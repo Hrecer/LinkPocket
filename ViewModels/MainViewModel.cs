@@ -78,6 +78,7 @@ namespace LinkPocket.ViewModels
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => _selectedFolderId >= 0);
             CreateFolderCommand = new AsyncRelayCommand(CreateFolderAsync, () => _selectedFolderId >= 0);
+            DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedAsync, CanDeleteSelected);
             EditLinkCommand = new RelayCommand<LinkItem>(EditLink);
             CancelEditLinkCommand = new RelayCommand(CancelEditLink);
             SaveEditLinkCommand = new AsyncRelayCommand(SaveEditLinkAsync, () => !EditLinkIsLoading && !string.IsNullOrWhiteSpace(EditLinkUrl) && !string.IsNullOrWhiteSpace(EditLinkTitle));
@@ -263,6 +264,13 @@ namespace LinkPocket.ViewModels
 
         public bool HasFolderItems => FolderItems?.Count > 0;
 
+        private ObservableCollection<FolderNode>? _trashItems;
+        public ObservableCollection<FolderNode>? TrashItems
+        {
+            get => _trashItems;
+            set { _trashItems = value; OnPropertyChanged(); }
+        }
+
         public ObservableCollection<SmartListItem> SmartListItems
         {
             get => _smartListItems;
@@ -296,6 +304,7 @@ namespace LinkPocket.ViewModels
         public ICommand SelectNavCommand { get; }
         public ICommand ShowAddLinkCommand { get; }
         public IAsyncRelayCommand CreateFolderCommand { get; }
+        public IAsyncRelayCommand DeleteSelectedCommand { get; }
         public ICommand EditLinkCommand { get; }
         public ICommand CancelEditLinkCommand { get; }
         public IAsyncRelayCommand SaveEditLinkCommand { get; }
@@ -337,8 +346,12 @@ namespace LinkPocket.ViewModels
 
             if (navId == "links")
                 await RefreshFolderTreeAndUIAsync();
-            else if (navId == "trash" && _trashViewModel != null)
-                await _trashViewModel.LoadTrashAsync();
+            else if (navId == "trash")
+            {
+                await LoadTrashTreeAsync();
+                if (Application.Current.MainWindow is MainWindow mw)
+                    await mw.RefreshTrashListAsync(this);
+            }
         }
 
         private void SyncNavSelection(string navId)
@@ -615,6 +628,7 @@ namespace LinkPocket.ViewModels
             _selectedFolderId = folderId;
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
             ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
+            ((AsyncRelayCommand)DeleteSelectedCommand).NotifyCanExecuteChanged();
 
             Logger.Info($"选中目录: {(folderId == 0 ? "全部书签" : $"文件夹 {folderId}")}");
         }
@@ -624,6 +638,49 @@ namespace LinkPocket.ViewModels
             _selectedFolderId = -1;
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
             ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
+            ((AsyncRelayCommand)DeleteSelectedCommand).NotifyCanExecuteChanged();
+        }
+
+        private bool CanDeleteSelected()
+        {
+            if (_selectedFolderId > 0) return true;
+            if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
+            return false;
+        }
+
+        private async Task DeleteSelectedAsync()
+        {
+            try
+            {
+                if (_selectedFolderId > 0)
+                {
+                    await _folderService.SoftDeleteFolderAsync(_selectedFolderId);
+                    Logger.Info($"文件夹 {_selectedFolderId} 已移至回收站");
+                    if (Application.Current.MainWindow is MainWindow mw)
+                        mw.ClearFolderSelection();
+                    await RefreshFolderTreeAndUIAsync();
+                    return;
+                }
+
+                if (_linkViewModel != null && _linkViewModel.HasSelectedItems)
+                {
+                    var selectedLinks = _linkViewModel.Links.Where(l => l.IsSelected).ToList();
+                    foreach (var link in selectedLinks)
+                    {
+                        await _linkService.DeleteLinkAsync(link.Id);
+                    }
+                    Logger.Info($"已将 {selectedLinks.Count} 个书签移至回收站");
+                    _linkViewModel.ClearSelectionCommand.Execute(null);
+                    if (Application.Current.MainWindow is MainWindow mw)
+                        mw.ClearDetailPanel();
+                    await RefreshFolderTreeAndUIAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("删除失败", ex);
+                MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private async Task CreateFolderAsync()
@@ -708,7 +765,55 @@ namespace LinkPocket.ViewModels
             {
                 await mw.RefreshSidebarAsync(this);
                 await mw.RefreshMainListAsync();
+                await mw.RefreshTrashListAsync(this);
             }
+        }
+
+        public async Task LoadTrashTreeAsync()
+        {
+            var deletedFolders = await _folderService.GetDeletedFoldersAsync();
+            var deletedLinks = await _linkService.GetDeletedLinksAsync();
+
+            var trashRoot = new FolderNode { Id = -1, Name = "回收站", IconKind = PackIconKind.Delete };
+
+            var lookup = new Dictionary<int, FolderNode>();
+            foreach (var f in deletedFolders)
+            {
+                lookup[f.Id] = new FolderNode
+                {
+                    Id = f.Id, Name = f.Name,
+                    IconKind = PackIconKind.Folder,
+                    Children = new ObservableCollection<FolderNode>()
+                };
+            }
+
+            foreach (var f in deletedFolders)
+            {
+                if (f.ParentId.HasValue && lookup.TryGetValue(f.ParentId.Value, out var parentNode))
+                    parentNode.Children.Add(lookup[f.Id]);
+                else
+                    trashRoot.Children.Add(lookup[f.Id]);
+            }
+
+            foreach (var link in deletedLinks)
+            {
+                if (link.ListId.HasValue && lookup.TryGetValue(link.ListId.Value, out var folderNode))
+                {
+                    folderNode.LinkCount++;
+                }
+            }
+
+            TrashItems = new ObservableCollection<FolderNode> { trashRoot };
+        }
+
+        public async Task<List<Data.Link>> GetTrashLinksForFolderAsync(int folderId)
+        {
+            return await _linkService.GetDeletedLinksForFolderAsync(folderId);
+        }
+
+        public async Task<List<Data.Link>> GetTrashRootLinksAsync()
+        {
+            return await _linkService.GetDeletedLinksForFolderAsync(null);
         }
 
         public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(int? listId = null)

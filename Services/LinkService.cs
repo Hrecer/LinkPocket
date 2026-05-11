@@ -128,6 +128,22 @@ public class LinkService
             .ToListAsync();
     }
 
+    public async Task<List<Link>> GetDeletedLinksAsync()
+    {
+        return await _db.Links
+            .Where(l => l.IsDeleted)
+            .OrderByDescending(l => l.DeletedAt)
+            .ToListAsync();
+    }
+
+    public async Task<List<Link>> GetDeletedLinksForFolderAsync(int? folderId)
+    {
+        return await _db.Links
+            .Where(l => l.IsDeleted && l.ListId == folderId)
+            .OrderByDescending(l => l.DeletedAt)
+            .ToListAsync();
+    }
+
     public async Task<Link?> GetLinkByIdAsync(int id)
     {
         return await _db.Links

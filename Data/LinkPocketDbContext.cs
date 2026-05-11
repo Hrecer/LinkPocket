@@ -49,6 +49,7 @@ public class LinkPocketDbContext : DbContext
         {
             entity.ToTable("lists");
             entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.IsDeleted);
             entity.HasOne(e => e.Parent)
                   .WithMany(f => f.Children)
                   .HasForeignKey(e => e.ParentId)

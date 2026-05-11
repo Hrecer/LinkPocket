@@ -25,6 +25,7 @@ public class FolderService
     public async Task<List<Folder>> GetAllFoldersAsync()
     {
         return await _db.Folders
+            .Where(f => !f.IsDeleted)
             .OrderBy(f => f.SortOrder)
             .ThenBy(f => f.Name)
             .ToListAsync();
@@ -250,5 +251,45 @@ public class FolderService
         }
 
         return ids;
+    }
+
+    public async Task SoftDeleteFolderAsync(int folderId)
+    {
+        var folder = await _db.Folders.FindAsync(folderId)
+            ?? throw new Exception("Folder not found");
+
+        folder.IsDeleted = true;
+        folder.DeletedAt = DateTime.UtcNow;
+
+        var descendantIds = await GetDescendantIdsAsync(folderId);
+        foreach (var childId in descendantIds)
+        {
+            var child = await _db.Folders.FindAsync(childId);
+            if (child != null)
+            {
+                child.IsDeleted = true;
+                child.DeletedAt = DateTime.UtcNow;
+            }
+        }
+
+        var allFolderIds = descendantIds.Concat(new[] { folderId }).ToList();
+        var linksInFolders = await _db.Links
+            .Where(l => l.ListId != null && allFolderIds.Contains(l.ListId.Value) && !l.IsDeleted)
+            .ToListAsync();
+        foreach (var link in linksInFolders)
+        {
+            link.IsDeleted = true;
+            link.DeletedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task<List<Folder>> GetDeletedFoldersAsync()
+    {
+        return await _db.Folders
+            .Where(f => f.IsDeleted)
+            .OrderByDescending(f => f.DeletedAt)
+            .ToListAsync();
     }
 }

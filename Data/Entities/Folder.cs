@@ -25,6 +25,12 @@ public class Folder
     [Column("sort_order")]
     public int SortOrder { get; set; } = 0;
 
+    [Column("is_deleted")]
+    public bool IsDeleted { get; set; } = false;
+
+    [Column("deleted_at")]
+    public DateTime? DeletedAt { get; set; }
+
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }
 
