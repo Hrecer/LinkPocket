@@ -207,19 +207,9 @@ public partial class MainWindow : Window
                     _expandedFolders.Add(folderId);
 
                 if (_selectedFolderId == folderId)
-                {
-                    _selectedFolderId = -1;
-                    ClearRootFolderSelection();
-                }
+                    ClearFolderSelection();
                 else
-                {
-                    _selectedFolderId = folderId;
-                    _rootFolderSelected = (folderId == 0);
-                    UpdateRootFolderSelectionVisual();
-                    viewModel.SelectFolder(folderId);
-                }
-
-                RefreshSidebar(viewModel);
+                    SetFolderSelection(folderId);
             }
             e.Handled = true;
         };
@@ -578,6 +568,35 @@ public partial class MainWindow : Window
     private bool _rootFolderExpanded = true;
     private bool _rootFolderSelected = false;
 
+    private void SetFolderSelection(int folderId)
+    {
+        _selectedFolderId = folderId;
+        _rootFolderSelected = (folderId == 0);
+        UpdateRootFolderSelectionVisual();
+
+        if (DataContext is MainViewModel vm)
+        {
+            vm.SelectFolder(folderId);
+            if (vm.LinkViewModel != null)
+            {
+                vm.LinkViewModel.ClearSelectionCommand.Execute(null);
+                _currentSelectedLink = null;
+                RefreshDetailPanel();
+            }
+            RefreshSidebar(vm);
+        }
+    }
+
+    private void ClearFolderSelection()
+    {
+        _selectedFolderId = -1;
+        _rootFolderSelected = false;
+        UpdateRootFolderSelectionVisual();
+
+        if (DataContext is MainViewModel vm)
+            RefreshSidebar(vm);
+    }
+
     private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _rootFolderExpanded = !_rootFolderExpanded;
@@ -593,26 +612,12 @@ public partial class MainWindow : Window
         if (linksItemsControl != null)
             linksItemsControl.Visibility = _rootFolderExpanded ? Visibility.Visible : Visibility.Collapsed;
 
-        if (DataContext is MainViewModel vm)
-        {
-            if (_rootFolderExpanded)
-                _expandedFolders.Add(0);
-            else
-                _expandedFolders.Remove(0);
+        if (_rootFolderExpanded)
+            _expandedFolders.Add(0);
+        else
+            _expandedFolders.Remove(0);
 
-            _rootFolderSelected = true;
-            _selectedFolderId = 0;
-            UpdateRootFolderSelectionVisual();
-            vm.SelectFolder(0);
-            RefreshSidebar(vm);
-
-            if (vm.LinkViewModel != null)
-            {
-                vm.LinkViewModel.ClearSelectionCommand.Execute(null);
-                _currentSelectedLink = null;
-                RefreshDetailPanel();
-            }
-        }
+        SetFolderSelection(0);
         e.Handled = true;
     }
 
@@ -634,12 +639,6 @@ public partial class MainWindow : Window
         RootFolderBorder.Background = _rootFolderSelected
             ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
             : new SolidColorBrush(Colors.Transparent);
-    }
-
-    public void ClearRootFolderSelection()
-    {
-        _rootFolderSelected = false;
-        UpdateRootFolderSelectionVisual();
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
@@ -675,13 +674,12 @@ public partial class MainWindow : Window
             {
                 viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
                 _currentSelectedLink = null;
-                ClearRootFolderSelection();
-                _selectedFolderId = -1;
+                ClearFolderSelection();
                 RefreshDetailPanel();
                 return;
             }
 
-            ClearRootFolderSelection();
+            ClearFolderSelection();
 
             Dispatcher.BeginInvoke(() =>
             {
@@ -724,8 +722,7 @@ public partial class MainWindow : Window
         {
             vm.LinkViewModel.ClearSelectionCommand.Execute(null);
             _currentSelectedLink = null;
-            ClearRootFolderSelection();
-            _selectedFolderId = -1;
+            ClearFolderSelection();
             RefreshDetailPanel();
         }
     }
