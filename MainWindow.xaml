@@ -168,9 +168,21 @@
                     <!-- 操作栏 -->
                     <Border Grid.Row="0" Background="{DynamicResource MaterialDesignCardBackground}" Padding="12,10" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Padding="12,8" Margin="4,0" Background="Transparent" BorderThickness="0" Cursor="Hand"
+                            <Button Padding="12,8" Margin="4,0" Cursor="Hand"
                                     Command="{Binding DataContext.ShowAddLinkCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     ToolTip="添加新链接">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="Opacity" Value="0.4"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
                                 <StackPanel Orientation="Horizontal">
                                     <materialDesign:PackIcon Kind="Plus" Width="18" Height="18" VerticalAlignment="Center"/>
                                     <TextBlock Text="添加" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
