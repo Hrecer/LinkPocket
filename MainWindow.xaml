@@ -188,6 +188,26 @@
                                     <TextBlock Text="添加" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
                                 </StackPanel>
                             </Button>
+                            <Button Padding="12,8" Margin="4,0" Cursor="Hand"
+                                    Command="{Binding DataContext.CreateFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="新建文件夹">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="Opacity" Value="0.4"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="FolderPlus" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock Text="新建文件夹" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                                </StackPanel>
+                            </Button>
                             <Button x:Name="DeleteButton" Padding="12,8" Margin="4,0"
                                     Content="🗑 删除" FontSize="14" FontFamily="Microsoft YaHei UI"
                                     Background="Transparent" BorderThickness="0" Foreground="#D32F2F" Cursor="Hand"
@@ -272,6 +292,8 @@
                                         <TextBlock Text="全部书签" FontSize="12" VerticalAlignment="Center" Foreground="#444444"/>
                                     </StackPanel>
                                 </Border>
+
+                                <StackPanel x:Name="SubFolderPanel"/>
 
                                 <ItemsControl x:Name="LinksItemsControl" ItemsSource="{Binding Links}">
                                     <ItemsControl.ItemsPanel>

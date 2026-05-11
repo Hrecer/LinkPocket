@@ -1,3 +1,6 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -137,25 +140,47 @@ public partial class MainWindow : Window
 
         foreach (var folder in folderItems)
         {
-            bool isExpanded = _expandedFolders.Contains(folder.Id);
-            bool isSelected = folder.Id == _selectedFolderId;
-
-            var folderRow = CreateFolderRow(folder, isExpanded, isSelected, viewModel);
-            FolderListPanel.Children.Add(folderRow);
-
-            if (isExpanded)
-            {
-                var childPanel = CreateBookmarkChildren(folder.Id, viewModel);
-                FolderListPanel.Children.Add(childPanel);
-            }
+            RenderFolderNode(folder, FolderListPanel, 0, viewModel);
         }
     }
 
-    private Border CreateFolderRow(FolderNode folder, bool isExpanded, bool isSelected, MainViewModel viewModel)
+    private void RenderFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
+    {
+        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isSelected = folder.Id == _selectedFolderId;
+
+        var folderRow = CreateFolderRow(folder, isExpanded, isSelected, depth, viewModel);
+        container.Children.Add(folderRow);
+
+        if (isExpanded)
+        {
+            var childPanel = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
+
+            foreach (var child in folder.Children)
+            {
+                RenderFolderNode(child, childPanel, depth + 1, viewModel);
+            }
+
+            var linksTask = viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id);
+            var links = linksTask.Result.Links;
+            if (links != null && links.Count > 0)
+            {
+                foreach (var link in links)
+                {
+                    var itemRow = CreateSidebarLinkRow(link, viewModel);
+                    childPanel.Children.Add(itemRow);
+                }
+            }
+
+            container.Children.Add(childPanel);
+        }
+    }
+
+    private Border CreateFolderRow(FolderNode folder, bool isExpanded, bool isSelected, int depth, MainViewModel viewModel)
     {
         var row = new Border
         {
-            MinHeight = 28, Padding = new Thickness(4, 4, 4, 4),
+            MinHeight = 28, Padding = new Thickness(4 + depth * 4, 4, 4, 4),
             Cursor = Cursors.Hand, Tag = folder.Id,
             Background = isSelected
                 ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
@@ -246,40 +271,6 @@ public partial class MainWindow : Window
         };
 
         return row;
-    }
-
-    private StackPanel CreateBookmarkChildren(int folderId, MainViewModel viewModel)
-    {
-        var panel = new StackPanel { Margin = new Thickness(18, 0, 0, 0) };
-
-        var linksTask = viewModel.GetLinksForSidebarAsync(folderId == 0 ? null : folderId);
-        var links = linksTask.Result.Links;
-
-        if (links == null || links.Count == 0)
-        {
-            panel.Children.Add(new TextBlock
-            {
-                Text = "（空）", FontSize = 11, Opacity = 0.3,
-                Margin = new Thickness(4, 2, 0, 4), VerticalAlignment = VerticalAlignment.Center
-            });
-            return panel;
-        }
-
-        foreach (var link in links)
-        {
-            var itemRow = CreateSidebarLinkRow(link, viewModel);
-            panel.Children.Add(itemRow);
-        }
-
-        if (viewModel.LinkViewModel != null)
-        {
-            viewModel.LinkViewModel.SelectionChanged -= LinkViewModel_SelectionChanged;
-            viewModel.LinkViewModel.SelectionChanged += LinkViewModel_SelectionChanged;
-        }
-
-        UpdateSidebarSelectionVisuals(viewModel);
-
-        return panel;
     }
 
     private Border CreateSidebarLinkRow(Data.Link link, MainViewModel viewModel)
@@ -591,6 +582,7 @@ public partial class MainWindow : Window
         _selectedFolderId = folderId;
         _rootFolderSelected = (folderId == 0);
         UpdateRootFolderSelectionVisual();
+        RefreshSubFolderPanel();
 
         if (DataContext is MainViewModel vm)
         {
@@ -605,11 +597,129 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RefreshSubFolderPanel()
+    {
+        if (SubFolderPanel == null) return;
+        SubFolderPanel.Children.Clear();
+
+        if (DataContext is not MainViewModel vm) return;
+        if (_selectedFolderId < 0) return;
+
+        var folderItems = vm.FolderItems;
+        if (folderItems == null) return;
+
+        FolderNode? selectedNode = null;
+        if (_selectedFolderId == 0)
+            selectedNode = folderItems.FirstOrDefault(f => f.Id == 0);
+        else
+            selectedNode = FindFolderNode(folderItems, _selectedFolderId);
+
+        if (selectedNode == null || selectedNode.Children.Count == 0) return;
+
+        foreach (var child in selectedNode.Children)
+        {
+            SubFolderPanel.Children.Add(CreateMainListFolderRow(child, 1, vm));
+        }
+    }
+
+    private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, int id)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Id == id) return node;
+            var found = FindFolderNode(node.Children, id);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private Border CreateMainListFolderRow(FolderNode folder, int depth, MainViewModel viewModel)
+    {
+        var row = new Border
+        {
+            Margin = new Thickness(0), CornerRadius = new CornerRadius(0), Cursor = Cursors.Hand,
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(224, 224, 224)),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(12 + depth * 20, 5, 12, 5),
+            Tag = "SubFolderCard"
+        };
+
+        var stack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+        var chevronBorder = new Border
+        {
+            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
+            Background = Brushes.Transparent, Cursor = Cursors.Hand,
+            Tag = folder.Id
+        };
+        var isExpanded = _expandedFolders.Contains(folder.Id);
+        chevronBorder.Child = new PackIcon
+        {
+            Width = 12, Height = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Kind = isExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight,
+            Opacity = 0.45
+        };
+        stack.Children.Add(chevronBorder);
+
+        stack.Children.Add(new PackIcon
+        {
+            Kind = isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline,
+            Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(4, 0, 6, 0), Opacity = 0.5
+        });
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = folder.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromRgb(68, 68, 68))
+        });
+
+        row.Child = stack;
+
+        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
+        {
+            if (s is FrameworkElement fe && fe.Tag is int fid)
+            {
+                if (_expandedFolders.Contains(fid))
+                    _expandedFolders.Remove(fid);
+                else
+                    _expandedFolders.Add(fid);
+                RefreshSidebar(viewModel);
+                RefreshSubFolderPanel();
+            }
+            e.Handled = true;
+        };
+
+        row.MouseLeftButtonDown += (s, e) =>
+        {
+            SetFolderSelection(folder.Id);
+            e.Handled = true;
+        };
+
+        row.MouseEnter += (s, e) =>
+        {
+            if (s is Border b && _selectedFolderId != folder.Id)
+                b.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+        };
+
+        row.MouseLeave += (s, e) =>
+        {
+            if (s is Border b && _selectedFolderId != folder.Id)
+                b.Background = new SolidColorBrush(Colors.Transparent);
+        };
+
+        return row;
+    }
+
     private void ClearFolderSelection()
     {
         _selectedFolderId = -1;
         _rootFolderSelected = false;
         UpdateRootFolderSelectionVisual();
+        if (SubFolderPanel != null) SubFolderPanel.Children.Clear();
 
         if (DataContext is MainViewModel vm)
         {
@@ -682,6 +792,7 @@ public partial class MainWindow : Window
                 if (walk is Border b)
                 {
                     if ("FolderCard".Equals(b.Tag as string)) return;
+                    if ("SubFolderCard".Equals(b.Tag as string)) return;
                     if (b.Name == "RootFolderChevronBorder") return;
                 }
                 walk = VisualTreeHelper.GetParent(walk);

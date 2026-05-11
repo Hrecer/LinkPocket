@@ -4,7 +4,9 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
 using LinkPocket.Data;
 using LinkPocket.Models;
@@ -75,6 +77,7 @@ namespace LinkPocket.ViewModels
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => _selectedFolderId >= 0);
+            CreateFolderCommand = new AsyncRelayCommand(CreateFolderAsync, () => _selectedFolderId >= 0);
             EditLinkCommand = new RelayCommand<LinkItem>(EditLink);
             CancelEditLinkCommand = new RelayCommand(CancelEditLink);
             SaveEditLinkCommand = new AsyncRelayCommand(SaveEditLinkAsync, () => !EditLinkIsLoading && !string.IsNullOrWhiteSpace(EditLinkUrl) && !string.IsNullOrWhiteSpace(EditLinkTitle));
@@ -292,6 +295,7 @@ namespace LinkPocket.ViewModels
 
         public ICommand SelectNavCommand { get; }
         public ICommand ShowAddLinkCommand { get; }
+        public IAsyncRelayCommand CreateFolderCommand { get; }
         public ICommand EditLinkCommand { get; }
         public ICommand CancelEditLinkCommand { get; }
         public IAsyncRelayCommand SaveEditLinkCommand { get; }
@@ -608,6 +612,7 @@ namespace LinkPocket.ViewModels
         {
             _selectedFolderId = folderId;
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
+            ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
 
             if (_linkViewModel != null)
             {
@@ -625,6 +630,75 @@ namespace LinkPocket.ViewModels
         {
             _selectedFolderId = -1;
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
+            ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
+        }
+
+        private async Task CreateFolderAsync()
+        {
+            if (_selectedFolderId < 0) return;
+
+            var dialog = new Window
+            {
+                Title = "新建文件夹",
+                Width = 360, Height = 180,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Application.Current.MainWindow,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.None,
+                Background = System.Windows.Media.Brushes.White,
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+                BorderThickness = new Thickness(1)
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(24) };
+            panel.Children.Add(new TextBlock
+            {
+                Text = "新建文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16)
+            });
+
+            var nameBox = new System.Windows.Controls.TextBox
+            {
+                FontSize = 14, Padding = new Thickness(8, 6, 8, 6)
+            };
+            nameBox.SetValue(HintAssist.HintProperty, "文件夹名称");
+            panel.Children.Add(nameBox);
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 16, 0, 0)
+            };
+
+            var cancelBtn = new System.Windows.Controls.Button { Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            cancelBtn.Click += (s, e) => dialog.DialogResult = false;
+            btnPanel.Children.Add(cancelBtn);
+
+            var okBtn = new System.Windows.Controls.Button { Content = "创建", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand };
+            okBtn.Click += (s, e) =>
+            {
+                if (!string.IsNullOrWhiteSpace(nameBox.Text))
+                    dialog.DialogResult = true;
+            };
+            btnPanel.Children.Add(okBtn);
+            panel.Children.Add(btnPanel);
+
+            dialog.Content = panel;
+            nameBox.Focus();
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
+                    await _folderService.CreateFolderAsync(nameBox.Text.Trim(), parentId: parentId);
+                    await RefreshFolderTreeAndUIAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("创建文件夹失败", ex);
+                }
+            }
         }
 
         private async void OnLinksChanged(object? sender, EventArgs e)
@@ -653,25 +727,36 @@ namespace LinkPocket.ViewModels
             try
             {
                 var totalLinks = await _linkService.GetTotalCountAsync();
-                var folders = await _folderService.GetTreeAsync();
+                var allFolders = await _folderService.GetAllFoldersAsync();
 
                 var folderNodes = new ObservableCollection<FolderNode>();
 
-                folderNodes.Add(new FolderNode
+                var rootNode = new FolderNode
                 {
                     Id = 0, Name = "全部书签", LinkCount = totalLinks,
                     IconKind = PackIconKind.BookmarkOutline,
                     Children = new ObservableCollection<FolderNode>()
-                });
+                };
+                folderNodes.Add(rootNode);
 
-                foreach (var folder in folders)
+                var lookup = new Dictionary<int, FolderNode>();
+                foreach (var folder in allFolders)
                 {
-                    folderNodes.Add(new FolderNode
+                    var node = new FolderNode
                     {
                         Id = folder.Id, Name = folder.Name, LinkCount = folder.LinkCount,
                         IconKind = folder.LinkCount > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
                         Children = new ObservableCollection<FolderNode>()
-                    });
+                    };
+                    lookup[folder.Id] = node;
+                }
+
+                foreach (var folder in allFolders)
+                {
+                    if (folder.ParentId.HasValue && lookup.TryGetValue(folder.ParentId.Value, out var parentNode))
+                        parentNode.Children.Add(lookup[folder.Id]);
+                    else
+                        folderNodes.Add(lookup[folder.Id]);
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>

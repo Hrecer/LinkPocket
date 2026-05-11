@@ -22,6 +22,14 @@ public class FolderService
             .ToListAsync();
     }
 
+    public async Task<List<Folder>> GetAllFoldersAsync()
+    {
+        return await _db.Folders
+            .OrderBy(f => f.SortOrder)
+            .ThenBy(f => f.Name)
+            .ToListAsync();
+    }
+
     public async Task<Folder?> GetFolderByIdAsync(int id)
     {
         return await _db.Folders
