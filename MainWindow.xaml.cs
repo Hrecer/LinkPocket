@@ -811,14 +811,31 @@ public partial class MainWindow : Window
         return row;
     }
 
+    private static StackPanel StackPanelWithTextTrimming(Data.Link link)
+    {
+        var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        sp.Children.Add(new TextBlock
+        {
+            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
+            FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        sp.Children.Add(new TextBlock
+        {
+            Text = link.Url, FontSize = 11, Opacity = 0.55,
+            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
+        });
+        return sp;
+    }
+
     private Border CreateMainListLinkCard(Data.Link link, MainViewModel viewModel)
     {
         var card = new Border
         {
             Tag = "LinkCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
-            Cursor = Cursors.Hand,
+            Cursor = Cursors.Hand, MaxWidth = 480,
             Background = (Brush)FindResource("MaterialDesignCardBackground"),
-            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
+            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12),
+            HorizontalAlignment = HorizontalAlignment.Left
         };
 
         var style = new Style(typeof(Border));
@@ -829,7 +846,9 @@ public partial class MainWindow : Window
         });
         card.Style = style;
 
-        var hStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var iconBorder = new Border
         {
@@ -869,22 +888,14 @@ public partial class MainWindow : Window
             iconGrid.Children.Add(faviconImg);
         }
         iconBorder.Child = iconGrid;
-        hStack.Children.Add(iconBorder);
+        Grid.SetColumn(iconBorder, 0);
+        grid.Children.Add(iconBorder);
 
-        var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        textStack.Children.Add(new TextBlock
-        {
-            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
-            FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
-        });
-        textStack.Children.Add(new TextBlock
-        {
-            Text = link.Url, FontSize = 11, Opacity = 0.55,
-            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-        });
-        hStack.Children.Add(textStack);
+        var textStack = StackPanelWithTextTrimming(link);
+        Grid.SetColumn(textStack, 1);
+        grid.Children.Add(textStack);
 
-        card.Child = hStack;
+        card.Child = grid;
 
         card.PreviewMouseLeftButtonDown += (s, e) =>
         {

@@ -257,7 +257,7 @@
                             <TextBlock Text="{Binding ErrorMessage}" FontSize="14" HorizontalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource ValidationErrorBrush}" MaxWidth="400" Margin="0,16,0,12"/>
                         </StackPanel>
 
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
                             <StackPanel x:Name="MainListContentPanel" Margin="8"/>
                         </ScrollViewer>
                     </Grid>
