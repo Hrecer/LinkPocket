@@ -20,7 +20,7 @@ namespace LinkPocket.ViewModels
         private readonly FolderService _folderService;
         
         private string _currentNavId = "links";
-        private int _selectedFolderId = 0;
+        private int _selectedFolderId = -1;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private ObservableCollection<SmartListItem> _smartListItems = new();
@@ -345,6 +345,7 @@ namespace LinkPocket.ViewModels
 
         private void ShowAddLink()
         {
+            if (_selectedFolderId < 0) return;
             _editOpenedFromDetail = false;
             IsEditMode = false;
             _editingLinkId = 0;
@@ -546,7 +547,7 @@ namespace LinkPocket.ViewModels
                         url: url,
                         title: title,
                         description: description,
-                        listId: null,
+                        listId: _selectedFolderId == 0 ? null : _selectedFolderId,
                         rating: 0,
                         isImportant: false,
                         tagIds: null,
