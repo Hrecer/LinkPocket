@@ -205,7 +205,7 @@ public partial class MainWindow : Window
 
         row.Child = stack;
 
-        chevronBorder.MouseLeftButtonDown += (s, e) =>
+        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
             {
