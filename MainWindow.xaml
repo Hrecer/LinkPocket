@@ -238,17 +238,18 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
                             <StackPanel Margin="8">
-                                <Border Margin="0,0,0,4" CornerRadius="4" Cursor="Hand"
+                                <Border Margin="0" CornerRadius="0" Cursor="Hand"
                                         Background="Transparent"
-                                        Padding="8,6"
+                                        BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
+                                        Padding="12,5,12,5"
                                         Tag="FolderCard"
                                         MouseLeftButtonDown="RootFolderCard_MouseLeftButtonDown">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <materialDesign:PackIcon x:Name="RootFolderChevron" Kind="ChevronRight" Width="14" Height="14"
+                                        <materialDesign:PackIcon x:Name="RootFolderChevron" Kind="ChevronDown" Width="12" Height="12"
+                                                                 VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.45"/>
+                                        <materialDesign:PackIcon Kind="BookmarkOutline" Width="14" Height="14"
                                                                  VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.5"/>
-                                        <materialDesign:PackIcon Kind="BookmarkOutline" Width="16" Height="16"
-                                                                 VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.6"/>
-                                        <TextBlock Text="全部书签" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="全部书签" FontSize="12" VerticalAlignment="Center" Foreground="#444444"/>
                                     </StackPanel>
                                 </Border>
 
