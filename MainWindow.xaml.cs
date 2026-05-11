@@ -557,31 +557,28 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
         {
-            LinkItem? clickedLink = null;
             DependencyObject? current = e.OriginalSource as DependencyObject;
+            bool hitCard = false;
             while (current != null)
             {
-                if (current is Border border && border.Tag?.ToString() == "LinkCard")
+                if (current is Border border && "LinkCard".Equals(border.Tag as string))
                 {
-                    clickedLink = border.DataContext as LinkItem;
+                    hitCard = true;
                     break;
                 }
-                current = VisualTreeHelper.GetParent(current);
+                if (current is Visual)
+                    current = VisualTreeHelper.GetParent(current);
+                else
+                    break;
             }
 
-            if (clickedLink == null)
+            if (!hitCard)
             {
                 viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
                 _currentSelectedLink = null;
                 RefreshDetailPanel();
-                return;
+                e.Handled = true;
             }
-
-            Dispatcher.BeginInvoke(() =>
-            {
-                _currentSelectedLink = clickedLink.IsSelected ? clickedLink : null;
-                RefreshDetailPanel();
-            }, System.Windows.Threading.DispatcherPriority.Input);
         }
     }
 }

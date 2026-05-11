@@ -236,8 +236,10 @@
                         </StackPanel>
 
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl ItemsSource="{Binding Links}">
+                                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
+                                      Background="Transparent"
+                                      PreviewMouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
+                            <ItemsControl ItemsSource="{Binding Links}" Background="Transparent">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel Margin="8"/>
