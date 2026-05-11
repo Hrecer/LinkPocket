@@ -1,0 +1,36 @@
+<Application x:Class="LinkPocket.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml" />
+                <materialDesign:BundledTheme BaseTheme="Light"
+                                             PrimaryColor="DeepPurple"
+                                             SecondaryColor="Lime" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <FontFamily x:Key="MaterialDesignFont">Microsoft YaHei UI, 微软雅黑, SimSun, 宋体, Arial</FontFamily>
+
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource MaterialDesignFont}"/>
+                <Setter Property="FontWeight" Value="Normal"/>
+            </Style>
+
+            <Style TargetType="Button">
+                <Setter Property="FontFamily" Value="{StaticResource MaterialDesignFont}"/>
+                <Setter Property="FontWeight" Value="Normal"/>
+            </Style>
+
+            <Style TargetType="TextBox">
+                <Setter Property="FontFamily" Value="{StaticResource MaterialDesignFont}"/>
+            </Style>
+
+            <Style TargetType="ComboBox">
+                <Setter Property="FontFamily" Value="{StaticResource MaterialDesignFont}"/>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
