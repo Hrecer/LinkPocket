@@ -79,7 +79,7 @@ namespace LinkPocket.ViewModels
             CancelEditLinkCommand = new RelayCommand(CancelEditLink);
             SaveEditLinkCommand = new AsyncRelayCommand(SaveEditLinkAsync, () => !EditLinkIsLoading && !string.IsNullOrWhiteSpace(EditLinkUrl) && !string.IsNullOrWhiteSpace(EditLinkTitle));
             FetchMetadataCommand = new AsyncRelayCommand(FetchMetadataAsync, CanFetchMetadata);
-            ClearFaviconCommand = new RelayCommand(ClearFavicon);
+            ClearFaviconCommand = new RelayCommand(ClearFavicon, CanClearFavicon);
             ShowDetailCommand = new RelayCommand<LinkItem>(ShowDetail);
             DetailEditCommand = new RelayCommand(DetailEdit);
             CancelDetailCommand = new RelayCommand(CancelDetail);
@@ -143,7 +143,7 @@ namespace LinkPocket.ViewModels
         public string EditLinkFaviconUrl
         {
             get => _fetchedFaviconUrl;
-            set { _fetchedFaviconUrl = value; OnPropertyChanged(); OnPropertyChanged(nameof(EditLinkHasFavicon)); }
+            set { _fetchedFaviconUrl = value; OnPropertyChanged(); OnPropertyChanged(nameof(EditLinkHasFavicon)); ((RelayCommand)ClearFaviconCommand).RaiseCanExecuteChanged(); }
         }
 
         public bool EditLinkHasFavicon => !string.IsNullOrEmpty(_fetchedFaviconUrl);
@@ -187,7 +187,7 @@ namespace LinkPocket.ViewModels
         public bool IsFetchingMetadata
         {
             get => _isFetchingMetadata;
-            set { _isFetchingMetadata = value; OnPropertyChanged(); }
+            set { _isFetchingMetadata = value; OnPropertyChanged(); ((RelayCommand)ClearFaviconCommand).RaiseCanExecuteChanged(); }
         }
 
         private string _fetchStatusMessage = string.Empty;
@@ -456,6 +456,8 @@ namespace LinkPocket.ViewModels
             _fetchedFaviconUrl = string.Empty;
             OnPropertyChanged(nameof(EditLinkFaviconUrl));
         }
+
+        private bool CanClearFavicon() => EditLinkHasFavicon && !IsFetchingMetadata;
 
         private async Task FetchMetadataAsync()
         {

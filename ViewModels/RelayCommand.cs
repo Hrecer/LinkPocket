@@ -22,6 +22,8 @@ namespace LinkPocket.ViewModels
 
         public bool CanExecute(object? parameter) => _canExecute?.Invoke() ?? true;
 
+        public void RaiseCanExecuteChanged() => CommandManager.InvalidateRequerySuggested();
+
         public void Execute(object? parameter) => _execute();
     }
 

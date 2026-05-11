@@ -690,19 +690,7 @@
                         <Button Command="{Binding ClearFaviconCommand}" Margin="12,0,0,0" Padding="10,5"
                                 ToolTip="清除已解析的图标" FontSize="12" FontFamily="Microsoft YaHei UI"
                                 BorderThickness="1" BorderBrush="#CCCCCC" Background="#FFFFFF"
-                                Content="✕ 清除图标" Cursor="Hand" VerticalAlignment="Center">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="IsEnabled" Value="True"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                            <Setter Property="Opacity" Value="0.5"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
+                                Content="✕ 清除图标" Cursor="Hand" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
