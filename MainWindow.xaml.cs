@@ -157,7 +157,9 @@ public partial class MainWindow : Window
         {
             MinHeight = 28, Padding = new Thickness(4, 4, 4, 4),
             Cursor = Cursors.Hand, Tag = folder.Id,
-            Background = new SolidColorBrush(Colors.Transparent),
+            Background = isSelected
+                ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
+                : new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0)
         };
 
@@ -175,7 +177,7 @@ public partial class MainWindow : Window
         {
             Width = 16, Height = 16, Margin = new Thickness(2, 0, 6, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Kind = folder.Id == 0 ? PackIconKind.BookmarkOutline : PackIconKind.FolderOutline,
+            Kind = folder.Id == 0 ? PackIconKind.BookmarkOutline : (isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline),
             Opacity = 0.7
         });
 
@@ -183,6 +185,15 @@ public partial class MainWindow : Window
         {
             Text = folder.Name, FontSize = 13, VerticalAlignment = VerticalAlignment.Center
         });
+
+        if (folder.LinkCount > 0 && folder.Id != 0)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = $" {folder.LinkCount}", FontSize = 10, Opacity = 0.4,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
 
         row.Child = stack;
 
@@ -244,109 +255,7 @@ public partial class MainWindow : Window
 
         foreach (var link in links)
         {
-            var itemRow = new Border
-            {
-                MinHeight = 28, Padding = new Thickness(4, 2, 4, 2),
-                Cursor = Cursors.Hand, Tag = link.Id,
-                Background = new SolidColorBrush(Colors.Transparent),
-                CornerRadius = new CornerRadius(4),
-                Margin = new Thickness(1, 1, 1, 1)
-            };
-
-            var itemStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-
-            var iconBorder = new Border
-            {
-                Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
-                Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
-                ClipToBounds = true,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 5, 0)
-            };
-
-            var iconGrid = new Grid();
-
-            var faviconImg = new Image
-            {
-                Stretch = Stretch.Uniform,
-                Source = !string.IsNullOrEmpty(link.FaviconUrl) ? new BitmapImage(new Uri(link.FaviconUrl, UriKind.Absolute)) : null,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            if (string.IsNullOrEmpty(link.FaviconUrl))
-                faviconImg.Visibility = Visibility.Collapsed;
-
-            var earthIcon = new PackIcon
-            {
-                Kind = PackIconKind.Earth,
-                Width = 11, Height = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Opacity = 0.6
-            };
-            if (!string.IsNullOrEmpty(link.FaviconUrl))
-                earthIcon.Visibility = Visibility.Collapsed;
-
-            iconGrid.Children.Add(faviconImg);
-            iconGrid.Children.Add(earthIcon);
-            iconBorder.Child = iconGrid;
-
-            itemStack.Children.Add(iconBorder);
-
-            itemStack.Children.Add(new TextBlock
-            {
-                Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
-                FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            });
-
-            itemRow.Child = itemStack;
-
-            _sidebarLinkBorders[link.Id] = itemRow;
-
-            itemRow.PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                if (s is Border br && br.Tag is int lid && viewModel.LinkViewModel != null)
-                {
-                    var targetLink = viewModel.LinkViewModel.Links.FirstOrDefault(l => l.Id == lid);
-                    if (targetLink == null) return;
-
-                    if (e.ClickCount == 2)
-                    {
-                        viewModel.ShowDetailCommand.Execute(targetLink);
-                        e.Handled = true;
-                        return;
-                    }
-
-                    viewModel.LinkViewModel.ToggleSelectCommand.Execute(targetLink);
-                    _currentSelectedLink = targetLink.IsSelected ? targetLink : null;
-                    RefreshDetailPanel();
-                    e.Handled = true;
-                }
-            };
-
-            itemRow.MouseEnter += (s, e) =>
-            {
-                var b = (Border)s;
-                if (b.Tag is int fid)
-                {
-                    var l = viewModel.LinkViewModel?.Links.FirstOrDefault(x => x.Id == fid);
-                    if (l != null && !l.IsSelected)
-                        b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
-                }
-            };
-
-            itemRow.MouseLeave += (s, e) =>
-            {
-                var b = (Border)s;
-                if (b.Tag is int fid)
-                {
-                    var l = viewModel.LinkViewModel?.Links.FirstOrDefault(x => x.Id == fid);
-                    if (l != null && !l.IsSelected)
-                        b.Background = new SolidColorBrush(Colors.Transparent);
-                }
-            };
-
+            var itemRow = CreateSidebarLinkRow(link, viewModel);
             panel.Children.Add(itemRow);
         }
 
@@ -359,6 +268,114 @@ public partial class MainWindow : Window
         UpdateSidebarSelectionVisuals(viewModel);
 
         return panel;
+    }
+
+    private Border CreateSidebarLinkRow(Data.Link link, MainViewModel viewModel)
+    {
+        var itemRow = new Border
+        {
+            MinHeight = 28, Padding = new Thickness(4, 2, 4, 2),
+            Cursor = Cursors.Hand, Tag = link.Id,
+            Background = new SolidColorBrush(Colors.Transparent),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(1, 1, 1, 1)
+        };
+
+        var itemStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+        var iconBorder = new Border
+        {
+            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
+            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            ClipToBounds = true,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0)
+        };
+
+        var iconGrid = new Grid();
+
+        var faviconImg = new Image
+        {
+            Stretch = Stretch.Uniform,
+            Source = !string.IsNullOrEmpty(link.FaviconUrl) ? new BitmapImage(new Uri(link.FaviconUrl, UriKind.Absolute)) : null,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        if (string.IsNullOrEmpty(link.FaviconUrl))
+            faviconImg.Visibility = Visibility.Collapsed;
+
+        var earthIcon = new PackIcon
+        {
+            Kind = PackIconKind.Earth,
+            Width = 11, Height = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = 0.6
+        };
+        if (!string.IsNullOrEmpty(link.FaviconUrl))
+            earthIcon.Visibility = Visibility.Collapsed;
+
+        iconGrid.Children.Add(faviconImg);
+        iconGrid.Children.Add(earthIcon);
+        iconBorder.Child = iconGrid;
+
+        itemStack.Children.Add(iconBorder);
+
+        itemStack.Children.Add(new TextBlock
+        {
+            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
+            FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+
+        itemRow.Child = itemStack;
+
+        _sidebarLinkBorders[link.Id] = itemRow;
+
+        itemRow.PreviewMouseLeftButtonDown += (s, e) =>
+        {
+            if (s is Border br && br.Tag is int lid && viewModel.LinkViewModel != null)
+            {
+                var targetLink = viewModel.LinkViewModel.Links.FirstOrDefault(l => l.Id == lid);
+                if (targetLink == null) return;
+
+                if (e.ClickCount == 2)
+                {
+                    viewModel.ShowDetailCommand.Execute(targetLink);
+                    e.Handled = true;
+                    return;
+                }
+
+                viewModel.LinkViewModel.ToggleSelectCommand.Execute(targetLink);
+                _currentSelectedLink = targetLink.IsSelected ? targetLink : null;
+                RefreshDetailPanel();
+                e.Handled = true;
+            }
+        };
+
+        itemRow.MouseEnter += (s, e) =>
+        {
+            var b = (Border)s;
+            if (b.Tag is int fid)
+            {
+                var l = viewModel.LinkViewModel?.Links.FirstOrDefault(x => x.Id == fid);
+                if (l != null && !l.IsSelected)
+                    b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
+            }
+        };
+
+        itemRow.MouseLeave += (s, e) =>
+        {
+            var b = (Border)s;
+            if (b.Tag is int fid)
+            {
+                var l = viewModel.LinkViewModel?.Links.FirstOrDefault(x => x.Id == fid);
+                if (l != null && !l.IsSelected)
+                    b.Background = new SolidColorBrush(Colors.Transparent);
+            }
+        };
+
+        return itemRow;
     }
 
     private void LinkViewModel_SelectionChanged(object? sender, EventArgs e)
