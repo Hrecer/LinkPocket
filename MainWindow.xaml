@@ -237,94 +237,140 @@
 
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
-                            <ItemsControl ItemsSource="{Binding Links}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Margin="8"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Tag="LinkCard" Margin="4,2" CornerRadius="10" Cursor="Hand"
-                                                Background="{DynamicResource MaterialDesignCardBackground}"
-                                                BorderThickness="2" Padding="16,12">
-                                            <Border.Style>
-                                                <Style TargetType="Border">
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+                            <StackPanel Margin="8">
+                                <Border Margin="4,2,4,8" CornerRadius="10" Cursor="Hand"
+                                        Background="{DynamicResource MaterialDesignCardBackground}"
+                                        BorderThickness="2" Padding="16,12"
+                                        Tag="FolderCard"
+                                        MouseLeftButtonDown="RootFolderCard_MouseLeftButtonDown">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+                                            <Setter Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.08"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter Property="Effect">
                                                         <Setter.Value>
-                                                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.08"/>
+                                                            <DropShadowEffect BlurRadius="12" ShadowDepth="3" Opacity="0.15"/>
                                                         </Setter.Value>
                                                     </Setter>
-                                                    <Style.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Effect">
-                                                                <Setter.Value>
-                                                                    <DropShadowEffect BlurRadius="12" ShadowDepth="3" Opacity="0.15"/>
-                                                                </Setter.Value>
-                                                            </Setter>
-                                                        </Trigger>
-                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                            <Setter Property="Background" Value="#FF424242"/>
-                                                            <Setter Property="BorderBrush" Value="#FF424242"/>
-                                                            <Setter Property="Effect">
-                                                                <Setter.Value>
-                                                                    <DropShadowEffect BlurRadius="16" ShadowDepth="4" Color="#FF000000" Opacity="0.3"/>
-                                                                </Setter.Value>
-                                                            </Setter>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
-                                            <Border.InputBindings>
-                                                <MouseBinding Gesture="LeftClick"
-                                                              Command="{Binding DataContext.LinkViewModel.ToggleSelectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              CommandParameter="{Binding}"/>
-                                                <MouseBinding Gesture="LeftDoubleClick"
-                                                              Command="{Binding DataContext.ShowDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                              CommandParameter="{Binding}"/>
-                                            </Border.InputBindings>
-                                            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                                                <Border Width="36" Height="36" CornerRadius="6" Background="#F0F0F0"
-                                                        Margin="0,0,12,0" VerticalAlignment="Center"
-                                                        ClipToBounds="True">
-                                                    <Grid>
-                                                        <Image Source="{Binding FaviconUrl}" Stretch="Uniform">
-                                                            <Image.Style>
-                                                                <Style TargetType="Image">
-                                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="">
-                                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </Image.Style>
-                                                        </Image>
-                                                        <materialDesign:PackIcon Kind="Earth" Width="20" Height="20"
-                                                                                 HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                            <materialDesign:PackIcon.Style>
-                                                                <Style TargetType="materialDesign:PackIcon">
-                                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding FaviconUrl}" Value="">
-                                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </materialDesign:PackIcon.Style>
-                                                        </materialDesign:PackIcon>
-                                                    </Grid>
-                                                </Border>
-                                                <StackPanel VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Url}" FontSize="11" Opacity="0.55" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-                                                </StackPanel>
-                                            </StackPanel>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Width="36" Height="36" CornerRadius="6" Background="#E3F2FD"
+                                                Margin="0,0,12,0" VerticalAlignment="Center">
+                                            <materialDesign:PackIcon Kind="BookmarkOutline" Width="20" Height="20"
+                                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                     Foreground="#1976D2"/>
                                         </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="全部书签" FontSize="14" FontWeight="SemiBold"/>
+                                            <TextBlock FontSize="11" Opacity="0.55" Margin="0,3,0,0">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} 个链接">
+                                                        <Binding Path="DataContext.LinkViewModel.Links.Count" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <ItemsControl ItemsSource="{Binding Links}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Tag="LinkCard" Margin="4,2" CornerRadius="10" Cursor="Hand"
+                                                    Background="{DynamicResource MaterialDesignCardBackground}"
+                                                    BorderThickness="2" Padding="16,12">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.08"/>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Effect">
+                                                                    <Setter.Value>
+                                                                        <DropShadowEffect BlurRadius="12" ShadowDepth="3" Opacity="0.15"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </Trigger>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="Background" Value="#FF424242"/>
+                                                                <Setter Property="BorderBrush" Value="#FF424242"/>
+                                                                <Setter Property="Effect">
+                                                                    <Setter.Value>
+                                                                        <DropShadowEffect BlurRadius="16" ShadowDepth="4" Color="#FF000000" Opacity="0.3"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Border.InputBindings>
+                                                    <MouseBinding Gesture="LeftClick"
+                                                                  Command="{Binding DataContext.LinkViewModel.ToggleSelectCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}"/>
+                                                    <MouseBinding Gesture="LeftDoubleClick"
+                                                                  Command="{Binding DataContext.ShowDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                  CommandParameter="{Binding}"/>
+                                                </Border.InputBindings>
+                                                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                                                    <Border Width="36" Height="36" CornerRadius="6" Background="#F0F0F0"
+                                                            Margin="0,0,12,0" VerticalAlignment="Center"
+                                                            ClipToBounds="True">
+                                                        <Grid>
+                                                            <Image Source="{Binding FaviconUrl}" Stretch="Uniform">
+                                                                <Image.Style>
+                                                                    <Style TargetType="Image">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Image.Style>
+                                                            </Image>
+                                                            <materialDesign:PackIcon Kind="Earth" Width="20" Height="20"
+                                                                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <materialDesign:PackIcon.Style>
+                                                                    <Style TargetType="materialDesign:PackIcon">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding FaviconUrl}" Value="">
+                                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </materialDesign:PackIcon.Style>
+                                                            </materialDesign:PackIcon>
+                                                        </Grid>
+                                                    </Border>
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Url}" FontSize="11" Opacity="0.55" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </ScrollViewer>
                     </Grid>
 

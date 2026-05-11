@@ -570,6 +570,18 @@ public partial class MainWindow : Window
         RefreshDetailPanel();
     }
 
+    private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            _selectedFolderId = 0;
+            _expandedFolders.Add(0);
+            vm.SelectFolder(0);
+            RefreshSidebar(vm);
+        }
+        e.Handled = true;
+    }
+
     private void LinksPage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
@@ -624,6 +636,7 @@ public partial class MainWindow : Window
             if (current is Border border)
             {
                 if ("LinkCard".Equals(border.Tag as string)) return;
+                if ("FolderCard".Equals(border.Tag as string)) return;
                 if (border.Tag is int) return;
             }
             if (current is System.Windows.Controls.Primitives.ButtonBase) return;
