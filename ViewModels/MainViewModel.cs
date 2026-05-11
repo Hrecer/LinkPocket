@@ -614,15 +614,6 @@ namespace LinkPocket.ViewModels
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
             ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
 
-            if (_linkViewModel != null)
-            {
-                var queryParams = new Models.LinkQueryParams
-                {
-                    ListId = folderId == 0 ? null : folderId
-                };
-                _ = _linkViewModel.LoadLinksAsync(queryParams);
-            }
-
             Logger.Info($"选中目录: {(folderId == 0 ? "全部书签" : $"文件夹 {folderId}")}");
         }
 
@@ -725,6 +716,11 @@ namespace LinkPocket.ViewModels
             );
         }
 
+        public async Task<List<Data.Link>> GetRootLevelLinksAsync()
+        {
+            return await _linkService.GetRootLevelLinksAsync();
+        }
+
         public async Task LoadFolderTreeAsync()
         {
             try
@@ -759,7 +755,7 @@ namespace LinkPocket.ViewModels
                     if (folder.ParentId.HasValue && lookup.TryGetValue(folder.ParentId.Value, out var parentNode))
                         parentNode.Children.Add(lookup[folder.Id]);
                     else
-                        folderNodes.Add(lookup[folder.Id]);
+                        rootNode.Children.Add(lookup[folder.Id]);
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>

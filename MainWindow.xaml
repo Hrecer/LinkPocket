@@ -257,21 +257,7 @@
                             <TextBlock Text="{Binding ErrorMessage}" FontSize="14" HorizontalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource ValidationErrorBrush}" MaxWidth="400" Margin="0,16,0,12"/>
                         </StackPanel>
 
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                                    Visibility="{Binding HasData, Converter={StaticResource InvertedBoolToVis}}" Margin="0,-100,0,0">
-                            <materialDesign:PackIcon Kind="BookmarkMultipleOutline" Width="72" Height="72" HorizontalAlignment="Center" Opacity="0.25"/>
-                            <TextBlock Text="{Binding NoDataMessage}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Opacity="0.5" Margin="0,16,0,6" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360"/>
-                            <Button Style="{StaticResource MaterialDesignFlatButton}" Margin="0,24,0,0" Padding="24,12"
-                                    Command="{Binding DataContext.ShowAddLinkCommand, RelativeSource={RelativeSource AncestorType=Window}}">
-                                <StackPanel Orientation="Horizontal">
-                                    <materialDesign:PackIcon Kind="Plus" Width="20" Height="20"/>
-                                    <TextBlock Text="添加第一个链接" Margin="8,0,0,0" FontSize="14"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel x:Name="MainListContentPanel" Margin="8"/>
                         </ScrollViewer>
                     </Grid>

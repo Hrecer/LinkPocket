@@ -22,7 +22,7 @@ namespace LinkPocket.ViewModels
         private string? _errorMessage;
         private string _noDataMessage = "暂无链接";
         private ObservableCollection<LinkItem> _links = new();
-        private Models.LinkQueryParams _currentQuery = new();
+        private Models.LinkQueryParams _currentQuery = new() { PerPage = 200 };
 
         // 撤销栈：保存修改前的数据
         private readonly Stack<LinkItem> _undoStack = new();

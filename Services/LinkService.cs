@@ -116,6 +116,18 @@ public class LinkService
         return await _db.Links.CountAsync(l => !l.IsDeleted);
     }
 
+    public async Task<List<Link>> GetRootLevelLinksAsync(int perPage = 50)
+    {
+        return await _db.Links
+            .Include(l => l.Tags)
+            .Include(l => l.Folder)
+            .Include(l => l.Notes)
+            .Where(l => !l.IsDeleted && l.ListId == null)
+            .OrderByDescending(l => l.CreatedAt)
+            .Take(perPage)
+            .ToListAsync();
+    }
+
     public async Task<Link?> GetLinkByIdAsync(int id)
     {
         return await _db.Links

@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LinkPocket.Data;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -162,8 +163,14 @@ public partial class MainWindow : Window
                 RenderFolderNode(child, childPanel, depth + 1, viewModel);
             }
 
-            var linksTask = viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id);
-            var links = linksTask.Result.Links;
+            List<Data.Link> links;
+            if (folder.Id == 0)
+                links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
+            else
+            {
+                var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id).GetAwaiter().GetResult();
+                links = linksResult.Links;
+            }
             if (links != null && links.Count > 0)
             {
                 foreach (var link in links)
@@ -652,10 +659,18 @@ public partial class MainWindow : Window
                 await RenderMainListFolderNodeAsync(child, childPanel, depth + 1, viewModel);
             }
 
-            var linksResult = await viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id);
-            if (linksResult.Links != null)
+            List<Data.Link> links;
+            if (folder.Id == 0)
+                links = await viewModel.GetRootLevelLinksAsync();
+            else
             {
-                foreach (var link in linksResult.Links)
+                var linksResult = await viewModel.GetLinksForSidebarAsync(folder.Id);
+                links = linksResult.Links;
+            }
+
+            if (links != null)
+            {
+                foreach (var link in links)
                 {
                     var card = CreateMainListLinkCard(link, viewModel);
                     childPanel.Children.Add(card);
@@ -683,10 +698,18 @@ public partial class MainWindow : Window
                 RenderMainListFolderNode(child, childPanel, depth + 1, viewModel);
             }
 
-            var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id).GetAwaiter().GetResult();
-            if (linksResult.Links != null)
+            List<Data.Link> links;
+            if (folder.Id == 0)
+                links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
+            else
             {
-                foreach (var link in linksResult.Links)
+                var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id).GetAwaiter().GetResult();
+                links = linksResult.Links;
+            }
+
+            if (links != null)
+            {
+                foreach (var link in links)
                 {
                     var card = CreateMainListLinkCard(link, viewModel);
                     childPanel.Children.Add(card);
@@ -862,7 +885,16 @@ public partial class MainWindow : Window
         {
             if (viewModel.LinkViewModel == null) return;
             var targetLink = viewModel.LinkViewModel.Links.FirstOrDefault(l => l.Id == link.Id);
-            if (targetLink == null) return;
+            if (targetLink == null)
+            {
+                targetLink = new LinkItem
+                {
+                    Id = link.Id, LinkId = link.LinkId, Url = link.Url ?? "",
+                    Title = link.Title ?? "", Description = link.Description ?? "",
+                    FaviconUrl = link.FaviconUrl ?? "", ListId = link.ListId,
+                    CreatedAt = link.CreatedAt, UpdatedAt = link.UpdatedAt
+                };
+            }
 
             if (e.ClickCount == 2)
             {
