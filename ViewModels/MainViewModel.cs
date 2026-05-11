@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using LinkPocket.Data;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using Microsoft.EntityFrameworkCore;
 using MaterialDesignThemes.Wpf;
 
 namespace LinkPocket.ViewModels
@@ -58,11 +59,45 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
+        private void EnsureSchema()
+        {
+            try
+            {
+                var conn = _db.Database.GetDbConnection();
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+
+                cmd.CommandText = "PRAGMA table_info(lists)";
+                var columns = new HashSet<string>();
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                        columns.Add(reader.GetString(1).ToLower());
+                }
+
+                if (!columns.Contains("is_deleted"))
+                {
+                    cmd.CommandText = "ALTER TABLE lists ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0";
+                    cmd.ExecuteNonQuery();
+                }
+                if (!columns.Contains("deleted_at"))
+                {
+                    cmd.CommandText = "ALTER TABLE lists ADD COLUMN deleted_at TEXT NULL";
+                    cmd.ExecuteNonQuery();
+                }
+
+                conn.Close();
+            }
+            catch { }
+        }
+
         public MainViewModel()
         {
             _db = new LinkPocketDbContext();
             _db.Database.EnsureCreated();
-            
+            EnsureSchema();
+
             _linkService = new LinkService(_db);
             _folderService = new FolderService(_db);
 
