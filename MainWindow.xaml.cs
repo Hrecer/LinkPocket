@@ -165,13 +165,21 @@ public partial class MainWindow : Window
 
         var stack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
 
-        stack.Children.Add(new PackIcon
+        var chevronBorder = new Border
         {
-            Width = 12, Height = 12, Margin = new Thickness(2, 0, 4, 0),
+            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
+            Background = Brushes.Transparent, Cursor = Cursors.Hand,
+            Tag = folder.Id
+        };
+        chevronBorder.Child = new PackIcon
+        {
+            Width = 12, Height = 12,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             Kind = isExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight,
             Opacity = 0.5
-        });
+        };
+        stack.Children.Add(chevronBorder);
 
         stack.Children.Add(new PackIcon
         {
@@ -197,7 +205,7 @@ public partial class MainWindow : Window
 
         row.Child = stack;
 
-        row.MouseLeftButtonDown += (s, e) =>
+        chevronBorder.MouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
             {
@@ -206,6 +214,15 @@ public partial class MainWindow : Window
                 else
                     _expandedFolders.Add(folderId);
 
+                RefreshSidebar(viewModel);
+            }
+            e.Handled = true;
+        };
+
+        row.MouseLeftButtonDown += (s, e) =>
+        {
+            if (s is FrameworkElement fe && fe.Tag is int folderId)
+            {
                 if (_selectedFolderId == folderId)
                     ClearFolderSelection();
                 else
@@ -597,16 +614,12 @@ public partial class MainWindow : Window
             RefreshSidebar(vm);
     }
 
-    private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void RootFolderChevron_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _rootFolderExpanded = !_rootFolderExpanded;
 
-        if (sender is Border border)
-        {
-            var chevron = FindVisualChild<PackIcon>(border, "RootFolderChevron");
-            if (chevron != null)
-                chevron.Kind = _rootFolderExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight;
-        }
+        if (RootFolderChevron != null)
+            RootFolderChevron.Kind = _rootFolderExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight;
 
         var linksItemsControl = FindName("LinksItemsControl") as ItemsControl;
         if (linksItemsControl != null)
@@ -617,6 +630,11 @@ public partial class MainWindow : Window
         else
             _expandedFolders.Remove(0);
 
+        e.Handled = true;
+    }
+
+    private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
         SetFolderSelection(0);
         e.Handled = true;
     }
