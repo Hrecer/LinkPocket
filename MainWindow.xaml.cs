@@ -571,6 +571,7 @@ public partial class MainWindow : Window
     }
 
     private bool _rootFolderExpanded = true;
+    private bool _rootFolderSelected = false;
 
     private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -593,11 +594,47 @@ public partial class MainWindow : Window
                 _expandedFolders.Add(0);
             else
                 _expandedFolders.Remove(0);
+
+            _rootFolderSelected = true;
             _selectedFolderId = 0;
+            UpdateRootFolderSelectionVisual();
             vm.SelectFolder(0);
             RefreshSidebar(vm);
+
+            if (vm.LinkViewModel != null)
+            {
+                vm.LinkViewModel.ClearSelectionCommand.Execute(null);
+                _currentSelectedLink = null;
+                RefreshDetailPanel();
+            }
         }
         e.Handled = true;
+    }
+
+    private void RootFolderBorder_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!_rootFolderSelected && sender is Border b)
+            b.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
+    }
+
+    private void RootFolderBorder_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (!_rootFolderSelected && sender is Border b)
+            b.Background = new SolidColorBrush(Colors.Transparent);
+    }
+
+    private void UpdateRootFolderSelectionVisual()
+    {
+        if (RootFolderBorder == null) return;
+        RootFolderBorder.Background = _rootFolderSelected
+            ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
+            : new SolidColorBrush(Colors.Transparent);
+    }
+
+    public void ClearRootFolderSelection()
+    {
+        _rootFolderSelected = false;
+        UpdateRootFolderSelectionVisual();
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
@@ -636,6 +673,8 @@ public partial class MainWindow : Window
                 RefreshDetailPanel();
                 return;
             }
+
+            ClearRootFolderSelection();
 
             Dispatcher.BeginInvoke(() =>
             {
