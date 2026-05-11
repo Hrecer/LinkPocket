@@ -244,6 +244,7 @@
                     <Grid Grid.Row="1" x:Name="LinksPage" DataContext="{Binding LinkViewModel}"
                           Background="Transparent"
                           PreviewMouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
+                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="links"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                             <ProgressBar IsIndeterminate="True" Width="60" Height="60" Style="{StaticResource MaterialDesignCircularProgressBar}"/>
