@@ -219,7 +219,7 @@ public partial class MainWindow : Window
             e.Handled = true;
         };
 
-        row.MouseLeftButtonDown += (s, e) =>
+        row.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
             {

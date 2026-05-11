@@ -209,7 +209,7 @@
                     <!-- 链接列表 -->
                     <Grid Grid.Row="1" x:Name="LinksPage" DataContext="{Binding LinkViewModel}"
                           Background="Transparent"
-                          PreviewMouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
+                          MouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
                             <ProgressBar IsIndeterminate="True" Width="60" Height="60" Style="{StaticResource MaterialDesignCircularProgressBar}"/>
@@ -243,7 +243,7 @@
                                         BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
                                         Padding="12,5,12,5"
                                         Tag="FolderCard"
-                                        MouseLeftButtonDown="RootFolderCard_MouseLeftButtonDown"
+                                        PreviewMouseLeftButtonDown="RootFolderCard_MouseLeftButtonDown"
                                         MouseEnter="RootFolderBorder_MouseEnter" MouseLeave="RootFolderBorder_MouseLeave">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <Border x:Name="RootFolderChevronBorder" Width="18" Height="18" CornerRadius="3"
