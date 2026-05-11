@@ -612,7 +612,10 @@ public partial class MainWindow : Window
         UpdateRootFolderSelectionVisual();
 
         if (DataContext is MainViewModel vm)
+        {
+            vm.ClearFolderSelectionVM();
             RefreshSidebar(vm);
+        }
     }
 
     private void RootFolderChevron_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

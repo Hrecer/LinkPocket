@@ -74,7 +74,7 @@ namespace LinkPocket.ViewModels
             _settingsViewModel = new SettingsViewModel();
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
-            ShowAddLinkCommand = new RelayCommand(ShowAddLink);
+            ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => _selectedFolderId >= 0);
             EditLinkCommand = new RelayCommand<LinkItem>(EditLink);
             CancelEditLinkCommand = new RelayCommand(CancelEditLink);
             SaveEditLinkCommand = new AsyncRelayCommand(SaveEditLinkAsync, () => !EditLinkIsLoading && !string.IsNullOrWhiteSpace(EditLinkUrl) && !string.IsNullOrWhiteSpace(EditLinkTitle));
@@ -606,6 +606,7 @@ namespace LinkPocket.ViewModels
         public void SelectFolder(int folderId)
         {
             _selectedFolderId = folderId;
+            ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
 
             if (_linkViewModel != null)
             {
@@ -617,6 +618,12 @@ namespace LinkPocket.ViewModels
             }
 
             Logger.Info($"选中目录: {(folderId == 0 ? "全部书签" : $"文件夹 {folderId}")}");
+        }
+
+        public void ClearFolderSelectionVM()
+        {
+            _selectedFolderId = -1;
+            ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
         }
 
         private async void OnLinksChanged(object? sender, EventArgs e)
