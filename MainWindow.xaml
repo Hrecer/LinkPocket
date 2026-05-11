@@ -82,7 +82,7 @@
         <vm:FaviconConverter x:Key="FaviconConverter"/>
     </Window.Resources>
 
-    <Grid>
+    <Grid x:Name="RootGrid" PreviewMouseLeftButtonDown="RootGrid_PreviewMouseLeftButtonDown">
         <!-- ===== 主界面 ===== -->
         <Grid x:Name="MainView">
             <Grid.RowDefinitions>
@@ -236,10 +236,8 @@
                         </StackPanel>
 
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
-                                      Background="Transparent"
-                                      PreviewMouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
-                            <ItemsControl ItemsSource="{Binding Links}" Background="Transparent">
+                                      Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
+                            <ItemsControl ItemsSource="{Binding Links}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <StackPanel Margin="8"/>

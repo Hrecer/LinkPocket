@@ -557,28 +557,65 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
         {
+            LinkItem? clickedLink = null;
             DependencyObject? current = e.OriginalSource as DependencyObject;
-            bool hitCard = false;
             while (current != null)
             {
-                if (current is Border border && "LinkCard".Equals(border.Tag as string))
+                if (current is Border border && border.Tag?.ToString() == "LinkCard")
                 {
-                    hitCard = true;
+                    clickedLink = border.DataContext as LinkItem;
                     break;
                 }
-                if (current is Visual)
-                    current = VisualTreeHelper.GetParent(current);
-                else
-                    break;
+                current = VisualTreeHelper.GetParent(current);
             }
 
-            if (!hitCard)
+            if (clickedLink == null)
             {
                 viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
                 _currentSelectedLink = null;
                 RefreshDetailPanel();
-                e.Handled = true;
+                return;
             }
+
+            Dispatcher.BeginInvoke(() =>
+            {
+                _currentSelectedLink = clickedLink.IsSelected ? clickedLink : null;
+                RefreshDetailPanel();
+            }, System.Windows.Threading.DispatcherPriority.Input);
+        }
+    }
+
+    private void RootGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (MainView.Visibility != Visibility.Visible) return;
+
+        DependencyObject? hit = e.OriginalSource as DependencyObject;
+        if (hit == null) return;
+
+        DependencyObject? current = hit;
+        while (current != null)
+        {
+            if (current == LinksPage) return;
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        current = hit;
+        while (current != null)
+        {
+            if (current is Border border)
+            {
+                if ("LinkCard".Equals(border.Tag as string)) return;
+                if (border.Tag is int) return;
+            }
+            if (current is System.Windows.Controls.Primitives.ButtonBase) return;
+            current = VisualTreeHelper.GetParent(current);
+        }
+
+        if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
+        {
+            vm.LinkViewModel.ClearSelectionCommand.Execute(null);
+            _currentSelectedLink = null;
+            RefreshDetailPanel();
         }
     }
 }
