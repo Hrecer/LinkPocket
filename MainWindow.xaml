@@ -208,6 +208,9 @@
                                                         <Trigger Property="IsPressed" Value="True">
                                                             <Setter TargetName="border" Property="Background" Value="#FFCDD2"/>
                                                         </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter Property="Opacity" Value="0.4"/>
+                                                        </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
                                             </Setter.Value>
