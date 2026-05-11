@@ -358,6 +358,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                ClearFolderSelection();
                 viewModel.LinkViewModel.ToggleSelectCommand.Execute(targetLink);
                 _currentSelectedLink = targetLink.IsSelected ? targetLink : null;
                 RefreshDetailPanel();
