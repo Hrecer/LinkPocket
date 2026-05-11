@@ -207,10 +207,15 @@ public partial class MainWindow : Window
                     _expandedFolders.Add(folderId);
 
                 if (_selectedFolderId == folderId)
+                {
                     _selectedFolderId = -1;
+                    ClearRootFolderSelection();
+                }
                 else
                 {
                     _selectedFolderId = folderId;
+                    _rootFolderSelected = (folderId == 0);
+                    UpdateRootFolderSelectionVisual();
                     viewModel.SelectFolder(folderId);
                 }
 
@@ -670,6 +675,8 @@ public partial class MainWindow : Window
             {
                 viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
                 _currentSelectedLink = null;
+                ClearRootFolderSelection();
+                _selectedFolderId = -1;
                 RefreshDetailPanel();
                 return;
             }
@@ -717,6 +724,8 @@ public partial class MainWindow : Window
         {
             vm.LinkViewModel.ClearSelectionCommand.Execute(null);
             _currentSelectedLink = null;
+            ClearRootFolderSelection();
+            _selectedFolderId = -1;
             RefreshDetailPanel();
         }
     }
