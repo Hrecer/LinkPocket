@@ -123,6 +123,7 @@ public partial class MainWindow : Window
         {
             await viewModel.LoadFolderTreeAsync();
             RefreshSidebar(viewModel);
+            await RefreshMainListAsync();
             if (viewModel.LinkViewModel != null)
             {
                 await viewModel.LinkViewModel.LoadLinksAsync();
@@ -574,15 +575,9 @@ public partial class MainWindow : Window
         RefreshDetailPanel();
     }
 
-    private bool _rootFolderExpanded = true;
-    private bool _rootFolderSelected = false;
-
-    private void SetFolderSelection(int folderId)
+    private async void SetFolderSelection(int folderId)
     {
         _selectedFolderId = folderId;
-        _rootFolderSelected = (folderId == 0);
-        UpdateRootFolderSelectionVisual();
-        RefreshSubFolderPanel();
 
         if (DataContext is MainViewModel vm)
         {
@@ -593,56 +588,127 @@ public partial class MainWindow : Window
                 _currentSelectedLink = null;
                 RefreshDetailPanel();
             }
+            await RefreshMainListAsync();
             RefreshSidebar(vm);
         }
     }
 
-    private void RefreshSubFolderPanel()
+    private async void ClearFolderSelection()
     {
-        if (SubFolderPanel == null) return;
-        SubFolderPanel.Children.Clear();
+        _selectedFolderId = -1;
+
+        if (DataContext is MainViewModel vm)
+        {
+            vm.ClearFolderSelectionVM();
+            await RefreshMainListAsync();
+            RefreshSidebar(vm);
+        }
+    }
+
+    public async Task RefreshMainListAsync()
+    {
+        if (MainListContentPanel == null) return;
+        MainListContentPanel.Children.Clear();
 
         if (DataContext is not MainViewModel vm) return;
-        if (_selectedFolderId < 0) return;
-
         var folderItems = vm.FolderItems;
         if (folderItems == null) return;
 
-        FolderNode? selectedNode = null;
-        if (_selectedFolderId == 0)
-            selectedNode = folderItems.FirstOrDefault(f => f.Id == 0);
-        else
-            selectedNode = FindFolderNode(folderItems, _selectedFolderId);
-
-        if (selectedNode == null || selectedNode.Children.Count == 0) return;
-
-        foreach (var child in selectedNode.Children)
+        foreach (var folder in folderItems)
         {
-            SubFolderPanel.Children.Add(CreateMainListFolderRow(child, 1, vm));
+            await RenderMainListFolderNodeAsync(folder, MainListContentPanel, 0, vm);
         }
     }
 
-    private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, int id)
+    public void RefreshMainList()
     {
-        foreach (var node in nodes)
+        if (MainListContentPanel == null) return;
+        MainListContentPanel.Children.Clear();
+
+        if (DataContext is not MainViewModel vm) return;
+        var folderItems = vm.FolderItems;
+        if (folderItems == null) return;
+
+        foreach (var folder in folderItems)
         {
-            if (node.Id == id) return node;
-            var found = FindFolderNode(node.Children, id);
-            if (found != null) return found;
+            RenderMainListFolderNode(folder, MainListContentPanel, 0, vm);
         }
-        return null;
     }
 
-    private Border CreateMainListFolderRow(FolderNode folder, int depth, MainViewModel viewModel)
+    private async Task RenderMainListFolderNodeAsync(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
+    {
+        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isSelected = folder.Id == _selectedFolderId;
+
+        var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
+        container.Children.Add(row);
+
+        if (isExpanded)
+        {
+            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
+
+            foreach (var child in folder.Children)
+            {
+                await RenderMainListFolderNodeAsync(child, childPanel, depth + 1, viewModel);
+            }
+
+            var linksResult = await viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id);
+            if (linksResult.Links != null)
+            {
+                foreach (var link in linksResult.Links)
+                {
+                    var card = CreateMainListLinkCard(link, viewModel);
+                    childPanel.Children.Add(card);
+                }
+            }
+
+            container.Children.Add(childPanel);
+        }
+    }
+
+    private void RenderMainListFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
+    {
+        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isSelected = folder.Id == _selectedFolderId;
+
+        var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
+        container.Children.Add(row);
+
+        if (isExpanded)
+        {
+            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
+
+            foreach (var child in folder.Children)
+            {
+                RenderMainListFolderNode(child, childPanel, depth + 1, viewModel);
+            }
+
+            var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id == 0 ? null : folder.Id).GetAwaiter().GetResult();
+            if (linksResult.Links != null)
+            {
+                foreach (var link in linksResult.Links)
+                {
+                    var card = CreateMainListLinkCard(link, viewModel);
+                    childPanel.Children.Add(card);
+                }
+            }
+
+            container.Children.Add(childPanel);
+        }
+    }
+
+    private Border CreateMainListFolderRow(FolderNode folder, bool isExpanded, bool isSelected, int depth, MainViewModel viewModel)
     {
         var row = new Border
         {
             Margin = new Thickness(0), CornerRadius = new CornerRadius(0), Cursor = Cursors.Hand,
-            Background = new SolidColorBrush(Colors.Transparent),
+            Background = isSelected
+                ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
+                : new SolidColorBrush(Colors.Transparent),
             BorderBrush = new SolidColorBrush(Color.FromRgb(224, 224, 224)),
             BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(12 + depth * 20, 5, 12, 5),
-            Tag = "SubFolderCard"
+            Padding = new Thickness(12, 5, 12, 5),
+            Tag = "FolderCard"
         };
 
         var stack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -653,7 +719,6 @@ public partial class MainWindow : Window
             Background = Brushes.Transparent, Cursor = Cursors.Hand,
             Tag = folder.Id
         };
-        var isExpanded = _expandedFolders.Contains(folder.Id);
         chevronBorder.Child = new PackIcon
         {
             Width = 12, Height = 12,
@@ -666,7 +731,7 @@ public partial class MainWindow : Window
 
         stack.Children.Add(new PackIcon
         {
-            Kind = isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline,
+            Kind = folder.Id == 0 ? PackIconKind.BookmarkOutline : (isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline),
             Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(4, 0, 6, 0), Opacity = 0.5
         });
@@ -679,7 +744,7 @@ public partial class MainWindow : Window
 
         row.Child = stack;
 
-        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
+        chevronBorder.PreviewMouseLeftButtonDown += async (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int fid)
             {
@@ -687,15 +752,18 @@ public partial class MainWindow : Window
                     _expandedFolders.Remove(fid);
                 else
                     _expandedFolders.Add(fid);
+                await RefreshMainListAsync();
                 RefreshSidebar(viewModel);
-                RefreshSubFolderPanel();
             }
             e.Handled = true;
         };
 
         row.MouseLeftButtonDown += (s, e) =>
         {
-            SetFolderSelection(folder.Id);
+            if (_selectedFolderId == folder.Id)
+                ClearFolderSelection();
+            else
+                SetFolderSelection(folder.Id);
             e.Handled = true;
         };
 
@@ -714,58 +782,114 @@ public partial class MainWindow : Window
         return row;
     }
 
-    private void ClearFolderSelection()
+    private Border CreateMainListLinkCard(Data.Link link, MainViewModel viewModel)
     {
-        _selectedFolderId = -1;
-        _rootFolderSelected = false;
-        UpdateRootFolderSelectionVisual();
-        if (SubFolderPanel != null) SubFolderPanel.Children.Clear();
-
-        if (DataContext is MainViewModel vm)
+        var card = new Border
         {
-            vm.ClearFolderSelectionVM();
-            RefreshSidebar(vm);
+            Tag = "LinkCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
+            Cursor = Cursors.Hand,
+            Background = (Brush)FindResource("MaterialDesignCardBackground"),
+            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
+        };
+
+        var style = new Style(typeof(Border));
+        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
+        style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
+        style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
+            Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
+        });
+        card.Style = style;
+
+        var hStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+        var iconBorder = new Border
+        {
+            Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
+            ClipToBounds = true
+        };
+
+        var iconGrid = new Grid();
+        Image? faviconImg = null;
+        try
+        {
+            if (!string.IsNullOrEmpty(link.FaviconUrl))
+            {
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.DecodePixelWidth = 48;
+                bmp.UriSource = new Uri(link.FaviconUrl, UriKind.Absolute);
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.EndInit();
+                bmp.Freeze();
+                faviconImg = new Image { Source = bmp, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+            }
         }
+        catch { }
+
+        if (faviconImg == null)
+        {
+            iconGrid.Children.Add(new PackIcon
+            {
+                Kind = PackIconKind.Earth, Width = 20, Height = 20,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+            });
+        }
+        else
+        {
+            iconGrid.Children.Add(faviconImg);
+        }
+        iconBorder.Child = iconGrid;
+        hStack.Children.Add(iconBorder);
+
+        var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        textStack.Children.Add(new TextBlock
+        {
+            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
+            FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        textStack.Children.Add(new TextBlock
+        {
+            Text = link.Url, FontSize = 11, Opacity = 0.55,
+            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
+        });
+        hStack.Children.Add(textStack);
+
+        card.Child = hStack;
+
+        card.PreviewMouseLeftButtonDown += (s, e) =>
+        {
+            if (viewModel.LinkViewModel == null) return;
+            var targetLink = viewModel.LinkViewModel.Links.FirstOrDefault(l => l.Id == link.Id);
+            if (targetLink == null) return;
+
+            if (e.ClickCount == 2)
+            {
+                viewModel.ShowDetailCommand.Execute(targetLink);
+                e.Handled = true;
+                return;
+            }
+
+            ClearFolderSelection();
+            viewModel.LinkViewModel.ToggleSelectCommand.Execute(targetLink);
+            _currentSelectedLink = targetLink.IsSelected ? targetLink : null;
+            RefreshDetailPanel();
+            e.Handled = true;
+        };
+
+        return card;
     }
 
-    private void RootFolderChevron_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, int id)
     {
-        _rootFolderExpanded = !_rootFolderExpanded;
-
-        if (RootFolderChevron != null)
-            RootFolderChevron.Kind = _rootFolderExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight;
-
-        var linksItemsControl = FindName("LinksItemsControl") as ItemsControl;
-        if (linksItemsControl != null)
-            linksItemsControl.Visibility = _rootFolderExpanded ? Visibility.Visible : Visibility.Collapsed;
-
-        e.Handled = true;
-    }
-
-    private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        SetFolderSelection(0);
-        e.Handled = true;
-    }
-
-    private void RootFolderBorder_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (!_rootFolderSelected && sender is Border b)
-            b.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
-    }
-
-    private void RootFolderBorder_MouseLeave(object sender, MouseEventArgs e)
-    {
-        if (!_rootFolderSelected && sender is Border b)
-            b.Background = new SolidColorBrush(Colors.Transparent);
-    }
-
-    private void UpdateRootFolderSelectionVisual()
-    {
-        if (RootFolderBorder == null) return;
-        RootFolderBorder.Background = _rootFolderSelected
-            ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-            : new SolidColorBrush(Colors.Transparent);
+        foreach (var node in nodes)
+        {
+            if (node.Id == id) return node;
+            var found = FindFolderNode(node.Children, id);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
@@ -793,7 +917,6 @@ public partial class MainWindow : Window
                 {
                     if ("FolderCard".Equals(b.Tag as string)) return;
                     if ("SubFolderCard".Equals(b.Tag as string)) return;
-                    if (b.Name == "RootFolderChevronBorder") return;
                 }
                 walk = VisualTreeHelper.GetParent(walk);
             }

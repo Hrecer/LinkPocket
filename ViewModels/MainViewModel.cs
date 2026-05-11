@@ -710,7 +710,10 @@ namespace LinkPocket.ViewModels
         {
             await LoadFolderTreeAsync();
             if (Application.Current.MainWindow is MainWindow mw)
+            {
                 await mw.RefreshSidebarAsync(this);
+                await mw.RefreshMainListAsync();
+            }
         }
 
         public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(int? listId = null)

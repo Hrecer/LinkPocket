@@ -1,37 +1,34 @@
 using System;
 using System.Globalization;
 using System.Windows.Data;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace LinkPocket.ViewModels;
 
 public class FaviconConverter : IValueConverter
 {
-    private static ImageSource? _defaultIcon;
-
-    private static ImageSource DefaultIcon
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        get
+        if (value is string url && !string.IsNullOrEmpty(url))
         {
-            if (_defaultIcon == null)
+            try
             {
                 var bmp = new BitmapImage();
                 bmp.BeginInit();
-                bmp.DecodePixelWidth = 16;
-                bmp.DecodePixelHeight = 16;
-                bmp.UriSource = new Uri("pack://application:,,,/Assets/default_favicon.png", UriKind.Absolute);
-                try { bmp.EndInit(); } catch { }
+                bmp.DecodePixelWidth = 48;
+                bmp.UriSource = new Uri(url, UriKind.Absolute);
+                bmp.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.EndInit();
                 bmp.Freeze();
-                _defaultIcon = bmp;
+                return bmp;
             }
-            return _defaultIcon;
+            catch
+            {
+                return null;
+            }
         }
-    }
-
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        return DefaultIcon;
+        return null;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
