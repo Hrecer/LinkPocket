@@ -219,7 +219,7 @@ public partial class MainWindow : Window
             e.Handled = true;
         };
 
-        row.PreviewMouseLeftButtonDown += (s, e) =>
+        row.MouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
             {
@@ -671,16 +671,28 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
         {
-            LinkItem? clickedLink = null;
-            DependencyObject? current = e.OriginalSource as DependencyObject;
-            while (current != null)
+            DependencyObject? hit = e.OriginalSource as DependencyObject;
+            DependencyObject? walk = hit;
+            while (walk != null)
             {
-                if (current is Border border && border.Tag?.ToString() == "LinkCard")
+                if (walk is Border b)
+                {
+                    if ("FolderCard".Equals(b.Tag as string)) return;
+                    if (b.Name == "RootFolderChevronBorder") return;
+                }
+                walk = VisualTreeHelper.GetParent(walk);
+            }
+
+            LinkItem? clickedLink = null;
+            walk = hit;
+            while (walk != null)
+            {
+                if (walk is Border border && border.Tag?.ToString() == "LinkCard")
                 {
                     clickedLink = border.DataContext as LinkItem;
                     break;
                 }
-                current = VisualTreeHelper.GetParent(current);
+                walk = VisualTreeHelper.GetParent(walk);
             }
 
             if (clickedLink == null)
