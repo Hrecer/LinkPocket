@@ -625,11 +625,6 @@ public partial class MainWindow : Window
         if (linksItemsControl != null)
             linksItemsControl.Visibility = _rootFolderExpanded ? Visibility.Visible : Visibility.Collapsed;
 
-        if (_rootFolderExpanded)
-            _expandedFolders.Add(0);
-        else
-            _expandedFolders.Remove(0);
-
         e.Handled = true;
     }
 
