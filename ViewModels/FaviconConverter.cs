@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media.Imaging;
 
@@ -25,10 +26,10 @@ public class FaviconConverter : IValueConverter
             }
             catch
             {
-                return null;
+                return DependencyProperty.UnsetValue;
             }
         }
-        return null;
+        return DependencyProperty.UnsetValue;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

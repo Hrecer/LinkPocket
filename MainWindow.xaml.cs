@@ -227,15 +227,6 @@ public partial class MainWindow : Window
             Text = folder.Name, FontSize = 13, VerticalAlignment = VerticalAlignment.Center
         });
 
-        if (folder.LinkCount > 0 && folder.Id != 0)
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = $" {folder.LinkCount}", FontSize = 10, Opacity = 0.4,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-        }
-
         row.Child = stack;
 
         chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
@@ -832,10 +823,9 @@ public partial class MainWindow : Window
         var card = new Border
         {
             Tag = "LinkCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
-            Cursor = Cursors.Hand, MaxWidth = 480,
+            Cursor = Cursors.Hand, Width = 720,
             Background = (Brush)FindResource("MaterialDesignCardBackground"),
-            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12),
-            HorizontalAlignment = HorizontalAlignment.Left
+            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
         };
 
         var style = new Style(typeof(Border));
