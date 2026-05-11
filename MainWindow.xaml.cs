@@ -17,7 +17,8 @@ namespace LinkPocket;
 public partial class MainWindow : Window
 {
     private int _selectedFolderId = -1;
-    private readonly HashSet<int> _expandedFolders = new() { 0 };
+    private readonly HashSet<int> _sidebarExpandedFolders = new() { 0 };
+    private readonly HashSet<int> _mainExpandedFolders = new() { 0 };
     private LinkItem? _currentSelectedLink;
     private readonly Dictionary<int, Border> _sidebarLinkBorders = new();
 
@@ -148,7 +149,7 @@ public partial class MainWindow : Window
 
     private void RenderFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
-        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isExpanded = _sidebarExpandedFolders.Contains(folder.Id);
         bool isSelected = folder.Id == _selectedFolderId;
 
         var folderRow = CreateFolderRow(folder, isExpanded, isSelected, depth, viewModel);
@@ -233,10 +234,10 @@ public partial class MainWindow : Window
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
             {
-                if (_expandedFolders.Contains(folderId))
-                    _expandedFolders.Remove(folderId);
+                if (_sidebarExpandedFolders.Contains(folderId))
+                    _sidebarExpandedFolders.Remove(folderId);
                 else
-                    _expandedFolders.Add(folderId);
+                    _sidebarExpandedFolders.Add(folderId);
 
                 RefreshSidebar(viewModel);
             }
@@ -593,8 +594,13 @@ public partial class MainWindow : Window
 
     public void ExpandFolder(int folderId)
     {
-        if (folderId >= 0 && !_expandedFolders.Contains(folderId))
-            _expandedFolders.Add(folderId);
+        if (folderId >= 0)
+        {
+            if (!_sidebarExpandedFolders.Contains(folderId))
+                _sidebarExpandedFolders.Add(folderId);
+            if (!_mainExpandedFolders.Contains(folderId))
+                _mainExpandedFolders.Add(folderId);
+        }
     }
 
     private async void ClearFolderSelection()
@@ -641,7 +647,7 @@ public partial class MainWindow : Window
 
     private async Task RenderMainListFolderNodeAsync(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
-        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
         bool isSelected = folder.Id == _selectedFolderId;
 
         var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
@@ -680,7 +686,7 @@ public partial class MainWindow : Window
 
     private void RenderMainListFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
-        bool isExpanded = _expandedFolders.Contains(folder.Id);
+        bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
         bool isSelected = folder.Id == _selectedFolderId;
 
         var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
@@ -768,12 +774,11 @@ public partial class MainWindow : Window
         {
             if (s is FrameworkElement fe && fe.Tag is int fid)
             {
-                if (_expandedFolders.Contains(fid))
-                    _expandedFolders.Remove(fid);
+                if (_mainExpandedFolders.Contains(fid))
+                    _mainExpandedFolders.Remove(fid);
                 else
-                    _expandedFolders.Add(fid);
+                    _mainExpandedFolders.Add(fid);
                 await RefreshMainListAsync();
-                RefreshSidebar(viewModel);
             }
             e.Handled = true;
         };
