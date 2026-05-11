@@ -596,6 +596,8 @@ public partial class MainWindow : Window
         while (current != null)
         {
             if (current == LinksPage) return;
+            if (current == RightSidebarBorder) return;
+            if (current == DetailPanel) return;
             current = VisualTreeHelper.GetParent(current);
         }
 

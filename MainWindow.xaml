@@ -352,7 +352,7 @@
                               Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE"/>
 
                 <!-- 右侧详情栏 -->
-                <Border Grid.Column="4" ContextMenu="{x:Null}" PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
+                <Border Grid.Column="4" x:Name="RightSidebarBorder" ContextMenu="{x:Null}" PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="DetailPanel" Margin="16,8,16,16"/>
                     </ScrollViewer>
