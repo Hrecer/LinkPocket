@@ -570,16 +570,47 @@ public partial class MainWindow : Window
         RefreshDetailPanel();
     }
 
+    private bool _rootFolderExpanded = true;
+
     private void RootFolderCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        _rootFolderExpanded = !_rootFolderExpanded;
+
+        if (sender is Border border)
+        {
+            var chevron = FindVisualChild<PackIcon>(border, "RootFolderChevron");
+            if (chevron != null)
+                chevron.Kind = _rootFolderExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight;
+        }
+
+        var linksItemsControl = FindName("LinksItemsControl") as ItemsControl;
+        if (linksItemsControl != null)
+            linksItemsControl.Visibility = _rootFolderExpanded ? Visibility.Visible : Visibility.Collapsed;
+
         if (DataContext is MainViewModel vm)
         {
+            if (_rootFolderExpanded)
+                _expandedFolders.Add(0);
+            else
+                _expandedFolders.Remove(0);
             _selectedFolderId = 0;
-            _expandedFolders.Add(0);
             vm.SelectFolder(0);
             RefreshSidebar(vm);
         }
         e.Handled = true;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T element && (name == null || element.Name == name))
+                return element;
+            var result = FindVisualChild<T>(child, name);
+            if (result != null) return result;
+        }
+        return null;
     }
 
     private void LinksPage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

@@ -238,51 +238,21 @@
                         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                       Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
                             <StackPanel Margin="8">
-                                <Border Margin="4,2,4,8" CornerRadius="10" Cursor="Hand"
-                                        Background="{DynamicResource MaterialDesignCardBackground}"
-                                        BorderThickness="2" Padding="16,12"
+                                <Border Margin="0,0,0,4" CornerRadius="4" Cursor="Hand"
+                                        Background="Transparent"
+                                        Padding="8,6"
                                         Tag="FolderCard"
                                         MouseLeftButtonDown="RootFolderCard_MouseLeftButtonDown">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="BorderBrush" Value="{DynamicResource MaterialDesignDivider}"/>
-                                            <Setter Property="Effect">
-                                                <Setter.Value>
-                                                    <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.08"/>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Effect">
-                                                        <Setter.Value>
-                                                            <DropShadowEffect BlurRadius="12" ShadowDepth="3" Opacity="0.15"/>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="36" Height="36" CornerRadius="6" Background="#E3F2FD"
-                                                Margin="0,0,12,0" VerticalAlignment="Center">
-                                            <materialDesign:PackIcon Kind="BookmarkOutline" Width="20" Height="20"
-                                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                     Foreground="#1976D2"/>
-                                        </Border>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="全部书签" FontSize="14" FontWeight="SemiBold"/>
-                                            <TextBlock FontSize="11" Opacity="0.55" Margin="0,3,0,0">
-                                                <TextBlock.Text>
-                                                    <MultiBinding StringFormat="{}{0} 个链接">
-                                                        <Binding Path="DataContext.LinkViewModel.Links.Count" RelativeSource="{RelativeSource AncestorType=Window}"/>
-                                                    </MultiBinding>
-                                                </TextBlock.Text>
-                                            </TextBlock>
-                                        </StackPanel>
+                                        <materialDesign:PackIcon x:Name="RootFolderChevron" Kind="ChevronRight" Width="14" Height="14"
+                                                                 VerticalAlignment="Center" Margin="0,0,6,0" Opacity="0.5"/>
+                                        <materialDesign:PackIcon Kind="BookmarkOutline" Width="16" Height="16"
+                                                                 VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.6"/>
+                                        <TextBlock Text="全部书签" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
-                                <ItemsControl ItemsSource="{Binding Links}">
+                                <ItemsControl x:Name="LinksItemsControl" ItemsSource="{Binding Links}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <StackPanel/>
