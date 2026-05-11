@@ -559,6 +559,8 @@ namespace LinkPocket.ViewModels
                         faviconUrl: _fetchedFaviconUrl
                     );
                     Logger.Info("链接添加成功");
+                    if (Application.Current.MainWindow is MainWindow mw2)
+                        mw2.ExpandFolder(_selectedFolderId);
                 }
 
                 CancelEditLink();
@@ -683,6 +685,8 @@ namespace LinkPocket.ViewModels
                 {
                     int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
                     await _folderService.CreateFolderAsync(nameBox.Text.Trim(), parentId: parentId);
+                    if (Application.Current.MainWindow is MainWindow mw)
+                        mw.ExpandFolder(_selectedFolderId);
                     await RefreshFolderTreeAndUIAsync();
                 }
                 catch (Exception ex)

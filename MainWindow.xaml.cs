@@ -600,6 +600,12 @@ public partial class MainWindow : Window
         }
     }
 
+    public void ExpandFolder(int folderId)
+    {
+        if (folderId >= 0 && !_expandedFolders.Contains(folderId))
+            _expandedFolders.Add(folderId);
+    }
+
     private async void ClearFolderSelection()
     {
         _selectedFolderId = -1;
@@ -652,7 +658,7 @@ public partial class MainWindow : Window
 
         if (isExpanded)
         {
-            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
+            var childPanel = new StackPanel { Margin = new Thickness(depth == 0 ? 0 : 20, 0, 0, 0) };
 
             foreach (var child in folder.Children)
             {
@@ -691,7 +697,7 @@ public partial class MainWindow : Window
 
         if (isExpanded)
         {
-            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
+            var childPanel = new StackPanel { Margin = new Thickness(depth == 0 ? 0 : 20, 0, 0, 0) };
 
             foreach (var child in folder.Children)
             {
@@ -839,14 +845,13 @@ public partial class MainWindow : Window
         {
             if (!string.IsNullOrEmpty(link.FaviconUrl))
             {
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.DecodePixelWidth = 48;
-                bmp.UriSource = new Uri(link.FaviconUrl, UriKind.Absolute);
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.EndInit();
-                bmp.Freeze();
-                faviconImg = new Image { Source = bmp, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+                faviconImg = new Image
+                {
+                    Source = new BitmapImage(new Uri(link.FaviconUrl, UriKind.Absolute)),
+                    Stretch = Stretch.Uniform,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
             }
         }
         catch { }
