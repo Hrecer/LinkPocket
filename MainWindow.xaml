@@ -697,10 +697,7 @@
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
                                             <Setter Property="IsEnabled" Value="False"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding EditLinkHasFavicon}" Value="False">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                            <Setter Property="Opacity" Value="0.3"/>
+                                            <Setter Property="Opacity" Value="0.5"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
