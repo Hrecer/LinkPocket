@@ -149,14 +149,17 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- 左侧边栏 -->
-                <Border Grid.Column="0">
+                <Border Grid.Column="0" x:Name="LeftSidebarBorder">
+                    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
                         <StackPanel x:Name="FolderListPanel" Margin="4,8,4,8"/>
                     </ScrollViewer>
                 </Border>
 
                 <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                              Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE"/>
+                              Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE">
+                    <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GridSplitter.Style>
+                </GridSplitter>
 
                 <!-- 中间内容区域 -->
                 <Grid Grid.Column="2">
@@ -166,7 +169,8 @@
                     </Grid.RowDefinitions>
 
                     <!-- 操作栏 -->
-                    <Border Grid.Row="0" Background="{DynamicResource MaterialDesignCardBackground}" Padding="12,10" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1">
+                    <Border Grid.Row="0" x:Name="ActionBar" Background="{DynamicResource MaterialDesignCardBackground}" Padding="12,10" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1">
+                        <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <Button Padding="12,8" Margin="4,0" Cursor="Hand"
                                     Command="{Binding DataContext.ShowAddLinkCommand, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -285,10 +289,13 @@
 
                 <!-- 右侧分隔线 -->
                 <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                              Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE"/>
+                              Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE">
+                    <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GridSplitter.Style>
+                </GridSplitter>
 
                 <!-- 右侧详情栏 -->
                 <Border Grid.Column="4" x:Name="RightSidebarBorder" ContextMenu="{x:Null}" PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
+                    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="DetailPanel" Margin="16,8,16,16"/>
                     </ScrollViewer>
