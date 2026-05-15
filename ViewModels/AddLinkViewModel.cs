@@ -73,7 +73,7 @@ namespace LinkPocket.ViewModels
                 HasError = false;
                 
                 await _linkService.CreateLinkAsync(
-                    url: Url.Trim(),
+                    url: DecodeUrl(Url.Trim()),
                     title: string.IsNullOrEmpty(Title?.Trim()) ? null : Title.Trim(),
                     description: string.IsNullOrEmpty(Description?.Trim()) ? null : Description.Trim(),
                     listId: SelectedListId,
@@ -138,6 +138,18 @@ namespace LinkPocket.ViewModels
             }
             
             return isValid;
+        }
+
+        private static string DecodeUrl(string url)
+        {
+            try
+            {
+                return Uri.UnescapeDataString(url);
+            }
+            catch
+            {
+                return url;
+            }
         }
 
         private bool IsValidUrl(string url)

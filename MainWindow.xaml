@@ -7,6 +7,7 @@
         xmlns:vm="clr-namespace:LinkPocket.ViewModels"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
+        xmlns:views="clr-namespace:LinkPocket.Views"
         mc:Ignorable="d"
         Title="LinkPocket"
         Height="720" Width="1200"
@@ -16,7 +17,8 @@
         ResizeMode="CanResizeWithGrip"
         Background="#FFFFFF"
         TextElement.FontFamily="{DynamicResource MaterialDesignFont}"
-        TextElement.Foreground="Black">
+        TextElement.Foreground="Black"
+        PreviewKeyDown="MainWindow_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="44"
@@ -83,60 +85,86 @@
     </Window.Resources>
 
     <Grid x:Name="RootGrid" PreviewMouseLeftButtonDown="RootGrid_PreviewMouseLeftButtonDown">
-        <!-- ===== 主界面 ===== -->
-        <Grid x:Name="MainView">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-            <!-- 顶部导航（兼标题栏） -->
-            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1"
-                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <Grid Margin="16,10,0,10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
-                        <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <ItemsControl Grid.Column="1" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Style="{StaticResource ToolbarButton}"
-                                        Command="{Binding DataContext.SelectNavCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        CommandParameter="{Binding Id}"
-                                        FontWeight="{Binding IsSelected, Converter={StaticResource BoolToFontWeightConverter}}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <materialDesign:PackIcon Kind="{Binding IconKind}" Width="18" Height="18" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
-                                WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
-                            <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
-                            <materialDesign:PackIcon Kind="WindowMaximize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
-                            <materialDesign:PackIcon Kind="WindowClose" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
+        <!-- ===== 全局标题栏（所有页面共享） ===== -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid Margin="16,10,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource ToolbarButton}"
+                                    Command="{Binding DataContext.SelectNavCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding Id}"
+                                    FontWeight="{Binding IsSelected, Converter={StaticResource BoolToFontWeightConverter}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="{Binding IconKind}" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
+                            WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
+                        <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
+                        <materialDesign:PackIcon Kind="WindowMaximize" Width="14" Height="14" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
+                        <materialDesign:PackIcon Kind="WindowClose" Width="14" Height="14" VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== 主界面（链接+回收站） ===== -->
+        <Grid Grid.Row="1" x:Name="MainView">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="search">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="trash">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="smartlists">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="ai">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="vault">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="settings">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
 
             <!-- 主内容区 -->
             <Grid Grid.Row="1">
@@ -267,24 +295,11 @@
                     </Grid>
 
                     <!-- 其他页面占位 -->
-                    <Grid Grid.Row="1" x:Name="VaultPage">
-                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="vault"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-                        <TextBlock Text="密码保险库 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Opacity="0.5"/>
-                    </Grid>
-                    <Grid Grid.Row="1" x:Name="SearchPage">
-                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="search"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-                        <TextBlock Text="搜索 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Opacity="0.5"/>
-                    </Grid>
-                    <Grid Grid.Row="1" x:Name="TrashPage">
-                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <StackPanel x:Name="TrashContentPanel" Margin="8"/>
-                        </ScrollViewer>
-                    </Grid>
-                    <Grid Grid.Row="1" x:Name="SettingsPage">
-                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="settings"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-                        <TextBlock Text="设置 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Opacity="0.5"/>
-                    </Grid>
+                    <!-- 密码库页面已移至独立视图 -->
+                    <!-- 智能列表页面已移至独立视图 -->
+                    <!-- 搜索页面已移至独立视图 -->
+                    <!-- 回收站页面已移至独立视图 -->
+                    <!-- 设置页面已移至独立视图 -->
                 </Grid>
 
                 <!-- 右侧分隔线 -->
@@ -302,6 +317,92 @@
                 </Border>
             </Grid>
         </Grid>
+
+        <!-- ===== 搜索视图（独立页面，无侧栏） ===== -->
+        <Grid Grid.Row="1" x:Name="SearchView" Background="White">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="search">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <TextBlock Text="搜索 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="16" Opacity="0.5"/>
+        </Grid>
+
+        <!-- ===== 回收站视图（独立页面） ===== -->
+        <views:TrashPage Grid.Row="1" x:Name="TrashView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:TrashPage.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="trash">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </views:TrashPage.Style>
+        </views:TrashPage>
+
+        <!-- ===== 智能列表视图（独立页面） ===== -->
+        <views:SmartListsPage Grid.Row="1" x:Name="SmartListsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:SmartListsPage.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="smartlists">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </views:SmartListsPage.Style>
+        </views:SmartListsPage>
+
+        <!-- ===== AI 助手视图（独立页面） ===== -->
+        <views:AIAssistantPage Grid.Row="1" x:Name="AIAssistantView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:AIAssistantPage.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="ai">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </views:AIAssistantPage.Style>
+        </views:AIAssistantPage>
+
+        <!-- ===== 密码库视图（独立页面） ===== -->
+        <views:VaultPage Grid.Row="1" x:Name="VaultView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:VaultPage.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="vault">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </views:VaultPage.Style>
+        </views:VaultPage>
+
+        <!-- ===== 设置视图（独立页面） ===== -->
+        <views:SettingsPage Grid.Row="1" x:Name="SettingsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:SettingsPage.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="settings">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </views:SettingsPage.Style>
+        </views:SettingsPage>
 
         <!-- ===== 详情视图页面 ===== -->
         <Grid x:Name="DetailView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" ContextMenu="{x:Null}"

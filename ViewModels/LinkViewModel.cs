@@ -413,6 +413,14 @@ namespace LinkPocket.ViewModels
         /// </summary>
         private bool CanDeleteSelected() => HasSelectedItems;
 
+        public void NotifySelectionStateChanged()
+        {
+            OnPropertyChanged(nameof(HasSelectedItems));
+            OnPropertyChanged(nameof(SelectedItems));
+            SelectedItem = Links.FirstOrDefault(l => l.IsSelected);
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         /// <summary>
         /// 清除所有选中状态
         /// </summary>

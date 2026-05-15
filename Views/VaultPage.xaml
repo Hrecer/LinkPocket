@@ -1,0 +1,8 @@
+<UserControl x:Class="LinkPocket.Views.VaultPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="White">
+        <TextBlock Text="密码库 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center"
+                   FontSize="16" Opacity="0.5"/>
+    </Grid>
+</UserControl>

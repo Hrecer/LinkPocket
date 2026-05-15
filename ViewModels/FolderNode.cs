@@ -20,6 +20,8 @@ public class FolderNode : INotifyPropertyChanged
         set { _id = value; OnPropertyChanged(); }
     }
 
+    public int? ParentId { get; set; }
+
     public string Name
     {
         get => _name;

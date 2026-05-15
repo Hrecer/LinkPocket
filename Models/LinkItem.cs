@@ -41,6 +41,13 @@ namespace LinkPocket.Models
             set { _isSelected = value; OnPropertyChanged(); }
         }
 
+        private bool _isCut;
+        public bool IsCut
+        {
+            get => _isCut;
+            set { _isCut = value; OnPropertyChanged(); }
+        }
+
         // UI辅助属性
         public string DisplayTitle => !string.IsNullOrEmpty(Title) ? Title : OriginalTitle;
         public string DisplayUrl => Url.Length > 50 ? Url.Substring(0, 47) + "..." : Url;

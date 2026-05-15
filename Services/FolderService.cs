@@ -280,6 +280,7 @@ public class FolderService
         {
             link.IsDeleted = true;
             link.DeletedAt = DateTime.UtcNow;
+            link.ListId = null;
         }
 
         await _db.SaveChangesAsync();
@@ -291,5 +292,64 @@ public class FolderService
             .Where(f => f.IsDeleted)
             .OrderByDescending(f => f.DeletedAt)
             .ToListAsync();
+    }
+
+    public async Task RestoreFolderAsync(int folderId)
+    {
+        var folder = await _db.Folders.FindAsync(folderId)
+            ?? throw new Exception("Folder not found");
+
+        var descendantIds = await GetDescendantIdsAsync(folderId);
+        var allFolderIds = descendantIds.Concat(new[] { folderId }).ToList();
+
+        foreach (var fid in allFolderIds)
+        {
+            var f = await _db.Folders.FindAsync(fid);
+            if (f != null)
+            {
+                f.IsDeleted = false;
+                f.DeletedAt = null;
+                f.ParentId = null;
+                f.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        var linksInFolders = await _db.Links
+            .Where(l => l.ListId != null && allFolderIds.Contains(l.ListId.Value) && l.IsDeleted)
+            .ToListAsync();
+        foreach (var link in linksInFolders)
+        {
+            link.IsDeleted = false;
+            link.DeletedAt = null;
+            link.ListId = null;
+            link.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task PermanentDeleteFolderAsync(int folderId)
+    {
+        var folder = await _db.Folders.FindAsync(folderId)
+            ?? throw new Exception("Folder not found");
+
+        var descendantIds = await GetDescendantIdsAsync(folderId);
+        var allFolderIds = descendantIds.Concat(new[] { folderId }).ToList();
+
+        var linksInFolders = await _db.Links
+            .Where(l => l.ListId != null && allFolderIds.Contains(l.ListId.Value))
+            .ToListAsync();
+        foreach (var link in linksInFolders)
+        {
+            var notes = await _db.Notes.Where(n => n.LinkId == link.Id).ToListAsync();
+            _db.Notes.RemoveRange(notes);
+            link.Tags.Clear();
+            _db.Links.Remove(link);
+        }
+
+        var foldersToDelete = await _db.Folders.Where(f => allFolderIds.Contains(f.Id)).ToListAsync();
+        _db.Folders.RemoveRange(foldersToDelete);
+
+        await _db.SaveChangesAsync();
     }
 }

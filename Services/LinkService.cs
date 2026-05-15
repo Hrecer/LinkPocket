@@ -128,6 +128,13 @@ public class LinkService
             .ToListAsync();
     }
 
+    public async Task<List<Link>> GetAllActiveLinksAsync()
+    {
+        return await _db.Links
+            .Where(l => !l.IsDeleted)
+            .ToListAsync();
+    }
+
     public async Task<List<Link>> GetDeletedLinksAsync()
     {
         return await _db.Links
@@ -277,6 +284,7 @@ public class LinkService
 
         link.IsDeleted = true;
         link.DeletedAt = DateTime.UtcNow;
+        link.ListId = null;
         link.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();

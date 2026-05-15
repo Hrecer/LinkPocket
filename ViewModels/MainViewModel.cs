@@ -24,12 +24,13 @@ namespace LinkPocket.ViewModels
         
         private string _currentNavId = "links";
         private int _selectedFolderId = -1;
+        private bool _hasSelectedLink;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private ObservableCollection<SmartListItem> _smartListItems = new();
         private LinkViewModel? _linkViewModel;
         private SearchViewModel? _searchViewModel;
-        private TrashViewModel? _trashViewModel;
+        private RecycleBinViewModel? _recycleBinViewModel;
         private SettingsViewModel? _settingsViewModel;
 
         private bool _isEditPageVisible;
@@ -107,7 +108,7 @@ namespace LinkPocket.ViewModels
             _linkViewModel = new LinkViewModel(_linkService, _folderService);
             _linkViewModel.LinksChanged += OnLinksChanged;
             _searchViewModel = new SearchViewModel(_linkService);
-            _trashViewModel = new TrashViewModel(_linkService);
+            _recycleBinViewModel = new RecycleBinViewModel(_linkService);
             _settingsViewModel = new SettingsViewModel();
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
@@ -324,10 +325,10 @@ namespace LinkPocket.ViewModels
             set { _searchViewModel = value; OnPropertyChanged(); }
         }
 
-        public TrashViewModel? TrashViewModel
+        public RecycleBinViewModel? RecycleBinViewModel
         {
-            get => _trashViewModel;
-            set { _trashViewModel = value; OnPropertyChanged(); }
+            get => _recycleBinViewModel;
+            set { _recycleBinViewModel = value; OnPropertyChanged(); }
         }
 
         public SettingsViewModel? SettingsViewModel
@@ -383,9 +384,12 @@ namespace LinkPocket.ViewModels
                 await RefreshFolderTreeAndUIAsync();
             else if (navId == "trash")
             {
-                await LoadTrashTreeAsync();
-                if (Application.Current.MainWindow is MainWindow mw)
-                    await mw.RefreshTrashListAsync(this);
+                if (_recycleBinViewModel != null)
+                {
+                    await _recycleBinViewModel.LoadAsync();
+                    if (Application.Current.MainWindow is MainWindow mw && mw.TrashView is Views.TrashPage tp)
+                        await tp.RefreshAsync();
+                }
             }
         }
 
@@ -397,7 +401,8 @@ namespace LinkPocket.ViewModels
 
         private void ShowAddLink()
         {
-            if (_selectedFolderId < 0) return;
+            if (_selectedFolderId < 0)
+                throw new InvalidOperationException("添加书签必须先选中一个文件夹");
             _editOpenedFromDetail = false;
             IsEditMode = false;
             _editingLinkId = 0;
@@ -578,7 +583,7 @@ namespace LinkPocket.ViewModels
                 EditLinkIsLoading = true;
                 EditLinkHasError = false;
 
-                var url = EditLinkUrl.Trim();
+                var url = DecodeUrl(EditLinkUrl.Trim());
                 var title = EditLinkTitle.Trim();
                 var description = string.IsNullOrEmpty(EditLinkDescription?.Trim()) ? null : EditLinkDescription.Trim();
 
@@ -595,6 +600,8 @@ namespace LinkPocket.ViewModels
                 }
                 else
                 {
+                    if (_selectedFolderId < 0)
+                        throw new InvalidOperationException("添加书签必须先选中一个文件夹");
                     await _linkService.CreateLinkAsync(
                         url: url,
                         title: title,
@@ -661,9 +668,7 @@ namespace LinkPocket.ViewModels
         public void SelectFolder(int folderId)
         {
             _selectedFolderId = folderId;
-            ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
-            ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
-            ((AsyncRelayCommand)DeleteSelectedCommand).NotifyCanExecuteChanged();
+            NotifyActionCommandsChanged();
 
             Logger.Info($"选中目录: {(folderId == 0 ? "全部书签" : $"文件夹 {folderId}")}");
         }
@@ -671,6 +676,18 @@ namespace LinkPocket.ViewModels
         public void ClearFolderSelectionVM()
         {
             _selectedFolderId = -1;
+            _hasSelectedLink = false;
+            NotifyActionCommandsChanged();
+        }
+
+        public void NotifyLinkSelected(bool selected)
+        {
+            _hasSelectedLink = selected;
+            NotifyActionCommandsChanged();
+        }
+
+        private void NotifyActionCommandsChanged()
+        {
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
             ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
             ((AsyncRelayCommand)DeleteSelectedCommand).NotifyCanExecuteChanged();
@@ -679,6 +696,7 @@ namespace LinkPocket.ViewModels
         private bool CanDeleteSelected()
         {
             if (_selectedFolderId > 0) return true;
+            if (_hasSelectedLink) return true;
             if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
             return false;
         }
@@ -689,6 +707,10 @@ namespace LinkPocket.ViewModels
             {
                 if (_selectedFolderId > 0)
                 {
+                    var folderName = FindFolderNameById(FolderItems, _selectedFolderId);
+                    if (!ShowDeleteFolderConfirmation(folderName))
+                        return;
+
                     await _folderService.SoftDeleteFolderAsync(_selectedFolderId);
                     Logger.Info($"文件夹 {_selectedFolderId} 已移至回收站");
                     if (Application.Current.MainWindow is MainWindow mw)
@@ -697,18 +719,21 @@ namespace LinkPocket.ViewModels
                     return;
                 }
 
+                if (_hasSelectedLink && Application.Current.MainWindow is MainWindow mw2)
+                {
+                    var selectedLink = mw2.GetSelectedLink();
+                    if (selectedLink != null)
+                    {
+                        await _linkService.DeleteLinkAsync(selectedLink.Id);
+                        Logger.Info($"已将书签 {selectedLink.Id} 移至回收站");
+                        mw2.ClearDetailPanel();
+                        await RefreshFolderTreeAndUIAsync();
+                    }
+                }
+
                 if (_linkViewModel != null && _linkViewModel.HasSelectedItems)
                 {
-                    var selectedLinks = _linkViewModel.Links.Where(l => l.IsSelected).ToList();
-                    foreach (var link in selectedLinks)
-                    {
-                        await _linkService.DeleteLinkAsync(link.Id);
-                    }
-                    Logger.Info($"已将 {selectedLinks.Count} 个书签移至回收站");
-                    _linkViewModel.ClearSelectionCommand.Execute(null);
-                    if (Application.Current.MainWindow is MainWindow mw)
-                        mw.ClearDetailPanel();
-                    await RefreshFolderTreeAndUIAsync();
+                    _linkViewModel.DeleteSelectedCommand.Execute(null);
                 }
             }
             catch (Exception ex)
@@ -720,33 +745,33 @@ namespace LinkPocket.ViewModels
 
         private async Task CreateFolderAsync()
         {
-            if (_selectedFolderId < 0) return;
+            if (_selectedFolderId < 0)
+                throw new InvalidOperationException("新建文件夹必须先选中一个文件夹");
 
             var dialog = new Window
             {
                 Title = "新建文件夹",
-                Width = 360, Height = 180,
+                Width = 360, Height = 200,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = Application.Current.MainWindow,
                 ResizeMode = ResizeMode.NoResize,
                 WindowStyle = WindowStyle.None,
-                Background = System.Windows.Media.Brushes.White,
-                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
-                BorderThickness = new Thickness(1)
+                Background = System.Windows.Media.Brushes.Transparent,
+                AllowsTransparency = true
             };
 
-            var panel = new StackPanel { Margin = new Thickness(24) };
-            panel.Children.Add(new TextBlock
+            var contentPanel = new StackPanel { Margin = new Thickness(24) };
+            contentPanel.Children.Add(new TextBlock
             {
                 Text = "新建文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16)
             });
 
-            var nameBox = new System.Windows.Controls.TextBox
+            var dialogNameBox = new System.Windows.Controls.TextBox
             {
                 FontSize = 14, Padding = new Thickness(8, 6, 8, 6)
             };
-            nameBox.SetValue(HintAssist.HintProperty, "文件夹名称");
-            panel.Children.Add(nameBox);
+            dialogNameBox.SetValue(HintAssist.HintProperty, "文件夹名称");
+            contentPanel.Children.Add(dialogNameBox);
 
             var btnPanel = new StackPanel
             {
@@ -755,28 +780,67 @@ namespace LinkPocket.ViewModels
                 Margin = new Thickness(0, 16, 0, 0)
             };
 
-            var cancelBtn = new System.Windows.Controls.Button { Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0), Cursor = Cursors.Hand };
+            var cancelBtn = new System.Windows.Controls.Button
+            {
+                Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
+                Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+                BorderThickness = new Thickness(1)
+            };
+            cancelBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
             cancelBtn.Click += (s, e) => dialog.DialogResult = false;
             btnPanel.Children.Add(cancelBtn);
 
-            var okBtn = new System.Windows.Controls.Button { Content = "创建", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand };
+            var okBtn = new System.Windows.Controls.Button
+            {
+                Content = "创建", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
+                Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
+                Foreground = System.Windows.Media.Brushes.White
+            };
+            okBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
             okBtn.Click += (s, e) =>
             {
-                if (!string.IsNullOrWhiteSpace(nameBox.Text))
+                if (!string.IsNullOrWhiteSpace(dialogNameBox.Text))
                     dialog.DialogResult = true;
             };
             btnPanel.Children.Add(okBtn);
-            panel.Children.Add(btnPanel);
+            contentPanel.Children.Add(btnPanel);
 
-            dialog.Content = panel;
-            nameBox.Focus();
+            var outerBorder = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Background = System.Windows.Media.Brushes.White,
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+                BorderThickness = new Thickness(1),
+                Child = contentPanel
+            };
+
+            dialog.Content = outerBorder;
+            dialogNameBox.Focus();
+
+            dialog.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    dialog.DialogResult = false;
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Enter)
+                {
+                    if (!string.IsNullOrWhiteSpace(dialogNameBox.Text))
+                    {
+                        dialog.DialogResult = true;
+                        e.Handled = true;
+                    }
+                }
+            };
 
             if (dialog.ShowDialog() == true)
             {
                 try
                 {
                     int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
-                    await _folderService.CreateFolderAsync(nameBox.Text.Trim(), parentId: parentId);
+                    await _folderService.CreateFolderAsync(dialogNameBox.Text.Trim(), parentId: parentId);
                     if (Application.Current.MainWindow is MainWindow mw)
                         mw.ExpandFolder(_selectedFolderId);
                     await RefreshFolderTreeAndUIAsync();
@@ -785,6 +849,63 @@ namespace LinkPocket.ViewModels
                 {
                     Logger.Error("创建文件夹失败", ex);
                 }
+            }
+        }
+
+        public async Task PasteLinksToFolderAsync(List<LinkItem> items, bool isCut)
+        {
+            if (items == null || items.Count == 0) return;
+            if (_selectedFolderId < 0) return;
+
+            try
+            {
+                int? listId = _selectedFolderId == 0 ? null : _selectedFolderId;
+
+                if (isCut)
+                {
+                    foreach (var item in items)
+                    {
+                        await _linkService.UpdateLinkAsync(item.Id, listId: listId);
+                        item.IsCut = false;
+                    }
+                }
+                else
+                {
+                    foreach (var item in items)
+                    {
+                        await _linkService.CreateLinkAsync(
+                            url: item.Url,
+                            title: item.Title,
+                            description: item.Description,
+                            listId: listId,
+                            rating: item.Rating,
+                            isImportant: item.IsImportant,
+                            tagIds: null,
+                            autoFetchMetadata: false,
+                            faviconUrl: item.FaviconUrl
+                        );
+                    }
+                }
+
+                if (_linkViewModel != null)
+                    await _linkViewModel.LoadLinksAsync();
+                await RefreshFolderTreeAndUIAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("粘贴链接失败", ex);
+            }
+        }
+
+        private static string DecodeUrl(string url)
+        {
+            try
+            {
+                return Uri.UnescapeDataString(url);
+            }
+            catch
+            {
+                return url;
             }
         }
 
@@ -800,7 +921,6 @@ namespace LinkPocket.ViewModels
             {
                 await mw.RefreshSidebarAsync(this);
                 await mw.RefreshMainListAsync();
-                await mw.RefreshTrashListAsync(this);
             }
         }
 
@@ -851,6 +971,11 @@ namespace LinkPocket.ViewModels
             return await _linkService.GetDeletedLinksForFolderAsync(null);
         }
 
+        public async Task<List<Data.Link>> GetAllLinksAsync()
+        {
+            return await _linkService.GetAllActiveLinksAsync();
+        }
+
         public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(int? listId = null)
         {
             return await _linkService.GetLinksAsync(
@@ -888,6 +1013,7 @@ namespace LinkPocket.ViewModels
                     var node = new FolderNode
                     {
                         Id = folder.Id, Name = folder.Name, LinkCount = folder.LinkCount,
+                        ParentId = folder.ParentId,
                         IconKind = folder.LinkCount > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
                         Children = new ObservableCollection<FolderNode>()
                     };
@@ -911,6 +1037,108 @@ namespace LinkPocket.ViewModels
             {
                 Logger.Error("加载目录树失败", ex);
             }
+        }
+
+        private string FindFolderNameById(ObservableCollection<FolderNode> nodes, int folderId)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.Id == folderId)
+                    return node.Name;
+                if (node.Children != null && node.Children.Count > 0)
+                {
+                    var name = FindFolderNameById(node.Children, folderId);
+                    if (name != null)
+                        return name;
+                }
+            }
+            return "未命名文件夹";
+        }
+
+        private bool ShowDeleteFolderConfirmation(string folderName)
+        {
+            var dialog = new Window
+            {
+                Title = "删除文件夹",
+                Width = 360, Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = Application.Current.MainWindow,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.None,
+                Background = System.Windows.Media.Brushes.Transparent,
+                AllowsTransparency = true
+            };
+
+            var contentPanel = new StackPanel { Margin = new Thickness(24) };
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = "删除文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4)
+            });
+
+            contentPanel.Children.Add(new TextBlock
+            {
+                Text = $"确定要删除文件夹 \"{folderName}\" 吗？",
+                FontSize = 14, Margin = new Thickness(0, 0, 0, 20),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
+            });
+
+            var btnPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            var cancelBtn = new System.Windows.Controls.Button
+            {
+                Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
+                Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+                BorderThickness = new Thickness(1)
+            };
+            cancelBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
+            cancelBtn.Click += (s, e) => dialog.DialogResult = false;
+            btnPanel.Children.Add(cancelBtn);
+
+            var okBtn = new System.Windows.Controls.Button
+            {
+                Content = "确定", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
+                Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
+                Foreground = System.Windows.Media.Brushes.White
+            };
+            okBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
+            okBtn.Click += (s, e) => dialog.DialogResult = true;
+            btnPanel.Children.Add(okBtn);
+
+            contentPanel.Children.Add(btnPanel);
+
+            var outerBorder = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Background = System.Windows.Media.Brushes.White,
+                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+                BorderThickness = new Thickness(1),
+                Child = contentPanel
+            };
+
+            dialog.Content = outerBorder;
+
+            dialog.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    dialog.DialogResult = false;
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Enter)
+                {
+                    dialog.DialogResult = true;
+                    e.Handled = true;
+                }
+            };
+
+            return dialog.ShowDialog() == true;
         }
 
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
