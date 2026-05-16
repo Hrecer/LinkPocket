@@ -465,6 +465,23 @@ public partial class MainWindow : Window
             Text = folder.Name, FontSize = 13, VerticalAlignment = VerticalAlignment.Center
         });
 
+        if (folder.TotalLinkCount > 0)
+        {
+            stack.Children.Add(new Border
+            {
+                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(6, 1, 6, 1),
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 98, 0, 238)),
+                Child = new TextBlock
+                {
+                    Text = folder.TotalLinkCount.ToString(), FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            });
+        }
+
         row.Child = stack;
         _sidebarFolderBorders[folder.Id] = row;
 
@@ -626,6 +643,7 @@ public partial class MainWindow : Window
 
                     targetLink.IsSelected = !targetLink.IsSelected;
                     viewModel.LinkViewModel?.NotifySelectionStateChanged();
+                    viewModel.NotifyLinkSelected(viewModel.LinkViewModel?.HasSelectedItems == true);
                     if (viewModel.LinkViewModel?.HasSelectedItems == false)
                         _selectionManager.NotifyMultiSelectEnded();
                     UpdateMainListSelectionVisuals();
@@ -1130,6 +1148,23 @@ public partial class MainWindow : Window
             Foreground = new SolidColorBrush(Color.FromRgb(68, 68, 68))
         });
 
+        if (folder.TotalLinkCount > 0)
+        {
+            stack.Children.Add(new Border
+            {
+                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(6, 1, 6, 1),
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(30, 98, 0, 238)),
+                Child = new TextBlock
+                {
+                    Text = folder.TotalLinkCount.ToString(), FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            });
+        }
+
         row.Child = stack;
         _mainListFolderBorders[folder.Id] = row;
 
@@ -1313,6 +1348,7 @@ public partial class MainWindow : Window
                     ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
                     : (Brush)FindResource("MaterialDesignDivider");
                 viewModel.LinkViewModel?.NotifySelectionStateChanged();
+                viewModel.NotifyLinkSelected(viewModel.LinkViewModel?.HasSelectedItems == true);
                 if (viewModel.LinkViewModel?.HasSelectedItems == false)
                 {
                     _selectionManager.NotifyMultiSelectEnded();

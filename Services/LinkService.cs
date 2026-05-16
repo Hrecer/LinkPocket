@@ -116,6 +116,19 @@ public class LinkService
         return await _db.Links.CountAsync(l => !l.IsDeleted);
     }
 
+    public async Task<Dictionary<int, int>> GetLinkCountByFolderAsync()
+    {
+        return await _db.Links
+            .Where(l => !l.IsDeleted && l.ListId != null)
+            .GroupBy(l => l.ListId!.Value)
+            .ToDictionaryAsync(g => g.Key, g => g.Count());
+    }
+
+    public async Task<int> GetRootLevelLinkCountAsync()
+    {
+        return await _db.Links.CountAsync(l => !l.IsDeleted && l.ListId == null);
+    }
+
     public async Task<List<Link>> GetRootLevelLinksAsync(int perPage = 50)
     {
         return await _db.Links

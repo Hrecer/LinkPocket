@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using MaterialDesignThemes.Wpf;
 
@@ -37,8 +38,10 @@ public class FolderNode : INotifyPropertyChanged
     public int LinkCount
     {
         get => _linkCount;
-        set { _linkCount = value; OnPropertyChanged(); }
+        set { _linkCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalLinkCount)); }
     }
+
+    public int TotalLinkCount => _linkCount + _children.Sum(c => c.TotalLinkCount);
 
     public PackIconKind IconKind
     {

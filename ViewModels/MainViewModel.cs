@@ -996,12 +996,14 @@ namespace LinkPocket.ViewModels
             {
                 var totalLinks = await _linkService.GetTotalCountAsync();
                 var allFolders = await _folderService.GetAllFoldersAsync();
+                var linkCountByFolder = await _linkService.GetLinkCountByFolderAsync();
+                var rootLinkCount = await _linkService.GetRootLevelLinkCountAsync();
 
                 var folderNodes = new ObservableCollection<FolderNode>();
 
                 var rootNode = new FolderNode
                 {
-                    Id = 0, Name = "全部书签", LinkCount = totalLinks,
+                    Id = 0, Name = "全部书签", LinkCount = rootLinkCount,
                     IconKind = PackIconKind.BookmarkOutline,
                     Children = new ObservableCollection<FolderNode>()
                 };
@@ -1010,11 +1012,12 @@ namespace LinkPocket.ViewModels
                 var lookup = new Dictionary<int, FolderNode>();
                 foreach (var folder in allFolders)
                 {
+                    var count = linkCountByFolder.TryGetValue(folder.Id, out var c) ? c : 0;
                     var node = new FolderNode
                     {
-                        Id = folder.Id, Name = folder.Name, LinkCount = folder.LinkCount,
+                        Id = folder.Id, Name = folder.Name, LinkCount = count,
                         ParentId = folder.ParentId,
-                        IconKind = folder.LinkCount > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
+                        IconKind = count > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
                         Children = new ObservableCollection<FolderNode>()
                     };
                     lookup[folder.Id] = node;
