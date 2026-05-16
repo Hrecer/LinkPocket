@@ -19,7 +19,6 @@ namespace LinkPocket.Models
         // 状态字段
         public DateTime? LastVisitedAt { get; set; }
         public int VisitCount { get; set; }
-        public int Rating { get; set; }
         public bool IsImportant { get; set; }
         public bool IsDeleted { get; set; }
         public DateTime? DeletedAt { get; set; }
@@ -63,7 +62,6 @@ namespace LinkPocket.Models
                 return char.ToUpper(firstChar).ToString();
             }
         }
-        public string RatingText => Rating > 0 ? new string('★', Rating) + new string('☆', 5 - Rating) : "未评分";
         public string VisitCountText => VisitCount == 0 ? "未访问" : $"{VisitCount} 次访问";
         public string LastVisitedText => LastVisitedAt.HasValue ? LastVisitedAt.Value.ToString("yyyy-MM-dd HH:mm") : "从未";
 

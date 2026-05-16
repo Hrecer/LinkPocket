@@ -35,6 +35,10 @@ namespace LinkPocket.ViewModels
 
         private bool _isEditPageVisible;
         private bool _isEditMode;
+
+        private string _linkSortField = "created_at";
+        private string _linkSortOrder = "desc";
+        private string _folderSortOrder = "asc";
         private int _editingLinkId;
         private string _editLinkUrl = string.Empty;
         private string _editLinkTitle = string.Empty;
@@ -43,6 +47,7 @@ namespace LinkPocket.ViewModels
         private string _editLinkUpdatedAtDisplay = string.Empty;
         private string _editLinkCreatedAtDisplay = string.Empty;
         private string _editLinkLastVisitedAtDisplay = string.Empty;
+        private string _editLinkVisitCountDisplay = string.Empty;
         private string _fetchedFaviconUrl = string.Empty;
         private bool _editLinkIsLoading;
         private bool _editLinkHasError;
@@ -59,6 +64,7 @@ namespace LinkPocket.ViewModels
         private string _detailUpdatedAtDisplay = string.Empty;
         private string _detailCreatedAtDisplay = string.Empty;
         private string _detailLastVisitedAtDisplay = string.Empty;
+        private string _detailVisitCountDisplay = string.Empty;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -214,6 +220,12 @@ namespace LinkPocket.ViewModels
             set { _editLinkLastVisitedAtDisplay = value; OnPropertyChanged(); }
         }
 
+        public string EditLinkVisitCountDisplay
+        {
+            get => _editLinkVisitCountDisplay;
+            set { _editLinkVisitCountDisplay = value; OnPropertyChanged(); }
+        }
+
         public bool EditLinkIsLoading
         {
             get => _editLinkIsLoading;
@@ -300,6 +312,12 @@ namespace LinkPocket.ViewModels
             set { _detailLastVisitedAtDisplay = value; OnPropertyChanged(); }
         }
 
+        public string DetailVisitCountDisplay
+        {
+            get => _detailVisitCountDisplay;
+            set { _detailVisitCountDisplay = value; OnPropertyChanged(); }
+        }
+
         public ObservableCollection<NavigationItem> NavigationItems
         {
             get => _navigationItems;
@@ -363,6 +381,22 @@ namespace LinkPocket.ViewModels
         public ICommand ShowDetailCommand { get; }
         public ICommand DetailEditCommand { get; }
         public ICommand CancelDetailCommand { get; }
+
+        public string LinkSortField
+        {
+            get => _linkSortField;
+            set { _linkSortField = value; OnPropertyChanged(); }
+        }
+        public string LinkSortOrder
+        {
+            get => _linkSortOrder;
+            set { _linkSortOrder = value; OnPropertyChanged(); }
+        }
+        public string FolderSortOrder
+        {
+            get => _folderSortOrder;
+            set { _folderSortOrder = value; OnPropertyChanged(); }
+        }
 
         private void InitializeNavigationItems()
         {
@@ -447,6 +481,7 @@ namespace LinkPocket.ViewModels
             EditLinkUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             EditLinkCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             EditLinkLastVisitedAtDisplay = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+            EditLinkVisitCountDisplay = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次";
             EditLinkHasError = false;
             EditLinkErrorMessage = string.Empty;
             ShowEditPage();
@@ -479,12 +514,44 @@ namespace LinkPocket.ViewModels
             }
         }
 
+        public async Task SetLinkSortAsync(string field)
+        {
+            if (field == _linkSortField)
+            {
+                _linkSortOrder = _linkSortOrder == "asc" ? "desc" : "asc";
+            }
+            else
+            {
+                _linkSortField = field;
+                _linkSortOrder = field == "title" ? "asc" : "desc";
+            }
+            OnPropertyChanged(nameof(LinkSortField));
+            OnPropertyChanged(nameof(LinkSortOrder));
+            if (_linkViewModel != null)
+                await _linkViewModel.LoadLinksAsync(new LinkQueryParams { SortBy = _linkSortField, SortOrder = _linkSortOrder, PerPage = 200 });
+            if (Application.Current.MainWindow is MainWindow mw)
+                await mw.RefreshMainListAsync();
+        }
+
+        public async Task ToggleFolderSortAsync()
+        {
+            _folderSortOrder = _folderSortOrder == "asc" ? "desc" : "asc";
+            OnPropertyChanged(nameof(FolderSortOrder));
+            await LoadFolderTreeAsync();
+            if (Application.Current.MainWindow is MainWindow mw)
+            {
+                mw.RefreshSidebar(this);
+                await mw.RefreshMainListAsync();
+            }
+        }
+
         private void ShowDetail(LinkItem? link)
         {
             if (link == null) return;
             _viewingLink = link;
             _ = _linkService.RecordVisitAsync(link.Id);
             link.LastVisitedAt = DateTime.UtcNow;
+            link.VisitCount++;
             DetailUrl = link.Url ?? string.Empty;
             DetailTitle = link.Title ?? string.Empty;
             DetailDescription = link.Description ?? "（无描述）";
@@ -493,6 +560,7 @@ namespace LinkPocket.ViewModels
             DetailUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             DetailCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             DetailLastVisitedAtDisplay = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+            DetailVisitCountDisplay = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次";
 
             if (_linkViewModel != null)
                 _linkViewModel.ClearSelectionCommand.Execute(null);
@@ -625,7 +693,6 @@ namespace LinkPocket.ViewModels
                         title: title,
                         description: description,
                         listId: _selectedFolderId == 0 ? null : _selectedFolderId,
-                        rating: 0,
                         isImportant: false,
                         tagIds: null,
                         autoFetchMetadata: false,
@@ -658,6 +725,7 @@ namespace LinkPocket.ViewModels
                             DetailUpdatedAtDisplay = updatedLink.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
                             DetailCreatedAtDisplay = updatedLink.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
                             DetailLastVisitedAtDisplay = updatedLink.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+                            DetailVisitCountDisplay = updatedLink.VisitCount == 0 ? "0 次" : $"{updatedLink.VisitCount} 次";
                             mw.ClearDetailPanel();
                         }
                     }
@@ -897,7 +965,6 @@ namespace LinkPocket.ViewModels
                             title: item.Title,
                             description: item.Description,
                             listId: listId,
-                            rating: item.Rating,
                             isImportant: item.IsImportant,
                             tagIds: null,
                             autoFetchMetadata: false,
@@ -1050,6 +1117,10 @@ namespace LinkPocket.ViewModels
                         rootNode.Children.Add(lookup[folder.Id]);
                 }
 
+                SortFolderNodes(rootNode.Children);
+                foreach (var node in lookup.Values)
+                    SortFolderNodes(node.Children);
+
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     FolderItems = folderNodes;
@@ -1059,6 +1130,16 @@ namespace LinkPocket.ViewModels
             {
                 Logger.Error("加载目录树失败", ex);
             }
+        }
+
+        private void SortFolderNodes(ObservableCollection<FolderNode> nodes)
+        {
+            var sorted = _folderSortOrder == "asc"
+                ? nodes.OrderBy(n => n.Name, StringComparer.CurrentCulture).ToList()
+                : nodes.OrderByDescending(n => n.Name, StringComparer.CurrentCulture).ToList();
+            nodes.Clear();
+            foreach (var n in sorted)
+                nodes.Add(n);
         }
 
         private string FindFolderNameById(ObservableCollection<FolderNode> nodes, int folderId)

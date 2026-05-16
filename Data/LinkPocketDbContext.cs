@@ -29,7 +29,6 @@ public class LinkPocketDbContext : DbContext
             entity.HasIndex(e => e.ListId);
             entity.HasIndex(e => e.IsDeleted);
             entity.HasIndex(e => e.LastVisitedAt);
-            entity.HasIndex(e => e.Rating);
             entity.HasIndex(e => e.IsImportant);
             
             entity.HasOne(e => e.Folder)

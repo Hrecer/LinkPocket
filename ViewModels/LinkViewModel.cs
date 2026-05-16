@@ -146,8 +146,6 @@ namespace LinkPocket.ViewModels
                     listId: _currentQuery.ListId,
                     tagId: _currentQuery.TagId,
                     isImportant: _currentQuery.IsImportant,
-                    minRating: _currentQuery.MinRating,
-                    maxRating: _currentQuery.MaxRating,
                     isDeleted: _currentQuery.IsDeleted,
                     dateFrom: _currentQuery.DateFrom,
                     dateTo: _currentQuery.DateTo,
@@ -219,13 +217,13 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 更新链接（使用本地服务）
         /// </summary>
-        public async Task<bool> UpdateLinkAsync(int id, string? url = null, string? title = null, 
-            string? description = null, int? listId = null, List<int>? tagIds = null, 
-            int? starRating = null, bool? isImportant = null)
+        public async Task<bool> UpdateLinkAsync(int id, string? url = null, string? title = null,
+            string? description = null, int? listId = null, List<int>? tagIds = null,
+            bool? isImportant = null)
         {
             try
             {
-                await _linkService.UpdateLinkAsync(id, url, title, description, listId, tagIds, starRating, isImportant);
+                await _linkService.UpdateLinkAsync(id, url, title, description, listId, tagIds, isImportant);
                 return true;
             }
             catch (Exception ex)
@@ -285,7 +283,6 @@ namespace LinkPocket.ViewModels
                 ListId = link.ListId,
                 LastVisitedAt = link.LastVisitedAt,
                 VisitCount = link.VisitCount,
-                Rating = link.Rating,
                 IsImportant = link.IsImportant,
                 IsDeleted = link.IsDeleted,
                 CreatedAt = link.CreatedAt,
@@ -319,7 +316,6 @@ namespace LinkPocket.ViewModels
                 currentLink.ListId = previousState.ListId;
                 currentLink.LastVisitedAt = previousState.LastVisitedAt;
                 currentLink.VisitCount = previousState.VisitCount;
-                currentLink.Rating = previousState.Rating;
                 currentLink.IsImportant = previousState.IsImportant;
                 currentLink.Tags = previousState.Tags;
                 currentLink.Notes = previousState.Notes;
@@ -453,7 +449,6 @@ namespace LinkPocket.ViewModels
                 ListId = link.ListId,
                 LastVisitedAt = link.LastVisitedAt,
                 VisitCount = link.VisitCount,
-                Rating = link.Rating,
                 IsImportant = link.IsImportant,
                 IsDeleted = link.IsDeleted,
                 DeletedAt = link.DeletedAt,

@@ -98,6 +98,56 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private static readonly Dictionary<string, string> SortFieldLabels = new()
+    {
+        { "title", "按名称" }, { "updated_at", "最后更新" },
+        { "last_visited_at", "最后查看" }, { "visit_count", "累计查看次数" }, { "created_at", "创建时间" }
+    };
+
+    private void LinkSortButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        UpdateLinkSortMenu(vm);
+        LinkSortMenu.PlacementTarget = LinkSortButton;
+        LinkSortMenu.IsOpen = true;
+    }
+
+    private void UpdateLinkSortMenu(MainViewModel vm)
+    {
+        foreach (MenuItem item in LinkSortMenu.Items)
+        {
+            var field = item.Tag as string;
+            if (field == vm.LinkSortField)
+            {
+                item.Header = $"{SortFieldLabels[field]} {(vm.LinkSortOrder == "asc" ? "↑" : "↓")}";
+            }
+            else
+            {
+                item.Header = $"{SortFieldLabels[field]} ↑↓";
+            }
+        }
+        if (SortFieldLabels.TryGetValue(vm.LinkSortField, out var label))
+            LinkSortButtonText.Text = label;
+        else
+            LinkSortButtonText.Text = "排序";
+        LinkSortOrderText.Text = vm.LinkSortOrder == "asc" ? "↑" : "↓";
+    }
+
+    private async void LinkSortMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem mi || mi.Tag is not string field) return;
+        if (DataContext is not MainViewModel vm) return;
+        await vm.SetLinkSortAsync(field);
+        UpdateLinkSortMenu(vm);
+    }
+
+    private async void FolderSortButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        await vm.ToggleFolderSortAsync();
+        FolderSortOrderText.Text = vm.FolderSortOrder == "asc" ? "名称 ↑" : "名称 ↓";
+    }
+
     private void LinkList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
@@ -131,6 +181,8 @@ public partial class MainWindow : Window
             await viewModel.LoadFolderTreeAsync();
             RefreshSidebar(viewModel);
             await RefreshMainListAsync();
+            UpdateLinkSortMenu(viewModel);
+            FolderSortOrderText.Text = viewModel.FolderSortOrder == "asc" ? "名称 ↑" : "名称 ↓";
             if (viewModel.LinkViewModel != null)
             {
                 viewModel.LinkViewModel.SelectionChanged += LinkViewModel_SelectionChanged;
@@ -870,6 +922,9 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(new TextBlock { Text = "最后查看", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
         DetailPanel.Children.Add(new TextBox { Text = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
+
+        DetailPanel.Children.Add(new TextBlock { Text = "累计查看次数", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        DetailPanel.Children.Add(new TextBox { Text = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
 
         DetailPanel.Children.Add(new TextBlock { Text = "创建时间", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
         DetailPanel.Children.Add(new TextBox { Text = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });

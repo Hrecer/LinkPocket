@@ -19,8 +19,6 @@ public class LinkService
         int? listId = null,
         int? tagId = null,
         bool? isImportant = null,
-        int? minRating = null,
-        int? maxRating = null,
         bool isDeleted = false,
         string? dateFrom = null,
         string? dateTo = null,
@@ -63,16 +61,6 @@ public class LinkService
             query = query.Where(l => l.IsImportant == isImportant);
         }
 
-        // 按评分范围筛选
-        if (minRating.HasValue)
-        {
-            query = query.Where(l => l.Rating >= minRating);
-        }
-        if (maxRating.HasValue)
-        {
-            query = query.Where(l => l.Rating <= maxRating);
-        }
-
         // 时间范围筛选
         if (!string.IsNullOrEmpty(dateFrom) && DateTime.TryParse(dateFrom, out var from))
         {
@@ -84,7 +72,7 @@ public class LinkService
         }
 
         // 排序
-        var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title", "rating" };
+        var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title" };
         if (!allowedSortFields.Contains(sortBy)) sortBy = "created_at";
         
         sortOrder = sortOrder.ToLower() == "asc" ? "asc" : "desc";
@@ -96,7 +84,6 @@ public class LinkService
             "last_visited_at" => sortOrder == "asc" ? query.OrderBy(l => l.LastVisitedAt) : query.OrderByDescending(l => l.LastVisitedAt),
             "visit_count" => sortOrder == "asc" ? query.OrderBy(l => l.VisitCount) : query.OrderByDescending(l => l.VisitCount),
             "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title) : query.OrderByDescending(l => l.Title),
-            "rating" => sortOrder == "asc" ? query.OrderBy(l => l.Rating) : query.OrderByDescending(l => l.Rating),
             _ => query.OrderByDescending(l => l.CreatedAt)
         };
 
@@ -174,7 +161,7 @@ public class LinkService
     }
 
     public async Task<Link> CreateLinkAsync(string url, string? title = null, string? description = null,
-        int? listId = null, List<int>? tagIds = null, int rating = 0, bool isImportant = false,
+        int? listId = null, List<int>? tagIds = null, bool isImportant = false,
         bool autoFetchMetadata = true, string? faviconUrl = null)
     {
         var link = new Link
@@ -184,7 +171,6 @@ public class LinkService
             OriginalTitle = title,
             Description = description,
             ListId = listId,
-            Rating = rating,
             IsImportant = isImportant,
             VisitCount = 0,
             IsDeleted = false,
@@ -247,7 +233,7 @@ public class LinkService
 
     public async Task<Link> UpdateLinkAsync(int id, string? url = null, string? title = null,
         string? description = null, int? listId = null, List<int>? tagIds = null,
-        int? starRating = null, bool? isImportant = null, string? faviconUrl = null)
+        bool? isImportant = null, string? faviconUrl = null)
     {
         var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
             ?? throw new Exception("Link not found");
@@ -260,12 +246,6 @@ public class LinkService
         if (title != null) link.Title = title;
         if (description != null) link.Description = description;
         if (listId != null) link.ListId = listId;
-        if (starRating != null)
-        {
-            if (starRating < 0 || starRating > 5)
-                throw new ArgumentException("Rating must be between 0 and 5");
-            link.Rating = starRating.Value;
-        }
         if (isImportant != null) link.IsImportant = isImportant.Value;
         if (faviconUrl != null) link.FaviconUrl = faviconUrl;
 

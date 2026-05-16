@@ -179,9 +179,21 @@
                 <!-- 左侧边栏 -->
                 <Border Grid.Column="0" x:Name="LeftSidebarBorder">
                     <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="FolderListPanel" Margin="4,8,4,8"/>
-                    </ScrollViewer>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Button Grid.Row="0" x:Name="FolderSortButton" Padding="8,6" Margin="4,4,4,0" HorizontalAlignment="Right" Cursor="Hand"
+                                Background="Transparent" BorderThickness="0" Click="FolderSortButton_Click" FontSize="12" FontFamily="Microsoft YaHei UI" Foreground="#888">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="FolderSortOrderText" Text="名称 ↑" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="FolderListPanel" Margin="4,4,4,8"/>
+                        </ScrollViewer>
+                    </Grid>
                 </Border>
 
                 <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -268,6 +280,28 @@
                                         </Setter>
                                     </Style>
                                 </Button.Style>
+                            </Button>
+                            <Button x:Name="LinkSortButton" Padding="10,8" Margin="16,0,0,0" Cursor="Hand" Click="LinkSortButton_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="Sort" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="LinkSortButtonText" Text="排序" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                                    <TextBlock x:Name="LinkSortOrderText" Text="↓" FontSize="12" VerticalAlignment="Center" Foreground="#888"/>
+                                </StackPanel>
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="LinkSortMenu">
+                                        <MenuItem Header="按名称 ↑↓" Tag="title" Click="LinkSortMenuItem_Click"/>
+                                        <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="LinkSortMenuItem_Click"/>
+                                        <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="LinkSortMenuItem_Click"/>
+                                        <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="LinkSortMenuItem_Click"/>
+                                        <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="LinkSortMenuItem_Click"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
                             </Button>
                         </StackPanel>
                     </Border>
@@ -564,6 +598,11 @@
                     <TextBox Text="{Binding DetailLastVisitedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
                              IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
 
+                    <!-- 累计查看次数 -->
+                    <TextBlock Text="累计查看次数" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
+                    <TextBox Text="{Binding DetailVisitCountDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
+                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
+
                     <!-- 创建时间 -->
                     <TextBlock Text="创建时间" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding DetailCreatedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
@@ -790,6 +829,8 @@
                     <TextBlock Text="{Binding EditLinkUpdatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
                     <TextBlock Text="最后查看" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                     <TextBlock Text="{Binding EditLinkLastVisitedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
+                    <TextBlock Text="累计查看次数" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding EditLinkVisitCountDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
                     <TextBlock Text="创建时间" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                     <TextBlock Text="{Binding EditLinkCreatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
                     <TextBlock Text="ID" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>

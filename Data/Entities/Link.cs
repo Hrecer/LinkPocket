@@ -41,8 +41,6 @@ public class Link
     [Column("visit_count")]
     public int VisitCount { get; set; } = 0;
 
-    public int Rating { get; set; } = 0;
-
     [Column("is_important")]
     public bool IsImportant { get; set; } = false;
 
