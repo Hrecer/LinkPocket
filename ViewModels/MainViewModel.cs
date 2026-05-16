@@ -42,6 +42,7 @@ namespace LinkPocket.ViewModels
         private string _editLinkIdDisplay = string.Empty;
         private string _editLinkUpdatedAtDisplay = string.Empty;
         private string _editLinkCreatedAtDisplay = string.Empty;
+        private string _editLinkLastVisitedAtDisplay = string.Empty;
         private string _fetchedFaviconUrl = string.Empty;
         private bool _editLinkIsLoading;
         private bool _editLinkHasError;
@@ -57,6 +58,7 @@ namespace LinkPocket.ViewModels
         private string _detailLinkIdDisplay = string.Empty;
         private string _detailUpdatedAtDisplay = string.Empty;
         private string _detailCreatedAtDisplay = string.Empty;
+        private string _detailLastVisitedAtDisplay = string.Empty;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -206,6 +208,12 @@ namespace LinkPocket.ViewModels
             set { _editLinkCreatedAtDisplay = value; OnPropertyChanged(); }
         }
 
+        public string EditLinkLastVisitedAtDisplay
+        {
+            get => _editLinkLastVisitedAtDisplay;
+            set { _editLinkLastVisitedAtDisplay = value; OnPropertyChanged(); }
+        }
+
         public bool EditLinkIsLoading
         {
             get => _editLinkIsLoading;
@@ -284,6 +292,12 @@ namespace LinkPocket.ViewModels
         {
             get => _detailCreatedAtDisplay;
             set { _detailCreatedAtDisplay = value; OnPropertyChanged(); }
+        }
+
+        public string DetailLastVisitedAtDisplay
+        {
+            get => _detailLastVisitedAtDisplay;
+            set { _detailLastVisitedAtDisplay = value; OnPropertyChanged(); }
         }
 
         public ObservableCollection<NavigationItem> NavigationItems
@@ -432,6 +446,7 @@ namespace LinkPocket.ViewModels
             EditLinkIdDisplay = link.LinkId ?? string.Empty;
             EditLinkUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             EditLinkCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            EditLinkLastVisitedAtDisplay = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
             EditLinkHasError = false;
             EditLinkErrorMessage = string.Empty;
             ShowEditPage();
@@ -468,6 +483,8 @@ namespace LinkPocket.ViewModels
         {
             if (link == null) return;
             _viewingLink = link;
+            _ = _linkService.RecordVisitAsync(link.Id);
+            link.LastVisitedAt = DateTime.UtcNow;
             DetailUrl = link.Url ?? string.Empty;
             DetailTitle = link.Title ?? string.Empty;
             DetailDescription = link.Description ?? "（无描述）";
@@ -475,6 +492,7 @@ namespace LinkPocket.ViewModels
             DetailLinkIdDisplay = link.LinkId ?? string.Empty;
             DetailUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             DetailCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            DetailLastVisitedAtDisplay = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
 
             if (_linkViewModel != null)
                 _linkViewModel.ClearSelectionCommand.Execute(null);
@@ -639,6 +657,7 @@ namespace LinkPocket.ViewModels
                             DetailLinkIdDisplay = updatedLink.LinkId ?? string.Empty;
                             DetailUpdatedAtDisplay = updatedLink.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
                             DetailCreatedAtDisplay = updatedLink.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                            DetailLastVisitedAtDisplay = updatedLink.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
                             mw.ClearDetailPanel();
                         }
                     }

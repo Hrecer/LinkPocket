@@ -559,6 +559,11 @@
                     <TextBox Text="{Binding DetailUpdatedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
                              IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
 
+                    <!-- 最后查看 -->
+                    <TextBlock Text="最后查看" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
+                    <TextBox Text="{Binding DetailLastVisitedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
+                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
+
                     <!-- 创建时间 -->
                     <TextBlock Text="创建时间" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding DetailCreatedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
@@ -783,6 +788,8 @@
                             Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="最后更新" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                     <TextBlock Text="{Binding EditLinkUpdatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
+                    <TextBlock Text="最后查看" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding EditLinkLastVisitedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
                     <TextBlock Text="创建时间" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
                     <TextBlock Text="{Binding EditLinkCreatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
                     <TextBlock Text="ID" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
