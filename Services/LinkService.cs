@@ -17,7 +17,6 @@ public class LinkService
     public async Task<(List<Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksAsync(
         string? search = null,
         int? listId = null,
-        int? tagId = null,
         bool? isImportant = null,
         bool isDeleted = false,
         string? dateFrom = null,
@@ -28,40 +27,28 @@ public class LinkService
         int perPage = 20)
     {
         var query = _db.Links
-            .Include(l => l.Tags)
             .Include(l => l.Folder)
-            .Include(l => l.Notes)
             .Where(l => l.IsDeleted == isDeleted);
 
-        // 搜索关键词
         if (!string.IsNullOrEmpty(search))
         {
-            query = query.Where(l => 
+            query = query.Where(l =>
                 l.Url.Contains(search) ||
                 (l.Title != null && l.Title.Contains(search)) ||
                 (l.OriginalTitle != null && l.OriginalTitle.Contains(search)) ||
                 (l.Description != null && l.Description.Contains(search)));
         }
 
-        // 按列表筛选
         if (listId.HasValue)
         {
             query = query.Where(l => l.ListId == listId);
         }
 
-        // 按标签筛选
-        if (tagId.HasValue)
-        {
-            query = query.Where(l => l.Tags.Any(t => t.Id == tagId));
-        }
-
-        // 按星标筛选
         if (isImportant.HasValue)
         {
             query = query.Where(l => l.IsImportant == isImportant);
         }
 
-        // 时间范围筛选
         if (!string.IsNullOrEmpty(dateFrom) && DateTime.TryParse(dateFrom, out var from))
         {
             query = query.Where(l => l.CreatedAt >= from);
@@ -71,20 +58,19 @@ public class LinkService
             query = query.Where(l => l.CreatedAt <= to);
         }
 
-        // 排序
         var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title" };
         if (!allowedSortFields.Contains(sortBy)) sortBy = "created_at";
-        
+
         sortOrder = sortOrder.ToLower() == "asc" ? "asc" : "desc";
 
         query = sortBy switch
         {
-            "created_at" => sortOrder == "asc" ? query.OrderBy(l => l.CreatedAt) : query.OrderByDescending(l => l.CreatedAt),
-            "updated_at" => sortOrder == "asc" ? query.OrderBy(l => l.UpdatedAt) : query.OrderByDescending(l => l.UpdatedAt),
-            "last_visited_at" => sortOrder == "asc" ? query.OrderBy(l => l.LastVisitedAt) : query.OrderByDescending(l => l.LastVisitedAt),
-            "visit_count" => sortOrder == "asc" ? query.OrderBy(l => l.VisitCount) : query.OrderByDescending(l => l.VisitCount),
-            "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title) : query.OrderByDescending(l => l.Title),
-            _ => query.OrderByDescending(l => l.CreatedAt)
+            "created_at" => sortOrder == "asc" ? query.OrderBy(l => l.CreatedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id),
+            "updated_at" => sortOrder == "asc" ? query.OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.Id),
+            "last_visited_at" => sortOrder == "asc" ? query.OrderBy(l => l.LastVisitedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.LastVisitedAt).ThenBy(l => l.Id),
+            "visit_count" => sortOrder == "asc" ? query.OrderBy(l => l.VisitCount).ThenBy(l => l.Id) : query.OrderByDescending(l => l.VisitCount).ThenBy(l => l.Id),
+            "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id) : query.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
+            _ => query.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id)
         };
 
         var totalCount = await query.CountAsync();
@@ -116,16 +102,31 @@ public class LinkService
         return await _db.Links.CountAsync(l => !l.IsDeleted && l.ListId == null);
     }
 
-    public async Task<List<Link>> GetRootLevelLinksAsync(int perPage = 50)
+    public async Task<List<Link>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50)
     {
-        return await _db.Links
-            .Include(l => l.Tags)
+        var query = _db.Links
             .Include(l => l.Folder)
-            .Include(l => l.Notes)
-            .Where(l => !l.IsDeleted && l.ListId == null)
-            .OrderByDescending(l => l.CreatedAt)
-            .Take(perPage)
-            .ToListAsync();
+            .Where(l => !l.IsDeleted && l.ListId == null);
+
+        var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title" };
+        var field = allowedSortFields.Contains(sortBy) ? sortBy : "created_at";
+        var order = sortOrder == "asc" ? "asc" : "desc";
+
+        query = (field, order) switch
+        {
+            ("created_at", "asc") => query.OrderBy(l => l.CreatedAt),
+            ("updated_at", "asc") => query.OrderBy(l => l.UpdatedAt),
+            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt),
+            ("visit_count", "asc") => query.OrderBy(l => l.VisitCount),
+            ("title", "asc") => query.OrderBy(l => l.Title),
+            ("updated_at", _) => query.OrderByDescending(l => l.UpdatedAt),
+            ("last_visited_at", _) => query.OrderByDescending(l => l.LastVisitedAt),
+            ("visit_count", _) => query.OrderByDescending(l => l.VisitCount),
+            ("title", _) => query.OrderByDescending(l => l.Title),
+            _ => query.OrderByDescending(l => l.CreatedAt)
+        };
+
+        return await query.Take(perPage).ToListAsync();
     }
 
     public async Task<List<Link>> GetAllActiveLinksAsync()
@@ -135,33 +136,28 @@ public class LinkService
             .ToListAsync();
     }
 
-    public async Task<List<Link>> GetDeletedLinksAsync()
+    public async Task<List<TrashedLink>> GetDeletedLinksAsync()
     {
-        return await _db.Links
-            .Where(l => l.IsDeleted)
-            .OrderByDescending(l => l.DeletedAt)
+        return await _db.TrashedLinks
+            .OrderByDescending(t => t.DeletedAt)
             .ToListAsync();
     }
 
-    public async Task<List<Link>> GetDeletedLinksForFolderAsync(int? folderId)
+    public async Task<TrashedLink?> GetTrashedLinkByIdAsync(int id)
     {
-        return await _db.Links
-            .Where(l => l.IsDeleted && l.ListId == folderId)
-            .OrderByDescending(l => l.DeletedAt)
-            .ToListAsync();
+        return await _db.TrashedLinks
+            .FirstOrDefaultAsync(t => t.Id == id);
     }
 
     public async Task<Link?> GetLinkByIdAsync(int id)
     {
         return await _db.Links
-            .Include(l => l.Tags)
             .Include(l => l.Folder)
-            .Include(l => l.Notes.OrderByDescending(n => n.CreatedAt))
             .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted);
     }
 
     public async Task<Link> CreateLinkAsync(string url, string? title = null, string? description = null,
-        int? listId = null, List<int>? tagIds = null, bool isImportant = false,
+        int? listId = null, bool isImportant = false,
         bool autoFetchMetadata = true, string? faviconUrl = null)
     {
         var link = new Link
@@ -178,7 +174,6 @@ public class LinkService
             UpdatedAt = DateTime.UtcNow
         };
 
-        // 自动抓取元数据（如果需要）
         if (autoFetchMetadata && (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(description)))
         {
             try
@@ -213,15 +208,6 @@ public class LinkService
         _db.Links.Add(link);
         await _db.SaveChangesAsync();
 
-        // 关联标签
-        if (tagIds != null && tagIds.Any())
-        {
-            var tags = await _db.Tags.Where(t => tagIds.Contains(t.Id)).ToListAsync();
-            link.Tags = tags;
-            await _db.SaveChangesAsync();
-        }
-
-        // 更新文件夹链接计数
         if (listId.HasValue)
         {
             var folder = await _db.Folders.FindAsync(listId);
@@ -232,7 +218,7 @@ public class LinkService
     }
 
     public async Task<Link> UpdateLinkAsync(int id, string? url = null, string? title = null,
-        string? description = null, int? listId = null, List<int>? tagIds = null,
+        string? description = null, int? listId = null,
         bool? isImportant = null, string? faviconUrl = null)
     {
         var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
@@ -245,96 +231,85 @@ public class LinkService
 
         if (title != null) link.Title = title;
         if (description != null) link.Description = description;
-        if (listId != null) link.ListId = listId;
+        if (listId.HasValue) link.ListId = listId.Value == 0 ? null : listId.Value;
         if (isImportant != null) link.IsImportant = isImportant.Value;
         if (faviconUrl != null) link.FaviconUrl = faviconUrl;
 
         link.UpdatedAt = DateTime.UtcNow;
 
-        // 更新标签关联
-        if (tagIds != null)
-        {
-            link.Tags.Clear();
-            var tags = await _db.Tags.Where(t => tagIds.Contains(t.Id)).ToListAsync();
-            foreach (var tag in tags)
-            {
-                link.Tags.Add(tag);
-            }
-        }
-
         await _db.SaveChangesAsync();
-
-        // 重新加载导航属性
-        await _db.Entry(link).Collection(l => l.Tags).Query().LoadAsync();
 
         return link;
     }
 
     public async Task DeleteLinkAsync(int id)
     {
-        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
+        var link = await _db.Links
+            .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
             ?? throw new Exception("Link not found");
 
-        link.IsDeleted = true;
-        link.DeletedAt = DateTime.UtcNow;
-        link.ListId = null;
-        link.UpdatedAt = DateTime.UtcNow;
+        var trashedLink = new TrashedLink
+        {
+            LinkId = link.LinkId,
+            Url = link.Url,
+            Title = link.Title,
+            OriginalTitle = link.OriginalTitle,
+            Description = link.Description,
+            FaviconUrl = link.FaviconUrl,
+            LastVisitedAt = link.LastVisitedAt,
+            VisitCount = link.VisitCount,
+            IsImportant = link.IsImportant,
+            DeletedAt = DateTime.UtcNow,
+            CreatedAt = link.CreatedAt,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.TrashedLinks.Add(trashedLink);
+        _db.Links.Remove(link);
 
         await _db.SaveChangesAsync();
-
-        // 更新文件夹计数
-        if (link.ListId.HasValue)
-        {
-            var folder = await _db.Folders.FindAsync(link.ListId);
-            folder?.UpdateLinkCount(_db);
-        }
     }
 
     public async Task PermanentDeleteLinkAsync(int id)
     {
-        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && l.IsDeleted)
+        var trashedLink = await _db.TrashedLinks
+            .FirstOrDefaultAsync(t => t.Id == id)
             ?? throw new Exception("Link not found in trash");
 
-        var listId = link.ListId;
+        _db.TrashedLinks.Remove(trashedLink);
 
-        // 删除笔记
-        var notes = await _db.Notes.Where(n => n.LinkId == id).ToListAsync();
-        _db.Notes.RemoveRange(notes);
-
-        // 解除标签关联
-        link.Tags.Clear();
-
-        // 永久删除
-        _db.Links.Remove(link);
         await _db.SaveChangesAsync();
-
-        // 更新文件夹计数
-        if (listId.HasValue)
-        {
-            var folder = await _db.Folders.FindAsync(listId);
-            folder?.UpdateLinkCount(_db);
-        }
     }
 
     public async Task<Link> RestoreLinkAsync(int id)
     {
-        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && l.IsDeleted)
+        var trashedLink = await _db.TrashedLinks
+            .FirstOrDefaultAsync(t => t.Id == id)
             ?? throw new Exception("Link not found in trash");
 
-        link.IsDeleted = false;
-        link.DeletedAt = null;
-        link.UpdatedAt = DateTime.UtcNow;
+        var restoredLink = new Link
+        {
+            LinkId = trashedLink.LinkId,
+            Url = trashedLink.Url,
+            Title = trashedLink.Title,
+            OriginalTitle = trashedLink.OriginalTitle,
+            Description = trashedLink.Description,
+            FaviconUrl = trashedLink.FaviconUrl,
+            ListId = null,
+            LastVisitedAt = trashedLink.LastVisitedAt,
+            VisitCount = trashedLink.VisitCount,
+            IsImportant = trashedLink.IsImportant,
+            IsDeleted = false,
+            CreatedAt = trashedLink.CreatedAt,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.Links.Add(restoredLink);
+        _db.TrashedLinks.Remove(trashedLink);
 
         await _db.SaveChangesAsync();
 
-        // 更新文件夹计数
-        if (link.ListId.HasValue)
-        {
-            var folder = await _db.Folders.FindAsync(link.ListId);
-            folder?.UpdateLinkCount(_db);
-        }
-
-        return link;
+        return restoredLink;
     }
 
     public async Task RecordVisitAsync(int id)
@@ -345,14 +320,6 @@ public class LinkService
         link.LastVisitedAt = DateTime.UtcNow;
         link.UpdatedAt = DateTime.UtcNow;
 
-        // 更新标签查看次数
-        await _db.Entry(link).Collection(l => l.Tags).LoadAsync();
-        foreach (var tag in link.Tags)
-        {
-            tag.RecordView();
-        }
-
-        // 更新所属文件夹的最后访问时间
         if (link.ListId.HasValue)
         {
             var folder = await _db.Folders.FindAsync(link.ListId);
@@ -397,21 +364,19 @@ public class LinkService
             Logger.Info($"FetchMetadata 成功获取HTML, 长度: {html.Length}, URL: {url}");
             var metadata = new MetadataResult();
 
-            // 提取标题
             var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (titleMatch.Success)
             {
                 metadata.Title = System.Net.WebUtility.HtmlDecode(titleMatch.Groups[1].Value.Trim());
             }
 
-            // 提取meta description
-            var descMatch = Regex.Match(html, 
-                @"<meta\s+[^>]*name=[""']description[""'][^>]*content=[""'](.*?)[""']", 
+            var descMatch = Regex.Match(html,
+                @"<meta\s+[^>]*name=[""']description[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
             if (!descMatch.Success)
             {
-                descMatch = Regex.Match(html, 
-                    @"<meta\s+[^>]*content=[""'](.*?)[""'][^>]*name=[""']description[""']", 
+                descMatch = Regex.Match(html,
+                    @"<meta\s+[^>]*content=[""'](.*?)[""'][^>]*name=[""']description[""']",
                     RegexOptions.IgnoreCase);
             }
             if (descMatch.Success)
@@ -419,30 +384,27 @@ public class LinkService
                 metadata.Description = System.Net.WebUtility.HtmlDecode(descMatch.Groups[1].Value.Trim());
             }
 
-            // 提取Open Graph标题
-            var ogTitleMatch = Regex.Match(html, 
-                @"<meta\s+[^>]*property=[""']og:title[""'][^>]*content=[""'](.*?)[""']", 
+            var ogTitleMatch = Regex.Match(html,
+                @"<meta\s+[^>]*property=[""']og:title[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
             if (ogTitleMatch.Success)
             {
                 metadata.Title = System.Net.WebUtility.HtmlDecode(ogTitleMatch.Groups[1].Value.Trim());
             }
 
-            // 提取OG描述
-            var ogDescMatch = Regex.Match(html, 
-                @"<meta\s+[^>]*property=[""']og:description[""'][^>]*content=[""'](.*?)[""']", 
+            var ogDescMatch = Regex.Match(html,
+                @"<meta\s+[^>]*property=[""']og:description[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
             if (ogDescMatch.Success)
             {
                 metadata.Description = System.Net.WebUtility.HtmlDecode(ogDescMatch.Groups[1].Value.Trim());
             }
 
-            // 提取favicon
             var uri = new Uri(url);
             var baseUrl = $"{uri.Scheme}://{uri.Host}";
 
-            var faviconMatch = Regex.Match(html, 
-                @"<link\s+[^>]*rel=[""'].*icon.*[""'][^>]*href=[""'](.*?)[""']", 
+            var faviconMatch = Regex.Match(html,
+                @"<link\s+[^>]*rel=[""'].*icon.*[""'][^>]*href=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
             if (faviconMatch.Success)
             {
@@ -486,7 +448,6 @@ public class LinkService
         string query, int page = 1, int perPage = 20)
     {
         var searchQuery = _db.Links
-            .Include(l => l.Tags)
             .Include(l => l.Folder)
             .Where(l => !l.IsDeleted &&
                    (l.Url.Contains(query) ||
@@ -509,7 +470,6 @@ public class LinkService
     public async Task<List<Link>> GetSmartListAsync(string type, int page = 1, int perPage = 20)
     {
         IQueryable<Link> query = _db.Links
-            .Include(l => l.Tags)
             .Include(l => l.Folder)
             .Where(l => !l.IsDeleted);
 
@@ -523,7 +483,7 @@ public class LinkService
                                    .OrderByDescending(l => l.VisitCount),
             "important" => query.Where(l => l.IsImportant)
                                .OrderByDescending(l => l.UpdatedAt),
-            "trash" => _db.Links.Include(l => l.Tags).Include(l => l.Folder)
+            "trash" => _db.Links.Include(l => l.Folder)
                        .Where(l => l.IsDeleted)
                        .OrderByDescending(l => l.DeletedAt),
             _ => throw new ArgumentException($"Invalid smart list type: {type}")

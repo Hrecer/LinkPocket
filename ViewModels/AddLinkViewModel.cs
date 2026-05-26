@@ -78,7 +78,6 @@ namespace LinkPocket.ViewModels
                     description: string.IsNullOrEmpty(Description?.Trim()) ? null : Description.Trim(),
                     listId: SelectedListId,
                     isImportant: false,
-                    tagIds: null,
                     autoFetchMetadata: false
                 );
 

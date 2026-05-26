@@ -24,6 +24,8 @@ namespace LinkPocket.ViewModels
         private ObservableCollection<LinkItem> _links = new();
         private Models.LinkQueryParams _currentQuery = new() { PerPage = 200 };
 
+        public Models.LinkQueryParams CurrentQuery => _currentQuery;
+
         // 撤销栈：保存修改前的数据
         private readonly Stack<LinkItem> _undoStack = new();
 
@@ -144,7 +146,6 @@ namespace LinkPocket.ViewModels
                 var (links, totalCount, currentPage, lastPage) = await _linkService.GetLinksAsync(
                     search: _currentQuery.Search,
                     listId: _currentQuery.ListId,
-                    tagId: _currentQuery.TagId,
                     isImportant: _currentQuery.IsImportant,
                     isDeleted: _currentQuery.IsDeleted,
                     dateFrom: _currentQuery.DateFrom,
@@ -191,8 +192,8 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 创建新链接（使用本地服务）
         /// </summary>
-        public async Task<LinkItem?> CreateLinkAsync(string url, string? title = null, 
-            string? description = null, int? listId = null, List<int>? tagIds = null)
+        public async Task<LinkItem?> CreateLinkAsync(string url, string? title = null,
+            string? description = null, int? listId = null)
         {
             try
             {
@@ -200,10 +201,10 @@ namespace LinkPocket.ViewModels
                     url: url,
                     title: title,
                     description: description,
-                    listId: listId,
-                    tagIds: tagIds
+                    listId: listId
                 );
 
+                LinksChanged?.Invoke(this, EventArgs.Empty);
                 return ConvertToLinkItem(link);
             }
             catch (Exception ex)
@@ -218,12 +219,13 @@ namespace LinkPocket.ViewModels
         /// 更新链接（使用本地服务）
         /// </summary>
         public async Task<bool> UpdateLinkAsync(int id, string? url = null, string? title = null,
-            string? description = null, int? listId = null, List<int>? tagIds = null,
+            string? description = null, int? listId = null,
             bool? isImportant = null)
         {
             try
             {
-                await _linkService.UpdateLinkAsync(id, url, title, description, listId, tagIds, isImportant);
+                await _linkService.UpdateLinkAsync(id, url, title, description, listId, isImportant);
+                LinksChanged?.Invoke(this, EventArgs.Empty);
                 return true;
             }
             catch (Exception ex)
@@ -242,7 +244,8 @@ namespace LinkPocket.ViewModels
             try
             {
                 await _linkService.DeleteLinkAsync(id);
-                await LoadLinksAsync(); // 刷新列表
+                await LoadLinksAsync();
+                LinksChanged?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
@@ -286,9 +289,7 @@ namespace LinkPocket.ViewModels
                 IsImportant = link.IsImportant,
                 IsDeleted = link.IsDeleted,
                 CreatedAt = link.CreatedAt,
-                UpdatedAt = link.UpdatedAt,
-                Tags = link.Tags?.ToList() ?? new List<TagItem>(),
-                Notes = link.Notes?.ToList() ?? new List<NoteItem>()
+                UpdatedAt = link.UpdatedAt
             };
             
             _undoStack.Push(snapshot);
@@ -317,8 +318,6 @@ namespace LinkPocket.ViewModels
                 currentLink.LastVisitedAt = previousState.LastVisitedAt;
                 currentLink.VisitCount = previousState.VisitCount;
                 currentLink.IsImportant = previousState.IsImportant;
-                currentLink.Tags = previousState.Tags;
-                currentLink.Notes = previousState.Notes;
             }
             
             OnPropertyChanged(nameof(CanUndo));
@@ -453,20 +452,7 @@ namespace LinkPocket.ViewModels
                 IsDeleted = link.IsDeleted,
                 DeletedAt = link.DeletedAt,
                 CreatedAt = link.CreatedAt,
-                UpdatedAt = link.UpdatedAt,
-                Tags = link.Tags.Select(t => new TagItem
-                {
-                    Id = t.Id,
-                    Name = t.Name,
-                    Color = t.Color ?? "#1976D2",
-                    Description = t.Description
-                }).ToList(),
-                Notes = link.Notes.Select(n => new NoteItem
-                {
-                    Id = n.Id,
-                    Title = n.Title,
-                    Content = n.Content ?? ""
-                }).ToList()
+                UpdatedAt = link.UpdatedAt
             };
         }
 

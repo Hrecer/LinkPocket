@@ -3,8 +3,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LinkPocket.Data;
 
-[Table("links")]
-public class Link
+[Table("trashed_links")]
+public class TrashedLink
 {
     [Key]
     public int Id { get; set; }
@@ -32,9 +32,6 @@ public class Link
     [Column("favicon_url")]
     public string? FaviconUrl { get; set; }
 
-    [Column("list_id")]
-    public int? ListId { get; set; }
-
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }
 
@@ -44,16 +41,9 @@ public class Link
     [Column("is_important")]
     public bool IsImportant { get; set; } = false;
 
-    [Column("is_deleted")]
-    public bool IsDeleted { get; set; } = false;
-
     [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
+    public DateTime DeletedAt { get; set; } = DateTime.UtcNow;
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
-
-    // 导航属性
-    [ForeignKey(nameof(ListId))]
-    public virtual Folder? Folder { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }

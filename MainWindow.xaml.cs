@@ -27,11 +27,25 @@ public partial class MainWindow : Window
     private readonly Managers.SelectionManager _selectionManager = new();
     private readonly Managers.ClipboardManager _clipboardManager = new();
 
+    private Border? _selectedSearchCard;
+    private LinkItem? _selectedSearchItem;
+
     public MainWindow()
     {
         InitializeComponent();
         DataContext = new MainViewModel();
+        if (DataContext is MainViewModel searchVm)
+        {
+            searchVm.OnNavigatedToSearch += (s, e) => ResetSearchUI();
+            searchVm.OnSearchRefreshRequested += async (s, e) =>
+            {
+                var query = SearchBox.Text.Trim();
+                if (!string.IsNullOrWhiteSpace(query))
+                    await ExecuteTitleSearchAsync(searchVm, query);
+            };
+        }
         Loaded += MainWindow_Loaded;
+        StateChanged += Window_StateChanged;
         RefreshDetailPanel();
     }
 
@@ -51,6 +65,22 @@ public partial class MainWindow : Window
     private void MaximizeButton_Click(object sender, RoutedEventArgs e)
     {
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    }
+
+    private void Window_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            var wa = SystemParameters.WorkArea;
+            RootGrid.Margin = new Thickness(
+                wa.Left, wa.Top,
+                SystemParameters.PrimaryScreenWidth - wa.Right,
+                SystemParameters.PrimaryScreenHeight - wa.Bottom);
+        }
+        else
+        {
+            RootGrid.Margin = new Thickness(0);
+        }
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -117,20 +147,18 @@ public partial class MainWindow : Window
         foreach (MenuItem item in LinkSortMenu.Items)
         {
             var field = item.Tag as string;
-            if (field == vm.LinkSortField)
-            {
-                item.Header = $"{SortFieldLabels[field]} {(vm.LinkSortOrder == "asc" ? "↑" : "↓")}";
-            }
-            else
-            {
-                item.Header = $"{SortFieldLabels[field]} ↑↓";
-            }
+            if (field == null) continue;
+            var isActive = field == vm.LinkSortField;
+            var arrow = isActive ? (vm.LinkSortOrder == "asc" ? " ↑" : " ↓") : "";
+            var check = isActive ? "✓ " : "   ";
+            item.Header = $"{check}{SortFieldLabels.GetValueOrDefault(field, field)}{arrow}";
         }
         if (SortFieldLabels.TryGetValue(vm.LinkSortField, out var label))
             LinkSortButtonText.Text = label;
         else
             LinkSortButtonText.Text = "排序";
-        LinkSortOrderText.Text = vm.LinkSortOrder == "asc" ? "↑" : "↓";
+        LinkSortOrderText.Text = vm.LinkSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
+        LinkSortButton.ToolTip = $"书签排序：{label} {(vm.LinkSortOrder == "asc" ? "升序" : "降序")}";
     }
 
     private async void LinkSortMenuItem_Click(object sender, RoutedEventArgs e)
@@ -145,7 +173,8 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainViewModel vm) return;
         await vm.ToggleFolderSortAsync();
-        FolderSortOrderText.Text = vm.FolderSortOrder == "asc" ? "名称 ↑" : "名称 ↓";
+        FolderSortOrderText.Text = vm.FolderSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
+        FolderSortButton.ToolTip = $"文件夹按名称{(vm.FolderSortOrder == "asc" ? "升序" : "降序")}排列";
     }
 
     private void LinkList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -182,7 +211,7 @@ public partial class MainWindow : Window
             RefreshSidebar(viewModel);
             await RefreshMainListAsync();
             UpdateLinkSortMenu(viewModel);
-            FolderSortOrderText.Text = viewModel.FolderSortOrder == "asc" ? "名称 ↑" : "名称 ↓";
+            FolderSortOrderText.Text = viewModel.FolderSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
             if (viewModel.LinkViewModel != null)
             {
                 viewModel.LinkViewModel.SelectionChanged += LinkViewModel_SelectionChanged;
@@ -226,6 +255,7 @@ public partial class MainWindow : Window
                 if (isMultiSelect && mvm.LinkViewModel != null)
                 {
                     mvm.LinkViewModel.DeleteSelectedCommand.Execute(null);
+                    _ = RefreshMainListAsync();
                     e.Handled = true;
                 }
             }
@@ -249,6 +279,12 @@ public partial class MainWindow : Window
                 {
                     _selectionManager.ClearCurrentSelectedLink();
                     ClearDetailPanel();
+                }
+                if (_selectedSearchCard != null)
+                {
+                    _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+                    _selectedSearchCard = null;
+                    _selectedSearchItem = null;
                 }
             }
             e.Handled = true;
@@ -326,7 +362,10 @@ public partial class MainWindow : Window
             }
         }
 
+        ExpandFolder(targetFolder);
         await vm.PasteLinksToFolderAsync(links, _clipboardManager.IsCut);
+
+        await RefreshMainListAsync();
 
         if (_clipboardManager.IsCut)
         {
@@ -582,6 +621,34 @@ public partial class MainWindow : Window
                 b.Background = new SolidColorBrush(Colors.Transparent);
         };
 
+        row.MouseRightButtonUp += (s, e) =>
+        {
+            _selectionManager.SelectFolder(folder.Id);
+            if (DataContext is MainViewModel vm)
+                vm.SelectFolder(folder.Id);
+            var ctxMenu = new ContextMenu();
+
+            if (_clipboardManager.HasClipboard)
+            {
+                var pasteItem = new MenuItem { Header = "粘贴到此处", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
+                pasteItem.Click += async (cs, ce) =>
+                {
+                    await PasteLinksAsync();
+                    ctxMenu.IsOpen = false;
+                };
+                ctxMenu.Items.Add(pasteItem);
+            }
+            else
+            {
+                var emptyItem = new MenuItem { Header = "（剪贴板为空）", IsEnabled = false };
+                ctxMenu.Items.Add(emptyItem);
+            }
+
+            ctxMenu.PlacementTarget = row;
+            ctxMenu.IsOpen = true;
+            e.Handled = true;
+        };
+
         return row;
     }
 
@@ -819,38 +886,31 @@ public partial class MainWindow : Window
 
     public void RefreshDetailPanel()
     {
-        DetailPanel.Children.Clear();
-
         if (_selectionManager.CurrentSelectedLink == null)
         {
-            var placeholder = new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 80, 0, 0)
-            };
-            placeholder.Children.Add(new PackIcon
-            {
-                Kind = PackIconKind.BookmarkOutline, Width = 48, Height = 48,
-                HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15
-            });
-            placeholder.Children.Add(new TextBlock
-            {
-                Text = "选中书签查看详情", FontSize = 13, Opacity = 0.3,
-                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0)
-            });
-            DetailPanel.Children.Add(placeholder);
+            ResetDetailPanelPlaceholder(DetailPanel);
             return;
         }
 
         var link = _selectionManager.CurrentSelectedLink;
+        var folderName = link.ListId.HasValue ? FindFolderNameForLink(link.ListId.Value) : "根目录";
+        PopulateDetailPanel(DetailPanel, link.Url, link.Title, link.Description, link.FaviconUrl,
+            link.UpdatedAt, link.LastVisitedAt, link.VisitCount, link.CreatedAt, link.LinkId, folderName);
+    }
+
+    private static void PopulateDetailPanel(Panel panel, string url, string? title, string? description,
+        string? faviconUrl, DateTime updatedAt, DateTime? lastVisitedAt, int visitCount,
+        DateTime createdAt, string? linkId, string folderName,
+        Action<int>? onJumpToLink = null)
+    {
+        panel.Children.Clear();
 
         var topIconRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) };
 
         var linkVariantIcon = new PackIcon
         {
             Kind = PackIconKind.LinkVariant, Width = 32, Height = 32,
-            Foreground = (FindResource("PrimaryHueMidBrush") as Brush) ?? new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+            Foreground = Application.Current.FindResource("PrimaryHueMidBrush") as Brush ?? new SolidColorBrush(Color.FromRgb(98, 0, 238)),
             VerticalAlignment = VerticalAlignment.Center,
         };
 
@@ -863,7 +923,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(10, 0, 0, 0)
         };
         var faviconGrid = new Grid();
-        var faviconBmp = TryLoadFavicon(link.FaviconUrl);
+        var faviconBmp = TryLoadFavicon(faviconUrl);
         var faviconImg = new Image
         {
             Stretch = Stretch.Uniform,
@@ -889,13 +949,18 @@ public partial class MainWindow : Window
 
         topIconRow.Children.Add(linkVariantIcon);
         topIconRow.Children.Add(faviconBorder);
-        DetailPanel.Children.Add(topIconRow);
+        panel.Children.Add(topIconRow);
 
-        DetailPanel.Children.Add(new TextBlock { Text = "URL", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        var folderRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+        folderRow.Children.Add(new PackIcon { Kind = PackIconKind.FolderOutline, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 });
+        folderRow.Children.Add(new TextBlock { Text = folderName ?? "根目录", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) });
+        panel.Children.Add(folderRow);
+
+        panel.Children.Add(new TextBlock { Text = "URL", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
         var urlGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var urlTb = new TextBox { Text = link.Url ?? "", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, ContextMenu = null };
+        var urlTb = new TextBox { Text = url ?? "", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, ContextMenu = null };
         Grid.SetColumn(urlTb, 0);
         urlGrid.Children.Add(urlTb);
         var urlCopyBtn = new Button
@@ -905,32 +970,105 @@ public partial class MainWindow : Window
             Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "复制URL",
             VerticalAlignment = VerticalAlignment.Center
         };
-        var capturedUrl = link.Url ?? "";
+        var capturedUrl = url ?? "";
         urlCopyBtn.Click += (s, e) => { Clipboard.SetText(capturedUrl); };
         Grid.SetColumn(urlCopyBtn, 1);
         urlGrid.Children.Add(urlCopyBtn);
-        DetailPanel.Children.Add(urlGrid);
+        panel.Children.Add(urlGrid);
 
-        DetailPanel.Children.Add(new TextBlock { Text = "标题", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.Title ?? "", FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 12), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "标题", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = title ?? "", FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 12), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "描述", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.Description ?? "（无描述）", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 12), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "描述", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = description ?? "（无描述）", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 12), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "最后更新", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "最后更新", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = updatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "最后查看", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "最后查看", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = lastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "累计查看次数", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "累计查看次数", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = visitCount == 0 ? "0 次" : $"{visitCount} 次", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "创建时间", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(new TextBox { Text = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
+        panel.Children.Add(new TextBlock { Text = "创建时间", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(new TextBox { Text = createdAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 8), ContextMenu = null });
 
-        DetailPanel.Children.Add(new TextBlock { Text = "ID", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        DetailPanel.Children.Add(CreateValueWithCopy(link.LinkId ?? "", link.LinkId ?? "", true));
+        panel.Children.Add(new TextBlock { Text = "ID", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
+        panel.Children.Add(CreateValueWithCopy(linkId ?? "", linkId ?? "", true));
+
+        if (onJumpToLink != null && !string.IsNullOrEmpty(linkId))
+        {
+            var jumpBtn = new Button
+            {
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Children =
+                    {
+                        new PackIcon { Kind = PackIconKind.OpenInNew, Width = 14, Height = 14, Margin = new Thickness(0, 0, 6, 0) },
+                        new TextBlock { Text = "跳转到链接页", FontSize = 12 }
+                    }
+                },
+                Padding = new Thickness(16, 8, 16, 8),
+                Margin = new Thickness(0, 16, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Background = (Brush)Application.Current.FindResource("PrimaryHueMidBrush") ?? new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+            };
+            var capturedLinkId = int.Parse(linkId);
+            var capturedOnJump = onJumpToLink;
+            jumpBtn.Click += (s, e) => { capturedOnJump(capturedLinkId); };
+            panel.Children.Add(jumpBtn);
+        }
+
+        if (!string.IsNullOrWhiteSpace(faviconUrl) && faviconBmp == null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await FaviconService.PrefetchAndCacheAsync(faviconUrl);
+                    var cached = FaviconService.LoadFromCache(faviconUrl);
+                    if (cached != null)
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            faviconImg.Source = cached;
+                            faviconImg.Visibility = Visibility.Visible;
+                            earthIcon.Visibility = Visibility.Collapsed;
+                        });
+                    }
+                }
+                catch { }
+            });
+        }
+    }
+
+    private static void ResetDetailPanelPlaceholder(Panel panel)
+    {
+        panel.Children.Clear();
+
+        var placeholder = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 80, 0, 0)
+        };
+        placeholder.Children.Add(new PackIcon
+        {
+            Kind = PackIconKind.BookmarkOutline, Width = 48, Height = 48,
+            HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15
+        });
+        placeholder.Children.Add(new TextBlock
+        {
+            Text = "选中书签查看详情", FontSize = 13, Opacity = 0.3,
+            HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0)
+        });
+        panel.Children.Add(placeholder);
     }
 
     private static Panel CreateValueWithCopy(string text, string copyValue, bool useMonospace)
@@ -973,6 +1111,33 @@ public partial class MainWindow : Window
         Grid.SetColumn(btn, 1);
         grid.Children.Add(btn);
         return grid;
+    }
+
+    private static string FindFolderNameForLink(int? listId)
+    {
+        if (!listId.HasValue || listId.Value == 0)
+            return "根目录";
+
+        if (Application.Current.MainWindow is MainWindow mw && mw.DataContext is MainViewModel vm)
+            return FindFolderNameInNodes(vm.FolderItems, listId.Value);
+
+        return "未知目录";
+    }
+
+    private static string FindFolderNameInNodes(ObservableCollection<FolderNode> nodes, int folderId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Id == folderId)
+                return node.Name;
+            if (node.Children != null && node.Children.Count > 0)
+            {
+                var name = FindFolderNameInNodes(node.Children, folderId);
+                if (name != null)
+                    return name;
+            }
+        }
+        return "未知目录";
     }
 
     public void UpdateDetailPanel(LinkItem link)
@@ -1265,6 +1430,34 @@ public partial class MainWindow : Window
                 b.Background = new SolidColorBrush(Colors.Transparent);
         };
 
+        row.MouseRightButtonUp += (s, e) =>
+        {
+            _selectionManager.SelectFolder(folder.Id);
+            if (DataContext is MainViewModel vm)
+                vm.SelectFolder(folder.Id);
+            var ctxMenu = new ContextMenu();
+
+            if (_clipboardManager.HasClipboard)
+            {
+                var pasteItem = new MenuItem { Header = "粘贴到此处", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
+                pasteItem.Click += async (cs, ce) =>
+                {
+                    await PasteLinksAsync();
+                    ctxMenu.IsOpen = false;
+                };
+                ctxMenu.Items.Add(pasteItem);
+            }
+            else
+            {
+                var emptyItem = new MenuItem { Header = "（剪贴板为空）", IsEnabled = false };
+                ctxMenu.Items.Add(emptyItem);
+            }
+
+            ctxMenu.PlacementTarget = row;
+            ctxMenu.IsOpen = true;
+            e.Handled = true;
+        };
+
         return row;
     }
 
@@ -1317,31 +1510,54 @@ public partial class MainWindow : Window
         };
 
         var iconGrid = new Grid();
-        var faviconBmp = TryLoadFavicon(link.FaviconUrl);
-        Image? faviconImg = null;
-        if (faviconBmp != null)
-        {
-            faviconImg = new Image
-            {
-                Source = faviconBmp,
-                Stretch = Stretch.Uniform,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-        }
 
-        if (faviconImg == null)
+        var faviconBmp = TryLoadFavicon(link.FaviconUrl);
+        var faviconImg = new Image
         {
-            iconGrid.Children.Add(new PackIcon
+            Stretch = Stretch.Uniform,
+            Source = faviconBmp,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        if (faviconBmp == null)
+            faviconImg.Visibility = Visibility.Collapsed;
+
+        var earthIcon = new PackIcon
+        {
+            Kind = PackIconKind.Earth,
+            Width = 20, Height = 20,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = 0.6
+        };
+        if (faviconBmp != null)
+            earthIcon.Visibility = Visibility.Collapsed;
+
+        iconGrid.Children.Add(faviconImg);
+        iconGrid.Children.Add(earthIcon);
+
+        if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && faviconBmp == null)
+        {
+            _ = Task.Run(async () =>
             {
-                Kind = PackIconKind.Earth, Width = 20, Height = 20,
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+                try
+                {
+                    await FaviconService.PrefetchAndCacheAsync(link.FaviconUrl);
+                    var cached = FaviconService.LoadFromCache(link.FaviconUrl);
+                    if (cached != null)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            faviconImg.Source = cached;
+                            faviconImg.Visibility = Visibility.Visible;
+                            earthIcon.Visibility = Visibility.Collapsed;
+                        });
+                    }
+                }
+                catch { }
             });
         }
-        else
-        {
-            iconGrid.Children.Add(faviconImg);
-        }
+
         iconBorder.Child = iconGrid;
         Grid.SetColumn(iconBorder, 0);
         grid.Children.Add(iconBorder);
@@ -1351,6 +1567,66 @@ public partial class MainWindow : Window
         grid.Children.Add(textStack);
 
         card.Child = grid;
+
+        var linkItemRef = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.Id == link.Id);
+        card.MouseRightButtonUp += (s, e) =>
+        {
+            var ctxMenu = new ContextMenu();
+            var targetLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.Id == link.Id) ?? linkItemRef;
+            if (targetLink == null) return;
+
+            _selectionManager.HandleSingleClick(targetLink);
+            UpdateMainListSelectionVisuals();
+            UpdateSidebarSelectionVisuals();
+            RefreshDetailPanel();
+
+            var copyItem = new MenuItem { Header = "复制", Icon = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 16, Height = 16 } };
+            copyItem.Click += (cs, ce) =>
+            {
+                _clipboardManager.Copy(new List<LinkItem> { targetLink });
+                ctxMenu.IsOpen = false;
+            };
+            ctxMenu.Items.Add(copyItem);
+
+            var cutItem = new MenuItem { Header = "剪切", Icon = new PackIcon { Kind = PackIconKind.Scissors, Width = 16, Height = 16 } };
+            cutItem.Click += (cs, ce) =>
+            {
+                CutSelectedLink();
+                ctxMenu.IsOpen = false;
+            };
+            ctxMenu.Items.Add(cutItem);
+
+            ctxMenu.Items.Add(new Separator());
+
+            if (_clipboardManager.HasClipboard)
+            {
+                var pasteItem = new MenuItem { Header = "粘贴到选中文件夹", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
+                pasteItem.Click += async (cs, ce) =>
+                {
+                    await PasteLinksAsync();
+                    ctxMenu.IsOpen = false;
+                };
+                pasteItem.IsEnabled = _selectionManager.SelectedFolderId >= 0;
+                pasteItem.ToolTip = _selectionManager.SelectedFolderId < 0 ? "请先选择一个目标文件夹" : "";
+                ctxMenu.Items.Add(pasteItem);
+            }
+
+            ctxMenu.Items.Add(new Separator());
+
+            var deleteItem = new MenuItem { Header = "删除", Icon = new PackIcon { Kind = PackIconKind.Delete, Width = 16, Height = 16 } };
+            deleteItem.Click += (cs, ce) =>
+            {
+                if (viewModel.LinkViewModel != null)
+                    viewModel.LinkViewModel.DeleteSelectedCommand.Execute(null);
+                ctxMenu.IsOpen = false;
+                _ = RefreshMainListAsync();
+            };
+            ctxMenu.Items.Add(deleteItem);
+
+            ctxMenu.PlacementTarget = card;
+            ctxMenu.IsOpen = true;
+            e.Handled = true;
+        };
 
         card.PreviewMouseLeftButtonDown += (s, e) =>
         {
@@ -1436,6 +1712,284 @@ public partial class MainWindow : Window
         return card;
     }
 
+    private void SearchSortButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        UpdateSearchSortMenu(vm);
+        SearchSortMenu.PlacementTarget = SearchSortButton;
+        SearchSortMenu.IsOpen = true;
+    }
+
+    private void UpdateSearchSortMenu(MainViewModel vm)
+    {
+        foreach (MenuItem item in SearchSortMenu.Items)
+        {
+            var field = item.Tag as string;
+            if (field == null) continue;
+            var isActive = field == vm.LinkSortField;
+            var arrow = isActive ? (vm.LinkSortOrder == "asc" ? " ↑" : " ↓") : "";
+            var check = isActive ? "✓ " : "   ";
+            item.Header = $"{check}{SortFieldLabels.GetValueOrDefault(field, field)}{arrow}";
+        }
+        if (SortFieldLabels.TryGetValue(vm.LinkSortField, out var label))
+            SearchSortButtonText.Text = label;
+        else
+            SearchSortButtonText.Text = "排序";
+        SearchSortOrderText.Text = vm.LinkSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
+        SearchSortButton.ToolTip = $"结果排序：{label} {(vm.LinkSortOrder == "asc" ? "升序" : "降序")}";
+    }
+
+    private async void SearchSortMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem mi || mi.Tag is not string field) return;
+        if (DataContext is not MainViewModel vm) return;
+        await vm.SetLinkSortAsync(field);
+        UpdateSearchSortMenu(vm);
+        if (!string.IsNullOrWhiteSpace(SearchBox.Text.Trim()))
+        {
+            var query = SearchBox.Text.Trim();
+            _ = ExecuteTitleSearchAsync(vm, query);
+        }
+    }
+
+    private void ResetSearchUI()
+    {
+        SearchBox.Text = string.Empty;
+        SearchResultsPanel.Children.Clear();
+        SearchResultsPanel.Children.Add(new TextBlock
+        {
+            Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 60, 0, 0)
+        });
+        if (DataContext is MainViewModel sortVm)
+            UpdateSearchSortMenu(sortVm);
+        SearchBox.Focus();
+    }
+
+    private void SearchBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && DataContext is MainViewModel vm)
+        {
+            var query = SearchBox.Text.Trim();
+            _ = ExecuteTitleSearchAsync(vm, query);
+            e.Handled = true;
+        }
+    }
+
+    private void SearchButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            var query = SearchBox.Text.Trim();
+            _ = ExecuteTitleSearchAsync(vm, query);
+        }
+    }
+
+    private void SearchCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = string.Empty;
+        SearchResultsPanel.Children.Clear();
+        SearchResultsPanel.Children.Add(new TextBlock
+        {
+            Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 60, 0, 0)
+        });
+        SearchBox.Focus();
+    }
+
+    private async Task ExecuteTitleSearchAsync(MainViewModel vm, string query)
+    {
+        SearchResultsPanel.Children.Clear();
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            SearchResultsPanel.Children.Add(new TextBlock
+            {
+                Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 60, 0, 0)
+            });
+            return;
+        }
+
+        SearchResultsPanel.Children.Add(new TextBlock
+        {
+            Text = "搜索中...", FontSize = 14, Opacity = 0.4,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 60, 0, 0)
+        });
+
+        try
+        {
+            var results = await vm.SearchLinksByTitleAsync(query);
+            SearchResultsPanel.Children.Clear();
+            _selectedSearchCard = null;
+            _selectedSearchItem = null;
+            ResetDetailPanelPlaceholder(SearchFixedSidebar);
+
+            if (results.Count == 0)
+            {
+                var notFoundPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
+                notFoundPanel.Children.Add(new PackIcon { Kind = PackIconKind.EmoticonSadOutline, Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15 });
+                notFoundPanel.Children.Add(new TextBlock { Text = $"未找到包含 \"{query}\" 的书签", FontSize = 14, Opacity = 0.35, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 0) });
+                SearchResultsPanel.Children.Add(notFoundPanel);
+                return;
+            }
+
+            foreach (var link in results)
+            {
+                var card = CreateSearchResultCard(link, vm);
+                SearchResultsPanel.Children.Add(card);
+            }
+        }
+        catch (Exception ex)
+        {
+            SearchResultsPanel.Children.Clear();
+            SearchResultsPanel.Children.Add(new TextBlock
+            {
+                Text = $"搜索出错: {ex.Message}", FontSize = 14, Opacity = 0.4,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 60, 0, 0)
+            });
+        }
+    }
+
+    private Border CreateSearchResultCard(LinkItem item, MainViewModel vm)
+    {
+        var card = new Border
+        {
+            Tag = "SearchCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
+            Cursor = Cursors.Hand, Width = 720, HorizontalAlignment = HorizontalAlignment.Center,
+            Background = (Brush)FindResource("MaterialDesignCardBackground"),
+            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
+        };
+
+        var style = new Style(typeof(Border));
+        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
+        style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
+        style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
+            Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
+        });
+        card.Style = style;
+
+        var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var iconBorder = new Border
+        {
+            Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
+            ClipToBounds = true
+        };
+
+        var iconGrid = new Grid();
+
+        var faviconBmp = TryLoadFavicon(item.FaviconUrl);
+        var faviconImg = new Image
+        {
+            Stretch = Stretch.Uniform,
+            Source = faviconBmp,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        if (faviconBmp == null)
+            faviconImg.Visibility = Visibility.Collapsed;
+
+        var earthIcon = new PackIcon
+        {
+            Kind = PackIconKind.Earth,
+            Width = 20, Height = 20,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = 0.6
+        };
+        if (faviconBmp != null)
+            earthIcon.Visibility = Visibility.Collapsed;
+
+        iconGrid.Children.Add(faviconImg);
+        iconGrid.Children.Add(earthIcon);
+
+        if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
+                    var cached = FaviconService.LoadFromCache(item.FaviconUrl);
+                    if (cached != null)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            faviconImg.Source = cached;
+                            faviconImg.Visibility = Visibility.Visible;
+                            earthIcon.Visibility = Visibility.Collapsed;
+                        });
+                    }
+                }
+                catch { }
+            });
+        }
+
+        iconBorder.Child = iconGrid;
+        Grid.SetColumn(iconBorder, 0);
+        grid.Children.Add(iconBorder);
+
+        var displayTitle = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url;
+        var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        textStack.Children.Add(new TextBlock
+        {
+            Text = displayTitle, FontSize = 14, FontWeight = FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        textStack.Children.Add(new TextBlock
+        {
+            Text = item.Url, FontSize = 11, Opacity = 0.55,
+            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
+        });
+        Grid.SetColumn(textStack, 1);
+        grid.Children.Add(textStack);
+
+        card.Child = grid;
+
+        card.PreviewMouseLeftButtonDown += (s, e) =>
+        {
+            if (_selectedSearchCard != null && _selectedSearchCard != card)
+                _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+
+            _selectedSearchCard = card;
+            _selectedSearchItem = item;
+            card.BorderBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+
+            PopulateDetailPanel(SearchFixedSidebar, item.Url, item.Title, item.Description, item.FaviconUrl,
+                item.UpdatedAt, item.LastVisitedAt, item.VisitCount, item.CreatedAt, item.LinkId,
+                FindFolderNameForLink(item.ListId), JumpToLinkInMainList);
+
+            if (e.ClickCount == 2)
+            {
+                vm.ShowDetailCommand.Execute(item);
+                e.Handled = true;
+            }
+        };
+
+        return card;
+    }
+
+    private void SearchResultsArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not Border && _selectedSearchCard != null)
+        {
+            _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+            _selectedSearchCard = null;
+            _selectedSearchItem = null;
+            ResetDetailPanelPlaceholder(SearchFixedSidebar);
+        }
+    }
+
     private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, int id)
     {
         foreach (var node in nodes)
@@ -1458,6 +2012,55 @@ public partial class MainWindow : Window
             if (result != null) return result;
         }
         return null;
+    }
+
+    private void JumpToLinkInMainList(int linkId)
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        _selectedSearchCard = null;
+        _selectedSearchItem = null;
+
+        var targetLink = vm.LinkViewModel?.Links.FirstOrDefault(l => l.Id == linkId);
+        if (targetLink == null) return;
+
+        vm.CurrentNavId = "links";
+
+        Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            await Task.Delay(100);
+
+            if (vm.LinkViewModel == null) return;
+
+            if (!vm.FolderItems.Any(f => f.Id == targetLink.ListId))
+            {
+                await vm.RefreshFolderTreeAndUIAsync();
+            }
+
+            if (targetLink.ListId.HasValue)
+            {
+                var targetNode = FindFolderNode(vm.FolderItems, targetLink.ListId.Value);
+                if (targetNode != null)
+                {
+                    vm.SelectFolder(targetNode.Id);
+                    await Task.Delay(150);
+                }
+            }
+            else
+            {
+                vm.SelectFolder(0);
+                await Task.Delay(150);
+            }
+
+            _selectionManager.HandleSingleClick(targetLink);
+            RefreshDetailPanel();
+            UpdateMainListSelectionVisuals();
+
+            if (_mainListCardBorders.TryGetValue(targetLink.Id, out var card))
+            {
+                card.BringIntoView();
+            }
+        }));
     }
 
     private void LinksPage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

@@ -1,0 +1,73 @@
+        <!-- ===== 搜索视图（无独立详情，点击跳转主界面详情） ===== -->
+        <Grid Grid.Row="1" x:Name="SearchView" Background="#FFFFFF">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="search">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+
+            <!-- 搜索框 + 结果列表（全宽显示） -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Padding="28,20,28,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SearchBox" Grid.Column="0" Padding="12,10" FontSize="14"
+                                 materialDesign:HintAssist.Hint="输入书签标题搜索..."
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="SearchBox_KeyDown"/>
+                        <Button x:Name="SearchSortButton" Grid.Column="1" Padding="10,8" Margin="8,0,8,0" Cursor="Hand" Click="SearchSortButton_Click"
+                                ToolTip="结果排序">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Sort" Width="18" Height="18" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchSortButtonText" Text="按名称" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu x:Name="SearchSortMenu">
+                                    <MenuItem Header="按名称 ↑↓" Tag="title" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="SearchSortMenuItem_Click"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                        <Button Grid.Column="2" Content="搜索" Padding="18,8" FontSize="13"
+                                Style="{StaticResource MaterialDesignRaisedButton}" Click="SearchButton_Click"
+                                VerticalAlignment="Center" Margin="8,0,8,0"/>
+                        <Button Grid.Column="3" Content="取消" Padding="18,8" FontSize="13"
+                                Style="{StaticResource MaterialDesignOutlinedButton}" Click="SearchCancelButton_Click"
+                                VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24">
+                    <StackPanel x:Name="SearchResultsPanel" HorizontalAlignment="Center">
+                        <TextBlock Text="输入关键词开始搜索" FontSize="14" Opacity="0.4"
+                                   HorizontalAlignment="Center" Margin="0,60,0,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>

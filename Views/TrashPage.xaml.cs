@@ -24,9 +24,9 @@ namespace LinkPocket.Views
             Loaded += (_, _) => Keyboard.Focus(this);
         }
 
-        public async Task RefreshAsync()
+        public Task RefreshAsync()
         {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
+            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return Task.CompletedTask;
 
             TrashContentPanel.Children.Clear();
             _trashCardBorders.Clear();
@@ -39,11 +39,13 @@ namespace LinkPocket.Views
                     Text = "回收站为空", FontSize = 14, Opacity = 0.4,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 40, 0, 0)
                 });
-                return;
+                return Task.CompletedTask;
             }
 
             foreach (var item in recycleVm.Items)
                 TrashContentPanel.Children.Add(CreateTrashLinkCard(item, recycleVm));
+
+            return Task.CompletedTask;
         }
 
         private Border CreateTrashLinkCard(LinkItem item, RecycleBinViewModel recycleVm)

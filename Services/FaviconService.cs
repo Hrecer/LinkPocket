@@ -61,15 +61,43 @@ public class FaviconService
         return ".ico";
     }
 
+    private static string? GetFallbackIcoUrl(string faviconUrl)
+    {
+        try
+        {
+            var uri = new Uri(faviconUrl);
+            return $"{uri.Scheme}://{uri.Host}/favicon.ico";
+        }
+        catch { }
+        return null;
+    }
+
+    public static string ResolveFaviconUrl(string? originalUrl)
+    {
+        if (string.IsNullOrWhiteSpace(originalUrl))
+            return string.Empty;
+
+        var ext = GetExtensionFromUrl(originalUrl).ToLower();
+        if (ext == ".svg")
+        {
+            var fallback = GetFallbackIcoUrl(originalUrl);
+            return fallback ?? originalUrl;
+        }
+
+        return originalUrl;
+    }
+
     public static BitmapImage? LoadFromCache(string? faviconUrl)
     {
         if (string.IsNullOrWhiteSpace(faviconUrl))
             return null;
 
-        if (_memoryCache.TryGetValue(faviconUrl, out var cached))
+        var resolvedUrl = ResolveFaviconUrl(faviconUrl);
+
+        if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
 
-        var filePath = GetCacheFilePath(faviconUrl);
+        var filePath = GetCacheFilePath(resolvedUrl);
         if (File.Exists(filePath))
         {
             try
@@ -81,7 +109,7 @@ public class FaviconService
                 bmp.CacheOption = BitmapCacheOption.OnLoad;
                 bmp.EndInit();
                 if (bmp.CanFreeze) bmp.Freeze();
-                _memoryCache[faviconUrl] = bmp;
+                _memoryCache[resolvedUrl] = bmp;
                 return bmp;
             }
             catch { return null; }
@@ -93,14 +121,17 @@ public class FaviconService
     public static async Task PrefetchAndCacheAsync(string? faviconUrl)
     {
         if (string.IsNullOrWhiteSpace(faviconUrl)) return;
-        if (_memoryCache.ContainsKey(faviconUrl)) return;
 
-        var filePath = GetCacheFilePath(faviconUrl);
+        var resolvedUrl = ResolveFaviconUrl(faviconUrl);
+
+        if (_memoryCache.ContainsKey(resolvedUrl)) return;
+
+        var filePath = GetCacheFilePath(resolvedUrl);
         if (File.Exists(filePath)) return;
 
         try
         {
-            using var response = await _httpClient.GetAsync(faviconUrl);
+            using var response = await _httpClient.GetAsync(resolvedUrl);
             if (!response.IsSuccessStatusCode) return;
 
             var bytes = await response.Content.ReadAsByteArrayAsync();
@@ -116,7 +147,7 @@ public class FaviconService
             bmp.CacheOption = BitmapCacheOption.OnLoad;
             bmp.EndInit();
             if (bmp.CanFreeze) bmp.Freeze();
-            _memoryCache[faviconUrl] = bmp;
+            _memoryCache[resolvedUrl] = bmp;
         }
         catch { }
     }
@@ -126,10 +157,12 @@ public class FaviconService
         if (string.IsNullOrEmpty(faviconUrl))
             return DefaultIcon;
 
-        if (_memoryCache.TryGetValue(faviconUrl, out var cached))
+        var resolvedUrl = ResolveFaviconUrl(faviconUrl);
+
+        if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
 
-        var filePath = GetCacheFilePath(faviconUrl);
+        var filePath = GetCacheFilePath(resolvedUrl);
         if (File.Exists(filePath))
         {
             try
@@ -141,7 +174,7 @@ public class FaviconService
                 bmp.CacheOption = BitmapCacheOption.OnLoad;
                 bmp.EndInit();
                 if (bmp.CanFreeze) bmp.Freeze();
-                _memoryCache[faviconUrl] = bmp;
+                _memoryCache[resolvedUrl] = bmp;
                 return bmp;
             }
             catch { }
@@ -149,7 +182,7 @@ public class FaviconService
 
         try
         {
-            using var response = await _httpClient.GetAsync(faviconUrl);
+            using var response = await _httpClient.GetAsync(resolvedUrl);
             if (!response.IsSuccessStatusCode)
                 return DefaultIcon;
 
@@ -169,7 +202,7 @@ public class FaviconService
             bmp.EndInit();
             bmp.Freeze();
 
-            _memoryCache[faviconUrl] = bmp;
+            _memoryCache[resolvedUrl] = bmp;
             return bmp;
         }
         catch

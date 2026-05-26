@@ -60,7 +60,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 var deletedLinks = await _linkService.GetDeletedLinksAsync();
-                foreach (var link in deletedLinks.OrderByDescending(l => l.DeletedAt ?? l.CreatedAt))
+                foreach (var link in deletedLinks)
                     Items.Add(ConvertToItem(link));
             }
             catch (Exception ex)
@@ -113,7 +113,7 @@ namespace LinkPocket.ViewModels
         public void ClearSelection() => SelectedIds.Clear();
         public bool IsSelected(int id) => SelectedIds.Contains(id);
 
-        private static LinkItem ConvertToItem(Data.Link link) => new()
+        private static LinkItem ConvertToItem(TrashedLink link) => new()
         {
             Id = link.Id,
             LinkId = link.LinkId,
@@ -122,7 +122,7 @@ namespace LinkPocket.ViewModels
             OriginalTitle = link.OriginalTitle ?? "",
             Description = link.Description ?? "",
             FaviconUrl = link.FaviconUrl ?? "",
-            ListId = link.ListId,
+            ListId = null,
             LastVisitedAt = link.LastVisitedAt,
             VisitCount = link.VisitCount,
             IsImportant = link.IsImportant,

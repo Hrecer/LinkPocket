@@ -34,10 +34,11 @@ namespace LinkPocket.ViewModels
         private SettingsViewModel? _settingsViewModel;
 
         private bool _isEditPageVisible;
+        private bool _isInSecondaryPage;
         private bool _isEditMode;
 
-        private string _linkSortField = "created_at";
-        private string _linkSortOrder = "desc";
+        private string _linkSortField = "title";
+        private string _linkSortOrder = "asc";
         private string _folderSortOrder = "asc";
         private int _editingLinkId;
         private string _editLinkUrl = string.Empty;
@@ -96,9 +97,24 @@ namespace LinkPocket.ViewModels
                     cmd.ExecuteNonQuery();
                 }
 
+                cmd.CommandText = "PRAGMA table_info(links)";
+                var linkColumns = new HashSet<string>();
+                using (var reader2 = cmd.ExecuteReader())
+                {
+                    while (reader2.Read())
+                        linkColumns.Add(reader2.GetString(1).ToLower());
+                }
+
+                if (linkColumns.Contains("rating"))
+                {
+                    try { cmd.CommandText = "DROP INDEX IF EXISTS IX_links_Rating"; cmd.ExecuteNonQuery(); } catch { }
+                    cmd.CommandText = "ALTER TABLE links DROP COLUMN rating";
+                    cmd.ExecuteNonQuery();
+                }
+
                 conn.Close();
             }
-            catch { }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"EnsureSchema error: {ex.Message}"); }
         }
 
         public MainViewModel()
@@ -151,14 +167,25 @@ namespace LinkPocket.ViewModels
                     OnPropertyChanged();
                     if (value == "links" && _linkViewModel != null)
                         _ = _linkViewModel.LoadLinksAsync();
+                    if (value == "search")
+                        OnNavigatedToSearch?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
+
+        public event EventHandler? OnNavigatedToSearch;
+        public event EventHandler? OnSearchRefreshRequested;
 
         public bool IsEditPageVisible
         {
             get => _isEditPageVisible;
             set { _isEditPageVisible = value; OnPropertyChanged(); }
+        }
+
+        public bool IsInSecondaryPage
+        {
+            get => _isInSecondaryPage;
+            set { _isInSecondaryPage = value; OnPropertyChanged(); }
         }
 
         public bool IsEditMode
@@ -191,7 +218,14 @@ namespace LinkPocket.ViewModels
         public string EditLinkFaviconUrl
         {
             get => _fetchedFaviconUrl;
-            set { _fetchedFaviconUrl = value; OnPropertyChanged(); OnPropertyChanged(nameof(EditLinkHasFavicon)); ((RelayCommand)ClearFaviconCommand).RaiseCanExecuteChanged(); }
+            set { _fetchedFaviconUrl = value; OnPropertyChanged(); OnPropertyChanged(nameof(EditLinkHasFavicon)); EditLinkFaviconImage = FaviconService.LoadFromCache(value); ((RelayCommand)ClearFaviconCommand).RaiseCanExecuteChanged(); }
+        }
+
+        private ImageSource? _editLinkFaviconImage;
+        public ImageSource? EditLinkFaviconImage
+        {
+            get => _editLinkFaviconImage;
+            set { _editLinkFaviconImage = value; OnPropertyChanged(); }
         }
 
         public bool EditLinkHasFavicon => !string.IsNullOrEmpty(_fetchedFaviconUrl);
@@ -276,6 +310,13 @@ namespace LinkPocket.ViewModels
             set { _detailTitle = value; OnPropertyChanged(); }
         }
 
+        private string _detailFolderName = string.Empty;
+        public string DetailFolderName
+        {
+            get => _detailFolderName;
+            set { _detailFolderName = value; OnPropertyChanged(); }
+        }
+
         public string DetailDescription
         {
             get => _detailDescription;
@@ -286,6 +327,13 @@ namespace LinkPocket.ViewModels
         {
             get => _detailFaviconUrl;
             set { _detailFaviconUrl = value; OnPropertyChanged(); }
+        }
+
+        private ImageSource? _detailFaviconImage;
+        public ImageSource? DetailFaviconImage
+        {
+            get => _detailFaviconImage;
+            set { _detailFaviconImage = value; OnPropertyChanged(); }
         }
 
         public string DetailLinkIdDisplay
@@ -490,6 +538,7 @@ namespace LinkPocket.ViewModels
         private void ShowEditPage()
         {
             IsEditPageVisible = true;
+            IsInSecondaryPage = true;
             if (_linkViewModel != null)
                 _linkViewModel.ClearSelectionCommand.Execute(null);
             if (Application.Current.MainWindow is MainWindow mw)
@@ -510,7 +559,10 @@ namespace LinkPocket.ViewModels
                 if (_editOpenedFromDetail && _viewingLink != null)
                     mw.DetailView.Visibility = Visibility.Visible;
                 else
+                {
+                    IsInSecondaryPage = false;
                     mw.MainView.Visibility = Visibility.Visible;
+                }
             }
         }
 
@@ -523,12 +575,21 @@ namespace LinkPocket.ViewModels
             else
             {
                 _linkSortField = field;
-                _linkSortOrder = field == "title" ? "asc" : "desc";
             }
             OnPropertyChanged(nameof(LinkSortField));
             OnPropertyChanged(nameof(LinkSortOrder));
             if (_linkViewModel != null)
-                await _linkViewModel.LoadLinksAsync(new LinkQueryParams { SortBy = _linkSortField, SortOrder = _linkSortOrder, PerPage = 200 });
+            {
+                var q = _linkViewModel.CurrentQuery;
+                await _linkViewModel.LoadLinksAsync(new LinkQueryParams
+                {
+                    Search = q.Search, ListId = q.ListId, TagId = q.TagId,
+                    IsImportant = q.IsImportant, IsDeleted = q.IsDeleted,
+                    DateFrom = q.DateFrom, DateTo = q.DateTo,
+                    SortBy = _linkSortField, SortOrder = _linkSortOrder,
+                    Page = q.Page, PerPage = q.PerPage
+                });
+            }
             if (Application.Current.MainWindow is MainWindow mw)
                 await mw.RefreshMainListAsync();
         }
@@ -556,6 +617,8 @@ namespace LinkPocket.ViewModels
             DetailTitle = link.Title ?? string.Empty;
             DetailDescription = link.Description ?? "（无描述）";
             DetailFaviconUrl = link.FaviconUrl ?? string.Empty;
+            DetailFolderName = link.ListId.HasValue ? FindFolderNameById(FolderItems, link.ListId.Value) : "根目录";
+            DetailFaviconImage = FaviconService.LoadFromCache(link.FaviconUrl);
             DetailLinkIdDisplay = link.LinkId ?? string.Empty;
             DetailUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             DetailCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -567,6 +630,7 @@ namespace LinkPocket.ViewModels
 
             if (Application.Current.MainWindow is MainWindow mw)
             {
+                IsInSecondaryPage = true;
                 mw.MainView.Visibility = Visibility.Collapsed;
                 mw.DetailView.Visibility = Visibility.Visible;
                 mw.ClearDetailPanel();
@@ -580,14 +644,18 @@ namespace LinkPocket.ViewModels
             EditLink(_viewingLink);
         }
 
-        private void CancelDetail()
+        private async void CancelDetail()
         {
             _viewingLink = null;
+            IsInSecondaryPage = false;
             if (Application.Current.MainWindow is MainWindow mw)
             {
                 mw.DetailView.Visibility = Visibility.Collapsed;
                 mw.MainView.Visibility = Visibility.Visible;
             }
+            await RefreshFolderTreeAndUIAsync();
+            if (_currentNavId == "search")
+                OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private bool CanFetchMetadata()
@@ -694,7 +762,6 @@ namespace LinkPocket.ViewModels
                         description: description,
                         listId: _selectedFolderId == 0 ? null : _selectedFolderId,
                         isImportant: false,
-                        tagIds: null,
                         autoFetchMetadata: false,
                         faviconUrl: _fetchedFaviconUrl
                     );
@@ -703,11 +770,14 @@ namespace LinkPocket.ViewModels
                         mw2.ExpandFolder(_selectedFolderId);
                 }
 
-                CancelEditLink();
-
                 if (_linkViewModel != null)
                     await _linkViewModel.LoadLinksAsync();
                 await RefreshFolderTreeAndUIAsync();
+
+                if (_currentNavId == "search")
+                    OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+
+                CancelEditLink();
 
                 if (Application.Current.MainWindow is MainWindow mw)
                 {
@@ -721,6 +791,7 @@ namespace LinkPocket.ViewModels
                             DetailTitle = updatedLink.Title ?? string.Empty;
                             DetailDescription = updatedLink.Description ?? "（无描述）";
                             DetailFaviconUrl = updatedLink.FaviconUrl ?? string.Empty;
+                            DetailFaviconImage = FaviconService.LoadFromCache(updatedLink.FaviconUrl);
                             DetailLinkIdDisplay = updatedLink.LinkId ?? string.Empty;
                             DetailUpdatedAtDisplay = updatedLink.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
                             DetailCreatedAtDisplay = updatedLink.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -743,13 +814,30 @@ namespace LinkPocket.ViewModels
             catch (Exception ex)
             {
                 EditLinkHasError = true;
-                EditLinkErrorMessage = $"保存失败: {ex.Message}";
+                var innerMsg = GetFullExceptionMessage(ex);
+                EditLinkErrorMessage = $"保存失败: {innerMsg}";
                 Logger.Error("保存链接失败", ex);
+                MessageBox.Show($"保存失败: {innerMsg}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
                 EditLinkIsLoading = false;
             }
+        }
+
+        private static string GetFullExceptionMessage(Exception ex)
+        {
+            var sb = new System.Text.StringBuilder();
+            var current = ex;
+            int depth = 0;
+            while (current != null && depth < 5)
+            {
+                if (depth > 0) sb.Append(" → ");
+                sb.Append(current.Message);
+                current = current.InnerException;
+                depth++;
+            }
+            return sb.ToString();
         }
 
         public void SelectFolder(int folderId)
@@ -946,7 +1034,7 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                int? listId = _selectedFolderId == 0 ? null : _selectedFolderId;
+                int? listId = _selectedFolderId;
 
                 if (isCut)
                 {
@@ -966,7 +1054,6 @@ namespace LinkPocket.ViewModels
                             description: item.Description,
                             listId: listId,
                             isImportant: item.IsImportant,
-                            tagIds: null,
                             autoFetchMetadata: false,
                             faviconUrl: item.FaviconUrl
                         );
@@ -997,6 +1084,8 @@ namespace LinkPocket.ViewModels
 
         private async void OnLinksChanged(object? sender, EventArgs e)
         {
+            if (_currentNavId == "search")
+                OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
             await RefreshFolderTreeAndUIAsync();
         }
 
@@ -1036,25 +1125,7 @@ namespace LinkPocket.ViewModels
                     trashRoot.Children.Add(lookup[f.Id]);
             }
 
-            foreach (var link in deletedLinks)
-            {
-                if (link.ListId.HasValue && lookup.TryGetValue(link.ListId.Value, out var folderNode))
-                {
-                    folderNode.LinkCount++;
-                }
-            }
-
             TrashItems = new ObservableCollection<FolderNode> { trashRoot };
-        }
-
-        public async Task<List<Data.Link>> GetTrashLinksForFolderAsync(int folderId)
-        {
-            return await _linkService.GetDeletedLinksForFolderAsync(folderId);
-        }
-
-        public async Task<List<Data.Link>> GetTrashRootLinksAsync()
-        {
-            return await _linkService.GetDeletedLinksForFolderAsync(null);
         }
 
         public async Task<List<Data.Link>> GetAllLinksAsync()
@@ -1066,14 +1137,51 @@ namespace LinkPocket.ViewModels
         {
             return await _linkService.GetLinksAsync(
                 listId: listId, isDeleted: false,
-                sortBy: "created_at", sortOrder: "desc",
+                sortBy: _linkSortField, sortOrder: _linkSortOrder,
                 page: 1, perPage: 50
             );
         }
 
         public async Task<List<Data.Link>> GetRootLevelLinksAsync()
         {
-            return await _linkService.GetRootLevelLinksAsync();
+            return await _linkService.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
+        }
+
+        public async Task<List<LinkItem>> SearchLinksByTitleAsync(string query)
+        {
+            var links = await _linkService.GetAllActiveLinksAsync();
+            var filtered = links
+                .Where(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+            filtered = _linkSortOrder == "asc"
+                ? _linkSortField switch
+                {
+                    "title" => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
+                    "updated_at" => filtered.OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id),
+                    "last_visited_at" => filtered.OrderBy(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.Id),
+                    "visit_count" => filtered.OrderBy(l => l.VisitCount).ThenBy(l => l.Id),
+                    "created_at" => filtered.OrderBy(l => l.CreatedAt).ThenBy(l => l.Id),
+                    _ => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id)
+                }
+                : _linkSortField switch
+                {
+                    "title" => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
+                    "updated_at" => filtered.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.Id),
+                    "last_visited_at" => filtered.OrderByDescending(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.Id),
+                    "visit_count" => filtered.OrderByDescending(l => l.VisitCount).ThenBy(l => l.Id),
+                    "created_at" => filtered.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id),
+                    _ => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id)
+                };
+
+            return filtered.ToList().Select(l => new LinkItem
+            {
+                Id = l.Id, LinkId = l.LinkId, Url = l.Url,
+                Title = l.Title ?? "", OriginalTitle = l.OriginalTitle ?? "",
+                Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
+                ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
+                VisitCount = l.VisitCount, IsImportant = l.IsImportant,
+                CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
+            }).ToList();
         }
 
         public async Task LoadFolderTreeAsync()

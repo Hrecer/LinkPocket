@@ -14,7 +14,7 @@
         MinHeight="600" MinWidth="900"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
-        ResizeMode="CanResizeWithGrip"
+        ResizeMode="CanResize"
         Background="#FFFFFF"
         TextElement.FontFamily="{DynamicResource MaterialDesignFont}"
         TextElement.Foreground="Black"
@@ -103,7 +103,17 @@
                     <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
                     <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
-                <ItemsControl Grid.Column="1" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
+                <ItemsControl Grid.Column="1" x:Name="NavigationTabs" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsInSecondaryPage}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
@@ -179,21 +189,9 @@
                 <!-- 左侧边栏 -->
                 <Border Grid.Column="0" x:Name="LeftSidebarBorder">
                     <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Button Grid.Row="0" x:Name="FolderSortButton" Padding="8,6" Margin="4,4,4,0" HorizontalAlignment="Right" Cursor="Hand"
-                                Background="Transparent" BorderThickness="0" Click="FolderSortButton_Click" FontSize="12" FontFamily="Microsoft YaHei UI" Foreground="#888">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock x:Name="FolderSortOrderText" Text="名称 ↑" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <StackPanel x:Name="FolderListPanel" Margin="4,4,4,8"/>
-                        </ScrollViewer>
-                    </Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="FolderListPanel" Margin="4,8,4,8"/>
+                    </ScrollViewer>
                 </Border>
 
                 <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
@@ -281,7 +279,8 @@
                                     </Style>
                                 </Button.Style>
                             </Button>
-                            <Button x:Name="LinkSortButton" Padding="10,8" Margin="16,0,0,0" Cursor="Hand" Click="LinkSortButton_Click">
+                            <Button x:Name="LinkSortButton" Padding="10,8" Margin="16,0,0,0" Cursor="Hand" Click="LinkSortButton_Click"
+                                    ToolTip="书签排序">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
                                         <Setter Property="Background" Value="Transparent"/>
@@ -291,7 +290,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <materialDesign:PackIcon Kind="Sort" Width="18" Height="18" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LinkSortButtonText" Text="排序" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                    <TextBlock x:Name="LinkSortOrderText" Text="↓" FontSize="12" VerticalAlignment="Center" Foreground="#888"/>
+                                    <TextBlock x:Name="LinkSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
                                 </StackPanel>
                                 <Button.ContextMenu>
                                     <ContextMenu x:Name="LinkSortMenu">
@@ -302,6 +301,21 @@
                                         <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="LinkSortMenuItem_Click"/>
                                     </ContextMenu>
                                 </Button.ContextMenu>
+                            </Button>
+                            <Border Width="1" Background="{DynamicResource MaterialDesignDivider}" Margin="8,4,0,4" VerticalAlignment="Stretch"/>
+                            <Button x:Name="FolderSortButton" Padding="10,8" Margin="0,0,0,0" Cursor="Hand"
+                                    Click="FolderSortButton_Click" ToolTip="文件夹按名称排序（点击切换升降序）">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="Folder" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock Text="文件夹" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                                    <TextBlock x:Name="FolderSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                                </StackPanel>
                             </Button>
                         </StackPanel>
                     </Border>
@@ -352,8 +366,8 @@
             </Grid>
         </Grid>
 
-        <!-- ===== 搜索视图（独立页面，无侧栏） ===== -->
-        <Grid Grid.Row="1" x:Name="SearchView" Background="White">
+        <!-- ===== 搜索视图（左侧结果 + 右侧常驻固定栏） ===== -->
+        <Grid Grid.Row="1" x:Name="SearchView" Background="#FFFFFF">
             <Grid.Style>
                 <Style TargetType="Grid">
                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -364,8 +378,100 @@
                     </Style.Triggers>
                 </Style>
             </Grid.Style>
-            <TextBlock Text="搜索 - 开发中..." HorizontalAlignment="Center" VerticalAlignment="Center"
-                       FontSize="16" Opacity="0.5"/>
+
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧：搜索框 + 结果列表 -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Padding="28,20,28,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SearchBox" Grid.Column="0" Padding="12,10" FontSize="14"
+                                 materialDesign:HintAssist.Hint="输入书签标题搜索..."
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 VerticalContentAlignment="Center"
+                                 KeyDown="SearchBox_KeyDown"/>
+                        <Button x:Name="SearchSortButton" Grid.Column="1" Padding="10,8" Margin="8,0,8,0" Cursor="Hand" Click="SearchSortButton_Click"
+                                ToolTip="结果排序">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Sort" Width="18" Height="18" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchSortButtonText" Text="按名称" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu x:Name="SearchSortMenu">
+                                    <MenuItem Header="按名称 ↑↓" Tag="title" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="SearchSortMenuItem_Click"/>
+                                    <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="SearchSortMenuItem_Click"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                        </Button>
+                        <Button Grid.Column="2" Content="搜索" Padding="18,8" FontSize="13"
+                                Style="{StaticResource MaterialDesignRaisedButton}" Click="SearchButton_Click"
+                                VerticalAlignment="Center" Margin="8,0,8,0"/>
+                        <Button Grid.Column="3" Content="取消" Padding="18,8" FontSize="13"
+                                Style="{StaticResource MaterialDesignOutlinedButton}" Click="SearchCancelButton_Click"
+                                VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24"
+                              PreviewMouseLeftButtonDown="SearchResultsArea_MouseLeftButtonDown">
+                    <StackPanel x:Name="SearchResultsPanel" HorizontalAlignment="Center">
+                        <StackPanel x:Name="SearchEmptyPlaceholder" HorizontalAlignment="Center" Margin="0,80,0,0">
+                            <materialDesign:PackIcon Kind="Magnify" Width="48" Height="48" HorizontalAlignment="Center" Opacity="0.15"/>
+                            <TextBlock Text="输入关键词开始搜索" FontSize="14" Opacity="0.35"
+                                       HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                            <TextBlock Text="单击结果卡片查看详情" FontSize="12" Opacity="0.25"
+                                       HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- 分隔线 -->
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          Background="{DynamicResource MaterialDesignDivider}" Cursor="SizeWE">
+                <GridSplitter.Style>
+                    <Style TargetType="GridSplitter">
+                        <Setter Property="Visibility" Value="Visible"/>
+                    </Style>
+                </GridSplitter.Style>
+            </GridSplitter>
+
+            <!-- 右侧常驻栏（与主界面DetailPanel结构和样式完全一致） -->
+            <Border Grid.Column="2" x:Name="SearchRightSidebarBorder" ContextMenu="{x:Null}" PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="SearchFixedSidebar" Margin="16,8,16,16">
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,80,0,0">
+                            <materialDesign:PackIcon Kind="BookmarkOutline" Width="48" Height="48" HorizontalAlignment="Center" Opacity="0.15"/>
+                            <TextBlock Text="选中书签查看详情" FontSize="13" Opacity="0.3" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
         </Grid>
 
         <!-- ===== 回收站视图（独立页面） ===== -->
@@ -439,66 +545,50 @@
         </views:SettingsPage>
 
         <!-- ===== 详情视图页面 ===== -->
-        <Grid x:Name="DetailView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" ContextMenu="{x:Null}"
-              PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
+        <Grid Grid.Row="1" x:Name="DetailView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" ContextMenu="{x:Null}"
+              PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp" Background="#FFFFFF">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 标题栏（Logo + 页面标题 + 窗口按钮） -->
-            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,0" Padding="16,10,0,10" WindowChrome.IsHitTestVisibleInChrome="True">
+            <!-- 操作栏（返回 + 编辑按钮 + 页面标题） -->
+            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource MaterialDesignCardBackground}" WindowChrome.IsHitTestVisibleInChrome="True">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
-                        <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button Command="{Binding CancelDetailCommand}" Style="{StaticResource MaterialDesignFlatButton}" Padding="8,6" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="ArrowLeft" Width="18" Height="18" VerticalAlignment="Center"/>
+                                <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding DetailEditCommand}" Style="{StaticResource MaterialDesignRaisedButton}" MinWidth="70" Padding="12,6">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Pencil" Width="14" Height="14" VerticalAlignment="Center"/>
+                                <TextBlock Text="编辑" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <materialDesign:PackIcon Kind="EyeOutline" Width="22" Height="22" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="书签详情" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal"
-                                WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
-                            <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
-                            <materialDesign:PackIcon Kind="WindowMaximize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
-                            <materialDesign:PackIcon Kind="WindowClose" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
+                        <materialDesign:PackIcon Kind="EyeOutline" Width="20" Height="20" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="书签详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- 操作栏（返回 + 编辑按钮） -->
-            <Border Grid.Row="1" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource MaterialDesignCardBackground}" WindowChrome.IsHitTestVisibleInChrome="True">
-                <StackPanel Orientation="Horizontal">
-                    <Button Command="{Binding CancelDetailCommand}" Style="{StaticResource MaterialDesignFlatButton}" Padding="8,6" Margin="0,0,8,0">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="ArrowLeft" Width="18" Height="18" VerticalAlignment="Center"/>
-                            <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Command="{Binding DetailEditCommand}" Style="{StaticResource MaterialDesignRaisedButton}" MinWidth="70" Padding="12,6">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="Pencil" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock Text="编辑" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Border>
-
             <!-- 内容区 -->
-            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource MaterialDesignPaper}" ContextMenu="{x:Null}">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" ContextMenu="{x:Null}">
                 <StackPanel Margin="48,32,48,32">
+
+                    <!-- 所属目录 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <materialDesign:PackIcon Kind="FolderOutline" Width="14" Height="14" VerticalAlignment="Center" Foreground="#888888"/>
+                        <TextBlock Text="{Binding DetailFolderName}" FontSize="12" Opacity="0.7" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
 
                     <!-- URL -->
                     <TextBlock Text="URL" FontSize="12" Opacity="0.5" Margin="0,0,0,4"/>
@@ -522,12 +612,12 @@
                             <Border Width="48" Height="48" CornerRadius="8" Background="#F0F0F0"
                                     ClipToBounds="True" VerticalAlignment="Center">
                                 <Grid>
-                                    <Image Source="{Binding DetailFaviconUrl}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Image Source="{Binding DetailFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
                                         <Image.Style>
                                             <Style TargetType="Image">
                                                 <Setter Property="Visibility" Value="Visible"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding DetailFaviconUrl}" Value="">
+                                                    <DataTrigger Binding="{Binding DetailFaviconImage}" Value="{x:Null}">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -623,93 +713,71 @@
         </Grid>
 
         <!-- ===== 添加/编辑链接页面 ===== -->
-        <Grid x:Name="EditLinkView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True">
+        <Grid Grid.Row="1" x:Name="EditLinkView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" Background="#FFFFFF">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 标题栏（Logo + 页面标题 + 窗口按钮） -->
-            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,0" Padding="16,10,0,10" WindowChrome.IsHitTestVisibleInChrome="True">
+            <!-- 操作栏（返回 + 保存按钮 + 页面标题） -->
+            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource MaterialDesignCardBackground}" WindowChrome.IsHitTestVisibleInChrome="True">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
-                        <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button Command="{Binding CancelEditLinkCommand}" Padding="8,6" Margin="0,0,8,0">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                    <Setter Property="IsEnabled" Value="True"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="ArrowLeft" Width="18" Height="18" VerticalAlignment="Center"/>
+                                <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding SaveEditLinkCommand}" MinWidth="70" Padding="12,6">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignRaisedButton}">
+                                    <Setter Property="IsEnabled" Value="True"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <ProgressBar IsIndeterminate="True" Width="14" Height="14" Margin="0,0,6,0"
+                                             Visibility="{Binding EditLinkIsLoading, Converter={StaticResource BoolToVis}}"
+                                             Style="{StaticResource MaterialDesignCircularProgressBar}"/>
+                                <TextBlock Text="保存" FontSize="13"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <materialDesign:PackIcon Kind="{Binding EditLinkPageIcon}" Width="22" Height="22" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding EditLinkPageTitle}" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal"
-                                WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
-                            <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
-                            <materialDesign:PackIcon Kind="WindowMaximize" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
-                        <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
-                            <materialDesign:PackIcon Kind="WindowClose" Width="14" Height="14" VerticalAlignment="Center"/>
-                        </Button>
+                        <materialDesign:PackIcon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding EditLinkPageTitle}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- 操作栏（返回 + 保存按钮） -->
-            <Border Grid.Row="1" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource MaterialDesignCardBackground}" WindowChrome.IsHitTestVisibleInChrome="True">
-                <StackPanel Orientation="Horizontal">
-                    <Button Command="{Binding CancelEditLinkCommand}" Padding="8,6" Margin="0,0,8,0">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
-                                <Setter Property="IsEnabled" Value="True"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="ArrowLeft" Width="18" Height="18" VerticalAlignment="Center"/>
-                            <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Command="{Binding SaveEditLinkCommand}" MinWidth="70" Padding="12,6">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignRaisedButton}">
-                                <Setter Property="IsEnabled" Value="True"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                        <StackPanel Orientation="Horizontal">
-                            <ProgressBar IsIndeterminate="True" Width="14" Height="14" Margin="0,0,6,0"
-                                         Visibility="{Binding EditLinkIsLoading, Converter={StaticResource BoolToVis}}"
-                                         Style="{StaticResource MaterialDesignCircularProgressBar}"/>
-                            <TextBlock Text="保存" FontSize="13"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Border>
-
             <!-- 表单（可滚动） -->
-            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="{DynamicResource MaterialDesignPaper}">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid MinHeight="400" Margin="48,32,48,32">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -748,12 +816,12 @@
                         <Border Width="48" Height="48" CornerRadius="8" Background="#F0F0F0"
                                 ClipToBounds="True" VerticalAlignment="Center">
                             <Grid>
-                                <Image Source="{Binding EditLinkFaviconUrl}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Image Source="{Binding EditLinkFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <Image.Style>
                                         <Style TargetType="Image">
                                             <Setter Property="Visibility" Value="Visible"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding EditLinkFaviconUrl}" Value="">
+                                                <DataTrigger Binding="{Binding EditLinkFaviconImage}" Value="{x:Null}">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -766,7 +834,7 @@
                                         <Style TargetType="materialDesign:PackIcon">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding EditLinkFaviconUrl}" Value="">
+                                                <DataTrigger Binding="{Binding EditLinkFaviconImage}" Value="{x:Null}">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>

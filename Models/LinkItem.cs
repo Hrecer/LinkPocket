@@ -28,9 +28,7 @@ namespace LinkPocket.Models
         public DateTime UpdatedAt { get; set; }
 
         // 关联数据（API返回时会包含）
-        public List<TagItem> Tags { get; set; } = new();
         public FolderItem? List { get; set; }
-        public List<NoteItem> Notes { get; set; } = new();
 
         // 选择状态
         private bool _isSelected;

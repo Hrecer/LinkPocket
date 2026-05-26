@@ -117,9 +117,6 @@ public class FolderService
                 // 删除所有子目录和链接
                 foreach (var link in affectedLinks)
                 {
-                    var notes = await _db.Notes.Where(n => n.LinkId == link.Id).ToListAsync();
-                    _db.Notes.RemoveRange(notes);
-                    link.Tags.Clear();
                     _db.Links.Remove(link);
                 }
                 
@@ -341,9 +338,6 @@ public class FolderService
             .ToListAsync();
         foreach (var link in linksInFolders)
         {
-            var notes = await _db.Notes.Where(n => n.LinkId == link.Id).ToListAsync();
-            _db.Notes.RemoveRange(notes);
-            link.Tags.Clear();
             _db.Links.Remove(link);
         }
 
