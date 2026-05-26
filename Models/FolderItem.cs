@@ -5,16 +5,13 @@ namespace LinkPocket.Models
 {
     public class FolderItem
     {
-        public int Id { get; set; }
-        public int? ParentId { get; set; }
+        public string Id { get; set; } = string.Empty;
+        public string FolderId { get; set; } = string.Empty;
+        public string? ParentId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? ParentName { get; set; }  // 添加父目录名称
         public string? Description { get; set; }
-        
-        // 嵌套集字段
-        public int Left { get; set; }
-        public int Right { get; set; }
-        
+
         // 统计字段
         public int LinkCount { get; set; }
         public DateTime? LastVisitedAt { get; set; }
@@ -30,7 +27,7 @@ namespace LinkPocket.Models
         
         // UI辅助属性
         public string DisplayText => $"{Name} ({LinkCount})";
-        public bool IsRoot => ParentId == null || ParentId == 0;
+        public bool IsRoot => string.IsNullOrEmpty(ParentId);
         public bool HasChildren => Children != null && Children.Count > 0;
     }
 }

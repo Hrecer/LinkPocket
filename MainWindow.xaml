@@ -100,7 +100,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
-                    <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                    <materialDesign:PackIcon Kind="LinkVariant" Width="24" Height="24" Foreground="#6200EE" VerticalAlignment="Center"/>
                     <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 <ItemsControl Grid.Column="1" x:Name="NavigationTabs" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
@@ -593,7 +593,7 @@
                         </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <materialDesign:PackIcon Kind="EyeOutline" Width="20" Height="20" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                        <materialDesign:PackIcon Kind="EyeOutline" Width="20" Height="20" Foreground="#6200EE" VerticalAlignment="Center"/>
                         <TextBlock Text="书签详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
@@ -779,7 +779,7 @@
                         </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <materialDesign:PackIcon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="{DynamicResource PrimaryHueMidBrush}" VerticalAlignment="Center"/>
+                        <materialDesign:PackIcon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="#6200EE" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding EditLinkPageTitle}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>

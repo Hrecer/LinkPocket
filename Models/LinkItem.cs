@@ -7,14 +7,13 @@ namespace LinkPocket.Models
 {
     public class LinkItem : INotifyPropertyChanged
     {
-        public int Id { get; set; }
         public string LinkId { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string OriginalTitle { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string FaviconUrl { get; set; } = string.Empty;
-        public int? ListId { get; set; }
+        public string? ListId { get; set; }
 
         // 状态字段
         public DateTime? LastVisitedAt { get; set; }
@@ -24,9 +23,6 @@ namespace LinkPocket.Models
         // 时间戳
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
-
-        // 关联数据（API返回时会包含）
-        public FolderItem? List { get; set; }
 
         // 选择状态
         private bool _isSelected;

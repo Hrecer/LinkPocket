@@ -7,7 +7,10 @@ namespace LinkPocket.Data;
 public class SearchHistory
 {
     [Key]
-    public int Id { get; set; }
+    [Required]
+    [MaxLength(20)]
+    [Column("search_id")]
+    public string Id { get; set; } = GenerateSearchId();
 
     [Required]
     [MaxLength(500)]
@@ -16,8 +19,12 @@ public class SearchHistory
     [Column("results_count")]
     public int ResultsCount { get; set; } = 0;
 
-    [Column("user_id")]
-    public int? UserId { get; set; }
-
     public DateTime SearchedAt { get; set; } = DateTime.UtcNow;
+
+    private static string GenerateSearchId()
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var rng = Random.Shared;
+        return new string(Enumerable.Range(0, 16).Select(_ => chars[rng.Next(chars.Length)]).ToArray());
+    }
 }

@@ -7,7 +7,17 @@ namespace LinkPocket.Data;
 public class Folder
 {
     [Key]
-    public int Id { get; set; }
+    [Required]
+    [MaxLength(20)]
+    [Column("folder_id")]
+    public string FolderId { get; set; } = GenerateFolderId();
+
+    private static string GenerateFolderId()
+    {
+        var rng = Random.Shared;
+        long id = ((long)rng.Next(1, 10000) << 48) | ((long)rng.Next() << 16) | (long)rng.Next() & 0xFFFF;
+        return id.ToString();
+    }
 
     [Required]
     [MaxLength(255)]
@@ -17,7 +27,7 @@ public class Folder
     public string? Description { get; set; }
 
     [Column("parent_id")]
-    public int? ParentId { get; set; }
+    public string? ParentId { get; set; }
 
     [Column("link_count")]
     public int LinkCount { get; set; } = 0;
@@ -43,7 +53,7 @@ public class Folder
         LinkCount = Links.Count;
         db.SaveChanges();
         
-        if (ParentId.HasValue)
+        if (!string.IsNullOrEmpty(ParentId))
         {
             var parent = db.Folders.Find(ParentId);
             parent?.UpdateLinkCount(db);

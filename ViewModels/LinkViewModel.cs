@@ -38,7 +38,7 @@ namespace LinkPocket.ViewModels
 
             RefreshCommand = new RelayCommand(async () => await LoadLinksAsync());
             UndoCommand = new RelayCommand(Undo, CanUndoExecute);
-            CopyUrlCommand = new RelayCommand<int>(CopyUrlToClipboard);
+            CopyUrlCommand = new RelayCommand<string?>(CopyUrlToClipboard);
             ToggleSelectCommand = new RelayCommand<LinkItem>(ToggleSelect);
             DeleteSelectedCommand = new RelayCommand(async () => await DeleteSelectedAsync(), CanDeleteSelected);
             ClearSelectionCommand = new RelayCommand(ClearSelection);
@@ -192,7 +192,7 @@ namespace LinkPocket.ViewModels
         /// 创建新链接（使用本地服务）
         /// </summary>
         public async Task<LinkItem?> CreateLinkAsync(string url, string? title = null,
-            string? description = null, int? listId = null)
+            string? description = null, string? listId = null)
         {
             try
             {
@@ -217,8 +217,8 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 更新链接（使用本地服务）
         /// </summary>
-        public async Task<bool> UpdateLinkAsync(int id, string? url = null, string? title = null,
-            string? description = null, int? listId = null,
+        public async Task<bool> UpdateLinkAsync(string id, string? url = null, string? title = null,
+            string? description = null, string? listId = null,
             bool? isImportant = null)
         {
             try
@@ -238,7 +238,7 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 删除链接（软删除到回收站）
         /// </summary>
-        public async Task DeleteLinkAsync(int id)
+        public async Task DeleteLinkAsync(string id)
         {
             try
             {
@@ -256,7 +256,7 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 记录访问（使用本地服务）
         /// </summary>
-        public async Task RecordVisitAsync(int id)
+        public async Task RecordVisitAsync(string id)
         {
             try
             {
@@ -276,7 +276,7 @@ namespace LinkPocket.ViewModels
             // 深拷贝当前状态到撤销栈
             var snapshot = new LinkItem
             {
-                Id = link.Id,
+                LinkId = link.LinkId,
                 Url = link.Url,
                 Title = link.Title,
                 OriginalTitle = link.OriginalTitle,
@@ -304,7 +304,7 @@ namespace LinkPocket.ViewModels
             var previousState = _undoStack.Pop();
             
             // 在列表中找到对应的链接并恢复
-            var currentLink = Links.FirstOrDefault(l => l.Id == previousState.Id);
+            var currentLink = Links.FirstOrDefault(l => l.LinkId == previousState.LinkId);
             if (currentLink != null)
             {
                 currentLink.Url = previousState.Url;
@@ -326,9 +326,9 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 复制URL到剪贴板
         /// </summary>
-        private void CopyUrlToClipboard(int linkId)
+        private void CopyUrlToClipboard(string? linkId)
         {
-            var link = Links.FirstOrDefault(l => l.Id == linkId);
+            var link = Links.FirstOrDefault(l => l.LinkId == linkId);
             if (link == null) return;
 
             try
@@ -357,7 +357,7 @@ namespace LinkPocket.ViewModels
             else
             {
                 // 点击未选中的卡片 → 先取消所有其他卡片的选择
-                foreach (var item in Links.Where(l => l.IsSelected && l.Id != link.Id))
+                foreach (var item in Links.Where(l => l.IsSelected && l.LinkId != link.LinkId))
                 {
                     item.IsSelected = false;
                 }
@@ -368,7 +368,7 @@ namespace LinkPocket.ViewModels
             OnPropertyChanged(nameof(HasSelectedItems));
             OnPropertyChanged(nameof(SelectedItems));
             SelectedItem = link.IsSelected ? link : Links.FirstOrDefault(l => l.IsSelected);
-            Logger.Info($"链接 {link.Id} 选中状态: {link.IsSelected}");
+            Logger.Info($"链接 {link.LinkId} 选中状态: {link.IsSelected}");
             SelectionChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -384,7 +384,7 @@ namespace LinkPocket.ViewModels
             {
                 foreach (var link in selectedLinks)
                 {
-                    await _linkService.DeleteLinkAsync(link.Id);
+                    await _linkService.DeleteLinkAsync(link.LinkId);
                 }
 
                 Logger.Info($"成功删除 {selectedLinks.Count} 个链接");
@@ -436,7 +436,6 @@ namespace LinkPocket.ViewModels
         {
             return new LinkItem
             {
-                Id = link.Id,
                 LinkId = link.LinkId,
                 Url = link.Url,
                 Title = link.Title ?? "",

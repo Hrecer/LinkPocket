@@ -45,7 +45,7 @@ namespace LinkPocket.ViewModels
 
         public bool HasItems => Items.Count > 0;
 
-        public HashSet<int> SelectedIds { get; } = new();
+        public HashSet<string> SelectedIds { get; } = new();
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -76,33 +76,33 @@ namespace LinkPocket.ViewModels
 
         public async Task RestoreSelectedAsync()
         {
-            var toRestore = Items.Where(i => SelectedIds.Contains(i.Id)).ToList();
+            var toRestore = Items.Where(i => SelectedIds.Contains(i.LinkId)).ToList();
             if (toRestore.Count == 0) return;
             foreach (var item in toRestore)
             {
-                try { await _linkService.RestoreLinkAsync(item.Id); } catch { }
+                try { await _linkService.RestoreLinkAsync(item.LinkId); } catch { }
             }
             SelectedIds.Clear();
         }
 
         public async Task PermanentDeleteSelectedAsync()
         {
-            var toDelete = Items.Where(i => SelectedIds.Contains(i.Id)).ToList();
+            var toDelete = Items.Where(i => SelectedIds.Contains(i.LinkId)).ToList();
             if (toDelete.Count == 0) return;
             foreach (var item in toDelete)
             {
-                try { await _linkService.PermanentDeleteLinkAsync(item.Id); } catch { }
+                try { await _linkService.PermanentDeleteLinkAsync(item.LinkId); } catch { }
             }
             SelectedIds.Clear();
         }
 
-        public void SelectSingle(int id)
+        public void SelectSingle(string id)
         {
             SelectedIds.Clear();
             SelectedIds.Add(id);
         }
 
-        public void ToggleMultiSelect(int id)
+        public void ToggleMultiSelect(string id)
         {
             if (SelectedIds.Contains(id))
                 SelectedIds.Remove(id);
@@ -111,11 +111,10 @@ namespace LinkPocket.ViewModels
         }
 
         public void ClearSelection() => SelectedIds.Clear();
-        public bool IsSelected(int id) => SelectedIds.Contains(id);
+        public bool IsSelected(string id) => SelectedIds.Contains(id);
 
         private static LinkItem ConvertToItem(TrashedLink link) => new()
         {
-            Id = link.Id,
             LinkId = link.LinkId,
             Url = link.Url,
             Title = link.Title ?? "",

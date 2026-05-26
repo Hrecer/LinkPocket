@@ -15,7 +15,7 @@ namespace LinkPocket.Views
 {
     public partial class TrashPage : UserControl
     {
-        private readonly Dictionary<int, Border> _trashCardBorders = new();
+        private readonly Dictionary<string, Border> _trashCardBorders = new();
 
         public TrashPage()
         {
@@ -71,7 +71,7 @@ namespace LinkPocket.Views
             });
             card.Style = style;
 
-            _trashCardBorders[item.Id] = card;
+            _trashCardBorders[item.LinkId] = card;
 
             var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -123,7 +123,7 @@ namespace LinkPocket.Views
 
             card.Child = grid;
 
-            var capturedId = item.Id;
+            var capturedId = item.LinkId;
             card.MouseLeftButtonDown += (s, e) =>
             {
                 if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)

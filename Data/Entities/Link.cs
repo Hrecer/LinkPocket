@@ -7,12 +7,17 @@ namespace LinkPocket.Data;
 public class Link
 {
     [Key]
-    public int Id { get; set; }
-
     [Required]
-    [MaxLength(36)]
+    [MaxLength(20)]
     [Column("link_id")]
-    public string LinkId { get; set; } = Guid.NewGuid().ToString();
+    public string LinkId { get; set; } = GenerateLinkId();
+
+    private static string GenerateLinkId()
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var rng = Random.Shared;
+        return new string(Enumerable.Range(0, 16).Select(_ => chars[rng.Next(chars.Length)]).ToArray());
+    }
 
     [Required]
     [MaxLength(2048)]
@@ -33,7 +38,7 @@ public class Link
     public string? FaviconUrl { get; set; }
 
     [Column("list_id")]
-    public int? ListId { get; set; }
+    public string? ListId { get; set; }
 
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }

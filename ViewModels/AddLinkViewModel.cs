@@ -29,7 +29,7 @@ namespace LinkPocket.ViewModels
         private string _description = string.Empty;
         
         [ObservableProperty]
-        private int? _selectedListId;
+        private string? _selectedListId;
         
         [ObservableProperty]
         private ObservableCollection<FolderItem> _folders = new();
@@ -204,7 +204,8 @@ namespace LinkPocket.ViewModels
 
         private FolderItem ConvertToFolderItem(Data.Folder folder) => new()
         {
-            Id = folder.Id,
+            Id = folder.FolderId,
+            FolderId = folder.FolderId,
             Name = folder.Name,
             ParentName = folder.Parent?.Name,
             LinkCount = folder.LinkCount,

@@ -264,7 +264,6 @@ namespace LinkPocket.ViewModels
 
         private LinkItem ConvertToLinkItem(Data.Link link) => new()
         {
-            Id = link.Id,
             LinkId = link.LinkId,
             Url = link.Url,
             Title = link.Title ?? "",

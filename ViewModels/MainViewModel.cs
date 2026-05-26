@@ -24,11 +24,10 @@ namespace LinkPocket.ViewModels
         private readonly FolderService _folderService;
         
         private string _currentNavId = "links";
-        private int _selectedFolderId = -1;
+        private string _selectedFolderId = string.Empty;
         private bool _hasSelectedLink;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
-        private ObservableCollection<SmartListItem> _smartListItems = new();
         private LinkViewModel? _linkViewModel;
         private SearchViewModel? _searchViewModel;
         private RecycleBinViewModel? _recycleBinViewModel;
@@ -41,7 +40,7 @@ namespace LinkPocket.ViewModels
         private string _linkSortField = "title";
         private string _linkSortOrder = "asc";
         private string _folderSortOrder = "asc";
-        private int _editingLinkId;
+        private string _editingLinkId = string.Empty;
         private string _editLinkUrl = string.Empty;
         private string _editLinkTitle = string.Empty;
         private string _editLinkDescription = string.Empty;
@@ -72,39 +71,7 @@ namespace LinkPocket.ViewModels
 
         private void EnsureSchema()
         {
-            try
-            {
-                var conn = _db.Database.GetDbConnection();
-                conn.Open();
-
-                using var cmd = conn.CreateCommand();
-
-                cmd.CommandText = "PRAGMA table_info(lists)";
-                var columns = new HashSet<string>();
-                using (var reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                        columns.Add(reader.GetString(1).ToLower());
-                }
-
-                cmd.CommandText = "PRAGMA table_info(links)";
-                var linkColumns = new HashSet<string>();
-                using (var reader2 = cmd.ExecuteReader())
-                {
-                    while (reader2.Read())
-                        linkColumns.Add(reader2.GetString(1).ToLower());
-                }
-
-                if (linkColumns.Contains("rating"))
-                {
-                    try { cmd.CommandText = "DROP INDEX IF EXISTS IX_links_Rating"; cmd.ExecuteNonQuery(); } catch { }
-                    cmd.CommandText = "ALTER TABLE links DROP COLUMN rating";
-                    cmd.ExecuteNonQuery();
-                }
-
-                conn.Close();
-            }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"EnsureSchema error: {ex.Message}"); }
+            // 数据库将清空重建，无需迁移逻辑
         }
 
         public MainViewModel()
@@ -117,8 +84,7 @@ namespace LinkPocket.ViewModels
             _folderService = new FolderService(_db);
 
             InitializeNavigationItems();
-            InitializeSmartListItems();
-            
+
             _linkViewModel = new LinkViewModel(_linkService, _folderService);
             _linkViewModel.LinksChanged += OnLinksChanged;
             _searchViewModel = new SearchViewModel(_linkService);
@@ -126,8 +92,8 @@ namespace LinkPocket.ViewModels
             _settingsViewModel = new SettingsViewModel();
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
-            ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => _selectedFolderId >= 0);
-            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => _selectedFolderId >= 0);
+            ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectedFolderId));
+            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => !string.IsNullOrEmpty(_selectedFolderId));
             ConfirmCreateFolderCommand = new AsyncRelayCommand(ConfirmCreateFolderAsync, () => !string.IsNullOrWhiteSpace(NewFolderName));
             CancelCreateFolderCommand = new RelayCommand(CancelCreateFolder);
             DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedAsync, CanDeleteSelected);
@@ -144,7 +110,7 @@ namespace LinkPocket.ViewModels
 
             FolderItems = new ObservableCollection<FolderNode>
             {
-                new FolderNode { Id = 0, Name = "全部书签", IconKind = PackIconKind.BookmarkOutline, LinkCount = 0 }
+                new FolderNode { Id = "0", FolderId = "0", Name = "全部书签", IconKind = PackIconKind.BookmarkOutline, LinkCount = 0 }
             };
         }
 
@@ -397,12 +363,6 @@ namespace LinkPocket.ViewModels
             set { _trashItems = value; OnPropertyChanged(); }
         }
 
-        public ObservableCollection<SmartListItem> SmartListItems
-        {
-            get => _smartListItems;
-            set { _smartListItems = value; OnPropertyChanged(); }
-        }
-
         public LinkViewModel? LinkViewModel
         {
             get => _linkViewModel;
@@ -472,17 +432,6 @@ namespace LinkPocket.ViewModels
             };
         }
 
-        private void InitializeSmartListItems()
-        {
-            SmartListItems = new ObservableCollection<SmartListItem>
-            {
-                new() { Id = "recently-added", Name = "最近添加", IconKind = PackIconKind.ClockPlus, Description = "最近7天添加的链接" },
-                new() { Id = "recently-visited", Name = "最近访问", IconKind = PackIconKind.History, Description = "最近7天访问过的链接" },
-                new() { Id = "most-visited", Name = "最常访问", IconKind = PackIconKind.Eye, Description = "按访问次数排序" },
-                new() { Id = "important", Name = "重要链接", IconKind = PackIconKind.Star, Description = "标记为重要的链接" }
-            };
-        }
-
         private async void SelectNav(string navId)
         {
             CurrentNavId = navId;
@@ -509,11 +458,11 @@ namespace LinkPocket.ViewModels
 
         private void ShowAddLink()
         {
-            if (_selectedFolderId < 0)
+            if (string.IsNullOrEmpty(_selectedFolderId))
                 throw new InvalidOperationException("添加书签必须先选中一个文件夹");
             _editOpenedFromDetail = false;
             IsEditMode = false;
-            _editingLinkId = 0;
+            _editingLinkId = string.Empty;
             EditLinkUrl = string.Empty;
             EditLinkTitle = string.Empty;
             EditLinkDescription = string.Empty;
@@ -532,7 +481,7 @@ namespace LinkPocket.ViewModels
         {
             if (link == null) return;
             IsEditMode = true;
-            _editingLinkId = link.Id;
+            _editingLinkId = link.LinkId;
             EditLinkUrl = link.Url ?? string.Empty;
             EditLinkTitle = link.Title ?? string.Empty;
             EditLinkDescription = link.Description ?? string.Empty;
@@ -617,7 +566,7 @@ namespace LinkPocket.ViewModels
                 var q = _linkViewModel.CurrentQuery;
                 await _linkViewModel.LoadLinksAsync(new LinkQueryParams
                 {
-                    Search = q.Search, ListId = q.ListId, TagId = q.TagId,
+                    Search = q.Search, ListId = q.ListId,
                     IsImportant = q.IsImportant,
                     DateFrom = q.DateFrom, DateTo = q.DateTo,
                     SortBy = _linkSortField, SortOrder = _linkSortOrder,
@@ -644,14 +593,14 @@ namespace LinkPocket.ViewModels
         {
             if (link == null) return;
             _viewingLink = link;
-            _ = _linkService.RecordVisitAsync(link.Id);
+            _ = _linkService.RecordVisitAsync(link.LinkId);
             link.LastVisitedAt = DateTime.UtcNow;
             link.VisitCount++;
             DetailUrl = link.Url ?? string.Empty;
             DetailTitle = link.Title ?? string.Empty;
             DetailDescription = link.Description ?? "（无描述）";
             DetailFaviconUrl = link.FaviconUrl ?? string.Empty;
-            DetailFolderName = link.ListId.HasValue ? FindFolderNameById(FolderItems, link.ListId.Value) : "根目录";
+            DetailFolderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameById(FolderItems, link.ListId) : "根目录";
             DetailFaviconImage = FaviconService.LoadFromCache(link.FaviconUrl);
             DetailLinkIdDisplay = link.LinkId ?? string.Empty;
             DetailUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -793,7 +742,7 @@ namespace LinkPocket.ViewModels
                 var title = EditLinkTitle.Trim();
                 var description = string.IsNullOrEmpty(EditLinkDescription?.Trim()) ? null : EditLinkDescription.Trim();
 
-                if (IsEditMode && _editingLinkId > 0)
+                if (IsEditMode && !string.IsNullOrEmpty(_editingLinkId))
                 {
                     await _linkService.UpdateLinkAsync(
                         id: _editingLinkId,
@@ -806,13 +755,13 @@ namespace LinkPocket.ViewModels
                 }
                 else
                 {
-                    if (_selectedFolderId < 0)
+                    if (string.IsNullOrEmpty(_selectedFolderId))
                         throw new InvalidOperationException("添加书签必须先选中一个文件夹");
                     await _linkService.CreateLinkAsync(
                         url: url,
                         title: title,
                         description: description,
-                        listId: _selectedFolderId == 0 ? null : _selectedFolderId,
+                        listId: _selectedFolderId == "0" ? null : _selectedFolderId,
                         isImportant: false,
                         autoFetchMetadata: false,
                         faviconUrl: _fetchedFaviconUrl
@@ -835,7 +784,7 @@ namespace LinkPocket.ViewModels
                 {
                     if (_editOpenedFromDetail && _viewingLink != null)
                     {
-                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.Id == _editingLinkId);
+                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.LinkId == _editingLinkId);
                         if (updatedLink != null)
                         {
                             _viewingLink = updatedLink;
@@ -852,9 +801,9 @@ namespace LinkPocket.ViewModels
                             mw.ClearDetailPanel();
                         }
                     }
-                    else if (_editingLinkId > 0)
+                    else if (!string.IsNullOrEmpty(_editingLinkId))
                     {
-                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.Id == _editingLinkId);
+                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.LinkId == _editingLinkId);
                         if (updatedLink != null)
                         {
                             updatedLink.IsSelected = true;
@@ -892,17 +841,39 @@ namespace LinkPocket.ViewModels
             return sb.ToString();
         }
 
-        public void SelectFolder(int folderId)
+        public void SelectFolder(string folderId)
         {
             _selectedFolderId = folderId;
             NotifyActionCommandsChanged();
 
-            Logger.Info($"选中目录: {(folderId == 0 ? "全部书签" : $"文件夹 {folderId}")}");
+            if (folderId == "0")
+            {
+                Logger.Info("选中目录: 全部书签");
+            }
+            else
+            {
+                var folderNode = FindFolderNodeById(FolderItems, folderId);
+                Logger.Info($"选中目录: {folderNode?.Name ?? folderId} (FolderId: {folderNode?.FolderId ?? "unknown"})");
+            }
+        }
+
+        private static FolderNode? FindFolderNodeById(ObservableCollection<FolderNode> nodes, string id)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.Id == id) return node;
+                if (node.Children != null && node.Children.Count > 0)
+                {
+                    var found = FindFolderNodeById(node.Children, id);
+                    if (found != null) return found;
+                }
+            }
+            return null;
         }
 
         public void ClearFolderSelectionVM()
         {
-            _selectedFolderId = -1;
+            _selectedFolderId = string.Empty;
             _hasSelectedLink = false;
             NotifyActionCommandsChanged();
         }
@@ -922,7 +893,7 @@ namespace LinkPocket.ViewModels
 
         private bool CanDeleteSelected()
         {
-            if (_selectedFolderId > 0) return true;
+            if (!string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0") return true;
             if (_hasSelectedLink) return true;
             if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
             return false;
@@ -932,14 +903,14 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                if (_selectedFolderId > 0)
+                if (!string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0")
                 {
                     var folderName = FindFolderNameById(FolderItems, _selectedFolderId);
                     if (!ShowDeleteFolderConfirmation(folderName))
                         return;
 
-                    await _folderService.SoftDeleteFolderAsync(_selectedFolderId);
-                    Logger.Info($"文件夹 {_selectedFolderId} 已移至回收站");
+                    await _folderService.DeleteFolderAsync(_selectedFolderId);
+                    Logger.Info($"文件夹 {_selectedFolderId} 已删除");
                     if (Application.Current.MainWindow is MainWindow mw)
                         mw.ClearFolderSelection();
                     await RefreshFolderTreeAndUIAsync();
@@ -951,8 +922,8 @@ namespace LinkPocket.ViewModels
                     var selectedLink = mw2.GetSelectedLink();
                     if (selectedLink != null)
                     {
-                        await _linkService.DeleteLinkAsync(selectedLink.Id);
-                        Logger.Info($"已将书签 {selectedLink.Id} 移至回收站");
+                        await _linkService.DeleteLinkAsync(selectedLink.LinkId);
+                        Logger.Info($"已将书签 {selectedLink.LinkId} 移至回收站");
                         mw2.ClearDetailPanel();
                         await RefreshFolderTreeAndUIAsync();
                     }
@@ -972,7 +943,7 @@ namespace LinkPocket.ViewModels
 
         private void CreateFolderAsync()
         {
-            if (_selectedFolderId < 0)
+            if (string.IsNullOrEmpty(_selectedFolderId))
                 throw new InvalidOperationException("新建文件夹必须先选中一个文件夹");
 
             NewFolderName = string.Empty;
@@ -990,7 +961,7 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
+                string? parentId = _selectedFolderId == "0" ? null : _selectedFolderId;
                 await _folderService.CreateFolderAsync(NewFolderName.Trim(), parentId: parentId);
                 if (Application.Current.MainWindow is MainWindow mw)
                     mw.ExpandFolder(_selectedFolderId);
@@ -1011,17 +982,17 @@ namespace LinkPocket.ViewModels
         public async Task PasteLinksToFolderAsync(List<LinkItem> items, bool isCut)
         {
             if (items == null || items.Count == 0) return;
-            if (_selectedFolderId < 0) return;
+            if (string.IsNullOrEmpty(_selectedFolderId)) return;
 
             try
             {
-                int? listId = _selectedFolderId;
+                string? listId = _selectedFolderId;
 
                 if (isCut)
                 {
                     foreach (var item in items)
                     {
-                        await _linkService.UpdateLinkAsync(item.Id, listId: listId);
+                        await _linkService.UpdateLinkAsync(item.LinkId, listId: listId);
                         item.IsCut = false;
                     }
                 }
@@ -1082,29 +1053,9 @@ namespace LinkPocket.ViewModels
 
         public async Task LoadTrashTreeAsync()
         {
-            var deletedFolders = await _folderService.GetDeletedFoldersAsync();
             var deletedLinks = await _linkService.GetDeletedLinksAsync();
 
-            var trashRoot = new FolderNode { Id = -1, Name = "回收站", IconKind = PackIconKind.Delete };
-
-            var lookup = new Dictionary<int, FolderNode>();
-            foreach (var f in deletedFolders)
-            {
-                lookup[f.Id] = new FolderNode
-                {
-                    Id = f.Id, Name = f.Name,
-                    IconKind = PackIconKind.Folder,
-                    Children = new ObservableCollection<FolderNode>()
-                };
-            }
-
-            foreach (var f in deletedFolders)
-            {
-                if (f.ParentId.HasValue && lookup.TryGetValue(f.ParentId.Value, out var parentNode))
-                    parentNode.Children.Add(lookup[f.Id]);
-                else
-                    trashRoot.Children.Add(lookup[f.Id]);
-            }
+            var trashRoot = new FolderNode { Id = "-1", Name = "回收站", IconKind = PackIconKind.Delete };
 
             TrashItems = new ObservableCollection<FolderNode> { trashRoot };
         }
@@ -1114,7 +1065,7 @@ namespace LinkPocket.ViewModels
             return await _linkService.GetAllActiveLinksAsync();
         }
 
-        public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(int? listId = null)
+        public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(string? listId = null)
         {
             return await _linkService.GetLinksAsync(
                 listId: listId,
@@ -1137,26 +1088,26 @@ namespace LinkPocket.ViewModels
             filtered = _linkSortOrder == "asc"
                 ? _linkSortField switch
                 {
-                    "title" => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
-                    "updated_at" => filtered.OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id),
-                    "last_visited_at" => filtered.OrderBy(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.Id),
-                    "visit_count" => filtered.OrderBy(l => l.VisitCount).ThenBy(l => l.Id),
-                    "created_at" => filtered.OrderBy(l => l.CreatedAt).ThenBy(l => l.Id),
-                    _ => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id)
+                    "title" => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId),
+                    "updated_at" => filtered.OrderBy(l => l.UpdatedAt).ThenBy(l => l.LinkId),
+                    "last_visited_at" => filtered.OrderBy(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.LinkId),
+                    "visit_count" => filtered.OrderBy(l => l.VisitCount).ThenBy(l => l.LinkId),
+                    "created_at" => filtered.OrderBy(l => l.CreatedAt).ThenBy(l => l.LinkId),
+                    _ => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId)
                 }
                 : _linkSortField switch
                 {
-                    "title" => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
-                    "updated_at" => filtered.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.Id),
-                    "last_visited_at" => filtered.OrderByDescending(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.Id),
-                    "visit_count" => filtered.OrderByDescending(l => l.VisitCount).ThenBy(l => l.Id),
-                    "created_at" => filtered.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id),
-                    _ => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id)
+                    "title" => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId),
+                    "updated_at" => filtered.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.LinkId),
+                    "last_visited_at" => filtered.OrderByDescending(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.LinkId),
+                    "visit_count" => filtered.OrderByDescending(l => l.VisitCount).ThenBy(l => l.LinkId),
+                    "created_at" => filtered.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.LinkId),
+                    _ => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId)
                 };
 
             return filtered.ToList().Select(l => new LinkItem
             {
-                Id = l.Id, LinkId = l.LinkId, Url = l.Url,
+                LinkId = l.LinkId, Url = l.Url,
                 Title = l.Title ?? "", OriginalTitle = l.OriginalTitle ?? "",
                 Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
                 ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
@@ -1178,32 +1129,32 @@ namespace LinkPocket.ViewModels
 
                 var rootNode = new FolderNode
                 {
-                    Id = 0, Name = "全部书签", LinkCount = rootLinkCount,
+                    Id = "0", FolderId = "0", Name = "全部书签", LinkCount = rootLinkCount,
                     IconKind = PackIconKind.BookmarkOutline,
                     Children = new ObservableCollection<FolderNode>()
                 };
                 folderNodes.Add(rootNode);
 
-                var lookup = new Dictionary<int, FolderNode>();
+                var lookup = new Dictionary<string, FolderNode>();
                 foreach (var folder in allFolders)
                 {
-                    var count = linkCountByFolder.TryGetValue(folder.Id, out var c) ? c : 0;
+                    var count = linkCountByFolder.TryGetValue(folder.FolderId, out var c) ? c : 0;
                     var node = new FolderNode
                     {
-                        Id = folder.Id, Name = folder.Name, LinkCount = count,
+                        Id = folder.FolderId, FolderId = folder.FolderId, Name = folder.Name, LinkCount = count,
                         ParentId = folder.ParentId,
                         IconKind = count > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
                         Children = new ObservableCollection<FolderNode>()
                     };
-                    lookup[folder.Id] = node;
+                    lookup[folder.FolderId] = node;
                 }
 
                 foreach (var folder in allFolders)
                 {
-                    if (folder.ParentId.HasValue && lookup.TryGetValue(folder.ParentId.Value, out var parentNode))
-                        parentNode.Children.Add(lookup[folder.Id]);
+                    if (!string.IsNullOrEmpty(folder.ParentId) && lookup.TryGetValue(folder.ParentId, out var parentNode))
+                        parentNode.Children.Add(lookup[folder.FolderId]);
                     else
-                        rootNode.Children.Add(lookup[folder.Id]);
+                        rootNode.Children.Add(lookup[folder.FolderId]);
                 }
 
                 SortFolderNodes(rootNode.Children);
@@ -1231,20 +1182,27 @@ namespace LinkPocket.ViewModels
                 nodes.Add(n);
         }
 
-        private string FindFolderNameById(ObservableCollection<FolderNode> nodes, int folderId)
+        private string FindFolderNameById(ObservableCollection<FolderNode> nodes, string folderId)
+        {
+            var path = FindFolderPathInNodes(nodes, folderId);
+            return path ?? "未命名文件夹";
+        }
+
+        public static string? FindFolderPathInNodes(ObservableCollection<FolderNode> nodes, string folderId, string? parentPath = null)
         {
             foreach (var node in nodes)
             {
+                var currentPath = parentPath == null ? node.Name : $"{parentPath} > {node.Name}";
                 if (node.Id == folderId)
-                    return node.Name;
+                    return currentPath;
                 if (node.Children != null && node.Children.Count > 0)
                 {
-                    var name = FindFolderNameById(node.Children, folderId);
-                    if (name != null)
-                        return name;
+                    var result = FindFolderPathInNodes(node.Children, folderId, currentPath);
+                    if (result != null)
+                        return result;
                 }
             }
-            return "未命名文件夹";
+            return null;
         }
 
         private bool ShowDeleteFolderConfirmation(string folderName)

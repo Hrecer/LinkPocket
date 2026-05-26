@@ -3,8 +3,7 @@ namespace LinkPocket.Models;
 public class LinkQueryParams
 {
     public string? Search { get; set; }
-    public int? ListId { get; set; }
-    public int? TagId { get; set; }
+    public string? ListId { get; set; }
     public bool? IsImportant { get; set; }
     public string? DateFrom { get; set; }
     public string? DateTo { get; set; }

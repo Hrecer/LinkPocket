@@ -7,10 +7,8 @@ namespace LinkPocket.Data;
 public class TrashedLink
 {
     [Key]
-    public int Id { get; set; }
-
     [Required]
-    [MaxLength(36)]
+    [MaxLength(20)]
     [Column("link_id")]
     public string LinkId { get; set; } = Guid.NewGuid().ToString();
 

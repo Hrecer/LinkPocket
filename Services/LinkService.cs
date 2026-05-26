@@ -16,7 +16,7 @@ public class LinkService
 
     public async Task<(List<Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksAsync(
         string? search = null,
-        int? listId = null,
+        string? listId = null,
         bool? isImportant = null,
         string? dateFrom = null,
         string? dateTo = null,
@@ -37,7 +37,7 @@ public class LinkService
                 (l.Description != null && l.Description.Contains(search)));
         }
 
-        if (listId.HasValue)
+        if (!string.IsNullOrEmpty(listId))
         {
             query = query.Where(l => l.ListId == listId);
         }
@@ -51,24 +51,28 @@ public class LinkService
         {
             query = query.Where(l => l.CreatedAt >= from);
         }
+
         if (!string.IsNullOrEmpty(dateTo) && DateTime.TryParse(dateTo, out var to))
         {
             query = query.Where(l => l.CreatedAt <= to);
         }
 
         var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title" };
-        if (!allowedSortFields.Contains(sortBy)) sortBy = "created_at";
+        var field = allowedSortFields.Contains(sortBy) ? sortBy : "created_at";
+        var order = sortOrder == "asc" ? "asc" : "desc";
 
-        sortOrder = sortOrder.ToLower() == "asc" ? "asc" : "desc";
-
-        query = sortBy switch
+        query = (field, order) switch
         {
-            "created_at" => sortOrder == "asc" ? query.OrderBy(l => l.CreatedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id),
-            "updated_at" => sortOrder == "asc" ? query.OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.Id),
-            "last_visited_at" => sortOrder == "asc" ? query.OrderBy(l => l.LastVisitedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.LastVisitedAt).ThenBy(l => l.Id),
-            "visit_count" => sortOrder == "asc" ? query.OrderBy(l => l.VisitCount).ThenBy(l => l.Id) : query.OrderByDescending(l => l.VisitCount).ThenBy(l => l.Id),
-            "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title).ThenBy(l => l.Id) : query.OrderByDescending(l => l.Title).ThenBy(l => l.Id),
-            _ => query.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id)
+            ("created_at", "asc") => query.OrderBy(l => l.CreatedAt),
+            ("updated_at", "asc") => query.OrderBy(l => l.UpdatedAt),
+            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt),
+            ("visit_count", "asc") => query.OrderBy(l => l.VisitCount),
+            ("title", "asc") => query.OrderBy(l => l.Title),
+            ("updated_at", _) => query.OrderByDescending(l => l.UpdatedAt),
+            ("last_visited_at", _) => query.OrderByDescending(l => l.LastVisitedAt),
+            ("visit_count", _) => query.OrderByDescending(l => l.VisitCount),
+            ("title", _) => query.OrderByDescending(l => l.Title),
+            _ => query.OrderByDescending(l => l.CreatedAt)
         };
 
         var totalCount = await query.CountAsync();
@@ -87,11 +91,11 @@ public class LinkService
         return await _db.Links.CountAsync();
     }
 
-    public async Task<Dictionary<int, int>> GetLinkCountByFolderAsync()
+    public async Task<Dictionary<string, int>> GetLinkCountByFolderAsync()
     {
         return await _db.Links
             .Where(l => l.ListId != null)
-            .GroupBy(l => l.ListId!.Value)
+            .GroupBy(l => l.ListId!)
             .ToDictionaryAsync(g => g.Key, g => g.Count());
     }
 
@@ -142,21 +146,8 @@ public class LinkService
             .ToListAsync();
     }
 
-    public async Task<TrashedLink?> GetTrashedLinkByIdAsync(int id)
-    {
-        return await _db.TrashedLinks
-            .FirstOrDefaultAsync(t => t.Id == id);
-    }
-
-    public async Task<Link?> GetLinkByIdAsync(int id)
-    {
-        return await _db.Links
-            .Include(l => l.Folder)
-            .FirstOrDefaultAsync(l => l.Id == id);
-    }
-
     public async Task<Link> CreateLinkAsync(string url, string? title = null, string? description = null,
-        int? listId = null, bool isImportant = false,
+        string? listId = null, bool isImportant = false,
         bool autoFetchMetadata = true, string? faviconUrl = null)
     {
         var link = new Link
@@ -206,7 +197,7 @@ public class LinkService
         _db.Links.Add(link);
         await _db.SaveChangesAsync();
 
-        if (listId.HasValue)
+        if (!string.IsNullOrEmpty(listId))
         {
             var folder = await _db.Folders.FindAsync(listId);
             folder?.UpdateLinkCount(_db);
@@ -215,11 +206,11 @@ public class LinkService
         return link;
     }
 
-    public async Task<Link> UpdateLinkAsync(int id, string? url = null, string? title = null,
-        string? description = null, int? listId = null,
+    public async Task<Link> UpdateLinkAsync(string id, string? url = null, string? title = null,
+        string? description = null, string? listId = null,
         bool? isImportant = null, string? faviconUrl = null)
     {
-        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id)
+        var link = await _db.Links.FirstOrDefaultAsync(l => l.LinkId == id)
             ?? throw new Exception("Link not found");
 
         if (!string.IsNullOrEmpty(url))
@@ -229,7 +220,7 @@ public class LinkService
 
         if (title != null) link.Title = title;
         if (description != null) link.Description = description;
-        if (listId.HasValue) link.ListId = listId.Value == 0 ? null : listId.Value;
+        if (listId != null) link.ListId = string.IsNullOrEmpty(listId) || listId == "0" ? null : listId;
         if (isImportant != null) link.IsImportant = isImportant.Value;
         if (faviconUrl != null) link.FaviconUrl = faviconUrl;
 
@@ -240,10 +231,10 @@ public class LinkService
         return link;
     }
 
-    public async Task DeleteLinkAsync(int id)
+    public async Task DeleteLinkAsync(string id)
     {
         var link = await _db.Links
-            .FirstOrDefaultAsync(l => l.Id == id)
+            .FirstOrDefaultAsync(l => l.LinkId == id)
             ?? throw new Exception("Link not found");
 
         var trashedLink = new TrashedLink
@@ -268,10 +259,10 @@ public class LinkService
         await _db.SaveChangesAsync();
     }
 
-    public async Task PermanentDeleteLinkAsync(int id)
+    public async Task PermanentDeleteLinkAsync(string id)
     {
         var trashedLink = await _db.TrashedLinks
-            .FirstOrDefaultAsync(t => t.Id == id)
+            .FirstOrDefaultAsync(t => t.LinkId == id)
             ?? throw new Exception("Link not found in trash");
 
         _db.TrashedLinks.Remove(trashedLink);
@@ -279,10 +270,10 @@ public class LinkService
         await _db.SaveChangesAsync();
     }
 
-    public async Task<Link> RestoreLinkAsync(int id)
+    public async Task<Link> RestoreLinkAsync(string id)
     {
         var trashedLink = await _db.TrashedLinks
-            .FirstOrDefaultAsync(t => t.Id == id)
+            .FirstOrDefaultAsync(t => t.LinkId == id)
             ?? throw new Exception("Link not found in trash");
 
         var restoredLink = new Link
@@ -309,7 +300,7 @@ public class LinkService
         return restoredLink;
     }
 
-    public async Task RecordVisitAsync(int id)
+    public async Task RecordVisitAsync(string id)
     {
         var link = await _db.Links.FindAsync(id) ?? throw new Exception("Link not found");
 
@@ -317,7 +308,7 @@ public class LinkService
         link.LastVisitedAt = DateTime.UtcNow;
         link.UpdatedAt = DateTime.UtcNow;
 
-        if (link.ListId.HasValue)
+        if (!string.IsNullOrEmpty(link.ListId))
         {
             var folder = await _db.Folders.FindAsync(link.ListId);
             if (folder != null)
@@ -339,34 +330,26 @@ public class LinkService
             using var httpClient = new HttpClient(new HttpClientHandler
             {
                 AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 5,
-                UseCookies = false
+                MaxAutomaticRedirections = 5
             });
             httpClient.Timeout = TimeSpan.FromSeconds(10);
-
             httpClient.DefaultRequestHeaders.Add("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            httpClient.DefaultRequestHeaders.Add("Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
-            httpClient.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
 
-            var response = await httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode)
-            {
-                Logger.Info($"FetchMetadata HTTP {response.StatusCode} for {url}");
-                return null;
-            }
+            var html = await httpClient.GetStringAsync(url);
 
-            var html = await response.Content.ReadAsStringAsync();
-            Logger.Info($"FetchMetadata 成功获取HTML, 长度: {html.Length}, URL: {url}");
             var metadata = new MetadataResult();
 
-            var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            // Title
+            var titleMatch = Regex.Match(html,
+                @"<title[^>]*>(.*?)</title>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (titleMatch.Success)
             {
                 metadata.Title = System.Net.WebUtility.HtmlDecode(titleMatch.Groups[1].Value.Trim());
             }
 
+            // Description
             var descMatch = Regex.Match(html,
                 @"<meta\s+[^>]*name=[""']description[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
@@ -384,6 +367,24 @@ public class LinkService
             var ogTitleMatch = Regex.Match(html,
                 @"<meta\s+[^>]*property=[""']og:title[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
+            if (!ogTitleMatch.Success)
+            {
+                ogTitleMatch = Regex.Match(html,
+                    @"<meta\s+[^>]*content=[""'](.*?)[""'][^>]*property=[""']og:title[""']",
+                    RegexOptions.IgnoreCase);
+            }
+            if (!ogTitleMatch.Success)
+            {
+                ogTitleMatch = Regex.Match(html,
+                    @"<meta\s+[^>]*(?:property|name)=[""'](?:og:title|twitter:title)[""'][^>]*content=[""'](.*?)[""']",
+                    RegexOptions.IgnoreCase);
+            }
+            if (!ogTitleMatch.Success)
+            {
+                ogTitleMatch = Regex.Match(html,
+                    @"<meta\s+[^>]*content=[""'](.*?)[""'][^>]*(?:property|name)=[""'](?:og:title|twitter:title)[""']",
+                    RegexOptions.IgnoreCase);
+            }
             if (ogTitleMatch.Success)
             {
                 metadata.Title = System.Net.WebUtility.HtmlDecode(ogTitleMatch.Groups[1].Value.Trim());
@@ -392,6 +393,12 @@ public class LinkService
             var ogDescMatch = Regex.Match(html,
                 @"<meta\s+[^>]*property=[""']og:description[""'][^>]*content=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
+            if (!ogDescMatch.Success)
+            {
+                ogDescMatch = Regex.Match(html,
+                    @"<meta\s+[^>]*content=[""'](.*?)[""'][^>]*property=[""']og:description[""']",
+                    RegexOptions.IgnoreCase);
+            }
             if (ogDescMatch.Success)
             {
                 metadata.Description = System.Net.WebUtility.HtmlDecode(ogDescMatch.Groups[1].Value.Trim());
@@ -401,19 +408,38 @@ public class LinkService
             var baseUrl = $"{uri.Scheme}://{uri.Host}";
 
             var faviconMatch = Regex.Match(html,
-                @"<link\s+[^>]*rel=[""'].*icon.*[""'][^>]*href=[""'](.*?)[""']",
+                @"<link\s+[^>]*rel=[""'](?:shortcut\s+icon|icon)[""'][^>]*href=[""'](.*?)[""']",
                 RegexOptions.IgnoreCase);
+            if (!faviconMatch.Success)
+            {
+                faviconMatch = Regex.Match(html,
+                    @"<link\s+[^>]*rel=[""'](?!apple-touch-icon)[^""']*icon[^""']*[""'][^>]*href=[""'](.*?)[""']",
+                    RegexOptions.IgnoreCase);
+            }
             if (faviconMatch.Success)
             {
                 var faviconPath = faviconMatch.Groups[1].Value;
+                string? resolvedUrl = null;
                 if (faviconPath.StartsWith("http://") || faviconPath.StartsWith("https://"))
-                    metadata.FaviconUrl = faviconPath;
+                    resolvedUrl = faviconPath;
                 else if (faviconPath.StartsWith("//"))
-                    metadata.FaviconUrl = $"https:{faviconPath}";
+                    resolvedUrl = $"https:{faviconPath}";
                 else if (faviconPath.StartsWith("/"))
-                    metadata.FaviconUrl = $"{baseUrl}{faviconPath}";
+                    resolvedUrl = $"{baseUrl}{faviconPath}";
                 else
-                    metadata.FaviconUrl = $"{baseUrl}/{faviconPath}";
+                    resolvedUrl = $"{baseUrl}/{faviconPath}";
+
+                var lowerUrl = resolvedUrl.ToLower();
+                if (lowerUrl.Contains("favicon") || lowerUrl.Contains(".ico") || lowerUrl.Contains(".png") ||
+                    lowerUrl.Contains(".jpg") || lowerUrl.Contains(".jpeg") || lowerUrl.Contains(".gif") ||
+                    lowerUrl.Contains(".svg") || lowerUrl.Contains(".webp"))
+                {
+                    metadata.FaviconUrl = resolvedUrl;
+                }
+                else
+                {
+                    metadata.FaviconUrl = $"{baseUrl}/favicon.ico";
+                }
             }
             else
             {
@@ -427,18 +453,6 @@ public class LinkService
             Logger.Error($"FetchMetadata 异常 for {url}: {ex.Message}", ex);
             return null;
         }
-    }
-
-    public async Task<(bool IsDuplicate, List<Link> Duplicates)> CheckDuplicateAsync(string url)
-    {
-        var normalizedUrl = url.ToLower().Trim().TrimEnd('/');
-        normalizedUrl = Regex.Replace(normalizedUrl, @"^(https?://)(www\.)", "$1");
-
-        var duplicates = await _db.Links
-            .Where(l => l.Url == normalizedUrl || l.Url.StartsWith(normalizedUrl + "/"))
-            .ToListAsync();
-
-        return (duplicates.Count > 0, duplicates);
     }
 
     public async Task<(List<Link> Results, int TotalCount, int CurrentPage, int LastPage)> SearchAsync(
@@ -461,48 +475,6 @@ public class LinkService
             .ToListAsync();
 
         return (results, totalCount, page, lastPage);
-    }
-
-    public async Task<List<Link>> GetSmartListAsync(string type, int page = 1, int perPage = 20)
-    {
-        IQueryable<Link> query = _db.Links
-            .Include(l => l.Folder);
-
-        query = type switch
-        {
-            "recently-added" => query.Where(l => l.CreatedAt >= DateTime.UtcNow.AddDays(-7))
-                                     .OrderByDescending(l => l.CreatedAt),
-            "recently-visited" => query.Where(l => l.LastVisitedAt.HasValue && l.LastVisitedAt.Value >= DateTime.UtcNow.AddDays(-7))
-                                       .OrderByDescending(l => l.LastVisitedAt),
-            "most-visited" => query.Where(l => l.VisitCount > 0)
-                                   .OrderByDescending(l => l.VisitCount),
-            "important" => query.Where(l => l.IsImportant)
-                               .OrderByDescending(l => l.UpdatedAt),
-            "trash" => _db.TrashedLinks
-                       .OrderByDescending(t => t.DeletedAt)
-                       .Select(t => new Link
-                       {
-                           Id = t.Id,
-                           LinkId = t.LinkId,
-                           Url = t.Url,
-                           Title = t.Title,
-                           OriginalTitle = t.OriginalTitle,
-                           Description = t.Description,
-                           FaviconUrl = t.FaviconUrl,
-                           ListId = null,
-                           LastVisitedAt = t.LastVisitedAt,
-                           VisitCount = t.VisitCount,
-                           IsImportant = t.IsImportant,
-                           CreatedAt = t.CreatedAt,
-                           UpdatedAt = t.UpdatedAt
-                       }),
-            _ => throw new ArgumentException($"Invalid smart list type: {type}")
-        };
-
-        return await query
-            .Skip((page - 1) * perPage)
-            .Take(perPage)
-            .ToListAsync();
     }
 
     private bool IsValidUrl(string url)

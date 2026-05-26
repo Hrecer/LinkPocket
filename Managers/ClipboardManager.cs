@@ -10,7 +10,7 @@ namespace LinkPocket.Managers
         public bool HasClipboard => _clipboardLinks is { Count: > 0 };
         public bool IsCut => _isCutOperation;
         public List<LinkItem>? ClipboardLinks => _clipboardLinks;
-        public int SourceFolderId => _clipboardLinks?.Count > 0 ? (_clipboardLinks[0].ListId ?? -1) : -1;
+        public string SourceFolderId => _clipboardLinks?.Count > 0 ? (_clipboardLinks[0].ListId ?? string.Empty) : string.Empty;
 
         public event EventHandler? ClipboardChanged;
 
@@ -44,9 +44,9 @@ namespace LinkPocket.Managers
             ClipboardChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public bool IsSameFolder(int folderId)
+        public bool IsSameFolder(string folderId)
         {
-            return _clipboardLinks?.Count > 0 && (_clipboardLinks[0].ListId ?? -1) == folderId;
+            return _clipboardLinks?.Count > 0 && (_clipboardLinks[0].ListId ?? string.Empty) == folderId;
         }
 
         private void ClearInternal()

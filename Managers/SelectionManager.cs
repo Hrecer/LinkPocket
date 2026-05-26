@@ -5,15 +5,15 @@ namespace LinkPocket.Managers
     public class SelectionManager
     {
         private LinkItem? _currentSelectedLink;
-        private int? _multiSelectFolderId;
-        private int _selectedFolderId = -1;
-        private int _activeFolderId = -1;
+        private string? _multiSelectFolderId;
+        private string _selectedFolderId = string.Empty;
+        private string _activeFolderId = string.Empty;
 
         public LinkItem? CurrentSelectedLink => _currentSelectedLink;
-        public bool IsInMultiSelectMode => _multiSelectFolderId.HasValue;
-        public int? MultiSelectFolderId => _multiSelectFolderId;
-        public int SelectedFolderId => _selectedFolderId;
-        public int ActiveFolderId => _activeFolderId;
+        public bool IsInMultiSelectMode => !string.IsNullOrEmpty(_multiSelectFolderId);
+        public string? MultiSelectFolderId => _multiSelectFolderId;
+        public string SelectedFolderId => _selectedFolderId;
+        public string ActiveFolderId => _activeFolderId;
 
         public event EventHandler<LinkItem?>? CurrentLinkChanged;
         public event EventHandler? MultiSelectStateChanged;
@@ -30,8 +30,8 @@ namespace LinkPocket.Managers
         {
             _currentSelectedLink = null;
             _multiSelectFolderId = null;
-            _selectedFolderId = -1;
-            _activeFolderId = -1;
+            _selectedFolderId = string.Empty;
+            _activeFolderId = string.Empty;
             NotifyAllCleared();
         }
 
@@ -39,34 +39,34 @@ namespace LinkPocket.Managers
         {
             _multiSelectFolderId = null;
 
-            if (_currentSelectedLink?.Id == link.Id)
+            if (_currentSelectedLink?.LinkId == link.LinkId)
             {
                 _currentSelectedLink = null;
-                _selectedFolderId = -1;
-                _activeFolderId = -1;
+                _selectedFolderId = string.Empty;
+                _activeFolderId = string.Empty;
             }
             else
             {
                 _currentSelectedLink = link;
-                _selectedFolderId = -1;
-                _activeFolderId = link.ListId ?? 0;
+                _selectedFolderId = string.Empty;
+                _activeFolderId = link.ListId ?? string.Empty;
             }
             CurrentLinkChanged?.Invoke(this, _currentSelectedLink);
         }
 
         public CtrlClickResult HandleCtrlClick(LinkItem targetLink)
         {
-            if (_selectedFolderId >= 0)
+            if (!string.IsNullOrEmpty(_selectedFolderId))
                 return CtrlClickResult.BlockedCrossDirectory;
 
-            var linkListId = targetLink.ListId ?? -1;
+            var linkListId = targetLink.ListId ?? string.Empty;
 
-            if (_multiSelectFolderId.HasValue && linkListId != _multiSelectFolderId.Value)
+            if (!string.IsNullOrEmpty(_multiSelectFolderId) && linkListId != _multiSelectFolderId)
                 return CtrlClickResult.BlockedCrossDirectory;
 
             if (_currentSelectedLink != null)
             {
-                var promotedListId = _currentSelectedLink.ListId ?? -1;
+                var promotedListId = _currentSelectedLink.ListId ?? string.Empty;
                 if (promotedListId != linkListId)
                     return CtrlClickResult.BlockedCrossDirectory;
 
@@ -76,7 +76,7 @@ namespace LinkPocket.Managers
                 return CtrlClickResult.Promoted;
             }
 
-            if (!_multiSelectFolderId.HasValue)
+            if (string.IsNullOrEmpty(_multiSelectFolderId))
             {
                 _multiSelectFolderId = linkListId;
             }
@@ -94,7 +94,7 @@ namespace LinkPocket.Managers
             MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public void SelectFolder(int folderId)
+        public void SelectFolder(string folderId)
         {
             _selectedFolderId = folderId;
             _activeFolderId = folderId;
@@ -106,8 +106,8 @@ namespace LinkPocket.Managers
 
         public void ClearFolderSelection()
         {
-            _selectedFolderId = -1;
-            _activeFolderId = -1;
+            _selectedFolderId = string.Empty;
+            _activeFolderId = string.Empty;
             _currentSelectedLink = null;
             _multiSelectFolderId = null;
             FolderSelectionChanged?.Invoke(this, EventArgs.Empty);
