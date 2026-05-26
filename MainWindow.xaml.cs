@@ -37,6 +37,13 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel searchVm)
         {
             searchVm.OnNavigatedToSearch += (s, e) => ResetSearchUI();
+            searchVm.OnNavigatedFromSearch += (s, e) =>
+            {
+                _selectedSearchCard = null;
+                _selectedSearchItem = null;
+                ResetDetailPanelPlaceholder(SearchFixedSidebar);
+                SearchJumpToLinkBtn.IsEnabled = false;
+            };
             searchVm.OnSearchRefreshRequested += async (s, e) =>
             {
                 var query = SearchBox.Text.Trim();
@@ -104,6 +111,41 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainViewModel vm)
             Clipboard.SetText(vm.EditLinkIdDisplay);
+    }
+
+    private void NewFolderOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+            vm.CancelCreateFolderCommand.Execute(null);
+    }
+
+    private void NewFolderDialog_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private void NewFolderNameBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            if (DataContext is MainViewModel vm && !string.IsNullOrWhiteSpace(vm.NewFolderName))
+                vm.ConfirmCreateFolderCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            if (DataContext is MainViewModel vm)
+                vm.CancelCreateFolderCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    public void FocusNewFolderDialog()
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            NewFolderNameBox?.Focus();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void DetailMarkdownViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -285,6 +327,8 @@ public partial class MainWindow : Window
                     _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
                     _selectedSearchCard = null;
                     _selectedSearchItem = null;
+                    ResetDetailPanelPlaceholder(SearchFixedSidebar);
+                    SearchJumpToLinkBtn.IsEnabled = false;
                 }
             }
             e.Handled = true;
@@ -900,8 +944,7 @@ public partial class MainWindow : Window
 
     private static void PopulateDetailPanel(Panel panel, string url, string? title, string? description,
         string? faviconUrl, DateTime updatedAt, DateTime? lastVisitedAt, int visitCount,
-        DateTime createdAt, string? linkId, string folderName,
-        Action<int>? onJumpToLink = null)
+        DateTime createdAt, string? linkId, string folderName)
     {
         panel.Children.Clear();
 
@@ -958,16 +1001,16 @@ public partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock { Text = "URL", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
         var urlGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-        urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MaxWidth = 320 });
         urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var urlTb = new TextBox { Text = url ?? "", FontSize = 13, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, ContextMenu = null };
+        var urlTb = new TextBlock { Text = url ?? "", FontSize = 13, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Black, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetColumn(urlTb, 0);
         urlGrid.Children.Add(urlTb);
         var urlCopyBtn = new Button
         {
             Content = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 12, Height = 12, Foreground = Brushes.Black },
             Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
-            Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "复制URL",
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "复制",
             VerticalAlignment = VerticalAlignment.Center
         };
         var capturedUrl = url ?? "";
@@ -996,34 +1039,6 @@ public partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock { Text = "ID", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
         panel.Children.Add(CreateValueWithCopy(linkId ?? "", linkId ?? "", true));
-
-        if (onJumpToLink != null && !string.IsNullOrEmpty(linkId))
-        {
-            var jumpBtn = new Button
-            {
-                Content = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Children =
-                    {
-                        new PackIcon { Kind = PackIconKind.OpenInNew, Width = 14, Height = 14, Margin = new Thickness(0, 0, 6, 0) },
-                        new TextBlock { Text = "跳转到链接页", FontSize = 12 }
-                    }
-                },
-                Padding = new Thickness(16, 8, 16, 8),
-                Margin = new Thickness(0, 16, 0, 0),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Center,
-                Cursor = Cursors.Hand,
-                Background = (Brush)Application.Current.FindResource("PrimaryHueMidBrush") ?? new SolidColorBrush(Color.FromRgb(98, 0, 238)),
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-            };
-            var capturedLinkId = int.Parse(linkId);
-            var capturedOnJump = onJumpToLink;
-            jumpBtn.Click += (s, e) => { capturedOnJump(capturedLinkId); };
-            panel.Children.Add(jumpBtn);
-        }
 
         if (!string.IsNullOrWhiteSpace(faviconUrl) && faviconBmp == null)
         {
@@ -1828,6 +1843,7 @@ public partial class MainWindow : Window
             _selectedSearchCard = null;
             _selectedSearchItem = null;
             ResetDetailPanelPlaceholder(SearchFixedSidebar);
+            SearchJumpToLinkBtn.IsEnabled = false;
 
             if (results.Count == 0)
             {
@@ -1967,7 +1983,9 @@ public partial class MainWindow : Window
 
             PopulateDetailPanel(SearchFixedSidebar, item.Url, item.Title, item.Description, item.FaviconUrl,
                 item.UpdatedAt, item.LastVisitedAt, item.VisitCount, item.CreatedAt, item.LinkId,
-                FindFolderNameForLink(item.ListId), JumpToLinkInMainList);
+                FindFolderNameForLink(item.ListId));
+
+            SearchJumpToLinkBtn.IsEnabled = true;
 
             if (e.ClickCount == 2)
             {
@@ -1981,13 +1999,21 @@ public partial class MainWindow : Window
 
     private void SearchResultsArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
         if (e.OriginalSource is not Border && _selectedSearchCard != null)
         {
             _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
             _selectedSearchCard = null;
             _selectedSearchItem = null;
             ResetDetailPanelPlaceholder(SearchFixedSidebar);
+            SearchJumpToLinkBtn.IsEnabled = false;
         }
+    }
+
+    private void SearchJumpToLinkBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedSearchItem != null)
+            JumpToLinkInMainList(_selectedSearchItem.Id);
     }
 
     private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, int id)
@@ -2065,6 +2091,7 @@ public partial class MainWindow : Window
 
     private void LinksPage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
         if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
         {
             if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control) return;
@@ -2111,6 +2138,7 @@ public partial class MainWindow : Window
     private void RootGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (MainView.Visibility != Visibility.Visible) return;
+        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
 
         DependencyObject? hit = e.OriginalSource as DependencyObject;
         if (hit == null) return;
@@ -2151,5 +2179,15 @@ public partial class MainWindow : Window
     private static BitmapImage? TryLoadFavicon(string? faviconUrl)
     {
         return FaviconService.LoadFromCache(faviconUrl);
+    }
+
+    private static bool IsInsideGridSplitter(DependencyObject? obj)
+    {
+        while (obj != null)
+        {
+            if (obj is GridSplitter) return true;
+            obj = VisualTreeHelper.GetParent(obj);
+        }
+        return false;
     }
 }

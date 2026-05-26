@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -86,17 +87,6 @@ namespace LinkPocket.ViewModels
                         columns.Add(reader.GetString(1).ToLower());
                 }
 
-                if (!columns.Contains("is_deleted"))
-                {
-                    cmd.CommandText = "ALTER TABLE lists ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0";
-                    cmd.ExecuteNonQuery();
-                }
-                if (!columns.Contains("deleted_at"))
-                {
-                    cmd.CommandText = "ALTER TABLE lists ADD COLUMN deleted_at TEXT NULL";
-                    cmd.ExecuteNonQuery();
-                }
-
                 cmd.CommandText = "PRAGMA table_info(links)";
                 var linkColumns = new HashSet<string>();
                 using (var reader2 = cmd.ExecuteReader())
@@ -137,7 +127,9 @@ namespace LinkPocket.ViewModels
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => _selectedFolderId >= 0);
-            CreateFolderCommand = new AsyncRelayCommand(CreateFolderAsync, () => _selectedFolderId >= 0);
+            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => _selectedFolderId >= 0);
+            ConfirmCreateFolderCommand = new AsyncRelayCommand(ConfirmCreateFolderAsync, () => !string.IsNullOrWhiteSpace(NewFolderName));
+            CancelCreateFolderCommand = new RelayCommand(CancelCreateFolder);
             DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedAsync, CanDeleteSelected);
             EditLinkCommand = new RelayCommand<LinkItem>(EditLink);
             CancelEditLinkCommand = new RelayCommand(CancelEditLink);
@@ -163,17 +155,21 @@ namespace LinkPocket.ViewModels
             {
                 if (_currentNavId != value)
                 {
+                    var oldId = _currentNavId;
                     _currentNavId = value;
                     OnPropertyChanged();
                     if (value == "links" && _linkViewModel != null)
                         _ = _linkViewModel.LoadLinksAsync();
                     if (value == "search")
                         OnNavigatedToSearch?.Invoke(this, EventArgs.Empty);
+                    if (oldId == "search")
+                        OnNavigatedFromSearch?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
 
         public event EventHandler? OnNavigatedToSearch;
+        public event EventHandler? OnNavigatedFromSearch;
         public event EventHandler? OnSearchRefreshRequested;
 
         public bool IsEditPageVisible
@@ -229,6 +225,20 @@ namespace LinkPocket.ViewModels
         }
 
         public bool EditLinkHasFavicon => !string.IsNullOrEmpty(_fetchedFaviconUrl);
+
+        private bool _isNewFolderDialogVisible;
+        public bool IsNewFolderDialogVisible
+        {
+            get => _isNewFolderDialogVisible;
+            set { _isNewFolderDialogVisible = value; OnPropertyChanged(); }
+        }
+
+        private string _newFolderName = string.Empty;
+        public string NewFolderName
+        {
+            get => _newFolderName;
+            set { _newFolderName = value; OnPropertyChanged(); }
+        }
 
         public string EditLinkIdDisplay
         {
@@ -419,7 +429,9 @@ namespace LinkPocket.ViewModels
 
         public ICommand SelectNavCommand { get; }
         public ICommand ShowAddLinkCommand { get; }
-        public IAsyncRelayCommand CreateFolderCommand { get; }
+        public ICommand CreateFolderCommand { get; }
+        public IAsyncRelayCommand ConfirmCreateFolderCommand { get; }
+        public ICommand CancelCreateFolderCommand { get; }
         public IAsyncRelayCommand DeleteSelectedCommand { get; }
         public ICommand EditLinkCommand { get; }
         public ICommand CancelEditLinkCommand { get; }
@@ -523,7 +535,8 @@ namespace LinkPocket.ViewModels
             EditLinkUrl = link.Url ?? string.Empty;
             EditLinkTitle = link.Title ?? string.Empty;
             EditLinkDescription = link.Description ?? string.Empty;
-            _fetchedFaviconUrl = link.FaviconUrl ?? string.Empty;
+            var faviconUrl = link.FaviconUrl ?? string.Empty;
+            _fetchedFaviconUrl = faviconUrl;
             OnPropertyChanged(nameof(EditLinkFaviconUrl));
             EditLinkIdDisplay = link.LinkId ?? string.Empty;
             EditLinkUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -532,6 +545,25 @@ namespace LinkPocket.ViewModels
             EditLinkVisitCountDisplay = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次";
             EditLinkHasError = false;
             EditLinkErrorMessage = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(faviconUrl) && EditLinkFaviconImage == null)
+            {
+                var capturedFaviconUrl = faviconUrl;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await FaviconService.PrefetchAndCacheAsync(capturedFaviconUrl);
+                        var cached = FaviconService.LoadFromCache(capturedFaviconUrl);
+                        if (cached != null && _fetchedFaviconUrl == capturedFaviconUrl)
+                        {
+                            Application.Current.Dispatcher.Invoke(() => EditLinkFaviconImage = cached);
+                        }
+                    }
+                    catch { }
+                });
+            }
+
             ShowEditPage();
         }
 
@@ -584,7 +616,7 @@ namespace LinkPocket.ViewModels
                 await _linkViewModel.LoadLinksAsync(new LinkQueryParams
                 {
                     Search = q.Search, ListId = q.ListId, TagId = q.TagId,
-                    IsImportant = q.IsImportant, IsDeleted = q.IsDeleted,
+                    IsImportant = q.IsImportant,
                     DateFrom = q.DateFrom, DateTo = q.DateTo,
                     SortBy = _linkSortField, SortOrder = _linkSortOrder,
                     Page = q.Page, PerPage = q.PerPage
@@ -666,7 +698,9 @@ namespace LinkPocket.ViewModels
         private void ClearFavicon()
         {
             _fetchedFaviconUrl = string.Empty;
+            EditLinkFaviconImage = null;
             OnPropertyChanged(nameof(EditLinkFaviconUrl));
+            OnPropertyChanged(nameof(EditLinkHasFavicon));
         }
 
         private bool CanClearFavicon() => EditLinkHasFavicon && !IsFetchingMetadata;
@@ -699,6 +733,21 @@ namespace LinkPocket.ViewModels
                         OnPropertyChanged(nameof(EditLinkFaviconUrl));
                         Logger.Info($"Favicon: {metadata.FaviconUrl}");
                         updated = true;
+                        if (EditLinkFaviconImage == null)
+                        {
+                            var resolvedUrl = metadata.FaviconUrl;
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await FaviconService.PrefetchAndCacheAsync(resolvedUrl);
+                                    var cached = FaviconService.LoadFromCache(resolvedUrl);
+                                    if (cached != null && _fetchedFaviconUrl == resolvedUrl)
+                                        Application.Current.Dispatcher.Invoke(() => EditLinkFaviconImage = cached);
+                                }
+                                catch { }
+                            });
+                        }
                     }
                     if (updated)
                         FetchStatusMessage = "✓ 解析完成";
@@ -864,7 +913,7 @@ namespace LinkPocket.ViewModels
         private void NotifyActionCommandsChanged()
         {
             ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
-            ((AsyncRelayCommand)CreateFolderCommand).NotifyCanExecuteChanged();
+            ((RelayCommand)CreateFolderCommand).RaiseCanExecuteChanged();
             ((AsyncRelayCommand)DeleteSelectedCommand).NotifyCanExecuteChanged();
         }
 
@@ -918,113 +967,42 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private async Task CreateFolderAsync()
+        private void CreateFolderAsync()
         {
             if (_selectedFolderId < 0)
                 throw new InvalidOperationException("新建文件夹必须先选中一个文件夹");
 
-            var dialog = new Window
-            {
-                Title = "新建文件夹",
-                Width = 360, Height = 200,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = Application.Current.MainWindow,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStyle = WindowStyle.None,
-                Background = System.Windows.Media.Brushes.Transparent,
-                AllowsTransparency = true
-            };
+            NewFolderName = string.Empty;
+            IsNewFolderDialogVisible = true;
 
-            var contentPanel = new StackPanel { Margin = new Thickness(24) };
-            contentPanel.Children.Add(new TextBlock
-            {
-                Text = "新建文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 16)
-            });
+            if (Application.Current.MainWindow is MainWindow mw)
+                mw.FocusNewFolderDialog();
+        }
 
-            var dialogNameBox = new System.Windows.Controls.TextBox
-            {
-                FontSize = 14, Padding = new Thickness(8, 6, 8, 6)
-            };
-            dialogNameBox.SetValue(HintAssist.HintProperty, "文件夹名称");
-            contentPanel.Children.Add(dialogNameBox);
+        private async Task ConfirmCreateFolderAsync()
+        {
+            if (string.IsNullOrWhiteSpace(NewFolderName)) return;
 
-            var btnPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 16, 0, 0)
-            };
+            IsNewFolderDialogVisible = false;
 
-            var cancelBtn = new System.Windows.Controls.Button
+            try
             {
-                Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
-                Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
-                BorderThickness = new Thickness(1)
-            };
-            cancelBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
-            cancelBtn.Click += (s, e) => dialog.DialogResult = false;
-            btnPanel.Children.Add(cancelBtn);
-
-            var okBtn = new System.Windows.Controls.Button
-            {
-                Content = "创建", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
-                Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
-                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
-                Foreground = System.Windows.Media.Brushes.White
-            };
-            okBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
-            okBtn.Click += (s, e) =>
-            {
-                if (!string.IsNullOrWhiteSpace(dialogNameBox.Text))
-                    dialog.DialogResult = true;
-            };
-            btnPanel.Children.Add(okBtn);
-            contentPanel.Children.Add(btnPanel);
-
-            var outerBorder = new Border
-            {
-                CornerRadius = new CornerRadius(8),
-                Background = System.Windows.Media.Brushes.White,
-                BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
-                BorderThickness = new Thickness(1),
-                Child = contentPanel
-            };
-
-            dialog.Content = outerBorder;
-            dialogNameBox.Focus();
-
-            dialog.PreviewKeyDown += (s, e) =>
-            {
-                if (e.Key == Key.Escape)
-                {
-                    dialog.DialogResult = false;
-                    e.Handled = true;
-                }
-                else if (e.Key == Key.Enter)
-                {
-                    if (!string.IsNullOrWhiteSpace(dialogNameBox.Text))
-                    {
-                        dialog.DialogResult = true;
-                        e.Handled = true;
-                    }
-                }
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                try
-                {
-                    int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
-                    await _folderService.CreateFolderAsync(dialogNameBox.Text.Trim(), parentId: parentId);
-                    if (Application.Current.MainWindow is MainWindow mw)
-                        mw.ExpandFolder(_selectedFolderId);
-                    await RefreshFolderTreeAndUIAsync();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("创建文件夹失败", ex);
-                }
+                int? parentId = _selectedFolderId == 0 ? null : _selectedFolderId;
+                await _folderService.CreateFolderAsync(NewFolderName.Trim(), parentId: parentId);
+                if (Application.Current.MainWindow is MainWindow mw)
+                    mw.ExpandFolder(_selectedFolderId);
+                await RefreshFolderTreeAndUIAsync();
             }
+            catch (Exception ex)
+            {
+                Logger.Error("创建文件夹失败", ex);
+            }
+        }
+
+        private void CancelCreateFolder()
+        {
+            IsNewFolderDialogVisible = false;
+            NewFolderName = string.Empty;
         }
 
         public async Task PasteLinksToFolderAsync(List<LinkItem> items, bool isCut)
@@ -1136,7 +1114,7 @@ namespace LinkPocket.ViewModels
         public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(int? listId = null)
         {
             return await _linkService.GetLinksAsync(
-                listId: listId, isDeleted: false,
+                listId: listId,
                 sortBy: _linkSortField, sortOrder: _linkSortOrder,
                 page: 1, perPage: 50
             );

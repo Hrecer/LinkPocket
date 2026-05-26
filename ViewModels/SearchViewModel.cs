@@ -275,7 +275,6 @@ namespace LinkPocket.ViewModels
             LastVisitedAt = link.LastVisitedAt,
             VisitCount = link.VisitCount,
             IsImportant = link.IsImportant,
-            IsDeleted = link.IsDeleted,
             CreatedAt = link.CreatedAt,
             UpdatedAt = link.UpdatedAt
         };

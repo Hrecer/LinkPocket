@@ -6,7 +6,6 @@ public class LinkQueryParams
     public int? ListId { get; set; }
     public int? TagId { get; set; }
     public bool? IsImportant { get; set; }
-    public bool IsDeleted { get; set; } = false;
     public string? DateFrom { get; set; }
     public string? DateTo { get; set; }
     public string SortBy { get; set; } = "created_at";

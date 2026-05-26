@@ -20,8 +20,6 @@ namespace LinkPocket.Models
         public DateTime? LastVisitedAt { get; set; }
         public int VisitCount { get; set; }
         public bool IsImportant { get; set; }
-        public bool IsDeleted { get; set; }
-        public DateTime? DeletedAt { get; set; }
 
         // 时间戳
         public DateTime CreatedAt { get; set; }

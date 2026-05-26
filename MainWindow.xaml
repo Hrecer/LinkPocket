@@ -385,9 +385,10 @@
                 <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：搜索框 + 结果列表 -->
+            <!-- 左侧：搜索框 + 跳转工具栏 + 结果列表 -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
@@ -437,7 +438,25 @@
                     </Grid>
                 </Border>
 
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24"
+                <!-- 搜索框下方常驻工具栏（有分隔线） -->
+                <Border x:Name="SearchToolbar" Grid.Row="1" Background="{DynamicResource MaterialDesignCardBackground}"
+                        Padding="16,8,16,12" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button x:Name="SearchJumpToLinkBtn"
+                                Style="{StaticResource MaterialDesignOutlinedButton}" Padding="20,6"
+                                Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
+                                Cursor="Hand">
+                            <Button.Content>
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="OpenInNew" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="跳转到链接页" FontSize="12"/>
+                                </StackPanel>
+                            </Button.Content>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24"
                               PreviewMouseLeftButtonDown="SearchResultsArea_MouseLeftButtonDown">
                     <StackPanel x:Name="SearchResultsPanel" HorizontalAlignment="Center">
                         <StackPanel x:Name="SearchEmptyPlaceholder" HorizontalAlignment="Center" Margin="0,80,0,0">
@@ -598,12 +617,9 @@
                                  Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black"
                                  VerticalAlignment="Center" ContextMenu="{x:Null}"/>
                     </ScrollViewer>
-                    <Button Padding="6,3" Margin="0,0,0,20" Cursor="Hand" Background="Transparent" BorderThickness="1" BorderBrush="#DDDDDD"
+                    <Button Padding="6,3" Margin="0,0,0,20" Cursor="Hand" Background="Transparent" BorderThickness="0"
                             ToolTip="复制URL" Click="CopyDetailUrl_Click" HorizontalAlignment="Left">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="ContentCopy" Width="14" Height="14" VerticalAlignment="Center" Foreground="#666666"/>
-                            <TextBlock Text="复制URL" FontSize="12" Foreground="#666666" Margin="4,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <materialDesign:PackIcon Kind="ContentCopy" Width="14" Height="14" VerticalAlignment="Center" Foreground="#666666"/>
                     </Button>
 
                     <!-- 图标区域 -->
@@ -936,5 +952,38 @@
                 </Border>
             </Border>
         </Grid>
+
+        <!-- ===== 新建文件夹内嵌对话框（遮罩+居中卡片） ===== -->
+        <Border Grid.RowSpan="2" Visibility="{Binding IsNewFolderDialogVisible, Converter={StaticResource BoolToVis}}"
+                Background="#60000000" Panel.ZIndex="100"
+                MouseLeftButtonDown="NewFolderOverlay_MouseLeftButtonDown">
+            <Border VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="White" CornerRadius="12"
+                    BorderBrush="#E0E0E0" BorderThickness="1"
+                    Padding="32,28,32,24" Width="380"
+                    MouseLeftButtonDown="NewFolderDialog_MouseLeftButtonDown">
+                <StackPanel>
+                    <TextBlock Text="新建文件夹" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,20"/>
+
+                    <TextBox x:Name="NewFolderNameBox" Text="{Binding NewFolderName, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="14" Padding="12,10"
+                             materialDesign:HintAssist.Hint="文件夹名称"
+                             Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                             KeyDown="NewFolderNameBox_KeyDown"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Content="取消" Padding="20,7" Margin="0,0,10,0" Cursor="Hand"
+                                Command="{Binding CancelCreateFolderCommand}"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"
+                                materialDesign:ButtonAssist.CornerRadius="6"/>
+                        <Button Content="创建" Padding="20,7" Cursor="Hand" FontWeight="SemiBold"
+                                Command="{Binding ConfirmCreateFolderCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                Background="#6200EE" Foreground="White"
+                                materialDesign:ButtonAssist.CornerRadius="6"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </Window>

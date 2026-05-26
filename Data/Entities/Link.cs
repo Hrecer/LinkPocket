@@ -44,12 +44,6 @@ public class Link
     [Column("is_important")]
     public bool IsImportant { get; set; } = false;
 
-    [Column("is_deleted")]
-    public bool IsDeleted { get; set; } = false;
-
-    [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
-
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

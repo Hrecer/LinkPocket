@@ -25,12 +25,6 @@ public class Folder
     [Column("sort_order")]
     public int SortOrder { get; set; } = 0;
 
-    [Column("is_deleted")]
-    public bool IsDeleted { get; set; } = false;
-
-    [Column("deleted_at")]
-    public DateTime? DeletedAt { get; set; }
-
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }
 
@@ -46,7 +40,7 @@ public class Folder
     // 辅助方法
     public void UpdateLinkCount(LinkPocketDbContext db)
     {
-        LinkCount = Links.Count(l => !l.IsDeleted);
+        LinkCount = Links.Count;
         db.SaveChanges();
         
         if (ParentId.HasValue)

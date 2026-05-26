@@ -27,7 +27,6 @@ public class LinkPocketDbContext : DbContext
             entity.HasIndex(e => e.LinkId).IsUnique();
             entity.HasIndex(e => e.Url);
             entity.HasIndex(e => e.ListId);
-            entity.HasIndex(e => e.IsDeleted);
             entity.HasIndex(e => e.LastVisitedAt);
             entity.HasIndex(e => e.IsImportant);
 
@@ -41,7 +40,6 @@ public class LinkPocketDbContext : DbContext
         {
             entity.ToTable("lists");
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => e.IsDeleted);
             entity.HasOne(e => e.Parent)
                   .WithMany(f => f.Children)
                   .HasForeignKey(e => e.ParentId)

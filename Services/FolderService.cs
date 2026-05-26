@@ -25,7 +25,6 @@ public class FolderService
     public async Task<List<Folder>> GetAllFoldersAsync()
     {
         return await _db.Folders
-            .Where(f => !f.IsDeleted)
             .OrderBy(f => f.SortOrder)
             .ThenBy(f => f.Name)
             .ToListAsync();
@@ -36,7 +35,7 @@ public class FolderService
         return await _db.Folders
             .Include(f => f.Parent)
             .Include(f => f.Children)
-            .Include(f => f.Links.Where(l => !l.IsDeleted).OrderByDescending(l => l.CreatedAt))
+            .Include(f => f.Links.OrderByDescending(l => l.CreatedAt))
             .FirstOrDefaultAsync(f => f.Id == id);
     }
 
@@ -165,12 +164,12 @@ public class FolderService
     {
         var folder = await _db.Folders.FindAsync(id) ?? throw new Exception("Folder not found");
 
-        var totalLinks = await _db.Links.CountAsync(l => l.ListId == id && !l.IsDeleted);
+        var totalLinks = await _db.Links.CountAsync(l => l.ListId == id);
 
         var descendantIds = await GetDescendantIdsAsync(id);
         descendantIds.Add(id);
 
-        var totalChildrenLinks = await _db.Links.CountAsync(l => descendantIds.Contains(l.ListId ?? 0) && !l.IsDeleted);
+        var totalChildrenLinks = await _db.Links.CountAsync(l => descendantIds.Contains(l.ListId ?? 0));
 
         var childrenCount = await _db.Folders.CountAsync(f => f.ParentId == id);
 
@@ -250,79 +249,19 @@ public class FolderService
         return ids;
     }
 
-    public async Task SoftDeleteFolderAsync(int folderId)
+    public Task SoftDeleteFolderAsync(int folderId)
     {
-        var folder = await _db.Folders.FindAsync(folderId)
-            ?? throw new Exception("Folder not found");
-
-        folder.IsDeleted = true;
-        folder.DeletedAt = DateTime.UtcNow;
-
-        var descendantIds = await GetDescendantIdsAsync(folderId);
-        foreach (var childId in descendantIds)
-        {
-            var child = await _db.Folders.FindAsync(childId);
-            if (child != null)
-            {
-                child.IsDeleted = true;
-                child.DeletedAt = DateTime.UtcNow;
-            }
-        }
-
-        var allFolderIds = descendantIds.Concat(new[] { folderId }).ToList();
-        var linksInFolders = await _db.Links
-            .Where(l => l.ListId != null && allFolderIds.Contains(l.ListId.Value) && !l.IsDeleted)
-            .ToListAsync();
-        foreach (var link in linksInFolders)
-        {
-            link.IsDeleted = true;
-            link.DeletedAt = DateTime.UtcNow;
-            link.ListId = null;
-        }
-
-        await _db.SaveChangesAsync();
+        return DeleteFolderAsync(folderId);
     }
 
-    public async Task<List<Folder>> GetDeletedFoldersAsync()
+    public Task<List<Folder>> GetDeletedFoldersAsync()
     {
-        return await _db.Folders
-            .Where(f => f.IsDeleted)
-            .OrderByDescending(f => f.DeletedAt)
-            .ToListAsync();
+        return Task.FromResult(new List<Folder>());
     }
 
-    public async Task RestoreFolderAsync(int folderId)
+    public Task RestoreFolderAsync(int folderId)
     {
-        var folder = await _db.Folders.FindAsync(folderId)
-            ?? throw new Exception("Folder not found");
-
-        var descendantIds = await GetDescendantIdsAsync(folderId);
-        var allFolderIds = descendantIds.Concat(new[] { folderId }).ToList();
-
-        foreach (var fid in allFolderIds)
-        {
-            var f = await _db.Folders.FindAsync(fid);
-            if (f != null)
-            {
-                f.IsDeleted = false;
-                f.DeletedAt = null;
-                f.ParentId = null;
-                f.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        var linksInFolders = await _db.Links
-            .Where(l => l.ListId != null && allFolderIds.Contains(l.ListId.Value) && l.IsDeleted)
-            .ToListAsync();
-        foreach (var link in linksInFolders)
-        {
-            link.IsDeleted = false;
-            link.DeletedAt = null;
-            link.ListId = null;
-            link.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _db.SaveChangesAsync();
+        throw new NotImplementedException("Folder restore requires physical recreation");
     }
 
     public async Task PermanentDeleteFolderAsync(int folderId)

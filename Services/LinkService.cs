@@ -18,7 +18,6 @@ public class LinkService
         string? search = null,
         int? listId = null,
         bool? isImportant = null,
-        bool isDeleted = false,
         string? dateFrom = null,
         string? dateTo = null,
         string sortBy = "created_at",
@@ -26,9 +25,8 @@ public class LinkService
         int page = 1,
         int perPage = 20)
     {
-        var query = _db.Links
-            .Include(l => l.Folder)
-            .Where(l => l.IsDeleted == isDeleted);
+        IQueryable<Link> query = _db.Links
+            .Include(l => l.Folder);
 
         if (!string.IsNullOrEmpty(search))
         {
@@ -86,27 +84,29 @@ public class LinkService
 
     public async Task<int> GetTotalCountAsync()
     {
-        return await _db.Links.CountAsync(l => !l.IsDeleted);
+        return await _db.Links.CountAsync();
     }
 
     public async Task<Dictionary<int, int>> GetLinkCountByFolderAsync()
     {
         return await _db.Links
-            .Where(l => !l.IsDeleted && l.ListId != null)
+            .Where(l => l.ListId != null)
             .GroupBy(l => l.ListId!.Value)
             .ToDictionaryAsync(g => g.Key, g => g.Count());
     }
 
     public async Task<int> GetRootLevelLinkCountAsync()
     {
-        return await _db.Links.CountAsync(l => !l.IsDeleted && l.ListId == null);
+        return await _db.Links
+            .Where(l => l.ListId == null)
+            .CountAsync();
     }
 
     public async Task<List<Link>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50)
     {
         var query = _db.Links
             .Include(l => l.Folder)
-            .Where(l => !l.IsDeleted && l.ListId == null);
+            .Where(l => l.ListId == null);
 
         var allowedSortFields = new[] { "created_at", "updated_at", "last_visited_at", "visit_count", "title" };
         var field = allowedSortFields.Contains(sortBy) ? sortBy : "created_at";
@@ -132,7 +132,6 @@ public class LinkService
     public async Task<List<Link>> GetAllActiveLinksAsync()
     {
         return await _db.Links
-            .Where(l => !l.IsDeleted)
             .ToListAsync();
     }
 
@@ -153,7 +152,7 @@ public class LinkService
     {
         return await _db.Links
             .Include(l => l.Folder)
-            .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted);
+            .FirstOrDefaultAsync(l => l.Id == id);
     }
 
     public async Task<Link> CreateLinkAsync(string url, string? title = null, string? description = null,
@@ -169,7 +168,6 @@ public class LinkService
             ListId = listId,
             IsImportant = isImportant,
             VisitCount = 0,
-            IsDeleted = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -221,7 +219,7 @@ public class LinkService
         string? description = null, int? listId = null,
         bool? isImportant = null, string? faviconUrl = null)
     {
-        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
+        var link = await _db.Links.FirstOrDefaultAsync(l => l.Id == id)
             ?? throw new Exception("Link not found");
 
         if (!string.IsNullOrEmpty(url))
@@ -245,7 +243,7 @@ public class LinkService
     public async Task DeleteLinkAsync(int id)
     {
         var link = await _db.Links
-            .FirstOrDefaultAsync(l => l.Id == id && !l.IsDeleted)
+            .FirstOrDefaultAsync(l => l.Id == id)
             ?? throw new Exception("Link not found");
 
         var trashedLink = new TrashedLink
@@ -299,7 +297,6 @@ public class LinkService
             LastVisitedAt = trashedLink.LastVisitedAt,
             VisitCount = trashedLink.VisitCount,
             IsImportant = trashedLink.IsImportant,
-            IsDeleted = false,
             CreatedAt = trashedLink.CreatedAt,
             UpdatedAt = DateTime.UtcNow
         };
@@ -449,11 +446,10 @@ public class LinkService
     {
         var searchQuery = _db.Links
             .Include(l => l.Folder)
-            .Where(l => !l.IsDeleted &&
-                   (l.Url.Contains(query) ||
+            .Where(l => l.Url.Contains(query) ||
                     (l.Title != null && l.Title.Contains(query)) ||
                     (l.OriginalTitle != null && l.OriginalTitle.Contains(query)) ||
-                    (l.Description != null && l.Description.Contains(query))))
+                    (l.Description != null && l.Description.Contains(query)))
             .OrderByDescending(l => l.CreatedAt);
 
         var totalCount = await searchQuery.CountAsync();
@@ -470,8 +466,7 @@ public class LinkService
     public async Task<List<Link>> GetSmartListAsync(string type, int page = 1, int perPage = 20)
     {
         IQueryable<Link> query = _db.Links
-            .Include(l => l.Folder)
-            .Where(l => !l.IsDeleted);
+            .Include(l => l.Folder);
 
         query = type switch
         {
@@ -483,9 +478,24 @@ public class LinkService
                                    .OrderByDescending(l => l.VisitCount),
             "important" => query.Where(l => l.IsImportant)
                                .OrderByDescending(l => l.UpdatedAt),
-            "trash" => _db.Links.Include(l => l.Folder)
-                       .Where(l => l.IsDeleted)
-                       .OrderByDescending(l => l.DeletedAt),
+            "trash" => _db.TrashedLinks
+                       .OrderByDescending(t => t.DeletedAt)
+                       .Select(t => new Link
+                       {
+                           Id = t.Id,
+                           LinkId = t.LinkId,
+                           Url = t.Url,
+                           Title = t.Title,
+                           OriginalTitle = t.OriginalTitle,
+                           Description = t.Description,
+                           FaviconUrl = t.FaviconUrl,
+                           ListId = null,
+                           LastVisitedAt = t.LastVisitedAt,
+                           VisitCount = t.VisitCount,
+                           IsImportant = t.IsImportant,
+                           CreatedAt = t.CreatedAt,
+                           UpdatedAt = t.UpdatedAt
+                       }),
             _ => throw new ArgumentException($"Invalid smart list type: {type}")
         };
 

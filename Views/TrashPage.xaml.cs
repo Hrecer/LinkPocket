@@ -115,7 +115,7 @@ namespace LinkPocket.Views
             });
             textStack.Children.Add(new TextBlock
             {
-                Text = $"删除于: {item.DeletedAt?.ToString("yyyy-MM-dd HH:mm") ?? "未知"}",
+                Text = $"删除于回收站",
                 FontSize = 10, Opacity = 0.35, Margin = new Thickness(0, 2, 0, 0)
             });
             Grid.SetColumn(textStack, 1);

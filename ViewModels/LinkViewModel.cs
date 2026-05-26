@@ -147,7 +147,6 @@ namespace LinkPocket.ViewModels
                     search: _currentQuery.Search,
                     listId: _currentQuery.ListId,
                     isImportant: _currentQuery.IsImportant,
-                    isDeleted: _currentQuery.IsDeleted,
                     dateFrom: _currentQuery.DateFrom,
                     dateTo: _currentQuery.DateTo,
                     sortBy: _currentQuery.SortBy,
@@ -287,7 +286,6 @@ namespace LinkPocket.ViewModels
                 LastVisitedAt = link.LastVisitedAt,
                 VisitCount = link.VisitCount,
                 IsImportant = link.IsImportant,
-                IsDeleted = link.IsDeleted,
                 CreatedAt = link.CreatedAt,
                 UpdatedAt = link.UpdatedAt
             };
@@ -449,8 +447,6 @@ namespace LinkPocket.ViewModels
                 LastVisitedAt = link.LastVisitedAt,
                 VisitCount = link.VisitCount,
                 IsImportant = link.IsImportant,
-                IsDeleted = link.IsDeleted,
-                DeletedAt = link.DeletedAt,
                 CreatedAt = link.CreatedAt,
                 UpdatedAt = link.UpdatedAt
             };
