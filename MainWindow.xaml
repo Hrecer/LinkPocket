@@ -136,13 +136,13 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
                             WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
-                        <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <Path Data="M0,6 L10,6" Stroke="#333333" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                     <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
-                        <materialDesign:PackIcon Kind="WindowMaximize" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <Path Data="M2,0 L8,0 A2,2 0 0 1 10,2 L10,8 A2,2 0 0 1 8,10 L2,10 A2,2 0 0 1 0,8 L0,2 A2,2 0 0 1 2,0 Z" Stroke="#333333" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                     <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
-                        <materialDesign:PackIcon Kind="WindowClose" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <Path Data="M2,2 L8,8 M8,2 L2,8" Stroke="#333333" StrokeThickness="1.3" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                 </StackPanel>
             </Grid>
@@ -625,7 +625,7 @@
                     <!-- 图标区域 -->
                     <Border Margin="0,16,0,16" Background="Transparent" CornerRadius="6">
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="48" Height="48" CornerRadius="8" Background="#F0F0F0"
+                            <Border Width="48" Height="48" CornerRadius="8" Background="White"
                                     ClipToBounds="True" VerticalAlignment="Center">
                                 <Grid>
                                     <Image Source="{Binding DetailFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -829,7 +829,7 @@
                 <Border Grid.Row="1" Margin="0,16,0,8"
                         Background="Transparent" CornerRadius="6">
                     <StackPanel Orientation="Horizontal">
-                        <Border Width="48" Height="48" CornerRadius="8" Background="#F0F0F0"
+                        <Border Width="48" Height="48" CornerRadius="8" Background="White"
                                 ClipToBounds="True" VerticalAlignment="Center">
                             <Grid>
                                 <Image Source="{Binding EditLinkFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -955,13 +955,11 @@
 
         <!-- ===== 新建文件夹内嵌对话框（遮罩+居中卡片） ===== -->
         <Border Grid.RowSpan="2" Visibility="{Binding IsNewFolderDialogVisible, Converter={StaticResource BoolToVis}}"
-                Background="#60000000" Panel.ZIndex="100"
-                MouseLeftButtonDown="NewFolderOverlay_MouseLeftButtonDown">
+                Background="#60000000" Panel.ZIndex="100">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
                     Background="White" CornerRadius="12"
                     BorderBrush="#E0E0E0" BorderThickness="1"
-                    Padding="32,28,32,24" Width="380"
-                    MouseLeftButtonDown="NewFolderDialog_MouseLeftButtonDown">
+                    Padding="32,28,32,24" Width="380">
                 <StackPanel>
                     <TextBlock Text="新建文件夹" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,20"/>
 
@@ -969,7 +967,7 @@
                              FontSize="14" Padding="12,10"
                              materialDesign:HintAssist.Hint="文件夹名称"
                              Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                             KeyDown="NewFolderNameBox_KeyDown"/>
+                             PreviewKeyDown="NewFolderNameBox_PreviewKeyDown"/>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                         <Button Content="取消" Padding="20,7" Margin="0,0,10,0" Cursor="Hand"

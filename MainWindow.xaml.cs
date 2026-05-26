@@ -113,18 +113,7 @@ public partial class MainWindow : Window
             Clipboard.SetText(vm.EditLinkIdDisplay);
     }
 
-    private void NewFolderOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-            vm.CancelCreateFolderCommand.Execute(null);
-    }
-
-    private void NewFolderDialog_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-    }
-
-    private void NewFolderNameBox_KeyDown(object sender, KeyEventArgs e)
+    private void NewFolderNameBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter)
         {
@@ -306,6 +295,12 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainViewModel escVm)
             {
+                if (escVm.IsNewFolderDialogVisible)
+                {
+                    escVm.CancelCreateFolderCommand.Execute(null);
+                    e.Handled = true;
+                    return;
+                }
                 if (_clipboardManager.HasClipboard)
                 {
                     _clipboardManager.Clear();
@@ -620,6 +615,8 @@ public partial class MainWindow : Window
         row.Child = stack;
         _sidebarFolderBorders[folder.Id] = row;
 
+        var chevronRef = chevronBorder;
+
         chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int folderId)
@@ -629,13 +626,19 @@ public partial class MainWindow : Window
                 else
                     _sidebarExpandedFolders.Add(folderId);
 
-                RefreshSidebar(viewModel);
+                Dispatcher.BeginInvoke(() => RefreshSidebar(viewModel));
             }
             e.Handled = true;
         };
 
         row.MouseLeftButtonDown += (s, e) =>
         {
+            if (IsDescendantOf(e.OriginalSource as DependencyObject, chevronRef))
+            {
+                e.Handled = true;
+                return;
+            }
+
             if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
                 e.Handled = true;
@@ -712,7 +715,7 @@ public partial class MainWindow : Window
         var iconBorder = new Border
         {
             Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
-            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Background = Brushes.White,
             ClipToBounds = true,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 5, 0)
@@ -960,7 +963,7 @@ public partial class MainWindow : Window
         var faviconBorder = new Border
         {
             Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Background = Brushes.White,
             ClipToBounds = true,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0, 0, 0)
@@ -1406,7 +1409,9 @@ public partial class MainWindow : Window
         row.Child = stack;
         _mainListFolderBorders[folder.Id] = row;
 
-        chevronBorder.PreviewMouseLeftButtonDown += async (s, e) =>
+        var mainChevronRef = chevronBorder;
+
+        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (s is FrameworkElement fe && fe.Tag is int fid)
             {
@@ -1414,13 +1419,20 @@ public partial class MainWindow : Window
                     _mainExpandedFolders.Remove(fid);
                 else
                     _mainExpandedFolders.Add(fid);
-                await RefreshMainListAsync();
+
+                Dispatcher.BeginInvoke(async () => await RefreshMainListAsync());
             }
             e.Handled = true;
         };
 
         row.MouseLeftButtonDown += (s, e) =>
         {
+            if (IsDescendantOf(e.OriginalSource as DependencyObject, mainChevronRef))
+            {
+                e.Handled = true;
+                return;
+            }
+
             if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
                 e.Handled = true;
@@ -1519,7 +1531,7 @@ public partial class MainWindow : Window
         var iconBorder = new Border
         {
             Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Background = Brushes.White,
             Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = true
         };
@@ -1897,7 +1909,7 @@ public partial class MainWindow : Window
         var iconBorder = new Border
         {
             Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-            Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
+            Background = Brushes.White,
             Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = true
         };
@@ -2186,6 +2198,16 @@ public partial class MainWindow : Window
         while (obj != null)
         {
             if (obj is GridSplitter) return true;
+            obj = VisualTreeHelper.GetParent(obj);
+        }
+        return false;
+    }
+
+    private static bool IsDescendantOf(DependencyObject? obj, DependencyObject parent)
+    {
+        while (obj != null)
+        {
+            if (obj == parent) return true;
             obj = VisualTreeHelper.GetParent(obj);
         }
         return false;

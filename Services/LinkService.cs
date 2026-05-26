@@ -67,7 +67,7 @@ public class LinkService
             "updated_at" => sortOrder == "asc" ? query.OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.Id),
             "last_visited_at" => sortOrder == "asc" ? query.OrderBy(l => l.LastVisitedAt).ThenBy(l => l.Id) : query.OrderByDescending(l => l.LastVisitedAt).ThenBy(l => l.Id),
             "visit_count" => sortOrder == "asc" ? query.OrderBy(l => l.VisitCount).ThenBy(l => l.Id) : query.OrderByDescending(l => l.VisitCount).ThenBy(l => l.Id),
-            "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id) : query.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.Id),
+            "title" => sortOrder == "asc" ? query.OrderBy(l => l.Title).ThenBy(l => l.Id) : query.OrderByDescending(l => l.Title).ThenBy(l => l.Id),
             _ => query.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.Id)
         };
 

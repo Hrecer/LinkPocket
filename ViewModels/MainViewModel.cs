@@ -237,7 +237,7 @@ namespace LinkPocket.ViewModels
         public string NewFolderName
         {
             get => _newFolderName;
-            set { _newFolderName = value; OnPropertyChanged(); }
+            set { _newFolderName = value; OnPropertyChanged(); ((AsyncRelayCommand)ConfirmCreateFolderCommand).NotifyCanExecuteChanged(); }
         }
 
         public string EditLinkIdDisplay
@@ -518,6 +518,7 @@ namespace LinkPocket.ViewModels
             EditLinkTitle = string.Empty;
             EditLinkDescription = string.Empty;
             _fetchedFaviconUrl = string.Empty;
+            EditLinkFaviconImage = null;
             OnPropertyChanged(nameof(EditLinkFaviconUrl));
             EditLinkIdDisplay = string.Empty;
             EditLinkUpdatedAtDisplay = string.Empty;
@@ -537,6 +538,7 @@ namespace LinkPocket.ViewModels
             EditLinkDescription = link.Description ?? string.Empty;
             var faviconUrl = link.FaviconUrl ?? string.Empty;
             _fetchedFaviconUrl = faviconUrl;
+            EditLinkFaviconImage = FaviconService.LoadFromCache(faviconUrl);
             OnPropertyChanged(nameof(EditLinkFaviconUrl));
             EditLinkIdDisplay = link.LinkId ?? string.Empty;
             EditLinkUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -730,6 +732,7 @@ namespace LinkPocket.ViewModels
                     if (!string.IsNullOrEmpty(metadata.FaviconUrl))
                     {
                         _fetchedFaviconUrl = metadata.FaviconUrl;
+                        EditLinkFaviconImage = FaviconService.LoadFromCache(metadata.FaviconUrl);
                         OnPropertyChanged(nameof(EditLinkFaviconUrl));
                         Logger.Info($"Favicon: {metadata.FaviconUrl}");
                         updated = true;
