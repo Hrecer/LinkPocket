@@ -275,7 +275,7 @@ public partial class MainWindow : Window
         else if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             if (IsInTextInput()) return;
-            if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId)) return;
+            if (DataContext is MainViewModel pasteVm && !string.IsNullOrEmpty(pasteVm.SelectedFolderId)) return;
             _ = PasteLinksAsync();
             e.Handled = true;
         }
@@ -312,9 +312,10 @@ public partial class MainWindow : Window
                     _selectionManager.NotifyMultiSelectEnded();
                     UpdateMainListSelectionVisuals();
                 }
-                if (_selectionManager.CurrentSelectedLink != null)
+                if (!string.IsNullOrEmpty(escVm.SelectedLinkId))
                 {
-                    _selectionManager.ClearCurrentSelectedLink();
+                    escVm.SelectedLinkId = null;
+                    escVm.NotifyLinkSelected(false);
                     ClearDetailPanel();
                 }
                 if (_selectedSearchCard != null)
@@ -344,7 +345,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var currentLink = _selectionManager.CurrentSelectedLink;
+        var currentLink = (DataContext as MainViewModel)?.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == (DataContext as MainViewModel)?.SelectedLinkId);
         if (currentLink == null) return;
         _clipboardManager.Copy(new List<LinkItem> { currentLink });
     }
@@ -365,7 +366,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var currentLink = _selectionManager.CurrentSelectedLink;
+        var currentLink = (DataContext as MainViewModel)?.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == (DataContext as MainViewModel)?.SelectedLinkId);
         if (currentLink == null) return;
         _clipboardManager.Cut(new List<LinkItem> { currentLink });
 
@@ -383,7 +384,7 @@ public partial class MainWindow : Window
         if (DataContext is not MainViewModel vm) return;
 
         string sourceFolder = links[0].ListId ?? string.Empty;
-        string targetFolder = _selectionManager.SelectedFolderId;
+        string targetFolder = vm.SelectedFolderId;
 
         if (sourceFolder == targetFolder)
         {
@@ -447,7 +448,7 @@ public partial class MainWindow : Window
         {
             if (_mainListCardBorders.TryGetValue(linkItem.LinkId, out var card))
             {
-                if (linkItem.IsSelected || _selectionManager.CurrentSelectedLink?.LinkId == linkItem.LinkId)
+                if (linkItem.IsSelected || linkItem.LinkId == vm.SelectedLinkId)
                 {
                     card.BorderBrush = selectedBrush;
                 }
@@ -517,7 +518,7 @@ public partial class MainWindow : Window
     private void RenderFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
         bool isExpanded = _sidebarExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == _selectionManager.SelectedFolderId;
+        bool isSelected = folder.Id == viewModel.SelectedFolderId;
 
         var folderRow = CreateFolderRow(folder, isExpanded, isSelected, depth, viewModel);
         container.Children.Add(folderRow);
@@ -646,7 +647,7 @@ public partial class MainWindow : Window
             }
             if (s is FrameworkElement fe && fe.Tag is string folderId)
             {
-                if (_selectionManager.SelectedFolderId == folderId)
+                if (viewModel.SelectedFolderId == folderId)
                     ClearFolderSelection();
                 else
                     SetFolderSelection(folderId);
@@ -657,20 +658,19 @@ public partial class MainWindow : Window
         row.MouseEnter += (s, e) =>
         {
             var b = (Border)s;
-            if (b.Tag is string fid && fid != _selectionManager.SelectedFolderId)
+            if (b.Tag is string fid && fid != viewModel.SelectedFolderId)
                 b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
         };
 
         row.MouseLeave += (s, e) =>
         {
             var b = (Border)s;
-            if (b.Tag is string fid && fid != _selectionManager.SelectedFolderId)
+            if (b.Tag is string fid && fid != viewModel.SelectedFolderId)
                 b.Background = new SolidColorBrush(Colors.Transparent);
         };
 
         row.MouseRightButtonUp += (s, e) =>
         {
-            _selectionManager.SelectFolder(folder.Id);
             if (DataContext is MainViewModel vm)
                 vm.SelectFolder(folder.Id);
             var ctxMenu = new ContextMenu();
@@ -786,17 +786,17 @@ public partial class MainWindow : Window
 
                 if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
                 {
-                    var prevSelectedBeforePromotion = _selectionManager.CurrentSelectedLink;
-                    var ctrlResult = _selectionManager.HandleCtrlClick(targetLink);
+                    var prevSelectedLinkId = viewModel.SelectedLinkId;
+                    var ctrlResult = _selectionManager.HandleCtrlClick(targetLink, viewModel.SelectedFolderId, viewModel.SelectedLinkId, out var newSelectedLinkId);
                     if (ctrlResult == Managers.SelectionManager.CtrlClickResult.BlockedCrossDirectory)
                     {
                         e.Handled = true;
                         return;
                     }
 
-                    if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && prevSelectedBeforePromotion != null)
+                    if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && !string.IsNullOrEmpty(prevSelectedLinkId))
                     {
-                        var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedBeforePromotion.LinkId);
+                        var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
                         if (promotedLink != null && !promotedLink.IsSelected)
                         {
                             promotedLink.IsSelected = true;
@@ -826,11 +826,20 @@ public partial class MainWindow : Window
                     _selectionManager.NotifyMultiSelectEnded();
                 }
 
-                _selectionManager.HandleSingleClick(targetLink);
+                if (viewModel.SelectedLinkId == targetLink.LinkId)
+                {
+                    viewModel.SelectedLinkId = null;
+                    viewModel.NotifyLinkSelected(false);
+                }
+                else
+                {
+                    viewModel.SelectedLinkId = targetLink.LinkId;
+                    viewModel.ClearFolderSelectionVM();
+                    viewModel.NotifyLinkSelected(true);
+                }
                 UpdateSidebarSelectionVisuals();
                 UpdateMainListSelectionVisuals();
                 RefreshDetailPanel();
-                viewModel.NotifyLinkSelected(_selectionManager.CurrentSelectedLink != null);
                 e.Handled = true;
             }
         };
@@ -840,7 +849,7 @@ public partial class MainWindow : Window
             var b = (Border)s;
             if (b.Tag is string fid)
             {
-                if (_selectionManager.CurrentSelectedLink?.LinkId == fid) return;
+                if (fid == viewModel.SelectedLinkId) return;
                 if (viewModel.LinkViewModel?.Links.Any(l => l.IsSelected && l.LinkId == fid) == true) return;
                 b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
             }
@@ -851,7 +860,7 @@ public partial class MainWindow : Window
             var b = (Border)s;
             if (b.Tag is string fid)
             {
-                if (_selectionManager.CurrentSelectedLink?.LinkId == fid) return;
+                if (fid == viewModel.SelectedLinkId) return;
                 if (viewModel.LinkViewModel?.Links.Any(l => l.IsSelected && l.LinkId == fid) == true) return;
                 b.Background = new SolidColorBrush(Colors.Transparent);
             }
@@ -871,11 +880,13 @@ public partial class MainWindow : Window
         _updatingSelectionVisuals = true;
         try
         {
+            if (DataContext is not MainViewModel vm) return;
+
             foreach (var kvp in _sidebarFolderBorders)
             {
                 var border = kvp.Value;
                 var folderId = kvp.Key;
-                bool isSelected = folderId == _selectionManager.SelectedFolderId;
+                bool isSelected = folderId == vm.SelectedFolderId;
                 border.Background = isSelected
                     ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
                     : new SolidColorBrush(Colors.Transparent);
@@ -885,10 +896,10 @@ public partial class MainWindow : Window
             {
                 var border = kvp.Value;
                 var linkId = kvp.Key;
-                bool isSelected = _selectionManager.CurrentSelectedLink?.LinkId == linkId;
-                if (!isSelected && DataContext is MainViewModel svm && svm.LinkViewModel != null)
+                bool isSelected = linkId == vm.SelectedLinkId;
+                if (!isSelected && vm.LinkViewModel != null)
                 {
-                    isSelected = svm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
+                    isSelected = vm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
                 }
                 border.Background = isSelected
                     ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
@@ -899,7 +910,7 @@ public partial class MainWindow : Window
             {
                 var border = kvp.Value;
                 var folderId = kvp.Key;
-                bool isSelected = folderId == _selectionManager.SelectedFolderId;
+                bool isSelected = folderId == vm.SelectedFolderId;
                 border.Background = isSelected
                     ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
                     : new SolidColorBrush(Colors.Transparent);
@@ -909,10 +920,10 @@ public partial class MainWindow : Window
             {
                 var border = kvp.Value;
                 var linkId = kvp.Key;
-                bool isSelected = _selectionManager.CurrentSelectedLink?.LinkId == linkId;
-                if (!isSelected && DataContext is MainViewModel mvm && mvm.LinkViewModel != null)
+                bool isSelected = linkId == vm.SelectedLinkId;
+                if (!isSelected && vm.LinkViewModel != null)
                 {
-                    isSelected = mvm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
+                    isSelected = vm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
                 }
                 border.BorderBrush = isSelected
                     ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
@@ -933,16 +944,29 @@ public partial class MainWindow : Window
 
     public void RefreshDetailPanel()
     {
-        if (_selectionManager.CurrentSelectedLink != null)
+        if (DataContext is not MainViewModel vm)
         {
-            var link = _selectionManager.CurrentSelectedLink;
-            var folderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameForLink(link.ListId) : "根目录";
-            PopulateDetailPanel(DetailPanel, link.Url, link.Title, link.Description, link.FaviconUrl,
-                link.UpdatedAt, link.LastVisitedAt, link.VisitCount, link.CreatedAt, link.LinkId, folderName);
+            ResetDetailPanelPlaceholder(DetailPanel);
+            return;
         }
-        else if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId) && DataContext is MainViewModel vm)
+
+        if (!string.IsNullOrEmpty(vm.SelectedLinkId))
         {
-            var folderNode = FindFolderNodeById(vm.FolderItems, _selectionManager.SelectedFolderId);
+            var link = vm.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == vm.SelectedLinkId);
+            if (link != null)
+            {
+                var folderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameForLink(link.ListId) : "全部书签";
+                PopulateDetailPanel(DetailPanel, link.Url, link.Title, link.Description, link.FaviconUrl,
+                    link.UpdatedAt, link.LastVisitedAt, link.VisitCount, link.CreatedAt, link.LinkId, folderName);
+            }
+            else
+            {
+                ResetDetailPanelPlaceholder(DetailPanel);
+            }
+        }
+        else if (!string.IsNullOrEmpty(vm.SelectedFolderId))
+        {
+            var folderNode = FindFolderNodeById(vm.FolderItems, vm.SelectedFolderId);
             if (folderNode != null)
             {
                 var folderPath = MainViewModel.FindFolderPathInNodes(vm.FolderItems, folderNode.Id) ?? folderNode.Name;
@@ -1085,7 +1109,7 @@ public partial class MainWindow : Window
         var folderIcon = new PackIcon { Kind = PackIconKind.FolderOutline, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
         Grid.SetColumn(folderIcon, 0);
         folderRow.Children.Add(folderIcon);
-        var folderText = new TextBlock { Text = folderName ?? "根目录", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
+        var folderText = new TextBlock { Text = folderName ?? "全部书签", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
         Grid.SetColumn(folderText, 1);
         folderRow.Children.Add(folderText);
         panel.Children.Add(folderRow);
@@ -1222,7 +1246,7 @@ public partial class MainWindow : Window
     private static string FindFolderNameForLink(string? listId)
     {
         if (string.IsNullOrEmpty(listId) || listId == "0")
-            return "根目录";
+            return "全部书签";
 
         if (Application.Current.MainWindow is MainWindow mw && mw.DataContext is MainViewModel vm)
             return MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录";
@@ -1232,28 +1256,35 @@ public partial class MainWindow : Window
 
     public void UpdateDetailPanel(LinkItem link)
     {
-        _selectionManager.HandleSingleClick(link);
+        if (DataContext is MainViewModel vm)
+        {
+            vm.SelectedLinkId = link.LinkId;
+            vm.NotifyLinkSelected(true);
+        }
         UpdateSidebarSelectionVisuals();
         RefreshDetailPanel();
-        if (DataContext is MainViewModel vm)
-            vm.NotifyLinkSelected(link != null);
     }
 
     public void ClearDetailPanel()
     {
-        _selectionManager.ClearCurrentSelectedLink();
+        if (DataContext is MainViewModel vm)
+        {
+            vm.SelectedLinkId = null;
+            vm.NotifyLinkSelected(false);
+        }
         UpdateSidebarSelectionVisuals();
         RefreshDetailPanel();
-        if (DataContext is MainViewModel vm)
-            vm.NotifyLinkSelected(false);
     }
 
-    public LinkItem? GetSelectedLink() => _selectionManager.CurrentSelectedLink;
+    public LinkItem? GetSelectedLink()
+    {
+        if (DataContext is MainViewModel vm && !string.IsNullOrEmpty(vm.SelectedLinkId))
+            return vm.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == vm.SelectedLinkId);
+        return null;
+    }
 
     private async void SetFolderSelection(string folderId)
     {
-        _selectionManager.SelectFolder(folderId);
-
         if (DataContext is MainViewModel vm)
         {
             vm.SelectFolder(folderId);
@@ -1280,10 +1311,26 @@ public partial class MainWindow : Window
         }
     }
 
+    public void ExpandAllAncestorFolders(ObservableCollection<FolderNode> nodes, string targetId)
+    {
+        var ancestors = new List<string>();
+        var current = FindFolderNode(nodes, targetId);
+        while (current != null)
+        {
+            if (!string.IsNullOrEmpty(current.Id))
+            {
+                ancestors.Add(current.Id);
+            }
+            current = FindParentNode(nodes, current.ParentId);
+        }
+        for (int i = ancestors.Count - 1; i >= 0; i--)
+        {
+            ExpandFolder(ancestors[i]);
+        }
+    }
+
     public async void ClearFolderSelection()
     {
-        _selectionManager.ClearFolderSelection();
-
         if (DataContext is MainViewModel vm)
         {
             vm.ClearFolderSelectionVM();
@@ -1341,7 +1388,7 @@ public partial class MainWindow : Window
     private async Task RenderMainListFolderNodeAsync(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
         bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == _selectionManager.SelectedFolderId;
+        bool isSelected = folder.Id == viewModel.SelectedFolderId;
 
         var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
         container.Children.Add(row);
@@ -1380,7 +1427,7 @@ public partial class MainWindow : Window
     private void RenderMainListFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
     {
         bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == _selectionManager.SelectedFolderId;
+        bool isSelected = folder.Id == viewModel.SelectedFolderId;
 
         var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
         container.Children.Add(row);
@@ -1510,7 +1557,7 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 return;
             }
-            if (_selectionManager.SelectedFolderId == folder.Id)
+            if (viewModel.SelectedFolderId == folder.Id)
                 ClearFolderSelection();
             else
                 SetFolderSelection(folder.Id);
@@ -1519,19 +1566,18 @@ public partial class MainWindow : Window
 
         row.MouseEnter += (s, e) =>
         {
-            if (s is Border b && _selectionManager.SelectedFolderId != folder.Id)
+            if (s is Border b && viewModel.SelectedFolderId != folder.Id)
                 b.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
         };
 
         row.MouseLeave += (s, e) =>
         {
-            if (s is Border b && _selectionManager.SelectedFolderId != folder.Id)
+            if (s is Border b && viewModel.SelectedFolderId != folder.Id)
                 b.Background = new SolidColorBrush(Colors.Transparent);
         };
 
         row.MouseRightButtonUp += (s, e) =>
         {
-            _selectionManager.SelectFolder(folder.Id);
             if (DataContext is MainViewModel vm)
                 vm.SelectFolder(folder.Id);
             var ctxMenu = new ContextMenu();
@@ -1674,7 +1720,7 @@ public partial class MainWindow : Window
             var targetLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == link.LinkId) ?? linkItemRef;
             if (targetLink == null) return;
 
-            _selectionManager.HandleSingleClick(targetLink);
+            viewModel.SelectedLinkId = targetLink.LinkId;
             UpdateMainListSelectionVisuals();
             UpdateSidebarSelectionVisuals();
             RefreshDetailPanel();
@@ -1705,8 +1751,8 @@ public partial class MainWindow : Window
                     await PasteLinksAsync();
                     ctxMenu.IsOpen = false;
                 };
-                pasteItem.IsEnabled = !string.IsNullOrEmpty(_selectionManager.SelectedFolderId);
-                pasteItem.ToolTip = string.IsNullOrEmpty(_selectionManager.SelectedFolderId) ? "请先选择一个目标文件夹" : "";
+                pasteItem.IsEnabled = !string.IsNullOrEmpty(viewModel.SelectedFolderId);
+                pasteItem.ToolTip = string.IsNullOrEmpty(viewModel.SelectedFolderId) ? "请先选择一个目标文件夹" : "";
                 ctxMenu.Items.Add(pasteItem);
             }
 
@@ -1750,22 +1796,22 @@ public partial class MainWindow : Window
 
             if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
-                var prevSelectedBeforePromotion = _selectionManager.CurrentSelectedLink;
-                var ctrlResult = _selectionManager.HandleCtrlClick(targetLink);
+                var prevSelectedLinkId = viewModel.SelectedLinkId;
+                var ctrlResult = _selectionManager.HandleCtrlClick(targetLink, viewModel.SelectedFolderId, viewModel.SelectedLinkId, out var newSelectedLinkId);
                 if (ctrlResult == Managers.SelectionManager.CtrlClickResult.BlockedCrossDirectory)
                 {
                     e.Handled = true;
                     return;
                 }
 
-                if (string.IsNullOrEmpty(_selectionManager.ActiveFolderId))
+                if (string.IsNullOrEmpty(viewModel.SelectedFolderId))
                 {
                     viewModel.ClearFolderSelectionVM();
                 }
 
-                if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && prevSelectedBeforePromotion != null)
+                if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && !string.IsNullOrEmpty(prevSelectedLinkId))
                 {
-                    var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedBeforePromotion.LinkId);
+                    var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
                     if (promotedLink != null && !promotedLink.IsSelected)
                     {
                         promotedLink.IsSelected = true;
@@ -1800,11 +1846,20 @@ public partial class MainWindow : Window
             _clipboardManager.Clear();
             ClearCutVisuals();
 
-            _selectionManager.HandleSingleClick(targetLink);
+            if (viewModel.SelectedLinkId == targetLink.LinkId)
+            {
+                viewModel.SelectedLinkId = null;
+                viewModel.NotifyLinkSelected(false);
+            }
+            else
+            {
+                viewModel.SelectedLinkId = targetLink.LinkId;
+                viewModel.ClearFolderSelectionVM();
+                viewModel.NotifyLinkSelected(true);
+            }
             UpdateMainListSelectionVisuals();
             UpdateSidebarSelectionVisuals();
             RefreshDetailPanel();
-            viewModel.NotifyLinkSelected(_selectionManager.CurrentSelectedLink != null);
             e.Handled = true;
         };
 
@@ -2111,6 +2166,18 @@ public partial class MainWindow : Window
         return null;
     }
 
+    private static FolderNode? FindParentNode(ObservableCollection<FolderNode> nodes, string? parentId)
+    {
+        if (string.IsNullOrEmpty(parentId)) return null;
+        foreach (var node in nodes)
+        {
+            if (node.Id == parentId) return node;
+            var found = FindParentNode(node.Children, parentId);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
     {
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
@@ -2152,23 +2219,52 @@ public partial class MainWindow : Window
                 var targetNode = FindFolderNode(vm.FolderItems, targetLink.ListId);
                 if (targetNode != null)
                 {
+                    _mainExpandedFolders.Clear();
+                    _mainExpandedFolders.Add("0");
+                    _sidebarExpandedFolders.Clear();
+                    _sidebarExpandedFolders.Add("0");
+                    ExpandAllAncestorFolders(vm.FolderItems, targetNode.Id);
                     vm.SelectFolder(targetNode.Id);
+                    await RefreshMainListAsync();
+                    RefreshSidebar(vm);
+
+                    if (_mainListFolderBorders.TryGetValue(targetNode.Id, out var folderRow))
+                        folderRow.BringIntoView();
+
+                    if (_sidebarFolderBorders.TryGetValue(targetNode.Id, out var sidebarFolder))
+                        sidebarFolder.BringIntoView();
+
                     await Task.Delay(150);
                 }
             }
             else
             {
+                _mainExpandedFolders.Clear();
+                _mainExpandedFolders.Add("0");
+                _sidebarExpandedFolders.Clear();
+                _sidebarExpandedFolders.Add("0");
                 vm.SelectFolder("0");
+                await RefreshMainListAsync();
+                RefreshSidebar(vm);
                 await Task.Delay(150);
             }
 
-            _selectionManager.HandleSingleClick(targetLink);
+            vm.SelectedLinkId = targetLink.LinkId;
+            UpdateSidebarSelectionVisuals();
             RefreshDetailPanel();
             UpdateMainListSelectionVisuals();
 
             if (_mainListCardBorders.TryGetValue(targetLink.LinkId, out var card))
             {
-                card.BringIntoView();
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    card.BringIntoView();
+                    var sv = FindVisualChild<ScrollViewer>(MainListContentPanel?.Parent as DependencyObject ?? this);
+                    if (sv != null && card.TransformToAncestor(sv).TryTransform(new Point(0, 0), out var pos) && pos.Y > 40)
+                    {
+                        sv.ScrollToVerticalOffset(sv.VerticalOffset + pos.Y - 20);
+                    }
+                }, System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }));
     }
@@ -2207,7 +2303,7 @@ public partial class MainWindow : Window
             if (clickedLink == null)
             {
                 viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
-                _selectionManager.ClearCurrentSelectedLink();
+                viewModel.SelectedLinkId = null;
                 viewModel.NotifyLinkSelected(false);
                 ClearFolderSelection();
                 UpdateSidebarSelectionVisuals();
@@ -2252,7 +2348,7 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
         {
             vm.LinkViewModel.ClearSelectionCommand.Execute(null);
-            _selectionManager.ClearCurrentSelectedLink();
+            vm.SelectedLinkId = null;
             vm.NotifyLinkSelected(false);
             ClearFolderSelection();
             UpdateSidebarSelectionVisuals();

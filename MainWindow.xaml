@@ -440,18 +440,28 @@
 
                 <!-- 搜索框下方常驻工具栏（有分隔线） -->
                 <Border x:Name="SearchToolbar" Grid.Row="1" Background="{DynamicResource MaterialDesignCardBackground}"
-                        Padding="16,8,16,12" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource MaterialDesignDivider}">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        Padding="12,10" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,1,0,1">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Button x:Name="SearchJumpToLinkBtn"
-                                Style="{StaticResource MaterialDesignOutlinedButton}" Padding="20,6"
+                                Padding="12,8" Margin="4,0"
                                 Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
                                 Cursor="Hand">
-                            <Button.Content>
-                                <StackPanel Orientation="Horizontal">
-                                    <materialDesign:PackIcon Kind="OpenInNew" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="跳转到链接页" FontSize="12"/>
-                                </StackPanel>
-                            </Button.Content>
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Opacity" Value="0.4"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="OpenInNew" Width="18" Height="18" VerticalAlignment="Center"/>
+                                <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                            </StackPanel>
                         </Button>
                     </StackPanel>
                 </Border>

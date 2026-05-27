@@ -156,7 +156,7 @@ public class LinkService
             Title = title,
             OriginalTitle = title,
             Description = description,
-            ListId = listId,
+            ListId = string.IsNullOrEmpty(listId) || listId == "0" ? null : listId,
             IsImportant = isImportant,
             VisitCount = 0,
             CreatedAt = DateTime.UtcNow,

@@ -25,6 +25,7 @@ namespace LinkPocket.ViewModels
         
         private string _currentNavId = "links";
         private string _selectedFolderId = string.Empty;
+        private string? _selectedLinkId;
         private bool _hasSelectedLink;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
@@ -133,6 +134,16 @@ namespace LinkPocket.ViewModels
                 }
             }
         }
+
+        public string SelectedFolderId => _selectedFolderId;
+
+        public string? SelectedLinkId
+        {
+            get => _selectedLinkId;
+            set { _selectedLinkId = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedLink)); }
+        }
+
+        public bool HasSelectedLink => !string.IsNullOrEmpty(_selectedLinkId);
 
         public event EventHandler? OnNavigatedToSearch;
         public event EventHandler? OnNavigatedFromSearch;
@@ -600,7 +611,7 @@ namespace LinkPocket.ViewModels
             DetailTitle = link.Title ?? string.Empty;
             DetailDescription = link.Description ?? "（无描述）";
             DetailFaviconUrl = link.FaviconUrl ?? string.Empty;
-            DetailFolderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameById(FolderItems, link.ListId) : "根目录";
+            DetailFolderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameById(FolderItems, link.ListId) : "全部书签";
             DetailFaviconImage = FaviconService.LoadFromCache(link.FaviconUrl);
             DetailLinkIdDisplay = link.LinkId ?? string.Empty;
             DetailUpdatedAtDisplay = link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -844,6 +855,7 @@ namespace LinkPocket.ViewModels
         public void SelectFolder(string folderId)
         {
             _selectedFolderId = folderId;
+            _selectedLinkId = null;
             NotifyActionCommandsChanged();
 
             if (folderId == "0")
@@ -874,6 +886,7 @@ namespace LinkPocket.ViewModels
         public void ClearFolderSelectionVM()
         {
             _selectedFolderId = string.Empty;
+            _selectedLinkId = null;
             _hasSelectedLink = false;
             NotifyActionCommandsChanged();
         }
