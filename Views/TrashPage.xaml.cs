@@ -39,12 +39,15 @@ namespace LinkPocket.Views
                     Text = "回收站为空", FontSize = 14, Opacity = 0.4,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 40, 0, 0)
                 });
+                TrashRestoreBtn.IsEnabled = false;
+                TrashDeleteBtn.IsEnabled = false;
                 return Task.CompletedTask;
             }
 
             foreach (var item in recycleVm.Items)
                 TrashContentPanel.Children.Add(CreateTrashLinkCard(item, recycleVm));
 
+            SyncButtonStates(recycleVm);
             return Task.CompletedTask;
         }
 
@@ -143,6 +146,14 @@ namespace LinkPocket.Views
             var defaultBrush = (Brush)FindResource("MaterialDesignDivider");
             foreach (var kvp in _trashCardBorders)
                 kvp.Value.BorderBrush = recycleVm.IsSelected(kvp.Key) ? selectedBrush : defaultBrush;
+            SyncButtonStates(recycleVm);
+        }
+
+        private void SyncButtonStates(RecycleBinViewModel recycleVm)
+        {
+            bool hasSelection = recycleVm.SelectedIds.Count > 0;
+            TrashRestoreBtn.IsEnabled = hasSelection;
+            TrashDeleteBtn.IsEnabled = hasSelection;
         }
 
         private async void TrashRestore_Click(object sender, RoutedEventArgs e)
