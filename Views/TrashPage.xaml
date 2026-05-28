@@ -6,9 +6,9 @@
              PreviewKeyDown="TrashPage_PreviewKeyDown"
              PreviewMouseLeftButtonDown="TrashPage_PreviewMouseLeftButtonDown">
     <DockPanel Background="Transparent">
-        <StackPanel x:Name="TrashToolbar" DockPanel.Dock="Top" Orientation="Vertical" HorizontalAlignment="Center"
-                    Width="720" Margin="0,12,0,8">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <Separator DockPanel.Dock="Top" Background="{DynamicResource MaterialDesignDivider}" Margin="0,0,0,0"/>
+        <StackPanel x:Name="TrashToolbar" DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Center"
+                    Margin="0,12,0,8">
                 <Button x:Name="TrashRestoreBtn" Padding="12,6" Margin="0,0,8,0" Cursor="Hand"
                         Click="TrashRestore_Click" IsEnabled="False">
                     <Button.Style>
@@ -48,8 +48,6 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
-            <Separator Background="{DynamicResource MaterialDesignDivider}" Margin="0,8,0,0"/>
-        </StackPanel>
         <ScrollViewer x:Name="TrashScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
             <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
                 <StackPanel x:Name="TrashContentPanel"/>
