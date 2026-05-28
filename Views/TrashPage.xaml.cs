@@ -137,7 +137,7 @@ namespace LinkPocket.Views
             return card;
         }
 
-        private void UpdateTrashSelectionVisuals(RecycleBinViewModel recycleVm)
+        public void UpdateTrashSelectionVisuals(RecycleBinViewModel recycleVm)
         {
             var selectedBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
             var defaultBrush = (Brush)FindResource("MaterialDesignDivider");
@@ -183,6 +183,24 @@ namespace LinkPocket.Views
                 UpdateTrashSelectionVisuals(recycleVm);
                 e.Handled = true;
             }
+        }
+
+        private void TrashPage_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
+            var recycleVm = vm.RecycleBinViewModel;
+            if (recycleVm.SelectedIds.Count == 0) return;
+
+            DependencyObject? hit = e.OriginalSource as DependencyObject;
+            while (hit != null)
+            {
+                if (hit is Border b && "TrashCard".Equals(b.Tag as string))
+                    return;
+                hit = VisualTreeHelper.GetParent(hit);
+            }
+
+            recycleVm.ClearSelection();
+            UpdateTrashSelectionVisuals(recycleVm);
         }
     }
 }

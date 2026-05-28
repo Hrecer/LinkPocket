@@ -352,6 +352,14 @@ public partial class MainWindow : Window
                     _clipboardManager.Clear();
                     ClearCutVisuals();
                 }
+                if (escVm.CurrentNavId == "trash" && escVm.RecycleBinViewModel != null && escVm.RecycleBinViewModel.SelectedIds.Count > 0)
+                {
+                    escVm.RecycleBinViewModel.ClearSelection();
+                    if (TrashView is Views.TrashPage tp)
+                        tp.UpdateTrashSelectionVisuals(escVm.RecycleBinViewModel);
+                    e.Handled = true;
+                    return;
+                }
                 if (escVm.LinkViewModel?.HasSelectedItems == true)
                 {
                     escVm.LinkViewModel.ClearSelectionCommand.Execute(null);

@@ -2,8 +2,10 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-             PreviewKeyDown="TrashPage_PreviewKeyDown">
-    <DockPanel>
+             Focusable="True"
+             PreviewKeyDown="TrashPage_PreviewKeyDown"
+             PreviewMouseLeftButtonDown="TrashPage_PreviewMouseLeftButtonDown">
+    <DockPanel Background="Transparent">
         <StackPanel x:Name="TrashToolbar" DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Right"
                     Width="720" Margin="0,12,0,8">
             <Button x:Name="TrashRestoreBtn" Padding="12,6" Margin="0,0,8,0" Cursor="Hand"
@@ -29,7 +31,7 @@
                 </StackPanel>
             </Button>
         </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="TrashScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
             <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
                 <StackPanel x:Name="TrashContentPanel"/>
             </StackPanel>
