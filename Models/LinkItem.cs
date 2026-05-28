@@ -10,7 +10,6 @@ namespace LinkPocket.Models
         public string LinkId { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
-        public string OriginalTitle { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string FaviconUrl { get; set; } = string.Empty;
         public string? ListId { get; set; }
@@ -40,7 +39,7 @@ namespace LinkPocket.Models
         }
 
         // UI辅助属性
-        public string DisplayTitle => !string.IsNullOrEmpty(Title) ? Title : OriginalTitle;
+        public string DisplayTitle => !string.IsNullOrEmpty(Title) ? Title : Url;
         public string DisplayUrl => Url.Length > 50 ? Url.Substring(0, 47) + "..." : Url;
         public string TitleLetter
         {

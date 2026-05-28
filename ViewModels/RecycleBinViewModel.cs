@@ -118,7 +118,6 @@ namespace LinkPocket.ViewModels
             LinkId = link.LinkId,
             Url = link.Url,
             Title = link.Title ?? "",
-            OriginalTitle = link.OriginalTitle ?? "",
             Description = link.Description ?? "",
             FaviconUrl = link.FaviconUrl ?? "",
             ListId = null,

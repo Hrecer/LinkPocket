@@ -1156,7 +1156,7 @@ namespace LinkPocket.ViewModels
             return filtered.ToList().Select(l => new LinkItem
             {
                 LinkId = l.LinkId, Url = l.Url,
-                Title = l.Title ?? "", OriginalTitle = l.OriginalTitle ?? "",
+                Title = l.Title ?? "",
                 Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
                 ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
                 VisitCount = l.VisitCount, IsImportant = l.IsImportant,

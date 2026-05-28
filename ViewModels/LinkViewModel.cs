@@ -279,7 +279,6 @@ namespace LinkPocket.ViewModels
                 LinkId = link.LinkId,
                 Url = link.Url,
                 Title = link.Title,
-                OriginalTitle = link.OriginalTitle,
                 Description = link.Description,
                 FaviconUrl = link.FaviconUrl,
                 ListId = link.ListId,
@@ -309,7 +308,6 @@ namespace LinkPocket.ViewModels
             {
                 currentLink.Url = previousState.Url;
                 currentLink.Title = previousState.Title;
-                currentLink.OriginalTitle = previousState.OriginalTitle;
                 currentLink.Description = previousState.Description;
                 currentLink.FaviconUrl = previousState.FaviconUrl;
                 currentLink.ListId = previousState.ListId;
@@ -443,7 +441,6 @@ namespace LinkPocket.ViewModels
                 LinkId = link.LinkId,
                 Url = link.Url,
                 Title = link.Title ?? "",
-                OriginalTitle = link.OriginalTitle ?? "",
                 Description = link.Description ?? "",
                 FaviconUrl = link.FaviconUrl ?? "",
                 ListId = link.ListId,

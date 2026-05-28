@@ -33,7 +33,6 @@ public class LinkService
             query = query.Where(l =>
                 l.Url.Contains(search) ||
                 (l.Title != null && l.Title.Contains(search)) ||
-                (l.OriginalTitle != null && l.OriginalTitle.Contains(search)) ||
                 (l.Description != null && l.Description.Contains(search)));
         }
 
@@ -154,7 +153,6 @@ public class LinkService
         {
             Url = url.Trim(),
             Title = title,
-            OriginalTitle = title,
             Description = description,
             ListId = string.IsNullOrEmpty(listId) || listId == "0" ? null : listId,
             IsImportant = isImportant,
@@ -173,7 +171,6 @@ public class LinkService
                     if (string.IsNullOrEmpty(link.Title) && !string.IsNullOrEmpty(metadata.Title))
                     {
                         link.Title = metadata.Title;
-                        link.OriginalTitle = metadata.Title;
                     }
                     if (string.IsNullOrEmpty(link.Description) && !string.IsNullOrEmpty(metadata.Description))
                     {
@@ -242,7 +239,6 @@ public class LinkService
             LinkId = link.LinkId,
             Url = link.Url,
             Title = link.Title,
-            OriginalTitle = link.OriginalTitle,
             Description = link.Description,
             FaviconUrl = link.FaviconUrl,
             LastVisitedAt = link.LastVisitedAt,
@@ -281,7 +277,6 @@ public class LinkService
             LinkId = trashedLink.LinkId,
             Url = trashedLink.Url,
             Title = trashedLink.Title,
-            OriginalTitle = trashedLink.OriginalTitle,
             Description = trashedLink.Description,
             FaviconUrl = trashedLink.FaviconUrl,
             ListId = null,
@@ -462,7 +457,6 @@ public class LinkService
             .Include(l => l.Folder)
             .Where(l => l.Url.Contains(query) ||
                     (l.Title != null && l.Title.Contains(query)) ||
-                    (l.OriginalTitle != null && l.OriginalTitle.Contains(query)) ||
                     (l.Description != null && l.Description.Contains(query)))
             .OrderByDescending(l => l.CreatedAt);
 

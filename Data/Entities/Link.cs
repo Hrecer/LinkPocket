@@ -26,10 +26,6 @@ public class Link
     [MaxLength(255)]
     public string? Title { get; set; }
 
-    [MaxLength(255)]
-    [Column("original_title")]
-    public string? OriginalTitle { get; set; }
-
     [Column(TypeName = "text")]
     public string? Description { get; set; }
 
