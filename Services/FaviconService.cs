@@ -17,8 +17,7 @@ public class FaviconService
     private static readonly ConcurrentDictionary<string, BitmapImage> _memoryCache = new();
     private static BitmapImage? _defaultIcon;
     private static readonly string _cacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LinkPocket", "favicons");
+        AppContext.BaseDirectory, "favicons");
 
     private static BitmapImage DefaultIcon
     {

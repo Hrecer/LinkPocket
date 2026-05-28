@@ -7,8 +7,7 @@ namespace LinkPocket.Services
     public static class Logger
     {
         private static readonly string LogDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "LinkPocket", "logs");
+            AppContext.BaseDirectory, "logs");
 
         private static readonly object Lock = new();
 

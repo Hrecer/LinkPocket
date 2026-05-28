@@ -8,9 +8,7 @@ public class LinkPocketDbContext : DbContext
 
     public LinkPocketDbContext()
     {
-        var folder = Environment.SpecialFolder.LocalApplicationData;
-        var path = Environment.GetFolderPath(folder);
-        DbPath = System.IO.Path.Join(path, "linkpocket.db");
+        DbPath = System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder options)
