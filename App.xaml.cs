@@ -9,6 +9,16 @@ public partial class App : Application
     {
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        DisableWerDumps();
+    }
+
+    private void DisableWerDumps()
+    {
+        try
+        {
+            Environment.SetEnvironmentVariable("WER_DISABLE_DIALOGS", "1");
+        }
+        catch { }
     }
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -23,4 +33,3 @@ public partial class App : Application
             Logger.Error("AppDomain未处理异常", ex);
     }
 }
-
