@@ -26,6 +26,10 @@ public class TrashedLink
     [Column("favicon_url")]
     public string? FaviconUrl { get; set; }
 
+    [MaxLength(20)]
+    [Column("list_id")]
+    public string? ListId { get; set; }
+
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }
 

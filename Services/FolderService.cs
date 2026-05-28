@@ -149,6 +149,7 @@ public class FolderService
                         Title = link.Title,
                         Description = link.Description,
                         FaviconUrl = link.FaviconUrl,
+                        ListId = link.ListId,
                         LastVisitedAt = link.LastVisitedAt,
                         VisitCount = link.VisitCount,
                         IsImportant = link.IsImportant,
