@@ -207,6 +207,8 @@ namespace LinkPocket.Views
             {
                 if (hit is Border b && "TrashCard".Equals(b.Tag as string))
                     return;
+                if (hit is Button)
+                    return;
                 hit = VisualTreeHelper.GetParent(hit);
             }
 
