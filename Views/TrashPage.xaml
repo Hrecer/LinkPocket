@@ -3,34 +3,36 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              PreviewKeyDown="TrashPage_PreviewKeyDown">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-        <StackPanel HorizontalAlignment="Center" Margin="0,12,0,0">
-            <StackPanel x:Name="TrashToolbar" Orientation="Horizontal" HorizontalAlignment="Right"
-                        Width="720" Margin="0,0,0,8">
-                <Button x:Name="TrashRestoreBtn" Padding="12,6" Margin="0,0,8,0" Cursor="Hand"
-                        BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1"
-                        Background="{DynamicResource MaterialDesignCardBackground}"
-                        Click="TrashRestore_Click">
-                    <Button.Resources>
-                        <Style TargetType="Border">
-                            <Setter Property="CornerRadius" Value="4"/>
-                        </Style>
-                    </Button.Resources>
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="恢复" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button x:Name="TrashDeleteBtn" Padding="12,6" Cursor="Hand"
-                        Background="#E53935" Foreground="White" BorderThickness="0"
-                        Click="TrashPermanentDelete_Click">
-                    <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="DeleteForever" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="永久删除" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-            <StackPanel x:Name="TrashContentPanel"/>
+    <DockPanel>
+        <StackPanel x:Name="TrashToolbar" DockPanel.Dock="Top" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Width="720" Margin="0,12,0,8">
+            <Button x:Name="TrashRestoreBtn" Padding="12,6" Margin="0,0,8,0" Cursor="Hand"
+                    BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="1"
+                    Background="{DynamicResource MaterialDesignCardBackground}"
+                    Click="TrashRestore_Click">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="4"/>
+                    </Style>
+                </Button.Resources>
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="Restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                    <TextBlock Text="恢复" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="TrashDeleteBtn" Padding="12,6" Cursor="Hand"
+                    Background="#E53935" Foreground="White" BorderThickness="0"
+                    Click="TrashPermanentDelete_Click">
+                <StackPanel Orientation="Horizontal">
+                    <materialDesign:PackIcon Kind="DeleteForever" Width="16" Height="16" VerticalAlignment="Center"/>
+                    <TextBlock Text="永久删除" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
-    </ScrollViewer>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
+                <StackPanel x:Name="TrashContentPanel"/>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
 </UserControl>

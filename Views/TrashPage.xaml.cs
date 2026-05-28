@@ -124,13 +124,14 @@ namespace LinkPocket.Views
             card.Child = grid;
 
             var capturedId = item.LinkId;
-            card.MouseLeftButtonDown += (s, e) =>
+            card.PreviewMouseLeftButtonDown += (s, e) =>
             {
                 if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
                     recycleVm.ToggleMultiSelect(capturedId);
                 else
                     recycleVm.SelectSingle(capturedId);
                 UpdateTrashSelectionVisuals(recycleVm);
+                e.Handled = true;
             };
 
             return card;
