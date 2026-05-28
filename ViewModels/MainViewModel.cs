@@ -22,17 +22,16 @@ namespace LinkPocket.ViewModels
         private readonly LinkPocketDbContext _db;
         private readonly LinkService _linkService;
         private readonly FolderService _folderService;
+        private readonly Managers.SelectionManager _selectionManager;
         
         private string _currentNavId = "links";
-        private string _selectedFolderId = string.Empty;
-        private string? _selectedLinkId;
-        private bool _hasSelectedLink;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private LinkViewModel? _linkViewModel;
         private SearchViewModel? _searchViewModel;
         private RecycleBinViewModel? _recycleBinViewModel;
         private SettingsViewModel? _settingsViewModel;
+        private SmartListViewModel? _smartListViewModel;
 
         private bool _isEditPageVisible;
         private bool _isInSecondaryPage;
@@ -75,8 +74,10 @@ namespace LinkPocket.ViewModels
             // 数据库将清空重建，无需迁移逻辑
         }
 
-        public MainViewModel()
+        public MainViewModel(Managers.SelectionManager selectionManager)
         {
+            _selectionManager = selectionManager;
+
             _db = new LinkPocketDbContext();
             _db.Database.EnsureCreated();
             EnsureSchema();
@@ -91,10 +92,11 @@ namespace LinkPocket.ViewModels
             _searchViewModel = new SearchViewModel(_linkService);
             _recycleBinViewModel = new RecycleBinViewModel(_linkService);
             _settingsViewModel = new SettingsViewModel();
+            _smartListViewModel = new SmartListViewModel(_linkService);
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
-            ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectedFolderId));
-            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => !string.IsNullOrEmpty(_selectedFolderId));
+            ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
+            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
             ConfirmCreateFolderCommand = new AsyncRelayCommand(ConfirmCreateFolderAsync, () => !string.IsNullOrWhiteSpace(NewFolderName));
             CancelCreateFolderCommand = new RelayCommand(CancelCreateFolder);
             DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedAsync, CanDeleteSelected);
@@ -106,6 +108,27 @@ namespace LinkPocket.ViewModels
             ShowDetailCommand = new RelayCommand<LinkItem>(ShowDetail);
             DetailEditCommand = new RelayCommand(DetailEdit);
             CancelDetailCommand = new RelayCommand(CancelDetail);
+
+            _selectionManager.PropertyChanged += (sender, e) =>
+            {
+                if (e.PropertyName == nameof(_selectionManager.HasSelectedLink) ||
+                    e.PropertyName == nameof(_selectionManager.SelectedLinkId))
+                {
+                    OnPropertyChanged(nameof(HasSelectedLink));
+                    OnPropertyChanged(nameof(SelectedLinkId));
+                }
+                if (e.PropertyName == nameof(_selectionManager.SelectedFolderId))
+                {
+                    OnPropertyChanged(nameof(SelectedFolderId));
+                    ((RelayCommand)ShowAddLinkCommand).RaiseCanExecuteChanged();
+                    ((RelayCommand)CreateFolderCommand).RaiseCanExecuteChanged();
+                }
+            };
+
+            _selectionManager.SelectedLinkChanged += (sender, e) =>
+            {
+                DeleteSelectedCommand.NotifyCanExecuteChanged();
+            };
 
             SyncNavSelection("links");
 
@@ -135,15 +158,21 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        public string SelectedFolderId => _selectedFolderId;
+        public string SelectedFolderId => _selectionManager.SelectedFolderId;
 
         public string? SelectedLinkId
         {
-            get => _selectedLinkId;
-            set { _selectedLinkId = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedLink)); }
+            get => _selectionManager.SelectedLinkId;
+            set
+            {
+                if (value == null)
+                    _selectionManager.ClearLinkSelection();
+                else
+                    _selectionManager.SelectLink(value);
+            }
         }
 
-        public bool HasSelectedLink => !string.IsNullOrEmpty(_selectedLinkId);
+        public bool HasSelectedLink => _selectionManager.HasSelectedLink;
 
         public event EventHandler? OnNavigatedToSearch;
         public event EventHandler? OnNavigatedFromSearch;
@@ -398,6 +427,14 @@ namespace LinkPocket.ViewModels
             set { _settingsViewModel = value; OnPropertyChanged(); }
         }
 
+        public SmartListViewModel? SmartListViewModel
+        {
+            get => _smartListViewModel;
+            set { _smartListViewModel = value; OnPropertyChanged(); }
+        }
+
+        public Managers.LinkNavigator? LinkNavigator { get; set; }
+
         public ICommand SelectNavCommand { get; }
         public ICommand ShowAddLinkCommand { get; }
         public ICommand CreateFolderCommand { get; }
@@ -448,6 +485,12 @@ namespace LinkPocket.ViewModels
             CurrentNavId = navId;
             SyncNavSelection(navId);
 
+            if (_smartListViewModel != null && _smartListViewModel.ShowResult)
+            {
+                _smartListViewModel.GoBack();
+                IsInSecondaryPage = false;
+            }
+
             if (navId == "links")
                 await RefreshFolderTreeAndUIAsync();
             else if (navId == "trash")
@@ -469,7 +512,7 @@ namespace LinkPocket.ViewModels
 
         private void ShowAddLink()
         {
-            if (string.IsNullOrEmpty(_selectedFolderId))
+            if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 throw new InvalidOperationException("添加书签必须先选中一个文件夹");
             _editOpenedFromDetail = false;
             IsEditMode = false;
@@ -766,20 +809,20 @@ namespace LinkPocket.ViewModels
                 }
                 else
                 {
-                    if (string.IsNullOrEmpty(_selectedFolderId))
+                    if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                         throw new InvalidOperationException("添加书签必须先选中一个文件夹");
                     await _linkService.CreateLinkAsync(
                         url: url,
                         title: title,
                         description: description,
-                        listId: _selectedFolderId == "0" ? null : _selectedFolderId,
+                        listId: _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId,
                         isImportant: false,
                         autoFetchMetadata: false,
                         faviconUrl: _fetchedFaviconUrl
                     );
                     Logger.Info("链接添加成功");
                     if (Application.Current.MainWindow is MainWindow mw2)
-                        mw2.ExpandFolder(_selectedFolderId);
+                        mw2.ExpandFolder(_selectionManager.SelectedFolderId);
                 }
 
                 if (_linkViewModel != null)
@@ -854,18 +897,17 @@ namespace LinkPocket.ViewModels
 
         public void SelectFolder(string folderId)
         {
-            _selectedFolderId = folderId;
-            _selectedLinkId = null;
+            _selectionManager.SelectFolder(folderId);
             NotifyActionCommandsChanged();
 
             if (folderId == "0")
             {
-                Logger.Info("选中目录: 全部书签");
+                Logger.Info($"[选中] SelectFolder: 全部书签");
             }
             else
             {
                 var folderNode = FindFolderNodeById(FolderItems, folderId);
-                Logger.Info($"选中目录: {folderNode?.Name ?? folderId} (FolderId: {folderNode?.FolderId ?? "unknown"})");
+                Logger.Info($"[选中] SelectFolder: {folderNode?.Name ?? folderId} (FolderId: {folderNode?.FolderId ?? "unknown"})");
             }
         }
 
@@ -885,16 +927,9 @@ namespace LinkPocket.ViewModels
 
         public void ClearFolderSelectionVM()
         {
-            _selectedFolderId = string.Empty;
-            _selectedLinkId = null;
-            _hasSelectedLink = false;
+            _selectionManager.ClearAll();
             NotifyActionCommandsChanged();
-        }
-
-        public void NotifyLinkSelected(bool selected)
-        {
-            _hasSelectedLink = selected;
-            NotifyActionCommandsChanged();
+            Logger.Info($"[选中] ClearFolderSelectionVM → 全部清除");
         }
 
         private void NotifyActionCommandsChanged()
@@ -906,8 +941,8 @@ namespace LinkPocket.ViewModels
 
         private bool CanDeleteSelected()
         {
-            if (!string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0") return true;
-            if (_hasSelectedLink) return true;
+            if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId) && _selectionManager.SelectedFolderId != "0") return true;
+            if (_selectionManager.HasSelectedLink) return true;
             if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
             return false;
         }
@@ -916,21 +951,21 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                if (!string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0")
+                if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId) && _selectionManager.SelectedFolderId != "0")
                 {
-                    var folderName = FindFolderNameById(FolderItems, _selectedFolderId);
+                    var folderName = FindFolderNameById(FolderItems, _selectionManager.SelectedFolderId);
                     if (!ShowDeleteFolderConfirmation(folderName))
                         return;
 
-                    await _folderService.DeleteFolderAsync(_selectedFolderId);
-                    Logger.Info($"文件夹 {_selectedFolderId} 已删除");
+                    await _folderService.DeleteFolderAsync(_selectionManager.SelectedFolderId);
+                    Logger.Info($"文件夹 {_selectionManager.SelectedFolderId} 已删除");
                     if (Application.Current.MainWindow is MainWindow mw)
                         mw.ClearFolderSelection();
                     await RefreshFolderTreeAndUIAsync();
                     return;
                 }
 
-                if (_hasSelectedLink && Application.Current.MainWindow is MainWindow mw2)
+                if (_selectionManager.HasSelectedLink && Application.Current.MainWindow is MainWindow mw2)
                 {
                     var selectedLink = mw2.GetSelectedLink();
                     if (selectedLink != null)
@@ -956,7 +991,7 @@ namespace LinkPocket.ViewModels
 
         private void CreateFolderAsync()
         {
-            if (string.IsNullOrEmpty(_selectedFolderId))
+            if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 throw new InvalidOperationException("新建文件夹必须先选中一个文件夹");
 
             NewFolderName = string.Empty;
@@ -974,10 +1009,10 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                string? parentId = _selectedFolderId == "0" ? null : _selectedFolderId;
+                string? parentId = _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId;
                 await _folderService.CreateFolderAsync(NewFolderName.Trim(), parentId: parentId);
                 if (Application.Current.MainWindow is MainWindow mw)
-                    mw.ExpandFolder(_selectedFolderId);
+                    mw.ExpandFolder(_selectionManager.SelectedFolderId);
                 await RefreshFolderTreeAndUIAsync();
             }
             catch (Exception ex)
@@ -995,11 +1030,11 @@ namespace LinkPocket.ViewModels
         public async Task PasteLinksToFolderAsync(List<LinkItem> items, bool isCut)
         {
             if (items == null || items.Count == 0) return;
-            if (string.IsNullOrEmpty(_selectedFolderId)) return;
+            if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId)) return;
 
             try
             {
-                string? listId = _selectedFolderId;
+                string? listId = _selectionManager.SelectedFolderId;
 
                 if (isCut)
                 {

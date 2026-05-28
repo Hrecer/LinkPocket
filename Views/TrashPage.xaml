@@ -12,7 +12,7 @@
                         Background="{DynamicResource MaterialDesignCardBackground}"
                         Click="TrashRestore_Click">
                     <Button.Resources>
-                        <Style TargetType="Border" BasedOn="{StaticResource MaterialDesignBorder}">
+                        <Style TargetType="Border">
                             <Setter Property="CornerRadius" Value="4"/>
                         </Style>
                     </Button.Resources>

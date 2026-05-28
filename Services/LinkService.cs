@@ -482,6 +482,50 @@ public class LinkService
         return Uri.TryCreate(url, UriKind.Absolute, out var uriResult) &&
                (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
     }
+
+    public async Task<List<Link>> GetRecentlyAddedAsync(int days = 7, int limit = 50)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        return await _db.Links
+            .Include(l => l.Folder)
+            .Where(l => l.CreatedAt >= since)
+            .OrderByDescending(l => l.CreatedAt)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task<List<Link>> GetRecentlyVisitedAsync(int days = 7, int limit = 50)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        return await _db.Links
+            .Include(l => l.Folder)
+            .Where(l => l.LastVisitedAt.HasValue && l.LastVisitedAt.Value >= since)
+            .OrderByDescending(l => l.LastVisitedAt)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task<List<Link>> GetRecentlyEditedAsync(int days = 7, int limit = 50)
+    {
+        var since = DateTime.UtcNow.AddDays(-days);
+        return await _db.Links
+            .Include(l => l.Folder)
+            .Where(l => l.UpdatedAt >= since)
+            .OrderByDescending(l => l.UpdatedAt)
+            .Take(limit)
+            .ToListAsync();
+    }
+
+    public async Task<List<Link>> GetMostVisitedAsync(int limit = 20)
+    {
+        return await _db.Links
+            .Include(l => l.Folder)
+            .Where(l => l.VisitCount > 0)
+            .OrderByDescending(l => l.VisitCount)
+            .ThenByDescending(l => l.LastVisitedAt)
+            .Take(limit)
+            .ToListAsync();
+    }
 }
 
 public class MetadataResult

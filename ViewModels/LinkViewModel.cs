@@ -408,10 +408,12 @@ namespace LinkPocket.ViewModels
 
         public void NotifySelectionStateChanged()
         {
+            var selectedIds = Links.Where(l => l.IsSelected).Select(l => l.LinkId).ToList();
             OnPropertyChanged(nameof(HasSelectedItems));
             OnPropertyChanged(nameof(SelectedItems));
             SelectedItem = Links.FirstOrDefault(l => l.IsSelected);
             SelectionChanged?.Invoke(this, EventArgs.Empty);
+            Logger.Debug($"[选中LinkVM] NotifySelectionStateChanged: HasSelectedItems={HasSelectedItems}, 选中IDs=[{string.Join(", ", selectedIds)}]");
         }
 
         /// <summary>
@@ -419,6 +421,7 @@ namespace LinkPocket.ViewModels
         /// </summary>
         private void ClearSelection()
         {
+            var clearedCount = Links.Count(l => l.IsSelected);
             foreach (var link in Links.Where(l => l.IsSelected))
             {
                 link.IsSelected = false;
@@ -427,6 +430,7 @@ namespace LinkPocket.ViewModels
             OnPropertyChanged(nameof(SelectedItems));
             SelectedItem = null;
             SelectionChanged?.Invoke(this, EventArgs.Empty);
+            Logger.Info($"[选中LinkVM] ClearSelection: 清除了{clearedCount}个选中项, HasSelectedItems={HasSelectedItems}");
         }
 
         /// <summary>

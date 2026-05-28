@@ -139,20 +139,30 @@ public class FolderService
                 targetFolder.UpdateLinkCount(_db);
                 break;
 
-            default: // move_to_parent
+            default: // trash_links: 将书签移至回收站
                 foreach (var link in affectedLinks)
                 {
-                    link.ListId = folder.ParentId;
+                    var trashedLink = new TrashedLink
+                    {
+                        LinkId = link.LinkId,
+                        Url = link.Url,
+                        Title = link.Title,
+                        OriginalTitle = link.OriginalTitle,
+                        Description = link.Description,
+                        FaviconUrl = link.FaviconUrl,
+                        LastVisitedAt = link.LastVisitedAt,
+                        VisitCount = link.VisitCount,
+                        IsImportant = link.IsImportant,
+                        DeletedAt = DateTime.UtcNow,
+                        CreatedAt = link.CreatedAt,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    _db.TrashedLinks.Add(trashedLink);
+                    _db.Links.Remove(link);
                 }
 
-                var foldersToMove2 = await _db.Folders.Where(f => descendantIds.Contains(f.FolderId)).ToListAsync();
-                _db.Folders.RemoveRange(foldersToMove2);
-
-                if (!string.IsNullOrEmpty(folder.ParentId))
-                {
-                    var parent = await _db.Folders.FindAsync(folder.ParentId);
-                    parent?.UpdateLinkCount(_db);
-                }
+                var foldersToTrash = await _db.Folders.Where(f => descendantIds.Contains(f.FolderId)).ToListAsync();
+                _db.Folders.RemoveRange(foldersToTrash);
                 break;
         }
 
