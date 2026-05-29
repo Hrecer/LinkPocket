@@ -140,7 +140,7 @@
                                    HorizontalAlignment="Center" Margin="0,10,0,0"/>
                     </StackPanel>
 
-                    <WrapPanel x:Name="ResultCardsPanel" Orientation="Horizontal"/>
+                    <StackPanel x:Name="ResultCardsPanel" HorizontalAlignment="Center"/>
                 </StackPanel>
             </ScrollViewer>
         </Grid>

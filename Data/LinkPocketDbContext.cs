@@ -42,12 +42,6 @@ public class LinkPocketDbContext : DbContext
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
-        modelBuilder.Entity<SearchHistory>(entity =>
-        {
-            entity.ToTable("search_histories");
-            entity.HasKey(e => e.Id);
-        });
-
         modelBuilder.Entity<TrashedLink>(entity =>
         {
             entity.ToTable("trashed_links");
@@ -58,6 +52,5 @@ public class LinkPocketDbContext : DbContext
 
     public DbSet<Link> Links { get; set; }
     public DbSet<Folder> Folders { get; set; }
-    public DbSet<SearchHistory> SearchHistories { get; set; }
     public DbSet<TrashedLink> TrashedLinks { get; set; }
 }

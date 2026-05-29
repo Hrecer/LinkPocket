@@ -163,7 +163,7 @@
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="smartlists">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="ai">
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="tools">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="vault">
@@ -385,7 +385,7 @@
                 <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：搜索框 + 跳转工具栏 + 结果列表 -->
+            <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表 -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -402,7 +402,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBox x:Name="SearchBox" Grid.Column="0" Padding="12,10" FontSize="14"
-                                 materialDesign:HintAssist.Hint="输入书签标题搜索..."
+                                 materialDesign:HintAssist.Hint="输入关键词搜索..."
                                  Style="{StaticResource MaterialDesignOutlinedTextBox}"
                                  VerticalContentAlignment="Center"
                                  KeyDown="SearchBox_KeyDown"/>
@@ -438,32 +438,50 @@
                     </Grid>
                 </Border>
 
-                <!-- 搜索框下方常驻工具栏（有分隔线） -->
+                <!-- 搜索框下方常驻工具栏（跳转按钮 + 筛选复选框） -->
                 <Border x:Name="SearchToolbar" Grid.Row="1" Background="{DynamicResource MaterialDesignCardBackground}"
                         Padding="12,10" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,1,0,1">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="SearchJumpToLinkBtn"
-                                Padding="12,8" Margin="4,0"
-                                Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
-                                Cursor="Hand">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsEnabled" Value="False">
-                                            <Setter Property="Background" Value="Transparent"/>
-                                            <Setter Property="Opacity" Value="0.4"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                            <StackPanel Orientation="Horizontal">
-                                <materialDesign:PackIcon Kind="OpenInNew" Width="18" Height="18" VerticalAlignment="Center"/>
-                                <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="SearchJumpToLinkBtn"
+                                    Padding="12,8" Margin="4,0"
+                                    Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
+                                    Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="Opacity" Value="0.4"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="OpenInNew" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <TextBlock Text="搜索范围:" FontSize="13" Foreground="#666"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True"
+                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
+                             <CheckBox x:Name="SearchUrlCb" Content="URL" IsChecked="True"
+                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
+                             <CheckBox x:Name="SearchTitleCb" Content="标题" IsChecked="True"
+                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
+                             <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True"
+                                      VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
                 </Border>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24"
@@ -473,7 +491,7 @@
                             <materialDesign:PackIcon Kind="Magnify" Width="48" Height="48" HorizontalAlignment="Center" Opacity="0.15"/>
                             <TextBlock Text="输入关键词开始搜索" FontSize="14" Opacity="0.35"
                                        HorizontalAlignment="Center" Margin="0,12,0,0"/>
-                            <TextBlock Text="单击结果卡片查看详情" FontSize="12" Opacity="0.25"
+                            <TextBlock Text="勾选下方搜索范围，精准筛选" FontSize="12" Opacity="0.25"
                                        HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         </StackPanel>
                     </StackPanel>
@@ -531,19 +549,19 @@
             </views:SmartListsPage.Style>
         </views:SmartListsPage>
 
-        <!-- ===== AI 助手视图（独立页面） ===== -->
-        <views:AIAssistantPage Grid.Row="1" x:Name="AIAssistantView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-            <views:AIAssistantPage.Style>
+        <!-- ===== 工具页面（空壳） ===== -->
+        <views:ToolsPage Grid.Row="1" x:Name="ToolsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <views:ToolsPage.Style>
                 <Style TargetType="UserControl">
                     <Setter Property="Visibility" Value="Collapsed"/>
                     <Style.Triggers>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="ai">
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="tools">
                             <Setter Property="Visibility" Value="Visible"/>
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
-            </views:AIAssistantPage.Style>
-        </views:AIAssistantPage>
+            </views:ToolsPage.Style>
+        </views:ToolsPage>
 
         <!-- ===== 密码库视图（独立页面） ===== -->
         <views:VaultPage Grid.Row="1" x:Name="VaultView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">

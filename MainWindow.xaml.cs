@@ -2075,7 +2075,13 @@ public partial class MainWindow : Window
 
         try
         {
-            var results = await vm.SearchLinksByTitleAsync(query);
+            var results = await vm.SearchLinksByTitleAsync(
+                query,
+                searchPath: SearchPathCb.IsChecked == true,
+                searchUrl: SearchUrlCb.IsChecked == true,
+                searchTitle: SearchTitleCb.IsChecked == true,
+                searchDescription: SearchDescCb.IsChecked == true
+            );
             SearchResultsPanel.Children.Clear();
             _selectedSearchCard = null;
             _selectedSearchItem = null;

@@ -62,12 +62,12 @@ namespace LinkPocket.Views
                 Width = 720,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Background = (Brush)FindResource("MaterialDesignCardBackground"),
-                BorderBrush = (Brush)FindResource("MaterialDesignDivider"),
                 BorderThickness = new Thickness(2),
                 Padding = new Thickness(16, 12, 16, 12)
             };
 
             var style = new Style(typeof(Border));
+            style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
             style.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
             style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
                 Setters = { new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
@@ -83,24 +83,60 @@ namespace LinkPocket.Views
             var iconBorder = new Border
             {
                 Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-                Background = new SolidColorBrush(Color.FromRgb(240, 240, 240)),
-                ClipToBounds = true, Margin = new Thickness(0, 0, 12, 0)
+                Background = Brushes.White,
+                Margin = new Thickness(0, 0, 12, 0),
+                ClipToBounds = true
             };
+
             var iconGrid = new Grid();
-            if (!string.IsNullOrEmpty(item.FaviconUrl))
+
+            var faviconBmp = FaviconService.LoadFromCache(item.FaviconUrl);
+            var faviconImg = new Image
             {
-                var img = new System.Windows.Controls.Image
+                Stretch = Stretch.Uniform,
+                Source = faviconBmp,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            if (faviconBmp == null)
+                faviconImg.Visibility = Visibility.Collapsed;
+
+            var webIcon = new PackIcon
+            {
+                Kind = PackIconKind.Web,
+                Width = 20, Height = 20,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Opacity = 0.55
+            };
+            if (faviconBmp != null)
+                webIcon.Visibility = Visibility.Collapsed;
+
+            iconGrid.Children.Add(faviconImg);
+            iconGrid.Children.Add(webIcon);
+
+            if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
+            {
+                _ = Task.Run(async () =>
                 {
-                    Source = FaviconService.LoadFromCache(item.FaviconUrl), Stretch = Stretch.Uniform,
-                    VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center
-                };
-                iconGrid.Children.Add(img);
+                    try
+                    {
+                        await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
+                        var cached = FaviconService.LoadFromCache(item.FaviconUrl);
+                        if (cached != null)
+                        {
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                faviconImg.Source = cached;
+                                faviconImg.Visibility = Visibility.Visible;
+                                webIcon.Visibility = Visibility.Collapsed;
+                            });
+                        }
+                    }
+                    catch { }
+                });
             }
-            else
-            {
-                iconGrid.Children.Add(new PackIcon { Kind = PackIconKind.Web, Width = 20, Height = 20,
-                    HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.55 });
-            }
+
             iconBorder.Child = iconGrid;
             Grid.SetColumn(iconBorder, 0);
             grid.Children.Add(iconBorder);
@@ -115,11 +151,6 @@ namespace LinkPocket.Views
             {
                 Text = item.Url, FontSize = 11, Opacity = 0.55,
                 TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-            });
-            textStack.Children.Add(new TextBlock
-            {
-                Text = $"删除于回收站",
-                FontSize = 10, Opacity = 0.35, Margin = new Thickness(0, 2, 0, 0)
             });
             Grid.SetColumn(textStack, 1);
             grid.Children.Add(textStack);
@@ -165,6 +196,7 @@ namespace LinkPocket.Views
             await recycleVm.RestoreSelectedAsync();
             await recycleVm.LoadAsync();
             await RefreshAsync();
+            await vm.RefreshFolderTreeAndUIAsync();
         }
 
         private async void TrashPermanentDelete_Click(object sender, RoutedEventArgs e)
@@ -176,6 +208,7 @@ namespace LinkPocket.Views
             await recycleVm.PermanentDeleteSelectedAsync();
             await recycleVm.LoadAsync();
             await RefreshAsync();
+            await vm.RefreshFolderTreeAndUIAsync();
         }
 
         private void TrashPage_PreviewKeyDown(object sender, KeyEventArgs e)

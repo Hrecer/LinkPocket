@@ -100,6 +100,63 @@ namespace LinkPocket.Managers
             }));
         }
 
+        public void NavigateToLinkById(string linkId, string? listId)
+        {
+            if (_viewModel.LinkViewModel == null) return;
+
+            OnBeforeNavigate?.Invoke();
+            OnClearSearchSelection?.Invoke();
+
+            _viewModel.CurrentNavId = "links";
+            var capturedListId = listId;
+
+            _dispatcher.BeginInvoke(new Action(async () =>
+            {
+                await Task.Delay(100);
+
+                if (_viewModel.LinkViewModel == null) return;
+
+                if (!_viewModel.FolderItems.Any(f => f.Id == capturedListId))
+                {
+                    await _viewModel.RefreshFolderTreeAndUIAsync();
+                }
+
+                if (!string.IsNullOrEmpty(capturedListId))
+                {
+                    var targetNode = FindFolderNode(_viewModel.FolderItems, capturedListId);
+                    if (targetNode != null)
+                    {
+                        OnClearExpanded?.Invoke("_main");
+                        OnClearExpanded?.Invoke("_sidebar");
+                        OnAddExpanded?.Invoke("_main:0");
+                        OnAddExpanded?.Invoke("_sidebar:0");
+                        OnExpandAncestorFolders?.Invoke(targetNode.Id);
+                        OnRefreshMainList?.Invoke();
+                        OnRefreshSidebar?.Invoke(_viewModel);
+
+                        await Task.Delay(150);
+                    }
+                }
+                else
+                {
+                    OnClearExpanded?.Invoke("_main");
+                    OnClearExpanded?.Invoke("_sidebar");
+                    OnAddExpanded?.Invoke("_main:0");
+                    OnAddExpanded?.Invoke("_sidebar:0");
+                    OnRefreshMainList?.Invoke();
+                    OnRefreshSidebar?.Invoke(_viewModel);
+                    await Task.Delay(150);
+                }
+
+                _viewModel.SelectedLinkId = linkId;
+                OnUpdateSelectionVisuals?.Invoke();
+                OnUpdateDetailPanel?.Invoke();
+
+                OnBringLinkIntoView?.Invoke(linkId);
+                OnBringSidebarIntoView?.Invoke(linkId, capturedListId);
+            }));
+        }
+
         private static FolderNode? FindFolderNode(System.Collections.ObjectModel.ObservableCollection<FolderNode> nodes, string id)
         {
             foreach (var node in nodes)

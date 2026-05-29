@@ -2,8 +2,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using LinkPocket.Models;
+using LinkPocket.Services;
 using LinkPocket.ViewModels;
+using MaterialDesignThemes.Wpf;
 
 namespace LinkPocket.Views
 {
@@ -90,72 +93,103 @@ namespace LinkPocket.Views
             {
                 Tag = "SmartResultCard",
                 Width = 720,
-                MinHeight = 72,
                 CornerRadius = new CornerRadius(10),
                 Background = (Brush)Application.Current.FindResource("MaterialDesignCardBackground"),
-                BorderBrush = (Brush)Application.Current.FindResource("MaterialDesignDivider"),
                 BorderThickness = new Thickness(2),
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(4, 2, 4, 2),
                 Padding = new Thickness(16, 12, 16, 12)
             };
 
+            var style = new Style(typeof(Border));
+            style.Setters.Add(new Setter(Border.BorderBrushProperty, Application.Current.FindResource("MaterialDesignDivider")));
+            style.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
+            style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
+                Setters = { new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
+            });
+            card.Style = style;
+
             card.MouseLeftButtonUp += ResultCard_Click;
 
-            var grid = new Grid();
+            var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var faviconBorder = new Border
+            var iconBorder = new Border
             {
-                Width = 36,
-                Height = 36,
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromRgb(245, 245, 245)),
-                VerticalAlignment = VerticalAlignment.Center
+                Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
+                Background = Brushes.White,
+                Margin = new Thickness(0, 0, 12, 0),
+                ClipToBounds = true
             };
-            Grid.SetColumn(faviconBorder, 0);
 
-            var faviconText = new TextBlock
+            var iconGrid = new Grid();
+
+            var faviconBmp = FaviconService.LoadFromCache(item.FaviconUrl);
+            var faviconImg = new Image
             {
-                Text = item.TitleLetter,
-                FontSize = 16,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                Stretch = Stretch.Uniform,
+                Source = faviconBmp,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            if (faviconBmp == null)
+                faviconImg.Visibility = Visibility.Collapsed;
+
+            var webIcon = new PackIcon
+            {
+                Kind = PackIconKind.Web,
+                Width = 20, Height = 20,
+                VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
+                Opacity = 0.55
             };
-            faviconBorder.Child = faviconText;
+            if (faviconBmp != null)
+                webIcon.Visibility = Visibility.Collapsed;
 
-            var infoStack = new StackPanel
+            iconGrid.Children.Add(faviconImg);
+            iconGrid.Children.Add(webIcon);
+
+            if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
             {
-                Margin = new Thickness(14, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(infoStack, 1);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
+                        var cached = FaviconService.LoadFromCache(item.FaviconUrl);
+                        if (cached != null)
+                        {
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                faviconImg.Source = cached;
+                                faviconImg.Visibility = Visibility.Visible;
+                                webIcon.Visibility = Visibility.Collapsed;
+                            });
+                        }
+                    }
+                    catch { }
+                });
+            }
 
-            var titleText = new TextBlock
+            iconBorder.Child = iconGrid;
+            Grid.SetColumn(iconBorder, 0);
+            grid.Children.Add(iconBorder);
+
+            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            textStack.Children.Add(new TextBlock
             {
-                Text = item.DisplayTitle.Length > 50 ? item.DisplayTitle[..47] + "..." : item.DisplayTitle,
-                FontSize = 14,
-                FontWeight = FontWeights.Medium,
-                Foreground = new SolidColorBrush(Color.FromRgb(26, 26, 26)),
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-
-            var metaText = new TextBlock
+                Text = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url,
+                FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            textStack.Children.Add(new TextBlock
             {
-                Text = $"{item.VisitCountText} · {item.LastVisitedText}",
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(153, 153, 153)),
-                Margin = new Thickness(0, 3, 0, 0)
-            };
+                Text = item.Url, FontSize = 11, Opacity = 0.55,
+                TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
+            });
+            Grid.SetColumn(textStack, 1);
+            grid.Children.Add(textStack);
 
-            infoStack.Children.Add(titleText);
-            infoStack.Children.Add(metaText);
-
-            grid.Children.Add(faviconBorder);
-            grid.Children.Add(infoStack);
             card.Child = grid;
 
             _resultCardBorders[item.LinkId] = card;
@@ -168,7 +202,7 @@ namespace LinkPocket.Views
 
             ClearResultVisualSelection();
 
-            if (sender is not Border card || card.Tag != "SmartResultCard") return;
+            if (sender is not Border card || !"SmartResultCard".Equals(card.Tag as string)) return;
 
             var item = FindItemByCard(card);
             if (item == null) return;
@@ -215,7 +249,7 @@ namespace LinkPocket.Views
         private void ResultArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (_selectedResultItem == null) return;
-            if (e.Source is not Border b || b.Tag != "SmartResultCard")
+            if (e.Source is not Border b || !"SmartResultCard".Equals(b.Tag as string))
                 ClearResultSelection();
         }
     }

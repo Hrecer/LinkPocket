@@ -241,7 +241,6 @@ public class LinkService
             Title = link.Title,
             Description = link.Description,
             FaviconUrl = link.FaviconUrl,
-            ListId = link.ListId,
             LastVisitedAt = link.LastVisitedAt,
             VisitCount = link.VisitCount,
             IsImportant = link.IsImportant,
@@ -280,7 +279,7 @@ public class LinkService
             Title = trashedLink.Title,
             Description = trashedLink.Description,
             FaviconUrl = trashedLink.FaviconUrl,
-            ListId = trashedLink.ListId,
+            ListId = null,
             LastVisitedAt = trashedLink.LastVisitedAt,
             VisitCount = trashedLink.VisitCount,
             IsImportant = trashedLink.IsImportant,
@@ -449,27 +448,6 @@ public class LinkService
             Logger.Error($"FetchMetadata 异常 for {url}: {ex.Message}", ex);
             return null;
         }
-    }
-
-    public async Task<(List<Link> Results, int TotalCount, int CurrentPage, int LastPage)> SearchAsync(
-        string query, int page = 1, int perPage = 20)
-    {
-        var searchQuery = _db.Links
-            .Include(l => l.Folder)
-            .Where(l => l.Url.Contains(query) ||
-                    (l.Title != null && l.Title.Contains(query)) ||
-                    (l.Description != null && l.Description.Contains(query)))
-            .OrderByDescending(l => l.CreatedAt);
-
-        var totalCount = await searchQuery.CountAsync();
-        var lastPage = (int)Math.Ceiling((double)totalCount / perPage);
-
-        var results = await searchQuery
-            .Skip((page - 1) * perPage)
-            .Take(perPage)
-            .ToListAsync();
-
-        return (results, totalCount, page, lastPage);
     }
 
     private bool IsValidUrl(string url)

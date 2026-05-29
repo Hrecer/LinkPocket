@@ -28,7 +28,6 @@ namespace LinkPocket.ViewModels
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private LinkViewModel? _linkViewModel;
-        private SearchViewModel? _searchViewModel;
         private RecycleBinViewModel? _recycleBinViewModel;
         private SettingsViewModel? _settingsViewModel;
         private SmartListViewModel? _smartListViewModel;
@@ -89,7 +88,6 @@ namespace LinkPocket.ViewModels
 
             _linkViewModel = new LinkViewModel(_linkService, _folderService);
             _linkViewModel.LinksChanged += OnLinksChanged;
-            _searchViewModel = new SearchViewModel(_linkService);
             _recycleBinViewModel = new RecycleBinViewModel(_linkService);
             _settingsViewModel = new SettingsViewModel();
             _smartListViewModel = new SmartListViewModel(_linkService);
@@ -177,6 +175,7 @@ namespace LinkPocket.ViewModels
         public event EventHandler? OnNavigatedToSearch;
         public event EventHandler? OnNavigatedFromSearch;
         public event EventHandler? OnSearchRefreshRequested;
+        public event EventHandler? OnToolsDataChanged;
 
         public bool IsEditPageVisible
         {
@@ -409,12 +408,6 @@ namespace LinkPocket.ViewModels
             set { _linkViewModel = value; OnPropertyChanged(); }
         }
 
-        public SearchViewModel? SearchViewModel
-        {
-            get => _searchViewModel;
-            set { _searchViewModel = value; OnPropertyChanged(); }
-        }
-
         public RecycleBinViewModel? RecycleBinViewModel
         {
             get => _recycleBinViewModel;
@@ -473,7 +466,7 @@ namespace LinkPocket.ViewModels
                 new() { Id = "links", Label = "链接", IconKind = PackIconKind.LinkVariant, IsSelected = true },
                 new() { Id = "search", Label = "搜索", IconKind = PackIconKind.Magnify },
                 new() { Id = "smartlists", Label = "智能列表", IconKind = PackIconKind.AutoFix },
-                new() { Id = "ai", Label = "AI 助手", IconKind = PackIconKind.RobotOutline },
+                new() { Id = "tools", Label = "工具", IconKind = PackIconKind.WrenchOutline },
                 new() { Id = "vault", Label = "密码库", IconKind = PackIconKind.LockOutline },
                 new() { Id = "trash", Label = "回收站", IconKind = PackIconKind.DeleteOutline },
                 new() { Id = "settings", Label = "设置", IconKind = PackIconKind.CogOutline }
@@ -1086,6 +1079,7 @@ namespace LinkPocket.ViewModels
         {
             if (_currentNavId == "search")
                 OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
             await RefreshFolderTreeAndUIAsync();
         }
 
@@ -1097,6 +1091,7 @@ namespace LinkPocket.ViewModels
                 await mw.RefreshSidebarAsync(this);
                 await mw.RefreshMainListAsync();
             }
+            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public async Task LoadTrashTreeAsync()
@@ -1109,6 +1104,11 @@ namespace LinkPocket.ViewModels
         }
 
         public async Task<List<Data.Link>> GetAllLinksAsync()
+        {
+            return await _linkService.GetAllActiveLinksAsync();
+        }
+
+        public async Task<List<Data.Link>> GetAllLinksForToolsAsync()
         {
             return await _linkService.GetAllActiveLinksAsync();
         }
@@ -1127,11 +1127,51 @@ namespace LinkPocket.ViewModels
             return await _linkService.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
         }
 
-        public async Task<List<LinkItem>> SearchLinksByTitleAsync(string query)
+        public async Task<List<LinkItem>> SearchLinksByTitleAsync(string query,
+            bool searchPath = false, bool searchUrl = false,
+            bool searchTitle = true, bool searchDescription = false)
         {
+            if (string.IsNullOrWhiteSpace(query)) return new List<LinkItem>();
+
             var links = await _linkService.GetAllActiveLinksAsync();
-            var filtered = links
-                .Where(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+            var predicates = new List<Func<Data.Link, bool>>();
+
+            if (searchTitle)
+                predicates.Add(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+            if (searchUrl)
+                predicates.Add(l => l.Url != null && l.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+            if (searchDescription)
+                predicates.Add(l => l.Description != null && l.Description.Contains(query, StringComparison.OrdinalIgnoreCase));
+
+            if (searchPath)
+            {
+                var allFolders = await _folderService.GetAllFoldersAsync();
+                var matchedFolderIds = allFolders
+                    .Where(f => f.Name != null && f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .Select(f => f.FolderId)
+                    .ToHashSet();
+
+                if (matchedFolderIds.Count > 0)
+                {
+                    var expandedIds = new HashSet<string>(matchedFolderIds);
+                    foreach (var fid in matchedFolderIds.ToList())
+                    {
+                        var descendants = await GetDescendantFolderIdsAsync(allFolders, fid);
+                        foreach (var d in descendants) expandedIds.Add(d);
+                    }
+                    predicates.Add(l => l.ListId != null && expandedIds.Contains(l.ListId));
+                }
+            }
+
+            if (predicates.Count == 0)
+            {
+                predicates.Add(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
+            }
+
+            var filtered = links.Where(l => predicates.Any(p => p(l)));
 
             filtered = _linkSortOrder == "asc"
                 ? _linkSortField switch
@@ -1162,6 +1202,18 @@ namespace LinkPocket.ViewModels
                 VisitCount = l.VisitCount, IsImportant = l.IsImportant,
                 CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
             }).ToList();
+        }
+
+        private async Task<List<string>> GetDescendantFolderIdsAsync(List<Data.Folder> allFolders, string folderId)
+        {
+            var ids = new List<string>();
+            var children = allFolders.Where(f => f.ParentId == folderId).ToList();
+            foreach (var child in children)
+            {
+                ids.Add(child.FolderId);
+                ids.AddRange(await GetDescendantFolderIdsAsync(allFolders, child.FolderId));
+            }
+            return ids;
         }
 
         public async Task LoadFolderTreeAsync()
@@ -1251,6 +1303,33 @@ namespace LinkPocket.ViewModels
                 }
             }
             return null;
+        }
+
+        public async Task<string> ResolveLinkPathAsync(string? listId)
+        {
+            if (string.IsNullOrEmpty(listId)) return "全部书签";
+            var treePath = FindFolderPathInNodes(FolderItems, listId);
+            if (treePath != null) return treePath;
+            try
+            {
+                var allFolders = await _folderService.GetAllFoldersAsync();
+                var dict = allFolders.ToDictionary(f => f.FolderId);
+                if (!dict.ContainsKey(listId)) return "全部书签";
+                var pathParts = new List<string>();
+                var currentId = listId;
+                for (int i = 0; i < 20 && !string.IsNullOrEmpty(currentId); i++)
+                {
+                    if (!dict.TryGetValue(currentId, out var folder)) break;
+                    pathParts.Add(folder.Name ?? "未命名文件夹");
+                    currentId = folder.ParentId ?? "";
+                }
+                pathParts.Reverse();
+                return string.Join(" > ", pathParts);
+            }
+            catch
+            {
+                return "全部书签";
+            }
         }
 
         private bool ShowDeleteFolderConfirmation(string folderName)
