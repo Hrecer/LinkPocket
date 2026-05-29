@@ -166,9 +166,6 @@
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="tools">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="vault">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="settings">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
@@ -343,7 +340,6 @@
                     </Grid>
 
                     <!-- 其他页面占位 -->
-                    <!-- 密码库页面已移至独立视图 -->
                     <!-- 智能列表页面已移至独立视图 -->
                     <!-- 搜索页面已移至独立视图 -->
                     <!-- 回收站页面已移至独立视图 -->
@@ -562,20 +558,6 @@
                 </Style>
             </views:ToolsPage.Style>
         </views:ToolsPage>
-
-        <!-- ===== 密码库视图（独立页面） ===== -->
-        <views:VaultPage Grid.Row="1" x:Name="VaultView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-            <views:VaultPage.Style>
-                <Style TargetType="UserControl">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="vault">
-                            <Setter Property="Visibility" Value="Visible"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </views:VaultPage.Style>
-        </views:VaultPage>
 
         <!-- ===== 设置视图（独立页面） ===== -->
         <views:SettingsPage Grid.Row="1" x:Name="SettingsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">

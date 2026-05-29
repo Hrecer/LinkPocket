@@ -157,6 +157,39 @@ namespace LinkPocket.Managers
             }));
         }
 
+        public void NavigateToFolderById(string folderId)
+        {
+            OnBeforeNavigate?.Invoke();
+            OnClearSearchSelection?.Invoke();
+
+            _viewModel.CurrentNavId = "links";
+            _viewModel.LinkViewModel?.ClearSelectionCommand.Execute(null);
+
+            _dispatcher.BeginInvoke(new Action(async () =>
+            {
+                await Task.Delay(100);
+
+                if (!_viewModel.FolderItems.Any(f => f.Id == folderId))
+                    await _viewModel.RefreshFolderTreeAndUIAsync();
+
+                _viewModel.SelectFolder(folderId);
+
+                OnClearExpanded?.Invoke("_main");
+                OnClearExpanded?.Invoke("_sidebar");
+                OnAddExpanded?.Invoke("_main:0");
+                OnAddExpanded?.Invoke("_sidebar:0");
+                OnExpandAncestorFolders?.Invoke(folderId);
+                OnRefreshMainList?.Invoke();
+                OnRefreshSidebar?.Invoke(_viewModel);
+
+                await Task.Delay(150);
+
+                OnUpdateSelectionVisuals?.Invoke();
+                OnUpdateDetailPanel?.Invoke();
+                OnBringSidebarIntoView?.Invoke("", folderId);
+            }));
+        }
+
         private static FolderNode? FindFolderNode(System.Collections.ObjectModel.ObservableCollection<FolderNode> nodes, string id)
         {
             foreach (var node in nodes)

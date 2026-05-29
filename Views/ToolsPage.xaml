@@ -5,15 +5,15 @@
              Loaded="ToolsPage_Loaded" Unloaded="ToolsPage_Unloaded">
     <Grid Background="White">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="200"/>
-            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="200" x:Name="LeftCol"/>
+            <ColumnDefinition Width="Auto" x:Name="SplitterCol"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,1,0"
-                Background="#FAFAFA">
+                Background="#FAFAFA" x:Name="LeftSidebarBorder">
             <StackPanel>
-                <TextBlock Text="工具箱" FontSize="16" FontWeight="SemiBold" Margin="16,16,16,12"
+                <TextBlock Text="工具" FontSize="16" FontWeight="SemiBold" Margin="16,16,16,12"
                             Foreground="#333333"/>
                 <ListBox x:Name="ToolListbox" BorderThickness="0" Background="Transparent"
                          DisplayMemberPath="Name"
@@ -29,11 +29,117 @@
         </Border>
 
         <GridSplitter Grid.Column="1" Width="1" Background="{DynamicResource MaterialDesignDivider}"
-                      HorizontalAlignment="Stretch"/>
+                      HorizontalAlignment="Stretch" x:Name="MainSplitter"/>
 
+        <!-- 主内容区（工具面板 / 去重列表） -->
         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                      Padding="20,16">
+                      Padding="20,16" x:Name="MainScrollView">
             <StackPanel x:Name="ToolContentPanel"/>
         </ScrollViewer>
+
+        <!-- 二级界面（分组详情） -->
+        <Grid Grid.Column="2" x:Name="DetailView" Visibility="Collapsed" Background="#FFFFFF"
+              KeyDown="DetailView_KeyDown" Focusable="True">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 顶部栏：返回按钮 + 标题（参考编辑页/智能列表样式） -->
+            <Border Grid.Row="0" BorderBrush="{DynamicResource MaterialDesignDivider}"
+                    BorderThickness="0,0,0,1"
+                    Background="{DynamicResource MaterialDesignCardBackground}"
+                    Padding="12,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：返回按钮（贴最左边缘） -->
+                    <Button Grid.Column="0" x:Name="DedupBackBtn"
+                            Click="DedupBack_Click" Cursor="Hand" Padding="10,6">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="ArrowLeft" Width="17" Height="17"
+                                                     VerticalAlignment="Center" Foreground="#6200EE"/>
+                            <TextBlock Text="返回" FontSize="13" Foreground="#6200EE"
+                                       VerticalAlignment="Center" Margin="5,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- 中间：标题（居中，紫色） -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <materialDesign:PackIcon Kind="EyeOutline" Width="18" Height="18"
+                                                 Foreground="#6200EE" VerticalAlignment="Center"/>
+                        <TextBlock Text="重复链接详情" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="#6200EE" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    </StackPanel>
+
+                    <!-- 右侧：删除重复项按钮 -->
+                    <Button x:Name="DedupDeleteBtn" Grid.Column="2" Padding="10,6" Margin="0"
+                            Cursor="Hand" IsEnabled="False"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Click="DedupDeleteSelected_Click">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Foreground" Value="#D32F2F"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="Opacity" Value="0.35"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="DeleteOutline" Width="16" Height="16"
+                                                     VerticalAlignment="Center" Foreground="#D32F2F"/>
+                            <TextBlock Text="删除重复项" FontSize="13" Foreground="#D32F2F"
+                                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- 统一 URL 区域（Row=1 固定高度） -->
+            <Border Grid.Row="1" Padding="28,18,28,10">
+                <StackPanel>
+                    <TextBox x:Name="DedupGroupUrlBox" IsReadOnly="True" FontSize="14"
+                             Background="Transparent" BorderThickness="0" Padding="0"
+                             Focusable="False" Foreground="#222222" TextWrapping="Wrap"
+                             ContextMenu="{x:Null}"/>
+                    <Button x:Name="DedupCopyUrlBtn" Padding="5,2,5,2"
+                            Cursor="Hand" Background="Transparent" BorderThickness="0"
+                            HorizontalAlignment="Left" Click="DedupCopyUrl_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="ContentCopy" Width="13" Height="13"
+                                                     Foreground="#666666" VerticalAlignment="Center"/>
+                            <TextBlock Text="复制URL" FontSize="12" Foreground="#666666"
+                                       VerticalAlignment="Center" Margin="4,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Separator Margin="0,14,0,8" Opacity="0.25"/>
+
+                    <TextBlock x:Name="DedupGroupCountLabel" FontSize="12" Opacity="0.55"
+                               Margin="0,0,0,4"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 书签卡片列表（Row=2 填充剩余空间） -->
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" Padding="24,0,24,32"
+                          PreviewMouseLeftButtonDown="DetailScrollView_BlankClick">
+                <WrapPanel x:Name="DedupDetailCardsPanel" HorizontalAlignment="Center"/>
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </UserControl>

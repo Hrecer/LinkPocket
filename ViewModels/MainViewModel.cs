@@ -467,7 +467,6 @@ namespace LinkPocket.ViewModels
                 new() { Id = "search", Label = "搜索", IconKind = PackIconKind.Magnify },
                 new() { Id = "smartlists", Label = "智能列表", IconKind = PackIconKind.AutoFix },
                 new() { Id = "tools", Label = "工具", IconKind = PackIconKind.WrenchOutline },
-                new() { Id = "vault", Label = "密码库", IconKind = PackIconKind.LockOutline },
                 new() { Id = "trash", Label = "回收站", IconKind = PackIconKind.DeleteOutline },
                 new() { Id = "settings", Label = "设置", IconKind = PackIconKind.CogOutline }
             };
@@ -475,6 +474,12 @@ namespace LinkPocket.ViewModels
 
         private async void SelectNav(string navId)
         {
+            if (navId != CurrentNavId && CurrentNavId == "links")
+            {
+                _linkViewModel?.ClearSelectionCommand.Execute(null);
+                _selectionManager.ClearAll();
+            }
+
             CurrentNavId = navId;
             SyncNavSelection(navId);
 
