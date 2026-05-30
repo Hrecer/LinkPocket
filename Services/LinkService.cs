@@ -7,9 +7,14 @@ namespace LinkPocket.Services;
 
 public class LinkService
 {
-    private readonly LinkPocketDbContext _db;
+    private LinkPocketDbContext _db;
 
     public LinkService(LinkPocketDbContext db)
+    {
+        _db = db;
+    }
+
+    public void SetDb(LinkPocketDbContext db)
     {
         _db = db;
     }

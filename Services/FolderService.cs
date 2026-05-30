@@ -5,9 +5,14 @@ namespace LinkPocket.Services;
 
 public class FolderService
 {
-    private readonly LinkPocketDbContext _db;
+    private LinkPocketDbContext _db;
 
     public FolderService(LinkPocketDbContext db)
+    {
+        _db = db;
+    }
+
+    public void SetDb(LinkPocketDbContext db)
     {
         _db = db;
     }
@@ -74,7 +79,7 @@ public class FolderService
                 throw new ArgumentException("Cannot set folder as its own parent");
 
             // 检查循环引用
-            if (!string.IsNullOrEmpty(parentId) && await WouldCreateCycleAsync(id, parentId))
+            if (!string.IsNullOrEmpty(parentId) && await WouldCreateCycleInternalAsync(id, parentId))
                 throw new ArgumentException("Moving would create a circular reference");
 
             // 验证新父目录存在
@@ -227,9 +232,14 @@ public class FolderService
         await _db.SaveChangesAsync();
     }
 
-    private async Task<bool> WouldCreateCycleAsync(string folderId, string newParentId)
+    public async Task<bool> WouldCreateCycleAsync(string folderId, string targetParentId)
     {
-        string? currentId = newParentId;
+        return await WouldCreateCycleInternalAsync(folderId, targetParentId);
+    }
+
+    private async Task<bool> WouldCreateCycleInternalAsync(string folderId, string targetParentId)
+    {
+        string? currentId = targetParentId;
         var maxDepth = 100;
 
         while (!string.IsNullOrEmpty(currentId) && maxDepth-- > 0)
@@ -256,5 +266,99 @@ public class FolderService
         }
 
         return ids;
+    }
+
+    public async Task MoveFolderAsync(string folderId, string? targetParentId)
+    {
+        await UpdateFolderAsync(folderId, parentId: targetParentId ?? "0");
+    }
+
+    public async Task<string> CopyFolderDeepAsync(string folderId, string? targetParentId)
+    {
+        var source = await _db.Folders
+            .Include(f => f.Children)
+            .Include(f => f.Links)
+            .FirstOrDefaultAsync(f => f.FolderId == folderId)
+            ?? throw new Exception("Folder not found");
+
+        var newFolder = new Folder
+        {
+            Name = source.Name,
+            Description = source.Description,
+            ParentId = string.IsNullOrEmpty(targetParentId) || targetParentId == "0" ? null : targetParentId,
+            LinkCount = 0,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.Folders.Add(newFolder);
+        await _db.SaveChangesAsync();
+
+        foreach (var link in source.Links)
+        {
+            var newLink = new Link
+            {
+                Url = link.Url,
+                Title = link.Title,
+                Description = link.Description,
+                FaviconUrl = link.FaviconUrl,
+                ListId = newFolder.FolderId,
+                LastVisitedAt = link.LastVisitedAt,
+                VisitCount = link.VisitCount,
+                IsImportant = link.IsImportant,
+                CreatedAt = link.CreatedAt,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.Links.Add(newLink);
+        }
+
+        await CopyChildrenDeepAsync(source.FolderId, newFolder.FolderId);
+
+        await _db.SaveChangesAsync();
+        return newFolder.FolderId;
+    }
+
+    private async Task CopyChildrenDeepAsync(string sourceParentId, string destParentId)
+    {
+        var children = await _db.Folders
+            .Include(f => f.Links)
+            .Where(f => f.ParentId == sourceParentId)
+            .ToListAsync();
+
+        foreach (var child in children)
+        {
+            var newChild = new Folder
+            {
+                Name = child.Name,
+                Description = child.Description,
+                ParentId = destParentId,
+                LinkCount = 0,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _db.Folders.Add(newChild);
+            await _db.SaveChangesAsync();
+
+            foreach (var link in child.Links)
+            {
+                var newLink = new Link
+                {
+                    Url = link.Url,
+                    Title = link.Title,
+                    Description = link.Description,
+                    FaviconUrl = link.FaviconUrl,
+                    ListId = newChild.FolderId,
+                    LastVisitedAt = link.LastVisitedAt,
+                    VisitCount = link.VisitCount,
+                    IsImportant = link.IsImportant,
+                    CreatedAt = link.CreatedAt,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _db.Links.Add(newLink);
+            }
+
+            await CopyChildrenDeepAsync(child.FolderId, newChild.FolderId);
+        }
     }
 }

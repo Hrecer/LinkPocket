@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -19,7 +20,7 @@ namespace LinkPocket.ViewModels
 {
     public class MainViewModel : INotifyPropertyChanged
     {
-        private readonly LinkPocketDbContext _db;
+        private LinkPocketDbContext _db;
         private readonly LinkService _linkService;
         private readonly FolderService _folderService;
         private readonly Managers.SelectionManager _selectionManager;
@@ -1426,6 +1427,64 @@ namespace LinkPocket.ViewModels
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public async Task MoveFolderAsync(string folderId, string? targetParentId)
+        {
+            await _folderService.MoveFolderAsync(folderId, targetParentId);
+        }
+
+        public async Task<string> CopyFolderDeepAsync(string folderId, string? targetParentId)
+        {
+            return await _folderService.CopyFolderDeepAsync(folderId, targetParentId);
+        }
+
+        public async Task<bool> WouldFolderMoveCreateCycleAsync(string folderId, string targetParentId)
+        {
+            return await _folderService.WouldCreateCycleAsync(folderId, targetParentId);
+        }
+
+        public async Task ReinitializeDatabaseAsync(bool resetData = true)
+        {
+            try { _db?.Database.CloseConnection(); } catch { }
+            try { _db?.Dispose(); } catch { }
+
+            var dbPath = Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
+            var connString = $"Data Source={dbPath}";
+            try { Microsoft.Data.Sqlite.SqliteConnection.ClearPool(new Microsoft.Data.Sqlite.SqliteConnection(connString)); } catch { }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            await Task.Delay(200);
+
+            if (resetData)
+            {
+                if (File.Exists(dbPath))
+                    File.Delete(dbPath);
+
+                var faviconDir = Path.Combine(AppContext.BaseDirectory, "favicons");
+                if (Directory.Exists(faviconDir))
+                    Directory.Delete(faviconDir, true);
+            }
+
+            _db = new LinkPocketDbContext();
+            _db.Database.EnsureCreated();
+
+            _linkService.SetDb(_db);
+            _folderService.SetDb(_db);
+
+            await LoadFolderTreeAsync();
+
+            if (Application.Current.MainWindow is MainWindow mw)
+            {
+                await mw.RefreshSidebarAsync(this);
+                mw.ClearMainList();
+                await mw.RefreshMainListAsync();
+            }
+
+            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
+
+            _selectionManager.SelectFolder(CurrentNavId == "links" ? "0" : CurrentNavId);
         }
     }
 }

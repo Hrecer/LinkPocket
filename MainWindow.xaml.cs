@@ -30,6 +30,8 @@ public partial class MainWindow : Window
 
     private Border? _selectedSearchCard;
     private LinkItem? _selectedSearchItem;
+    private string? _clippedFolderId;
+    private bool _isFolderClipCut;
 
     public MainWindow()
     {
@@ -304,25 +306,64 @@ public partial class MainWindow : Window
             var inText = IsInTextInput();
             Logger.Info($"[快捷键] Ctrl+C 原始触发: IsInTextInput={inText}, FocusedType={Keyboard.FocusedElement?.GetType().Name}");
             if (inText) return;
-            CopySelectedLink();
+            if (DataContext is MainViewModel cVm)
+            {
+                if (cVm.LinkViewModel?.HasSelectedItems == true || !string.IsNullOrEmpty(cVm.SelectedLinkId))
+                {
+                    _clippedFolderId = null;
+                    _isFolderClipCut = false;
+                    CopySelectedLink();
+                }
+                else if (!string.IsNullOrEmpty(cVm.SelectedFolderId) && cVm.SelectedFolderId != "0")
+                {
+                    _clippedFolderId = cVm.SelectedFolderId;
+                    _isFolderClipCut = false;
+                    Logger.Info($"[快捷键] Ctrl+C → 文件夹复制: {_clippedFolderId}");
+                }
+            }
             e.Handled = true;
         }
         else if (e.Key == Key.X && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             if (IsInTextInput()) return;
-            CutSelectedLink();
+            if (DataContext is MainViewModel xVm)
+            {
+                if (xVm.LinkViewModel?.HasSelectedItems == true || !string.IsNullOrEmpty(xVm.SelectedLinkId))
+                {
+                    _clippedFolderId = null;
+                    _isFolderClipCut = false;
+                    CutSelectedLink();
+                }
+                else if (!string.IsNullOrEmpty(xVm.SelectedFolderId) && xVm.SelectedFolderId != "0")
+                {
+                    _clippedFolderId = xVm.SelectedFolderId;
+                    _isFolderClipCut = true;
+                    if (_sidebarFolderBorders.TryGetValue(_clippedFolderId, out var sb))
+                        sb.Opacity = 0.4;
+                    if (_mainListFolderBorders.TryGetValue(_clippedFolderId, out var mb))
+                        mb.Opacity = 0.4;
+                    Logger.Info($"[快捷键] Ctrl+X → 文件夹剪切: {_clippedFolderId}");
+                }
+            }
             e.Handled = true;
         }
         else if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
             if (IsInTextInput()) return;
-            Logger.Info($"[快捷键] Ctrl+V 触发: SelectedFolderId={(DataContext as MainViewModel)?.SelectedFolderId}, HasClipboard={_clipboardManager.HasClipboard}");
-            if (DataContext is MainViewModel pasteVm && string.IsNullOrEmpty(pasteVm.SelectedFolderId))
+            if (_clippedFolderId != null)
             {
-                Logger.Info($"[快捷键] Ctrl+V → 无目标文件夹，无法粘贴");
-                return;
+                _ = PasteFolderAsync();
             }
-            _ = PasteLinksAsync();
+            else
+            {
+                Logger.Info($"[快捷键] Ctrl+V 触发: SelectedFolderId={(DataContext as MainViewModel)?.SelectedFolderId}, HasClipboard={_clipboardManager.HasClipboard}");
+                if (DataContext is MainViewModel pasteVm && string.IsNullOrEmpty(pasteVm.SelectedFolderId))
+                {
+                    Logger.Info($"[快捷键] Ctrl+V → 无目标文件夹，无法粘贴");
+                    return;
+                }
+                _ = PasteLinksAsync();
+            }
             e.Handled = true;
         }
         else if (e.Key == Key.Delete)
@@ -351,6 +392,18 @@ public partial class MainWindow : Window
                 {
                     _clipboardManager.Clear();
                     ClearCutVisuals();
+                }
+                if (_clippedFolderId != null)
+                {
+                    if (_isFolderClipCut)
+                    {
+                        if (_sidebarFolderBorders.TryGetValue(_clippedFolderId, out var fbsb))
+                            fbsb.Opacity = 1.0;
+                        if (_mainListFolderBorders.TryGetValue(_clippedFolderId, out var fbmb))
+                            fbmb.Opacity = 1.0;
+                    }
+                    _clippedFolderId = null;
+                    _isFolderClipCut = false;
                 }
                 if (escVm.CurrentNavId == "trash" && escVm.RecycleBinViewModel != null && escVm.RecycleBinViewModel.SelectedIds.Count > 0)
                 {
@@ -438,6 +491,71 @@ public partial class MainWindow : Window
             card.Opacity = 0.4;
         if (_sidebarLinkBorders.TryGetValue(currentLink.LinkId, out var sidebarCard))
             sidebarCard.Opacity = 0.4;
+    }
+
+    private async Task PasteFolderAsync()
+    {
+        if (DataContext is not MainViewModel vm) return;
+        if (string.IsNullOrEmpty(vm.SelectedFolderId)) return;
+        if (_clippedFolderId == null) return;
+
+        var sourceId = _clippedFolderId;
+        var targetId = vm.SelectedFolderId;
+
+        if (sourceId == targetId)
+        {
+            if (_isFolderClipCut)
+            {
+                MessageBox.Show("源目录与目标目录相同，无法剪切到同一目录", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            else
+            {
+                var result = MessageBox.Show("目标目录与源目录相同，是否继续复制？", "提示",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result != MessageBoxResult.Yes) return;
+            }
+        }
+
+        if (await vm.WouldFolderMoveCreateCycleAsync(sourceId, targetId))
+        {
+            MessageBox.Show("无法将文件夹移动或复制到其自身子目录中，会导致循环引用", "提示",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            if (_isFolderClipCut)
+            {
+                await vm.MoveFolderAsync(sourceId, targetId);
+            }
+            else
+            {
+                await vm.CopyFolderDeepAsync(sourceId, targetId);
+            }
+
+            if (_isFolderClipCut)
+            {
+                if (_sidebarFolderBorders.TryGetValue(sourceId, out var psb))
+                    psb.Opacity = 1.0;
+                if (_mainListFolderBorders.TryGetValue(sourceId, out var pmb))
+                    pmb.Opacity = 1.0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[文件夹粘贴] 操作失败: {ex.Message}", ex);
+            MessageBox.Show($"操作失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        _clippedFolderId = null;
+        _isFolderClipCut = false;
+
+        await vm.RefreshFolderTreeAndUIAsync();
+        RefreshDetailPanel();
     }
 
     private async Task PasteLinksAsync()
@@ -742,33 +860,6 @@ public partial class MainWindow : Window
             var b = (Border)s;
             if (b.Tag is string fid && fid != viewModel.SelectedFolderId)
                 b.Background = new SolidColorBrush(Colors.Transparent);
-        };
-
-        row.MouseRightButtonUp += (s, e) =>
-        {
-            if (DataContext is MainViewModel vm)
-                vm.SelectFolder(folder.Id);
-            var ctxMenu = new ContextMenu();
-
-            if (_clipboardManager.HasClipboard)
-            {
-                var pasteItem = new MenuItem { Header = "粘贴到此处", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
-                pasteItem.Click += async (cs, ce) =>
-                {
-                    await PasteLinksAsync();
-                    ctxMenu.IsOpen = false;
-                };
-                ctxMenu.Items.Add(pasteItem);
-            }
-            else
-            {
-                var emptyItem = new MenuItem { Header = "（剪贴板为空）", IsEnabled = false };
-                ctxMenu.Items.Add(emptyItem);
-            }
-
-            ctxMenu.PlacementTarget = row;
-            ctxMenu.IsOpen = true;
-            e.Handled = true;
         };
 
         return row;
@@ -1456,6 +1547,16 @@ public partial class MainWindow : Window
         UpdateSidebarSelectionVisuals();
         UpdateCutVisuals();
         UpdateMainListSelectionVisuals();
+        InvalidateVisual();
+    }
+
+    public void ClearMainList()
+    {
+        if (MainListContentPanel == null) return;
+        MainListContentPanel.Children.Clear();
+        _mainListCardBorders.Clear();
+        _mainListFolderBorders.Clear();
+        ClearCutVisuals();
     }
 
     public void RefreshMainList()
@@ -1671,33 +1772,6 @@ public partial class MainWindow : Window
                 b.Background = new SolidColorBrush(Colors.Transparent);
         };
 
-        row.MouseRightButtonUp += (s, e) =>
-        {
-            if (DataContext is MainViewModel vm)
-                vm.SelectFolder(folder.Id);
-            var ctxMenu = new ContextMenu();
-
-            if (_clipboardManager.HasClipboard)
-            {
-                var pasteItem = new MenuItem { Header = "粘贴到此处", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
-                pasteItem.Click += async (cs, ce) =>
-                {
-                    await PasteLinksAsync();
-                    ctxMenu.IsOpen = false;
-                };
-                ctxMenu.Items.Add(pasteItem);
-            }
-            else
-            {
-                var emptyItem = new MenuItem { Header = "（剪贴板为空）", IsEnabled = false };
-                ctxMenu.Items.Add(emptyItem);
-            }
-
-            ctxMenu.PlacementTarget = row;
-            ctxMenu.IsOpen = true;
-            e.Handled = true;
-        };
-
         return row;
     }
 
@@ -1809,64 +1883,6 @@ public partial class MainWindow : Window
         card.Child = grid;
 
         var linkItemRef = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == link.LinkId);
-        card.MouseRightButtonUp += (s, e) =>
-        {
-            var ctxMenu = new ContextMenu();
-            var targetLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == link.LinkId) ?? linkItemRef;
-            if (targetLink == null) return;
-
-            viewModel.SelectedLinkId = targetLink.LinkId;
-            UpdateMainListSelectionVisuals();
-            UpdateSidebarSelectionVisuals();
-            RefreshDetailPanel();
-
-            var copyItem = new MenuItem { Header = "复制", Icon = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 16, Height = 16 } };
-            copyItem.Click += (cs, ce) =>
-            {
-                _clipboardManager.Copy(new List<LinkItem> { targetLink });
-                ctxMenu.IsOpen = false;
-            };
-            ctxMenu.Items.Add(copyItem);
-
-            var cutItem = new MenuItem { Header = "剪切", Icon = new PackIcon { Kind = PackIconKind.Scissors, Width = 16, Height = 16 } };
-            cutItem.Click += (cs, ce) =>
-            {
-                CutSelectedLink();
-                ctxMenu.IsOpen = false;
-            };
-            ctxMenu.Items.Add(cutItem);
-
-            ctxMenu.Items.Add(new Separator());
-
-            if (_clipboardManager.HasClipboard)
-            {
-                var pasteItem = new MenuItem { Header = "粘贴到选中文件夹", Icon = new PackIcon { Kind = PackIconKind.ContentPaste, Width = 16, Height = 16 } };
-                pasteItem.Click += async (cs, ce) =>
-                {
-                    await PasteLinksAsync();
-                    ctxMenu.IsOpen = false;
-                };
-                pasteItem.IsEnabled = !string.IsNullOrEmpty(viewModel.SelectedFolderId);
-                pasteItem.ToolTip = string.IsNullOrEmpty(viewModel.SelectedFolderId) ? "请先选择一个目标文件夹" : "";
-                ctxMenu.Items.Add(pasteItem);
-            }
-
-            ctxMenu.Items.Add(new Separator());
-
-            var deleteItem = new MenuItem { Header = "删除", Icon = new PackIcon { Kind = PackIconKind.Delete, Width = 16, Height = 16 } };
-            deleteItem.Click += (cs, ce) =>
-            {
-                if (viewModel.LinkViewModel != null)
-                    viewModel.LinkViewModel.DeleteSelectedCommand.Execute(null);
-                ctxMenu.IsOpen = false;
-                _ = RefreshMainListAsync();
-            };
-            ctxMenu.Items.Add(deleteItem);
-
-            ctxMenu.PlacementTarget = card;
-            ctxMenu.IsOpen = true;
-            e.Handled = true;
-        };
 
         card.PreviewMouseLeftButtonDown += (s, e) =>
         {
