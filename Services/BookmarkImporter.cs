@@ -39,11 +39,18 @@ public class BookmarkImporter
 
             if (item.IsFolder)
             {
+                string? realParentId = null;
+                if (item.TempParentId != null)
+                {
+                    var parentFolder = items.FirstOrDefault(i => i.IsFolder && i.TempId == item.TempParentId);
+                    realParentId = parentFolder?.GeneratedId;
+                }
+
                 var folder = new Folder
                 {
                     Name = item.Title,
                     Description = null,
-                    ParentId = item.ParentId,
+                    ParentId = realParentId,
                     LinkCount = 0,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -53,20 +60,24 @@ public class BookmarkImporter
 
                 item.GeneratedId = folder.FolderId;
 
-                foreach (var child in items.Where(c => c.TempParentId == item.TempId))
-                    child.ParentId = folder.FolderId;
-
                 result.FoldersCreated++;
             }
             else
             {
+                string? realListId = null;
+                if (item.TempParentId != null)
+                {
+                    var parentFolder = items.FirstOrDefault(i => i.IsFolder && i.TempId == item.TempParentId);
+                    realListId = parentFolder?.GeneratedId;
+                }
+
                 var link = new Link
                 {
                     Url = item.Url ?? string.Empty,
                     Title = item.Title,
                     Description = null,
                     FaviconUrl = item.IconUrl,
-                    ListId = item.ParentId,
+                    ListId = realListId,
                     VisitCount = 0,
                     IsImportant = false,
                     CreatedAt = item.AddDate ?? DateTime.UtcNow,
@@ -120,11 +131,15 @@ public class BookmarkImporter
         return html.Substring(start, pos - start - 5);
     }
 
-    private static string? ExtractInnerDl(string afterH3)
+    private static string? ExtractInnerDl(string afterH3, out int innerStart, out int innerEnd)
     {
+        innerStart = -1;
+        innerEnd = -1;
+
         var startMatch = Regex.Match(afterH3, @"<DL[^>]*>", RegexOptions.IgnoreCase);
         if (!startMatch.Success) return null;
 
+        innerStart = startMatch.Index;
         var start = startMatch.Index + startMatch.Length;
         var depth = 1;
         var pos = start;
@@ -140,7 +155,12 @@ public class BookmarkImporter
             if (closeTag.Success && (!openTag.Success || closeTag.Index < openTag.Index))
             {
                 depth--;
-                pos += closeTag.Index + 5;
+                if (depth == 0)
+                {
+                    innerEnd = pos + closeTag.Index + closeTag.Length;
+                    return afterH3.Substring(start, pos + closeTag.Index - start);
+                }
+                pos += closeTag.Index + closeTag.Length;
             }
             else if (openTag.Success)
             {
@@ -149,8 +169,7 @@ public class BookmarkImporter
             }
         }
 
-        if (depth != 0) return null;
-        return afterH3.Substring(start, pos - start - 5);
+        return null;
     }
 
     private void ParseEntries(string dlContent, string? parentTempId, List<ParsedItem> items)
@@ -172,7 +191,7 @@ public class BookmarkImporter
                 var tempId = Guid.NewGuid().ToString("N");
 
                 var afterH3 = rest.Substring(folderMatch.Index + folderMatch.Length);
-                var innerDl = ExtractInnerDl(afterH3);
+                ExtractInnerDl(afterH3, out var dlStart, out var dlEnd);
 
                 items.Add(new ParsedItem
                 {
@@ -183,16 +202,11 @@ public class BookmarkImporter
                     TempParentId = parentTempId
                 });
 
-                if (innerDl != null)
-                    ParseEntries(innerDl, tempId, items);
-
-                if (innerDl != null)
+                if (dlEnd > 0)
                 {
-                    var dlMatch = Regex.Match(afterH3, @"<DL[^>]*>[\s\S]*?</DL>", RegexOptions.IgnoreCase);
-                    if (dlMatch.Success)
-                        pos = entryStart + folderMatch.Index + folderMatch.Length + dlMatch.Index + dlMatch.Length;
-                    else
-                        pos = entryStart + folderMatch.Index + folderMatch.Length;
+                    var innerContent = afterH3.Substring(dlStart, dlEnd - dlStart);
+                    ParseEntries(innerContent, tempId, items);
+                    pos = entryStart + folderMatch.Index + folderMatch.Length + dlEnd;
                 }
                 else
                 {

@@ -55,8 +55,8 @@ public class BookmarkExporter
         await writer.WriteLineAsync("<!-- This is an automatically generated file.");
         await writer.WriteLineAsync("     It will be read and overwritten. Do NOT edit! -->");
         await writer.WriteLineAsync("<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">");
-        await writer.WriteLineAsync("<TITLE>LinkPocket 书签导出</TITLE>");
-        await writer.WriteLineAsync("<H1>LinkPocket 书签</H1>");
+        await writer.WriteLineAsync("<TITLE>Bookmarks</TITLE>");
+        await writer.WriteLineAsync("<H1>Bookmarks</H1>");
         await writer.WriteLineAsync("<DL><p>");
 
         foreach (var link in rootLinks)

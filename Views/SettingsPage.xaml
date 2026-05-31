@@ -1,7 +1,8 @@
 <UserControl x:Class="LinkPocket.Views.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes">
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:views="clr-namespace:LinkPocket.Views">
     <Grid Background="White">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
@@ -42,6 +43,13 @@
                             <materialDesign:PackIcon Kind="DeleteSweep" Width="18" Height="18"
                                                      VerticalAlignment="Center" Opacity="0.7"/>
                             <TextBlock Text="  数据维护" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="BackupRestore" Width="18" Height="18"
+                                                     VerticalAlignment="Center" Opacity="0.7"/>
+                            <TextBlock Text="  备份与恢复" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                 </ListBox>
@@ -220,6 +228,9 @@
                     </Grid>
                 </Border>
             </StackPanel>
+
+            <!-- 备份与恢复界面 -->
+            <views:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->

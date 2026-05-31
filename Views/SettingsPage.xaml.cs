@@ -38,6 +38,7 @@ namespace LinkPocket.Views
             ExportPanel.Visibility = Visibility.Collapsed;
             ImportPanel.Visibility = Visibility.Collapsed;
             MaintenancePanel.Visibility = Visibility.Collapsed;
+            BackupPanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
                 ExportPanel.Visibility = Visibility.Visible;
@@ -45,6 +46,8 @@ namespace LinkPocket.Views
                 ImportPanel.Visibility = Visibility.Visible;
             else if (SettingListBox.SelectedIndex == 2)
                 MaintenancePanel.Visibility = Visibility.Visible;
+            else if (SettingListBox.SelectedIndex == 3)
+                BackupPanelControl.Visibility = Visibility.Visible;
             else
                 PlaceholderPanel.Visibility = Visibility.Visible;
 
@@ -52,6 +55,11 @@ namespace LinkPocket.Views
             {
                 ImportFileTextBox.Text = string.Empty;
                 ImportButton.IsEnabled = false;
+            }
+
+            if (SettingListBox.SelectedIndex != 3)
+            {
+                BackupPanelControl.ResetState();
             }
         }
 
@@ -83,7 +91,7 @@ namespace LinkPocket.Views
             if (string.IsNullOrWhiteSpace(settingsVm.ExportDirectory))
                 return;
 
-            var outputPath = System.IO.Path.Combine(settingsVm.ExportDirectory, "LinkPocket_书签导出.html");
+            var outputPath = System.IO.Path.Combine(settingsVm.ExportDirectory, $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
             var dbPath = System.IO.Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
 
             Services.Logger.Info($"[导出] 开始导出流程");
@@ -204,6 +212,10 @@ namespace LinkPocket.Views
                 ExportOverlay.Visibility = Visibility.Collapsed;
                 settingsVm.IsExporting = false;
                 settingsVm.IsExportOverlayVisible = false;
+                ExportDirTextBox.Text = string.Empty;
+                ExportButton.IsEnabled = false;
+                if (DataContext is ViewModels.MainViewModel vm2 && vm2.SettingsViewModel != null)
+                    vm2.SettingsViewModel.ExportDirectory = string.Empty;
                 Services.Logger.Info("[导出] 流程结束");
 
                 if (fileExists && exportedCount == dbLinkCount)
@@ -222,6 +234,10 @@ namespace LinkPocket.Views
                 ExportOverlay.Visibility = Visibility.Collapsed;
                 settingsVm.IsExporting = false;
                 settingsVm.IsExportOverlayVisible = false;
+                ExportDirTextBox.Text = string.Empty;
+                ExportButton.IsEnabled = false;
+                if (DataContext is ViewModels.MainViewModel vm3 && vm3.SettingsViewModel != null)
+                    vm3.SettingsViewModel.ExportDirectory = string.Empty;
                 Services.Logger.Info("[导出] 流程结束");
             }
         }
@@ -314,7 +330,8 @@ namespace LinkPocket.Views
                 }
 
                 ExportOverlay.Visibility = Visibility.Collapsed;
-                ImportButton.IsEnabled = true;
+                ImportFileTextBox.Text = string.Empty;
+                ImportButton.IsEnabled = false;
             }
             catch (Exception ex)
             {
@@ -324,7 +341,8 @@ namespace LinkPocket.Views
                 ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
                 await Task.Delay(3000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
-                ImportButton.IsEnabled = true;
+                ImportFileTextBox.Text = string.Empty;
+                ImportButton.IsEnabled = false;
             }
         }
 

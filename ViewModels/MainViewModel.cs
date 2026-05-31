@@ -1444,6 +1444,11 @@ namespace LinkPocket.ViewModels
             return await _folderService.WouldCreateCycleAsync(folderId, targetParentId);
         }
 
+        public LinkPocketDbContext GetDbForBackup()
+        {
+            return _db;
+        }
+
         public async Task ReinitializeDatabaseAsync(bool resetData = true)
         {
             try { _db?.Database.CloseConnection(); } catch { }
@@ -1478,6 +1483,7 @@ namespace LinkPocket.ViewModels
             if (Application.Current.MainWindow is MainWindow mw)
             {
                 await mw.RefreshSidebarAsync(this);
+                mw.ClearDetailPanel();
                 mw.ClearMainList();
                 await mw.RefreshMainListAsync();
             }
