@@ -2,7 +2,6 @@ bin/
 obj/
 *.user
 *.suo
-*.py
 linkpocket.db
 favicons/
 *.lpbackup
