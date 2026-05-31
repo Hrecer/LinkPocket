@@ -1,6 +1,6 @@
 # LinkPocket
 
-**LinkPocket Bookmark Manager** — A desktop bookmark management tool built with WPF + .NET 8, featuring folder-based organization, smart search, Netscape format import/export, and full-featured backup/restore.
+**LinkPocket Bookmark Manager** — A desktop bookmark management tool built with WPF + .NET 8, featuring folder-based organization, smart search, HTML format import/export, and full-featured backup/restore.
 
 ## ✨ Features
 
@@ -33,7 +33,7 @@ LinkPocket/
 │   ├── LinkService    # Bookmark CRUD + metadata fetching
 │   ├── FolderService  # Folder tree management
 │   ├── FaviconService # Three-level favicon cache
-│   ├── BookmarkExporter / BookmarkImporter  # Netscape HTML import/export
+│   ├── BookmarkExporter / BookmarkImporter  # HTML import/export
 │   └── LinkPocketBackupService             # .lpbackup backup import/export
 ├── ViewModels/        # MVVM view models
 ├── Views/             # View layer (XAML)
