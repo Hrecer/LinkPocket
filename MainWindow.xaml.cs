@@ -15,7 +15,7 @@ using MaterialDesignThemes.Wpf;
 
 namespace LinkPocket;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, Services.IUiCoordinator
 {
     private readonly HashSet<string> _sidebarExpandedFolders = new() { "0" };
     private readonly HashSet<string> _mainExpandedFolders = new() { "0" };
@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = new MainViewModel(_selectionManager);
+        Services.UiCoordinator.Instance = this;
         _linkNavigator = new Managers.LinkNavigator((MainViewModel)DataContext, Dispatcher)
         {
             OnExpandAncestorFolders = id => ExpandAllAncestorFolders(((MainViewModel)DataContext).FolderItems, id),
@@ -96,6 +97,146 @@ public partial class MainWindow : Window
         StateChanged += Window_StateChanged;
         RefreshDetailPanel();
     }
+
+    #region IUiCoordinator 实现（供 ViewModel 解耦调用）
+
+    void Services.IUiCoordinator.ShowEditPage()
+    {
+        MainView.Visibility = Visibility.Collapsed;
+        DetailView.Visibility = Visibility.Collapsed;
+        EditLinkView.Visibility = Visibility.Visible;
+        ClearDetailPanel();
+    }
+
+    void Services.IUiCoordinator.CloseEditPage(bool returnToDetail)
+    {
+        EditLinkView.Visibility = Visibility.Collapsed;
+        if (returnToDetail)
+            DetailView.Visibility = Visibility.Visible;
+        else
+            MainView.Visibility = Visibility.Visible;
+    }
+
+    void Services.IUiCoordinator.ShowDetailView()
+    {
+        MainView.Visibility = Visibility.Collapsed;
+        DetailView.Visibility = Visibility.Visible;
+        ClearDetailPanel();
+    }
+
+    void Services.IUiCoordinator.CloseDetailView()
+    {
+        DetailView.Visibility = Visibility.Collapsed;
+        MainView.Visibility = Visibility.Visible;
+    }
+
+    void Services.IUiCoordinator.UpdateDetailPanel(LinkItem link) => UpdateDetailPanel(link);
+    void Services.IUiCoordinator.ClearDetailPanel() => ClearDetailPanel();
+    LinkItem? Services.IUiCoordinator.GetSelectedLink() => GetSelectedLink();
+    void Services.IUiCoordinator.RefreshSidebar() => RefreshSidebar((MainViewModel)DataContext);
+    Task Services.IUiCoordinator.RefreshSidebarAsync() => RefreshSidebarAsync((MainViewModel)DataContext);
+    Task Services.IUiCoordinator.RefreshMainListAsync() => RefreshMainListAsync();
+    void Services.IUiCoordinator.ClearMainList() => ClearMainList();
+    void Services.IUiCoordinator.ExpandFolder(string folderId) => ExpandFolder(folderId);
+    void Services.IUiCoordinator.ClearFolderSelection() => ClearFolderSelection();
+    void Services.IUiCoordinator.FocusNewFolderDialog() => FocusNewFolderDialog();
+    Task Services.IUiCoordinator.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
+
+    void Services.IUiCoordinator.ShowNavigationTabs()
+    {
+        if (FindName("NavigationTabs") is ItemsControl navTabs)
+            navTabs.Visibility = Visibility.Visible;
+    }
+
+    bool Services.IUiCoordinator.ConfirmDeleteFolder(string folderName) => ShowDeleteFolderConfirmation(folderName);
+
+    private bool ShowDeleteFolderConfirmation(string folderName)
+    {
+        var dialog = new Window
+        {
+            Title = "删除文件夹",
+            Width = 360, Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStyle = WindowStyle.None,
+            Background = System.Windows.Media.Brushes.Transparent,
+            AllowsTransparency = true
+        };
+
+        var contentPanel = new StackPanel { Margin = new Thickness(24) };
+
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = "删除文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4)
+        });
+
+        contentPanel.Children.Add(new TextBlock
+        {
+            Text = $"确定要删除文件夹 \"{folderName}\" 吗？",
+            FontSize = 14, Margin = new Thickness(0, 0, 0, 20),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
+        });
+
+        var btnPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var cancelBtn = new System.Windows.Controls.Button
+        {
+            Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
+            Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+            BorderThickness = new Thickness(1)
+        };
+        cancelBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
+        cancelBtn.Click += (s, e) => dialog.DialogResult = false;
+        btnPanel.Children.Add(cancelBtn);
+
+        var okBtn = new System.Windows.Controls.Button
+        {
+            Content = "确定", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
+            Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
+            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+        okBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
+        okBtn.Click += (s, e) => dialog.DialogResult = true;
+        btnPanel.Children.Add(okBtn);
+
+        contentPanel.Children.Add(btnPanel);
+
+        var outerBorder = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = System.Windows.Media.Brushes.White,
+            BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+            BorderThickness = new Thickness(1),
+            Child = contentPanel
+        };
+
+        dialog.Content = outerBorder;
+
+        dialog.PreviewKeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                dialog.DialogResult = false;
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                dialog.DialogResult = true;
+                e.Handled = true;
+            }
+        };
+
+        return dialog.ShowDialog() == true;
+    }
+
+    #endregion
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

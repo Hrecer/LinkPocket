@@ -389,8 +389,7 @@ namespace LinkPocket.ViewModels
                 await LoadLinksAsync();
                 LinksChanged?.Invoke(this, EventArgs.Empty);
 
-                if (Application.Current.MainWindow is MainWindow mw)
-                    mw.ClearDetailPanel();
+                Services.UiCoordinator.Instance?.ClearDetailPanel();
             }
             catch (Exception ex)
             {

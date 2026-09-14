@@ -296,11 +296,7 @@ namespace LinkPocket.Views
                     vm.LinkNavigator.NavigateToFolderById(id);
                 }
 
-                if (Application.Current.MainWindow is MainWindow mw)
-                {
-                    if (mw.FindName("NavigationTabs") is System.Windows.Controls.ItemsControl navTabs)
-                        navTabs.Visibility = Visibility.Visible;
-                }
+                Services.UiCoordinator.Instance?.ShowNavigationTabs();
             }
             catch { }
         }
