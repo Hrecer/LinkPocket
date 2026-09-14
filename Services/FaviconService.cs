@@ -1,23 +1,17 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.Net.Http;
-using System.Security.Cryptography;
-using System.Text;
 using System.Windows.Media.Imaging;
 
 namespace LinkPocket.Services;
 
+/// <summary>
+/// 前端 favicon 渲染层：基于后端 FaviconStore 的磁盘缓存，负责 WPF BitmapImage 解码与内存缓存。
+/// 后端（LinkPocket.Core）不引用本文件。
+/// </summary>
 public class FaviconService
 {
-    private static readonly HttpClient _httpClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(8)
-    };
-
     private static readonly ConcurrentDictionary<string, BitmapImage> _memoryCache = new();
     private static BitmapImage? _defaultIcon;
-    private static readonly string _cacheDir = Path.Combine(
-        AppContext.BaseDirectory, "favicons");
 
     private static BitmapImage DefaultIcon
     {
@@ -64,52 +58,9 @@ public class FaviconService
         return bmp;
     }
 
-    private static string GetCacheFilePath(string faviconUrl)
-    {
-        using var sha = SHA256.Create();
-        var hash = Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(faviconUrl)));
-        var ext = GetExtensionFromUrl(faviconUrl);
-        return Path.Combine(_cacheDir, $"{hash}{ext}");
-    }
+    public static string ResolveFaviconUrl(string? originalUrl) => FaviconStore.ResolveFaviconUrl(originalUrl);
 
-    private static string GetExtensionFromUrl(string url)
-    {
-        try
-        {
-            var path = new Uri(url).AbsolutePath;
-            var ext = Path.GetExtension(path);
-            if (ext is ".png" or ".jpg" or ".jpeg" or ".ico" or ".gif" or ".bmp" or ".webp" or ".svg")
-                return ext == ".jpeg" ? ".jpg" : ext;
-        }
-        catch { }
-        return ".ico";
-    }
-
-    private static string? GetFallbackIcoUrl(string faviconUrl)
-    {
-        try
-        {
-            var uri = new Uri(faviconUrl);
-            return $"{uri.Scheme}://{uri.Host}/favicon.ico";
-        }
-        catch { }
-        return null;
-    }
-
-    public static string ResolveFaviconUrl(string? originalUrl)
-    {
-        if (string.IsNullOrWhiteSpace(originalUrl))
-            return string.Empty;
-
-        var ext = GetExtensionFromUrl(originalUrl).ToLower();
-        if (ext == ".svg")
-        {
-            var fallback = GetFallbackIcoUrl(originalUrl);
-            return fallback ?? originalUrl;
-        }
-
-        return originalUrl;
-    }
+    public static string BuildDefaultFaviconUrl(string url) => FaviconStore.BuildDefaultFaviconUrl(url);
 
     public static BitmapImage? LoadFromCache(string? faviconUrl)
     {
@@ -121,7 +72,7 @@ public class FaviconService
         if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
 
-        var filePath = GetCacheFilePath(resolvedUrl);
+        var filePath = FaviconStore.GetCacheFilePath(resolvedUrl);
         if (File.Exists(filePath))
         {
             try
@@ -150,20 +101,12 @@ public class FaviconService
 
         if (_memoryCache.ContainsKey(resolvedUrl)) return;
 
-        var filePath = GetCacheFilePath(resolvedUrl);
-        if (File.Exists(filePath)) return;
+        if (!await FaviconStore.EnsureCachedAsync(resolvedUrl)) return;
 
         try
         {
-            using var response = await _httpClient.GetAsync(resolvedUrl);
-            if (!response.IsSuccessStatusCode) return;
-
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            if (bytes.Length == 0) return;
-
-            Directory.CreateDirectory(_cacheDir);
-            await File.WriteAllBytesAsync(filePath, bytes);
-
+            var filePath = FaviconStore.GetCacheFilePath(resolvedUrl);
+            var bytes = await File.ReadAllBytesAsync(filePath);
             var bmp = new BitmapImage();
             bmp.BeginInit();
             bmp.DecodePixelWidth = 48;
@@ -186,8 +129,7 @@ public class FaviconService
         if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
 
-        var filePath = GetCacheFilePath(resolvedUrl);
-        if (File.Exists(filePath))
+        if (FaviconStore.TryGetCacheFilePath(resolvedUrl) is string filePath)
         {
             try
             {
@@ -204,25 +146,17 @@ public class FaviconService
             catch { }
         }
 
+        if (!await FaviconStore.EnsureCachedAsync(resolvedUrl))
+            return DefaultIcon;
+
         try
         {
-            using var response = await _httpClient.GetAsync(resolvedUrl);
-            if (!response.IsSuccessStatusCode)
-                return DefaultIcon;
-
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            if (bytes.Length == 0)
-                return DefaultIcon;
-
-            Directory.CreateDirectory(_cacheDir);
-            await File.WriteAllBytesAsync(filePath, bytes);
-
             var bmp = new BitmapImage();
             bmp.BeginInit();
-            bmp.StreamSource = new MemoryStream(bytes);
             bmp.DecodePixelWidth = 16;
             bmp.DecodePixelHeight = 16;
             bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(await File.ReadAllBytesAsync(FaviconStore.GetCacheFilePath(resolvedUrl)));
             bmp.EndInit();
             bmp.Freeze();
 
@@ -238,18 +172,5 @@ public class FaviconService
     public void ClearCache()
     {
         _memoryCache.Clear();
-    }
-
-    public static string BuildDefaultFaviconUrl(string url)
-    {
-        try
-        {
-            var uri = new Uri(url);
-            return $"{uri.Scheme}://{uri.Host}/favicon.ico";
-        }
-        catch
-        {
-            return string.Empty;
-        }
     }
 }

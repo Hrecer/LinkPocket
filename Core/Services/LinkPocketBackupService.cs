@@ -12,7 +12,6 @@ namespace LinkPocket.Services;
 public class LinkPocketBackupService
 {
     private readonly LinkPocketDbContext _db;
-    private static readonly string _faviconCacheDir = Path.Combine(AppContext.BaseDirectory, "favicons");
 
     public LinkPocketBackupService(LinkPocketDbContext db)
     {
@@ -265,10 +264,10 @@ public class LinkPocketBackupService
     {
         try
         {
-            var resolvedUrl = FaviconService.ResolveFaviconUrl(faviconUrl);
+            var resolvedUrl = FaviconStore.ResolveFaviconUrl(faviconUrl);
             if (string.IsNullOrWhiteSpace(resolvedUrl)) return;
 
-            var cacheFilePath = GetCacheFilePath(resolvedUrl);
+            var cacheFilePath = FaviconStore.GetCacheFilePath(resolvedUrl);
             if (!File.Exists(cacheFilePath)) return;
 
             var fileName = Path.GetFileName(cacheFilePath);
@@ -279,30 +278,6 @@ public class LinkPocketBackupService
         }
         catch
         {
-        }
-    }
-
-    private static string GetCacheFilePath(string faviconUrl)
-    {
-        using var sha = SHA256.Create();
-        var hash = Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(faviconUrl)));
-        var ext = GetExtensionFromUrl(faviconUrl);
-        return Path.Combine(_faviconCacheDir, $"{hash}{ext}");
-    }
-
-    private static string GetExtensionFromUrl(string url)
-    {
-        try
-        {
-            var path = new Uri(url).AbsolutePath;
-            var ext = Path.GetExtension(path).ToLower();
-            return ext is ".png" or ".jpg" or ".jpeg" or ".ico" or ".gif" or ".bmp" or ".webp" or ".svg"
-                ? ext == ".jpeg" ? ".jpg" : ext
-                : ".ico";
-        }
-        catch
-        {
-            return ".ico";
         }
     }
 
@@ -499,15 +474,15 @@ public class LinkPocketBackupService
 
         try
         {
-            var resolvedUrl = FaviconService.ResolveFaviconUrl(originalUrl);
-            var cacheFilePath = GetCacheFilePath(resolvedUrl);
+            var resolvedUrl = FaviconStore.ResolveFaviconUrl(originalUrl);
+            var cacheFilePath = FaviconStore.GetCacheFilePath(resolvedUrl);
 
             if (File.Exists(cacheFilePath)) return resolvedUrl;
 
             var fileName = Path.GetFileName(cacheFilePath);
             if (!faviconDataDict.ContainsKey(fileName)) return originalUrl;
 
-            Directory.CreateDirectory(_faviconCacheDir);
+            Directory.CreateDirectory(FaviconStore.CacheDirectory);
             await File.WriteAllBytesAsync(cacheFilePath, faviconDataDict[fileName]);
 
             return resolvedUrl;
