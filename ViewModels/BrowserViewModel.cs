@@ -120,11 +120,17 @@ public class BrowserViewModel : INotifyPropertyChanged
 
             foreach (var row in linkRows) Rows.Add(row);
 
-            // 面包屑（含 ID，可点击跳转）
+            // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
             Breadcrumbs.Clear();
             Breadcrumbs.Add(new BrowserCrumbViewModel(null, "全部书签"));
-            foreach (var crumb in BuildBreadcrumbIds(Controller.CurrentFolderId))
-                Breadcrumbs.Add(new BrowserCrumbViewModel(crumb.Id, crumb.Name));
+            var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
+            for (int i = 0; i < chain.Count; i++)
+            {
+                Breadcrumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)
+                {
+                    IsLast = i == chain.Count - 1
+                });
+            }
 
             StatusText = $"共 {contents.SubFolders.Count + contents.Links.Count} 项" +
                          $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个书签）";

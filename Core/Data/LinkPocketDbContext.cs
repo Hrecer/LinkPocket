@@ -6,9 +6,14 @@ public class LinkPocketDbContext : DbContext
 {
     public string DbPath { get; }
 
-    public LinkPocketDbContext()
+    public LinkPocketDbContext() : this(null)
     {
-        DbPath = System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
+    }
+
+    /// <summary>允许指定数据库文件路径（测试/数据工具用）；默认取程序运行目录。</summary>
+    public LinkPocketDbContext(string? dbPath)
+    {
+        DbPath = dbPath ?? System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder options)

@@ -74,4 +74,7 @@ public class BrowserCrumbViewModel
     /// <summary>null 表示根目录（全部书签）。</summary>
     public string? FolderId { get; }
     public string Name { get; }
+
+    /// <summary>是否为当前目录（面包屑最后一级，高亮显示）。</summary>
+    public bool IsLast { get; init; }
 }
