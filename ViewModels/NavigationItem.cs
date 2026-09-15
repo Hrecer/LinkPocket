@@ -1,5 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.ViewModels;
 
@@ -12,7 +12,7 @@ public partial class NavigationItem : ObservableObject
     private string _label = string.Empty;
 
     [ObservableProperty]
-    private PackIconKind _iconKind = PackIconKind.FolderOutline;
+    private string _iconKind = "folder-outline";
 
     [ObservableProperty]
     private bool _isSelected;

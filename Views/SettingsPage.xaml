@@ -1,7 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views">
     <Grid Background="White">
         <Grid.ColumnDefinitions>
@@ -11,7 +11,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- 左侧栏 -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource MaterialDesignDivider}"
+        <Border Grid.Column="0" BorderBrush="{DynamicResource OutlineVariant}"
                 BorderThickness="0,0,1,0" Background="#FAFAFA">
             <StackPanel>
                 <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
@@ -19,35 +19,35 @@
                 <ListBox x:Name="SettingListBox" BorderThickness="0" Background="Transparent"
                          SelectionChanged="SettingListBox_SelectionChanged">
                     <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" BasedOn="{StaticResource MaterialDesignListBoxItem}">
+                        <Style TargetType="ListBoxItem" >
                             <Setter Property="Padding" Value="16,10"/>
                             <Setter Property="FontSize" Value="13"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="Export" Width="18" Height="18"
+                            <m3:M3Icon Kind="export" Width="18" Height="18"
                                                      VerticalAlignment="Center" Opacity="0.7"/>
                             <TextBlock Text="  导出书签" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="Import" Width="18" Height="18"
+                            <m3:M3Icon Kind="import" Width="18" Height="18"
                                                      VerticalAlignment="Center" Opacity="0.7"/>
                             <TextBlock Text="  导入书签" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="DeleteSweep" Width="18" Height="18"
+                            <m3:M3Icon Kind="delete-sweep" Width="18" Height="18"
                                                      VerticalAlignment="Center" Opacity="0.7"/>
                             <TextBlock Text="  数据维护" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="BackupRestore" Width="18" Height="18"
+                            <m3:M3Icon Kind="backup-restore" Width="18" Height="18"
                                                      VerticalAlignment="Center" Opacity="0.7"/>
                             <TextBlock Text="  备份与恢复" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
@@ -57,14 +57,14 @@
         </Border>
 
         <GridSplitter Grid.Column="1" Width="1"
-                      Background="{DynamicResource MaterialDesignDivider}"
+                      Background="{DynamicResource OutlineVariant}"
                       HorizontalAlignment="Stretch"/>
 
         <!-- 右侧内容区 -->
         <Grid Grid.Column="2" x:Name="ContentPanel">
             <!-- 默认占位 -->
             <StackPanel x:Name="PlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <materialDesign:PackIcon Kind="Settings" Width="48" Height="48"
+                <m3:M3Icon Kind="cog" Width="48" Height="48"
                                          HorizontalAlignment="Center" Opacity="0.15"/>
                 <TextBlock Text="选择一个设置项" FontSize="14" Opacity="0.3"
                            HorizontalAlignment="Center" Margin="0,12,0,0"/>
@@ -90,7 +90,7 @@
                              Foreground="#333333"
                              Background="#F5F5F5"
                              BorderBrush="#CCCCCC" BorderThickness="1.5"
-                             materialDesign:HintAssist.Hint="选择导出目录..."/>
+                             Tag="选择导出目录..."/>
                     <Button Grid.Column="1" x:Name="BrowseDirButton"
                             Content="浏览" Margin="8,0,0,0" Padding="14,8"
                             Cursor="Hand" Click="BrowseDirButton_Click"
@@ -101,8 +101,7 @@
                 <Button x:Name="ExportButton" Margin="0,24,0,0"
                         Padding="20,10" HorizontalAlignment="Left" Cursor="Hand"
                         Click="ExportButton_Click" IsEnabled="False"
-                        FontSize="14" FontWeight="SemiBold"
-                        materialDesign:ButtonAssist.CornerRadius="6">
+                        FontSize="14" FontWeight="SemiBold">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Background" Value="#6200EE"/>
@@ -121,7 +120,7 @@
                         </Style>
                     </Button.Style>
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Export" Width="18" Height="18"
+                        <m3:M3Icon Kind="export" Width="18" Height="18"
                                                  VerticalAlignment="Center"/>
                         <TextBlock Text="  开始导出" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
@@ -144,7 +143,7 @@
                              IsReadOnly="True" Padding="10,8" FontSize="13"
                              Foreground="#333333" Background="#F5F5F5"
                              BorderBrush="#CCCCCC" BorderThickness="1.5"
-                             materialDesign:HintAssist.Hint="选择 bookmarks.html 文件..."/>
+                             Tag="选择 bookmarks.html 文件..."/>
                     <Button Grid.Column="1" x:Name="BrowseImportButton"
                             Content="浏览" Margin="8,0,0,0" Padding="14,8"
                             Cursor="Hand" Click="BrowseImportButton_Click"
@@ -155,8 +154,7 @@
                 <Button x:Name="ImportButton" Margin="0,24,0,0"
                         Padding="20,10" HorizontalAlignment="Left" Cursor="Hand"
                         Click="ImportButton_Click" IsEnabled="False"
-                        FontSize="14" FontWeight="SemiBold"
-                        materialDesign:ButtonAssist.CornerRadius="6">
+                        FontSize="14" FontWeight="SemiBold">
                     <Button.Style>
                         <Style TargetType="Button">
                             <Setter Property="Background" Value="#6200EE"/>
@@ -175,7 +173,7 @@
                         </Style>
                     </Button.Style>
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Import" Width="18" Height="18"
+                        <m3:M3Icon Kind="import" Width="18" Height="18"
                                                  VerticalAlignment="Center"/>
                         <TextBlock Text="  开始导入" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
@@ -188,7 +186,7 @@
                 <TextBlock Text="管理日志文件和应用数据"
                            FontSize="13" Opacity="0.55" Margin="0,0,0,28" TextWrapping="Wrap"/>
 
-                <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1"
+                <Border BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
                         Margin="0,0,0,16" Padding="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -208,7 +206,7 @@
                     </Grid>
                 </Border>
 
-                <Border BorderBrush="{DynamicResource MaterialDesignDivider}" BorderThickness="0,0,0,1"
+                <Border BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
                         Margin="0,0,0,16" Padding="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -283,7 +281,7 @@
                              HorizontalAlignment="Stretch"
                              Foreground="#333333" Background="#FFFFFF"
                              BorderBrush="#CCCCCC" BorderThickness="1.5"
-                             materialDesign:HintAssist.Hint="在此输入确认文字..."/>
+                             Tag="在此输入确认文字..."/>
 
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -303,8 +301,7 @@
                                 Content="确认清空" Padding="20,8" IsEnabled="False"
                                 Cursor="Hand" Click="ExecuteClearButton_Click"
                                 Background="#CC0000" BorderThickness="0"
-                                FontSize="13" Foreground="White"
-                                materialDesign:ButtonAssist.CornerRadius="6"/>
+                                FontSize="13" Foreground="White"/>
                     </Grid>
                 </StackPanel>
             </Border>

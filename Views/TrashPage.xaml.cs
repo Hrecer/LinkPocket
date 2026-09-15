@@ -9,7 +9,7 @@ using System.Windows.Media.Effects;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.Views
 {
@@ -61,13 +61,13 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 Width = 720,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Background = (Brush)FindResource("MaterialDesignCardBackground"),
+                Background = (Brush)FindResource("SurfaceContainer"),
                 BorderThickness = new Thickness(2),
                 Padding = new Thickness(16, 12, 16, 12)
             };
 
             var style = new Style(typeof(Border));
-            style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
+            style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
             style.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
             style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
                 Setters = { new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
@@ -101,9 +101,9 @@ namespace LinkPocket.Views
             if (faviconBmp == null)
                 faviconImg.Visibility = Visibility.Collapsed;
 
-            var webIcon = new PackIcon
+            var webIcon = new M3Icon
             {
-                Kind = PackIconKind.Web,
+                Kind = "web",
                 Width = 20, Height = 20,
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -174,7 +174,7 @@ namespace LinkPocket.Views
         public void UpdateTrashSelectionVisuals(RecycleBinViewModel recycleVm)
         {
             var selectedBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
-            var defaultBrush = (Brush)FindResource("MaterialDesignDivider");
+            var defaultBrush = (Brush)FindResource("OutlineVariant");
             foreach (var kvp in _trashCardBorders)
                 kvp.Value.BorderBrush = recycleVm.IsSelected(kvp.Key) ? selectedBrush : defaultBrush;
             SyncButtonStates(recycleVm);

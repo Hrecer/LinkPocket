@@ -1,7 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.TrashPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              Focusable="True"
              PreviewKeyDown="TrashPage_PreviewKeyDown"
              PreviewMouseLeftButtonDown="TrashPage_PreviewMouseLeftButtonDown">
@@ -11,7 +11,7 @@
                 <Button x:Name="TrashRestoreBtn" Padding="12,6" Margin="0,0,8,0" Cursor="Hand"
                         Click="TrashRestore_Click" IsEnabled="False">
                     <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="Foreground" Value="#6200EE"/>
@@ -23,14 +23,14 @@
                         </Style>
                     </Button.Style>
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="Restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="恢复" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Button x:Name="TrashDeleteBtn" Padding="12,6" Cursor="Hand"
                         Click="TrashPermanentDelete_Click" IsEnabled="False">
                     <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource MaterialDesignFlatButton}">
+                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="Foreground" Value="#E53935"/>
@@ -42,12 +42,12 @@
                         </Style>
                     </Button.Style>
                     <StackPanel Orientation="Horizontal">
-                        <materialDesign:PackIcon Kind="DeleteForever" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="永久删除" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
-        <Separator DockPanel.Dock="Top" Background="{DynamicResource MaterialDesignDivider}" Margin="0,4,0,0"/>
+        <Separator DockPanel.Dock="Top" Background="{DynamicResource OutlineVariant}" Margin="0,4,0,0"/>
         <ScrollViewer x:Name="TrashScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
             <StackPanel HorizontalAlignment="Center" Margin="0,0,0,12">
                 <StackPanel x:Name="TrashContentPanel"/>

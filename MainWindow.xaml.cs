@@ -11,7 +11,7 @@ using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket;
 
@@ -202,7 +202,6 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
             BorderThickness = new Thickness(1)
         };
-        cancelBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
         cancelBtn.Click += (s, e) => dialog.DialogResult = false;
         btnPanel.Children.Add(cancelBtn);
 
@@ -213,7 +212,6 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
             Foreground = System.Windows.Media.Brushes.White
         };
-        okBtn.SetValue(ButtonAssist.CornerRadiusProperty, new CornerRadius(4));
         okBtn.Click += (s, e) => dialog.DialogResult = true;
         btnPanel.Children.Add(okBtn);
 
@@ -580,7 +578,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 }
                 if (_selectedSearchCard != null)
                 {
-                    _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+                    _selectedSearchCard.BorderBrush = (Brush)FindResource("OutlineVariant");
                     _selectedSearchCard = null;
                     _selectedSearchItem = null;
                     ResetDetailPanelPlaceholder(SearchFixedSidebar);
@@ -779,7 +777,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     {
         if (DataContext is not MainViewModel vm || vm.LinkViewModel == null) return;
 
-        var defaultBrush = (Brush)FindResource("MaterialDesignDivider");
+        var defaultBrush = (Brush)FindResource("OutlineVariant");
         var selectedBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
         int selectedCount = 0, totalCount = 0;
         foreach (var linkItem in vm.LinkViewModel.Links)
@@ -918,21 +916,21 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Background = Brushes.Transparent, Cursor = Cursors.Hand,
             Tag = folder.Id
         };
-        chevronBorder.Child = new PackIcon
+        chevronBorder.Child = new M3Icon
         {
             Width = 12, Height = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Kind = isExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight,
+            Kind = isExpanded ? "chevron-down" : "chevron-right",
             Opacity = 0.5
         };
         stack.Children.Add(chevronBorder);
 
-        stack.Children.Add(new PackIcon
+        stack.Children.Add(new M3Icon
         {
             Width = 16, Height = 16, Margin = new Thickness(2, 0, 6, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Kind = folder.Id == "0" ? PackIconKind.BookmarkOutline : (isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline),
+            Kind = folder.Id == "0" ? "bookmark-outline" : (isExpanded ? "folder" : "folder-outline"),
             Opacity = 0.7
         });
 
@@ -1052,9 +1050,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         if (faviconBmp == null)
             faviconImg.Visibility = Visibility.Collapsed;
 
-        var earthIcon = new PackIcon
+        var earthIcon = new M3Icon
         {
-            Kind = PackIconKind.Earth,
+            Kind = "earth",
             Width = 11, Height = 11,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -1260,7 +1258,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 }
                 border.BorderBrush = isSelected
                     ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
-                    : (Brush)FindResource("MaterialDesignDivider");
+                    : (Brush)FindResource("OutlineVariant");
             }
 
             Logger.Debug($"[视觉] UpdateSidebarSelectionVisuals: 文件夹选中={folderSelected}/{folderTotal}, 书签选中={linkSelected}/{linkTotal}, _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
@@ -1338,9 +1336,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
         // 文件夹图标
         var topIconRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) };
-        topIconRow.Children.Add(new PackIcon
+        topIconRow.Children.Add(new M3Icon
         {
-            Kind = PackIconKind.FolderOutline, Width = 32, Height = 32,
+            Kind = "folder-outline", Width = 32, Height = 32,
             Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
             VerticalAlignment = VerticalAlignment.Center,
         });
@@ -1355,7 +1353,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var pathGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var pathIcon = new PackIcon { Kind = PackIconKind.FolderOutline, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
+        var pathIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
         Grid.SetColumn(pathIcon, 0);
         pathGrid.Children.Add(pathIcon);
         var pathText = new TextBlock { Text = folderPath, FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -1394,9 +1392,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
         var topIconRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) };
 
-        var linkVariantIcon = new PackIcon
+        var linkVariantIcon = new M3Icon
         {
-            Kind = PackIconKind.LinkVariant, Width = 32, Height = 32,
+            Kind = "link-variant", Width = 32, Height = 32,
             Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -1420,9 +1418,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         };
         if (faviconBmp == null)
             faviconImg.Visibility = Visibility.Collapsed;
-        var earthIcon = new PackIcon
+        var earthIcon = new M3Icon
         {
-            Kind = PackIconKind.Earth,
+            Kind = "earth",
             Width = 20, Height = 20,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -1441,7 +1439,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var folderRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var folderIcon = new PackIcon { Kind = PackIconKind.FolderOutline, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
+        var folderIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
         Grid.SetColumn(folderIcon, 0);
         folderRow.Children.Add(folderIcon);
         var folderText = new TextBlock { Text = folderName ?? "全部书签", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -1458,7 +1456,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         urlGrid.Children.Add(urlTb);
         var urlCopyBtn = new Button
         {
-            Content = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 12, Height = 12, Foreground = Brushes.Black },
+            Content = new M3Icon { Kind = "content-copy", Width = 12, Height = 12, Foreground = Brushes.Black },
             Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand,
             Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "复制",
             VerticalAlignment = VerticalAlignment.Center
@@ -1523,9 +1521,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 80, 0, 0)
         };
-        placeholder.Children.Add(new PackIcon
+        placeholder.Children.Add(new M3Icon
         {
-            Kind = PackIconKind.BookmarkOutline, Width = 48, Height = 48,
+            Kind = "bookmark-outline", Width = 48, Height = 48,
             HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15
         });
         placeholder.Children.Add(new TextBlock
@@ -1562,7 +1560,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         grid.Children.Add(tb);
         var btn = new Button
         {
-            Content = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 12, Height = 12, Foreground = Brushes.Black },
+            Content = new M3Icon { Kind = "content-copy", Width = 12, Height = 12, Foreground = Brushes.Black },
             Padding = new Thickness(4, 2, 4, 2),
             Margin = new Thickness(6, 0, 0, 0),
             Cursor = Cursors.Hand,
@@ -1833,19 +1831,19 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Background = Brushes.Transparent, Cursor = Cursors.Hand,
             Tag = folder.Id
         };
-        chevronBorder.Child = new PackIcon
+        chevronBorder.Child = new M3Icon
         {
             Width = 12, Height = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Kind = isExpanded ? PackIconKind.ChevronDown : PackIconKind.ChevronRight,
+            Kind = isExpanded ? "chevron-down" : "chevron-right",
             Opacity = 0.45
         };
         stack.Children.Add(chevronBorder);
 
-        stack.Children.Add(new PackIcon
+        stack.Children.Add(new M3Icon
         {
-            Kind = folder.Id == "0" ? PackIconKind.BookmarkOutline : (isExpanded ? PackIconKind.Folder : PackIconKind.FolderOutline),
+            Kind = folder.Id == "0" ? "bookmark-outline" : (isExpanded ? "folder" : "folder-outline"),
             Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(4, 0, 6, 0), Opacity = 0.5
         });
@@ -1949,12 +1947,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             Tag = "LinkCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
             Cursor = Cursors.Hand, Width = 720, HorizontalAlignment = HorizontalAlignment.Left,
-            Background = (Brush)FindResource("MaterialDesignCardBackground"),
+            Background = (Brush)FindResource("SurfaceContainer"),
             BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
         };
 
         var style = new Style(typeof(Border));
-        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
+        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
         style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
         style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
             Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
@@ -1988,9 +1986,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         if (faviconBmp == null)
             faviconImg.Visibility = Visibility.Collapsed;
 
-        var earthIcon = new PackIcon
+        var earthIcon = new M3Icon
         {
-            Kind = PackIconKind.Earth,
+            Kind = "earth",
             Width = 20, Height = 20,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -2092,7 +2090,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 Logger.Info($"[点击] 主栏Ctrl+点击: {targetLink.LinkId}.IsSelected → {targetLink.IsSelected}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
                 card.BorderBrush = targetLink.IsSelected
                     ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
-                    : (Brush)FindResource("MaterialDesignDivider");
+                    : (Brush)FindResource("OutlineVariant");
                 viewModel.LinkViewModel?.NotifySelectionStateChanged();
                 if (viewModel.LinkViewModel?.HasSelectedItems == false)
                 {
@@ -2259,7 +2257,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             if (results.Count == 0)
             {
                 var notFoundPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
-                notFoundPanel.Children.Add(new PackIcon { Kind = PackIconKind.EmoticonSadOutline, Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15 });
+                notFoundPanel.Children.Add(new M3Icon { Kind = "emoticon-sad-outline", Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15 });
                 notFoundPanel.Children.Add(new TextBlock { Text = $"未找到包含 \"{query}\" 的书签", FontSize = 14, Opacity = 0.35, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 0) });
                 SearchResultsPanel.Children.Add(notFoundPanel);
                 return;
@@ -2289,12 +2287,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             Tag = "SearchCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
             Cursor = Cursors.Hand, Width = 720, HorizontalAlignment = HorizontalAlignment.Center,
-            Background = (Brush)FindResource("MaterialDesignCardBackground"),
+            Background = (Brush)FindResource("SurfaceContainer"),
             BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
         };
 
         var style = new Style(typeof(Border));
-        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("MaterialDesignDivider")));
+        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
         style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
         style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
             Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
@@ -2326,9 +2324,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         if (faviconBmp == null)
             faviconImg.Visibility = Visibility.Collapsed;
 
-        var earthIcon = new PackIcon
+        var earthIcon = new M3Icon
         {
-            Kind = PackIconKind.Earth,
+            Kind = "earth",
             Width = 20, Height = 20,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -2386,7 +2384,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         card.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (_selectedSearchCard != null && _selectedSearchCard != card)
-                _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+                _selectedSearchCard.BorderBrush = (Brush)FindResource("OutlineVariant");
 
             _selectedSearchCard = card;
             _selectedSearchItem = item;
@@ -2413,7 +2411,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
         if (e.OriginalSource is not Border && _selectedSearchCard != null)
         {
-            _selectedSearchCard.BorderBrush = (Brush)FindResource("MaterialDesignDivider");
+            _selectedSearchCard.BorderBrush = (Brush)FindResource("OutlineVariant");
             _selectedSearchCard = null;
             _selectedSearchItem = null;
             ResetDetailPanelPlaceholder(SearchFixedSidebar);

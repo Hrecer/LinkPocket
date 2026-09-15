@@ -27,7 +27,7 @@ LinkPocket 是一个 Windows 桌面**书签 / 网站管理器**。核心能力�
 |---|---|
 | 后端（Core） | .NET 8 类库，EF Core 8.0.10 + SQLite，**无任何 UI 依赖** |
 | 通信 | JSON-RPC 2.0 风格协议，`ILinkPocketTransport` 抽象（当前进程内直连） |
-| 前端（当前） | WPF (net8.0-windows)，MaterialDesignThemes 5.1.0 / MdXaml / XamlFlair |
+| 前端（当前） | WPF (net8.0-windows)，Material3.Wpf 0.9.0（M3 主题+控件）/ MdXaml / CommunityToolkit.Mvvm。依赖审计见 [`依赖审计.md`](依赖审计.md) |
 | 前端（未来） | 未定，可能是 Web（此时只需新增 `HttpTransport`，后端零改动） |
 
 **关键结论：前后端已经完全解耦。前端所有数据访问都经协议；后端不引用任何 UI 类型。**
@@ -519,15 +519,21 @@ dotnet run --project tests/ProtocolSmoke
    记得同样注册（或在新的组合根里完成），否则 ViewModel 里的界面操控会静默失效
    （所有调用都是 `Ui?.Xxx()`，null 时不报错）。
 2. **`AppServices.Initialize()` 必须在任何 ViewModel 构造之前**（现在在 `App` 构造函数里）。
-3. **时间戳一律 UTC**：写入用 `DateTime.UtcNow`，显示用 `.ToLocalTime()`，
+3. **M3 主题必须在 `App.OnStartup` 里 Apply**（`M3Theme.Apply` + `LpIcons.RegisterAll`），
+   放 App 构造函数会被 App.xaml 的资源合并覆盖（角色画刷全部丢失，运行时抛
+   ResourceReferenceKeyNotFoundException）。
+4. **图标 = LpIcons 键名**：M3Icon 无内置图标，`Kind="arrow-left"` 这类键必须在
+   `Services/LpIcons.cs` 的 Glyphs 字典里注册过，否则静默空白。新图标去
+   pictogrammers.com/library/mdi 拿 Path 数据加进去。
+5. **时间戳一律 UTC**：写入用 `DateTime.UtcNow`，显示用 `.ToLocalTime()`，
    解析外部字符串必须按 UTC 解释（`DateTimeOffset.TryParse(..., AssumeUniversal | AdjustToUniversal)`）。
    历史 bug 就是 `DateTime.TryParse` 把 `Z` 转成了本地时间。
-4. **协议字段是 snake_case**，DTO 上靠 `[JsonPropertyName]` 映射；新增字段别忘了加特性。
-5. **前端拿到的都是 DTO**，不是 EF 实体。`MainViewModel` 的公开查询方法返回 `LinkDto`，
+6. **协议字段是 snake_case**，DTO 上靠 `[JsonPropertyName]` 映射；新增字段别忘了加特性。
+7. **前端拿到的都是 DTO**，不是 EF 实体。`MainViewModel` 的公开查询方法返回 `LinkDto`，
    需要 UI 模型时用 `MapToLinkItem(LinkDto)` 转换（`MainViewModel` 内有现成实现）。
-6. **不要"顺手修"回收站恢复不还原文件夹**：这是产品上确认过的有意设计。
-7. 编译主项目会同时编译 `Core`（ProjectReference）；主项目 csproj 里有
-   `<Compile Remove="Core/**/*.cs" />`，新增 Core 文件放在 `Core/` 下即可，不会被主项目重复编译。
+8. **不要"顺手修"回收站恢复不还原文件夹**：这是产品上确认过的有意设计。
+9. 编译主项目会同时编译 `Core`（ProjectReference）；主项目 csproj 里有
+   `<Compile Remove="Core/**/*.cs" />`、`<Compile Remove="tests/**/*.cs" />`，新增文件放对应目录即可。
 
 ---
 

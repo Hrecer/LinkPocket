@@ -1,5 +1,6 @@
 using System.Windows;
 using LinkPocket.Services;
+using Material3.Wpf;
 
 namespace LinkPocket;
 
@@ -11,6 +12,18 @@ public partial class App : Application
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         DisableWerDumps();
+    }
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        // 必须在 InitializeComponent（App.xaml 资源合并）之后调用，
+        // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
+        M3Theme.Apply(
+            Material3.Core.MaterialTheme.FromSeed(Material3.Core.Argb.FromArgb(0x67, 0x50, 0xA4)),
+            isDark: false,
+            Resources);
+        LpIcons.RegisterAll();
+        base.OnStartup(e);
     }
 
     private void DisableWerDumps()

@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.ViewModels;
 
@@ -13,7 +13,7 @@ public class FolderNode : INotifyPropertyChanged
     private string _name = string.Empty;
     private string? _parentName;
     private int _linkCount;
-    private PackIconKind _iconKind = PackIconKind.FolderOutline;
+    private string _iconKind = "folder-outline";
     private ObservableCollection<FolderNode> _children = new();
 
     public string Id
@@ -50,7 +50,7 @@ public class FolderNode : INotifyPropertyChanged
 
     public int TotalLinkCount => _linkCount + _children.Sum(c => c.TotalLinkCount);
 
-    public PackIconKind IconKind
+    public string IconKind
     {
         get => _iconKind;
         set { _iconKind = value; OnPropertyChanged(); }

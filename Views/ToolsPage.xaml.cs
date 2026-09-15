@@ -6,7 +6,7 @@ using System.Windows.Input;
 using System.Globalization;
 using LinkPocket.Api;
 using LinkPocket.Services;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.Views
 {
@@ -30,7 +30,7 @@ namespace LinkPocket.Views
         private StackPanel? _dedupHeaderRow;
         private Button? _dedupActionBtn;
         private TextBlock? _dedupActionText;
-        private PackIcon? _dedupActionIcon;
+        private M3Icon? _dedupActionIcon;
         private Button? _dedupClearBtn;
         private TextBlock? _dedupDesc;
         private TextBlock? _dedupSummaryTb;
@@ -128,7 +128,7 @@ namespace LinkPocket.Views
             };
             _dedupHeaderRow.Children.Add(header);
 
-            _dedupActionIcon = new PackIcon { Kind = PackIconKind.ContentDuplicate, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
+            _dedupActionIcon = new M3Icon { Kind = "content-duplicate", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
             _dedupActionText = new TextBlock { Text = "开始查重", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
 
             _dedupActionBtn = new Button
@@ -151,7 +151,7 @@ namespace LinkPocket.Views
                     Orientation = Orientation.Horizontal,
                     Children =
                     {
-                        new PackIcon { Kind = PackIconKind.CloseCircleOutline, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center },
+                        new M3Icon { Kind = "close-circle-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center },
                         new TextBlock { Text = "清除结果", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
                     }
                 },
@@ -222,7 +222,7 @@ namespace LinkPocket.Views
                     Orientation = Orientation.Horizontal,
                     Children =
                     {
-                        new PackIcon { Kind = PackIconKind.OpenInNew, Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center },
+                        new M3Icon { Kind = "open-in-new", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center },
                         new TextBlock { Text = "跳转", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
                     }
                 },
@@ -357,7 +357,7 @@ namespace LinkPocket.Views
             while (ToolContentPanel.Children.Count > 2)
                 ToolContentPanel.Children.RemoveAt(ToolContentPanel.Children.Count - 1);
 
-            _dedupActionIcon!.Kind = PackIconKind.Refresh;
+            _dedupActionIcon!.Kind = "refresh";
             _dedupActionText!.Text = "重新查重";
             _dedupClearBtn!.IsEnabled = true;
             _dedupClearBtn.Opacity = 1.0;
@@ -420,7 +420,7 @@ namespace LinkPocket.Views
             {
                 Tag = Tuple.Create(url, links, pathCache),
                 Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
-                BorderBrush = (Brush)Application.Current.FindResource("MaterialDesignDivider"),
+                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
                 Margin = new Thickness(0, 0, 0, 12),
@@ -443,9 +443,9 @@ namespace LinkPocket.Views
                 Margin = new Thickness(0, 0, 0, 6)
             };
 
-            var icon = new PackIcon
+            var icon = new M3Icon
             {
-                Kind = PackIconKind.ContentDuplicate,
+                Kind = "content-duplicate",
                 Width = 18,
                 Height = 18,
                 Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
@@ -509,9 +509,9 @@ namespace LinkPocket.Views
                 if (faviconBmp == null)
                     faviconImg.Visibility = Visibility.Collapsed;
 
-                var webIcon = new PackIcon
+                var webIcon = new M3Icon
                 {
-                    Kind = PackIconKind.Web,
+                    Kind = "web",
                     Width = 16,
                     Height = 16,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -655,7 +655,7 @@ namespace LinkPocket.Views
 
         private void DetailCard_Click(object sender, MouseButtonEventArgs e)
         {
-            if (e.OriginalSource is Button or PackIcon or TextBlock) return;
+            if (e.OriginalSource is Button or M3Icon or TextBlock) return;
             if (sender is not Border card || card.Tag is not string linkId) return;
             if (_currentGroupLinks == null) return;
 
@@ -685,7 +685,7 @@ namespace LinkPocket.Views
             }
             else
             {
-                card.BorderBrush = (Brush)Application.Current.FindResource("MaterialDesignDivider");
+                card.BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant");
                 card.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
             }
         }
@@ -793,7 +793,7 @@ namespace LinkPocket.Views
             {
                 Tag = link.LinkId,
                 Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
-                BorderBrush = (Brush)Application.Current.FindResource("MaterialDesignDivider"),
+                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(16, 14, 16, 14),
@@ -822,7 +822,7 @@ namespace LinkPocket.Views
                     Orientation = Orientation.Horizontal,
                     Children =
                     {
-                        new PackIcon { Kind = PackIconKind.OpenInNew, Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center },
+                        new M3Icon { Kind = "open-in-new", Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center },
                         new TextBlock { Text = "跳转", FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) }
                     }
                 },
@@ -852,7 +852,7 @@ namespace LinkPocket.Views
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var folderIcon = new PackIcon { Kind = PackIconKind.FolderOutline, Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) };
+            var folderIcon = new M3Icon { Kind = "folder-outline", Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) };
             Grid.SetColumn(folderIcon, 0);
             pathGrid.Children.Add(folderIcon);
 
@@ -888,7 +888,7 @@ namespace LinkPocket.Views
             var favBmp = FaviconService.LoadFromCache(link.FaviconUrl ?? link.Url);
             var favImg = new Image { Source = favBmp, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             if (favBmp == null) favImg.Visibility = Visibility.Collapsed;
-            var earthIcon = new PackIcon { Kind = PackIconKind.Earth, Width = 18, Height = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.55 };
+            var earthIcon = new M3Icon { Kind = "earth", Width = 18, Height = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.55 };
             if (favBmp != null) earthIcon.Visibility = Visibility.Collapsed;
             iconGrid.Children.Add(favImg);
             iconGrid.Children.Add(earthIcon);
@@ -1034,7 +1034,7 @@ namespace LinkPocket.Views
 
             var copyIdBtn = new Button
             {
-                Content = new PackIcon { Kind = PackIconKind.ContentCopy, Width = 11, Height = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) },
+                Content = new M3Icon { Kind = "content-copy", Width = 11, Height = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) },
                 Padding = new Thickness(3, 1, 3, 1),
                 Margin = new Thickness(4, 0, 0, 0),
                 Cursor = Cursors.Hand,
@@ -1100,7 +1100,7 @@ namespace LinkPocket.Views
         {
             _hasRunDedup = false;
             ExitDetailView();
-            if (_dedupActionIcon != null) _dedupActionIcon.Kind = PackIconKind.ContentDuplicate;
+            if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
             if (_dedupActionText != null) _dedupActionText.Text = "开始查重";
             if (_dedupClearBtn != null) { _dedupClearBtn.IsEnabled = false; _dedupClearBtn.Opacity = 0.35; _dedupClearBtn.Foreground = Brushes.Gray; }
             while (ToolContentPanel.Children.Count > 2)

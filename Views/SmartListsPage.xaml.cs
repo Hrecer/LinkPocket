@@ -6,7 +6,7 @@ using System.Windows.Media.Effects;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.Views
 {
@@ -94,7 +94,7 @@ namespace LinkPocket.Views
                 Tag = "SmartResultCard",
                 Width = 720,
                 CornerRadius = new CornerRadius(10),
-                Background = (Brush)Application.Current.FindResource("MaterialDesignCardBackground"),
+                Background = (Brush)Application.Current.FindResource("SurfaceContainer"),
                 BorderThickness = new Thickness(2),
                 Cursor = Cursors.Hand,
                 Margin = new Thickness(4, 2, 4, 2),
@@ -102,7 +102,7 @@ namespace LinkPocket.Views
             };
 
             var style = new Style(typeof(Border));
-            style.Setters.Add(new Setter(Border.BorderBrushProperty, Application.Current.FindResource("MaterialDesignDivider")));
+            style.Setters.Add(new Setter(Border.BorderBrushProperty, Application.Current.FindResource("OutlineVariant")));
             style.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
             style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
                 Setters = { new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
@@ -136,9 +136,9 @@ namespace LinkPocket.Views
             if (faviconBmp == null)
                 faviconImg.Visibility = Visibility.Collapsed;
 
-            var webIcon = new PackIcon
+            var webIcon = new M3Icon
             {
-                Kind = PackIconKind.Web,
+                Kind = "web",
                 Width = 20, Height = 20,
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -225,7 +225,7 @@ namespace LinkPocket.Views
 
         private void ClearResultVisualSelection()
         {
-            var defaultBrush = (Brush)Application.Current.FindResource("MaterialDesignDivider");
+            var defaultBrush = (Brush)Application.Current.FindResource("OutlineVariant");
             foreach (var kvp in _resultCardBorders)
             {
                 kvp.Value.BorderBrush = defaultBrush;

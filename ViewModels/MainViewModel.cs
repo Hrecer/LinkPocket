@@ -11,7 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
-using MaterialDesignThemes.Wpf;
+using Material3.Wpf;
 
 namespace LinkPocket.ViewModels
 {
@@ -123,7 +123,7 @@ namespace LinkPocket.ViewModels
 
             FolderItems = new ObservableCollection<FolderNode>
             {
-                new FolderNode { Id = "0", FolderId = "0", Name = "全部书签", IconKind = PackIconKind.BookmarkOutline, LinkCount = 0 }
+                new FolderNode { Id = "0", FolderId = "0", Name = "全部书签", IconKind = "bookmark-outline", LinkCount = 0 }
             };
 
             // P3 事件推送：订阅后端数据变更，防抖后刷新当前视图。
@@ -231,7 +231,7 @@ namespace LinkPocket.ViewModels
         }
 
         public string EditLinkPageTitle => IsEditMode ? "编辑链接" : "添加新链接";
-        public PackIconKind EditLinkPageIcon => IsEditMode ? PackIconKind.PencilOutline : PackIconKind.LinkPlus;
+        public string EditLinkPageIcon => IsEditMode ? "pencil-outline" : "link-plus";
 
         public string EditLinkUrl
         {
@@ -498,13 +498,13 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = "links", Label = "链接", IconKind = PackIconKind.LinkVariant, IsSelected = true },
-                new() { Id = "browser", Label = "浏览", IconKind = PackIconKind.FolderOpenOutline },
-                new() { Id = "search", Label = "搜索", IconKind = PackIconKind.Magnify },
-                new() { Id = "smartlists", Label = "智能列表", IconKind = PackIconKind.AutoFix },
-                new() { Id = "tools", Label = "工具", IconKind = PackIconKind.WrenchOutline },
-                new() { Id = "trash", Label = "回收站", IconKind = PackIconKind.DeleteOutline },
-                new() { Id = "settings", Label = "设置", IconKind = PackIconKind.CogOutline }
+                new() { Id = "links", Label = "链接", IconKind = "link-variant", IsSelected = true },
+                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline" },
+                new() { Id = "search", Label = "搜索", IconKind = "magnify" },
+                new() { Id = "smartlists", Label = "智能列表", IconKind = "auto-fix" },
+                new() { Id = "tools", Label = "工具", IconKind = "wrench-outline" },
+                new() { Id = "trash", Label = "回收站", IconKind = "delete-outline" },
+                new() { Id = "settings", Label = "设置", IconKind = "cog-outline" }
             };
         }
 
@@ -1127,7 +1127,7 @@ namespace LinkPocket.ViewModels
         {
             _ = await Api.GetTrashAsync();
 
-            var trashRoot = new FolderNode { Id = "-1", Name = "回收站", IconKind = PackIconKind.Delete };
+            var trashRoot = new FolderNode { Id = "-1", Name = "回收站", IconKind = "delete" };
 
             TrashItems = new ObservableCollection<FolderNode> { trashRoot };
         }
@@ -1193,7 +1193,7 @@ namespace LinkPocket.ViewModels
                 var rootNode = new FolderNode
                 {
                     Id = "0", FolderId = "0", Name = "全部书签", LinkCount = counts.RootLevel,
-                    IconKind = PackIconKind.BookmarkOutline,
+                    IconKind = "bookmark-outline",
                     Children = new ObservableCollection<FolderNode>()
                 };
                 folderNodes.Add(rootNode);
@@ -1206,7 +1206,7 @@ namespace LinkPocket.ViewModels
                     {
                         Id = folder.FolderId, FolderId = folder.FolderId, Name = folder.Name, LinkCount = count,
                         ParentId = folder.ParentId,
-                        IconKind = count > 0 ? PackIconKind.Folder : PackIconKind.FolderOutline,
+                        IconKind = count > 0 ? "folder" : "folder-outline",
                         Children = new ObservableCollection<FolderNode>()
                     };
                     lookup[folder.FolderId] = node;
