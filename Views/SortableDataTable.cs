@@ -93,9 +93,9 @@ public class SortableDataTable : Grid
         set => SetValue(ColumnsProperty, value);
     }
 
-    public IEnumerable ItemsSource
+    public IEnumerable? ItemsSource
     {
-        get => (IEnumerable)GetValue(ItemsSourceProperty);
+        get => (IEnumerable?)GetValue(ItemsSourceProperty);
         set => SetValue(ItemsSourceProperty, value);
     }
 
@@ -174,13 +174,14 @@ public class SortableDataTable : Grid
         {
             Background = (Brush)Application.Current.FindResource("TintPanel"),
             CornerRadius = new CornerRadius(24, 24, 0, 0),
-            // ⚠️ 水平内距必须 = 行容器内距（RowSkin 16）：表头 Grid 与行 Grid 内容区同宽，
-            // Star 列宽才一致、列边界才逐列对齐（改小会整行错位）。垂直 5 只影响表头高度。
-            // 药丸是列内自含胶囊（文字居中、两侧各留 6px），分隔线恰好落在两个药丸的正中心。
-            Padding = new Thickness(16, 5, 16, 5)
+            // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（Padding 10,10,10,6 + 12px 文字 = 32）：
+            // 两条紫色色带等高，底边严格对齐（此前靠内容撑高，比侧栏低边多出几像素）。
+            // 水平内距 16 = 行容器内距，列边界逐列对齐不变；表头内容垂直居中。
+            Height = 32,
+            Padding = new Thickness(16, 0, 16, 0)
         };
         _headerBand.SetBinding(MarginProperty, new Binding(nameof(HeaderBandMargin)) { Source = this });
-        _headerGrid = new Grid();
+        _headerGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
         _headerBand.Child = _headerGrid;
         Children.Add(_headerBand);
         SetRow(_headerBand, 0);
@@ -257,8 +258,8 @@ public class SortableDataTable : Grid
                 Field = col.Field,
                 Direction = col.Field == SortField ? SortAscending : null,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                // 药丸两侧对称留 6px：列边界（拖拽分隔线）恰好落在两个药丸的正中心
-                Margin = new Thickness(6, 0, 6, 0),
+                // 药丸紧挨（无外距），拖拽分隔线画在两药丸的贴合线上（同上一版本观感）
+                Margin = new Thickness(0, 0, 0, 0),
                 ToolTip = $"按{col.Label}排序"
             };
             header.Click += OnHeaderClick;
