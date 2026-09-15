@@ -174,11 +174,10 @@ public class SortableDataTable : Grid
         {
             Background = (Brush)Application.Current.FindResource("TintPanel"),
             CornerRadius = new CornerRadius(24, 24, 0, 0),
-            // ⚠️ 对齐关键：内距必须与行容器一致（行 RowSkin Padding 16）——上一版本就是 16,6，
-            // 改小会导致表头 Grid 与行 Grid 内容区宽度不同 → Star 列宽漂移 → 逐列错位。
-            // 表头按钮水平内距为 0（药丸贴文字），标签起点 = 16 = 行内容起点。
-            // 嵌入卡片容器时用 HeaderBandMargin=0 只改外距、不动内距。
-            Padding = new Thickness(16, 6, 16, 6)
+            // ⚠️ 水平内距必须 = 行容器内距（RowSkin 16）：表头 Grid 与行 Grid 内容区同宽，
+            // Star 列宽才一致、列边界才逐列对齐（改小会整行错位）。垂直 5 只影响表头高度。
+            // 药丸是列内自含胶囊（文字居中、两侧各留 6px），分隔线恰好落在两个药丸的正中心。
+            Padding = new Thickness(16, 5, 16, 5)
         };
         _headerBand.SetBinding(MarginProperty, new Binding(nameof(HeaderBandMargin)) { Source = this });
         _headerGrid = new Grid();
@@ -258,7 +257,8 @@ public class SortableDataTable : Grid
                 Field = col.Field,
                 Direction = col.Field == SortField ? SortAscending : null,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 0, 7, 0), // 右缘让出手柄位
+                // 药丸两侧对称留 6px：列边界（拖拽分隔线）恰好落在两个药丸的正中心
+                Margin = new Thickness(6, 0, 6, 0),
                 ToolTip = $"按{col.Label}排序"
             };
             header.Click += OnHeaderClick;

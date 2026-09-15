@@ -74,17 +74,19 @@
             <Style TargetType="views:SortableHeaderButton">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                <!-- ⚠️ 文字在药丸内水平+垂直居中（用户要求）；药丸两侧由使用方留对称空隙，
+                     分隔线（列边界）恰好落在两个药丸的正中心 -->
+                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
                 <Setter Property="Cursor" Value="Hand"/>
                 <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="views:SortableHeaderButton">
-                            <!-- 悬停药丸 = Primary 12% 叠加（随旧 TextButton 的 state layer 语义：在 TintPanel 上变深）；
-                                 水平内距必须为 0，标签起点 = 表头带 Padding 16 = 行内容起点，逐列对齐 -->
-                            <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="6" Padding="0,3"
-                                    SnapsToDevicePixels="True">
-                                <StackPanel Orientation="Horizontal">
+                            <!-- 悬停药丸 = Primary 12% 叠加（随旧 TextButton 的 state layer 语义：在 TintPanel 上变深） -->
+                            <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="14"
+                                    MinHeight="28" SnapsToDevicePixels="True">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <ContentPresenter VerticalAlignment="Center"/>
                                     <TextBlock x:Name="Indicator" FontSize="10" Margin="4,0,0,0"
                                                Foreground="{DynamicResource Primary}" Visibility="Collapsed"
