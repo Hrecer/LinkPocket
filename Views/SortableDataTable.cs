@@ -177,6 +177,8 @@ public class SortableDataTable : Grid
             // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（Padding 10,10,10,6 + 12px 文字 = 32）：
             // 两条紫色色带等高，底边严格对齐（此前靠内容撑高，比侧栏低边多出几像素）。
             // 水平内距 16 = 行容器内距，列边界逐列对齐不变；表头内容垂直居中。
+            // 注意：此类数值均由用户直接确认后写入，属"对齐类"简单调整——后续微调直接改值即可，
+            // 无需探针/截图等重验证流程（过度验证反而拖慢迭代）。
             Height = 32,
             Padding = new Thickness(16, 0, 16, 0)
         };
@@ -341,15 +343,11 @@ public class SortableDataTable : Grid
             : items.OrderByDescending(column.SortKey);
     }
 
-    /// <summary>渲染追踪钩子（诊断用：探针订阅；生产环境为 null 零开销）。</summary>
-    public static Action<string>? RenderTrace;
-
     private void RenderRows()
     {
-        if (IsTemplateMode) { RenderTrace?.Invoke("template-mode-skip"); return; } // 模板模式行由 ItemsSource 直通驱动
+        if (IsTemplateMode) return; // 模板模式行由 ItemsSource 直通驱动
 
         var items = SortedItems().ToList();
-        RenderTrace?.Invoke($"factory items={items.Count} emptyContent={(EmptyContent != null)}");
         _rowMap.Clear();
         SelectedItem = null;
 
@@ -365,14 +363,12 @@ public class SortableDataTable : Grid
             }
             _emptyHost.Content = EmptyContent;
             _emptyHost.Visibility = EmptyContent != null ? Visibility.Visible : Visibility.Collapsed;
-            RenderTrace?.Invoke("empty-shown");
             return;
         }
 
         _emptyHost.Content = null;
         _emptyHost.Visibility = Visibility.Collapsed;
         _rowsList.ItemsSource = items.Select(BuildRow).ToList();
-        RenderTrace?.Invoke("rows-assigned=" + _rowsList.Items.Count);
     }
 
     private Border BuildRow(object item)
