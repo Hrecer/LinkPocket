@@ -26,6 +26,9 @@ namespace LinkPocket.ViewModels
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private LinkViewModel? _linkViewModel;
+
+        /// <summary>资源管理器式浏览页（P4）：由 MainWindow 取用并设为 BrowserView 的 DataContext。</summary>
+        public BrowserViewModel BrowserViewModel { get; } = new();
         private RecycleBinViewModel? _recycleBinViewModel;
         private SettingsViewModel? _settingsViewModel;
         private SmartListViewModel? _smartListViewModel;
@@ -143,20 +146,23 @@ namespace LinkPocket.ViewModels
                     _backendEventTimer.Stop();
                     try
                     {
-                        switch (_currentNavId)
-                        {
-                            case "links":
-                                if (_linkViewModel != null)
-                                    await _linkViewModel.LoadLinksAsync();
-                                await RefreshFolderTreeAndUIAsync();
-                                break;
-                            case "trash":
-                                await LoadTrashTreeAsync();
-                                break;
-                            case "search":
-                                OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
-                                break;
-                        }
+                    switch (_currentNavId)
+                    {
+                        case "links":
+                            if (_linkViewModel != null)
+                                await _linkViewModel.LoadLinksAsync();
+                            await RefreshFolderTreeAndUIAsync();
+                            break;
+                        case "browser":
+                            await BrowserViewModel.RefreshAsync();
+                            break;
+                        case "trash":
+                            await LoadTrashTreeAsync();
+                            break;
+                        case "search":
+                            OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+                            break;
+                    }
                     }
                     catch { /* 事件驱动的刷新失败不应打断 UI */ }
                 };
@@ -493,6 +499,7 @@ namespace LinkPocket.ViewModels
             NavigationItems = new ObservableCollection<NavigationItem>
             {
                 new() { Id = "links", Label = "链接", IconKind = PackIconKind.LinkVariant, IsSelected = true },
+                new() { Id = "browser", Label = "浏览", IconKind = PackIconKind.FolderOpenOutline },
                 new() { Id = "search", Label = "搜索", IconKind = PackIconKind.Magnify },
                 new() { Id = "smartlists", Label = "智能列表", IconKind = PackIconKind.AutoFix },
                 new() { Id = "tools", Label = "工具", IconKind = PackIconKind.WrenchOutline },
@@ -503,6 +510,8 @@ namespace LinkPocket.ViewModels
 
         private async void SelectNav(string navId)
         {
+            var previousNavId = CurrentNavId;
+
             if (navId != CurrentNavId && CurrentNavId == "links")
             {
                 _linkViewModel?.ClearSelectionCommand.Execute(null);
@@ -511,6 +520,18 @@ namespace LinkPocket.ViewModels
 
             CurrentNavId = navId;
             SyncNavSelection(navId);
+
+            // P4 浏览页：首次进入从根目录加载；显隐经 IUiCoordinator（与旧界面并存）
+            if (navId == "browser")
+            {
+                if (BrowserViewModel.Rows.Count == 0)
+                    _ = BrowserViewModel.LoadAsync(null);
+                Ui?.ShowBrowserPage();
+            }
+            else if (previousNavId == "browser")
+            {
+                Ui?.CloseBrowserPage();
+            }
 
             if (_smartListViewModel != null && _smartListViewModel.ShowResult)
             {

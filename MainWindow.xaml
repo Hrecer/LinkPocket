@@ -8,6 +8,7 @@
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
         xmlns:views="clr-namespace:LinkPocket.Views"
+        xmlns:browserviews="clr-namespace:LinkPocket.Views.Browser"
         mc:Ignorable="d"
         Title="LinkPocket"
         Height="720" Width="1200"
@@ -155,6 +156,9 @@
                     <Setter Property="Visibility" Value="Visible"/>
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="search">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding CurrentNavId}" Value="browser">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding CurrentNavId}" Value="trash">
@@ -516,6 +520,11 @@
                 </ScrollViewer>
             </Border>
         </Grid>
+
+        <!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存，显隐由 IUiCoordinator 控制） ===== -->
+        <browserviews:BrowserView Grid.Row="1" x:Name="BrowserPage"
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                  Visibility="Collapsed"/>
 
         <!-- ===== 回收站视图（独立页面） ===== -->
         <views:TrashPage Grid.Row="1" x:Name="TrashView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">

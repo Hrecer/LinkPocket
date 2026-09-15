@@ -304,6 +304,15 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
    前端 `MainViewModel` 订阅并防抖刷新（与旧事件链并存）；
    冒烟测试固化为 `tests/ProtocolSmoke`（dotnet run 即可运行）。
 
+5. **P4 导航框架搭建**
+   新增 `Views/Browser/BrowserView`（导航栏 + 内容区 + 状态栏三段式），
+   XAML `ItemsControl` + `DataTemplate` 渲染行（行 VM `BrowserRowViewModel` 含 `IsSelected`，无代码建控件）；
+   新增 `Managers/NavigationController`（`currentFolderId` + 后退/前进历史栈，只存 folderId）；
+   新增 `ViewModels/BrowserViewModel`（数据全走 `folders.contents` 协议，面包屑可点击，
+   单击选中、双击进入文件夹 / 打开链接并记录访问、空白处清除选中、空状态与加载态）；
+   主窗口新增"浏览"导航页挂载，显隐经 `IUiCoordinator.ShowBrowserPage/CloseBrowserPage`，
+   旧界面并存不受影响；事件推送订阅增加 browser 分支（数据变更自动刷新当前目录）。
+
 ---
 
 ## 8. 当前 UI 的工作方式（将被本次重构替换）
@@ -400,12 +409,13 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
 - [ ] 备份/导入的进度回调协议化（可选，见技术债）
 - **验收**：`tests/ProtocolSmoke` 冒烟用例通过（分页、计数语义、三类事件、错误通道）；旧 UI 行为不变。
 
-### P4 —— 导航框架搭建（中等）
-- [ ] 新建 `Views/Browser/` 目录，落地 `BrowserView`（导航栏 + 内容区 + 状态栏三段式）
-- [ ] 实现 `NavigationController`（`currentFolderId` + 后退/前进历史栈 + 面包屑计算）
-- [ ] `BrowserView` 用 `ItemsControl` + `DataTemplate` 渲染行，行 VM 支持 `IsSelected`
-- [ ] 在主窗口中以"新页面"形式挂载，通过 `IUiCoordinator` 暴露显示/隐藏
-- **验收**：可在新界面里进入文件夹、返回上级、双击打开链接；旧界面仍可用（并存）。
+### P4 —— 导航框架搭建（已完成 ✅）
+- [x] 新建 `Views/Browser/` 目录，落地 `BrowserView`（导航栏 + 内容区 + 状态栏三段式）
+- [x] 实现 `NavigationController`（`currentFolderId` + 后退/前进历史栈 + 面包屑计算）
+- [x] `BrowserView` 用 `ItemsControl` + `DataTemplate` 渲染行，行 VM 支持 `IsSelected`
+- [x] 在主窗口中以"新页面"形式挂载（导航项"浏览"），通过 `IUiCoordinator.ShowBrowserPage/CloseBrowserPage` 暴露显示/隐藏
+- **验收**：可进入文件夹、返回上级（↑ 按钮）、双击打开链接（默认浏览器 + 记录访问）、后退/前进/面包屑跳转；旧界面并存可用。
+  注：P4 交互细节（多选、排序、视图模式、右键、拖拽）留待 P5/P7。
 
 ### P5 —— 资源管理器式浏览功能完善（大）
 - [ ] 面包屑可点击跳转 + 可编辑地址栏（ID 跳转）
@@ -523,7 +533,7 @@ dotnet run --project tests/ProtocolSmoke
 
 ## 15. 文档版本
 
-- 版本：v1.1（P3 完成；对应代码为 P3 提交）
+- 版本：v1.2（P3、P4 完成）
 - 关联文档：[`DECOUPLING_PLAN.md`](DECOUPLING_PLAN.md)（前后端分离的原始规划与协议设计）、
   [`tests/ProtocolSmoke/`](tests/ProtocolSmoke/)（协议冒烟测试，`dotnet run --project tests/ProtocolSmoke`）
 - 更新要求：每次完成一个阶段后，更新第 7 节（里程碑）、第 10 节（勾选进度）、第 13 节（技术债）。

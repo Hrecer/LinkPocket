@@ -37,6 +37,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     {
         InitializeComponent();
         DataContext = new MainViewModel(_selectionManager);
+        BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
         Services.UiCoordinator.Instance = this;
         _linkNavigator = new Managers.LinkNavigator((MainViewModel)DataContext, Dispatcher)
         {
@@ -106,6 +107,16 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         DetailView.Visibility = Visibility.Collapsed;
         EditLinkView.Visibility = Visibility.Visible;
         ClearDetailPanel();
+    }
+
+    void Services.IUiCoordinator.ShowBrowserPage()
+    {
+        BrowserPage.Visibility = Visibility.Visible;
+    }
+
+    void Services.IUiCoordinator.CloseBrowserPage()
+    {
+        BrowserPage.Visibility = Visibility.Collapsed;
     }
 
     void Services.IUiCoordinator.CloseEditPage(bool returnToDetail)

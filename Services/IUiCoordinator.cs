@@ -17,6 +17,12 @@ namespace LinkPocket.Services
         /// <summary>退出编辑页：returnToDetail 为 true 时回到详情面板，否则回到主列表。</summary>
         void CloseEditPage(bool returnToDetail);
 
+        /// <summary>显示资源管理器式浏览页（P4 新页面，与旧界面并存）。</summary>
+        void ShowBrowserPage();
+
+        /// <summary>隐藏资源管理器式浏览页。</summary>
+        void CloseBrowserPage();
+
         /// <summary>进入详情面板：隐藏主列表，显示详情视图。</summary>
         void ShowDetailView();
 

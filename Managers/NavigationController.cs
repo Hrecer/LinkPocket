@@ -1,0 +1,55 @@
+using System;
+using System.Collections.Generic;
+
+namespace LinkPocket.Managers;
+
+/// <summary>
+/// 资源管理器式浏览的导航状态（P4）：
+/// 维护 currentFolderId 与后退 / 前进历史栈（只存 folderId，null 表示根目录）。
+/// 不持有任何 UI 引用；目录内容加载由 BrowserViewModel 完成。
+/// </summary>
+public class NavigationController
+{
+    private readonly Stack<string?> _back = new();
+    private readonly Stack<string?> _forward = new();
+
+    /// <summary>当前目录 ID；null 或 "0" 表示根目录（全部书签）。</summary>
+    public string? CurrentFolderId { get; private set; }
+
+    public bool CanGoBack => _back.Count > 0;
+    public bool CanGoForward => _forward.Count > 0;
+
+    /// <summary>导航到指定目录；重复导航到当前目录时忽略。返回是否发生了变化。</summary>
+    public bool NavigateTo(string? folderId)
+    {
+        var normalized = Normalize(folderId);
+        var current = Normalize(CurrentFolderId);
+        if (normalized == current) return false;
+
+        _back.Push(CurrentFolderId);
+        _forward.Clear();
+        CurrentFolderId = folderId;
+        return true;
+    }
+
+    /// <summary>后退，返回目标目录 ID（无历史时返回当前目录）。</summary>
+    public string? GoBack()
+    {
+        if (_back.Count == 0) return CurrentFolderId;
+        _forward.Push(CurrentFolderId);
+        CurrentFolderId = _back.Pop();
+        return CurrentFolderId;
+    }
+
+    /// <summary>前进，返回目标目录 ID（无历史时返回当前目录）。</summary>
+    public string? GoForward()
+    {
+        if (_forward.Count == 0) return CurrentFolderId;
+        _back.Push(CurrentFolderId);
+        CurrentFolderId = _forward.Pop();
+        return CurrentFolderId;
+    }
+
+    private static string Normalize(string? folderId)
+        => string.IsNullOrEmpty(folderId) || folderId == "0" ? "0" : folderId!;
+}
