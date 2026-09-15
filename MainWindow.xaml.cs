@@ -7,7 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -865,7 +865,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 RenderFolderNode(child, childPanel, depth + 1, viewModel);
             }
 
-            List<Data.Link> links;
+            List<LinkDto> links;
             if (folder.Id == "0")
                 links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
             else
@@ -1006,7 +1006,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         return row;
     }
 
-    private Border CreateSidebarLinkRow(Data.Link link, MainViewModel viewModel)
+    private Border CreateSidebarLinkRow(LinkDto link, MainViewModel viewModel)
     {
         var itemRow = new Border
         {
@@ -1739,7 +1739,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 await RenderMainListFolderNodeAsync(child, childPanel, depth + 1, viewModel);
             }
 
-            List<Data.Link> links;
+            List<LinkDto> links;
             if (folder.Id == "0")
                 links = await viewModel.GetRootLevelLinksAsync();
             else
@@ -1778,7 +1778,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 RenderMainListFolderNode(child, childPanel, depth + 1, viewModel);
             }
 
-            List<Data.Link> links;
+            List<LinkDto> links;
             if (folder.Id == "0")
                 links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
             else
@@ -1916,7 +1916,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         return row;
     }
 
-    private static StackPanel StackPanelWithTextTrimming(Data.Link link)
+    private static StackPanel StackPanelWithTextTrimming(LinkDto link)
     {
         var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         sp.Children.Add(new TextBlock
@@ -1932,7 +1932,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         return sp;
     }
 
-    private Border CreateMainListLinkCard(Data.Link link, MainViewModel viewModel)
+    private Border CreateMainListLinkCard(LinkDto link, MainViewModel viewModel)
     {
         var card = new Border
         {

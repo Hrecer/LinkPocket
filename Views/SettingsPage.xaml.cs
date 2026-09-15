@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using LinkPocket.Data;
 using LinkPocket.Services;
 using Microsoft.Win32;
 
@@ -129,35 +128,19 @@ namespace LinkPocket.Views
 
             try
             {
-                Services.Logger.Info("[导出] 创建 DbContext...");
-                using var db = new Data.LinkPocketDbContext();
-
-                Services.Logger.Info("[导出] DbContext.DbPath = " + db.DbPath);
-                db.Database.EnsureCreated();
-
-                var validFolderIds = db.Folders.Select(f => f.FolderId).ToList();
-                var dbLinkCount = db.Links.Count(l => l.ListId == null || l.ListId == "0" || validFolderIds.Contains(l.ListId));
-                var folderCount = db.Folders.Count();
-                var totalDbLinks = db.Links.Count();
+                // 统计信息经后端协议获取
+                var counts = await Services.AppServices.Api.GetCountsAsync();
+                var folders = await Services.AppServices.Api.GetFolderTreeAsync();
+                var validFolderIds = folders.Select(f => f.FolderId).ToHashSet();
+                var allLinks = await Services.AppServices.Api.GetAllLinksAsync();
+                var dbLinkCount = allLinks.Count(l => string.IsNullOrEmpty(l.ListId) || l.ListId == "0" || validFolderIds.Contains(l.ListId));
+                var folderCount = folders.Count;
+                var totalDbLinks = allLinks.Count;
                 var orphanedCount = totalDbLinks - dbLinkCount;
                 Services.Logger.Info($"[导出] DB统计: 可导出书签={dbLinkCount}, 文件夹={folderCount}, 总计书签={totalDbLinks}, 无归属书签={orphanedCount}");
 
-                var exporter = new BookmarkExporter(db);
-
-                var progress = new Progress<(string message, int current, int total)>(p =>
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        ExportStatusText.Text = p.message;
-                        ExportProgressBar.Maximum = p.total;
-                        ExportProgressBar.Value = p.current;
-                        ExportProgressText.Text = $"{p.current} / {p.total}";
-                        Services.Logger.Info($"[导出] 进度: {p.message} ({p.current}/{p.total})");
-                    });
-                });
-
                 Services.Logger.Info("[导出] 开始 ExportAsync...");
-                await exporter.ExportAsync(outputPath, progress);
+                await Services.AppServices.Api.ExportBookmarksHtmlAsync(outputPath);
                 Services.Logger.Info("[导出] ExportAsync 完成");
 
                 var fileExists = System.IO.File.Exists(outputPath);
@@ -290,44 +273,17 @@ namespace LinkPocket.Views
                 ExportProgressText.Text = "准备中...";
                 ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238));
 
-                using var db = new Data.LinkPocketDbContext();
-                var importer = new BookmarkImporter(db);
-
-                var progress = new Progress<(string message, int current, int total)>(p =>
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        ExportStatusText.Text = p.message;
-                        ExportProgressBar.Maximum = p.total;
-                        ExportProgressBar.Value = p.current;
-                        ExportProgressText.Text = $"{p.current} / {p.total}";
-                        Services.Logger.Info($"[导入] 进度: {p.message} ({p.current}/{p.total})");
-                    });
-                });
-
-                var result = await importer.ImportAsync(filePath, progress);
+                var importedCount = await Services.AppServices.Api.ImportBookmarksHtmlAsync(filePath);
 
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
+                ExportStatusText.Text = $"导入成功！\n共 {importedCount} 条";
+                ExportProgressText.Text = $"✅ {importedCount} 条";
+                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
 
-                if (result.Success)
-                {
-                    ExportStatusText.Text = $"导入成功！\n{result.FoldersCreated} 个文件夹, {result.LinksCreated} 个书签";
-                    ExportProgressText.Text = $"✅ {result.TotalItems} 条";
-                    ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+                if (DataContext is ViewModels.MainViewModel importVm)
+                    await importVm.ReinitializeDatabaseAsync(resetData: false);
 
-                    if (DataContext is ViewModels.MainViewModel importVm)
-                        await importVm.ReinitializeDatabaseAsync(resetData: false);
-
-                    await Task.Delay(100);
-                }
-                else
-                {
-                    var errMsg = string.Join("; ", result.Errors);
-                    ExportStatusText.Text = $"导入失败\n{errMsg}";
-                    ExportProgressText.Text = "❌ 失败";
-                    ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
-                    await Task.Delay(3000);
-                }
+                await Task.Delay(100);
 
                 ExportOverlay.Visibility = Visibility.Collapsed;
                 ImportFileTextBox.Text = string.Empty;

@@ -4,7 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Input;
 using System.Globalization;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Services;
 using MaterialDesignThemes.Wpf;
 
@@ -36,7 +36,7 @@ namespace LinkPocket.Views
         private TextBlock? _dedupSummaryTb;
 
         private readonly HashSet<string> _selectedLinkIds = new();
-        private List<Link>? _currentGroupLinks;
+        private List<LinkDto>? _currentGroupLinks;
         private Dictionary<string, string>? _currentPathCache;
         private string? _currentGroupUrl;
 
@@ -343,7 +343,7 @@ namespace LinkPocket.Views
             ToolContentPanel.Children.Add(loadingBar);
 
             if (DataContext is not ViewModels.MainViewModel vm) return;
-            List<Link> links;
+            List<LinkDto> links;
             try
             {
                 links = await vm.GetAllLinksForToolsAsync();
@@ -414,7 +414,7 @@ namespace LinkPocket.Views
             }
         }
 
-        private UIElement CreateDedupGroupCard(string url, List<Link> links, Dictionary<string, string> pathCache)
+        private UIElement CreateDedupGroupCard(string url, List<LinkDto> links, Dictionary<string, string> pathCache)
         {
             var outerBorder = new Border
             {
@@ -589,11 +589,11 @@ namespace LinkPocket.Views
 
         private void DedupGroup_Click(object sender, MouseButtonEventArgs e)
         {
-            if (sender is not Border border || border.Tag is not Tuple<string, List<Link>, Dictionary<string, string>> data) return;
+            if (sender is not Border border || border.Tag is not Tuple<string, List<LinkDto>, Dictionary<string, string>> data) return;
             EnterDetailView(data.Item1, data.Item2, data.Item3);
         }
 
-        private void EnterDetailView(string groupUrl, List<Link> links, Dictionary<string, string> pathCache)
+        private void EnterDetailView(string groupUrl, List<LinkDto> links, Dictionary<string, string> pathCache)
         {
             MainScrollView.Visibility = Visibility.Collapsed;
             LeftSidebarBorder.Visibility = Visibility.Collapsed;
@@ -767,7 +767,7 @@ namespace LinkPocket.Views
             }
         }
 
-        private async Task<List<Link>?> FindDedupGroupForUrl(string url)
+        private async Task<List<LinkDto>?> FindDedupGroupForUrl(string url)
         {
             if (DataContext is not ViewModels.MainViewModel vm) return null;
             var allLinks = await vm.GetAllLinksForToolsAsync();
@@ -775,7 +775,7 @@ namespace LinkPocket.Views
             return group.Count > 1 ? group : null;
         }
 
-        private async Task<Dictionary<string, string>> BuildPathCache(List<Link> links)
+        private async Task<Dictionary<string, string>> BuildPathCache(List<LinkDto> links)
         {
             var cache = new Dictionary<string, string>();
             if (DataContext is not ViewModels.MainViewModel vm) return cache;
@@ -787,7 +787,7 @@ namespace LinkPocket.Views
             return cache;
         }
 
-        private UIElement CreateDetailCard(Link link, Dictionary<string, string> pathCache)
+        private UIElement CreateDetailCard(LinkDto link, Dictionary<string, string> pathCache)
         {
             var card = new Border
             {

@@ -102,13 +102,19 @@ public class LinkPocketApiDispatcher
         // 链接
         "links.list" => await _api.GetLinksAsync(
             PStrOrNull(p, "list_id"), PStrOrNull(p, "search"), PBoolOrNull(p, "is_important"),
+            PStrOrNull(p, "date_from"), PStrOrNull(p, "date_to"),
             PStr(p, "sort_by", "created_at"), PStr(p, "sort_order", "desc"),
             PInt(p, "page", 1), PInt(p, "per_page", 20)),
+        "links.all" => await _api.GetAllLinksAsync(),
+        "links.root" => await _api.GetRootLevelLinksAsync(
+            PStr(p, "sort_by", "created_at"), PStr(p, "sort_order", "desc"), PInt(p, "per_page", 50)),
         "links.create" => await _api.CreateLinkAsync(
             PReqStr(p, "url"), PStrOrNull(p, "title"), PStrOrNull(p, "description"),
-            PStrOrNull(p, "list_id"), PStrOrNull(p, "favicon_url")),
+            PStrOrNull(p, "list_id"), PBool(p, "is_important", false), PBool(p, "auto_fetch_metadata", false),
+            PStrOrNull(p, "favicon_url")),
         "links.update" => await _api.UpdateLinkAsync(
-            PReqStr(p, "id"), PStrOrNull(p, "url"), PStrOrNull(p, "title"), PStrOrNull(p, "description"), PStrOrNull(p, "favicon_url")),
+            PReqStr(p, "id"), PStrOrNull(p, "url"), PStrOrNull(p, "title"), PStrOrNull(p, "description"),
+            PStrOrNull(p, "list_id"), PBoolOrNull(p, "is_important"), PStrOrNull(p, "favicon_url")),
         "links.trash" => await WrapVoid(() => _api.TrashLinkAsync(PReqStr(p, "id"))),
         "links.record_visit" => await WrapVoid(() => _api.RecordVisitAsync(PReqStr(p, "id"))),
 
@@ -131,6 +137,11 @@ public class LinkPocketApiDispatcher
         // 导入导出
         "export.bookmarks_html" => await _api.ExportBookmarksHtmlAsync(PReqStr(p, "output_path")),
         "import.bookmarks_html" => await _api.ImportBookmarksHtmlAsync(PReqStr(p, "file_path")),
+
+        // 备份与维护
+        "backup.export" => await WrapVoid(() => _api.ExportBackupAsync(PReqStr(p, "output_path"))),
+        "backup.import" => await _api.ImportBackupAsync(PReqStr(p, "file_path")),
+        "settings.reinit_db" => await WrapVoid(() => _api.ReinitializeDatabaseAsync(PBool(p, "reset_data", true))),
 
         _ => throw new LinkPocketApiException($"未知方法: {method}", -32601)
     };

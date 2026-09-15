@@ -108,11 +108,18 @@ public class BookmarkExporter
         await writer.WriteLineAsync("  </DL><p>");
     }
 
-    private static void WriteLink(StreamWriter writer, Link link)
+    /// <summary>把任意 Kind 的时间归一到 UTC（数据库持久化的都是 UTC 时间）。</summary>
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
     {
-        var url = EscapeHtml(link.Url ?? "");
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    private static void WriteLink(StreamWriter writer, Link link)
+    {        var url = EscapeHtml(link.Url ?? "");
         var title = EscapeHtml(link.Title ?? link.Url ?? "无标题");
-        var addDate = new DateTimeOffset(link.CreatedAt, TimeSpan.Zero).ToUnixTimeSeconds();
+        var addDate = new DateTimeOffset(ToUtc(link.CreatedAt)).ToUnixTimeSeconds();
 
         writer.Write($"  <DT><A HREF=\"{url}\" ADD_DATE=\"{addDate}\"");
 

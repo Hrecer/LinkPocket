@@ -60,6 +60,11 @@ public class TrashEntryDto
     [JsonPropertyName("description")] public string? Description { get; set; }
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
     [JsonPropertyName("original_list_id")] public string? OriginalListId { get; set; }
+    [JsonPropertyName("last_visited_at")] public DateTime? LastVisitedAt { get; set; }
+    [JsonPropertyName("visit_count")] public int VisitCount { get; set; }
+    [JsonPropertyName("is_important")] public bool IsImportant { get; set; }
+    [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
+    [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
 }
 
@@ -82,4 +87,13 @@ public class ApiResultDto
 {
     [JsonPropertyName("ok")] public bool Ok { get; set; } = true;
     [JsonPropertyName("message")] public string? Message { get; set; }
+}
+
+public class BackupImportDto
+{
+    [JsonPropertyName("folders_created")] public int FoldersCreated { get; set; }
+    [JsonPropertyName("links_created")] public int LinksCreated { get; set; }
+    [JsonPropertyName("total_items")] public int TotalItems { get; set; }
+    [JsonPropertyName("success")] public bool Success { get; set; }
+    [JsonPropertyName("errors")] public List<string> Errors { get; set; } = new();
 }

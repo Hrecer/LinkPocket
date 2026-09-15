@@ -77,16 +77,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var backupService = new LinkPocketBackupService(vm.GetDbForBackup());
-                var progress = new Progress<(string message, int current, int total)>(p =>
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        UpdateOverlay(overlay, p.message, p.current, p.total);
-                    });
-                });
-
-                await backupService.ExportAsync(outputPath, progress);
+                await Services.AppServices.Api.ExportBackupAsync(outputPath);
 
                 UpdateOverlay(overlay, $"导出成功！\n共导出所有书签和文件夹", 1, 1);
                 SetOverlayProgressColor(overlay, true);
@@ -149,16 +140,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var backupService = new LinkPocketBackupService(vm.GetDbForBackup());
-                var progress = new Progress<(string message, int current, int total)>(p =>
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        UpdateOverlay(overlay, p.message, p.current, p.total);
-                    });
-                });
-
-                var result = await backupService.ImportAsync(filePath, progress);
+                var result = await Services.AppServices.Api.ImportBackupAsync(filePath);
 
                 if (result.Success)
                 {

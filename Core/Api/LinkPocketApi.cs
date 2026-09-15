@@ -1,5 +1,6 @@
 using LinkPocket.Api;
 using LinkPocket.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace LinkPocket.Api;
 
@@ -10,9 +11,9 @@ namespace LinkPocket.Api;
 /// </summary>
 public class LinkPocketApi : ILinkPocketApi
 {
-    private readonly LinkPocketDbContext _db;
-    private readonly Services.LinkService _links;
-    private readonly Services.FolderService _folders;
+    private LinkPocketDbContext _db;
+    private Services.LinkService _links;
+    private Services.FolderService _folders;
 
     public LinkPocketApi(LinkPocketDbContext? db = null)
     {
@@ -120,10 +121,12 @@ public class LinkPocketApi : ILinkPocketApi
     // —— 链接 ——
 
     public async Task<PagedLinksDto> GetLinksAsync(string? listId = null, string? search = null, bool? isImportant = null,
+        string? dateFrom = null, string? dateTo = null,
         string sortBy = "created_at", string sortOrder = "desc", int page = 1, int perPage = 20)
     {
         var (links, total, currentPage, lastPage) = await _links.GetLinksAsync(
             search: search, listId: listId == "0" ? null : listId, isImportant: isImportant,
+            dateFrom: dateFrom, dateTo: dateTo,
             sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: perPage);
         return new PagedLinksDto
         {
@@ -134,18 +137,31 @@ public class LinkPocketApi : ILinkPocketApi
         };
     }
 
+    public async Task<List<LinkDto>> GetAllLinksAsync()
+    {
+        var links = await _links.GetAllActiveLinksAsync();
+        return links.Select(MapLink).ToList();
+    }
+
+    public async Task<List<LinkDto>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50)
+    {
+        var links = await _links.GetRootLevelLinksAsync(sortBy, sortOrder, perPage);
+        return links.Select(MapLink).ToList();
+    }
+
     public async Task<LinkDto> CreateLinkAsync(string url, string? title = null, string? description = null,
-        string? listId = null, string? faviconUrl = null)
+        string? listId = null, bool isImportant = false, bool autoFetchMetadata = false, string? faviconUrl = null)
     {
         var link = await _links.CreateLinkAsync(url, title, description,
-            listId: listId == "0" ? null : listId, autoFetchMetadata: false, faviconUrl: faviconUrl);
+            listId: listId == "0" ? null : listId, isImportant: isImportant,
+            autoFetchMetadata: autoFetchMetadata, faviconUrl: faviconUrl);
         return MapLink(link);
     }
 
     public async Task<LinkDto> UpdateLinkAsync(string id, string? url = null, string? title = null,
-        string? description = null, string? faviconUrl = null)
+        string? description = null, string? listId = null, bool? isImportant = null, string? faviconUrl = null)
     {
-        var link = await _links.UpdateLinkAsync(id, url, title, description, faviconUrl);
+        var link = await _links.UpdateLinkAsync(id, url, title, description, listId, isImportant, faviconUrl);
         return MapLink(link);
     }
 
@@ -166,6 +182,11 @@ public class LinkPocketApi : ILinkPocketApi
             Description = t.Description,
             FaviconUrl = t.FaviconUrl,
             OriginalListId = t.ListId,
+            LastVisitedAt = t.LastVisitedAt,
+            VisitCount = t.VisitCount,
+            IsImportant = t.IsImportant,
+            CreatedAt = t.CreatedAt,
+            UpdatedAt = t.UpdatedAt,
             DeletedAt = t.DeletedAt
         }).ToList();
     }
@@ -267,6 +288,55 @@ public class LinkPocketApi : ILinkPocketApi
         if (!result.Success && result.TotalItems == 0)
             throw new InvalidOperationException(string.Join("; ", result.Errors));
         return result.TotalItems;
+    }
+
+    // —— .lpbackup 备份 ——
+
+    public Task ExportBackupAsync(string outputPath)
+        => new Services.LinkPocketBackupService(_db).ExportAsync(outputPath);
+
+    public async Task<BackupImportDto> ImportBackupAsync(string filePath)
+    {
+        var result = await new Services.LinkPocketBackupService(_db).ImportAsync(filePath);
+        return new BackupImportDto
+        {
+            FoldersCreated = result.FoldersCreated,
+            LinksCreated = result.LinksCreated,
+            TotalItems = result.TotalItems,
+            Success = result.Success,
+            Errors = result.Errors
+        };
+    }
+
+    // —— 维护 ——
+
+    public async Task ReinitializeDatabaseAsync(bool resetData = true)
+    {
+        try { _db.Database.GetDbConnection().Close(); } catch { }
+        try { _db.Dispose(); } catch { }
+
+        var dbPath = Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
+        var connString = $"Data Source={dbPath}";
+        try { Microsoft.Data.Sqlite.SqliteConnection.ClearPool(new Microsoft.Data.Sqlite.SqliteConnection(connString)); } catch { }
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        await Task.Delay(200);
+
+        if (resetData)
+        {
+            if (File.Exists(dbPath))
+                File.Delete(dbPath);
+
+            var faviconDir = Path.Combine(AppContext.BaseDirectory, "favicons");
+            if (Directory.Exists(faviconDir))
+                Directory.Delete(faviconDir, true);
+        }
+
+        _db = new LinkPocketDbContext();
+        _db.Database.EnsureCreated();
+        _links.SetDb(_db);
+        _folders.SetDb(_db);
     }
 
     // —— 内部工具 ——

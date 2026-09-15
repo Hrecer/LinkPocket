@@ -138,8 +138,8 @@ public class LinkPocketBackupService
                 Description = folder.Description,
                 ParentPath = GetParentFolderPath(folder, allFolders),
                 SortOrder = folder.SortOrder,
-                CreatedAt = folder.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-                UpdatedAt = folder.UpdatedAt.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                CreatedAt = FormatUtc(folder.CreatedAt),
+                UpdatedAt = FormatUtc(folder.UpdatedAt)
             });
 
             folderIndex++;
@@ -493,18 +493,36 @@ public class LinkPocketBackupService
         }
     }
 
+    /// <summary>统一按 UTC 序列化时间戳，避免 Kind=Local 的值被误标为 Z。</summary>
+    private static string FormatUtc(DateTime value) => ToUtc(value).ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+    /// <summary>把任意 Kind 的时间归一到 UTC（数据库中持久化的都是 UTC 时间）。</summary>
+    private static DateTime ToUtc(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
+
+    /// <summary>解析备份中的时间戳：显式按 UTC 解释，避免被转成本地时间。</summary>
     private static DateTime ParseDateTime(string dateTimeStr)
     {
-        if (DateTime.TryParse(dateTimeStr, out var dt))
-            return dt;
+        if (DateTimeOffset.TryParse(dateTimeStr,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var dto))
+            return dto.UtcDateTime;
         return DateTime.UtcNow;
     }
 
     private static DateTime? ParseNullableDateTime(string? dateTimeStr)
     {
         if (string.IsNullOrWhiteSpace(dateTimeStr)) return null;
-        if (DateTime.TryParse(dateTimeStr, out var dt))
-            return dt;
+        if (DateTimeOffset.TryParse(dateTimeStr,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var dto))
+            return dto.UtcDateTime;
         return null;
     }
 

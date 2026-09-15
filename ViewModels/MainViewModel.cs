@@ -1,29 +1,26 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
-using Microsoft.EntityFrameworkCore;
 using MaterialDesignThemes.Wpf;
 
 namespace LinkPocket.ViewModels
 {
     public class MainViewModel : INotifyPropertyChanged
     {
-        private LinkPocketDbContext _db;
-        private readonly LinkService _linkService;
-        private readonly FolderService _folderService;
         private readonly Managers.SelectionManager _selectionManager;
+
+        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
+        private static ILinkPocketApi Api => AppServices.Api;
         
         private string _currentNavId = "links";
         private ObservableCollection<NavigationItem> _navigationItems = new();
@@ -71,29 +68,17 @@ namespace LinkPocket.ViewModels
 
         private static Services.IUiCoordinator? Ui => Services.UiCoordinator.Instance;
 
-        private void EnsureSchema()
-        {
-            // 数据库将清空重建，无需迁移逻辑
-        }
-
         public MainViewModel(Managers.SelectionManager selectionManager)
         {
             _selectionManager = selectionManager;
 
-            _db = new LinkPocketDbContext();
-            _db.Database.EnsureCreated();
-            EnsureSchema();
-
-            _linkService = new LinkService(_db);
-            _folderService = new FolderService(_db);
-
             InitializeNavigationItems();
 
-            _linkViewModel = new LinkViewModel(_linkService, _folderService);
+            _linkViewModel = new LinkViewModel();
             _linkViewModel.LinksChanged += OnLinksChanged;
-            _recycleBinViewModel = new RecycleBinViewModel(_linkService);
+            _recycleBinViewModel = new RecycleBinViewModel();
             _settingsViewModel = new SettingsViewModel();
-            _smartListViewModel = new SmartListViewModel(_linkService);
+            _smartListViewModel = new SmartListViewModel();
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
@@ -635,7 +620,7 @@ namespace LinkPocket.ViewModels
         {
             if (link == null) return;
             _viewingLink = link;
-            _ = _linkService.RecordVisitAsync(link.LinkId);
+            _ = Task.Run(async () => { try { await Api.RecordVisitAsync(link.LinkId); } catch { } });
             link.LastVisitedAt = DateTime.UtcNow;
             link.VisitCount++;
             DetailUrl = link.Url ?? string.Empty;
@@ -704,7 +689,7 @@ namespace LinkPocket.ViewModels
                 EditLinkHasError = false;
 
                 var url = EditLinkUrl.Trim();
-                var metadata = await _linkService.FetchMetadataAsync(url);
+                var metadata = await Api.FetchMetadataAsync(url);
 
                 if (metadata != null)
                 {
@@ -780,7 +765,7 @@ namespace LinkPocket.ViewModels
 
                 if (IsEditMode && !string.IsNullOrEmpty(_editingLinkId))
                 {
-                    await _linkService.UpdateLinkAsync(
+                    await Api.UpdateLinkAsync(
                         id: _editingLinkId,
                         url: url,
                         title: title,
@@ -793,13 +778,11 @@ namespace LinkPocket.ViewModels
                 {
                     if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                         throw new InvalidOperationException("添加书签必须先选中一个文件夹");
-                    await _linkService.CreateLinkAsync(
+                    await Api.CreateLinkAsync(
                         url: url,
                         title: title,
                         description: description,
                         listId: _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId,
-                        isImportant: false,
-                        autoFetchMetadata: false,
                         faviconUrl: _fetchedFaviconUrl
                     );
                     Logger.Info("链接添加成功");
@@ -938,7 +921,7 @@ namespace LinkPocket.ViewModels
                     if (Ui?.ConfirmDeleteFolder(folderName) != true)
                         return;
 
-                    await _folderService.DeleteFolderAsync(_selectionManager.SelectedFolderId);
+                    await Api.DeleteFolderAsync(_selectionManager.SelectedFolderId);
                     Logger.Info($"文件夹 {_selectionManager.SelectedFolderId} 已删除");
                     Ui?.ClearFolderSelection();
                     await RefreshFolderTreeAndUIAsync();
@@ -950,7 +933,7 @@ namespace LinkPocket.ViewModels
                     var selectedLink = Ui.GetSelectedLink();
                     if (selectedLink != null)
                     {
-                        await _linkService.DeleteLinkAsync(selectedLink.LinkId);
+                        await Api.TrashLinkAsync(selectedLink.LinkId);
                         Logger.Info($"已将书签 {selectedLink.LinkId} 移至回收站");
                         Ui.ClearDetailPanel();
                         await RefreshFolderTreeAndUIAsync();
@@ -989,7 +972,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 string? parentId = _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId;
-                await _folderService.CreateFolderAsync(NewFolderName.Trim(), parentId: parentId);
+                await Api.CreateFolderAsync(NewFolderName.Trim(), parentId);
                 Ui?.ExpandFolder(_selectionManager.SelectedFolderId);
                 await RefreshFolderTreeAndUIAsync();
             }
@@ -1018,7 +1001,7 @@ namespace LinkPocket.ViewModels
                 {
                     foreach (var item in items)
                     {
-                        await _linkService.UpdateLinkAsync(item.LinkId, listId: listId);
+                        await Api.UpdateLinkAsync(item.LinkId, listId: listId);
                         item.IsCut = false;
                     }
                 }
@@ -1026,13 +1009,12 @@ namespace LinkPocket.ViewModels
                 {
                     foreach (var item in items)
                     {
-                        await _linkService.CreateLinkAsync(
+                        await Api.CreateLinkAsync(
                             url: item.Url,
                             title: item.Title,
                             description: item.Description,
                             listId: listId,
                             isImportant: item.IsImportant,
-                            autoFetchMetadata: false,
                             faviconUrl: item.FaviconUrl
                         );
                     }
@@ -1081,35 +1063,35 @@ namespace LinkPocket.ViewModels
 
         public async Task LoadTrashTreeAsync()
         {
-            var deletedLinks = await _linkService.GetDeletedLinksAsync();
+            _ = await Api.GetTrashAsync();
 
             var trashRoot = new FolderNode { Id = "-1", Name = "回收站", IconKind = PackIconKind.Delete };
 
             TrashItems = new ObservableCollection<FolderNode> { trashRoot };
         }
 
-        public async Task<List<Data.Link>> GetAllLinksAsync()
+        public async Task<List<LinkDto>> GetAllLinksAsync()
         {
-            return await _linkService.GetAllActiveLinksAsync();
+            return await Api.GetAllLinksAsync();
         }
 
-        public async Task<List<Data.Link>> GetAllLinksForToolsAsync()
+        public async Task<List<LinkDto>> GetAllLinksForToolsAsync()
         {
-            return await _linkService.GetAllActiveLinksAsync();
+            return await Api.GetAllLinksAsync();
         }
 
-        public async Task<(List<Data.Link> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(string? listId = null)
+        public async Task<(List<LinkDto> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(string? listId = null)
         {
-            return await _linkService.GetLinksAsync(
+            var page = await Api.GetLinksAsync(
                 listId: listId,
                 sortBy: _linkSortField, sortOrder: _linkSortOrder,
-                page: 1, perPage: 50
-            );
+                page: 1, perPage: 50);
+            return (page.Links, page.TotalCount, page.CurrentPage, page.LastPage);
         }
 
-        public async Task<List<Data.Link>> GetRootLevelLinksAsync()
+        public async Task<List<LinkDto>> GetRootLevelLinksAsync()
         {
-            return await _linkService.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
+            return await Api.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
         }
 
         public async Task<List<LinkItem>> SearchLinksByTitleAsync(string query,
@@ -1118,103 +1100,37 @@ namespace LinkPocket.ViewModels
         {
             if (string.IsNullOrWhiteSpace(query)) return new List<LinkItem>();
 
-            var links = await _linkService.GetAllActiveLinksAsync();
+            // 搜索逻辑已下沉到后端协议（search）
+            var results = await Api.SearchAsync(query,
+                searchTitle: searchTitle, searchUrl: searchUrl,
+                searchDescription: searchDescription, searchPath: searchPath,
+                sortBy: _linkSortField, sortOrder: _linkSortOrder);
 
-            var predicates = new List<Func<Data.Link, bool>>();
-
-            if (searchTitle)
-                predicates.Add(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
-
-            if (searchUrl)
-                predicates.Add(l => l.Url != null && l.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
-
-            if (searchDescription)
-                predicates.Add(l => l.Description != null && l.Description.Contains(query, StringComparison.OrdinalIgnoreCase));
-
-            if (searchPath)
-            {
-                var allFolders = await _folderService.GetAllFoldersAsync();
-                var matchedFolderIds = allFolders
-                    .Where(f => f.Name != null && f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    .Select(f => f.FolderId)
-                    .ToHashSet();
-
-                if (matchedFolderIds.Count > 0)
-                {
-                    var expandedIds = new HashSet<string>(matchedFolderIds);
-                    foreach (var fid in matchedFolderIds.ToList())
-                    {
-                        var descendants = await GetDescendantFolderIdsAsync(allFolders, fid);
-                        foreach (var d in descendants) expandedIds.Add(d);
-                    }
-                    predicates.Add(l => l.ListId != null && expandedIds.Contains(l.ListId));
-                }
-            }
-
-            if (predicates.Count == 0)
-            {
-                predicates.Add(l => l.Title != null && l.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
-            }
-
-            var filtered = links.Where(l => predicates.Any(p => p(l)));
-
-            filtered = _linkSortOrder == "asc"
-                ? _linkSortField switch
-                {
-                    "title" => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId),
-                    "updated_at" => filtered.OrderBy(l => l.UpdatedAt).ThenBy(l => l.LinkId),
-                    "last_visited_at" => filtered.OrderBy(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.LinkId),
-                    "visit_count" => filtered.OrderBy(l => l.VisitCount).ThenBy(l => l.LinkId),
-                    "created_at" => filtered.OrderBy(l => l.CreatedAt).ThenBy(l => l.LinkId),
-                    _ => filtered.OrderBy(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId)
-                }
-                : _linkSortField switch
-                {
-                    "title" => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId),
-                    "updated_at" => filtered.OrderByDescending(l => l.UpdatedAt).ThenBy(l => l.LinkId),
-                    "last_visited_at" => filtered.OrderByDescending(l => l.LastVisitedAt ?? DateTime.MinValue).ThenBy(l => l.LinkId),
-                    "visit_count" => filtered.OrderByDescending(l => l.VisitCount).ThenBy(l => l.LinkId),
-                    "created_at" => filtered.OrderByDescending(l => l.CreatedAt).ThenBy(l => l.LinkId),
-                    _ => filtered.OrderByDescending(l => l.Title, StringComparer.CurrentCulture).ThenBy(l => l.LinkId)
-                };
-
-            return filtered.ToList().Select(l => new LinkItem
-            {
-                LinkId = l.LinkId, Url = l.Url,
-                Title = l.Title ?? "",
-                Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
-                ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
-                VisitCount = l.VisitCount, IsImportant = l.IsImportant,
-                CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
-            }).ToList();
+            return results.Select(MapToLinkItem).ToList();
         }
 
-        private async Task<List<string>> GetDescendantFolderIdsAsync(List<Data.Folder> allFolders, string folderId)
+        private static LinkItem MapToLinkItem(LinkDto l) => new()
         {
-            var ids = new List<string>();
-            var children = allFolders.Where(f => f.ParentId == folderId).ToList();
-            foreach (var child in children)
-            {
-                ids.Add(child.FolderId);
-                ids.AddRange(await GetDescendantFolderIdsAsync(allFolders, child.FolderId));
-            }
-            return ids;
-        }
+            LinkId = l.LinkId, Url = l.Url,
+            Title = l.Title ?? "",
+            Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
+            ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
+            VisitCount = l.VisitCount, IsImportant = l.IsImportant,
+            CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
+        };
 
         public async Task LoadFolderTreeAsync()
         {
             try
             {
-                var totalLinks = await _linkService.GetTotalCountAsync();
-                var allFolders = await _folderService.GetAllFoldersAsync();
-                var linkCountByFolder = await _linkService.GetLinkCountByFolderAsync();
-                var rootLinkCount = await _linkService.GetRootLevelLinkCountAsync();
+                var counts = await Api.GetCountsAsync();
+                var allFolders = await Api.GetFolderTreeAsync();
 
                 var folderNodes = new ObservableCollection<FolderNode>();
 
                 var rootNode = new FolderNode
                 {
-                    Id = "0", FolderId = "0", Name = "全部书签", LinkCount = rootLinkCount,
+                    Id = "0", FolderId = "0", Name = "全部书签", LinkCount = counts.RootLevel,
                     IconKind = PackIconKind.BookmarkOutline,
                     Children = new ObservableCollection<FolderNode>()
                 };
@@ -1223,7 +1139,7 @@ namespace LinkPocket.ViewModels
                 var lookup = new Dictionary<string, FolderNode>();
                 foreach (var folder in allFolders)
                 {
-                    var count = linkCountByFolder.TryGetValue(folder.FolderId, out var c) ? c : 0;
+                    var count = counts.ByFolder.TryGetValue(folder.FolderId, out var c) ? c : 0;
                     var node = new FolderNode
                     {
                         Id = folder.FolderId, FolderId = folder.FolderId, Name = folder.Name, LinkCount = count,
@@ -1297,7 +1213,7 @@ namespace LinkPocket.ViewModels
             if (treePath != null) return treePath;
             try
             {
-                var allFolders = await _folderService.GetAllFoldersAsync();
+                var allFolders = await Api.GetFolderTreeAsync();
                 var dict = allFolders.ToDictionary(f => f.FolderId);
                 if (!dict.ContainsKey(listId)) return "全部书签";
                 var pathParts = new List<string>();
@@ -1324,52 +1240,22 @@ namespace LinkPocket.ViewModels
 
         public async Task MoveFolderAsync(string folderId, string? targetParentId)
         {
-            await _folderService.MoveFolderAsync(folderId, targetParentId);
+            await Api.MoveFolderAsync(folderId, targetParentId);
         }
 
         public async Task<string> CopyFolderDeepAsync(string folderId, string? targetParentId)
         {
-            return await _folderService.CopyFolderDeepAsync(folderId, targetParentId);
+            return await Api.CopyFolderAsync(folderId, targetParentId);
         }
 
         public async Task<bool> WouldFolderMoveCreateCycleAsync(string folderId, string targetParentId)
         {
-            return await _folderService.WouldCreateCycleAsync(folderId, targetParentId);
-        }
-
-        public LinkPocketDbContext GetDbForBackup()
-        {
-            return _db;
+            return await Api.WouldMoveCreateCycleAsync(folderId, targetParentId);
         }
 
         public async Task ReinitializeDatabaseAsync(bool resetData = true)
         {
-            try { _db?.Database.CloseConnection(); } catch { }
-            try { _db?.Dispose(); } catch { }
-
-            var dbPath = Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
-            var connString = $"Data Source={dbPath}";
-            try { Microsoft.Data.Sqlite.SqliteConnection.ClearPool(new Microsoft.Data.Sqlite.SqliteConnection(connString)); } catch { }
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            await Task.Delay(200);
-
-            if (resetData)
-            {
-                if (File.Exists(dbPath))
-                    File.Delete(dbPath);
-
-                var faviconDir = Path.Combine(AppContext.BaseDirectory, "favicons");
-                if (Directory.Exists(faviconDir))
-                    Directory.Delete(faviconDir, true);
-            }
-
-            _db = new LinkPocketDbContext();
-            _db.Database.EnsureCreated();
-
-            _linkService.SetDb(_db);
-            _folderService.SetDb(_db);
+            await Api.ReinitializeDatabaseAsync(resetData);
 
             await LoadFolderTreeAsync();
 

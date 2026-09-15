@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -18,16 +18,14 @@ namespace LinkPocket.ViewModels
 
     public class SmartListViewModel : INotifyPropertyChanged
     {
-        private readonly LinkService _linkService;
         private bool _isLoading;
         private ObservableCollection<SmartListCardItem> _cards = new();
         private SmartListResultViewModel? _resultViewModel;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public SmartListViewModel(LinkService linkService)
+        public SmartListViewModel()
         {
-            _linkService = linkService;
             InitializeCards();
         }
 
@@ -67,7 +65,7 @@ namespace LinkPocket.ViewModels
             IsLoading = true;
             try
             {
-                var resultVm = new SmartListResultViewModel(_linkService, listId, GetTitleById(listId));
+                var resultVm = new SmartListResultViewModel(listId, GetTitleById(listId));
                 await resultVm.LoadAsync();
                 ResultViewModel = resultVm;
             }

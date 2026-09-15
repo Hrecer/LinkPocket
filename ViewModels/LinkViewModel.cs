@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -14,8 +14,8 @@ namespace LinkPocket.ViewModels
 {
     public class LinkViewModel : INotifyPropertyChanged
     {
-        private readonly LinkService _linkService;
-        private readonly FolderService _folderService;
+        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
+        private static ILinkPocketApi Api => AppServices.Api;
         
         private bool _isLoading;
         private bool _hasError;
@@ -31,11 +31,8 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public LinkViewModel(LinkService linkService, FolderService folderService)
+        public LinkViewModel()
         {
-            _linkService = linkService;
-            _folderService = folderService;
-
             RefreshCommand = new RelayCommand(async () => await LoadLinksAsync());
             UndoCommand = new RelayCommand(Undo, CanUndoExecute);
             CopyUrlCommand = new RelayCommand<string?>(CopyUrlToClipboard);
@@ -142,8 +139,8 @@ namespace LinkPocket.ViewModels
                     _currentQuery = queryParams;
                 }
 
-                // 直接调用本地LinkService，不再通过HTTP API
-                var (links, totalCount, currentPage, lastPage) = await _linkService.GetLinksAsync(
+                // 经传输层调用后端协议
+                var page = await Api.GetLinksAsync(
                     search: _currentQuery.Search,
                     listId: _currentQuery.ListId,
                     isImportant: _currentQuery.IsImportant,
@@ -155,13 +152,13 @@ namespace LinkPocket.ViewModels
                     perPage: _currentQuery.PerPage
                 );
 
-                Logger.Info($"查询完成，获取到 {links.Count} 条链接（总计 {totalCount} 条）");
+                Logger.Info($"查询完成，获取到 {page.Links.Count} 条链接（总计 {page.TotalCount} 条）");
 
-                // 将数据实体转换为UI模型
-                var linkItems = links.Select(ConvertToLinkItem).ToList();
+                // 将 DTO 转换为UI模型
+                var linkItems = page.Links.Select(ConvertToLinkItem).ToList();
 
                 Links = new ObservableCollection<LinkItem>(linkItems);
-                
+
                 Logger.Info($"Links集合已更新，当前数量: {Links.Count}, HasData: {HasData}");
 
                 if (linkItems.Count == 0)
@@ -196,11 +193,12 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                var link = await _linkService.CreateLinkAsync(
+                var link = await Api.CreateLinkAsync(
                     url: url,
                     title: title,
                     description: description,
-                    listId: listId
+                    listId: listId,
+                    autoFetchMetadata: true
                 );
 
                 LinksChanged?.Invoke(this, EventArgs.Empty);
@@ -223,7 +221,7 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                await _linkService.UpdateLinkAsync(id, url, title, description, listId, isImportant);
+                await Api.UpdateLinkAsync(id, url, title, description, listId, isImportant);
                 LinksChanged?.Invoke(this, EventArgs.Empty);
                 return true;
             }
@@ -242,7 +240,7 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                await _linkService.DeleteLinkAsync(id);
+                await Api.TrashLinkAsync(id);
                 await LoadLinksAsync();
                 LinksChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -260,7 +258,7 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                await _linkService.RecordVisitAsync(id);
+                await Api.RecordVisitAsync(id);
             }
             catch (Exception ex)
             {
@@ -382,7 +380,7 @@ namespace LinkPocket.ViewModels
             {
                 foreach (var link in selectedLinks)
                 {
-                    await _linkService.DeleteLinkAsync(link.LinkId);
+                    await Api.TrashLinkAsync(link.LinkId);
                 }
 
                 Logger.Info($"成功删除 {selectedLinks.Count} 个链接");
@@ -431,9 +429,9 @@ namespace LinkPocket.ViewModels
         }
 
         /// <summary>
-        /// 将数据实体转换为UI模型
+        /// 将 DTO 转换为UI模型
         /// </summary>
-        private LinkItem ConvertToLinkItem(Data.Link link)
+        private LinkItem ConvertToLinkItem(LinkDto link)
         {
             return new LinkItem
             {

@@ -7,6 +7,7 @@ public partial class App : Application
 {
     public App()
     {
+        Services.AppServices.Initialize();
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         DisableWerDumps();

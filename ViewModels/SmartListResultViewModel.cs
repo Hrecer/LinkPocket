@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -9,7 +9,9 @@ namespace LinkPocket.ViewModels
 {
     public class SmartListResultViewModel : INotifyPropertyChanged
     {
-        private readonly LinkService _linkService;
+        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
+        private static ILinkPocketApi Api => AppServices.Api;
+
         private readonly string _listId;
         private bool _isLoading;
         private bool _hasData;
@@ -58,9 +60,8 @@ namespace LinkPocket.ViewModels
             set { _totalCount = value; OnPropertyChanged(); }
         }
 
-        public SmartListResultViewModel(LinkService linkService, string listId, string title)
+        public SmartListResultViewModel(string listId, string title)
         {
-            _linkService = linkService;
             _listId = listId;
             Title = title;
         }
@@ -73,14 +74,8 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                List<Data.Link> links = _listId switch
-                {
-                    "recently_added" => await _linkService.GetRecentlyAddedAsync(7, 100),
-                    "recently_visited" => await _linkService.GetRecentlyVisitedAsync(7, 100),
-                    "recently_edited" => await _linkService.GetRecentlyEditedAsync(7, 100),
-                    "most_visited" => await _linkService.GetMostVisitedAsync(20),
-                    _ => new List<Data.Link>()
-                };
+                var limit = _listId == "most_visited" ? 20 : 100;
+                List<LinkDto> links = await Api.GetSmartListAsync(_listId, limit);
 
                 TotalCount = links.Count;
 
@@ -107,7 +102,7 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private static LinkItem ConvertToLinkItem(Data.Link link) => new()
+        private static LinkItem ConvertToLinkItem(LinkDto link) => new()
         {
             LinkId = link.LinkId,
             Url = link.Url,

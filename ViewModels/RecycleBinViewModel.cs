@@ -5,7 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -13,14 +13,15 @@ namespace LinkPocket.ViewModels
 {
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
-        private readonly LinkService _linkService;
+        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
+        private static ILinkPocketApi Api => AppServices.Api;
+
         private bool _isLoading;
         private bool _hasError;
         private string _errorMessage = string.Empty;
 
-        public RecycleBinViewModel(LinkService linkService)
+        public RecycleBinViewModel()
         {
-            _linkService = linkService;
         }
 
         public ObservableCollection<LinkItem> Items { get; } = new();
@@ -59,7 +60,7 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                var deletedLinks = await _linkService.GetDeletedLinksAsync();
+                var deletedLinks = await Api.GetTrashAsync();
                 foreach (var link in deletedLinks)
                     Items.Add(ConvertToItem(link));
             }
@@ -80,7 +81,7 @@ namespace LinkPocket.ViewModels
             if (toRestore.Count == 0) return;
             foreach (var item in toRestore)
             {
-                try { await _linkService.RestoreLinkAsync(item.LinkId); } catch { }
+                try { await Api.RestoreLinkAsync(item.LinkId); } catch { }
             }
             SelectedIds.Clear();
         }
@@ -91,7 +92,7 @@ namespace LinkPocket.ViewModels
             if (toDelete.Count == 0) return;
             foreach (var item in toDelete)
             {
-                try { await _linkService.PermanentDeleteLinkAsync(item.LinkId); } catch { }
+                try { await Api.PurgeLinkAsync(item.LinkId); } catch { }
             }
             SelectedIds.Clear();
         }
@@ -113,7 +114,7 @@ namespace LinkPocket.ViewModels
         public void ClearSelection() => SelectedIds.Clear();
         public bool IsSelected(string id) => SelectedIds.Contains(id);
 
-        private static LinkItem ConvertToItem(TrashedLink link) => new()
+        private static LinkItem ConvertToItem(TrashEntryDto link) => new()
         {
             LinkId = link.LinkId,
             Url = link.Url,
@@ -125,8 +126,7 @@ namespace LinkPocket.ViewModels
             VisitCount = link.VisitCount,
             IsImportant = link.IsImportant,
             CreatedAt = link.CreatedAt,
-            UpdatedAt = link.UpdatedAt
-        };
+            UpdatedAt = link.UpdatedAt        };
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {

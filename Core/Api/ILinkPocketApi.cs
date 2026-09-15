@@ -29,11 +29,16 @@ public interface ILinkPocketApi
 
     // —— 链接 ——
     Task<PagedLinksDto> GetLinksAsync(string? listId = null, string? search = null, bool? isImportant = null,
+        string? dateFrom = null, string? dateTo = null,
         string sortBy = "created_at", string sortOrder = "desc", int page = 1, int perPage = 20);
+    /// <summary>获取全部活动链接（工具页去重等全量场景）。</summary>
+    Task<List<LinkDto>> GetAllLinksAsync();
+    /// <summary>获取根级（未归类文件夹）链接，用于"全部书签"侧栏。</summary>
+    Task<List<LinkDto>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50);
     Task<LinkDto> CreateLinkAsync(string url, string? title = null, string? description = null,
-        string? listId = null, string? faviconUrl = null);
+        string? listId = null, bool isImportant = false, bool autoFetchMetadata = false, string? faviconUrl = null);
     Task<LinkDto> UpdateLinkAsync(string id, string? url = null, string? title = null,
-        string? description = null, string? faviconUrl = null);
+        string? description = null, string? listId = null, bool? isImportant = null, string? faviconUrl = null);
     /// <summary>把链接移入回收站（软删除）。</summary>
     Task TrashLinkAsync(string id);
     Task RecordVisitAsync(string id);
@@ -59,4 +64,14 @@ public interface ILinkPocketApi
     Task<string> ExportBookmarksHtmlAsync(string outputDirectory);
     /// <summary>导入浏览器书签 HTML，返回导入的条目数。</summary>
     Task<int> ImportBookmarksHtmlAsync(string filePath);
+
+    // —— .lpbackup 备份 ——
+    /// <summary>导出 .lpbackup 备份文件（manifest + data + favicons）。</summary>
+    Task ExportBackupAsync(string outputPath);
+    /// <summary>导入 .lpbackup 备份文件，返回导入统计。</summary>
+    Task<BackupImportDto> ImportBackupAsync(string filePath);
+
+    // —— 维护 ——
+    /// <summary>重建数据库。resetData 为 true 时删除数据库文件与 favicon 缓存后重建。</summary>
+    Task ReinitializeDatabaseAsync(bool resetData = true);
 }

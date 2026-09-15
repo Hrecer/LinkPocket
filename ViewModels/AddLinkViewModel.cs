@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using LinkPocket.Data;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -16,8 +16,8 @@ namespace LinkPocket.ViewModels
 {
     public partial class AddLinkViewModel : ObservableObject, INotifyDataErrorInfo
     {
-        private readonly LinkService _linkService;
-        private readonly FolderService _folderService;
+        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
+        private static ILinkPocketApi Api => AppServices.Api;
         
         [ObservableProperty]
         private string _url = string.Empty;
@@ -50,10 +50,6 @@ namespace LinkPocket.ViewModels
 
         public AddLinkViewModel()
         {
-            var db = new LinkPocketDbContext();
-            _linkService = new LinkService(db);
-            _folderService = new FolderService(db);
-            
             SaveCommand = new AsyncRelayCommand(SaveAsync, CanSave);
             CancelCommand = new RelayCommand(Cancel);
             
@@ -72,7 +68,7 @@ namespace LinkPocket.ViewModels
                 IsLoading = true;
                 HasError = false;
                 
-                await _linkService.CreateLinkAsync(
+                await Api.CreateLinkAsync(
                     url: DecodeUrl(Url.Trim()),
                     title: string.IsNullOrEmpty(Title?.Trim()) ? null : Title.Trim(),
                     description: string.IsNullOrEmpty(Description?.Trim()) ? null : Description.Trim(),
@@ -103,9 +99,31 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                var folders = await _folderService.GetTreeAsync();
+                var folders = await Api.GetFolderTreeAsync();
+
+                // 后端返回扁平列表（含 ParentId），在前端组装成树
+                var byId = folders.ToDictionary(f => f.FolderId);
+                var items = folders.ToDictionary(f => f.FolderId, f => new FolderItem
+                {
+                    Id = f.FolderId,
+                    FolderId = f.FolderId,
+                    Name = f.Name,
+                    ParentName = f.ParentId != null && byId.TryGetValue(f.ParentId, out var p) ? p.Name : null,
+                    LinkCount = f.LinkCount,
+                    Children = new List<FolderItem>()
+                });
+
+                var roots = new List<FolderItem>();
+                foreach (var f in folders)
+                {
+                    if (!string.IsNullOrEmpty(f.ParentId) && items.TryGetValue(f.ParentId, out var parent))
+                        parent.Children!.Add(items[f.FolderId]);
+                    else
+                        roots.Add(items[f.FolderId]);
+                }
+
                 Folders.Clear();
-                FlattenFolders(folders.Select(ConvertToFolderItem).ToList(), Folders, 0);
+                FlattenFolders(roots, Folders, 0);
             }
             catch (Exception ex)
             {
@@ -201,16 +219,6 @@ namespace LinkPocket.ViewModels
                 ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(propertyName));
             }
         }
-
-        private FolderItem ConvertToFolderItem(Data.Folder folder) => new()
-        {
-            Id = folder.FolderId,
-            FolderId = folder.FolderId,
-            Name = folder.Name,
-            ParentName = folder.Parent?.Name,
-            LinkCount = folder.LinkCount,
-            Children = folder.Children.Select(ConvertToFolderItem).ToList()
-        };
 
         private void FlattenFolders(List<FolderItem> folders, ObservableCollection<FolderItem> result, int level)
         {
