@@ -9,7 +9,7 @@
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
              Focusable="True"
-             Background="{DynamicResource SurfaceContainerLowest}">
+             Background="{DynamicResource SurfaceContainerLow}">
 
     <UserControl.InputBindings>
         <KeyBinding Modifiers="Control" Key="X" Command="{Binding CutCommand}"/>
@@ -29,10 +29,10 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
 
-        <!-- 详情栏卡片：M3 圆角容器（大圆角 16），叠在 SurfaceContainerLow 侧栏底色上 -->
+        <!-- 详情栏卡片：M3 圆角容器（Expressive 大圆角 20），TintCard 浮起在 TintPanel 面板上 -->
         <Style x:Key="SideCard" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource SurfaceContainer}"/>
-            <Setter Property="CornerRadius" Value="16"/>
+            <Setter Property="Background" Value="{DynamicResource TintCard}"/>
+            <Setter Property="CornerRadius" Value="20"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
@@ -119,15 +119,83 @@
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="4"/>
         </Style>
+        <!-- 树展开箭头：chevron 放在圆形 hover 药丸里，IsChecked(=IsExpanded) 时旋转 90° 朝下 -->
+        <Style x:Key="TreeExpanderToggle" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Width" Value="20"/>
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="10">
+                            <m3:M3Icon x:Name="Chevron" Kind="chevron-right" Width="14" Height="14"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <m3:M3Icon.LayoutTransform>
+                                    <RotateTransform Angle="0"/>
+                                </m3:M3Icon.LayoutTransform>
+                            </m3:M3Icon>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chevron" Property="LayoutTransform">
+                                    <Setter.Value>
+                                        <RotateTransform Angle="90"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="FolderTreeItemStyle" TargetType="TreeViewItem">
             <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="2"/>
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
             <Setter Property="AllowDrop" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <!-- 自绘 TreeViewItem 模板：替换掉默认的尖锐三角形展开箭头（MD3E：
+                         圆形药丸 chevron，展开时旋转 90° 朝下；无子项时占位隐藏，子级整体缩进 20）。 -->
+                    <ControlTemplate TargetType="TreeViewItem">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ToggleButton x:Name="Expander" Grid.Column="0"
+                                              Style="{StaticResource TreeExpanderToggle}"
+                                              ClickMode="Press"
+                                              IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"/>
+                                <ContentPresenter x:Name="PART_Header" Grid.Column="1"
+                                                  ContentSource="Header"
+                                                  HorizontalAlignment="Left"/>
+                            </Grid>
+                            <ItemsPresenter x:Name="ItemsHost"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="False">
+                                <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
+                            </Trigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <EventSetter Event="DragOver" Handler="TreeItem_DragOver"/>
             <EventSetter Event="Drop" Handler="TreeItem_Drop"/>
         </Style>
+
         <Style x:Key="HeaderSortButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -283,10 +351,11 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 命令栏（Windows 11 Explorer 风格）：导航栏之下、内容区之上的独立一整行 ===== -->
-        <Border Grid.Row="1" Background="{DynamicResource Surface}"
-                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                Padding="12,6">
+        <!-- ===== 命令栏（悬浮式）：两枚新建命令收进一枚浮动胶囊组，不占整行 ===== -->
+        <Border Grid.Row="1" Background="Transparent"
+                Padding="12,0,12,8">
+            <Border HorizontalAlignment="Left" Background="{DynamicResource SurfaceContainerHigh}"
+                    CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
                 <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字 -->
                 <Button Command="{Binding NewFolderCommand}" Cursor="Hand"
@@ -305,14 +374,16 @@
                     </StackPanel>
                 </Button>
             </StackPanel>
+            </Border>
         </Border>
 
-        <!-- ===== 导航栏 ===== -->
-        <Border Grid.Row="0" Background="{DynamicResource SurfaceContainer}"
-                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                Padding="10,6">
+        <!-- ===== 导航行（悬浮式）：无整行底带 —— 三枚导航键收进一枚圆胶囊，地址栏自成胶囊，编辑键独立圆胶囊 ===== -->
+        <Border Grid.Row="0" Background="Transparent"
+                Padding="12,0,12,8">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
+                        CornerRadius="17" Padding="2" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource NavIconButton}" Tag="后退 (Alt+←)"
                             Command="{Binding GoBackCommand}">
                         <m3:M3Icon Kind="arrow-left" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -325,15 +396,17 @@
                             Command="{Binding GoUpCommand}">
                         <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Button>
-                </StackPanel>
-                <!-- 路径编辑开关：与左侧 ← → ↑ 完全同规格（34×32 / 20px 图标），
-                     否则它比导航按钮小一圈，且"退出编辑(close-circle)"与"进入编辑(pencil)"两个字形
-                     视觉大小不一致 —— 统一按不编辑时的大小。 -->
-                <Button DockPanel.Dock="Right" Style="{StaticResource NavIconButton}"
+                    </StackPanel>
+                </Border>
+                <!-- 路径编辑开关：独立圆胶囊（与左键组同语言） -->
+                <Border DockPanel.Dock="Right" Background="{DynamicResource SurfaceContainerHigh}"
+                        CornerRadius="17" Padding="2" VerticalAlignment="Center" Margin="8,0,0,0">
+                    <Button Style="{StaticResource NavIconButton}"
                         ToolTip="编辑路径（Enter 导航，Esc 取消）" Focusable="False"
-                        Command="{Binding TogglePathEditCommand}" Margin="6,0,0,0">
-                    <m3:M3Icon Kind="{Binding PathEditIconKind}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
+                        Command="{Binding TogglePathEditCommand}">
+                        <m3:M3Icon Kind="{Binding PathEditIconKind}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </Border>
 
                 <!-- 地址栏（MD3 Expressive 胶囊）：与搜索页胶囊同语言。
                      编辑态只做颜色/描边形变（SurfaceContainerHighest + 2px Primary），圆角保持 20 —— 
@@ -470,16 +543,20 @@
                 <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧文件夹树（资源管理器式导航） -->
-            <Border Grid.Column="0" Background="{DynamicResource SurfaceContainerLow}"
-                    BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,1,0">
+            <!-- 左侧文件夹树：与中央列表卡同构 —— TintPanel 标题带 + SurfaceContainerHigh 内容卡
+                 （左缘贴窗口边、右缘上下圆角朝沟槽；底部留背景余位与状态栏脱开） -->
+            <Border Grid.Column="0" Background="{DynamicResource SurfaceContainerHigh}"
+                    CornerRadius="0,24,24,0" Margin="0,0,0,8">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Margin="10,10,10,6" Text="文件夹" FontSize="12" FontWeight="SemiBold"
-                               Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <Border Grid.Row="0" Background="{DynamicResource TintPanel}"
+                            CornerRadius="0,24,0,0" Padding="10,10,10,6">
+                        <TextBlock Text="文件夹" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    </Border>
                     <TreeView Grid.Row="1" x:Name="FolderTreeControl"
                               Style="{StaticResource FolderTreeStyle}"
                               ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
@@ -540,7 +617,7 @@
                                                 <Setter Property="Foreground" Value="#FFB300"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsRoot}" Value="True">
-                                                        <Setter Property="Kind" Value="bookmark-outline"/>
+                                                        <Setter Property="Kind" Value="bookmark"/>
                                                         <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -564,8 +641,12 @@
                 </Grid>
             </Border>
 
-            <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩 -->
-            <Grid Grid.Column="1">
+            <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩。
+                 列表区卡片化（MD3E shape separation）：大圆角 24 + 四周基面沟槽，
+                 消除与两侧面板之间生硬的竖直色块边界。 -->
+            <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
+                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
+            <Grid>
                 <Grid.ContextMenu>
                     <ContextMenu>
                         <!-- 紧凑菜单样式的隐式兜底：ContextMenu 不在 UserControl 的可视树里，
@@ -583,9 +664,9 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- 列头：与行共用同一份列宽；整列可点排序，边界可拖拽调宽；水平滚动时随内容平移 -->
-                <Border Grid.Row="0" Background="{DynamicResource SurfaceContainerLow}" BorderBrush="{DynamicResource OutlineVariant}"
-                        BorderThickness="0,0,0,1" Padding="16,6" ClipToBounds="True">
+                <!-- 列头：TintPanel 色带（与侧区面板同档），顶角与卡片圆角对齐 -->
+                <Border Grid.Row="0" Background="{DynamicResource TintPanel}" Padding="16,6" ClipToBounds="True"
+                        CornerRadius="24,24,0,0">
                     <Grid x:Name="HeaderGrid" RenderTransformOrigin="0,0">
                         <Grid.RenderTransform>
                             <TranslateTransform X="{Binding HorizontalOffset, ElementName=RowsScroll}"/>
@@ -693,7 +774,9 @@
                 <ItemsControl x:Name="RowsControl" ItemsSource="{Binding Rows}" Padding="0,4">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="RowBorder" Tag="BrowserRow" Padding="16,7" Cursor="Hand"
+                            <!-- 外层 Border：承载事件/右键菜单/列宽对齐，透明无底色（宽度=视口，不产生横向溢出）；
+                                 内层 RowSkin：MD3E 悬浮行容器 —— 大圆角 12 + 左右外距 10，hover/选中底色都在它上面 -->
+                            <Border x:Name="RowBorder" Tag="BrowserRow" Cursor="Hand"
                                     MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
                                     PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
                                     MouseMove="RowBorder_MouseMove"
@@ -787,29 +870,25 @@
                                                   Command="{Binding DataContext.RowOpenCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                   CommandParameter="{Binding}"/>
                                 </Border.InputBindings>
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                                            </DataTrigger>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
-                                            </Trigger>
-                                            <DataTrigger Binding="{Binding IsCut}" Value="True">
-                                                <Setter Property="Opacity" Value="0.45"/>
-                                            </DataTrigger>
-                                            <MultiDataTrigger>
-                                                <MultiDataTrigger.Conditions>
-                                                    <Condition Binding="{Binding IsSelected}" Value="True"/>
-                                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
-                                                </MultiDataTrigger.Conditions>
-                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                                            </MultiDataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
+                                <!-- 内层 RowSkin：MD3E 悬浮行容器（大圆角 12 + 左右外距 10）。
+                                     底色触发器挂在这里：hover/选中底色是圆角的，且不会撑出横向滚动条。 -->
+                                <Border Margin="0,1" CornerRadius="12" Padding="16,7" SnapsToDevicePixels="True">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                </DataTrigger>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                                </Trigger>
+                                                <DataTrigger Binding="{Binding IsCut}" Value="True">
+                                                    <Setter Property="Opacity" Value="0.45"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                 <Grid>
                                     <!-- 与列头共用同一份列宽（拖拽列头即同步到每一行） -->
                                     <Grid.ColumnDefinitions>
@@ -918,18 +997,17 @@
                                     <TextBlock Grid.Column="4" Style="{StaticResource RowCellText}"
                                                Text="{Binding CreatedText}" ToolTip="{Binding CreatedText}"/>
                                 </Grid>
+                                </Border>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- 空状态：仅当不在加载中且列表为空时显示（修复：此前无可见性绑定，永远盖在列表上） -->
-            <m3:EmptyState Grid.Row="1" IconKind="folder-open-outline"
-                           Title="此文件夹为空"
-                           Text="拖入链接或从浏览器导入">
-                <m3:EmptyState.Style>
-                    <Style TargetType="m3:EmptyState">
+            <!-- 空状态（MD3E）：大圆角色块徽章 + 引导性文案，替代生硬的系统提示 -->
+            <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid.Style>
+                    <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <MultiDataTrigger>
@@ -941,8 +1019,23 @@
                             </MultiDataTrigger>
                         </Style.Triggers>
                     </Style>
-                </m3:EmptyState.Style>
-            </m3:EmptyState>
+                </Grid.Style>
+                <StackPanel>
+                    <Border Width="96" Height="96" CornerRadius="32"
+                            Background="{DynamicResource PrimaryContainer}"
+                            HorizontalAlignment="Center">
+                        <m3:M3Icon Kind="folder-open-outline" Width="40" Height="40"
+                                   Foreground="{DynamicResource OnPrimaryContainer}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="这里还空空如也" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurface}"
+                               HorizontalAlignment="Center" Margin="0,18,0,0"/>
+                    <TextBlock Text="新建文件夹或链接，也可以把浏览器里的网址导入进来" FontSize="12"
+                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Grid>
 
             <!-- 加载遮罩 -->
             <Border Grid.Row="1" Background="#80FFFFFF">
@@ -961,18 +1054,19 @@
                 </StackPanel>
             </Border>
             </Grid>
+            </Border>
 
             <!-- 详情栏可拖拽分隔线 -->
         <GridSplitter Grid.Column="2" x:Name="DetailSplitter" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
                       Background="Transparent" Cursor="SizeWE"/>
 
-        <!-- ===== 右侧详情栏（参考链接页 DetailPanel 重新设计：卡片化 + 层级信息 + 快捷操作） ===== -->
-        <Border Grid.Column="3" x:Name="DetailsPanel" Background="{DynamicResource SurfaceContainerLow}"
-                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1,0,0,0">
+        <!-- ===== 右侧详情栏：紫色叠层面板 —— 右缘贴窗口边、左缘上下圆角朝沟槽；底部留背景余位 ===== -->
+        <Border Grid.Column="3" x:Name="DetailsPanel" Background="{DynamicResource TintPanel}"
+                CornerRadius="24,0,0,24" Margin="0,0,0,8">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="12,12,12,16">
 
-                    <!-- 空态占位 -->
+                    <!-- 空态占位（MD3E）：圆角色块徽章 + 引导文案 -->
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,110,0,0">
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
@@ -984,11 +1078,15 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <m3:M3Icon Kind="eye-outline" Width="44" Height="44"
-                                   HorizontalAlignment="Center" Opacity="0.15"/>
-                        <TextBlock Text="选中项目查看详情" FontSize="13" Opacity="0.35"
+                        <Border Width="72" Height="72" CornerRadius="24" HorizontalAlignment="Center"
+                                Background="{DynamicResource TintCard}">
+                            <m3:M3Icon Kind="eye-outline" Width="30" Height="30"
+                                       Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="选中项目查看详情" FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.8"
                                    HorizontalAlignment="Center" Margin="0,14,0,0"/>
-                        <TextBlock Text="链接或文件夹均可" FontSize="11" Opacity="0.22"
+                        <TextBlock Text="链接或文件夹均可" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -1449,9 +1547,9 @@
         </Border>
         </Grid>
 
-        <!-- ===== 状态栏 ===== -->
-        <Border Grid.Row="3" MinHeight="36" Background="{DynamicResource SurfaceContainerLow}"
-                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,1,0,0"
+        <!-- ===== 状态栏：左右贴边的通栏（无侧向圆角），顶部圆角仅在中央沟槽处与卡片衔接 ===== -->
+        <Border Grid.Row="3" MinHeight="36" Background="{DynamicResource TintPanel}"
+                CornerRadius="0" Margin="0"
                 Padding="16,0">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

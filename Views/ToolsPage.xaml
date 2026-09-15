@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              Loaded="ToolsPage_Loaded" Unloaded="ToolsPage_Unloaded">
-    <Grid Background="White">
+    <Grid Background="{DynamicResource SurfaceContainerLow}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200" x:Name="LeftCol"/>
             <ColumnDefinition Width="Auto" x:Name="SplitterCol"/>

@@ -140,64 +140,70 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource Surface}">
+    <Grid Background="{DynamicResource SurfaceContainerLow}">
+        <!-- ===== 沉浸式 hero 头部（与详情页同骨架）：
+             无传统顶栏 —— 返回是左上浮动圆钮，取消/保存收进右上浮动胶囊组，页面标题由 hero 头部卡的小字幕承担。 -->
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 顶栏：返回 / 标题 / 取消 + 保存 ===== -->
-        <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                Padding="12,8" Background="{DynamicResource SurfaceContainer}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Command="{Binding CancelCommand}" Style="{StaticResource TextButton}" Padding="8,6">
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
-                        <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <m3:M3Icon Kind="{Binding TitleIcon}" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding TitleText}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Command="{Binding CancelCommand}" Style="{StaticResource OutlinedButton}" Padding="14,6" MinHeight="32" Margin="0,0,8,0">
-                        <TextBlock Text="取消" FontSize="13"/>
+        <!-- 浮动控制层：返回圆钮 + 右上 取消/保存 胶囊组 -->
+        <Grid Grid.Row="0">
+            <Button Command="{Binding CancelCommand}" ToolTip="返回（放弃更改）"
+                    Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
+                    Foreground="{DynamicResource OnSurface}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
+            </Button>
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,16,0,0"
+                    Background="{DynamicResource TintCard}" CornerRadius="21" Padding="6,3">
+                <StackPanel Orientation="Horizontal">
+                    <Button Command="{Binding CancelCommand}" Style="{StaticResource OutlinedButton}" Padding="12,4" MinHeight="28"
+                            Margin="0,0,4,0">
+                        <TextBlock Text="取消" FontSize="12"/>
                     </Button>
-                    <Button Command="{Binding SaveCommand}" Style="{StaticResource FilledButton}" Padding="14,6" MinHeight="32"
+                    <Button Command="{Binding SaveCommand}" Style="{StaticResource FilledButton}" Padding="12,4" MinHeight="28"
                             HorizontalContentAlignment="Center">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <!-- 边距挂在转圈右侧：隐藏时不占位，文字保持居中 -->
-                            <m3:CircularProgress IsIndeterminate="True" Width="14" Height="14" Margin="0,0,6,0"
+                            <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13" Margin="0,0,5,0"
                                                  Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="保存" FontSize="13" VerticalAlignment="Center"/>
+                            <TextBlock Text="保存" FontSize="12" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
-            </Grid>
-        </Border>
+            </Border>
+        </Grid>
 
         <!-- ===== 正文：居中内容列 ===== -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <!-- 定宽居中列：外边距经滚动条补偿，保证与详情页左边界严格一致（切换整页不横移） -->
             <Grid Width="760" HorizontalAlignment="Center">
                 <Grid.Margin>
                     <Binding Path="ComputedVerticalScrollBarVisibility"
                              RelativeSource="{RelativeSource AncestorType=ScrollViewer}"
                              Converter="{StaticResource ScrollGutterMargin}"
-                             ConverterParameter="36,28,36,28"/>
+                             ConverterParameter="36,84,36,28"/>
                 </Grid.Margin>
                 <StackPanel>
 
-                <!-- 头部卡片：色调圆底图标 + 大号标题字段 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,18">
+                <!-- 头部卡片：页面字幕 + 图标位 + 大号标题字段 -->
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,18">
+                    <StackPanel>
+                        <TextBlock Text="{Binding TitleText}" FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Primary}" Opacity="0.9" Margin="2,0,0,10"/>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -245,6 +251,7 @@
                                      Text="{Binding LinkTitle, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
                     </Grid>
+                    </StackPanel>
                 </Border>
 
                 <!-- 错误横幅 -->
@@ -268,8 +275,7 @@
                 </Border>
 
                 <!-- URL 卡片 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                <Border Background="{DynamicResource TintCard}"
                         CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
                         <Grid Margin="2,0,0,6">
@@ -312,8 +318,7 @@
                 </Border>
 
                 <!-- 描述卡片 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                <Border Background="{DynamicResource TintCard}"
                         CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="2,0,0,6">

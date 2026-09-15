@@ -11,6 +11,13 @@
 
             <FontFamily x:Key="AppFont">Microsoft YaHei UI, 微软雅黑, SimSun, 宋体, Arial</FontFamily>
 
+            <!-- 紫色调层（MD3E 色彩即层级的本地化实现）：比中性 Surface 角色带 Primary 染色的分层画刷。
+                 TintSurface = 内容区（近白带紫）· TintCard = 卡片（比所在面板浅半档）
+                 · TintPanel = 侧区面板（比基面深一档的紫色叠层）。 -->
+            <SolidColorBrush x:Key="TintSurface" Color="#FAF8FD"/>
+            <SolidColorBrush x:Key="TintCard" Color="#F5F1FB"/>
+            <SolidColorBrush x:Key="TintPanel" Color="#E4DCF3"/>
+
             <Style TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
                 <Setter Property="FontWeight" Value="Normal"/>
@@ -30,6 +37,30 @@
             <Style TargetType="ComboBox">
                 <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
                 <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            </Style>
+
+            <!-- ToolTip：自绘 M3 模板。默认模板自带 SystemDropShadowChrome 投影，
+                 与右键菜单（无阴影、纯圆角色块）的视觉语言冲突 → 统一改为圆角无阴影色块。 -->
+            <Style TargetType="ToolTip">
+                <Setter Property="OverridesDefaultStyle" Value="True"/>
+                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="HasDropShadow" Value="False"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToolTip">
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </ResourceDictionary>
     </Application.Resources>

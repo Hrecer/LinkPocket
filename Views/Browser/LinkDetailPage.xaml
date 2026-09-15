@@ -52,74 +52,92 @@
     <!-- 浏览模块「链接详情页」：参考链接页书签详情 + 浏览右侧栏卡片风格。
          顶栏：返回 / 标题 / 打开网站 / 编辑；正文：favicon、标题、位置、URL、Markdown 描述、统计信息。 -->
 
-    <Grid Background="{DynamicResource Surface}">
+    <Grid Background="{DynamicResource SurfaceContainerLow}">
+        <!-- ===== 沉浸式 hero 头部（MD3E Large top bar 精神）：
+             无传统顶栏 —— 返回是左上浮动圆钮，操作收进右上浮动胶囊组，标题由内容流 hero 头部卡承担。 -->
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 顶栏 ===== -->
-        <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                Padding="12,8" Background="{DynamicResource SurfaceContainer}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Button Command="{Binding BackCommand}" Style="{StaticResource TextButton}" Padding="8,6" Margin="0,0,8,0">
+        <!-- 浮动控制层：返回圆钮 + 右上操作胶囊组 -->
+        <Grid Grid.Row="0">
+            <Grid.Resources>
+                <Style x:Key="FloatingIconButton" TargetType="Button">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                    <Setter Property="Width" Value="34"/>
+                    <Setter Property="Height" Value="34"/>
+                    <Setter Property="Cursor" Value="Hand"/>
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="17">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Grid.Resources>
+            <Button Command="{Binding BackCommand}" ToolTip="返回"
+                    Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
+                    Foreground="{DynamicResource OnSurface}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
+            </Button>
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,16,0,0"
+                    Background="{DynamicResource TintCard}" CornerRadius="21" Padding="3">
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource FloatingIconButton}" Command="{Binding CopyUrlCommand}" ToolTip="复制 URL">
+                        <m3:M3Icon Kind="content-copy" Width="16" Height="16"/>
+                    </Button>
+                    <Button Style="{StaticResource FloatingIconButton}" Command="{Binding OpenWebsiteCommand}" ToolTip="在默认浏览器中打开">
+                        <m3:M3Icon Kind="open-in-new" Width="16" Height="16"/>
+                    </Button>
+                    <Button Command="{Binding EditCommand}" Style="{StaticResource FilledButton}" Padding="12,5" MinHeight="28"
+                            Margin="2,0,0,0">
                         <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
-                            <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                            <m3:M3Icon Kind="pencil" Width="13" Height="13" VerticalAlignment="Center"/>
+                            <TextBlock Text="编辑" FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <m3:M3Icon Kind="eye-outline" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
-                    <TextBlock Text="链接详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Command="{Binding CopyUrlCommand}" Style="{StaticResource TonalButton}" Padding="10,6" MinHeight="32"
-                            ToolTip="复制 URL" Margin="0,0,8,0">
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="content-copy" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock Text="复制 URL" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Command="{Binding OpenWebsiteCommand}" Style="{StaticResource TonalButton}" Padding="10,6" MinHeight="32"
-                            ToolTip="在默认浏览器中打开" Margin="0,0,8,0">
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock Text="打开网站" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                    <Button Command="{Binding EditCommand}" Style="{StaticResource FilledButton}" Padding="10,6" MinHeight="32">
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="pencil" Width="14" Height="14" VerticalAlignment="Center"/>
-                            <TextBlock Text="编辑" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </Border>
+            </Border>
+        </Grid>
 
         <!-- ===== 正文 ===== -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <!-- 定宽居中列：外边距经滚动条补偿，保证与编辑页左边界严格一致（切换整页不横移） -->
             <Grid Width="760" HorizontalAlignment="Center">
                 <Grid.Margin>
                     <Binding Path="ComputedVerticalScrollBarVisibility"
                              RelativeSource="{RelativeSource AncestorType=ScrollViewer}"
                              Converter="{StaticResource ScrollGutterMargin}"
-                             ConverterParameter="36,28,36,28"/>
+                             ConverterParameter="36,84,36,28"/>
                 </Grid.Margin>
                 <StackPanel>
 
                 <!-- 头部卡片：favicon + 标题 + 位置 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,18">
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,18">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <!-- favicon 位：与右侧栏同款（44px 白底圆角方块，非圆形） -->
@@ -156,7 +174,7 @@
                                     </m3:M3Icon>
                                 </Grid>
                             </Border>
-                            <TextBlock Text="{Binding Title}" FontSize="19" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold"
                                        VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
                                        Foreground="{DynamicResource OnSurface}"/>
                         </StackPanel>
@@ -164,9 +182,8 @@
                 </Border>
 
                 <!-- URL 卡片 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -192,9 +209,8 @@
                 </Border>
 
                 <!-- 描述卡片（Markdown 渲染） -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                     <Border.Style>
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Visible"/>
@@ -231,9 +247,8 @@
                 </Border>
 
                 <!-- 信息卡片 -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="信息" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
                                    Foreground="{DynamicResource OnSurfaceVariant}"/>
@@ -339,9 +354,8 @@
                 </Border>
 
                 <!-- 操作卡片：与右侧栏快捷操作同款（打开 / 编辑 / 删除） -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
                         <TextBlock Text="操作" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
                                    Foreground="{DynamicResource OnSurfaceVariant}"/>
