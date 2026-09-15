@@ -1,4 +1,5 @@
 using LinkPocket.Data;
+using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 using System.IO;
 
@@ -18,12 +19,12 @@ public class BookmarkExporter
         progress?.Report(("正在获取书签数据...", 0, 1));
 
         var rootFolders = await _db.Folders
-            .Where(f => f.ParentId == null || f.ParentId == "0")
+            .Where(f => f.ParentId == null)
             .OrderBy(f => f.Name)
             .ToListAsync();
 
         var rootLinks = await _db.Links
-            .Where(l => l.ListId == null || l.ListId == "0")
+            .Where(l => l.ListId == null)
             .OrderBy(l => l.CreatedAt)
             .ToListAsync();
 

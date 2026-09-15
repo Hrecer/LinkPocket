@@ -18,8 +18,7 @@
         ResizeMode="CanResize"
         Background="{DynamicResource Surface}"
         TextElement.FontFamily="{StaticResource AppFont}"
-        TextElement.Foreground="{DynamicResource OnSurface}"
-        PreviewKeyDown="MainWindow_PreviewKeyDown">
+        TextElement.Foreground="{DynamicResource OnSurface}">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="44"
@@ -49,6 +48,47 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- ===== 搜索页（MD3 Expressive）专用样式 ===== -->
+        <!-- 胶囊搜索栏内的透明输入框：视觉由外层 SearchBarShell 承担 -->
+        <Style x:Key="SearchCapsuleBox" TargetType="TextBox">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        </Style>
+        <!-- 筛选 chip：药丸形，选中后变低圆角 + SecondaryContainer 强调（MD3E 形状区分状态） -->
+        <Style x:Key="SearchChip" TargetType="CheckBox">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Bd" CornerRadius="14" Background="{DynamicResource SurfaceContainerHigh}"
+                                Padding="14,6" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+                                <Setter TargetName="Bd" Property="CornerRadius" Value="10"/>
+                                <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="TitleBarButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -100,7 +140,7 @@
         <vm:FaviconConverter x:Key="FaviconConverter"/>
     </Window.Resources>
 
-    <Grid x:Name="RootGrid" PreviewMouseLeftButtonDown="RootGrid_PreviewMouseLeftButtonDown">
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -163,225 +203,8 @@
             </Grid>
         </Border>
 
-        <!-- ===== 主界面（链接+回收站） ===== -->
-        <Grid Grid.Row="1" x:Name="MainView">
-            <Grid.Style>
-                <Style TargetType="Grid">
-                    <Setter Property="Visibility" Value="Visible"/>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="search">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="browser">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="trash">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="smartlists">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="tools">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding CurrentNavId}" Value="settings">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Grid.Style>
-
-            <!-- 主内容区 -->
-            <Grid Grid.Row="1">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" MinWidth="160" MaxWidth="400"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="1*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="220" MinWidth="160" MaxWidth="360"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- 左侧边栏 -->
-                <Border Grid.Column="0" x:Name="LeftSidebarBorder">
-                    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="FolderListPanel" Margin="4,8,4,8"/>
-                    </ScrollViewer>
-                </Border>
-
-                <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                              Background="{DynamicResource OutlineVariant}" Cursor="SizeWE">
-                    <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GridSplitter.Style>
-                </GridSplitter>
-
-                <!-- 中间内容区域 -->
-                <Grid Grid.Column="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- 操作栏 -->
-                    <Border Grid.Row="0" x:Name="ActionBar" Background="{DynamicResource SurfaceContainer}" Padding="12,10" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1">
-                        <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Padding="12,8" Margin="4,0" Cursor="Hand"
-                                    Command="{Binding DataContext.ShowAddLinkCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    ToolTip="添加新链接">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                                <Setter Property="Opacity" Value="0.4"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="plus" Width="18" Height="18" VerticalAlignment="Center"/>
-                                    <TextBlock Text="添加" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Padding="12,8" Margin="4,0" Cursor="Hand"
-                                    Command="{Binding DataContext.CreateFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    ToolTip="新建文件夹">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                                <Setter Property="Opacity" Value="0.4"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="folder-plus" Width="18" Height="18" VerticalAlignment="Center"/>
-                                    <TextBlock Text="新建文件夹" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="DeleteButton" Padding="12,8" Margin="4,0"
-                                    Content="🗑 删除" FontSize="14" FontFamily="Microsoft YaHei UI"
-                                    Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Error}" Cursor="Hand"
-                                    Command="{Binding DataContext.DeleteSelectedCommand, RelativeSource={RelativeSource AncestorType=Window}}">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border x:Name="border" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="4">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="border" Property="Background" Value="{DynamicResource ErrorContainer}"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsPressed" Value="True">
-                                                            <Setter TargetName="border" Property="Background" Value="{DynamicResource ErrorContainer}"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsEnabled" Value="False">
-                                                            <Setter Property="Opacity" Value="0.4"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                            <Button x:Name="LinkSortButton" Padding="10,8" Margin="16,0,0,0" Cursor="Hand" Click="LinkSortButton_Click"
-                                    ToolTip="书签排序">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                    </Style>
-                                </Button.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="sort" Width="18" Height="18" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="LinkSortButtonText" Text="排序" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                    <TextBlock x:Name="LinkSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                                <Button.ContextMenu>
-                                    <ContextMenu x:Name="LinkSortMenu">
-                                        <MenuItem Header="按名称 ↑↓" Tag="title" Click="LinkSortMenuItem_Click"/>
-                                        <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="LinkSortMenuItem_Click"/>
-                                        <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="LinkSortMenuItem_Click"/>
-                                        <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="LinkSortMenuItem_Click"/>
-                                        <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="LinkSortMenuItem_Click"/>
-                                    </ContextMenu>
-                                </Button.ContextMenu>
-                            </Button>
-                            <Border Width="1" Background="{DynamicResource OutlineVariant}" Margin="8,4,0,4" VerticalAlignment="Stretch"/>
-                            <Button x:Name="FolderSortButton" Padding="10,8" Margin="0,0,0,0" Cursor="Hand"
-                                    Click="FolderSortButton_Click" ToolTip="文件夹按名称排序（点击切换升降序）">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="BorderThickness" Value="0"/>
-                                    </Style>
-                                </Button.Style>
-                                <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="folder" Width="18" Height="18" VerticalAlignment="Center"/>
-                                    <TextBlock Text="文件夹" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                    <TextBlock x:Name="FolderSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 链接列表 -->
-                    <Grid Grid.Row="1" x:Name="LinksPage" DataContext="{Binding LinkViewModel}"
-                          Background="Transparent"
-                          PreviewMouseLeftButtonDown="LinksPage_MouseLeftButtonDown">
-                        <Grid.Style><Style TargetType="Grid"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="links"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Grid.Style>
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
-                            <m3:CircularProgress IsIndeterminate="True" Width="60" Height="60"/>
-                            <TextBlock Text="正在加载链接..." FontSize="14" Opacity="0.6" Margin="0,16,0,0"/>
-                        </StackPanel>
-
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                            <m3:M3Icon Kind="alert-circle-outline" Width="56" Height="56" HorizontalAlignment="Center" Opacity="0.4" Foreground="{DynamicResource Error}"/>
-                            <TextBlock Text="{Binding ErrorMessage}" FontSize="14" HorizontalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource Error}" MaxWidth="400" Margin="0,16,0,12"/>
-                        </StackPanel>
-
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
-                            <StackPanel x:Name="MainListContentPanel" Margin="8"/>
-                        </ScrollViewer>
-                    </Grid>
-
-                    <!-- 其他页面占位 -->
-                    <!-- 智能列表页面已移至独立视图 -->
-                    <!-- 搜索页面已移至独立视图 -->
-                    <!-- 回收站页面已移至独立视图 -->
-                    <!-- 设置页面已移至独立视图 -->
-                </Grid>
-
-                <!-- 右侧分隔线 -->
-                <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                              Background="{DynamicResource OutlineVariant}" Cursor="SizeWE">
-                    <GridSplitter.Style><Style TargetType="GridSplitter"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></GridSplitter.Style>
-                </GridSplitter>
-
-                <!-- 右侧详情栏 -->
-                <Border Grid.Column="4" x:Name="RightSidebarBorder" ContextMenu="{x:Null}" PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp">
-                    <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="trash"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="DetailPanel" Margin="16,8,16,16"/>
-                    </ScrollViewer>
-                </Border>
-            </Grid>
-        </Grid>
-
         <!-- ===== 搜索视图（左侧结果 + 右侧常驻固定栏） ===== -->
-        <Grid Grid.Row="1" x:Name="SearchView" Background="{DynamicResource Surface}">
+        <Grid Grid.Row="1" x:Name="SearchView" Background="{DynamicResource SurfaceContainerLow}">
             <Grid.Style>
                 <Style TargetType="Grid">
                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -407,114 +230,146 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0" Padding="28,20,28,4">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="SearchBox" Grid.Column="0" Padding="12,10" FontSize="14"
-                                 Tag="输入关键词搜索..."
-                                 
-                                 VerticalContentAlignment="Center"
-                                 KeyDown="SearchBox_KeyDown"/>
-                        <Button x:Name="SearchSortButton" Grid.Column="1" Padding="10,8" Margin="8,0,8,0" Cursor="Hand" Click="SearchSortButton_Click"
-                                ToolTip="结果排序">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="BorderThickness" Value="0"/>
-                                </Style>
-                            </Button.Style>
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="sort" Width="18" Height="18" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="SearchSortButtonText" Text="按名称" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                            </StackPanel>
-                            <Button.ContextMenu>
-                                <ContextMenu x:Name="SearchSortMenu">
-                                    <MenuItem Header="按名称 ↑↓" Tag="title" Click="SearchSortMenuItem_Click"/>
-                                    <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="SearchSortMenuItem_Click"/>
-                                    <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="SearchSortMenuItem_Click"/>
-                                    <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="SearchSortMenuItem_Click"/>
-                                    <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="SearchSortMenuItem_Click"/>
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
-                        <Button Grid.Column="2" Content="搜索" Padding="18,8" FontSize="13"
-                                Style="{StaticResource FilledButton}" Click="SearchButton_Click"
-                                VerticalAlignment="Center" Margin="8,0,8,0"/>
-                        <Button Grid.Column="3" Content="取消" Padding="18,8" FontSize="13"
-                                Style="{StaticResource OutlinedButton}" Click="SearchCancelButton_Click"
-                                VerticalAlignment="Center"/>
-                    </Grid>
-                </Border>
+                <Border Grid.Row="0" Padding="28,22,28,6">
+                    <!-- 胶囊搜索栏（视觉重心）：聚焦时高度 52→62、圆角 26→20 形变，弹簧曲线 -->
+                    <Border x:Name="SearchBarShell" CornerRadius="26" Height="52"
+                            Background="{DynamicResource SurfaceContainerHigh}"
+                            BorderThickness="2" BorderBrush="Transparent"
+                            Padding="20,0,12,0" HorizontalAlignment="Stretch">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                        <Setter Property="CornerRadius" Value="20"/>
+                                        <Setter Property="Height" Value="62"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                <!-- 搜索框下方常驻工具栏（跳转按钮 + 筛选复选框） -->
-                <Border x:Name="SearchToolbar" Grid.Row="1" Background="{DynamicResource SurfaceContainer}"
-                        Padding="12,10" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,1,0,1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button x:Name="SearchJumpToLinkBtn"
-                                    Padding="12,8" Margin="4,0"
-                                    Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
-                                    Cursor="Hand">
+                            <m3:M3Icon Grid.Column="0" Kind="magnify" Width="22" Height="22"
+                                       Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
+
+                            <Grid Grid.Column="1" Margin="12,0,0,0">
+                                <TextBlock Text="搜索书签、网址或描述…" FontSize="16" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceVariant}" IsHitTestVisible="False">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text.Length, ElementName=SearchBox, FallbackValue=0}" Value="0">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBox x:Name="SearchBox" Style="{StaticResource SearchCapsuleBox}"
+                                         Background="Transparent"
+                                         KeyDown="SearchBox_KeyDown"/>
+                            </Grid>
+
+                            <Button x:Name="SearchSortButton" Grid.Column="2" Padding="10,8" Margin="8,0,4,0" Cursor="Hand" Click="SearchSortButton_Click"
+                                    ToolTip="结果排序" VerticalAlignment="Center">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                                         <Setter Property="Background" Value="Transparent"/>
                                         <Setter Property="BorderThickness" Value="0"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsEnabled" Value="False">
-                                                <Setter Property="Background" Value="Transparent"/>
-                                                <Setter Property="Opacity" Value="0.4"/>
-                                            </Trigger>
-                                        </Style.Triggers>
+                                        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
                                     </Style>
                                 </Button.Style>
                                 <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="open-in-new" Width="18" Height="18" VerticalAlignment="Center"/>
-                                    <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
+                                    <m3:M3Icon Kind="sort" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="SearchSortButtonText" Text="按名称" Margin="6,0,4,0" FontSize="13" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
                                 </StackPanel>
+                                <Button.ContextMenu>
+                                    <ContextMenu x:Name="SearchSortMenu">
+                                        <MenuItem Header="按名称 ↑↓" Tag="title" Click="SearchSortMenuItem_Click"/>
+                                        <MenuItem Header="最后更新 ↑↓" Tag="updated_at" Click="SearchSortMenuItem_Click"/>
+                                        <MenuItem Header="最后查看 ↑↓" Tag="last_visited_at" Click="SearchSortMenuItem_Click"/>
+                                        <MenuItem Header="累计查看次数 ↑↓" Tag="visit_count" Click="SearchSortMenuItem_Click"/>
+                                        <MenuItem Header="创建时间 ↑↓" Tag="created_at" Click="SearchSortMenuItem_Click"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
                             </Button>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <TextBlock Text="搜索范围:" FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}"
-                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True"
-                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
-                             <CheckBox x:Name="SearchUrlCb" Content="URL" IsChecked="True"
-                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
-                             <CheckBox x:Name="SearchTitleCb" Content="标题" IsChecked="True"
-                                       VerticalAlignment="Center" Margin="0,0,14,0"/>
-                             <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True"
-                                      VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Grid>
+                            <Button Grid.Column="3" Content="搜索" Padding="20,9" FontSize="13" FontWeight="SemiBold"
+                                    Style="{StaticResource FilledButton}" Click="SearchButton_Click"
+                                    VerticalAlignment="Center" Margin="4,0,4,0"/>
+                            <Button Grid.Column="4" Content="取消" Padding="14,9" FontSize="13"
+                                    Style="{StaticResource TextButton}" Click="SearchCancelButton_Click"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
                 </Border>
+
+                <!-- 筛选 chip 行（药丸 chip：选中 → SecondaryContainer + 圆角变小） -->
+                <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
+                            Margin="28,4,28,10">
+                    <Button x:Name="SearchJumpToLinkBtn" Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
+                            Cursor="Hand" Margin="0,0,14,0" VerticalAlignment="Center">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
+                                <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="14,7"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="Opacity" Value="0.4"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="open-in-new" Width="16" Height="16" VerticalAlignment="Center"/>
+                            <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBlock Text="搜索范围" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
+                               VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True" Style="{StaticResource SearchChip}"/>
+                    <CheckBox x:Name="SearchUrlCb" Content="URL" IsChecked="True" Style="{StaticResource SearchChip}"/>
+                    <CheckBox x:Name="SearchTitleCb" Content="标题" IsChecked="True" Style="{StaticResource SearchChip}"/>
+                    <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True" Style="{StaticResource SearchChip}"/>
+                </StackPanel>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="28,8,28,24"
                               PreviewMouseLeftButtonDown="SearchResultsArea_MouseLeftButtonDown">
                     <StackPanel x:Name="SearchResultsPanel" HorizontalAlignment="Center">
-                        <StackPanel x:Name="SearchEmptyPlaceholder" HorizontalAlignment="Center" Margin="0,80,0,0">
-                            <m3:M3Icon Kind="magnify" Width="48" Height="48" HorizontalAlignment="Center" Opacity="0.15"/>
-                            <TextBlock Text="输入关键词开始搜索" FontSize="14" Opacity="0.35"
-                                       HorizontalAlignment="Center" Margin="0,12,0,0"/>
-                            <TextBlock Text="勾选下方搜索范围，精准筛选" FontSize="12" Opacity="0.25"
-                                       HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <StackPanel x:Name="SearchEmptyPlaceholder" HorizontalAlignment="Center" Margin="0,72,0,0">
+                            <!-- MD3E 空状态：大圆角色块徽章 + 引导性文案 -->
+                            <Border Width="96" Height="96" CornerRadius="32"
+                                    Background="{DynamicResource PrimaryContainer}"
+                                    HorizontalAlignment="Center">
+                                <m3:M3Icon Kind="magnify" Width="40" Height="40"
+                                           Foreground="{DynamicResource OnPrimaryContainer}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Text="想找点什么？" FontSize="17" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource OnSurface}"
+                                       HorizontalAlignment="Center" Margin="0,18,0,0"/>
+                            <TextBlock Text="输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围" FontSize="12"
+                                       Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
+                                       HorizontalAlignment="Center" Margin="0,6,0,0"/>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
 
-            <!-- 分隔线 -->
+            <!-- 分隔线：弱化为细窄的低对比条（色彩分层替代硬分隔） -->
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                          Background="{DynamicResource OutlineVariant}" Cursor="SizeWE">
+                          Background="{DynamicResource SurfaceContainerHighest}" Cursor="SizeWE">
                 <GridSplitter.Style>
                     <Style TargetType="GridSplitter">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -536,9 +391,21 @@
         </Grid>
 
         <!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存，显隐由 IUiCoordinator 控制） ===== -->
+        <!-- 显隐与其它页面统一走 CurrentNavId 触发器（老「链接」页删除后它成为默认首页） -->
         <browserviews:BrowserView Grid.Row="1" x:Name="BrowserPage"
-                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                                  Visibility="Collapsed"/>
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <browserviews:BrowserView.Style>
+                <Style TargetType="UserControl">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <!-- 注意：BrowserPage 的 DataContext 是 BrowserViewModel，必须显式取窗口的 CurrentNavId -->
+                        <DataTrigger Binding="{Binding DataContext.CurrentNavId, RelativeSource={RelativeSource AncestorType=Window}}" Value="browser">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </browserviews:BrowserView.Style>
+        </browserviews:BrowserView>
 
         <!-- ===== 回收站视图（独立页面） ===== -->
         <views:TrashPage Grid.Row="1" x:Name="TrashView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
@@ -596,421 +463,5 @@
             </views:SettingsPage.Style>
         </views:SettingsPage>
 
-        <!-- ===== 详情视图页面 ===== -->
-        <Grid Grid.Row="1" x:Name="DetailView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" ContextMenu="{x:Null}"
-              PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp" Background="{DynamicResource Surface}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- 操作栏（返回 + 编辑按钮 + 页面标题） -->
-            <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource SurfaceContainer}" WindowChrome.IsHitTestVisibleInChrome="True">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Button Command="{Binding CancelDetailCommand}" Style="{StaticResource TextButton}" Padding="8,6" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
-                                <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding DetailEditCommand}" Style="{StaticResource FilledButton}" MinWidth="70" Padding="12,6">
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="pencil" Width="14" Height="14" VerticalAlignment="Center"/>
-                                <TextBlock Text="编辑" Margin="5,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <m3:M3Icon Kind="eye-outline" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
-                        <TextBlock Text="书签详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- 内容区 -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" ContextMenu="{x:Null}">
-                <StackPanel Margin="48,32,48,32">
-
-                    <!-- 所属目录 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <m3:M3Icon Kind="folder-outline" Width="14" Height="14" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        <TextBlock Text="{Binding DetailFolderName}" FontSize="12" Opacity="0.7" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                    </StackPanel>
-
-                    <!-- URL -->
-                    <TextBlock Text="URL" FontSize="12" Opacity="0.5" Margin="0,0,0,4"/>
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                                  MaxHeight="40" Margin="0,0,0,8">
-                        <TextBox Text="{Binding DetailUrl}" FontSize="14" TextWrapping="NoWrap" IsReadOnly="True"
-                                 Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black"
-                                 VerticalAlignment="Center" ContextMenu="{x:Null}"/>
-                    </ScrollViewer>
-                    <Button Padding="6,3" Margin="0,0,0,20" Cursor="Hand" Background="Transparent" BorderThickness="0"
-                            ToolTip="复制URL" Click="CopyDetailUrl_Click" HorizontalAlignment="Left">
-                        <m3:M3Icon Kind="content-copy" Width="14" Height="14" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                    </Button>
-
-                    <!-- 图标区域 -->
-                    <Border Margin="0,16,0,16" Background="Transparent" CornerRadius="6">
-                        <StackPanel Orientation="Horizontal">
-                            <Border Width="48" Height="48" CornerRadius="8" Background="White"
-                                    ClipToBounds="True" VerticalAlignment="Center">
-                                <Grid>
-                                    <Image Source="{Binding DetailFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                        <Image.Style>
-                                            <Style TargetType="Image">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding DetailFaviconImage}" Value="{x:Null}">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Image.Style>
-                                    </Image>
-                                    <m3:M3Icon Kind="earth" Width="26" Height="26"
-                                                             HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55">
-                                        <m3:M3Icon.Style>
-                                            <Style TargetType="m3:M3Icon">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding DetailFaviconUrl}" Value="">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </m3:M3Icon.Style>
-                                    </m3:M3Icon>
-                                </Grid>
-                            </Border>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 标题 -->
-                    <TextBlock Text="标题" FontSize="12" Opacity="0.5" Margin="0,0,0,4"/>
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                                  MaxHeight="50" Margin="0,0,0,20">
-                        <TextBox Text="{Binding DetailTitle}" FontSize="24" FontWeight="SemiBold" TextWrapping="NoWrap"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-                    </ScrollViewer>
-
-                    <!-- 描述 (Markdown) -->
-                    <TextBlock Text="描述" FontSize="12" Opacity="0.5" Margin="0,0,0,4"/>
-                    <mdxaml:MarkdownScrollViewer x:Name="DetailMarkdownViewer"
-                                                  Markdown="{Binding DetailDescription}"
-                                                  FontFamily="Microsoft YaHei UI"
-                                                  VerticalScrollBarVisibility="Disabled"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  PreviewMouseWheel="DetailMarkdownViewer_PreviewMouseWheel"
-                                                  RequestBringIntoView="DetailMarkdownViewer_RequestBringIntoView"
-                                                  Margin="0,0,0,28">
-                        <mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                            <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
-                                <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                <Setter Property="Foreground" Value="Black"/>
-                                <Style.Resources>
-                                    <Style TargetType="Paragraph">
-                                        <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                    </Style>
-                                    <Style TargetType="Run">
-                                        <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                    </Style>
-                                </Style.Resources>
-                            </Style>
-                        </mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                    </mdxaml:MarkdownScrollViewer>
-
-                    <Separator Opacity="0.3" Margin="0,0,0,20"/>
-
-                    <!-- 最后更新 -->
-                    <TextBlock Text="最后更新" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding DetailUpdatedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
-                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-
-                    <!-- 最后查看 -->
-                    <TextBlock Text="最后查看" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding DetailLastVisitedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
-                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-
-                    <!-- 累计查看次数 -->
-                    <TextBlock Text="累计查看次数" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding DetailVisitCountDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
-                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-
-                    <!-- 创建时间 -->
-                    <TextBlock Text="创建时间" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding DetailCreatedAtDisplay}" FontSize="13" Opacity="0.65" Margin="0,0,0,12"
-                             IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-
-                    <!-- ID -->
-                    <TextBlock Text="ID" FontSize="11" Opacity="0.45" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                        <TextBox Text="{Binding DetailLinkIdDisplay}" FontSize="12" FontFamily="Consolas" Opacity="0.45" TextWrapping="Wrap"
-                                 IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
-                        <Button Padding="6,2" Margin="8,0,0,0" Cursor="Hand" Background="Transparent" BorderThickness="0" ToolTip="复制ID"
-                                Click="CopyDetailId_Click">
-                            <m3:M3Icon Kind="content-copy" Width="13" Height="13" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        </Button>
-                    </StackPanel>
-                </StackPanel>
-            </ScrollViewer>
-        </Grid>
-
-        <!-- ===== 添加/编辑链接页面 ===== -->
-        <Grid Grid.Row="1" x:Name="EditLinkView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" Background="{DynamicResource Surface}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- 操作栏（返回 + 保存按钮 + 页面标题） -->
-            <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1" Padding="12,8" Background="{DynamicResource SurfaceContainer}" WindowChrome.IsHitTestVisibleInChrome="True">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Button Command="{Binding CancelEditLinkCommand}" Padding="8,6" Margin="0,0,8,0">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                    <Setter Property="IsEnabled" Value="True"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
-                                <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Command="{Binding SaveEditLinkCommand}" MinWidth="70" Padding="12,6">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource FilledButton}">
-                                    <Setter Property="IsEnabled" Value="True"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                            <StackPanel Orientation="Horizontal">
-                                <m3:CircularProgress IsIndeterminate="True" Width="14" Height="14" Margin="0,0,6,0"
-                                             Visibility="{Binding EditLinkIsLoading, Converter={StaticResource BoolToVis}}"/>
-                                <TextBlock Text="保存" FontSize="13"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <m3:M3Icon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding EditLinkPageTitle}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- 表单（可滚动） -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid MinHeight="400" Margin="48,32,48,32">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0" Margin="0,0,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Tag="URL地址" 
-                             Text="{Binding EditLinkUrl, UpdateSourceTrigger=PropertyChanged}" FontSize="16" Padding="12,10"/>
-                    <Button Grid.Column="1" Command="{Binding FetchMetadataCommand}" Margin="8,0,0,0"
-                            VerticalAlignment="Stretch" HorizontalAlignment="Right"
-                            ToolTip="自动解析标题和图标" FontSize="14" FontFamily="Microsoft YaHei UI"
-                            MinWidth="80" Content="自动解析">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                                <Setter Property="IsEnabled" Value="True"/>
-                                <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </Grid>
-
-                <!-- 图标区域 -->
-                <Border Grid.Row="1" Margin="0,16,0,8"
-                        Background="Transparent" CornerRadius="6">
-                    <StackPanel Orientation="Horizontal">
-                        <Border Width="48" Height="48" CornerRadius="8" Background="White"
-                                ClipToBounds="True" VerticalAlignment="Center">
-                            <Grid>
-                                <Image Source="{Binding EditLinkFaviconImage}" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <Image.Style>
-                                        <Style TargetType="Image">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding EditLinkFaviconImage}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Image.Style>
-                                </Image>
-                                <m3:M3Icon Kind="earth" Width="26" Height="26"
-                                                         HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55">
-                                    <m3:M3Icon.Style>
-                                        <Style TargetType="m3:M3Icon">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding EditLinkFaviconImage}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </m3:M3Icon.Style>
-                                </m3:M3Icon>
-                            </Grid>
-                        </Border>
-                        <Button Command="{Binding ClearFaviconCommand}" Margin="12,0,0,0" Padding="10,5"
-                                ToolTip="清除已解析的图标" FontSize="12" FontFamily="Microsoft YaHei UI"
-                                Style="{StaticResource OutlinedButton}"
-                                Content="✕ 清除图标" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-
-                <TextBox Grid.Row="2" Tag="标题" 
-                         Text="{Binding EditLinkTitle, UpdateSourceTrigger=PropertyChanged}" FontSize="16" Padding="12,10"/>
-
-                <Grid Grid.Row="3" Margin="0,16,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="描述" FontSize="13" Opacity="0.6" Margin="4,0,0,4"/>
-                    <TextBox Grid.Row="1" Text="{Binding EditLinkDescription, UpdateSourceTrigger=PropertyChanged}"
-                             AcceptsReturn="True" TextWrapping="Wrap" FontSize="16"
-                             MinHeight="80"
-                             Foreground="{DynamicResource OnSurface}"
-                             CaretBrush="{DynamicResource OnSurface}">
-                        <TextBox.Template>
-                            <ControlTemplate TargetType="TextBox">
-                                <Border x:Name="border" Background="Transparent"
-                                        BorderBrush="{DynamicResource OutlineVariant}"
-                                        BorderThickness="1.5" CornerRadius="4"
-                                        SnapsToDevicePixels="True">
-                                    <ScrollViewer x:Name="PART_ContentHost"
-                                                  VerticalScrollBarVisibility="Disabled"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  Focusable="False"
-                                                  Margin="14,12"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource Outline}"/>
-                                        <Setter TargetName="border" Property="Background" Value="#08000000"/>
-                                    </Trigger>
-                                    <Trigger Property="IsFocused" Value="True">
-                                        <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                        <Setter TargetName="border" Property="Background" Value="#0A000000"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </TextBox.Template>
-                    </TextBox>
-                </Grid>
-
-                <StackPanel Grid.Row="4" Margin="0,20,0,0"
-                            Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="最后更新" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding EditLinkUpdatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
-                    <TextBlock Text="最后查看" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding EditLinkLastVisitedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
-                    <TextBlock Text="累计查看次数" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding EditLinkVisitCountDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
-                    <TextBlock Text="创建时间" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding EditLinkCreatedAtDisplay}" FontSize="13" Opacity="0.6" Margin="0,0,0,12"/>
-                    <TextBlock Text="ID" FontSize="11" Opacity="0.5" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding EditLinkIdDisplay}" FontSize="11" FontFamily="Consolas" Opacity="0.4" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                        <Button Padding="4,2" Margin="6,0,0,0" Cursor="Hand" Background="Transparent" BorderThickness="0" ToolTip="复制ID"
-                                Click="CopyEditId_Click">
-                            <m3:M3Icon Kind="content-copy" Width="11" Height="11" VerticalAlignment="Center" Opacity="0.35"/>
-                        </Button>
-                    </StackPanel>
-                </StackPanel>
-
-                <TextBlock Grid.Row="8" Text="{Binding EditLinkErrorMessage}" Foreground="{DynamicResource Error}"
-                           TextWrapping="Wrap" Visibility="{Binding EditLinkHasError, Converter={StaticResource BoolToVis}}" Margin="0,16,0,0"/>
-                </Grid>
-            </ScrollViewer>
-
-            <!-- 解析中遮罩层 -->
-            <Border Visibility="{Binding IsFetchOverlayVisible, Converter={StaticResource BoolToVis}}"
-                    Background="#AA000000" Panel.ZIndex="100"
-                    Grid.RowSpan="3">
-                <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
-                        Padding="32,24" Width="280">
-                    <StackPanel>
-                        <ProgressBar IsIndeterminate="True" Height="4"
-                                     Margin="0,0,0,16"
-                                     Style="{StaticResource M3Progress}"/>
-                        <TextBlock Text="{Binding FetchStatusMessage}" FontSize="14"
-                                   HorizontalAlignment="Center"
-                                   Foreground="{DynamicResource OnSurface}"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center"/>
-                    </StackPanel>
-                </Border>
-            </Border>
-        </Grid>
-
-        <!-- ===== 新建文件夹内嵌对话框（遮罩+居中卡片） ===== -->
-        <Border Grid.RowSpan="2" Visibility="{Binding IsNewFolderDialogVisible, Converter={StaticResource BoolToVis}}"
-                Background="#60000000" Panel.ZIndex="100">
-            <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
-                    BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
-                    Padding="32,28,32,24" Width="380">
-                <StackPanel>
-                    <TextBlock Text="新建文件夹" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,20"/>
-
-                    <TextBox x:Name="NewFolderNameBox" Text="{Binding NewFolderName, UpdateSourceTrigger=PropertyChanged}"
-                             FontSize="14" Padding="12,10"
-                             Tag="文件夹名称"
-                             
-                             PreviewKeyDown="NewFolderNameBox_PreviewKeyDown"/>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                        <Button Content="取消" Padding="20,7" Margin="0,0,10,0" Cursor="Hand"
-                                Command="{Binding CancelCreateFolderCommand}"
-                                Style="{StaticResource OutlinedButton}"/>
-                        <Button Content="创建" Padding="20,7" Cursor="Hand" FontWeight="SemiBold"
-                                Command="{Binding ConfirmCreateFolderCommand}"
-                                Style="{StaticResource FilledButton}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-        </Border>
     </Grid>
 </Window>

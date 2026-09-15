@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Api;
 using LinkPocket.Models;
@@ -24,6 +25,17 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
     public ObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
 
+    /// <summary>左侧文件夹树：虚拟根节点"全部书签"（IsRoot，无 FolderId）+ 各级子文件夹。</summary>
+    public ObservableCollection<FolderNode> FolderTree { get; } = new();
+
+    /// <summary>当前目录 ID（null = 根目录），供左侧树同步选中态。</summary>
+    private string? _currentFolderId;
+    public string? CurrentFolderId
+    {
+        get => _currentFolderId;
+        private set { _currentFolderId = value; OnPropertyChanged(); }
+    }
+
     private string _statusText = "就绪";
     public string StatusText
     {
@@ -38,12 +50,233 @@ public class BrowserViewModel : INotifyPropertyChanged
         set { _isLoading = value; OnPropertyChanged(); }
     }
 
+    // —— 链接详情页（全页覆盖层，参考链接页书签详情） ——
+
+    public LinkDetailPageViewModel DetailPage { get; }
+
+    private bool _isDetailPageOpen;
+    /// <summary>链接详情页是否打开（打开时覆盖整个浏览模块内容区）。</summary>
+    public bool IsDetailPageOpen
+    {
+        get => _isDetailPageOpen;
+        private set { _isDetailPageOpen = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>打开链接详情页（行命令 / 右键菜单 / 右侧栏操作卡共用）。</summary>
+    public async Task OpenDetailPageAsync(BrowserRowViewModel? row)
+    {
+        if (row == null || row.IsFolder) return;
+        SelectRow(row);
+        IsDetailPageOpen = true;
+        await DetailPage.LoadAsync(row.Id);
+    }
+
+    /// <summary>关闭链接详情页（由 DetailPage VM 回调）。</summary>
+    public void CloseDetailPage() => IsDetailPageOpen = false;
+
+    /// <summary>
+    /// 按链接 ID 直接打开详情页（无需该链接出现在当前目录的行里）。
+    /// 供搜索页「跳转」使用——老「链接」页删除后，跳转目标改为本页详情页。
+    /// </summary>
+    public async Task OpenDetailPageByIdAsync(string linkId)
+    {
+        if (string.IsNullOrEmpty(linkId)) return;
+        IsDetailPageOpen = true;
+        await DetailPage.LoadAsync(linkId);
+    }
+
+    // —— 链接编辑器（新建/编辑共用，整页覆盖层，与详情页同层级设计） ——
+
+    private LinkEditorViewModel? _editorPage;
+    /// <summary>当前编辑器页实例（每次打开重建，区分新建/编辑）。</summary>
+    public LinkEditorViewModel? EditorPage
+    {
+        get => _editorPage;
+        private set { _editorPage = value; OnPropertyChanged(); }
+    }
+
+    private bool _isEditorPageOpen;
+    /// <summary>编辑器页是否打开（打开时覆盖整个浏览模块内容区，位于详情页之上）。</summary>
+    public bool IsEditorPageOpen
+    {
+        get => _isEditorPageOpen;
+        private set { _isEditorPageOpen = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>新建链接：在当前目录创建（不再选择所属目录），打开整页编辑器。</summary>
+    public void OpenEditorForCreate()
+    {
+        EditorPage = new LinkEditorViewModel(this, IsAtRoot() ? null : CurrentFolderId);
+        IsEditorPageOpen = true;
+    }
+
+    /// <summary>编辑链接：整页编辑器预填数据（不改变所属目录）。</summary>
+    public void OpenEditorForEdit(string linkId)
+    {
+        EditorPage = LinkEditorViewModel.ForEdit(this, linkId);
+        IsEditorPageOpen = true;
+    }
+
+    /// <summary>关闭编辑器页（由编辑器 VM 回调）。</summary>
+    public void CloseEditorPage() => IsEditorPageOpen = false;
+
     public ICommand GoBackCommand { get; }
     public ICommand GoForwardCommand { get; }
     public ICommand GoUpCommand { get; }
     public ICommand RowClickCommand { get; }
     public ICommand RowOpenCommand { get; }
     public ICommand CrumbClickCommand { get; }
+    public ICommand SortCommand { get; }
+    public ICommand CopyUrlCommand { get; }
+    public ICommand RenameRowCommand { get; }
+    public ICommand DeleteRowCommand { get; }
+    public ICommand NewFolderCommand { get; }
+    public ICommand NewLinkCommand { get; }
+    public ICommand OpenDetailCommand { get; }
+    public ICommand RenameNodeCommand { get; }
+    public ICommand DeleteNodeCommand { get; }
+    public ICommand CutCommand { get; }
+    public ICommand CopyCommand { get; }
+    public ICommand PasteCommand { get; }
+    public ICommand SelectAllCommand { get; }
+    public ICommand ClearSelectionCommand { get; }
+    public ICommand DeleteSelectionCommand { get; }
+    public ICommand RenameSelectionCommand { get; }
+    public ICommand OpenSelectionCommand { get; }
+    public ICommand TogglePathEditCommand { get; }
+    public ICommand ConfirmPathCommand { get; }
+    public ICommand CancelPathEditCommand { get; }
+    public ICommand CompletePathCommand { get; }
+
+    /// <summary>文本输入委托：由视图层注入（InputDialog.Show），避免 VM 直接依赖控件。参数 (标题, 默认值)，返回输入或 null 取消。</summary>
+    public static Func<string, string, string?>? Prompt { get; set; }
+
+    // —— 多选（Windows 资源管理器语义：锚点 + Ctrl/Shift 修饰键）——
+
+    /// <summary>Shift 区间选择的起点行 ID。</summary>
+    private string? _anchorId;
+
+    public IEnumerable<BrowserRowViewModel> SelectedRows => Rows.Where(r => r.IsSelected);
+    public int SelectionCount => Rows.Count(r => r.IsSelected);
+    public bool HasSelection => SelectionCount > 0;
+    public bool HasMultipleSelection => SelectionCount > 1;
+    public string SelectionInfoText => HasSelection ? $"已选中 {SelectionCount} 项" : string.Empty;
+
+    /// <summary>
+    /// 右键命中的行（由视图在 ContextMenuOpening 时告知）。
+    /// 删除文案必须按"这一次点下去会删掉什么"来算，所以需要知道命中的是哪一行。
+    /// </summary>
+    private BrowserRowViewModel? _contextRow;
+
+    /// <summary>告知 VM 当前右键命中的行；null = 非行内菜单（空白区），文案退回选中集合项数。</summary>
+    public void SetContextRow(BrowserRowViewModel? row)
+    {
+        if (ReferenceEquals(_contextRow, row)) return;
+        _contextRow = row;
+        OnPropertyChanged(nameof(DeleteMenuHeader));
+    }
+
+    /// <summary>
+    /// 「删除」菜单文案，口径与 <see cref="DeleteRowAsync"/> 的删除目标严格一致，且只在"数字有意义"时才报数：
+    /// 单个链接 / 空文件夹 → 只显示「删除」；单个文件夹 → 显示其内链接数（删除文件夹 = 其中链接进回收站）；
+    /// 右键多选中的行 → 显示选中项数。
+    /// </summary>
+    public string DeleteMenuHeader
+    {
+        get
+        {
+            var row = _contextRow;
+            if (row != null && !(row.IsSelected && SelectionCount > 1))
+                return row.IsFolder && row.LinkCount > 0 ? $"删除 ({row.LinkCount} 项)" : "删除";
+            return HasSelection ? $"删除 ({SelectionCount} 项)" : "删除";
+        }
+    }
+
+    /// <summary>右侧详情栏状态（P4.5 现代化重设计）：选中态变化时同步刷新。</summary>
+    public BrowserDetailsViewModel Details { get; } = new();
+
+    /// <summary>选中态变化时由行 VM 回调（行是 INPC 通知源，VM 借此刷新派生属性与命令状态）。</summary>
+    internal void NotifySelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectionCount));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(HasMultipleSelection));
+        OnPropertyChanged(nameof(SelectionInfoText));
+        OnPropertyChanged(nameof(DeleteMenuHeader));
+        Details.UpdateFrom(SelectedRows.ToList(), this);
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    /// <summary>
+    /// 文件夹完整路径展示（详情栏用）："全部书签 / A / B"；根返回"全部书签"。
+    /// includeSelf=false 时用于「选中文件夹本身」的场景：位置只显示其祖先链，不包含自己。
+    /// </summary>
+    public string GetFolderPathDisplay(string? folderId, bool includeSelf = true)
+    {
+        if (FolderIds.IsRoot(folderId)) return FolderIds.RootDisplayName;
+        var chain = BuildBreadcrumbIds(folderId).ToList();
+        if (!includeSelf && chain.Count > 0) chain.RemoveAt(chain.Count - 1);
+        if (chain.Count == 0) return "全部书签";
+        return "全部书签 / " + string.Join(" / ", chain.Select(c => c.Name));
+    }
+
+    // —— 剪贴板（Ctrl+X / C / V，载荷见 ClipboardManager.BrowserClipboardPayload）——
+
+    public Managers.ClipboardManager Clipboard { get; } = new();
+
+    // —— 面包屑内联路径编辑（Explorer 地址栏两态）——
+
+    private bool _isPathEditing;
+    public bool IsPathEditing
+    {
+        get => _isPathEditing;
+        set
+        {
+            if (_isPathEditing == value) return;
+            _isPathEditing = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PathEditIconKind));
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    public string PathEditIconKind => IsPathEditing ? "close-circle-outline" : "pencil";
+
+    private string _pathEditText = string.Empty;
+    public string PathEditText
+    {
+        get => _pathEditText;
+        set
+        {
+            if (_pathEditText == value) return;
+            _pathEditText = value;
+            OnPropertyChanged();
+            IsPathInvalid = false;
+            UpdatePathCandidates();
+        }
+    }
+
+    private bool _isPathInvalid;
+    public bool IsPathInvalid
+    {
+        get => _isPathInvalid;
+        set { if (_isPathInvalid != value) { _isPathInvalid = value; OnPropertyChanged(); } }
+    }
+
+    private List<string> _pathCandidates = new();
+    public List<string> PathCandidates
+    {
+        get => _pathCandidates;
+        private set { _pathCandidates = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasPathCandidates)); }
+    }
+    public bool HasPathCandidates => IsPathEditing && _pathCandidates.Count > 0;
+
+    private int _selectedCandidateIndex = -1;
+    public int SelectedCandidateIndex
+    {
+        get => _selectedCandidateIndex;
+        set { _selectedCandidateIndex = value; OnPropertyChanged(); }
+    }
 
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
     private Dictionary<string, (string? ParentId, string Name)> _folderMap = new();
@@ -56,35 +289,149 @@ public class BrowserViewModel : INotifyPropertyChanged
         RowClickCommand = new RelayCommand<BrowserRowViewModel?>(SelectRow);
         RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row));
         CrumbClickCommand = new RelayCommand<BrowserCrumbViewModel?>(crumb => _ = LoadAsync(crumb?.FolderId));
+        SortCommand = new RelayCommand<string?>(ToggleSort);
+        CopyUrlCommand = new RelayCommand<BrowserRowViewModel?>(CopyUrl);
+        RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = RenameRowAsync(row));
+        DeleteRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = DeleteRowAsync(row));
+        NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string));
+        NewLinkCommand = new RelayCommand(OpenEditorForCreate);
+        OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
+        DetailPage = new LinkDetailPageViewModel(this);
+        RenameNodeCommand = new RelayCommand<FolderNode?>(node => _ = RenameNodeAsync(node));
+        DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
+        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing);
+        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing);
+        PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing);
+        SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing);
+        ClearSelectionCommand = new RelayCommand(ClearSelection);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing);
+        RenameSelectionCommand = new RelayCommand(() => _ = RenameSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
+        OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
+        TogglePathEditCommand = new RelayCommand(TogglePathEdit);
+        ConfirmPathCommand = new RelayCommand(ConfirmPath);
+        CancelPathEditCommand = new RelayCommand(CancelPathEdit);
+        CompletePathCommand = new RelayCommand(CompletePath);
+
+        // 剪贴板载荷变化（含被其他页面/操作清空）→ 刷新粘贴命令可用性
+        Clipboard.ClipboardChanged += (_, _) => CommandManager.InvalidateRequerySuggested();
     }
 
-    /// <summary>进入指定目录（null/"0" = 根）。首次显示页面时调用 LoadAsync(null)。</summary>
+    // —— 排序（列头点击切换，参考 Windows 资源管理器）——
+
+    private const string DefaultSortBy = "title";
+    private const string DefaultSortOrder = "asc";
+
+    public string SortBy { get; private set; } = DefaultSortBy;
+    public string SortOrder { get; private set; } = DefaultSortOrder;
+
+    // —— 列头排序指示器：每列一个（名称 / 最后更新 / 最后查看 / 查看次数 / 创建时间）——
+    private string Indicator(string key) => SortBy == key ? (SortOrder == "asc" ? "▲" : "▼") : "";
+    public string SortIndicatorName => Indicator("title");
+    public string SortIndicatorUpdated => Indicator("updated_at");
+    public string SortIndicatorLastViewed => Indicator("last_visited_at");
+    public string SortIndicatorViewCount => Indicator("visit_count");
+    public string SortIndicatorCreated => Indicator("created_at");
+
+    private static readonly string[] SortIndicatorProps =
+    {
+        nameof(SortIndicatorName), nameof(SortIndicatorUpdated), nameof(SortIndicatorLastViewed),
+        nameof(SortIndicatorViewCount), nameof(SortIndicatorCreated)
+    };
+
+    private void ToggleSort(string? column)
+    {
+        if (string.IsNullOrEmpty(column)) return;
+        if (SortBy == column) SortOrder = SortOrder == "asc" ? "desc" : "asc";
+        else { SortBy = column; SortOrder = "asc"; }
+        foreach (var p in SortIndicatorProps) OnPropertyChanged(p);
+        _ = RefreshPreservingSelectionAsync(); // 重排不该丢掉选中（Windows 点列头也不丢）
+    }
+
+    // —— 列表列宽：列头与每一行共用同一份像素宽度，列头边界可拖拽调整（Windows 语义）——
+    public const int ColumnName = 0, ColumnUpdated = 1, ColumnLastViewed = 2, ColumnViewCount = 3, ColumnCreated = 4;
+
+    public ObservableCollection<GridLength> ColumnWidths { get; } = new()
+    {
+        new GridLength(220, GridUnitType.Pixel), // 名称
+        new GridLength(140, GridUnitType.Pixel), // 最后更新
+        new GridLength(140, GridUnitType.Pixel), // 最后查看
+        new GridLength(80, GridUnitType.Pixel),  // 查看次数
+        new GridLength(140, GridUnitType.Pixel), // 创建时间
+    };
+
+    /// <summary>拖拽时的单列下限。</summary>
+    private const double MinColumnWidth = 60;
+
+    /// <summary>「名称」列初始下限：视口过窄时保底宽度，超出部分靠横向滚动查看。</summary>
+    private const double MinNameColumnWidth = 140;
+
+    /// <summary>
+    /// 按当前可视宽度给「名称」列定值（其余列为固定初值）：名称列吸收剩余宽度，
+    /// 因此首次布局与窗口缩放都不会出现横向溢出。用户在列头拖拽过之后由视图层停止调用本方法，
+    /// 列宽从此完全由用户决定（Windows 语义）。
+    /// </summary>
+    public void InitColumnWidths(double viewportWidth)
+    {
+        const double horizontalPadding = 32; // 列头/行左右各 16
+        var others = 140 + 140 + 80 + 140;
+        var name = viewportWidth - horizontalPadding - others;
+        if (name < MinNameColumnWidth) name = MinNameColumnWidth;
+        ColumnWidths[ColumnName] = new GridLength(name, GridUnitType.Pixel);
+    }
+
+    /// <summary>拖拽列头边界：调整第 index 列宽度（像素），不改变其他列宽度（Windows 语义）。</summary>
+    public void ResizeColumn(int index, double delta)
+    {
+        if (index < 0 || index >= ColumnWidths.Count) return;
+        var w = ColumnWidths[index].Value + delta;
+        if (w < MinColumnWidth) w = MinColumnWidth;
+        ColumnWidths[index] = new GridLength(w, GridUnitType.Pixel);
+    }
+
+    /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。</summary>
     public async Task LoadAsync(string? folderId)
     {
         Controller.NavigateTo(folderId);
+        CurrentFolderId = Controller.CurrentFolderId;
         await RefreshAsync();
     }
 
-    /// <summary>重新加载当前目录（供事件推送订阅调用）。</summary>
-    public async Task RefreshAsync()
+    /// <summary>
+    /// 重新加载当前目录（供事件推送订阅调用）。
+    /// preserveSelectionId：原地刷新场景（如从链接详情页返回）传入原选中项 id，
+    /// 刷新后恢复该选中，避免"刷新即清空右侧栏"。
+    /// </summary>
+    public async Task RefreshAsync(string? preserveSelectionId = null)
     {
         if (IsLoading) return;
         IsLoading = true;
         try
         {
-            var contents = await Api.GetFolderContentsAsync(Controller.CurrentFolderId);
+            var contents = await Api.GetFolderContentsAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
-            // 文件夹映射：面包屑 + 返回上级需要父链
+            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
             var tree = await Api.GetFolderTreeAsync();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
+            await RebuildFolderTreeAsync(tree);
+            // 树已重建：重发当前目录通知，让视图重新定位树的选中项
+            OnPropertyChanged(nameof(CurrentFolderId));
 
             Rows.Clear();
+            SetContextRow(null); // 行对象已重建：右键命中行引用作废（删除文案随之复位）
+
+            // Windows 逻辑：升序时文件夹在前，降序时文件夹在后（任何排序维度都如此）
+            var folderRows = new List<BrowserRowViewModel>();
             foreach (var folder in contents.SubFolders)
             {
-                Rows.Add(new BrowserRowViewModel(folder.FolderId, isFolder: true, folder.Name)
+                folderRows.Add(new BrowserRowViewModel(folder.FolderId, isFolder: true, folder.Name)
                 {
                     LinkCount = folder.LinkCount,
-                    ModifiedAt = DateTime.UtcNow
+                    ModifiedAt = folder.UpdatedAt, // 内核维护：文件夹内容（含子孙）最后变动时间
+                    CreatedAt = folder.CreatedAt,  // 内核维护：文件夹创建时间
+                    LastViewedAt = folder.LastVisitedAt, // 内核维护：子孙链接被查看时沿父链刷新
+                    ViewCount = folder.VisitCount,       // 内核维护：子孙链接被查看时沿父链 +1
+                    Host = this,
+                    IsCut = IsCutInClipboard(folder.FolderId, true)
                 });
             }
 
@@ -94,9 +441,13 @@ public class BrowserViewModel : INotifyPropertyChanged
                 linkRows.Add(new BrowserRowViewModel(link.LinkId, isFolder: false, link.Title)
                 {
                     Url = link.Url,
-                    IsImportant = link.IsImportant,
-                    ModifiedAt = link.UpdatedAt,
-                    Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl)
+                    ModifiedAt = link.UpdatedAt,        // 内核维护：内容变动时间（查看不影响）
+                    CreatedAt = link.CreatedAt,          // 内核维护：链接创建时间
+                    LastViewedAt = link.LastVisitedAt,   // 内核维护：链接最后查看时间
+                    ViewCount = link.VisitCount,         // 内核维护：链接查看次数
+                    Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl),
+                    Host = this,
+                    IsCut = IsCutInClipboard(link.LinkId, false)
                 });
             }
 
@@ -118,12 +469,35 @@ public class BrowserViewModel : INotifyPropertyChanged
                 }
             }
 
-            foreach (var row in linkRows) Rows.Add(row);
+            // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）
+            if (SortOrder == "desc")
+            {
+                foreach (var row in linkRows) Rows.Add(row);
+                foreach (var row in folderRows) Rows.Add(row);
+            }
+            else
+            {
+                foreach (var row in folderRows) Rows.Add(row);
+                foreach (var row in linkRows) Rows.Add(row);
+            }
+
+            // 目录切换后旧选中与锚点失效；原地刷新（preserveSelectionId）时恢复原选中
+            _anchorId = null;
+            if (!string.IsNullOrEmpty(preserveSelectionId))
+            {
+                var keep = Rows.FirstOrDefault(r => r.Id == preserveSelectionId);
+                if (keep != null)
+                {
+                    keep.IsSelected = true;
+                    _anchorId = keep.Id;
+                }
+            }
+            NotifySelectionChanged();
 
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
             Breadcrumbs.Clear();
-            Breadcrumbs.Add(new BrowserCrumbViewModel(null, "全部书签"));
             var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
+            Breadcrumbs.Add(new BrowserCrumbViewModel(null, "全部书签") { IsLast = chain.Count == 0 });
             for (int i = 0; i < chain.Count; i++)
             {
                 Breadcrumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)
@@ -133,7 +507,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
 
             StatusText = $"共 {contents.SubFolders.Count + contents.Links.Count} 项" +
-                         $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个书签）";
+                         $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个链接）";
         }
         catch (Exception)
         {
@@ -153,12 +527,47 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (row == null) return;
         foreach (var r in Rows)
             r.IsSelected = ReferenceEquals(r, row);
+        _anchorId = row.Id;
+    }
+
+    /// <summary>带修饰键的选择路由（由视图在鼠标抬起时调用，读 Keyboard.Modifiers）。</summary>
+    public void SelectRowWithModifiers(BrowserRowViewModel? row, ModifierKeys mods)
+    {
+        if (row == null) return;
+
+        if (mods.HasFlag(ModifierKeys.Control))
+        {
+            row.IsSelected = !row.IsSelected;
+            _anchorId ??= row.Id;
+        }
+        else if (mods.HasFlag(ModifierKeys.Shift))
+        {
+            var anchor = Rows.FirstOrDefault(r => r.Id == _anchorId) ?? row;
+            var i1 = Rows.IndexOf(anchor);
+            var i2 = Rows.IndexOf(row);
+            if (i1 > i2) (i1, i2) = (i2, i1);
+            for (var i = 0; i < Rows.Count; i++)
+                Rows[i].IsSelected = i >= i1 && i <= i2;
+        }
+        else
+        {
+            foreach (var r in Rows)
+                r.IsSelected = ReferenceEquals(r, row);
+            _anchorId = row.Id;
+        }
+    }
+
+    public void SelectAllRows()
+    {
+        foreach (var r in Rows) r.IsSelected = true;
+        _anchorId ??= Rows.FirstOrDefault()?.Id;
     }
 
     public void ClearSelection()
     {
         foreach (var r in Rows)
             r.IsSelected = false;
+        _anchorId = null;
     }
 
     private async Task OpenRowAsync(BrowserRowViewModel? row)
@@ -172,27 +581,506 @@ public class BrowserViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 双击书签：默认浏览器打开 + 记录访问
-        if (!string.IsNullOrEmpty(row.Url))
-        {
-            try
+        // 双击链接：打开链接详情页（不再直接打开网站；打开网站改由详情页顶栏按钮承担）
+        await OpenDetailPageAsync(row);
+    }
+
+    /// <summary>当前目录的父目录 ID；已在根目录时返回 null（根没有父级）。</summary>
+    private string? GetParentId(string? folderId)
+    {
+        if (IsAtRoot() || folderId == null) return null;
+        return _folderMap.TryGetValue(folderId, out var info) ? info.ParentId : null;
+    }
+
+    private bool IsAtRoot() => Controller.CurrentFolderId == null;
+
+    /// <summary>由 GetFolderTreeAsync 的扁平结果重建左侧树（ParentId == null 即根级）。保留既有展开状态。</summary>
+    private async Task RebuildFolderTreeAsync(List<FolderDto> tree)
+    {
+        var expandedIds = new HashSet<string?>();
+        CollectExpandedIds(FolderTree, expandedIds);
+
+        FolderTree.Clear();
+
+        var root = new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "folder-open-outline", IsExpanded = true, Host = this };
+        var nodes = tree.ToDictionary(
+            f => f.FolderId,
+            f => new FolderNode
             {
-                Process.Start(new ProcessStartInfo(row.Url) { UseShellExecute = true });
+                FolderId = f.FolderId,
+                ParentId = f.ParentId,
+                Name = f.Name,
+                LinkCount = f.LinkCount,
+                Host = this,
+                IsExpanded = expandedIds.Contains(f.FolderId)
+            });
+
+        foreach (var node in nodes.Values)
+        {
+            if (node.ParentId != null && nodes.TryGetValue(node.ParentId, out var parent))
+            {
+                parent.Children.Add(node);
             }
-            catch { /* 无法打开时保持静默 */ }
-            _ = Task.Run(async () => { try { await Api.RecordVisitAsync(row.Id); } catch { } });
+            else
+            {
+                root.Children.Add(node);
+            }
+        }
+
+        // 根节点计数 = 顶层文件夹递归计数之和 + 根级直挂链接数（内核递归计数）
+        var rootLevel = (await Api.GetCountsAsync()).RootLevel;
+        root.LinkCount = tree.Where(f => f.ParentId == null)
+            .Sum(f => f.LinkCount) + rootLevel;
+
+        FolderTree.Add(root);
+    }
+
+    private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.IsExpanded && node.FolderId != null) ids.Add(node.FolderId);
+            CollectExpandedIds(node.Children, ids);
         }
     }
 
-    private string GetParentId(string? folderId)
+    // —— 右键菜单 / 拖拽移动（参考 Files、Alist 的文件管理范式）——
+
+    /// <summary>目标文件夹是否为 folderId 自身或其后代（用于阻止把文件夹移进自己）。</summary>
+    public bool IsSelfOrDescendant(string folderId, string? targetId)
     {
-        if (IsAtRoot()) return "0";
-        var id = folderId!;
-        return _folderMap.TryGetValue(id, out var info) ? info.ParentId ?? "0" : "0";
+        var current = targetId;
+        while (current != null)
+        {
+            if (current == folderId) return true;
+            current = _folderMap.TryGetValue(current, out var info) ? info.ParentId : null;
+        }
+        return false;
     }
 
-    private bool IsAtRoot()
-        => string.IsNullOrEmpty(Controller.CurrentFolderId) || Controller.CurrentFolderId == "0";
+    /// <summary>批量拖拽 / 移动入口。targetFolderId 为 null 表示根。非法项（目标在自身子树内、已在目标目录）逐项跳过。</summary>
+    public async Task MoveItemsAsync(IEnumerable<(string Id, bool IsFolder)> items, string? targetFolderId)
+    {
+        var target = FolderIds.Normalize(targetFolderId);
+        var moved = 0;
+        var renamedNotes = new List<string>();
+        IsLoading = true;
+        try
+        {
+            foreach (var (id, isFolder) in items)
+            {
+                if (isFolder)
+                {
+                    if (id == target || IsSelfOrDescendant(id, target)) continue;
+                    if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
+                        continue; // 已在目标目录
+                    var unique = await MoveFolderWithConflictRenameAsync(id, target, renamedNotes);
+                    if (unique) moved++;
+                }
+                else
+                {
+                    if (await MoveLinkAsync(id, target)) moved++;
+                }
+            }
+            StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
+            await RefreshPreservingSelectionAsync();
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusText = "移动失败";
+            MessageBox.Show($"移动失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。</summary>
+    private async Task<bool> MoveFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
+    {
+        var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
+        var unique = GenerateUniqueName(name, SiblingFolderNames(target));
+        await Api.MoveFolderAsync(folderId, target);
+        if (unique != name)
+        {
+            await Api.UpdateFolderAsync(folderId, name: unique);
+            renamedNotes.Add($"「{name}」→「{unique}」");
+        }
+        return true;
+    }
+
+    private async Task<bool> MoveLinkAsync(string linkId, string? target)
+    {
+        // 同目录粘贴/拖放 = 无操作
+        try
+        {
+            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            if (link == null) return false; // 源已被删除，跳过
+            if (NormalizeParentId(link.ListId) == target) return false;
+            await Api.UpdateLinkAsync(linkId, listId: target);
+            return true;
+        }
+        catch
+        {
+            return false; // 单项失败不中断整批
+        }
+    }
+
+    /// <summary>把父目录 ID 归一化成可比较的值（null = 根）。</summary>
+    private static string? NormalizeParentId(string? parentId) => FolderIds.Normalize(parentId);
+
+    /// <summary>目标目录下已存在的文件夹名集合。</summary>
+    private HashSet<string> SiblingFolderNames(string? targetId)
+    {
+        var target = NormalizeParentId(targetId);
+        return _folderMap
+            .Where(kvp => NormalizeParentId(kvp.Value.ParentId) == target)
+            .Select(kvp => kvp.Value.Name)
+            .ToHashSet(StringComparer.CurrentCulture);
+    }
+
+    /// <summary>Windows 风格重名编号："abc" → "abc (2)" → "abc (3)"…；输入名本身已带 "(N)" 时剥掉再编号。</summary>
+    private static string GenerateUniqueName(string original, HashSet<string> taken)
+    {
+        if (!taken.Contains(original)) return original;
+        var baseName = System.Text.RegularExpressions.Regex.Replace(original, @"\s*\(\d+\)$", string.Empty);
+        if (string.IsNullOrWhiteSpace(baseName)) baseName = "未命名";
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = $"{baseName} ({i})";
+            if (!taken.Contains(candidate)) return candidate;
+        }
+        return $"{baseName} ({DateTime.Now:HHmmss})";
+    }
+
+    private static string FormatRenamedNotes(List<string> notes)
+        => notes.Count > 0 ? $"（重命名：{string.Join("、", notes)}）" : string.Empty;
+
+    // —— 剪切 / 复制 / 粘贴（Ctrl+X / C / V）——
+
+    private Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<BrowserRowViewModel> source, bool isCut) => new()
+    {
+        FolderIds = source.Where(r => r.IsFolder).Select(r => r.Id).ToList(),
+        LinkIds = source.Where(r => !r.IsFolder).Select(r => r.Id).ToList(),
+        SourceFolderId = Controller.CurrentFolderId,
+        IsCut = isCut
+    };
+
+    private void CutSelection()
+    {
+        var sel = SelectedRows.ToList();
+        if (sel.Count == 0) return;
+        Clipboard.SetBrowserPayload(BuildPayload(sel, isCut: true));
+        foreach (var r in Rows) r.IsCut = false;
+        foreach (var r in sel) r.IsCut = true;
+        StatusText = $"已剪切 {sel.Count} 项（Ctrl+V 粘贴到目标文件夹）";
+    }
+
+    private void CopySelection()
+    {
+        var sel = SelectedRows.ToList();
+        if (sel.Count == 0) return;
+        Clipboard.SetBrowserPayload(BuildPayload(sel, isCut: false));
+        foreach (var r in Rows) r.IsCut = false; // 复制覆盖剪切，清除半透明视觉
+        StatusText = $"已复制 {sel.Count} 项";
+    }
+
+    private async Task PasteAsync()
+    {
+        var payload = Clipboard.BrowserPayload;
+        if (payload == null || payload.IsEmpty) return;
+
+        var target = Controller.CurrentFolderId;
+        if (payload.IsCut && payload.SourceFolderId == target)
+        {
+            StatusText = "项目已在当前文件夹中";
+            return;
+        }
+
+        IsLoading = true;
+        var renamedNotes = new List<string>();
+        var pasted = 0;
+        try
+        {
+            foreach (var fid in payload.FolderIds)
+            {
+                if (fid == target || IsSelfOrDescendant(fid, target)) continue;
+                if (payload.IsCut)
+                {
+                    if (NormalizeParentId(_folderMap.TryGetValue(fid, out var info) ? info.ParentId : null) == target) continue;
+                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes)) pasted++;
+                }
+                else if (await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes)) pasted++;
+            }
+
+            foreach (var lid in payload.LinkIds)
+            {
+                if (payload.IsCut)
+                {
+                    if (await MoveLinkAsync(lid, target)) pasted++;
+                }
+                else if (await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes)) pasted++;
+            }
+
+            if (payload.IsCut)
+            {
+                Clipboard.SetBrowserPayload(null); // 剪切语义：粘贴后清空
+                foreach (var r in Rows) r.IsCut = false;
+            }
+            StatusText = pasted > 0 ? $"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}" : "没有可粘贴的项目";
+            await RefreshPreservingSelectionAsync();
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusText = "粘贴失败";
+            MessageBox.Show($"粘贴失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    /// <summary>深拷贝文件夹；同名自动编号。返回是否执行。</summary>
+    private async Task<bool> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
+    {
+        try
+        {
+            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
+            var unique = GenerateUniqueName(name, SiblingFolderNames(target));
+            var newId = await Api.CopyFolderAsync(folderId, target);
+            if (unique != name) await Api.UpdateFolderAsync(newId, name: unique);
+            renamedNotes.Add($"「{name}」→「{unique}」");
+            return true;
+        }
+        catch
+        {
+            return false; // 源已被删除等情况：单项跳过
+        }
+    }
+
+    /// <summary>复制书签（全量字段）；同名自动编号。返回是否执行。</summary>
+    private async Task<bool> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes)
+    {
+        try
+        {
+            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            if (link == null) return false;
+
+            var targetNorm = FolderIds.Normalize(target);
+            var siblingTitles = (await Api.GetAllLinksAsync())
+                .Where(l => l.ListId == targetNorm)
+                .Select(l => l.Title)
+                .ToHashSet(StringComparer.CurrentCulture);
+            var unique = GenerateUniqueName(link.Title, siblingTitles);
+
+            await Api.CreateLinkAsync(link.Url,
+                title: unique,
+                description: string.IsNullOrEmpty(link.Description) ? null : link.Description,
+                listId: targetNorm,
+                isImportant: link.IsImportant,
+                autoFetchMetadata: false,
+                faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl);
+            if (unique != link.Title) renamedNotes.Add($"「{link.Title}」→「{unique}」");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>刷新重建行后，按剪贴板载荷恢复剪切半透明视觉（仅剪切语义）。</summary>
+    private bool IsCutInClipboard(string id, bool isFolder)
+    {
+        var p = Clipboard.BrowserPayload;
+        return p is { IsCut: true } && (isFolder ? p.FolderIds.Contains(id) : p.LinkIds.Contains(id));
+    }
+
+    /// <summary>
+    /// 新建文件夹（Windows 语义）：
+    /// 参数为空 → 在当前目录新建；参数为目标文件夹 ID（行右键）→ 在该文件夹内新建。
+    /// </summary>
+    private async Task NewFolderAsync(string? parentId)
+    {
+        // 参数为空 → 当前目录；参数为真实文件夹 ID → 在该文件夹内新建
+        var target = FolderIds.IsRoot(parentId) ? Controller.CurrentFolderId : parentId;
+        var name = Prompt?.Invoke("新建文件夹", "新建文件夹");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
+        {
+            await Api.CreateFolderAsync(name, target);
+            StatusText = $"已创建文件夹「{name}」";
+            await RefreshPreservingSelectionAsync();
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"新建文件夹失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// 就地刷新并保留当前选中。用于两类收尾：
+    /// ① 非导航类操作（重命名 / 新建 / 移动 / 粘贴 / 排序 / 从树里删节点）——它们不改变所在目录；
+    /// ② 后端数据变更事件驱动的刷新（<c>MainViewModel.OnTransportEventReceived</c>）——写操作自己
+    ///    刚恢复的选中会被这条 300ms 防抖后的第二次刷新抹掉，所以它也必须保留选中。
+    /// 只有"切换目录"才用裸 <see cref="RefreshAsync(string?)"/>（那种场景本来就该清空选中与锚点）。
+    /// 若被保留的条目已不存在（例如刚被删掉），则刷新后自然为空选中。
+    /// </summary>
+    public Task RefreshPreservingSelectionAsync()
+        => RefreshAsync(SelectedRows.FirstOrDefault()?.Id);
+
+    private async Task RenameNodeAsync(FolderNode? node)
+    {
+        if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
+        var name = Prompt?.Invoke("重命名文件夹", node.Name);
+        if (string.IsNullOrWhiteSpace(name) || name == node.Name) return;
+        try
+        {
+            await Api.UpdateFolderAsync(node.FolderId, name: name);
+            await RefreshPreservingSelectionAsync();
+            StatusText = $"已重命名为「{name}」";
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"重命名失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task DeleteNodeAsync(FolderNode? node)
+    {
+        if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
+        if (MessageBox.Show($"删除文件夹「{node.Name}」？\n其中的链接将移入回收站，子文件夹一并删除。",
+                "删除文件夹", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        try
+        {
+            await Api.DeleteFolderAsync(node.FolderId, "trash_links");
+            StatusText = $"已删除文件夹「{node.Name}」";
+            await RefreshPreservingSelectionAsync();
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void CopyUrl(BrowserRowViewModel? row)
+    {
+        if (row == null || row.IsFolder || string.IsNullOrEmpty(row.Url)) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(row.Url);
+            StatusText = "已复制链接";
+        }
+        catch { /* 剪贴板被占用时静默 */ }
+    }
+
+    private async Task DeleteSelectedAsync()
+    {
+        var sel = SelectedRows.ToList();
+        if (sel.Count == 0) return;
+        if (!await ConfirmDeleteAsync(sel)) return;
+        await DeleteItemsAsync(sel);
+    }
+
+    /// <summary>删除确认文案（混合选择时列明文件夹与书签数量）。</summary>
+    private static Task<bool> ConfirmDeleteAsync(IReadOnlyList<BrowserRowViewModel> items)
+    {
+        var folders = items.Count(r => r.IsFolder);
+        var links = items.Count - folders;
+        string msg;
+        if (folders > 0 && links > 0)
+            msg = $"删除选中的 {folders} 个文件夹和 {links} 个链接？\n文件夹内的链接将移入回收站。";
+        else if (folders > 0)
+            msg = folders == 1
+                ? $"删除文件夹「{items[0].Name}」？\n其中的链接将移入回收站，子文件夹一并删除。"
+                : $"删除选中的 {folders} 个文件夹？\n其中的链接将移入回收站，子文件夹一并删除。";
+        else
+            msg = links == 1
+                ? $"把链接「{items[0].Name}」移入回收站？"
+                : $"把选中的 {links} 个链接移入回收站？";
+
+        var result = MessageBox.Show(msg, "删除", MessageBoxButton.YesNo,
+            folders > 0 ? MessageBoxImage.Warning : MessageBoxImage.Question);
+        return Task.FromResult(result == MessageBoxResult.Yes);
+    }
+
+    private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
+    {
+        try
+        {
+            foreach (var item in items)
+            {
+                if (item.IsFolder) await Api.DeleteFolderAsync(item.Id, "trash_links");
+                else await Api.TrashLinkAsync(item.Id);
+            }
+            StatusText = $"已删除 {items.Count} 项";
+            ClearSelection();
+            await RefreshAsync();
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task RenameSelectedAsync()
+    {
+        var row = SelectedRows.FirstOrDefault();
+        if (row != null) await RenameRowAsync(row);
+    }
+
+    private async Task OpenSelectedAsync()
+    {
+        var row = SelectedRows.FirstOrDefault();
+        if (row != null) await OpenRowAsync(row);
+    }
+
+    private async Task RenameRowAsync(BrowserRowViewModel? row)
+    {
+        if (row == null) return;
+
+        // 链接没有"重命名"语义（名称/URL/描述/图标都属于可编辑内容）→ 打开整页编辑器
+        if (!row.IsFolder)
+        {
+            OpenEditorForEdit(row.Id);
+            return;
+        }
+
+        var name = Prompt?.Invoke("重命名文件夹", row.Name);
+        if (string.IsNullOrWhiteSpace(name) || name == row.Name) return;
+        try
+        {
+            await Api.UpdateFolderAsync(row.Id, name: name);
+            // 原地刷新并保留该行选中：重命名不该把选中态（以及右侧栏）清掉
+            await RefreshAsync(row.Id);
+            StatusText = $"已重命名为「{name}」";
+            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"重命名失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task DeleteRowAsync(BrowserRowViewModel? row)
+    {
+        if (row == null) return;
+        // 右键命中的行已在多选集合内 → 批量删除；否则只删该行（Explorer 语义）
+        var targets = row.IsSelected && SelectionCount > 1
+            ? SelectedRows.ToList()
+            : new List<BrowserRowViewModel> { row };
+        if (!await ConfirmDeleteAsync(targets)) return;
+        await DeleteItemsAsync(targets);
+    }
 
     private IEnumerable<(string Id, string Name)> BuildBreadcrumbIds(string? folderId)
     {
@@ -208,6 +1096,127 @@ public class BrowserViewModel : INotifyPropertyChanged
         chain.Reverse();
         foreach (var item in chain) yield return item;
     }
+
+    // —— 面包屑内联路径编辑 ——
+
+    private void TogglePathEdit()
+    {
+        if (IsPathEditing) CancelPathEdit();
+        else EnterPathEdit();
+    }
+
+    private void EnterPathEdit()
+    {
+        PathEditText = BuildPathText(Controller.CurrentFolderId);
+        IsPathInvalid = false;
+        IsPathEditing = true;
+    }
+
+    private void CancelPathEdit()
+    {
+        IsPathEditing = false;
+        PathCandidates = new List<string>();
+    }
+
+    private string BuildPathText(string? folderId)
+    {
+        var parts = new List<string> { "全部书签" };
+        foreach (var (id, name) in BuildBreadcrumbIds(folderId))
+            parts.Add(name);
+        return string.Join("/", parts);
+    }
+
+    /// <summary>Enter：逐级按名解析路径（同级重名取排序第一；不区分大小写）。失败 → 边框标红并提示。</summary>
+    private void ConfirmPath()
+    {
+        if (TryResolvePath(PathEditText, out var folderId, out var invalidSegment))
+        {
+            IsPathEditing = false;
+            PathCandidates = new List<string>();
+            _ = LoadAsync(folderId);
+        }
+        else
+        {
+            IsPathInvalid = true;
+            StatusText = $"路径不存在：{invalidSegment}";
+        }
+    }
+
+    /// <summary>Tab：用当前候选补全最后一级。</summary>
+    private void CompletePath()
+    {
+        if (SelectedCandidateIndex >= 0 && SelectedCandidateIndex < PathCandidates.Count)
+            ChooseCandidate(PathCandidates[SelectedCandidateIndex]);
+    }
+
+    /// <summary>选择候选（点击或 Tab）：改写文本后保留编辑态，继续输入下一级。</summary>
+    public void ChooseCandidate(string name)
+    {
+        var text = PathEditText ?? string.Empty;
+        var idx = text.LastIndexOf('/');
+        var prefix = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
+        PathEditText = prefix + name + "/";
+        SelectedCandidateIndex = 0;
+    }
+
+    /// <summary>↑/↓ 移动候选高亮（由视图键盘事件调用）。</summary>
+    public void MoveCandidate(int delta)
+    {
+        if (PathCandidates.Count == 0) return;
+        var next = Math.Clamp(SelectedCandidateIndex + delta, 0, PathCandidates.Count - 1);
+        SelectedCandidateIndex = next;
+    }
+
+    private void UpdatePathCandidates()
+    {
+        var text = _pathEditText ?? string.Empty;
+        var idx = text.LastIndexOf('/');
+        var headText = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
+        var typed = idx >= 0 ? text.Substring(idx + 1) : text;
+
+        if (!TryResolvePath(headText, out var head, out _))
+        {
+            PathCandidates = new List<string>();
+            return;
+        }
+
+        PathCandidates = _folderMap
+            .Where(kvp => ParentMatches(kvp.Value.ParentId, head))
+            .Where(kvp => typed.Length == 0 || kvp.Value.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(kvp => kvp.Value.Name, StringComparer.CurrentCulture)
+            .Select(kvp => kvp.Value.Name)
+            .Take(8)
+            .ToList();
+        SelectedCandidateIndex = PathCandidates.Count > 0 ? 0 : -1;
+    }
+
+    private bool TryResolvePath(string text, out string? folderId, out string? invalidSegment)
+    {
+        folderId = null;
+        invalidSegment = null;
+        var segments = text.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var seg in segments)
+        {
+            if (folderId == null && seg.Equals("全部书签", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var current = folderId; // out 参数不能被 lambda 捕获，先复制
+            var match = _folderMap
+                .Where(kvp => ParentMatches(kvp.Value.ParentId, current)
+                              && string.Equals(kvp.Value.Name, seg, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                .ToList();
+            if (match.Count == 0)
+            {
+                invalidSegment = seg;
+                return false;
+            }
+            folderId = match[0].Key;
+        }
+        return true;
+    }
+
+    private static bool ParentMatches(string? parentId, string? current)
+        => FolderIds.Normalize(parentId) == FolderIds.Normalize(current);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

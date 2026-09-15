@@ -1,5 +1,6 @@
 using LinkPocket.Api;
 using LinkPocket.Data;
+using LinkPocket.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
@@ -22,8 +23,59 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     {
         _db = db ?? new LinkPocketDbContext();
         _db.Database.EnsureCreated();
+        MigrateLegacyRootIds();
+        EnsureFolderVisitCountColumn();
         _links = new Services.LinkService(_db);
         _folders = new Services.FolderService(_db);
+    }
+
+    /// <summary>
+    /// 一次性数据迁移：历史版本用哨兵 '0' 表示根目录，而约定是 NULL。
+    /// 把库里残留的哨兵值清成 NULL —— 迁移之后全库不再出现该哨兵，
+    /// 业务代码只需判 null；<see cref="FolderIds.Normalize"/> 仅兜住外部入参。
+    /// </summary>
+    private void MigrateLegacyRootIds()
+    {
+        try
+        {
+            _db.Database.ExecuteSqlRaw(
+                $"UPDATE lists SET parent_id = NULL WHERE parent_id = '{FolderIds.LegacyRootId}'");
+            _db.Database.ExecuteSqlRaw(
+                $"UPDATE links SET list_id = NULL WHERE list_id = '{FolderIds.LegacyRootId}'");
+        }
+        catch (Exception ex)
+        {
+            // 迁移失败会让旧数据的根级内容从根目录页消失，必须留下可诊断的痕迹
+            Logger.Error("历史根目录哨兵值迁移失败", ex);
+        }
+    }
+
+    /// <summary>
+    /// EnsureCreated 不会为已存在的库补新列：文件夹 visit_count（查看次数）为后增字段，
+    /// 这里检查 lists 表结构，缺失时以 ALTER TABLE 补齐（默认 0）。
+    /// </summary>
+    private void EnsureFolderVisitCountColumn()
+    {
+        try
+        {
+            var hasColumn = false;
+            using (var cmd = _db.Database.GetDbConnection().CreateCommand())
+            {
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('lists') WHERE name = 'visit_count'";
+                _db.Database.OpenConnection();
+                hasColumn = Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+            }
+            if (!hasColumn)
+                _db.Database.ExecuteSqlRaw("ALTER TABLE lists ADD COLUMN visit_count INTEGER NOT NULL DEFAULT 0");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("补齐 lists.visit_count 列失败", ex);
+        }
+        finally
+        {
+            try { _db.Database.CloseConnection(); } catch { }
+        }
     }
 
     /// <summary>过渡期兼容入口：设置页重置数据库 / 备份面板需要共享同一个 DbContext。</summary>
@@ -54,40 +106,55 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         // 未启用分页时沿用旧版上限（一次取回最多 10000 条）
         var effectivePerPage = perPage > 0 ? perPage : 10000;
 
-        var isRoot = string.IsNullOrEmpty(folderId) || folderId == "0";
+        var isRoot = FolderIds.IsRoot(folderId);
         var allFolders = await _folders.GetAllFoldersAsync();
-        var counts = await _links.GetLinkCountByFolderAsync();
+        var directCounts = await _links.GetLinkCountByFolderAsync();
+        var counts = await GetRecursiveLinkCountsAsync(allFolders, directCounts);
 
-        var dto = new FolderContentsDto { FolderId = isRoot ? "0" : folderId, PerPage = effectivePerPage };
+        var dto = new FolderContentsDto { FolderId = FolderIds.Normalize(folderId), PerPage = effectivePerPage };
+
+        // 子文件夹排序：与列表列头一一对应（名称 / 最后更新 / 最后查看 / 查看次数 / 创建时间），
+        // 名称与各维度都遵循升/降序；「最后查看」为空的（从未）恒排最后，与链接侧口径一致。
+        List<FolderDto> SortFolders(IEnumerable<Folder> source)
+        {
+            var mapped = source.Select(f => MapFolder(f, counts));
+            var desc = sortOrder == "desc";
+            var ordered = sortBy switch
+            {
+                "updated_at" => desc ? mapped.OrderByDescending(f => f.UpdatedAt) : mapped.OrderBy(f => f.UpdatedAt),
+                "created_at" => desc ? mapped.OrderByDescending(f => f.CreatedAt) : mapped.OrderBy(f => f.CreatedAt),
+                "visit_count" => desc ? mapped.OrderByDescending(f => f.VisitCount) : mapped.OrderBy(f => f.VisitCount),
+                "last_visited_at" => desc
+                    ? mapped.OrderBy(f => f.LastVisitedAt == null).ThenByDescending(f => f.LastVisitedAt)
+                    : mapped.OrderBy(f => f.LastVisitedAt == null).ThenBy(f => f.LastVisitedAt),
+                _ => desc
+                    ? mapped.OrderByDescending(f => f.Name, StringComparer.CurrentCulture)
+                    : mapped.OrderBy(f => f.Name, StringComparer.CurrentCulture)
+            };
+            return ordered.ThenBy(f => f.Name, StringComparer.CurrentCulture).ToList();
+        }
 
         if (isRoot)
         {
-            dto.FolderName = "全部书签";
-            dto.SubFolders = allFolders
-                .Where(f => string.IsNullOrEmpty(f.ParentId))
-                .Select(f => MapFolder(f, counts))
-                .OrderBy(f => f.Name, StringComparer.CurrentCulture)
-                .ToList();
-            var (links, _, currentPage, lastPage) = await _links.GetLinksAsync(sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: effectivePerPage);
-            dto.Links = links.Select(MapLink).ToList();
+            dto.FolderName = FolderIds.RootDisplayName;
+            dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
+            // 根目录只显示根级书签（ListId == null），而不是全库书签
+            var rootLinks = await _links.GetRootLevelLinksAsync(sortBy: sortBy, sortOrder: sortOrder, perPage: effectivePerPage);
+            dto.Links = rootLinks.Select(MapLink).ToList();
             dto.TotalLinkCount = await _links.GetRootLevelLinkCountAsync();
-            dto.CurrentPage = currentPage;
-            dto.LastPage = perPage > 0 ? lastPage : 1;
-            dto.Breadcrumb = new List<string> { "全部书签" };
+            dto.CurrentPage = 1;
+            dto.LastPage = 1;
+            dto.Breadcrumb = new List<string> { FolderIds.RootDisplayName };
         }
         else
         {
             var folder = allFolders.FirstOrDefault(f => f.FolderId == folderId)
                 ?? throw new InvalidOperationException($"文件夹 {folderId} 不存在");
             dto.FolderName = folder.Name;
-            dto.SubFolders = allFolders
-                .Where(f => f.ParentId == folderId)
-                .Select(f => MapFolder(f, counts))
-                .OrderBy(f => f.Name, StringComparer.CurrentCulture)
-                .ToList();
+            dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
             var (links, _, currentPage, lastPage) = await _links.GetLinksAsync(listId: folderId, sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: effectivePerPage);
             dto.Links = links.Select(MapLink).ToList();
-            dto.TotalLinkCount = counts.TryGetValue(folderId ?? string.Empty, out var c) ? c : 0;
+            dto.TotalLinkCount = directCounts.TryGetValue(folderId ?? string.Empty, out var c) ? c : 0;
             dto.CurrentPage = currentPage;
             dto.LastPage = perPage > 0 ? lastPage : 1;
             dto.Breadcrumb = BuildBreadcrumb(folder, allFolders);
@@ -99,7 +166,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public async Task<List<FolderDto>> GetFolderTreeAsync()
     {
         var allFolders = await _folders.GetAllFoldersAsync();
-        var counts = await _links.GetLinkCountByFolderAsync();
+        var counts = await GetRecursiveLinkCountsAsync(allFolders);
         return allFolders
             .Select(f => MapFolder(f, counts))
             .OrderBy(f => f.Name, StringComparer.CurrentCulture)
@@ -108,47 +175,60 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
 
     public async Task<List<string>> GetBreadcrumbAsync(string? folderId)
     {
-        if (string.IsNullOrEmpty(folderId) || folderId == "0")
-            return new List<string> { "全部书签" };
+        if (FolderIds.IsRoot(folderId))
+            return new List<string> { FolderIds.RootDisplayName };
 
         var allFolders = await _folders.GetAllFoldersAsync();
         var folder = allFolders.FirstOrDefault(f => f.FolderId == folderId);
-        return folder == null ? new List<string> { "全部书签" } : BuildBreadcrumb(folder, allFolders);
+        return folder == null ? new List<string> { FolderIds.RootDisplayName } : BuildBreadcrumb(folder, allFolders);
     }
 
     // —— 文件夹管理 ——
 
     public async Task<FolderDto> CreateFolderAsync(string name, string? parentId)
     {
-        var parent = string.IsNullOrEmpty(parentId) || parentId == "0" ? null : parentId;
+        var parent = FolderIds.Normalize(parentId);
         var folder = await _folders.CreateFolderAsync(name, parentId: parent);
+        await _folders.TouchModifiedAsync(parent); // 新增子文件夹 → 父链内容有变
         RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });
-        return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId };
+        return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId, UpdatedAt = folder.UpdatedAt };
     }
 
     public async Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
     {
-        var folder = await _folders.UpdateFolderAsync(id, name, description, parentId == "0" ? null : parentId);
+        var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == id);
+        var folder = await _folders.UpdateFolderAsync(id, name, description, FolderIds.Normalize(parentId));
+        // 自身被改名 / 被移动，以及原父级、新父级的内容构成都发生了变化
+        await _folders.TouchModifiedAsync(folder.FolderId);
+        await _folders.TouchModifiedAsync(before?.ParentId);
         RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });
-        return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId };
+        return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId, UpdatedAt = folder.UpdatedAt };
     }
 
     public async Task DeleteFolderAsync(string id, string cascade = "move_to_parent", string? targetListId = null)
     {
+        var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == id);
         await _folders.DeleteFolderAsync(id, cascade, targetListId);
+        // 删除（含连带移入回收站的链接）→ 原父级内容有变；move_to_list 模式下目标文件夹也变了
+        await _folders.TouchModifiedAsync(before?.ParentId);
+        if (cascade == "move_to_list") await _folders.TouchModifiedAsync(targetListId);
         RaiseChanged("folders.changed", new { folder_id = id });
         RaiseChanged("links.changed", new { folder_id = id });
     }
 
     public async Task MoveFolderAsync(string folderId, string? targetParentId)
     {
-        await _folders.MoveFolderAsync(folderId, targetParentId == "0" ? null : targetParentId);
+        var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == folderId);
+        await _folders.MoveFolderAsync(folderId, targetParentId);
+        await _folders.TouchModifiedAsync(before?.ParentId);
+        await _folders.TouchModifiedAsync(FolderIds.Normalize(targetParentId));
         RaiseChanged("folders.changed", new { folder_id = folderId, target_parent_id = targetParentId });
     }
 
     public async Task<string> CopyFolderAsync(string folderId, string? targetParentId)
     {
-        var newId = await _folders.CopyFolderDeepAsync(folderId, targetParentId == "0" ? null : targetParentId);
+        var newId = await _folders.CopyFolderDeepAsync(folderId, targetParentId);
+        await _folders.TouchModifiedAsync(FolderIds.Normalize(targetParentId));
         RaiseChanged("folders.changed", new { folder_id = newId, copied_from = folderId });
         return newId;
     }
@@ -158,7 +238,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
 
     public async Task UpdateSortAsync(string? parentId, List<string> itemIds)
     {
-        await _folders.UpdateSortAsync(parentId == "0" ? null : parentId, itemIds);
+        await _folders.UpdateSortAsync(parentId, itemIds);
         RaiseChanged("folders.changed", new { parent_id = parentId });
     }
 
@@ -169,7 +249,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         string sortBy = "created_at", string sortOrder = "desc", int page = 1, int perPage = 20)
     {
         var (links, total, currentPage, lastPage) = await _links.GetLinksAsync(
-            search: search, listId: listId == "0" ? null : listId, isImportant: isImportant,
+            search: search, listId: FolderIds.Normalize(listId), isImportant: isImportant,
             dateFrom: dateFrom, dateTo: dateTo,
             sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: perPage);
         return new PagedLinksDto
@@ -197,8 +277,9 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         string? listId = null, bool isImportant = false, bool autoFetchMetadata = false, string? faviconUrl = null)
     {
         var link = await _links.CreateLinkAsync(url, title, description,
-            listId: listId == "0" ? null : listId, isImportant: isImportant,
+            listId: FolderIds.Normalize(listId), isImportant: isImportant,
             autoFetchMetadata: autoFetchMetadata, faviconUrl: faviconUrl);
+        await _folders.TouchModifiedAsync(link.ListId); // 新增链接 → 所在文件夹内容有变
         RaiseChanged("links.changed", new { link_id = link.LinkId, list_id = link.ListId });
         return MapLink(link);
     }
@@ -206,20 +287,29 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public async Task<LinkDto> UpdateLinkAsync(string id, string? url = null, string? title = null,
         string? description = null, string? listId = null, bool? isImportant = null, string? faviconUrl = null)
     {
+        var previousListId = (await _links.GetAllActiveLinksAsync()).FirstOrDefault(l => l.LinkId == id)?.ListId;
         var link = await _links.UpdateLinkAsync(id, url, title, description, listId, isImportant, faviconUrl);
+        // 链接被编辑（改名/改地址/改描述）或跨文件夹移动 → 新旧两个文件夹的内容都变了
+        await _folders.TouchModifiedAsync(link.ListId);
+        if (previousListId != link.ListId) await _folders.TouchModifiedAsync(previousListId);
         RaiseChanged("links.changed", new { link_id = link.LinkId, list_id = link.ListId });
         return MapLink(link);
     }
 
     public async Task TrashLinkAsync(string id)
     {
+        var listId = (await _links.GetAllActiveLinksAsync()).FirstOrDefault(l => l.LinkId == id)?.ListId;
         await _links.DeleteLinkAsync(id);
+        await _folders.TouchModifiedAsync(listId); // 链接被移入回收站 → 原文件夹内容有变
         RaiseChanged("trash.changed", new { link_id = id });
     }
 
     public async Task RecordVisitAsync(string id)
     {
-        await _links.RecordVisitAsync(id);
+        var listId = await _links.RecordVisitAsync(id);
+        // 文件夹「最后查看 / 查看次数」：沿父链链式刷新，与「最后更新」（TouchModifiedAsync）同一套
+        // 事件驱动增量口径——同一条父链原语，只是触发事件与写入字段不同。
+        await _folders.RecordFolderViewAsync(listId);
         RaiseChanged("links.changed", new { link_id = id });
     }
 
@@ -248,6 +338,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public async Task<LinkDto> RestoreLinkAsync(string linkId)
     {
         var dto = MapLink(await _links.RestoreLinkAsync(linkId));
+        await _folders.TouchModifiedAsync(dto.ListId); // 从回收站还原 → 目标文件夹内容有变
         RaiseChanged("trash.changed", new { link_id = linkId });
         return dto;
     }
@@ -350,6 +441,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         var result = await new Services.BookmarkImporter(_db).ImportAsync(filePath);
         if (!result.Success && result.TotalItems == 0)
             throw new InvalidOperationException(string.Join("; ", result.Errors));
+        await _folders.TouchAllModifiedAsync(); // 批量写入 → 所有文件夹内容均视为变动
         RaiseChanged("links.changed", new { source = "import.bookmarks_html", count = result.TotalItems });
         RaiseChanged("folders.changed", new { source = "import.bookmarks_html" });
         return result.TotalItems;
@@ -363,6 +455,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public async Task<BackupImportDto> ImportBackupAsync(string filePath)
     {
         var result = await new Services.LinkPocketBackupService(_db).ImportAsync(filePath);
+        await _folders.TouchAllModifiedAsync(); // 备份恢复 → 所有文件夹内容均视为变动
         return new BackupImportDto
         {
             FoldersCreated = result.FoldersCreated,
@@ -426,8 +519,38 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         FolderId = f.FolderId,
         Name = f.Name,
         ParentId = f.ParentId,
-        LinkCount = counts.TryGetValue(f.FolderId, out var c) ? c : 0
+        LinkCount = counts.TryGetValue(f.FolderId, out var c) ? c : 0,
+        UpdatedAt = f.UpdatedAt,
+        CreatedAt = f.CreatedAt,
+        LastVisitedAt = f.LastVisitedAt,
+        VisitCount = f.VisitCount
     };
+
+    /// <summary>
+    /// 递归链接计数：每个文件夹 = 自身直接子链接 + 全部子孙文件夹的链接数。
+    /// 文件夹数量有限（内存树遍历），代价可忽略。
+    /// </summary>
+    private async Task<Dictionary<string, int>> GetRecursiveLinkCountsAsync(
+        List<Folder> allFolders, Dictionary<string, int>? directCounts = null)
+    {
+        directCounts ??= await _links.GetLinkCountByFolderAsync();
+        // 子 → 父索引，用于沿父链上溯累加
+        var parentOf = allFolders.ToDictionary(f => f.FolderId, f => f.ParentId ?? string.Empty);
+        var totals = new Dictionary<string, int>();
+        foreach (var f in allFolders)
+        {
+            var direct = directCounts.TryGetValue(f.FolderId, out var dc) ? dc : 0;
+            // 自身及全部祖先都 +direct（祖先含子孙的链接）
+            var cur = f.FolderId;
+            for (int i = 0; i < 256 && !string.IsNullOrEmpty(cur); i++)
+            {
+                totals[cur] = totals.TryGetValue(cur, out var t) ? t + direct : direct;
+                if (!parentOf.TryGetValue(cur, out var p) || p == cur) break;
+                cur = p;
+            }
+        }
+        return totals;
+    }
 
     private static List<string> BuildBreadcrumb(Folder folder, List<Folder> allFolders)
     {
@@ -439,7 +562,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
             parts.Insert(0, f.Name);
             currentId = f.ParentId ?? string.Empty;
         }
-        return new List<string> { "全部书签" }.Concat(parts).ToList();
+        return new List<string> { FolderIds.RootDisplayName }.Concat(parts).ToList();
     }
 
     private static IEnumerable<string> CollectDescendantIds(List<Folder> allFolders, string folderId)

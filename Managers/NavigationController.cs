@@ -1,11 +1,12 @@
 using System;
+using LinkPocket.Api;
 using System.Collections.Generic;
 
 namespace LinkPocket.Managers;
 
 /// <summary>
 /// 资源管理器式浏览的导航状态（P4）：
-/// 维护 currentFolderId 与后退 / 前进历史栈（只存 folderId，null 表示根目录）。
+/// 维护 currentFolderId 与后退 / 前进历史栈（只存 folderId，null = 根目录「全部书签」）。
 /// 不持有任何 UI 引用；目录内容加载由 BrowserViewModel 完成。
 /// </summary>
 public class NavigationController
@@ -13,7 +14,7 @@ public class NavigationController
     private readonly Stack<string?> _back = new();
     private readonly Stack<string?> _forward = new();
 
-    /// <summary>当前目录 ID；null 或 "0" 表示根目录（全部书签）。</summary>
+    /// <summary>当前目录 ID；<c>null</c> 表示根目录（全部书签）。根目录不是文件夹，没有 ID。</summary>
     public string? CurrentFolderId { get; private set; }
 
     public bool CanGoBack => _back.Count > 0;
@@ -23,12 +24,11 @@ public class NavigationController
     public bool NavigateTo(string? folderId)
     {
         var normalized = Normalize(folderId);
-        var current = Normalize(CurrentFolderId);
-        if (normalized == current) return false;
+        if (normalized == CurrentFolderId) return false;
 
         _back.Push(CurrentFolderId);
         _forward.Clear();
-        CurrentFolderId = folderId;
+        CurrentFolderId = normalized;
         return true;
     }
 
@@ -50,6 +50,5 @@ public class NavigationController
         return CurrentFolderId;
     }
 
-    private static string Normalize(string? folderId)
-        => string.IsNullOrEmpty(folderId) || folderId == "0" ? "0" : folderId!;
+    private static string? Normalize(string? folderId) => FolderIds.Normalize(folderId);
 }

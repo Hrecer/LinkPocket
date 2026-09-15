@@ -27,17 +27,43 @@ public class FolderDto
     [JsonPropertyName("id")] public string FolderId { get; set; } = string.Empty;
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     [JsonPropertyName("parent_id")] public string? ParentId { get; set; }
+
+    /// <summary>
+    /// 该文件夹下所有链接总数（递归）：含直接子链接以及全部子孙文件夹内的链接。
+    /// </summary>
     [JsonPropertyName("link_count")] public int LinkCount { get; set; }
+
+    /// <summary>
+    /// 文件夹「最后更新」＝内容最后变动时间。事件：内容变动（新增/删除/改名/移入移出链接与子文件夹、
+    /// 链接内容被编辑）。内核沿父链刷新（FolderService.TouchModifiedAsync），UI 只读；<b>查看不算变动</b>。
+    /// </summary>
+    [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+
+    /// <summary>文件夹创建时间（内核维护，UI 只读展示）。</summary>
+    [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
+
+    /// <summary>
+    /// 文件夹「最后查看」时间。事件：子孙链接被打开详情页/访问。内核沿父链刷新
+    /// （FolderService.RecordFolderViewAsync），与「最后更新」同一条父链原语、同一套事件驱动增量口径。
+    /// </summary>
+    [JsonPropertyName("last_visited_at")] public DateTime? LastVisitedAt { get; set; }
+
+    /// <summary>
+    /// 文件夹「查看次数」：子树内任何链接被查看详情页/访问时，沿父链所有祖先 +1
+    /// （与 LastVisitedAt 同一次链式写入、同一事件；与链接的 VisitCount 相互独立，
+    /// 移动链接不转移历史计数）。
+    /// </summary>
+    [JsonPropertyName("visit_count")] public int VisitCount { get; set; }
 }
 
 /// <summary>
 /// 资源管理器式浏览的一个"目录页"：当前文件夹的子文件夹 + 链接 + 面包屑路径。
-/// folderId 为 null/"0" 表示根目录（全部书签）。
+/// folderId 为 null 表示根目录（全部书签）——它不是实体、没有 ID。
 /// </summary>
 public class FolderContentsDto
 {
     [JsonPropertyName("folder_id")] public string? FolderId { get; set; }
-    [JsonPropertyName("folder_name")] public string FolderName { get; set; } = "全部书签";
+    [JsonPropertyName("folder_name")] public string FolderName { get; set; } = FolderIds.RootDisplayName;
     [JsonPropertyName("sub_folders")] public List<FolderDto> SubFolders { get; set; } = new();
     [JsonPropertyName("links")] public List<LinkDto> Links { get; set; } = new();
     [JsonPropertyName("breadcrumb")] public List<string> Breadcrumb { get; set; } = new();

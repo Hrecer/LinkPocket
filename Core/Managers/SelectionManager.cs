@@ -41,7 +41,8 @@ namespace LinkPocket.Managers
             }
         }
 
-        public bool HasSelectedFolder => !string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0";
+        /// <summary>是否选中了一个真实文件夹（根目录「全部书签」不是文件夹，选中它等于没选文件夹）。</summary>
+        public bool HasSelectedFolder => !string.IsNullOrEmpty(_selectedFolderId);
         public bool HasSelectedLink => !string.IsNullOrEmpty(_selectedLinkId);
         public bool IsInMultiSelectMode => !string.IsNullOrEmpty(_multiSelectFolderId);
         public string? MultiSelectFolderId => _multiSelectFolderId;
@@ -164,7 +165,7 @@ namespace LinkPocket.Managers
         /// </summary>
         private void ClearFolderForMultiSelect()
         {
-            if (!string.IsNullOrEmpty(_selectedFolderId) && _selectedFolderId != "0")
+            if (!string.IsNullOrEmpty(_selectedFolderId))
             {
                 var old = _selectedFolderId;
                 _selectedFolderId = string.Empty;

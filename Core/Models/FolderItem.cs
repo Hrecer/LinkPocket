@@ -29,5 +29,10 @@ namespace LinkPocket.Models
         public string DisplayText => $"{Name} ({LinkCount})";
         public bool IsRoot => string.IsNullOrEmpty(ParentId);
         public bool HasChildren => Children != null && Children.Count > 0;
+
+        /// <summary>树形下拉框缩进层级（0 = 根级）。</summary>
+        public int Level { get; set; }
+        /// <summary>树形下拉框缩进显示名。</summary>
+        public string IndentedName => Level > 0 ? string.Concat(new string('　', Level), Name) : Name;
     }
 }

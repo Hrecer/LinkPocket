@@ -1,0 +1,334 @@
+<UserControl x:Class="LinkPocket.Views.Browser.LinkEditorPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             xmlns:local="clr-namespace:LinkPocket.Views.Browser">
+
+    <!-- 浏览模块「新建/编辑链接」整页编辑器：与链接详情页同版式（顶栏 + 居中内容列 + 统一卡片规格）。
+         新建固定当前目录，无所属目录选择；数据由 LinkEditorViewModel 驱动。 -->
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+        <!-- 内容列外边距补偿：有纵向滚动条时把右侧外距减掉一个滚动条宽，
+             否则详情页/编辑页之间切换会看到整块内容横移（见转换器注释） -->
+        <local:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
+
+        <!-- M3 Expressive 圆角填充文本域（单行） -->
+        <Style x:Key="PageTextField" TargetType="TextBox">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="MinHeight" Value="44"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Root" CornerRadius="12"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="2" BorderBrush="Transparent"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden"
+                                          Focusable="False"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.38"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 大号标题字段（头部卡片内，保持填充底色保证可见） -->
+        <Style x:Key="HeroTitleField" TargetType="TextBox" BasedOn="{StaticResource PageTextField}">
+            <Setter Property="FontSize" Value="18"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="MinHeight" Value="48"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Root" CornerRadius="12"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="2" BorderBrush="Transparent">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 小图标按钮（URL 卡片右上角工具位） -->
+        <Style x:Key="MiniIconButton" TargetType="Button">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" CornerRadius="13" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 多行描述文本域 -->
+        <Style x:Key="PageMultilineField" TargetType="TextBox" BasedOn="{StaticResource PageTextField}">
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="MinHeight" Value="120"/>
+            <Setter Property="VerticalContentAlignment" Value="Top"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Root" CornerRadius="12"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="2" BorderBrush="Transparent"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Focusable="False"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Background="{DynamicResource Surface}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ===== 顶栏：返回 / 标题 / 取消 + 保存 ===== -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
+                Padding="12,8" Background="{DynamicResource SurfaceContainer}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding CancelCommand}" Style="{StaticResource TextButton}" Padding="8,6">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
+                        <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <m3:M3Icon Kind="{Binding TitleIcon}" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding TitleText}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Command="{Binding CancelCommand}" Style="{StaticResource OutlinedButton}" Padding="14,6" MinHeight="32" Margin="0,0,8,0">
+                        <TextBlock Text="取消" FontSize="13"/>
+                    </Button>
+                    <Button Command="{Binding SaveCommand}" Style="{StaticResource FilledButton}" Padding="14,6" MinHeight="32"
+                            HorizontalContentAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <!-- 边距挂在转圈右侧：隐藏时不占位，文字保持居中 -->
+                            <m3:CircularProgress IsIndeterminate="True" Width="14" Height="14" Margin="0,0,6,0"
+                                                 Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
+                            <TextBlock Text="保存" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== 正文：居中内容列 ===== -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <!-- 定宽居中列：外边距经滚动条补偿，保证与详情页左边界严格一致（切换整页不横移） -->
+            <Grid Width="760" HorizontalAlignment="Center">
+                <Grid.Margin>
+                    <Binding Path="ComputedVerticalScrollBarVisibility"
+                             RelativeSource="{RelativeSource AncestorType=ScrollViewer}"
+                             Converter="{StaticResource ScrollGutterMargin}"
+                             ConverterParameter="36,28,36,28"/>
+                </Grid.Margin>
+                <StackPanel>
+
+                <!-- 头部卡片：色调圆底图标 + 大号标题字段 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,18">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <!-- 图标位：与右侧栏同款（白底圆角方块，非圆形；有 favicon 时替换默认图标） -->
+                        <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True"
+                                VerticalAlignment="Center">
+                            <Grid>
+                                <Image Source="{Binding Favicon}" Stretch="Uniform" Margin="6"
+                                       RenderOptions.BitmapScalingMode="HighQuality"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Image.Style>
+                                        <Style TargetType="Image">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Image.Style>
+                                </Image>
+                                <!-- 无 favicon 时统一回落小地球（与右侧栏/详情页一致），不用「编辑/新建」符号 -->
+                                <m3:M3Icon Kind="earth" Width="22" Height="22"
+                                           Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <m3:M3Icon.Style>
+                                        <Style TargetType="m3:M3Icon">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </m3:M3Icon.Style>
+                                </m3:M3Icon>
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="名称" FontSize="12" Opacity="0.55" Margin="2,0,0,2"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBox Style="{StaticResource HeroTitleField}"
+                                     Text="{Binding LinkTitle, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 错误横幅 -->
+                <Border Background="{DynamicResource ErrorContainer}" CornerRadius="12" Padding="14,10" Margin="0,14,0,0">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasError}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="alert-circle-outline" Width="16" Height="16" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnErrorContainer}"/>
+                        <TextBlock Text="{Binding Error}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource OnErrorContainer}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- URL 卡片 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <StackPanel>
+                        <Grid Margin="2,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <m3:M3Icon Kind="link-variant" Width="13" Height="13" Opacity="0.6" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Text="URL" FontSize="12" Opacity="0.6" Margin="5,0,0,0"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <!-- 自动解析：抓取标题/描述/图标，空缺字段自动填充 -->
+                                <Button Style="{StaticResource MiniIconButton}" Command="{Binding FetchMetadataCommand}"
+                                        ToolTip="自动解析：抓取网站标题、描述与图标">
+                                    <Button.Content>
+                                        <Grid>
+                                            <m3:M3Icon Kind="auto-fix" Width="15" Height="15"
+                                                       Visibility="{Binding IsFetching, Converter={StaticResource InvBoolToVis}}"/>
+                                            <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13"
+                                                                 Visibility="{Binding IsFetching, Converter={StaticResource BoolToVis}}"/>
+                                        </Grid>
+                                    </Button.Content>
+                                </Button>
+                                <!-- 清除图标：仅编辑模式显示，保存时写入空图标 -->
+                                <Button Style="{StaticResource MiniIconButton}" Command="{Binding ClearFaviconCommand}"
+                                        ToolTip="清除图标" Margin="2,0,0,0">
+                                    <Button.Visibility>
+                                        <Binding Path="CanClearFavicon" Converter="{StaticResource BoolToVis}"/>
+                                    </Button.Visibility>
+                                    <m3:M3Icon Kind="close-circle-outline" Width="15" Height="15"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <TextBox Style="{StaticResource PageTextField}"
+                                 Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 描述卡片 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
+                            <TextBlock Text="描述" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Text="支持 Markdown" FontSize="11" Opacity="0.5" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        </StackPanel>
+                        <TextBox Style="{StaticResource PageMultilineField}"
+                                 Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>
+                    </StackPanel>
+                </Border>
+
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

@@ -1,4 +1,5 @@
 using LinkPocket.Data;
+using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 
 namespace LinkPocket.Services;
@@ -35,6 +36,76 @@ public class FolderService
             .ToListAsync();
     }
 
+    /// <summary>
+    /// 父链上溯原语：返回 folderId 自身 + 全部祖先文件夹（由近及远），null = 根目录。
+    /// 文件夹的两个派生时间字段与查看次数都只经这一条链传播，
+    /// 保证「事件驱动增量」的口径完全一致：一次事件 → 自身 + 全部祖先同步刷新。
+    /// </summary>
+    private async Task<List<Folder>> WalkAncestorsAsync(string? folderId)
+    {
+        var chain = new List<Folder>();
+        var current = FolderIds.Normalize(folderId);
+
+        for (var guard = 0; current != null && guard < 200; guard++)
+        {
+            var folder = await _db.Folders.FindAsync(current);
+            if (folder == null) break;
+
+            chain.Add(folder);
+            current = FolderIds.Normalize(folder.ParentId);
+        }
+
+        return chain;
+    }
+
+    /// <summary>
+    /// 事件：内容变动。把 folderId 及其全部祖先的 UpdatedAt 置为当前时间。
+    /// 语义 = 文件夹内容发生了变化（新增/删除/改名/移入移出链接或子文件夹、链接内容被编辑等）。
+    /// 注意：仅由「内容变动」驱动，查看链接不算内容变动。
+    /// 统一由内核在写路径上调用，界面层只读该字段、不参与计算。
+    /// </summary>
+    public async Task TouchModifiedAsync(string? folderId, DateTime? at = null)
+    {
+        var chain = await WalkAncestorsAsync(folderId);
+        if (chain.Count == 0) return;
+
+        var stamp = at ?? DateTime.UtcNow;
+        foreach (var folder in chain) folder.UpdatedAt = stamp;
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 事件：子孙链接被查看。把 folderId 及其全部祖先的 LastVisitedAt 刷新为当前时间、VisitCount 各 +1。
+    /// 与 <see cref="TouchModifiedAsync"/> 完全同构（同一条父链、同一套事件驱动增量口径），
+    /// 区别只在触发事件与写入字段：查看不影响 UpdatedAt，内容变动不影响 LastVisitedAt/VisitCount。
+    /// </summary>
+    public async Task RecordFolderViewAsync(string? folderId, DateTime? at = null)
+    {
+        var chain = await WalkAncestorsAsync(folderId);
+        if (chain.Count == 0) return;
+
+        var stamp = at ?? DateTime.UtcNow;
+        foreach (var folder in chain)
+        {
+            folder.LastVisitedAt = stamp;
+            folder.VisitCount++;
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 批量刷新全部文件夹的“内容修改时间”，用于导入 / 备份恢复这类一次性大批量写入之后。
+    /// </summary>
+    public async Task TouchAllModifiedAsync(DateTime? at = null)
+    {
+        var stamp = at ?? DateTime.UtcNow;
+        var folders = await _db.Folders.ToListAsync();
+        foreach (var folder in folders) folder.UpdatedAt = stamp;
+        await _db.SaveChangesAsync();
+    }
+
     public async Task<Folder?> GetFolderByIdAsync(string id)
     {
         return await _db.Folders
@@ -69,6 +140,11 @@ public class FolderService
         return folder;
     }
 
+    /// <summary>
+    /// 改名 / 改描述；（可选）改父目录——<paramref name="parentId"/> 为 <c>null</c> 表示"不改父级"，
+    /// 且必须是一个真实文件夹 ID（根目录不是文件夹，不能作为父级传入）。
+    /// 要"移动到根目录"请用 <see cref="MoveFolderAsync"/>（那里 null 才表示根）。
+    /// </summary>
     public async Task<Folder> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
     {
         var folder = await _db.Folders.FindAsync(id) ?? throw new Exception("Folder not found");
@@ -79,20 +155,17 @@ public class FolderService
                 throw new ArgumentException("Cannot set folder as its own parent");
 
             // 检查循环引用
-            if (!string.IsNullOrEmpty(parentId) && await WouldCreateCycleInternalAsync(id, parentId))
+            if (await WouldCreateCycleInternalAsync(id, parentId))
                 throw new ArgumentException("Moving would create a circular reference");
 
             // 验证新父目录存在
-            if (!string.IsNullOrEmpty(parentId) && parentId != "0")
-            {
-                var parent = await _db.Folders.FindAsync(parentId);
-                if (parent == null) throw new Exception("Parent folder not found");
-            }
+            if (await _db.Folders.FindAsync(parentId) == null)
+                throw new Exception("Parent folder not found");
         }
 
         if (!string.IsNullOrEmpty(name)) folder.Name = name.Trim();
         if (description != null) folder.Description = description;
-        if (parentId != null) folder.ParentId = string.IsNullOrEmpty(parentId) || parentId == "0" ? null : parentId;
+        if (parentId != null) folder.ParentId = parentId;
 
         folder.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
@@ -196,17 +269,19 @@ public class FolderService
         };
     }
 
+    /// <summary>重排某父目录下的文件夹顺序；<paramref name="parentId"/> 为 <c>null</c> 表示根目录下的一级文件夹。</summary>
     public async Task UpdateSortAsync(string? parentId, List<string> itemIds)
     {
         IQueryable<Folder> query = _db.Folders;
+        var parent = FolderIds.Normalize(parentId);
 
-        if (string.IsNullOrEmpty(parentId) || parentId == "0")
+        if (parent == null)
         {
             query = query.Where(f => f.ParentId == null);
         }
         else
         {
-            query = query.Where(f => f.ParentId == parentId);
+            query = query.Where(f => f.ParentId == parent);
         }
 
         var folders = await query.ToListAsync();
@@ -268,9 +343,26 @@ public class FolderService
         return ids;
     }
 
+    /// <summary>移动文件夹；<paramref name="targetParentId"/> 为 <c>null</c> 表示移到根目录（全部书签）。</summary>
     public async Task MoveFolderAsync(string folderId, string? targetParentId)
     {
-        await UpdateFolderAsync(folderId, parentId: targetParentId ?? "0");
+        var folder = await _db.Folders.FindAsync(folderId) ?? throw new Exception("Folder not found");
+        var target = FolderIds.Normalize(targetParentId);
+
+        if (target == folderId)
+            throw new ArgumentException("Cannot move a folder into itself");
+
+        if (target != null)
+        {
+            if (await WouldCreateCycleInternalAsync(folderId, target))
+                throw new ArgumentException("Moving would create a circular reference");
+            if (await _db.Folders.FindAsync(target) == null)
+                throw new Exception("Parent folder not found");
+        }
+
+        folder.ParentId = target;
+        folder.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
     }
 
     public async Task<string> CopyFolderDeepAsync(string folderId, string? targetParentId)
@@ -285,7 +377,7 @@ public class FolderService
         {
             Name = source.Name,
             Description = source.Description,
-            ParentId = string.IsNullOrEmpty(targetParentId) || targetParentId == "0" ? null : targetParentId,
+            ParentId = FolderIds.Normalize(targetParentId),
             LinkCount = 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

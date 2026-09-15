@@ -1,4 +1,5 @@
 using LinkPocket.Data;
+using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http;
 using System.Text.RegularExpressions;
@@ -69,11 +70,12 @@ public class LinkService
         {
             ("created_at", "asc") => query.OrderBy(l => l.CreatedAt),
             ("updated_at", "asc") => query.OrderBy(l => l.UpdatedAt),
-            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt),
+            // 从未查看（null）恒排最后，与文件夹侧同口径
+            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt == null).ThenBy(l => l.LastVisitedAt),
             ("visit_count", "asc") => query.OrderBy(l => l.VisitCount),
             ("title", "asc") => query.OrderBy(l => l.Title),
             ("updated_at", _) => query.OrderByDescending(l => l.UpdatedAt),
-            ("last_visited_at", _) => query.OrderByDescending(l => l.LastVisitedAt),
+            ("last_visited_at", _) => query.OrderBy(l => l.LastVisitedAt == null).ThenByDescending(l => l.LastVisitedAt),
             ("visit_count", _) => query.OrderByDescending(l => l.VisitCount),
             ("title", _) => query.OrderByDescending(l => l.Title),
             _ => query.OrderByDescending(l => l.CreatedAt)
@@ -124,11 +126,11 @@ public class LinkService
         {
             ("created_at", "asc") => query.OrderBy(l => l.CreatedAt),
             ("updated_at", "asc") => query.OrderBy(l => l.UpdatedAt),
-            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt),
+            ("last_visited_at", "asc") => query.OrderBy(l => l.LastVisitedAt == null).ThenBy(l => l.LastVisitedAt),
             ("visit_count", "asc") => query.OrderBy(l => l.VisitCount),
             ("title", "asc") => query.OrderBy(l => l.Title),
             ("updated_at", _) => query.OrderByDescending(l => l.UpdatedAt),
-            ("last_visited_at", _) => query.OrderByDescending(l => l.LastVisitedAt),
+            ("last_visited_at", _) => query.OrderBy(l => l.LastVisitedAt == null).ThenByDescending(l => l.LastVisitedAt),
             ("visit_count", _) => query.OrderByDescending(l => l.VisitCount),
             ("title", _) => query.OrderByDescending(l => l.Title),
             _ => query.OrderByDescending(l => l.CreatedAt)
@@ -159,7 +161,7 @@ public class LinkService
             Url = url.Trim(),
             Title = title,
             Description = description,
-            ListId = string.IsNullOrEmpty(listId) || listId == "0" ? null : listId,
+            ListId = FolderIds.Normalize(listId),
             IsImportant = isImportant,
             VisitCount = 0,
             CreatedAt = DateTime.UtcNow,
@@ -222,7 +224,7 @@ public class LinkService
 
         if (title != null) link.Title = title;
         if (description != null) link.Description = description;
-        if (listId != null) link.ListId = string.IsNullOrEmpty(listId) || listId == "0" ? null : listId;
+        if (listId != null) link.ListId = FolderIds.Normalize(listId);
         if (isImportant != null) link.IsImportant = isImportant.Value;
         if (faviconUrl != null) link.FaviconUrl = faviconUrl;
 
@@ -300,24 +302,22 @@ public class LinkService
         return restoredLink;
     }
 
-    public async Task RecordVisitAsync(string id)
+    /// <summary>
+    /// 记录一次「查看」：只影响访问统计（LastVisitedAt / VisitCount）。
+    /// <b>不改 UpdatedAt</b>——「最后更新」严格由内容变动驱动，与文件夹口径一致；
+    /// 文件夹侧的「最后查看 / 查看次数」由 <see cref="FolderService.RecordFolderViewAsync"/> 沿父链刷新，
+    /// 本方法只返回链接所在文件夹 id 供调用方接力。
+    /// </summary>
+    public async Task<string?> RecordVisitAsync(string id)
     {
         var link = await _db.Links.FindAsync(id) ?? throw new Exception("Link not found");
 
         link.VisitCount++;
         link.LastVisitedAt = DateTime.UtcNow;
-        link.UpdatedAt = DateTime.UtcNow;
-
-        if (!string.IsNullOrEmpty(link.ListId))
-        {
-            var folder = await _db.Folders.FindAsync(link.ListId);
-            if (folder != null)
-            {
-                folder.LastVisitedAt = DateTime.UtcNow;
-            }
-        }
 
         await _db.SaveChangesAsync();
+
+        return link.ListId;
     }
 
     public async Task<MetadataResult?> FetchMetadataAsync(string url)

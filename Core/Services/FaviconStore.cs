@@ -11,10 +11,45 @@ namespace LinkPocket.Services;
 /// </summary>
 public static class FaviconStore
 {
-    private static readonly HttpClient _httpClient = new()
+    private static readonly HttpClient _httpClient = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
     {
-        Timeout = TimeSpan.FromSeconds(8)
-    };
+        var client = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(8)
+        };
+        // 部分 CDN（含 Bing）对无 UA 请求可能拒绝或返回异常内容
+        client.DefaultRequestHeaders.Add("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        return client;
+    }
+
+    /// <summary>下载单个 URL；成功返回字节，失败返回 null（带日志）。</summary>
+    private static async Task<byte[]?> TryDownloadAsync(string url)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.Error($"favicon 下载失败 [{(int)response.StatusCode}]: {url}", null);
+                return null;
+            }
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            if (bytes.Length == 0)
+            {
+                Logger.Error($"favicon 下载为空: {url}", null);
+                return null;
+            }
+            return bytes;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"favicon 下载异常: {url} - {ex.Message}", ex);
+            return null;
+        }
+    }
 
     public static readonly string CacheDirectory = Path.Combine(AppContext.BaseDirectory, "favicons");
 
@@ -49,28 +84,50 @@ public static class FaviconStore
         return File.Exists(filePath) ? filePath : null;
     }
 
-    /// <summary>确保 favicon 已下载到磁盘缓存；已存在或下载成功返回 true。</summary>
+    /// <summary>确保 favicon 已下载到磁盘缓存；已存在或下载成功返回 true。
+    /// 降级链：原 URL → {host}/favicon.ico → api.iowen.cn 聚合源（国内可达）。
+    /// 无论哪个来源成功，都写入原 URL 对应的缓存路径，保证 LoadFromCache 命中。</summary>
     public static async Task<bool> EnsureCachedAsync(string? faviconUrl)
     {
         if (string.IsNullOrWhiteSpace(faviconUrl)) return false;
 
         var resolvedUrl = ResolveFaviconUrl(faviconUrl);
-        if (File.Exists(GetCacheFilePath(resolvedUrl))) return true;
+        var cachePath = GetCacheFilePath(resolvedUrl);
+        if (File.Exists(cachePath)) return true;
+
+        // ① 原始 URL
+        var bytes = await TryDownloadAsync(resolvedUrl);
+
+        // ② 站点根 favicon.ico
+        if (bytes == null)
+        {
+            var root = BuildDefaultFaviconUrl(resolvedUrl);
+            if (!string.IsNullOrEmpty(root) && root != resolvedUrl)
+                bytes = await TryDownloadAsync(root);
+        }
+
+        // ③ 聚合 favicon 源（国内网络可达，按域名取 64px 图标）
+        if (bytes == null)
+        {
+            try
+            {
+                var host = new Uri(resolvedUrl).Host;
+                bytes = await TryDownloadAsync($"https://api.iowen.cn/favicon/{host}.png");
+            }
+            catch { }
+        }
+
+        if (bytes == null) return false;
 
         try
         {
-            using var response = await _httpClient.GetAsync(resolvedUrl);
-            if (!response.IsSuccessStatusCode) return false;
-
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            if (bytes.Length == 0) return false;
-
             Directory.CreateDirectory(CacheDirectory);
-            await File.WriteAllBytesAsync(GetCacheFilePath(resolvedUrl), bytes);
+            await File.WriteAllBytesAsync(cachePath, bytes);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.Error($"favicon 缓存写入失败: {cachePath} - {ex.Message}", ex);
             return false;
         }
     }

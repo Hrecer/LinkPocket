@@ -11,7 +11,7 @@ public interface ILinkPocketApi
 {
     // —— 浏览（资源管理器式逐级进入）——
     /// <summary>
-    /// 获取一个目录的内容。folderId 为 null/"0" 表示根目录（全部书签）。
+    /// 获取一个目录的内容。folderId 为 null 表示根目录（全部书签）——它不是实体、没有 ID。
     /// perPage &gt; 0 时对链接启用分页（page 从 1 开始）；perPage = 0（默认）不分页，
     /// 一次取回全部链接（与旧版行为一致）。
     /// totalLinkCount 只统计直接子链接，不递归子文件夹。

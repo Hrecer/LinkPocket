@@ -26,6 +26,18 @@ public partial class App : Application
         base.OnStartup(e);
     }
 
+    /// <summary>
+    /// 退出兜底：默认 OnLastWindowClose 下，若存在被异常吞掉后残留的隐藏窗口
+    /// 或后端线程未结束，进程会残留在后台。改为「主窗口关闭即退出」，
+    /// 并在 Exit 时强制终止整个进程，确保关闭窗口 = 进程结束。
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Logger.Info("应用退出，强制结束进程");
+        base.OnExit(e);
+        Environment.Exit(0);
+    }
+
     private void DisableWerDumps()
     {
         try

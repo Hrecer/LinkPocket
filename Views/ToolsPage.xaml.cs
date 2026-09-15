@@ -269,7 +269,7 @@ namespace LinkPocket.Views
                 return;
             }
 
-            if (DataContext is not ViewModels.MainViewModel vm || vm.LinkNavigator == null) return;
+            if (DataContext is not ViewModels.MainViewModel vm) return;
 
             try
             {
@@ -283,7 +283,7 @@ namespace LinkPocket.Views
                         return;
                     }
                     idInput.Text = "";
-                    vm.LinkNavigator.NavigateToLinkById(id, target.ListId);
+                    Services.UiCoordinator.Instance?.OpenLinkInBrowser(id);
                 }
                 else
                 {
@@ -293,7 +293,7 @@ namespace LinkPocket.Views
                         return;
                     }
                     idInput.Text = "";
-                    vm.LinkNavigator.NavigateToFolderById(id);
+                    Services.UiCoordinator.Instance?.OpenFolderInBrowser(id);
                 }
 
                 Services.UiCoordinator.Instance?.ShowNavigationTabs();
@@ -835,12 +835,12 @@ namespace LinkPocket.Views
                 VerticalAlignment = VerticalAlignment.Top
             };
             var capturedLinkId = link.LinkId;
-            var capturedListId = link.ListId;
+            
             jumpBtn.Click += (s, e) =>
             {
                 ExitDetailView();
-                if (DataContext is ViewModels.MainViewModel vm && vm.LinkNavigator != null)
-                    vm.LinkNavigator.NavigateToLinkById(capturedLinkId, capturedListId);
+                if (Services.UiCoordinator.Instance != null)
+                    Services.UiCoordinator.Instance.OpenLinkInBrowser(capturedLinkId);
             };
 
             var headerGrid = new Grid { Height = 48 };

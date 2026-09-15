@@ -242,8 +242,8 @@ namespace LinkPocket.Views
 
         private void JumpToLink_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedResultItem == null || DataContext is not MainViewModel vm || vm.LinkNavigator == null) return;
-            vm.LinkNavigator.NavigateToLinkInMainList(_selectedResultItem.LinkId);
+            if (_selectedResultItem == null) return;
+            Services.UiCoordinator.Instance?.OpenLinkInBrowser(_selectedResultItem.LinkId);
         }
 
         private void ResultArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

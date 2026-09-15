@@ -22,7 +22,7 @@ namespace LinkPocket.ViewModels
         /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
         private static ILinkPocketApi Api => AppServices.Api;
         
-        private string _currentNavId = "links";
+        private string _currentNavId = "browser";
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
         private LinkViewModel? _linkViewModel;
@@ -83,7 +83,7 @@ namespace LinkPocket.ViewModels
             _settingsViewModel = new SettingsViewModel();
             _smartListViewModel = new SmartListViewModel();
 
-            SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "links"));
+            SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
             CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
             ConfirmCreateFolderCommand = new AsyncRelayCommand(ConfirmCreateFolderAsync, () => !string.IsNullOrWhiteSpace(NewFolderName));
@@ -119,11 +119,11 @@ namespace LinkPocket.ViewModels
                 DeleteSelectedCommand.NotifyCanExecuteChanged();
             };
 
-            SyncNavSelection("links");
+            SyncNavSelection("browser");
 
             FolderItems = new ObservableCollection<FolderNode>
             {
-                new FolderNode { Id = "0", FolderId = "0", Name = "全部书签", IconKind = "bookmark-outline", LinkCount = 0 }
+                new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "bookmark-outline", LinkCount = 0 }
             };
 
             // P3 事件推送：订阅后端数据变更，防抖后刷新当前视图。
@@ -148,13 +148,10 @@ namespace LinkPocket.ViewModels
                     {
                     switch (_currentNavId)
                     {
-                        case "links":
-                            if (_linkViewModel != null)
-                                await _linkViewModel.LoadLinksAsync();
-                            await RefreshFolderTreeAndUIAsync();
-                            break;
                         case "browser":
-                            await BrowserViewModel.RefreshAsync();
+                            // 必须保留选中：写操作（重命名/新建/移动…）自己刚恢复的选中，
+                            // 会被这条 300ms 防抖后的第二次刷新抹掉 —— 表现为"刚重命名完是选中的，立马又没了"。
+                            await BrowserViewModel.RefreshPreservingSelectionAsync();
                             break;
                         case "trash":
                             await LoadTrashTreeAsync();
@@ -181,8 +178,6 @@ namespace LinkPocket.ViewModels
                     var oldId = _currentNavId;
                     _currentNavId = value;
                     OnPropertyChanged();
-                    if (value == "links" && _linkViewModel != null)
-                        _ = _linkViewModel.LoadLinksAsync();
                     if (value == "search")
                         OnNavigatedToSearch?.Invoke(this, EventArgs.Empty);
                     if (oldId == "search")
@@ -461,7 +456,6 @@ namespace LinkPocket.ViewModels
             set { _smartListViewModel = value; OnPropertyChanged(); }
         }
 
-        public Managers.LinkNavigator? LinkNavigator { get; set; }
 
         public ICommand SelectNavCommand { get; }
         public ICommand ShowAddLinkCommand { get; }
@@ -498,8 +492,7 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = "links", Label = "链接", IconKind = "link-variant", IsSelected = true },
-                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline" },
+                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline", IsSelected = true },
                 new() { Id = "search", Label = "搜索", IconKind = "magnify" },
                 new() { Id = "smartlists", Label = "智能列表", IconKind = "auto-fix" },
                 new() { Id = "tools", Label = "工具", IconKind = "wrench-outline" },
@@ -512,11 +505,6 @@ namespace LinkPocket.ViewModels
         {
             var previousNavId = CurrentNavId;
 
-            if (navId != CurrentNavId && CurrentNavId == "links")
-            {
-                _linkViewModel?.ClearSelectionCommand.Execute(null);
-                _selectionManager.ClearAll();
-            }
 
             CurrentNavId = navId;
             SyncNavSelection(navId);
@@ -539,9 +527,7 @@ namespace LinkPocket.ViewModels
                 IsInSecondaryPage = false;
             }
 
-            if (navId == "links")
-                await RefreshFolderTreeAndUIAsync();
-            else if (navId == "trash")
+            if (navId == "trash")
             {
                 if (_recycleBinViewModel != null)
                 {
@@ -678,11 +664,14 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private void ShowDetail(LinkItem? link)
+        private async void ShowDetail(LinkItem? link)
         {
             if (link == null) return;
             _viewingLink = link;
-            _ = Task.Run(async () => { try { await Api.RecordVisitAsync(link.LinkId); } catch { } });
+            // 先记账、再展示：展示的就是"含本次"的统计。
+            // 不要用 Task.Run —— 后台线程与 UI 线程并发使用同一个 EF DbContext 是非线程安全的
+            // （UI 线程同时可能因事件防抖在刷新列表）。
+            try { await Api.RecordVisitAsync(link.LinkId); } catch { }
             link.LastVisitedAt = DateTime.UtcNow;
             link.VisitCount++;
             DetailUrl = link.Url ?? string.Empty;
@@ -844,7 +833,7 @@ namespace LinkPocket.ViewModels
                         url: url,
                         title: title,
                         description: description,
-                        listId: _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId,
+                        listId: string.IsNullOrEmpty(_selectionManager.SelectedFolderId) ? null : _selectionManager.SelectedFolderId,
                         faviconUrl: _fetchedFaviconUrl
                     );
                     Logger.Info("链接添加成功");
@@ -926,7 +915,7 @@ namespace LinkPocket.ViewModels
             _selectionManager.SelectFolder(folderId);
             NotifyActionCommandsChanged();
 
-            if (folderId == "0")
+            if (string.IsNullOrEmpty(folderId))
             {
                 Logger.Info($"[选中] SelectFolder: 全部书签");
             }
@@ -967,7 +956,7 @@ namespace LinkPocket.ViewModels
 
         private bool CanDeleteSelected()
         {
-            if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId) && _selectionManager.SelectedFolderId != "0") return true;
+            if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId)) return true;
             if (_selectionManager.HasSelectedLink) return true;
             if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
             return false;
@@ -977,7 +966,7 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId) && _selectionManager.SelectedFolderId != "0")
+                if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 {
                     var folderName = FindFolderNameById(FolderItems, _selectionManager.SelectedFolderId);
                     if (Ui?.ConfirmDeleteFolder(folderName) != true)
@@ -1033,7 +1022,7 @@ namespace LinkPocket.ViewModels
 
             try
             {
-                string? parentId = _selectionManager.SelectedFolderId == "0" ? null : _selectionManager.SelectedFolderId;
+                string? parentId = string.IsNullOrEmpty(_selectionManager.SelectedFolderId) ? null : _selectionManager.SelectedFolderId;
                 await Api.CreateFolderAsync(NewFolderName.Trim(), parentId);
                 Ui?.ExpandFolder(_selectionManager.SelectedFolderId);
                 await RefreshFolderTreeAndUIAsync();
@@ -1192,7 +1181,7 @@ namespace LinkPocket.ViewModels
 
                 var rootNode = new FolderNode
                 {
-                    Id = "0", FolderId = "0", Name = "全部书签", LinkCount = counts.RootLevel,
+                    IsRoot = true, Name = FolderIds.RootDisplayName, LinkCount = counts.RootLevel,
                     IconKind = "bookmark-outline",
                     Children = new ObservableCollection<FolderNode>()
                 };
@@ -1331,7 +1320,7 @@ namespace LinkPocket.ViewModels
 
             OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
 
-            _selectionManager.SelectFolder(CurrentNavId == "links" ? "0" : CurrentNavId);
+            _selectionManager.SelectFolder(CurrentNavId == "browser" ? string.Empty : CurrentNavId);
         }
     }
 }

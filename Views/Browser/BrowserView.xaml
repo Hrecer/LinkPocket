@@ -5,18 +5,272 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:vm="clr-namespace:LinkPocket.ViewModels"
+             xmlns:local="clr-namespace:LinkPocket.Views.Browser"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
+             Focusable="True"
              Background="{DynamicResource SurfaceContainerLowest}">
 
+    <UserControl.InputBindings>
+        <KeyBinding Modifiers="Control" Key="X" Command="{Binding CutCommand}"/>
+        <KeyBinding Modifiers="Control" Key="C" Command="{Binding CopyCommand}"/>
+        <KeyBinding Modifiers="Control" Key="V" Command="{Binding PasteCommand}"/>
+        <KeyBinding Modifiers="Control" Key="A" Command="{Binding SelectAllCommand}"/>
+        <KeyBinding Key="Delete" Command="{Binding DeleteSelectionCommand}"/>
+        <KeyBinding Key="F2" Command="{Binding RenameSelectionCommand}"/>
+        <KeyBinding Key="Enter" Command="{Binding OpenSelectionCommand}"/>
+        <KeyBinding Key="Backspace" Command="{Binding GoUpCommand}"/>
+        <KeyBinding Modifiers="Alt" Key="Left" Command="{Binding GoBackCommand}"/>
+        <KeyBinding Modifiers="Alt" Key="Right" Command="{Binding GoForwardCommand}"/>
+        <KeyBinding Key="Escape" Command="{Binding ClearSelectionCommand}"/>
+    </UserControl.InputBindings>
+
     <UserControl.Resources>
-        <Style x:Key="NavIconButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+
+        <!-- 详情栏卡片：M3 圆角容器，叠在 SurfaceContainerLow 侧栏底色上 -->
+        <Style x:Key="SideCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SurfaceContainer}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <!-- 详情栏小节标签 -->
+        <Style x:Key="SideLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Margin" Value="4,0,0,4"/>
+        </Style>
+        <!-- 类型 / 统计小药丸 -->
+        <Style x:Key="SideChip" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- 列表行计数药丸（Material 3 Expressive 风格）：
+             全圆角 pill + 次级容器色调 + 紧凑字重，尺寸克制，跟随名称显示而不抢视觉焦点。 -->
+        <Style x:Key="CountPill" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+            <Setter Property="CornerRadius" Value="9"/>
+            <Setter Property="MinHeight" Value="18"/>
+            <Setter Property="Padding" Value="9,0"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <!-- 纯图标按钮：自带 ControlTemplate，绝对不能 BasedOn TextButton。
+             Material3 的 TextButton 模板把 Padding 硬编码成 Padding="14,0"（不响应 Button.Padding，
+             也不受本样式 Padding=4 影响），Width=34 的按钮内容区被压到 34-28=6，
+             再被布局裁切 → 后退/前进箭头左右两端被切掉。
+             这里用 TemplateBinding Padding，内容区 = 34-2*4 = 26 ≥ 图标 20，图标完整显示。
+             同时避免继承 TextButton 的 MinHeight=40，Height 才真正等于 32。 -->
+        <Style x:Key="NavIconButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="6"/>
+            <Setter Property="Padding" Value="4"/>
             <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="30"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="0"/>
+            <Setter Property="ToolTipService.Placement" Value="Top"/>
+            <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="16" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <!-- hover / pressed 状态层：沿用 TextButton 的 Primary 叠加（8% / 12%） -->
+                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                        Opacity="0" CornerRadius="16" Margin="-4"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="FolderTreeStyle" TargetType="TreeView">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style x:Key="FolderTreeItemStyle" TargetType="TreeViewItem">
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="AllowDrop" Value="True"/>
+            <EventSetter Event="DragOver" Handler="TreeItem_DragOver"/>
+            <EventSetter Event="Drop" Handler="TreeItem_Drop"/>
+        </Style>
+        <Style x:Key="HeaderSortButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- 列宽拖拽手柄（Windows 列头分隔线）：贴在列右边界，hover/拖动时显示一条细高亮线 -->
+        <Style x:Key="ColumnResizeThumb" TargetType="Thumb">
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Margin" Value="0,0,-4,0"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="SizeWE"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="Transparent" Padding="2,0">
+                            <Border x:Name="Line" Width="2" Background="Transparent" CornerRadius="1"
+                                    HorizontalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 名称列可用宽度 = 列宽 - 图标/间距/计数药丸的固定占位 -->
+        <local:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
+
+        <!-- 右键菜单项：库默认模板行高过大、字号偏大、文字不垂直居中，这里给一套紧凑模板（M3 菜单形态：
+             无分组分割线、行高小、字小、左右留白紧）。
+             ⚠️ 两个坑：
+             1) 菜单项若写了显式的 <MenuItem.Style>，会整体取代下面的隐式样式（不是叠加），
+                必须写 BasedOn="{StaticResource LpMenuItem}"，否则退回库默认模板
+                → 同一张菜单里"有显式样式的项"高而缩进、"没写的项"矮而左对齐，看起来就是没对齐。
+             2) 隐式样式与具名样式要同时存在：具名的供 BasedOn 引用，隐式的负责兜底覆盖。 -->
+        <Style x:Key="LpMenuItem" TargetType="MenuItem">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Margin="3,1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+        <!-- M3 菜单不用分组分割线：本页菜单里的 <Separator/> 已全部移除。
+             这条样式留着是为了万一以后有人加回分割线时不至于退回库默认的粗线。 -->
+        <Style TargetType="Separator">
+            <Setter Property="Margin" Value="8,3"/>
+            <Setter Property="Background" Value="{DynamicResource OutlineVariant}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Height="1" Margin="{TemplateBinding Margin}"
+                                Background="{TemplateBinding Background}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 路径编辑框：M3 Expressive 圆角填充文本域（紧凑版，高度与导航按钮同为 32，保证切换时整行高度不变）。
+             默认 Collapsed，IsPathEditing=True 才显示；路径无效时 2px Error 描边。
+             注意：不能用库默认 TextBox 模板——那是直角 + 蓝色系统焦点描边，与 M3 割裂。 -->
+        <Style x:Key="PathEditField" TargetType="TextBox">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="MinWidth" Value="120"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
+            <!-- 键盘焦点虚线框必须去掉：回车确认后这个 TextBox 会被折叠，但它仍是焦点元素，
+                 WPF 会画出焦点虚线框 —— 塌成一条横跨整宽的黑色虚线，看起来像"奇怪的灰色样式"。 -->
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Root" CornerRadius="16"
+                                Background="{DynamicResource SurfaceContainerHighest}"
+                                BorderThickness="2" BorderBrush="Transparent"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsPathInvalid}" Value="True">
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#E24B4A"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPathEditing}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 行内信息列文字（最后更新 / 最后查看 / 查看次数 / 创建时间）统一规格 -->
+        <Style x:Key="RowCellText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
         </Style>
     </UserControl.Resources>
 
@@ -24,30 +278,79 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+
+        <!-- ===== 命令栏（Windows 11 Explorer 风格）：导航栏之下、内容区之上的独立一整行 ===== -->
+        <Border Grid.Row="1" Background="{DynamicResource Surface}"
+                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
+                Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+                <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字 -->
+                <Button Command="{Binding NewFolderCommand}" Cursor="Hand"
+                        Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="folder-plus" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="新建文件夹" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <!-- 新建链接：与新建文件夹并列，弹出 M3 链接编辑器（默认当前目录） -->
+                <Button Command="{Binding NewLinkCommand}" Cursor="Hand"
+                        Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="新建链接" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Border>
 
         <!-- ===== 导航栏 ===== -->
         <Border Grid.Row="0" Background="{DynamicResource SurfaceContainer}"
                 BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
                 Padding="10,6">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Style="{StaticResource NavIconButton}" Tag="后退 (Alt+←)"
-                        Command="{Binding GoBackCommand}">
-                    <m3:M3Icon Kind="arrow-left" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
-                <Button Style="{StaticResource NavIconButton}" Tag="前进 (Alt+→)"
-                        Command="{Binding GoForwardCommand}">
-                    <m3:M3Icon Kind="arrow-right" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Button>
-                <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Backspace)"
-                        Command="{Binding GoUpCommand}">
-                    <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <DockPanel VerticalAlignment="Center" LastChildFill="True">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <Button Style="{StaticResource NavIconButton}" Tag="后退 (Alt+←)"
+                            Command="{Binding GoBackCommand}">
+                        <m3:M3Icon Kind="arrow-left" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Style="{StaticResource NavIconButton}" Tag="前进 (Alt+→)"
+                            Command="{Binding GoForwardCommand}">
+                        <m3:M3Icon Kind="arrow-right" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                    <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Backspace)"
+                            Command="{Binding GoUpCommand}">
+                        <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </StackPanel>
+                <!-- 路径编辑开关：与左侧 ← → ↑ 完全同规格（34×32 / 20px 图标），
+                     否则它比导航按钮小一圈，且"退出编辑(close-circle)"与"进入编辑(pencil)"两个字形
+                     视觉大小不一致 —— 统一按不编辑时的大小。 -->
+                <Button DockPanel.Dock="Right" Style="{StaticResource NavIconButton}"
+                        ToolTip="编辑路径（Enter 导航，Esc 取消）" Focusable="False"
+                        Command="{Binding TogglePathEditCommand}" Margin="6,0,0,0">
+                    <m3:M3Icon Kind="{Binding PathEditIconKind}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Button>
 
-                <!-- 面包屑：每一级可点击，当前级高亮 -->
-                <ItemsControl ItemsSource="{Binding Breadcrumbs}" Margin="12,0,0,0" VerticalAlignment="Center">
+                <!-- 面包屑 / 路径编辑 双态区（Explorer 地址栏模式） -->
+                <Grid Margin="12,0,0,0" VerticalAlignment="Center">
+                    <!-- 面包屑：每一级可点击，当前级高亮；路径编辑态时隐藏。
+                         MinHeight 显式压到 32：面包屑按钮 BasedOn TextButton 会白拿 MinHeight=40，
+                         而编辑态它们被折叠、只剩 32 高的编辑框 → 整行会在点开编辑时缩短。 -->
+                    <ItemsControl ItemsSource="{Binding Breadcrumbs}" VerticalAlignment="Center">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPathEditing}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal"/>
@@ -59,11 +362,13 @@
                                 <Button Command="{Binding DataContext.CrumbClickCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
                                         Background="Transparent" BorderThickness="0"
-                                        Padding="10,4" FontSize="13" Cursor="Hand">
+                                        FontSize="13" Cursor="Hand">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                                             <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-                                            <Setter Property="Padding" Value="10,4"/>
+                                            <Setter Property="Padding" Value="12,0"/>
+                                            <Setter Property="MinHeight" Value="32"/>
+                                            <Setter Property="Height" Value="32"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsLast}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
@@ -91,41 +396,359 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </StackPanel>
+
+                    <!-- 路径编辑态：M3 圆角填充文本域 + 同级候选 Popup（高度与面包屑/导航按钮一致，整行不变高） -->
+                    <TextBox x:Name="PathEditBox" Style="{StaticResource PathEditField}"
+                             Text="{Binding PathEditText, UpdateSourceTrigger=PropertyChanged}"
+                             VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                             PreviewKeyDown="PathEditBox_PreviewKeyDown"
+                             LostFocus="PathEditBox_LostFocus">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding ConfirmPathCommand}"/>
+                            <KeyBinding Key="Escape" Command="{Binding CancelPathEditCommand}"/>
+                            <KeyBinding Key="Tab" Command="{Binding CompletePathCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
+
+                    <Popup IsOpen="{Binding HasPathCandidates, Mode=OneWay}"
+                           PlacementTarget="{Binding ElementName=PathEditBox}"
+                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                           Closed="PathCandidatesPopup_Closed">
+                        <Border Background="{DynamicResource SurfaceContainerHigh}"
+                                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                                CornerRadius="12" MaxHeight="220" MinWidth="180" Padding="0,4">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="#000000"/>
+                            </Border.Effect>
+                            <ListBox x:Name="PathCandidatesList" Focusable="False"
+                                     ItemsSource="{Binding PathCandidates}"
+                                     SelectedIndex="{Binding SelectedCandidateIndex, Mode=TwoWay}"
+                                     BorderThickness="0" Background="Transparent"
+                                     SelectionChanged="PathCandidates_SelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" FontSize="12" Height="26" Margin="12,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSurface}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </DockPanel>
         </Border>
 
-        <!-- ===== 内容区 ===== -->
-        <Grid Grid.Row="1" MouseLeftButtonUp="ContentArea_MouseLeftButtonUp">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <!-- ===== 内容区：左侧文件夹树 / 右侧列表 / 详情栏 ===== -->
+        <Grid Grid.Row="2" MouseLeftButtonUp="ContentArea_MouseLeftButtonUp">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
+            </Grid.ColumnDefinitions>
 
-            <!-- 列头 -->
-            <Border Grid.Row="0" Background="{DynamicResource SurfaceContainerLow}" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1" Padding="16,6">
+            <!-- 左侧文件夹树（资源管理器式导航） -->
+            <Border Grid.Column="0" Background="{DynamicResource SurfaceContainerLow}"
+                    BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,1,0">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="90"/>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="30"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="名称" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                    <TextBlock Grid.Column="1" Text="书签数" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                    <TextBlock Grid.Column="2" Text="修改时间" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Margin="10,10,10,6" Text="文件夹" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <TreeView Grid.Row="1" x:Name="FolderTreeControl"
+                              Style="{StaticResource FolderTreeStyle}"
+                              ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
+                              ItemsSource="{Binding FolderTree}"
+                              SelectedItemChanged="FolderTree_SelectedItemChanged"
+                              VirtualizingPanel.IsVirtualizing="True">
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <StackPanel.ContextMenu>
+                                        <ContextMenu>
+                                            <ContextMenu.Resources>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                                            </ContextMenu.Resources>
+                                            <!-- 根节点「全部书签」不是文件夹：重命名/删除只对真实文件夹显示 -->
+                                            <MenuItem Header="重命名" Command="{Binding Host.RenameNodeCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem Header="{Binding DeleteMenuHeader}" Command="{Binding Host.DeleteNodeCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </StackPanel.ContextMenu>
+                                    <!-- 真实文件夹：与右侧列表统一的实心琥珀色；根节点「全部书签」用书签图标（它不是文件夹） -->
+                                    <m3:M3Icon Width="16" Height="16" VerticalAlignment="Center">
+                                        <m3:M3Icon.Style>
+                                            <Style TargetType="m3:M3Icon">
+                                                <Setter Property="Kind" Value="folder"/>
+                                                <Setter Property="Foreground" Value="#FFB300"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                        <Setter Property="Kind" Value="bookmark-outline"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </m3:M3Icon.Style>
+                                    </m3:M3Icon>
+                                    <TextBlock Text="{Binding Name}" FontSize="13" Margin="6,0,0,0"
+                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Name}"/>
+                                    <!-- 链接数药丸：与右侧列表统一的 M3 Expressive 胶囊（递归计数，含子孙文件夹） -->
+                                    <Border Style="{StaticResource CountPill}" Padding="7,0" MinHeight="16">
+                                        <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                    </Border>
+                                </StackPanel>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
                 </Grid>
             </Border>
 
+            <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩 -->
+            <Grid Grid.Column="1">
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <!-- 紧凑菜单样式的隐式兜底：ContextMenu 不在 UserControl 的可视树里，
+                             拿不到 UserControl.Resources 的隐式样式，所以必须在每个菜单自己的 Resources 里再声明一次。 -->
+                        <ContextMenu.Resources>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                        </ContextMenu.Resources>
+                        <MenuItem Header="新建文件夹" Command="{Binding NewFolderCommand}"/>
+                        <MenuItem Header="粘贴" Command="{Binding PasteCommand}"/>
+                        <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
+                    </ContextMenu>
+                </Grid.ContextMenu>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 列头：与行共用同一份列宽；整列可点排序，边界可拖拽调宽；水平滚动时随内容平移 -->
+                <Border Grid.Row="0" Background="{DynamicResource SurfaceContainerLow}" BorderBrush="{DynamicResource OutlineVariant}"
+                        BorderThickness="0,0,0,1" Padding="16,6" ClipToBounds="True">
+                    <Grid x:Name="HeaderGrid" RenderTransformOrigin="0,0">
+                        <Grid.RenderTransform>
+                            <TranslateTransform X="{Binding HorizontalOffset, ElementName=RowsScroll}"/>
+                        </Grid.RenderTransform>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[0]}"/>
+                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[1]}"/>
+                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[2]}"/>
+                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[3]}"/>
+                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[4]}"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 名称 -->
+                        <Grid Grid.Column="0">
+                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SortCommand}" CommandParameter="title" ToolTip="按名称排序">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="名称" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <TextBlock Text="{Binding SortIndicatorName}" FontSize="10" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                                </StackPanel>
+                            </Button>
+                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="0" Panel.ZIndex="2"
+                                   DragDelta="ColumnResizeThumb_DragDelta"/>
+                        </Grid>
+
+                        <!-- 最后更新（内容变动时间，不含查看） -->
+                        <Grid Grid.Column="1">
+                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SortCommand}" CommandParameter="updated_at" ToolTip="按最后更新排序">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="最后更新" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <TextBlock Text="{Binding SortIndicatorUpdated}" FontSize="10" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                                </StackPanel>
+                            </Button>
+                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="1" Panel.ZIndex="2"
+                                   DragDelta="ColumnResizeThumb_DragDelta"/>
+                        </Grid>
+
+                        <!-- 最后查看 -->
+                        <Grid Grid.Column="2">
+                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SortCommand}" CommandParameter="last_visited_at" ToolTip="按最后查看排序">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="最后查看" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <TextBlock Text="{Binding SortIndicatorLastViewed}" FontSize="10" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                                </StackPanel>
+                            </Button>
+                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="2" Panel.ZIndex="2"
+                                   DragDelta="ColumnResizeThumb_DragDelta"/>
+                        </Grid>
+
+                        <!-- 查看次数 -->
+                        <Grid Grid.Column="3">
+                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SortCommand}" CommandParameter="visit_count" ToolTip="按查看次数排序">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="查看次数" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <TextBlock Text="{Binding SortIndicatorViewCount}" FontSize="10" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                                </StackPanel>
+                            </Button>
+                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="3" Panel.ZIndex="2"
+                                   DragDelta="ColumnResizeThumb_DragDelta"/>
+                        </Grid>
+
+                        <!-- 创建时间 -->
+                        <Grid Grid.Column="4">
+                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding SortCommand}" CommandParameter="created_at" ToolTip="按创建时间排序">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="创建时间" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <TextBlock Text="{Binding SortIndicatorCreated}" FontSize="10" Margin="4,0,0,0"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                                </StackPanel>
+                            </Button>
+                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="4" Panel.ZIndex="2"
+                                   DragDelta="ColumnResizeThumb_DragDelta"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
             <!-- 行列表 -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="RowsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto" SizeChanged="RowsScroll_SizeChanged">
+                <ScrollViewer.ContextMenu>
+                    <ContextMenu>
+                        <!-- 紧凑菜单样式的隐式兜底：ContextMenu 不在 UserControl 的可视树里，
+                             拿不到 UserControl.Resources 的隐式样式，所以必须在每个菜单自己的 Resources 里再声明一次。 -->
+                        <ContextMenu.Resources>
+                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                        </ContextMenu.Resources>
+                        <MenuItem Header="新建文件夹" Command="{Binding NewFolderCommand}"/>
+                        <MenuItem Header="粘贴" Command="{Binding PasteCommand}"/>
+                        <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
+                    </ContextMenu>
+                </ScrollViewer.ContextMenu>
                 <ItemsControl x:Name="RowsControl" ItemsSource="{Binding Rows}" Padding="0,4">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="RowBorder" Tag="BrowserRow" Padding="16,7" Cursor="Hand">
+                            <Border x:Name="RowBorder" Tag="BrowserRow" Padding="16,7" Cursor="Hand"
+                                    MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                    PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
+                                    MouseMove="RowBorder_MouseMove"
+                                    MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
+                                    ContextMenuOpening="RowBorder_ContextMenuOpening"
+                                    AllowDrop="True" DragOver="RowBorder_DragOver" Drop="RowBorder_Drop">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <ContextMenu.Resources>
+                                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                                        </ContextMenu.Resources>
+                                        <MenuItem Header="打开" Command="{Binding Host.RowOpenCommand}" CommandParameter="{Binding}"/>
+                                        <MenuItem Header="新建文件夹（在此文件夹内）" Command="{Binding Host.NewFolderCommand}"
+                                                  CommandParameter="{Binding Id}">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                        </MenuItem>
+                                        <MenuItem Header="复制链接" Command="{Binding Host.CopyUrlCommand}" CommandParameter="{Binding}">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                        </MenuItem>
+                                        <!-- 链接没有「重命名」语义：编辑 = 打开整页编辑器（URL / 名称 / 描述 / 图标） -->
+                                        <MenuItem Header="编辑" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}"
+                                                  ToolTip="编辑链接（URL / 名称 / 描述 / 图标）">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsFolder}" Value="False"/>
+                                                                <Condition Binding="{Binding Host.HasMultipleSelection}" Value="False"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                        </MenuItem>
+                                        <!-- 文件夹：本身只有名称，保留「重命名」 -->
+                                        <MenuItem Header="重命名" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsFolder}" Value="True"/>
+                                                                <Condition Binding="{Binding Host.HasMultipleSelection}" Value="False"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                        </MenuItem>
+                                        <MenuItem Header="详情" Command="{Binding Host.OpenDetailCommand}" CommandParameter="{Binding}"
+                                                  ToolTip="打开链接详情页">
+                                            <MenuItem.Style>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </MenuItem.Style>
+                                        </MenuItem>
+                                        <MenuItem Header="{Binding Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <Border.InputBindings>
-                                    <MouseBinding Gesture="LeftClick"
-                                                  Command="{Binding DataContext.RowClickCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                  CommandParameter="{Binding}"/>
                                     <MouseBinding Gesture="LeftDoubleClick"
                                                   Command="{Binding DataContext.RowOpenCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                   CommandParameter="{Binding}"/>
@@ -140,6 +763,9 @@
                                             <Trigger Property="IsMouseOver" Value="True">
                                                 <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
                                             </Trigger>
+                                            <DataTrigger Binding="{Binding IsCut}" Value="True">
+                                                <Setter Property="Opacity" Value="0.45"/>
+                                            </DataTrigger>
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>
                                                     <Condition Binding="{Binding IsSelected}" Value="True"/>
@@ -151,16 +777,24 @@
                                     </Style>
                                 </Border.Style>
                                 <Grid>
+                                    <!-- 与列头共用同一份列宽（拖拽列头即同步到每一行） -->
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                        <ColumnDefinition Width="150"/>
-                                        <ColumnDefinition Width="30"/>
+                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[0], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[1], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[2], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[3], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[4], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- 名称（图标 + 文本） -->
-                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Grid Width="20" Height="20" VerticalAlignment="Center">
+                                    <!-- 名称（图标 + 文本 + 计数药丸）：名称 Auto 紧跟图标，药丸紧贴名称（与左侧树一致），尾部 * 空白吸收剩余宽度 -->
+                                    <Grid Grid.Column="0" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0" Width="20" Height="20" VerticalAlignment="Center">
                                             <!-- 文件夹图标 -->
                                             <m3:M3Icon Kind="folder" Width="20" Height="20"
                                                                      Foreground="#FFB300" VerticalAlignment="Center">
@@ -211,43 +845,44 @@
                                                 </m3:M3Icon.Style>
                                             </m3:M3Icon>
                                         </Grid>
-                                        <TextBlock Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
+                                        <!-- 名称文本宽度跟随列宽，列变窄时省略号收窄，药丸不会被挤出到相邻列 -->
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="{Binding DataContext.ColumnWidths[0].Value, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NameCellTextWidth}, ConverterParameter=78}"
                                                    ToolTip="{Binding Name}"/>
-                                    </StackPanel>
+                                        <!-- 链接数药丸（仅文件夹）：紧贴名称，与左侧树完全一致（只显示数字） -->
+                                        <Border Grid.Column="2" Padding="7,0" MinHeight="16" Margin="8,0,0,0">
+                                            <Border.Style>
+                                                <Style TargetType="Border" BasedOn="{StaticResource CountPill}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                        </Border>
+                                    </Grid>
 
-                                    <!-- 书签数（仅文件夹） -->
-                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="{Binding LinkCount}"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsFolder}" Value="False">
-                                                        <Setter Property="Text" Value="—"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <!-- 最后更新（文件夹 = 内容含子孙最后变动时间；查看不算变动，内核维护） -->
+                                    <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
+                                               Text="{Binding ModifiedText}" ToolTip="{Binding ModifiedText}"/>
 
-                                    <!-- 修改时间 -->
-                                    <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" VerticalAlignment="Center"
-                                               FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                    <!-- 最后查看（文件夹 = 子孙链接被查看时沿父链刷新；从未显示「从未」） -->
+                                    <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
+                                               Text="{Binding LastViewedText}" ToolTip="{Binding LastViewedText}"/>
 
-                                    <!-- 收藏星标（仅书签） -->
-                                    <m3:M3Icon Grid.Column="3" Kind="star" Width="16" Height="16"
-                                                             Foreground="#FFC107" VerticalAlignment="Center">
-                                        <m3:M3Icon.Style>
-                                            <Style TargetType="m3:M3Icon">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsImportant}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </m3:M3Icon.Style>
-                                    </m3:M3Icon>
+                                    <!-- 查看次数（文件夹 = 子树增量计数；链接 = 自身访问次数） -->
+                                    <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
+                                               Text="{Binding ViewCountText}"/>
+
+                                    <!-- 创建时间 -->
+                                    <TextBlock Grid.Column="4" Style="{StaticResource RowCellText}"
+                                               Text="{Binding CreatedText}" ToolTip="{Binding CreatedText}"/>
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -255,10 +890,25 @@
                 </ItemsControl>
             </ScrollViewer>
 
-            <!-- 空状态 -->
+            <!-- 空状态：仅当不在加载中且列表为空时显示（修复：此前无可见性绑定，永远盖在列表上） -->
             <m3:EmptyState Grid.Row="1" IconKind="folder-open-outline"
                            Title="此文件夹为空"
-                           Text="拖入书签或从浏览器导入"/>
+                           Text="拖入链接或从浏览器导入">
+                <m3:EmptyState.Style>
+                    <Style TargetType="m3:EmptyState">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Rows.Count}" Value="0"/>
+                                    <Condition Binding="{Binding IsLoading}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </m3:EmptyState.Style>
+            </m3:EmptyState>
 
             <!-- 加载遮罩 -->
             <Border Grid.Row="1" Background="#80FFFFFF">
@@ -276,18 +926,549 @@
                     <m3:CircularProgress IsIndeterminate="True"/>
                 </StackPanel>
             </Border>
+            </Grid>
+
+            <!-- 详情栏可拖拽分隔线 -->
+        <GridSplitter Grid.Column="2" x:Name="DetailSplitter" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      Background="Transparent" Cursor="SizeWE"/>
+
+        <!-- ===== 右侧详情栏（参考链接页 DetailPanel 重新设计：卡片化 + 层级信息 + 快捷操作） ===== -->
+        <Border Grid.Column="3" x:Name="DetailsPanel" Background="{DynamicResource SurfaceContainerLow}"
+                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1,0,0,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="12,12,12,16">
+
+                    <!-- 空态占位 -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,110,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.HasSelection}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <m3:M3Icon Kind="eye-outline" Width="44" Height="44"
+                                   HorizontalAlignment="Center" Opacity="0.15"/>
+                        <TextBlock Text="选中项目查看详情" FontSize="13" Opacity="0.35"
+                                   HorizontalAlignment="Center" Margin="0,14,0,0"/>
+                        <TextBlock Text="链接或文件夹均可" FontSize="11" Opacity="0.22"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <!-- ===== 单选：头部卡片（图标 + 名称 + 类型药丸） ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.IsSingle}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <!-- 头部：图标居左，名称 + 类型药丸靠右排布，节省纵向空间 -->
+                            <Grid Margin="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid Grid.Column="0" Width="44" Height="44" VerticalAlignment="Center">
+                                    <!-- 书签 favicon（无图时回退 earth 占位） -->
+                                    <Border CornerRadius="10" Background="White" ClipToBounds="True">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Details.IsFolder}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid>
+                                            <Image Source="{Binding Details.Favicon}" Stretch="Uniform" Margin="6"
+                                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                                <Image.Style>
+                                                    <Style TargetType="Image">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Details.HasFavicon}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Image.Style>
+                                            </Image>
+                                            <m3:M3Icon Kind="earth" Width="22" Height="22"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5">
+                                                <m3:M3Icon.Style>
+                                                    <Style TargetType="m3:M3Icon">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Details.HasFavicon}" Value="False">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </m3:M3Icon.Style>
+                                            </m3:M3Icon>
+                                        </Grid>
+                                    </Border>
+                                    <!-- 文件夹大图标 -->
+                                    <m3:M3Icon Kind="folder" Width="40" Height="40" Foreground="#FFB300"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <m3:M3Icon.Style>
+                                            <Style TargetType="m3:M3Icon">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Details.IsFolder}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </m3:M3Icon.Style>
+                                    </m3:M3Icon>
+                                </Grid>
+
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Details.DisplayName}" FontSize="15" FontWeight="SemiBold"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 单选书签：URL 卡片 ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.IsLink}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding Details.UrlText}" FontSize="12"
+                                       FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="复制链接"
+                                    Width="26" Height="24" Padding="4" Margin="6,0,0,0" VerticalAlignment="Center"
+                                    Command="{Binding Details.CopyUrlCommand}">
+                                <m3:M3Icon Kind="content-copy" Width="13" Height="13"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- ===== 单选：信息卡片（位置 / 时间 / 统计） ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.IsSingle}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock Text="信息" Style="{StaticResource SideLabel}"/>
+
+                            <!-- 位置 -->
+                            <Grid Margin="0,2,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="folder-outline" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                                <TextBlock Grid.Column="1" Text="位置" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.PathText}" FontSize="12"
+                                           TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 文件夹：书签数 -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsFolder}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="link-variant" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="链接数" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.BookmarkCountText}" FontSize="12"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource Primary}"/>
+                            </Grid>
+
+                            <!-- 最后更新 -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="refresh" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="最后更新" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.UpdatedText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 最后查看（仅书签） -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsLink}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="history" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="最后查看" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.LastVisitedText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 累计查看（仅书签） -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsLink}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="trending-up" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="查看次数" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.VisitText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 最后查看（仅文件夹）：内核维护，子孙链接被查看时沿父链刷新 -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsFolder}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="history" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="最后查看" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.LastVisitedText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 查看次数（仅文件夹）：内核维护，子孙链接被查看时沿父链 +1（递归继承口径） -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsFolder}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="trending-up" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="查看次数" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.ViewCountText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- 创建时间（书签与文件夹均显示，文件夹时间由内核维护） -->
+                            <Grid Margin="0,0,0,8">
+                                <Grid.Style>
+                                    <Style TargetType="Grid">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Details.IsSingle}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Grid.Style>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="plus-circle-outline" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="创建时间" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.CreatedText}" FontSize="12"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </Grid>
+
+                            <!-- ID（可复制）：与其他信息行共用 16/62 列宽，图标/标签/值三列严格对齐 -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="16"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <m3:M3Icon Kind="fingerprint" Width="13" Height="13" Opacity="0.55"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock Grid.Column="1" Text="ID" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Details.IdText}" FontSize="11" FontFamily="Consolas"
+                                           TextTrimming="CharacterEllipsis" Opacity="0.6" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"
+                                           ToolTip="{Binding Details.IdText}"/>
+                                <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="复制 ID"
+                                        Width="24" Height="22" Padding="3" Margin="4,0,0,0" VerticalAlignment="Center"
+                                        Command="{Binding Details.CopyIdCommand}">
+                                    <m3:M3Icon Kind="content-copy" Width="12" Height="12"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 单选书签：描述卡片（置于信息卡之后） ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.HasDescription}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock Text="描述" Style="{StaticResource SideLabel}"/>
+                            <TextBlock Text="{Binding Details.DescriptionText}" FontSize="12.5" TextWrapping="Wrap"
+                                       LineHeight="19" Foreground="{DynamicResource OnSurface}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 单选：快捷操作 ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.IsSingle}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock Text="操作" Style="{StaticResource SideLabel}"/>
+                            <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Style="{StaticResource FilledButton}" Padding="10,7"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                        Command="{Binding Details.OpenCommand}"
+                                        ToolTip="打开（链接进入详情页，文件夹进入目录）">
+                                    <StackPanel Orientation="Horizontal">
+                                        <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
+                                        <TextBlock Text="打开" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <!-- 链接：编辑（整页编辑器）；文件夹：重命名 -->
+                                <Button Grid.Column="1" Style="{StaticResource NavIconButton}"
+                                        Tag="{Binding Details.EditLabel}"
+                                        Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                                        Command="{Binding Details.RenameCommand}">
+                                    <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
+                                </Button>
+                                <Button Grid.Column="2" Style="{StaticResource NavIconButton}" Tag="删除"
+                                        Width="32" Height="32" VerticalAlignment="Center"
+                                        Command="{Binding Details.DeleteCommand}">
+                                    <Button.Resources>
+                                        <SolidColorBrush x:Key="OverrideBrush" Color="#D32F2F"/>
+                                    </Button.Resources>
+                                    <m3:M3Icon Kind="delete-outline" Width="15" Height="15" Foreground="#D32F2F"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 多选：统计卡片 ===== -->
+                    <Border>
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Details.IsMulti}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <m3:M3Icon Kind="content-duplicate" Width="26" Height="26"
+                                           Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Details.SelectedTotal}" FontSize="22" FontWeight="SemiBold"
+                                           Margin="10,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                                <TextBlock Text="项已选中" FontSize="14" Margin="8,0,0,0" Opacity="0.7" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Border Style="{StaticResource SideChip}">
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource OnPrimaryContainer}">
+                                        <Run Text="{Binding Details.SelectedFolders, Mode=OneWay}"/>
+                                        <Run Text=" 个文件夹"/>
+                                    </TextBlock>
+                                </Border>
+                                <Border Style="{StaticResource SideChip}">
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource OnPrimaryContainer}">
+                                        <Run Text="{Binding Details.SelectedLinks, Mode=OneWay}"/>
+                                        <Run Text=" 个链接"/>
+                                    </TextBlock>
+                                </Border>
+                            </StackPanel>
+                            <!-- 多选态只提供「删除所选」：重命名只对单个条目有意义，多选不出现该按钮 -->
+                            <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Ctrl+点击 可增减选择" FontSize="11" Opacity="0.45" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="删除所选"
+                                        Width="32" Height="32" Margin="6,0,0,0" Command="{Binding Details.DeleteCommand}">
+                                    <m3:M3Icon Kind="delete-outline" Width="15" Height="15" Foreground="#D32F2F"/>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
         </Grid>
 
         <!-- ===== 状态栏 ===== -->
-        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource SurfaceContainerLow}"
+        <Border Grid.Row="3" MinHeight="36" Background="{DynamicResource SurfaceContainerLow}"
                 BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,1,0,0"
                 Padding="16,0">
             <Grid>
-                <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
-                           VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <TextBlock Text="{Binding SelectionInfoText}" FontSize="12" Margin="16,0,0,0"
+                               FontWeight="SemiBold" Foreground="{DynamicResource Primary}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelection}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
                 <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.6"/>
             </Grid>
         </Border>
+
+        <!-- ===== 链接详情页覆盖层：打开时覆盖整个浏览模块（返回后回到浏览视图） ===== -->
+        <Grid Grid.Row="0" Grid.RowSpan="3">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsDetailPageOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <local:LinkDetailPage DataContext="{Binding DetailPage}"/>
+        </Grid>
+
+        <!-- ===== 链接编辑器覆盖层（新建/编辑整页）：位于详情页之上（从详情页点编辑时两层叠加） ===== -->
+        <Grid Grid.Row="0" Grid.RowSpan="3">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditorPageOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <local:LinkEditorPage DataContext="{Binding EditorPage}"/>
+        </Grid>
     </Grid>
 </UserControl>

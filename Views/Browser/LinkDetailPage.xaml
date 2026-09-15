@@ -1,0 +1,382 @@
+<UserControl x:Class="LinkPocket.Views.Browser.LinkDetailPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
+             xmlns:local="clr-namespace:LinkPocket.Views.Browser">
+
+    <UserControl.Resources>
+        <!-- 内容列外边距补偿：有纵向滚动条时把右侧外距减掉一个滚动条宽，
+             否则详情页/编辑页之间切换会看到整块内容横移（见转换器注释） -->
+        <local:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
+        <!-- 与 BrowserView.NavIconButton 同款的小图标按钮（右侧栏交互对齐） -->
+        <Style x:Key="SideIconButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
+            <Setter Property="ToolTipService.InitialShowDelay" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="13"
+                                Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}" Opacity="0"
+                                        CornerRadius="13" Margin="-4"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 浏览模块「链接详情页」：参考链接页书签详情 + 浏览右侧栏卡片风格。
+         顶栏：返回 / 标题 / 打开网站 / 编辑；正文：favicon、标题、位置、URL、Markdown 描述、统计信息。 -->
+
+    <Grid Background="{DynamicResource Surface}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ===== 顶栏 ===== -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
+                Padding="12,8" Background="{DynamicResource SurfaceContainer}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button Command="{Binding BackCommand}" Style="{StaticResource TextButton}" Padding="8,6" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="arrow-left" Width="18" Height="18" VerticalAlignment="Center"/>
+                            <TextBlock Text="返回" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <m3:M3Icon Kind="eye-outline" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
+                    <TextBlock Text="链接详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Command="{Binding CopyUrlCommand}" Style="{StaticResource TonalButton}" Padding="10,6" MinHeight="32"
+                            ToolTip="复制 URL" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="content-copy" Width="14" Height="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="复制 URL" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding OpenWebsiteCommand}" Style="{StaticResource TonalButton}" Padding="10,6" MinHeight="32"
+                            ToolTip="在默认浏览器中打开" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="打开网站" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding EditCommand}" Style="{StaticResource FilledButton}" Padding="10,6" MinHeight="32">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="pencil" Width="14" Height="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="编辑" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ===== 正文 ===== -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <!-- 定宽居中列：外边距经滚动条补偿，保证与编辑页左边界严格一致（切换整页不横移） -->
+            <Grid Width="760" HorizontalAlignment="Center">
+                <Grid.Margin>
+                    <Binding Path="ComputedVerticalScrollBarVisibility"
+                             RelativeSource="{RelativeSource AncestorType=ScrollViewer}"
+                             Converter="{StaticResource ScrollGutterMargin}"
+                             ConverterParameter="36,28,36,28"/>
+                </Grid.Margin>
+                <StackPanel>
+
+                <!-- 头部卡片：favicon + 标题 + 位置 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <!-- favicon 位：与右侧栏同款（44px 白底圆角方块，非圆形） -->
+                            <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True"
+                                    VerticalAlignment="Center">
+                                <Grid>
+                                    <Image Source="{Binding Favicon}" Stretch="Uniform" Margin="6"
+                                           RenderOptions.BitmapScalingMode="HighQuality"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    <!-- 无 favicon（抓不到 / 没抓过）时回落小地球；有图标时隐藏 -->
+                                    <m3:M3Icon Kind="earth" Width="22" Height="22" Opacity="0.5"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <m3:M3Icon.Style>
+                                            <Style TargetType="m3:M3Icon">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </m3:M3Icon.Style>
+                                    </m3:M3Icon>
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="{Binding Title}" FontSize="19" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- URL 卡片 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0" Text="URL" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="复制 URL"
+                                Margin="6,0,0,0" VerticalAlignment="Top" Command="{Binding CopyUrlCommand}">
+                            <m3:M3Icon Kind="content-copy" Width="13" Height="13"/>
+                        </Button>
+                        <ScrollViewer Grid.Row="1" Grid.ColumnSpan="2" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled" MaxHeight="42">
+                            <TextBox Text="{Binding Url, Mode=OneWay}" FontSize="14" TextWrapping="NoWrap" IsReadOnly="True"
+                                     Background="Transparent" BorderThickness="0" Padding="0" Focusable="True"
+                                     Foreground="{DynamicResource OnSurface}" VerticalAlignment="Center"/>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+
+                <!-- 描述卡片（Markdown 渲染） -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasDescription}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="描述" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
+                                                     FontFamily="Microsoft YaHei UI"
+                                                     VerticalScrollBarVisibility="Disabled"
+                                                     HorizontalScrollBarVisibility="Disabled">
+                            <mdxaml:MarkdownScrollViewer.MarkdownStyle>
+                                <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
+                                    <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                                    <Style.Resources>
+                                        <Style TargetType="Paragraph">
+                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                        </Style>
+                                        <Style TargetType="Run">
+                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                        </Style>
+                                    </Style.Resources>
+                                </Style>
+                            </mdxaml:MarkdownScrollViewer.MarkdownStyle>
+                        </mdxaml:MarkdownScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <!-- 信息卡片 -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Text="信息" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+
+                        <!-- 位置 -->
+                        <Grid Margin="0,2,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="folder-outline" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                            <TextBlock Grid.Column="1" Text="位置" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                            <TextBlock Grid.Column="2" Text="{Binding PathText}" FontSize="12"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
+                        </Grid>
+
+                        <!-- 最后更新 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="refresh" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="1" Text="最后更新" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding UpdatedAtText}" FontSize="12"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </Grid>
+
+                        <!-- 最后查看 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="history" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="1" Text="最后查看" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding LastVisitedText}" FontSize="12"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </Grid>
+
+                        <!-- 累计查看 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="chart-line" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="1" Text="累计查看" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding VisitCountText}" FontSize="12"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </Grid>
+
+                        <!-- 创建时间 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="plus-circle-outline" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="1" Text="创建时间" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding CreatedAtText}" FontSize="12"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </Grid>
+
+                        <!-- ID（可复制） -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="62"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <m3:M3Icon Kind="fingerprint" Width="13" Height="13" Opacity="0.55"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Grid.Column="1" Text="ID" FontSize="12" Opacity="0.6"
+                                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{Binding IdText}" FontSize="11" FontFamily="Consolas"
+                                       TextTrimming="CharacterEllipsis" Opacity="0.6" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"
+                                       ToolTip="{Binding IdText}"/>
+                            <Button Grid.Column="3" Style="{StaticResource SideIconButton}" Tag="复制 ID"
+                                    Width="24" Height="22" Padding="3" Margin="4,0,0,0" VerticalAlignment="Center"
+                                    Command="{Binding CopyIdCommand}">
+                                <m3:M3Icon Kind="content-copy" Width="12" Height="12"/>
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 操作卡片：与右侧栏快捷操作同款（打开 / 编辑 / 删除） -->
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock Text="操作" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        <Grid Margin="0,2,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Style="{StaticResource FilledButton}" Padding="10,7"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                    Command="{Binding OpenWebsiteCommand}"
+                                    ToolTip="在默认浏览器中打开并记录一次访问">
+                                <StackPanel Orientation="Horizontal">
+                                    <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
+                                    <TextBlock Text="打开网站" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="编辑"
+                                    Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                                    Command="{Binding EditCommand}">
+                                <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
+                            </Button>
+                            <Button Grid.Column="2" Style="{StaticResource SideIconButton}" Tag="删除"
+                                    Width="32" Height="32" VerticalAlignment="Center"
+                                    Command="{Binding DeleteCommand}"
+                                    ToolTip="移入回收站">
+                                <m3:M3Icon Kind="delete-outline" Width="15" Height="15" Foreground="#D32F2F"/>
+                            </Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

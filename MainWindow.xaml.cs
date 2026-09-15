@@ -4,8 +4,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using LinkPocket.Api;
 using LinkPocket.Models;
@@ -17,21 +19,11 @@ namespace LinkPocket;
 
 public partial class MainWindow : Window, Services.IUiCoordinator
 {
-    private readonly HashSet<string> _sidebarExpandedFolders = new() { "0" };
-    private readonly HashSet<string> _mainExpandedFolders = new() { "0" };
-    private readonly Dictionary<string, Border> _sidebarLinkBorders = new();
-    private readonly Dictionary<string, Border> _mainListCardBorders = new();
-    private readonly Dictionary<string, Border> _sidebarFolderBorders = new();
-    private readonly Dictionary<string, Border> _mainListFolderBorders = new();
-    private bool _updatingSelectionVisuals;
     private readonly Managers.SelectionManager _selectionManager = new();
-    private readonly Managers.ClipboardManager _clipboardManager = new();
-    private readonly Managers.LinkNavigator _linkNavigator;
 
+    // 搜索页自己的选中态（老「链接」页删除后，主窗口只剩搜索页需要残余状态）
     private Border? _selectedSearchCard;
     private LinkItem? _selectedSearchItem;
-    private string? _clippedFolderId;
-    private bool _isFolderClipCut;
 
     public MainWindow()
     {
@@ -39,44 +31,9 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         DataContext = new MainViewModel(_selectionManager);
         BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
         Services.UiCoordinator.Instance = this;
-        _linkNavigator = new Managers.LinkNavigator((MainViewModel)DataContext, Dispatcher)
-        {
-            OnExpandAncestorFolders = id => ExpandAllAncestorFolders(((MainViewModel)DataContext).FolderItems, id),
-            OnRefreshMainList = async () => await RefreshMainListAsync(),
-            OnRefreshSidebar = RefreshSidebar,
-            OnUpdateSelectionVisuals = () => { UpdateSidebarSelectionVisuals(); UpdateMainListSelectionVisuals(); },
-            OnUpdateDetailPanel = RefreshDetailPanel,
-            OnBringLinkIntoView = BringLinkCardIntoView,
-            OnBringSidebarIntoView = (linkId, folderId) =>
-            {
-                _ = Dispatcher.BeginInvoke(() =>
-                {
-                    if (_sidebarLinkBorders.TryGetValue(linkId, out var sidebarLink))
-                        sidebarLink.BringIntoView();
-                    else if (!string.IsNullOrEmpty(folderId) && _sidebarFolderBorders.TryGetValue(folderId, out var sidebarFolder))
-                        sidebarFolder.BringIntoView();
-                }, System.Windows.Threading.DispatcherPriority.Loaded);
-            },
-            OnClearSearchSelection = () => { _selectedSearchCard = null; _selectedSearchItem = null; SearchJumpToLinkBtn.IsEnabled = false; },
-            OnBeforeNavigate = () =>
-            {
-                ((MainViewModel)DataContext).IsInSecondaryPage = false;
-                _selectedSearchCard = null;
-                _selectedSearchItem = null;
-                SearchJumpToLinkBtn.IsEnabled = false;
-            },
-            OnClearExpanded = prefix =>
-            {
-                if (prefix == "_main") _mainExpandedFolders.Clear();
-                else if (prefix == "_sidebar") _sidebarExpandedFolders.Clear();
-            },
-            OnAddExpanded = key =>
-            {
-                if (key.StartsWith("_main:")) _mainExpandedFolders.Add(key[6..]);
-                else if (key.StartsWith("_sidebar:")) _sidebarExpandedFolders.Add(key[9..]);
-            }
-        };
-        ((MainViewModel)DataContext).LinkNavigator = _linkNavigator;
+
+        // 老「链接」页的 LinkNavigator（在旧列表里定位/展开/滚动到某条链接）随页面一并删除；
+        // 搜索页的「跳转」已改为在「浏览」页直接打开该链接的详情页。
         if (DataContext is MainViewModel searchVm)
         {
             searchVm.OnNavigatedToSearch += (s, e) => ResetSearchUI();
@@ -96,61 +53,43 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         }
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
-        RefreshDetailPanel();
     }
 
     #region IUiCoordinator 实现（供 ViewModel 解耦调用）
 
-    void Services.IUiCoordinator.ShowEditPage()
+    // 老「链接」页已整体删除：以下成员原本全部作用在它的界面上（左侧文件夹树、中间链接列表、
+    // 右侧详情栏、整页详情/编辑页、新建文件夹弹窗）。这里保留方法签名但不再有界面动作，
+    // 以免 ViewModel 侧既有调用链断裂；新页面的同级能力由 BrowserView 自行承担。
+    void Services.IUiCoordinator.ShowEditPage() { }
+    void Services.IUiCoordinator.CloseEditPage(bool returnToDetail) { }
+    void Services.IUiCoordinator.ShowDetailView() { }
+    void Services.IUiCoordinator.CloseDetailView() { }
+    void Services.IUiCoordinator.UpdateDetailPanel(LinkItem link) { }
+    void Services.IUiCoordinator.ClearDetailPanel() { }
+    LinkItem? Services.IUiCoordinator.GetSelectedLink() => null;
+    void Services.IUiCoordinator.RefreshSidebar() { }
+    Task Services.IUiCoordinator.RefreshSidebarAsync() => Task.CompletedTask;
+    Task Services.IUiCoordinator.RefreshMainListAsync() => Task.CompletedTask;
+    void Services.IUiCoordinator.ClearMainList() { }
+    void Services.IUiCoordinator.ExpandFolder(string folderId) { }
+    void Services.IUiCoordinator.ClearFolderSelection() { }
+    void Services.IUiCoordinator.FocusNewFolderDialog() { }
+
+    // 浏览页显隐改为 MainWindow.xaml 里 CurrentNavId 的 DataTrigger 声明式控制
+    // （与搜索/回收站/智能列表/工具/设置各页一致）——若在这里用代码设置 Visibility，
+    // 本地值会盖过样式触发器，导致离开浏览页后旧页面仍盖在上面。
+    void Services.IUiCoordinator.ShowBrowserPage() { }
+    void Services.IUiCoordinator.CloseBrowserPage() { }
+
+    void Services.IUiCoordinator.OpenLinkInBrowser(string linkId) => OpenLinkInBrowserPage(linkId);
+
+    void Services.IUiCoordinator.OpenFolderInBrowser(string folderId)
     {
-        MainView.Visibility = Visibility.Collapsed;
-        DetailView.Visibility = Visibility.Collapsed;
-        EditLinkView.Visibility = Visibility.Visible;
-        ClearDetailPanel();
+        if (string.IsNullOrEmpty(folderId) || DataContext is not MainViewModel vm) return;
+        vm.SelectNavCommand.Execute("browser");
+        _ = vm.BrowserViewModel.LoadAsync(folderId);
     }
 
-    void Services.IUiCoordinator.ShowBrowserPage()
-    {
-        BrowserPage.Visibility = Visibility.Visible;
-    }
-
-    void Services.IUiCoordinator.CloseBrowserPage()
-    {
-        BrowserPage.Visibility = Visibility.Collapsed;
-    }
-
-    void Services.IUiCoordinator.CloseEditPage(bool returnToDetail)
-    {
-        EditLinkView.Visibility = Visibility.Collapsed;
-        if (returnToDetail)
-            DetailView.Visibility = Visibility.Visible;
-        else
-            MainView.Visibility = Visibility.Visible;
-    }
-
-    void Services.IUiCoordinator.ShowDetailView()
-    {
-        MainView.Visibility = Visibility.Collapsed;
-        DetailView.Visibility = Visibility.Visible;
-        ClearDetailPanel();
-    }
-
-    void Services.IUiCoordinator.CloseDetailView()
-    {
-        DetailView.Visibility = Visibility.Collapsed;
-        MainView.Visibility = Visibility.Visible;
-    }
-
-    void Services.IUiCoordinator.UpdateDetailPanel(LinkItem link) => UpdateDetailPanel(link);
-    void Services.IUiCoordinator.ClearDetailPanel() => ClearDetailPanel();
-    LinkItem? Services.IUiCoordinator.GetSelectedLink() => GetSelectedLink();
-    void Services.IUiCoordinator.RefreshSidebar() => RefreshSidebar((MainViewModel)DataContext);
-    Task Services.IUiCoordinator.RefreshSidebarAsync() => RefreshSidebarAsync((MainViewModel)DataContext);
-    Task Services.IUiCoordinator.RefreshMainListAsync() => RefreshMainListAsync();
-    void Services.IUiCoordinator.ClearMainList() => ClearMainList();
-    void Services.IUiCoordinator.ExpandFolder(string folderId) => ExpandFolder(folderId);
-    void Services.IUiCoordinator.ClearFolderSelection() => ClearFolderSelection();
-    void Services.IUiCoordinator.FocusNewFolderDialog() => FocusNewFolderDialog();
     Task Services.IUiCoordinator.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
 
     void Services.IUiCoordinator.ShowNavigationTabs()
@@ -286,65 +225,6 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         Close();
     }
 
-    private void CopyDetailId_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-            Clipboard.SetText(vm.DetailLinkIdDisplay);
-    }
-
-    private void CopyDetailUrl_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-            Clipboard.SetText(vm.DetailUrl);
-    }
-
-    private void CopyEditId_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-            Clipboard.SetText(vm.EditLinkIdDisplay);
-    }
-
-    private void NewFolderNameBox_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            if (DataContext is MainViewModel vm && !string.IsNullOrWhiteSpace(vm.NewFolderName))
-                vm.ConfirmCreateFolderCommand.Execute(null);
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape)
-        {
-            if (DataContext is MainViewModel vm)
-                vm.CancelCreateFolderCommand.Execute(null);
-            e.Handled = true;
-        }
-    }
-
-    public void FocusNewFolderDialog()
-    {
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            NewFolderNameBox?.Focus();
-        }), System.Windows.Threading.DispatcherPriority.Loaded);
-    }
-
-    private void DetailMarkdownViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (e.Handled) return;
-        e.Handled = true;
-        var raisedEvent = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-        {
-            RoutedEvent = UIElement.MouseWheelEvent
-        };
-        var parent = DetailMarkdownViewer?.Parent as UIElement;
-        parent?.RaiseEvent(raisedEvent);
-    }
-
-    private void DetailMarkdownViewer_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
-    {
-        e.Handled = true;
-    }
-
     private void SuppressContextMenu_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
@@ -356,1033 +236,23 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         { "last_visited_at", "最后查看" }, { "visit_count", "累计查看次数" }, { "created_at", "创建时间" }
     };
 
-    private void LinkSortButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel vm) return;
-        UpdateLinkSortMenu(vm);
-        LinkSortMenu.PlacementTarget = LinkSortButton;
-        LinkSortMenu.IsOpen = true;
-    }
-
-    private void UpdateLinkSortMenu(MainViewModel vm)
-    {
-        foreach (MenuItem item in LinkSortMenu.Items)
-        {
-            var field = item.Tag as string;
-            if (field == null) continue;
-            var isActive = field == vm.LinkSortField;
-            var arrow = isActive ? (vm.LinkSortOrder == "asc" ? " ↑" : " ↓") : "";
-            var check = isActive ? "✓ " : "   ";
-            item.Header = $"{check}{SortFieldLabels.GetValueOrDefault(field, field)}{arrow}";
-        }
-        if (SortFieldLabels.TryGetValue(vm.LinkSortField, out var label))
-            LinkSortButtonText.Text = label;
-        else
-            LinkSortButtonText.Text = "排序";
-        LinkSortOrderText.Text = vm.LinkSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
-        LinkSortButton.ToolTip = $"书签排序：{label} {(vm.LinkSortOrder == "asc" ? "升序" : "降序")}";
-    }
-
-    private async void LinkSortMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not MenuItem mi || mi.Tag is not string field) return;
-        if (DataContext is not MainViewModel vm) return;
-        await vm.SetLinkSortAsync(field);
-        UpdateLinkSortMenu(vm);
-    }
-
-    private async void FolderSortButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is not MainViewModel vm) return;
-        await vm.ToggleFolderSortAsync();
-        FolderSortOrderText.Text = vm.FolderSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
-        FolderSortButton.ToolTip = $"文件夹按名称{(vm.FolderSortOrder == "asc" ? "升序" : "降序")}排列";
-    }
-
-    private void LinkList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
-        {
-            var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
-            if (hitTest?.VisualHit == null || !IsLinkCard(hitTest.VisualHit))
-            {
-                vm.LinkViewModel.ClearSelectionCommand.Execute(null);
-            }
-        }
-    }
-
-    private bool IsLinkCard(DependencyObject element)
-    {
-        while (element != null)
-        {
-            if (element is Border border && "LinkCard".Equals(border.Tag as string))
-                return true;
-            if (element is Visual)
-                element = VisualTreeHelper.GetParent(element);
-            else
-                break;
-        }
-        return false;
-    }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        if (DataContext is MainViewModel viewModel)
-        {
-            await viewModel.LoadFolderTreeAsync();
-            RefreshSidebar(viewModel);
-            await RefreshMainListAsync();
-            UpdateLinkSortMenu(viewModel);
-            FolderSortOrderText.Text = viewModel.FolderSortOrder == "asc" ? "↑ 升序" : "↓ 降序";
-            if (viewModel.LinkViewModel != null)
-            {
-                viewModel.LinkViewModel.SelectionChanged += LinkViewModel_SelectionChanged;
-                await viewModel.LinkViewModel.LoadLinksAsync();
-            }
-            PrefetchFavicons(viewModel);
-        }
-    }
+        if (DataContext is not MainViewModel viewModel) return;
 
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        bool isMultiSelect = false;
-        if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
-        {
-            isMultiSelect = vm.LinkViewModel.HasSelectedItems;
-        }
-
-        if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            var inText = IsInTextInput();
-            Logger.Info($"[快捷键] Ctrl+C 原始触发: IsInTextInput={inText}, FocusedType={Keyboard.FocusedElement?.GetType().Name}");
-            if (inText) return;
-            if (DataContext is MainViewModel cVm)
-            {
-                if (cVm.LinkViewModel?.HasSelectedItems == true || !string.IsNullOrEmpty(cVm.SelectedLinkId))
-                {
-                    _clippedFolderId = null;
-                    _isFolderClipCut = false;
-                    CopySelectedLink();
-                }
-                else if (!string.IsNullOrEmpty(cVm.SelectedFolderId) && cVm.SelectedFolderId != "0")
-                {
-                    _clippedFolderId = cVm.SelectedFolderId;
-                    _isFolderClipCut = false;
-                    Logger.Info($"[快捷键] Ctrl+C → 文件夹复制: {_clippedFolderId}");
-                }
-            }
-            e.Handled = true;
-        }
-        else if (e.Key == Key.X && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            if (IsInTextInput()) return;
-            if (DataContext is MainViewModel xVm)
-            {
-                if (xVm.LinkViewModel?.HasSelectedItems == true || !string.IsNullOrEmpty(xVm.SelectedLinkId))
-                {
-                    _clippedFolderId = null;
-                    _isFolderClipCut = false;
-                    CutSelectedLink();
-                }
-                else if (!string.IsNullOrEmpty(xVm.SelectedFolderId) && xVm.SelectedFolderId != "0")
-                {
-                    _clippedFolderId = xVm.SelectedFolderId;
-                    _isFolderClipCut = true;
-                    if (_sidebarFolderBorders.TryGetValue(_clippedFolderId, out var sb))
-                        sb.Opacity = 0.4;
-                    if (_mainListFolderBorders.TryGetValue(_clippedFolderId, out var mb))
-                        mb.Opacity = 0.4;
-                    Logger.Info($"[快捷键] Ctrl+X → 文件夹剪切: {_clippedFolderId}");
-                }
-            }
-            e.Handled = true;
-        }
-        else if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-        {
-            if (IsInTextInput()) return;
-            if (_clippedFolderId != null)
-            {
-                _ = PasteFolderAsync();
-            }
-            else
-            {
-                Logger.Info($"[快捷键] Ctrl+V 触发: SelectedFolderId={(DataContext as MainViewModel)?.SelectedFolderId}, HasClipboard={_clipboardManager.HasClipboard}");
-                if (DataContext is MainViewModel pasteVm && string.IsNullOrEmpty(pasteVm.SelectedFolderId))
-                {
-                    Logger.Info($"[快捷键] Ctrl+V → 无目标文件夹，无法粘贴");
-                    return;
-                }
-                _ = PasteLinksAsync();
-            }
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Delete)
-        {
-            if (DataContext is MainViewModel mvm)
-            {
-                if (isMultiSelect && mvm.LinkViewModel != null)
-                {
-                    mvm.LinkViewModel.DeleteSelectedCommand.Execute(null);
-                    _ = RefreshMainListAsync();
-                    e.Handled = true;
-                }
-            }
-        }
-        else if (e.Key == Key.Escape)
-        {
-            if (DataContext is MainViewModel escVm)
-            {
-                if (escVm.IsNewFolderDialogVisible)
-                {
-                    escVm.CancelCreateFolderCommand.Execute(null);
-                    e.Handled = true;
-                    return;
-                }
-                if (_clipboardManager.HasClipboard)
-                {
-                    _clipboardManager.Clear();
-                    ClearCutVisuals();
-                }
-                if (_clippedFolderId != null)
-                {
-                    if (_isFolderClipCut)
-                    {
-                        if (_sidebarFolderBorders.TryGetValue(_clippedFolderId, out var fbsb))
-                            fbsb.Opacity = 1.0;
-                        if (_mainListFolderBorders.TryGetValue(_clippedFolderId, out var fbmb))
-                            fbmb.Opacity = 1.0;
-                    }
-                    _clippedFolderId = null;
-                    _isFolderClipCut = false;
-                }
-                if (escVm.CurrentNavId == "trash" && escVm.RecycleBinViewModel != null && escVm.RecycleBinViewModel.SelectedIds.Count > 0)
-                {
-                    escVm.RecycleBinViewModel.ClearSelection();
-                    if (TrashView is Views.TrashPage tp)
-                        tp.UpdateTrashSelectionVisuals(escVm.RecycleBinViewModel);
-                    e.Handled = true;
-                    return;
-                }
-                if (escVm.LinkViewModel?.HasSelectedItems == true)
-                {
-                    escVm.LinkViewModel.ClearSelectionCommand.Execute(null);
-                    _selectionManager.NotifyMultiSelectEnded();
-                    UpdateMainListSelectionVisuals();
-                    Logger.Info($"[选中] Escape清除多选: HasSelectedItems=true, 已调用ClearSelection");
-                }
-                if (!string.IsNullOrEmpty(escVm.SelectedLinkId))
-                {
-                    Logger.Info($"[选中] Escape清除单选中: SelectedLinkId={escVm.SelectedLinkId}");
-                    escVm.SelectedLinkId = null;
-                    ClearDetailPanel();
-                }
-                if (_selectedSearchCard != null)
-                {
-                    _selectedSearchCard.BorderBrush = (Brush)FindResource("OutlineVariant");
-                    _selectedSearchCard = null;
-                    _selectedSearchItem = null;
-                    ResetDetailPanelPlaceholder(SearchFixedSidebar);
-                    SearchJumpToLinkBtn.IsEnabled = false;
-                }
-            }
-            e.Handled = true;
-        }
-    }
-
-    private static bool IsInTextInput()
-    {
-        var focused = Keyboard.FocusedElement;
-        return focused is System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.PasswordBox;
-    }
-
-    private void CopySelectedLink()
-    {
-        Logger.Info($"[快捷键] Ctrl+C 触发: HasSelectedItems={(DataContext as MainViewModel)?.LinkViewModel?.HasSelectedItems}, SelectedLinkId={(DataContext as MainViewModel)?.SelectedLinkId}, Links.Count={(DataContext as MainViewModel)?.LinkViewModel?.Links?.Count}");
-
-        if (DataContext is MainViewModel vm && vm.LinkViewModel != null && vm.LinkViewModel.HasSelectedItems)
-        {
-            _clipboardManager.Copy(vm.LinkViewModel.SelectedItems.ToList());
-            Logger.Info($"[快捷键] Ctrl+C → 多选复制: {vm.LinkViewModel.SelectedItems.Count} 项");
-            return;
-        }
-
-        var currentLink = (DataContext as MainViewModel)?.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == (DataContext as MainViewModel)?.SelectedLinkId);
-        if (currentLink == null)
-        {
-            Logger.Info($"[快捷键] Ctrl+C → 未找到书签! SelectedLinkId={(DataContext as MainViewModel)?.SelectedLinkId}");
-            return;
-        }
-        _clipboardManager.Copy(new List<LinkItem> { currentLink });
-        Logger.Info($"[快捷键] Ctrl+C → 单选复制: {currentLink.Title} ({currentLink.LinkId})");
-    }
-
-    private void CutSelectedLink()
-    {
-        if (DataContext is MainViewModel vm && vm.LinkViewModel != null && vm.LinkViewModel.HasSelectedItems)
-        {
-            var items = vm.LinkViewModel.SelectedItems.ToList();
-            _clipboardManager.Cut(items);
-            foreach (var cutItem in items)
-            {
-                if (_mainListCardBorders.TryGetValue(cutItem.LinkId, out var cutCard))
-                    cutCard.Opacity = 0.4;
-                if (_sidebarLinkBorders.TryGetValue(cutItem.LinkId, out var cutSidebar))
-                    cutSidebar.Opacity = 0.4;
-            }
-            return;
-        }
-
-        var currentLink = (DataContext as MainViewModel)?.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == (DataContext as MainViewModel)?.SelectedLinkId);
-        if (currentLink == null) return;
-        _clipboardManager.Cut(new List<LinkItem> { currentLink });
-
-        currentLink.IsCut = true;
-        if (_mainListCardBorders.TryGetValue(currentLink.LinkId, out var card))
-            card.Opacity = 0.4;
-        if (_sidebarLinkBorders.TryGetValue(currentLink.LinkId, out var sidebarCard))
-            sidebarCard.Opacity = 0.4;
-    }
-
-    private async Task PasteFolderAsync()
-    {
-        if (DataContext is not MainViewModel vm) return;
-        if (string.IsNullOrEmpty(vm.SelectedFolderId)) return;
-        if (_clippedFolderId == null) return;
-
-        var sourceId = _clippedFolderId;
-        var targetId = vm.SelectedFolderId;
-
-        if (sourceId == targetId)
-        {
-            if (_isFolderClipCut)
-            {
-                MessageBox.Show("源目录与目标目录相同，无法剪切到同一目录", "提示",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            else
-            {
-                var result = MessageBox.Show("目标目录与源目录相同，是否继续复制？", "提示",
-                    MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result != MessageBoxResult.Yes) return;
-            }
-        }
-
-        if (await vm.WouldFolderMoveCreateCycleAsync(sourceId, targetId))
-        {
-            MessageBox.Show("无法将文件夹移动或复制到其自身子目录中，会导致循环引用", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        try
-        {
-            if (_isFolderClipCut)
-            {
-                await vm.MoveFolderAsync(sourceId, targetId);
-            }
-            else
-            {
-                await vm.CopyFolderDeepAsync(sourceId, targetId);
-            }
-
-            if (_isFolderClipCut)
-            {
-                if (_sidebarFolderBorders.TryGetValue(sourceId, out var psb))
-                    psb.Opacity = 1.0;
-                if (_mainListFolderBorders.TryGetValue(sourceId, out var pmb))
-                    pmb.Opacity = 1.0;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"[文件夹粘贴] 操作失败: {ex.Message}", ex);
-            MessageBox.Show($"操作失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            return;
-        }
-
-        _clippedFolderId = null;
-        _isFolderClipCut = false;
-
-        await vm.RefreshFolderTreeAndUIAsync();
-        RefreshDetailPanel();
-    }
-
-    private async Task PasteLinksAsync()
-    {
-        var links = _clipboardManager.ClipboardLinks;
-        if (links == null || links.Count == 0) return;
-        if (DataContext is not MainViewModel vm) return;
-
-        string sourceFolder = links[0].ListId ?? string.Empty;
-        string targetFolder = vm.SelectedFolderId;
-
-        if (sourceFolder == targetFolder)
-        {
-            if (_clipboardManager.IsCut)
-            {
-                MessageBox.Show("源目录与目标目录相同，无法剪切到同一目录", "提示",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            else
-            {
-                var result = MessageBox.Show("目标目录与源目录相同，是否继续复制？", "提示",
-                    MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (result != MessageBoxResult.Yes) return;
-            }
-        }
-
-        ExpandFolder(targetFolder);
-        Logger.Info($"[粘贴] 目标文件夹={targetFolder}, _sidebarExpandedFolders包含={_sidebarExpandedFolders.Contains(targetFolder)}, 书签数={links.Count}");
-        await vm.PasteLinksToFolderAsync(links, _clipboardManager.IsCut);
-        Logger.Info($"[粘贴] PasteLinksToFolderAsync 完成, 开始最终UI刷新");
-
-        await RefreshMainListAsync();
-        RefreshSidebar(vm);
-        RefreshDetailPanel();
-
-        if (_clipboardManager.IsCut)
-        {
-            ClearCutVisuals();
-        }
-        _clipboardManager.AfterPaste();
-        _selectionManager.NotifyMultiSelectEnded();
-    }
-
-    private void ClearCutVisuals()
-    {
-        foreach (var kvp in _mainListCardBorders)
-        {
-            kvp.Value.Opacity = 1.0;
-        }
-        foreach (var kvp in _sidebarLinkBorders)
-        {
-            kvp.Value.Opacity = 1.0;
-        }
-    }
-
-    private void UpdateCutVisuals()
-    {
-        foreach (var link in GetAllLinkItems())
-        {
-            if (link.IsCut && _mainListCardBorders.TryGetValue(link.LinkId, out var card))
-            {
-                card.Opacity = 0.4;
-            }
-        }
-    }
-
-    private void UpdateMainListSelectionVisuals()
-    {
-        if (DataContext is not MainViewModel vm || vm.LinkViewModel == null) return;
-
-        var defaultBrush = (Brush)FindResource("OutlineVariant");
-        var selectedBrush = (Brush)Application.Current.FindResource("Primary");
-        int selectedCount = 0, totalCount = 0;
-        foreach (var linkItem in vm.LinkViewModel.Links)
-        {
-            totalCount++;
-            if (_mainListCardBorders.TryGetValue(linkItem.LinkId, out var card))
-            {
-                if (linkItem.IsSelected || linkItem.LinkId == vm.SelectedLinkId)
-                {
-                    card.BorderBrush = selectedBrush;
-                    selectedCount++;
-                }
-                else
-                {
-                    card.BorderBrush = defaultBrush;
-                }
-            }
-        }
-        Logger.Debug($"[视觉] UpdateMainListSelectionVisuals: Links总数={totalCount}, 选中={selectedCount}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
-    }
-
-    private List<LinkItem> GetAllLinkItems()
-    {
-        var items = new List<LinkItem>();
-        CollectLinkItems(MainListContentPanel, items);
-        return items;
-    }
-
-    private static void CollectLinkItems(Panel panel, List<LinkItem> items)
-    {
-        foreach (var child in panel.Children)
-        {
-            if (child is Border border && border.Tag?.ToString() == "LinkCard" && border.DataContext is LinkItem link)
-            {
-                items.Add(link);
-            }
-            else if (child is Panel childPanel)
-            {
-                CollectLinkItems(childPanel, items);
-            }
-        }
-    }
-
-    private static async void PrefetchFavicons(MainViewModel viewModel)
-    {
-        try
-        {
-            var links = await viewModel.GetAllLinksAsync();
-            var urls = links.Select(l => l.FaviconUrl)
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Distinct();
-            foreach (var url in urls)
-            {
-                await FaviconService.PrefetchAndCacheAsync(url);
-            }
-        }
-        catch { }
-    }
-
-    public void RefreshSidebar(MainViewModel viewModel)
-    {
-        FolderListPanel.Children.Clear();
-        _sidebarLinkBorders.Clear();
-        _sidebarFolderBorders.Clear();
-
-        var folderItems = viewModel.FolderItems;
-        if (folderItems == null) return;
-
-        foreach (var folder in folderItems)
-        {
-            RenderFolderNode(folder, FolderListPanel, 0, viewModel);
-        }
-
-        UpdateSidebarSelectionVisuals();
-    }
-
-    private void RenderFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
-    {
-        bool isExpanded = _sidebarExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == viewModel.SelectedFolderId;
-
-        if (depth == 0 || isExpanded)
-            Logger.Info($"[侧栏遍历] 文件夹={folder.Name}({folder.Id}), isExpanded={isExpanded}, SelectedFolderId={viewModel.SelectedFolderId}");
-
-        var folderRow = CreateFolderRow(folder, isExpanded, isSelected, depth, viewModel);
-        container.Children.Add(folderRow);
-
-        if (isExpanded)
-        {
-            var childPanel = new StackPanel { Margin = new Thickness(16, 0, 0, 0) };
-
-            foreach (var child in folder.Children)
-            {
-                RenderFolderNode(child, childPanel, depth + 1, viewModel);
-            }
-
-            List<LinkDto> links;
-            if (folder.Id == "0")
-                links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
-            else
-            {
-                var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id).GetAwaiter().GetResult();
-                links = linksResult.Links;
-            }
-            Logger.Info($"[侧栏渲染] 文件夹={folder.Name}({folder.Id}), 展开=true, LinkCount={folder.LinkCount}, 查询到书签数={links?.Count ?? 0}");
-            if (links != null && links.Count > 0)
-            {
-                foreach (var link in links)
-                {
-                    var itemRow = CreateSidebarLinkRow(link, viewModel);
-                    childPanel.Children.Add(itemRow);
-                }
-            }
-
-            container.Children.Add(childPanel);
-        }
-    }
-
-    private Border CreateFolderRow(FolderNode folder, bool isExpanded, bool isSelected, int depth, MainViewModel viewModel)
-    {
-        var row = new Border
-        {
-            MinHeight = 28, Padding = new Thickness(4 + depth * 4, 4, 4, 4),
-            Cursor = Cursors.Hand, Tag = folder.Id,
-            Background = isSelected
-                ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-                : new SolidColorBrush(Colors.Transparent),
-            BorderThickness = new Thickness(0)
-        };
-
-        var stack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-
-        var chevronBorder = new Border
-        {
-            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
-            Background = Brushes.Transparent, Cursor = Cursors.Hand,
-            Tag = folder.Id
-        };
-        chevronBorder.Child = new M3Icon
-        {
-            Width = 12, Height = 12,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Kind = isExpanded ? "chevron-down" : "chevron-right",
-            Opacity = 0.5
-        };
-        stack.Children.Add(chevronBorder);
-
-        stack.Children.Add(new M3Icon
-        {
-            Width = 16, Height = 16, Margin = new Thickness(2, 0, 6, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Kind = folder.Id == "0" ? "bookmark-outline" : (isExpanded ? "folder" : "folder-outline"),
-            Opacity = 0.7
-        });
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = folder.Name, FontSize = 13, VerticalAlignment = VerticalAlignment.Center
-        });
-
-        if (folder.TotalLinkCount > 0)
-        {
-            stack.Children.Add(new Border
-            {
-                Margin = new Thickness(6, 0, 0, 0),
-                Padding = new Thickness(6, 1, 6, 1),
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(30, 98, 0, 238)),
-                Child = new TextBlock
-                {
-                    Text = folder.TotalLinkCount.ToString(), FontSize = 10,
-                    Foreground = (Brush)Application.Current.FindResource("Primary"),
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            });
-        }
-
-        row.Child = stack;
-        _sidebarFolderBorders[folder.Id] = row;
-
-        var chevronRef = chevronBorder;
-
-        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
-        {
-            if (s is FrameworkElement fe && fe.Tag is string folderId)
-            {
-                if (_sidebarExpandedFolders.Contains(folderId))
-                    _sidebarExpandedFolders.Remove(folderId);
-                else
-                    _sidebarExpandedFolders.Add(folderId);
-
-                Dispatcher.BeginInvoke(() => RefreshSidebar(viewModel));
-            }
-            e.Handled = true;
-        };
-
-        row.MouseLeftButtonDown += (s, e) =>
-        {
-            if (IsDescendantOf(e.OriginalSource as DependencyObject, chevronRef))
-            {
-                e.Handled = true;
-                return;
-            }
-
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-            {
-                e.Handled = true;
-                return;
-            }
-            if (s is FrameworkElement fe && fe.Tag is string folderId)
-            {
-                if (viewModel.SelectedFolderId == folderId)
-                    ClearFolderSelection();
-                else
-                    SetFolderSelection(folderId);
-            }
-            e.Handled = true;
-        };
-
-        row.MouseEnter += (s, e) =>
-        {
-            var b = (Border)s;
-            if (b.Tag is string fid && fid != viewModel.SelectedFolderId)
-                b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
-        };
-
-        row.MouseLeave += (s, e) =>
-        {
-            var b = (Border)s;
-            if (b.Tag is string fid && fid != viewModel.SelectedFolderId)
-                b.Background = new SolidColorBrush(Colors.Transparent);
-        };
-
-        return row;
-    }
-
-    private Border CreateSidebarLinkRow(LinkDto link, MainViewModel viewModel)
-    {
-        var itemRow = new Border
-        {
-            MinHeight = 28, Padding = new Thickness(4, 2, 4, 2),
-            Cursor = Cursors.Hand, Tag = link.LinkId,
-            Background = new SolidColorBrush(Colors.Transparent),
-            CornerRadius = new CornerRadius(4),
-            Margin = new Thickness(1, 1, 1, 1)
-        };
-
-        var itemStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-
-        var iconBorder = new Border
-        {
-            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
-            Background = Brushes.White,
-            ClipToBounds = true,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 5, 0)
-        };
-
-        var iconGrid = new Grid();
-
-        var faviconBmp = TryLoadFavicon(link.FaviconUrl);
-        var faviconImg = new Image
-        {
-            Stretch = Stretch.Uniform,
-            Source = faviconBmp,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        if (faviconBmp == null)
-            faviconImg.Visibility = Visibility.Collapsed;
-
-        var earthIcon = new M3Icon
-        {
-            Kind = "earth",
-            Width = 11, Height = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Opacity = 0.6
-        };
-        if (faviconBmp != null)
-            earthIcon.Visibility = Visibility.Collapsed;
-
-        iconGrid.Children.Add(faviconImg);
-        iconGrid.Children.Add(earthIcon);
-        iconBorder.Child = iconGrid;
-
-        itemStack.Children.Add(iconBorder);
-
-        itemStack.Children.Add(new TextBlock
-        {
-            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
-            FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        });
-
-        itemRow.Child = itemStack;
-
-        _sidebarLinkBorders[link.LinkId] = itemRow;
-
-        itemRow.PreviewMouseLeftButtonDown += (s, e) =>
-        {
-            if (s is Border br && br.Tag is string lid)
-            {
-                var targetLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == lid);
-                if (targetLink == null)
-                {
-                    targetLink = new LinkItem
-                    {
-                        LinkId = link.LinkId, Url = link.Url ?? "", Title = link.Title ?? "",
-                        Description = link.Description ?? "", FaviconUrl = link.FaviconUrl ?? "",
-                        ListId = link.ListId, CreatedAt = link.CreatedAt, UpdatedAt = link.UpdatedAt
-                    };
-                }
-
-                if (e.ClickCount == 2)
-                {
-                    viewModel.ShowDetailCommand.Execute(targetLink);
-                    e.Handled = true;
-                    return;
-                }
-
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                {
-                    var prevSelectedLinkId = viewModel.SelectedLinkId;
-                    Logger.Info($"[点击] 侧栏Ctrl+点击: target={targetLink.LinkId}(ListId={targetLink.ListId ?? "null"}), prevSelected={prevSelectedLinkId ?? "null"}");
-                    string? prevLinkListId = null;
-                    if (!string.IsNullOrEmpty(prevSelectedLinkId))
-                    {
-                        var prevLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
-                        if (prevLink != null) prevLinkListId = prevLink.ListId;
-                    }
-                    var ctrlResult = _selectionManager.HandleCtrlClick(targetLink, viewModel.SelectedFolderId, viewModel.SelectedLinkId, prevLinkListId, out var newSelectedLinkId);
-                    if (ctrlResult == Managers.SelectionManager.CtrlClickResult.BlockedCrossDirectory)
-                    {
-                        Logger.Info($"[点击] 侧栏Ctrl+点击 → 阻止跨目录");
-                        e.Handled = true;
-                        return;
-                    }
-
-                    if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && !string.IsNullOrEmpty(prevSelectedLinkId))
-                    {
-                        var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
-                        if (promotedLink != null && !promotedLink.IsSelected)
-                        {
-                            promotedLink.IsSelected = true;
-                            if (_sidebarLinkBorders.TryGetValue(promotedLink.LinkId, out var prevSidebar))
-                                prevSidebar.Background = new SolidColorBrush(Color.FromArgb(25, 98, 0, 238));
-                            Logger.Info($"[点击] 侧栏多选提升: {prevSelectedLinkId} → IsSelected=true");
-                        }
-                        ClearDetailPanel();
-                    }
-
-                    targetLink.IsSelected = !targetLink.IsSelected;
-                    Logger.Info($"[点击] 侧栏Ctrl+点击: {targetLink.LinkId}.IsSelected → {targetLink.IsSelected}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
-                    viewModel.LinkViewModel?.NotifySelectionStateChanged();
-                    if (viewModel.LinkViewModel?.HasSelectedItems == false)
-                        _selectionManager.NotifyMultiSelectEnded();
-                    UpdateMainListSelectionVisuals();
-                    UpdateSidebarSelectionVisuals();
-                    e.Handled = true;
-                    return;
-                }
-
-                _clipboardManager.Clear();
-                ClearCutVisuals();
-
-                if (viewModel.LinkViewModel?.HasSelectedItems == true)
-                {
-                    viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
-                }
-                _selectionManager.NotifyMultiSelectEnded();
-
-                Logger.Info($"[点击] 侧栏正常点击: LinkId={targetLink.LinkId}, ListId={targetLink.ListId ?? "null"}, 当前SelectedLinkId={viewModel.SelectedLinkId ?? "null"}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
-                if (viewModel.SelectedLinkId == targetLink.LinkId)
-                {
-                    viewModel.SelectedLinkId = null;
-                    Logger.Info($"[点击] 侧栏取消选中(再次点击相同)");
-                }
-                else
-                {
-                    viewModel.SelectedLinkId = targetLink.LinkId;
-                    Logger.Info($"[点击] 侧栏选中书签: {targetLink.LinkId}");
-                }
-                UpdateSidebarSelectionVisuals();
-                UpdateMainListSelectionVisuals();
-                RefreshDetailPanel();
-                e.Handled = true;
-            }
-        };
-
-        itemRow.MouseEnter += (s, e) =>
-        {
-            var b = (Border)s;
-            if (b.Tag is string fid)
-            {
-                if (fid == viewModel.SelectedLinkId) return;
-                if (viewModel.LinkViewModel?.Links.Any(l => l.IsSelected && l.LinkId == fid) == true) return;
-                b.Background = new SolidColorBrush(Color.FromArgb(15, 0, 0, 0));
-            }
-        };
-
-        itemRow.MouseLeave += (s, e) =>
-        {
-            var b = (Border)s;
-            if (b.Tag is string fid)
-            {
-                if (fid == viewModel.SelectedLinkId) return;
-                if (viewModel.LinkViewModel?.Links.Any(l => l.IsSelected && l.LinkId == fid) == true) return;
-                b.Background = new SolidColorBrush(Colors.Transparent);
-            }
-        };
-
-        return itemRow;
-    }
-
-    private void LinkViewModel_SelectionChanged(object? sender, EventArgs e)
-    {
-        UpdateSidebarSelectionVisuals();
-    }
-
-    private void UpdateSidebarSelectionVisuals()
-    {
-        if (_updatingSelectionVisuals) return;
-        _updatingSelectionVisuals = true;
-        try
-        {
-            if (DataContext is not MainViewModel vm) return;
-
-            int folderSelected = 0, linkSelected = 0, folderTotal = 0, linkTotal = 0;
-
-            foreach (var kvp in _sidebarFolderBorders)
-            {
-                folderTotal++;
-                var border = kvp.Value;
-                var folderId = kvp.Key;
-                bool isSelected = folderId == vm.SelectedFolderId;
-                border.Background = isSelected
-                    ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-                    : new SolidColorBrush(Colors.Transparent);
-                if (isSelected) folderSelected++;
-            }
-
-            foreach (var kvp in _sidebarLinkBorders)
-            {
-                linkTotal++;
-                var border = kvp.Value;
-                var linkId = kvp.Key;
-                bool isSelected = linkId == vm.SelectedLinkId;
-                if (!isSelected && vm.LinkViewModel != null)
-                {
-                    isSelected = vm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
-                }
-                border.Background = isSelected
-                    ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-                    : new SolidColorBrush(Colors.Transparent);
-                if (isSelected) linkSelected++;
-            }
-
-            foreach (var kvp in _mainListFolderBorders)
-            {
-                var border = kvp.Value;
-                var folderId = kvp.Key;
-                bool isSelected = folderId == vm.SelectedFolderId;
-                border.Background = isSelected
-                    ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-                    : new SolidColorBrush(Colors.Transparent);
-            }
-
-            foreach (var kvp in _mainListCardBorders)
-            {
-                var border = kvp.Value;
-                var linkId = kvp.Key;
-                bool isSelected = linkId == vm.SelectedLinkId;
-                if (!isSelected && vm.LinkViewModel != null)
-                {
-                    isSelected = vm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
-                }
-                border.BorderBrush = isSelected
-                    ? (Brush)Application.Current.FindResource("Primary")
-                    : (Brush)FindResource("OutlineVariant");
-            }
-
-            Logger.Debug($"[视觉] UpdateSidebarSelectionVisuals: 文件夹选中={folderSelected}/{folderTotal}, 书签选中={linkSelected}/{linkTotal}, _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
-        }
-        finally
-        {
-            _updatingSelectionVisuals = false;
-        }
-    }
-
-    public async Task RefreshSidebarAsync(MainViewModel viewModel)
-    {
+        // 搜索页展示「所属文件夹」名称用的扁平文件夹列表
         await viewModel.LoadFolderTreeAsync();
-        Application.Current.Dispatcher.Invoke(() => RefreshSidebar(viewModel));
+
+        // 「浏览」页是默认首页（CurrentNavId 初始即 "browser"，启动时不会走 SelectNav），
+        // 因此必须在这里主动装载一次，否则左侧文件夹树与列表在启动时是空的、
+        // 要手动点一下「浏览」才会加载。
+        await viewModel.BrowserViewModel.LoadAsync(null);
     }
 
-    public void RefreshDetailPanel()
-    {
-        if (DataContext is not MainViewModel vm)
-        {
-            ResetDetailPanelPlaceholder(DetailPanel);
-            return;
-        }
 
-        if (!string.IsNullOrEmpty(vm.SelectedLinkId))
-        {
-            var link = vm.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == vm.SelectedLinkId);
-            if (link != null)
-            {
-                var folderName = !string.IsNullOrEmpty(link.ListId) ? FindFolderNameForLink(link.ListId) : "全部书签";
-                PopulateDetailPanel(DetailPanel, link.Url, link.Title, link.Description, link.FaviconUrl,
-                    link.UpdatedAt, link.LastVisitedAt, link.VisitCount, link.CreatedAt, link.LinkId, folderName);
-            }
-            else
-            {
-                ResetDetailPanelPlaceholder(DetailPanel);
-            }
-        }
-        else if (!string.IsNullOrEmpty(vm.SelectedFolderId))
-        {
-            var folderNode = FindFolderNodeById(vm.FolderItems, vm.SelectedFolderId);
-            if (folderNode != null)
-            {
-                var folderPath = MainViewModel.FindFolderPathInNodes(vm.FolderItems, folderNode.Id) ?? folderNode.Name;
-                PopulateFolderDetailPanel(DetailPanel, folderNode.Name, folderPath, folderNode.TotalLinkCount, folderNode.FolderId);
-            }
-            else
-            {
-                ResetDetailPanelPlaceholder(DetailPanel);
-            }
-        }
-        else
-        {
-            ResetDetailPanelPlaceholder(DetailPanel);
-        }
-    }
 
-    private static FolderNode? FindFolderNodeById(ObservableCollection<FolderNode> nodes, string id)
-    {
-        foreach (var node in nodes)
-        {
-            if (node.Id == id) return node;
-            if (node.Children != null && node.Children.Count > 0)
-            {
-                var found = FindFolderNodeById(node.Children, id);
-                if (found != null) return found;
-            }
-        }
-        return null;
-    }
 
-    private static void PopulateFolderDetailPanel(Panel panel, string folderName, string folderPath, int linkCount, string folderId)
-    {
-        panel.Children.Clear();
-
-        // 文件夹图标
-        var topIconRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) };
-        topIconRow.Children.Add(new M3Icon
-        {
-            Kind = "folder-outline", Width = 32, Height = 32,
-            Foreground = (Brush)Application.Current.FindResource("Primary"),
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        panel.Children.Add(topIconRow);
-
-        // 文件夹名称
-        panel.Children.Add(new TextBlock { Text = "名称", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        panel.Children.Add(new TextBox { Text = folderName, FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, IsReadOnly = true, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Foreground = Brushes.Black, Margin = new Thickness(0, 0, 0, 12), ContextMenu = null });
-
-        // 文件夹路径
-        panel.Children.Add(new TextBlock { Text = "路径", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        var pathGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
-        pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var pathIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"), Opacity = 0.6 };
-        Grid.SetColumn(pathIcon, 0);
-        pathGrid.Children.Add(pathIcon);
-        var pathText = new TextBlock { Text = folderPath, FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
-        Grid.SetColumn(pathText, 1);
-        pathGrid.Children.Add(pathText);
-        panel.Children.Add(pathGrid);
-
-        // 书签数量（药丸样式，复用侧边栏逻辑）
-        panel.Children.Add(new TextBlock { Text = "书签数量", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        var countRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-        countRow.Children.Add(new Border
-        {
-            Padding = new Thickness(10, 3, 10, 3),
-            CornerRadius = new CornerRadius(8),
-            Background = new SolidColorBrush(Color.FromArgb(30, 98, 0, 238)),
-            Child = new TextBlock
-            {
-                Text = linkCount == 0 ? "0 个书签" : $"{linkCount} 个书签",
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.FindResource("Primary"),
-                VerticalAlignment = VerticalAlignment.Center
-            }
-        });
-        panel.Children.Add(countRow);
-
-        // FolderId
-        panel.Children.Add(new TextBlock { Text = "ID", FontSize = 11, Opacity = 0.5, Margin = new Thickness(0, 0, 0, 4) });
-        panel.Children.Add(CreateValueWithCopy(folderId, folderId, true));
-    }
 
     private static void PopulateDetailPanel(Panel panel, string url, string? title, string? description,
         string? faviconUrl, DateTime updatedAt, DateTime? lastVisitedAt, int visitCount,
@@ -1578,7 +448,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
     private static string FindFolderNameForLink(string? listId)
     {
-        if (string.IsNullOrEmpty(listId) || listId == "0")
+        if (string.IsNullOrEmpty(listId))
             return "全部书签";
 
         if (Application.Current.MainWindow is MainWindow mw && mw.DataContext is MainViewModel vm)
@@ -1587,548 +457,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         return "未知目录";
     }
 
-    public void UpdateDetailPanel(LinkItem link)
-    {
-        if (DataContext is MainViewModel vm)
-        {
-            vm.SelectedLinkId = link.LinkId;
-        }
-        UpdateSidebarSelectionVisuals();
-        RefreshDetailPanel();
-    }
 
-    public void ClearDetailPanel()
-    {
-        if (DataContext is MainViewModel vm)
-        {
-            vm.SelectedLinkId = null;
-        }
-        UpdateSidebarSelectionVisuals();
-        RefreshDetailPanel();
-    }
-
-    public LinkItem? GetSelectedLink()
-    {
-        if (DataContext is MainViewModel vm && !string.IsNullOrEmpty(vm.SelectedLinkId))
-            return vm.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == vm.SelectedLinkId);
-        return null;
-    }
-
-    private async void SetFolderSelection(string folderId)
-    {
-        if (DataContext is MainViewModel vm)
-        {
-            Logger.Info($"[点击] SetFolderSelection: folderId={folderId}, 当前 state: _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}, HasSelectedItems={vm.LinkViewModel?.HasSelectedItems}");
-            vm.SelectFolder(folderId);
-            _selectionManager.NotifyMultiSelectEnded();
-            if (vm.LinkViewModel != null)
-            {
-                vm.LinkViewModel.ClearSelectionCommand.Execute(null);
-                UpdateSidebarSelectionVisuals();
-                RefreshDetailPanel();
-            }
-            await RefreshMainListAsync();
-            RefreshSidebar(vm);
-            Logger.Info($"[点击] SetFolderSelection 完成: _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
-        }
-    }
-
-    public void ExpandFolder(string folderId)
-    {
-        if (!string.IsNullOrEmpty(folderId))
-        {
-            if (!_sidebarExpandedFolders.Contains(folderId))
-                _sidebarExpandedFolders.Add(folderId);
-            if (!_mainExpandedFolders.Contains(folderId))
-                _mainExpandedFolders.Add(folderId);
-        }
-    }
-
-    public void ExpandAllAncestorFolders(ObservableCollection<FolderNode> nodes, string targetId)
-    {
-        var ancestors = new List<string>();
-        var current = FindFolderNode(nodes, targetId);
-        while (current != null)
-        {
-            if (!string.IsNullOrEmpty(current.Id))
-            {
-                ancestors.Add(current.Id);
-            }
-            current = FindParentNode(nodes, current.ParentId);
-        }
-        for (int i = ancestors.Count - 1; i >= 0; i--)
-        {
-            ExpandFolder(ancestors[i]);
-        }
-    }
-
-    public async void ClearFolderSelection()
-    {
-        if (DataContext is MainViewModel vm)
-        {
-            Logger.Info($"[点击] ClearFolderSelection: 当前 _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
-            vm.ClearFolderSelectionVM();
-            _selectionManager.NotifyMultiSelectEnded();
-            UpdateSidebarSelectionVisuals();
-            RefreshDetailPanel();
-            await RefreshMainListAsync();
-            RefreshSidebar(vm);
-            Logger.Info($"[点击] ClearFolderSelection 完成: _selectedFolderId={vm.SelectedFolderId}, _selectedLinkId={vm.SelectedLinkId ?? "null"}");
-        }
-    }
-
-    public async Task RefreshMainListAsync()
-    {
-        if (MainListContentPanel == null) return;
-        MainListContentPanel.Children.Clear();
-        _mainListCardBorders.Clear();
-        _mainListFolderBorders.Clear();
-        ClearCutVisuals();
-
-        if (DataContext is not MainViewModel vm) return;
-        var folderItems = vm.FolderItems;
-        if (folderItems == null) return;
-
-        foreach (var folder in folderItems)
-        {
-            await RenderMainListFolderNodeAsync(folder, MainListContentPanel, 0, vm);
-        }
-
-        UpdateSidebarSelectionVisuals();
-        UpdateCutVisuals();
-        UpdateMainListSelectionVisuals();
-        InvalidateVisual();
-    }
-
-    public void ClearMainList()
-    {
-        if (MainListContentPanel == null) return;
-        MainListContentPanel.Children.Clear();
-        _mainListCardBorders.Clear();
-        _mainListFolderBorders.Clear();
-        ClearCutVisuals();
-    }
-
-    public void RefreshMainList()
-    {
-        if (MainListContentPanel == null) return;
-        MainListContentPanel.Children.Clear();
-        _mainListCardBorders.Clear();
-        _mainListFolderBorders.Clear();
-        ClearCutVisuals();
-
-        if (DataContext is not MainViewModel vm) return;
-        var folderItems = vm.FolderItems;
-        if (folderItems == null) return;
-
-        foreach (var folder in folderItems)
-        {
-            RenderMainListFolderNode(folder, MainListContentPanel, 0, vm);
-        }
-
-        UpdateSidebarSelectionVisuals();
-        UpdateCutVisuals();
-        UpdateMainListSelectionVisuals();
-    }
-
-    private async Task RenderMainListFolderNodeAsync(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
-    {
-        bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == viewModel.SelectedFolderId;
-
-        var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
-        container.Children.Add(row);
-
-        if (isExpanded)
-        {
-            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
-
-            foreach (var child in folder.Children)
-            {
-                await RenderMainListFolderNodeAsync(child, childPanel, depth + 1, viewModel);
-            }
-
-            List<LinkDto> links;
-            if (folder.Id == "0")
-                links = await viewModel.GetRootLevelLinksAsync();
-            else
-            {
-                var linksResult = await viewModel.GetLinksForSidebarAsync(folder.Id);
-                links = linksResult.Links;
-            }
-
-            if (links != null)
-            {
-                foreach (var link in links)
-                {
-                    var card = CreateMainListLinkCard(link, viewModel);
-                    childPanel.Children.Add(card);
-                }
-            }
-
-            container.Children.Add(childPanel);
-        }
-    }
-
-    private void RenderMainListFolderNode(FolderNode folder, Panel container, int depth, MainViewModel viewModel)
-    {
-        bool isExpanded = _mainExpandedFolders.Contains(folder.Id);
-        bool isSelected = folder.Id == viewModel.SelectedFolderId;
-
-        var row = CreateMainListFolderRow(folder, isExpanded, isSelected, depth, viewModel);
-        container.Children.Add(row);
-
-        if (isExpanded)
-        {
-            var childPanel = new StackPanel { Margin = new Thickness(20, 0, 0, 0) };
-
-            foreach (var child in folder.Children)
-            {
-                RenderMainListFolderNode(child, childPanel, depth + 1, viewModel);
-            }
-
-            List<LinkDto> links;
-            if (folder.Id == "0")
-                links = viewModel.GetRootLevelLinksAsync().GetAwaiter().GetResult();
-            else
-            {
-                var linksResult = viewModel.GetLinksForSidebarAsync(folder.Id).GetAwaiter().GetResult();
-                links = linksResult.Links;
-            }
-
-            if (links != null)
-            {
-                foreach (var link in links)
-                {
-                    var card = CreateMainListLinkCard(link, viewModel);
-                    childPanel.Children.Add(card);
-                }
-            }
-
-            container.Children.Add(childPanel);
-        }
-    }
-
-    private Border CreateMainListFolderRow(FolderNode folder, bool isExpanded, bool isSelected, int depth, MainViewModel viewModel)
-    {
-        var row = new Border
-        {
-            Margin = new Thickness(0), CornerRadius = new CornerRadius(0), Cursor = Cursors.Hand,
-            Background = isSelected
-                ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
-                : new SolidColorBrush(Colors.Transparent),
-            BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(12, 5, 12, 5),
-            Tag = "FolderCard"
-        };
-
-        var stack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-
-        var chevronBorder = new Border
-        {
-            Width = 18, Height = 18, CornerRadius = new CornerRadius(3),
-            Background = Brushes.Transparent, Cursor = Cursors.Hand,
-            Tag = folder.Id
-        };
-        chevronBorder.Child = new M3Icon
-        {
-            Width = 12, Height = 12,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Kind = isExpanded ? "chevron-down" : "chevron-right",
-            Opacity = 0.45
-        };
-        stack.Children.Add(chevronBorder);
-
-        stack.Children.Add(new M3Icon
-        {
-            Kind = folder.Id == "0" ? "bookmark-outline" : (isExpanded ? "folder" : "folder-outline"),
-            Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(4, 0, 6, 0), Opacity = 0.5
-        });
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = folder.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-            Foreground = (Brush)Application.Current.FindResource("OnSurface")
-        });
-
-        if (folder.TotalLinkCount > 0)
-        {
-            stack.Children.Add(new Border
-            {
-                Margin = new Thickness(6, 0, 0, 0),
-                Padding = new Thickness(6, 1, 6, 1),
-                CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(30, 98, 0, 238)),
-                Child = new TextBlock
-                {
-                    Text = folder.TotalLinkCount.ToString(), FontSize = 10,
-                    Foreground = (Brush)Application.Current.FindResource("Primary"),
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            });
-        }
-
-        row.Child = stack;
-        _mainListFolderBorders[folder.Id] = row;
-
-        var mainChevronRef = chevronBorder;
-
-        chevronBorder.PreviewMouseLeftButtonDown += (s, e) =>
-        {
-            if (s is FrameworkElement fe && fe.Tag is string fid)
-            {
-                if (_mainExpandedFolders.Contains(fid))
-                    _mainExpandedFolders.Remove(fid);
-                else
-                    _mainExpandedFolders.Add(fid);
-
-                Dispatcher.BeginInvoke(async () => await RefreshMainListAsync());
-            }
-            e.Handled = true;
-        };
-
-        row.MouseLeftButtonDown += (s, e) =>
-        {
-            if (IsDescendantOf(e.OriginalSource as DependencyObject, mainChevronRef))
-            {
-                e.Handled = true;
-                return;
-            }
-
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-            {
-                e.Handled = true;
-                return;
-            }
-            if (viewModel.SelectedFolderId == folder.Id)
-                ClearFolderSelection();
-            else
-                SetFolderSelection(folder.Id);
-            e.Handled = true;
-        };
-
-        row.MouseEnter += (s, e) =>
-        {
-            if (s is Border b && viewModel.SelectedFolderId != folder.Id)
-                b.Background = new SolidColorBrush(Color.FromArgb(10, 0, 0, 0));
-        };
-
-        row.MouseLeave += (s, e) =>
-        {
-            if (s is Border b && viewModel.SelectedFolderId != folder.Id)
-                b.Background = new SolidColorBrush(Colors.Transparent);
-        };
-
-        return row;
-    }
-
-    private static StackPanel StackPanelWithTextTrimming(LinkDto link)
-    {
-        var sp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        sp.Children.Add(new TextBlock
-        {
-            Text = !string.IsNullOrEmpty(link.Title) ? link.Title : link.Url,
-            FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
-        });
-        sp.Children.Add(new TextBlock
-        {
-            Text = link.Url, FontSize = 11, Opacity = 0.55,
-            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-        });
-        return sp;
-    }
-
-    private Border CreateMainListLinkCard(LinkDto link, MainViewModel viewModel)
-    {
-        var card = new Border
-        {
-            Tag = "LinkCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
-            Cursor = Cursors.Hand, Width = 720, HorizontalAlignment = HorizontalAlignment.Left,
-            Background = (Brush)FindResource("SurfaceContainer"),
-            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
-        };
-
-        var style = new Style(typeof(Border));
-        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
-        style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
-        style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
-            Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
-        });
-        card.Style = style;
-
-        _mainListCardBorders[link.LinkId] = card;
-
-        var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var iconBorder = new Border
-        {
-            Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-            Background = Brushes.White,
-            Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
-            ClipToBounds = true
-        };
-
-        var iconGrid = new Grid();
-
-        var faviconBmp = TryLoadFavicon(link.FaviconUrl);
-        var faviconImg = new Image
-        {
-            Stretch = Stretch.Uniform,
-            Source = faviconBmp,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        if (faviconBmp == null)
-            faviconImg.Visibility = Visibility.Collapsed;
-
-        var earthIcon = new M3Icon
-        {
-            Kind = "earth",
-            Width = 20, Height = 20,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Opacity = 0.6
-        };
-        if (faviconBmp != null)
-            earthIcon.Visibility = Visibility.Collapsed;
-
-        iconGrid.Children.Add(faviconImg);
-        iconGrid.Children.Add(earthIcon);
-
-        if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && faviconBmp == null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await FaviconService.PrefetchAndCacheAsync(link.FaviconUrl);
-                    var cached = FaviconService.LoadFromCache(link.FaviconUrl);
-                    if (cached != null)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            faviconImg.Source = cached;
-                            faviconImg.Visibility = Visibility.Visible;
-                            earthIcon.Visibility = Visibility.Collapsed;
-                        });
-                    }
-                }
-                catch { }
-            });
-        }
-
-        iconBorder.Child = iconGrid;
-        Grid.SetColumn(iconBorder, 0);
-        grid.Children.Add(iconBorder);
-
-        var textStack = StackPanelWithTextTrimming(link);
-        Grid.SetColumn(textStack, 1);
-        grid.Children.Add(textStack);
-
-        card.Child = grid;
-
-        var linkItemRef = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == link.LinkId);
-
-        card.PreviewMouseLeftButtonDown += (s, e) =>
-        {
-            var targetLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == link.LinkId);
-            if (targetLink == null)
-            {
-                targetLink = new LinkItem
-                {
-                    LinkId = link.LinkId, Url = link.Url ?? "",
-                    Title = link.Title ?? "", Description = link.Description ?? "",
-                    FaviconUrl = link.FaviconUrl ?? "", ListId = link.ListId,
-                    CreatedAt = link.CreatedAt, UpdatedAt = link.UpdatedAt
-                };
-            }
-
-            if (e.ClickCount == 2)
-            {
-                viewModel.ShowDetailCommand.Execute(targetLink);
-                e.Handled = true;
-                return;
-            }
-
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-            {
-                var prevSelectedLinkId = viewModel.SelectedLinkId;
-                Logger.Info($"[点击] 主栏Ctrl+点击: target={targetLink.LinkId}(ListId={targetLink.ListId ?? "null"}), prevSelected={prevSelectedLinkId ?? "null"}");
-                string? prevLinkListId = null;
-                if (!string.IsNullOrEmpty(prevSelectedLinkId))
-                {
-                    var prevLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
-                    if (prevLink != null) prevLinkListId = prevLink.ListId;
-                }
-                var ctrlResult = _selectionManager.HandleCtrlClick(targetLink, viewModel.SelectedFolderId, viewModel.SelectedLinkId, prevLinkListId, out var newSelectedLinkId);
-                if (ctrlResult == Managers.SelectionManager.CtrlClickResult.BlockedCrossDirectory)
-                {
-                    Logger.Info($"[点击] 主栏Ctrl+点击 → 阻止跨目录");
-                    e.Handled = true;
-                    return;
-                }
-
-                if (ctrlResult == Managers.SelectionManager.CtrlClickResult.Promoted && !string.IsNullOrEmpty(prevSelectedLinkId))
-                {
-                    var promotedLink = viewModel.LinkViewModel?.Links.FirstOrDefault(l => l.LinkId == prevSelectedLinkId);
-                    if (promotedLink != null && !promotedLink.IsSelected)
-                    {
-                        promotedLink.IsSelected = true;
-                        if (_mainListCardBorders.TryGetValue(promotedLink.LinkId, out var prevCard))
-                            prevCard.BorderBrush = (Brush)Application.Current.FindResource("Primary");
-                        Logger.Info($"[点击] 主栏多选提升: {prevSelectedLinkId} → IsSelected=true");
-                    }
-                    ClearDetailPanel();
-                }
-
-                targetLink.IsSelected = !targetLink.IsSelected;
-                Logger.Info($"[点击] 主栏Ctrl+点击: {targetLink.LinkId}.IsSelected → {targetLink.IsSelected}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
-                card.BorderBrush = targetLink.IsSelected
-                    ? (Brush)Application.Current.FindResource("Primary")
-                    : (Brush)FindResource("OutlineVariant");
-                viewModel.LinkViewModel?.NotifySelectionStateChanged();
-                if (viewModel.LinkViewModel?.HasSelectedItems == false)
-                {
-                    _selectionManager.NotifyMultiSelectEnded();
-                }
-                UpdateMainListSelectionVisuals();
-                UpdateSidebarSelectionVisuals();
-                e.Handled = true;
-                return;
-            }
-
-            if (viewModel.LinkViewModel?.HasSelectedItems == true)
-            {
-                viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
-            }
-            _selectionManager.NotifyMultiSelectEnded();
-
-            _clipboardManager.Clear();
-            ClearCutVisuals();
-
-            Logger.Info($"[点击] 主栏正常点击: LinkId={targetLink.LinkId}, ListId={targetLink.ListId ?? "null"}, 当前SelectedLinkId={viewModel.SelectedLinkId ?? "null"}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
-
-            if (viewModel.SelectedLinkId == targetLink.LinkId)
-            {
-                viewModel.SelectedLinkId = null;
-            }
-            else
-            {
-                viewModel.SelectedLinkId = targetLink.LinkId;
-            }
-            UpdateMainListSelectionVisuals();
-            UpdateSidebarSelectionVisuals();
-            RefreshDetailPanel();
-            e.Handled = true;
-        };
-
-        return card;
-    }
 
     private void SearchSortButton_Click(object sender, RoutedEventArgs e)
     {
@@ -2173,16 +502,53 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     private void ResetSearchUI()
     {
         SearchBox.Text = string.Empty;
-        SearchResultsPanel.Children.Clear();
-        SearchResultsPanel.Children.Add(new TextBlock
-        {
-            Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 60, 0, 0)
-        });
+        ShowSearchEmptyState();
         if (DataContext is MainViewModel sortVm)
             UpdateSearchSortMenu(sortVm);
         SearchBox.Focus();
+    }
+
+    /// <summary>MD3E 空状态视图：大圆角色块徽章 + 引导性文案（替代生硬的系统提示）。</summary>
+    private FrameworkElement BuildSearchState(string iconKind, string title, string? subtitle,
+        string containerBrush, string onContainerBrush)
+    {
+        var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 56, 0, 0) };
+        var badge = new Border
+        {
+            Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
+            Background = (Brush)FindResource(containerBrush),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        badge.Child = new M3Icon
+        {
+            Kind = iconKind, Width = 40, Height = 40,
+            Foreground = (Brush)FindResource(onContainerBrush),
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+        };
+        sp.Children.Add(badge);
+        sp.Children.Add(new TextBlock
+        {
+            Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("OnSurface"),
+            HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
+        });
+        if (subtitle != null)
+            sp.Children.Add(new TextBlock
+            {
+                Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.85,
+                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
+                MaxWidth = 420, TextAlignment = TextAlignment.Center
+            });
+        return sp;
+    }
+
+    private void ShowSearchEmptyState()
+    {
+        SearchResultsPanel.Children.Clear();
+        SearchResultsPanel.Children.Add(BuildSearchState("magnify", "想找点什么？",
+            "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
+            "PrimaryContainer", "OnPrimaryContainer"));
     }
 
     private void SearchBox_KeyDown(object sender, KeyEventArgs e)
@@ -2207,13 +573,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     private void SearchCancelButton_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = string.Empty;
-        SearchResultsPanel.Children.Clear();
-        SearchResultsPanel.Children.Add(new TextBlock
-        {
-            Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 60, 0, 0)
-        });
+        ShowSearchEmptyState();
         SearchBox.Focus();
     }
 
@@ -2223,21 +583,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
         if (string.IsNullOrWhiteSpace(query))
         {
-            SearchResultsPanel.Children.Add(new TextBlock
-            {
-                Text = "输入关键词开始搜索", FontSize = 14, Opacity = 0.4,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 60, 0, 0)
-            });
+            ShowSearchEmptyState();
             return;
         }
 
-        SearchResultsPanel.Children.Add(new TextBlock
-        {
-            Text = "搜索中...", FontSize = 14, Opacity = 0.4,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 60, 0, 0)
-        });
+        SearchResultsPanel.Children.Add(BuildSearchState("magnify", "正在搜索…",
+            null, "SecondaryContainer", "OnSecondaryContainer"));
 
         try
         {
@@ -2256,46 +607,114 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
             if (results.Count == 0)
             {
-                var notFoundPanel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
-                notFoundPanel.Children.Add(new M3Icon { Kind = "emoticon-sad-outline", Width = 40, Height = 40, HorizontalAlignment = HorizontalAlignment.Center, Opacity = 0.15 });
-                notFoundPanel.Children.Add(new TextBlock { Text = $"未找到包含 \"{query}\" 的书签", FontSize = 14, Opacity = 0.35, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 0) });
-                SearchResultsPanel.Children.Add(notFoundPanel);
+                SearchResultsPanel.Children.Add(BuildSearchState("emoticon-sad-outline",
+                    $"没有找到与「{query}」相关的内容",
+                    "换个关键词，或用上方标签扩大搜索范围再试试",
+                    "SecondaryContainer", "OnSecondaryContainer"));
                 return;
             }
 
-            foreach (var link in results)
+            _lastSearchQuery = query;
+            for (var i = 0; i < results.Count; i++)
             {
-                var card = CreateSearchResultCard(link, vm);
+                var card = CreateSearchResultCard(results[i], vm);
                 SearchResultsPanel.Children.Add(card);
+                PlayCardEntrance(card, i);
             }
         }
         catch (Exception ex)
         {
             SearchResultsPanel.Children.Clear();
-            SearchResultsPanel.Children.Add(new TextBlock
+            SearchResultsPanel.Children.Add(BuildSearchState("alert-outline", "搜索出了点小问题",
+                ex.Message, "SurfaceContainerHighest", "OnSurface"));
+        }
+    }
+
+    private string _lastSearchQuery = "";
+
+    /// <summary>
+    /// 结果卡错峰入场：淡入 + 轻微上移，弹簧（BackEase）曲线，每张错开 40ms。
+    /// 系统关闭客户端动画（辅助功能「减少动态效果」）时跳过。
+    /// </summary>
+    private void PlayCardEntrance(FrameworkElement el, int index)
+    {
+        if (!SystemParameters.ClientAreaAnimation) return;
+        var tt = new TranslateTransform(0, 16);
+        el.RenderTransform = tt;
+        el.Opacity = 0;
+        var ease = new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut };
+        var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 40);
+
+        var oy = new DoubleAnimation(16, 0, TimeSpan.FromMilliseconds(340))
+        { EasingFunction = ease, BeginTime = begin };
+        var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220))
+        { BeginTime = begin };
+
+        // 动画结束后清除动画层并落到终值（否则 Stop 会回退到本地值 0，卡片永远透明）
+        var done = (EventHandler)((_, _) =>
+        {
+            el.BeginAnimation(UIElement.OpacityProperty, null);
+            el.Opacity = 1;
+            tt.BeginAnimation(TranslateTransform.YProperty, null);
+            tt.Y = 0;
+        });
+        oo.Completed += done;
+        oy.Completed += done;
+
+        tt.BeginAnimation(TranslateTransform.YProperty, oy);
+        el.BeginAnimation(UIElement.OpacityProperty, oo);
+    }
+
+    /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
+    private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
+    {
+        var accent = (Brush)FindResource("Primary");
+        tb.Inlines.Clear();
+        if (string.IsNullOrEmpty(query))
+        {
+            tb.Inlines.Add(new Run(text) { Foreground = normal });
+            return;
+        }
+        var lower = text.ToLowerInvariant();
+        var q = query.ToLowerInvariant();
+        var pos = 0;
+        while (true)
+        {
+            var hit = lower.IndexOf(q, pos, StringComparison.Ordinal);
+            if (hit < 0)
             {
-                Text = $"搜索出错: {ex.Message}", FontSize = 14, Opacity = 0.4,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 60, 0, 0)
+                if (pos < text.Length)
+                    tb.Inlines.Add(new Run(text[pos..]) { Foreground = normal });
+                break;
+            }
+            if (hit > pos)
+                tb.Inlines.Add(new Run(text[pos..hit]) { Foreground = normal });
+            tb.Inlines.Add(new Run(text.Substring(hit, q.Length))
+            {
+                Foreground = accent,
+                FontWeight = FontWeights.Bold
             });
+            pos = hit + q.Length;
         }
     }
 
     private Border CreateSearchResultCard(LinkItem item, MainViewModel vm)
     {
+        // MD3E：色彩分层替代阴影层级 —— 默认 SurfaceContainerLowest，hover 升到 High，
+        // 选中 PrimaryContainer + Primary 描边；不使用 DropShadow。
         var card = new Border
         {
-            Tag = "SearchCard", Margin = new Thickness(4, 2, 4, 2), CornerRadius = new CornerRadius(10),
+            Tag = "SearchCard", Margin = new Thickness(4, 4, 4, 4), CornerRadius = new CornerRadius(16),
             Cursor = Cursors.Hand, Width = 720, HorizontalAlignment = HorizontalAlignment.Center,
-            Background = (Brush)FindResource("SurfaceContainer"),
-            BorderThickness = new Thickness(2), Padding = new Thickness(16, 12, 16, 12)
+            Background = (Brush)FindResource("SurfaceContainerLowest"),
+            BorderThickness = new Thickness(2), BorderBrush = Brushes.Transparent,
+            Padding = new Thickness(16, 12, 16, 12)
         };
-
         var style = new Style(typeof(Border));
-        style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
-        style.Setters.Add(new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
-        style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
-            Setters = { new Setter(Border.EffectProperty, new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
+        style.Triggers.Add(new Trigger
+        {
+            Property = Border.IsMouseOverProperty, Value = true,
+            Setters = { new Setter(Border.BackgroundProperty, (Brush)FindResource("SurfaceContainerHigh")) }
         });
         card.Style = style;
 
@@ -2303,11 +722,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        // 图标位：PrimaryContainer 圆角色块（大圆角，与卡片 16 圆角形成形状对比）
         var iconBorder = new Border
         {
-            Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-            Background = Brushes.White,
-            Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center,
+            Width = 40, Height = 40, CornerRadius = new CornerRadius(12),
+            Background = (Brush)FindResource("PrimaryContainer"),
+            Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = true
         };
 
@@ -2319,7 +739,8 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Stretch = Stretch.Uniform,
             Source = faviconBmp,
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(6)
         };
         if (faviconBmp == null)
             faviconImg.Visibility = Visibility.Collapsed;
@@ -2328,9 +749,10 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             Kind = "earth",
             Width = 20, Height = 20,
+            Foreground = (Brush)FindResource("OnPrimaryContainer"),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Opacity = 0.6
+            Opacity = 0.75
         };
         if (faviconBmp != null)
             earthIcon.Visibility = Visibility.Collapsed;
@@ -2364,16 +786,35 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         Grid.SetColumn(iconBorder, 0);
         grid.Children.Add(iconBorder);
 
+        // 文本区：强调型排版 —— 标题 15 SemiBold（关键词强调色高亮）/ URL / 元数据三个层级
         var displayTitle = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url;
         var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        textStack.Children.Add(new TextBlock
+
+        var titleBlock = new TextBlock
         {
-            Text = displayTitle, FontSize = 14, FontWeight = FontWeights.SemiBold,
+            FontSize = 15, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("OnSurface"),
             TextTrimming = TextTrimming.CharacterEllipsis
-        });
+        };
+        AddHighlightedRuns(titleBlock, displayTitle, _lastSearchQuery, (Brush)FindResource("OnSurface"));
+        textStack.Children.Add(titleBlock);
+
+        var urlBlock = new TextBlock
+        {
+            FontSize = 11,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 4, 0, 0)
+        };
+        AddHighlightedRuns(urlBlock, item.Url, _lastSearchQuery, (Brush)FindResource("OnSurfaceVariant"));
+        textStack.Children.Add(urlBlock);
+
+        // 元数据行：来源文件夹 · 最后更新 —— 小字号、低对比
+        var folderName = FindFolderNameForLink(item.ListId) ?? "全部书签";
+        var metaText = $"{folderName} · 最后更新 {item.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}";
         textStack.Children.Add(new TextBlock
         {
-            Text = item.Url, FontSize = 11, Opacity = 0.55,
+            Text = metaText, FontSize = 11,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.72,
             TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
         });
         Grid.SetColumn(textStack, 1);
@@ -2384,11 +825,15 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         card.PreviewMouseLeftButtonDown += (s, e) =>
         {
             if (_selectedSearchCard != null && _selectedSearchCard != card)
-                _selectedSearchCard.BorderBrush = (Brush)FindResource("OutlineVariant");
+            {
+                _selectedSearchCard.BorderBrush = Brushes.Transparent;
+                _selectedSearchCard.Background = (Brush)FindResource("SurfaceContainerLowest");
+            }
 
             _selectedSearchCard = card;
             _selectedSearchItem = item;
-            card.BorderBrush = (Brush)Application.Current.FindResource("Primary");
+            card.Background = (Brush)FindResource("PrimaryContainer");
+            card.BorderBrush = (Brush)FindResource("Primary");
 
             PopulateDetailPanel(SearchFixedSidebar, item.Url, item.Title, item.Description, item.FaviconUrl,
                 item.UpdatedAt, item.LastVisitedAt, item.VisitCount, item.CreatedAt, item.LinkId,
@@ -2398,7 +843,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
             if (e.ClickCount == 2)
             {
-                vm.ShowDetailCommand.Execute(item);
+                OpenLinkInBrowserPage(item.LinkId); // 老「链接」详情页已删除 → 改在「浏览」页打开详情
                 e.Handled = true;
             }
         };
@@ -2422,143 +867,22 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     private void SearchJumpToLinkBtn_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedSearchItem != null)
-            _linkNavigator.NavigateToLinkInMainList(_selectedSearchItem.LinkId);
+            OpenLinkInBrowserPage(_selectedSearchItem.LinkId);
     }
 
-    private static FolderNode? FindFolderNode(ObservableCollection<FolderNode> nodes, string id)
+    /// <summary>
+    /// 搜索结果「跳转」：老「链接」页已整体删除，改为切到「浏览」页并打开该链接的详情页
+    /// （无需先导航到它所在的文件夹，详情页自带所属路径与打开/编辑/删除操作）。
+    /// </summary>
+    private void OpenLinkInBrowserPage(string linkId)
     {
-        foreach (var node in nodes)
-        {
-            if (node.Id == id) return node;
-            var found = FindFolderNode(node.Children, id);
-            if (found != null) return found;
-        }
-        return null;
+        if (string.IsNullOrEmpty(linkId) || DataContext is not MainViewModel vm) return;
+
+        vm.SelectNavCommand.Execute("browser");
+        _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
     }
 
-    private static FolderNode? FindParentNode(ObservableCollection<FolderNode> nodes, string? parentId)
-    {
-        if (string.IsNullOrEmpty(parentId)) return null;
-        foreach (var node in nodes)
-        {
-            if (node.Id == parentId) return node;
-            var found = FindParentNode(node.Children, parentId);
-            if (found != null) return found;
-        }
-        return null;
-    }
 
-    private static T? FindVisualChild<T>(DependencyObject parent, string? name = null) where T : FrameworkElement
-    {
-        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T element && (name == null || element.Name == name))
-                return element;
-            var result = FindVisualChild<T>(child, name);
-            if (result != null) return result;
-        }
-        return null;
-    }
-
-    private void BringLinkCardIntoView(string linkId)
-    {
-        if (_mainListCardBorders.TryGetValue(linkId, out var card))
-        {
-            _ = Dispatcher.BeginInvoke(() =>
-            {
-                card.BringIntoView();
-                var sv = FindVisualChild<ScrollViewer>(MainListContentPanel?.Parent as DependencyObject ?? this);
-                if (sv != null && card.TransformToAncestor(sv).TryTransform(new Point(0, 0), out var pos) && pos.Y > 40)
-                    sv.ScrollToVerticalOffset(sv.VerticalOffset + pos.Y - 20);
-            }, System.Windows.Threading.DispatcherPriority.Loaded);
-        }
-    }
-
-    private void LinksPage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
-        if (DataContext is MainViewModel viewModel && viewModel.LinkViewModel != null)
-        {
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control) return;
-
-            DependencyObject? hit = e.OriginalSource as DependencyObject;
-            DependencyObject? walk = hit;
-            while (walk != null)
-            {
-                if (walk is Border b)
-                {
-                    if ("FolderCard".Equals(b.Tag as string)) return;
-                    if ("SubFolderCard".Equals(b.Tag as string)) return;
-                }
-                walk = VisualTreeHelper.GetParent(walk);
-            }
-
-            LinkItem? clickedLink = null;
-            walk = hit;
-            while (walk != null)
-            {
-                if (walk is Border border && border.Tag?.ToString() == "LinkCard")
-                {
-                    clickedLink = border.DataContext as LinkItem;
-                    break;
-                }
-                walk = VisualTreeHelper.GetParent(walk);
-            }
-
-            if (clickedLink == null)
-            {
-                viewModel.LinkViewModel.ClearSelectionCommand.Execute(null);
-                viewModel.SelectedLinkId = null;
-                ClearFolderSelection();
-                UpdateSidebarSelectionVisuals();
-                RefreshDetailPanel();
-                return;
-            }
-
-            viewModel.ClearFolderSelectionVM();
-        }
-    }
-
-    private void RootGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (MainView.Visibility != Visibility.Visible) return;
-        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
-
-        DependencyObject? hit = e.OriginalSource as DependencyObject;
-        if (hit == null) return;
-
-        DependencyObject? current = hit;
-        while (current != null)
-        {
-            if (current == LinksPage) return;
-            if (current == RightSidebarBorder) return;
-            if (current == DetailPanel) return;
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        current = hit;
-        while (current != null)
-        {
-            if (current is Border border)
-            {
-                if ("LinkCard".Equals(border.Tag as string)) return;
-                if ("FolderCard".Equals(border.Tag as string)) return;
-                if (border.Tag is string) return;
-            }
-            if (current is System.Windows.Controls.Primitives.ButtonBase) return;
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        if (DataContext is MainViewModel vm && vm.LinkViewModel != null)
-        {
-            vm.LinkViewModel.ClearSelectionCommand.Execute(null);
-            vm.SelectedLinkId = null;
-            ClearFolderSelection();
-            UpdateSidebarSelectionVisuals();
-            RefreshDetailPanel();
-        }
-    }
 
     private static BitmapImage? TryLoadFavicon(string? faviconUrl)
     {
@@ -2575,13 +899,4 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         return false;
     }
 
-    private static bool IsDescendantOf(DependencyObject? obj, DependencyObject parent)
-    {
-        while (obj != null)
-        {
-            if (obj == parent) return true;
-            obj = VisualTreeHelper.GetParent(obj);
-        }
-        return false;
-    }
 }

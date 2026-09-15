@@ -35,10 +35,21 @@ public class Folder
     [Column("sort_order")]
     public int SortOrder { get; set; } = 0;
 
+    /// <summary>最后查看（递归继承口径）：子树内任何链接被查看详情/访问时，沿父链所有祖先刷新为当前时间。
+    /// 事件：查看。由 FolderService.RecordFolderViewAsync 维护，界面层只读。</summary>
     [Column("last_visited_at")]
     public DateTime? LastVisitedAt { get; set; }
 
+    /// <summary>查看次数（递归继承口径）：子树内任何链接被查看详情/访问时，沿父链所有祖先 +1。
+    /// 事件驱动增量计数，不从链接 VisitCount 聚合——移动链接不会转移历史计数。</summary>
+    [Column("visit_count")]
+    public int VisitCount { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>最后更新 = 内容（含全部子孙）最后变动时间。事件：内容变动
+    /// （新增/删除/改名/移入移出链接或子文件夹、链接内容被编辑等）。查看不算变动。
+    /// 由 FolderService.TouchModifiedAsync 沿父链维护，界面层只读、不参与计算。</summary>
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // 导航属性

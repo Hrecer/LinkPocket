@@ -133,7 +133,7 @@ namespace LinkPocket.Views
                 var folders = await Services.AppServices.Api.GetFolderTreeAsync();
                 var validFolderIds = folders.Select(f => f.FolderId).ToHashSet();
                 var allLinks = await Services.AppServices.Api.GetAllLinksAsync();
-                var dbLinkCount = allLinks.Count(l => string.IsNullOrEmpty(l.ListId) || l.ListId == "0" || validFolderIds.Contains(l.ListId));
+                var dbLinkCount = allLinks.Count(l => string.IsNullOrEmpty(l.ListId) || validFolderIds.Contains(l.ListId));
                 var folderCount = folders.Count;
                 var totalDbLinks = allLinks.Count;
                 var orphanedCount = totalDbLinks - dbLinkCount;
