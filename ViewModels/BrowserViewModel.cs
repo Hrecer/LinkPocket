@@ -126,7 +126,6 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand RowClickCommand { get; }
     public ICommand RowOpenCommand { get; }
     public ICommand CrumbClickCommand { get; }
-    public ICommand SortCommand { get; }
     public ICommand CopyUrlCommand { get; }
     public ICommand RenameRowCommand { get; }
     public ICommand DeleteRowCommand { get; }
@@ -289,7 +288,6 @@ public class BrowserViewModel : INotifyPropertyChanged
         RowClickCommand = new RelayCommand<BrowserRowViewModel?>(SelectRow);
         RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row));
         CrumbClickCommand = new RelayCommand<BrowserCrumbViewModel?>(crumb => _ = LoadAsync(crumb?.FolderId));
-        SortCommand = new RelayCommand<string?>(ToggleSort);
         CopyUrlCommand = new RelayCommand<BrowserRowViewModel?>(CopyUrl);
         RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = RenameRowAsync(row));
         DeleteRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = DeleteRowAsync(row));
@@ -316,7 +314,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         Clipboard.ClipboardChanged += (_, _) => CommandManager.InvalidateRequerySuggested();
     }
 
-    // —— 排序（列头点击切换，参考 Windows 资源管理器）——
+    // —— 排序（服务端排序：视图层共享数据表控件 SortableDataTable 点列头后经 SortChanged 事件转到这里）——
 
     private const string DefaultSortBy = "title";
     private const string DefaultSortOrder = "asc";
@@ -324,68 +322,16 @@ public class BrowserViewModel : INotifyPropertyChanged
     public string SortBy { get; private set; } = DefaultSortBy;
     public string SortOrder { get; private set; } = DefaultSortOrder;
 
-    // —— 列头排序指示器：每列一个（名称 / 最后更新 / 最后查看 / 查看次数 / 创建时间）——
-    private string Indicator(string key) => SortBy == key ? (SortOrder == "asc" ? "▲" : "▼") : "";
-    public string SortIndicatorName => Indicator("title");
-    public string SortIndicatorUpdated => Indicator("updated_at");
-    public string SortIndicatorLastViewed => Indicator("last_visited_at");
-    public string SortIndicatorViewCount => Indicator("visit_count");
-    public string SortIndicatorCreated => Indicator("created_at");
-
-    private static readonly string[] SortIndicatorProps =
-    {
-        nameof(SortIndicatorName), nameof(SortIndicatorUpdated), nameof(SortIndicatorLastViewed),
-        nameof(SortIndicatorViewCount), nameof(SortIndicatorCreated)
-    };
-
-    private void ToggleSort(string? column)
-    {
-        if (string.IsNullOrEmpty(column)) return;
-        if (SortBy == column) SortOrder = SortOrder == "asc" ? "desc" : "asc";
-        else { SortBy = column; SortOrder = "asc"; }
-        foreach (var p in SortIndicatorProps) OnPropertyChanged(p);
-        _ = RefreshPreservingSelectionAsync(); // 重排不该丢掉选中（Windows 点列头也不丢）
-    }
-
-    // —— 列表列宽：列头与每一行共用同一份像素宽度，列头边界可拖拽调整（Windows 语义）——
-    public const int ColumnName = 0, ColumnUpdated = 1, ColumnLastViewed = 2, ColumnViewCount = 3, ColumnCreated = 4;
-
-    public ObservableCollection<GridLength> ColumnWidths { get; } = new()
-    {
-        new GridLength(220, GridUnitType.Pixel), // 名称
-        new GridLength(140, GridUnitType.Pixel), // 最后更新
-        new GridLength(140, GridUnitType.Pixel), // 最后查看
-        new GridLength(80, GridUnitType.Pixel),  // 查看次数
-        new GridLength(140, GridUnitType.Pixel), // 创建时间
-    };
-
-    /// <summary>拖拽时的单列下限。</summary>
-    private const double MinColumnWidth = 60;
-
-    /// <summary>「名称」列初始下限：视口过窄时保底宽度，超出部分靠横向滚动查看。</summary>
-    private const double MinNameColumnWidth = 140;
-
     /// <summary>
-    /// 按当前可视宽度给「名称」列定值（其余列为固定初值）：名称列吸收剩余宽度，
-    /// 因此首次布局与窗口缩放都不会出现横向溢出。用户在列头拖拽过之后由视图层停止调用本方法，
-    /// 列宽从此完全由用户决定（Windows 语义）。
+    /// 应用排序（字段与方向已由共享表控件切换完毕）并重排。
+    /// 走 RefreshPreservingSelectionAsync：重排不丢选中（Windows 点列头也不丢）。
     /// </summary>
-    public void InitColumnWidths(double viewportWidth)
+    public void ApplySort(string? field, bool ascending)
     {
-        const double horizontalPadding = 32; // 列头/行左右各 16
-        var others = 140 + 140 + 80 + 140;
-        var name = viewportWidth - horizontalPadding - others;
-        if (name < MinNameColumnWidth) name = MinNameColumnWidth;
-        ColumnWidths[ColumnName] = new GridLength(name, GridUnitType.Pixel);
-    }
-
-    /// <summary>拖拽列头边界：调整第 index 列宽度（像素），不改变其他列宽度（Windows 语义）。</summary>
-    public void ResizeColumn(int index, double delta)
-    {
-        if (index < 0 || index >= ColumnWidths.Count) return;
-        var w = ColumnWidths[index].Value + delta;
-        if (w < MinColumnWidth) w = MinColumnWidth;
-        ColumnWidths[index] = new GridLength(w, GridUnitType.Pixel);
+        if (string.IsNullOrEmpty(field)) return;
+        SortBy = field;
+        SortOrder = ascending ? "asc" : "desc";
+        _ = RefreshPreservingSelectionAsync();
     }
 
     /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。</summary>

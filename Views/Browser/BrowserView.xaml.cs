@@ -25,10 +25,41 @@ public partial class BrowserView : UserControl
         BrowserViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);
         DataContextChanged += (_, _) =>
         {
-            if (ViewModel != null)
-                ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            // ⚠️ MainWindow 先设自身 DataContext（MainViewModel）→ 继承级联会先触发本事件，
+            // 此时 ViewModel 还不是 BrowserViewModel；必须跳过并等待真正的一次，
+            // 「装载过就置守卫」只能在成功路径上做（否则守卫被中间态污染，列定义永远装不进去）。
+            if (ViewModel == null) return;
+            ViewModel.PropertyChanged -= OnViewModelPropertyChanged; // 防重复订阅
+            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             HookRowsCollection(ViewModel);
+            WireMainTableOnce();
         };
+    }
+
+    /// <summary>共享表是否已装载列定义（仅在成功装载后置位，见构造函数中的注释）。</summary>
+    private bool _mainTableWired;
+
+    /// <summary>
+    /// 主栏共享数据表（views:SortableDataTable，与搜索结果表同一份实现）：
+    /// 列定义 = 数据（Field/Label/Width），排序走 SortChanged 事件转 VM（服务端排序），
+    /// 行 = ItemTemplate 模板模式（本页 XAML），列宽单一数据源在控件 ColumnWidths。
+    /// </summary>
+    private void WireMainTableOnce()
+    {
+        if (_mainTableWired || ViewModel == null) return;
+        _mainTableWired = true;
+
+        MainTable.SortField = ViewModel.SortBy;
+        MainTable.SortAscending = ViewModel.SortOrder != "desc";
+        MainTable.Columns = new[]
+        {
+            new DataTableColumn { Field = "title", Label = "名称", Width = -1 },
+            new DataTableColumn { Field = "updated_at", Label = "最后更新", Width = 140 },
+            new DataTableColumn { Field = "last_visited_at", Label = "最后查看", Width = 140 },
+            new DataTableColumn { Field = "visit_count", Label = "查看次数", Width = 80 },
+            new DataTableColumn { Field = "created_at", Label = "创建时间", Width = 140 },
+        };
+        MainTable.SortChanged += (_, e) => ViewModel.ApplySort(e.Field, e.Ascending);
     }
 
     private BrowserViewModel? ViewModel => DataContext as BrowserViewModel;
@@ -49,10 +80,11 @@ public partial class BrowserView : UserControl
         if (!SystemParameters.ClientAreaAnimation) return; // 辅助功能：减少动态效果
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
+            var rows = MainTable.RowsList;
             var idx = 0;
-            for (var i = 0; i < RowsControl.Items.Count && idx < 12; i++)
+            for (var i = 0; i < rows.Items.Count && idx < 12; i++)
             {
-                if (RowsControl.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
+                if (rows.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
                 {
                     PlayRowEntrance(fe, idx);
                     idx++;
@@ -108,26 +140,8 @@ public partial class BrowserView : UserControl
         public void Detach() => _source.CollectionChanged -= OnChanged;
     }
 
-    // —— 列宽拖拽（Windows 语义：列头右边界可拖动调整该列宽度，各行同步）——
-
-    /// <summary>用户是否手动拖拽过列宽：拖过之后名称列不再自动重算（Windows 语义，列宽由用户决定）。</summary>
-    private bool _columnsResizedByUser;
-
-    private void RowsScroll_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (_columnsResizedByUser || e.NewSize.Width <= 0) return;
-        ViewModel?.InitColumnWidths(e.NewSize.Width);
-    }
-
-    private void ColumnResizeThumb_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.Primitives.Thumb thumb) return;
-        if (thumb.Tag is not string tag || !int.TryParse(tag, out var index)) return;
-        if (ViewModel == null) return;
-
-        _columnsResizedByUser = true;
-        ViewModel.ResizeColumn(index, e.HorizontalChange);
-    }
+    // （列头与列宽拖拽已由共享数据表控件 SortableDataTable 内部驱动：
+    //   表头按 Columns 生成，拖拽只改控件的 ColumnWidths 单一数据源。）
 
     // —— 行点击路由（读修饰键：无=单选，Ctrl=翻转，Shift=区间）——
 

@@ -286,7 +286,7 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <Grid>
+                        <Grid VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -358,56 +358,8 @@
                     <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True" Style="{StaticResource SearchChip}"/>
                 </StackPanel>
 
-                <!-- 结果区：与浏览页中央卡同构 —— TintPanel 表头带 + SurfaceContainerHigh 内容卡 -->
-                <Border Grid.Row="2" Background="{DynamicResource SurfaceContainerHigh}"
-                        CornerRadius="24" Margin="12,0,12,8" ClipToBounds="True">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <Border Grid.Row="0" Background="{DynamicResource TintPanel}"
-                            CornerRadius="24,24,0,0" Padding="16,9">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="150"/>
-                                <ColumnDefinition Width="150"/>
-                                <ColumnDefinition Width="90"/>
-                                <ColumnDefinition Width="150"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="名称" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                            <TextBlock Grid.Column="1" Text="位置" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,12,0"/>
-                            <TextBlock Grid.Column="2" Text="最后更新" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,12,0"/>
-                            <TextBlock Grid.Column="3" Text="最后查看" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,12,0"/>
-                            <TextBlock Grid.Column="4" Text="查看次数" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,12,0"/>
-                            <TextBlock Grid.Column="5" Text="创建时间" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        </Grid>
-                    </Border>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  PreviewMouseLeftButtonDown="SearchResultsArea_MouseLeftButtonDown">
-                    <StackPanel x:Name="SearchResultsPanel">
-                        <StackPanel x:Name="SearchEmptyPlaceholder" HorizontalAlignment="Center" Margin="0,72,0,0">
-                            <!-- MD3E 空状态：大圆角色块徽章 + 引导性文案 -->
-                            <Border Width="96" Height="96" CornerRadius="32"
-                                    Background="{DynamicResource PrimaryContainer}"
-                                    HorizontalAlignment="Center">
-                                <m3:M3Icon Kind="magnify" Width="40" Height="40"
-                                           Foreground="{DynamicResource OnPrimaryContainer}"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="想找点什么？" FontSize="17" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource OnSurface}"
-                                       HorizontalAlignment="Center" Margin="0,18,0,0"/>
-                            <TextBlock Text="输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围" FontSize="12"
-                                       Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
-                                       HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                        </StackPanel>
-                    </StackPanel>
-                    </ScrollViewer>
-                </Grid>
-                </Border>
+                <!-- 结果区：完全可复用、数据驱动的 SortableDataTable（表头排序/表格化行/空态一体） -->
+                <views:SortableDataTable x:Name="SearchResultsTable" Grid.Row="2" Margin="12,0,12,8"/>
             </Grid>
 
         </Grid>

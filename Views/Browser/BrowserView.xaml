@@ -5,6 +5,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:vm="clr-namespace:LinkPocket.ViewModels"
+             xmlns:views="clr-namespace:LinkPocket.Views"
              xmlns:local="clr-namespace:LinkPocket.Views.Browser"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
@@ -196,41 +197,8 @@
             <EventSetter Event="Drop" Handler="TreeItem_Drop"/>
         </Style>
 
-        <Style x:Key="HeaderSortButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-
-        <!-- 列宽拖拽手柄（Windows 列头分隔线）：贴在列右边界，hover/拖动时显示一条细高亮线 -->
-        <Style x:Key="ColumnResizeThumb" TargetType="Thumb">
-            <Setter Property="Width" Value="7"/>
-            <Setter Property="Margin" Value="0,0,-4,0"/>
-            <Setter Property="HorizontalAlignment" Value="Right"/>
-            <Setter Property="VerticalAlignment" Value="Stretch"/>
-            <Setter Property="Cursor" Value="SizeWE"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Thumb">
-                        <Border Background="Transparent" Padding="2,0">
-                            <Border x:Name="Line" Width="2" Background="Transparent" CornerRadius="1"
-                                    HorizontalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
-                            </Trigger>
-                            <Trigger Property="IsDragging" Value="True">
-                                <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- 排序表头按钮已随共享数据表控件（views:SortableDataTable）统一：表头由控件按列定义生成，
+             本页不再保留独立的 HeaderSortButton 样式。 -->
 
         <!-- 名称列可用宽度 = 列宽 - 图标/间距/计数药丸的固定占位 -->
         <local:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
@@ -660,119 +628,16 @@
                     </ContextMenu>
                 </Grid.ContextMenu>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- 列头：TintPanel 色带（与侧区面板同档），顶角与卡片圆角对齐 -->
-                <Border Grid.Row="0" Background="{DynamicResource TintPanel}" Padding="16,6" ClipToBounds="True"
-                        CornerRadius="24,24,0,0">
-                    <Grid x:Name="HeaderGrid" RenderTransformOrigin="0,0">
-                        <Grid.RenderTransform>
-                            <TranslateTransform X="{Binding HorizontalOffset, ElementName=RowsScroll}"/>
-                        </Grid.RenderTransform>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[0]}"/>
-                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[1]}"/>
-                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[2]}"/>
-                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[3]}"/>
-                            <ColumnDefinition local:ColumnWidthBinding.Width="{Binding ColumnWidths[4]}"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- 名称 -->
-                        <Grid Grid.Column="0">
-                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
-                                    HorizontalAlignment="Stretch"
-                                    Command="{Binding SortCommand}" CommandParameter="title" ToolTip="按名称排序">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="名称" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                    <TextBlock Text="{Binding SortIndicatorName}" FontSize="10" Margin="4,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="0" Panel.ZIndex="2"
-                                   DragDelta="ColumnResizeThumb_DragDelta"/>
-                        </Grid>
-
-                        <!-- 最后更新（内容变动时间，不含查看） -->
-                        <Grid Grid.Column="1">
-                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
-                                    HorizontalAlignment="Stretch"
-                                    Command="{Binding SortCommand}" CommandParameter="updated_at" ToolTip="按最后更新排序">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="最后更新" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                    <TextBlock Text="{Binding SortIndicatorUpdated}" FontSize="10" Margin="4,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="1" Panel.ZIndex="2"
-                                   DragDelta="ColumnResizeThumb_DragDelta"/>
-                        </Grid>
-
-                        <!-- 最后查看 -->
-                        <Grid Grid.Column="2">
-                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
-                                    HorizontalAlignment="Stretch"
-                                    Command="{Binding SortCommand}" CommandParameter="last_visited_at" ToolTip="按最后查看排序">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="最后查看" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                    <TextBlock Text="{Binding SortIndicatorLastViewed}" FontSize="10" Margin="4,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="2" Panel.ZIndex="2"
-                                   DragDelta="ColumnResizeThumb_DragDelta"/>
-                        </Grid>
-
-                        <!-- 查看次数 -->
-                        <Grid Grid.Column="3">
-                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
-                                    HorizontalAlignment="Stretch"
-                                    Command="{Binding SortCommand}" CommandParameter="visit_count" ToolTip="按查看次数排序">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="查看次数" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                    <TextBlock Text="{Binding SortIndicatorViewCount}" FontSize="10" Margin="4,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="3" Panel.ZIndex="2"
-                                   DragDelta="ColumnResizeThumb_DragDelta"/>
-                        </Grid>
-
-                        <!-- 创建时间 -->
-                        <Grid Grid.Column="4">
-                            <Button Style="{StaticResource HeaderSortButton}" MinHeight="28" Padding="0"
-                                    HorizontalAlignment="Stretch"
-                                    Command="{Binding SortCommand}" CommandParameter="created_at" ToolTip="按创建时间排序">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="创建时间" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                    <TextBlock Text="{Binding SortIndicatorCreated}" FontSize="10" Margin="4,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
-                                </StackPanel>
-                            </Button>
-                            <Thumb Style="{StaticResource ColumnResizeThumb}" Tag="4" Panel.ZIndex="2"
-                                   DragDelta="ColumnResizeThumb_DragDelta"/>
-                        </Grid>
-                    </Grid>
-                </Border>
-
-            <!-- 行列表 -->
-            <ScrollViewer x:Name="RowsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Auto" SizeChanged="RowsScroll_SizeChanged">
-                <ScrollViewer.ContextMenu>
-                    <ContextMenu>
-                        <!-- 紧凑菜单样式的隐式兜底：ContextMenu 不在 UserControl 的可视树里，
-                             拿不到 UserControl.Resources 的隐式样式，所以必须在每个菜单自己的 Resources 里再声明一次。 -->
-                        <ContextMenu.Resources>
-                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
-                        </ContextMenu.Resources>
-                        <MenuItem Header="新建文件夹" Command="{Binding NewFolderCommand}"/>
-                        <MenuItem Header="粘贴" Command="{Binding PasteCommand}"/>
-                        <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
-                    </ContextMenu>
-                </ScrollViewer.ContextMenu>
-                <ItemsControl x:Name="RowsControl" ItemsSource="{Binding Rows}" Padding="0,4">
-                    <ItemsControl.ItemTemplate>
+                <!-- 列头 + 行列表：共享数据表控件（与搜索结果表同一份实现，数据驱动、独立 CS）。
+                     列头/排序/列宽拖拽全部由控件按列定义生成；行 = 模板模式（ItemTemplate），
+                     行悬停/选中/右键菜单/拖放仍归本页行模板所有。
+                     排序经 SortChanged 事件转 VM（服务端排序），列宽单一数据源在控件 ColumnWidths。 -->
+                <views:SortableDataTable x:Name="MainTable" Grid.Row="0"
+                                         HeaderBandMargin="0" ItemsSource="{Binding Rows}">
+                    <views:SortableDataTable.ItemTemplate>
                         <DataTemplate>
                             <!-- 外层 Border：承载事件/右键菜单/列宽对齐，透明无底色（宽度=视口，不产生横向溢出）；
                                  内层 RowSkin：MD3E 悬浮行容器 —— 大圆角 12 + 左右外距 10，hover/选中底色都在它上面 -->
@@ -892,11 +757,12 @@
                                 <Grid>
                                     <!-- 与列头共用同一份列宽（拖拽列头即同步到每一行） -->
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[0], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[1], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[2], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[3], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
-                                        <ColumnDefinition local:ColumnWidthBinding.Width="{Binding DataContext.ColumnWidths[4], RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                        <!-- 与共享控件表头共用同一份列宽（ColumnWidths 单一数据源，拖拽即同步） -->
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[3], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[4], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
                                     </Grid.ColumnDefinitions>
 
                                     <!-- 名称（图标 + 文本 + 计数药丸）：名称 Auto 紧跟图标，药丸紧贴名称（与左侧树一致），尾部 * 空白吸收剩余宽度 -->
@@ -961,7 +827,7 @@
                                         <!-- 名称文本宽度跟随列宽，列变窄时省略号收窄，药丸不会被挤出到相邻列 -->
                                         <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                   MaxWidth="{Binding DataContext.ColumnWidths[0].Value, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource NameCellTextWidth}, ConverterParameter=78}"
+                                                   MaxWidth="{Binding ColumnWidths[0].Value, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}, Converter={StaticResource NameCellTextWidth}, ConverterParameter=78}"
                                                    ToolTip="{Binding Name}"/>
                                         <!-- 链接数药丸（仅文件夹）：紧贴名称，与左侧树完全一致（只显示数字） -->
                                         <Border Grid.Column="2" Padding="7,0" MinHeight="16" Margin="8,0,0,0">
@@ -1000,12 +866,11 @@
                                 </Border>
                             </Border>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+                    </views:SortableDataTable.ItemTemplate>
+                </views:SortableDataTable>
 
             <!-- 空状态（MD3E）：大圆角色块徽章 + 引导性文案，替代生硬的系统提示 -->
-            <Grid Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -1038,7 +903,7 @@
             </Grid>
 
             <!-- 加载遮罩 -->
-            <Border Grid.Row="1" Background="#80FFFFFF">
+            <Border Grid.Row="0" Background="#80FFFFFF">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Collapsed"/>

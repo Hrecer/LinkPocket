@@ -13,6 +13,7 @@ using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
+using LinkPocket.Views;
 using Material3.Wpf;
 
 namespace LinkPocket;
@@ -22,7 +23,6 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     private readonly Managers.SelectionManager _selectionManager = new();
 
     // 搜索页自己的选中态（老「链接」页删除后，主窗口只剩搜索页需要残余状态）
-    private Border? _selectedSearchCard;
     private LinkItem? _selectedSearchItem;
 
     public MainWindow()
@@ -31,6 +31,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         DataContext = new MainViewModel(_selectionManager);
         BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
         Services.UiCoordinator.Instance = this;
+        SetupSearchTable(); // 搜索结果表：列定义 + 排序 + 行交互（完全数据驱动）
 
         // 老「链接」页的 LinkNavigator（在旧列表里定位/展开/滚动到某条链接）随页面一并删除；
         // 搜索页的「跳转」已改为在「浏览」页直接打开该链接的详情页。
@@ -39,7 +40,6 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             searchVm.OnNavigatedToSearch += (s, e) => ResetSearchUI();
             searchVm.OnNavigatedFromSearch += (s, e) =>
             {
-                _selectedSearchCard = null;
                 _selectedSearchItem = null;
                 SearchJumpToLinkBtn.IsEnabled = false;
             };
@@ -546,6 +546,149 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         SearchBox.Focus();
     }
 
+    /// <summary>
+    /// 搜索结果表（SortableDataTable）：列定义 = 数据 + 排序键 + 单元格工厂，表头/行/排序全部由控件驱动。
+    /// </summary>
+    private void SetupSearchTable()
+    {
+        SearchResultsTable.SortField = "title";   // 默认名称升序（与主栏一致，表头初始即显示 ▲）
+        SearchResultsTable.SortAscending = true;
+        SearchResultsTable.Columns = new[]
+        {
+            new DataTableColumn
+            {
+                Field = "title", Label = "名称", Width = -1,
+                SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
+                    ? ((LinkItem)r).Url : ((LinkItem)r).Title),
+                CellFactory = r => BuildSearchNameCell((LinkItem)r)
+            },
+            new DataTableColumn
+            {
+                Field = "path", Label = "位置", Width = 200,
+                SortKey = r => (IComparable)(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签"),
+                CellFactory = r => SearchTextCell(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签", 12.5)
+            },
+            new DataTableColumn
+            {
+                Field = "updated_at", Label = "最后更新", Width = 150,
+                SortKey = r => (IComparable)((LinkItem)r).UpdatedAt,
+                CellFactory = r => SearchTextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 13)
+            },
+            new DataTableColumn
+            {
+                Field = "last_visited_at", Label = "最后查看", Width = 150,
+                SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
+                CellFactory = r => SearchTextCell(
+                    ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 13)
+            },
+            new DataTableColumn
+            {
+                Field = "visit_count", Label = "查看次数", Width = 90,
+                SortKey = r => (IComparable)((LinkItem)r).VisitCount,
+                CellFactory = r => SearchTextCell($"{((LinkItem)r).VisitCount} 次", 13)
+            },
+            new DataTableColumn
+            {
+                Field = "created_at", Label = "创建时间", Width = 150,
+                SortKey = r => (IComparable)((LinkItem)r).CreatedAt,
+                CellFactory = r => SearchTextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 13)
+            },
+        };
+
+        SearchResultsTable.RowClick += (_, item) =>
+        {
+            _selectedSearchItem = (LinkItem)item;
+            SearchJumpToLinkBtn.IsEnabled = true;
+        };
+        SearchResultsTable.RowDoubleClick += (_, item) => OpenLinkInBrowserPage(((LinkItem)item).LinkId);
+    }
+
+    /// <summary>名称列：favicon + 标题 + URL 副行（关键词高亮）。</summary>
+    private FrameworkElement BuildSearchNameCell(LinkItem item)
+    {
+        var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Orientation = Orientation.Horizontal };
+
+        var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var faviconBmp = TryLoadFavicon(item.FaviconUrl);
+        var faviconImg = new Image
+        {
+            Stretch = Stretch.Uniform,
+            Source = faviconBmp,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        System.Windows.Media.RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
+        if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
+        var earthIcon = new M3Icon
+        {
+            Kind = "earth",
+            Width = 16, Height = 16,
+            Foreground = (Brush)FindResource("OnSurfaceMuted"),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
+        iconGrid.Children.Add(faviconImg);
+        iconGrid.Children.Add(earthIcon);
+
+        if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
+                    var cached = FaviconService.LoadFromCache(item.FaviconUrl);
+                    if (cached != null)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            faviconImg.Source = cached;
+                            faviconImg.Visibility = Visibility.Visible;
+                            earthIcon.Visibility = Visibility.Collapsed;
+                        });
+                    }
+                }
+                catch { }
+            });
+        }
+
+        var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        var displayTitle = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url;
+        var titleBlock = new TextBlock
+        {
+            FontSize = 14, FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("OnSurface"),
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        AddHighlightedRuns(titleBlock, displayTitle, _lastSearchQuery, (Brush)FindResource("OnSurface"));
+        textStack.Children.Add(titleBlock);
+
+        var urlBlock = new TextBlock
+        {
+            FontSize = 11.5,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
+        };
+        AddHighlightedRuns(urlBlock, item.Url, _lastSearchQuery, (Brush)FindResource("OnSurfaceVariant"));
+        textStack.Children.Add(urlBlock);
+
+        panel.Children.Add(iconGrid);
+        panel.Children.Add(textStack);
+        return panel;
+    }
+
+    /// <summary>普通文本单元格（表格化信息列统一规格）。</summary>
+    private TextBlock SearchTextCell(string text, double fontSize)
+        => new()
+        {
+            Text = text,
+            FontSize = fontSize,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
     /// <summary>MD3E 空状态视图：大圆角色块徽章 + 引导性文案（替代生硬的系统提示）。</summary>
     private FrameworkElement BuildSearchState(string iconKind, string title, string? subtitle,
         string containerBrush, string onContainerBrush)
@@ -583,10 +726,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
     private void ShowSearchEmptyState()
     {
-        SearchResultsPanel.Children.Clear();
-        SearchResultsPanel.Children.Add(BuildSearchState("magnify", "想找点什么？",
+        _selectedSearchItem = null;
+        SearchJumpToLinkBtn.IsEnabled = false;
+        SearchResultsTable.EmptyContent = BuildSearchState("magnify", "想找点什么？",
             "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
-            "PrimaryContainer", "OnPrimaryContainer"));
+            "PrimaryContainer", "OnPrimaryContainer");
+        SearchResultsTable.ItemsSource = null;
     }
 
     private void SearchBox_KeyDown(object sender, KeyEventArgs e)
@@ -617,16 +762,16 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
     private async Task ExecuteTitleSearchAsync(MainViewModel vm, string query)
     {
-        SearchResultsPanel.Children.Clear();
-
         if (string.IsNullOrWhiteSpace(query))
         {
             ShowSearchEmptyState();
             return;
         }
 
-        SearchResultsPanel.Children.Add(BuildSearchState("magnify", "正在搜索…",
-            null, "SecondaryContainer", "OnSecondaryContainer"));
+        // 加载态：清空数据 + 加载占位
+        SearchResultsTable.EmptyContent = BuildSearchState("magnify", "正在搜索…",
+            null, "SecondaryContainer", "OnSecondaryContainer");
+        SearchResultsTable.ItemsSource = null;
 
         try
         {
@@ -637,74 +782,32 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 searchTitle: SearchTitleCb.IsChecked == true,
                 searchDescription: SearchDescCb.IsChecked == true
             );
-            SearchResultsPanel.Children.Clear();
-            _selectedSearchCard = null;
             _selectedSearchItem = null;
             SearchJumpToLinkBtn.IsEnabled = false;
+            _lastSearchQuery = query;
 
-            if (results.Count == 0)
-            {
-                SearchResultsPanel.Children.Add(BuildSearchState("emoticon-sad-outline",
+            // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
+            SearchResultsTable.EmptyContent = results.Count == 0
+                ? BuildSearchState("emoticon-sad-outline",
                     $"没有找到与「{query}」相关的内容",
                     "换个关键词，或用上方标签扩大搜索范围再试试",
-                    "SecondaryContainer", "OnSecondaryContainer"));
-                return;
-            }
-
-            _lastSearchQuery = query;
-            // 与浏览页主栏一致：默认按名称升序
-            results = results
-                .OrderBy(r => string.IsNullOrEmpty(r.Title) ? r.Url : r.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            for (var i = 0; i < results.Count; i++)
-            {
-                var card = CreateSearchResultCard(results[i], vm);
-                SearchResultsPanel.Children.Add(card);
-                PlayCardEntrance(card, i);
-            }
+                    "SecondaryContainer", "OnSecondaryContainer")
+                : BuildSearchState("magnify", "想找点什么？",
+                    "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
+                    "PrimaryContainer", "OnPrimaryContainer");
+            SearchResultsTable.ItemsSource = results;
         }
         catch (Exception ex)
         {
-            SearchResultsPanel.Children.Clear();
-            SearchResultsPanel.Children.Add(BuildSearchState("alert-outline", "搜索出了点小问题",
-                ex.Message, "SurfaceContainerHighest", "OnSurface"));
+            SearchResultsTable.EmptyContent = BuildSearchState("alert-outline", "搜索出了点小问题",
+                ex.Message, "SurfaceContainerHighest", "OnSurface");
+            SearchResultsTable.ItemsSource = null;
         }
     }
 
     private string _lastSearchQuery = "";
 
-    /// <summary>
-    /// 结果卡错峰入场：淡入 + 轻微上移，弹簧（BackEase）曲线，每张错开 40ms。
-    /// 系统关闭客户端动画（辅助功能「减少动态效果」）时跳过。
-    /// </summary>
-    private void PlayCardEntrance(FrameworkElement el, int index)
-    {
-        if (!SystemParameters.ClientAreaAnimation) return;
-        var tt = new TranslateTransform(0, 16);
-        el.RenderTransform = tt;
-        el.Opacity = 0;
-        var ease = new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut };
-        var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 40);
-
-        var oy = new DoubleAnimation(16, 0, TimeSpan.FromMilliseconds(340))
-        { EasingFunction = ease, BeginTime = begin };
-        var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220))
-        { BeginTime = begin };
-
-        // 动画结束后清除动画层并落到终值（否则 Stop 会回退到本地值 0，卡片永远透明）
-        var done = (EventHandler)((_, _) =>
-        {
-            el.BeginAnimation(UIElement.OpacityProperty, null);
-            el.Opacity = 1;
-            tt.BeginAnimation(TranslateTransform.YProperty, null);
-            tt.Y = 0;
-        });
-        oo.Completed += done;
-        oy.Completed += done;
-
-        tt.BeginAnimation(TranslateTransform.YProperty, oy);
-        el.BeginAnimation(UIElement.OpacityProperty, oo);
-    }
+    private List<LinkItem> _lastSearchResults = new();
 
     /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
     private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
@@ -739,201 +842,10 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         }
     }
 
-    private Border CreateSearchResultCard(LinkItem item, MainViewModel vm)
-    {
-        // 搜索结果 = 表格化大行（与浏览页主栏同语言）：六列（名称+URL/位置/最后更新/最后查看/查看次数/创建时间），
-        // 排序与主栏一致（名称升序）；底色透明落在 High 结果卡上，hover 升 Highest，选中 PrimaryContainer。
-        var card = new Border
-        {
-            Tag = "SearchCard", Margin = new Thickness(8, 1, 8, 1), CornerRadius = new CornerRadius(12),
-            Cursor = Cursors.Hand,
-            Padding = new Thickness(16, 11, 16, 11),
-            SnapsToDevicePixels = true
-        };
-        var style = new Style(typeof(Border));
-        style.Setters.Add(new Setter(Border.BackgroundProperty, Brushes.Transparent));
-        style.Triggers.Add(new Trigger
-        {
-            Property = Border.IsMouseOverProperty, Value = true,
-            Setters = { new Setter(Border.BackgroundProperty, (Brush)FindResource("SurfaceContainerHighest")) }
-        });
-        card.Style = style;
-
-        var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-
-        // 图标位：favicon 18 / 回落小地球（与浏览页行内一致的轻盈规格，不再套色块）
-        var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-
-        var faviconBmp = TryLoadFavicon(item.FaviconUrl);
-        var faviconImg = new Image
-        {
-            Stretch = Stretch.Uniform,
-            Source = faviconBmp,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        System.Windows.Media.RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
-        if (faviconBmp == null)
-            faviconImg.Visibility = Visibility.Collapsed;
-
-        var earthIcon = new M3Icon
-        {
-            Kind = "earth",
-            Width = 16, Height = 16,
-            Foreground = (Brush)FindResource("OnSurfaceMuted"),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        if (faviconBmp != null)
-            earthIcon.Visibility = Visibility.Collapsed;
-
-        iconGrid.Children.Add(faviconImg);
-        iconGrid.Children.Add(earthIcon);
-
-        if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
-                    var cached = FaviconService.LoadFromCache(item.FaviconUrl);
-                    if (cached != null)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            faviconImg.Source = cached;
-                            faviconImg.Visibility = Visibility.Visible;
-                            earthIcon.Visibility = Visibility.Collapsed;
-                        });
-                    }
-                }
-                catch { }
-            });
-        }
-
-        Grid.SetColumn(iconGrid, 0);
-        grid.Children.Add(iconGrid);
-
-        // 列 1：名称 + URL 副行（两行强调排版，关键词均高亮）
-        var displayTitle = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url;
-        var nameStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-
-        var titleBlock = new TextBlock
-        {
-            FontSize = 14, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("OnSurface"),
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-        AddHighlightedRuns(titleBlock, displayTitle, _lastSearchQuery, (Brush)FindResource("OnSurface"));
-        nameStack.Children.Add(titleBlock);
-
-        var urlBlock = new TextBlock
-        {
-            FontSize = 11.5,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-        };
-        AddHighlightedRuns(urlBlock, item.Url, _lastSearchQuery, (Brush)FindResource("OnSurfaceVariant"));
-        nameStack.Children.Add(urlBlock);
-
-        Grid.SetColumn(nameStack, 1);
-        grid.Children.Add(nameStack);
-
-        // 列 2：位置（来源文件夹）
-        var folderName = FindFolderNameForLink(item.ListId) ?? "全部书签";
-        var folderBlock = new TextBlock
-        {
-            Text = folderName, FontSize = 12.5,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0),
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-        Grid.SetColumn(folderBlock, 2);
-        grid.Children.Add(folderBlock);
-
-        // 列 3：最后更新
-        var updatedBlock = new TextBlock
-        {
-            Text = item.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), FontSize = 13,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0)
-        };
-        Grid.SetColumn(updatedBlock, 3);
-        grid.Children.Add(updatedBlock);
-
-        // 列 4：最后查看（从未 = 淡显占位）
-        var lastVisitedBlock = new TextBlock
-        {
-            Text = item.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", FontSize = 13,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0)
-        };
-        Grid.SetColumn(lastVisitedBlock, 4);
-        grid.Children.Add(lastVisitedBlock);
-
-        // 列 5：查看次数
-        var visitBlock = new TextBlock
-        {
-            Text = $"{item.VisitCount} 次", FontSize = 13,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0)
-        };
-        Grid.SetColumn(visitBlock, 5);
-        grid.Children.Add(visitBlock);
-
-        // 列 6：创建时间
-        var createdBlock = new TextBlock
-        {
-            Text = item.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), FontSize = 13,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(createdBlock, 6);
-        grid.Children.Add(createdBlock);
-
-        card.Child = grid;
-
-        card.PreviewMouseLeftButtonDown += (s, e) =>
-        {
-            if (_selectedSearchCard != null && _selectedSearchCard != card)
-            {
-                _selectedSearchCard.Background = Brushes.Transparent;
-            }
-
-            _selectedSearchCard = card;
-            _selectedSearchItem = item;
-            card.Background = (Brush)FindResource("PrimaryContainer");
-
-            SearchJumpToLinkBtn.IsEnabled = true;
-
-            if (e.ClickCount == 2)
-            {
-                OpenLinkInBrowserPage(item.LinkId); // 老「链接」详情页已删除 → 改在「浏览」页打开详情
-                e.Handled = true;
-            }
-        };
-
-        return card;
-    }
 
     private void SearchResultsArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (IsInsideGridSplitter(e.OriginalSource as DependencyObject)) return;
-        if (e.OriginalSource is not Border && _selectedSearchCard != null)
-        {
-            _selectedSearchCard.Background = Brushes.Transparent;
-            _selectedSearchCard = null;
-            _selectedSearchItem = null;
-            SearchJumpToLinkBtn.IsEnabled = false;
-        }
+        // 行选中/清除已由 SortableDataTable 内部管理
     }
 
     private void SearchJumpToLinkBtn_Click(object sender, RoutedEventArgs e)
