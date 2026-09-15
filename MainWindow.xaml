@@ -245,7 +245,8 @@
                                     <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
                                         <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                        <Setter Property="CornerRadius" Value="20"/>
+                                        <!-- 高 62 的胶囊全圆 = 31：圆角若小于高度一半会出现"方不方圆不圆"的怪框 -->
+                                        <Setter Property="CornerRadius" Value="31"/>
                                         <Setter Property="Height" Value="62"/>
                                     </DataTrigger>
                                 </Style.Triggers>

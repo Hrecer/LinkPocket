@@ -336,7 +336,8 @@
                 </Button>
 
                 <!-- 地址栏（MD3 Expressive 胶囊）：与搜索页胶囊同语言。
-                     编辑态做颜色/圆角形变（SurfaceContainerHighest + 2px Primary + 圆角 20→14），
+                     编辑态只做颜色/描边形变（SurfaceContainerHighest + 2px Primary），圆角保持 20 —— 
+                     40 高的胶囊全圆就是 20，比它小（如 14）会出现"方不方圆不圆"的怪框。
                      高度两态恒为 40 —— 重蹈"点开编辑整行变矮"的覆辙。
                      ⚠️ 基态值必须写在 Style.Setters 里：写在元素特性上是本地值，
                      本地值优先级高于样式触发器，触发器永远不会生效。 -->
@@ -352,7 +353,6 @@
                                 <DataTrigger Binding="{Binding IsPathEditing}" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
                                     <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                    <Setter Property="CornerRadius" Value="14"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
