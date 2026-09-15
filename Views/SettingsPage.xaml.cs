@@ -166,14 +166,14 @@ namespace LinkPocket.Views
                         Services.Logger.Info($"[导出] 数量一致，导出成功");
                         ExportStatusText.Text = $"导出成功！\n共 {exportedCount} 个书签";
                         ExportProgressText.Text = $"{exportedCount} / {dbLinkCount} ✅ 一致";
-                        ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+                        ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
                     }
                     else
                     {
                         Services.Logger.Error($"[导出] 数量不一致: 数据库={dbLinkCount}, 文件={exportedCount}");
                         ExportStatusText.Text = $"导出验证失败\n数据库应导出 {dbLinkCount} 个\n文件中仅 {exportedCount} 个";
                         ExportProgressText.Text = "❌ 数量不匹配";
-                        ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
+                        ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
                     }
                 }
                 else
@@ -261,7 +261,7 @@ namespace LinkPocket.Views
                 {
                     ExportStatusText.Text = $"导入失败\n{errorMsg}";
                     ExportProgressText.Text = "❌ 格式无效";
-                    ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
+                    ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
                     await Task.Delay(3000);
                     ExportOverlay.Visibility = Visibility.Collapsed;
                     ImportButton.IsEnabled = true;
@@ -271,14 +271,14 @@ namespace LinkPocket.Views
                 ExportStatusText.Text = "正在导入书签...";
                 ExportProgressBar.Value = 0;
                 ExportProgressText.Text = "准备中...";
-                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238));
+                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Primary");
 
                 var importedCount = await Services.AppServices.Api.ImportBookmarksHtmlAsync(filePath);
 
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
                 ExportStatusText.Text = $"导入成功！\n共 {importedCount} 条";
                 ExportProgressText.Text = $"✅ {importedCount} 条";
-                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
 
                 if (DataContext is ViewModels.MainViewModel importVm)
                     await importVm.ReinitializeDatabaseAsync(resetData: false);
@@ -294,7 +294,7 @@ namespace LinkPocket.Views
                 Services.Logger.Error("[导入] 异常", ex);
                 ExportStatusText.Text = $"导入失败: {ex.Message}";
                 ExportProgressText.Text = "❌ 异常";
-                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
+                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
                 await Task.Delay(3000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
                 ImportFileTextBox.Text = string.Empty;
@@ -403,7 +403,7 @@ namespace LinkPocket.Views
                 ExportStatusText.Text = "数据已全部清空！";
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
                 ExportProgressText.Text = "✅ 完成";
-                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
@@ -414,7 +414,7 @@ namespace LinkPocket.Views
                 Services.Logger.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
                 ExportProgressText.Text = "❌ 失败";
-                ExportProgressBar.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
+                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
             }

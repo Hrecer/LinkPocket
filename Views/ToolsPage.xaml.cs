@@ -123,7 +123,7 @@ namespace LinkPocket.Views
                 Text = "链接去重",
                 FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             _dedupHeaderRow.Children.Add(header);
@@ -139,7 +139,7 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238))
+                Foreground = (Brush)Application.Current.FindResource("Primary")
             };
             _dedupActionBtn.Click += async (s, e) => await RunDedup();
             _dedupHeaderRow.Children.Add(_dedupActionBtn);
@@ -186,7 +186,7 @@ namespace LinkPocket.Views
                 Text = "ID跳转",
                 FontSize = 18,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
                 Margin = new Thickness(0, 0, 0, 20)
             };
             ToolContentPanel.Children.Add(header);
@@ -208,7 +208,7 @@ namespace LinkPocket.Views
                 Width = 280,
                 FontSize = 14,
                 Padding = new Thickness(8, 6, 8, 6),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)),
+                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
                 BorderThickness = new Thickness(1),
                 Foreground = Brushes.Black
             };
@@ -231,7 +231,7 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                Foreground = (Brush)Application.Current.FindResource("Primary"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             jumpBtn.Click += (s, e) => IdJump_Click(idInput, linkRadio, folderRadio);
@@ -242,7 +242,7 @@ namespace LinkPocket.Views
             var errorHint = new TextBlock
             {
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x00, 0x00)),
+                Foreground = (Brush)Application.Current.FindResource("Error"),
                 Margin = new Thickness(0, 2, 0, 0),
                 Opacity = 0,
                 Height = 16
@@ -254,7 +254,7 @@ namespace LinkPocket.Views
             {
                 Text = "输入书签ID或文件夹ID，快速定位到目标位置",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted"),
                 Margin = new Thickness(0, 4, 0, 0)
             };
             ToolContentPanel.Children.Add(tip);
@@ -338,7 +338,7 @@ namespace LinkPocket.Views
                 _dedupSummaryTb.Text = "";
 
             var loadingBar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 0, 16) };
-            loadingBar.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 120, Height = 3, Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)) });
+            loadingBar.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 120, Height = 3, Foreground = (Brush)Application.Current.FindResource("Primary") });
             loadingBar.Children.Add(new TextBlock { Text = "正在扫描重复链接...", FontSize = 12, Foreground = Brushes.Gray, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
             ToolContentPanel.Children.Add(loadingBar);
 
@@ -361,7 +361,7 @@ namespace LinkPocket.Views
             _dedupActionText!.Text = "重新查重";
             _dedupClearBtn!.IsEnabled = true;
             _dedupClearBtn.Opacity = 1.0;
-            _dedupClearBtn.Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+            _dedupClearBtn.Foreground = (Brush)Application.Current.FindResource("Primary");
 
             var groups = links
                 .GroupBy(l => l.Url, StringComparer.OrdinalIgnoreCase)
@@ -379,7 +379,7 @@ namespace LinkPocket.Views
             {
                 Text = summaryText,
                 FontSize = 13,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             summaryRow.Children.Add(_dedupSummaryTb);
@@ -419,7 +419,7 @@ namespace LinkPocket.Views
             var outerBorder = new Border
             {
                 Tag = Tuple.Create(url, links, pathCache),
-                Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
+                Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest"),
                 BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(10),
@@ -448,7 +448,7 @@ namespace LinkPocket.Views
                 Kind = "content-duplicate",
                 Width = 18,
                 Height = 18,
-                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                Foreground = (Brush)Application.Current.FindResource("Warning"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             titleBar.Children.Add(icon);
@@ -458,7 +458,7 @@ namespace LinkPocket.Views
                 Text = $" ×{links.Count}",
                 FontSize = 13,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x98, 0x00)),
+                Foreground = (Brush)Application.Current.FindResource("Warning"),
                 Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
@@ -469,7 +469,7 @@ namespace LinkPocket.Views
             {
                 Text = url.Length > 120 ? url[..117] + "..." : url,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(24, 0, 0, 8)
             };
@@ -551,7 +551,7 @@ namespace LinkPocket.Views
                 {
                     Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
                     FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
+                    Foreground = (Brush)Application.Current.FindResource("OnSurface"),
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis
                 };
@@ -680,13 +680,13 @@ namespace LinkPocket.Views
         {
             if (selected)
             {
-                card.BorderBrush = new SolidColorBrush(Color.FromRgb(0x62, 0x00, 0xEE));
-                card.Background = new SolidColorBrush(Color.FromRgb(0xF3, 0xE5, 0xF5));
+                card.BorderBrush = (Brush)Application.Current.FindResource("Primary");
+                card.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
             }
             else
             {
                 card.BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant");
-                card.Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                card.Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest");
             }
         }
 
@@ -792,7 +792,7 @@ namespace LinkPocket.Views
             var card = new Border
             {
                 Tag = link.LinkId,
-                Background = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
+                Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest"),
                 BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
@@ -830,7 +830,7 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                Foreground = (Brush)Application.Current.FindResource("Primary"),
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Top
             };
@@ -852,7 +852,7 @@ namespace LinkPocket.Views
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            var folderIcon = new M3Icon { Kind = "folder-outline", Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0), Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) };
+            var folderIcon = new M3Icon { Kind = "folder-outline", Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0), Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted") };
             Grid.SetColumn(folderIcon, 0);
             pathGrid.Children.Add(folderIcon);
 
@@ -860,7 +860,7 @@ namespace LinkPocket.Views
             {
                 Text = folderPath,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
                 TextWrapping = TextWrapping.Wrap,
                 IsReadOnly = true,
                 Background = Brushes.Transparent,
@@ -938,7 +938,7 @@ namespace LinkPocket.Views
             {
                 Text = link.Url,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
                 TextWrapping = TextWrapping.Wrap,
                 IsReadOnly = true,
                 Background = Brushes.Transparent,
@@ -958,7 +958,7 @@ namespace LinkPocket.Views
             {
                 Text = descDisplay,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66)),
+                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
                 TextWrapping = TextWrapping.Wrap,
                 IsReadOnly = true,
                 Background = Brushes.Transparent,
@@ -977,7 +977,7 @@ namespace LinkPocket.Views
                 Text = descTruncated ? "(未全部显示)" : "",
                 FontSize = 10,
                 FontStyle = FontStyles.Italic,
-                Foreground = descTruncated ? new SolidColorBrush(Color.FromRgb(0xBB, 0xBB, 0xBB)) : Brushes.Transparent,
+                Foreground = descTruncated ? (Brush)Application.Current.FindResource("OnSurfaceMuted") : Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
             sp.Children.Add(hintArea);
@@ -1034,7 +1034,7 @@ namespace LinkPocket.Views
 
             var copyIdBtn = new Button
             {
-                Content = new M3Icon { Kind = "content-copy", Width = 11, Height = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)) },
+                Content = new M3Icon { Kind = "content-copy", Width = 11, Height = 11, Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted") },
                 Padding = new Thickness(3, 1, 3, 1),
                 Margin = new Thickness(4, 0, 0, 0),
                 Cursor = Cursors.Hand,

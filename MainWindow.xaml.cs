@@ -187,7 +187,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Text = $"确定要删除文件夹 \"{folderName}\" 吗？",
             FontSize = 14, Margin = new Thickness(0, 0, 0, 20),
             TextWrapping = TextWrapping.Wrap,
-            Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
+            Foreground = (Brush)Application.Current.FindResource("OnSurface")
         });
 
         var btnPanel = new StackPanel
@@ -199,7 +199,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var cancelBtn = new System.Windows.Controls.Button
         {
             Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
-            Cursor = Cursors.Hand, BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 180, 180)),
+            Cursor = Cursors.Hand, BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
             BorderThickness = new Thickness(1)
         };
         cancelBtn.Click += (s, e) => dialog.DialogResult = false;
@@ -209,7 +209,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             Content = "确定", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
             Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
-            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(98, 0, 238)),
+            Background = (Brush)Application.Current.FindResource("Primary"),
             Foreground = System.Windows.Media.Brushes.White
         };
         okBtn.Click += (s, e) => dialog.DialogResult = true;
@@ -221,7 +221,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             CornerRadius = new CornerRadius(8),
             Background = System.Windows.Media.Brushes.White,
-            BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(200, 200, 200)),
+            BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
             BorderThickness = new Thickness(1),
             Child = contentPanel
         };
@@ -778,7 +778,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         if (DataContext is not MainViewModel vm || vm.LinkViewModel == null) return;
 
         var defaultBrush = (Brush)FindResource("OutlineVariant");
-        var selectedBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+        var selectedBrush = (Brush)Application.Current.FindResource("Primary");
         int selectedCount = 0, totalCount = 0;
         foreach (var linkItem in vm.LinkViewModel.Links)
         {
@@ -950,7 +950,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 Child = new TextBlock
                 {
                     Text = folder.TotalLinkCount.ToString(), FontSize = 10,
-                    Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                    Foreground = (Brush)Application.Current.FindResource("Primary"),
                     VerticalAlignment = VerticalAlignment.Center
                 }
             });
@@ -1257,7 +1257,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                     isSelected = vm.LinkViewModel.Links.Any(l => l.IsSelected && l.LinkId == linkId);
                 }
                 border.BorderBrush = isSelected
-                    ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
+                    ? (Brush)Application.Current.FindResource("Primary")
                     : (Brush)FindResource("OutlineVariant");
             }
 
@@ -1339,7 +1339,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         topIconRow.Children.Add(new M3Icon
         {
             Kind = "folder-outline", Width = 32, Height = 32,
-            Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+            Foreground = (Brush)Application.Current.FindResource("Primary"),
             VerticalAlignment = VerticalAlignment.Center,
         });
         panel.Children.Add(topIconRow);
@@ -1353,7 +1353,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var pathGrid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var pathIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
+        var pathIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"), Opacity = 0.6 };
         Grid.SetColumn(pathIcon, 0);
         pathGrid.Children.Add(pathIcon);
         var pathText = new TextBlock { Text = folderPath, FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -1373,7 +1373,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             {
                 Text = linkCount == 0 ? "0 个书签" : $"{linkCount} 个书签",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                Foreground = (Brush)Application.Current.FindResource("Primary"),
                 VerticalAlignment = VerticalAlignment.Center
             }
         });
@@ -1395,7 +1395,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var linkVariantIcon = new M3Icon
         {
             Kind = "link-variant", Width = 32, Height = 32,
-            Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+            Foreground = (Brush)Application.Current.FindResource("Primary"),
             VerticalAlignment = VerticalAlignment.Center,
         };
 
@@ -1439,7 +1439,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         var folderRow = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var folderIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = new SolidColorBrush(Color.FromRgb(100, 100, 100)), Opacity = 0.6 };
+        var folderIcon = new M3Icon { Kind = "folder-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"), Opacity = 0.6 };
         Grid.SetColumn(folderIcon, 0);
         folderRow.Children.Add(folderIcon);
         var folderText = new TextBlock { Text = folderName ?? "全部书签", FontSize = 12, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -1817,7 +1817,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             Background = isSelected
                 ? new SolidColorBrush(Color.FromArgb(25, 98, 0, 238))
                 : new SolidColorBrush(Colors.Transparent),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(224, 224, 224)),
+            BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(12, 5, 12, 5),
             Tag = "FolderCard"
@@ -1851,7 +1851,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         stack.Children.Add(new TextBlock
         {
             Text = folder.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(68, 68, 68))
+            Foreground = (Brush)Application.Current.FindResource("OnSurface")
         });
 
         if (folder.TotalLinkCount > 0)
@@ -1865,7 +1865,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 Child = new TextBlock
                 {
                     Text = folder.TotalLinkCount.ToString(), FontSize = 10,
-                    Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238)),
+                    Foreground = (Brush)Application.Current.FindResource("Primary"),
                     VerticalAlignment = VerticalAlignment.Center
                 }
             });
@@ -2080,7 +2080,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                     {
                         promotedLink.IsSelected = true;
                         if (_mainListCardBorders.TryGetValue(promotedLink.LinkId, out var prevCard))
-                            prevCard.BorderBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+                            prevCard.BorderBrush = (Brush)Application.Current.FindResource("Primary");
                         Logger.Info($"[点击] 主栏多选提升: {prevSelectedLinkId} → IsSelected=true");
                     }
                     ClearDetailPanel();
@@ -2089,7 +2089,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
                 targetLink.IsSelected = !targetLink.IsSelected;
                 Logger.Info($"[点击] 主栏Ctrl+点击: {targetLink.LinkId}.IsSelected → {targetLink.IsSelected}, HasSelectedItems={viewModel.LinkViewModel?.HasSelectedItems}");
                 card.BorderBrush = targetLink.IsSelected
-                    ? new SolidColorBrush(Color.FromRgb(98, 0, 238))
+                    ? (Brush)Application.Current.FindResource("Primary")
                     : (Brush)FindResource("OutlineVariant");
                 viewModel.LinkViewModel?.NotifySelectionStateChanged();
                 if (viewModel.LinkViewModel?.HasSelectedItems == false)
@@ -2388,7 +2388,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
             _selectedSearchCard = card;
             _selectedSearchItem = item;
-            card.BorderBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+            card.BorderBrush = (Brush)Application.Current.FindResource("Primary");
 
             PopulateDetailPanel(SearchFixedSidebar, item.Url, item.Title, item.Description, item.FaviconUrl,
                 item.UpdatedAt, item.LastVisitedAt, item.VisitCount, item.CreatedAt, item.LinkId,

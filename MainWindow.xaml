@@ -16,9 +16,9 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="#FFFFFF"
+        Background="{DynamicResource Surface}"
         TextElement.FontFamily="{StaticResource AppFont}"
-        TextElement.Foreground="Black"
+        TextElement.Foreground="{DynamicResource OnSurface}"
         PreviewKeyDown="MainWindow_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
@@ -33,6 +33,21 @@
             <Setter Property="Padding" Value="10,6"/>
             <Setter Property="Margin" Value="4,0"/>
             <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style x:Key="NavTabButton" TargetType="Button" BasedOn="{StaticResource TextButton}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Margin" Value="3,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
         <Style x:Key="TitleBarButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -101,7 +116,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
-                    <m3:M3Icon Kind="link-variant" Width="24" Height="24" Foreground="#6200EE" VerticalAlignment="Center"/>
+                    <m3:M3Icon Kind="link-variant" Width="24" Height="24" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
                     <TextBlock Text="LinkPocket" FontSize="18" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 <ItemsControl Grid.Column="1" x:Name="NavigationTabs" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
@@ -122,12 +137,11 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Style="{StaticResource ToolbarButton}"
+                            <Button Style="{StaticResource NavTabButton}"
                                     Command="{Binding DataContext.SelectNavCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                    CommandParameter="{Binding Id}"
-                                    FontWeight="{Binding IsSelected, Converter={StaticResource BoolToFontWeightConverter}}">
+                                    CommandParameter="{Binding Id}">
                                 <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="{Binding IconKind}" Width="18" Height="18" VerticalAlignment="Center"/>
+                                    <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
@@ -137,13 +151,13 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Right"
                             WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">
-                        <Path Data="M0,6 L10,6" Stroke="#333333" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+                        <Path Data="M0,6 L10,6" Stroke="{DynamicResource OnSurface}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                     <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="最大化">
-                        <Path Data="M2,0 L8,0 A2,2 0 0 1 10,2 L10,8 A2,2 0 0 1 8,10 L2,10 A2,2 0 0 1 0,8 L0,2 A2,2 0 0 1 2,0 Z" Stroke="#333333" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+                        <Path Data="M2,0 L8,0 A2,2 0 0 1 10,2 L10,8 A2,2 0 0 1 8,10 L2,10 A2,2 0 0 1 0,8 L0,2 A2,2 0 0 1 2,0 Z" Stroke="{DynamicResource OnSurface}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                     <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="关闭">
-                        <Path Data="M2,2 L8,8 M8,2 L2,8" Stroke="#333333" StrokeThickness="1.3" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+                        <Path Data="M2,2 L8,8 M8,2 L2,8" Stroke="{DynamicResource OnSurface}" StrokeThickness="1.3" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
                     </Button>
                 </StackPanel>
             </Grid>
@@ -253,7 +267,7 @@
                             </Button>
                             <Button x:Name="DeleteButton" Padding="12,8" Margin="4,0"
                                     Content="🗑 删除" FontSize="14" FontFamily="Microsoft YaHei UI"
-                                    Background="Transparent" BorderThickness="0" Foreground="#D32F2F" Cursor="Hand"
+                                    Background="Transparent" BorderThickness="0" Foreground="{DynamicResource Error}" Cursor="Hand"
                                     Command="{Binding DataContext.DeleteSelectedCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                                 <Button.Style>
                                     <Style TargetType="Button">
@@ -265,10 +279,10 @@
                                                     </Border>
                                                     <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="border" Property="Background" Value="#FFEBEE"/>
+                                                            <Setter TargetName="border" Property="Background" Value="{DynamicResource ErrorContainer}"/>
                                                         </Trigger>
                                                         <Trigger Property="IsPressed" Value="True">
-                                                            <Setter TargetName="border" Property="Background" Value="#FFCDD2"/>
+                                                            <Setter TargetName="border" Property="Background" Value="{DynamicResource ErrorContainer}"/>
                                                         </Trigger>
                                                         <Trigger Property="IsEnabled" Value="False">
                                                             <Setter Property="Opacity" Value="0.4"/>
@@ -291,7 +305,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <m3:M3Icon Kind="sort" Width="18" Height="18" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LinkSortButtonText" Text="排序" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                    <TextBlock x:Name="LinkSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                                    <TextBlock x:Name="LinkSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
                                 </StackPanel>
                                 <Button.ContextMenu>
                                     <ContextMenu x:Name="LinkSortMenu">
@@ -315,7 +329,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <m3:M3Icon Kind="folder" Width="18" Height="18" VerticalAlignment="Center"/>
                                     <TextBlock Text="文件夹" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center" FontFamily="Microsoft YaHei UI"/>
-                                    <TextBlock x:Name="FolderSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                                    <TextBlock x:Name="FolderSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -367,7 +381,7 @@
         </Grid>
 
         <!-- ===== 搜索视图（左侧结果 + 右侧常驻固定栏） ===== -->
-        <Grid Grid.Row="1" x:Name="SearchView" Background="#FFFFFF">
+        <Grid Grid.Row="1" x:Name="SearchView" Background="{DynamicResource Surface}">
             <Grid.Style>
                 <Style TargetType="Grid">
                     <Setter Property="Visibility" Value="Collapsed"/>
@@ -417,7 +431,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="sort" Width="18" Height="18" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="SearchSortButtonText" Text="按名称" Margin="6,0,4,0" FontSize="14" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="#6200EE"/>
+                                <TextBlock x:Name="SearchSortOrderText" Text="↑ 升序" FontSize="12" VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
                             </StackPanel>
                             <Button.ContextMenu>
                                 <ContextMenu x:Name="SearchSortMenu">
@@ -470,7 +484,7 @@
                             </Button>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <TextBlock Text="搜索范围:" FontSize="13" Foreground="#666"
+                            <TextBlock Text="搜索范围:" FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}"
                                        VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True"
                                        VerticalAlignment="Center" Margin="0,0,14,0"/>
@@ -584,7 +598,7 @@
 
         <!-- ===== 详情视图页面 ===== -->
         <Grid Grid.Row="1" x:Name="DetailView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" ContextMenu="{x:Null}"
-              PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp" Background="#FFFFFF">
+              PreviewMouseRightButtonUp="SuppressContextMenu_PreviewMouseRightButtonUp" Background="{DynamicResource Surface}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -612,7 +626,7 @@
                         </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <m3:M3Icon Kind="eye-outline" Width="20" Height="20" Foreground="#6200EE" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="eye-outline" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
                         <TextBlock Text="书签详情" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
@@ -624,7 +638,7 @@
 
                     <!-- 所属目录 -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <m3:M3Icon Kind="folder-outline" Width="14" Height="14" VerticalAlignment="Center" Foreground="#888888"/>
+                        <m3:M3Icon Kind="folder-outline" Width="14" Height="14" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
                         <TextBlock Text="{Binding DetailFolderName}" FontSize="12" Opacity="0.7" VerticalAlignment="Center" Margin="6,0,0,0"/>
                     </StackPanel>
 
@@ -638,7 +652,7 @@
                     </ScrollViewer>
                     <Button Padding="6,3" Margin="0,0,0,20" Cursor="Hand" Background="Transparent" BorderThickness="0"
                             ToolTip="复制URL" Click="CopyDetailUrl_Click" HorizontalAlignment="Left">
-                        <m3:M3Icon Kind="content-copy" Width="14" Height="14" VerticalAlignment="Center" Foreground="#666666"/>
+                        <m3:M3Icon Kind="content-copy" Width="14" Height="14" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
                     </Button>
 
                     <!-- 图标区域 -->
@@ -740,7 +754,7 @@
                                  IsReadOnly="True" Background="Transparent" BorderThickness="0" Padding="0" Focusable="True" Foreground="Black" ContextMenu="{x:Null}"/>
                         <Button Padding="6,2" Margin="8,0,0,0" Cursor="Hand" Background="Transparent" BorderThickness="0" ToolTip="复制ID"
                                 Click="CopyDetailId_Click">
-                            <m3:M3Icon Kind="content-copy" Width="13" Height="13" VerticalAlignment="Center" Foreground="#666666"/>
+                            <m3:M3Icon Kind="content-copy" Width="13" Height="13" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
                         </Button>
                     </StackPanel>
                 </StackPanel>
@@ -748,7 +762,7 @@
         </Grid>
 
         <!-- ===== 添加/编辑链接页面 ===== -->
-        <Grid Grid.Row="1" x:Name="EditLinkView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" Background="#FFFFFF">
+        <Grid Grid.Row="1" x:Name="EditLinkView" Visibility="Collapsed" WindowChrome.IsHitTestVisibleInChrome="True" Background="{DynamicResource Surface}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -797,7 +811,7 @@
                         </Button>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <m3:M3Icon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="#6200EE" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="{Binding EditLinkPageIcon}" Width="20" Height="20" Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding EditLinkPageTitle}" FontSize="16" FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Grid>
@@ -828,11 +842,11 @@
                     <Button Grid.Column="1" Command="{Binding FetchMetadataCommand}" Margin="8,0,0,0"
                             VerticalAlignment="Stretch" HorizontalAlignment="Right"
                             ToolTip="自动解析标题和图标" FontSize="14" FontFamily="Microsoft YaHei UI"
-                            BorderThickness="1.5" BorderBrush="#CCCCCC" Background="#F5F5F5"
                             MinWidth="80" Content="自动解析">
                         <Button.Style>
-                            <Style TargetType="Button">
+                            <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
                                 <Setter Property="IsEnabled" Value="True"/>
+                                <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsFetchingMetadata}" Value="True">
                                         <Setter Property="IsEnabled" Value="False"/>
@@ -879,8 +893,8 @@
                         </Border>
                         <Button Command="{Binding ClearFaviconCommand}" Margin="12,0,0,0" Padding="10,5"
                                 ToolTip="清除已解析的图标" FontSize="12" FontFamily="Microsoft YaHei UI"
-                                BorderThickness="1" BorderBrush="#CCCCCC" Background="#FFFFFF"
-                                Content="✕ 清除图标" Cursor="Hand" VerticalAlignment="Center"/>
+                                Style="{StaticResource OutlinedButton}"
+                                Content="✕ 清除图标" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
@@ -901,7 +915,7 @@
                         <TextBox.Template>
                             <ControlTemplate TargetType="TextBox">
                                 <Border x:Name="border" Background="Transparent"
-                                        BorderBrush="#44000000"
+                                        BorderBrush="{DynamicResource OutlineVariant}"
                                         BorderThickness="1.5" CornerRadius="4"
                                         SnapsToDevicePixels="True">
                                     <ScrollViewer x:Name="PART_ContentHost"
@@ -912,11 +926,11 @@
                                 </Border>
                                 <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="border" Property="BorderBrush" Value="#99000000"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource Outline}"/>
                                         <Setter TargetName="border" Property="Background" Value="#08000000"/>
                                     </Trigger>
                                     <Trigger Property="IsFocused" Value="True">
-                                        <Setter TargetName="border" Property="BorderBrush" Value="Black"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource Primary}"/>
                                         <Setter TargetName="border" Property="Background" Value="#0A000000"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
@@ -955,7 +969,7 @@
                     Background="#AA000000" Panel.ZIndex="100"
                     Grid.RowSpan="3">
                 <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Background="White" CornerRadius="12"
+                        Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
                         Padding="32,24" Width="280">
                     <StackPanel>
                         <ProgressBar IsIndeterminate="True" Height="4"
@@ -963,7 +977,7 @@
                                      Style="{StaticResource M3Progress}"/>
                         <TextBlock Text="{Binding FetchStatusMessage}" FontSize="14"
                                    HorizontalAlignment="Center"
-                                   Foreground="#333333"
+                                   Foreground="{DynamicResource OnSurface}"
                                    TextWrapping="Wrap"
                                    TextAlignment="Center"/>
                     </StackPanel>
@@ -975,8 +989,8 @@
         <Border Grid.RowSpan="2" Visibility="{Binding IsNewFolderDialogVisible, Converter={StaticResource BoolToVis}}"
                 Background="#60000000" Panel.ZIndex="100">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="White" CornerRadius="12"
-                    BorderBrush="#E0E0E0" BorderThickness="1"
+                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
+                    BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
                     Padding="32,28,32,24" Width="380">
                 <StackPanel>
                     <TextBlock Text="新建文件夹" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,20"/>
@@ -993,8 +1007,7 @@
                                 Style="{StaticResource OutlinedButton}"/>
                         <Button Content="创建" Padding="20,7" Cursor="Hand" FontWeight="SemiBold"
                                 Command="{Binding ConfirmCreateFolderCommand}"
-                                Style="{StaticResource FilledButton}"
-                                Background="#6200EE" Foreground="White"/>
+                                Style="{StaticResource FilledButton}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

@@ -13,7 +13,7 @@ namespace LinkPocket.ViewModels
         public string Title { get; set; } = string.Empty;
         public string Subtitle { get; set; } = string.Empty;
         public string IconKind { get; set; } = "StarOutline";
-        public string Color { get; set; } = "#6200EE";
+        public string Color { get; set; } = "Primary";
     }
 
     public class SmartListViewModel : INotifyPropertyChanged
@@ -53,10 +53,10 @@ namespace LinkPocket.ViewModels
         {
             Cards = new ObservableCollection<SmartListCardItem>
             {
-                new() { Id = "recently_added", Title = "最近添加", Subtitle = "近 7 天新增的书签", IconKind = "PlusCircleOutline", Color = "#4CAF50" },
-                new() { Id = "recently_visited", Title = "最近查看", Subtitle = "近 7 天访问过的书签", IconKind = "History", Color = "#2196F3" },
-                new() { Id = "recently_edited", Title = "最近编辑", Subtitle = "近 7 天修改过的书签", IconKind = "PencilOutline", Color = "#FF9800" },
-                new() { Id = "most_visited", Title = "最常查看", Subtitle = "访问次数前 20 的书签", IconKind = "TrendingUp", Color = "#E91E63" }
+                new() { Id = "recently_added", Title = "最近添加", Subtitle = "近 7 天新增的书签", IconKind = "plus-circle-outline", Color = "Success" },
+                new() { Id = "recently_visited", Title = "最近查看", Subtitle = "近 7 天访问过的书签", IconKind = "history", Color = "Primary" },
+                new() { Id = "recently_edited", Title = "最近编辑", Subtitle = "近 7 天修改过的书签", IconKind = "pencil-outline", Color = "Warning" },
+                new() { Id = "most_visited", Title = "最常查看", Subtitle = "访问次数前 20 的书签", IconKind = "trending-up", Color = "Tertiary" }
             };
         }
 

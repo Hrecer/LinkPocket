@@ -17,14 +17,14 @@
             <TextBox x:Name="BackupExportDirTextBox" Grid.Column="0"
                      IsReadOnly="True"
                      Padding="10,8" FontSize="13"
-                     Foreground="#333333"
-                     Background="#F5F5F5"
-                     BorderBrush="#CCCCCC" BorderThickness="1.5"
+                     Foreground="{DynamicResource OnSurface}"
+                     Background="{DynamicResource SurfaceContainerHighest}"
+                     BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
                      Tag="选择导出目录..."/>
             <Button Grid.Column="1" x:Name="BrowseBackupExportDirButton"
                     Content="浏览" Margin="8,0,0,0" Padding="14,8"
                     Cursor="Hand" Click="BrowseBackupExportDirButton_Click"
-                    BorderThickness="1.5" BorderBrush="#CCCCCC" Background="#F5F5F5"
+                    BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
                     FontSize="13"/>
         </Grid>
 
@@ -34,17 +34,17 @@
                 FontSize="14" FontWeight="SemiBold">
             <Button.Style>
                 <Style TargetType="Button">
-                    <Setter Property="Background" Value="#6200EE"/>
+                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
                     <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Foreground" Value="White"/>
                     <Style.Triggers>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Background" Value="#E0E0E0"/>
-                            <Setter Property="Foreground" Value="#999999"/>
+                            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#5000CC"/>
+                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>
@@ -70,13 +70,13 @@
             </Grid.ColumnDefinitions>
             <TextBox x:Name="BackupImportFileTextBox" Grid.Column="0"
                      IsReadOnly="True" Padding="10,8" FontSize="13"
-                     Foreground="#333333" Background="#F5F5F5"
-                     BorderBrush="#CCCCCC" BorderThickness="1.5"
+                     Foreground="{DynamicResource OnSurface}" Background="{DynamicResource SurfaceContainerHighest}"
+                     BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
                      Tag="选择 .lpbackup 备份文件..."/>
             <Button Grid.Column="1" x:Name="BrowseBackupImportButton"
                     Content="浏览" Margin="8,0,0,0" Padding="14,8"
                     Cursor="Hand" Click="BrowseBackupImportButton_Click"
-                    BorderThickness="1.5" BorderBrush="#CCCCCC" Background="#F5F5F5"
+                    BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
                     FontSize="13"/>
         </Grid>
 
@@ -86,17 +86,17 @@
                 FontSize="14" FontWeight="SemiBold">
             <Button.Style>
                 <Style TargetType="Button">
-                    <Setter Property="Background" Value="#6200EE"/>
+                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
                     <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Foreground" Value="White"/>
                     <Style.Triggers>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Background" Value="#E0E0E0"/>
-                            <Setter Property="Foreground" Value="#999999"/>
+                            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#5000CC"/>
+                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>

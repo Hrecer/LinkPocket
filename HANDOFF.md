@@ -313,6 +313,16 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
    主窗口新增"浏览"导航页挂载，显隐经 `IUiCoordinator.ShowBrowserPage/CloseBrowserPage`，
    旧界面并存不受影响；事件推送订阅增加 browser 分支（数据变更自动刷新当前目录）。
 
+6. **UI 库迁移 Material3.Wpf + 全局 M3 Expressive 换肤**
+   依赖与迁移细节见 [`依赖审计.md`](依赖审计.md)。UI 层面：
+   顶部导航改为 M3 药丸分段式（选中 = PrimaryContainer 填充）；全局底色切 Surface 系角色；
+   所有硬编码颜色（#6200EE 品牌紫、灰阶、红/绿状态色）全部替换为 M3 角色画刷
+   （Primary/OnSurface/OnSurfaceVariant/OnSurfaceMuted/OutlineVariant/Error/Success/Warning 等）；
+   代码建 UI（侧栏/主列表/搜索卡片/工具页/回收站/智能列表卡片）同步切换；
+   输入框、按钮统一走 M3 隐式样式（药丸形）；对话框卡片圆角 24；
+   图标注册表扩充至 44 个（补 star/plus-circle-outline/history/trending-up）。
+   功能逻辑零改动，仅视觉层。
+
 ---
 
 ## 8. 当前 UI 的工作方式（将被本次重构替换）

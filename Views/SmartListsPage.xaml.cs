@@ -208,7 +208,7 @@ namespace LinkPocket.Views
             if (item == null) return;
 
             _selectedResultItem = item;
-            card.BorderBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+            card.BorderBrush = (Brush)Application.Current.FindResource("Primary");
             card.BorderThickness = new Thickness(2);
             JumpToLinkBtn.IsEnabled = true;
         }

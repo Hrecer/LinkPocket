@@ -12,10 +12,10 @@
 
         <!-- 左侧栏 -->
         <Border Grid.Column="0" BorderBrush="{DynamicResource OutlineVariant}"
-                BorderThickness="0,0,1,0" Background="#FAFAFA">
+                BorderThickness="0,0,1,0" Background="{DynamicResource SurfaceContainerLow}">
             <StackPanel>
                 <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
-                           Margin="16,16,16,12" Foreground="#333333"/>
+                           Margin="16,16,16,12" Foreground="{DynamicResource OnSurface}"/>
                 <ListBox x:Name="SettingListBox" BorderThickness="0" Background="Transparent"
                          SelectionChanged="SettingListBox_SelectionChanged">
                     <ListBox.ItemContainerStyle>
@@ -87,14 +87,14 @@
                                     RelativeSource={RelativeSource AncestorType=Window}}"
                              IsReadOnly="True"
                              Padding="10,8" FontSize="13"
-                             Foreground="#333333"
-                             Background="#F5F5F5"
-                             BorderBrush="#CCCCCC" BorderThickness="1.5"
+                             Foreground="{DynamicResource OnSurface}"
+                             Background="{DynamicResource SurfaceContainerHighest}"
+                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
                              Tag="选择导出目录..."/>
                     <Button Grid.Column="1" x:Name="BrowseDirButton"
                             Content="浏览" Margin="8,0,0,0" Padding="14,8"
                             Cursor="Hand" Click="BrowseDirButton_Click"
-                            BorderThickness="1.5" BorderBrush="#CCCCCC" Background="#F5F5F5"
+                            BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
                             FontSize="13"/>
                 </Grid>
 
@@ -104,17 +104,17 @@
                         FontSize="14" FontWeight="SemiBold">
                     <Button.Style>
                         <Style TargetType="Button">
-                            <Setter Property="Background" Value="#6200EE"/>
+                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
                             <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="Foreground" Value="White"/>
                             <Style.Triggers>
                                 <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Background" Value="#E0E0E0"/>
-                                    <Setter Property="Foreground" Value="#999999"/>
+                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
                                     <Setter Property="Cursor" Value="Arrow"/>
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#5000CC"/>
+                                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -141,13 +141,13 @@
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="ImportFileTextBox" Grid.Column="0"
                              IsReadOnly="True" Padding="10,8" FontSize="13"
-                             Foreground="#333333" Background="#F5F5F5"
-                             BorderBrush="#CCCCCC" BorderThickness="1.5"
+                             Foreground="{DynamicResource OnSurface}" Background="{DynamicResource SurfaceContainerHighest}"
+                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
                              Tag="选择 bookmarks.html 文件..."/>
                     <Button Grid.Column="1" x:Name="BrowseImportButton"
                             Content="浏览" Margin="8,0,0,0" Padding="14,8"
                             Cursor="Hand" Click="BrowseImportButton_Click"
-                            BorderThickness="1.5" BorderBrush="#CCCCCC" Background="#F5F5F5"
+                            BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
                             FontSize="13"/>
                 </Grid>
 
@@ -157,17 +157,17 @@
                         FontSize="14" FontWeight="SemiBold">
                     <Button.Style>
                         <Style TargetType="Button">
-                            <Setter Property="Background" Value="#6200EE"/>
+                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
                             <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="Foreground" Value="White"/>
                             <Style.Triggers>
                                 <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Background" Value="#E0E0E0"/>
-                                    <Setter Property="Foreground" Value="#999999"/>
+                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
                                     <Setter Property="Cursor" Value="Arrow"/>
                                 </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#5000CC"/>
+                                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -194,15 +194,15 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="清除日志" FontSize="14" Foreground="#333333"/>
+                            <TextBlock Text="清除日志" FontSize="14" Foreground="{DynamicResource OnSurface}"/>
                             <TextBlock x:Name="LogStatusText" Text="日志目录: 查看下方路径"
                                        FontSize="12" Foreground="#999999" Margin="0,2,0,0"/>
                         </StackPanel>
                         <Button Grid.Column="1" x:Name="ClearLogsButton"
                                 Content="一键清除" Padding="16,8" VerticalAlignment="Center"
                                 Cursor="Hand" Click="ClearLogsButton_Click"
-                                Background="#F5F5F5" BorderBrush="#CCCCCC" BorderThickness="1.5"
-                                FontSize="13" Foreground="#333333"/>
+                                Background="{DynamicResource SurfaceContainerHighest}" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
+                                FontSize="13" Foreground="{DynamicResource OnSurface}"/>
                     </Grid>
                 </Border>
 
@@ -214,15 +214,15 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="清空所有数据" FontSize="14" Foreground="#CC0000"/>
+                            <TextBlock Text="清空所有数据" FontSize="14" Foreground="{DynamicResource Error}"/>
                             <TextBlock Text="清除数据库 + 图标缓存，此操作不可恢复"
-                                       FontSize="12" Foreground="#CC0000" Opacity="0.7" Margin="0,2,0,0"/>
+                                       FontSize="12" Foreground="{DynamicResource Error}" Opacity="0.7" Margin="0,2,0,0"/>
                         </StackPanel>
                         <Button Grid.Column="1" x:Name="ClearAllDataButton"
                                 Content="清空数据" Padding="16,8" VerticalAlignment="Center"
                                 Cursor="Hand" Click="ClearAllDataButton_Click"
-                                Background="#FFE0E0" BorderBrush="#CC0000" BorderThickness="1.5"
-                                FontSize="13" Foreground="#CC0000"/>
+                                Background="{DynamicResource ErrorContainer}" BorderBrush="{DynamicResource Error}" BorderThickness="1.5"
+                                FontSize="13" Foreground="{DynamicResource Error}"/>
                     </Grid>
                 </Border>
             </StackPanel>
@@ -235,16 +235,16 @@
         <Border Grid.ColumnSpan="3" x:Name="ExportOverlay" Visibility="Collapsed"
                 Background="#AA000000" Panel.ZIndex="100">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="White" CornerRadius="12"
+                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
                     Padding="32,24" Width="380">
                 <StackPanel>
                     <TextBlock x:Name="ExportStatusText" Text="正在导出..."
                                FontSize="14" HorizontalAlignment="Center"
-                               Foreground="#333333" TextWrapping="Wrap"
+                               Foreground="{DynamicResource OnSurface}" TextWrapping="Wrap"
                                TextAlignment="Center" Margin="0,0,0,12"/>
                     <ProgressBar x:Name="ExportProgressBar" Height="6"
                                  Minimum="0" Maximum="100" Value="0"
-                                 Foreground="#6200EE" Background="#E0E0E0"/>
+                                 Foreground="{DynamicResource Primary}" Background="#E0E0E0"/>
                     <TextBlock x:Name="ExportProgressText" Text="0 / 0"
                                FontSize="12" HorizontalAlignment="Center"
                                Foreground="#999999" Margin="0,6,0,0"/>
@@ -256,31 +256,31 @@
         <Border Grid.ColumnSpan="3" x:Name="ConfirmOverlay" Visibility="Collapsed"
                 Background="#AA000000" Panel.ZIndex="200">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="White" CornerRadius="12"
+                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
                     Padding="32,24" Width="400">
                 <StackPanel>
                     <TextBlock Text="确认清空所有数据" FontSize="18" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Foreground="#CC0000"
+                               HorizontalAlignment="Center" Foreground="{DynamicResource Error}"
                                Margin="0,0,0,8"/>
                     <TextBlock Text="此操作将清除所有书签、文件夹和设置数据，且不可恢复。"
                                FontSize="13" HorizontalAlignment="Center"
-                               Foreground="#666666" TextWrapping="Wrap"
+                               Foreground="{DynamicResource OnSurfaceVariant}" TextWrapping="Wrap"
                                TextAlignment="Center" Margin="0,0,0,4"/>
                     <TextBlock Text="如需备份，请先使用导出功能。"
                                FontSize="13" HorizontalAlignment="Center"
-                               Foreground="#666666" TextWrapping="Wrap"
+                               Foreground="{DynamicResource OnSurfaceVariant}" TextWrapping="Wrap"
                                TextAlignment="Center" Margin="0,0,0,16"/>
 
                     <TextBlock Text="请输入以下文字确认操作："
-                               FontSize="13" Foreground="#333333" Margin="0,0,0,6"/>
+                               FontSize="13" Foreground="{DynamicResource OnSurface}" Margin="0,0,0,6"/>
                     <TextBlock Text="我确认清除全部数据"
-                               FontSize="14" FontWeight="Bold" Foreground="#CC0000"
+                               FontSize="14" FontWeight="Bold" Foreground="{DynamicResource Error}"
                                HorizontalAlignment="Center" Margin="0,0,0,10"/>
 
                     <TextBox x:Name="ConfirmInputBox" Padding="10,8" FontSize="13"
                              HorizontalAlignment="Stretch"
-                             Foreground="#333333" Background="#FFFFFF"
-                             BorderBrush="#CCCCCC" BorderThickness="1.5"
+                             Foreground="{DynamicResource OnSurface}" Background="{DynamicResource SurfaceContainerLowest}"
+                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
                              Tag="在此输入确认文字..."/>
 
                     <Grid Margin="0,16,0,0">
@@ -290,17 +290,17 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" x:Name="ConfirmErrorText"
-                                   Text="" FontSize="12" Foreground="#CC0000"
+                                   Text="" FontSize="12" Foreground="{DynamicResource Error}"
                                    VerticalAlignment="Center"/>
                         <Button Grid.Column="1" x:Name="CancelConfirmButton"
                                 Content="取消" Padding="20,8" Margin="0,0,8,0"
                                 Cursor="Hand" Click="CancelConfirmButton_Click"
-                                Background="#F5F5F5" BorderBrush="#CCCCCC" BorderThickness="1.5"
-                                FontSize="13" Foreground="#333333"/>
+                                Background="{DynamicResource SurfaceContainerHighest}" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
+                                FontSize="13" Foreground="{DynamicResource OnSurface}"/>
                         <Button Grid.Column="2" x:Name="ExecuteClearButton"
                                 Content="确认清空" Padding="20,8" IsEnabled="False"
                                 Cursor="Hand" Click="ExecuteClearButton_Click"
-                                Background="#CC0000" BorderThickness="0"
+                                Background="{DynamicResource Error}" BorderThickness="0"
                                 FontSize="13" Foreground="White"/>
                     </Grid>
                 </StackPanel>

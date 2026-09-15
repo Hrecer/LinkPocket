@@ -14,7 +14,7 @@
                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Foreground" Value="#6200EE"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
                             <Style.Triggers>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Opacity" Value="0.35"/>
@@ -33,7 +33,7 @@
                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Foreground" Value="#E53935"/>
+                            <Setter Property="Foreground" Value="{DynamicResource Error}"/>
                             <Style.Triggers>
                                 <Trigger Property="IsEnabled" Value="False">
                                     <Setter Property="Opacity" Value="0.35"/>

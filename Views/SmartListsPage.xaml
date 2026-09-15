@@ -7,7 +7,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
 
-    <Grid Background="#FFFFFF">
+    <Grid Background="{DynamicResource SurfaceContainerLowest}">
         <!-- ===== 主页：4个智能列表卡片 ===== -->
         <Grid x:Name="CardPanel">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
@@ -30,7 +30,7 @@
                                     <Style TargetType="Border">
                                         <Style.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="BorderBrush" Value="#6200EE"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
                                                 <Setter Property="BorderThickness" Value="2"/>
                                             </Trigger>
                                         </Style.Triggers>
@@ -45,7 +45,7 @@
                                     </Grid.RowDefinitions>
 
                                     <Border Grid.Row="0" CornerRadius="10" Margin="18,16,18,6"
-                                            Background="#F5F5FA"
+                                            Background="{DynamicResource SurfaceContainerLow}"
                                             HorizontalAlignment="Left" VerticalAlignment="Top"
                                             Width="44" Height="44">
                                         <m3:M3Icon Kind="{Binding IconKind}"
@@ -57,11 +57,11 @@
 
                                     <TextBlock Grid.Row="1" Text="{Binding Title}"
                                                FontSize="15" FontWeight="SemiBold"
-                                               Foreground="#1A1A1A"
+                                               Foreground="{DynamicResource OnSurface}"
                                                Margin="18,4,18,0"/>
 
                                     <TextBlock Grid.Row="2" Text="{Binding Subtitle}"
-                                               FontSize="12" Foreground="#999"
+                                               FontSize="12" Foreground="{DynamicResource OnSurfaceMuted}"
                                                Margin="18,2,18,14"/>
                                 </Grid>
                             </Border>
@@ -90,14 +90,14 @@
                         </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="arrow-left" Width="17" Height="17"
-                                                       VerticalAlignment="Center" Foreground="#6200EE"/>
-                            <TextBlock Text="返回" FontSize="13" Foreground="#6200EE"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                            <TextBlock Text="返回" FontSize="13" Foreground="{DynamicResource Primary}"
                                        VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
                     </Button>
 
                     <TextBlock Text="{Binding ResultViewModel.Title}"
-                               FontSize="14" FontWeight="SemiBold" Foreground="#333"
+                               FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource OnSurface}"
                                VerticalAlignment="Center" Margin="14,0,0,0"/>
 
                     <Button x:Name="JumpToLinkBtn" Padding="10,6" Margin="14,0,0,0"
@@ -127,8 +127,8 @@
 
                     <StackPanel x:Name="LoadingIndicator" HorizontalAlignment="Center" Margin="0,70,0,0"
                                 Visibility="{Binding ResultViewModel.IsLoading, Converter={StaticResource BoolToVis}}">
-                        <ProgressBar IsIndeterminate="True" Width="100" Height="3" Foreground="#6200EE"/>
-                        <TextBlock Text="加载中..." FontSize="12" Foreground="#999" HorizontalAlignment="Center"
+                        <ProgressBar IsIndeterminate="True" Width="100" Height="3" Foreground="{DynamicResource Primary}"/>
+                        <TextBlock Text="加载中..." FontSize="12" Foreground="{DynamicResource OnSurfaceMuted}" HorizontalAlignment="Center"
                                    Margin="0,10,0,0"/>
                     </StackPanel>
 

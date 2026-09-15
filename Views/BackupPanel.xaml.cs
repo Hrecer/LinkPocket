@@ -237,7 +237,7 @@ namespace LinkPocket.Views
                     progressBar.Maximum = total;
                     progressBar.Value = current;
                 }
-                progressBar.Foreground = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+                progressBar.Foreground = (Brush)Application.Current.FindResource("Primary");
             }
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");

@@ -173,7 +173,7 @@ namespace LinkPocket.Views
 
         public void UpdateTrashSelectionVisuals(RecycleBinViewModel recycleVm)
         {
-            var selectedBrush = new SolidColorBrush(Color.FromRgb(98, 0, 238));
+            var selectedBrush = (Brush)Application.Current.FindResource("Primary");
             var defaultBrush = (Brush)FindResource("OutlineVariant");
             foreach (var kvp in _trashCardBorders)
                 kvp.Value.BorderBrush = recycleVm.IsSelected(kvp.Key) ? selectedBrush : defaultBrush;

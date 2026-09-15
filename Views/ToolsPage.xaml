@@ -11,10 +11,10 @@
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,1,0"
-                Background="#FAFAFA" x:Name="LeftSidebarBorder">
+                Background="{DynamicResource SurfaceContainerLow}" x:Name="LeftSidebarBorder">
             <StackPanel>
                 <TextBlock Text="工具" FontSize="16" FontWeight="SemiBold" Margin="16,16,16,12"
-                            Foreground="#333333"/>
+                            Foreground="{DynamicResource OnSurface}"/>
                 <ListBox x:Name="ToolListbox" BorderThickness="0" Background="Transparent"
                          DisplayMemberPath="Name"
                          SelectionChanged="ToolListbox_SelectionChanged">
@@ -38,7 +38,7 @@
         </ScrollViewer>
 
         <!-- 二级界面（分组详情） -->
-        <Grid Grid.Column="2" x:Name="DetailView" Visibility="Collapsed" Background="#FFFFFF"
+        <Grid Grid.Column="2" x:Name="DetailView" Visibility="Collapsed" Background="{DynamicResource SurfaceContainerLowest}"
               KeyDown="DetailView_KeyDown" Focusable="True">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -69,8 +69,8 @@
                         </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="arrow-left" Width="17" Height="17"
-                                                     VerticalAlignment="Center" Foreground="#6200EE"/>
-                            <TextBlock Text="返回" FontSize="13" Foreground="#6200EE"
+                                                     VerticalAlignment="Center" Foreground="{DynamicResource Primary}"/>
+                            <TextBlock Text="返回" FontSize="13" Foreground="{DynamicResource Primary}"
                                        VerticalAlignment="Center" Margin="5,0,0,0"/>
                         </StackPanel>
                     </Button>
@@ -78,9 +78,9 @@
                     <!-- 中间：标题（居中，紫色） -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <m3:M3Icon Kind="eye-outline" Width="18" Height="18"
-                                                 Foreground="#6200EE" VerticalAlignment="Center"/>
+                                                 Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
                         <TextBlock Text="重复链接详情" FontSize="15" FontWeight="SemiBold"
-                                   Foreground="#6200EE" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                   Foreground="{DynamicResource Primary}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                     </StackPanel>
 
                     <!-- 右侧：删除重复项按钮 -->
@@ -102,8 +102,8 @@
                         </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="delete-outline" Width="16" Height="16"
-                                                     VerticalAlignment="Center" Foreground="#D32F2F"/>
-                            <TextBlock Text="删除重复项" FontSize="13" Foreground="#D32F2F"
+                                                     VerticalAlignment="Center" Foreground="{DynamicResource Error}"/>
+                            <TextBlock Text="删除重复项" FontSize="13" Foreground="{DynamicResource Error}"
                                        VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
                     </Button>
@@ -115,15 +115,15 @@
                 <StackPanel>
                     <TextBox x:Name="DedupGroupUrlBox" IsReadOnly="True" FontSize="14"
                              Background="Transparent" BorderThickness="0" Padding="0"
-                             Focusable="False" Foreground="#222222" TextWrapping="Wrap"
+                             Focusable="False" Foreground="{DynamicResource OnSurface}" TextWrapping="Wrap"
                              ContextMenu="{x:Null}"/>
                     <Button x:Name="DedupCopyUrlBtn" Padding="5,2,5,2"
                             Cursor="Hand" Background="Transparent" BorderThickness="0"
                             HorizontalAlignment="Left" Click="DedupCopyUrl_Click">
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="content-copy" Width="13" Height="13"
-                                                     Foreground="#666666" VerticalAlignment="Center"/>
-                            <TextBlock Text="复制URL" FontSize="12" Foreground="#666666"
+                                                     Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"/>
+                            <TextBlock Text="复制URL" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
                                        VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
                     </Button>

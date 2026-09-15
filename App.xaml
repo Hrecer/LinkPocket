@@ -22,10 +22,13 @@
 
             <Style TargetType="TextBox">
                 <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+                <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
             </Style>
 
             <Style TargetType="ComboBox">
                 <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+                <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
             </Style>
         </ResourceDictionary>
     </Application.Resources>
