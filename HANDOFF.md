@@ -180,7 +180,7 @@ Api           = new TransportedLinkPocketApi(Transport);              // 前端�
 
 | 方法 | 参数（snake_case） | 返回 |
 |---|---|---|
-| `folders.contents` | `folder_id?`（null/"0"=根）、`sort_by`、`sort_order` | `FolderContentsDto` |
+| `folders.contents` | `folder_id?`（null/"0"=根）、`sort_by`、`sort_order`、`page`（默认 1）、`per_page`（默认 0=不分页，一次取全部） | `FolderContentsDto` |
 | `folders.tree` | — | `FolderDto[]`（扁平，含 `parent_id`） |
 | `folders.breadcrumb` | `folder_id?` | `string[]`（`["全部书签","A","B"]`） |
 | `folders.create` | `name`, `parent_id?` | `FolderDto` |
@@ -221,11 +221,34 @@ Api           = new TransportedLinkPocketApi(Transport);              // 前端�
   "sub_folders": [ { "id": "456", "name": "CSS", "parent_id": "123", "link_count": 7 } ],
   "links": [ { "id": "...", "url": "...", "title": "...", "favicon_url": "...", "created_at": "..." } ],
   "breadcrumb": ["全部书签", "技术", "前端资源"],
-  "total_link_count": 7
+  "total_link_count": 7,
+  "current_page": 1,               // P3 新增：当前页码（从 1 开始）
+  "per_page": 20,                  // P3 新增：每页链接数；0 表示未启用分页
+  "last_page": 1                   // P3 新增：链接总页数（按本目录实际链接查询计算）
 }
 ```
 
 一次调用即可渲染"当前目录页"（子文件夹 + 链接 + 面包屑），无需前端拼装。
+
+**计数语义（P3 确认）**：`total_link_count` 只统计**直接子链接**，不递归统计子文件夹；
+子文件夹的书签数看 `sub_folders[].link_count`。UI 上的"书签数"以此为准。
+
+### 事件推送（P3 新增）
+
+后端在数据变更后会通过 `ILinkPocketTransport.EventReceived` 推送 JSON 事件，
+前端（`MainViewModel`）已订阅并做 300ms 防抖刷新当前视图：
+
+```json
+{ "event": "links.changed", "data": { "link_id": "...", "list_id": "..." }, "at": "2026-09-15T..." }
+```
+
+| 事件 | 触发时机 |
+|---|---|
+| `links.changed` | 链接创建/更新/访问/删除级联、HTML 导入、备份导入、重置数据库 |
+| `folders.changed` | 文件夹创建/更新/删除/移动/复制/排序、HTML 导入、备份导入、重置数据库 |
+| `trash.changed` | 移入回收站、恢复、彻底删除、重置数据库 |
+
+注意：现阶段事件链与既有 `EventHandler` 链**并存**（防抖去重），P4/P6 再逐步替换旧链。
 
 ---
 
@@ -271,6 +294,15 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
    且所有访问都串行经过协议层）。
    同时修掉两个真 bug：备份/导出时间戳被 `DateTime.TryParse` 转成本地时间（Unix 时间戳偏移）；
    分发器误用 `WrapVoid` 吞掉 `import.bookmarks_html` 的返回条数。
+
+4. **P3 后端补齐"文件管理器"能力**
+   `folders.contents` 支持分页（`page`/`per_page`，`per_page=0` 保持旧行为）；
+   `total_link_count` 语义确认（只统计直接子链接）并补充 DTO 分页字段
+   （`current_page`/`per_page`/`last_page`）；
+   事件推送落地：`ILinkPocketEventSource` + `InProcessTransport.EventReceived`，
+   后端推送 `links.changed` / `folders.changed` / `trash.changed`，
+   前端 `MainViewModel` 订阅并防抖刷新（与旧事件链并存）；
+   冒烟测试固化为 `tests/ProtocolSmoke`（dotnet run 即可运行）。
 
 ---
 
@@ -358,15 +390,15 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
 > 每阶段独立提交、可独立验收。**任何阶段结束时必须：两个项目编译 0 错误 0 警告 +
 > 协议冒烟测试通过 + 单独 Git 提交。**
 
-### P3 —— 后端补齐"文件管理器"所需能力（小，建议先做）
-- [ ] `folders.contents` 增加分页参数（当前一次取回上限 10000 条，目录内链接极多时需分页）
-- [ ] 空目录/链接计数语义确认：`FolderContentsDto.total_link_count` 只统计**直接子链接**
-      （子文件夹的链接不递归统计，需在 UI 上明确"书签数"含义）
-- [ ] 事件推送：实现 `ILinkPocketTransport.EventReceived` 的进程内版本，
+### P3 —— 后端补齐"文件管理器"所需能力（已完成 ✅）
+- [x] `folders.contents` 增加分页参数（`page`/`per_page`，默认不分页保持旧行为）
+- [x] 空目录/链接计数语义确认：`FolderContentsDto.total_link_count` 只统计**直接子链接**
+      （子文件夹的链接不递归统计；UI 上"书签数"含义见第 5 节说明）
+- [x] 事件推送：实现 `ILinkPocketTransport.EventReceived` 的进程内版本，
       后端在数据变更后推 `links.changed` / `folders.changed` / `trash.changed`；
-      前端订阅刷新当前目录（替代现在的多层 `EventHandler` 链）
+      前端（`MainViewModel`）订阅并防抖刷新当前目录（与旧事件链并存，P4/P6 再替换）
 - [ ] 备份/导入的进度回调协议化（可选，见技术债）
-- **验收**：新增方法有协议冒烟用例；旧 UI 行为不变。
+- **验收**：`tests/ProtocolSmoke` 冒烟用例通过（分页、计数语义、三类事件、错误通道）；旧 UI 行为不变。
 
 ### P4 —— 导航框架搭建（中等）
 - [ ] 新建 `Views/Browser/` 目录，落地 `BrowserView`（导航栏 + 内容区 + 状态栏三段式）
@@ -425,43 +457,18 @@ SQLite 三张表（EF Core `EnsureCreated()` 建库，**无迁移体系**）：
 
 ### 12.1 协议冒烟测试（当前最有效的自动化手段）
 
-项目里没有测试工程（有意保持轻量）。验证方式是临时控制台项目：
+冒烟测试已固化为 `tests/ProtocolSmoke`（不参与主项目编译，独立控制台项目）：
 
 ```bash
-mkdir /tmp/lp-test && cd /tmp/lp-test
-cat > t.csproj <<'EOF'
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="G:\LinkPocket 网站管理器开发\开发目录\linkpocket\Core\LinkPocket.Core.csproj" />
-  </ItemGroup>
-</Project>
-EOF
+dotnet run --project tests/ProtocolSmoke
 ```
 
-`Program.cs` 用与前端完全相同的装配方式，然后逐项断言：
+它用与前端完全相同的装配方式（LinkPocketApi → Dispatcher → InProcessTransport → TransportedLinkPocketApi），
+逐项断言：目录分页、计数语义、三类变更事件、回收站闭环、错误通道。输出"全部通过"即验收。
+测试库是测试 exe 目录下的独立 `linkpocket.db`，不会污染正式数据。
 
-```csharp
-using LinkPocket.Api;
-
-var backend   = new LinkPocketApi();
-var transport = new InProcessTransport(new LinkPocketApiDispatcher(backend));
-ILinkPocketApi api = new TransportedLinkPocketApi(transport);
-
-await api.ReinitializeDatabaseAsync(resetData: true);      // 保证断言可重复（测试库是 exe 目录下的 linkpocket.db）
-var folder = await api.CreateFolderAsync("测试", null);
-var link   = await api.CreateLinkAsync("https://example.com", "示例", null, folder.FolderId);
-var contents = await api.GetFolderContentsAsync(folder.FolderId);
-if (contents.Links.Count != 1) throw new Exception("目录内容不符");
-// ... 覆盖：回收站闭环、备份导出/导入、HTML 导出/导入、搜索、统计、错误通道
-Console.WriteLine("通过");
-```
-
-> 重要：**测试项目的 exe 目录会生成独立的 `linkpocket.db`**，不会污染正式数据；
-> 但断言前务必先 `ReinitializeDatabaseAsync`（历史上踩过"上一轮导入的数据导致断言失败"的坑）。
+若要临时验证新协议方法，可参照该目录的 `Program.cs` 追加断言（历史做法是临时控制台项目，
+现在直接改这个文件即可）。
 
 ### 12.2 人工验收清单（改 UI 后必过）
 
@@ -490,7 +497,6 @@ Console.WriteLine("通过");
 | 中 | 备份/导入进度条精度丢失 | 协议当前不支持进度回调，`BackupPanel` 只能显示不定进度（P3 可选补事件推送） |
 | 中 | Ctrl+Z 撤销栈只改内存 | `LinkViewModel.SaveForUndo/Undo` 不落库，刷新即回退；要么删掉，要么改走协议 |
 | 低 | `SettingsPage` 导出后用"读全文数 `<A HREF=`"校验 | 大文件低效，可改为解析/流式计数 |
-| 低 | 单次目录取回上限 10000 条 | `folders.contents` 未分页 |
 | 低 | VS 启动未验证 | 本轮重构后**尚未实际启动 WPF 应用做人工验收**（仅编译 + 协议冒烟）。接手后请先跑一次 12.2 清单 |
 | 低 | `Views/VaultPage.xaml` 孤立文件 | 已废弃的密码库功能残留，可直接删除 |
 | 决策 | Web 化 or WPF 重画 | P8 时决定；两条路线的前置工作相同（协议回归用例） |
@@ -517,6 +523,7 @@ Console.WriteLine("通过");
 
 ## 15. 文档版本
 
-- 版本：v1.0（对应当前代码 `5338843`）
-- 关联文档：[`DECOUPLING_PLAN.md`](DECOUPLING_PLAN.md)（前后端分离的原始规划与协议设计）
+- 版本：v1.1（P3 完成；对应代码为 P3 提交）
+- 关联文档：[`DECOUPLING_PLAN.md`](DECOUPLING_PLAN.md)（前后端分离的原始规划与协议设计）、
+  [`tests/ProtocolSmoke/`](tests/ProtocolSmoke/)（协议冒烟测试，`dotnet run --project tests/ProtocolSmoke`）
 - 更新要求：每次完成一个阶段后，更新第 7 节（里程碑）、第 10 节（勾选进度）、第 13 节（技术债）。

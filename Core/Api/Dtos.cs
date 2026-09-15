@@ -41,7 +41,17 @@ public class FolderContentsDto
     [JsonPropertyName("sub_folders")] public List<FolderDto> SubFolders { get; set; } = new();
     [JsonPropertyName("links")] public List<LinkDto> Links { get; set; } = new();
     [JsonPropertyName("breadcrumb")] public List<string> Breadcrumb { get; set; } = new();
+    /// <summary>
+    /// 直接子链接总数（语义确认，P3）：只统计当前目录的直接子链接，
+    /// 不递归统计子文件夹内的链接；根目录为根级链接数。UI 上"书签数"含义以此为准。
+    /// </summary>
     [JsonPropertyName("total_link_count")] public int TotalLinkCount { get; set; }
+    /// <summary>当前页码（从 1 开始；未启用分页时为 1）。</summary>
+    [JsonPropertyName("current_page")] public int CurrentPage { get; set; } = 1;
+    /// <summary>每页链接数（0 表示未启用分页，一次取回全部）。</summary>
+    [JsonPropertyName("per_page")] public int PerPage { get; set; }
+    /// <summary>链接总页数（未启用分页时为 1）。按本目录实际链接查询结果计算。</summary>
+    [JsonPropertyName("last_page")] public int LastPage { get; set; } = 1;
 }
 
 public class PagedLinksDto

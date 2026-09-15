@@ -10,8 +10,13 @@ namespace LinkPocket.Api;
 public interface ILinkPocketApi
 {
     // —— 浏览（资源管理器式逐级进入）——
-    /// <summary>获取一个目录的内容。folderId 为 null/"0" 表示根目录（全部书签）。</summary>
-    Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc");
+    /// <summary>
+    /// 获取一个目录的内容。folderId 为 null/"0" 表示根目录（全部书签）。
+    /// perPage &gt; 0 时对链接启用分页（page 从 1 开始）；perPage = 0（默认）不分页，
+    /// 一次取回全部链接（与旧版行为一致）。
+    /// totalLinkCount 只统计直接子链接，不递归子文件夹。
+    /// </summary>
+    Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0);
     /// <summary>获取文件夹树（含根节点），用于侧栏树展示。</summary>
     Task<List<FolderDto>> GetFolderTreeAsync();
     /// <summary>获取面包屑路径（从"全部书签"到当前文件夹的名称列表）。</summary>

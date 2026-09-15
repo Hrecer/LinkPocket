@@ -17,6 +17,15 @@ public interface ILinkPocketTransport : IDisposable
     event EventHandler<string>? EventReceived;
 }
 
+/// <summary>
+/// 后端数据变更事件源（P3）：后端在数据变更后触发 DataChanged，
+/// 负载为 JSON 字符串：{"event":"links.changed"|"folders.changed"|"trash.changed","data":{...},"at":"..."}
+/// </summary>
+public interface ILinkPocketEventSource
+{
+    event EventHandler<string>? DataChanged;
+}
+
 /// <summary>API 调用失败（远程错误 / 方法不存在等）。</summary>
 public class LinkPocketApiException : Exception
 {
@@ -32,17 +41,16 @@ public class InProcessTransport : ILinkPocketTransport
     public InProcessTransport(LinkPocketApiDispatcher dispatcher)
     {
         _dispatcher = dispatcher;
+        // 后端实现了事件源时（默认 LinkPocketApi），把数据变更事件转发给前端订阅方
+        if (_dispatcher.Api is ILinkPocketEventSource source)
+            source.DataChanged += (sender, payload) => EventReceived?.Invoke(this, payload);
     }
 
     public Task<string> SendAsync(string jsonRequest, CancellationToken cancellationToken = default)
         => _dispatcher.HandleAsync(jsonRequest, cancellationToken);
 
-    // 进程内直连没有独立后端进程，事件推送预留为空实现
-    public event EventHandler<string>? EventReceived
-    {
-        add { }
-        remove { }
-    }
+    /// <summary>后端推送的数据变更事件（负载为 JSON 字符串）。</summary>
+    public event EventHandler<string>? EventReceived;
 
     public void Dispose() { }
 }
@@ -56,6 +64,9 @@ public class LinkPocketApiDispatcher
     private readonly ILinkPocketApi _api;
 
     public LinkPocketApiDispatcher(ILinkPocketApi api) => _api = api;
+
+    /// <summary>分发器持有的后端实现（用于传输层订阅数据变更事件等）。</summary>
+    public ILinkPocketApi Api => _api;
 
     public async Task<string> HandleAsync(string jsonRequest, CancellationToken cancellationToken = default)
     {
@@ -84,7 +95,9 @@ public class LinkPocketApiDispatcher
         "folders.contents" => await _api.GetFolderContentsAsync(
             PStrOrNull(p, "folder_id"),
             PStr(p, "sort_by", "title"),
-            PStr(p, "sort_order", "asc")),
+            PStr(p, "sort_order", "asc"),
+            PInt(p, "page", 1),
+            PInt(p, "per_page", 0)),
         "folders.tree" => await _api.GetFolderTreeAsync(),
         "folders.breadcrumb" => await _api.GetBreadcrumbAsync(PStrOrNull(p, "folder_id")),
 

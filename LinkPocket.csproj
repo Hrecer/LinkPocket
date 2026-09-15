@@ -14,6 +14,7 @@
   <!-- 后端逻辑位于 Core 子项目，WPF 前端仅通过其公开契约访问 -->
   <ItemGroup>
     <Compile Remove="Core/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

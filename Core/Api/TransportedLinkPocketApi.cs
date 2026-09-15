@@ -13,9 +13,9 @@ public class TransportedLinkPocketApi : ILinkPocketApi
 
     // —— 浏览 ——
 
-    public Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc")
+    public Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0)
         => _transport.InvokeAsync<FolderContentsDto>("folders.contents", new
-        { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder });
+        { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage });
 
     public Task<List<FolderDto>> GetFolderTreeAsync()
         => _transport.InvokeAsync<List<FolderDto>>("folders.tree");

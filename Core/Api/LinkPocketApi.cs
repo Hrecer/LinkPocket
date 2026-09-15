@@ -1,6 +1,7 @@
 using LinkPocket.Api;
 using LinkPocket.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace LinkPocket.Api;
 
@@ -8,8 +9,10 @@ namespace LinkPocket.Api;
 /// 后端 API 的默认实现：组合 LinkService/FolderService 等服务，
 /// 对外只暴露 ILinkPocketApi 契约与 DTO。运行在后端进程内；
 /// 前端永远不直接接触本类，只通过通信层调用。
+/// 同时实现 ILinkPocketEventSource：数据变更后推送 links.changed /
+/// folders.changed / trash.changed 事件（P3）。
 /// </summary>
-public class LinkPocketApi : ILinkPocketApi
+public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
 {
     private LinkPocketDbContext _db;
     private Services.LinkService _links;
@@ -26,15 +29,36 @@ public class LinkPocketApi : ILinkPocketApi
     /// <summary>过渡期兼容入口：设置页重置数据库 / 备份面板需要共享同一个 DbContext。</summary>
     public LinkPocketDbContext Db => _db;
 
+    // —— 数据变更事件推送（P3）——
+
+    /// <summary>数据变更事件。payload 为 JSON 字符串：{"event":"links.changed","data":{...},"at":"..."}</summary>
+    public event EventHandler<string>? DataChanged;
+
+    /// <summary>推送一条数据变更事件。事件推送失败不影响主流程。</summary>
+    private void RaiseChanged(string kind, object? data = null)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { @event = kind, data, at = DateTime.UtcNow });
+            DataChanged?.Invoke(this, payload);
+        }
+        catch { /* 事件序列化/订阅方异常不应中断业务操作 */ }
+    }
+
     // —— 浏览 ——
 
-    public async Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc")
+    public async Task<FolderContentsDto> GetFolderContentsAsync(string? folderId, string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0)
     {
+        if (page < 1) page = 1;
+        if (perPage < 0) perPage = 0;
+        // 未启用分页时沿用旧版上限（一次取回最多 10000 条）
+        var effectivePerPage = perPage > 0 ? perPage : 10000;
+
         var isRoot = string.IsNullOrEmpty(folderId) || folderId == "0";
         var allFolders = await _folders.GetAllFoldersAsync();
         var counts = await _links.GetLinkCountByFolderAsync();
 
-        var dto = new FolderContentsDto { FolderId = isRoot ? "0" : folderId };
+        var dto = new FolderContentsDto { FolderId = isRoot ? "0" : folderId, PerPage = effectivePerPage };
 
         if (isRoot)
         {
@@ -44,9 +68,11 @@ public class LinkPocketApi : ILinkPocketApi
                 .Select(f => MapFolder(f, counts))
                 .OrderBy(f => f.Name, StringComparer.CurrentCulture)
                 .ToList();
-            var (links, total, _, _) = await _links.GetLinksAsync(sortBy: sortBy, sortOrder: sortOrder, page: 1, perPage: 10000);
+            var (links, _, currentPage, lastPage) = await _links.GetLinksAsync(sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: effectivePerPage);
             dto.Links = links.Select(MapLink).ToList();
             dto.TotalLinkCount = await _links.GetRootLevelLinkCountAsync();
+            dto.CurrentPage = currentPage;
+            dto.LastPage = perPage > 0 ? lastPage : 1;
             dto.Breadcrumb = new List<string> { "全部书签" };
         }
         else
@@ -59,9 +85,11 @@ public class LinkPocketApi : ILinkPocketApi
                 .Select(f => MapFolder(f, counts))
                 .OrderBy(f => f.Name, StringComparer.CurrentCulture)
                 .ToList();
-            var (links, total, _, _) = await _links.GetLinksAsync(listId: folderId, sortBy: sortBy, sortOrder: sortOrder, page: 1, perPage: 10000);
+            var (links, _, currentPage, lastPage) = await _links.GetLinksAsync(listId: folderId, sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: effectivePerPage);
             dto.Links = links.Select(MapLink).ToList();
             dto.TotalLinkCount = counts.TryGetValue(folderId ?? string.Empty, out var c) ? c : 0;
+            dto.CurrentPage = currentPage;
+            dto.LastPage = perPage > 0 ? lastPage : 1;
             dto.Breadcrumb = BuildBreadcrumb(folder, allFolders);
         }
 
@@ -94,29 +122,45 @@ public class LinkPocketApi : ILinkPocketApi
     {
         var parent = string.IsNullOrEmpty(parentId) || parentId == "0" ? null : parentId;
         var folder = await _folders.CreateFolderAsync(name, parentId: parent);
+        RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });
         return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId };
     }
 
     public async Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
     {
         var folder = await _folders.UpdateFolderAsync(id, name, description, parentId == "0" ? null : parentId);
+        RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });
         return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId };
     }
 
-    public Task DeleteFolderAsync(string id, string cascade = "move_to_parent", string? targetListId = null)
-        => _folders.DeleteFolderAsync(id, cascade, targetListId);
+    public async Task DeleteFolderAsync(string id, string cascade = "move_to_parent", string? targetListId = null)
+    {
+        await _folders.DeleteFolderAsync(id, cascade, targetListId);
+        RaiseChanged("folders.changed", new { folder_id = id });
+        RaiseChanged("links.changed", new { folder_id = id });
+    }
 
-    public Task MoveFolderAsync(string folderId, string? targetParentId)
-        => _folders.MoveFolderAsync(folderId, targetParentId == "0" ? null : targetParentId);
+    public async Task MoveFolderAsync(string folderId, string? targetParentId)
+    {
+        await _folders.MoveFolderAsync(folderId, targetParentId == "0" ? null : targetParentId);
+        RaiseChanged("folders.changed", new { folder_id = folderId, target_parent_id = targetParentId });
+    }
 
-    public Task<string> CopyFolderAsync(string folderId, string? targetParentId)
-        => _folders.CopyFolderDeepAsync(folderId, targetParentId == "0" ? null : targetParentId);
+    public async Task<string> CopyFolderAsync(string folderId, string? targetParentId)
+    {
+        var newId = await _folders.CopyFolderDeepAsync(folderId, targetParentId == "0" ? null : targetParentId);
+        RaiseChanged("folders.changed", new { folder_id = newId, copied_from = folderId });
+        return newId;
+    }
 
     public Task<bool> WouldMoveCreateCycleAsync(string folderId, string targetParentId)
         => _folders.WouldCreateCycleAsync(folderId, targetParentId);
 
-    public Task UpdateSortAsync(string? parentId, List<string> itemIds)
-        => _folders.UpdateSortAsync(parentId == "0" ? null : parentId, itemIds);
+    public async Task UpdateSortAsync(string? parentId, List<string> itemIds)
+    {
+        await _folders.UpdateSortAsync(parentId == "0" ? null : parentId, itemIds);
+        RaiseChanged("folders.changed", new { parent_id = parentId });
+    }
 
     // —— 链接 ——
 
@@ -155,6 +199,7 @@ public class LinkPocketApi : ILinkPocketApi
         var link = await _links.CreateLinkAsync(url, title, description,
             listId: listId == "0" ? null : listId, isImportant: isImportant,
             autoFetchMetadata: autoFetchMetadata, faviconUrl: faviconUrl);
+        RaiseChanged("links.changed", new { link_id = link.LinkId, list_id = link.ListId });
         return MapLink(link);
     }
 
@@ -162,12 +207,21 @@ public class LinkPocketApi : ILinkPocketApi
         string? description = null, string? listId = null, bool? isImportant = null, string? faviconUrl = null)
     {
         var link = await _links.UpdateLinkAsync(id, url, title, description, listId, isImportant, faviconUrl);
+        RaiseChanged("links.changed", new { link_id = link.LinkId, list_id = link.ListId });
         return MapLink(link);
     }
 
-    public Task TrashLinkAsync(string id) => _links.DeleteLinkAsync(id);
+    public async Task TrashLinkAsync(string id)
+    {
+        await _links.DeleteLinkAsync(id);
+        RaiseChanged("trash.changed", new { link_id = id });
+    }
 
-    public Task RecordVisitAsync(string id) => _links.RecordVisitAsync(id);
+    public async Task RecordVisitAsync(string id)
+    {
+        await _links.RecordVisitAsync(id);
+        RaiseChanged("links.changed", new { link_id = id });
+    }
 
     // —— 回收站 ——
 
@@ -191,9 +245,18 @@ public class LinkPocketApi : ILinkPocketApi
         }).ToList();
     }
 
-    public async Task<LinkDto> RestoreLinkAsync(string linkId) => MapLink(await _links.RestoreLinkAsync(linkId));
+    public async Task<LinkDto> RestoreLinkAsync(string linkId)
+    {
+        var dto = MapLink(await _links.RestoreLinkAsync(linkId));
+        RaiseChanged("trash.changed", new { link_id = linkId });
+        return dto;
+    }
 
-    public Task PurgeLinkAsync(string linkId) => _links.PermanentDeleteLinkAsync(linkId);
+    public async Task PurgeLinkAsync(string linkId)
+    {
+        await _links.PermanentDeleteLinkAsync(linkId);
+        RaiseChanged("trash.changed", new { link_id = linkId });
+    }
 
     // —— 搜索与智能列表 ——
 
@@ -287,6 +350,8 @@ public class LinkPocketApi : ILinkPocketApi
         var result = await new Services.BookmarkImporter(_db).ImportAsync(filePath);
         if (!result.Success && result.TotalItems == 0)
             throw new InvalidOperationException(string.Join("; ", result.Errors));
+        RaiseChanged("links.changed", new { source = "import.bookmarks_html", count = result.TotalItems });
+        RaiseChanged("folders.changed", new { source = "import.bookmarks_html" });
         return result.TotalItems;
     }
 

@@ -122,6 +122,47 @@ namespace LinkPocket.ViewModels
             {
                 new FolderNode { Id = "0", FolderId = "0", Name = "全部书签", IconKind = PackIconKind.BookmarkOutline, LinkCount = 0 }
             };
+
+            // P3 事件推送：订阅后端数据变更，防抖后刷新当前视图。
+            // 现阶段与既有 EventHandler 链并存（防抖去重）；P4/P6 再逐步替换旧链。
+            Services.AppServices.Transport.EventReceived += OnTransportEventReceived;
+        }
+
+        private System.Windows.Threading.DispatcherTimer? _backendEventTimer;
+
+        private void OnTransportEventReceived(object? sender, string payload)
+        {
+            if (_backendEventTimer == null)
+            {
+                _backendEventTimer = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(300)
+                };
+                _backendEventTimer.Tick += async (_, _) =>
+                {
+                    _backendEventTimer.Stop();
+                    try
+                    {
+                        switch (_currentNavId)
+                        {
+                            case "links":
+                                if (_linkViewModel != null)
+                                    await _linkViewModel.LoadLinksAsync();
+                                await RefreshFolderTreeAndUIAsync();
+                                break;
+                            case "trash":
+                                await LoadTrashTreeAsync();
+                                break;
+                            case "search":
+                                OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+                                break;
+                        }
+                    }
+                    catch { /* 事件驱动的刷新失败不应打断 UI */ }
+                };
+            }
+            _backendEventTimer.Stop();
+            _backendEventTimer.Start();
         }
 
         public string CurrentNavId
