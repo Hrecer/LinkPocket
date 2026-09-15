@@ -29,10 +29,10 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
 
-        <!-- 详情栏卡片：M3 圆角容器，叠在 SurfaceContainerLow 侧栏底色上 -->
+        <!-- 详情栏卡片：M3 圆角容器（大圆角 16），叠在 SurfaceContainerLow 侧栏底色上 -->
         <Style x:Key="SideCard" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource SurfaceContainer}"/>
-            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="CornerRadius" Value="16"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
@@ -335,8 +335,29 @@
                     <m3:M3Icon Kind="{Binding PathEditIconKind}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Button>
 
-                <!-- 面包屑 / 路径编辑 双态区（Explorer 地址栏模式） -->
-                <Grid Margin="12,0,0,0" VerticalAlignment="Center">
+                <!-- 地址栏（MD3 Expressive 胶囊）：与搜索页胶囊同语言。
+                     编辑态做颜色/圆角形变（SurfaceContainerHighest + 2px Primary + 圆角 20→14），
+                     高度两态恒为 40 —— 重蹈"点开编辑整行变矮"的覆辙。
+                     ⚠️ 基态值必须写在 Style.Setters 里：写在元素特性上是本地值，
+                     本地值优先级高于样式触发器，触发器永远不会生效。 -->
+                <Border x:Name="AddressBarShell" Margin="12,0,0,0" Height="40"
+                        BorderThickness="2" VerticalAlignment="Center">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Padding" Value="8,4"/>
+                            <Setter Property="CornerRadius" Value="20"/>
+                            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPathEditing}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                    <Setter Property="CornerRadius" Value="14"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Grid VerticalAlignment="Center">
                     <!-- 面包屑：每一级可点击，当前级高亮；路径编辑态时隐藏。
                          MinHeight 显式压到 32：面包屑按钮 BasedOn TextButton 会白拿 MinHeight=40，
                          而编辑态它们被折叠、只剩 32 高的编辑框 → 整行会在点开编辑时缩短。 -->
@@ -436,6 +457,7 @@
                         </Border>
                     </Popup>
                 </Grid>
+                </Border>
             </DockPanel>
         </Border>
 
@@ -466,7 +488,18 @@
                               VirtualizingPanel.IsVirtualizing="True">
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                <!-- 选中态药丸：SecondaryContainer 圆角容器（MD3E 形状区分选中） -->
+                                <Border CornerRadius="8" Padding="6,3" Margin="0,1" Background="Transparent">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                <StackPanel Orientation="Horizontal">
                                     <StackPanel.ContextMenu>
                                         <ContextMenu>
                                             <ContextMenu.Resources>
@@ -524,6 +557,7 @@
                                                    Foreground="{DynamicResource OnSecondaryContainer}"/>
                                     </Border>
                                 </StackPanel>
+                                </Border>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
@@ -1422,10 +1456,11 @@
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                    <TextBlock Text="{Binding SelectionInfoText}" FontSize="12" Margin="16,0,0,0"
-                               FontWeight="SemiBold" Foreground="{DynamicResource Primary}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
+                    <!-- 选中信息：PrimaryContainer 药丸强调（MD3E 关键状态用色彩点亮） -->
+                    <Border CornerRadius="9" Background="{DynamicResource PrimaryContainer}"
+                            Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding HasSelection}" Value="True">
@@ -1433,8 +1468,10 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        </Border.Style>
+                        <TextBlock Text="{Binding SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnPrimaryContainer}"/>
+                    </Border>
                 </StackPanel>
                 <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.6"/>

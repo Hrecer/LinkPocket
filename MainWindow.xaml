@@ -231,13 +231,16 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Padding="28,22,28,6">
-                    <!-- 胶囊搜索栏（视觉重心）：聚焦时高度 52→62、圆角 26→20 形变，弹簧曲线 -->
-                    <Border x:Name="SearchBarShell" CornerRadius="26" Height="52"
-                            Background="{DynamicResource SurfaceContainerHigh}"
-                            BorderThickness="2" BorderBrush="Transparent"
+                    <!-- 胶囊搜索栏（视觉重心）：聚焦时高度 52→62、圆角 26→20 形变，弹簧曲线。
+                         ⚠️ 基态值必须写在 Style.Setters 里（本地值优先级高于样式触发器）。 -->
+                    <Border x:Name="SearchBarShell" Height="52"
+                            BorderThickness="2"
                             Padding="20,0,12,0" HorizontalAlignment="Stretch">
                         <Border.Style>
                             <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="26"/>
+                                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                                <Setter Property="BorderBrush" Value="Transparent"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsKeyboardFocusWithin, ElementName=SearchBox}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>

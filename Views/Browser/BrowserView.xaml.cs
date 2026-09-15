@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using LinkPocket.ViewModels;
 
 namespace LinkPocket.Views.Browser;
@@ -24,10 +27,86 @@ public partial class BrowserView : UserControl
         {
             if (ViewModel != null)
                 ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            HookRowsCollection(ViewModel);
         };
     }
 
     private BrowserViewModel? ViewModel => DataContext as BrowserViewModel;
+
+    // —— 行错峰入场（MD3E）：目录装载/刷新后淡入 + 轻微上移，弹簧曲线 ——
+    private ObservableCollectionHook? _rowsHook;
+
+    private void HookRowsCollection(BrowserViewModel? vm)
+    {
+        _rowsHook?.Detach();
+        _rowsHook = null;
+        if (vm == null) return;
+        _rowsHook = new ObservableCollectionHook(vm.Rows, QueueRowEntrance);
+    }
+
+    private void QueueRowEntrance()
+    {
+        if (!SystemParameters.ClientAreaAnimation) return; // 辅助功能：减少动态效果
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            var idx = 0;
+            for (var i = 0; i < RowsControl.Items.Count && idx < 12; i++)
+            {
+                if (RowsControl.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
+                {
+                    PlayRowEntrance(fe, idx);
+                    idx++;
+                }
+            }
+        }));
+    }
+
+    private void PlayRowEntrance(FrameworkElement el, int index)
+    {
+        var tt = new TranslateTransform(0, 10);
+        el.RenderTransform = tt;
+        el.Opacity = 0;
+        var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 30);
+        var oy = new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260))
+        { EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut }, BeginTime = begin };
+        var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = begin };
+
+        // 结束后清除动画层并落终值（FillBehavior.Stop 会回退到本地值 0，行会永远透明）
+        EventHandler done = (_, _) =>
+        {
+            el.BeginAnimation(UIElement.OpacityProperty, null);
+            el.Opacity = 1;
+            tt.BeginAnimation(TranslateTransform.YProperty, null);
+            tt.Y = 0;
+        };
+        oo.Completed += done;
+        oy.Completed += done;
+
+        tt.BeginAnimation(TranslateTransform.YProperty, oy);
+        el.BeginAnimation(UIElement.OpacityProperty, oo);
+    }
+
+    /// <summary>订阅行集合变更的轻量钩子（DataContext 换绑时自动迁移/解除）。</summary>
+    private sealed class ObservableCollectionHook
+    {
+        private readonly INotifyCollectionChanged _source;
+        private readonly Action _onChange;
+
+        public ObservableCollectionHook(INotifyCollectionChanged source, Action onChange)
+        {
+            _source = source;
+            _onChange = onChange;
+            _source.CollectionChanged += OnChanged;
+        }
+
+        private void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.Action == NotifyCollectionChangedAction.Reset || e.Action == NotifyCollectionChangedAction.Add)
+                _onChange();
+        }
+
+        public void Detach() => _source.CollectionChanged -= OnChanged;
+    }
 
     // —— 列宽拖拽（Windows 语义：列头右边界可拖动调整该列宽度，各行同步）——
 
