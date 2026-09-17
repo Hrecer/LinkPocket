@@ -13,12 +13,14 @@ public sealed class EfUnitOfWork : IUnitOfWork
     private EfLinkRepository? _links;
     private EfFolderRepository? _folders;
     private EfTrashRepository? _trash;
+    private EfTreeService? _trees;
 
     public EfUnitOfWork(LinkPocketDbContext db) => _db = db;
 
     public ILinkRepository Links => _links ??= new EfLinkRepository(_db);
     public IFolderRepository Folders => _folders ??= new EfFolderRepository(_db);
     public ITrashRepository Trash => _trash ??= new EfTrashRepository(_db);
+    public ITreeService Trees => _trees ??= new EfTreeService(_db);
 
     public Task CommitAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
 

@@ -1,0 +1,74 @@
+using System.Text.Json;
+using LinkPocket.Api;
+using LinkPocket.Contracts;
+using LinkPocket.Kernel;
+using LinkPocket.Kernel.Commands;
+
+namespace LinkPocket.Modules.Links;
+
+/// <summary>
+/// links.update（Mutation）：编辑链接（url/title/description/list_id/is_important/favicon_url）。
+/// list_id 语义与既有口径一致：参数缺省 = 不改；显式传根值（"0"/""）= 移到根级。
+/// 链接被编辑或跨目录移动 → 新旧两个文件夹的内容都变了。
+/// </summary>
+internal sealed class LinkUpdateHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        Name: "links.update",
+        Category: "links",
+        Description: "编辑链接（仅显式传入的字段会被修改）",
+        Parameters:
+        [
+            ParamSpec.Req<string>("id", "链接 ID"),
+            ParamSpec.Opt<string>("url", "新地址"),
+            ParamSpec.Opt<string>("title", "新标题"),
+            ParamSpec.Opt<string>("description", "新描述"),
+            ParamSpec.Opt<string>("list_id", "新目录 ID（缺省 = 不改）"),
+            ParamSpec.Opt<bool>("is_important", "是否重要"),
+            ParamSpec.Opt<string>("favicon_url", "图标地址"),
+        ],
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        var id = new LinkId(CommandArgs.RequireString(args, "id"));
+        var url = CommandArgs.OptionalString(args, "url");
+        var title = CommandArgs.OptionalString(args, "title");
+        var description = CommandArgs.OptionalString(args, "description");
+        var listIdArg = CommandArgs.OptionalString(args, "list_id");
+        var faviconUrl = CommandArgs.OptionalString(args, "favicon_url");
+        var isImportant = args.ValueKind == JsonValueKind.Object
+                          && args.TryGetProperty("is_important", out var impEl)
+                          && impEl.ValueKind is (JsonValueKind.True or JsonValueKind.False)
+            ? impEl.GetBoolean()
+            : (bool?)null;
+        var ct = ctx.Ct;
+
+        var link = await ctx.Uow.Links.FindAsync(id, ct)
+            ?? throw new EngineException(EngineErrors.Of(
+                EngineErrors.EntityNotFound, $"链接 {id} 不存在", correlationId: ctx.CorrelationId));
+        var previousListId = link.ListId;
+
+        if (!string.IsNullOrEmpty(url)) link.Url = url.Trim();
+        if (title != null) link.Title = title;
+        if (description != null) link.Description = description;
+        if (listIdArg != null) link.ListId = FolderIds.Normalize(listIdArg);
+        if (isImportant != null) link.IsImportant = isImportant.Value;
+        if (faviconUrl != null) link.FaviconUrl = faviconUrl;
+        link.UpdatedAt = DateTime.UtcNow;
+
+        // 新旧两个文件夹的内容构成变化（跨目录移动时）
+        await ctx.Uow.Trees.TouchModifiedAsync(
+            link.ListId == null ? null : new FolderId(link.ListId), ct);
+        if (previousListId != link.ListId)
+            await ctx.Uow.Trees.TouchModifiedAsync(
+                previousListId == null ? null : new FolderId(previousListId), ct);
+
+        return CommandResult.Ok(
+            link.ToDto(),
+            ChangeSet.Of(
+                new EntityRef("link", link.LinkId),
+                "links.changed",
+                $"已更新链接「{link.Title ?? link.Url}」"));
+    }
+}

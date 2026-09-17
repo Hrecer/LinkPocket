@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 查重模块（方案 4.2/第五章）：复杂命令样板——scan（扫描）→ plan（策略计划，纯干跑）→
+       apply（嵌套派发 links.trash 执行，单审计条目）。黑盒封装：除模块入口外全部 internal。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

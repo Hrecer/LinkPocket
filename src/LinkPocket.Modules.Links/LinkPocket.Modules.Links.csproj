@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 链接域模块（方案 4.2/第五章）：链接 CRUD/软删/查看记账/智能列表/统计/元数据抓取/结构化查询/批量。
+       黑盒封装：除模块入口 CreateHandlers 外全部 internal；只依赖 L0 契约。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

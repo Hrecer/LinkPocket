@@ -19,4 +19,17 @@ public interface ITreeService
 
     /// <summary>路径显示：「全部书签 / A / B」；null = 根 =「全部书签」。</summary>
     Task<string> PathDisplayAsync(FolderId? id, CancellationToken ct);
+
+    /// <summary>
+    /// 事件：内容变动。把 id 及其全部祖先的 UpdatedAt 置为当前时间（事件驱动增量口径的唯一写入点）。
+    /// id = null（根）时为 no-op。变更由引擎在提交时落库——本方法只登记，不保存。
+    /// </summary>
+    Task TouchModifiedAsync(FolderId? id, CancellationToken ct);
+
+    /// <summary>
+    /// 事件：子孙链接被查看。把 id 及其全部祖先的 LastVisitedAt 刷新为当前时间、VisitCount 各 +1。
+    /// 与 <see cref="TouchModifiedAsync"/> 同一条父链、同一套事件驱动增量口径，区别只在写入字段。
+    /// id = null（根）时为 no-op；本方法只登记，不保存。
+    /// </summary>
+    Task RecordFolderViewAsync(FolderId? id, CancellationToken ct);
 }

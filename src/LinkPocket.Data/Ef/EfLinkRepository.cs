@@ -71,6 +71,36 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (f.IsImportant is { } imp) q = q.Where(l => l.IsImportant == imp);
         if (f.CreatedFrom is { } from) q = q.Where(l => l.CreatedAt >= from);
         if (f.CreatedTo is { } to) q = q.Where(l => l.CreatedAt <= to);
+
+        // —— links.query 结构化字段（每条独立下推；字段互斥由模块层保证）——
+        if (f.Unfiled is { } unfiled) q = unfiled ? q.Where(l => l.ListId == null) : q.Where(l => l.ListId != null);
+        if (!string.IsNullOrEmpty(f.TitleContains))
+        {
+            var like = $"%{f.TitleContains}%";
+            q = q.Where(l => l.Title != null && EF.Functions.Like(l.Title, like));
+        }
+        if (!string.IsNullOrEmpty(f.UrlContains))
+        {
+            var like = $"%{f.UrlContains}%";
+            q = q.Where(l => EF.Functions.Like(l.Url, like));
+        }
+        if (!string.IsNullOrEmpty(f.UrlStarts))
+        {
+            var like = $"{f.UrlStarts}%";
+            q = q.Where(l => EF.Functions.Like(l.Url, like));
+        }
+        if (!string.IsNullOrEmpty(f.DescriptionContains))
+        {
+            var like = $"%{f.DescriptionContains}%";
+            q = q.Where(l => l.Description != null && EF.Functions.Like(l.Description, like));
+        }
+        if (f.UpdatedFrom is { } uFrom) q = q.Where(l => l.UpdatedAt >= uFrom);
+        if (f.UpdatedTo is { } uTo) q = q.Where(l => l.UpdatedAt <= uTo);
+        if (f.LastVisitedFrom is { } lvFrom) q = q.Where(l => l.LastVisitedAt >= lvFrom);
+        if (f.LastVisitedTo is { } lvTo) q = q.Where(l => l.LastVisitedAt <= lvTo);
+        if (f.NeverVisited is { } never) q = never ? q.Where(l => l.LastVisitedAt == null) : q.Where(l => l.LastVisitedAt != null);
+        if (f.VisitCountMin is { } vcMin) q = q.Where(l => l.VisitCount >= vcMin);
+        if (f.VisitCountMax is { } vcMax) q = q.Where(l => l.VisitCount <= vcMax);
         return q;
     }
 }

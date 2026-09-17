@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 搜索模块（方案 4.2/第五章）：四范围组合搜索 + 命中字段解释（AI 自校验）。
+       黑盒封装：除模块入口 CreateHandlers 外全部 internal；只依赖 L0 契约。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

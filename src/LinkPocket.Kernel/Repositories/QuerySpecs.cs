@@ -16,7 +16,12 @@ public sealed record PageSpec(int Index = 1, int Size = 0)
     public int Skip => (Math.Max(1, Index) - 1) * Math.Max(0, Size);
 }
 
-/// <summary>链接过滤（纯过滤条件；null = 不过滤）。</summary>
+/// <summary>
+/// 链接过滤（纯过滤条件；null = 不过滤）。
+/// 基础字段服务既有查询（links.list 等）；后段结构化字段服务 links.query（方案 3.3）——
+/// 字段名/操作符白名单在 Links 模块校验，这里只是强类型数据形态，EF 实现逐条 SQL 下推。
+/// 同一字段的重复条件由模块层拒绝（一条过滤一个值）。
+/// </summary>
 public sealed record LinkFilter
 {
     public string? Search { get; init; }
@@ -24,6 +29,38 @@ public sealed record LinkFilter
     public bool? IsImportant { get; init; }
     public DateTime? CreatedFrom { get; init; }
     public DateTime? CreatedTo { get; init; }
+
+    // —— links.query 结构化字段（字段名见 Links 模块白名单）——
+
+    /// <summary>folder_id isnull：根级（无归属）书签。</summary>
+    public bool? Unfiled { get; init; }
+
+    /// <summary>title contains。</summary>
+    public string? TitleContains { get; init; }
+
+    /// <summary>url contains。</summary>
+    public string? UrlContains { get; init; }
+
+    /// <summary>url starts。</summary>
+    public string? UrlStarts { get; init; }
+
+    /// <summary>description contains。</summary>
+    public string? DescriptionContains { get; init; }
+
+    /// <summary>updated_at 范围（between = From+To，单边 = gte/lte）。</summary>
+    public DateTime? UpdatedFrom { get; init; }
+    public DateTime? UpdatedTo { get; init; }
+
+    /// <summary>last_visited_at 范围。</summary>
+    public DateTime? LastVisitedFrom { get; init; }
+    public DateTime? LastVisitedTo { get; init; }
+
+    /// <summary>last_visited_at isnull：从未查看。</summary>
+    public bool? NeverVisited { get; init; }
+
+    /// <summary>visit_count 范围（gte/lte）。</summary>
+    public int? VisitCountMin { get; init; }
+    public int? VisitCountMax { get; init; }
 }
 
 /// <summary>链接查询规格 = 过滤 + 排序 + 分页（方案 3.3 标准参数的强类型形态）。</summary>

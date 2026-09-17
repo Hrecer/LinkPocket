@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 回收站模块（方案 4.2/第五章）：平铺/树/单元内容/还原/永久删除（两阶段确认）。
+       黑盒封装：除模块入口 CreateHandlers 外全部 internal；只依赖 L0 契约。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

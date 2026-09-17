@@ -17,6 +17,9 @@ public interface IUnitOfWork : IAsyncDisposable
     IFolderRepository Folders { get; }
     ITrashRepository Trash { get; }
 
+    /// <summary>树领域服务（父链遍历/递归计数/环检测/路径显示——唯一出处，方案 4.1）。</summary>
+    ITreeService Trees { get; }
+
     Task CommitAsync(CancellationToken ct);
 
     ITransactionScope BeginTransaction();

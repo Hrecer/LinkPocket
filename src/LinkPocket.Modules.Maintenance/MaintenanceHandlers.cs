@@ -1,0 +1,122 @@
+using System.Text.Json;
+using LinkPocket.Api;
+using LinkPocket.Contracts;
+using LinkPocket.Kernel;
+using LinkPocket.Kernel.Commands;
+
+namespace LinkPocket.Modules.Maintenance;
+
+/// <summary>maintenance.schema_version（Query）：当前 schema 版本（1 = 现行表结构；阶段 5 schema v2 起步后为 2）。</summary>
+internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        Name: "maintenance.schema_version",
+        Category: "maintenance",
+        Description: "取当前数据库 schema 版本",
+        Parameters: [],
+        Caps: CommandCaps.Query);
+
+    public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+        => Task.FromResult(CommandResult.Ok(JsonSerializer.SerializeToElement(new { schema_version = 1 })));
+}
+
+/// <summary>diagnostics.collect（Query）：脱敏诊断信息打包（版本/计数；审计与事件摘要随后续阶段接入）。</summary>
+internal sealed class DiagnosticsCollectHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        Name: "diagnostics.collect",
+        Category: "maintenance",
+        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 生成时间（脱敏）",
+        Parameters: [],
+        Caps: CommandCaps.Query);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        var ct = ctx.Ct;
+        var standalone = await ctx.Uow.Trash.ListStandaloneLinksAsync(ct);
+        var units = await ctx.Uow.Trash.ListFoldersAsync(ct);
+
+        var diagnostics = new
+        {
+            generated_at = DateTimeOffset.Now,
+            app_version = GetAppVersion(),
+            schema_version = 1,
+            counts = new
+            {
+                folders = (await ctx.Uow.Folders.ListAllAsync(ct)).Count,
+                links = await ctx.Uow.Links.CountAsync(new LinkFilter(), ct),
+                root_links = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct),
+                trash_links = standalone.Count,
+                trash_units = units.Count,
+            },
+        };
+        return CommandResult.Ok(JsonSerializer.SerializeToElement(diagnostics));
+    }
+
+    private static string GetAppVersion()
+        => System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+}
+
+/// <summary>
+/// maintenance.reinit（Mutation · Destructive 两阶段确认）：整库重置——
+/// 清空全部数据表（链接/文件夹/回收站两表）并尽力清除图标缓存目录。
+/// 旧实现是"删库文件再建"，引擎语义等价改为"单事务清空全部行"（同一用户可见终态：空库）。
+/// </summary>
+internal sealed class MaintenanceReinitHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        Name: "maintenance.reinit",
+        Category: "maintenance",
+        Description: "整库重置：清空全部数据（链接/文件夹/回收站）并清除图标缓存；不可恢复，需两阶段确认",
+        Parameters: [],
+        Caps: CommandCaps.Mutation | CommandCaps.Destructive,
+        Impact: ImpactSummary.Database);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        var ct = ctx.Ct;
+        var uow = ctx.Uow;
+
+        // —— 回收站：先删快照与单元（单独删除 + 各单元内）——
+        foreach (var link in await uow.Trash.ListStandaloneLinksAsync(ct))
+            await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
+        var units = await uow.Trash.ListFoldersAsync(ct);
+        foreach (var unit in units)
+        {
+            foreach (var link in await uow.Trash.ListLinksByUnitAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct))
+                await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
+            await uow.Trash.RemoveFolderAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct);
+        }
+
+        // —— 主表 ——
+        foreach (var link in await uow.Links.ListAsync(new LinkQuerySpec(), ct))
+            await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
+        foreach (var folder in await uow.Folders.ListAllAsync(ct))
+            await uow.Folders.RemoveAsync(new FolderId(folder.FolderId), ct);
+
+        // —— 图标缓存（尽力而为；目录被占用等失败不阻断重置）——
+        var faviconCleared = TryClearFaviconCache();
+
+        return CommandResult.Ok(
+            JsonSerializer.SerializeToElement(new { cleared = true, favicon_cache_cleared = faviconCleared }),
+            new ChangeSet(
+                Touched: [new EntityRef("database", "*")],
+                Events: ["links.changed", "folders.changed", "trash.changed"],
+                HumanSummary: "已清空全部数据"));
+    }
+
+    private static bool TryClearFaviconCache()
+    {
+        try
+        {
+            var dir = Path.Combine(AppContext.BaseDirectory, "favicons");
+            if (!Directory.Exists(dir)) return true;
+            Directory.Delete(dir, recursive: true);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

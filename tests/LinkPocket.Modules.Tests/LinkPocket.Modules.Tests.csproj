@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 模块单测（方案 第八章）：九模块全量真实命令经引擎黑盒驱动（内存 SQLite 临时库）。
+       每模块断言：正常路径 / 校验错误 / 状态错误 / 嵌套派发 / 事件负载。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Data\LinkPocket.Data.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Engine\LinkPocket.Engine.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Folders\LinkPocket.Modules.Folders.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Links\LinkPocket.Modules.Links.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Trash\LinkPocket.Modules.Trash.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Search\LinkPocket.Modules.Search.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Bookmarks\LinkPocket.Modules.Bookmarks.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Backup\LinkPocket.Modules.Backup.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Dedup\LinkPocket.Modules.Dedup.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Favicon\LinkPocket.Modules.Favicon.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Modules.Maintenance\LinkPocket.Modules.Maintenance.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>
