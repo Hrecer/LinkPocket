@@ -3,27 +3,33 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LinkPocket.Data;
 
-[Table("lists")]
+[Table("folders")]
 public class Folder
 {
     /// <summary>主键：固定 12 位纯数字（与链接 16 位混合串一眼区分），生成入口唯一在 <see cref="EntityIds"/>。</summary>
     [Key]
     [Required]
     [MaxLength(20)]
-    [Column("folder_id")]
+    [Column("id")]
     public string FolderId { get; set; } = EntityIds.NewFolderId();
 
     [Required]
     [MaxLength(255)]
+    [Column("name")]
     public string Name { get; set; } = string.Empty;
 
-    [Column(TypeName = "text")]
+    [Column("description")]
     public string? Description { get; set; }
 
     [Column("parent_id")]
     public string? ParentId { get; set; }
 
-    [Column("link_count")]
+    /// <summary>
+    /// v2 folders 表不再落 link_count 列（方案 6.1）：目录计数一律经
+    /// ITreeService.RecursiveLinkCountsAsync 即时计算并进 DTO，本属性仅存内存语义
+    /// （导入/删除等路径的批内直接计数），<c>[NotMapped]</c> 不参与任何 SQL。
+    /// </summary>
+    [NotMapped]
     public int LinkCount { get; set; } = 0;
 
     [Column("sort_order")]
@@ -39,11 +45,13 @@ public class Folder
     [Column("visit_count")]
     public int VisitCount { get; set; } = 0;
 
+    [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>最后更新 = 内容（含全部子孙）最后变动时间。事件：内容变动
     /// （新增/删除/改名/移入移出链接或子文件夹、链接内容被编辑等）。查看不算变动。
     /// 由 FolderService.TouchModifiedAsync 沿父链维护，界面层只读、不参与计算。</summary>
+    [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // 导航属性

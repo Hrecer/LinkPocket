@@ -631,7 +631,8 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        Assert.Equal(1, version.GetProperty("schema_version").GetInt32());
+        // v2 全新建库起步（schema_migrations 版本表，方案 6.1/6.2）
+        Assert.Equal(2, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

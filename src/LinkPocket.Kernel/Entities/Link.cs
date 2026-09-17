@@ -10,24 +10,28 @@ public class Link
     [Key]
     [Required]
     [MaxLength(20)]
-    [Column("link_id")]
+    [Column("id")]
     public string LinkId { get; set; } = EntityIds.NewLinkId();
 
     [Required]
     [MaxLength(2048)]
+    [Column("url")]
     public string Url { get; set; } = string.Empty;
 
     [MaxLength(255)]
+    [Column("title")]
     public string? Title { get; set; }
 
-    [Column(TypeName = "text")]
+    [Column("description")]
     public string? Description { get; set; }
 
     [MaxLength(512)]
     [Column("favicon_url")]
     public string? FaviconUrl { get; set; }
 
-    [Column("list_id")]
+    /// <summary>所在文件夹（v2 列名 folder_id）；NULL = 根级书签（根不是实体，无哨兵）。
+    /// 属性名沿用旧称 ListId，语义归位随模型归位阶段统一处理。</summary>
+    [Column("folder_id")]
     public string? ListId { get; set; }
 
     [Column("last_visited_at")]
@@ -39,7 +43,9 @@ public class Link
     [Column("is_important")]
     public bool IsImportant { get; set; } = false;
 
+    [Column("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     // 导航属性

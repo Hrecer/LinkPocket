@@ -49,7 +49,7 @@ public class LinkPocketDbContext : DbContext
 
         modelBuilder.Entity<Folder>(entity =>
         {
-            entity.ToTable("lists");
+            entity.ToTable("folders");
             entity.HasKey(e => e.FolderId);
             entity.HasOne(e => e.Parent)
                   .WithMany(f => f.Children)
@@ -59,7 +59,7 @@ public class LinkPocketDbContext : DbContext
 
         modelBuilder.Entity<TrashedLink>(entity =>
         {
-            entity.ToTable("trashed_links");
+            entity.ToTable("trash_links");
             entity.HasKey(e => e.LinkId);
             entity.HasIndex(e => e.DeletedAt);
             entity.HasIndex(e => e.TrashFolderId);
@@ -111,12 +111,12 @@ public class LinkPocketDbContext : DbContext
         }
     }
 
-    /// <summary>是否为 lists.folder_id / links.link_id 主键唯一冲突（回收站表的冲突不在此列，语义不同）。</summary>
+    /// <summary>是否为 folders.id / links.id 主键唯一冲突（回收站表的冲突不在此列，语义不同）。</summary>
     private static bool IsFolderLinkPkCollision(DbUpdateException ex)
     {
         if (ex.InnerException is not SqliteException se || se.SqliteErrorCode != 19) return false;
         var msg = se.Message;
-        return msg.Contains("lists.folder_id") || msg.Contains("links.link_id");
+        return msg.Contains("folders.id") || msg.Contains("links.id");
     }
 
     /// <summary>给本批所有新增 Folder/Link 换新 ID，并把同批次内指向它们的 ParentId/ListId 一并改指新号。

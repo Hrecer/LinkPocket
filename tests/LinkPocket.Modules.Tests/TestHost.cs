@@ -10,9 +10,8 @@ internal static class TestHost
     public static (EngineCore Engine, LinkPocketDbContextFactory Factory, string DbPath) Create()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"lpmod_{Guid.NewGuid():N}.db");
+        // 工厂构造内已完成 WAL 启用 + schema v2 建库（SchemaMigrator），无需 EnsureCreated
         var factory = new LinkPocketDbContextFactory(dbPath);
-        using (var ctx = factory.CreateDbContext())
-            ctx.Database.EnsureCreated();
 
         var registry = new CommandRegistry();
         registry.RegisterAll(Modules.Folders.FoldersModule.CreateHandlers());

@@ -21,6 +21,8 @@ public sealed class LinkPocketDbContextFactory : IDbContextFactory<LinkPocketDbC
         };
         _connectionString = builder.ToString();
         EnableWal(dbPath);
+        // 首次使用直接创建全新 v2 库（方案 6.2：零责任，无迁移组件）；已是 v2+ 时幂等快速返回
+        SchemaMigrator.EnsureSchema(dbPath);
     }
 
     public LinkPocketDbContext CreateDbContext()

@@ -22,124 +22,12 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public LinkPocketApi(LinkPocketDbContext? db = null)
     {
         _db = db ?? new LinkPocketDbContext();
-        _db.Database.EnsureCreated();
-        MigrateLegacyRootIds();
-        EnsureFolderVisitCountColumn();
-        RebuildTrashTablesIfNeeded();
+        // 首次使用直接创建全新 v2 库（方案 6.2 零责任定稿：无迁移组件——
+        // 旧版的哨兵迁移/补列/回收站表重建组件已随 v2 schema 全部移除）。
+        // 旧格式库（有用户表无 schema_migrations 版本表）在此处被拒绝并明确报错。
+        SchemaMigrator.EnsureSchema(_db.DbPath);
         _links = new Services.LinkService(_db);
         _folders = new Services.FolderService(_db);
-    }
-
-    /// <summary>
-    /// 回收站表结构重建（v2：层级化回收站）：
-    /// 旧 trashed_links 是无层级的扁平快照（list_id 单列），新结构 = trash_folders（被删文件夹树）
-    /// + trashed_links（含 trash_folder_id / origin_list_id / origin_path）。
-    /// 用户决策：旧数据清空重来（原本就是脚本生成的），检测到旧结构时直接 DROP 重建；
-    /// 新库由 EnsureCreated 建表，这里 CREATE TABLE IF NOT EXISTS 兜底。
-    /// </summary>
-    private void RebuildTrashTablesIfNeeded()
-    {
-        try
-        {
-            var needsRebuild = false;
-            using (var cmd = _db.Database.GetDbConnection().CreateCommand())
-            {
-                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trashed_links') WHERE name = 'origin_list_id'";
-                _db.Database.OpenConnection();
-                needsRebuild = Convert.ToInt64(cmd.ExecuteScalar()) == 0;
-            }
-            if (needsRebuild)
-            {
-                _db.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS trashed_links");
-                Logger.Info("回收站表结构升级：trashed_links 已重建（旧扁平快照按决策清空）");
-            }
-            _db.Database.ExecuteSqlRaw(@"
-CREATE TABLE IF NOT EXISTS trash_folders (
-    trash_folder_id        TEXT PRIMARY KEY NOT NULL,
-    parent_trash_folder_id TEXT,
-    name                   TEXT NOT NULL,
-    origin_folder_id       TEXT,
-    origin_path            TEXT,
-    deleted_at             TEXT NOT NULL
-)");
-            _db.Database.ExecuteSqlRaw(@"
-CREATE TABLE IF NOT EXISTS trashed_links (
-    link_id         TEXT PRIMARY KEY NOT NULL,
-    url             TEXT NOT NULL,
-    title           TEXT,
-    description     TEXT,
-    favicon_url     TEXT,
-    trash_folder_id TEXT,
-    origin_list_id  TEXT,
-    origin_path     TEXT,
-    last_visited_at TEXT,
-    visit_count     INTEGER NOT NULL DEFAULT 0,
-    is_important    INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL,
-    deleted_at      TEXT NOT NULL
-)");
-            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trashed_links_deleted_at ON trashed_links(deleted_at)");
-            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trashed_links_trash_folder_id ON trashed_links(trash_folder_id)");
-            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trash_folders_parent ON trash_folders(parent_trash_folder_id)");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("回收站表结构重建失败", ex);
-        }
-        finally
-        {
-            try { _db.Database.CloseConnection(); } catch { }
-        }
-    }
-
-    /// <summary>
-    /// 一次性数据迁移：历史版本用哨兵 '0' 表示根目录，而约定是 NULL。
-    /// 把库里残留的哨兵值清成 NULL —— 迁移之后全库不再出现该哨兵，
-    /// 业务代码只需判 null；<see cref="FolderIds.Normalize"/> 仅兜住外部入参。
-    /// </summary>
-    private void MigrateLegacyRootIds()
-    {
-        try
-        {
-            _db.Database.ExecuteSqlRaw(
-                $"UPDATE lists SET parent_id = NULL WHERE parent_id = '{FolderIds.LegacyRootId}'");
-            _db.Database.ExecuteSqlRaw(
-                $"UPDATE links SET list_id = NULL WHERE list_id = '{FolderIds.LegacyRootId}'");
-        }
-        catch (Exception ex)
-        {
-            // 迁移失败会让旧数据的根级内容从根目录页消失，必须留下可诊断的痕迹
-            Logger.Error("历史根目录哨兵值迁移失败", ex);
-        }
-    }
-
-    /// <summary>
-    /// EnsureCreated 不会为已存在的库补新列：文件夹 visit_count（查看次数）为后增字段，
-    /// 这里检查 lists 表结构，缺失时以 ALTER TABLE 补齐（默认 0）。
-    /// </summary>
-    private void EnsureFolderVisitCountColumn()
-    {
-        try
-        {
-            var hasColumn = false;
-            using (var cmd = _db.Database.GetDbConnection().CreateCommand())
-            {
-                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('lists') WHERE name = 'visit_count'";
-                _db.Database.OpenConnection();
-                hasColumn = Convert.ToInt64(cmd.ExecuteScalar()) > 0;
-            }
-            if (!hasColumn)
-                _db.Database.ExecuteSqlRaw("ALTER TABLE lists ADD COLUMN visit_count INTEGER NOT NULL DEFAULT 0");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("补齐 lists.visit_count 列失败", ex);
-        }
-        finally
-        {
-            try { _db.Database.CloseConnection(); } catch { }
-        }
     }
 
     /// <summary>过渡期兼容入口：设置页重置数据库 / 备份面板需要共享同一个 DbContext。</summary>
@@ -647,8 +535,7 @@ CREATE TABLE IF NOT EXISTS trashed_links (
         try { _db.Dispose(); } catch { }
 
         var dbPath = Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
-        var connString = $"Data Source={dbPath}";
-        try { Microsoft.Data.Sqlite.SqliteConnection.ClearPool(new Microsoft.Data.Sqlite.SqliteConnection(connString)); } catch { }
+        try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
 
         GC.Collect();
         GC.WaitForPendingFinalizers();
@@ -665,7 +552,8 @@ CREATE TABLE IF NOT EXISTS trashed_links (
         }
 
         _db = new LinkPocketDbContext();
-        _db.Database.EnsureCreated();
+        // 库文件已被删除：EnsureSchema 的文件存在性守卫失效，此处直接重建 v2 库
+        SchemaMigrator.EnsureSchema(_db.DbPath);
         _links.SetDb(_db);
         _folders.SetDb(_db);
     }

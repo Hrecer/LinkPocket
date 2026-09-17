@@ -23,4 +23,10 @@ public interface IUnitOfWork : IAsyncDisposable
     Task CommitAsync(CancellationToken ct);
 
     ITransactionScope BeginTransaction();
+
+    /// <summary>
+    /// 当前库 schema 版本（schema_migrations 表 MAX(version)，方案 6.1/6.2；
+    /// v2 全新建库起步，仅服务 v2 内部常规演进）。维护/诊断命令消费。
+    /// </summary>
+    Task<int> SchemaVersionAsync(CancellationToken ct);
 }

@@ -4,28 +4,31 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace LinkPocket.Data;
 
 /// <summary>
-/// 回收站里的被删文件夹单元（Windows 式整树删除）：
-/// 删除一个文件夹时，整个子树一次性镜像进本表 —— 删除根的 parent_trash_folder_id = NULL（挂在回收站根），
-/// 子文件夹用 parent_trash_folder_id 指向回收站内的父单元，原样保留层级结构。
+/// 回收站里的被删文件夹单元（Windows 式整树删除，v2 表名 trash_folders）：
+/// 删除一个文件夹时，整个子树一次性镜像进本表 —— 删除根的 parent_id = NULL（挂在回收站根），
+/// 子文件夹用 parent_id 指向回收站内的父单元，原样保留层级结构。
 /// 每行都带删除时的位置标记（origin_folder_id + origin_path），为「还原到原位置」备好数据。
 /// 回收站里的文件夹只是层级展示单元，不可被打开/导航。
 /// </summary>
 [Table("trash_folders")]
 public class TrashedFolder
 {
+    /// <summary>回收站保留原文件夹 ID（删除根 = 原文件夹 ID；子单元 = 原子文件夹 ID）。</summary>
     [Key]
     [Required]
     [MaxLength(20)]
-    [Column("trash_folder_id")]
+    [Column("id")]
     public string TrashFolderId { get; set; } = Guid.NewGuid().ToString("N")[..16];
 
-    /// <summary>回收站内的父单元；NULL = 回收站根（即「删除操作」的直接对象）。</summary>
+    /// <summary>回收站内的父单元；NULL = 回收站根（即「删除操作」的直接对象）。
+    /// 属性名沿用旧称 ParentTrashFolderId，语义归位随模型归位阶段统一处理。</summary>
     [MaxLength(20)]
-    [Column("parent_trash_folder_id")]
+    [Column("parent_id")]
     public string? ParentTrashFolderId { get; set; }
 
     [Required]
     [MaxLength(255)]
+    [Column("name")]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>删除时的原文件夹 ID（还原到原位置的数据依据）。</summary>

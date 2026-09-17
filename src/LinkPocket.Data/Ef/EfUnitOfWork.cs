@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using LinkPocket.Kernel;
 
@@ -23,6 +24,15 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public ITreeService Trees => _trees ??= new EfTreeService(_db);
 
     public Task CommitAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
+
+    public async Task<int> SchemaVersionAsync(CancellationToken ct)
+    {
+        // schema_migrations 由 SchemaMigrator 建库时写入（v2 起步）；标量查询列名须为 Value
+        var row = await _db.Database
+            .SqlQuery<int?>($"SELECT COALESCE(MAX(version), 0) AS Value FROM schema_migrations")
+            .ToListAsync(ct);
+        return row.FirstOrDefault() ?? 0;
+    }
 
     public ITransactionScope BeginTransaction()
         => new EfTransactionScope(new Lazy<Task<IDbContextTransaction>>(() => _db.Database.BeginTransactionAsync()));

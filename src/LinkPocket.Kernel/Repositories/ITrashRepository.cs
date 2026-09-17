@@ -2,7 +2,7 @@ using LinkPocket.Data;
 
 namespace LinkPocket.Kernel;
 
-/// <summary>回收站两表（trashed_links / trash_folders）的完整读写契约。</summary>
+/// <summary>回收站两表（trash_links / trash_folders）的完整读写契约。</summary>
 public interface ITrashRepository
 {
     // —— 链接快照 ——

@@ -6,7 +6,7 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Maintenance;
 
-/// <summary>maintenance.schema_version（Query）：当前 schema 版本（1 = 现行表结构；阶段 5 schema v2 起步后为 2）。</summary>
+/// <summary>maintenance.schema_version（Query）：当前库 schema 版本（schema_migrations MAX(version)，v2 全新建库起步）。</summary>
 internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
@@ -16,8 +16,9 @@ internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
         Parameters: [],
         Caps: CommandCaps.Query);
 
-    public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
-        => Task.FromResult(CommandResult.Ok(JsonSerializer.SerializeToElement(new { schema_version = 1 })));
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+        => CommandResult.Ok(JsonSerializer.SerializeToElement(
+            new { schema_version = await ctx.Uow.SchemaVersionAsync(ctx.Ct) }));
 }
 
 /// <summary>diagnostics.collect（Query）：脱敏诊断信息打包（版本/计数；审计与事件摘要随后续阶段接入）。</summary>
@@ -40,7 +41,7 @@ internal sealed class DiagnosticsCollectHandler : ICommandHandler
         {
             generated_at = DateTimeOffset.Now,
             app_version = GetAppVersion(),
-            schema_version = 1,
+            schema_version = await ctx.Uow.SchemaVersionAsync(ct),
             counts = new
             {
                 folders = (await ctx.Uow.Folders.ListAllAsync(ct)).Count,

@@ -3,14 +3,13 @@ namespace LinkPocket.Api;
 /// <summary>
 /// 文件夹 ID 的语义定义。
 ///
-/// <para><b>「全部书签」（根目录）不是实体、没有 ID</b>：它不在 <c>lists</c> 表里，也不该被当成文件夹。
+/// <para><b>「全部书签」（根目录）不是实体、没有 ID</b>：它不在 <c>folders</c> 表里，也不该被当成文件夹。
 /// 契约层一律用 <c>null</c> 表示根——「根级文件夹」= <c>ParentId == null</c>，
 /// 「根级链接」= <c>ListId == null</c>，API 入参 <c>folderId == null</c> 表示根目录页。</para>
 ///
-/// <para>历史版本用字符串哨兵 <c>"0"</c> 表示根，并与 <c>null</c> 并存，导致全库几十处
-/// <c>string.IsNullOrEmpty(x) || x == "0"</c> 的双重判定。<see cref="Normalize"/> 是**唯一**
-/// 还认识这个历史值的入口，只用于边界归一化（外部入参 / 未迁移的历史库）；
-/// 归一化后的数据一律不再出现 <c>"0"</c>。</para>
+/// <para>历史 wire 协议曾用字符串哨兵 <c>"0"</c> 表示根。schema v2 全新建库后哨兵值在库里
+/// 彻底不存在（根 = NULL，唯一表示）；<see cref="Normalize"/> 只兜外部入参的历史形状，
+/// 待阶段 6 协议重写后一并退役。</para>
 /// </summary>
 public static class FolderIds
 {
