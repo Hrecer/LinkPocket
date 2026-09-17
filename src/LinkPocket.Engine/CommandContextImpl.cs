@@ -84,8 +84,12 @@ public static class EngineJson
     public static JsonElement ToJsonElement(object? args)
         => args switch
         {
-            null => JsonSerializer.Deserialize<JsonElement>("{}"),
-            JsonElement e => e,
+            null => EmptyObject,
+            // wire 直路由（方法名 = 命令名）缺省传 default(JsonElement)（Undefined）；JSON null 同理。
+            // 统一归一为 {} —— 下游 Handler 一律按"对象形态"读参数，加速器与观测面不得成为故障源。
+            JsonElement e => e.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? EmptyObject : e,
             _ => JsonSerializer.SerializeToElement(args, Options),
         };
+
+    private static readonly JsonElement EmptyObject = JsonSerializer.Deserialize<JsonElement>("{}");
 }

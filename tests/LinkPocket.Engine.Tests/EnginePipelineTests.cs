@@ -251,6 +251,25 @@ public class EnginePipelineTests
         finally { TryDelete(path); }
     }
 
+    [Fact]
+    public async Task Default_Caller_Is_Ui_Not_Test()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var engine = TestEnv.CreateEngine(factory);
+            var callers = new List<CallerRef>();
+            using (engine.Events.Subscribe(e => { if (e.Caller != null) callers.Add(e.Caller); }))
+            {
+                await engine.ExecuteAsync<string>("test.add_folder", new { name = "工作" });
+                await Task.Yield();
+            }
+
+            Assert.Equal(CallerKind.Ui, Assert.Single(callers).Kind);
+        }
+        finally { TryDelete(path); }
+    }
+
     private static void TryDelete(string path)
     {
         try

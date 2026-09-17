@@ -37,11 +37,7 @@ internal sealed class LinkUpdateHandler : ICommandHandler
         var description = CommandArgs.OptionalString(args, "description");
         var listIdArg = CommandArgs.OptionalString(args, "list_id");
         var faviconUrl = CommandArgs.OptionalString(args, "favicon_url");
-        var isImportant = args.ValueKind == JsonValueKind.Object
-                          && args.TryGetProperty("is_important", out var impEl)
-                          && impEl.ValueKind is (JsonValueKind.True or JsonValueKind.False)
-            ? impEl.GetBoolean()
-            : (bool?)null;
+        var isImportant = CommandArgs.OptionalBoolOrNull(args, "is_important");
         var ct = ctx.Ct;
 
         var link = await ctx.Uow.Links.FindAsync(id, ct)

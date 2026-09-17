@@ -35,10 +35,7 @@ internal sealed class LinkListHandler : ICommandHandler
     {
         var listId = FolderIds.Normalize(CommandArgs.OptionalString(args, "list_id"));
         var search = CommandArgs.OptionalString(args, "search");
-        var isImportant = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("is_important", out var impEl)
-            && impEl.ValueKind is (JsonValueKind.True or JsonValueKind.False)
-            ? impEl.GetBoolean()
-            : (bool?)null;
+        var isImportant = CommandArgs.OptionalBoolOrNull(args, "is_important");
         var dateFrom = CommandArgs.OptionalString(args, "date_from");
         var dateTo = CommandArgs.OptionalString(args, "date_to");
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "created_at";

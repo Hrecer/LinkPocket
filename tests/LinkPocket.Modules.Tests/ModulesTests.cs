@@ -71,6 +71,16 @@ public class FoldersModuleTests
     }
 
     [Fact]
+    public async Task Contents_Wrong_Param_Type_Fails_Not_Silently_Defaults()
+    {
+        var (engine, _, _) = TestHost.Create();
+        // per_page 传字符串 = 类型错 → LP.VAL.002（旧口径会静默变 0 = 全量）
+        var ex = await Assert.ThrowsAsync<EngineException>(
+            () => engine.QueryAsync<FolderContentsDto>("folders.contents", new { per_page = "abc" }));
+        Assert.Equal(EngineErrors.TypeMismatch, ex.Error.Code);
+    }
+
+    [Fact]
     public async Task Move_Into_Own_Subtree_Rejected()
     {
         var (engine, _, _) = TestHost.Create();
@@ -205,6 +215,18 @@ public class LinksModuleTests
         var (engine, _, _) = TestHost.Create();
         var ex = await Assert.ThrowsAsync<EngineException>(() => engine.QueryAsync<LinkDto>("links.get", new { id = "missing" }));
         Assert.Equal(EngineErrors.EntityNotFound, ex.Error.Code);
+    }
+
+    [Fact]
+    public async Task Update_Wrong_Bool_Type_Fails_Not_Silently_False()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var link = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X" });
+
+        // is_important 传字符串 = 类型错 → LP.VAL.002（旧口径会静默当 false）
+        var ex = await Assert.ThrowsAsync<EngineException>(
+            () => engine.ExecuteAsync<LinkDto>("links.update", new { id = link.Data!.LinkId, is_important = "yes" }));
+        Assert.Equal(EngineErrors.TypeMismatch, ex.Error.Code);
     }
 
     [Fact]
