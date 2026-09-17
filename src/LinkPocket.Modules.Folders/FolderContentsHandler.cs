@@ -43,8 +43,7 @@ internal sealed class FolderContentsHandler : ICommandHandler
 
         var isRoot = FolderIds.IsRoot(folderId);
         var allFolders = await ctx.Uow.Folders.ListAllAsync(ct);
-        var directCounts = await ctx.Uow.Links.CountByFolderAsync(ct);
-        var counts = await ctx.Uow.Trees.RecursiveLinkCountsAsync(ct);
+        var counts = await ctx.Uow.Trees.LinkCountsAsync(ct);
 
         var dto = new FolderContentsDto { FolderId = folderId, PerPage = effectivePerPage };
         List<FolderDto> SortFolders(IEnumerable<Folder> source)
@@ -60,7 +59,7 @@ internal sealed class FolderContentsHandler : ICommandHandler
                 .Take(effectivePerPage)
                 .Select(l => l.ToDto())
                 .ToList();
-            dto.TotalLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
+            dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
             dto.CurrentPage = 1;
             dto.LastPage = 1;
             dto.Breadcrumb = [FolderIds.RootDisplayName];
@@ -79,7 +78,7 @@ internal sealed class FolderContentsHandler : ICommandHandler
             dto.Links = sorted.Skip((page - 1) * effectivePerPage).Take(effectivePerPage)
                 .Select(l => l.ToDto())
                 .ToList();
-            dto.TotalLinkCount = directCounts.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
+            dto.DirectLinkCount = counts.Direct.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
             dto.CurrentPage = page;
             dto.LastPage = perPage > 0
                 ? (int)Math.Ceiling(sorted.Count / (double)effectivePerPage)

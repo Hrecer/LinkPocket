@@ -3,13 +3,21 @@ using LinkPocket.Data;
 namespace LinkPocket.Kernel;
 
 /// <summary>
+/// 文件夹链接计数的两种口径（一次查询同时产出，杜绝"同一概念两个口径"）：
+/// <see cref="Direct"/> = 该文件夹的**直接**子链接数；<see cref="Recursive"/> = 含全部子孙文件夹的链接总数。
+/// </summary>
+public sealed record FolderLinkCounts(
+    IReadOnlyDictionary<FolderId, int> Direct,
+    IReadOnlyDictionary<FolderId, int> Recursive);
+
+/// <summary>
 /// 树算法唯一出处（方案 4.1）：消灭各处重复的父链遍历。
 /// 实现于 Data（经 EF 查询），模块经 UoW 所在组合获得。
 /// </summary>
 public interface ITreeService
 {
-    /// <summary>全库递归链接计数（文件夹树列计数；配合缓存/事件失效由上层管理）。</summary>
-    Task<IReadOnlyDictionary<FolderId, int>> RecursiveLinkCountsAsync(CancellationToken ct);
+    /// <summary>全库链接计数两口径（文件夹树列计数；配合缓存/事件失效由上层管理）。</summary>
+    Task<FolderLinkCounts> LinkCountsAsync(CancellationToken ct);
 
     /// <summary>祖先链（includeSelf = true 时含自身，自底向上）。</summary>
     Task<IReadOnlyList<FolderId>> AncestorsAsync(FolderId id, bool includeSelf, CancellationToken ct);

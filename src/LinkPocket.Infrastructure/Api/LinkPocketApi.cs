@@ -93,7 +93,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
             // 根目录只显示根级书签（ListId == null），而不是全库书签
             var rootLinks = await _links.GetRootLevelLinksAsync(sortBy: sortBy, sortOrder: sortOrder, perPage: effectivePerPage);
             dto.Links = rootLinks.Select(MapLink).ToList();
-            dto.TotalLinkCount = await _links.GetRootLevelLinkCountAsync();
+            dto.DirectLinkCount = await _links.GetRootLevelLinkCountAsync();
             dto.CurrentPage = 1;
             dto.LastPage = 1;
             dto.Breadcrumb = new List<string> { FolderIds.RootDisplayName };
@@ -106,7 +106,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
             var (links, _, currentPage, lastPage) = await _links.GetLinksAsync(listId: folderId, sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: effectivePerPage);
             dto.Links = links.Select(MapLink).ToList();
-            dto.TotalLinkCount = directCounts.TryGetValue(folderId ?? string.Empty, out var c) ? c : 0;
+            dto.DirectLinkCount = directCounts.TryGetValue(folderId ?? string.Empty, out var c) ? c : 0;
             dto.CurrentPage = currentPage;
             dto.LastPage = perPage > 0 ? lastPage : 1;
             dto.Breadcrumb = BuildBreadcrumb(folder, allFolders);

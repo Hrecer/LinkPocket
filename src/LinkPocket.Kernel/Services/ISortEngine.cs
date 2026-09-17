@@ -15,6 +15,16 @@ public sealed class SortFieldMap<T>
 
     /// <summary>默认排序字段（当前定稿：名称升序 + ID 兜底）。</summary>
     public string DefaultField { get; init; } = "title";
+
+    /// <summary>
+    /// 「为空恒排最后」的字段名（行为契约 §9：「最后查看」为空的恒排最后）。
+    /// 该字段排序时前置一个 <see cref="NullLastSelector"/> 升序子句 —— SQL 端
+    /// <c>ORDER BY (col IS NULL), col</c> 即可完整表达，无需退回内存排序。
+    /// </summary>
+    public string? NullLastField { get; init; }
+
+    /// <summary>与 <see cref="NullLastField"/> 配套的判空表达式。</summary>
+    public Expression<Func<T, bool>>? NullLastSelector { get; init; }
 }
 
 /// <summary>

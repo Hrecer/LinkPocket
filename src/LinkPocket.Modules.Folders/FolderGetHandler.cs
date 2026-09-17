@@ -15,7 +15,7 @@ internal sealed class FolderGetHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.get",
         Category: "folders",
-        Description: "按 ID 取单个文件夹（link_count = 递归子链接数）",
+        Description: "按 ID 取单个文件夹（link_count = 递归子链接数、direct_link_count = 直接子链接数）",
         Parameters: [ParamSpec.Req<string>("folder_id", "文件夹 ID")],
         Caps: CommandCaps.Query,
         // 单文件夹读取仍是「全量文件夹 + 全量递归计数」两趟，按内容类缓存（定位/跳转复用率高）
@@ -32,7 +32,7 @@ internal sealed class FolderGetHandler : ICommandHandler
         var folder = allFolders.FirstOrDefault(f => f.FolderId == id)
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
-        var counts = await ctx.Uow.Trees.RecursiveLinkCountsAsync(ctx.Ct);
+        var counts = await ctx.Uow.Trees.LinkCountsAsync(ctx.Ct);
         return CommandResult.Ok(folder.ToDto(counts));
     }
 }

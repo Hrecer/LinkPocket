@@ -29,9 +29,16 @@ public class FolderDto
     [JsonPropertyName("parent_id")] public string? ParentId { get; set; }
 
     /// <summary>
-    /// 该文件夹下所有链接总数（递归）：含直接子链接以及全部子孙文件夹内的链接。
+    /// 该文件夹下所有链接总数（**递归**）：含直接子链接以及全部子孙文件夹内的链接。
+    /// 与之相对的直接口径见 <see cref="DirectLinkCount"/>——两个口径不同名同义，调用方不得混用。
     /// </summary>
     [JsonPropertyName("link_count")] public int LinkCount { get; set; }
+
+    /// <summary>
+    /// 该文件夹的**直接**子链接数（不递归；不含子孙文件夹内的链接）。
+    /// 与 <see cref="LinkCount"/>（递归）成对存在，语义自明——旧实现的两种口径混用已收敛到这里。
+    /// </summary>
+    [JsonPropertyName("direct_link_count")] public int DirectLinkCount { get; set; }
 
     /// <summary>
     /// 文件夹「最后更新」＝内容最后变动时间。事件：内容变动（新增/删除/改名/移入移出链接与子文件夹、
@@ -68,10 +75,10 @@ public class FolderContentsDto
     [JsonPropertyName("links")] public List<LinkDto> Links { get; set; } = new();
     [JsonPropertyName("breadcrumb")] public List<string> Breadcrumb { get; set; } = new();
     /// <summary>
-    /// 直接子链接总数（语义确认，P3）：只统计当前目录的直接子链接，
-    /// 不递归统计子文件夹内的链接；根目录为根级链接数。UI 上"书签数"含义以此为准。
+    /// 当前目录的**直接**子链接总数：只统计当前目录的直接子链接，不递归统计子文件夹内的链接；
+    /// 根目录为根级链接数。字段名与语义一一对应（旧名 total_link_count 会把"直接"误读成"总计"）。
     /// </summary>
-    [JsonPropertyName("total_link_count")] public int TotalLinkCount { get; set; }
+    [JsonPropertyName("direct_link_count")] public int DirectLinkCount { get; set; }
     /// <summary>当前页码（从 1 开始；未启用分页时为 1）。</summary>
     [JsonPropertyName("current_page")] public int CurrentPage { get; set; } = 1;
     /// <summary>每页链接数（0 表示未启用分页，一次取回全部）。</summary>

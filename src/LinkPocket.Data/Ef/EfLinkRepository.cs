@@ -67,6 +67,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
                           || EF.Functions.Like(l.Url, like)
                           || (l.Description != null && EF.Functions.Like(l.Description, like)));
         }
+        if (f.SearchScope is { } scope) q = ApplySearchScope(q, scope);
         if (f.FolderId is { } folder) q = q.Where(l => l.ListId == folder.Value);
         if (f.IsImportant is { } imp) q = q.Where(l => l.IsImportant == imp);
         if (f.CreatedFrom is { } from) q = q.Where(l => l.CreatedAt >= from);
@@ -103,4 +104,31 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (f.VisitCountMax is { } vcMax) q = q.Where(l => l.VisitCount <= vcMax);
         return q;
     }
+
+    /// <summary>
+    /// search.links 多范围搜索的 SQL 下推（方案 3.3）：三字段 OR 包含 ∪ 目录集合，两段之间亦为 OR。
+    /// 中缀 LIKE 注定全表扫描（已知且接受，见 IndexPlanTests 负向断言）——但过滤发生在 SQL 端，
+    /// 不再把全库读进内存逐条比对。
+    /// </summary>
+    private static IQueryable<Link> ApplySearchScope(IQueryable<Link> q, LinkSearchScope scope)
+    {
+        var like = $"%{EscapeLike(scope.Query)}%";
+        var folderIds = scope.Folders.Select(x => x.Value).ToArray();
+        var hasFolderRange = folderIds.Length > 0;
+
+        if (!scope.Title && !scope.Url && !scope.Description && !hasFolderRange)
+            return q.Where(_ => false);   // 全范围未启用 = 无命中
+
+        return q.Where(l =>
+            (scope.Title && EF.Functions.Like(l.Title, like, LikeEscape))
+            || (scope.Url && EF.Functions.Like(l.Url, like, LikeEscape))
+            || (scope.Description && l.Description != null && EF.Functions.Like(l.Description, like, LikeEscape))
+            || (hasFolderRange && l.ListId != null && folderIds.Contains(l.ListId)));
+    }
+
+    private const string LikeEscape = "\\";
+
+    /// <summary>LIKE 通配符转义：关键词里的 % / _ / \ 按字面匹配，不做通配（用户输入不得改变匹配语义）。</summary>
+    private static string EscapeLike(string value)
+        => value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 }

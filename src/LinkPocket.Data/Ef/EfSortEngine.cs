@@ -1,5 +1,6 @@
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace LinkPocket.Data;
 
@@ -8,11 +9,18 @@ internal sealed class EfSortEngine : ISortEngine
 {
     internal static readonly EfSortEngine Instance = new();
 
+    /// <summary>
+    /// 名称列的 SQL 排序规则：<c>NOCASE</c> ≈ .NET <c>StringComparer.CurrentCulture</c> 的
+    /// 「大小写不敏感」显示口径（「Apple」与「apple」相邻）——BINARY 会把大写全排到小写之前，
+    /// 与「按名称升序」的用户直觉不符。单一出处，全库名称排序口径一致。
+    /// </summary>
+    private const string NameCollation = "NOCASE";
+
     /// <summary>链接排序白名单（字段名 = 机器可读稳定名）。</summary>
     internal static readonly SortFieldMap<Link> LinkFields = new(new Dictionary<string, System.Linq.Expressions.Expression<Func<Link, object?>>>
     {
-        ["title"] = l => l.Title,
-        ["url"] = l => l.Url,
+        ["title"] = l => EF.Functions.Collate(l.Title, NameCollation),
+        ["url"] = l => EF.Functions.Collate(l.Url, NameCollation),
         ["created_at"] = l => l.CreatedAt,
         ["updated_at"] = l => l.UpdatedAt,
         ["last_visited_at"] = l => l.LastVisitedAt,
@@ -21,12 +29,14 @@ internal sealed class EfSortEngine : ISortEngine
     })
     {
         DefaultField = "title",
+        NullLastField = "last_visited_at",
+        NullLastSelector = l => l.LastVisitedAt == null,
     };
 
     /// <summary>文件夹排序白名单。</summary>
     internal static readonly SortFieldMap<Folder> FolderFields = new(new Dictionary<string, System.Linq.Expressions.Expression<Func<Folder, object?>>>
     {
-        ["name"] = f => f.Name,
+        ["name"] = f => EF.Functions.Collate(f.Name, NameCollation),
         ["created_at"] = f => f.CreatedAt,
         ["updated_at"] = f => f.UpdatedAt,
         ["visit_count"] = f => f.VisitCount,
@@ -41,6 +51,11 @@ internal sealed class EfSortEngine : ISortEngine
         var clauses = sort.Count > 0 ? sort : [new SortSpec(fieldMap.DefaultField, SortDir.Asc)];
 
         IOrderedQueryable<T>? ordered = null;
+
+        // 「为空恒排最后」（行为契约 §9）：前置判空子句 —— ORDER BY (col IS NULL), col
+        if (fieldMap.NullLastSelector is { } nullLast && clauses[0].Field == fieldMap.NullLastField)
+            ordered = source.OrderBy(nullLast);
+
         foreach (var clause in clauses)
         {
             if (!fieldMap.TryGetSelector(clause.Field, out var selector))

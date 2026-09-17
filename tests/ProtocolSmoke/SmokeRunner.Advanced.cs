@@ -115,7 +115,7 @@ internal static partial class SmokeRunner
 
         var contents = (await s.Client.FolderContentsAsync(folder.FolderId));
         Asserts.That(contents.Links.Count == FanOut, $"并发写后文件夹应有 {FanOut} 条链接，实际 {contents.Links.Count}");
-        Asserts.That(contents.TotalLinkCount == FanOut, "并发写后直接子链接计数应精确");
+        Asserts.That(contents.DirectLinkCount == FanOut, "并发写后直接子链接计数应精确");
         var all = (await s.Client.LinkListAsync(perPage: 0)).Links;
         Asserts.That(all.Count(l => l.ListId == folder.FolderId) == FanOut, "并发写不得丢失或重复任何一条");
         Asserts.That(s.Events.Count(e => e == "links.changed") == FanOut,

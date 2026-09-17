@@ -18,11 +18,11 @@ internal static partial class SmokeRunner
         var sub = (await client.FolderCreateAsync("子目录", parentId: folder.FolderId)).Data!;
         await client.LinkCreateAsync("https://example.com/sub", "子链接", listId: sub.FolderId);
 
-        // 分页 + total_link_count 直接子链接语义
+        // 分页 + direct_link_count 直接子链接语义
         var p1 = (await client.FolderContentsAsync(folder.FolderId, perPage: 2));
         Asserts.That(p1.Links.Count == 2 && p1.CurrentPage == 1 && p1.LastPage == 2 && p1.PerPage == 2,
             "分页第一页应为 2 条 / last_page 2");
-        Asserts.That(p1.TotalLinkCount == 3, $"直接子链接计数应为 3（不含子目录），实际 {p1.TotalLinkCount}");
+        Asserts.That(p1.DirectLinkCount == 3, $"直接子链接计数应为 3（不含子目录），实际 {p1.DirectLinkCount}");
         var p2 = (await client.FolderContentsAsync(folder.FolderId, page: 2, perPage: 2));
         Asserts.That(p2.Links.Count == 1 && p2.CurrentPage == 2, "分页第二页应为 1 条");
 
@@ -39,9 +39,11 @@ internal static partial class SmokeRunner
         Asserts.That(breadcrumb.SequenceEqual([FolderIds.RootDisplayName, "测试目录", "子目录"]),
             "面包屑应为 全部书签 / 测试目录 / 子目录");
 
-        // 树 + 子目录 LinkCount（递归）
+        // 树 + 子目录 LinkCount（递归）与 direct_link_count（直接）两口径并存
         var tree = (await client.FolderTreeAsync());
-        Asserts.That(tree.First(f => f.Name == "测试目录").LinkCount == 4, "树节点 LinkCount 应为递归 4 条");
+        var treeNode = tree.First(f => f.Name == "测试目录");
+        Asserts.That(treeNode.LinkCount == 4, "树节点 LinkCount 应为递归 4 条");
+        Asserts.That(treeNode.DirectLinkCount == 3, "树节点 DirectLinkCount 应为直接 3 条");
 
         // 环检测：移入自己的子树必拒
         var cycle = (await client.FolderCycleCheckAsync(folder.FolderId, sub.FolderId));

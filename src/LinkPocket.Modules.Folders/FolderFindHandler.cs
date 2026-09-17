@@ -32,8 +32,8 @@ internal sealed class FolderFindHandler : ICommandHandler
             ? allFolders.Where(f => f.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
             : allFolders.Where(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-        // 命中数有限；逐个补递归计数代价可忽略（与 folders.get 同口径）
-        var counts = await ctx.Uow.Trees.RecursiveLinkCountsAsync(ctx.Ct);
+        // 命中数有限；逐个补两种计数口径代价可忽略（与 folders.get 同口径）
+        var counts = await ctx.Uow.Trees.LinkCountsAsync(ctx.Ct);
         var result = matched
             .Select(f => f.ToDto(counts))
             .OrderBy(f => f.Name, StringComparer.CurrentCulture)

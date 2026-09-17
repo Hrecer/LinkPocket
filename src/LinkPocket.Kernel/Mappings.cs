@@ -23,18 +23,22 @@ public static class Mappings
         UpdatedAt = link.UpdatedAt,
     };
 
-    /// <param name="recursiveCounts">
-    /// 递归链接计数（<see cref="ITreeService.RecursiveLinkCountsAsync"/> 的结果）；
-    /// 传 null 时 LinkCount 置 0（调用方明确放弃计数口径，如纯列表场景）。
+    /// <param name="counts">
+    /// 链接计数两口径（<see cref="ITreeService.LinkCountsAsync"/> 的结果）：
+    /// <c>LinkCount</c> = 递归（含子孙），<c>DirectLinkCount</c> = 直接子链接数。
+    /// 传 null 时两个字段置 0（调用方明确放弃计数口径，如纯列表场景）。
     /// </param>
-    public static Api.FolderDto ToDto(this Folder folder, IReadOnlyDictionary<FolderId, int>? recursiveCounts)
+    public static Api.FolderDto ToDto(this Folder folder, FolderLinkCounts? counts)
         => new()
         {
             FolderId = folder.FolderId,
             Name = folder.Name,
             ParentId = folder.ParentId,
-            LinkCount = recursiveCounts != null && recursiveCounts.TryGetValue(new FolderId(folder.FolderId), out var count)
-                ? count
+            LinkCount = counts != null && counts.Recursive.TryGetValue(new FolderId(folder.FolderId), out var recursive)
+                ? recursive
+                : 0,
+            DirectLinkCount = counts != null && counts.Direct.TryGetValue(new FolderId(folder.FolderId), out var direct)
+                ? direct
                 : 0,
             UpdatedAt = folder.UpdatedAt,
             CreatedAt = folder.CreatedAt,
