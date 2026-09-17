@@ -103,11 +103,22 @@ if (-not $built) {
 }
 Write-Host "[CI] 编译通过" -ForegroundColor Green
 
-# —— 2. 单元测试 ——
+# —— 2. 单元测试（逐项目串行：`dotnet test` 多项目并行跑会让测试宿主进程崩溃 0xC00000FD/0x80131506，
+#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，见 docs/TESTING.md §2 与 docs/WARNINGS.md ——）
 Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
-& $dotnet test (Join-Path $repoRoot "LinkPocket.sln") -c $Configuration --no-build --nologo 2>&1 |
-    Tee-Object -FilePath (Join-Path $artifacts "test.log")
-if ($LASTEXITCODE -ne 0) { Write-Host "[CI] 单元测试失败（exit=$LASTEXITCODE）" -ForegroundColor Red; exit $LASTEXITCODE }
+$testProjects = @(
+    "tests/LinkPocket.Architecture.Tests",
+    "tests/LinkPocket.Engine.Tests",
+    "tests/LinkPocket.Modules.Tests"
+)
+$testLog = Join-Path $artifacts "test.log"
+if (Test-Path -LiteralPath $testLog) { Remove-Item -LiteralPath $testLog -Force }
+foreach ($project in $testProjects) {
+    Write-Host "[CI]   -> $project" -ForegroundColor DarkGray
+    & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo 2>&1 |
+        Tee-Object -FilePath $testLog -Append
+    if ($LASTEXITCODE -ne 0) { Write-Host "[CI] 单元测试失败（$project，exit=$LASTEXITCODE）" -ForegroundColor Red; exit $LASTEXITCODE }
+}
 Write-Host "[CI] 单元测试通过" -ForegroundColor Green
 
 # —— 3 & 4. 协议冒烟 + 严格性能门槛 ——
