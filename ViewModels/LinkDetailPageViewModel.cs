@@ -178,7 +178,6 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
             await Api.TrashLinkAsync(_linkId);
             Close();
             await _host.RefreshAsync();
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {

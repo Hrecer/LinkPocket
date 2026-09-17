@@ -25,7 +25,6 @@ namespace LinkPocket.ViewModels
         private string _currentNavId = "browser";
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
-        private LinkViewModel? _linkViewModel;
 
         /// <summary>资源管理器式浏览页（P4）：由 MainWindow 取用并设为 BrowserView 的 DataContext。</summary>
         public BrowserViewModel BrowserViewModel { get; } = new();
@@ -54,7 +53,6 @@ namespace LinkPocket.ViewModels
         private bool _editLinkIsLoading;
         private bool _editLinkHasError;
         private string _editLinkErrorMessage = string.Empty;
-        private bool _editOpenedFromDetail;
         private bool _isFetchingMetadata;
 
         private LinkItem? _viewingLink;
@@ -78,8 +76,6 @@ namespace LinkPocket.ViewModels
 
             InitializeNavigationItems();
 
-            _linkViewModel = new LinkViewModel();
-            _linkViewModel.LinksChanged += OnLinksChanged;
             _recycleBinViewModel = new RecycleBinViewModel();
             _settingsViewModel = new SettingsViewModel();
             _smartListViewModel = new SmartListViewModel();
@@ -427,12 +423,6 @@ namespace LinkPocket.ViewModels
             set { _trashItems = value; OnPropertyChanged(); }
         }
 
-        public LinkViewModel? LinkViewModel
-        {
-            get => _linkViewModel;
-            set { _linkViewModel = value; OnPropertyChanged(); }
-        }
-
         public RecycleBinViewModel? RecycleBinViewModel
         {
             get => _recycleBinViewModel;
@@ -498,22 +488,14 @@ namespace LinkPocket.ViewModels
 
         private async void SelectNav(string navId)
         {
-            var previousNavId = CurrentNavId;
-
-
             CurrentNavId = navId;
             SyncNavSelection(navId);
 
-            // P4 浏览页：首次进入从根目录加载；显隐经 IUiCoordinator（与旧界面并存）
+            // P4 浏览页：首次进入从根目录加载；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制
             if (navId == "browser")
             {
                 if (BrowserViewModel.Rows.Count == 0)
                     _ = BrowserViewModel.LoadAsync(null);
-                Ui?.ShowBrowserPage();
-            }
-            else if (previousNavId == "browser")
-            {
-                Ui?.CloseBrowserPage();
             }
 
             if (_smartListViewModel != null && _smartListViewModel.ShowResult)
@@ -542,7 +524,6 @@ namespace LinkPocket.ViewModels
         {
             if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 throw new InvalidOperationException("添加书签必须先选中一个文件夹");
-            _editOpenedFromDetail = false;
             IsEditMode = false;
             _editingLinkId = string.Empty;
             EditLinkUrl = string.Empty;
@@ -603,44 +584,11 @@ namespace LinkPocket.ViewModels
         private void ShowEditPage()
         {
             IsEditPageVisible = true;
-            if (_linkViewModel != null)
-                _linkViewModel.ClearSelectionCommand.Execute(null);
-            Ui?.ShowEditPage();
         }
 
         private void CancelEditLink()
         {
             IsEditPageVisible = false;
-            bool returnToDetail = _editOpenedFromDetail && _viewingLink != null;
-            Ui?.CloseEditPage(returnToDetail);
-        }
-
-        public async Task SetLinkSortAsync(string field)
-        {
-            if (field == _linkSortField)
-            {
-                _linkSortOrder = _linkSortOrder == "asc" ? "desc" : "asc";
-            }
-            else
-            {
-                _linkSortField = field;
-            }
-            OnPropertyChanged(nameof(LinkSortField));
-            OnPropertyChanged(nameof(LinkSortOrder));
-            if (_linkViewModel != null)
-            {
-                var q = _linkViewModel.CurrentQuery;
-                await _linkViewModel.LoadLinksAsync(new LinkQueryParams
-                {
-                    Search = q.Search, ListId = q.ListId,
-                    IsImportant = q.IsImportant,
-                    DateFrom = q.DateFrom, DateTo = q.DateTo,
-                    SortBy = _linkSortField, SortOrder = _linkSortOrder,
-                    Page = q.Page, PerPage = q.PerPage
-                });
-            }
-            if (Ui != null)
-                await Ui.RefreshMainListAsync();
         }
 
         public async Task ToggleFolderSortAsync()
@@ -648,11 +596,6 @@ namespace LinkPocket.ViewModels
             _folderSortOrder = _folderSortOrder == "asc" ? "desc" : "asc";
             OnPropertyChanged(nameof(FolderSortOrder));
             await LoadFolderTreeAsync();
-            if (Ui != null)
-            {
-                Ui.RefreshSidebar();
-                await Ui.RefreshMainListAsync();
-            }
         }
 
         private async void ShowDetail(LinkItem? link)
@@ -676,27 +619,17 @@ namespace LinkPocket.ViewModels
             DetailCreatedAtDisplay = link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             DetailLastVisitedAtDisplay = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
             DetailVisitCountDisplay = link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次";
-
-            if (_linkViewModel != null)
-                _linkViewModel.ClearSelectionCommand.Execute(null);
-
-            if (Ui != null)
-            {
-                Ui.ShowDetailView();
-            }
         }
 
         private void DetailEdit()
         {
             if (_viewingLink == null) return;
-            _editOpenedFromDetail = true;
             EditLink(_viewingLink);
         }
 
         private async void CancelDetail()
         {
             _viewingLink = null;
-            Ui?.CloseDetailView();
             await RefreshFolderTreeAndUIAsync();
             if (_currentNavId == "search")
                 OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
@@ -826,49 +759,14 @@ namespace LinkPocket.ViewModels
                         faviconUrl: _fetchedFaviconUrl
                     );
                     Logger.Info("链接添加成功");
-                    Ui?.ExpandFolder(_selectionManager.SelectedFolderId);
                 }
 
-                if (_linkViewModel != null)
-                    await _linkViewModel.LoadLinksAsync();
                 await RefreshFolderTreeAndUIAsync();
 
                 if (_currentNavId == "search")
                     OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
 
                 CancelEditLink();
-
-                if (Ui != null)
-                {
-                    if (_editOpenedFromDetail && _viewingLink != null)
-                    {
-                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.LinkId == _editingLinkId);
-                        if (updatedLink != null)
-                        {
-                            _viewingLink = updatedLink;
-                            DetailUrl = updatedLink.Url ?? string.Empty;
-                            DetailTitle = updatedLink.Title ?? string.Empty;
-                            DetailDescription = updatedLink.Description ?? "（无描述）";
-                            DetailFaviconUrl = updatedLink.FaviconUrl ?? string.Empty;
-                            DetailFaviconImage = FaviconService.LoadFromCache(updatedLink.FaviconUrl);
-                            DetailLinkIdDisplay = updatedLink.LinkId ?? string.Empty;
-                            DetailUpdatedAtDisplay = updatedLink.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-                            DetailCreatedAtDisplay = updatedLink.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-                            DetailLastVisitedAtDisplay = updatedLink.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
-                            DetailVisitCountDisplay = updatedLink.VisitCount == 0 ? "0 次" : $"{updatedLink.VisitCount} 次";
-                            Ui.ClearDetailPanel();
-                        }
-                    }
-                    else if (!string.IsNullOrEmpty(_editingLinkId))
-                    {
-                        var updatedLink = _linkViewModel?.Links.FirstOrDefault(l => l.LinkId == _editingLinkId);
-                        if (updatedLink != null)
-                        {
-                            updatedLink.IsSelected = true;
-                            Ui.UpdateDetailPanel(updatedLink);
-                        }
-                    }
-                }
             }
             catch (Exception ex)
             {
@@ -947,7 +845,6 @@ namespace LinkPocket.ViewModels
         {
             if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId)) return true;
             if (_selectionManager.HasSelectedLink) return true;
-            if (_linkViewModel != null && _linkViewModel.HasSelectedItems) return true;
             return false;
         }
 
@@ -963,26 +860,8 @@ namespace LinkPocket.ViewModels
 
                     await Api.DeleteFolderAsync(_selectionManager.SelectedFolderId);
                     Logger.Info($"文件夹 {_selectionManager.SelectedFolderId} 已删除");
-                    Ui?.ClearFolderSelection();
                     await RefreshFolderTreeAndUIAsync();
                     return;
-                }
-
-                if (_selectionManager.HasSelectedLink && Ui != null)
-                {
-                    var selectedLink = Ui.GetSelectedLink();
-                    if (selectedLink != null)
-                    {
-                        await Api.TrashLinkAsync(selectedLink.LinkId);
-                        Logger.Info($"已将书签 {selectedLink.LinkId} 移至回收站");
-                        Ui.ClearDetailPanel();
-                        await RefreshFolderTreeAndUIAsync();
-                    }
-                }
-
-                if (_linkViewModel != null && _linkViewModel.HasSelectedItems)
-                {
-                    _linkViewModel.DeleteSelectedCommand.Execute(null);
                 }
             }
             catch (Exception ex)
@@ -999,8 +878,6 @@ namespace LinkPocket.ViewModels
 
             NewFolderName = string.Empty;
             IsNewFolderDialogVisible = true;
-
-            Ui?.FocusNewFolderDialog();
         }
 
         private async Task ConfirmCreateFolderAsync()
@@ -1013,7 +890,6 @@ namespace LinkPocket.ViewModels
             {
                 string? parentId = string.IsNullOrEmpty(_selectionManager.SelectedFolderId) ? null : _selectionManager.SelectedFolderId;
                 await Api.CreateFolderAsync(NewFolderName.Trim(), parentId);
-                Ui?.ExpandFolder(_selectionManager.SelectedFolderId);
                 await RefreshFolderTreeAndUIAsync();
             }
             catch (Exception ex)
@@ -1028,48 +904,6 @@ namespace LinkPocket.ViewModels
             NewFolderName = string.Empty;
         }
 
-        public async Task PasteLinksToFolderAsync(List<LinkItem> items, bool isCut)
-        {
-            if (items == null || items.Count == 0) return;
-            if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId)) return;
-
-            try
-            {
-                string? listId = _selectionManager.SelectedFolderId;
-
-                if (isCut)
-                {
-                    foreach (var item in items)
-                    {
-                        await Api.UpdateLinkAsync(item.LinkId, listId: listId);
-                        item.IsCut = false;
-                    }
-                }
-                else
-                {
-                    foreach (var item in items)
-                    {
-                        await Api.CreateLinkAsync(
-                            url: item.Url,
-                            title: item.Title,
-                            description: item.Description,
-                            listId: listId,
-                            isImportant: item.IsImportant,
-                            faviconUrl: item.FaviconUrl
-                        );
-                    }
-                }
-
-                if (_linkViewModel != null)
-                    await _linkViewModel.LoadLinksAsync();
-                await RefreshFolderTreeAndUIAsync();
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("粘贴链接失败", ex);
-            }
-        }
-
         private static string DecodeUrl(string url)
         {
             try
@@ -1082,22 +916,9 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private async void OnLinksChanged(object? sender, EventArgs e)
-        {
-            if (_currentNavId == "search")
-                OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
-            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
-            await RefreshFolderTreeAndUIAsync();
-        }
-
         public async Task RefreshFolderTreeAndUIAsync()
         {
             await LoadFolderTreeAsync();
-            if (Ui != null)
-            {
-                await Ui.RefreshSidebarAsync();
-                await Ui.RefreshMainListAsync();
-            }
             OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
         }
 
@@ -1297,18 +1118,9 @@ namespace LinkPocket.ViewModels
 
             await LoadFolderTreeAsync();
 
-            // 数据库已被删除重建：浏览页必须强制回到根并重载。
-            // （Ui.RefreshSidebar/MainList 是 no-op 占位；不清一则旧目录的行会一直挂在浏览页上，
-            //   直到用户手点「全部书签」才刷新——实测踩中。）
+            // 数据库已被删除重建：浏览页必须强制回到根并重载，
+            // 否则旧目录的行会一直挂在浏览页上，直到用户手点「全部书签」才刷新——实测踩中。
             await BrowserViewModel.LoadAsync(null);
-
-            if (Ui != null)
-            {
-                await Ui.RefreshSidebarAsync();
-                Ui.ClearDetailPanel();
-                Ui.ClearMainList();
-                await Ui.RefreshMainListAsync();
-            }
 
             OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
 

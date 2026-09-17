@@ -648,7 +648,11 @@ namespace LinkPocket.Views
             try
             {
                 foreach (var linkId in toDelete)
-                    await vm.LinkViewModel!.DeleteLinkAsync(linkId);
+                    await AppServices.Api.TrashLinkAsync(linkId);
+
+                // 刷新目录树计数（原经 LinkViewModel.LinksChanged 链条触发，现直调一次；
+                // 查重重跑仍由本方法后半段的就地刷新/回表重跑承担，明细展开时 OnToolsDataChanged 本就不重跑）。
+                await vm.RefreshFolderTreeAndUIAsync();
 
                 // 重算当前 URL 的重复组：仍有多条 → 就地刷新明细；已剩一条及以下 → 回主表重跑
                 var all = await vm.GetAllLinksForToolsAsync();

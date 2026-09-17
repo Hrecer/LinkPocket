@@ -659,7 +659,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
             StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
             await RefreshPreservingSelectionAsync();
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -806,7 +805,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
             StatusText = pasted > 0 ? $"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}" : "没有可粘贴的项目";
             await RefreshPreservingSelectionAsync();
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -890,7 +888,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             await Api.CreateFolderAsync(name, target);
             StatusText = $"已创建文件夹「{name}」";
             await RefreshPreservingSelectionAsync();
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -919,7 +916,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             await Api.UpdateFolderAsync(node.FolderId, name: name);
             await RefreshPreservingSelectionAsync();
             StatusText = $"已重命名为「{name}」";
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -939,7 +935,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             StatusText = $"已删除文件夹「{node.Name}」";
             // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
             // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -999,7 +994,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             ClearSelection();
             // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
             // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
@@ -1038,7 +1032,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 原地刷新并保留该行选中：重命名不该把选中态（以及右侧栏）清掉
             await RefreshAsync(row.Id);
             StatusText = $"已重命名为「{name}」";
-            _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
         {
