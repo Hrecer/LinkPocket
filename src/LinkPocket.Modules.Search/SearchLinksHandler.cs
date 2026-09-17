@@ -40,8 +40,7 @@ internal sealed class SearchLinksHandler : ICommandHandler
             CommandArgs.OptionalBool(args, "search_description"),
             CommandArgs.OptionalBool(args, "search_path"),
             sortBy,
-            // 排序方向口径：只有 "desc" 是降序，其余一律升序（与既有搜索口径一致）
-            string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc",
+            QueryParsing.NormalizeOrder(sortOrder),
             ctx.Ct);
 
         return CommandResult.Ok(hits.Select(h => h.Link.ToDto()).ToList());

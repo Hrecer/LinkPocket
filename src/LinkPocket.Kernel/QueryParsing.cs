@@ -25,4 +25,11 @@ public static class QueryParsing
         var dir = string.Equals(sortOrder, "asc", StringComparison.OrdinalIgnoreCase) ? SortDir.Asc : SortDir.Desc;
         return [new SortSpec(field, dir)];
     }
+
+    /// <summary>
+    /// 列表列头口径的排序方向归一：**只有 "desc" 是降序，其余一律升序**（含缺省与非法值）。
+    /// 「先归一、再 ParseSort」把两处方向口径收敛成一条，避免同一参数在不同命令里默认值不同。
+    /// </summary>
+    public static string NormalizeOrder(string? sortOrder)
+        => string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
 }

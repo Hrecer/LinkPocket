@@ -5,7 +5,7 @@ using LinkPocket.Kernel;
 
 namespace LinkPocket.Modules.Folders;
 
-/// <summary>文件夹域内部支撑：后代收集 / 排序 / 面包屑（与既有实现逐条等价，internal）。</summary>
+/// <summary>文件夹域内部支撑：后代收集 / 排序 / 面包屑（internal）。</summary>
 internal static class FolderSupport
 {
     /// <summary>递归收集后代文件夹 ID（不含自身；内存树遍历——文件夹数量有限）。</summary>
@@ -21,6 +21,7 @@ internal static class FolderSupport
     /// <summary>
     /// 子文件夹排序（与既有 SortFolders 逐条等价）：
     /// 名称与各维度都遵循升/降序；「最后查看」为空（从未）恒排最后；名称做同序稳定兜底（CurrentCulture）。
+    /// 仅用于**一次读出的同一个目录的直接子文件夹**（数量有限），链接列表的排序一律 SQL 下推。
     /// </summary>
     public static List<FolderDto> SortFolders(IEnumerable<FolderDto> source, string sortBy, string sortOrder)
     {
@@ -38,30 +39,6 @@ internal static class FolderSupport
                 : source.OrderBy(f => f.Name, StringComparer.CurrentCulture),
         };
         return ordered.ThenBy(f => f.Name, StringComparer.CurrentCulture).ToList();
-    }
-
-    /// <summary>
-    /// 链接内存排序（与既有 SortLinks/GetLinksAsync 逐条等价）：
-    /// 标题按 CurrentCulture；从未查看（null）恒排最后；ID 次序兜底。
-    /// 文件夹目录页的链接列表全走本实现（每页数据量有界，内存排序 = 行为完全等价的最短路径）。
-    /// </summary>
-    public static List<Link> SortLinks(IEnumerable<Link> source, string sortBy, string sortOrder)
-    {
-        var desc = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
-        IOrderedEnumerable<Link> ordered = sortBy switch
-        {
-            "title" => desc
-                ? source.OrderByDescending(l => l.Title, StringComparer.CurrentCulture)
-                : source.OrderBy(l => l.Title, StringComparer.CurrentCulture),
-            "updated_at" => desc ? source.OrderByDescending(l => l.UpdatedAt) : source.OrderBy(l => l.UpdatedAt),
-            "last_visited_at" => desc
-                ? source.OrderByDescending(l => l.LastVisitedAt ?? DateTime.MinValue)
-                : source.OrderBy(l => l.LastVisitedAt ?? DateTime.MinValue),
-            "visit_count" => desc ? source.OrderByDescending(l => l.VisitCount) : source.OrderBy(l => l.VisitCount),
-            "created_at" => desc ? source.OrderByDescending(l => l.CreatedAt) : source.OrderBy(l => l.CreatedAt),
-            _ => desc ? source.OrderByDescending(l => l.CreatedAt) : source.OrderBy(l => l.CreatedAt),
-        };
-        return ordered.ThenBy(l => l.LinkId, StringComparer.Ordinal).ToList();
     }
 
     /// <summary>面包屑：「全部书签 / A / B」（与既有 BuildBreadcrumb 逐条等价）。</summary>

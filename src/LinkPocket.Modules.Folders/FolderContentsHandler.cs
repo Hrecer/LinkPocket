@@ -9,7 +9,7 @@ namespace LinkPocket.Modules.Folders;
 
 /// <summary>
 /// folders.contents（Query）：目录页 = 子文件夹 + 链接 + 面包屑 + 计数。
-/// 与既有 GetFolderContentsAsync 行为逐条等价：未启用分页时上限 10000；
+/// 链接列表的**排序与分页全部 SQL 下推**（不再全量拉进内存排序后再 Skip/Take）；
 /// 子文件夹/链接排序口径一致；根目录只显示根级书签；面包屑含根显示名。
 /// </summary>
 internal sealed class FolderContentsHandler : ICommandHandler
@@ -45,6 +45,10 @@ internal sealed class FolderContentsHandler : ICommandHandler
         var allFolders = await ctx.Uow.Folders.ListAllAsync(ct);
         var counts = await ctx.Uow.Trees.LinkCountsAsync(ct);
 
+        // 排序下推：字段白名单 + ID 兜底（「最后查看」为空的恒排最后由排序引擎统一表达）
+        var sort = QueryParsing.ParseSort(
+            sortBy, QueryParsing.NormalizeOrder(sortOrder), QueryParsing.LinkSortFields, "created_at");
+
         var dto = new FolderContentsDto { FolderId = folderId, PerPage = effectivePerPage };
         List<FolderDto> SortFolders(IEnumerable<Folder> source)
             => FolderSupport.SortFolders(source.Select(f => f.ToDto(counts)), sortBy, sortOrder);
@@ -53,13 +57,13 @@ internal sealed class FolderContentsHandler : ICommandHandler
         {
             dto.FolderName = FolderIds.RootDisplayName;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
-            var rootLinks = await ctx.Uow.Links.ListAsync(
-                new LinkQuerySpec { Filter = new LinkFilter { Unfiled = true } }, ct);
-            dto.Links = FolderSupport.SortLinks(rootLinks, sortBy, sortOrder)
-                .Take(effectivePerPage)
-                .Select(l => l.ToDto())
-                .ToList();
             dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
+            dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            {
+                Filter = new LinkFilter { Unfiled = true },
+                Sort = sort,
+                Page = new PageSpec(1, effectivePerPage),
+            }, ct)).Select(l => l.ToDto()).ToList();
             dto.CurrentPage = 1;
             dto.LastPage = 1;
             dto.Breadcrumb = [FolderIds.RootDisplayName];
@@ -71,17 +75,17 @@ internal sealed class FolderContentsHandler : ICommandHandler
                     EngineErrors.EntityNotFound, $"文件夹 {folderId} 不存在", correlationId: ctx.CorrelationId));
             dto.FolderName = folder.Name;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
-
-            var allInFolder = await ctx.Uow.Links.ListAsync(
-                new LinkQuerySpec { Filter = new LinkFilter { FolderId = new FolderId(folderId!) } }, ct);
-            var sorted = FolderSupport.SortLinks(allInFolder, sortBy, sortOrder);
-            dto.Links = sorted.Skip((page - 1) * effectivePerPage).Take(effectivePerPage)
-                .Select(l => l.ToDto())
-                .ToList();
             dto.DirectLinkCount = counts.Direct.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
+            dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            {
+                Filter = new LinkFilter { FolderId = new FolderId(folderId!) },
+                Sort = sort,
+                Page = new PageSpec(page, effectivePerPage),
+            }, ct)).Select(l => l.ToDto()).ToList();
             dto.CurrentPage = page;
+            // 总页数由直接子链接计数推出（SQL 端 COUNT，无需把全部行拉回来数）
             dto.LastPage = perPage > 0
-                ? (int)Math.Ceiling(sorted.Count / (double)effectivePerPage)
+                ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
                 : 1;
             dto.Breadcrumb = FolderSupport.BuildBreadcrumb(folder, allFolders);
         }

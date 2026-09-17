@@ -71,6 +71,30 @@ public class FoldersModuleTests
     }
 
     [Fact]
+    public async Task Contents_LastVisited_Sort_Puts_Never_Visited_Last_Both_Ways()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "F" });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/never", title = "从未", list_id = folder.Data!.FolderId });
+        var visited = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/yes", title = "看过", list_id = folder.Data!.FolderId });
+        await engine.ExecuteAsync<object>("links.visit_record", new { id = visited.Data!.LinkId });
+
+        // 行为契约 §9：「最后查看」为空的恒排最后 —— 升/降序都成立（SQL 端 (col IS NULL) 前置子句）
+        foreach (var order in new[] { "asc", "desc" })
+        {
+            var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", new
+            {
+                folder_id = folder.Data!.FolderId,
+                sort_by = "last_visited_at",
+                sort_order = order,
+            });
+            Assert.Equal(new[] { "看过", "从未" }, contents.Links.Select(l => l.Title));
+        }
+    }
+
+    [Fact]
     public async Task Contents_Wrong_Param_Type_Fails_Not_Silently_Defaults()
     {
         var (engine, _, _) = TestHost.Create();

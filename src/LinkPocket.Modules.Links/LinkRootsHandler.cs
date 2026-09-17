@@ -26,9 +26,14 @@ internal sealed class LinkRootsHandler : ICommandHandler
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "desc";
         var perPage = Math.Max(1, CommandArgs.OptionalInt(args, "per_page", 50));
 
-        var roots = await ctx.Uow.Links.ListAsync(
-            new LinkQuerySpec { Filter = new LinkFilter { Unfiled = true } }, ctx.Ct);
-        var items = LinkSupport.SortLinks(roots, sortBy, sortOrder).Take(perPage).ToList();
+        var sort = QueryParsing.ParseSort(
+            sortBy, QueryParsing.NormalizeOrder(sortOrder), QueryParsing.LinkSortFields, "created_at");
+        var items = await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+        {
+            Filter = new LinkFilter { Unfiled = true },
+            Sort = sort,
+            Page = new PageSpec(1, perPage),
+        }, ctx.Ct);
         return CommandResult.Ok(items.Select(l => l.ToDto()).ToList());
     }
 }

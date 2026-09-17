@@ -9,7 +9,7 @@ namespace LinkPocket.Modules.Links;
 
 /// <summary>
 /// links.list（Query）：分页链接查询（过滤 + 排序 + 分页；per_page 缺省 20）。
-/// 「最后查看」排序走内存路径（null 恒排最后的既有口径，SQL 端无此语义）。
+/// 排序与分页全部 SQL 下推（含「最后查看」为空的恒排最后，由排序引擎表达）。
 /// </summary>
 internal sealed class LinkListHandler : ICommandHandler
 {
@@ -53,28 +53,14 @@ internal sealed class LinkListHandler : ICommandHandler
             CreatedTo = dateTo == null ? null : LinkSupport.ParseDate(dateTo, "date_to"),
         };
 
-        IReadOnlyList<Link> items;
-        int total;
-        var needsNullLast = sortBy == "last_visited_at";
-        if (needsNullLast)
+        var sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "created_at");
+        var items = await ctx.Uow.Links.ListAsync(new LinkQuerySpec
         {
-            var all = await ctx.Uow.Links.ListAsync(new LinkQuerySpec { Filter = filter }, ct);
-            var sorted = LinkSupport.SortLinks(all, sortBy, sortOrder);
-            total = sorted.Count;
-            items = sorted.Skip((page - 1) * perPage).Take(perPage).ToList();
-        }
-        else
-        {
-            var sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "created_at");
-            var spec = new LinkQuerySpec
-            {
-                Filter = filter,
-                Sort = sort,
-                Page = new PageSpec(page, perPage),
-            };
-            items = await ctx.Uow.Links.ListAsync(spec, ct);
-            total = await ctx.Uow.Links.CountAsync(filter, ct);
-        }
+            Filter = filter,
+            Sort = sort,
+            Page = new PageSpec(page, perPage),
+        }, ct);
+        var total = await ctx.Uow.Links.CountAsync(filter, ct);
 
         var lastPage = perPage > 0 ? (int)Math.Ceiling(total / (double)perPage) : 1;
         var dto = new PagedLinksDto
