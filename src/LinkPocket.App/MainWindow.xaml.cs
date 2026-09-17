@@ -18,8 +18,10 @@ using Material3.Wpf;
 
 namespace LinkPocket;
 
-public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBrowserLocateHost
+public partial class MainWindow : Window, Services.IDialogService, Services.INavigationService, Services.IBrowserLocateHost
 {
+    private readonly Services.AppHost _host;
+
     private readonly Managers.SelectionManager _selectionManager = new();
 
     // 搜索页自己的选中态（老「链接」页删除后，主窗口只剩搜索页需要残余状态）
@@ -28,15 +30,21 @@ public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBro
     // 搜索页右侧详情栏：复用 Views/DetailSidebar 控件（与浏览页同一数据契约，解耦于 BrowserViewModel）
     private readonly SearchDetailsViewModel _searchDetails = new();
 
-    public MainWindow()
+    public MainWindow(Services.AppHost host)
     {
+        _host = host;
         InitializeComponent();
-        DataContext = new MainViewModel(_selectionManager);
+        DataContext = new MainViewModel(_host.Api, _host.Transport, _host.Ports, _selectionManager);
         BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
-        Services.UiCoordinator.Instance = this;
-        // 内容定位组件（「跳转」）的宿主注册：本窗口只提供"切到浏览页 + 进入目录并选中一行"两个原语，
-        // 定位算法在 Services/ContentLocator 里——页面与工具都只依赖 IContentLocator，不直接碰窗口。
-        Services.BrowserLocateHost.Current = this;
+        // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
+        // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
+        _host.Ports.Dialogs = this;
+        _host.Ports.Navigation = this;
+        _host.LocateHost = this;
+        // 页面装配：XAML 声明的页面无法构造注入，由 Shell（本窗口）在构造时下发组合根。
+        ToolsView.Host = _host;
+        SmartListsView.Host = _host;
+        SettingsView.Host = _host;
         SetupSearchTable(); // 搜索结果表：列定义 + 排序 + 行交互（完全数据驱动）
         SearchSidebar.DataContext = _searchDetails; // 搜索详情栏：同一控件，数据由 SearchDetailsViewModel 驱动
         WireSearchDetailsCommands();
@@ -67,10 +75,10 @@ public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBro
         HookNavPillDriver();
     }
 
-    #region IUiCoordinator 实现（供 ViewModel 解耦调用）
-    void Services.IUiCoordinator.OpenLinkInBrowser(string linkId) => OpenLinkInBrowserPage(linkId);
+    #region 端口实现（IDialogService / INavigationService / IBrowserLocateHost，供 ViewModel 解耦调用）
+    void Services.INavigationService.OpenLinkInBrowser(string linkId) => OpenLinkInBrowserPage(linkId);
 
-    void Services.IUiCoordinator.OpenFolderInBrowser(string folderId)
+    void Services.INavigationService.OpenFolderInBrowser(string folderId)
     {
         if (string.IsNullOrEmpty(folderId) || DataContext is not MainViewModel vm) return;
         vm.SelectNavCommand.Execute("browser");
@@ -92,15 +100,15 @@ public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBro
             ? vm.BrowserViewModel.NavigateAndSelectAsync(folderId, rowId)
             : Task.FromResult(false);
 
-    Task Services.IUiCoordinator.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
+    Task Services.INavigationService.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
 
-    void Services.IUiCoordinator.ShowNavigationTabs()
+    void Services.INavigationService.ShowNavigationTabs()
     {
         if (FindName("NavigationTabs") is ItemsControl navTabs)
             navTabs.Visibility = Visibility.Visible;
     }
 
-    bool Services.IUiCoordinator.ConfirmDeleteFolder(string folderName) => ShowDeleteFolderConfirmation(folderName);
+    bool Services.IDialogService.ConfirmDeleteFolder(string folderName) => ShowDeleteFolderConfirmation(folderName);
 
     // Windows 口径：删除文件夹 = 整体移入回收站，不再罗列"子文件夹一并删除"等后果说明
     private bool ShowDeleteFolderConfirmation(string folderName)
@@ -726,7 +734,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBro
         catch { /* 无法打开时保持静默 */ }
         try
         {
-            await Services.AppServices.Api.RecordVisitAsync(item.LinkId);
+            await _host.Api.RecordVisitAsync(item.LinkId);
             if (_selectedSearchItem?.LinkId == item.LinkId)
                 _searchDetails.UpdateFrom(item, FindFolderNameForLink(item.ListId)); // 统计行原位刷新
         }
@@ -743,7 +751,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBro
 
         try
         {
-            await Services.AppServices.Api.TrashLinkAsync(item.LinkId);
+            await _host.Api.TrashLinkAsync(item.LinkId);
             _selectedSearchItem = null;
             SearchJumpToLinkBtn.IsEnabled = false;
             _searchDetails.UpdateFrom(null, "");

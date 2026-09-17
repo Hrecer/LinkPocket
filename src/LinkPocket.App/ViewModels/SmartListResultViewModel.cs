@@ -9,8 +9,8 @@ namespace LinkPocket.ViewModels
 {
     public class SmartListResultViewModel : INotifyPropertyChanged
     {
-        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
-        private static ILinkPocketApi Api => AppServices.Api;
+        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+        private readonly ILinkPocketApi Api;
 
         private readonly string _listId;
         private bool _isLoading;
@@ -68,8 +68,9 @@ namespace LinkPocket.ViewModels
             set { _totalCount = value; OnPropertyChanged(); }
         }
 
-        public SmartListResultViewModel(string listId, string title)
+        public SmartListResultViewModel(ILinkPocketApi api, string listId, string title)
         {
+            Api = api;
             _listId = listId;
             Title = title;
         }

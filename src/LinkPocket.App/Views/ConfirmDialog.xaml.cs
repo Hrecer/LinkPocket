@@ -6,7 +6,7 @@ namespace LinkPocket.Views;
 /// <summary>
 /// 统一确认弹窗（MD3 Expressive）：删除/危险操作的唯一确认入口。
 /// 浏览页（BrowserViewModel）、搜索侧栏（MainWindow.ShowConfirmDialog）、
-/// 协调器（IUiCoordinator.ConfirmDeleteFolder）全部走这里，不再各自手搓弹窗。
+/// 协调器（IDialogService.ConfirmDeleteFolder）全部走这里，不再各自手搓弹窗。
 /// 静态 Show 调用；owner 自动取当前激活窗口。
 /// </summary>
 public partial class ConfirmDialog : Window

@@ -15,14 +15,16 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class LinkEditorViewModel : INotifyPropertyChanged
 {
-    private static ILinkPocketApi Api => AppServices.Api;
+    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+    private readonly ILinkPocketApi Api;
 
     private readonly BrowserViewModel _host;
     private readonly string? _editLinkId;
     private readonly string? _createListId;
 
-    private LinkEditorViewModel(BrowserViewModel host, string? editLinkId, string? createListId)
+    private LinkEditorViewModel(ILinkPocketApi api, BrowserViewModel host, string? editLinkId, string? createListId)
     {
+        Api = api;
         _host = host;
         _editLinkId = editLinkId;
         _createListId = createListId;
@@ -35,10 +37,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>新建模式：在浏览模块当前目录创建（null = 根级）。</summary>
-    public LinkEditorViewModel(BrowserViewModel host, string? initialListId) : this(host, null, initialListId) { }
+    public LinkEditorViewModel(ILinkPocketApi api, BrowserViewModel host, string? initialListId)
+        : this(api, host, null, initialListId) { }
 
     /// <summary>编辑模式工厂：预填链接数据。</summary>
-    public static LinkEditorViewModel ForEdit(BrowserViewModel host, string linkId) => new(host, linkId, null);
+    public static LinkEditorViewModel ForEdit(ILinkPocketApi api, BrowserViewModel host, string linkId)
+        => new(api, host, linkId, null);
 
     public bool IsEditMode => _editLinkId != null;
     public string TitleText => IsEditMode ? "编辑链接" : "新建链接";

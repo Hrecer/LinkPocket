@@ -428,7 +428,7 @@
 
         </Grid>
 
-        <!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存，显隐由 IUiCoordinator 控制） ===== -->
+        <!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存，显隐由 CurrentNavId 数据触发器控制） ===== -->
         <!-- 显隐与其它页面统一走 CurrentNavId 触发器（老「链接」页删除后它成为默认首页） -->
         <browserviews:BrowserView Grid.Row="1" x:Name="BrowserPage"
                                   HorizontalAlignment="Stretch" VerticalAlignment="Stretch">

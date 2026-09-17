@@ -182,12 +182,3 @@ public sealed class ContentLocator : IContentLocator
         }
     }
 }
-
-/// <summary>
-/// 浏览宿主的注册点：由浏览模块在启动时注册自己（MainWindow 实现 <see cref="IBrowserLocateHost"/>）。
-/// 定位组件通过它取宿主，不直接引用任何窗口类型。
-/// </summary>
-public static class BrowserLocateHost
-{
-    public static IBrowserLocateHost? Current { get; set; }
-}

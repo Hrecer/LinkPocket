@@ -14,7 +14,8 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class BrowserDetailsViewModel : DetailSidebarModel
 {
-    private static ILinkPocketApi Api => Services.AppServices.Api;
+    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+    private readonly ILinkPocketApi Api;
 
     private BrowserViewModel? _host;
 
@@ -38,8 +39,9 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         () => _host != null && IsSingle && !IsFolder);
     private RelayCommand? _showDetailCommand;
 
-    public BrowserDetailsViewModel()
+    public BrowserDetailsViewModel(ILinkPocketApi api)
     {
+        Api = api;
         // 页面动作命令：复用 Host 的既有能力，避免第二套业务逻辑
         OpenCommand = new RelayCommand(
             () =>

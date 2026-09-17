@@ -18,7 +18,8 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class BrowserViewModel : INotifyPropertyChanged
 {
-    private static ILinkPocketApi Api => Services.AppServices.Api;
+    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+    private readonly ILinkPocketApi Api;
 
     public Managers.NavigationController Controller { get; } = new();
 
@@ -106,14 +107,14 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>新建链接：在当前目录创建（不再选择所属目录），打开整页编辑器。</summary>
     public void OpenEditorForCreate()
     {
-        EditorPage = new LinkEditorViewModel(this, IsAtRoot() ? null : CurrentFolderId);
+        EditorPage = new LinkEditorViewModel(Api, this, IsAtRoot() ? null : CurrentFolderId);
         IsEditorPageOpen = true;
     }
 
     /// <summary>编辑链接：整页编辑器预填数据（不改变所属目录）。</summary>
     public void OpenEditorForEdit(string linkId)
     {
-        EditorPage = LinkEditorViewModel.ForEdit(this, linkId);
+        EditorPage = LinkEditorViewModel.ForEdit(Api, this, linkId);
         IsEditorPageOpen = true;
     }
 
@@ -192,7 +193,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>右侧详情栏状态（P4.5 现代化重设计）：选中态变化时同步刷新。</summary>
-    public BrowserDetailsViewModel Details { get; } = new();
+    public BrowserDetailsViewModel Details { get; }
 
     /// <summary>选中态变化时由行 VM 回调（行是 INPC 通知源，VM 借此刷新派生属性与命令状态）。</summary>
     internal void NotifySelectionChanged()
@@ -280,8 +281,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
     private Dictionary<string, (string? ParentId, string Name)> _folderMap = new();
 
-    public BrowserViewModel()
+    public BrowserViewModel(ILinkPocketApi api)
     {
+        Api = api;
+        Details = new BrowserDetailsViewModel(Api);
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
         GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot());
@@ -294,7 +297,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string));
         NewLinkCommand = new RelayCommand(OpenEditorForCreate);
         OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
-        DetailPage = new LinkDetailPageViewModel(this);
+        DetailPage = new LinkDetailPageViewModel(Api, this);
         RenameNodeCommand = new RelayCommand<FolderNode?>(node => _ = RenameNodeAsync(node));
         DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
         CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing);

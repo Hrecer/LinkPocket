@@ -15,6 +15,9 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class BackupPanel : UserControl
     {
+        /// <summary>组合根（由宿主 SettingsPage 转发赋值）；备份导入导出经它访问后端。</summary>
+        public AppHost Host { get; set; } = null!;
+
         private string _exportDirectory = string.Empty;
         private string _importFilePath = string.Empty;
         private bool _pendingReplaceImport;          // 本次导入是否为「清空后导入」
@@ -92,7 +95,7 @@ namespace LinkPocket.Views
 
             try
             {
-                await Services.AppServices.Api.ExportBackupAsync(outputPath);
+                await Host.Api.ExportBackupAsync(outputPath);
 
                 UpdateOverlay(overlay, "导出成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);
@@ -154,7 +157,7 @@ namespace LinkPocket.Views
                 }
 
                 UpdateOverlay(overlay, "正在导入备份...", 0, 0);
-                var result = await Services.AppServices.Api.ImportBackupAsync(filePath);
+                var result = await Host.Api.ImportBackupAsync(filePath);
 
                 if (!result.Success)
                 {

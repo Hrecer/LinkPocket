@@ -24,6 +24,9 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class SmartListsPage : UserControl
     {
+        /// <summary>组合根（MainWindow 构造时赋值）；本页的后端访问经它。</summary>
+        public Services.AppHost Host { get; set; } = null!;
+
         private SearchDetailsViewModel? _details;
         private LinkItem? _selectedItem;
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
@@ -352,7 +355,7 @@ namespace LinkPocket.Views
             catch { /* 无法打开时保持静默 */ }
             try
             {
-                await AppServices.Api.RecordVisitAsync(item.LinkId);
+                await Host.Api.RecordVisitAsync(item.LinkId);
                 // 统计行原位刷新（代次校验：选中未变才写回）
                 if (_details != null && _selectedItem?.LinkId == item.LinkId)
                     _details.UpdateFrom(item, ResolveFolderName(item.ListId));
@@ -373,7 +376,7 @@ namespace LinkPocket.Views
             _isDeleting = true;
             try
             {
-                await AppServices.Api.TrashLinkAsync(item.LinkId);
+                await Host.Api.TrashLinkAsync(item.LinkId);
                 _selectedItem = null;
                 _details?.Clear();
 

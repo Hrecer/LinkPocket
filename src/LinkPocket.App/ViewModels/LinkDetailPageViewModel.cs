@@ -14,14 +14,16 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class LinkDetailPageViewModel : INotifyPropertyChanged
 {
-    private static ILinkPocketApi Api => AppServices.Api;
+    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+    private readonly ILinkPocketApi Api;
 
     private readonly BrowserViewModel _host;
     private string? _linkId;
     private int _generation;
 
-    public LinkDetailPageViewModel(BrowserViewModel host)
+    public LinkDetailPageViewModel(ILinkPocketApi api, BrowserViewModel host)
     {
+        Api = api;
         _host = host;
         BackCommand = new RelayCommand(() => _ = BackAsync());
         // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（_linkId/Url 尚空），

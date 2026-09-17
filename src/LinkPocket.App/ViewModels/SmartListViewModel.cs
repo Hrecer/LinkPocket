@@ -18,14 +18,16 @@ namespace LinkPocket.ViewModels
 
     public class SmartListViewModel : INotifyPropertyChanged
     {
+        private readonly ILinkPocketApi _api;
         private bool _isLoading;
         private ObservableCollection<SmartListCardItem> _cards = new();
         private SmartListResultViewModel? _resultViewModel;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public SmartListViewModel()
+        public SmartListViewModel(ILinkPocketApi api)
         {
+            _api = api;
             InitializeCards();
         }
 
@@ -76,7 +78,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 var def = Definition(listId);
-                var resultVm = new SmartListResultViewModel(listId, def.Title)
+                var resultVm = new SmartListResultViewModel(_api, listId, def.Title)
                 {
                     Subtitle = def.Subtitle,
                 };

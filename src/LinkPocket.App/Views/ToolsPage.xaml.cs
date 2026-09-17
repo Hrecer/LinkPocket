@@ -18,12 +18,15 @@ namespace LinkPocket.Views
     /// <summary>
     /// 工具页（v2 完全重写）：左栏工具列表 + 右主区（共享数据表 / 表单），重复组明细为整页二级面板。
     /// 两条硬性架构约定：
-    /// 1. 「跳转」一律通过 Services 层组件 <see cref="IContentLocator"/>（AppServices.Locator）执行——
+    /// 1. 「跳转」一律通过 Services 层组件 <see cref="IContentLocator"/>（组合根的 Locator）执行——
     ///    本页不直连任何界面方法，跳转语义（进入目标目录并选中该行）由组件统一承担；
     /// 2. 列表一律复用共享 <see cref="SortableDataTable"/>，不手绘卡片。
+    /// 依赖来源：XAML 声明的页面无法构造注入，由 Shell（MainWindow）在构造时下发组合根（Host）。
     /// </summary>
     public partial class ToolsPage : UserControl
     {
+        /// <summary>组合根（MainWindow 构造时赋值）；本页一切后端访问与定位都经它。</summary>
+        public Services.AppHost Host { get; set; } = null!;
         private sealed class ToolItem
         {
             public string Id { get; init; } = string.Empty;
@@ -648,7 +651,7 @@ namespace LinkPocket.Views
             try
             {
                 foreach (var linkId in toDelete)
-                    await AppServices.Api.TrashLinkAsync(linkId);
+                    await Host.Api.TrashLinkAsync(linkId);
 
                 // 刷新目录树计数（原经 LinkViewModel.LinksChanged 链条触发，现直调一次；
                 // 查重重跑仍由本方法后半段的就地刷新/回表重跑承担，明细展开时 OnToolsDataChanged 本就不重跑）。
@@ -739,7 +742,7 @@ namespace LinkPocket.Views
         /// <summary>跳转统一入口：全部经 <see cref="IContentLocator"/>（组件），本页不做任何定位算法。</summary>
         private async Task<LocateResult> JumpToIdAsync(string id)
         {
-            var locator = AppServices.Locator;
+            var locator = Host.Locator;
             if (locator == null)
             {
                 ShowJumpHint("定位组件不可用，请重启应用");
@@ -915,7 +918,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var info = await AppServices.Api.InspectBookmarksHtmlAsync(filePath);
+                var info = await Host.Api.InspectBookmarksHtmlAsync(filePath);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
 
                 if (!info.IsValid)
@@ -965,7 +968,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var count = await AppServices.Api.ImportBookmarksHtmlAsync(filePath);
+                var count = await Host.Api.ImportBookmarksHtmlAsync(filePath);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
 
                 var detail = _importInspection is { } info
@@ -1036,11 +1039,11 @@ namespace LinkPocket.Views
 
             try
             {
-                await AppServices.Api.ExportBookmarksHtmlAsync(outputPath);
+                await Host.Api.ExportBookmarksHtmlAsync(outputPath);
 
                 // 自校验：把刚写出的产物再解析一遍，用产物自身的数据报数（而不是"期望值"）
                 ExportProgressText.Text = "正在校验导出产物...";
-                var info = await AppServices.Api.InspectBookmarksHtmlAsync(outputPath);
+                var info = await Host.Api.InspectBookmarksHtmlAsync(outputPath);
                 ExportProgressRow.Visibility = Visibility.Collapsed;
 
                 if (!info.IsValid)

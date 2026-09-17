@@ -19,15 +19,17 @@ namespace LinkPocket.ViewModels
     {
         private readonly Managers.SelectionManager _selectionManager;
 
-        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
-        private static ILinkPocketApi Api => AppServices.Api;
+        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+        private readonly ILinkPocketApi Api;
+        private readonly ILinkPocketTransport _transport;
+        private readonly Services.UiPortProvider _ports;
         
         private string _currentNavId = "browser";
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
 
         /// <summary>资源管理器式浏览页（P4）：由 MainWindow 取用并设为 BrowserView 的 DataContext。</summary>
-        public BrowserViewModel BrowserViewModel { get; } = new();
+        public BrowserViewModel BrowserViewModel { get; }
         private RecycleBinViewModel? _recycleBinViewModel;
         private SettingsViewModel? _settingsViewModel;
         private SmartListViewModel? _smartListViewModel;
@@ -68,17 +70,20 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private static Services.IUiCoordinator? Ui => Services.UiCoordinator.Instance;
-
-        public MainViewModel(Managers.SelectionManager selectionManager)
+        public MainViewModel(ILinkPocketApi api, ILinkPocketTransport transport,
+            Services.UiPortProvider ports, Managers.SelectionManager selectionManager)
         {
+            Api = api;
+            _transport = transport;
+            _ports = ports;
             _selectionManager = selectionManager;
 
             InitializeNavigationItems();
 
-            _recycleBinViewModel = new RecycleBinViewModel();
+            _recycleBinViewModel = new RecycleBinViewModel(Api);
             _settingsViewModel = new SettingsViewModel();
-            _smartListViewModel = new SmartListViewModel();
+            _smartListViewModel = new SmartListViewModel(Api);
+            BrowserViewModel = new BrowserViewModel(Api);
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
@@ -125,7 +130,7 @@ namespace LinkPocket.ViewModels
 
             // P3 事件推送：订阅后端数据变更，防抖后刷新当前视图。
             // 现阶段与既有 EventHandler 链并存（防抖去重）；P4/P6 再逐步替换旧链。
-            Services.AppServices.Transport.EventReceived += OnTransportEventReceived;
+            _transport.EventReceived += OnTransportEventReceived;
         }
 
         private System.Windows.Threading.DispatcherTimer? _backendEventTimer;
@@ -508,8 +513,9 @@ namespace LinkPocket.ViewModels
                 if (_recycleBinViewModel != null)
                 {
                     await _recycleBinViewModel.LoadAsync();
-                    if (Ui != null)
-                        await Ui.RefreshTrashPageAsync();
+                    var navigation = _ports.Navigation;
+                    if (navigation != null)
+                        await navigation.RefreshTrashPageAsync();
                 }
             }
         }
@@ -855,7 +861,7 @@ namespace LinkPocket.ViewModels
                 if (!string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 {
                     var folderName = FindFolderNameById(FolderItems, _selectionManager.SelectedFolderId);
-                    if (Ui?.ConfirmDeleteFolder(folderName) != true)
+                    if (_ports.Dialogs?.ConfirmDeleteFolder(folderName) != true)
                         return;
 
                     await Api.DeleteFolderAsync(_selectionManager.SelectedFolderId);

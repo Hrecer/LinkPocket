@@ -8,7 +8,6 @@ public partial class App : Application
 {
     public App()
     {
-        Services.AppServices.Initialize();
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         DisableWerDumps();
@@ -35,6 +34,12 @@ public partial class App : Application
         Resources["SurfaceContainerHighest"] = new System.Windows.Media.SolidColorBrush(
             System.Windows.Media.Color.FromRgb(0xE3, 0xD9, 0xEB));
         base.OnStartup(e);
+
+        // 组合根装配（阶段 7）：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
+        var host = Services.AppHost.CreateDefault();
+        var window = new MainWindow(host);
+        MainWindow = window; // ShutdownMode=OnMainWindowClose 依赖此引用
+        window.Show();
     }
 
     /// <summary>

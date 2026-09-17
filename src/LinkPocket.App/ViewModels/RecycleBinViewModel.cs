@@ -18,16 +18,17 @@ namespace LinkPocket.ViewModels
     /// </summary>
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
-        /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
-        private static ILinkPocketApi Api => AppServices.Api;
+        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
+        private readonly ILinkPocketApi Api;
 
         private bool _isLoading;
         private bool _hasError;
         private string _errorMessage = string.Empty;
         private TrashEntryDto? _selectedEntry;
 
-        public RecycleBinViewModel()
+        public RecycleBinViewModel(ILinkPocketApi api)
         {
+            Api = api;
         }
 
         /// <summary>回收站文件夹树（纯视觉层级：节点不可打开，仅展示被删文件夹结构与计数）。</summary>

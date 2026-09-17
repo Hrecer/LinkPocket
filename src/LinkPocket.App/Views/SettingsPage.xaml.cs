@@ -15,6 +15,19 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class SettingsPage : UserControl
     {
+        private AppHost _host = null!;
+
+        /// <summary>组合根（MainWindow 构造时赋值），并转发给页内的备份面板。</summary>
+        public AppHost Host
+        {
+            get => _host;
+            set
+            {
+                _host = value;
+                BackupPanelControl.Host = value;
+            }
+        }
+
         public SettingsPage()
         {
             InitializeComponent();
