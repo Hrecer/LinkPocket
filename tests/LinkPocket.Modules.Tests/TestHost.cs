@@ -14,6 +14,7 @@ internal static class TestHost
         var factory = new LinkPocketDbContextFactory(dbPath);
 
         var registry = new CommandRegistry();
+        EngineCore? engineRef = null;   // diagnostics.collect 的 runtime 段接线（引擎后于注册构造）
         registry.RegisterAll(Modules.Folders.FoldersModule.CreateHandlers());
         registry.RegisterAll(Modules.Links.LinksModule.CreateHandlers());
         registry.RegisterAll(Modules.Trash.TrashModule.CreateHandlers());
@@ -22,8 +23,10 @@ internal static class TestHost
         registry.RegisterAll(Modules.Backup.BackupModule.CreateHandlers());
         registry.RegisterAll(Modules.Dedup.DedupModule.CreateHandlers());
         registry.RegisterAll(Modules.Favicon.FaviconModule.CreateHandlers());
-        registry.RegisterAll(Modules.Maintenance.MaintenanceModule.CreateHandlers());
+        registry.RegisterAll(Modules.Maintenance.MaintenanceModule.CreateHandlers(() => engineRef!.RuntimeStats));
 
-        return (new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext())), factory, dbPath);
+        var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()));
+        engineRef = engine;
+        return (engine, factory, dbPath);
     }
 }

@@ -21,13 +21,16 @@ internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
             new { schema_version = await ctx.Uow.SchemaVersionAsync(ctx.Ct) }));
 }
 
-/// <summary>diagnostics.collect（Query）：脱敏诊断信息打包（版本/计数；审计与事件摘要随后续阶段接入）。</summary>
-internal sealed class DiagnosticsCollectHandler : ICommandHandler
+/// <summary>
+/// diagnostics.collect（Query）：脱敏诊断信息打包（版本 / schema / 各表计数 / 运行时可观测读数）。
+/// runtime 段由组合根接线提供（阶段 12：查询缓存与事件存储读数）；未接线则为 null（不填假值）。
+/// </summary>
+internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtimeStats) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "diagnostics.collect",
         Category: "maintenance",
-        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 生成时间（脱敏）",
+        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 缓存与事件存储读数（脱敏）",
         Parameters: [],
         Caps: CommandCaps.Query);
 
@@ -36,6 +39,7 @@ internal sealed class DiagnosticsCollectHandler : ICommandHandler
         var ct = ctx.Ct;
         var standalone = await ctx.Uow.Trash.ListStandaloneLinksAsync(ct);
         var units = await ctx.Uow.Trash.ListFoldersAsync(ct);
+        var runtime = runtimeStats?.Invoke();
 
         var diagnostics = new
         {
@@ -49,6 +53,17 @@ internal sealed class DiagnosticsCollectHandler : ICommandHandler
                 root_links = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct),
                 trash_links = standalone.Count,
                 trash_units = units.Count,
+            },
+            // null = 未接线（观测面纪律：不假装有数据）；接线后即为引擎缓存/事件存储真实读数
+            runtime = runtime is null ? null : new
+            {
+                cache_entries = runtime.CacheEntries,
+                cache_hits = runtime.CacheHits,
+                cache_misses = runtime.CacheMisses,
+                cache_evictions = runtime.CacheEvictions,
+                cache_invalidations = runtime.CacheInvalidations,
+                cache_hit_rate = Math.Round(runtime.CacheHitRate, 4),
+                event_store_head = runtime.EventStoreHead,
             },
         };
         return CommandResult.Ok(JsonSerializer.SerializeToElement(diagnostics));

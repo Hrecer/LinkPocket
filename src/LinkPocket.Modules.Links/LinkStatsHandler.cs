@@ -17,7 +17,9 @@ internal sealed class LinkStatsHandler : ICommandHandler
         Category: "links",
         Description: "全库统计：链接总数 / 回收站项数 / 根级书签数 / 按目录直接子链接计数",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 侧栏每次刷新都取（4 次查询：两趟回收站 + 总数 + 根级 + 分组），三类表都可能影响计数
+        Cache: CachePolicy.Counting());
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

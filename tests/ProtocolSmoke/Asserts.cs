@@ -8,12 +8,17 @@ internal static class Asserts
         if (!cond) throw new Exception("断言失败: " + msg);
     }
 
-    /// <summary>性能断言：DEBUG 构建按倍数放宽（方案 7.3 门槛按 Release/CI 口径标定）。</summary>
+    /// <summary>
+    /// 性能断言：方案 7.3 的门槛按 <b>Release/CI 口径</b>标定。
+    /// Debug 构建统一放宽 <see cref="PerfReport.Relaxation"/> 倍（JIT 未优化、无内联），
+    /// 严格模式（<c>--strict-perf</c> 或 <c>LP_PERF_STRICT=1</c>）下不放宽 —— 这就是"基准进 CI"的开关。
+    /// 实测值同时记入 <see cref="PerfReport"/>，随运行落盘 perf_report.json。
+    /// </summary>
     public static void Within(long elapsedMs, long limitMs, string what)
     {
-#if DEBUG
-        limitMs *= 5;
-#endif
-        That(elapsedMs <= limitMs, $"{what} 应 ≤ {limitMs}ms，实际 {elapsedMs}ms");
+        var effectiveLimit = PerfReport.Instance.EffectiveLimit(limitMs);
+        PerfReport.Instance.Record(what, elapsedMs, effectiveLimit);
+        That(elapsedMs <= effectiveLimit,
+            $"{what} 应 ≤ {effectiveLimit}ms（标定 {limitMs}ms × {PerfReport.Instance.Relaxation}），实际 {elapsedMs}ms");
     }
 }

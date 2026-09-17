@@ -238,8 +238,11 @@ internal static partial class SmokeRunner
                 "10k 导入应产出 10000 条书签");
             Asserts.Within(sw.ElapsedMilliseconds, 5_000, "10k 书签导入");
 
+            // 缓存命中路径（阶段 12）：同一个 10k 库上冷查询 vs 命中
+            await MeasureCacheLatency(client);
+
             File.Delete(htmlPath);
-            Console.WriteLine("[OK] §9 10k 性能门槛：contents / search / move_batch(10) / import(10k) 全部达标");
+            Console.WriteLine("[OK] §9 10k 性能门槛：contents / search / move_batch(10) / import(10k) / 缓存命中 全部达标");
         }
         finally
         {

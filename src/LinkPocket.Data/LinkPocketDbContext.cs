@@ -33,13 +33,18 @@ public class LinkPocketDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // ⚠️ 索引的单一事实源是 SchemaMigrator 的 DDL 脚本（建库走原生 SQL，EF 的 EnsureCreated/迁移都不参与）。
+        // 这里的 HasIndex 声明只用于「模型与库形状一致」的可读性/审计；阶段 12 索引复核已逐条对齐：
+        // 删掉基线里并不存在的 links(is_important)，补上 v3 新加的 created_at / url COLLATE NOCASE / trash_folders(deleted_at)。
         modelBuilder.Entity<Link>(entity =>
         {
             entity.ToTable("links");
             entity.HasKey(e => e.LinkId);
             entity.HasIndex(e => e.Url);
             entity.HasIndex(e => e.LastVisitedAt);
-            entity.HasIndex(e => e.IsImportant);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.UpdatedAt);
+            // ListId 的索引由下面的 FK 关系自动派生（idx_links_folder），不重复声明
 
             entity.HasOne(e => e.Folder)
                   .WithMany(f => f.Links)
@@ -51,6 +56,7 @@ public class LinkPocketDbContext : DbContext
         {
             entity.ToTable("folders");
             entity.HasKey(e => e.FolderId);
+            // parent_id 索引由自引用 FK 自动派生（idx_folders_parent），不重复声明
             entity.HasOne(e => e.Parent)
                   .WithMany(f => f.Children)
                   .HasForeignKey(e => e.ParentId)

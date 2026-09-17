@@ -5,9 +5,10 @@ namespace LinkPocket.Data;
 /// <summary>
 /// schema v2 建库与版本演进（方案 6.1/6.2，零责任定稿）：
 ///
-/// <para><b>全新建库</b>：首次使用（库文件不存在或为空）时在单个事务内执行 v2 基线 DDL
-/// 并写入 <c>schema_migrations(version=2)</c>。全库表/列/索引 = 方案 6.1 逐字定稿
-/// （lists→folders、list_id→folder_id、哨兵 "0" 不存在、主键统一 id、根 = NULL）。</para>
+/// <para><b>全新建库</b>：首次使用（库文件不存在或为空）时在单个事务内执行<b>完整版本链</b>
+/// （v2 基线 DDL + 全部演进脚本，见 <c>Scripts</c>）并逐版本写入 <c>schema_migrations</c>。
+/// 全库表/列/索引 = 方案 6.1 逐字定稿（lists→folders、list_id→folder_id、哨兵 "0" 不存在、
+/// 主键统一 id、根 = NULL）+ 阶段 12 索引复核追加的 v3 索引。</para>
 ///
 /// <para><b>版本表</b>：<c>schema_migrations</c> 仅服务 v2 之后的<b>内部常规演进</b>
 /// （新增列/索引/表时追加版本脚本，按版本号顺序应用、幂等跳过已应用版本），
@@ -96,7 +97,7 @@ public static class SchemaMigrator
         return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
     }
 
-    /// <summary>应用当前版本之后的所有版本脚本（当前仅 v2 基线；后续演进追加到 Scripts）。</summary>
+    /// <summary>应用当前版本之后的所有版本脚本（后续演进一律追加到 Scripts 末尾）。</summary>
     private static void ApplyPending(SqliteConnection conn, int currentVersion)
     {
         foreach (var (version, sql) in Scripts)
@@ -106,9 +107,12 @@ public static class SchemaMigrator
         }
     }
 
-    /// <summary>空库：建 v2 基线（DDL + 版本行，同一事务——中途失败不留半成品库）。</summary>
+    /// <summary>
+    /// 空库：一次性跑完整版本链（基线 DDL + 全部演进脚本），同一事务——中途失败不留半成品库。
+    /// 每条脚本自带版本行 → 新建库与升级库共用同一份脚本，不存在「只对新库生效」的隐性差异。
+    /// </summary>
     private static void CreateBaseline(SqliteConnection conn)
-        => ExecuteInTransaction(conn, Scripts[0].Sql + BaselineVersionRow);
+        => ExecuteInTransaction(conn, string.Join("\n", Scripts.Select(s => s.Sql)));
 
     private static void ExecuteInTransaction(SqliteConnection conn, string sql)
     {
@@ -120,15 +124,16 @@ public static class SchemaMigrator
         tx.Commit();
     }
 
-    /// <summary>版本脚本表（方案 6.2：schema_migrations 仅服务 v2 内部常规演进）。</summary>
-    private static readonly (int Version, string Sql)[] Scripts =
+    /// <summary>版本脚本表（方案 6.2：schema_migrations 仅服务 v2 之后的内部常规演进）。</summary>
+    private static (int Version, string Sql)[] Scripts =>
     [
-        (2, BaselineV2),
+        (2, BaselineV2 + VersionRow(2)),
+        (3, IndexesV3 + VersionRow(3)),
     ];
 
-    /// <summary>建库时写入的基线版本行（v2，applied_at = 建库时刻 UTC）。</summary>
-    private static string BaselineVersionRow =>
-        "INSERT INTO schema_migrations (version, applied_at) VALUES (2, '" +
+    /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
+    private static string VersionRow(int version) =>
+        $"INSERT INTO schema_migrations (version, applied_at) VALUES ({version}, '" +
         DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "');";
 
     /// <summary>
@@ -172,5 +177,36 @@ public static class SchemaMigrator
           changes_json TEXT NULL, batch_id TEXT NULL, correlation_id TEXT NOT NULL);
         CREATE TABLE idempotency (key TEXT PRIMARY KEY, result_json TEXT NOT NULL, at TEXT NOT NULL);
         CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+        """;
+
+    /// <summary>
+    /// v3 版本脚本（阶段 12 索引复核）：<b>只加索引，不动表/列</b>——三个候选都是
+    /// 用 <c>EXPLAIN QUERY PLAN</c> 在实测计划里定位出来的空缺，不是凭感觉加的：
+    ///
+    /// <list type="bullet">
+    /// <item><c>idx_links_created</c>：<c>links.list</c> 缺省排序（created_at DESC）与
+    /// <c>links.smart_list recently_added</c> 的键。加之前计划是 <c>SCAN links | USE TEMP B-TREE FOR ORDER BY</c>
+    /// （10k 全表 + 临时排序），加之后为 <c>SCAN links USING INDEX idx_links_created</c>（有序扫描，零临时排序）。</item>
+    /// <item><c>idx_links_url_nocase</c>：<c>links.query { url, starts }</c> 的前缀 LIKE 走不到
+    /// <c>idx_links_url</c>（BINARY 索引对默认大小写不敏感的 LIKE 无效，实测 <c>SCAN links</c>）；
+    /// NOCASE 索引把该条件变成范围 SEARCH。注意<b>不能</b>用它替换 <c>idx_links_url</c>：
+    /// 实测 <c>url = ?</c>（BINARY 语义）在只有 NOCASE 索引时退化为全表 SCAN，故两条并存、各司其职。</item>
+    /// <item><c>idx_trash_folders_deleted</c>：<c>trash.list / trash.tree</c> 按 deleted_at 倒序，
+    /// 实测 SCAN + 临时排序；同时补齐 EF 模型已声明而基线 DDL 漏建的不一致。</item>
+    /// </list>
+    ///
+    /// <para><b>复核后决定不加的</b>（避免投机索引的写放大与小表收益倒挂）：
+    /// <c>links(title)</c>（界面侧名称排序在内存做culture 比较，SQL 下推的 title 排序非热点）、
+    /// <c>links(visit_count)</c>（most_visited 结果已进查询缓存，10k 全表排序仍在毫秒级）、
+    /// <c>links(is_important)</c>（低选择性，EF 模型里那条声明属历史遗留，已在模型中删除）、
+    /// <c>(trash_folder_id, deleted_at)</c> 复合索引（回收站单表量级小，且与既有 idx_trash_links_folder
+    /// 高度重叠 = 白付写代价）、<c>audit_log(at)</c> / <c>idempotency(at)</c>
+    /// （对应当前尚不存在的 <c>audit.prune</c> 保留策略，随该命令一并落地而非预留空索引）。</para>
+    /// </summary>
+    private const string IndexesV3 =
+        """
+        CREATE INDEX idx_links_created ON links(created_at);
+        CREATE INDEX idx_links_url_nocase ON links(url COLLATE NOCASE);
+        CREATE INDEX idx_trash_folders_deleted ON trash_folders(deleted_at);
         """;
 }

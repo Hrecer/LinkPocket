@@ -13,7 +13,9 @@ internal sealed class TrashTreeHandler : ICommandHandler
         Category: "trash",
         Description: "回收站单元树（平铺节点列表；link_count = 单元子树内的书签总数，层级由调用方组装）",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 单元树 = 全量单元 + 全量子树计数（递归拼装），只读回收站两表
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

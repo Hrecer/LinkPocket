@@ -149,9 +149,14 @@ public sealed class BatchEngine : IBatchEngine
             if (!dryRun)
             {
                 // 事件发布：嵌套事件已随执行入父缓冲，提交成功后统一发布一次
-                // （不变量：订阅方不得同步回派命令）
-                foreach (var name in ctx.TakeNestedEvents())
-                    await _engine.Events.PublishAsync(new DomainEvent(name, DateTimeOffset.Now, null, correlationId, caller));
+                // （不变量：订阅方不得同步回派命令；发布路径统一走 EngineCore.PublishAsync → 缓存世代戳同步推进）
+                var merged = ctx.TakeNestedChanges();
+                if (merged.Events.Count > 0)
+                {
+                    var payload = JsonSerializer.SerializeToElement(merged, EngineJson.Options);
+                    foreach (var name in merged.Events)
+                        await _engine.PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));
+                }
             }
             return (results, touched, events);
         }

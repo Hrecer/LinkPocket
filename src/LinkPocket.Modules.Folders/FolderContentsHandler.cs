@@ -26,7 +26,10 @@ internal sealed class FolderContentsHandler : ICommandHandler
             ParamSpec.Opt<int>("page", "页码（从 1 起）"),
             ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（上限 10000）"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 目录页 = 4 次查询（文件夹全量 + 直接计数 + 递归计数 + 链接），UI 每次刷新/导航都要；
+        // 结果只受「文件夹/链接变更」影响 → 内容类缓存（事件驱动失效）
+        Cache: CachePolicy.Content());
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

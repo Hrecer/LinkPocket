@@ -31,4 +31,8 @@ public interface IEngine
     /// <summary>批引擎（方案 4.3 L2 编排层）：batch.run / batch.dry_run / batch.status 的执行面。
     /// 组合时注入（OrchestrationHost）；未装配为 null（wire 调用编排命令报「未装配」）。</summary>
     IBatchEngine? Batch { get; }
+
+    /// <summary>运行时统计（方案 4.5 诊断面 / 阶段 12）：查询缓存命中·失效计数 + 事件存储游标。
+    /// 排障与 AI 自校验的可观测入口——缓存是否真在工作，只能靠读数说话，不靠"应该会命中"。</summary>
+    EngineRuntimeStats RuntimeStats { get; }
 }

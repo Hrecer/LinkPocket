@@ -3,7 +3,7 @@ using LinkPocket.Contracts;
 
 namespace ProtocolSmoke;
 
-/// <summary>冒烟主流程：目录自描述 → wire → 数据流 → 回收站 → 书签/备份往返 → 引擎能力 → 并发 → 错误模型 → 性能 → 编排层。</summary>
+/// <summary>冒烟主流程：目录自描述 → wire → 数据流 → 回收站 → 书签/备份往返 → 引擎能力 → 并发 → 错误模型 → 性能 → 编排层 → 缓存与增量。</summary>
 internal static partial class SmokeRunner
 {
     public static async Task RunAsync()
@@ -22,6 +22,7 @@ internal static partial class SmokeRunner
             await SectionErrorModel(state);
             await SectionPerformance(state);
             await SectionOrchestration(state);
+            await SectionCacheAndInvalidation(state);
             Console.WriteLine("全部通过");
         }
         finally

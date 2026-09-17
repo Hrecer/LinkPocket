@@ -13,7 +13,9 @@ internal sealed class FolderTreeHandler : ICommandHandler
         Category: "folders",
         Description: "取全部文件夹（平铺、按名称排序；link_count = 递归子链接数，层级由调用方组装）",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 树 = 文件夹全量 + 递归计数全量重算（7.2：树快照缓存 + folders.changed 精确失效）
+        Cache: CachePolicy.Content());
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

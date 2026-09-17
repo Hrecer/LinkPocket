@@ -10,6 +10,7 @@ internal sealed class CommandContextImpl : ICommandContext
 {
     private readonly EngineCore _engine;
     private readonly List<string> _nestedEvents = [];
+    private readonly List<EntityRef> _nestedTouched = [];
 
     public CommandContextImpl(
         IUnitOfWork uow,
@@ -42,14 +43,24 @@ internal sealed class CommandContextImpl : ICommandContext
     public Task<CommandResult> DispatchNestedAsync(string command, object? args = null, CancellationToken ct = default)
         => _engine.ExecuteNestedAsync(this, command, args, ct);
 
-    /// <summary>嵌套子命令产生的领域事件（父提交后随父事件一并发布）。</summary>
-    public void CollectNestedEvent(string eventName) => _nestedEvents.Add(eventName);
-
-    public IReadOnlyList<string> TakeNestedEvents()
+    /// <summary>累积嵌套子命令的变更集（父提交成功后随父事件一并发布并失效缓存；父审计条目下附带子记录）。</summary>
+    public void CollectNestedChange(ChangeSet? changes)
     {
-        var taken = _nestedEvents.ToArray();
+        if (changes is null) return;
+        _nestedEvents.AddRange(changes.Events);
+        _nestedTouched.AddRange(changes.Touched);
+    }
+
+    /// <summary>取走嵌套变更集（事件名去重、受影响实体去重）：父级只发布/失效一次。</summary>
+    public ChangeSet TakeNestedChanges()
+    {
+        var merged = new ChangeSet(
+            _nestedTouched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
+            _nestedEvents.Distinct(StringComparer.Ordinal).ToArray(),
+            null);
         _nestedEvents.Clear();
-        return taken;
+        _nestedTouched.Clear();
+        return merged;
     }
 }
 

@@ -16,7 +16,9 @@ internal sealed class TrashListHandler : ICommandHandler
         Category: "trash",
         Description: "回收站平铺列表：单独删除的书签 + 被删文件夹单元根（按删除时间倒序）",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 平铺列表只读回收站两表（回收站页每次刷新都取）
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

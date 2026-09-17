@@ -631,12 +631,19 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // v2 全新建库起步（schema_migrations 版本表，方案 6.1/6.2）
-        Assert.Equal(2, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 完整版本链（v2 基线 + v3 索引复核），版本表落最高版本
+        Assert.Equal(3, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
         Assert.Equal(1, diag.GetProperty("counts").GetProperty("folders").GetInt32());
+
+        // runtime 段（阶段 12）：组合根已接线 → 必须是引擎真实读数而不是 null/假值
+        var runtime = diag.GetProperty("runtime");
+        Assert.Equal(JsonValueKind.Object, runtime.ValueKind);
+        Assert.Equal(0L, runtime.GetProperty("cache_hits").GetInt64());
+        Assert.Equal(0L, runtime.GetProperty("cache_entries").GetInt64());
+        Assert.True(runtime.GetProperty("event_store_head").GetInt64() > 0, "建文件夹后事件存储游标应已推进");
     }
 
     [Fact]

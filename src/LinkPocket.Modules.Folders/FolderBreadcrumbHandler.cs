@@ -13,7 +13,9 @@ internal sealed class FolderBreadcrumbHandler : ICommandHandler
         Category: "folders",
         Description: "取某目录的面包屑路径（名称列表，含根显示名「全部书签」）",
         Parameters: [ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根")],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 每次目录导航都会取面包屑（全量文件夹一遍）；只受文件夹改名/移动影响
+        Cache: CachePolicy.Of(10, DomainEventNames.FoldersChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

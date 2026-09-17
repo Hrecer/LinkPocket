@@ -137,3 +137,36 @@ internal sealed class SlowWriteHandler : ICommandHandler
         return CommandResult.Ok("slow-done");
     }
 }
+
+/// <summary>
+/// 可缓存查询（测试用）：命令名与缓存依赖可配，并记录「实际触库次数」——
+/// 缓存断言只能靠触库次数证明（结果相同可能是缓存命中，也可能是数据没变）。
+/// </summary>
+internal sealed class CachedQueryHandler(string name, CachePolicy policy) : ICommandHandler
+{
+    private int _executions;
+
+    /// <summary>实际进入 Handler 的次数（缓存命中不递增）。</summary>
+    public int Executions => Volatile.Read(ref _executions);
+
+    public CommandDescriptor Descriptor { get; } = new(
+        name, "test", $"可缓存测试查询（依赖 {string.Join("+", policy.DependsOn)}，TTL {policy.TtlSeconds}s）",
+        [], CommandCaps.Query, Cache: policy);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        Interlocked.Increment(ref _executions);
+        var folders = await ctx.Uow.Folders.ListAllAsync(ctx.Ct);
+        return CommandResult.Ok(folders.Count);
+    }
+}
+
+/// <summary>变更（测试用）：只发布指定事件名，用于验证「缓存失效按事件名精确生效、不是全清」。</summary>
+internal sealed class EmitEventHandler(string eventName) : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        $"test.emit_{eventName.Replace('.', '_')}", "test", $"只发布 {eventName}", [], CommandCaps.Mutation);
+
+    public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+        => Task.FromResult(CommandResult.Ok("ok", ChangeSet.Of(new EntityRef("test", "1"), eventName)));
+}

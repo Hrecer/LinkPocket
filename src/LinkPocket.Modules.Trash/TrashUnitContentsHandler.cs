@@ -17,7 +17,9 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
         Category: "trash",
         Description: "取回收站单元内容：直接子单元 + 子树内全部书签快照",
         Parameters: [ParamSpec.Req<string>("id", "回收站单元 ID")],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 单元内容 = 单元全量 + 每子树一趟（N+1），只读回收站两表
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

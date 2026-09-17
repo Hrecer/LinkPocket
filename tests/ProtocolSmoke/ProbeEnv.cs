@@ -23,6 +23,10 @@ internal static class ProbeEnv
     {
         var factory = new LinkPocketDbContextFactory(dbPath);
         var registry = new CommandRegistry();
+
+        // diagnostics.collect 的 runtime 段由组合根接线（阶段 12）：引擎在注册之后才构造，
+        // 故用延迟读取的闭包 —— 引擎 = 观测对象本身，接线不得引入第二份统计源。
+        EngineCore? engineRef = null;
         registry.RegisterAll(LinkPocket.Modules.Folders.FoldersModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Links.LinksModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Trash.TrashModule.CreateHandlers());
@@ -31,12 +35,14 @@ internal static class ProbeEnv
         registry.RegisterAll(LinkPocket.Modules.Backup.BackupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Dedup.DedupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Favicon.FaviconModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers());
+        registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers(
+            () => engineRef!.RuntimeStats));
 
         // 阶段 11 编排层：批引擎/撤销协调器挂引擎 + 16 个编排命令入目录 + audit_log/idempotency 落表
         var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()),
             audit: new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(() => factory.CreateDbContext())),
             idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+        engineRef = engine;
         var stagingRoot = Path.Combine(Path.GetDirectoryName(dbPath)!, $"lpsmoke_staging_{Path.GetFileNameWithoutExtension(dbPath)}");
         registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext(), stagingRoot));
         return new EngineClient(engine);

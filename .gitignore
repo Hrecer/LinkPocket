@@ -6,3 +6,5 @@ linkpocket.db
 favicons/
 *.lpbackup
 *.zip
+build/artifacts/
+perf_report.json

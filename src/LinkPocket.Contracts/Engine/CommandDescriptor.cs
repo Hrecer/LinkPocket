@@ -50,11 +50,15 @@ public sealed record CommandDescriptor(
     IReadOnlyList<ParamSpec> Parameters,
     CommandCaps Caps,
     string? UndoInverse = null,
-    ImpactSummary? Impact = null)
+    ImpactSummary? Impact = null,
+    CachePolicy? Cache = null)
 {
     public bool IsQuery => Caps.HasFlag(CommandCaps.Query);
     public bool IsMutation => Caps.HasFlag(CommandCaps.Mutation);
     public bool IsDestructive => Caps.HasFlag(CommandCaps.Destructive);
+
+    /// <summary>本查询是否参与结果缓存（方案 7.2：只有声明了依赖与 TTL 的查询才缓存）。</summary>
+    public bool IsCacheable => IsQuery && Cache is not null;
 }
 
 /// <summary>引擎目录清单（engine.describe 的返回；AI 工具清单/文档的唯一来源）。</summary>

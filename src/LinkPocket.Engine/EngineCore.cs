@@ -25,6 +25,7 @@ public sealed class EngineCore : IEngine
     private readonly IEventBus _events;
     private readonly IEventStore _eventStore;
     private readonly ISessionManager? _sessions;
+    private readonly QueryCache _cache;
 
     public EngineCore(
         CommandRegistry registry,
@@ -34,7 +35,8 @@ public sealed class EngineCore : IEngine
         ConfirmTokenStore? confirmTokens = null,
         IdempotencyStore? idempotency = null,
         IEventStore? eventStore = null,
-        ISessionManager? sessions = null)
+        ISessionManager? sessions = null,
+        QueryCache? cache = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _uowFactory = uowFactory ?? throw new ArgumentNullException(nameof(uowFactory));
@@ -44,6 +46,7 @@ public sealed class EngineCore : IEngine
         _idempotency = idempotency ?? new IdempotencyStore();
         _eventStore = eventStore ?? new InMemoryEventStore();
         _sessions = sessions;
+        _cache = cache ?? new QueryCache();    // 查询缓存缺省装配（策略由 Descriptor 声明，未声明即不走缓存）
         _writeGate = new SemaphoreSlim(1, 1);   // 全局单写闸：任意两写不重叠（现状数据闸语义保留）
 
         // 事件存储 = 总线的常驻订阅者：发布即写入（先于消费方订阅者登记，顺序稳定）
@@ -61,6 +64,21 @@ public sealed class EngineCore : IEngine
 
     /// <summary>撤销协调器（阶段 11 编排层；OrchestrationHost 装配后非空）。</summary>
     public IUndoCoordinator? Undo { get; set; }
+
+    /// <summary>查询结果缓存（阶段 12 性能加固）：声明了 <see cref="CommandDescriptor.Cache"/> 的查询才参与。</summary>
+    public QueryCache Cache => _cache;
+
+    /// <summary>运行时统计快照（诊断面；宿主/Host 接线进 diagnostics.collect）。</summary>
+    public EngineRuntimeStats RuntimeStats
+    {
+        get
+        {
+            var c = _cache.Counters;
+            return new EngineRuntimeStats(
+                c.Entries, c.Hits, c.Misses, c.Evictions, c.Invalidations,
+                _eventStore.Head.Sequence);
+        }
+    }
 
     // ===== 同程序集编排组件的内部访问器（BatchEngine/MacroRun 等复用写闸/UoW 工厂/审计/注册表）=====
 
@@ -126,8 +144,11 @@ public sealed class EngineCore : IEngine
             if (!dryRun)
             {
                 // 事件发布：持闸期间同步推送（不变量：订阅方不得同步回派命令）
-                foreach (var name in CollectEvents(result, ctx))
-                    await _events.PublishAsync(new DomainEvent(name, DateTimeOffset.Now, null, correlationId, caller));
+                // 阶段 12：事件携带 ChangeSet 负载（订阅方可做增量处理）+ 按事件名精确失效查询缓存
+                await PublishChangesAsync(result.Changes, ctx, correlationId, caller);
+
+                // 整库影响面的命令（maintenance.reinit）：表已清空，全部条目直接作废
+                if (handler.Descriptor.Impact == ImpactSummary.Database) _cache.Clear();
 
                 if (options?.IdempotencyKey is { } idemKey)
                     _idempotency.Store(idemKey, result);
@@ -184,10 +205,34 @@ public sealed class EngineCore : IEngine
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
                 $"「{query}」不是查询命令，请走 ExecuteAsync", correlationId: correlationId));
 
+        var argsJson = EngineJson.ToJsonElement(args);
+        var policy = handler.Descriptor.Cache;
+
+        // 缓存路径（方案 2.3 读流）：先取依赖世代快照，再触库；条目按快照存回。
+        // 快照必须在读取之前取 —— 读取期间发生的写会推进世代戳，使本次条目立即失配（冷启动宁多回填一次，绝不留陈旧值）。
+        if (policy is not null)
+        {
+            var key = QueryCache.BuildKey(query, argsJson);
+            var stamp = _cache.Snapshot(policy.DependsOn);
+            if (_cache.TryGet(key, stamp, out var hit)) return (T)hit!;
+
+            await using var cachedUow = _uowFactory();
+            var cachedCtx = new CommandContextImpl(cachedUow, isNested: false, dryRun: false, correlationId, caller, ct, this);
+            var cachedResult = await handler.ExecuteAsync(cachedCtx, argsJson);
+            if (cachedResult.Data is T cachedData)
+            {
+                _cache.Set(key, policy.DependsOn, stamp, cachedData, TimeSpan.FromSeconds(policy.TtlSeconds));
+                return cachedData;
+            }
+            return (T?)cachedResult.Data
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal,
+                    $"查询「{query}」返回空结果", correlationId: correlationId));
+        }
+
         // 读池：每查询一个短 UoW，免写闸、免审计、免撤销（WAL 下与写并发）
         await using var uow = _uowFactory();
         var ctx = new CommandContextImpl(uow, isNested: false, dryRun: false, correlationId, caller, ct, this);
-        var result = await handler.ExecuteAsync(ctx, EngineJson.ToJsonElement(args));
+        var result = await handler.ExecuteAsync(ctx, argsJson);
         return (T?)result.Data
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal,
                 $"查询「{query}」返回空结果", correlationId: correlationId));
@@ -208,8 +253,8 @@ public sealed class EngineCore : IEngine
             parent.CorrelationId, parent.Caller, ct == default ? parent.Ct : ct, this);
         var result = await handler.ExecuteAsync(childCtx, json);
 
-        // 嵌套事件入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
-        foreach (var name in result.Changes?.Events ?? []) parent.CollectNestedEvent(name);
+        // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
+        parent.CollectNestedChange(result.Changes);
 
         _audit.Write(new AuditEntry(
             DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
@@ -219,12 +264,44 @@ public sealed class EngineCore : IEngine
         return result;
     }
 
-    private IReadOnlyList<string> CollectEvents(CommandResult result, CommandContextImpl ctx)
+    /// <summary>
+    /// 发布一次调用的全部事件（自身 + 嵌套聚合），并按事件名精确失效查询缓存。
+    /// 事件负载 Data = 本次调用的合并变更集（去重后的受影响实体 + 事件名 + 人类摘要），
+    /// 使订阅方（事件存储追平 / AI 轮询 / 未来的界面增量刷新）能按「变了哪些实体」增量处理，
+    /// 而不是只知道「有变更」。
+    /// </summary>
+    private async Task PublishChangesAsync(ChangeSet? own, CommandContextImpl ctx, string correlationId, CallerRef caller)
     {
+        var nested = ctx.TakeNestedChanges();
+
         var events = new List<string>();
-        if (result.Changes?.Events is { } own) events.AddRange(own);
-        events.AddRange(ctx.TakeNestedEvents());
-        return events;
+        if (own?.Events is { } ownEvents) events.AddRange(ownEvents);
+        events.AddRange(nested.Events);
+        var distinctEvents = events.Distinct(StringComparer.Ordinal).ToArray();
+        if (distinctEvents.Length == 0) return;
+
+        var touched = new List<EntityRef>();
+        if (own?.Touched is { } ownTouched) touched.AddRange(ownTouched);
+        touched.AddRange(nested.Touched);
+
+        var payload = JsonSerializer.SerializeToElement(new ChangeSet(
+            touched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
+            distinctEvents,
+            own?.HumanSummary), EngineJson.Options);
+
+        foreach (var name in distinctEvents)
+            await PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));
+    }
+
+    /// <summary>
+    /// 发布单个领域事件（批引擎的事务批发布同样走这里，保证失效路径唯一）：
+    /// 先推进缓存世代戳（状态变更对读者立即可见），再推订阅方——顺序固定，
+    /// 任一订阅方异常都不会留下「已发布但缓存未失效」的窗口。
+    /// </summary>
+    internal async Task PublishAsync(DomainEvent e)
+    {
+        _cache.Invalidate([e.Name]);
+        await _events.PublishAsync(e);
     }
 
     private ICommandHandler ResolveOrThrow(string command, string correlationId)
