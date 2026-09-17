@@ -25,9 +25,7 @@ internal sealed class SearchExplainHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var query = CommandArgs.OptionalString(args, "query") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(query))
-            return CommandResult.Ok(new SearchExplanation([]));
+        var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001
 
         var hits = await SearchSupport.MatchAsync(
             ctx.Uow, query,

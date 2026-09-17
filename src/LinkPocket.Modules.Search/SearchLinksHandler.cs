@@ -7,13 +7,13 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Search;
 
-/// <summary>search.links（Query）：四范围组合搜索（与既有 SearchAsync 行为等价；空查询 = 空结果）。</summary>
+/// <summary>search.links（Query）：四范围组合搜索（与既有 SearchAsync 行为等价；空查询 = LP.VAL.001）。</summary>
 internal sealed class SearchLinksHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "search.links",
         Category: "search",
-        Description: "搜索链接（四范围：title/url/description/path；全部未选 = 按标题；排序缺省 title 升序）",
+        Description: "搜索链接（四范围：title/url/description/path；排序缺省 title 升序）",
         Parameters:
         [
             ParamSpec.Req<string>("query", "搜索关键词"),
@@ -28,9 +28,7 @@ internal sealed class SearchLinksHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var query = CommandArgs.OptionalString(args, "query") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(query))
-            return CommandResult.Ok(new List<LinkDto>());
+        var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001（引导空态是界面职责）
 
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "asc";

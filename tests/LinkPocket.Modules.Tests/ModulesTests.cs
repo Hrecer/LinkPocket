@@ -484,8 +484,10 @@ public class SearchModuleTests
         var hit = Assert.Single(explain.Hits);
         Assert.Equal(new[] { "url" }, hit.Matched);
 
-        var empty = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "  " });
-        Assert.Empty(empty);
+        // 空查询：引导空态是界面职责，引擎直接报 LP.VAL.001（不返回空列表制造假象）
+        var empty = await Assert.ThrowsAsync<EngineException>(
+            () => engine.QueryAsync<List<LinkDto>>("search.links", new { query = "  " }));
+        Assert.Equal(EngineErrors.RequiredParam, empty.Error.Code);
     }
 }
 

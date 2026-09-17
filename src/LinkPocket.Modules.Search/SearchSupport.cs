@@ -12,7 +12,7 @@ internal static class SearchSupport
 {
     /// <summary>
     /// 四范围匹配：title / url / description（OrdinalIgnoreCase contains）+ path（文件夹名命中 → 子树展开）。
-    /// 全部范围未选 = 标题（既有 API 兜底口径；UI 层另有引导空态守卫）。
+    /// 空查询不是引擎职责（由 Handler 报 LP.VAL.001）；范围全不选 = 无命中（引导空态属界面）。
     /// </summary>
     public static async Task<IReadOnlyList<(Link Link, List<string> Matched)>> MatchAsync(
         Kernel.IUnitOfWork uow, string query,
@@ -50,13 +50,6 @@ internal static class SearchSupport
                 matchedFields.Add("description");
             if (searchPath && expanded != null && link.ListId != null && expanded.Contains(link.ListId))
                 matchedFields.Add("path");
-
-            // 全部范围未选 → 标题兜底（与既有口径一致）
-            if (matchedFields.Count == 0 && !searchTitle && !searchUrl && !searchDescription && !searchPath)
-            {
-                if (link.Title != null && link.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
-                    matchedFields.Add("title");
-            }
 
             if (matchedFields.Count > 0)
                 hits.Add((link, matchedFields));
