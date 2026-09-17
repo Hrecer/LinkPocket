@@ -3,6 +3,13 @@ namespace LinkPocket.Kernel;
 /// <summary>显式事务作用域（批/导入/干跑用）：Commit 提交、Dispose 未提交即回滚。</summary>
 public interface ITransactionScope : IAsyncDisposable
 {
+    /// <summary>
+    /// 立刻开启底层事务（而非等到 Commit/Rollback 才开）。
+    /// 干跑必须先调用：批量语句（<c>ExecuteDelete</c> 等绕过变更跟踪的操作）只在本连接已有事务时才被回滚，
+    /// 否则会立刻落库、绕开"执行但不提交"的干跑语义。
+    /// </summary>
+    Task BeginAsync(CancellationToken ct);
+
     Task CommitAsync(CancellationToken ct);
     Task RollbackAsync(CancellationToken ct);
 }
@@ -23,6 +30,14 @@ public interface IUnitOfWork : IAsyncDisposable
     Task CommitAsync(CancellationToken ct);
 
     ITransactionScope BeginTransaction();
+
+    /// <summary>
+    /// 清空全部业务数据（链接 / 文件夹 / 回收站两表）——**单语句批量删除**，供整库重置使用。
+    /// 10k 库下逐条 DELETE 是一万次往返；这里是常量条 SQL。
+    /// folder_id 外键为 ON DELETE SET NULL、folders.parent_id 是自引用 RESTRICT，
+    /// 故删除顺序与去跟踪细节由实现保证；本方法只登记/执行删除，**不提交**。
+    /// </summary>
+    Task ClearAllDataAsync(CancellationToken ct);
 
     /// <summary>
     /// 当前库 schema 版本（schema_migrations 表 MAX(version)，方案 6.1/6.2；

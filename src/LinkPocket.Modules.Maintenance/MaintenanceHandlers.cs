@@ -77,6 +77,7 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
 /// maintenance.reinit（Mutation · Destructive 两阶段确认）：整库重置——
 /// 清空全部数据表（链接/文件夹/回收站两表）并尽力清除图标缓存目录。
 /// 旧实现是"删库文件再建"，引擎语义等价改为"单事务清空全部行"（同一用户可见终态：空库）。
+/// 清空走 <see cref="IUnitOfWork.ClearAllDataAsync"/> 的**批量删除**：10k 库下逐条 DELETE 是一万次往返。
 /// </summary>
 internal sealed class MaintenanceReinitHandler : ICommandHandler
 {
@@ -90,25 +91,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var ct = ctx.Ct;
-        var uow = ctx.Uow;
-
-        // —— 回收站：先删快照与单元（单独删除 + 各单元内）——
-        foreach (var link in await uow.Trash.ListStandaloneLinksAsync(ct))
-            await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
-        var units = await uow.Trash.ListFoldersAsync(ct);
-        foreach (var unit in units)
-        {
-            foreach (var link in await uow.Trash.ListLinksByUnitAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct))
-                await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
-            await uow.Trash.RemoveFolderAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct);
-        }
-
-        // —— 主表 ——
-        foreach (var link in await uow.Links.ListAsync(new LinkQuerySpec(), ct))
-            await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
-        foreach (var folder in await uow.Folders.ListAllAsync(ct))
-            await uow.Folders.RemoveAsync(new FolderId(folder.FolderId), ct);
+        await ctx.Uow.ClearAllDataAsync(ctx.Ct);
 
         // —— 图标缓存（尽力而为；目录被占用等失败不阻断重置）——
         var faviconCleared = TryClearFaviconCache();

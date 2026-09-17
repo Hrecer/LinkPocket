@@ -119,7 +119,10 @@ public sealed class EngineCore : IEngine
             gateOwned = true;
 
             await using var uow = _uowFactory();
+            // 干跑立即开启显式事务：绕过变更跟踪的批量语句（ExecuteDelete 等）只在本连接已有事务时才可回滚，
+            // 否则"执行但不提交"会被绕开（改动直接落库）。
             ITransactionScope? tx = dryRun ? uow.BeginTransaction() : null;
+            if (tx != null) await tx.BeginAsync(ct);
             CommandResult result;
             CommandContextImpl ctx;
             try

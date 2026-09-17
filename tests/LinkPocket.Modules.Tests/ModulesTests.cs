@@ -787,6 +787,28 @@ public class MaintenanceModuleTests
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("links").GetInt32());
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("trash_links").GetInt32());
     }
+
+    /// <summary>
+    /// 干跑零副作用：整库重置走批量删除（ExecuteDelete 绕过变更跟踪），
+    /// 若引擎没在干跑时先开事务，删除会立刻落库 → 这条断言就是那个护栏。
+    /// </summary>
+    [Fact]
+    public async Task Reinit_DryRun_Clears_Nothing()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        var link = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X" });
+        await engine.ExecuteAsync<object>("links.trash", new { id = link.Data!.LinkId });
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B" });
+
+        var dry = await engine.ExecuteAsync<JsonElement>(
+            "maintenance.reinit", null, new CallOptions(DryRun: true));
+        Assert.True(dry.Data.GetProperty("cleared").GetBoolean());
+
+        var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
+        Assert.Equal(2, diag.GetProperty("counts").GetProperty("folders").GetInt32());
+        Assert.Equal(1, diag.GetProperty("counts").GetProperty("trash_links").GetInt32());
+    }
 }
 
 public class FaviconModuleTests
