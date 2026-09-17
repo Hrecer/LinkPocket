@@ -322,6 +322,32 @@ public class LinksModuleTests
     }
 
     [Fact]
+    public async Task Restore_To_Origin_Uses_Snapshot_Folder()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "F" });
+        var link = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example", title = "X", list_id = folder.Data!.FolderId });
+        await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
+
+        var restored = await engine.ExecuteAsync<TrashRestoreResult>(
+            "trash.restore", new { id = link.Data!.LinkId, to_origin = true });
+        Assert.True(restored.Data!.RestoredToOrigin);
+        Assert.Equal(folder.Data!.FolderId, restored.Data!.ListId);
+
+        var got = await engine.QueryAsync<LinkDto>("links.get", new { id = link.Data!.LinkId });
+        Assert.Equal(folder.Data!.FolderId, got.ListId);
+
+        // 原目录已不存在 → 回落根，且结果如实回报（不假装还原到了原位）
+        await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = folder.Data!.FolderId });
+        var fallback = await engine.ExecuteAsync<TrashRestoreResult>(
+            "trash.restore", new { id = link.Data!.LinkId, to_origin = true });
+        Assert.False(fallback.Data!.RestoredToOrigin);
+        Assert.Null(fallback.Data!.ListId);
+    }
+
+    [Fact]
     public async Task VisitRecord_Updates_Folder_Chain()
     {
         var (engine, _, _) = TestHost.Create();

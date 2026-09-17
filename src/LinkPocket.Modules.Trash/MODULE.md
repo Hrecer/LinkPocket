@@ -14,7 +14,8 @@
 | `trash.list` | 查询 | 平铺 = **单独删除的书签 + 被删文件夹单元根**（不含单元内部条目），按删除时间倒序；声明缓存 |
 | `trash.tree` | 查询 | 全部单元节点（含子单元），`link_count` = 单元子树内书签总数；声明缓存 |
 | `trash.unit_contents` | 查询 | 单元内容 = 直接子单元 + 子树内全部书签快照（回收站「打开目录」用） |
-| `trash.restore` / `trash.restore_batch` | 变更 | 还原，**固定落根级**（既有口径）；批量原子单事务 |
+| `trash.restore` | 变更 | 还原单条：**缺省落根级**（既有口径）；`to_origin = true` 还原到删除前所在目录（原目录已不存在时落根，结果如实回报落点） |
+| `trash.restore_batch` | 变更 | 批量还原，**固定落根级**；批量原子单事务 |
 | `trash.purge` / `trash.purge_batch` | 变更 | 永久删除（单条快照 / 整单元子树）；**破坏性：两阶段确认令牌** |
 
 ## 内部组件
@@ -24,7 +25,8 @@
 ## 关键口径（行为等价项）
 
 - 「平铺只含单独删除的书签」是刻意的 Windows 口径：被删文件夹里的书签只在单元内可见，不重复出现在平铺列表。
-- 还原永远落根，不还原到原目录（`origin_folder_id`/`origin_path` 只是位置快照，用于展示）。
+- 还原**缺省**落根（界面口径不变）；`to_origin = true` 是**新增能力**：用快照里的 `origin_folder_id` 原位还原。
+  `origin_folder_id`/`origin_path` 同时用于「原位置」列展示。
 - `purge` 与 `purge_batch` 标记 `Destructive` → 首次调用返回 `LP.SEC.003 CONFIRM_REQUIRED` 并下发 60s 一次性令牌。
 
 ## 测试

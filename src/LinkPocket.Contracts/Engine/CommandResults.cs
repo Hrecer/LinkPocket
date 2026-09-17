@@ -37,8 +37,11 @@ public sealed record LinkExportResult(string FilePath, string Format, int Count,
 
 // —— trash ——
 
-/// <summary>还原结果（还原固定落根，ListId = null——行为等价项）。</summary>
-public sealed record TrashRestoreResult(string LinkId);
+/// <summary>
+/// 还原结果。<paramref name="ListId"/> = 实际落点目录（null = 根）；
+/// <paramref name="RestoredToOrigin"/> = 是否按原位置还原（<c>to_origin: true</c> 且原目录仍存在）。
+/// </summary>
+public sealed record TrashRestoreResult(string LinkId, string? ListId = null, bool RestoredToOrigin = false);
 
 /// <summary>批量还原结果。</summary>
 public sealed record TrashRestoreBatchResult(int Restored);
