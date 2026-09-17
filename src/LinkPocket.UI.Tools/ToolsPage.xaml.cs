@@ -27,8 +27,21 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class ToolsPage : UserControl
     {
-        /// <summary>组合根（MainWindow 构造时赋值）；本页一切后端访问与定位都经它。</summary>
-        public Services.AppHost Host { get; set; } = null!;
+        // —— 阶段 10 模块化：页面不认识组合根/MainViewModel，依赖由 Shell 经 Configure 窄注入 ——
+        private ILinkPocketApi _api = null!;
+        private IContentLocator? _locator;
+        private Func<string?, Task<string>> _resolveLinkPath = _ => Task.FromResult("全部书签");
+        private Func<Task> _refreshFolderTree = () => Task.CompletedTask;
+
+        /// <summary>Shell 在构造时注入：协议访问、定位组件、路径解析与目录树刷新委托。</summary>
+        public void Configure(ILinkPocketApi api, IContentLocator? locator,
+            Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
+        {
+            _api = api;
+            _locator = locator;
+            _resolveLinkPath = resolveLinkPath;
+            _refreshFolderTree = refreshFolderTree;
+        }
 
         private sealed class ToolItem
         {
@@ -53,24 +66,14 @@ namespace LinkPocket.Views
         private const string BookmarkSubtitle =
             "与 Chrome / Edge / Firefox 互通的标准 Netscape 书签格式（.html）：导入还原文件夹层级，导出可直接被浏览器导入。";
 
-        // —— 工具页 ViewModel（懒建：需要 Host + DataContext 就绪） ——
+        // —— 工具页 ViewModel（懒建：需要 Configure 注入就绪） ——
         private ToolsViewModel? _toolsVm;
         private ToolsViewModel VmTools
         {
             get
             {
                 if (_toolsVm != null) return _toolsVm;
-                var main = DataContext as MainViewModel;
-                return _toolsVm = new ToolsViewModel(
-                    Host.Api,
-                    Host.Locator,
-                    resolveLinkPath: listId => main != null
-                        ? main.ResolveLinkPathAsync(listId)
-                        : Task.FromResult("全部书签"),
-                    refreshFolderTree: async () =>
-                    {
-                        if (main != null) await main.RefreshFolderTreeAndUIAsync();
-                    });
+                return _toolsVm = new ToolsViewModel(_api, _locator, _resolveLinkPath, _refreshFolderTree);
             }
         }
 
@@ -103,20 +106,15 @@ namespace LinkPocket.Views
         {
             ToolListbox.ItemsSource = _tools;
             if (ToolListbox.SelectedIndex < 0) ToolListbox.SelectedIndex = 0;
-
-            if (DataContext is MainViewModel vm)
-                vm.OnToolsDataChanged += OnToolsDataChanged;
         }
 
-        private void ToolsPage_Unloaded(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// 外部数据变更转发入口（Shell 订阅 MainViewModel.OnToolsDataChanged 后调用；
+        /// 阶段 10 起页面不再直接订阅 MainViewModel）。
+        /// 数据变更（外部增删改）后自动重跑查重，避免展示过期结果。
+        /// </summary>
+        public async void OnExternalDataChanged()
         {
-            if (DataContext is MainViewModel vm)
-                vm.OnToolsDataChanged -= OnToolsDataChanged;
-        }
-
-        private async void OnToolsDataChanged(object? sender, EventArgs e)
-        {
-            // 数据变更（外部增删改）后自动重跑查重，避免展示过期结果
             if (VmTools.HasRunDedup && DetailPanel.Visibility != Visibility.Visible
                 && (ToolListbox.SelectedItem as ToolItem)?.Id == "dedup")
             {

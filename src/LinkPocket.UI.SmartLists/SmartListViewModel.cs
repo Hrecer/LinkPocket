@@ -27,6 +27,9 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
+        /// <summary>「位置」列与详情栏共用的路径解析（组合根注入，与浏览页同一份目录树）；视图单元格工厂也经此取值。</summary>
+        public Func<string?, string> ResolveFolderPath { get; }
+
         /// <summary>
         /// ports = UI 端口槽位（组合根持有，MainWindow 构造时登记）；结果页动作命令
         /// 在打开列表时从槽位取用（此时端口必已登记）。路径解析器 = 「位置」列与
@@ -37,6 +40,7 @@ namespace LinkPocket.ViewModels
             _api = api;
             _ports = ports;
             _resolveFolderPath = resolveFolderPath;
+            ResolveFolderPath = resolveFolderPath;
             InitializeCards();
         }
 

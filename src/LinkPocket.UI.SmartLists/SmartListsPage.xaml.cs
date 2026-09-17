@@ -16,14 +16,12 @@ namespace LinkPocket.Views
     /// 智能列表页（v2 完全重做，页面自包含）：与搜索页/回收站页同构 ——
     /// 入口卡片 → 结果视图（共享 <see cref="SortableDataTable"/> 数据表 + 可复用 <see cref="DetailSidebar"/>）。
     /// 阶段 9 MVVM：选中态、详情栏与页面动作命令（详情/打开网站/删除）在
-    /// <see cref="SmartListResultViewModel"/>；本视图只做表格装配、空态渲染与键盘路由。
+    /// <see cref="SmartListViewModel"/>/<see cref="SmartListResultViewModel"/>；
+    /// 阶段 10 模块化：DataContext = SmartListViewModel（Shell 装配注入），本视图不认识 MainViewModel。
     /// 交互口径与搜索页一致：行单击选中更新详情栏、双击进入浏览页详情页。
     /// </summary>
     public partial class SmartListsPage : UserControl
     {
-        /// <summary>组合根（MainWindow 构造时赋值）；本页的后端访问经它。</summary>
-        public Services.AppHost Host { get; set; } = null!;
-
         private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
         private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
@@ -42,16 +40,16 @@ namespace LinkPocket.Views
         private void WireOnce()
         {
             if (_wired) return;
-            if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
+            if (DataContext is not SmartListViewModel slVm) return;
             _wired = true;
 
-            vm.SmartListViewModel.PropertyChanged += (_, e) =>
+            slVm.PropertyChanged += (_, e) =>
             {
-                if (e.PropertyName == nameof(SmartListViewModel.ShowResult) && DataContext is MainViewModel v)
-                    ApplyShowResult(v.SmartListViewModel!.ShowResult);
+                if (e.PropertyName == nameof(SmartListViewModel.ShowResult))
+                    ApplyShowResult(slVm.ShowResult);
             };
             // 若装配时已处于结果页（切页往返/热重载），恢复正确状态
-            ApplyShowResult(vm.SmartListViewModel.ShowResult);
+            ApplyShowResult(slVm.ShowResult);
         }
 
         // ============================================================
@@ -60,7 +58,7 @@ namespace LinkPocket.Views
 
         private void ApplyShowResult(bool showResult)
         {
-            if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
+            if (DataContext is not SmartListViewModel slVm) return;
 
             if (showResult)
             {
@@ -83,12 +81,12 @@ namespace LinkPocket.Views
         {
             if (_openingGuard) return;
             if (sender is not FrameworkElement fe || fe.Tag is not string listId) return;
-            if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
+            if (DataContext is not SmartListViewModel slVm) return;
 
             _openingGuard = true;
             try
             {
-                vm.SmartListViewModel.OpenSmartList(listId); // async void：完成后经 ShowResult 驱动面板切换
+                slVm.OpenSmartList(listId); // async void：完成后经 ShowResult 驱动面板切换
             }
             finally
             {
@@ -100,8 +98,8 @@ namespace LinkPocket.Views
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DataContext is MainViewModel vm && vm.SmartListViewModel != null)
-                vm.SmartListViewModel.GoBack();
+            if (DataContext is SmartListViewModel slVm)
+                slVm.GoBack();
         }
 
         // ============================================================
@@ -165,7 +163,7 @@ namespace LinkPocket.Views
         }
 
         private SmartListResultViewModel? ResultVm
-            => (DataContext as MainViewModel)?.SmartListViewModel?.ResultViewModel;
+            => (DataContext as SmartListViewModel)?.ResultViewModel;
 
         /// <summary>把当前结果集绑到表格：重设默认排序（按列表语义）+ ItemsSource + 空态 + 清选中。</summary>
         private void RebindResultTable()
@@ -306,12 +304,12 @@ namespace LinkPocket.Views
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
 
-        /// <summary>位置解析：与搜索页「位置」列同一口径（沿文件夹树解析；根链接 = 全部书签）。</summary>
+        /// <summary>位置解析：与搜索页「位置」列同一口径（VM 注入的组合根解析器；根链接 = 全部书签）。</summary>
         private string ResolveFolderName(string? listId)
         {
             if (string.IsNullOrEmpty(listId)) return "全部书签";
-            if (DataContext is MainViewModel vm)
-                return MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录";
+            if (DataContext is SmartListViewModel slVm)
+                return slVm.ResolveFolderPath(listId);
             return "未知目录";
         }
 
@@ -329,8 +327,8 @@ namespace LinkPocket.Views
             }
             else if (e.Key == Key.Escape)
             {
-                if (DataContext is MainViewModel vm && vm.SmartListViewModel != null)
-                    vm.SmartListViewModel.GoBack();
+                if (DataContext is SmartListViewModel slVm)
+                    slVm.GoBack();
                 e.Handled = true;
             }
         }

@@ -2,8 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
-             xmlns:views="clr-namespace:LinkPocket.Views"
-             Loaded="ToolsPage_Loaded" Unloaded="ToolsPage_Unloaded">
+             xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             Loaded="ToolsPage_Loaded">
     <!-- 工具页（v2 完全重写）：与搜索/回收站/智能列表同构的 MD3E 语言。
          结构 = 双面板：主面板（左栏工具列表 + 右主区表格/表单）/ 重复组明细面板（整页）。
          数据表一律复用共享 SortableDataTable；「跳转」一律走 Services 层 IContentLocator 组件

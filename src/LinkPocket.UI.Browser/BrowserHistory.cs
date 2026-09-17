@@ -2,14 +2,14 @@ using System;
 using LinkPocket.Api;
 using System.Collections.Generic;
 
-namespace LinkPocket.Managers;
+namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 资源管理器式浏览的导航状态（P4）：
+/// 资源管理器式浏览的导航状态（P4；阶段 10 自 Managers/NavigationController 归位为 BrowserHistory）：
 /// 维护 currentFolderId 与后退 / 前进历史栈（只存 folderId，null = 根目录「全部书签」）。
 /// 不持有任何 UI 引用；目录内容加载由 BrowserViewModel 完成。
 /// </summary>
-public class NavigationController
+public class BrowserHistory
 {
     private readonly Stack<string?> _back = new();
     private readonly Stack<string?> _forward = new();

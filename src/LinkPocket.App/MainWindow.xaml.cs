@@ -20,6 +20,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     private readonly Managers.SelectionManager _selectionManager = new();
 
+    private readonly Services.ViewRegistry _regions = new();
+
     private readonly SearchViewModel _searchVm;
 
     public MainWindow(Services.AppHost host)
@@ -28,16 +30,23 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         InitializeComponent();
         var vm = new MainViewModel(_host.Api, _host.Hub, _host.Ports, _selectionManager);
         DataContext = vm;
-        BrowserPage.DataContext = vm.BrowserViewModel;
         // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
         _host.Ports.Dialogs = this;
         _host.Ports.Navigation = this;
         _host.LocateHost = this;
-        // 页面装配：XAML 声明的页面无法构造注入，由 Shell（本窗口）在构造时下发组合根。
-        ToolsView.Host = _host;
-        SmartListsView.Host = _host;
-        SettingsView.Host = _host;
+
+        // ===== 区域视图注册 / 路由装配（阶段 10）：navId → 页面的唯一装配点 =====
+        // 页面不再持有组合根（Host 已废除），依赖由 Shell 经窄接口注入；
+        // 页面 DataContext = 各自的 ViewModel（浏览页=BrowserViewModel，其余页见下）。
+        _regions.Register("browser", BrowserPage);
+        _regions.Register("search", SearchView);
+        _regions.Register("trash", TrashView);
+        _regions.Register("smartlists", SmartListsView);
+        _regions.Register("tools", ToolsView);
+        _regions.Register("settings", SettingsView);
+
+        BrowserPage.DataContext = vm.BrowserViewModel;
         // 搜索页（阶段 9 MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
         // MainViewModel 的目录树（与浏览页/智能列表同一份）。
         _searchVm = new SearchViewModel(
@@ -46,6 +55,15 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
                 ? "全部书签"
                 : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"));
         SearchView.DataContext = _searchVm;
+        TrashView.DataContext = vm.RecycleBinViewModel;
+        SmartListsView.DataContext = vm.SmartListViewModel;
+        // 工具页：协议访问/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
+        // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。
+        ToolsView.Configure(_host.Api, _host.Locator,
+            listId => vm.ResolveLinkPathAsync(listId),
+            () => vm.RefreshFolderTreeAndUIAsync());
+        SettingsView.Configure(_host.Api, reset => vm.ReinitializeDatabaseAsync(reset));
+        vm.OnToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
 
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入重置 / 离开清选中 / 数据变更重跑）
         vm.OnNavigatedToSearch += (_, _) => _searchVm.ResetToEmpty();

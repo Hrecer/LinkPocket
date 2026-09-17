@@ -5,8 +5,9 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:vm="clr-namespace:LinkPocket.ViewModels"
-             xmlns:views="clr-namespace:LinkPocket.Views"
+             xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              xmlns:local="clr-namespace:LinkPocket.Views.Browser"
+             xmlns:uikit="clr-namespace:LinkPocket.Views.Browser;assembly=LinkPocket.UIKit"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
              Focusable="True"
@@ -34,7 +35,7 @@
              本页不再保留独立的 HeaderSortButton 样式。 -->
 
         <!-- 名称列可用宽度 = 列宽 - 图标/间距/计数药丸的固定占位 -->
-        <local:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
+        <uikit:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
 
         <!-- 右键菜单项已上收 UIKit.xaml（LpMenuItem + 隐式兜底）。
              ⚠️ 两个坑（仍适用）：

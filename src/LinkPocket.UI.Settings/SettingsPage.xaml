@@ -2,7 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
-             xmlns:views="clr-namespace:LinkPocket.Views">
+             xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             xmlns:local="clr-namespace:LinkPocket.Views">
     <Grid Background="{DynamicResource SurfaceContainerLow}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
@@ -100,7 +101,7 @@
             </ScrollViewer>
 
             <!-- 备份与恢复界面 -->
-            <views:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
+            <local:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->

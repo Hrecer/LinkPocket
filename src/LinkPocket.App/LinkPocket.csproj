@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- WPF Shell：组合根 + 窗口壳 + 区域 + 端口实现（工程目录内只有应用自身源码，无任何排除 hack） -->
+  <!-- WPF Shell（阶段 10）：组合根 + 窗口壳 + 区域装配 + 端口实现 + UiEventHub。
+       UI 已模块化为 UIKit + UI.* 六项目（视图注册/路由装配见 Services/ViewRegistry）。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -13,6 +14,13 @@
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
     <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Browser\LinkPocket.UI.Browser.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Search\LinkPocket.UI.Search.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Trash\LinkPocket.UI.Trash.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.SmartLists\LinkPocket.UI.SmartLists.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Tools\LinkPocket.UI.Tools.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Settings\LinkPocket.UI.Settings.csproj" />
   </ItemGroup>
 
   <ItemGroup>

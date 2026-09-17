@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using LinkPocket.Api;
 using LinkPocket.Services;
 using Microsoft.Win32;
 
@@ -15,8 +16,11 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class BackupPanel : UserControl
     {
-        /// <summary>组合根（由宿主 SettingsPage 转发赋值）；备份导入导出经它访问后端。</summary>
-        public AppHost Host { get; set; } = null!;
+        /// <summary>协议访问（阶段 10：由宿主 SettingsPage 经 Configure 窄注入，不再持有组合根）。</summary>
+        public ILinkPocketApi Api { get; set; } = null!;
+
+        /// <summary>整库重置委托（resetData=true = 完全重置后重建；Shell 注入 MainViewModel.ReinitializeDatabaseAsync）。</summary>
+        public Func<bool, Task> ReinitializeAsync { get; set; } = null!;
 
         private string _exportDirectory = string.Empty;
         private string _importFilePath = string.Empty;
@@ -85,7 +89,7 @@ namespace LinkPocket.Views
                 return;
             }
 
-            if (DataContext is not ViewModels.MainViewModel vm) return;
+            if (Api == null) return;
 
             var overlay = FindOverlay();
             if (overlay == null) return;
@@ -95,7 +99,7 @@ namespace LinkPocket.Views
 
             try
             {
-                await Host.Api.ExportBackupAsync(outputPath);
+                await Api.ExportBackupAsync(outputPath);
 
                 UpdateOverlay(overlay, "导出成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);
@@ -137,7 +141,7 @@ namespace LinkPocket.Views
             if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath)) return;
 
             if (!ImportModeDialog.Show(out var replaceMode)) return;   // 模态弹窗：挡住后面无法操作
-            if (DataContext is not ViewModels.MainViewModel vm) return;
+            if (Api == null || ReinitializeAsync == null) return;
 
             _pendingReplaceImport = replaceMode;
 
@@ -153,11 +157,11 @@ namespace LinkPocket.Views
                 {
                     // 完全重置：删除数据库文件（含回收站）+ 图标缓存目录后重建（与「清空数据」同机制）
                     Services.Logger.Info("[备份导入] 清空后导入：开始完全重置");
-                    await vm.ReinitializeDatabaseAsync(resetData: true);
+                    await ReinitializeAsync(true);
                 }
 
                 UpdateOverlay(overlay, "正在导入备份...", 0, 0);
-                var result = await Host.Api.ImportBackupAsync(filePath);
+                var result = await Api.ImportBackupAsync(filePath);
 
                 if (!result.Success)
                 {
@@ -171,7 +175,7 @@ namespace LinkPocket.Views
                 }
 
                 // 刷新界面数据（新增模式导入后也要重载）
-                await vm.ReinitializeDatabaseAsync(resetData: false);
+                await ReinitializeAsync(false);
 
                 UpdateOverlay(overlay, "导入成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI.Settings（阶段 10）：设置页（存储管理 + 备份与恢复 BackupPanel）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.UI.Settings</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>

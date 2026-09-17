@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI.Search（阶段 10）：搜索页（Views/SearchView + SearchViewModel）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.UI.Search</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>

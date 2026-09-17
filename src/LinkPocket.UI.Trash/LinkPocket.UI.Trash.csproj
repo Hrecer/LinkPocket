@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI.Trash（阶段 10）：回收站页（层级树 + 单元浏览 + 只读详情）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.UI.Trash</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>

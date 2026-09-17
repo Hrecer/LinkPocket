@@ -21,7 +21,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
     private readonly ILinkPocketApi Api;
 
-    public Managers.NavigationController Controller { get; } = new();
+    public BrowserHistory Controller { get; } = new();
 
     public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
     public ObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
@@ -737,7 +737,7 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     // —— 剪切 / 复制 / 粘贴（Ctrl+X / C / V）——
 
-    private Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<BrowserRowViewModel> source, bool isCut) => new()
+    private LinkPocket.Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<BrowserRowViewModel> source, bool isCut) => new()
     {
         FolderIds = source.Where(r => r.IsFolder).Select(r => r.Id).ToList(),
         LinkIds = source.Where(r => !r.IsFolder).Select(r => r.Id).ToList(),

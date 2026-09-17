@@ -1,5 +1,8 @@
+using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using LinkPocket.Api;
 using LinkPocket.Services;
 
 namespace LinkPocket.Views
@@ -15,18 +18,17 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class SettingsPage : UserControl
     {
-        private AppHost _host = null!;
-
-        /// <summary>组合根（MainWindow 构造时赋值），并转发给页内的备份面板。</summary>
-        public AppHost Host
+        /// <summary>阶段 10 模块化：Shell 经 Configure 窄注入（协议访问 + 整库重置委托），页面不认识组合根。</summary>
+        public void Configure(ILinkPocketApi api, Func<bool, Task> reinitializeAsync)
         {
-            get => _host;
-            set
-            {
-                _host = value;
-                BackupPanelControl.Host = value;
-            }
+            Api = api;
+            ReinitializeAsync = reinitializeAsync;
+            BackupPanelControl.Api = api;
+            BackupPanelControl.ReinitializeAsync = reinitializeAsync;
         }
+
+        private ILinkPocketApi Api { get; set; } = null!;
+        private Func<bool, Task> ReinitializeAsync { get; set; } = null!;
 
         public SettingsPage()
         {
@@ -124,8 +126,7 @@ namespace LinkPocket.Views
             {
                 Services.Logger.Info("[维护] 开始清空数据");
 
-                if (DataContext is ViewModels.MainViewModel clearVm)
-                    await clearVm.ReinitializeDatabaseAsync();
+                await ReinitializeAsync(false);
 
                 var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
                 if (System.IO.Directory.Exists(logDir))

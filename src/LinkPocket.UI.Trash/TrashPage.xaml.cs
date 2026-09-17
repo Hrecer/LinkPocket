@@ -43,7 +43,8 @@ namespace LinkPocket.Views
             };
         }
 
-        private RecycleBinViewModel? Vm => (DataContext as MainViewModel)?.RecycleBinViewModel;
+        /// <summary>阶段 10 模块化：DataContext = RecycleBinViewModel（Shell 装配注入），本视图不认识 MainViewModel。</summary>
+        private RecycleBinViewModel? Vm => DataContext as RecycleBinViewModel;
 
         // ===== 右侧只读详情栏：跟随 SelectedEntry（VM INPC 驱动，含 purge/清空后的清空态） =====
         private readonly TrashSidebarModel _sidebar = new();

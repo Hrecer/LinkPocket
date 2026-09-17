@@ -6,8 +6,8 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Material3.Wpf;component/Controls.xaml" />
-                <!-- UIKit（阶段 9）：全应用共享样式/转换器/色板唯一来源，App.xaml 只做合并 -->
-                <ResourceDictionary Source="UIKit.xaml" />
+                <!-- UIKit（阶段 10 独立程序集）：全应用共享样式/转换器/色板唯一来源，App.xaml 只做合并 -->
+                <ResourceDictionary Source="pack://application:,,,/LinkPocket.UIKit;component/UIKit.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- 页面专属资源仍在各页（阶段 10 随页面迁往 UI.* 项目） -->

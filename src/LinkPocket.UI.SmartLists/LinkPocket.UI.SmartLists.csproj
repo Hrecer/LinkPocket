@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI.SmartLists（阶段 10）：智能列表页（入口卡片 → 结果表 + 详情栏）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.UI.SmartLists</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>
