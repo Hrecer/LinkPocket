@@ -40,6 +40,7 @@ public static class Mappings
             DirectLinkCount = counts != null && counts.Direct.TryGetValue(new FolderId(folder.FolderId), out var direct)
                 ? direct
                 : 0,
+            SortOrder = folder.SortOrder,
             UpdatedAt = folder.UpdatedAt,
             CreatedAt = folder.CreatedAt,
             LastVisitedAt = folder.LastVisitedAt,

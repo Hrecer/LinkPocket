@@ -22,7 +22,7 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
         Parameters:
         [
             ParamSpec.Opt<string>("folder_id", "目录 ID；缺省或 \"0\" = 根"),
-            ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at"),
+            ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at（链接）/ name | sort_order | updated_at | last_visited_at | visit_count | created_at（子文件夹）"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
             ParamSpec.Opt<int>("page", "页码（从 1 起）"),
             ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（受引擎上限约束，触限时 truncated = true）"),

@@ -95,6 +95,30 @@ public class FoldersModuleTests
     }
 
     [Fact]
+    public async Task Sort_Order_Is_Readable_By_Contents_And_Tree()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        var b = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B" });
+        var c = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "C" });
+
+        // folders.sort 写入手动顺序：C → B → A（此前该列只有写路径，没有读路径）
+        await engine.ExecuteAsync<FolderSortResult>("folders.sort",
+            new { item_ids = new[] { c.Data!.FolderId, b.Data!.FolderId, a.Data!.FolderId } });
+
+        var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", new { sort_by = "sort_order" });
+        Assert.Equal(new[] { "C", "B", "A" }, contents.SubFolders.Select(f => f.Name));
+        Assert.Equal(new[] { 0, 1, 2 }, contents.SubFolders.Select(f => f.SortOrder));
+
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", new { sort_by = "sort_order" });
+        Assert.Equal(new[] { "C", "B", "A" }, tree.Select(f => f.Name));
+
+        // 缺省仍为名称升序
+        var byName = await engine.QueryAsync<FolderContentsDto>("folders.contents");
+        Assert.Equal(new[] { "A", "B", "C" }, byName.SubFolders.Select(f => f.Name));
+    }
+
+    [Fact]
     public async Task Contents_Truncation_Is_Visible_Not_Silent()
     {
         var (engine, _, _) = TestHost.Create();

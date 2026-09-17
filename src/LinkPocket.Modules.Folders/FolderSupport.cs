@@ -21,6 +21,7 @@ internal static class FolderSupport
     /// <summary>
     /// 子文件夹排序（与既有 SortFolders 逐条等价）：
     /// 名称与各维度都遵循升/降序；「最后查看」为空（从未）恒排最后；名称做同序稳定兜底（CurrentCulture）。
+    /// <c>sort_order</c> = 手动排序（<c>folders.sort</c> 写入的列），此前只有写路径没有读路径，现接通。
     /// 仅用于**一次读出的同一个目录的直接子文件夹**（数量有限），链接列表的排序一律 SQL 下推。
     /// </summary>
     public static List<FolderDto> SortFolders(IEnumerable<FolderDto> source, string sortBy, string sortOrder)
@@ -31,6 +32,7 @@ internal static class FolderSupport
             "updated_at" => desc ? source.OrderByDescending(f => f.UpdatedAt) : source.OrderBy(f => f.UpdatedAt),
             "created_at" => desc ? source.OrderByDescending(f => f.CreatedAt) : source.OrderBy(f => f.CreatedAt),
             "visit_count" => desc ? source.OrderByDescending(f => f.VisitCount) : source.OrderBy(f => f.VisitCount),
+            "sort_order" => desc ? source.OrderByDescending(f => f.SortOrder) : source.OrderBy(f => f.SortOrder),
             "last_visited_at" => desc
                 ? source.OrderBy(f => f.LastVisitedAt == null).ThenByDescending(f => f.LastVisitedAt)
                 : source.OrderBy(f => f.LastVisitedAt == null).ThenBy(f => f.LastVisitedAt),

@@ -41,6 +41,12 @@ public class FolderDto
     [JsonPropertyName("direct_link_count")] public int DirectLinkCount { get; set; }
 
     /// <summary>
+    /// 手动排序序号（<c>folders.sort</c> 写入；同层内升序即用户自定义顺序）。
+    /// 目录页/树在 <c>sort_by=sort_order</c> 时按它排序——此前该列只有写路径没有读路径。
+    /// </summary>
+    [JsonPropertyName("sort_order")] public int SortOrder { get; set; }
+
+    /// <summary>
     /// 文件夹「最后更新」＝内容最后变动时间。事件：内容变动（新增/删除/改名/移入移出链接与子文件夹、
     /// 链接内容被编辑）。内核沿父链刷新（FolderService.TouchModifiedAsync），UI 只读；<b>查看不算变动</b>。
     /// </summary>
