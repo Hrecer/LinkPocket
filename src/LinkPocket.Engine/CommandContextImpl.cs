@@ -11,6 +11,7 @@ internal sealed class CommandContextImpl : ICommandContext
     private readonly EngineCore _engine;
     private readonly List<string> _nestedEvents = [];
     private readonly List<EntityRef> _nestedTouched = [];
+    private readonly List<string> _nestedWarnings = [];
 
     public CommandContextImpl(
         IUnitOfWork uow,
@@ -49,6 +50,7 @@ internal sealed class CommandContextImpl : ICommandContext
         if (changes is null) return;
         _nestedEvents.AddRange(changes.Events);
         _nestedTouched.AddRange(changes.Touched);
+        if (changes.Warnings is { Count: > 0 }) _nestedWarnings.AddRange(changes.Warnings);
     }
 
     /// <summary>取走嵌套变更集（事件名去重、受影响实体去重）：父级只发布/失效一次。</summary>
@@ -57,9 +59,11 @@ internal sealed class CommandContextImpl : ICommandContext
         var merged = new ChangeSet(
             _nestedTouched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
             _nestedEvents.Distinct(StringComparer.Ordinal).ToArray(),
-            null);
+            null,
+            _nestedWarnings.Count > 0 ? _nestedWarnings.Distinct(StringComparer.Ordinal).ToArray() : null);
         _nestedEvents.Clear();
         _nestedTouched.Clear();
+        _nestedWarnings.Clear();
         return merged;
     }
 }

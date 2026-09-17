@@ -10,7 +10,12 @@ public sealed record EntityRef(string Type, string Id);
 public sealed record ChangeSet(
     IReadOnlyList<EntityRef> Touched,
     IReadOnlyList<string> Events,
-    string? HumanSummary)
+    string? HumanSummary,
+    /// <summary>
+    /// 非致命问题的结构化上报（缺省空）：命令整体成功，但**部分可选项没做成**时如实记在这里，
+    /// 例如 <c>links.create</c> 的元数据抓取失败。绝不静默吞掉（观测面纪律：失败要暴露）。
+    /// </summary>
+    IReadOnlyList<string>? Warnings = null)
 {
     public static readonly ChangeSet Empty = new([], [], null);
 

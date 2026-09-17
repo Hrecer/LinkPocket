@@ -9,7 +9,8 @@ namespace LinkPocket.Modules.Links;
 
 /// <summary>
 /// links.create（Mutation）：新建链接。
-/// auto_fetch_metadata = true 且标题/描述缺失时抓取元数据补齐（抓取失败静默忽略——既有口径）；
+/// auto_fetch_metadata = true 且标题/描述缺失时抓取元数据补齐；**抓取失败不阻断创建，但结果如实上报**
+/// （ChangeSet.Warnings + 摘要），绝不静默吞掉——否则调用方以为补全了、实际没有。
 /// 写路径内抓取仅发生在显式开启时（默认关），常态网络抓取请走 links.metadata_fetch（闸外）。
 /// </summary>
 internal sealed class LinkCreateHandler : ICommandHandler
@@ -25,7 +26,7 @@ internal sealed class LinkCreateHandler : ICommandHandler
             ParamSpec.Opt<string>("description", "描述"),
             ParamSpec.Opt<string>("list_id", "所属目录 ID；缺省 = 根级"),
             ParamSpec.Opt<bool>("is_important", "是否重要"),
-            ParamSpec.Opt<bool>("auto_fetch_metadata", "自动抓取页面元数据（缺省 false）"),
+            ParamSpec.Opt<bool>("auto_fetch_metadata", "自动抓取页面元数据（缺省 false；失败会在结果 warnings 里上报）"),
             ParamSpec.Opt<string>("favicon_url", "显式指定图标地址"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
@@ -54,6 +55,7 @@ internal sealed class LinkCreateHandler : ICommandHandler
             UpdatedAt = DateTime.UtcNow,
         };
 
+        List<string>? warnings = null;
         if (autoFetch && (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(description)))
         {
             try
@@ -63,9 +65,10 @@ internal sealed class LinkCreateHandler : ICommandHandler
                 link.Description ??= string.IsNullOrEmpty(metadata.Description) ? null : metadata.Description;
                 link.FaviconUrl ??= string.IsNullOrEmpty(metadata.FaviconUrl) ? null : metadata.FaviconUrl;
             }
-            catch (EngineException)
+            catch (EngineException ex)
             {
-                // 抓取失败不阻断创建（既有口径：Debug 日志后继续）
+                // 抓取失败不阻断创建；但必须上报（调用方据此决定是否重试 links.metadata_fetch）
+                warnings = [$"元数据抓取失败（{ex.Error.Code}）：{ex.Error.Message}"];
             }
         }
 
@@ -80,11 +83,14 @@ internal sealed class LinkCreateHandler : ICommandHandler
         // 新增链接 → 所在文件夹内容有变
         await ctx.Uow.Trees.TouchModifiedAsync(listId == null ? null : new FolderId(listId), ct);
 
+        var summary = $"已创建链接「{link.Title ?? link.Url}」"
+                      + (warnings == null ? "" : "（元数据未抓取到）");
         return CommandResult.Ok(
             link.ToDto(),
-            ChangeSet.Of(
-                new EntityRef("link", link.LinkId),
-                "links.changed",
-                $"已创建链接「{link.Title ?? link.Url}」"));
+            new ChangeSet(
+                Touched: [new EntityRef("link", link.LinkId)],
+                Events: ["links.changed"],
+                HumanSummary: summary,
+                Warnings: warnings));
     }
 }

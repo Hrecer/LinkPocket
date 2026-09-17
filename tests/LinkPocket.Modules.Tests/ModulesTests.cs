@@ -474,6 +474,24 @@ public class LinksModuleTests
     }
 
     [Fact]
+    public async Task Auto_Fetch_Failure_Is_Reported_Not_Swallowed()
+    {
+        var (engine, _, _) = TestHost.Create();
+        // 非 http/https 绝对地址 → 抓取立即失败（不触网），失败必须出现在结果的 warnings 里
+        var created = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "notaurl", auto_fetch_metadata = true });
+
+        Assert.True(created.Ok);
+        var warning = Assert.Single(created.Changes!.Warnings!);
+        Assert.Contains(EngineErrors.InvalidUrl, warning);
+        Assert.Contains("元数据未抓取到", created.Changes!.HumanSummary);
+
+        // 未开启抓取 → 无 warnings
+        var plain = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X" });
+        Assert.Null(plain.Changes!.Warnings);
+    }
+
+    [Fact]
     public async Task MetadataFetch_Invalid_Url_Throws()
     {
         var (engine, _, _) = TestHost.Create();

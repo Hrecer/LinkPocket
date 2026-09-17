@@ -287,10 +287,16 @@ public sealed class EngineCore : IEngine
         if (own?.Touched is { } ownTouched) touched.AddRange(ownTouched);
         touched.AddRange(nested.Touched);
 
+        // 非致命问题（Warnings）一并进事件负载：订阅方/AI 能看到"部分可选项没做成"，与调用的结果面一致
+        var warnings = new List<string>();
+        if (own?.Warnings is { Count: > 0 } ownWarnings) warnings.AddRange(ownWarnings);
+        if (nested.Warnings is { Count: > 0 } nestedWarnings) warnings.AddRange(nestedWarnings);
+
         var payload = JsonSerializer.SerializeToElement(new ChangeSet(
             touched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
             distinctEvents,
-            own?.HumanSummary), EngineJson.Options);
+            own?.HumanSummary,
+            warnings.Count > 0 ? warnings.Distinct(StringComparer.Ordinal).ToArray() : null), EngineJson.Options);
 
         foreach (var name in distinctEvents)
             await PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));
