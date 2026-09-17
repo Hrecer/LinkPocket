@@ -1,4 +1,4 @@
-﻿using LinkPocket.Data;
+using LinkPocket.Data;
 using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 
@@ -140,32 +140,13 @@ public class FolderService
         return folder;
     }
 
-    /// <summary>
-    /// 改名 / 改描述；（可选）改父目录——<paramref name="parentId"/> 为 <c>null</c> 表示"不改父级"，
-    /// 且必须是一个真实文件夹 ID（根目录不是文件夹，不能作为父级传入）。
-    /// 要"移动到根目录"请用 <see cref="MoveFolderAsync"/>（那里 null 才表示根）。
-    /// </summary>
-    public async Task<Folder> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
+    /// <summary>改名 / 改描述（不换父——换父是 <see cref="MoveFolderAsync"/> 的语义，一个动作一个入口）。</summary>
+    public async Task<Folder> UpdateFolderAsync(string id, string? name = null, string? description = null)
     {
         var folder = await _db.Folders.FindAsync(id) ?? throw new Exception("Folder not found");
 
-        if (parentId != null && parentId != folder.ParentId)
-        {
-            if (parentId == id)
-                throw new ArgumentException("Cannot set folder as its own parent");
-
-            // 检查循环引用
-            if (await WouldCreateCycleInternalAsync(id, parentId))
-                throw new ArgumentException("Moving would create a circular reference");
-
-            // 验证新父目录存在
-            if (await _db.Folders.FindAsync(parentId) == null)
-                throw new Exception("Parent folder not found");
-        }
-
         if (!string.IsNullOrEmpty(name)) folder.Name = name.Trim();
         if (description != null) folder.Description = description;
-        if (parentId != null) folder.ParentId = parentId;
 
         folder.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();

@@ -1,4 +1,4 @@
-﻿using LinkPocket.Api;
+using LinkPocket.Api;
 using LinkPocket.Data;
 using LinkPocket.Services;
 using Microsoft.EntityFrameworkCore;
@@ -160,11 +160,11 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         return new FolderDto { FolderId = folder.FolderId, Name = folder.Name, ParentId = folder.ParentId, UpdatedAt = folder.UpdatedAt };
     }
 
-    public async Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
+    public async Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null)
     {
         var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == id);
-        var folder = await _folders.UpdateFolderAsync(id, name, description, parentId);
-        // 自身被改名 / 被移动，以及原父级、新父级的内容构成都发生了变化
+        var folder = await _folders.UpdateFolderAsync(id, name, description);
+        // 自身被改名 + 父链的内容构成变化（换父是 folders.move 的语义，不在此处）
         await _folders.TouchModifiedAsync(folder.FolderId);
         await _folders.TouchModifiedAsync(before?.ParentId);
         RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });

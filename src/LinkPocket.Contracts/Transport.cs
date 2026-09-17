@@ -139,7 +139,7 @@ public class LinkPocketApiDispatcher
         // 文件夹管理
         "folders.create" => await _api.CreateFolderAsync(PReqStr(p, "name"), PStrOrNull(p, "parent_id")),
         "folders.update" => await _api.UpdateFolderAsync(
-            PReqStr(p, "id"), PStrOrNull(p, "name"), PStrOrNull(p, "description"), PStrOrNull(p, "parent_id")),
+            PReqStr(p, "id"), PStrOrNull(p, "name"), PStrOrNull(p, "description")),
         "folders.delete" => await WrapVoid(() => _api.DeleteFolderAsync(
             PReqStr(p, "id"), PStr(p, "cascade", "move_to_parent"), PStrOrNull(p, "target_list_id"))),
         "folders.move" => await WrapVoid(() => _api.MoveFolderAsync(PReqStr(p, "folder_id"), PStrOrNull(p, "target_parent_id"))),

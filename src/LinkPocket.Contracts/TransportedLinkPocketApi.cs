@@ -31,8 +31,8 @@ public class TransportedLinkPocketApi : ILinkPocketApi
     public Task<FolderDto> CreateFolderAsync(string name, string? parentId)
         => _transport.InvokeAsync<FolderDto>("folders.create", new { name, parent_id = parentId });
 
-    public Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
-        => _transport.InvokeAsync<FolderDto>("folders.update", new { id, name, description, parent_id = parentId });
+    public Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null)
+        => _transport.InvokeAsync<FolderDto>("folders.update", new { id, name, description });
 
     public Task DeleteFolderAsync(string id, string cascade = "move_to_parent", string? targetListId = null)
         => _transport.InvokeAsync<object?>("folders.delete", new { id, cascade, target_list_id = targetListId });

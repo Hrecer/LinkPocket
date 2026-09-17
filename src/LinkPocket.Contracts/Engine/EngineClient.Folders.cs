@@ -17,8 +17,8 @@ public sealed partial class EngineClient
     public Task<List<FolderDto>> FolderTreeAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<FolderDto>>("folders.tree", null, o, ct);
 
-    /// <summary>按 ID 取文件夹（根不是实体、无 ID，根 ID 恒为 not found）。</summary>
-    public Task<FolderDto> FolderGetAsync(string folderId, CallOptions? o = null, CancellationToken ct = default)
+    /// <summary>按 ID 取文件夹（根不是实体、无 ID：缺省/null 即向根寻址 → LP.STATE.002）。</summary>
+    public Task<FolderDto> FolderGetAsync(string? folderId = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<FolderDto>("folders.get", new { folder_id = folderId }, o, ct);
 
     /// <summary>面包屑（「全部书签」→ 当前目录的名称链）。</summary>
@@ -31,10 +31,10 @@ public sealed partial class EngineClient
         => ExecuteAsync<FolderDto>("folders.create", new { name, description, parent_id = parentId }, o, ct);
 
     public Task<CommandResult<FolderDto>> FolderUpdateAsync(string folderId, string? name = null,
-        string? description = null, string? parentId = null,
+        string? description = null,
         CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<FolderDto>("folders.update",
-            new { folder_id = folderId, name, description, parent_id = parentId }, o, ct);
+            new { folder_id = folderId, name, description }, o, ct);
 
     /// <summary>删除文件夹：cascade = trash_links（默认，整树入回收站）| move_to_list（配 target_list_id）。</summary>
     public Task<CommandResult<FolderDeleteResult>> FolderDeleteAsync(string folderId, string? cascade = null,

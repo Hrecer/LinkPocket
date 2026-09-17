@@ -15,11 +15,12 @@ internal sealed class LinkSmartListHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.smart_list",
         Category: "links",
-        Description: "智能列表预设：recently_added（最近添加）| recently_visited（最近查看）| recently_edited（最近编辑）| most_visited（最常访问，上限 20 语义）",
+        Description: "智能列表预设：recently_added（最近添加）| recently_visited（最近查看）| recently_edited（最近编辑）| most_visited（最常访问）",
         Parameters:
         [
             ParamSpec.Req<string>("kind", "recently_added | recently_visited | recently_edited | most_visited"),
-            ParamSpec.Opt<int>("limit", "上限（缺省 50）"),
+            ParamSpec.Opt<int>("limit", "返回条数上限（缺省 50）"),
+            ParamSpec.Opt<int>("days", "时间窗天数，只对 recently_* 三类生效（缺省 7）"),
         ],
         Caps: CommandCaps.Query,
         // 智能列表只查 links 表且结果只受链接表变更影响（7.2：recently_* 三键都有索引，缓存省掉重复排序）
@@ -29,7 +30,8 @@ internal sealed class LinkSmartListHandler : ICommandHandler
     {
         var kind = CommandArgs.RequireString(args, "kind");
         var limit = Math.Max(1, CommandArgs.OptionalInt(args, "limit", DefaultLimit));
-        var since = DateTime.UtcNow.AddDays(-DefaultDays);
+        var days = Math.Max(1, CommandArgs.OptionalInt(args, "days", DefaultDays));
+        var since = DateTime.UtcNow.AddDays(-days);
         var ct = ctx.Ct;
 
         LinkFilter filter;

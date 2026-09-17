@@ -29,7 +29,7 @@ public interface ILinkPocketApi
 
     // —— 文件夹管理 ——
     Task<FolderDto> CreateFolderAsync(string name, string? parentId);
-    Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null);
+    Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null);
     /// <summary>删除文件夹。cascade: "move_to_parent"（默认）| "trash_links" | "target"，配合 targetListId。</summary>
     Task DeleteFolderAsync(string id, string cascade = "move_to_parent", string? targetListId = null);
     Task MoveFolderAsync(string folderId, string? targetParentId);
