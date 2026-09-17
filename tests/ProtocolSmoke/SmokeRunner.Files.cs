@@ -49,8 +49,8 @@ internal static partial class SmokeRunner
 
     private static async Task SectionBookmarks(SmokeState s)
     {
-        s.Reset();   // 旧版语义：书签往返在全新库上进行
-        var client = s.Client;   // Reset 换了引擎实例，必须在此之后取
+        // 旧版语义：书签往返在全新库上进行（Reset 返回新引擎：旧引用指向已删除的库文件，必须弃用）
+        var client = s.Reset();
         var workDir = s.WorkDir;
         var samplePath = Path.Combine(workDir, "sample_bookmarks.html");
         await File.WriteAllTextAsync(samplePath, SampleBookmarks, new System.Text.UTF8Encoding(false));
@@ -119,8 +119,7 @@ internal static partial class SmokeRunner
             "导出产物应能被自身解析且条目数一致");
 
         // 二次往返：全新库重导入 → 再导出 → 逐行一致
-        s.Reset();
-        client = s.Client;   // Reset 换了引擎实例
+        client = s.Reset();
         var reimported = (await client.BookmarksImportAsync(exportA)).Data!;
         Asserts.That(reimported.GetProperty("folders_created").GetInt32() + reimported.GetProperty("links_created").GetInt32() == 13,
             "往返导入条目数应为 13");
@@ -149,8 +148,8 @@ internal static partial class SmokeRunner
 
     private static async Task SectionBackup(SmokeState s)
     {
-        s.Reset();   // 旧版语义：备份场景在全新库上构建
-        var client = s.Client;
+        // 旧版语义：备份场景在全新库上构建（阶段一 = 构建 + 导出）
+        var client = s.Reset();
         s.Events.Clear();
 
         // 场景：同父重名 + 名含「>」+ 回收站内容（单独删除 + 整树删除）→ 备份 → 全新库恢复
@@ -194,8 +193,8 @@ internal static partial class SmokeRunner
             "回收站内容不应出现在备份里");
 
         // 全新库 + 两阶段确认导入（backup.import 为破坏性命令）
-        s.Reset();
-        var fresh = s.Client;   // Reset 换了引擎实例，导入与断言全部走新引擎
+        // 阶段二起改用 Reset() 返回的新引擎 fresh：下文一切调用（含篡改导入）都必须走它
+        var fresh = s.Reset();
         var ex = await AssertThrowsAsync(() => fresh.BackupImportAsync(backupPath));
         Asserts.That(ex.Error.Code == EngineErrors.ConfirmRequired, "backup.import 无令牌应报 LP.SEC.003");
         var token = ex.Error.Details!.Value.GetProperty("confirm_token").GetString();
@@ -239,10 +238,10 @@ internal static partial class SmokeRunner
             }
         }
 
-        var tamperedGate = await AssertThrowsAsync(() => client.BackupImportAsync(tamperedPath));
+        var tamperedGate = await AssertThrowsAsync(() => fresh.BackupImportAsync(tamperedPath));
         Asserts.That(tamperedGate.Error.Code == EngineErrors.ConfirmRequired, "篡改导入同样先走确认门");
         var tamperedToken = tamperedGate.Error.Details!.Value.GetProperty("confirm_token").GetString();
-        var tampered = await AssertThrowsAsync(() => client.BackupImportAsync(tamperedPath, o: new CallOptions(ConfirmToken: tamperedToken)));
+        var tampered = await AssertThrowsAsync(() => fresh.BackupImportAsync(tamperedPath, o: new CallOptions(ConfirmToken: tamperedToken)));
         Asserts.That(tampered.Error.Code == EngineErrors.InvalidPath, "被篡改备份应被拒绝（LP.VAL.004）");
         Asserts.That(tampered.Error.Message.Contains("完整性"), $"错误信息应说明完整性校验失败，实际：{tampered.Error.Message}");
 

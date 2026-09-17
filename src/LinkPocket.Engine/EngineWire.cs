@@ -111,6 +111,24 @@ public sealed class EngineWire(IEngine engine)
                     : null;
                 return engine.Describe(category);
             }
+            case "batch.run" or "batch.dry_run" or "batch.status":
+            {
+                // 编排命令（方案 3.1：wire 方法 = engine.* 三标准方法 + <编排命令>）：
+                // 批引擎自身即管道父调用，直路由 IBatchEngine，不经标准命令管道。
+                var batch = engine.Batch
+                    ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal, "批引擎未装配（OrchestrationHost）"));
+                return method switch
+                {
+                    "batch.run" => await batch.RunAsync(
+                        ParseScript(RequireElement(args, "script")),
+                        args.TryGetProperty("options", out var oEl) && oEl.ValueKind == JsonValueKind.Object
+                            ? DeserializeOptions(oEl) : null, ct),
+                    "batch.dry_run" => await batch.DryRunAsync(ParseScript(RequireElement(args, "script")), ct),
+                    _ => batch.GetStatus(Require(args, "batch_id"))
+                        ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
+                            $"批不存在：{Require(args, "batch_id")}")),
+                };
+            }
             default:
             {
                 // 直接命令名：params = args；按目录里的 Query/Mutation 标志路由
@@ -129,6 +147,21 @@ public sealed class EngineWire(IEngine engine)
 
     /// <summary>查询结果 = 数据本体（JSON 可序列化：DTO / record / JsonElement 均直接落形）。</summary>
     private static object? ToWireData(object? data) => data;
+
+    private static BatchScript ParseScript(JsonElement scriptEl)
+        => JsonSerializer.Deserialize<BatchScript>(scriptEl.GetRawText(), EngineJson.ScriptOptions)
+           ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, "批脚本不是合法的 BatchScript JSON"));
+
+    /// <summary>必填 JSON 元素参数（复杂入参，如批脚本）；缺失即抛 REQUIRED_PARAM。</summary>
+    private static JsonElement RequireElement(JsonElement args, string name)
+    {
+        if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty(name, out var el)
+            && el.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined))
+            return el;
+
+        throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
+            $"缺少必填参数「{name}」", details: JsonSerializer.SerializeToElement(new { param = name })));
+    }
 
     private static CallOptions DeserializeOptions(JsonElement el)
         => JsonSerializer.Deserialize<CallOptions>(el.GetRawText(), WireOptions) ?? new CallOptions();

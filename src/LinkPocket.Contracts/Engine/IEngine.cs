@@ -27,4 +27,8 @@ public interface IEngine
     /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲（默认 5000 条），
     /// 供新会话追平（<see cref="IEventStore.FollowAsync"/>）与 AI 轮询（<see cref="IEventStore.PollAsync"/>）。</summary>
     IEventStore EventStore { get; }
+
+    /// <summary>批引擎（方案 4.3 L2 编排层）：batch.run / batch.dry_run / batch.status 的执行面。
+    /// 组合时注入（OrchestrationHost）；未装配为 null（wire 调用编排命令报「未装配」）。</summary>
+    IBatchEngine? Batch { get; }
 }

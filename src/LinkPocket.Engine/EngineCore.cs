@@ -24,6 +24,7 @@ public sealed class EngineCore : IEngine
     private readonly IAuditWriter _audit;
     private readonly IEventBus _events;
     private readonly IEventStore _eventStore;
+    private readonly ISessionManager? _sessions;
 
     public EngineCore(
         CommandRegistry registry,
@@ -32,7 +33,8 @@ public sealed class EngineCore : IEngine
         IEventBus? eventBus = null,
         ConfirmTokenStore? confirmTokens = null,
         IdempotencyStore? idempotency = null,
-        IEventStore? eventStore = null)
+        IEventStore? eventStore = null,
+        ISessionManager? sessions = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _uowFactory = uowFactory ?? throw new ArgumentNullException(nameof(uowFactory));
@@ -41,6 +43,7 @@ public sealed class EngineCore : IEngine
         _confirmTokens = confirmTokens ?? new ConfirmTokenStore();
         _idempotency = idempotency ?? new IdempotencyStore();
         _eventStore = eventStore ?? new InMemoryEventStore();
+        _sessions = sessions;
         _writeGate = new SemaphoreSlim(1, 1);   // 全局单写闸：任意两写不重叠（现状数据闸语义保留）
 
         // 事件存储 = 总线的常驻订阅者：发布即写入（先于消费方订阅者登记，顺序稳定）
@@ -53,12 +56,29 @@ public sealed class EngineCore : IEngine
     /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲，追平/轮询入口。</summary>
     public IEventStore EventStore => _eventStore;
 
+    /// <summary>批引擎（阶段 11 编排层；OrchestrationHost 装配后非空）。</summary>
+    public IBatchEngine? Batch { get; set; }
+
+    /// <summary>撤销协调器（阶段 11 编排层；OrchestrationHost 装配后非空）。</summary>
+    public IUndoCoordinator? Undo { get; set; }
+
+    // ===== 同程序集编排组件的内部访问器（BatchEngine/MacroRun 等复用写闸/UoW 工厂/审计/注册表）=====
+
+    internal SemaphoreSlim WriteGate => _writeGate;
+    internal Func<IUnitOfWork> UowFactory => _uowFactory;
+    internal IAuditWriter Audit => _audit;
+    internal CommandRegistry Registry => _registry;
+
     public async Task<CommandResult<T>> ExecuteAsync<T>(string command, object? args = null,
         CallOptions? options = null, CancellationToken ct = default)
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
         var caller = options?.Caller ?? CallerRef.Test;
         var dryRun = options?.DryRun == true;
+        var argsJson = EngineJson.ToJsonElement(args);   // 入参快照：审计 ArgsJson 与撤销登记共用
+
+        // 能力门（方案 4.5）：会话存在性 + 只读拒绝写 + 限流（未登记会话零约束，兼容宿主自有调用）
+        _sessions?.Enforce(caller, isMutation: true, correlationId);
 
         var handler = ResolveOrThrow(command, correlationId);
         if (!handler.Descriptor.IsMutation)
@@ -87,7 +107,7 @@ public sealed class EngineCore : IEngine
             try
             {
                 ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, this);
-                result = await handler.ExecuteAsync(ctx, EngineJson.ToJsonElement(args));
+                result = await handler.ExecuteAsync(ctx, argsJson);
 
                 if (dryRun)
                 {
@@ -111,11 +131,15 @@ public sealed class EngineCore : IEngine
 
                 if (options?.IdempotencyKey is { } idemKey)
                     _idempotency.Store(idemKey, result);
+
+                // 撤销登记（阶段 11）：顶层可撤销命令（Reversible + UndoInverse）成功后入栈
+                Undo?.Record(handler.Descriptor, argsJson, caller);
             }
 
             var auditRef = _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null));
+                Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
+                ArgsJson: TruncateArgs(argsJson)));
 
             return new CommandResult<T>(true, (T?)result.Data, result.Changes, auditRef);
         }
@@ -123,7 +147,8 @@ public sealed class EngineCore : IEngine
         {
             _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: false, ex.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString()));
+                Success: false, ex.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString(),
+                ArgsJson: TruncateArgs(argsJson)));
             throw;
         }
         catch (OperationCanceledException)
@@ -136,7 +161,8 @@ public sealed class EngineCore : IEngine
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
             _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: false, wrapped.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString()));
+                Success: false, wrapped.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString(),
+                ArgsJson: TruncateArgs(argsJson)));
             throw wrapped;
         }
         finally
@@ -150,6 +176,8 @@ public sealed class EngineCore : IEngine
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
         var caller = options?.Caller ?? CallerRef.Test;
+
+        _sessions?.Enforce(caller, isMutation: false, correlationId);
 
         var handler = ResolveOrThrow(query, correlationId);
         if (!handler.Descriptor.IsQuery)
@@ -228,4 +256,14 @@ public sealed class EngineCore : IEngine
 
     private static CommandResult<T> ToTyped<T>(CommandResult result)
         => new(true, (T?)result.Data, result.Changes, result.AuditRef);   // 非泛型 CommandResult 只承载成功结果（失败走异常）
+
+    /// <summary>入参快照截断（审计 ArgsJson 列；空对象不记，超长截 4000 字符）。</summary>
+    private static string? TruncateArgs(JsonElement argsJson)
+    {
+        if (argsJson.ValueKind != JsonValueKind.Object || argsJson.EnumerateObject().MoveNext() == false)
+            return null;
+        const int max = 4000;
+        var raw = argsJson.GetRawText();
+        return raw.Length <= max ? raw : raw[..max];
+    }
 }

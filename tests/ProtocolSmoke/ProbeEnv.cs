@@ -32,7 +32,14 @@ internal static class ProbeEnv
         registry.RegisterAll(LinkPocket.Modules.Dedup.DedupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Favicon.FaviconModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers());
-        return new EngineClient(new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext())));
+
+        // 阶段 11 编排层：批引擎/撤销协调器挂引擎 + 16 个编排命令入目录 + audit_log/idempotency 落表
+        var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()),
+            audit: new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(() => factory.CreateDbContext())),
+            idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+        var stagingRoot = Path.Combine(Path.GetDirectoryName(dbPath)!, $"lpsmoke_staging_{Path.GetFileNameWithoutExtension(dbPath)}");
+        registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext(), stagingRoot));
+        return new EngineClient(engine);
     }
 
     /// <summary>尽力清理临时库（连接池句柄滞留会阻止删除，失败不打断流程）。</summary>

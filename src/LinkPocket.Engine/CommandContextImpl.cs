@@ -36,6 +36,9 @@ internal sealed class CommandContextImpl : ICommandContext
     public string CorrelationId { get; }
     public CallerRef Caller { get; }
 
+    /// <summary>所属引擎（同程序集编排组件复用嵌套派发入口）。</summary>
+    internal EngineCore Engine => _engine;
+
     public Task<CommandResult> DispatchNestedAsync(string command, object? args = null, CancellationToken ct = default)
         => _engine.ExecuteNestedAsync(this, command, args, ct);
 
@@ -57,6 +60,14 @@ public static class EngineJson
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>批脚本/宏脚本解析口径：在 Options 之上放开枚举字符串（scope/on_error 可写 "transactional"/"continue"）。</summary>
+    public static readonly JsonSerializerOptions ScriptOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 
     public static JsonElement ToJsonElement(object? args)

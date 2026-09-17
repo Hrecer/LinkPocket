@@ -18,6 +18,10 @@ internal static class TestEnv
     }
 
     public static EngineCore CreateEngine(LinkPocketDbContextFactory factory, params ICommandHandler[] extra)
+        => CreateEngine(factory, withOrchestration: false, sessions: null, extra);
+
+    public static EngineCore CreateEngine(LinkPocketDbContextFactory factory, bool withOrchestration,
+        ISessionManager? sessions = null, params ICommandHandler[] extra)
     {
         var registry = new CommandRegistry();
         var builtins = new List<ICommandHandler>
@@ -33,7 +37,14 @@ internal static class TestEnv
         var extraNames = extra.Select(h => h.Descriptor.Name).ToHashSet();
         registry.RegisterAll(builtins.Where(h => !extraNames.Contains(h.Descriptor.Name)));
         registry.RegisterAll(extra);
-        return new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()));
+
+        var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()), sessions: sessions);
+        if (withOrchestration)
+        {
+            // 阶段 11：编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致）
+            registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext()));
+        }
+        return engine;
     }
 }
 

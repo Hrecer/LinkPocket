@@ -24,7 +24,7 @@ public sealed partial class EngineClient(IEngine engine)
         CallOptions? options = null, CancellationToken ct = default)
         => Engine.QueryAsync<T>(query, args, options, ct);
 
-    /// <summary>自描述：引擎全部能力（52 命令目录，AI 工具清单/文档的唯一事实源）。</summary>
+    /// <summary>自描述：引擎全部能力（命令目录，AI 工具清单/文档的唯一事实源）。</summary>
     public EngineManifest Describe(string? category = null) => Engine.Describe(category);
 
     /// <summary>订阅引擎领域事件（links.changed / folders.changed / trash.changed / ...）。
