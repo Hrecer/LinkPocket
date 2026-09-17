@@ -4,14 +4,15 @@
 
 .DESCRIPTION
   单一入口，任何 CI 提供商（GitHub Actions / Jenkins / 本地预提交）都只需调用本脚本。
-  四道门，任一道不过即非零退出：
+  五道门，任一道不过即非零退出：
 
     1. 清 obj + 全量编译（方案 9：0 警告 0 错误，-warnaserror 强制）
     2. 单元测试（Engine / Modules / Architecture）
     3. 协议冒烟（含 §0~§11 端到端断言）
     4. 10k 性能门槛（Release 构建 + --strict-perf：严格按方案 7.3 原始门槛判定，不享受 Debug 放宽）
+    5. 目录文档漂移检查（docs/catalog 必须与命令描述符逐字节一致）
 
-  产物：build/artifacts/{build,test,smoke}.log + perf_report.json（逐条实测值，供归档与趋势对比）。
+  产物：build/artifacts/{build,test,smoke,catalog}.log + perf_report.json（逐条实测值，供归档与趋势对比）。
 
 .PARAMETER Configuration
   构建配置，缺省 Release（性能门槛的标定口径；Debug 仅供本地快速迭代）。
@@ -86,6 +87,17 @@ Write-Host "[CI] 协议冒烟 + 10k 性能门槛（严格）..." -ForegroundColo
 & $dotnet run --project (Join-Path $repoRoot "tests/ProtocolSmoke") -c $Configuration --no-build -- --strict-perf 2>&1 |
     Tee-Object -FilePath (Join-Path $artifacts "smoke.log")
 if ($LASTEXITCODE -ne 0) { Write-Host "[CI] 协议冒烟/性能门槛未过（exit=$LASTEXITCODE）" -ForegroundColor Red; exit $LASTEXITCODE }
+Write-Host "[CI] 协议冒烟与性能门槛通过" -ForegroundColor Green
+
+# —— 5. 目录文档漂移检查（Descriptor = 单一事实源，文档必须机械生成）——
+Write-Host "[CI] 目录文档漂移检查 ..." -ForegroundColor Cyan
+& $dotnet run --project (Join-Path $repoRoot "tools/LinkPocket.CatalogExport") -c $Configuration --no-build -- --check 2>&1 |
+    Tee-Object -FilePath (Join-Path $artifacts "catalog.log")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[CI] docs/catalog 与命令描述符不一致（跑 build/gen-catalog.ps1 重新生成）" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+Write-Host "[CI] 目录文档与描述符一致" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "[CI] 全部门禁通过。性能报告：$env:LP_PERF_REPORT" -ForegroundColor Green
