@@ -71,7 +71,29 @@ internal static partial class SmokeRunner
         Asserts.That(!(await client.FolderTreeAsync()).Any(f => f.Name == "干跑目录"), "干跑不得落库");
         Asserts.That(s.Events.Count == dryEvents, "干跑不得发布事件");
 
-        Console.WriteLine("[OK] §6 引擎能力：links.query（白名单防注入）/ batch 三件套 / 幂等键 / DryRun 零副作用");
+        // ★ 事件存储（阶段 8，方案 4.4）：发布即入环形存储；追平回放到 Head / 游标续读 / 轮询 limit
+        var store = client.EventStore;
+        Asserts.That(store.Head.Sequence > 0, "事件存储应有事件（Head > 0）");
+        var replay = new List<StoredEvent>();
+        await foreach (var ev in store.FollowAsync()) replay.Add(ev);
+        Asserts.That(replay.Count > 0 && replay[^1].Cursor.Sequence == store.Head.Sequence,
+            "追平应从最早存活事件回放到 Head");
+        Asserts.That(replay.Any(ev => ev.Event.Name == "links.changed"), "存储应含 links.changed");
+
+        var mid = replay[replay.Count / 2].Cursor;
+        var tail = new List<StoredEvent>();
+        await foreach (var ev in store.FollowAsync(mid)) tail.Add(ev);
+        Asserts.That(tail.Count == replay.Count - replay.Count / 2 - 1,
+            "从游标续读应只含游标之后的事件");
+
+        var poll = await store.PollAsync(mid, 2);
+        Asserts.That(poll.Items.Count == 2 && poll.Next is { } next
+                && next.Sequence == mid.Sequence + 2,
+            "轮询 limit=2 应给出 Next = 游标+2");
+        Asserts.That((await store.PollAsync(mid, 1)).Items[0].Cursor.Sequence == mid.Sequence + 1,
+            "轮询应从游标后第一条开始");
+
+        Console.WriteLine("[OK] §6 引擎能力：links.query（白名单防注入）/ batch 三件套 / 幂等键 / DryRun 零副作用 / 事件存储追平轮询");
     }
 
     private static async Task SectionConcurrency(SmokeState s)

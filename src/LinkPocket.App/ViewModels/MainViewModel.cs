@@ -21,7 +21,7 @@ namespace LinkPocket.ViewModels
 
         /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
         private readonly ILinkPocketApi Api;
-        private readonly ILinkPocketTransport _transport;
+        private readonly Services.UiEventHub _events;
         private readonly Services.UiPortProvider _ports;
         
         private string _currentNavId = "browser";
@@ -70,11 +70,11 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public MainViewModel(ILinkPocketApi api, ILinkPocketTransport transport,
+        public MainViewModel(ILinkPocketApi api, Services.UiEventHub events,
             Services.UiPortProvider ports, Managers.SelectionManager selectionManager)
         {
             Api = api;
-            _transport = transport;
+            _events = events;
             _ports = ports;
             _selectionManager = selectionManager;
 
@@ -128,46 +128,38 @@ namespace LinkPocket.ViewModels
                 new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "bookmark-outline", LinkCount = 0 }
             };
 
-            // P3 事件推送：订阅后端数据变更，防抖后刷新当前视图。
-            // 现阶段与既有 EventHandler 链并存（防抖去重）；P4/P6 再逐步替换旧链。
-            _transport.EventReceived += OnTransportEventReceived;
+            // 事件推送（阶段 8 定稿）：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
+            // 本 VM 只按当前活跃视图路由刷新（防抖在枢纽内完成）。
+            _events.RefreshRequested += OnBackendRefresh;
         }
 
-        private System.Windows.Threading.DispatcherTimer? _backendEventTimer;
-
-        private void OnTransportEventReceived(object? sender, string payload)
+        private void OnBackendRefresh()
         {
-            if (_backendEventTimer == null)
+            // 必须保留选中：写操作（重命名/新建/移动…）自己刚恢复的选中，
+            // 会被防抖后的刷新抹掉 —— 表现为"刚重命名完是选中的，立马又没了"（浏览器页内处理）。
+            // ⚠️ 数据闸纪律：本处理器不得同步回派协议命令；await 续体统一经 Dispatcher 执行
+            // （与原内联定时器 Tick 的 async void 形态逐字等价，绝不 Task.Run 离开 UI 线程）。
+            _ = RefreshActiveViewAsync();
+        }
+
+        private async Task RefreshActiveViewAsync()
+        {
+            try
             {
-                _backendEventTimer = new System.Windows.Threading.DispatcherTimer
+                switch (_currentNavId)
                 {
-                    Interval = TimeSpan.FromMilliseconds(300)
-                };
-                _backendEventTimer.Tick += async (_, _) =>
-                {
-                    _backendEventTimer.Stop();
-                    try
-                    {
-                    switch (_currentNavId)
-                    {
-                        case "browser":
-                            // 必须保留选中：写操作（重命名/新建/移动…）自己刚恢复的选中，
-                            // 会被这条 300ms 防抖后的第二次刷新抹掉 —— 表现为"刚重命名完是选中的，立马又没了"。
-                            await BrowserViewModel.RefreshPreservingSelectionAsync();
-                            break;
-                        case "trash":
-                            await LoadTrashTreeAsync();
-                            break;
-                        case "search":
-                            OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
-                            break;
-                    }
-                    }
-                    catch { /* 事件驱动的刷新失败不应打断 UI */ }
-                };
+                    case "browser":
+                        await BrowserViewModel.RefreshPreservingSelectionAsync();
+                        break;
+                    case "trash":
+                        await LoadTrashTreeAsync();
+                        break;
+                    case "search":
+                        OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+                        break;
+                }
             }
-            _backendEventTimer.Stop();
-            _backendEventTimer.Start();
+            catch { /* 事件驱动的刷新失败不应打断 UI */ }
         }
 
         public string CurrentNavId

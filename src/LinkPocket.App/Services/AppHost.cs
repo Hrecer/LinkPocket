@@ -28,6 +28,13 @@ public sealed class AppHost
     /// <summary>UI 端口槽位：MainWindow（Shell）在构造时登记 IDialogService/INavigationService 实现。</summary>
     public UiPortProvider Ports { get; } = new();
 
+    /// <summary>
+    /// UI 事件枢纽（阶段 8 定稿）：后端数据变更 → 界面刷新的唯一 300ms 防抖通道。
+    /// 旧链事件源在 <see cref="CreateDefault"/> 里自动接入；阶段 9 起新引擎源经
+    /// <c>Hub.Attach(engine.Events)</c> 并入同一条流。
+    /// </summary>
+    public UiEventHub Hub { get; } = new();
+
     /// <summary>浏览页宿主（「跳转」原语提供方）：由 MainWindow 构造时登记自身。</summary>
     public IBrowserLocateHost? LocateHost { get; set; }
 
@@ -38,12 +45,14 @@ public sealed class AppHost
         Locator = new ContentLocator(Api, () => LocateHost);
     }
 
-    /// <summary>默认装配：进程内后端 + JSON-RPC 分发器 + 传输代理。</summary>
+    /// <summary>默认装配：进程内后端 + JSON-RPC 分发器 + 传输代理 + 事件枢纽。</summary>
     public static AppHost CreateDefault()
     {
         // 后端：契约实现 + 协议分发器；前端：传输代理
         var backend = new LinkPocketApi();
         var transport = new InProcessTransport(new LinkPocketApiDispatcher(backend));
-        return new AppHost(transport, new TransportedLinkPocketApi(transport));
+        var host = new AppHost(transport, new TransportedLinkPocketApi(transport));
+        host.Hub.Attach(transport);   // 旧链事件源自动接入（新引擎源在逐页切换时并入）
+        return host;
     }
 }

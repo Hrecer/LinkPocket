@@ -23,6 +23,7 @@ public sealed class EngineCore : IEngine
     private readonly ConfirmTokenStore _confirmTokens;
     private readonly IAuditWriter _audit;
     private readonly IEventBus _events;
+    private readonly IEventStore _eventStore;
 
     public EngineCore(
         CommandRegistry registry,
@@ -30,7 +31,8 @@ public sealed class EngineCore : IEngine
         IAuditWriter? audit = null,
         IEventBus? eventBus = null,
         ConfirmTokenStore? confirmTokens = null,
-        IdempotencyStore? idempotency = null)
+        IdempotencyStore? idempotency = null,
+        IEventStore? eventStore = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _uowFactory = uowFactory ?? throw new ArgumentNullException(nameof(uowFactory));
@@ -38,11 +40,18 @@ public sealed class EngineCore : IEngine
         _events = eventBus ?? new InMemoryEventBus();
         _confirmTokens = confirmTokens ?? new ConfirmTokenStore();
         _idempotency = idempotency ?? new IdempotencyStore();
+        _eventStore = eventStore ?? new InMemoryEventStore();
         _writeGate = new SemaphoreSlim(1, 1);   // 全局单写闸：任意两写不重叠（现状数据闸语义保留）
+
+        // 事件存储 = 总线的常驻订阅者：发布即写入（先于消费方订阅者登记，顺序稳定）
+        _events.Subscribe(_eventStore.Append);
     }
 
     /// <summary>事件总线（宿主可订阅做 UI 防抖刷新等；订阅方纪律 = 不得同步回派命令）。</summary>
     public IEventBus Events => _events;
+
+    /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲，追平/轮询入口。</summary>
+    public IEventStore EventStore => _eventStore;
 
     public async Task<CommandResult<T>> ExecuteAsync<T>(string command, object? args = null,
         CallOptions? options = null, CancellationToken ct = default)

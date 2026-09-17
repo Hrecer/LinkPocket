@@ -901,7 +901,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 就地刷新并保留当前选中。用于两类收尾：
     /// ① 非导航类操作（重命名 / 新建 / 移动 / 粘贴 / 排序 / 从树里删节点）——它们不改变所在目录；
-    /// ② 后端数据变更事件驱动的刷新（<c>MainViewModel.OnTransportEventReceived</c>）——写操作自己
+    /// ② 后端数据变更事件驱动的刷新（<c>MainViewModel.OnBackendRefresh</c>，经 UiEventHub 防抖）——写操作自己
     ///    刚恢复的选中会被这条 300ms 防抖后的第二次刷新抹掉，所以它也必须保留选中。
     /// 只有"切换目录"才用裸 <see cref="RefreshAsync(string?)"/>（那种场景本来就该清空选中与锚点）。
     /// 若被保留的条目已不存在（例如刚被删掉），则刷新后自然为空选中。

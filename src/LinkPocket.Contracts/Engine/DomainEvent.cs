@@ -5,7 +5,7 @@ namespace LinkPocket.Contracts;
 /// <summary>
 /// 领域事件（方案 4.4）：提交成功后发布；持闸期间同步推送给内存订阅方
 /// （不变量：订阅方不得在处理器内同步回派命令，违者死锁——架构单测 + 文档双保险）；
-/// 同时持久化进事件存储供追平（Phase 8 完整实现）。
+/// 同时写入事件存储供追平/轮询（阶段 8 已落地：<see cref="IEventStore"/> 进程内环形缓冲）。
 /// </summary>
 public sealed record DomainEvent(
     string Name,
@@ -14,7 +14,7 @@ public sealed record DomainEvent(
     string CorrelationId,
     CallerRef? Caller);
 
-/// <summary>事件总线：进程内同步推送 + 事件存储（Phase 8 追平游标）。</summary>
+/// <summary>事件总线：进程内同步推送 + 事件存储（<see cref="IEventStore"/> 追平游标）。</summary>
 public interface IEventBus
 {
     ValueTask PublishAsync(DomainEvent e);

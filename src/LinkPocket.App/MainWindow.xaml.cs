@@ -34,7 +34,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         _host = host;
         InitializeComponent();
-        DataContext = new MainViewModel(_host.Api, _host.Transport, _host.Ports, _selectionManager);
+        DataContext = new MainViewModel(_host.Api, _host.Hub, _host.Ports, _selectionManager);
         BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
         // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。

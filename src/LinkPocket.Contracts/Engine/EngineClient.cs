@@ -30,4 +30,7 @@ public sealed partial class EngineClient(IEngine engine)
     /// <summary>订阅引擎领域事件（links.changed / folders.changed / trash.changed / ...）。
     /// ⚠️ 订阅方纪律：处理器内不得同步回派命令（会自锁）——一律异步/防抖消费。</summary>
     public IDisposable Subscribe(Action<DomainEvent> handler) => Engine.Events.Subscribe(handler);
+
+    /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲，新会话追平 / AI 轮询入口。</summary>
+    public IEventStore EventStore => Engine.EventStore;
 }

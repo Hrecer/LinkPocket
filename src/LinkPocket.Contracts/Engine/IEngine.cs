@@ -23,4 +23,8 @@ public interface IEngine
     /// <summary>事件总线（方案 4.4）：提交成功后同步推送领域事件；
     /// ⚠️ 订阅方纪律 = 处理器内不得同步回派命令（会自锁），一律异步/防抖消费。</summary>
     IEventBus Events { get; }
+
+    /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲（默认 5000 条），
+    /// 供新会话追平（<see cref="IEventStore.FollowAsync"/>）与 AI 轮询（<see cref="IEventStore.PollAsync"/>）。</summary>
+    IEventStore EventStore { get; }
 }
