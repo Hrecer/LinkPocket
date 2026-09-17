@@ -15,7 +15,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Infrastructure",
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E0E15218-1483-42AF-BF9E-7360DEBEAEA7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "t", "tests\ProtocolSmoke\t.csproj", "{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProtocolSmoke", "tests\ProtocolSmoke\ProtocolSmoke.csproj", "{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket", "src\LinkPocket.App\LinkPocket.csproj", "{70328666-6C7C-45EF-99FC-7E7DE89A7B04}"
 EndProject

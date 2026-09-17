@@ -1,0 +1,192 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using LinkPocket.Contracts;
+
+namespace LinkPocket.Engine;
+
+/// <summary>
+/// 引擎 wire 层（方案 3.1/3.2 定稿）：JSON-RPC 2.0 端点，与内存层同一语义。
+///
+/// <para><b>方法路由</b>：<c>engine.execute</c>（params = { command, args?, options? }）、
+/// <c>engine.query</c>（params = { command, args? }）、<c>engine.describe</c>（params = { category? }），
+/// 其余 method 一律视为直接命令名（params = args；按 Descriptor 的 Query/Mutation 标志路由）。</para>
+///
+/// <para><b>响应</b>：成功 = <c>{ jsonrpc, id, result }</c>；execute/变更命令的 result =
+/// <c>{ ok, data, changes, audit_ref }</c>（snake_case），查询的 result = 数据本体。</para>
+///
+/// <para><b>错误</b>：JSON-RPC error.code 数值映射（-32600 请求体非法 / -32601 未知命令 /
+/// -32602 校验类 / -32000 其余引擎错误），完整 <see cref="EngineError"/>（code/message/details/
+/// retryable/correlation_id）放 error.data——兼容规范又保留结构化信息。</para>
+///
+/// <para>事件：提交成功后的领域事件由 <see cref="IEventBus"/> 推送（宿主订阅后自行转 wire 通知），
+/// 不在响应内联——与旧协议的事件通道形态一致（前端防抖行为不变）。</para>
+/// </summary>
+public sealed class EngineWire(IEngine engine)
+{
+    /// <summary>命令目录缓存（构造期解析一次；registry 注册完成后再构造 wire）。</summary>
+    private readonly Dictionary<string, CommandDescriptor> _commands =
+        engine.Describe(null).Commands.ToDictionary(c => c.Name, StringComparer.Ordinal);
+
+    private static readonly JsonSerializerOptions WireOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    public async Task<string> HandleAsync(string jsonRequest, CancellationToken ct = default)
+    {
+        JsonElement request;
+        var hasId = false;
+        JsonElement idValue = default;
+
+        try
+        {
+            request = JsonSerializer.Deserialize<JsonElement>(jsonRequest);
+            if (request.ValueKind != JsonValueKind.Object
+                || !request.TryGetProperty("method", out var methodEl)
+                || methodEl.ValueKind != JsonValueKind.String)
+            {
+                return Error(hasId, idValue, -32600, "请求体不是合法的 JSON-RPC 2.0 对象");
+            }
+
+            if (request.TryGetProperty("id", out var idEl))
+            {
+                hasId = true;
+                idValue = idEl.Clone();
+            }
+
+            var method = methodEl.GetString()!;
+            request.TryGetProperty("params", out var paramsEl);
+            var result = await DispatchAsync(method, paramsEl, ct);
+            return Response(hasId, idValue, result);
+        }
+        catch (JsonException ex)
+        {
+            return Error(hasId, idValue, -32600, $"请求体 JSON 解析失败：{ex.Message}");
+        }
+        catch (EngineException ex)
+        {
+            var (code, _) = MapError(ex.Error.Code);
+            return Error(hasId, idValue, code, ex.Error.Message, ex.Error);
+        }
+        catch (OperationCanceledException)
+        {
+            return Error(hasId, idValue, -32000, "调用已取消");
+        }
+        catch (Exception ex)
+        {
+            return Error(hasId, idValue, -32000, $"内部错误：{ex.Message}");
+        }
+    }
+
+    /// <summary>方法分发（engine.* 三标准方法 + 直接命令名）。</summary>
+    private async Task<object?> DispatchAsync(string method, JsonElement args, CancellationToken ct)
+    {
+        switch (method)
+        {
+            case "engine.execute":
+            {
+                var command = Require(args, "command");
+                var wireArgs = args.TryGetProperty("args", out var a) ? a.Clone() : (JsonElement?)null;
+                var options = args.TryGetProperty("options", out var oEl) && oEl.ValueKind == JsonValueKind.Object
+                    ? DeserializeOptions(oEl)
+                    : null;
+                var r = await engine.ExecuteAsync<object>(command, wireArgs, options, ct);
+                return ToWireResult(r);
+            }
+            case "engine.query":
+            {
+                var command = Require(args, "command");
+                var wireArgs = args.TryGetProperty("args", out var a) ? a.Clone() : (JsonElement?)null;
+                return ToWireData(await engine.QueryAsync<object>(command, wireArgs, null, ct));
+            }
+            case "engine.describe":
+            {
+                var category = args.ValueKind == JsonValueKind.Object
+                    && args.TryGetProperty("category", out var c)
+                    && c.ValueKind == JsonValueKind.String
+                    ? c.GetString()
+                    : null;
+                return engine.Describe(category);
+            }
+            default:
+            {
+                // 直接命令名：params = args；按目录里的 Query/Mutation 标志路由
+                if (!_commands.TryGetValue(method, out var descriptor))
+                    throw new EngineException(EngineErrors.Of(EngineErrors.UnknownCommand,
+                        $"未知命令「{method}」"));
+
+                if (descriptor.IsQuery)
+                    return ToWireData(await engine.QueryAsync<object>(method, args, null, ct));
+
+                var r = await engine.ExecuteAsync<object>(method, args, null, ct);
+                return ToWireResult(r);
+            }
+        }
+    }
+
+    /// <summary>查询结果 = 数据本体（JSON 可序列化：DTO / record / JsonElement 均直接落形）。</summary>
+    private static object? ToWireData(object? data) => data;
+
+    private static CallOptions DeserializeOptions(JsonElement el)
+        => JsonSerializer.Deserialize<CallOptions>(el.GetRawText(), WireOptions) ?? new CallOptions();
+
+    private static object ToWireResult<T>(CommandResult<T> r) => new
+    {
+        ok = r.Ok,
+        data = r.Data,
+        audit_ref = r.AuditRef,
+        changes = r.Changes == null
+            ? null
+            : new
+            {
+                touched = r.Changes.Touched.Select(t => new { type = t.Type, id = t.Id }),
+                events = r.Changes.Events,
+                human_summary = r.Changes.HumanSummary,
+            },
+    };
+
+    private static string Require(JsonElement args, string name)
+    {
+        if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty(name, out var el)
+            && el.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(el.GetString()))
+            return el.GetString()!;
+
+        throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
+            $"缺少必填参数「{name}」", details: JsonSerializer.SerializeToElement(new { param = name })));
+    }
+
+    /// <summary>错误码 → JSON-RPC 数值码（方案 3.2 约定②）。</summary>
+    private static (int Code, bool) MapError(string engineCode) => engineCode switch
+    {
+        EngineErrors.UnknownCommand => (-32601, true),
+        EngineErrors.ProtocolMalformed => (-32600, true),
+        _ when engineCode.StartsWith("LP.VAL", StringComparison.Ordinal) => (-32602, true),
+        _ => (-32000, false),
+    };
+
+    private static string Response(bool hasId, JsonElement id, object? result)
+        => JsonSerializer.Serialize(
+            new Dictionary<string, object?>
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = hasId ? id.Clone() : null,
+                ["result"] = result,
+            }, WireOptions);
+
+    private static string Error(bool hasId, JsonElement id, int code, string message, EngineError? error = null)
+        => JsonSerializer.Serialize(
+            new Dictionary<string, object?>
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = hasId ? id.Clone() : null,
+                ["error"] = new Dictionary<string, object?>
+                {
+                    ["code"] = code,
+                    ["message"] = message,
+                    ["data"] = error ?? EngineErrors.Of(EngineErrors.Internal, message),
+                },
+            }, WireOptions);
+}

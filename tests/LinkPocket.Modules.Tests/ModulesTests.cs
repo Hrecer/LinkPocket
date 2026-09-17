@@ -93,7 +93,7 @@ public class FoldersModuleTests
         var b = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.Data!.FolderId });
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X", list_id = b.Data!.FolderId });
 
-        var deleted = await engine.ExecuteAsync<Modules.Folders.FolderDeleteResult>(
+        var deleted = await engine.ExecuteAsync<FolderDeleteResult>(
             "folders.delete", new { folder_id = a.Data!.FolderId });
         Assert.Equal("trash_links", deleted.Data!.Cascade);
         Assert.Equal(2, deleted.Data!.DeletedFolders);
@@ -125,7 +125,7 @@ public class FoldersModuleTests
         var target = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "T" });
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X", list_id = a.Data!.FolderId });
 
-        var deleted = await engine.ExecuteAsync<Modules.Folders.FolderDeleteResult>(
+        var deleted = await engine.ExecuteAsync<FolderDeleteResult>(
             "folders.delete", new { folder_id = a.Data!.FolderId, cascade = "move_to_list", target_list_id = target.Data!.FolderId });
         Assert.Equal(1, deleted.Data!.DeletedFolders);
 
@@ -141,7 +141,7 @@ public class FoldersModuleTests
         var source2 = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
         var dest = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "归档" });
 
-        var result = await engine.ExecuteAsync<Modules.Folders.FolderMoveBatchResult>(
+        var result = await engine.ExecuteAsync<FolderMoveBatchResult>(
             "folders.move_batch", new { folder_ids = new[] { source1.Data!.FolderId, source2.Data!.FolderId }, target_parent_id = dest.Data!.FolderId });
         Assert.Equal(2, result.Data!.Moved);
         Assert.Single(result.Data!.RenamedNotes);
@@ -159,7 +159,7 @@ public class FoldersModuleTests
         var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X", list_id = a.Data!.FolderId });
 
-        var copy = await engine.ExecuteAsync<Modules.Folders.FolderCopyResult>("folders.copy", new { folder_id = a.Data!.FolderId });
+        var copy = await engine.ExecuteAsync<FolderCopyResult>("folders.copy", new { folder_id = a.Data!.FolderId });
         Assert.NotEqual(a.Data!.FolderId, copy.Data!.NewFolderId);
 
         var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
@@ -215,12 +215,12 @@ public class LinksModuleTests
         var link = await engine.ExecuteAsync<LinkDto>("links.create",
             new { url = "https://x.example", title = "X", list_id = folder.Data!.FolderId });
 
-        var trashed = await engine.ExecuteAsync<Modules.Links.LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
+        var trashed = await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
         Assert.Equal(link.Data!.LinkId, trashed.Data!.LinkId);
         Assert.Equal("全部书签 / F", trashed.Data!.OriginPath);
         Assert.Contains("trash.changed", trashed.Changes!.Events);
 
-        var restored = await engine.ExecuteAsync<Modules.Trash.TrashRestoreResult>("trash.restore", new { id = link.Data!.LinkId });
+        var restored = await engine.ExecuteAsync<TrashRestoreResult>("trash.restore", new { id = link.Data!.LinkId });
         Assert.Equal(link.Data!.LinkId, restored.Data!.LinkId);
 
         var got = await engine.QueryAsync<LinkDto>("links.get", new { id = link.Data!.LinkId });
@@ -317,11 +317,11 @@ public class LinksModuleTests
         var l1 = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example/1", title = "1", list_id = f1.Data!.FolderId });
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example/2", title = "2", list_id = f1.Data!.FolderId });
 
-        var moved = await engine.ExecuteAsync<Modules.Links.LinkBatchResult>("links.move_batch",
+        var moved = await engine.ExecuteAsync<LinkBatchResult>("links.move_batch",
             new { link_ids = new[] { l1.Data!.LinkId }, target_list_id = f2.Data!.FolderId });
         Assert.Equal(1, moved.Data!.Affected);
 
-        var copied = await engine.ExecuteAsync<Modules.Links.LinkBatchResult>("links.copy_batch",
+        var copied = await engine.ExecuteAsync<LinkBatchResult>("links.copy_batch",
             new { link_ids = new[] { l1.Data!.LinkId }, target_list_id = f2.Data!.FolderId });
         Assert.Equal(1, copied.Data!.Affected);
 
@@ -342,12 +342,12 @@ public class LinksModuleTests
         var jsonPath = Path.Combine(Path.GetTempPath(), $"lpexp_{Guid.NewGuid():N}.json");
         var csvPath = Path.Combine(Path.GetTempPath(), $"lpexp_{Guid.NewGuid():N}.csv");
 
-        var json = await engine.ExecuteAsync<Modules.Links.LinkExportResult>("links.export",
+        var json = await engine.ExecuteAsync<LinkExportResult>("links.export",
             new { file_path = jsonPath, format = "json" });
         Assert.Equal(1, json.Data!.Count);
         Assert.Contains("\"url\": \"https://x.example,a\"", await File.ReadAllTextAsync(jsonPath));
 
-        var csv = await engine.ExecuteAsync<Modules.Links.LinkExportResult>("links.export",
+        var csv = await engine.ExecuteAsync<LinkExportResult>("links.export",
             new { file_path = csvPath, format = "csv" });
         Assert.Equal(1, csv.Data!.Count);
         Assert.Contains("\"A\"\"B\"", await File.ReadAllTextAsync(csvPath));
@@ -428,7 +428,7 @@ public class TrashModuleTests
         await engine.ExecuteAsync<object>("links.trash", new { id = l1.Data!.LinkId });
         await engine.ExecuteAsync<object>("links.trash", new { id = l2.Data!.LinkId });
 
-        var restored = await engine.ExecuteAsync<Modules.Trash.TrashRestoreBatchResult>("trash.restore_batch",
+        var restored = await engine.ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
             new { ids = new[] { l1.Data!.LinkId, l2.Data!.LinkId } });
         Assert.Equal(2, restored.Data!.Restored);
 
