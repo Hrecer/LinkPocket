@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
@@ -29,7 +29,7 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
         if (linkIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.RequiredParam, "link_ids 不能为空", correlationId: ctx.CorrelationId));
-        var target = FolderIds.Normalize(CommandArgs.OptionalString(args, "target_list_id"));
+        var target = CommandArgs.OptionalString(args, "target_list_id");
         var ct = ctx.Ct;
 
         if (target != null)

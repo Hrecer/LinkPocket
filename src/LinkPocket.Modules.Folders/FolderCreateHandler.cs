@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
@@ -29,7 +29,7 @@ internal sealed class FolderCreateHandler : ICommandHandler
     {
         var name = CommandArgs.RequireString(args, "name");
         var description = CommandArgs.OptionalString(args, "description");
-        var parentId = FolderIds.Normalize(CommandArgs.OptionalString(args, "parent_id"));
+        var parentId = CommandArgs.OptionalString(args, "parent_id");
         var ct = ctx.Ct;
 
         if (parentId != null)

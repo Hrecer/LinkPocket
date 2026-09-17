@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
@@ -30,7 +30,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         if (folderIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.RequiredParam, "folder_ids 不能为空", correlationId: ctx.CorrelationId));
-        var target = FolderIds.Normalize(CommandArgs.OptionalString(args, "target_parent_id"));
+        var target = CommandArgs.OptionalString(args, "target_parent_id");
         var ct = ctx.Ct;
         var uow = ctx.Uow;
 

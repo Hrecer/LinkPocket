@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
@@ -23,7 +23,7 @@ internal sealed class FolderCycleCheckHandler : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var folderId = new FolderId(CommandArgs.RequireString(args, "folder_id"));
-        var target = FolderIds.Normalize(CommandArgs.OptionalString(args, "target_parent_id"));
+        var target = CommandArgs.OptionalString(args, "target_parent_id");
         var wouldCycle = target != null
             && await ctx.Uow.Trees.WouldCreateCycleAsync(folderId, new FolderId(target), ctx.Ct);
         return CommandResult.Ok(wouldCycle);

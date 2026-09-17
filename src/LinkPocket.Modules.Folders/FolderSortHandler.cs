@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
@@ -22,7 +22,7 @@ internal sealed class FolderSortHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var parentId = FolderIds.Normalize(CommandArgs.OptionalString(args, "parent_id"));
+        var parentId = CommandArgs.OptionalString(args, "parent_id");
         var itemIds = CommandArgs.StringArray(args, "item_ids");
         var ct = ctx.Ct;
 

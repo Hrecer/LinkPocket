@@ -129,10 +129,13 @@ internal static partial class SmokeRunner
         // LP.STATE.001 实体不存在
         Asserts.That(ThrowsCode(() => s.Client.LinkGetAsync("missing")) == EngineErrors.EntityNotFound,
             "不存在的链接应报 LP.STATE.001");
-        // 根不是实体、无 ID：folders.get 对根哨兵形状的 ID 报 LP.STATE.002 ROOT_NOT_ENTITY
-        var rootGet = await AssertThrowsAsync(() => s.Client.FolderGetAsync("0"));
+        // 根不是实体、无 ID：folders.get 不给 ID = 向根寻址 → LP.STATE.002 ROOT_NOT_ENTITY
+        var rootGet = await AssertThrowsAsync(() => s.Client.FolderGetAsync(null));
         Asserts.That(rootGet.Error.Code == EngineErrors.RootNotEntity,
-            "根（哨兵形状 ID）应报 LP.STATE.002 ROOT_NOT_ENTITY");
+            "对根（无 ID）应报 LP.STATE.002 ROOT_NOT_ENTITY");
+        // 无兼容：任何非 null 的字符串都当真实 ID 查库，哨兵形状不再是根
+        Asserts.That(ThrowsCode(() => s.Client.FolderGetAsync("0")) == EngineErrors.EntityNotFound,
+            "字符串 \"0\" 不是根，应报 LP.STATE.001 ENTITY_NOT_FOUND");
         // LP.VAL.001 缺必填
         Asserts.That(ThrowsCode(() => s.Client.FolderCreateAsync("")) == EngineErrors.RequiredParam,
             "空名称应报 LP.VAL.001");

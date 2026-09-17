@@ -55,8 +55,13 @@ public class FoldersQueryCoverageTests
         Assert.Equal(1, childDto.LinkCount);
 
         var rootEx = await Assert.ThrowsAsync<EngineException>(
-            () => engine.QueryAsync<FolderDto>("folders.get", new { folder_id = "0" }));
+            () => engine.QueryAsync<FolderDto>("folders.get", null));
         Assert.Equal(EngineErrors.RootNotEntity, rootEx.Error.Code);
+
+        // 无兼容：字符串 "0" 不是根，只是一个查不到的 ID
+        var sentinelEx = await Assert.ThrowsAsync<EngineException>(
+            () => engine.QueryAsync<FolderDto>("folders.get", new { folder_id = "0" }));
+        Assert.Equal(EngineErrors.EntityNotFound, sentinelEx.Error.Code);
     }
 
     [Fact]

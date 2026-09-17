@@ -21,7 +21,7 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
         Description: "取一个目录页：直接子文件夹 + 直接子链接 + 面包屑路径（folder_id 缺省 = 根「全部书签」）",
         Parameters:
         [
-            ParamSpec.Opt<string>("folder_id", "目录 ID；缺省或 \"0\" = 根"),
+            ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根「全部书签」（根不是实体、无 ID）"),
             ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at（链接）/ name | sort_order | updated_at | last_visited_at | visit_count | created_at（子文件夹）"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
             ParamSpec.Opt<int>("page", "页码（从 1 起）"),
@@ -34,7 +34,7 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var folderId = FolderIds.Normalize(CommandArgs.OptionalString(args, "folder_id"));
+        var folderId = CommandArgs.OptionalString(args, "folder_id");
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "asc";
         var page = Math.Max(1, CommandArgs.OptionalInt(args, "page", 1));

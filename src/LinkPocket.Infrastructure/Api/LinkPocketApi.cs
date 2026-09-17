@@ -1,4 +1,4 @@
-using LinkPocket.Api;
+﻿using LinkPocket.Api;
 using LinkPocket.Data;
 using LinkPocket.Services;
 using Microsoft.EntityFrameworkCore;
@@ -63,7 +63,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         var directCounts = await _links.GetLinkCountByFolderAsync();
         var counts = await GetRecursiveLinkCountsAsync(allFolders, directCounts);
 
-        var dto = new FolderContentsDto { FolderId = FolderIds.Normalize(folderId), PerPage = effectivePerPage };
+        var dto = new FolderContentsDto { FolderId = folderId, PerPage = effectivePerPage };
 
         // 子文件夹排序：与列表列头一一对应（名称 / 最后更新 / 最后查看 / 查看次数 / 创建时间），
         // 名称与各维度都遵循升/降序；「最后查看」为空的（从未）恒排最后，与链接侧口径一致。
@@ -153,7 +153,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
 
     public async Task<FolderDto> CreateFolderAsync(string name, string? parentId)
     {
-        var parent = FolderIds.Normalize(parentId);
+        var parent = parentId;
         var folder = await _folders.CreateFolderAsync(name, parentId: parent);
         await _folders.TouchModifiedAsync(parent); // 新增子文件夹 → 父链内容有变
         RaiseChanged("folders.changed", new { folder_id = folder.FolderId, parent_id = folder.ParentId });
@@ -163,7 +163,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
     public async Task<FolderDto> UpdateFolderAsync(string id, string? name = null, string? description = null, string? parentId = null)
     {
         var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == id);
-        var folder = await _folders.UpdateFolderAsync(id, name, description, FolderIds.Normalize(parentId));
+        var folder = await _folders.UpdateFolderAsync(id, name, description, parentId);
         // 自身被改名 / 被移动，以及原父级、新父级的内容构成都发生了变化
         await _folders.TouchModifiedAsync(folder.FolderId);
         await _folders.TouchModifiedAsync(before?.ParentId);
@@ -188,14 +188,14 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         var before = (await _folders.GetAllFoldersAsync()).FirstOrDefault(f => f.FolderId == folderId);
         await _folders.MoveFolderAsync(folderId, targetParentId);
         await _folders.TouchModifiedAsync(before?.ParentId);
-        await _folders.TouchModifiedAsync(FolderIds.Normalize(targetParentId));
+        await _folders.TouchModifiedAsync(targetParentId);
         RaiseChanged("folders.changed", new { folder_id = folderId, target_parent_id = targetParentId });
     }
 
     public async Task<string> CopyFolderAsync(string folderId, string? targetParentId)
     {
         var newId = await _folders.CopyFolderDeepAsync(folderId, targetParentId);
-        await _folders.TouchModifiedAsync(FolderIds.Normalize(targetParentId));
+        await _folders.TouchModifiedAsync(targetParentId);
         RaiseChanged("folders.changed", new { folder_id = newId, copied_from = folderId });
         return newId;
     }
@@ -216,7 +216,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         string sortBy = "created_at", string sortOrder = "desc", int page = 1, int perPage = 20)
     {
         var (links, total, currentPage, lastPage) = await _links.GetLinksAsync(
-            search: search, listId: FolderIds.Normalize(listId), isImportant: isImportant,
+            search: search, listId: listId, isImportant: isImportant,
             dateFrom: dateFrom, dateTo: dateTo,
             sortBy: sortBy, sortOrder: sortOrder, page: page, perPage: perPage);
         return new PagedLinksDto
@@ -251,7 +251,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         string? listId = null, bool isImportant = false, bool autoFetchMetadata = false, string? faviconUrl = null)
     {
         var link = await _links.CreateLinkAsync(url, title, description,
-            listId: FolderIds.Normalize(listId), isImportant: isImportant,
+            listId: listId, isImportant: isImportant,
             autoFetchMetadata: autoFetchMetadata, faviconUrl: faviconUrl);
         await _folders.TouchModifiedAsync(link.ListId); // 新增链接 → 所在文件夹内容有变
         RaiseChanged("links.changed", new { link_id = link.LinkId, list_id = link.ListId });

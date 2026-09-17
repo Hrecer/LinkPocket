@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel.Commands;
@@ -19,7 +19,7 @@ internal sealed class FolderBreadcrumbHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var folderId = FolderIds.Normalize(CommandArgs.OptionalString(args, "folder_id"));
+        var folderId = CommandArgs.OptionalString(args, "folder_id");
         if (FolderIds.IsRoot(folderId))
             return CommandResult.Ok(new List<string> { FolderIds.RootDisplayName });
 

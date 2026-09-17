@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http;
@@ -170,7 +170,7 @@ public class LinkService
             Url = url.Trim(),
             Title = title,
             Description = description,
-            ListId = FolderIds.Normalize(listId),
+            ListId = listId,
             IsImportant = isImportant,
             VisitCount = 0,
             CreatedAt = DateTime.UtcNow,
@@ -233,7 +233,7 @@ public class LinkService
 
         if (title != null) link.Title = title;
         if (description != null) link.Description = description;
-        if (listId != null) link.ListId = FolderIds.Normalize(listId);
+        if (listId != null) link.ListId = listId;
         if (isImportant != null) link.IsImportant = isImportant.Value;
         if (faviconUrl != null) link.FaviconUrl = faviconUrl;
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -639,7 +639,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>批量拖拽 / 移动入口。targetFolderId 为 null 表示根。非法项（目标在自身子树内、已在目标目录）逐项跳过。</summary>
     public async Task MoveItemsAsync(IEnumerable<(string Id, bool IsFolder)> items, string? targetFolderId)
     {
-        var target = FolderIds.Normalize(targetFolderId);
+        var target = targetFolderId;
         var moved = 0;
         var renamedNotes = new List<string>();
         IsLoading = true;
@@ -706,7 +706,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>把父目录 ID 归一化成可比较的值（null = 根）。</summary>
-    private static string? NormalizeParentId(string? parentId) => FolderIds.Normalize(parentId);
+    private static string? NormalizeParentId(string? parentId) => parentId;
 
     /// <summary>目标目录下已存在的文件夹名集合。</summary>
     private HashSet<string> SiblingFolderNames(string? targetId)
@@ -846,7 +846,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
             if (link == null) return false;
 
-            var targetNorm = FolderIds.Normalize(target);
+            var targetNorm = target;
             var siblingTitles = (await Api.GetAllLinksAsync())
                 .Where(l => l.ListId == targetNorm)
                 .Select(l => l.Title)
@@ -1187,7 +1187,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     private static bool ParentMatches(string? parentId, string? current)
-        => FolderIds.Normalize(parentId) == FolderIds.Normalize(current);
+        => parentId == current;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

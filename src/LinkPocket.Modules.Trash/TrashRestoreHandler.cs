@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Data;
@@ -37,7 +37,7 @@ internal sealed class TrashRestoreHandler : ICommandHandler
                 EngineErrors.EntityNotFound, $"回收站中不存在书签 {id}", correlationId: ctx.CorrelationId));
 
         // 原位还原：仅在「请求了 + 原目录仍在」时生效；否则落根（不静默假装还原成功）
-        var originId = toOrigin ? FolderIds.Normalize(snapshot.OriginListId) : null;
+        var originId = toOrigin ? snapshot.OriginListId : null;
         var originExists = originId != null
                            && await ctx.Uow.Folders.FindAsync(new FolderId(originId), ct) != null;
         var targetListId = originExists ? originId : null;

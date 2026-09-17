@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
@@ -33,7 +33,7 @@ internal sealed class LinkListHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var listId = FolderIds.Normalize(CommandArgs.OptionalString(args, "list_id"));
+        var listId = CommandArgs.OptionalString(args, "list_id");
         var search = CommandArgs.OptionalString(args, "search");
         var isImportant = CommandArgs.OptionalBoolOrNull(args, "is_important");
         var dateFrom = CommandArgs.OptionalString(args, "date_from");

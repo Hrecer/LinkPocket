@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
@@ -37,7 +37,7 @@ internal sealed class LinkCreateHandler : ICommandHandler
         var title = CommandArgs.OptionalString(args, "title");
         var description = CommandArgs.OptionalString(args, "description");
         var listIdArg = CommandArgs.OptionalString(args, "list_id");
-        var listId = FolderIds.Normalize(listIdArg);
+        var listId = listIdArg;
         var isImportant = CommandArgs.OptionalBool(args, "is_important");
         var autoFetch = CommandArgs.OptionalBool(args, "auto_fetch_metadata");
         var faviconUrl = CommandArgs.OptionalString(args, "favicon_url");

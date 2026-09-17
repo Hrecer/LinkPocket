@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using LinkPocket.Api;
 using System.Collections.Generic;
 
@@ -50,5 +50,5 @@ public class BrowserHistory
         return CurrentFolderId;
     }
 
-    private static string? Normalize(string? folderId) => FolderIds.Normalize(folderId);
+    private static string? Normalize(string? folderId) => folderId;
 }

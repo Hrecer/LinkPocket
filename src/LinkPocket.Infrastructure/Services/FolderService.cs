@@ -1,4 +1,4 @@
-using LinkPocket.Data;
+﻿using LinkPocket.Data;
 using LinkPocket.Api;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,7 +44,7 @@ public class FolderService
     private async Task<List<Folder>> WalkAncestorsAsync(string? folderId)
     {
         var chain = new List<Folder>();
-        var current = FolderIds.Normalize(folderId);
+        var current = folderId;
 
         for (var guard = 0; current != null && guard < 200; guard++)
         {
@@ -52,7 +52,7 @@ public class FolderService
             if (folder == null) break;
 
             chain.Add(folder);
-            current = FolderIds.Normalize(folder.ParentId);
+            current = folder.ParentId;
         }
 
         return chain;
@@ -398,7 +398,7 @@ public class FolderService
     public async Task UpdateSortAsync(string? parentId, List<string> itemIds)
     {
         IQueryable<Folder> query = _db.Folders;
-        var parent = FolderIds.Normalize(parentId);
+        var parent = parentId;
 
         if (parent == null)
         {
@@ -472,7 +472,7 @@ public class FolderService
     public async Task MoveFolderAsync(string folderId, string? targetParentId)
     {
         var folder = await _db.Folders.FindAsync(folderId) ?? throw new Exception("Folder not found");
-        var target = FolderIds.Normalize(targetParentId);
+        var target = targetParentId;
 
         if (target == folderId)
             throw new ArgumentException("Cannot move a folder into itself");
@@ -502,7 +502,7 @@ public class FolderService
         {
             Name = source.Name,
             Description = source.Description,
-            ParentId = FolderIds.Normalize(targetParentId),
+            ParentId = targetParentId,
             LinkCount = 0,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow

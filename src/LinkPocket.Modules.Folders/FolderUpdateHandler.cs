@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
@@ -31,7 +31,7 @@ internal sealed class FolderUpdateHandler : ICommandHandler
         var id = new FolderId(CommandArgs.RequireString(args, "folder_id"));
         var name = CommandArgs.OptionalString(args, "name");
         var description = CommandArgs.OptionalString(args, "description");
-        var parentId = FolderIds.Normalize(CommandArgs.OptionalString(args, "parent_id"));
+        var parentId = CommandArgs.OptionalString(args, "parent_id");
         var ct = ctx.Ct;
 
         var folder = await ctx.Uow.Folders.FindAsync(id, ct)

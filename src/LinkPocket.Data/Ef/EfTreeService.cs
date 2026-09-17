@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using LinkPocket.Api;
 using LinkPocket.Kernel;
 
@@ -118,7 +118,7 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
     /// </summary>
     private async Task<List<Folder>> WalkAncestorsAsync(string? folderId, CancellationToken ct)
     {
-        var start = FolderIds.Normalize(folderId);
+        var start = folderId;
         if (start == null) return [];
 
         var chainIds = WalkExisting(start, await LoadParentIndexAsync(ct));

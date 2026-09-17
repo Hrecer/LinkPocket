@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
@@ -23,7 +23,7 @@ internal sealed class FolderMoveHandler : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var id = new FolderId(CommandArgs.RequireString(args, "folder_id"));
-        var target = FolderIds.Normalize(CommandArgs.OptionalString(args, "target_parent_id"));
+        var target = CommandArgs.OptionalString(args, "target_parent_id");
         var ct = ctx.Ct;
 
         var folder = await ctx.Uow.Folders.FindAsync(id, ct)
