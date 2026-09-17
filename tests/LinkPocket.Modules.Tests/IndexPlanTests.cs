@@ -32,7 +32,7 @@ public class IndexPlanTests
 
     private static void WithFreshDb(Action<string> assert)
     {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"lpplan_{Guid.NewGuid():N}.db");
+        var dbPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpplan_{Guid.NewGuid():N}.db");
         try
         {
             SchemaMigrator.EnsureSchema(dbPath);

@@ -11,7 +11,7 @@ internal static class TestEnv
 {
     public static (LinkPocketDbContextFactory Factory, string Path) CreateDb()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"lpengine_{Guid.NewGuid():N}.db");
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpengine_{Guid.NewGuid():N}.db");
         // 工厂构造内已完成 WAL 启用 + schema v2 建库（SchemaMigrator），无需 EnsureCreated
         var factory = new LinkPocketDbContextFactory(path);
         return (factory, path);

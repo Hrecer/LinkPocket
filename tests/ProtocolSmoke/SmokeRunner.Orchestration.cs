@@ -107,7 +107,7 @@ internal static partial class SmokeRunner
         await s.Client.UndoClearAsync();
 
         // —— §10.8 Staging 全生命周期：stage → list → inspect → transform(dry/落盘) → commit → discard ——
-        var htmlPath = Path.Combine(Path.GetTempPath(), $"lpsmoke_bm_{Guid.NewGuid():N}.html");
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_bm_{Guid.NewGuid():N}.html");
         await File.WriteAllTextAsync(htmlPath,
             """<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p><DT><A HREF="https://staging.example.com/a">A</A></DL><p>""",
             System.Text.Encoding.UTF8);
@@ -120,7 +120,7 @@ internal static partial class SmokeRunner
         var inspected = await s.Client.QueryAsync<JsonElement>("staging.inspect", new { staging_id = staged.StagingId });
         Asserts.That(inspected.GetProperty("is_valid").GetBoolean(), "staging.inspect 应复用 bookmarks.inspect 判定有效");
 
-        var linksJsonPath = Path.Combine(Path.GetTempPath(), $"lpsmoke_links_{Guid.NewGuid():N}.json");
+        var linksJsonPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_links_{Guid.NewGuid():N}.json");
         await File.WriteAllTextAsync(linksJsonPath, """
             [
               {"url":"https://t.example.com/1","title":"T1","folder":"源目录"},

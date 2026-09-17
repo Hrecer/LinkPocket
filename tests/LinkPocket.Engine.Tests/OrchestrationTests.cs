@@ -377,7 +377,7 @@ public class OrchestrationTests
     [Fact]
     public async Task Staging_Transform_Pipeline_DryRun_And_Persist()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"lpstaging_{Guid.NewGuid():N}");
+        var root = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpstaging_{Guid.NewGuid():N}");
         var source = Path.Combine(root, "src.json");
         Directory.CreateDirectory(root);
         await File.WriteAllTextAsync(source,

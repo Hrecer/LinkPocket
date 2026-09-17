@@ -21,7 +21,8 @@ public sealed class StagingService : IStagingService
 
     public StagingService(string? root = null, Func<IEngine>? engineAccessor = null)
     {
-        _root = root ?? Path.Combine(Path.GetTempPath(), "linkpocket-staging");
+        // 缺省根 = 系统临时目录；`LP_TEMP_ROOT` 可把它指到工作区内（CI/测试用，避免在用户目录留临时文件）
+        _root = root ?? Path.Combine(TempArea.Resolve(), "linkpocket-staging");
         _engineAccessor = engineAccessor;
         Directory.CreateDirectory(_root);
     }

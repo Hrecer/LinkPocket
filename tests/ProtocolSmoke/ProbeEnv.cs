@@ -13,7 +13,7 @@ internal static class ProbeEnv
 {
     public static (EngineClient Client, EngineWire Wire, string DbPath) Create()
     {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"lpsmoke_{Guid.NewGuid():N}.db");
+        var dbPath = Path.Combine(TempArea.Resolve(), $"lpsmoke_{Guid.NewGuid():N}.db");
         var client = CreateEngineOn(dbPath);
         var wire = new EngineWire(client.Engine);   // 构造期缓存目录 → 必须在注册完成后创建
         return (client, wire, dbPath);
@@ -43,12 +43,15 @@ internal static class ProbeEnv
             audit: new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(() => factory.CreateDbContext())),
             idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
         engineRef = engine;
-        var stagingRoot = Path.Combine(Path.GetDirectoryName(dbPath)!, $"lpsmoke_staging_{Path.GetFileNameWithoutExtension(dbPath)}");
-        registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext(), stagingRoot));
+        registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext(), StagingRootFor(dbPath)));
         return new EngineClient(engine);
     }
 
-    /// <summary>尽力清理临时库（连接池句柄滞留会阻止删除，失败不打断流程）。</summary>
+    /// <summary>暂存区根 = 库文件同目录下的派生目录（由 <see cref="TryDelete"/> 一并清理，不留残留）。</summary>
+    internal static string StagingRootFor(string dbPath)
+        => Path.Combine(Path.GetDirectoryName(dbPath)!, $"lpsmoke_staging_{Path.GetFileNameWithoutExtension(dbPath)}");
+
+    /// <summary>尽力清理临时库与其暂存区（连接池句柄滞留会阻止删除，失败不打断流程）。</summary>
     public static void TryDelete(string dbPath)
     {
         try
@@ -59,6 +62,17 @@ internal static class ProbeEnv
         catch
         {
             // 临时文件交给系统清理
+        }
+
+        // 暂存区（staging 会往里拷文件）与 WAL 副本一并清掉：测试不得在临时根留垃圾
+        try
+        {
+            var staging = StagingRootFor(dbPath);
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+        catch
+        {
+            // 尽力而为
         }
     }
 }

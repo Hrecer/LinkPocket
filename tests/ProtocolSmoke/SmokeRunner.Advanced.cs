@@ -163,7 +163,7 @@ internal static partial class SmokeRunner
     // —— §9 10k 性能门槛（方案 7.3；DEBUG 构建放宽 ×5，见 Asserts.Within）——
     private static async Task SectionPerformance(SmokeState s)
     {
-        var perfDb = Path.Combine(Path.GetTempPath(), $"lpsmoke_perf_{Guid.NewGuid():N}.db");
+        var perfDb = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_perf_{Guid.NewGuid():N}.db");
         try
         {
             var client = ProbeEnv.CreateEngineOn(perfDb);
@@ -223,7 +223,7 @@ internal static partial class SmokeRunner
             Asserts.Within(sw.ElapsedMilliseconds, 50, "10k 库 links.move_batch(10)");
 
             // bookmarks.import(10k) < 5s
-            var htmlPath = Path.Combine(Path.GetTempPath(), $"lpsmoke_perf_{Guid.NewGuid():N}.html");
+            var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_perf_{Guid.NewGuid():N}.html");
             var html = new System.Text.StringBuilder("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n");
             for (var i = 0; i < 10_000; i++)
                 html.Append("    <DT><A HREF=\"https://import.example.com/p/").Append(i)

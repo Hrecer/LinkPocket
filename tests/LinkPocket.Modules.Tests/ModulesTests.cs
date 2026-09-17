@@ -339,8 +339,8 @@ public class LinksModuleTests
         var (engine, _, _) = TestHost.Create();
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example,a", title = "A\"B" });
 
-        var jsonPath = Path.Combine(Path.GetTempPath(), $"lpexp_{Guid.NewGuid():N}.json");
-        var csvPath = Path.Combine(Path.GetTempPath(), $"lpexp_{Guid.NewGuid():N}.csv");
+        var jsonPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpexp_{Guid.NewGuid():N}.json");
+        var csvPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpexp_{Guid.NewGuid():N}.csv");
 
         var json = await engine.ExecuteAsync<LinkExportResult>("links.export",
             new { file_path = jsonPath, format = "json" });
@@ -488,7 +488,7 @@ public class BookmarksModuleTests
     public async Task Inspect_Import_Export_RoundTrip()
     {
         var (engine, _, _) = TestHost.Create();
-        var htmlPath = Path.Combine(Path.GetTempPath(), $"lpbm_{Guid.NewGuid():N}.html");
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
         await File.WriteAllTextAsync(htmlPath, SampleHtml);
 
         var inspection = await engine.QueryAsync<BookmarkFileInspectionDto>("bookmarks.inspect", new { file_path = htmlPath });
@@ -506,11 +506,11 @@ public class BookmarksModuleTests
         Assert.Equal("Root & Link", rootLink[0].Title);
 
         // 导出 → 二次导出逐行一致（往返保真）
-        var exportPath = Path.Combine(Path.GetTempPath(), $"lpbm_{Guid.NewGuid():N}.html");
+        var exportPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
         await engine.ExecuteAsync<object>("bookmarks.export", new { file_path = exportPath });
         var first = await File.ReadAllLinesAsync(exportPath);
 
-        var export2Path = Path.Combine(Path.GetTempPath(), $"lpbm_{Guid.NewGuid():N}.html");
+        var export2Path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
         await engine.ExecuteAsync<object>("bookmarks.export", new { file_path = export2Path });
         var second = await File.ReadAllLinesAsync(export2Path);
         Assert.Equal(first, second);
@@ -526,7 +526,7 @@ public class BookmarksModuleTests
     public async Task Import_Invalid_File_Throws()
     {
         var (engine, _, _) = TestHost.Create();
-        var badPath = Path.Combine(Path.GetTempPath(), $"lpbm_{Guid.NewGuid():N}.html");
+        var badPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
         await File.WriteAllTextAsync(badPath, "<html>不是书签文件</html>");
 
         var ex = await Assert.ThrowsAsync<EngineException>(() =>
@@ -547,7 +547,7 @@ public class BackupModuleTests
         var trashLink = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://t.example", title = "T" });
         await engine.ExecuteAsync<object>("links.trash", new { id = trashLink.Data!.LinkId });
 
-        var backupPath = Path.Combine(Path.GetTempPath(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var backupPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
         await engine.ExecuteAsync<object>("backup.export", new { output_path = backupPath });
 
         // backup.inspect：manifest + 完整性，零写入
@@ -580,7 +580,7 @@ public class BackupModuleTests
         Assert.Single(stats3.ByFolder);   // 文件夹 A 还原
 
         // —— 篡改拒绝 ——
-        var tamperedPath = Path.Combine(Path.GetTempPath(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var tamperedPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
         var bytes = await File.ReadAllBytesAsync(backupPath);
         bytes[^5] ^= 0xFF;
         await File.WriteAllBytesAsync(tamperedPath, bytes);

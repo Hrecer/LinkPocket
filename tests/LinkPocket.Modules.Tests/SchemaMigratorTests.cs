@@ -14,7 +14,7 @@ namespace LinkPocket.Modules.Tests;
 public class SchemaMigratorTests
 {
     private static string TempDbPath()
-        => Path.Combine(Path.GetTempPath(), $"lpschema_{Guid.NewGuid():N}.db");
+        => Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpschema_{Guid.NewGuid():N}.db");
 
     private static string[] UserTables(string dbPath)
     {

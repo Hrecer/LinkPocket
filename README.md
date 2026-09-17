@@ -5,8 +5,21 @@
 
 - 技术栈：.NET 8 · WPF · EF Core / SQLite（WAL）· xUnit
 - 命令目录：**70 条**（52 业务 + 15 编排 + 3 批），全部由描述符机械生成 → [`docs/catalog/COMMANDS.md`](docs/catalog/COMMANDS.md)
-- 架构说明：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)（分层、四条数据流、不变量、性能与验证）
-- 避坑清单：[`docs/WARNINGS.md`](docs/WARNINGS.md)（改代码前值得读一遍）
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层与依赖规则、四条数据流、不变量、性能工程、**现状边界与已知遗留** |
+| [`docs/BEHAVIOR-CONTRACT.md`](docs/BEHAVIOR-CONTRACT.md) | **功能行为契约**：界面与引擎的行为等价口径（功能一致性的唯一裁判） |
+| [`docs/UI-SPEC.md`](docs/UI-SPEC.md) | 视觉与控件规格：色板、控件、版式冻结项、Material3 模板陷阱 |
+| [`docs/ENGINE-API.md`](docs/ENGINE-API.md) | 调用模型、错误码全表、标准参数、幂等/取消、并发事务语义、扩展机制 |
+| [`docs/DATA-SCHEMA.md`](docs/DATA-SCHEMA.md) | 表结构 DDL、索引清单与判据、版本链、ID 规则、旧数据零责任 |
+| [`docs/TESTING.md`](docs/TESTING.md) | 测试分层、CI 五道门、性能门槛、新增测试落点决策表 |
+| [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | 命名与工程规范（含**工作区卫生**：临时文件一律放工作区，不污染用户目录） |
+| [`docs/WARNINGS.md`](docs/WARNINGS.md) | 工程避坑清单（改代码前值得读一遍） |
+
+模块细节见各模块目录下的 `README.md`（`src/LinkPocket.Modules.*/README.md`）。
 
 ---
 
@@ -59,7 +72,7 @@ docs/                          ARCHITECTURE.md · WARNINGS.md · catalog/
 
 **旧数据零责任**：本版本不迁移、不读取、不转换任何旧格式数据库。首次启动直接创建全新 schema v3 库；
 检测到旧格式库（有用户表但无 `schema_migrations`）会**明确报错拒绝**，不动、不删旧文件——处置权归用户。
-开发/测试数据由种子脚本（`开发目录/_seed_db.py`）重建，测试用库一律是临时文件。
+开发/测试数据由种子脚本（`tools/dev-seed/_seed_db.py`，用法见该目录 README）重建，测试用库一律是临时文件。
 
 ---
 

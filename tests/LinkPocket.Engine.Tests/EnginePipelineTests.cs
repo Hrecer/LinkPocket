@@ -8,7 +8,7 @@ namespace LinkPocket.Engine.Tests;
 /// <summary>管道行为断言：错误模型、写闸、幂等、确认令牌、干跑、嵌套、审计、事件、WAL（方案第八章 Engine 行）。</summary>
 public class EnginePipelineTests
 {
-    private static string TempPath() => Path.Combine(Path.GetTempPath(), $"lpengine_{Guid.NewGuid():N}.db");
+    private static string TempPath() => Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpengine_{Guid.NewGuid():N}.db");
 
     [Fact]
     public async Task UnknownCommand_Throws_Sys001()
