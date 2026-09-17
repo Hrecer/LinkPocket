@@ -24,7 +24,10 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     {
         _host = host;
         BackCommand = new RelayCommand(() => _ = BackAsync());
-        OpenWebsiteCommand = new RelayCommand(() => OpenWebsite(), () => _linkId != null && !string.IsNullOrEmpty(Url));
+        // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（_linkId/Url 尚空），
+        // 若按 CanExecute 禁用，按钮会先以 0.4 透明度渲染、加载完又突然恢复 → 肉眼可见的闪烁。
+        // 命令内部对空 URL 有守卫，提前点击只是无操作。
+        OpenWebsiteCommand = new RelayCommand(() => OpenWebsite());
         CopyUrlCommand = new RelayCommand(CopyUrl, () => !string.IsNullOrEmpty(Url));
         EditCommand = new RelayCommand(Edit, () => _linkId != null);
         CopyIdCommand = new RelayCommand(CopyId, () => !string.IsNullOrEmpty(IdText));

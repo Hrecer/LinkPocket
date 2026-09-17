@@ -23,6 +23,17 @@ public partial class App : Application
             isDark: false,
             Resources);
         LpIcons.RegisterAll();
+        // 用户定稿（2026-09-16）：全局界面基面 = 禁用态删除按钮的浅紫。
+        // 设定值按显示器校色偏移反推（#EAE4ED 上屏 ≈ 按钮的屏显 #EDE2F4）。
+        // 必须在 M3Theme.Apply 之后覆盖（Apply 会写入整套生成调色板，晚于此处会被冲掉）。
+        Resources["SurfaceContainerLow"] = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(0xEA, 0xE4, 0xED));
+        // 用户定稿（2026-09-16 第二轮）：卡面/胶囊底去灰 —— 原生成色偏暖灰（屏显 #EEE6EC），
+        // 在浅紫基面上显"灰蒙蒙"。卡面改近白浅紫（浮起），悬停/胶囊底改明确的深一档紫灰（反馈清晰）。
+        Resources["SurfaceContainerHigh"] = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(0xF6, 0xF1, 0xF8));
+        Resources["SurfaceContainerHighest"] = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(0xE3, 0xD9, 0xEB));
         base.OnStartup(e);
     }
 

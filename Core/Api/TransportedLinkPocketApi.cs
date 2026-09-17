@@ -20,6 +20,9 @@ public class TransportedLinkPocketApi : ILinkPocketApi
     public Task<List<FolderDto>> GetFolderTreeAsync()
         => _transport.InvokeAsync<List<FolderDto>>("folders.tree");
 
+    public Task<FolderDto?> GetFolderAsync(string folderId)
+        => _transport.InvokeAsync<FolderDto?>("folders.get", new { folder_id = folderId });
+
     public Task<List<string>> GetBreadcrumbAsync(string? folderId)
         => _transport.InvokeAsync<List<string>>("folders.breadcrumb", new { folder_id = folderId });
 
@@ -61,6 +64,9 @@ public class TransportedLinkPocketApi : ILinkPocketApi
     public Task<List<LinkDto>> GetAllLinksAsync()
         => _transport.InvokeAsync<List<LinkDto>>("links.all");
 
+    public Task<LinkDto?> GetLinkAsync(string linkId)
+        => _transport.InvokeAsync<LinkDto?>("links.get", new { id = linkId });
+
     public Task<List<LinkDto>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50)
         => _transport.InvokeAsync<List<LinkDto>>("links.root", new { sort_by = sortBy, sort_order = sortOrder, per_page = perPage });
 
@@ -85,11 +91,14 @@ public class TransportedLinkPocketApi : ILinkPocketApi
     public Task<List<TrashEntryDto>> GetTrashAsync()
         => _transport.InvokeAsync<List<TrashEntryDto>>("trash.list");
 
+    public Task<List<TrashFolderDto>> GetTrashTreeAsync()
+        => _transport.InvokeAsync<List<TrashFolderDto>>("trash.tree");
+
     public Task<LinkDto> RestoreLinkAsync(string linkId)
         => _transport.InvokeAsync<LinkDto>("trash.restore", new { link_id = linkId });
 
-    public Task PurgeLinkAsync(string linkId)
-        => _transport.InvokeAsync<object?>("trash.purge", new { link_id = linkId });
+    public Task PurgeTrashAsync(string id, bool isFolder)
+        => _transport.InvokeAsync<object?>("trash.purge", new { id, is_folder = isFolder });
 
     // —— 搜索与智能列表 ——
 
@@ -114,13 +123,16 @@ public class TransportedLinkPocketApi : ILinkPocketApi
     public Task<LinkCountsDto> GetCountsAsync()
         => _transport.InvokeAsync<LinkCountsDto>("stats.counts");
 
-    // —— 导入 / 导出 ——
+    // —— 导入 / 导出（Netscape 书签文件格式）——
 
-    public Task<string> ExportBookmarksHtmlAsync(string outputDirectory)
-        => _transport.InvokeAsync<string>("export.bookmarks_html", new { output_path = outputDirectory });
+    public Task<string> ExportBookmarksHtmlAsync(string outputFilePath)
+        => _transport.InvokeAsync<string>("export.bookmarks_html", new { output_path = outputFilePath });
 
     public Task<int> ImportBookmarksHtmlAsync(string filePath)
         => _transport.InvokeAsync<int>("import.bookmarks_html", new { file_path = filePath });
+
+    public Task<BookmarkFileInspectionDto> InspectBookmarksHtmlAsync(string filePath)
+        => _transport.InvokeAsync<BookmarkFileInspectionDto>("bookmarks.inspect_html", new { file_path = filePath });
 
     // —— 备份与维护 ——
 
@@ -132,4 +144,7 @@ public class TransportedLinkPocketApi : ILinkPocketApi
 
     public Task ReinitializeDatabaseAsync(bool resetData = true)
         => _transport.InvokeAsync<object?>("settings.reinit_db", new { reset_data = resetData });
+
+    public Task<List<TrashEntryDto>> GetTrashUnitContentsAsync(string trashFolderId)
+        => _transport.InvokeAsync<List<TrashEntryDto>>("trash.unit_contents", new { trash_folder_id = trashFolderId });
 }

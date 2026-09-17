@@ -1,0 +1,116 @@
+<Window x:Class="LinkPocket.Views.ImportModeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+        WindowStartupLocation="CenterOwner"
+        SizeToContent="Height" Width="470"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent">
+
+    <!-- 导入方式选择弹窗（MD3 Expressive，复用 ConfirmDialog 视觉语言）：
+         ShowDialog 模态 —— 挡住后面无法操作。
+         「新增导入」= 常规项（选中 = PrimaryContainer 卡 + Primary 单选）；
+         「清空后导入」= 危险项（选中 = WarnBg 奶油黄卡 + 文字确认 + 确认键变 WarnPillButton）。
+         单选 = MD3 圆环 + 中心实心点（20px 环 / 10px 点）。 -->
+
+    <Grid Margin="24">
+        <Border CornerRadius="24" Background="{DynamicResource TintBg}">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="28" ShadowDepth="3" Direction="270"
+                                  Opacity="0.28" Color="#000000"/>
+            </Border.Effect>
+
+            <StackPanel Margin="28,24">
+                <!-- 头部：图标 chip + 标题 -->
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="44" Height="44" CornerRadius="22"
+                            Background="{DynamicResource TintPanel}">
+                        <m3:M3Icon Kind="import" Width="22" Height="22"
+                                   Foreground="{DynamicResource OnSurface}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="选择导入方式" FontSize="19" FontWeight="Medium"
+                               VerticalAlignment="Center" Margin="14,0,0,0"
+                               Foreground="{DynamicResource OnSurface}"/>
+                </StackPanel>
+
+                <!-- 方式一：新增导入（常规） -->
+                <Border x:Name="AppendCard" CornerRadius="16" Padding="14,12"
+                        Background="Transparent" Cursor="Hand" Margin="2,20,2,0"
+                        MouseLeftButtonUp="AppendCard_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- MD3 单选：圆环 + 中心实心点 -->
+                        <Grid VerticalAlignment="Center">
+                            <Border x:Name="AppendRing" Width="20" Height="20" CornerRadius="10"
+                                    BorderThickness="2" BorderBrush="{DynamicResource OutlineVariant}"/>
+                            <Border x:Name="AppendDot" Width="10" Height="10" CornerRadius="5"
+                                    Background="{DynamicResource Primary}" Visibility="Collapsed"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <StackPanel Margin="12,0,0,0">
+                            <TextBlock Text="新增导入" FontSize="13.5" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                            <TextBlock Text="备份内容全部加入当前数据，现有数据保持不变。不去重：重复导入同一备份会让条目成倍增加。"
+                                       FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="17"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 方式二：清空后导入（危险 = 奶油黄） -->
+                <Border x:Name="ReplaceCard" CornerRadius="16" Padding="14,12"
+                        Background="Transparent" Cursor="Hand" Margin="2,10,2,0"
+                        MouseLeftButtonUp="ReplaceCard_Click">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Grid VerticalAlignment="Center">
+                                <Border x:Name="ReplaceRing" Width="20" Height="20" CornerRadius="10"
+                                        BorderThickness="2" BorderBrush="{DynamicResource OutlineVariant}"/>
+                                <Border x:Name="ReplaceDot" Width="10" Height="10" CornerRadius="5"
+                                        Background="{DynamicResource Primary}" Visibility="Collapsed"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Text="清空后导入" FontSize="13.5" FontWeight="SemiBold"
+                                       Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                        </StackPanel>
+                        <TextBlock Text="先完全清除当前所有数据（含回收站与图标缓存），再导入备份内容。此操作不可恢复。"
+                                   FontSize="11.5" TextWrapping="Wrap" LineHeight="17"
+                                   Margin="32,3,0,0"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+
+                        <!-- 文字确认（仅危险方式被选中时出现） -->
+                        <StackPanel x:Name="ReplaceConfirmBox" Visibility="Collapsed" Margin="32,10,0,0">
+                            <TextBlock Text="请输入以下文字确认：" FontSize="12"
+                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            <TextBlock Text="我确认清空并导入" FontSize="13" FontWeight="Bold"
+                                       Margin="0,2,0,6"
+                                       Foreground="{DynamicResource OnSurface}"/>
+                            <Border CornerRadius="12" Background="{DynamicResource SurfaceContainerHighest}">
+                                <TextBox x:Name="ReplaceConfirmInput" Height="36"
+                                         BorderThickness="0" Background="Transparent"
+                                         Padding="14,0" VerticalContentAlignment="Center" FontSize="13"
+                                         Foreground="{DynamicResource OnSurface}"
+                                         CaretBrush="{DynamicResource Primary}"
+                                         TextChanged="ReplaceConfirmInput_TextChanged"/>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 操作区：取消 = TonalButton；确认 = PrimaryPillButton（危险模式切换为 WarnPillButton 奶油黄） -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                    <Button x:Name="CancelBtn" Content="取消" IsCancel="True"
+                            Style="{StaticResource TonalButton}"
+                            Height="32" MinWidth="96" Padding="20,6" FontSize="13"/>
+                    <Button x:Name="ConfirmBtn" IsDefault="True"
+                            Style="{StaticResource PrimaryPillButton}"
+                            Height="32" MinWidth="96" Padding="20,6" FontSize="13" Margin="10,0,0,0"
+                            Click="ConfirmBtn_Click">
+                        <TextBlock x:Name="ConfirmLabel" Text="确认导入"/>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

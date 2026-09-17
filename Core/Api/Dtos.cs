@@ -88,19 +88,30 @@ public class PagedLinksDto
     [JsonPropertyName("last_page")] public int LastPage { get; set; }
 }
 
+/// <summary>
+/// 回收站平铺条目（Windows 式）：entry_type = "link" | "folder"。
+/// folder 条目 = 「删除操作」的直接对象（被删文件夹单元的根），单元内部内容在回收站树里展示；
+/// link 条目 = 单独删除的书签。id 对 link = 原 link_id，对 folder = trash_folder_id。
+/// </summary>
 public class TrashEntryDto
 {
-    [JsonPropertyName("link_id")] public string LinkId { get; set; } = string.Empty;
-    [JsonPropertyName("url")] public string Url { get; set; } = string.Empty;
-    [JsonPropertyName("title")] public string? Title { get; set; }
-    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
+    [JsonPropertyName("entry_type")] public string EntryType { get; set; } = "link";
+    [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+    [JsonPropertyName("url")] public string? Url { get; set; }
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
-    [JsonPropertyName("original_list_id")] public string? OriginalListId { get; set; }
-    [JsonPropertyName("last_visited_at")] public DateTime? LastVisitedAt { get; set; }
-    [JsonPropertyName("visit_count")] public int VisitCount { get; set; }
-    [JsonPropertyName("is_important")] public bool IsImportant { get; set; }
-    [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
-    [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+    [JsonPropertyName("origin_path")] public string? OriginPath { get; set; }
+    [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
+}
+
+/// <summary>回收站文件夹树节点（层级展示用；回收站内文件夹不可打开/导航）。</summary>
+public class TrashFolderDto
+{
+    [JsonPropertyName("trash_folder_id")] public string TrashFolderId { get; set; } = string.Empty;
+    [JsonPropertyName("parent_trash_folder_id")] public string? ParentTrashFolderId { get; set; }
+    [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+    /// <summary>单元内书签总数（含子孙单元）。</summary>
+    [JsonPropertyName("link_count")] public int LinkCount { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
 }
 
@@ -132,4 +143,26 @@ public class BackupImportDto
     [JsonPropertyName("total_items")] public int TotalItems { get; set; }
     [JsonPropertyName("success")] public bool Success { get; set; }
     [JsonPropertyName("errors")] public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Netscape 书签文件只读预检结果（导入前展示 / 导出后校验共用）。
+/// 纯数据对象，不含任何 UI 依赖；<see cref="Warnings"/> 为可容忍的问题（结构不完整等）。
+/// </summary>
+public class BookmarkFileInspectionDto
+{
+    [JsonPropertyName("is_valid")] public bool IsValid { get; set; }
+    /// <summary>无效原因（有效时为空字符串）。</summary>
+    [JsonPropertyName("error")] public string Error { get; set; } = string.Empty;
+    /// <summary>识别到的格式（如「Netscape 书签文件（NETSCAPE-Bookmark-file-1）」）。</summary>
+    [JsonPropertyName("format")] public string Format { get; set; } = string.Empty;
+    [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = new();
+    [JsonPropertyName("folder_count")] public int FolderCount { get; set; }
+    [JsonPropertyName("link_count")] public int LinkCount { get; set; }
+    /// <summary>被跳过的条目数（无地址 / about:blank）。</summary>
+    [JsonPropertyName("skipped_count")] public int SkippedCount { get; set; }
+    /// <summary>最深文件夹嵌套层数（根级文件夹 = 1；无文件夹时为 0）。</summary>
+    [JsonPropertyName("max_depth")] public int MaxDepth { get; set; }
+    [JsonPropertyName("file_bytes")] public long FileBytes { get; set; }
+    [JsonPropertyName("total_items")] public int TotalItems { get; set; }
 }

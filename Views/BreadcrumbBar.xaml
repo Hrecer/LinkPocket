@@ -1,0 +1,174 @@
+<UserControl x:Class="LinkPocket.Views.BreadcrumbBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LinkPocket.Views"
+             x:Name="Root">
+    <!-- 可复用面包屑地址栏（数据驱动，浏览页/回收站共用）：
+         - 浏览页：Breadcrumbs = 路径段集合；CrumbClickCommand 点段导航；编辑态（IsPathEditing）= 
+           路径输入框 + 候选 Popup（键盘上下选候选经 CandidateMoveRequested 转发宿主 VM）。
+         - 回收站：只塞一个「回收站」段，IsPathEditing 恒 false → 纯展示。
+         ⚠️ 胶囊基态值必须写在 Style.Setters（本地值优先级高于样式触发器）。 -->
+
+    <UserControl.Resources>
+        <!-- 路径编辑框：M3E 圆角填充文本域（高度 32 与面包屑按钮一致，切换不变高）；
+             默认 Collapsed，IsPathEditing=True 才显示；路径无效时 2px Error 描边。 -->
+        <Style x:Key="PathEditField" TargetType="TextBox">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="MinWidth" Value="120"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="EditRoot" CornerRadius="16"
+                                Background="{DynamicResource SurfaceContainerHighest}"
+                                BorderThickness="2" BorderBrush="Transparent"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsPathInvalid, ElementName=Root}" Value="True">
+                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="#E24B4A"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 胶囊外壳：40 高恒定，编辑态只做颜色/描边形变，圆角保持 20（40 的全圆） -->
+    <Border Height="40" BorderThickness="2" VerticalAlignment="Center">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Padding" Value="8,4"/>
+                <Setter Property="CornerRadius" Value="20"/>
+                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <Grid VerticalAlignment="Center">
+            <!-- 面包屑：每一级可点击，当前级高亮；编辑态时隐藏 -->
+            <ItemsControl ItemsSource="{Binding Breadcrumbs, ElementName=Root}" VerticalAlignment="Center">
+                <ItemsControl.Style>
+                    <Style TargetType="ItemsControl">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Style>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Command="{Binding CrumbClickCommand, ElementName=Root}"
+                                    CommandParameter="{Binding}"
+                                    Background="Transparent" BorderThickness="0"
+                                    FontSize="13" Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
+                                        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                                        <Setter Property="Padding" Value="12,0"/>
+                                        <Setter Property="MinHeight" Value="32"/>
+                                        <Setter Property="Height" Value="32"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <TextBlock Text="{Binding Name}"/>
+                            </Button>
+                            <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceMuted}" Margin="2,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- 路径编辑态：输入框 + 同级候选 Popup -->
+            <TextBox x:Name="PathEditBox" Style="{StaticResource PathEditField}"
+                     Text="{Binding PathEditText, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                     PreviewKeyDown="PathEditBox_PreviewKeyDown"
+                     LostFocus="PathEditBox_LostFocus">
+                <TextBox.InputBindings>
+                    <KeyBinding Key="Enter" Command="{Binding ConfirmPathCommand, ElementName=Root}"/>
+                    <KeyBinding Key="Escape" Command="{Binding CancelPathCommand, ElementName=Root}"/>
+                    <KeyBinding Key="Tab" Command="{Binding CompletePathCommand, ElementName=Root}"/>
+                </TextBox.InputBindings>
+            </TextBox>
+
+            <Popup IsOpen="{Binding HasPathCandidates, ElementName=Root, Mode=OneWay}"
+                   PlacementTarget="{Binding ElementName=PathEditBox}"
+                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                   Closed="PathCandidatesPopup_Closed">
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="12" MaxHeight="220" MinWidth="180" Padding="0,4">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="#000000"/>
+                    </Border.Effect>
+                    <ListBox x:Name="PathCandidatesList" Focusable="False"
+                             ItemsSource="{Binding PathCandidates, ElementName=Root}"
+                             SelectedIndex="{Binding SelectedCandidateIndex, ElementName=Root, Mode=TwoWay}"
+                             BorderThickness="0" Background="Transparent"
+                             SelectionChanged="PathCandidates_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" FontSize="12" Height="26" Margin="12,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Popup>
+        </Grid>
+    </Border>
+</UserControl>

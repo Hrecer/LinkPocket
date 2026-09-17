@@ -1,900 +1,574 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Media.Effects;
 using System.Windows.Input;
-using System.Globalization;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using LinkPocket.Api;
 using LinkPocket.Services;
+using LinkPocket.ViewModels;
 using Material3.Wpf;
 
 namespace LinkPocket.Views
 {
+    /// <summary>
+    /// 工具页（v2 完全重写）：左栏工具列表 + 右主区（共享数据表 / 表单），重复组明细为整页二级面板。
+    /// 两条硬性架构约定：
+    /// 1. 「跳转」一律通过 Services 层组件 <see cref="IContentLocator"/>（AppServices.Locator）执行——
+    ///    本页不直连任何界面方法，跳转语义（进入目标目录并选中该行）由组件统一承担；
+    /// 2. 列表一律复用共享 <see cref="SortableDataTable"/>，不手绘卡片。
+    /// </summary>
     public partial class ToolsPage : UserControl
     {
-        private class ToolItem
+        private sealed class ToolItem
         {
-            public string Id { get; set; } = string.Empty;
-            public string Name { get; set; } = string.Empty;
-            public string Icon { get; set; } = string.Empty;
+            public string Id { get; init; } = string.Empty;
+            public string Name { get; init; } = string.Empty;
+            /// <summary>必须是 LpIcons 已注册的字形，否则渲染为空白占位。</summary>
+            public string Icon { get; init; } = string.Empty;
+        }
+
+        /// <summary>一个重复组（同一 URL 的多条链接）在表格里的行数据。</summary>
+        private sealed class DedupGroupRow
+        {
+            public string Url { get; init; } = string.Empty;
+            public List<LinkDto> Links { get; init; } = new();
+            public int Count => Links.Count;
+            public string LocationsSummary { get; init; } = string.Empty;
         }
 
         private readonly List<ToolItem> _tools = new()
         {
-            new() { Id = "dedup", Name = "链接去重", Icon = "ContentDuplicate" },
-            new() { Id = "idjump", Name = "ID跳转", Icon = "TextBoxSearchOutline" },
+            new() { Id = "dedup", Name = "链接去重", Icon = "content-duplicate" },
+            new() { Id = "idjump", Name = "ID 跳转", Icon = "fingerprint" },
+            new() { Id = "bookmarks", Name = "书签导入 / 导出", Icon = "bookmark-outline" },
         };
 
-        private bool _hasRunDedup;
+        private const string DedupTitle = "链接去重";
+        private const string DedupSubtitle = "扫描完全相同的 URL，按组列出重复的链接，可逐条保留或删除。";
+        private const string IdJumpTitle = "ID 跳转";
+        private const string IdJumpSubtitle = "按 ID 定位到目标：进入它所在的目录并选中那一行。";
+        private const string BookmarkTitle = "书签导入 / 导出";
+        private const string BookmarkSubtitle =
+            "与 Chrome / Edge / Firefox 互通的标准 Netscape 书签格式（.html）：导入还原文件夹层级，导出可直接被浏览器导入。";
 
-        private StackPanel? _dedupHeaderRow;
+        // —— 去重状态 ——
+        private bool _hasRunDedup;
+        private List<DedupGroupRow> _groups = new();
+        private List<LinkDto>? _currentGroupLinks;
+        private string _currentGroupUrl = string.Empty;
+        private Dictionary<string, string> _pathCache = new();
+        private readonly HashSet<string> _checkedIds = new();
         private Button? _dedupActionBtn;
         private TextBlock? _dedupActionText;
         private M3Icon? _dedupActionIcon;
         private Button? _dedupClearBtn;
-        private TextBlock? _dedupDesc;
-        private TextBlock? _dedupSummaryTb;
-
-        private readonly HashSet<string> _selectedLinkIds = new();
-        private List<LinkDto>? _currentGroupLinks;
-        private Dictionary<string, string>? _currentPathCache;
-        private string? _currentGroupUrl;
-
-        private TextBox? _idJumpInput;
-        private TextBlock? _idJumpErrorHint;
 
         public ToolsPage()
         {
             InitializeComponent();
-            this.IsVisibleChanged += (s, e) =>
+            SetupPaneTable();
+            SetupDetailTable();
+            SetBookmarkMode(importing: true);   // 书签工具默认停在「导入」方向
+            IsVisibleChanged += (_, e) =>
             {
-                if ((bool)e.NewValue)
-                    ClearIdJumpInput();
+                if ((bool)e.NewValue) ResetIdJumpForm();
             };
         }
+
+        // ============================================================
+        // —— 生命周期与工具切换 ——
+        // ============================================================
 
         private void ToolsPage_Loaded(object sender, RoutedEventArgs e)
         {
             ToolListbox.ItemsSource = _tools;
-            ToolListbox.SelectedIndex = 0;
-            ShowToolPanel("dedup");
+            if (ToolListbox.SelectedIndex < 0) ToolListbox.SelectedIndex = 0;
 
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.OnToolsDataChanged += OnDataChanged;
-        }
-
-        private async void OnDataChanged(object? sender, EventArgs e)
-        {
-            if (_hasRunDedup && DetailView.Visibility != Visibility.Visible)
-                await RunDedup();
+            if (DataContext is MainViewModel vm)
+                vm.OnToolsDataChanged += OnToolsDataChanged;
         }
 
         private void ToolsPage_Unloaded(object sender, RoutedEventArgs e)
         {
-            ClearIdJumpInput();
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.OnToolsDataChanged -= OnDataChanged;
+            if (DataContext is MainViewModel vm)
+                vm.OnToolsDataChanged -= OnToolsDataChanged;
         }
 
-        private void ClearIdJumpInput()
+        private async void OnToolsDataChanged(object? sender, EventArgs e)
         {
-            if (_idJumpInput != null)
+            // 数据变更（外部增删改）后自动重跑查重，避免展示过期结果
+            if (_hasRunDedup && DetailPanel.Visibility != Visibility.Visible
+                && (ToolListbox.SelectedItem as ToolItem)?.Id == "dedup")
             {
-                _idJumpInput.Text = "";
-                _idJumpInput = null;
+                await RunDedupAsync();
             }
-            _idJumpErrorHint = null;
         }
 
         private void ToolListbox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ToolListbox.SelectedItem is not ToolItem tool) return;
             _hasRunDedup = false;
-            ExitDetailView();
-            ShowToolPanel(tool.Id);
+            GoBackToList();
+            ShowTool(tool.Id);
         }
 
-        private void ShowToolPanel(string toolId)
+        private void ShowTool(string toolId)
         {
-            ClearIdJumpInput();
+            HeaderActions.Children.Clear();
+            _dedupActionBtn = null;
+            _dedupActionText = null;
+            _dedupActionIcon = null;
+            _dedupClearBtn = null;
 
-            ToolContentPanel.Children.Clear();
+            // 三个宿主互斥显示，先统一收起再按工具打开（避免出现"空白的第三态"）
+            PaneTableHost.Visibility = Visibility.Collapsed;
+            PaneFormHost.Visibility = Visibility.Collapsed;
+            PaneBookmarkHost.Visibility = Visibility.Collapsed;
+
             switch (toolId)
             {
-                case "dedup":
-                    BuildDedupLayout();
-                    break;
                 case "idjump":
-                    BuildIdJumpLayout();
+                    PaneTitle.Text = IdJumpTitle;
+                    PaneSubtitle.Text = IdJumpSubtitle;
+                    PaneFormHost.Visibility = Visibility.Visible;
+                    ResetIdJumpForm();
+                    IdInput.Focus();
+                    break;
+
+                case "bookmarks":
+                    PaneTitle.Text = BookmarkTitle;
+                    PaneSubtitle.Text = BookmarkSubtitle;
+                    PaneBookmarkHost.Visibility = Visibility.Visible;
+                    ResetBookmarkMessages();
+                    SetBookmarkMode(importing: true);
+                    break;
+
+                default: // dedup
+                    PaneTitle.Text = DedupTitle;
+                    PaneSubtitle.Text = DedupSubtitle;
+                    PaneTableHost.Visibility = Visibility.Visible;
+                    BuildDedupHeaderActions();
+                    ShowDedupPlaceholder();
                     break;
             }
         }
 
-        private void BuildDedupLayout()
+        /// <summary>去重工具的操作组：主操作药丸（开始/重新查重）+ 清除结果。</summary>
+        private void BuildDedupHeaderActions()
         {
-            _dedupHeaderRow = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            var header = new TextBlock
-            {
-                Text = "链接去重",
-                FontSize = 18,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            _dedupHeaderRow.Children.Add(header);
-
             _dedupActionIcon = new M3Icon { Kind = "content-duplicate", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
             _dedupActionText = new TextBlock { Text = "开始查重", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-
             _dedupActionBtn = new Button
             {
-                Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { _dedupActionIcon, _dedupActionText } },
-                Padding = new Thickness(14, 6, 14, 6),
-                Margin = new Thickness(16, 0, 8, 0),
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = (Brush)Application.Current.FindResource("Primary")
+                Style = (Style)Application.Current.FindResource("PrimaryPillButton"),
+                // ⚠️ 药丸样式自身不含 MinHeight/Padding：高度必须显式给（与其它页药丸统一的 32），
+                // 否则垂直 Padding=0 会把按钮压扁成一条。
+                Height = 32,
+                Padding = new Thickness(14, 0, 14, 0),
+                Margin = new Thickness(0, 0, 8, 0),
+                Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { _dedupActionIcon, _dedupActionText } }
             };
-            _dedupActionBtn.Click += async (s, e) => await RunDedup();
-            _dedupHeaderRow.Children.Add(_dedupActionBtn);
+            _dedupActionBtn.Click += async (_, _) => await RunDedupAsync();
+            HeaderActions.Children.Add(_dedupActionBtn);
 
             _dedupClearBtn = new Button
             {
+                Height = 32,   // 同上：药丸样式无高度默认值，必须显式给
+                Padding = new Thickness(12, 0, 12, 0),
+                IsEnabled = false,
+                Cursor = Cursors.Hand,
                 Content = new StackPanel
                 {
                     Orientation = Orientation.Horizontal,
                     Children =
                     {
                         new M3Icon { Kind = "close-circle-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "清除结果", FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
+                        new TextBlock { Text = "清除结果", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
                     }
                 },
-                Padding = new Thickness(10, 5, 10, 5),
-                Cursor = Cursors.Hand,
-                IsEnabled = false,
-                Opacity = 0.35,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = Brushes.Gray
+                Style = (Style)Application.Current.FindResource("TonalButton")
             };
-            _dedupClearBtn.Click += (s, e) => ClearDedupResults();
-            _dedupHeaderRow.Children.Add(_dedupClearBtn);
-
-            ToolContentPanel.Children.Add(_dedupHeaderRow);
-
-            _dedupDesc = new TextBlock
-            {
-                Text = "检测完全相同的 URL，以组的形式展示重复的链接。",
-                FontSize = 12,
-                Foreground = Brushes.Gray,
-                Margin = new Thickness(0, 8, 0, 20),
-                TextWrapping = TextWrapping.Wrap
-            };
-            ToolContentPanel.Children.Add(_dedupDesc);
+            _dedupClearBtn.Click += (_, _) => ClearDedupResults();
+            HeaderActions.Children.Add(_dedupClearBtn);
         }
 
-        private void BuildIdJumpLayout()
+        private void ShowDedupPlaceholder()
         {
-            var header = new TextBlock
+            PaneTable.ItemsSource = null;
+            PaneTable.EmptyContent = BuildState("content-duplicate", "还没有查重结果",
+                "点击右上角「开始查重」，扫描完全相同的 URL");
+            PaneSubtitle.Text = DedupSubtitle;
+        }
+
+        private void ClearDedupResults()
+        {
+            _hasRunDedup = false;
+            _groups = new List<DedupGroupRow>();
+            _pathCache.Clear();
+            GoBackToList();
+            if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
+            if (_dedupActionText != null) _dedupActionText.Text = "开始查重";
+            if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = false;
+            ShowDedupPlaceholder();
+        }
+
+        // ============================================================
+        // —— 去重：主表（重复组） ——
+        // ============================================================
+
+        private void SetupPaneTable()
+        {
+            PaneTable.Columns = new[]
             {
-                Text = "ID跳转",
-                FontSize = 18,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
-                Margin = new Thickness(0, 0, 0, 20)
-            };
-            ToolContentPanel.Children.Add(header);
-
-            var typePanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-            typePanel.Children.Add(new TextBlock { Text = "跳转类型：", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Black });
-
-            var linkRadio = new RadioButton { Content = "书签", GroupName = "JumpType", IsChecked = true, FontSize = 13, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            var folderRadio = new RadioButton { Content = "文件夹", GroupName = "JumpType", FontSize = 13, Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-            typePanel.Children.Add(linkRadio);
-            typePanel.Children.Add(folderRadio);
-            ToolContentPanel.Children.Add(typePanel);
-
-            var inputRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 16), VerticalAlignment = VerticalAlignment.Center };
-
-            var idInput = new TextBox
-            {
-                Name = "IdJumpInput",
-                Width = 280,
-                FontSize = 14,
-                Padding = new Thickness(8, 6, 8, 6),
-                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-                BorderThickness = new Thickness(1),
-                Foreground = Brushes.Black
-            };
-            _idJumpInput = idInput;
-            inputRow.Children.Add(idInput);
-
-            var jumpBtn = new Button
-            {
-                Content = new StackPanel
+                new DataTableColumn
                 {
-                    Orientation = Orientation.Horizontal,
-                    Children =
+                    Field = "url", Label = "重复地址", Width = -3,
+                    SortKey = r => (IComparable)((DedupGroupRow)r).Url,
+                    CellFactory = r => new TextBlock
                     {
-                        new M3Icon { Kind = "open-in-new", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "跳转", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
+                        Text = ((DedupGroupRow)r).Url,
+                        FontSize = 12,
+                        FontFamily = new FontFamily("Consolas"),
+                        Foreground = (Brush)FindResource("OnSurface"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis
                     }
                 },
-                Padding = new Thickness(14, 6, 14, 6),
-                Margin = new Thickness(10, 0, 0, 0),
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = (Brush)Application.Current.FindResource("Primary"),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            jumpBtn.Click += (s, e) => IdJump_Click(idInput, linkRadio, folderRadio);
-            inputRow.Children.Add(jumpBtn);
-
-            ToolContentPanel.Children.Add(inputRow);
-
-            var errorHint = new TextBlock
-            {
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.FindResource("Error"),
-                Margin = new Thickness(0, 2, 0, 0),
-                Opacity = 0,
-                Height = 16
-            };
-            _idJumpErrorHint = errorHint;
-            ToolContentPanel.Children.Add(errorHint);
-
-            var tip = new TextBlock
-            {
-                Text = "输入书签ID或文件夹ID，快速定位到目标位置",
-                FontSize = 12,
-                Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted"),
-                Margin = new Thickness(0, 4, 0, 0)
-            };
-            ToolContentPanel.Children.Add(tip);
-        }
-
-        private async void IdJump_Click(TextBox idInput, RadioButton linkRadio, RadioButton folderRadio)
-        {
-            var id = idInput.Text.Trim();
-            if (string.IsNullOrWhiteSpace(id))
-            {
-                await ShowIdError("请输入ID");
-                return;
-            }
-
-            if (DataContext is not ViewModels.MainViewModel vm) return;
-
-            try
-            {
-                if (linkRadio.IsChecked == true)
+                new DataTableColumn
                 {
-                    var links = await vm.GetAllLinksForToolsAsync();
-                    var target = links.FirstOrDefault(l => l.LinkId == id);
-                    if (target == null)
+                    Field = "count", Label = "重复数", Width = 90,
+                    SortKey = r => (IComparable)((DedupGroupRow)r).Count,
+                    CellFactory = r => new Border
                     {
-                        await ShowIdError("未找到匹配的书签ID");
-                        return;
+                        Background = (Brush)FindResource("PrimaryContainer"),
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(8, 2, 8, 2),
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Child = new TextBlock
+                        {
+                            Text = $"×{((DedupGroupRow)r).Count}",
+                            FontSize = 12, FontWeight = FontWeights.SemiBold,
+                            Foreground = (Brush)FindResource("OnPrimaryContainer")
+                        }
                     }
-                    idInput.Text = "";
-                    Services.UiCoordinator.Instance?.OpenLinkInBrowser(id);
-                }
-                else
+                },
+                new DataTableColumn
                 {
-                    if (!FolderExists(vm.FolderItems, id))
+                    Field = "locations", Label = "所在位置", Width = -2,
+                    SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary,
+                    CellFactory = r => new TextBlock
                     {
-                        await ShowIdError("未找到匹配的文件夹ID");
-                        return;
+                        Text = ((DedupGroupRow)r).LocationsSummary,
+                        FontSize = 12.5,
+                        Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis
                     }
-                    idInput.Text = "";
-                    Services.UiCoordinator.Instance?.OpenFolderInBrowser(id);
-                }
-
-                Services.UiCoordinator.Instance?.ShowNavigationTabs();
-            }
-            catch { }
-        }
-
-        private async Task ShowIdError(string message)
-        {
-            if (_idJumpErrorHint == null) return;
-            _idJumpErrorHint.Text = message;
-            _idJumpErrorHint.Opacity = 1;
-            _idJumpErrorHint.BeginAnimation(UIElement.OpacityProperty, null);
-            await Task.Delay(500);
-            var anim = new System.Windows.Media.Animation.DoubleAnimation
-            {
-                From = 1.0,
-                To = 0.0,
-                Duration = TimeSpan.FromMilliseconds(300),
-                EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn }
+                },
             };
-            _idJumpErrorHint.BeginAnimation(UIElement.OpacityProperty, anim);
+
+            PaneTable.RowClick += (_, item) => EnterDetail((DedupGroupRow)item);
+            PaneTable.RowDoubleClick += (_, item) => EnterDetail((DedupGroupRow)item);
+            ShowDedupPlaceholder();
         }
 
-        private static bool FolderExists(System.Collections.ObjectModel.ObservableCollection<ViewModels.FolderNode> nodes, string id)
+        private async Task RunDedupAsync()
         {
-            foreach (var node in nodes)
-            {
-                if (node.Id == id) return true;
-                if (node.Children != null && node.Children.Count > 0 && FolderExists(node.Children, id))
-                    return true;
-            }
-            return false;
-        }
+            if (DataContext is not MainViewModel vm) return;
 
-        private async Task RunDedup()
-        {
-            while (ToolContentPanel.Children.Count > 2)
-                ToolContentPanel.Children.RemoveAt(ToolContentPanel.Children.Count - 1);
+            PaneTable.ItemsSource = null;
+            PaneTable.EmptyContent = BuildState("refresh", "正在扫描重复链接…", "全库比对 URL，请稍候");
+            PaneSubtitle.Text = DedupSubtitle;
 
-            if (_dedupSummaryTb != null)
-                _dedupSummaryTb.Text = "";
-
-            var loadingBar = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 0, 16) };
-            loadingBar.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 120, Height = 3, Foreground = (Brush)Application.Current.FindResource("Primary") });
-            loadingBar.Children.Add(new TextBlock { Text = "正在扫描重复链接...", FontSize = 12, Foreground = Brushes.Gray, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
-            ToolContentPanel.Children.Add(loadingBar);
-
-            if (DataContext is not ViewModels.MainViewModel vm) return;
             List<LinkDto> links;
             try
             {
                 links = await vm.GetAllLinksForToolsAsync();
             }
-            catch
+            catch (Exception ex)
             {
-                ShowDedupError("读取数据失败");
+                Logger.Error("链接去重扫描失败", ex);
+                PaneTable.EmptyContent = BuildState("alert-circle-outline", "读取数据失败", ex.Message);
                 return;
             }
 
-            while (ToolContentPanel.Children.Count > 2)
-                ToolContentPanel.Children.RemoveAt(ToolContentPanel.Children.Count - 1);
-
-            _dedupActionIcon!.Kind = "refresh";
-            _dedupActionText!.Text = "重新查重";
-            _dedupClearBtn!.IsEnabled = true;
-            _dedupClearBtn.Opacity = 1.0;
-            _dedupClearBtn.Foreground = (Brush)Application.Current.FindResource("Primary");
-
             var groups = links
-                .GroupBy(l => l.Url, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(l => l.Url ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .Where(g => g.Count() > 1)
                 .OrderByDescending(g => g.Count())
                 .ToList();
 
-            var summaryRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 4, 0, 10) };
-
-            var summaryText = groups.Count == 0
-                ? "没有发现重复的链接"
-                : $"发现 {groups.Count} 组重复链接，共 {groups.Sum(g => g.Count())} 条";
-
-            _dedupSummaryTb = new TextBlock
-            {
-                Text = summaryText,
-                FontSize = 13,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            summaryRow.Children.Add(_dedupSummaryTb);
-            ToolContentPanel.Children.Add(summaryRow);
             _hasRunDedup = true;
+            if (_dedupActionIcon != null) _dedupActionIcon.Kind = "refresh";
+            if (_dedupActionText != null) _dedupActionText.Text = "重新查重";
+            if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = true;
 
             if (groups.Count == 0)
             {
-                var empty = new TextBlock
-                {
-                    Text = "✓ 所有链接 URL 均不重复",
-                    FontSize = 14,
-                    Foreground = Brushes.Green,
-                    Margin = new Thickness(0, 30, 0, 0),
-                    HorizontalAlignment = HorizontalAlignment.Center
-                };
-                ToolContentPanel.Children.Add(empty);
+                _groups = new List<DedupGroupRow>();
+                PaneTable.EmptyContent = BuildState("content-duplicate", "没有发现重复链接",
+                    "所有链接的 URL 都互不相同");
+                PaneSubtitle.Text = "扫描完成：未发现重复";
                 return;
             }
 
-            var pathCache = new Dictionary<string, string>();
+            // 位置解析（每个链接一次；同一 URL 组内共享缓存）
+            _pathCache = new Dictionary<string, string>();
             foreach (var link in groups.SelectMany(g => g))
             {
-                if (!pathCache.ContainsKey(link.LinkId))
-                    pathCache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
+                if (!_pathCache.ContainsKey(link.LinkId))
+                    _pathCache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
             }
 
-            foreach (var group in groups)
+            _groups = groups.Select(g => new DedupGroupRow
             {
-                var groupCard = CreateDedupGroupCard(group.Key, group.ToList(), pathCache);
-                ToolContentPanel.Children.Add(groupCard);
-            }
+                Url = g.Key,
+                Links = g.ToList(),
+                LocationsSummary = BuildLocationsSummary(g.ToList())
+            }).ToList();
+
+            PaneTable.ItemsSource = _groups;
+            PaneTable.EmptyContent = null!;
+            PaneSubtitle.Text = $"发现 {_groups.Count} 组重复链接，共 {_groups.Sum(g => g.Count)} 条";
         }
 
-        private UIElement CreateDedupGroupCard(string url, List<LinkDto> links, Dictionary<string, string> pathCache)
+        /// <summary>位置摘要：首条所在位置，多处时补「等 N 处」（不罗列全部，避免单元格噪音）。</summary>
+        private string BuildLocationsSummary(List<LinkDto> links)
         {
-            var outerBorder = new Border
+            var paths = links
+                .Select(l => _pathCache.TryGetValue(l.LinkId, out var p) ? p : "全部书签")
+                .Distinct()
+                .ToList();
+            return paths.Count == 1 ? paths[0] : $"{paths[0]} 等 {paths.Count} 处";
+        }
+
+        // ============================================================
+        // —— 去重：明细（组内各条） ——
+        // ============================================================
+
+        private void SetupDetailTable()
+        {
+            DetailTable.Columns = new[]
             {
-                Tag = Tuple.Create(url, links, pathCache),
-                Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest"),
-                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Margin = new Thickness(0, 0, 0, 12),
-                Padding = new Thickness(14),
-                Cursor = Cursors.Hand,
-                Effect = new DropShadowEffect
+                new DataTableColumn
                 {
-                    BlurRadius = 6,
-                    ShadowDepth = 1,
-                    Opacity = 0.08,
-                    Color = Colors.Black
-                }
-            };
-
-            var sp = new StackPanel();
-
-            var titleBar = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 6)
-            };
-
-            var icon = new M3Icon
-            {
-                Kind = "content-duplicate",
-                Width = 18,
-                Height = 18,
-                Foreground = (Brush)Application.Current.FindResource("Warning"),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            titleBar.Children.Add(icon);
-
-            var countBadge = new TextBlock
-            {
-                Text = $" ×{links.Count}",
-                FontSize = 13,
-                FontWeight = FontWeights.Bold,
-                Foreground = (Brush)Application.Current.FindResource("Warning"),
-                Margin = new Thickness(6, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            titleBar.Children.Add(countBadge);
-            sp.Children.Add(titleBar);
-
-            var urlText = new TextBlock
-            {
-                Text = url.Length > 120 ? url[..117] + "..." : url,
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Margin = new Thickness(24, 0, 0, 8)
-            };
-            sp.Children.Add(urlText);
-
-            foreach (var link in links)
-            {
-                var itemSp = new StackPanel { Margin = new Thickness(24, 3, 0, 5) };
-
-                var leftPart = new Grid
+                    Field = "check", Label = "", Width = 44,
+                    CellFactory = BuildCheckCell
+                },
+                new DataTableColumn
                 {
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                leftPart.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                leftPart.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-                var titleArea = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-                Grid.SetColumn(titleArea, 0);
-                leftPart.Children.Add(titleArea);
-
-                var iconGrid = new Grid
+                    Field = "title", Label = "名称", Width = -1,
+                    SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkDto)r).Title) ? ((LinkDto)r).Url : ((LinkDto)r).Title),
+                    CellFactory = r => BuildNameCell((LinkDto)r)
+                },
+                new DataTableColumn
                 {
-                    Width = 16,
-                    Height = 16,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 6, 0)
-                };
-
-                var faviconBmp = FaviconService.LoadFromCache(link.FaviconUrl ?? link.Url);
-                var faviconImg = new Image
-                {
-                    Stretch = Stretch.Uniform,
-                    Source = faviconBmp,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center
-                };
-                if (faviconBmp == null)
-                    faviconImg.Visibility = Visibility.Collapsed;
-
-                var webIcon = new M3Icon
-                {
-                    Kind = "web",
-                    Width = 16,
-                    Height = 16,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Opacity = 0.55
-                };
-                if (faviconBmp != null)
-                    webIcon.Visibility = Visibility.Collapsed;
-
-                iconGrid.Children.Add(faviconImg);
-                iconGrid.Children.Add(webIcon);
-                titleArea.Children.Add(iconGrid);
-
-                if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && faviconBmp == null)
-                {
-                    _ = Task.Run(async () =>
+                    // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
+                    Field = "path", Label = "位置", Width = -3,
+                    SortKey = r => (IComparable)ResolvePath((LinkDto)r),
+                    CellFactory = r => new TextBlock
                     {
-                        try
-                        {
-                            await FaviconService.PrefetchAndCacheAsync(link.FaviconUrl);
-                            var cached = FaviconService.LoadFromCache(link.FaviconUrl);
-                            if (cached != null)
-                            {
-                                Application.Current.Dispatcher.Invoke(() =>
-                                {
-                                    faviconImg.Source = cached;
-                                    faviconImg.Visibility = Visibility.Visible;
-                                    webIcon.Visibility = Visibility.Collapsed;
-                                });
-                            }
-                        }
-                        catch { }
-                    });
-                }
-
-                var titleText = new TextBlock
+                        Text = ResolvePath((LinkDto)r),
+                        FontSize = 12.5,
+                        Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis
+                    }
+                },
+                new DataTableColumn
                 {
-                    Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
-                    FontSize = 12,
-                    Foreground = (Brush)Application.Current.FindResource("OnSurface"),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                };
-                titleArea.Children.Add(titleText);
-
-                var folderPath = pathCache.TryGetValue(link.LinkId, out var resolved) ? resolved : "全部书签";
-                var pathText = new TextBox
+                    Field = "updated_at", Label = "最后更新", Width = 130,
+                    SortKey = r => (IComparable)((LinkDto)r).UpdatedAt,
+                    CellFactory = r => TextCell(((LinkDto)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                },
+                new DataTableColumn
                 {
-                    Text = $" · {folderPath}",
-                    FontSize = 11,
-                    Foreground = Brushes.Gray,
-                    Margin = new Thickness(6, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextWrapping = TextWrapping.Wrap,
-                    IsReadOnly = true,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(0),
-                    Focusable = true,
-                    ContextMenu = null,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
-                };
-                Grid.SetColumn(pathText, 1);
-                leftPart.Children.Add(pathText);
-
-                itemSp.Children.Add(leftPart);
-                sp.Children.Add(itemSp);
-            }
-
-            outerBorder.Child = sp;
-
-            outerBorder.MouseLeftButtonUp += DedupGroup_Click;
-            return outerBorder;
+                    Field = "last_visited_at", Label = "最后查看", Width = 130,
+                    SortKey = r => (IComparable)(((LinkDto)r).LastVisitedAt ?? DateTime.MinValue),
+                    CellFactory = r => TextCell(((LinkDto)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未")
+                },
+                new DataTableColumn
+                {
+                    Field = "visit_count", Label = "查看次数", Width = 84,
+                    SortKey = r => (IComparable)((LinkDto)r).VisitCount,
+                    CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
+                },
+                new DataTableColumn
+                {
+                    Field = "action", Label = "操作", Width = 56,
+                    CellFactory = BuildJumpCell
+                },
+            };
         }
 
-        private void DedupGroup_Click(object sender, MouseButtonEventArgs e)
+        private void EnterDetail(DedupGroupRow row)
         {
-            if (sender is not Border border || border.Tag is not Tuple<string, List<LinkDto>, Dictionary<string, string>> data) return;
-            EnterDetailView(data.Item1, data.Item2, data.Item3);
+            _currentGroupUrl = row.Url;
+            _currentGroupLinks = row.Links;
+            _checkedIds.Clear();
+
+            DetailUrlText.Text = row.Url;
+            DetailHintText.Text = $"共 {row.Count} 条重复链接";
+            DetailTable.ItemsSource = null;
+            DetailTable.ItemsSource = row.Links;
+            DetailTable.EmptyContent = null!;
+
+            UpdateDeleteState();
+            MainPanel.Visibility = Visibility.Collapsed;
+            DetailPanel.Visibility = Visibility.Visible;
+            DetailPanel.Focus();
         }
 
-        private void EnterDetailView(string groupUrl, List<LinkDto> links, Dictionary<string, string> pathCache)
+        private void GoBackToList()
         {
-            MainScrollView.Visibility = Visibility.Collapsed;
-            LeftSidebarBorder.Visibility = Visibility.Collapsed;
-            MainSplitter.Visibility = Visibility.Collapsed;
-
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.IsInSecondaryPage = true;
-
-            Grid.SetColumn(DetailView, 0);
-            Grid.SetColumnSpan(DetailView, 3);
-
-            _currentGroupUrl = groupUrl;
-            _currentGroupLinks = links;
-            _currentPathCache = pathCache;
-            _selectedLinkIds.Clear();
-
-            DedupGroupUrlBox.Text = groupUrl;
-            DedupGroupCountLabel.Text = $"共 {links.Count} 条重复链接";
-
-            DedupDetailCardsPanel.Children.Clear();
-            foreach (var link in links)
-            {
-                var card = CreateDetailCard(link, pathCache);
-                DedupDetailCardsPanel.Children.Add(card);
-            }
-
-            UpdateDeleteBtnState();
-            DetailView.Visibility = Visibility.Visible;
-            Keyboard.Focus(DetailView);
-        }
-
-        private void ExitDetailView()
-        {
-            _selectedLinkIds.Clear();
+            _checkedIds.Clear();
             _currentGroupLinks = null;
-            _currentPathCache = null;
-            _currentGroupUrl = null;
-
-            DetailView.Visibility = Visibility.Collapsed;
-            Grid.SetColumn(DetailView, 2);
-            Grid.SetColumnSpan(DetailView, 1);
-            MainScrollView.Visibility = Visibility.Visible;
-            LeftSidebarBorder.Visibility = Visibility.Visible;
-            MainSplitter.Visibility = Visibility.Visible;
-
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.IsInSecondaryPage = false;
+            _currentGroupUrl = string.Empty;
+            DetailTable.ItemsSource = null;
+            DetailPanel.Visibility = Visibility.Collapsed;
+            MainPanel.Visibility = Visibility.Visible;
         }
 
-        private void DedupBack_Click(object sender, RoutedEventArgs e)
+        private void DetailBack_Click(object sender, RoutedEventArgs e) => GoBackToList();
+
+        private void DetailPanel_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            ExitDetailView();
-        }
-
-        private void DedupCopyUrl_Click(object sender, RoutedEventArgs e)
-        {
-            Clipboard.SetText(DedupGroupUrlBox.Text);
-        }
-
-        private void DetailCard_Click(object sender, MouseButtonEventArgs e)
-        {
-            if (e.OriginalSource is Button or M3Icon or TextBlock) return;
-            if (sender is not Border card || card.Tag is not string linkId) return;
-            if (_currentGroupLinks == null) return;
-
-            int maxSelect = _currentGroupLinks.Count - 1;
-
-            if (_selectedLinkIds.Contains(linkId))
-            {
-                _selectedLinkIds.Remove(linkId);
-            }
-            else
-            {
-                if (_selectedLinkIds.Count >= maxSelect) return;
-                _selectedLinkIds.Add(linkId);
-            }
-
-            UpdateCardSelectionVisual(card, _selectedLinkIds.Contains(linkId));
-            UpdateDeleteBtnState();
+            if (e.Key != Key.Escape) return;
+            GoBackToList();
             e.Handled = true;
         }
 
-        private void UpdateCardSelectionVisual(Border card, bool selected)
+        private void CopyUrl_Click(object sender, RoutedEventArgs e)
         {
-            if (selected)
+            if (!string.IsNullOrEmpty(_currentGroupUrl))
             {
-                card.BorderBrush = (Brush)Application.Current.FindResource("Primary");
-                card.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
-            }
-            else
-            {
-                card.BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant");
-                card.Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest");
+                try { Clipboard.SetText(_currentGroupUrl); } catch { }
             }
         }
 
-        private void UpdateDeleteBtnState()
+        /// <summary>勾选单元：MD3 圆形勾选（选中 = Primary 实心 + 白勾，未选 = 描边圆）。</summary>
+        private FrameworkElement BuildCheckCell(object data)
         {
-            if (DedupDeleteBtn == null) return;
-            DedupDeleteBtn.IsEnabled = _selectedLinkIds.Count > 0 && _currentGroupLinks != null;
-        }
+            var link = (LinkDto)data;
+            var checkedNow = _checkedIds.Contains(link.LinkId);
 
-        private void ClearAllSelections()
-        {
-            if (_selectedLinkIds.Count == 0) return;
-            _selectedLinkIds.Clear();
-            foreach (var child in DedupDetailCardsPanel.Children)
+            var outline = new Border
             {
-                if (child is Border card)
-                    UpdateCardSelectionVisual(card, false);
-            }
-            UpdateDeleteBtnState();
-        }
-
-        private void DetailView_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Escape)
+                Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(1.6),
+                BorderBrush = (Brush)FindResource("OnSurfaceVariant"),
+                Background = Brushes.Transparent,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var fill = new Border
             {
-                ClearAllSelections();
-                e.Handled = true;
-            }
-        }
-
-        private void DetailScrollView_BlankClick(object sender, MouseButtonEventArgs e)
-        {
-            if (e.OriginalSource is ScrollViewer)
-                ClearAllSelections();
-        }
-
-        private async void DedupDeleteSelected_Click(object sender, RoutedEventArgs e)
-        {
-            if (_selectedLinkIds.Count == 0 || string.IsNullOrEmpty(_currentGroupUrl)) return;
-            if (DataContext is not ViewModels.MainViewModel vm) return;
-
-            var toDelete = _selectedLinkIds.ToList();
-            _selectedLinkIds.Clear();
-
-            try
-            {
-                foreach (var linkId in toDelete)
+                Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
+                Background = (Brush)FindResource("Primary"),
+                Visibility = checkedNow ? Visibility.Visible : Visibility.Collapsed,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new Path
                 {
-                    await vm.LinkViewModel!.DeleteLinkAsync(linkId);
+                    Data = Geometry.Parse("M1,4.6 L3.6,7.1 L8,1.8"),
+                    Stroke = Brushes.White,
+                    StrokeThickness = 1.7,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                    StrokeLineJoin = PenLineJoin.Round,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
                 }
+            };
 
-                var newGroups = await FindDedupGroupForUrl(_currentGroupUrl);
-                if (newGroups != null && newGroups.Count > 1)
+            var host = new Grid { Width = 22, Height = 22 };
+            host.Children.Add(outline);
+            host.Children.Add(fill);
+
+            var button = new Button
+            {
+                Content = host,
+                Width = 30, Height = 26,
+                Cursor = Cursors.Hand,
+                FocusVisualStyle = null,
+                Style = (Style)FindResource("RowIconButton"),
+                ToolTip = "勾选后删除（每组至少保留一条）"
+            };
+            button.Click += async (_, _) =>
+            {
+                if (_checkedIds.Contains(link.LinkId))
                 {
-                    var pathCache = await BuildPathCache(newGroups);
-                    _currentGroupLinks = newGroups;
-                    _currentPathCache = pathCache;
-                    DedupGroupCountLabel.Text = $"共 {newGroups.Count} 条重复链接";
-
-                    DedupDetailCardsPanel.Children.Clear();
-                    foreach (var link in newGroups)
-                    {
-                        var card = CreateDetailCard(link, pathCache);
-                        DedupDetailCardsPanel.Children.Add(card);
-                    }
-
-                    UpdateDeleteBtnState();
+                    _checkedIds.Remove(link.LinkId);
                 }
                 else
                 {
-                    ExitDetailView();
-                    await RunDedup();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async Task<List<LinkDto>?> FindDedupGroupForUrl(string url)
-        {
-            if (DataContext is not ViewModels.MainViewModel vm) return null;
-            var allLinks = await vm.GetAllLinksForToolsAsync();
-            var group = allLinks.Where(l => string.Equals(l.Url, url, StringComparison.OrdinalIgnoreCase)).ToList();
-            return group.Count > 1 ? group : null;
-        }
-
-        private async Task<Dictionary<string, string>> BuildPathCache(List<LinkDto> links)
-        {
-            var cache = new Dictionary<string, string>();
-            if (DataContext is not ViewModels.MainViewModel vm) return cache;
-            foreach (var link in links)
-            {
-                if (!cache.ContainsKey(link.LinkId))
-                    cache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
-            }
-            return cache;
-        }
-
-        private UIElement CreateDetailCard(LinkDto link, Dictionary<string, string> pathCache)
-        {
-            var card = new Border
-            {
-                Tag = link.LinkId,
-                Background = (Brush)Application.Current.FindResource("SurfaceContainerLowest"),
-                BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16, 14, 16, 14),
-                Margin = new Thickness(0, 0, 10, 10),
-                Width = 330,
-                Height = 420,
-                Effect = new DropShadowEffect
-                {
-                    BlurRadius = 5,
-                    ShadowDepth = 1,
-                    Opacity = 0.08,
-                    Color = Colors.Black
-                },
-                Cursor = Cursors.Hand
-            };
-            card.PreviewMouseLeftButtonUp += DetailCard_Click;
-
-            var sp = new StackPanel();
-
-            var folderPath = pathCache.TryGetValue(link.LinkId, out var resolved) ? resolved : "全部书签";
-
-            var jumpBtn = new Button
-            {
-                Content = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Children =
+                    var total = _currentGroupLinks?.Count ?? 0;
+                    if (total > 0 && _checkedIds.Count >= total - 1)
                     {
-                        new M3Icon { Kind = "open-in-new", Width = 12, Height = 12, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "跳转", FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) }
+                        await FlashSelectionInfo("至少保留一条");
+                        return;
                     }
-                },
-                Padding = new Thickness(8, 3, 8, 3),
+                    _checkedIds.Add(link.LinkId);
+                }
+
+                var nowChecked = _checkedIds.Contains(link.LinkId);
+                fill.Visibility = nowChecked ? Visibility.Visible : Visibility.Collapsed;
+                UpdateDeleteState();
+            };
+
+            return button;
+        }
+
+        /// <summary>「跳转」单元：走标准组件（进入目标目录并选中该行），不直连界面方法。</summary>
+        private FrameworkElement BuildJumpCell(object data)
+        {
+            var link = (LinkDto)data;
+            var button = new Button
+            {
+                Width = 30, Height = 26,
                 Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Foreground = (Brush)Application.Current.FindResource("Primary"),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top
+                FocusVisualStyle = null,
+                Style = (Style)FindResource("RowIconButton"),
+                ToolTip = "跳转：进入所在目录并选中它",
+                Content = new M3Icon { Kind = "arrow-right", Width = 15, Height = 15 }
             };
-            var capturedLinkId = link.LinkId;
-            
-            jumpBtn.Click += (s, e) =>
+            button.Click += async (_, _) => await JumpToIdAsync(link.LinkId);
+            return button;
+        }
+
+        private FrameworkElement BuildNameCell(LinkDto link)
+        {
+            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+
+            var iconGrid = new Grid { Width = 18, Height = 18, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
+            var faviconBmp = FaviconService.LoadFromCache(link.FaviconUrl);
+            var faviconImg = new Image
             {
-                ExitDetailView();
-                if (Services.UiCoordinator.Instance != null)
-                    Services.UiCoordinator.Instance.OpenLinkInBrowser(capturedLinkId);
+                Source = faviconBmp,
+                Stretch = Stretch.Uniform,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
+            RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
+            if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
 
-            var headerGrid = new Grid { Height = 48 };
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var pathClip = new Border { ClipToBounds = true };
-            var pathGrid = new Grid();
-            pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            pathGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var folderIcon = new M3Icon { Kind = "folder-outline", Width = 13, Height = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 0, 0), Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted") };
-            Grid.SetColumn(folderIcon, 0);
-            pathGrid.Children.Add(folderIcon);
-
-            var pathTb = new TextBox
+            var earthIcon = new M3Icon
             {
-                Text = folderPath,
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
-                TextWrapping = TextWrapping.Wrap,
-                IsReadOnly = true,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Focusable = true,
-                ContextMenu = null,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                IsHitTestVisible = false,
-                Margin = new Thickness(4, 0, 0, 0)
+                Kind = "earth", Width = 16, Height = 16,
+                Foreground = (Brush)FindResource("OnSurfaceMuted"),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
             };
-            Grid.SetColumn(pathTb, 1);
-            pathGrid.Children.Add(pathTb);
-            pathClip.Child = pathGrid;
-
-            Grid.SetColumn(pathClip, 0);
-            headerGrid.Children.Add(pathClip);
-
-            Grid.SetColumn(jumpBtn, 1);
-            headerGrid.Children.Add(jumpBtn);
-
-            sp.Children.Add(headerGrid);
-
-            var iconGrid = new Grid { Width = 32, Height = 32, Margin = new Thickness(0, 6, 0, 6), HorizontalAlignment = HorizontalAlignment.Left };
-            var favBmp = FaviconService.LoadFromCache(link.FaviconUrl ?? link.Url);
-            var favImg = new Image { Source = favBmp, Stretch = Stretch.Uniform, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-            if (favBmp == null) favImg.Visibility = Visibility.Collapsed;
-            var earthIcon = new M3Icon { Kind = "earth", Width = 18, Height = 18, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.55 };
-            if (favBmp != null) earthIcon.Visibility = Visibility.Collapsed;
-            iconGrid.Children.Add(favImg);
+            if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
+            iconGrid.Children.Add(faviconImg);
             iconGrid.Children.Add(earthIcon);
-            sp.Children.Add(iconGrid);
 
-            if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && favBmp == null)
+            if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && faviconBmp == null)
             {
                 _ = Task.Run(async () =>
                 {
@@ -904,10 +578,10 @@ namespace LinkPocket.Views
                         var cached = FaviconService.LoadFromCache(link.FaviconUrl);
                         if (cached != null)
                         {
-                            Application.Current.Dispatcher.Invoke(() =>
+                            Dispatcher.Invoke(() =>
                             {
-                                favImg.Source = cached;
-                                favImg.Visibility = Visibility.Visible;
+                                faviconImg.Source = cached;
+                                faviconImg.Visibility = Visibility.Visible;
                                 earthIcon.Visibility = Visibility.Collapsed;
                             });
                         }
@@ -916,222 +590,553 @@ namespace LinkPocket.Views
                 });
             }
 
-            sp.Children.Add(new TextBox
+            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            textStack.Children.Add(new TextBlock
             {
                 Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
-                FontSize = 14,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = Brushes.Black,
-                TextWrapping = TextWrapping.NoWrap,
-                IsReadOnly = true,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Focusable = true,
-                ContextMenu = null,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                IsHitTestVisible = false,
-                Margin = new Thickness(0, 2, 0, 0)
+                FontSize = 13.5, FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("OnSurface"),
+                TextTrimming = TextTrimming.CharacterEllipsis
             });
-
-            sp.Children.Add(new TextBox
+            textStack.Children.Add(new TextBlock
             {
                 Text = link.Url,
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
-                TextWrapping = TextWrapping.Wrap,
-                IsReadOnly = true,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Focusable = true,
-                ContextMenu = null,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                IsHitTestVisible = false,
-                Margin = new Thickness(0, 3, 0, 0)
+                FontSize = 11.5, Margin = new Thickness(0, 3, 0, 0),
+                Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                TextTrimming = TextTrimming.CharacterEllipsis
             });
 
-            var (descDisplay, descTruncated, descLineHeight) = TruncateToLines(link.Description ?? "", 298, 4, 11);
-            var descBoxHeight = Math.Ceiling(descLineHeight * 4) + 4;
-            var descBox = new Border { Height = descBoxHeight, Margin = new Thickness(0, 8, 0, 0) };
-            descBox.Child = new TextBox
+            panel.Children.Add(iconGrid);
+            panel.Children.Add(textStack);
+            return panel;
+        }
+
+        private TextBlock TextCell(string text) => new()
+        {
+            Text = text,
+            FontSize = 12.5,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        private string ResolvePath(LinkDto link)
+            => _pathCache.TryGetValue(link.LinkId, out var p) ? p : "全部书签";
+
+        private void UpdateDeleteState()
+        {
+            DeleteSelectedBtn.IsEnabled = _checkedIds.Count > 0;
+            SelectionInfoText.Text = _checkedIds.Count > 0 ? $"已勾选 {_checkedIds.Count} 条" : string.Empty;
+        }
+
+        /// <summary>临时提示（不打断操作）：显示一句短提示后恢复勾选计数。</summary>
+        private async Task FlashSelectionInfo(string message)
+        {
+            SelectionInfoText.Text = message;
+            await Task.Delay(1600);
+            if (DetailPanel.Visibility == Visibility.Visible) UpdateDeleteState();
+        }
+
+        private async void DeleteSelected_Click(object sender, RoutedEventArgs e)
+        {
+            if (_checkedIds.Count == 0 || DataContext is not MainViewModel vm) return;
+
+            var toDelete = _checkedIds.ToList();
+            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {toDelete.Count} 条链接移入回收站吗？", "删除", "delete-outline"))
+                return;
+
+            try
             {
-                Text = descDisplay,
-                FontSize = 11,
-                Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
-                TextWrapping = TextWrapping.Wrap,
-                IsReadOnly = true,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Focusable = true,
-                ContextMenu = null,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                foreach (var linkId in toDelete)
+                    await vm.LinkViewModel!.DeleteLinkAsync(linkId);
+
+                // 重算当前 URL 的重复组：仍有多条 → 就地刷新明细；已剩一条及以下 → 回主表重跑
+                var all = await vm.GetAllLinksForToolsAsync();
+                var rest = all
+                    .Where(l => string.Equals(l.Url ?? string.Empty, _currentGroupUrl, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                _checkedIds.Clear();
+                if (rest.Count > 1)
+                {
+                    foreach (var link in rest)
+                    {
+                        if (!_pathCache.ContainsKey(link.LinkId))
+                            _pathCache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
+                    }
+                    _currentGroupLinks = rest;
+                    DetailHintText.Text = $"共 {rest.Count} 条重复链接";
+                    DetailTable.ItemsSource = null;
+                    DetailTable.ItemsSource = rest;
+                    UpdateDeleteState();
+                }
+                else
+                {
+                    GoBackToList();
+                    await RunDedupAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("删除重复项失败", ex);
+                await FlashSelectionInfo("删除失败：" + ex.Message);
+            }
+        }
+
+        // ============================================================
+        // —— ID 跳转（统一走 IContentLocator 组件） ——
+        // ============================================================
+
+        private void ResetIdJumpForm()
+        {
+            IdInput.Text = string.Empty;
+            HideJumpHint();
+        }
+
+        private void HideJumpHint()
+        {
+            JumpHintChip.Visibility = Visibility.Collapsed;
+            JumpHintText.Text = string.Empty;
+        }
+
+        private void ShowJumpHint(string message)
+        {
+            JumpHintText.Text = message;
+            JumpHintChip.Visibility = Visibility.Visible;
+        }
+
+        private void IdInput_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            _ = JumpFromInputAsync();
+            e.Handled = true;
+        }
+
+        private void Jump_Click(object sender, RoutedEventArgs e) => _ = JumpFromInputAsync();
+
+        private async Task JumpFromInputAsync()
+        {
+            HideJumpHint();
+            var id = IdInput.Text.Trim();
+            if (string.IsNullOrEmpty(id))
+            {
+                ShowJumpHint("请输入要定位的 ID");
+                return;
+            }
+
+            var result = await JumpToIdAsync(id);
+            if (result.IsSuccess)
+            {
+                // 已切到浏览页并选中目标：清空输入，避免下次进来还残留旧 ID
+                ResetIdJumpForm();
+            }
+        }
+
+        /// <summary>跳转统一入口：全部经 <see cref="IContentLocator"/>（组件），本页不做任何定位算法。</summary>
+        private async Task<LocateResult> JumpToIdAsync(string id)
+        {
+            var locator = AppServices.Locator;
+            if (locator == null)
+            {
+                ShowJumpHint("定位组件不可用，请重启应用");
+                return new LocateResult(LocateStatus.NoHost, null, null, id, "定位组件不可用");
+            }
+
+            var result = await locator.LocateAsync(id);
+            if (!result.IsSuccess && DetailPanel.Visibility != Visibility.Visible)
+            {
+                ShowJumpHint(result.Message ?? result.Status switch
+                {
+                    LocateStatus.NotFound => "未找到匹配的链接或文件夹 ID",
+                    LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
+                    LocateStatus.Failed => "定位失败，请稍后重试",
+                    _ => "定位未完成",
+                });
+            }
+            return result;
+        }
+
+        // ============================================================
+        // —— 书签导入 / 导出（合并为一项；算法全在后端契约里） ——
+        // 本页只做三件事：选文件 / 选目录、展示只读预检、展示结果。
+        // 导入导出走 ILinkPocketApi（ImportBookmarksHtmlAsync / ExportBookmarksHtmlAsync /
+        // InspectBookmarksHtmlAsync），页面不持有任何解析或写库逻辑。
+        // ============================================================
+
+        private bool _bookmarkBusy;
+        private string _lastExportPath = string.Empty;
+        private BookmarkFileInspectionDto? _importInspection;
+
+        private void SegImport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_bookmarkBusy) { SyncBookmarkSegments(); return; }
+            SetBookmarkMode(importing: true);
+        }
+
+        private void SegExport_Click(object sender, RoutedEventArgs e)
+        {
+            if (_bookmarkBusy) { SyncBookmarkSegments(); return; }
+            SetBookmarkMode(importing: false);
+        }
+
+        private void SetBookmarkMode(bool importing)
+        {
+            SegImport.IsChecked = importing;
+            SegExport.IsChecked = !importing;
+            BookmarkImportCard.Visibility = importing ? Visibility.Visible : Visibility.Collapsed;
+            BookmarkExportCard.Visibility = importing ? Visibility.Collapsed : Visibility.Visible;
+            MoveSegIndicator(animated: true);
+        }
+
+        private void SyncBookmarkSegments()
+        {
+            var importing = BookmarkImportCard.Visibility == Visibility.Visible;
+            SegImport.IsChecked = importing;
+            SegExport.IsChecked = !importing;
+            MoveSegIndicator(animated: false);
+        }
+
+        // ===== 分段切换滑动指示器：两段等宽星号列，指示器在段 0，切到段 1 时把 TranslateTransform.X
+        //       缓动滑过一个列宽（CubicEase Out，240ms，与全应用的柔和节奏一致）。
+        //       构造初设时 ActualWidth 还是 0，首帧由 SegGrid_SizeChanged 直接贴齐，不做动画。 =====
+
+        private void SegGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+            => MoveSegIndicator(animated: false);
+
+        private void MoveSegIndicator(bool animated)
+        {
+            var half = SegGrid.ColumnDefinitions[0].ActualWidth;
+            if (half <= 0) return;   // 尚未完成布局，等 SizeChanged 贴齐
+            var target = SegExport.IsChecked == true ? half : 0;
+            if (!animated)
+            {
+                SegIndicatorX.BeginAnimation(TranslateTransform.XProperty, null);
+                SegIndicatorX.X = target;
+                return;
+            }
+            SegIndicatorX.BeginAnimation(TranslateTransform.XProperty,
+                new System.Windows.Media.Animation.DoubleAnimation
+                {
+                    To = target,
+                    Duration = TimeSpan.FromMilliseconds(240),
+                    EasingFunction = new System.Windows.Media.Animation.CubicEase
+                    {
+                        EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+                    }
+                });
+        }
+
+        // 左栏工具列表的滑动指示器已抽为可复用组件 Views/SideNavList（与设置页左栏共用），
+        // 几何贴齐与滑动动画全部由组件内部负责，页面代码不再参与。
+
+        /// <summary>清空两条流程的临时状态：每次进入工具都是干净的表单（与 ID 跳转表单同口径）。</summary>
+        private void ResetBookmarkMessages()
+        {
+            ImportInspectChip.Visibility = Visibility.Collapsed;
+            ExportResultChip.Visibility = Visibility.Collapsed;
+            ImportProgressRow.Visibility = Visibility.Collapsed;
+            ExportProgressRow.Visibility = Visibility.Collapsed;
+            ExportRevealBtn.Visibility = Visibility.Collapsed;
+
+            _lastExportPath = string.Empty;
+
+            _importFilePath = string.Empty;
+            _importInspection = null;
+            ImportFileBox.Text = string.Empty;
+            ImportFileBox.ToolTip = null;
+            ImportRunBtn.IsEnabled = false;
+
+            ExportDirBox.Text = string.Empty;
+            ExportDirBox.ToolTip = null;
+            ExportRunBtn.IsEnabled = false;
+        }
+
+        /// <summary>结果条语义：信息（浅紫）/ 成功（浅紫 + 勾）/ 警告失败（奶油黄，项目规范禁用红色）。</summary>
+        private enum ChipState { Info, Success, Warn }
+
+        /// <summary>
+        /// 结果条：成功与信息走 PrimaryContainer 分区色，异常/警告一律 WarnBg 奶油黄
+        /// （项目规范：删除与警告禁用红色，内容用深色保证可读）。
+        /// 成功态用矢量勾（字形表未注册勾形图标，不引入未经渲染验证的字形）。
+        /// </summary>
+        private static void ShowChip(Border chip, M3Icon icon, Path check, TextBlock text,
+            string message, ChipState state)
+        {
+            var warn = state == ChipState.Warn;
+            chip.Background = (Brush)Application.Current.FindResource(warn ? "WarnBg" : "PrimaryContainer");
+
+            var foreground = warn
+                ? new SolidColorBrush(Color.FromRgb(0x1C, 0x1B, 0x1F))
+                : (Brush)Application.Current.FindResource("OnSurface");
+
+            icon.Visibility = state == ChipState.Success ? Visibility.Collapsed : Visibility.Visible;
+            check.Visibility = state == ChipState.Success ? Visibility.Visible : Visibility.Collapsed;
+            icon.Foreground = foreground;
+            check.Stroke = foreground;
+            text.Foreground = foreground;
+            text.Text = message;
+            chip.Visibility = Visibility.Visible;
+        }
+
+        // —— 导入 ——
+
+        private string _importFilePath = string.Empty;
+
+        private void ImportBrowse_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择书签 HTML 文件",
+                Filter = "书签文件 (*.html;*.htm)|*.html;*.htm|所有文件 (*.*)|*.*",
+                CheckFileExists = true
+            };
+            if (dialog.ShowDialog() != true) return;
+
+            _importFilePath = dialog.FileName;
+            // 域内只显示文件名（完整路径在同域 ToolTip 里），避免长路径把域撑成"半截字符"
+            ImportFileBox.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ImportFileBox.ToolTip = dialog.FileName;
+            _ = InspectImportFileAsync(dialog.FileName);
+        }
+
+        /// <summary>导入前只读预检：格式识别 + 条目统计（不写任何数据）。</summary>
+        private async Task InspectImportFileAsync(string filePath)
+        {
+            ImportInspectChip.Visibility = Visibility.Collapsed;
+            ImportRunBtn.IsEnabled = false;
+            _importInspection = null;
+
+            ImportProgressRow.Visibility = Visibility.Visible;
+            ImportProgressText.Text = "正在预检文件（只读，不会写入数据）...";
+
+            try
+            {
+                var info = await AppServices.Api.InspectBookmarksHtmlAsync(filePath);
+                ImportProgressRow.Visibility = Visibility.Collapsed;
+
+                if (!info.IsValid)
+                {
+                    ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
+                        $"无法识别为书签文件：{info.Error}", ChipState.Warn);
+                    return;
+                }
+
+                _importInspection = info;
+                var parts = new List<string>
+                {
+                    info.Format,
+                    $"{info.LinkCount} 个书签",
+                    $"{info.FolderCount} 个文件夹",
+                    $"最深 {info.MaxDepth} 层"
+                };
+                if (info.SkippedCount > 0)
+                    parts.Add($"跳过 {info.SkippedCount} 条占位书签（about:blank）");
+                if (info.Warnings.Count > 0)
+                    parts.Add(info.Warnings[0]);
+
+                ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
+                    string.Join(" · ", parts),
+                    info.Warnings.Count > 0 ? ChipState.Warn : ChipState.Info);
+                ImportRunBtn.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("书签预检失败", ex);
+                ImportProgressRow.Visibility = Visibility.Collapsed;
+                ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
+                    $"预检失败：{ex.Message}", ChipState.Warn);
+            }
+        }
+
+        private async void ImportRun_Click(object sender, RoutedEventArgs e)
+        {
+            var filePath = _importFilePath;
+            if (_bookmarkBusy || string.IsNullOrWhiteSpace(filePath)) return;
+
+            _bookmarkBusy = true;
+            ImportRunBtn.IsEnabled = false;
+            ImportBrowseBtn.IsEnabled = false;
+            ImportProgressRow.Visibility = Visibility.Visible;
+            ImportProgressText.Text = "正在导入书签（文件夹层级与创建时间一并还原）...";
+
+            try
+            {
+                var count = await AppServices.Api.ImportBookmarksHtmlAsync(filePath);
+                ImportProgressRow.Visibility = Visibility.Collapsed;
+
+                var detail = _importInspection is { } info
+                    ? $"{info.FolderCount} 个文件夹 + {info.LinkCount} 个书签"
+                    : $"共 {count} 条";
+                ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
+                    $"导入完成：{detail} 已追加，界面已自动刷新", ChipState.Success);
+
+                // 成功即清空选择并锁定，避免二次点击造成重复导入
+                _importFilePath = string.Empty;
+                ImportFileBox.Text = string.Empty;
+                ImportFileBox.ToolTip = null;
+                ImportRunBtn.IsEnabled = false;
+                _importInspection = null;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("书签导入失败", ex);
+                ImportProgressRow.Visibility = Visibility.Collapsed;
+                ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
+                    $"导入失败：{ex.Message}", ChipState.Warn);
+                ImportRunBtn.IsEnabled = true;
+            }
+            finally
+            {
+                _bookmarkBusy = false;
+                ImportBrowseBtn.IsEnabled = true;
+            }
+        }
+
+        // —— 导出 ——
+
+        private void ExportBrowse_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择导出目录" };
+            if (dialog.ShowDialog() != true) return;
+
+            ExportDirBox.Text = dialog.FolderName;
+            ExportDirBox.ToolTip = dialog.FolderName;
+            ExportRunBtn.IsEnabled = true;
+            ExportResultChip.Visibility = Visibility.Collapsed;
+            ExportRevealBtn.Visibility = Visibility.Collapsed;
+            _lastExportPath = string.Empty;
+        }
+
+        private async void ExportRun_Click(object sender, RoutedEventArgs e)
+        {
+            var directory = ExportDirBox.Text;
+            if (_bookmarkBusy || string.IsNullOrWhiteSpace(directory)) return;
+
+            if (!System.IO.Directory.Exists(directory))
+            {
+                ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
+                    $"导出目录不存在：{directory}", ChipState.Warn);
+                return;
+            }
+
+            _bookmarkBusy = true;
+            ExportRunBtn.IsEnabled = false;
+            ExportBrowseBtn.IsEnabled = false;
+            ExportResultChip.Visibility = Visibility.Collapsed;
+            ExportRevealBtn.Visibility = Visibility.Collapsed;
+            ExportProgressRow.Visibility = Visibility.Visible;
+            ExportProgressText.Text = "正在导出书签...";
+
+            var outputPath = System.IO.Path.Combine(directory,
+                $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
+
+            try
+            {
+                await AppServices.Api.ExportBookmarksHtmlAsync(outputPath);
+
+                // 自校验：把刚写出的产物再解析一遍，用产物自身的数据报数（而不是"期望值"）
+                ExportProgressText.Text = "正在校验导出产物...";
+                var info = await AppServices.Api.InspectBookmarksHtmlAsync(outputPath);
+                ExportProgressRow.Visibility = Visibility.Collapsed;
+
+                if (!info.IsValid)
+                {
+                    ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
+                        $"导出文件校验未通过：{info.Error}", ChipState.Warn);
+                    ExportRunBtn.IsEnabled = true;
+                    return;
+                }
+
+                _lastExportPath = outputPath;
+                ExportRevealBtn.Visibility = Visibility.Visible;
+                // 第二行只给文件名（完整路径就在上方域里，且可「打开所在文件夹」直达），避免长路径折行
+                ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
+                    $"导出完成并已校验：{info.LinkCount} 个书签 · {info.FolderCount} 个文件夹 · {FormatBytes(info.FileBytes)}" +
+                    $"\n{System.IO.Path.GetFileName(outputPath)}", ChipState.Success);
+                ExportRunBtn.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("书签导出失败", ex);
+                ExportProgressRow.Visibility = Visibility.Collapsed;
+                ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
+                    $"导出失败：{ex.Message}", ChipState.Warn);
+                ExportRunBtn.IsEnabled = true;
+            }
+            finally
+            {
+                _bookmarkBusy = false;
+                ExportBrowseBtn.IsEnabled = true;
+            }
+        }
+
+        private void ExportReveal_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_lastExportPath)) return;
+            try
+            {
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_lastExportPath}\"");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("打开导出目录失败", ex);
+            }
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes < 1024) return $"{bytes} B";
+            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+            return $"{bytes / (1024.0 * 1024.0):F2} MB";
+        }
+
+        // ============================================================
+        // —— 空态（MD3E：大圆角徽章 + 引导文案，与其它页面同规格） ——
+        // ============================================================
+
+        private static FrameworkElement BuildState(string iconKind, string title, string subtitle)
+        {
+            var panel = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 56, 0, 0),
                 IsHitTestVisible = false
             };
-            sp.Children.Add(descBox);
 
-            var hintArea = new Border { Height = 14, Margin = new Thickness(0, 1, 0, 0) };
-            hintArea.Child = new TextBlock
+            var badge = new Border
             {
-                Text = descTruncated ? "(未全部显示)" : "",
-                FontSize = 10,
-                FontStyle = FontStyles.Italic,
-                Foreground = descTruncated ? (Brush)Application.Current.FindResource("OnSurfaceMuted") : Brushes.Transparent,
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-            sp.Children.Add(hintArea);
-
-            sp.Children.Add(new Separator { Opacity = 0.18, Margin = new Thickness(0, 6, 0, 4) });
-
-            var labelStyle = new Action<string, string, int>((labelText, valueText, marginBottom) =>
-            {
-                sp.Children.Add(new TextBlock { Text = labelText, FontSize = 10, Opacity = 0.5, Margin = new Thickness(0, 2, 0, 1) });
-                sp.Children.Add(new TextBox
-                {
-                    Text = valueText,
-                    FontSize = 10,
-                    IsReadOnly = true,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(0),
-                    Focusable = true,
-                    ContextMenu = null,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    IsHitTestVisible = false,
-                    Foreground = Brushes.Black,
-                    Margin = new Thickness(0, 0, 0, marginBottom)
-                });
-            });
-
-            labelStyle("最后更新", link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), 3);
-            labelStyle("最后查看", link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未", 3);
-            labelStyle("累计查看次数", link.VisitCount == 0 ? "0 次" : $"{link.VisitCount} 次", 3);
-            labelStyle("创建时间", link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"), 3);
-
-            sp.Children.Add(new TextBlock { Text = "ID", FontSize = 10, Opacity = 0.5, Margin = new Thickness(0, 2, 0, 1) });
-
-            var idRow = new Grid { Margin = new Thickness(0, 0, 0, 0) };
-            idRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            idRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            idRow.Children.Add(new TextBox
-            {
-                Text = link.LinkId,
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 10,
-                Opacity = 0.7,
-                IsReadOnly = true,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                Focusable = true,
-                ContextMenu = null,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                IsHitTestVisible = false,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-
-            var copyIdBtn = new Button
-            {
-                Content = new M3Icon { Kind = "content-copy", Width = 11, Height = 11, Foreground = (Brush)Application.Current.FindResource("OnSurfaceMuted") },
-                Padding = new Thickness(3, 1, 3, 1),
-                Margin = new Thickness(4, 0, 0, 0),
-                Cursor = Cursors.Hand,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                ToolTip = "复制ID",
-                VerticalAlignment = VerticalAlignment.Center,
-                IsHitTestVisible = true
-            };
-            var capturedId = link.LinkId;
-            copyIdBtn.Click += (s, e) => Clipboard.SetText(capturedId);
-            Grid.SetColumn(copyIdBtn, 1);
-            idRow.Children.Add(copyIdBtn);
-
-            sp.Children.Add(idRow);
-
-            card.Child = sp;
-            return card;
-        }
-
-        private static (string text, bool truncated, double lineHeight) TruncateToLines(string text, double availableWidth, int maxLines, double fontSize)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                var typeface0 = new Typeface(new FontFamily(), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-                var dpi0 = VisualTreeHelper.GetDpi(Application.Current.MainWindow);
-                var single0 = new FormattedText("A", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface0, fontSize, Brushes.Black, dpi0.DpiScaleY);
-                single0.MaxTextWidth = availableWidth;
-                return ("", false, single0.Height);
-            }
-
-            var typeface = new Typeface(new FontFamily(), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-            var dpi = VisualTreeHelper.GetDpi(Application.Current.MainWindow);
-            var pixelsPerDip = dpi.DpiScaleY;
-
-            var singleLine = new FormattedText("A", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black, pixelsPerDip);
-            singleLine.MaxTextWidth = availableWidth;
-            double lh = singleLine.Height;
-            double maxAllowedHeight = lh * maxLines;
-
-            var fullFormatted = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black, pixelsPerDip);
-            fullFormatted.MaxTextWidth = availableWidth;
-
-            if (fullFormatted.Height <= maxAllowedHeight)
-                return (text, false, lh);
-
-            int low = 0, high = text.Length;
-            while (low < high)
-            {
-                int mid = (low + high + 1) / 2;
-                var partial = new FormattedText(text[..mid], CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black, pixelsPerDip);
-                partial.MaxTextWidth = availableWidth;
-                if (partial.Height <= maxAllowedHeight)
-                    low = mid;
-                else
-                    high = mid - 1;
-            }
-
-            return (text[..low], true, lh);
-        }
-
-        private void ClearDedupResults()
-        {
-            _hasRunDedup = false;
-            ExitDetailView();
-            if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
-            if (_dedupActionText != null) _dedupActionText.Text = "开始查重";
-            if (_dedupClearBtn != null) { _dedupClearBtn.IsEnabled = false; _dedupClearBtn.Opacity = 0.35; _dedupClearBtn.Foreground = Brushes.Gray; }
-            while (ToolContentPanel.Children.Count > 2)
-                ToolContentPanel.Children.RemoveAt(ToolContentPanel.Children.Count - 1);
-        }
-
-        private void ShowDedupError(string message)
-        {
-            while (ToolContentPanel.Children.Count > 2)
-                ToolContentPanel.Children.RemoveAt(ToolContentPanel.Children.Count - 1);
-
-            var errorTb = new TextBlock
-            {
-                Text = message,
-                FontSize = 13,
-                Foreground = Brushes.Red,
-                Margin = new Thickness(0, 16, 0, 0),
+                Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
+                Background = (Brush)Application.Current.FindResource("TintPanel"),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-            ToolContentPanel.Children.Add(errorTb);
-
-            var retryBtn = new Button
+            badge.Child = new M3Icon
             {
-                Content = "重试",
-                Padding = new Thickness(16, 6, 16, 6),
-                Margin = new Thickness(0, 10, 0, 0),
+                Kind = iconKind, Width = 40, Height = 40,
+                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Cursor = Cursors.Hand
+                VerticalAlignment = VerticalAlignment.Center
             };
-            retryBtn.Click += async (s, e) => await RunDedup();
-            ToolContentPanel.Children.Add(retryBtn);
+            panel.Children.Add(badge);
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
+            });
+            if (!string.IsNullOrEmpty(subtitle))
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = subtitle, FontSize = 12,
+                    Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
+                    Opacity = 0.7, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
+                    MaxWidth = 420,
+                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
+                });
+            }
+            return panel;
         }
     }
 }

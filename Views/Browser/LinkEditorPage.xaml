@@ -147,45 +147,6 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 浮动控制层：返回圆钮 + 右上 取消/保存 胶囊组 -->
-        <Grid Grid.Row="0">
-            <Button Command="{Binding CancelCommand}" ToolTip="返回（放弃更改）"
-                    Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
-                    Foreground="{DynamicResource OnSurface}">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
-            </Button>
-            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,16,0,0"
-                    Background="{DynamicResource TintCard}" CornerRadius="21" Padding="6,3">
-                <StackPanel Orientation="Horizontal">
-                    <Button Command="{Binding CancelCommand}" Style="{StaticResource OutlinedButton}" Padding="12,4" MinHeight="28"
-                            Margin="0,0,4,0">
-                        <TextBlock Text="取消" FontSize="12"/>
-                    </Button>
-                    <Button Command="{Binding SaveCommand}" Style="{StaticResource FilledButton}" Padding="12,4" MinHeight="28"
-                            HorizontalContentAlignment="Center">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <!-- 边距挂在转圈右侧：隐藏时不占位，文字保持居中 -->
-                            <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13" Margin="0,0,5,0"
-                                                 Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
-                            <TextBlock Text="保存" FontSize="12" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Border>
-        </Grid>
-
         <!-- ===== 正文：居中内容列 ===== -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <!-- 定宽居中列：外边距经滚动条补偿，保证与详情页左边界严格一致（切换整页不横移） -->
@@ -335,5 +296,59 @@
                 </StackPanel>
             </Grid>
         </ScrollViewer>
+
+        <!-- 浮动控制层：返回圆钮 + 右上 取消/保存 胶囊组。
+             ⚠️ 必须声明在整页 ScrollViewer 之后（= z 序在上层）：
+             Material3.Wpf 0.9.0 的 ScrollViewer 模板铺了一块与底色同色的不透明 Rectangle，
+             悬浮层若在它下面，顶部按钮的鼠标命中会被整页 ScrollViewer 吃掉（同 LinkDetailPage）。 -->
+        <Grid Grid.Row="0">
+            <!-- 与主界面导航胶囊同语言：圆形返回钮 + 大药丸容器（内含 取消/保存 两个紫色小药丸），并列同高 40。
+                 容器底色 = TintCard（与左侧返回圆钮同款白底，同浏览页命令栏胶囊组口径） -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0">
+                <Button Command="{Binding CancelCommand}" ToolTip="返回（放弃更改）"
+                        Width="40" Height="40" Foreground="{DynamicResource OnSurface}">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
+                                <Grid>
+                                    <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                            Opacity="0" CornerRadius="20"/>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.16"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
+                </Button>
+                <Border Background="{DynamicResource TintCard}" CornerRadius="20" Padding="4"
+                        Margin="10,0,0,0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- 成对规范：同为药丸（TonalButton / PrimaryPillButton 16），同高 32，仅颜色不同 -->
+                        <Button Command="{Binding CancelCommand}" Style="{StaticResource TonalButton}"
+                                Height="32" VerticalAlignment="Center" Padding="14,0">
+                            <TextBlock Text="取消" FontSize="12"/>
+                        </Button>
+                        <Button Command="{Binding SaveCommand}" Style="{StaticResource PrimaryPillButton}"
+                                Height="32" VerticalAlignment="Center" Padding="14,0" Margin="4,0,0,0"
+                                HorizontalContentAlignment="Center">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <!-- 边距挂在转圈右侧：隐藏时不占位，文字保持居中 -->
+                                <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13" Margin="0,0,5,0"
+                                                     Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="保存" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

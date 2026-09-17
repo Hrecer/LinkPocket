@@ -32,6 +32,12 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>是否为虚拟根节点「全部书签」：无 ID、不可重命名/删除，只作为树的根与移动目标。</summary>
     public bool IsRoot { get; set; }
 
+    /// <summary>回收站树模式：被删文件夹单元（灰化图标 + 无右键菜单）。浏览页恒为 false。</summary>
+    public bool IsTrashed { get; set; }
+
+    /// <summary>是否显示节点右键菜单（回收站树节点 = false）。ContextMenu 半离线，走 DataContext 绑定。</summary>
+    public bool ShowNodeMenu => Host != null;
+
     public string? ParentId { get; set; }
 
     public string Name

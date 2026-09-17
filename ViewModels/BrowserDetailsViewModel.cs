@@ -1,22 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media.Imaging;
 using LinkPocket.Api;
 
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 浏览页右侧详情栏（P4.5）：参考链接页 DetailPanel 的信息结构重新设计。
-/// 单选书签 / 单选文件夹 / 多选 / 空四种状态，全部经属性通知驱动 XAML 渲染，
-/// 不在视图层代码中拼控件。书签的描述、访问统计等扩展字段按需异步补拉。
+/// 浏览页右侧详情栏数据模型：继承通用 <see cref="DetailSidebarModel"/>，
+/// 只负责「选中行快照 → 数据」的映射与异步补拉；渲染全部交给 Views/DetailSidebar 控件。
+/// 单选书签 / 单选文件夹 / 多选 / 空四种状态；信息卡行按选中对象类型构建（数据驱动）。
 /// </summary>
-public class BrowserDetailsViewModel : INotifyPropertyChanged
+public class BrowserDetailsViewModel : DetailSidebarModel
 {
     private static ILinkPocketApi Api => Services.AppServices.Api;
 
@@ -25,60 +21,16 @@ public class BrowserDetailsViewModel : INotifyPropertyChanged
     /// <summary>选中代次：异步补拉返回时校验，避免旧结果覆盖新选中。</summary>
     private int _generation;
 
-    // —— 状态 ——
-    public bool HasSelection { get; private set; }
-    public bool IsPlaceholder => !HasSelection;
-    public bool IsMulti { get; private set; }
-    public bool IsSingle => HasSelection && !IsMulti;
-    public bool IsFolder { get; private set; }
-    public bool IsLink => IsSingle && !IsFolder;
-
-    // —— 单选公共 ——
-    public string DisplayName { get; private set; } = "";
-    public string IdText { get; private set; } = "";
-    public string PathText { get; private set; } = "";
+    // —— 浏览页特有（通用模型之外的字段） ——
     public string ModifiedText { get; private set; } = "—";
-    public BitmapImage? Favicon { get; private set; }
-    public bool HasFavicon => Favicon != null;
-
-    // —— 单选书签 ——
-    public string UrlText { get; private set; } = "";
-    public string DescriptionText { get; private set; } = "";
-    public bool HasDescription => IsLink && !string.IsNullOrWhiteSpace(DescriptionText);
-    public string UpdatedText { get; private set; } = "—";
-    public string LastVisitedText { get; private set; } = "—";
-    public string VisitText { get; private set; } = "0 次";
-    public string CreatedText { get; private set; } = "—";
-
-    // —— 单选文件夹 ——
     public string ViewCountText { get; private set; } = "0 次";
 
     public int FolderBookmarkCount { get; private set; }
     public string BookmarkCountText => $"{FolderBookmarkCount} 个链接";
 
-    // —— 多选 ——
-    public int SelectedTotal { get; private set; }
-    public int SelectedFolders { get; private set; }
-    public int SelectedLinks { get; private set; }
-
-    /// <summary>
-    /// 单选操作卡里铅笔按钮的文案：链接是「编辑」（打开整页编辑器，可改 URL/名称/描述/图标），
-    /// 文件夹是「重命名」（文件夹本身只有名称）。
-    /// </summary>
-    public string EditLabel => IsFolder ? "重命名" : "编辑";
-
-    // —— 命令：复用 Host 的既有能力，避免第二套业务逻辑 ——
-    /// <summary>打开：链接 → 打开链接详情页；文件夹 → 进入该目录。</summary>
-    public ICommand OpenCommand => _openCommand ??= new RelayCommand(
-        () =>
-        {
-            var row = _host?.SelectedRows.FirstOrDefault();
-            if (row == null || _host == null) return;
-            if (row.IsFolder) _host.OpenSelectionCommand.Execute(null);
-            else _ = _host.OpenDetailPageAsync(row);
-        },
-        () => _host?.OpenSelectionCommand.CanExecute(null) == true);
-    private RelayCommand? _openCommand;
+    public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
+        () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } });
+    private RelayCommand? _copyIdCommand;
 
     /// <summary>查看链接详情页（仅单选链接可用；复用 Host 的详情页能力）。</summary>
     public ICommand ShowDetailCommand => _showDetailCommand ??= new RelayCommand(
@@ -86,24 +38,53 @@ public class BrowserDetailsViewModel : INotifyPropertyChanged
         () => _host != null && IsSingle && !IsFolder);
     private RelayCommand? _showDetailCommand;
 
-    public ICommand CopyUrlCommand => _copyUrlCommand ??= new RelayCommand(CopyUrl, () => IsLink && !string.IsNullOrEmpty(UrlText));
-    private RelayCommand? _copyUrlCommand;
+    public BrowserDetailsViewModel()
+    {
+        // 页面动作命令：复用 Host 的既有能力，避免第二套业务逻辑
+        OpenCommand = new RelayCommand(
+            () =>
+            {
+                var row = _host?.SelectedRows.FirstOrDefault();
+                if (row == null || _host == null) return;
+                if (row.IsFolder) _host.OpenSelectionCommand.Execute(null);
+                else _ = _host.OpenDetailPageAsync(row);
+            },
+            () => _host?.OpenSelectionCommand.CanExecute(null) == true);
+        OpenWebsiteCommand = new RelayCommand(
+            () => _ = OpenWebsiteInBrowserAsync(),
+            () => IsLink && !string.IsNullOrEmpty(UrlText));
+        RenameCommand = new RelayCommand(
+            () => _host?.RenameSelectionCommand.Execute(null),
+            () => _host?.RenameSelectionCommand.CanExecute(null) == true);
+        DeleteCommand = new RelayCommand(
+            () => _host?.DeleteSelectionCommand.Execute(null),
+            () => _host?.DeleteSelectionCommand.CanExecute(null) == true);
+        CopyUrlCommand = new RelayCommand(
+            () => { try { if (!string.IsNullOrEmpty(UrlText)) System.Windows.Clipboard.SetText(UrlText); } catch { } },
+            () => IsLink && !string.IsNullOrEmpty(UrlText));
+    }
 
-    public ICommand RenameCommand => _renameCommand ??= new RelayCommand(
-        () => _host?.RenameSelectionCommand.Execute(null),
-        () => _host?.RenameSelectionCommand.CanExecute(null) == true);
-    private RelayCommand? _renameCommand;
+    /// <summary>
+    /// 打开网站 = 系统默认浏览器打开 URL 并记录一次访问（与链接详情页「打开网站」同口径）。
+    /// 记账后回读列表，让「最后查看 / 累计查看」的派生统计及时反映这一次。
+    /// </summary>
+    private async Task OpenWebsiteInBrowserAsync()
+    {
+        if (string.IsNullOrEmpty(UrlText)) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UrlText) { UseShellExecute = true }); }
+        catch { /* 无法打开时保持静默 */ }
+        try
+        {
+            await Api.RecordVisitAsync(IdText);
+            _ = _host?.RefreshPreservingSelectionAsync();
+        }
+        catch { /* 记账失败不打断 */ }
+    }
 
-    public ICommand DeleteCommand => _deleteCommand ??= new RelayCommand(
-        () => _host?.DeleteSelectionCommand.Execute(null),
-        () => _host?.DeleteSelectionCommand.CanExecute(null) == true);
-    private RelayCommand? _deleteCommand;
-
-    public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
-        () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } });
-    private RelayCommand? _copyIdCommand;
-
-    /// <summary>由 BrowserViewModel 在选中态变化时调用。rows 需为快照列表。</summary>
+    /// <summary>
+    /// 由 BrowserViewModel 在选中态变化时调用。rows 需为快照列表。
+    /// 信息卡行按选中对象类型构建：文件夹含「链接数」，链接经异步补拉填充统计/路径。
+    /// </summary>
     internal void UpdateFrom(IReadOnlyList<BrowserRowViewModel> rows, BrowserViewModel host)
     {
         _host = host;
@@ -127,25 +108,41 @@ public class BrowserDetailsViewModel : INotifyPropertyChanged
             Favicon = row.Favicon;
             UrlText = row.Url ?? "";
             DescriptionText = "";
-            UpdatedText = row.ModifiedText;
-            LastVisitedText = "—";
-            VisitText = "—";
-            CreatedText = "—";
 
             if (row.IsFolder)
             {
                 FolderBookmarkCount = row.LinkCount;
                 ViewCountText = $"{row.ViewCount} 次";
-                PathText = host.GetFolderPathDisplay(row.Id, includeSelf: false);
-                CreatedText = row.CreatedAt.Year <= 1
+                var path = host.GetFolderPathDisplay(row.Id, includeSelf: false);
+                var updated = row.ModifiedText;
+                var lastVisited = row.LastViewedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+                var created = row.CreatedAt.Year <= 1
                     ? "—"
                     : row.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-                LastVisitedText = row.LastViewedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+
+                SetRows(new List<DetailSidebarRow>
+                {
+                    new() { IconKind = "folder-outline", Label = "位置", Value = path },
+                    new() { IconKind = "link-variant", Label = "链接数", Value = BookmarkCountText, IsAccent = true },
+                    new() { IconKind = "refresh", Label = "最后更新", Value = updated },
+                    new() { IconKind = "history", Label = "最后查看", Value = lastVisited },
+                    new() { IconKind = "trending-up", Label = "查看次数", Value = ViewCountText },
+                    new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = created },
+                    new() { IconKind = "fingerprint", Label = "ID", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                });
             }
             else
             {
-                PathText = "读取中…";
                 // 同步先用行内已有数据渲染，再异步补拉描述/统计/路径
+                SetRows(new List<DetailSidebarRow>
+                {
+                    new() { IconKind = "folder-outline", Label = "位置", Value = "读取中…" },
+                    new() { IconKind = "refresh", Label = "最后更新", Value = row.ModifiedText },
+                    new() { IconKind = "history", Label = "最后查看", Value = "—" },
+                    new() { IconKind = "trending-up", Label = "查看次数", Value = "—" },
+                    new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = "—" },
+                    new() { IconKind = "fingerprint", Label = "ID", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                });
                 _ = LoadLinkDetailsAsync(row.Id, gen);
             }
         }
@@ -154,7 +151,6 @@ public class BrowserDetailsViewModel : INotifyPropertyChanged
             DisplayName = "";
             IdText = "";
             UrlText = "";
-            PathText = "";
             Favicon = null;
             DescriptionText = "";
         }
@@ -170,60 +166,25 @@ public class BrowserDetailsViewModel : INotifyPropertyChanged
             if (gen != _generation || link == null || _host == null) return; // 已切换选中或源已删除
 
             DescriptionText = link.Description ?? "";
-            UpdatedText = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            LastVisitedText = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
-            VisitText = $"{link.VisitCount} 次";
-            CreatedText = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            PathText = _host.GetFolderPathDisplay(link.ListId);
+
+            // 异步补拉结果原位写回数据行（INPC 通知，无需重建整卡）
+            var pathRow = FindRow("位置");
+            if (pathRow != null) pathRow.Value = _host.GetFolderPathDisplay(link.ListId);
+            var updatedRow = FindRow("最后更新");
+            if (updatedRow != null)
+                updatedRow.Value = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            var visitedRow = FindRow("最后查看");
+            if (visitedRow != null)
+                visitedRow.Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+            var visitRow = FindRow("查看次数");
+            if (visitRow != null) visitRow.Value = $"{link.VisitCount} 次";
+            var createdRow = FindRow("创建时间");
+            if (createdRow != null)
+                createdRow.Value = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
             OnPropertyChanged(nameof(DescriptionText));
             OnPropertyChanged(nameof(HasDescription));
-            OnPropertyChanged(nameof(UpdatedText));
-            OnPropertyChanged(nameof(LastVisitedText));
-            OnPropertyChanged(nameof(VisitText));
-            OnPropertyChanged(nameof(CreatedText));
-            OnPropertyChanged(nameof(PathText));
         }
         catch { /* 补拉失败时保留行内基础信息 */ }
     }
-
-    private void CopyUrl()
-    {
-        try { if (!string.IsNullOrEmpty(UrlText)) System.Windows.Clipboard.SetText(UrlText); } catch { }
-    }
-
-    private void RaiseAll()
-    {
-        OnPropertyChanged(nameof(HasSelection));
-        OnPropertyChanged(nameof(ViewCountText));
-        OnPropertyChanged(nameof(IsPlaceholder));
-        OnPropertyChanged(nameof(IsMulti));
-        OnPropertyChanged(nameof(IsSingle));
-        OnPropertyChanged(nameof(IsFolder));
-        OnPropertyChanged(nameof(IsLink));
-        OnPropertyChanged(nameof(DisplayName));
-        OnPropertyChanged(nameof(IdText));
-        OnPropertyChanged(nameof(PathText));
-        OnPropertyChanged(nameof(ModifiedText));
-        OnPropertyChanged(nameof(Favicon));
-        OnPropertyChanged(nameof(HasFavicon));
-        OnPropertyChanged(nameof(UrlText));
-        OnPropertyChanged(nameof(DescriptionText));
-        OnPropertyChanged(nameof(HasDescription));
-        OnPropertyChanged(nameof(UpdatedText));
-        OnPropertyChanged(nameof(LastVisitedText));
-        OnPropertyChanged(nameof(VisitText));
-        OnPropertyChanged(nameof(CreatedText));
-        OnPropertyChanged(nameof(FolderBookmarkCount));
-        OnPropertyChanged(nameof(BookmarkCountText));
-        OnPropertyChanged(nameof(EditLabel));
-        OnPropertyChanged(nameof(SelectedTotal));
-        OnPropertyChanged(nameof(SelectedFolders));
-        OnPropertyChanged(nameof(SelectedLinks));
-        CommandManager.InvalidateRequerySuggested();
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

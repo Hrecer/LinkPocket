@@ -30,6 +30,14 @@ namespace LinkPocket.ViewModels
             set { _title = value; OnPropertyChanged(); }
         }
 
+        private string _subtitle = "";
+        /// <summary>列表语义的灰色提示（结果页标题右侧展示，与入口卡片副标题同一数据源）。</summary>
+        public string Subtitle
+        {
+            get => _subtitle;
+            set { _subtitle = value; OnPropertyChanged(); }
+        }
+
         public bool IsLoading
         {
             get => _isLoading;

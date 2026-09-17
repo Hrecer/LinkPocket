@@ -62,7 +62,7 @@
             <Button Content="取消" Command="{Binding CancelCommand}"
                     Style="{StaticResource OutlinedButton}" MinWidth="80" Margin="0,0,12,0"/>
             <Button Command="{Binding SaveCommand}" IsDefault="true"
-                    Style="{StaticResource FilledButton}" MinWidth="80">
+                    Style="{StaticResource PrimaryPillButton}" MinWidth="80">
                 <StackPanel Orientation="Horizontal">
                     <m3:CircularProgress IsIndeterminate="True" Width="16" Height="16" Margin="0,0,8,0"
                                  Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>

@@ -6,302 +6,184 @@
     <Grid Background="{DynamicResource SurfaceContainerLow}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
-            <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 左侧栏 -->
-        <Border Grid.Column="0" BorderBrush="{DynamicResource OutlineVariant}"
-                BorderThickness="0,0,1,0" Background="{DynamicResource SurfaceContainerLow}">
+        <!-- 左侧栏：与工具页左栏同一套 SideNavList 可复用组件（滑动指示器 + 无悬停底色） -->
+        <Border Grid.Column="0" Background="{DynamicResource SurfaceContainerLow}">
             <StackPanel>
-                <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
-                           Margin="16,16,16,12" Foreground="{DynamicResource OnSurface}"/>
-                <ListBox x:Name="SettingListBox" BorderThickness="0" Background="Transparent"
-                         SelectionChanged="SettingListBox_SelectionChanged">
-                    <ListBox.ItemContainerStyle>
-                        <Style TargetType="ListBoxItem" >
-                            <Setter Property="Padding" Value="16,10"/>
-                            <Setter Property="FontSize" Value="13"/>
-                        </Style>
-                    </ListBox.ItemContainerStyle>
+                <TextBlock Text="设置" FontSize="17" FontWeight="SemiBold" Margin="20,18,20,10"
+                           Foreground="{DynamicResource OnSurface}"/>
+                <views:SideNavList x:Name="SettingListBox" Style="{StaticResource SideNavListStyle}"
+                                   ItemContainerStyle="{StaticResource SideNavItemStyle}"
+                                   SelectionChanged="SettingListBox_SelectionChanged">
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="export" Width="18" Height="18"
-                                                     VerticalAlignment="Center" Opacity="0.7"/>
-                            <TextBlock Text="  导出书签" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            <m3:M3Icon Kind="delete-sweep" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="存储管理" Margin="9,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="import" Width="18" Height="18"
-                                                     VerticalAlignment="Center" Opacity="0.7"/>
-                            <TextBlock Text="  导入书签" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            <m3:M3Icon Kind="backup-restore" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="备份与恢复" Margin="9,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
-                    <ListBoxItem>
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="delete-sweep" Width="18" Height="18"
-                                                     VerticalAlignment="Center" Opacity="0.7"/>
-                            <TextBlock Text="  数据维护" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </ListBoxItem>
-                    <ListBoxItem>
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="backup-restore" Width="18" Height="18"
-                                                     VerticalAlignment="Center" Opacity="0.7"/>
-                            <TextBlock Text="  备份与恢复" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </ListBoxItem>
-                </ListBox>
+                </views:SideNavList>
             </StackPanel>
         </Border>
 
-        <GridSplitter Grid.Column="1" Width="1"
-                      Background="{DynamicResource OutlineVariant}"
-                      HorizontalAlignment="Stretch"/>
-
         <!-- 右侧内容区 -->
-        <Grid Grid.Column="2" x:Name="ContentPanel">
-            <!-- 默认占位 -->
-            <StackPanel x:Name="PlaceholderPanel" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <m3:M3Icon Kind="cog" Width="48" Height="48"
-                                         HorizontalAlignment="Center" Opacity="0.15"/>
-                <TextBlock Text="选择一个设置项" FontSize="14" Opacity="0.3"
-                           HorizontalAlignment="Center" Margin="0,12,0,0"/>
-            </StackPanel>
+        <Grid Grid.Column="1" x:Name="ContentPanel">
+            <!-- 存储管理界面：与工具页同语言的圆角卡片（危险区 = WarnBg 奶油黄，项目铁律禁红色） -->
+            <ScrollViewer x:Name="MaintenancePanel" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="32,24,32,24">
+                    <TextBlock Text="存储管理" FontSize="20" FontWeight="SemiBold" Margin="4,0,0,4"
+                               Foreground="{DynamicResource OnSurface}"/>
+                    <TextBlock Text="清理日志与本地数据；清空操作不可恢复，请先备份"
+                               FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}"
+                               Margin="4,0,0,20" TextWrapping="Wrap"/>
 
-            <!-- 导出界面 -->
-            <StackPanel x:Name="ExportPanel" Visibility="Collapsed" Margin="32,24,32,24">
-                <TextBlock Text="导出书签" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBlock Text="将所有书签导出为 Netscape 书签格式（.html），可供 Chrome、Firefox、Edge 等浏览器导入"
-                           FontSize="13" Opacity="0.55" Margin="0,0,0,28" TextWrapping="Wrap"/>
+                    <!-- 日志清理卡 -->
+                    <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="24" Padding="22,20">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="日志清理" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                                <TextBlock x:Name="LogStatusText" Text="删除应用运行产生的日志文件（logs 目录）"
+                                           FontSize="12" Margin="0,3,0,0" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" x:Name="ClearLogsButton"
+                                    Content="一键清除" VerticalAlignment="Center"
+                                    Style="{StaticResource TonalButton}" Height="36" Padding="20,0"
+                                    Cursor="Hand" Click="ClearLogsButton_Click"/>
+                        </Grid>
+                    </Border>
 
-                <TextBlock Text="导出目录" FontSize="13" Opacity="0.6" Margin="0,0,0,6"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="ExportDirTextBox" Grid.Column="0"
-                             Text="{Binding SettingsViewModel.ExportDirectory, Mode=TwoWay,
-                                    RelativeSource={RelativeSource AncestorType=Window}}"
-                             IsReadOnly="True"
-                             Padding="10,8" FontSize="13"
-                             Foreground="{DynamicResource OnSurface}"
-                             Background="{DynamicResource SurfaceContainerHighest}"
-                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
-                             Tag="选择导出目录..."/>
-                    <Button Grid.Column="1" x:Name="BrowseDirButton"
-                            Content="浏览" Margin="8,0,0,0" Padding="14,8"
-                            Cursor="Hand" Click="BrowseDirButton_Click"
-                            BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
-                            FontSize="13"/>
-                </Grid>
-
-                <Button x:Name="ExportButton" Margin="0,24,0,0"
-                        Padding="20,10" HorizontalAlignment="Left" Cursor="Hand"
-                        Click="ExportButton_Click" IsEnabled="False"
-                        FontSize="14" FontWeight="SemiBold">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
-                            <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Foreground" Value="White"/>
-                            <Style.Triggers>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
-                                    <Setter Property="Cursor" Value="Arrow"/>
-                                </Trigger>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="export" Width="18" Height="18"
-                                                 VerticalAlignment="Center"/>
-                        <TextBlock Text="  开始导出" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-
-            <!-- 导入界面 -->
-            <StackPanel x:Name="ImportPanel" Visibility="Collapsed" Margin="32,24,32,24">
-                <TextBlock Text="导入书签" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBlock Text="从 Netscape 书签格式（.html）文件导入书签，支持 Chrome、Firefox、Edge 等浏览器导出的文件"
-                           FontSize="13" Opacity="0.55" Margin="0,0,0,28" TextWrapping="Wrap"/>
-
-                <TextBlock Text="选择导入文件" FontSize="13" Opacity="0.6" Margin="0,0,0,6"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="ImportFileTextBox" Grid.Column="0"
-                             IsReadOnly="True" Padding="10,8" FontSize="13"
-                             Foreground="{DynamicResource OnSurface}" Background="{DynamicResource SurfaceContainerHighest}"
-                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
-                             Tag="选择 bookmarks.html 文件..."/>
-                    <Button Grid.Column="1" x:Name="BrowseImportButton"
-                            Content="浏览" Margin="8,0,0,0" Padding="14,8"
-                            Cursor="Hand" Click="BrowseImportButton_Click"
-                            BorderThickness="1.5" BorderBrush="{DynamicResource OutlineVariant}" Background="{DynamicResource SurfaceContainerHighest}"
-                            FontSize="13"/>
-                </Grid>
-
-                <Button x:Name="ImportButton" Margin="0,24,0,0"
-                        Padding="20,10" HorizontalAlignment="Left" Cursor="Hand"
-                        Click="ImportButton_Click" IsEnabled="False"
-                        FontSize="14" FontWeight="SemiBold">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="{DynamicResource Primary}"/>
-                            <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Foreground" Value="White"/>
-                            <Style.Triggers>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
-                                    <Setter Property="Cursor" Value="Arrow"/>
-                                </Trigger>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="{DynamicResource Primary}"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="import" Width="18" Height="18"
-                                                 VerticalAlignment="Center"/>
-                        <TextBlock Text="  开始导入" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-
-            <!-- 数据维护界面 -->
-            <StackPanel x:Name="MaintenancePanel" Visibility="Collapsed" Margin="32,24,32,24">
-                <TextBlock Text="数据维护" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                <TextBlock Text="管理日志文件和应用数据"
-                           FontSize="13" Opacity="0.55" Margin="0,0,0,28" TextWrapping="Wrap"/>
-
-                <Border BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                        Margin="0,0,0,16" Padding="0,0,0,16">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="清除日志" FontSize="14" Foreground="{DynamicResource OnSurface}"/>
-                            <TextBlock x:Name="LogStatusText" Text="日志目录: 查看下方路径"
-                                       FontSize="12" Foreground="#999999" Margin="0,2,0,0"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" x:Name="ClearLogsButton"
-                                Content="一键清除" Padding="16,8" VerticalAlignment="Center"
-                                Cursor="Hand" Click="ClearLogsButton_Click"
-                                Background="{DynamicResource SurfaceContainerHighest}" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
-                                FontSize="13" Foreground="{DynamicResource OnSurface}"/>
-                    </Grid>
-                </Border>
-
-                <Border BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="0,0,0,1"
-                        Margin="0,0,0,16" Padding="0,0,0,16">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="清空所有数据" FontSize="14" Foreground="{DynamicResource Error}"/>
-                            <TextBlock Text="清除数据库 + 图标缓存，此操作不可恢复"
-                                       FontSize="12" Foreground="{DynamicResource Error}" Opacity="0.7" Margin="0,2,0,0"/>
-                        </StackPanel>
-                        <Button Grid.Column="1" x:Name="ClearAllDataButton"
-                                Content="清空数据" Padding="16,8" VerticalAlignment="Center"
-                                Cursor="Hand" Click="ClearAllDataButton_Click"
-                                Background="{DynamicResource ErrorContainer}" BorderBrush="{DynamicResource Error}" BorderThickness="1.5"
-                                FontSize="13" Foreground="{DynamicResource Error}"/>
-                    </Grid>
-                </Border>
-            </StackPanel>
+                    <!-- 清空数据卡（危险区：奶油黄警示） -->
+                    <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="24"
+                            Padding="22,20" Margin="0,16,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="24" Height="24" CornerRadius="12"
+                                            Background="{StaticResource WarnBg}">
+                                        <m3:M3Icon Kind="delete-outline" Width="13" Height="13"
+                                                   Foreground="{DynamicResource OnSurface}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Text="清空所有数据" FontSize="15" FontWeight="SemiBold"
+                                               Margin="10,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource OnSurface}"/>
+                                </StackPanel>
+                                <TextBlock Text="清除数据库（含回收站）与图标缓存，此操作不可恢复"
+                                           FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" x:Name="ClearAllDataButton"
+                                    Content="清空数据" VerticalAlignment="Center"
+                                    Style="{StaticResource WarnPillButton}" Height="36" Padding="20,0"
+                                    Cursor="Hand" Click="ClearAllDataButton_Click"/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
 
             <!-- 备份与恢复界面 -->
             <views:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->
-        <Border Grid.ColumnSpan="3" x:Name="ExportOverlay" Visibility="Collapsed"
+        <Border Grid.ColumnSpan="2" x:Name="ExportOverlay" Visibility="Collapsed"
                 Background="#AA000000" Panel.ZIndex="100">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
+                    Background="{DynamicResource TintBg}" CornerRadius="24"
                     Padding="32,24" Width="380">
                 <StackPanel>
                     <TextBlock x:Name="ExportStatusText" Text="正在导出..."
                                FontSize="14" HorizontalAlignment="Center"
                                Foreground="{DynamicResource OnSurface}" TextWrapping="Wrap"
                                TextAlignment="Center" Margin="0,0,0,12"/>
-                    <ProgressBar x:Name="ExportProgressBar" Height="6"
-                                 Minimum="0" Maximum="100" Value="0"
-                                 Foreground="{DynamicResource Primary}" Background="#E0E0E0"/>
+                    <!-- MD3E 波浪进度条（已走 = 起伏波浪线，剩余 = 直线轨道，进度点 = 竖向滑标）；深紫 = AccentBtn 定稿色 -->
+                    <views:WavyProgressBar x:Name="ExportProgressBar" Height="22"
+                                           Minimum="0" Maximum="100" Value="0"
+                                           ActiveBrush="{DynamicResource AccentBtn}"
+                                           TrackBrush="{DynamicResource OutlineVariant}"/>
                     <TextBlock x:Name="ExportProgressText" Text="0 / 0"
                                FontSize="12" HorizontalAlignment="Center"
-                               Foreground="#999999" Margin="0,6,0,0"/>
+                               Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,6,0,0"/>
                 </StackPanel>
             </Border>
         </Border>
 
-        <!-- 清空确认遮罩层 -->
-        <Border Grid.ColumnSpan="3" x:Name="ConfirmOverlay" Visibility="Collapsed"
+        <!-- 清空确认遮罩层（与 ConfirmDialog 同语言：WarnBg 图标 chip + 药丸按钮，禁红色） -->
+        <Border Grid.ColumnSpan="2" x:Name="ConfirmOverlay" Visibility="Collapsed"
                 Background="#AA000000" Panel.ZIndex="200">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource SurfaceContainerLowest}" CornerRadius="24"
-                    Padding="32,24" Width="400">
+                    Background="{DynamicResource TintBg}" CornerRadius="24"
+                    Padding="28,24" Width="420">
                 <StackPanel>
-                    <TextBlock Text="确认清空所有数据" FontSize="18" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Foreground="{DynamicResource Error}"
-                               Margin="0,0,0,8"/>
-                    <TextBlock Text="此操作将清除所有书签、文件夹和设置数据，且不可恢复。"
-                               FontSize="13" HorizontalAlignment="Center"
-                               Foreground="{DynamicResource OnSurfaceVariant}" TextWrapping="Wrap"
-                               TextAlignment="Center" Margin="0,0,0,4"/>
-                    <TextBlock Text="如需备份，请先使用导出功能。"
-                               FontSize="13" HorizontalAlignment="Center"
-                               Foreground="{DynamicResource OnSurfaceVariant}" TextWrapping="Wrap"
-                               TextAlignment="Center" Margin="0,0,0,16"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="44" Height="44" CornerRadius="22"
+                                Background="{StaticResource WarnBg}">
+                            <m3:M3Icon Kind="delete-outline" Width="22" Height="22"
+                                       Foreground="{DynamicResource OnSurface}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="确认清空所有数据" FontSize="18" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Margin="14,0,0,0"
+                                   Foreground="{DynamicResource OnSurface}"/>
+                    </StackPanel>
 
-                    <TextBlock Text="请输入以下文字确认操作："
-                               FontSize="13" Foreground="{DynamicResource OnSurface}" Margin="0,0,0,6"/>
-                    <TextBlock Text="我确认清除全部数据"
-                               FontSize="14" FontWeight="Bold" Foreground="{DynamicResource Error}"
-                               HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Text="此操作将清除所有书签、文件夹与回收站数据（含图标缓存），且不可恢复。"
+                               FontSize="13" Margin="2,16,2,0" TextWrapping="Wrap" LineHeight="21"
+                               Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <TextBlock Text="如需保留数据，请先在「备份与恢复」中导出备份。"
+                               FontSize="13" Margin="2,6,2,0" TextWrapping="Wrap" LineHeight="21"
+                               Foreground="{DynamicResource OnSurfaceVariant}"/>
 
-                    <TextBox x:Name="ConfirmInputBox" Padding="10,8" FontSize="13"
-                             HorizontalAlignment="Stretch"
-                             Foreground="{DynamicResource OnSurface}" Background="{DynamicResource SurfaceContainerLowest}"
-                             BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
-                             Tag="在此输入确认文字..."/>
+                    <TextBlock Text="请输入以下文字确认操作：" FontSize="13"
+                               Foreground="{DynamicResource OnSurface}" Margin="2,18,0,6"/>
+                    <TextBlock Text="我确认清除全部数据" FontSize="14" FontWeight="Bold"
+                               Foreground="{DynamicResource OnSurface}" Margin="2,0,0,10"/>
 
-                    <Grid Margin="0,16,0,0">
+                    <Border CornerRadius="12" Background="{DynamicResource SurfaceContainerHighest}">
+                        <TextBox x:Name="ConfirmInputBox" Height="40" FontSize="13"
+                                 HorizontalAlignment="Stretch"
+                                 Foreground="{DynamicResource OnSurface}"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Padding="14,0" VerticalContentAlignment="Center"
+                                 Tag="在此输入确认文字..."/>
+                    </Border>
+
+                    <Grid Margin="0,18,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" x:Name="ConfirmErrorText"
-                                   Text="" FontSize="12" Foreground="{DynamicResource Error}"
-                                   VerticalAlignment="Center"/>
+                                   Text="" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
                         <Button Grid.Column="1" x:Name="CancelConfirmButton"
-                                Content="取消" Padding="20,8" Margin="0,0,8,0"
-                                Cursor="Hand" Click="CancelConfirmButton_Click"
-                                Background="{DynamicResource SurfaceContainerHighest}" BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1.5"
-                                FontSize="13" Foreground="{DynamicResource OnSurface}"/>
+                                Content="取消" Style="{StaticResource TonalButton}"
+                                Height="32" MinWidth="96" Padding="20,6" Margin="0,0,10,0"
+                                Cursor="Hand" Click="CancelConfirmButton_Click" FontSize="13"/>
                         <Button Grid.Column="2" x:Name="ExecuteClearButton"
-                                Content="确认清空" Padding="20,8" IsEnabled="False"
-                                Cursor="Hand" Click="ExecuteClearButton_Click"
-                                Background="{DynamicResource Error}" BorderThickness="0"
-                                FontSize="13" Foreground="White"/>
+                                Content="确认清空" Style="{StaticResource WarnPillButton}"
+                                Height="32" MinWidth="96" Padding="20,6" IsEnabled="False"
+                                Cursor="Hand" Click="ExecuteClearButton_Click" FontSize="13"/>
                     </Grid>
                 </StackPanel>
             </Border>

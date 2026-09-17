@@ -1,10 +1,18 @@
 using System.Windows;
 using System.Windows.Controls;
 using LinkPocket.Services;
-using Microsoft.Win32;
 
 namespace LinkPocket.Views
 {
+    /// <summary>
+    /// 设置页：存储管理（清日志 / 清空数据，危险区奶油黄警示）+ 备份与恢复（BackupPanel）。
+    ///
+    /// 变更记录（2026-09-16）：书签「导入 / 导出」两项已合并为**工具页**的一项工具
+    /// （左栏「书签导入 / 导出」，界面见 <see cref="ToolsPage"/>）；
+    /// 算法在后端 <c>Services/BookmarkImporter</c> / <c>Services/BookmarkExporter</c>，
+    /// 经 <c>ILinkPocketApi</c> 暴露，设置页不再保留任何书签导入导出入口。
+    /// 变更记录（2026-09-17）：「数据维护」更名「存储管理」并卡片化；危险色统一 WarnBg 奶油黄（禁红）。
+    /// </summary>
     public partial class SettingsPage : UserControl
     {
         public SettingsPage()
@@ -18,312 +26,27 @@ namespace LinkPocket.Views
         {
             if (e.NewValue is bool isVisible && isVisible)
             {
-                SettingListBox.SelectedIndex = -1;
-                ExportDirTextBox.Text = string.Empty;
-                ExportButton.IsEnabled = false;
-                ImportFileTextBox.Text = string.Empty;
-                ImportButton.IsEnabled = false;
-
-                if (DataContext is ViewModels.MainViewModel vm && vm.SettingsViewModel != null)
-                    vm.SettingsViewModel.ExportDirectory = string.Empty;
-
+                // 与工具页同口径：进入设置页必须停在一个设置项上（默认第一项），
+                // 绝不允许出现「选择一个设置项」空态；已选过则保持用户上次的选择
+                if (SettingListBox.SelectedIndex < 0)
+                    SettingListBox.SelectedIndex = 0;
                 LogStatusText.Text = string.Empty;
             }
         }
 
+        /// <summary>左栏只剩两项：0 = 存储管理，1 = 备份与恢复。</summary>
         private void SettingListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            PlaceholderPanel.Visibility = Visibility.Collapsed;
-            ExportPanel.Visibility = Visibility.Collapsed;
-            ImportPanel.Visibility = Visibility.Collapsed;
             MaintenancePanel.Visibility = Visibility.Collapsed;
             BackupPanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
-                ExportPanel.Visibility = Visibility.Visible;
-            else if (SettingListBox.SelectedIndex == 1)
-                ImportPanel.Visibility = Visibility.Visible;
-            else if (SettingListBox.SelectedIndex == 2)
                 MaintenancePanel.Visibility = Visibility.Visible;
-            else if (SettingListBox.SelectedIndex == 3)
+            else if (SettingListBox.SelectedIndex == 1)
                 BackupPanelControl.Visibility = Visibility.Visible;
-            else
-                PlaceholderPanel.Visibility = Visibility.Visible;
 
             if (SettingListBox.SelectedIndex != 1)
-            {
-                ImportFileTextBox.Text = string.Empty;
-                ImportButton.IsEnabled = false;
-            }
-
-            if (SettingListBox.SelectedIndex != 3)
-            {
                 BackupPanelControl.ResetState();
-            }
-        }
-
-        private void BrowseDirButton_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new OpenFolderDialog
-            {
-                Title = "选择导出目录"
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                ExportDirTextBox.Text = dialog.FolderName;
-
-                if (DataContext is ViewModels.MainViewModel vm && vm.SettingsViewModel != null)
-                    vm.SettingsViewModel.ExportDirectory = dialog.FolderName;
-
-                ExportButton.IsEnabled = true;
-            }
-        }
-
-        private async void ExportButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is not ViewModels.MainViewModel vm || vm.SettingsViewModel == null)
-                return;
-
-            var settingsVm = vm.SettingsViewModel;
-
-            if (string.IsNullOrWhiteSpace(settingsVm.ExportDirectory))
-                return;
-
-            var outputPath = System.IO.Path.Combine(settingsVm.ExportDirectory, $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
-            var dbPath = System.IO.Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
-
-            Services.Logger.Info($"[导出] 开始导出流程");
-            Services.Logger.Info($"[导出] 目标目录: {settingsVm.ExportDirectory}");
-            Services.Logger.Info($"[导出] 输出路径: {outputPath}");
-            Services.Logger.Info($"[导出] DB路径: {dbPath}");
-            Services.Logger.Info($"[导出] DB文件存在: {System.IO.File.Exists(dbPath)}");
-
-            if (!System.IO.Directory.Exists(settingsVm.ExportDirectory))
-            {
-                Services.Logger.Error($"[导出] 导出目录不存在: {settingsVm.ExportDirectory}");
-                ExportStatusText.Text = $"导出目录不存在\n{settingsVm.ExportDirectory}";
-                ExportOverlay.Visibility = Visibility.Visible;
-                await Task.Delay(3000);
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            if (!System.IO.File.Exists(dbPath))
-            {
-                Services.Logger.Error($"[导出] 数据库文件不存在: {dbPath}");
-                ExportStatusText.Text = $"数据库文件不存在\n{dbPath}";
-                ExportOverlay.Visibility = Visibility.Visible;
-                await Task.Delay(3000);
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                return;
-            }
-
-            ExportOverlay.Visibility = Visibility.Visible;
-            ExportStatusText.Text = "正在导出书签...";
-            ExportProgressBar.Value = 0;
-            ExportProgressText.Text = "准备中...";
-            settingsVm.IsExporting = true;
-            settingsVm.IsExportOverlayVisible = true;
-
-            try
-            {
-                // 统计信息经后端协议获取
-                var counts = await Services.AppServices.Api.GetCountsAsync();
-                var folders = await Services.AppServices.Api.GetFolderTreeAsync();
-                var validFolderIds = folders.Select(f => f.FolderId).ToHashSet();
-                var allLinks = await Services.AppServices.Api.GetAllLinksAsync();
-                var dbLinkCount = allLinks.Count(l => string.IsNullOrEmpty(l.ListId) || validFolderIds.Contains(l.ListId));
-                var folderCount = folders.Count;
-                var totalDbLinks = allLinks.Count;
-                var orphanedCount = totalDbLinks - dbLinkCount;
-                Services.Logger.Info($"[导出] DB统计: 可导出书签={dbLinkCount}, 文件夹={folderCount}, 总计书签={totalDbLinks}, 无归属书签={orphanedCount}");
-
-                Services.Logger.Info("[导出] 开始 ExportAsync...");
-                await Services.AppServices.Api.ExportBookmarksHtmlAsync(outputPath);
-                Services.Logger.Info("[导出] ExportAsync 完成");
-
-                var fileExists = System.IO.File.Exists(outputPath);
-                Services.Logger.Info($"[导出] 验证: 文件存在={fileExists}");
-
-                var exportedCount = 0;
-
-                if (fileExists)
-                {
-                    var fileInfo = new System.IO.FileInfo(outputPath);
-                    var fileContent = System.IO.File.ReadAllText(outputPath);
-                    foreach (var line in fileContent.Split('\n'))
-                        if (line.Contains("<A HREF="))
-                            exportedCount++;
-
-                    Services.Logger.Info($"[导出] 文件验证: 大小={fileInfo.Length} 字节, 文件中书签数={exportedCount}");
-                    Services.Logger.Info($"[导出] 对照: 数据库应导出={dbLinkCount}, 实际导出={exportedCount}");
-
-                    ExportProgressBar.Value = ExportProgressBar.Maximum;
-
-                    if (exportedCount == dbLinkCount)
-                    {
-                        Services.Logger.Info($"[导出] 数量一致，导出成功");
-                        ExportStatusText.Text = $"导出成功！\n共 {exportedCount} 个书签";
-                        ExportProgressText.Text = $"{exportedCount} / {dbLinkCount} ✅ 一致";
-                        ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
-                    }
-                    else
-                    {
-                        Services.Logger.Error($"[导出] 数量不一致: 数据库={dbLinkCount}, 文件={exportedCount}");
-                        ExportStatusText.Text = $"导出验证失败\n数据库应导出 {dbLinkCount} 个\n文件中仅 {exportedCount} 个";
-                        ExportProgressText.Text = "❌ 数量不匹配";
-                        ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
-                    }
-                }
-                else
-                {
-                    Services.Logger.Error($"[导出] 文件不存在: {outputPath}");
-                    ExportStatusText.Text = $"导出失败：文件未创建\n{outputPath}";
-                    ExportProgressText.Text = "❌ 失败";
-                }
-
-                if (fileExists && exportedCount == dbLinkCount)
-                {
-                    await Task.Delay(100);
-                }
-                else
-                {
-                    await Task.Delay(3000);
-                }
-
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                settingsVm.IsExporting = false;
-                settingsVm.IsExportOverlayVisible = false;
-                ExportDirTextBox.Text = string.Empty;
-                ExportButton.IsEnabled = false;
-                if (DataContext is ViewModels.MainViewModel vm2 && vm2.SettingsViewModel != null)
-                    vm2.SettingsViewModel.ExportDirectory = string.Empty;
-                Services.Logger.Info("[导出] 流程结束");
-
-                if (fileExists && exportedCount == dbLinkCount)
-                {
-                    try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""); }
-                    catch (Exception openEx) { Services.Logger.Error($"[导出] 打开目录失败", openEx); }
-                }
-            }
-            catch (Exception ex)
-            {
-                Services.Logger.Error($"[导出] 异常", ex);
-                ExportStatusText.Text = $"导出失败: {ex.Message}";
-                ExportProgressText.Text = "❌ 异常";
-                await Task.Delay(5000);
-
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                settingsVm.IsExporting = false;
-                settingsVm.IsExportOverlayVisible = false;
-                ExportDirTextBox.Text = string.Empty;
-                ExportButton.IsEnabled = false;
-                if (DataContext is ViewModels.MainViewModel vm3 && vm3.SettingsViewModel != null)
-                    vm3.SettingsViewModel.ExportDirectory = string.Empty;
-                Services.Logger.Info("[导出] 流程结束");
-            }
-        }
-
-        private void BrowseImportButton_Click(object sender, RoutedEventArgs e)
-        {
-            var dialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = "选择书签 HTML 文件",
-                Filter = "书签文件 (*.html;*.htm)|*.html;*.htm|所有文件 (*.*)|*.*",
-                CheckFileExists = true
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                ImportFileTextBox.Text = dialog.FileName;
-                ImportButton.IsEnabled = true;
-            }
-        }
-
-        private async void ImportButton_Click(object sender, RoutedEventArgs e)
-        {
-            var filePath = ImportFileTextBox.Text;
-            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
-                return;
-
-            ExportOverlay.Visibility = Visibility.Visible;
-            ExportStatusText.Text = "正在验证文件...";
-            ExportProgressBar.Value = 0;
-            ExportProgressText.Text = "验证中...";
-            ImportButton.IsEnabled = false;
-
-            try
-            {
-                var (isValid, errorMsg) = await ValidateBookmarkFileAsync(filePath);
-
-                if (!isValid)
-                {
-                    ExportStatusText.Text = $"导入失败\n{errorMsg}";
-                    ExportProgressText.Text = "❌ 格式无效";
-                    ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
-                    await Task.Delay(3000);
-                    ExportOverlay.Visibility = Visibility.Collapsed;
-                    ImportButton.IsEnabled = true;
-                    return;
-                }
-
-                ExportStatusText.Text = "正在导入书签...";
-                ExportProgressBar.Value = 0;
-                ExportProgressText.Text = "准备中...";
-                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Primary");
-
-                var importedCount = await Services.AppServices.Api.ImportBookmarksHtmlAsync(filePath);
-
-                ExportProgressBar.Value = ExportProgressBar.Maximum;
-                ExportStatusText.Text = $"导入成功！\n共 {importedCount} 条";
-                ExportProgressText.Text = $"✅ {importedCount} 条";
-                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
-
-                if (DataContext is ViewModels.MainViewModel importVm)
-                    await importVm.ReinitializeDatabaseAsync(resetData: false);
-
-                await Task.Delay(100);
-
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                ImportFileTextBox.Text = string.Empty;
-                ImportButton.IsEnabled = false;
-            }
-            catch (Exception ex)
-            {
-                Services.Logger.Error("[导入] 异常", ex);
-                ExportStatusText.Text = $"导入失败: {ex.Message}";
-                ExportProgressText.Text = "❌ 异常";
-                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
-                await Task.Delay(3000);
-                ExportOverlay.Visibility = Visibility.Collapsed;
-                ImportFileTextBox.Text = string.Empty;
-                ImportButton.IsEnabled = false;
-            }
-        }
-
-        private static async Task<(bool isValid, string error)> ValidateBookmarkFileAsync(string filePath)
-        {
-            if (!System.IO.File.Exists(filePath))
-                return (false, "文件不存在");
-
-            var content = await System.IO.File.ReadAllTextAsync(filePath);
-            if (string.IsNullOrWhiteSpace(content))
-                return (false, "文件为空");
-
-            if (!content.Contains("<!DOCTYPE") && !content.Contains("<DL"))
-                return (false, "文件不是有效的 Netscape 书签格式（缺少 DOCTYPE 或 <DL> 标签）");
-
-            if (!System.Text.RegularExpressions.Regex.IsMatch(content, @"<A\b[^>]*HREF\s*=\s*""[^""]+""", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-                && !System.Text.RegularExpressions.Regex.IsMatch(content, @"<H3\b[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                return (false, "文件中未找到书签或文件夹（缺少 <A HREF= 或 <H3> 标签）");
-
-            var dlOpenCount = System.Text.RegularExpressions.Regex.Matches(content, @"<DL[ >]", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
-            var dlCloseCount = System.Text.RegularExpressions.Regex.Matches(content, @"</DL>", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Count;
-            if (dlOpenCount != dlCloseCount)
-                return (false, $"标签不匹配：<DL> 出现 {dlOpenCount} 次，</DL> 出现 {dlCloseCount} 次");
-
-            return (true, string.Empty);
         }
 
         private async void ClearLogsButton_Click(object sender, RoutedEventArgs e)
@@ -402,8 +125,7 @@ namespace LinkPocket.Views
 
                 ExportStatusText.Text = "数据已全部清空！";
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
-                ExportProgressText.Text = "✅ 完成";
-                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Success");
+                ExportProgressText.Text = "完成";
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
@@ -413,8 +135,8 @@ namespace LinkPocket.Views
             {
                 Services.Logger.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
-                ExportProgressText.Text = "❌ 失败";
-                ExportProgressBar.Foreground = (System.Windows.Media.Brush)Application.Current.FindResource("Error");
+                ExportProgressText.Text = "失败";
+                ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("WarnBg");
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
             }

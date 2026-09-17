@@ -1,0 +1,200 @@
+using System.Windows;
+using System.Windows.Media;
+
+namespace LinkPocket.Views;
+
+/// <summary>
+/// MD3 Expressive 波浪进度条（替换原生方形 ProgressBar）：
+/// 已走部分 = 持续起伏的<b>波浪线</b>（Primary 色），剩余部分 = 直线轨道（浅色），
+/// 进度点 = 竖向小滑标 —— 参考 MD3E wavy progress indicator 规范
+/// （"Do: break from the surrounding shape style to draw attention to a particular element"）。
+/// 相位经 CompositionTarget.Rendering 逐帧推进；仅在可见时渲染。
+/// 用法（备份进度遮罩）：
+/// <code>
+/// &lt;views:WavyProgressBar ActiveBrush="{DynamicResource Primary}" TrackBrush="{DynamicResource OutlineVariant}"/&gt;
+/// </code>
+/// </summary>
+public class WavyProgressBar : FrameworkElement
+{
+    public static readonly DependencyProperty MinimumProperty = DependencyProperty.Register(
+        nameof(Minimum), typeof(double), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty MaximumProperty = DependencyProperty.Register(
+        nameof(Maximum), typeof(double), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(100.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(
+        nameof(Value), typeof(double), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ActiveBrushProperty = DependencyProperty.Register(
+        nameof(ActiveBrush), typeof(Brush), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(null, OnBrushChanged));
+
+    public static readonly DependencyProperty TrackBrushProperty = DependencyProperty.Register(
+        nameof(TrackBrush), typeof(Brush), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(null, OnBrushChanged));
+
+    public double Minimum
+    {
+        get => (double)GetValue(MinimumProperty);
+        set => SetValue(MinimumProperty, value);
+    }
+
+    public double Maximum
+    {
+        get => (double)GetValue(MaximumProperty);
+        set => SetValue(MaximumProperty, value);
+    }
+
+    public double Value
+    {
+        get => (double)GetValue(ValueProperty);
+        set => SetValue(ValueProperty, value);
+    }
+
+    /// <summary>已走部分（波浪线 + 滑标）的颜色。</summary>
+    public Brush? ActiveBrush
+    {
+        get => (Brush?)GetValue(ActiveBrushProperty);
+        set => SetValue(ActiveBrushProperty, value);
+    }
+
+    /// <summary>剩余轨道（直线）的颜色。</summary>
+    public Brush? TrackBrush
+    {
+        get => (Brush?)GetValue(TrackBrushProperty);
+        set => SetValue(TrackBrushProperty, value);
+    }
+
+    /// <summary>波长（px）：一个完整正弦周期的横向长度。</summary>
+    public double WaveLength { get; set; } = 16.0;
+
+    /// <summary>波幅（px）：波浪偏离中线的幅度。</summary>
+    public double Amplitude { get; set; } = 3.2;
+
+    /// <summary>线宽（px）。</summary>
+    public double StrokeWidth { get; set; } = 2.5;
+
+    /// <summary>进度点竖向滑标的高度（px）。</summary>
+    public double ThumbHeight { get; set; } = 16.0;
+
+    private const double PhaseSpeed = 5.5;   // 波浪行进速度（rad/s）
+    private const double SampleStep = 1.5;   // 波形采样步长（px）
+
+    private double _phase;
+    private TimeSpan? _lastRenderTime;
+    private bool _hooked;
+    private bool _pensDirty = true;
+    private Pen? _activePen, _trackPen, _thumbPen;
+
+    public WavyProgressBar()
+    {
+        Loaded += (_, _) => Hook(true);
+        Unloaded += (_, _) => Hook(false);
+    }
+
+    private static void OnBrushChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        ((WavyProgressBar)d)._pensDirty = true;
+    }
+
+    private void Hook(bool on)
+    {
+        if (on && !_hooked)
+        {
+            CompositionTarget.Rendering += OnRendering;
+            _lastRenderTime = null;
+            _hooked = true;
+        }
+        else if (!on && _hooked)
+        {
+            CompositionTarget.Rendering -= OnRendering;
+            _hooked = false;
+        }
+    }
+
+    private void OnRendering(object? sender, EventArgs e)
+    {
+        if (!IsVisible) return;
+        if (e is RenderingEventArgs re)
+        {
+            if (_lastRenderTime.HasValue && re.RenderingTime > _lastRenderTime.Value)
+                _phase += (re.RenderingTime - _lastRenderTime.Value).TotalSeconds * PhaseSpeed;
+            _lastRenderTime = re.RenderingTime;
+        }
+        InvalidateVisual();   // 推进波形相位
+    }
+
+    private void EnsurePens()
+    {
+        if (!_pensDirty && _activePen != null) return;
+        _activePen = new Pen(ActiveBrush ?? Brushes.Transparent, StrokeWidth)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+        _trackPen = new Pen(TrackBrush ?? Brushes.Transparent, StrokeWidth)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+        _thumbPen = new Pen(ActiveBrush ?? Brushes.Transparent, 3.0)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+        _pensDirty = false;
+    }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        EnsurePens();
+        var w = ActualWidth;
+        var h = ActualHeight;
+        if (w <= 0 || h <= 0 || _activePen == null || _trackPen == null || _thumbPen == null) return;
+
+        var cy = h / 2;
+        var span = Maximum - Minimum;
+        var p = span > 0 ? Math.Clamp((Value - Minimum) / span, 0.0, 1.0) : 0.0;
+        var px = Math.Max(StrokeWidth, p * (w - StrokeWidth));   // 滑标不贴边被裁
+
+        // 剩余轨道：直线
+        if (px < w - 1)
+            dc.DrawLine(_trackPen, new Point(px, cy), new Point(w, cy));
+
+        // 已走部分：正弦波浪线
+        if (px > 0)
+        {
+            var geo = new StreamGeometry();
+            using (var ctx = geo.Open())
+            {
+                var started = false;
+                for (var x = 0.0; x < px; x += SampleStep)
+                {
+                    var y = cy + Amplitude * Math.Sin(x / WaveLength * 2 * Math.PI - _phase);
+                    if (!started)
+                    {
+                        ctx.BeginFigure(new Point(0, y), false, false);
+                        started = true;
+                    }
+                    else
+                    {
+                        ctx.LineTo(new Point(x, y), true, false);
+                    }
+                }
+
+                var yEnd = cy + Amplitude * Math.Sin(px / WaveLength * 2 * Math.PI - _phase);
+                if (!started) ctx.BeginFigure(new Point(0, yEnd), false, false);
+                else ctx.LineTo(new Point(px, yEnd), true, false);
+            }
+
+            geo.Freeze();
+            dc.DrawGeometry(null, _activePen, geo);
+        }
+
+        // 进度点：竖向小滑标
+        dc.DrawLine(_thumbPen, new Point(px, cy - ThumbHeight / 2), new Point(px, cy + ThumbHeight / 2));
+    }
+}

@@ -59,70 +59,6 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 浮动控制层：返回圆钮 + 右上操作胶囊组 -->
-        <Grid Grid.Row="0">
-            <Grid.Resources>
-                <Style x:Key="FloatingIconButton" TargetType="Button">
-                    <Setter Property="Background" Value="Transparent"/>
-                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-                    <Setter Property="Width" Value="34"/>
-                    <Setter Property="Height" Value="34"/>
-                    <Setter Property="Cursor" Value="Hand"/>
-                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="17">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
-            </Grid.Resources>
-            <Button Command="{Binding BackCommand}" ToolTip="返回"
-                    Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
-                    Foreground="{DynamicResource OnSurface}">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
-            </Button>
-            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20,16,0,0"
-                    Background="{DynamicResource TintCard}" CornerRadius="21" Padding="3">
-                <StackPanel Orientation="Horizontal">
-                    <Button Style="{StaticResource FloatingIconButton}" Command="{Binding CopyUrlCommand}" ToolTip="复制 URL">
-                        <m3:M3Icon Kind="content-copy" Width="16" Height="16"/>
-                    </Button>
-                    <Button Style="{StaticResource FloatingIconButton}" Command="{Binding OpenWebsiteCommand}" ToolTip="在默认浏览器中打开">
-                        <m3:M3Icon Kind="open-in-new" Width="16" Height="16"/>
-                    </Button>
-                    <Button Command="{Binding EditCommand}" Style="{StaticResource FilledButton}" Padding="12,5" MinHeight="28"
-                            Margin="2,0,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="pencil" Width="13" Height="13" VerticalAlignment="Center"/>
-                            <TextBlock Text="编辑" FontSize="12" Margin="5,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Border>
-        </Grid>
-
         <!-- ===== 正文 ===== -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <!-- 定宽居中列：外边距经滚动条补偿，保证与编辑页左边界严格一致（切换整页不横移） -->
@@ -208,45 +144,7 @@
                     </Grid>
                 </Border>
 
-                <!-- 描述卡片（Markdown 渲染） -->
-                <Border Background="{DynamicResource TintCard}"
-                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasDescription}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <StackPanel>
-                        <TextBlock Text="描述" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
-                                                     FontFamily="Microsoft YaHei UI"
-                                                     VerticalScrollBarVisibility="Disabled"
-                                                     HorizontalScrollBarVisibility="Disabled">
-                            <mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                                <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
-                                    <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                    <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-                                    <Style.Resources>
-                                        <Style TargetType="Paragraph">
-                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                        </Style>
-                                        <Style TargetType="Run">
-                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
-                                        </Style>
-                                    </Style.Resources>
-                                </Style>
-                            </mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                        </mdxaml:MarkdownScrollViewer>
-                    </StackPanel>
-                </Border>
-
-                <!-- 信息卡片 -->
+                <!-- 信息卡片（与右侧栏一致：信息在描述上方） -->
                 <Border Background="{DynamicResource TintCard}"
                         CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
@@ -353,6 +251,44 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 描述卡片（Markdown 渲染） -->
+                <Border Background="{DynamicResource TintCard}"
+                        CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasDescription}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel>
+                        <TextBlock Text="描述" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
+                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                        <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
+                                                     FontFamily="Microsoft YaHei UI"
+                                                     VerticalScrollBarVisibility="Disabled"
+                                                     HorizontalScrollBarVisibility="Disabled">
+                            <mdxaml:MarkdownScrollViewer.MarkdownStyle>
+                                <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
+                                    <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                                    <Style.Resources>
+                                        <Style TargetType="Paragraph">
+                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                        </Style>
+                                        <Style TargetType="Run">
+                                            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+                                        </Style>
+                                    </Style.Resources>
+                                </Style>
+                            </mdxaml:MarkdownScrollViewer.MarkdownStyle>
+                        </mdxaml:MarkdownScrollViewer>
+                    </StackPanel>
+                </Border>
+
                 <!-- 操作卡片：与右侧栏快捷操作同款（打开 / 编辑 / 删除） -->
                 <Border Background="{DynamicResource TintCard}"
                         CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
@@ -365,13 +301,14 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Style="{StaticResource FilledButton}" Padding="10,7"
+                            <Button Grid.Column="0" Style="{StaticResource PrimaryPillButton}" Height="32"
+                                    VerticalAlignment="Center" Padding="12,0"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                     Command="{Binding OpenWebsiteCommand}"
-                                    ToolTip="在默认浏览器中打开并记录一次访问">
+                                    ToolTip="在浏览器中打开">
                                 <StackPanel Orientation="Horizontal">
                                     <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
-                                    <TextBlock Text="打开网站" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="打开" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                             <Button Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="编辑"
@@ -382,8 +319,9 @@
                             <Button Grid.Column="2" Style="{StaticResource SideIconButton}" Tag="删除"
                                     Width="32" Height="32" VerticalAlignment="Center"
                                     Command="{Binding DeleteCommand}"
-                                    ToolTip="移入回收站">
-                                <m3:M3Icon Kind="delete-outline" Width="15" Height="15" Foreground="#D32F2F"/>
+                                    ToolTip="删除">
+                                <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
+                                           Foreground="{StaticResource WarnBg}"/>
                             </Button>
                         </Grid>
                     </StackPanel>
@@ -392,5 +330,36 @@
                 </StackPanel>
             </Grid>
         </ScrollViewer>
+
+        <!-- 浮动控制层：返回圆钮 + 右上操作胶囊组。
+             ⚠️ 必须声明在整页 ScrollViewer 之后（= z 序在上层）：
+             Material3.Wpf 0.9.0 的 ScrollViewer 模板铺了一块与底色同色的不透明 Rectangle，
+             悬浮层若在它下面，整块区域会被 ScrollViewer 吃掉全部鼠标命中（顶部按钮全部点不动）。 -->
+        <Grid Grid.Row="0">
+            <Button Command="{Binding BackCommand}" ToolTip="返回"
+                    Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
+                    Foreground="{DynamicResource OnSurface}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
+                            <Grid>
+                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                        Opacity="0" CornerRadius="20"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.16"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
+            </Button>
+        </Grid>
     </Grid>
 </UserControl>

@@ -145,9 +145,18 @@ public class LinkService
             .ToListAsync();
     }
 
+    /// <summary>按 ID 取单条链接（不存在返回 null）。供按 ID 定位场景使用，避免取全库再筛。</summary>
+    public async Task<Link?> GetActiveByIdAsync(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        return await _db.Links.FirstOrDefaultAsync(l => l.LinkId == id);
+    }
+
+    /// <summary>回收站平铺列表：只取「单独删除」的根级书签（随文件夹单元进来的在 trash_folders 树里）。</summary>
     public async Task<List<TrashedLink>> GetDeletedLinksAsync()
     {
         return await _db.TrashedLinks
+            .Where(t => t.TrashFolderId == null)
             .OrderByDescending(t => t.DeletedAt)
             .ToListAsync();
     }
@@ -241,6 +250,8 @@ public class LinkService
             .FirstOrDefaultAsync(l => l.LinkId == id)
             ?? throw new Exception("Link not found");
 
+        // Windows 式回收站：单独删除的书签挂在回收站根（TrashFolderId=null），
+        // 并定格删除时的位置（origin_list_id + origin_path 快照）。
         var trashedLink = new TrashedLink
         {
             LinkId = link.LinkId,
@@ -248,6 +259,9 @@ public class LinkService
             Title = link.Title,
             Description = link.Description,
             FaviconUrl = link.FaviconUrl,
+            TrashFolderId = null,
+            OriginListId = link.ListId,
+            OriginPath = await OriginPath.BuildListPathAsync(_db, link.ListId),
             LastVisitedAt = link.LastVisitedAt,
             VisitCount = link.VisitCount,
             IsImportant = link.IsImportant,

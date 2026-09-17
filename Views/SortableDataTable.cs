@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace LinkPocket.Views;
 
@@ -23,7 +24,7 @@ public class DataTableColumn
     public string Field { get; init; } = "";
     /// <summary>表头文案。</summary>
     public string Label { get; init; } = "";
-    /// <summary>列宽；小于 0 表示 Star（占满剩余）。</summary>
+    /// <summary>列宽；负值表示 Star（按权重占剩余空间：-1 = 1 份，-2 = 2 份…），正值 = 固定像素。</summary>
     public double Width { get; init; } = -1;
     /// <summary>排序键：把数据项映射为可比较值（null = 该列不可内部排序，由外部 VM 排序）。</summary>
     public Func<object, IComparable>? SortKey { get; init; }
@@ -154,6 +155,8 @@ public class SortableDataTable : Grid
     private readonly Border _headerBand;
     private readonly Grid _headerGrid;
     private readonly ItemsControl _rowsList;
+    /// <summary>行区滚动宿主（排序后需要恢复滚动位置，故持有引用）。</summary>
+    private readonly ScrollViewer _rowsScroller;
     /// <summary>空态承载器（独立 ContentControl，绝不与 ItemsSource 混用 Items —— 混用会抛
     /// "在使用 ItemsSource 之前，项集合必须为空"，搜索结果因此永远渲染不出来）。</summary>
     private readonly ContentControl _emptyHost;
@@ -174,8 +177,8 @@ public class SortableDataTable : Grid
         {
             Background = (Brush)Application.Current.FindResource("TintPanel"),
             CornerRadius = new CornerRadius(24, 24, 0, 0),
-            // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（Padding 10,10,10,6 + 12px 文字 = 32）：
-            // 两条紫色色带等高，底边严格对齐（此前靠内容撑高，比侧栏低边多出几像素）。
+            // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（BrowserView.xaml 中同样 Height=32、文字垂直居中）：
+            // 两条紫色色带等高，底边严格对齐（侧栏曾靠 Padding+行高撑出 31.x 导致底边差一点）。
             // 水平内距 16 = 行容器内距，列边界逐列对齐不变；表头内容垂直居中。
             // 注意：此类数值均由用户直接确认后写入，属"对齐类"简单调整——后续微调直接改值即可，
             // 无需探针/截图等重验证流程（过度验证反而拖慢迭代）。
@@ -200,24 +203,39 @@ public class SortableDataTable : Grid
             IsHitTestVisible = false, // 空态不拦截鼠标（右键空白区菜单仍可用）
             Visibility = Visibility.Collapsed
         };
-        var rowsArea = new Grid();
-        rowsArea.Children.Add(_rowsList);
-        rowsArea.Children.Add(_emptyHost);
+        // 虚拟化前提：行列表必须是 ScrollViewer 的直接内容（隔一层容器会让视口约束传不进
+        // VirtualizingStackPanel，退化为全量实例化）；空态改为覆盖层，不再与行列表同容器。
         var scroller = new ScrollViewer
         {
-            Content = rowsArea,
+            Content = _rowsList,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            CanContentScroll = true
         };
-        Children.Add(scroller);
-        SetRow(scroller, 1);
+        _rowsScroller = scroller;
+        VirtualizingPanel.SetIsVirtualizing(_rowsList, true);
+        VirtualizingPanel.SetScrollUnit(_rowsList, ScrollUnit.Pixel); // 像素滚动，保持平滑手感
+        VirtualizingPanel.SetCacheLength(_rowsList, new VirtualizationCacheLength(1));
+        VirtualizingPanel.SetCacheLengthUnit(_rowsList, VirtualizationCacheLengthUnit.Page);
+        var rowsArea = new Grid();
+        rowsArea.Children.Add(scroller);
+        rowsArea.Children.Add(_emptyHost);
+        Children.Add(rowsArea);
+        SetRow(rowsArea, 1);
+
+        // 表头列区与行内容区对齐：行区宽度会随「纵向滚动条出现/消失」「窗口缩放」变化，
+        // 也必须等布局结束后才能实测（行容器是布局期生成的）。
+        _rowsList.SizeChanged += (_, _) => ScheduleHeaderAlignment();
+        Loaded += (_, _) => ScheduleHeaderAlignment();
     }
 
     private static ItemsPanelTemplate BuildRowsPanel()
     {
+        // UI 虚拟化（windowing）：VirtualizingStackPanel 只实例化可视区 ± 缓存页的行，
+        // 数千行时布局/内存都是常数级（与 React windowing / RecyclerView cell 复用同一算法）。
         const string xaml =
             "<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>" +
-            "<StackPanel/>" +
+            "<VirtualizingStackPanel/>" +
             "</ItemsPanelTemplate>";
         return (ItemsPanelTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
     }
@@ -237,7 +255,10 @@ public class SortableDataTable : Grid
         {
             ColumnWidths.Clear();
             foreach (var col in ColumnList)
-                ColumnWidths.Add(col.Width < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(col.Width));
+                // 负值 = Star 权重（-1 → 1*，-2 → 2*），正值 = 固定像素
+                ColumnWidths.Add(col.Width < 0
+                    ? new GridLength(-col.Width, GridUnitType.Star)
+                    : new GridLength(col.Width));
         }
 
         var i = 0;
@@ -269,10 +290,15 @@ public class SortableDataTable : Grid
             _headerButtons.Add(header);
 
             // 手柄：App.xaml 共享 ColumnResizeThumb 样式（hover/拖动紫线由样式触发器驱动）
-            var thumb = new Thumb { Style = (Style)Application.Current.FindResource("ColumnResizeThumb"), Tag = i };
-            thumb.SetValue(Panel.ZIndexProperty, 2);
-            thumb.DragDelta += OnThumbDragDelta;
-            cell.Children.Add(thumb);
+            // ⚠️ 最右列不放拖拽手柄：最后一列右缘之外已无列可调，放了会在表头右端凭空多出
+            //     一根可拖拽竖线（用户 2026-09-16 报障：创建时间右边还有一根"滑动条"）。
+            if (i < ColumnList.Count() - 1)
+            {
+                var thumb = new Thumb { Style = (Style)Application.Current.FindResource("ColumnResizeThumb"), Tag = i };
+                thumb.SetValue(Panel.ZIndexProperty, 2);
+                thumb.DragDelta += OnThumbDragDelta;
+                cell.Children.Add(thumb);
+            }
 
             Grid.SetColumn(cell, i);
             _headerGrid.Children.Add(cell);
@@ -282,16 +308,179 @@ public class SortableDataTable : Grid
         OnSortChanged();
     }
 
-    /// <summary>拖拽表头右缘：改 ColumnWidths[idx]（像素），表头与所有行经绑定实时同步。</summary>
+    /// <summary>列宽下限（与表头拖拽一致）。</summary>
+    private const double MinColumnWidth = 60;
+
+    /// <summary>
+    /// 拖拽表头右缘调整列宽（资源管理器语义）：
+    /// 1. 先把所有 Star（弹性）列冻结为当前像素宽 —— 否则把某列从 * 改成固定值时，
+    ///    剩余空间会在所有弹性列之间隐形重分配，表现为"拖这一列，别的列跟着变"（严重误导）。
+    /// 2. 本列 +Δ、相邻列 −Δ（总宽恒定，其余列纹丝不动）；两列都不低于下限。
+    /// </summary>
     private void OnThumbDragDelta(object sender, DragDeltaEventArgs e)
     {
         if (sender is not Thumb thumb || thumb.Tag is not int idx) return;
-        if (idx < 0 || idx >= ColumnWidths.Count) return;
 
-        var current = _headerGrid.ColumnDefinitions[idx].ActualWidth;
-        if (current <= 0) current = 60;
-        ColumnWidths[idx] = new GridLength(Math.Max(60, Math.Round(current + e.HorizontalChange)));
+        var defs = _headerGrid.ColumnDefinitions;
+        if (idx < 0 || idx >= defs.Count) return;
+        if (idx >= ColumnWidths.Count) return;
+
+        FreezeStarColumns();
+
+        var left = defs[idx].ActualWidth;
+        if (left <= 0) left = ColumnWidths[idx].Value;
+
+        // 相邻补偿列：优先右邻，最右列则用左邻（保证总宽恒定、不撑破视口）
+        var partner = idx + 1 < defs.Count ? idx + 1 : (idx - 1 >= 0 ? idx - 1 : -1);
+        if (partner < 0)
+        {
+            ColumnWidths[idx] = new GridLength(Math.Max(MinColumnWidth, Math.Round(left + e.HorizontalChange)));
+            return;
+        }
+
+        var partnerWidth = defs[partner].ActualWidth;
+        if (partnerWidth <= 0) partnerWidth = ColumnWidths[partner].Value;
+        var total = left + partnerWidth;
+
+        // 两列合计固定：本列在 [下限, 合计−下限] 之间自由拖动，超出的部分由相邻列吸收
+        var wanted = Math.Clamp(Math.Round(left + e.HorizontalChange), MinColumnWidth, Math.Max(MinColumnWidth, total - MinColumnWidth));
+
+        ColumnWidths[idx] = new GridLength(wanted);
+        ColumnWidths[partner] = new GridLength(Math.Max(MinColumnWidth, Math.Round(total - wanted)));
     }
+
+    /// <summary>
+    /// 把所有 Star（弹性）列冻结成像素列（拖拽前调用一次即可）。
+    ///
+    /// ⚠️ 基准宽度必须取「行内容区」的列容器实宽，绝不能用表头 Grid 实宽：
+    /// 表头带比行区宽（行容器另有外边距 + 内距，且行区还要减去纵向滚动条），
+    /// 用表头宽度冻结会让所有列合计超出行区宽度 → 行内容被裁剪、右侧整块"向右闪一下"
+    /// （用户 2026-09-16 报障：第一次拖动列宽时右边区域会挪动一下）。
+    /// 分配按 Star 权重比例（视觉比例保持不变），最后一个弹性列吸收取整误差，
+    /// 保证冻结后合计恰好等于行区宽度。
+    /// </summary>
+    private void FreezeStarColumns()
+    {
+        var defs = _headerGrid.ColumnDefinitions;
+        if (defs.Count == 0 || ColumnWidths.Count != defs.Count) return;
+
+        var baseWidth = ColumnAreaWidth();
+        if (baseWidth <= 0) return;
+
+        double weightSum = 0, fixedSum = 0;
+        foreach (var w in ColumnWidths)
+        {
+            if (w.IsStar) weightSum += w.Value;
+            else fixedSum += w.Value;
+        }
+
+        var starSpace = baseWidth - fixedSum;
+        if (weightSum <= 0 || starSpace <= 0) return;
+
+        var lastStar = -1;
+        for (var i = 0; i < ColumnWidths.Count; i++)
+            if (ColumnWidths[i].IsStar) lastStar = i;
+
+        double used = 0;
+        for (var i = 0; i < ColumnWidths.Count; i++)
+        {
+            if (!ColumnWidths[i].IsStar) continue;
+            var share = i == lastStar
+                ? Math.Max(MinColumnWidth, Math.Round(starSpace - used))
+                : Math.Max(MinColumnWidth, Math.Round(starSpace * ColumnWidths[i].Value / weightSum));
+            used += share;
+            ColumnWidths[i] = new GridLength(share);
+        }
+    }
+
+    /// <summary>
+    /// 行内容区的列容器实宽 —— 表头列宽与弹性列冻结的唯一基准。
+    /// 优先实测已实例化行内的列容器（含纵向滚动条占宽的真实结果），
+    /// 无行可测时退回表头实宽（空表场景，无行可裁，不影响观感）。
+    /// </summary>
+    private double ColumnAreaWidth()
+    {
+        if (FindRowColumnGrid() is { ActualWidth: > 0 } rowGrid) return rowGrid.ActualWidth;
+        if (_headerGrid.ActualWidth > 0) return _headerGrid.ActualWidth;
+        return _headerGrid.ColumnDefinitions.Sum(cd => cd.ActualWidth);
+    }
+
+    /// <summary>取第一行的列容器 Grid（列数与 <see cref="ColumnWidths"/> 一致），用于实测行内容区。</summary>
+    private Grid? FindRowColumnGrid()
+    {
+        // 工厂模式：行映射里直接取行容器的子 Grid
+        foreach (var row in _rowMap.Values)
+        {
+            if (row.ActualWidth <= 0) continue;
+            if (row.Child is Grid g && g.ColumnDefinitions.Count == ColumnWidths.Count && g.ColumnDefinitions.Count > 0)
+                return g;
+        }
+
+        // 模板模式：从已实例化的行容器向下查找
+        for (var i = 0; i < _rowsList.Items.Count; i++)
+        {
+            if (_rowsList.ItemContainerGenerator.ContainerFromIndex(i) is DependencyObject container
+                && FindColumnGrid(container) is { } hit)
+                return hit;
+        }
+        return null;
+    }
+
+    private Grid? FindColumnGrid(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Grid g && g.ColumnDefinitions.Count == ColumnWidths.Count && g.ColumnDefinitions.Count > 0)
+                return g;
+            if (FindColumnGrid(child) is { } hit) return hit;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 让表头列区与行内容区在水平方向严格重合（宽度 + 左缘）。
+    /// 目的有二：① 表头分隔线正好压在行内列边界上（拖拽所见即所得）；
+    /// ② 冻结基准与真实行宽一致，杜绝拖拽瞬间行区溢出（"右侧向右闪一下"）。
+    /// 行区宽度受纵向滚动条影响会变化，故在行区尺寸变化/重新渲染后都重新对齐。
+    /// </summary>
+    private void AlignHeaderToRows()
+    {
+        var rowGrid = FindRowColumnGrid();
+
+        if (rowGrid is not { ActualWidth: > 0 })
+        {
+            // 无行可测：恢复表头自适应（避免残留上一次的固定宽度）
+            if (!double.IsNaN(_headerGrid.Width))
+            {
+                _headerGrid.Width = double.NaN;
+                _headerGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+                _headerGrid.Margin = new Thickness(0);
+            }
+            return;
+        }
+
+        try
+        {
+            var rowLeft = rowGrid.TransformToAncestor(this).Transform(new Point(0, 0)).X;
+            var headLeft = _headerGrid.TransformToAncestor(this).Transform(new Point(0, 0)).X;
+            var shift = Math.Max(0, _headerGrid.Margin.Left + (rowLeft - headLeft));
+
+            _headerGrid.HorizontalAlignment = HorizontalAlignment.Left;
+            _headerGrid.Width = rowGrid.ActualWidth;
+            if (Math.Abs(_headerGrid.Margin.Left - shift) > 0.5)
+                _headerGrid.Margin = new Thickness(Math.Round(shift, 1), 0, 0, 0);
+        }
+        catch (InvalidOperationException)
+        {
+            // 尚未接入可视树/布局未完 —— 跳过，等下一次尺寸变化再对齐
+        }
+    }
+
+    /// <summary>延后到布局结束后再对齐（行容器是布局期生成的，必须等它落地）。</summary>
+    private void ScheduleHeaderAlignment()
+        => Dispatcher.BeginInvoke(new Action(AlignHeaderToRows), DispatcherPriority.Loaded);
 
     // —— 行模式：模板模式 = ItemsSource 直通 + 模板呈现；工厂模式 = 控件生成行 ——
 
@@ -313,39 +502,61 @@ public class SortableDataTable : Grid
             _rowsList.ItemsSource = null; // 断开直通绑定，交给 RenderRows 管理
             RenderRows();
         }
+
+        // 行模式变化 → 行容器水平内距/滚动条状态可能变化，重新对齐表头列区
+        ScheduleHeaderAlignment();
     }
 
     private void OnHeaderClick(object sender, RoutedEventArgs e)
     {
         if (sender is not SortableHeaderButton header) return;
-        if (header.Field == SortField) SortAscending = !SortAscending;
+        // 与"生效排序"比较：未显式设过排序时第一列就是当前排序列，点它应该是切方向而不是跳成升序
+        if (header.Field == EffectiveSortField) SortAscending = !SortAscending;
         else { SortField = header.Field; SortAscending = true; }
         SortChanged?.Invoke(this, new SortEventArgs { Field = SortField, Ascending = SortAscending });
     }
 
     private void OnSortChanged()
     {
+        // 表头指示器始终指向"生效排序"列：调用方没设排序时落在第一个可排序列（见 EffectiveSortField）
+        var activeField = EffectiveSortField;
         foreach (var header in _headerButtons)
-            header.Direction = header.Field == SortField ? SortAscending : null;
+            header.Direction = header.Field == activeField ? SortAscending : null;
 
         // 内部排序只在默认工厂模式 + 列有 SortKey 时执行；模板模式（外部 VM 排序）不重排行
-        if (!IsTemplateMode && ColumnList.Any(c => c.Field == SortField && c.SortKey != null))
-            RenderRows();
+        // preserveView = true：重排同一批数据，保留选中与滚动位置
+        if (!IsTemplateMode && ColumnList.Any(c => c.Field == activeField && c.SortKey != null))
+            RenderRows(preserveView: true);
     }
 
     private IEnumerable<object> SortedItems()
     {
         var items = ItemsSource?.Cast<object>() ?? Array.Empty<object>();
-        var column = ColumnList.FirstOrDefault(c => c.Field == SortField);
+        var column = ColumnList.FirstOrDefault(c => c.Field == EffectiveSortField);
         if (column?.SortKey == null) return items;
         return SortAscending
             ? items.OrderBy(column.SortKey)
             : items.OrderByDescending(column.SortKey);
     }
 
-    private void RenderRows()
+    /// <summary>
+    /// 生效排序字段（架构保证）：调用方未设 SortField 时，自动落到第一个可排序列（升序）。
+    /// 这样任何使用方都不可能渲染出"一行三角形都没有"的表格——排序永远存在且表头可见；
+    /// 用局部推导而不是回写 DP，避免触发 DP 回调造成递归渲染。
+    /// </summary>
+    public string EffectiveSortField
+        => !string.IsNullOrEmpty(SortField)
+            ? SortField
+            : ColumnList.FirstOrDefault(c => c.SortKey != null)?.Field ?? string.Empty;
+
+    private void RenderRows(bool preserveView = false)
     {
         if (IsTemplateMode) return; // 模板模式行由 ItemsSource 直通驱动
+
+        // 排序只是重排同一批数据：应保留选中行与滚动位置（否则"点一下表头，选中没了、详情栏还在"）
+        var previousSelection = preserveView ? SelectedItem : null;
+        var previousOffset = preserveView ? _rowsScroller.VerticalOffset : 0;
+        var keepView = preserveView && RowHasData();
 
         var items = SortedItems().ToList();
         _rowMap.Clear();
@@ -363,12 +574,39 @@ public class SortableDataTable : Grid
             }
             _emptyHost.Content = EmptyContent;
             _emptyHost.Visibility = EmptyContent != null ? Visibility.Visible : Visibility.Collapsed;
+            ScheduleHeaderAlignment(); // 无行可测 → 表头恢复自适应宽度
             return;
         }
 
         _emptyHost.Content = null;
         _emptyHost.Visibility = Visibility.Collapsed;
         _rowsList.ItemsSource = items.Select(BuildRow).ToList();
+        ScheduleHeaderAlignment(); // 行重建 → 行区宽度/滚动条状态可能变化，表头列区需重新对齐
+
+        if (!keepView) return;
+
+        // 选中项在新行列表里找回并恢复高亮（详情栏与表格保持一致）
+        if (previousSelection is { } kept && _rowMap.TryGetValue(kept, out var keptRow))
+        {
+            SelectedItem = kept;
+            keptRow.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
+        }
+
+        // 滚动位置恢复要等新行完成布局（虚拟化下偏移单位是像素，直接设回去即可）
+        if (previousOffset > 0)
+        {
+            var target = previousOffset;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
+                new Action(() => _rowsScroller.ScrollToVerticalOffset(target)));
+        }
+    }
+
+    /// <summary>当前是否已有数据行（用于判断"重排"而非"换数据"）。</summary>
+    private bool RowHasData()
+    {
+        foreach (var item in _rowsList.Items)
+            if (item != null) return true;
+        return false;
     }
 
     private Border BuildRow(object item)
@@ -415,15 +653,18 @@ public class SortableDataTable : Grid
                 RowClick?.Invoke(this, item);
         };
 
+        // ⚠️ 必须登记行映射：SelectItem/ClearSelection/排序后恢复选中全靠它查回行容器。
+        // 缺了这行 → 选中态画不出来（表现为"点了行没有任何反馈"），且排序后无法恢复选中。
+        _rowMap[item] = row;
+
         return row;
     }
 
-    /// <summary>选中某一项（更新内部绘制；不匹配的项恢复透明。仅默认工厂模式）。</summary>
+    /// <summary>选中某一项（更新内部绘制；不匹配的项恢复默认态。仅默认工厂模式）。</summary>
     public void SelectItem(object item)
     {
         if (IsTemplateMode) return;
-        if (SelectedItem is { } old && _rowMap.TryGetValue(old, out var oldRow))
-            oldRow.Background = Brushes.Transparent;
+        ResetRowBackground(SelectedItem);
         SelectedItem = item;
         if (_rowMap.TryGetValue(item, out var newRow))
             newRow.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
@@ -432,8 +673,19 @@ public class SortableDataTable : Grid
     /// <summary>清除选中（仅默认工厂模式）。</summary>
     public void ClearSelection()
     {
-        if (SelectedItem is { } old && _rowMap.TryGetValue(old, out var oldRow))
-            oldRow.Background = Brushes.Transparent;
+        if (IsTemplateMode) return;
+        ResetRowBackground(SelectedItem);
         SelectedItem = null;
+    }
+
+    /// <summary>
+    /// 复位某行的选中底色：用 ClearValue 而不是赋 Transparent —— 本地值会压过样式触发器，
+    /// 赋过 Transparent 之后该行的悬停高亮就永久失效了。
+    /// </summary>
+    private void ResetRowBackground(object? item)
+    {
+        if (item == null) return;
+        if (_rowMap.TryGetValue(item, out var row))
+            row.ClearValue(BackgroundProperty);
     }
 }

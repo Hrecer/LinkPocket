@@ -31,6 +31,8 @@ public partial class BrowserView : UserControl
             if (ViewModel == null) return;
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged; // 防重复订阅
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ViewModel.FocusRowRequested -= OnFocusRowRequested;
+            ViewModel.FocusRowRequested += OnFocusRowRequested;
             HookRowsCollection(ViewModel);
             WireMainTableOnce();
         };
@@ -63,6 +65,60 @@ public partial class BrowserView : UserControl
     }
 
     private BrowserViewModel? ViewModel => DataContext as BrowserViewModel;
+
+    // —— 定位跳转：把刚选中的行滚入视口 ——
+    // 主栏是共享数据表（UI 虚拟化）：视口外的行还没有容器，必须先估算偏移滚过去，
+    // 等布局完成容器落地后再 BringIntoView 精确对齐，否则"跳转过去了但看不见"。
+
+    private void OnFocusRowRequested(object? sender, BrowserRowViewModel row) => ScrollRowIntoView(row);
+
+    private void ScrollRowIntoView(BrowserRowViewModel row)
+    {
+        if (ViewModel == null) return;
+        var list = MainTable.RowsList;
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement realized)
+            {
+                realized.BringIntoView();
+                return;
+            }
+
+            var scroller = FindAncestorScrollViewer(list);
+            var index = ViewModel.Rows.IndexOf(row);
+            if (scroller == null || index < 0) return;
+
+            var rowHeight = EstimateRowHeight(list);
+            scroller.ScrollToVerticalOffset(Math.Max(0, index * rowHeight - scroller.ViewportHeight / 3));
+
+            // 容器实现后精确对齐（第二段）
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement afterScroll)
+                    afterScroll.BringIntoView();
+            }));
+        }));
+    }
+
+    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject child)
+    {
+        var current = VisualTreeHelper.GetParent(child);
+        while (current != null)
+        {
+            if (current is ScrollViewer sv) return sv;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    /// <summary>行高估算：优先取已实现容器的实测高度，否则用共享表的常规行高兜底。</summary>
+    private static double EstimateRowHeight(ItemsControl list)
+    {
+        if (list.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement first && first.ActualHeight > 1)
+            return first.ActualHeight;
+        return 36;
+    }
 
     // —— 行错峰入场（MD3E）：目录装载/刷新后淡入 + 轻微上移，弹簧曲线 ——
     private ObservableCollectionHook? _rowsHook;
@@ -163,47 +219,32 @@ public partial class BrowserView : UserControl
         ViewModel.SetContextRow(row);
     }
 
-    // —— 面包屑路径编辑：候选键盘导航与取消 ——
+        // —— 面包屑地址栏（Views/BreadcrumbBar）事件转接：编辑态与候选导航仍由 BrowserViewModel 驱动 ——
 
-    private bool _suppressCandidateChoose;
-
-    private void PathEditBox_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (ViewModel == null) return;
-        if (e.Key == Key.Down)
+        private void Breadcrumb_CandidateMoveRequested(object? sender, CandidateMoveEventArgs e)
         {
-            _suppressCandidateChoose = true;
-            try { ViewModel.MoveCandidate(1); } finally { _suppressCandidateChoose = false; }
-            e.Handled = true;
+            if (ViewModel == null) return;
+            ViewModel.MoveCandidate(e.Delta);
         }
-        else if (e.Key == Key.Up)
+
+        private void Breadcrumb_EditFocusLost(object? sender, EventArgs e)
         {
-            _suppressCandidateChoose = true;
-            try { ViewModel.MoveCandidate(-1); } finally { _suppressCandidateChoose = false; }
-            e.Handled = true;
+            // 焦点移出路径框 → 退出编辑态（候选 ListBox Focusable=False，点击候选不会触发）
+            if (ViewModel is { IsPathEditing: true })
+                ViewModel.CancelPathEditCommand.Execute(null);
         }
-    }
 
-    private void PathEditBox_LostFocus(object sender, RoutedEventArgs e)
-    {
-        // 焦点移出路径框 → 退出编辑态（候选 ListBox Focusable=False，点击候选不会触发）
-        if (ViewModel is { IsPathEditing: true })
-            ViewModel.CancelPathEditCommand.Execute(null);
-    }
+        private void Breadcrumb_EditPopupClosed(object? sender, EventArgs e)
+        {
+            // 点击候选项以外区域关闭 Popup → 退出编辑态（与 Esc 一致）
+            if (ViewModel is { IsPathEditing: true })
+                ViewModel.CancelPathEditCommand.Execute(null);
+        }
 
-    private void PathCandidates_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_suppressCandidateChoose) return;
-        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not string name) return;
-        ViewModel?.ChooseCandidate(name);
-    }
-
-    private void PathCandidatesPopup_Closed(object? sender, EventArgs e)
-    {
-        // 点击候选项以外区域关闭 Popup → 退出编辑态（与 Esc 一致）
-        if (ViewModel is { IsPathEditing: true })
-            ViewModel.CancelPathEditCommand.Execute(null);
-    }
+        private void Breadcrumb_CandidateChosen(object? sender, string? name)
+        {
+            if (!string.IsNullOrEmpty(name)) ViewModel?.ChooseCandidate(name);
+        }
 
     // —— 行拖拽（参考 Windows 资源管理器：按下 → 移动超过阈值 → 进入拖拽）——
 
@@ -267,32 +308,34 @@ public partial class BrowserView : UserControl
         e.Handled = true;
     }
 
-    // —— 树节点拖放（移入对应文件夹；根节点 = 移到全部书签）——
+    // —— 树节点拖放/选中（FolderTreePanel 事件转发）——
 
-    private void TreeItem_DragOver(object sender, DragEventArgs e)
+    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受。</summary>
+    private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
-        var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var node = (sender as TreeViewItem)?.DataContext as FolderNode;
+        var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+        var node = e.Node as FolderNode;
         var ok = node != null && IsDropValid(payload, node.FolderId);
-        e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
+        e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+        e.Args.Handled = true;
     }
 
-    private void TreeItem_Drop(object sender, DragEventArgs e)
+    /// <summary>树节点落放：移入对应文件夹（根节点「全部书签」= 移到根）。</summary>
+    private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
     {
-        var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var node = (sender as TreeViewItem)?.DataContext as FolderNode;
+        var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+        var node = e.Node as FolderNode;
         if (payload != null && node != null && IsDropValid(payload, node.FolderId))
             _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), node.FolderId);
-        e.Handled = true;
+        e.Args.Handled = true;
     }
 
     /// <summary>点击树节点 → 进入对应目录。</summary>
-    private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (_suppressTreeSelection) return;
-        if (e.NewValue is FolderNode node && ViewModel != null)
-            _ = ViewModel.LoadAsync(node.FolderId);
+        if (node is FolderNode fn && ViewModel != null)
+            _ = ViewModel.LoadAsync(fn.FolderId);
     }
 
     /// <summary>VM 当前目录变化（双击行/面包屑/后退前进）→ 同步左侧树选中；进入路径编辑态 → 聚焦并全选。</summary>
@@ -302,8 +345,10 @@ public partial class BrowserView : UserControl
         {
             if (ViewModel is { IsPathEditing: true })
             {
-                PathEditBox.Focus();
-                PathEditBox.SelectAll();
+                // 编辑框在 BreadcrumbBar 模板内（Collapsd↔Visible 切换由控件触发器负责），找到后聚焦全选
+                var editBox = FindDescendant<TextBox>(Breadcrumb);
+                editBox?.Focus();
+                editBox?.SelectAll();
             }
             return;
         }
@@ -314,7 +359,7 @@ public partial class BrowserView : UserControl
         _suppressTreeSelection = true;
         try
         {
-            SelectTreeItem(FolderTreeControl.Items, targetId);
+            FolderTreePanelCtl.SelectNodeById(targetId);
         }
         finally
         {
@@ -322,26 +367,17 @@ public partial class BrowserView : UserControl
         }
     }
 
-    private bool SelectTreeItem(ItemCollection items, string? folderId)
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
     {
-        foreach (var item in items)
+        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
         {
-            if (FolderTreeControl.ItemContainerGenerator.ContainerFromItem(item) is not TreeViewItem container)
-                continue;
-
-            if (item is FolderNode node && string.Equals(node.FolderId, folderId, StringComparison.Ordinal))
-            {
-                container.IsSelected = true;
-                return true;
-            }
-
-            if (SelectTreeItem(container.Items, folderId))
-            {
-                container.IsExpanded = true;
-                return true;
-            }
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T hit) return hit;
+            var sub = FindDescendant<T>(child);
+            if (sub != null) return sub;
         }
-        return false;
+        return null;
     }
 
     /// <summary>点击空白处清除选中（命中行内元素时不处理，由行命令负责）。</summary>

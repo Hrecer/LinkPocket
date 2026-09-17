@@ -24,8 +24,10 @@ namespace LinkPocket.Services
         void CloseBrowserPage();
 
         /// <summary>
-        /// 在浏览页打开某条链接的详情（工具页/智能列表/搜索页的「跳转」统一走这里）。
-        /// 老「链接」页删除后，跳转目标由它改为浏览页详情页。
+        /// 在浏览页打开某条链接的**详情页**（工具页/搜索页/智能列表的「详情」入口走这里）。
+        /// ⚠️ 语义区分：「详情」= 展开该链接的详情页；「跳转」= 进入其所在目录并选中那一行，
+        /// 后者是标准能力，请用 <see cref="IContentLocator"/>（Services/ContentLocator），
+        /// 不要再用本方法承担跳转语义。
         /// </summary>
         void OpenLinkInBrowser(string linkId);
 

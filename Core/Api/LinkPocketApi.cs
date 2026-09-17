@@ -25,8 +25,72 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         _db.Database.EnsureCreated();
         MigrateLegacyRootIds();
         EnsureFolderVisitCountColumn();
+        RebuildTrashTablesIfNeeded();
         _links = new Services.LinkService(_db);
         _folders = new Services.FolderService(_db);
+    }
+
+    /// <summary>
+    /// 回收站表结构重建（v2：层级化回收站）：
+    /// 旧 trashed_links 是无层级的扁平快照（list_id 单列），新结构 = trash_folders（被删文件夹树）
+    /// + trashed_links（含 trash_folder_id / origin_list_id / origin_path）。
+    /// 用户决策：旧数据清空重来（原本就是脚本生成的），检测到旧结构时直接 DROP 重建；
+    /// 新库由 EnsureCreated 建表，这里 CREATE TABLE IF NOT EXISTS 兜底。
+    /// </summary>
+    private void RebuildTrashTablesIfNeeded()
+    {
+        try
+        {
+            var needsRebuild = false;
+            using (var cmd = _db.Database.GetDbConnection().CreateCommand())
+            {
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('trashed_links') WHERE name = 'origin_list_id'";
+                _db.Database.OpenConnection();
+                needsRebuild = Convert.ToInt64(cmd.ExecuteScalar()) == 0;
+            }
+            if (needsRebuild)
+            {
+                _db.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS trashed_links");
+                Logger.Info("回收站表结构升级：trashed_links 已重建（旧扁平快照按决策清空）");
+            }
+            _db.Database.ExecuteSqlRaw(@"
+CREATE TABLE IF NOT EXISTS trash_folders (
+    trash_folder_id        TEXT PRIMARY KEY NOT NULL,
+    parent_trash_folder_id TEXT,
+    name                   TEXT NOT NULL,
+    origin_folder_id       TEXT,
+    origin_path            TEXT,
+    deleted_at             TEXT NOT NULL
+)");
+            _db.Database.ExecuteSqlRaw(@"
+CREATE TABLE IF NOT EXISTS trashed_links (
+    link_id         TEXT PRIMARY KEY NOT NULL,
+    url             TEXT NOT NULL,
+    title           TEXT,
+    description     TEXT,
+    favicon_url     TEXT,
+    trash_folder_id TEXT,
+    origin_list_id  TEXT,
+    origin_path     TEXT,
+    last_visited_at TEXT,
+    visit_count     INTEGER NOT NULL DEFAULT 0,
+    is_important    INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    deleted_at      TEXT NOT NULL
+)");
+            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trashed_links_deleted_at ON trashed_links(deleted_at)");
+            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trashed_links_trash_folder_id ON trashed_links(trash_folder_id)");
+            _db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_trash_folders_parent ON trash_folders(parent_trash_folder_id)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("回收站表结构重建失败", ex);
+        }
+        finally
+        {
+            try { _db.Database.CloseConnection(); } catch { }
+        }
     }
 
     /// <summary>
@@ -173,6 +237,20 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
             .ToList();
     }
 
+    /// <summary>
+    /// 按 ID 取单个文件夹。计数口径与 <see cref="GetFolderTreeAsync"/> 完全一致（递归子链接数），
+    /// 保证同一文件夹在树里与在定位结果里显示的数字相同。
+    /// </summary>
+    public async Task<FolderDto?> GetFolderAsync(string folderId)
+    {
+        if (FolderIds.IsRoot(folderId)) return null;   // 根不是实体、没有 ID
+        var allFolders = await _folders.GetAllFoldersAsync();
+        var folder = allFolders.FirstOrDefault(f => f.FolderId == folderId);
+        if (folder == null) return null;
+        var counts = await GetRecursiveLinkCountsAsync(allFolders);
+        return MapFolder(folder, counts);
+    }
+
     public async Task<List<string>> GetBreadcrumbAsync(string? folderId)
     {
         if (FolderIds.IsRoot(folderId))
@@ -214,6 +292,7 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         if (cascade == "move_to_list") await _folders.TouchModifiedAsync(targetListId);
         RaiseChanged("folders.changed", new { folder_id = id });
         RaiseChanged("links.changed", new { folder_id = id });
+        if (cascade == "trash_links") RaiseChanged("trash.changed", new { folder_id = id });
     }
 
     public async Task MoveFolderAsync(string folderId, string? targetParentId)
@@ -267,6 +346,13 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         return links.Select(MapLink).ToList();
     }
 
+    /// <summary>按 ID 取单条链接（不存在返回 null）：定位组件据此解析链接所属目录。</summary>
+    public async Task<LinkDto?> GetLinkAsync(string linkId)
+    {
+        var link = await _links.GetActiveByIdAsync(linkId);
+        return link == null ? null : MapLink(link);
+    }
+
     public async Task<List<LinkDto>> GetRootLevelLinksAsync(string sortBy = "created_at", string sortOrder = "desc", int perPage = 50)
     {
         var links = await _links.GetRootLevelLinksAsync(sortBy, sortOrder, perPage);
@@ -317,22 +403,78 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
 
     public async Task<List<TrashEntryDto>> GetTrashAsync()
     {
-        var items = await _links.GetDeletedLinksAsync();
-        return items.Select(t => new TrashEntryDto
+        var entries = new List<TrashEntryDto>();
+
+        // 被删文件夹单元根（挂在回收站根的删除操作对象）
+        var folderRoots = await _db.TrashedFolders.Where(f => f.ParentTrashFolderId == null).ToListAsync();
+        foreach (var f in folderRoots)
         {
-            LinkId = t.LinkId,
-            Url = t.Url,
-            Title = t.Title,
-            Description = t.Description,
-            FaviconUrl = t.FaviconUrl,
-            OriginalListId = t.ListId,
-            LastVisitedAt = t.LastVisitedAt,
-            VisitCount = t.VisitCount,
-            IsImportant = t.IsImportant,
-            CreatedAt = t.CreatedAt,
-            UpdatedAt = t.UpdatedAt,
-            DeletedAt = t.DeletedAt
-        }).ToList();
+            entries.Add(new TrashEntryDto
+            {
+                Id = f.TrashFolderId,
+                EntryType = "folder",
+                Name = f.Name,
+                OriginPath = f.OriginPath,
+                DeletedAt = f.DeletedAt
+            });
+        }
+
+        // 单独删除的书签（挂在回收站根）
+        var rootLinks = await _links.GetDeletedLinksAsync();
+        foreach (var t in rootLinks)
+        {
+            entries.Add(new TrashEntryDto
+            {
+                Id = t.LinkId,
+                EntryType = "link",
+                Name = string.IsNullOrEmpty(t.Title) ? t.Url : t.Title!,
+                Url = t.Url,
+                FaviconUrl = t.FaviconUrl,
+                OriginPath = t.OriginPath,
+                DeletedAt = t.DeletedAt
+            });
+        }
+
+        return entries.OrderByDescending(e => e.DeletedAt).ToList();
+    }
+
+    public async Task<List<TrashFolderDto>> GetTrashTreeAsync()
+    {
+        var folders = await _folders.GetAllTrashFoldersAsync();
+        var links = await _db.TrashedLinks.Where(l => l.TrashFolderId != null).ToListAsync();
+
+        // 每个单元的药丸计数 = 单元子树内的书签总数
+        var result = new List<TrashFolderDto>();
+        foreach (var f in folders)
+        {
+            var subtreeIds = new List<string> { f.TrashFolderId };
+            var added = true;
+            while (added)
+            {
+                added = false;
+                foreach (var child in folders)
+                {
+                    if (child.ParentTrashFolderId != null
+                        && subtreeIds.Contains(child.ParentTrashFolderId)
+                        && !subtreeIds.Contains(child.TrashFolderId))
+                    {
+                        subtreeIds.Add(child.TrashFolderId);
+                        added = true;
+                    }
+                }
+            }
+
+            result.Add(new TrashFolderDto
+            {
+                TrashFolderId = f.TrashFolderId,
+                ParentTrashFolderId = f.ParentTrashFolderId,
+                Name = f.Name,
+                LinkCount = links.Count(l => l.TrashFolderId != null && subtreeIds.Contains(l.TrashFolderId)),
+                DeletedAt = f.DeletedAt
+            });
+        }
+
+        return result;
     }
 
     public async Task<LinkDto> RestoreLinkAsync(string linkId)
@@ -343,10 +485,13 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         return dto;
     }
 
-    public async Task PurgeLinkAsync(string linkId)
+    public async Task PurgeTrashAsync(string id, bool isFolder)
     {
-        await _links.PermanentDeleteLinkAsync(linkId);
-        RaiseChanged("trash.changed", new { link_id = linkId });
+        if (isFolder)
+            await _folders.PurgeTrashFolderSubtreeAsync(id);
+        else
+            await _links.PermanentDeleteLinkAsync(id);
+        RaiseChanged("trash.changed", new { id });
     }
 
     // —— 搜索与智能列表 ——
@@ -422,18 +567,24 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         return new LinkCountsDto
         {
             Total = await _links.GetTotalCountAsync(),
-            Trash = (await _links.GetDeletedLinksAsync()).Count,
+            // 回收站项数 = 单独删除的书签 + 被删文件夹单元（Windows 口径：按删除操作计数）
+            Trash = (await _links.GetDeletedLinksAsync()).Count
+                    + await _db.TrashedFolders.CountAsync(f => f.ParentTrashFolderId == null),
             RootLevel = await _links.GetRootLevelLinkCountAsync(),
             ByFolder = await _links.GetLinkCountByFolderAsync()
         };
     }
 
-    // —— 导入 / 导出 ——
+    // —— 导入 / 导出（Netscape 书签文件格式：Chrome / Edge / Firefox 通用交换格式） ——
 
-    public async Task<string> ExportBookmarksHtmlAsync(string outputPath)
+    /// <param name="outputFilePath">导出目标<b>文件</b>的完整路径（目录须已存在）。</param>
+    public async Task<string> ExportBookmarksHtmlAsync(string outputFilePath)
     {
-        await new Services.BookmarkExporter(_db).ExportAsync(outputPath);
-        return outputPath;
+        var result = await new Services.BookmarkExporter(_db).ExportAsync(outputFilePath);
+        Logger.Info($"[导出] 完成：文件={result.FilePath} 文件夹={result.FoldersExported} " +
+                    $"书签={result.TotalLinks}（根级 {result.RootLinksExported}，其中无归属 {result.OrphanLinksExported}）" +
+                    $"大小={result.FileBytes} 字节");
+        return result.FilePath;
     }
 
     public async Task<int> ImportBookmarksHtmlAsync(string filePath)
@@ -445,6 +596,25 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
         RaiseChanged("links.changed", new { source = "import.bookmarks_html", count = result.TotalItems });
         RaiseChanged("folders.changed", new { source = "import.bookmarks_html" });
         return result.TotalItems;
+    }
+
+    /// <summary>只读预检：识别文件格式并统计条目数，不写任何数据（导入前展示 / 导出后校验共用）。</summary>
+    public async Task<BookmarkFileInspectionDto> InspectBookmarksHtmlAsync(string filePath)
+    {
+        var inspection = await Services.BookmarkImporter.InspectAsync(filePath);
+        return new BookmarkFileInspectionDto
+        {
+            IsValid = inspection.IsValid,
+            Error = inspection.Error,
+            Format = inspection.Format,
+            Warnings = inspection.Warnings,
+            FolderCount = inspection.FolderCount,
+            LinkCount = inspection.LinkCount,
+            SkippedCount = inspection.SkippedCount,
+            MaxDepth = inspection.MaxDepth,
+            FileBytes = inspection.FileBytes,
+            TotalItems = inspection.TotalItems
+        };
     }
 
     // —— .lpbackup 备份 ——
@@ -465,6 +635,9 @@ public class LinkPocketApi : ILinkPocketApi, ILinkPocketEventSource
             Errors = result.Errors
         };
     }
+
+    public Task<List<TrashEntryDto>> GetTrashUnitContentsAsync(string trashFolderId)
+        => _folders.GetTrashUnitContentsAsync(trashFolderId);
 
     // —— 维护 ——
 

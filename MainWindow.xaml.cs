@@ -18,12 +18,15 @@ using Material3.Wpf;
 
 namespace LinkPocket;
 
-public partial class MainWindow : Window, Services.IUiCoordinator
+public partial class MainWindow : Window, Services.IUiCoordinator, Services.IBrowserLocateHost
 {
     private readonly Managers.SelectionManager _selectionManager = new();
 
     // 搜索页自己的选中态（老「链接」页删除后，主窗口只剩搜索页需要残余状态）
     private LinkItem? _selectedSearchItem;
+
+    // 搜索页右侧详情栏：复用 Views/DetailSidebar 控件（与浏览页同一数据契约，解耦于 BrowserViewModel）
+    private readonly SearchDetailsViewModel _searchDetails = new();
 
     public MainWindow()
     {
@@ -31,7 +34,12 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         DataContext = new MainViewModel(_selectionManager);
         BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
         Services.UiCoordinator.Instance = this;
+        // 内容定位组件（「跳转」）的宿主注册：本窗口只提供"切到浏览页 + 进入目录并选中一行"两个原语，
+        // 定位算法在 Services/ContentLocator 里——页面与工具都只依赖 IContentLocator，不直接碰窗口。
+        Services.BrowserLocateHost.Current = this;
         SetupSearchTable(); // 搜索结果表：列定义 + 排序 + 行交互（完全数据驱动）
+        SearchSidebar.DataContext = _searchDetails; // 搜索详情栏：同一控件，数据由 SearchDetailsViewModel 驱动
+        WireSearchDetailsCommands();
 
         // 老「链接」页的 LinkNavigator（在旧列表里定位/展开/滚动到某条链接）随页面一并删除；
         // 搜索页的「跳转」已改为在「浏览」页直接打开该链接的详情页。
@@ -42,6 +50,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             {
                 _selectedSearchItem = null;
                 SearchJumpToLinkBtn.IsEnabled = false;
+                _searchDetails.UpdateFrom(null, "");
             };
             searchVm.OnSearchRefreshRequested += async (s, e) =>
             {
@@ -93,6 +102,21 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         _ = vm.BrowserViewModel.LoadAsync(folderId);
     }
 
+    // —— IBrowserLocateHost（「跳转」= 进入目标目录并选中目标行）——
+    // 本窗口只提供两个原语：切页 + 委托浏览页执行"进入目录并选中一行"。
+    // 目标类型判别、容器目录推导等算法全部在 Services/ContentLocator（组件），窗口不参与。
+
+    void Services.IBrowserLocateHost.ShowBrowser()
+    {
+        if (DataContext is MainViewModel vm)
+            vm.SelectNavCommand.Execute("browser");
+    }
+
+    Task<bool> Services.IBrowserLocateHost.EnterAndSelectAsync(string? folderId, string rowId)
+        => DataContext is MainViewModel vm
+            ? vm.BrowserViewModel.NavigateAndSelectAsync(folderId, rowId)
+            : Task.FromResult(false);
+
     Task Services.IUiCoordinator.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
 
     void Services.IUiCoordinator.ShowNavigationTabs()
@@ -103,89 +127,13 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
     bool Services.IUiCoordinator.ConfirmDeleteFolder(string folderName) => ShowDeleteFolderConfirmation(folderName);
 
+    // Windows 口径：删除文件夹 = 整体移入回收站，不再罗列"子文件夹一并删除"等后果说明
     private bool ShowDeleteFolderConfirmation(string folderName)
-    {
-        var dialog = new Window
-        {
-            Title = "删除文件夹",
-            Width = 360, Height = 200,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = this,
-            ResizeMode = ResizeMode.NoResize,
-            WindowStyle = WindowStyle.None,
-            Background = System.Windows.Media.Brushes.Transparent,
-            AllowsTransparency = true
-        };
+        => ShowConfirmDialog("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？");
 
-        var contentPanel = new StackPanel { Margin = new Thickness(24) };
-
-        contentPanel.Children.Add(new TextBlock
-        {
-            Text = "删除文件夹", FontSize = 16, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4)
-        });
-
-        contentPanel.Children.Add(new TextBlock
-        {
-            Text = $"确定要删除文件夹 \"{folderName}\" 吗？",
-            FontSize = 14, Margin = new Thickness(0, 0, 0, 20),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = (Brush)Application.Current.FindResource("OnSurface")
-        });
-
-        var btnPanel = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-
-        var cancelBtn = new System.Windows.Controls.Button
-        {
-            Content = "取消", Padding = new Thickness(16, 6, 16, 6), Margin = new Thickness(0, 0, 8, 0),
-            Cursor = Cursors.Hand, BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-            BorderThickness = new Thickness(1)
-        };
-        cancelBtn.Click += (s, e) => dialog.DialogResult = false;
-        btnPanel.Children.Add(cancelBtn);
-
-        var okBtn = new System.Windows.Controls.Button
-        {
-            Content = "确定", Padding = new Thickness(16, 6, 16, 6), FontWeight = FontWeights.SemiBold,
-            Cursor = Cursors.Hand, BorderThickness = new Thickness(0),
-            Background = (Brush)Application.Current.FindResource("Primary"),
-            Foreground = System.Windows.Media.Brushes.White
-        };
-        okBtn.Click += (s, e) => dialog.DialogResult = true;
-        btnPanel.Children.Add(okBtn);
-
-        contentPanel.Children.Add(btnPanel);
-
-        var outerBorder = new Border
-        {
-            CornerRadius = new CornerRadius(8),
-            Background = System.Windows.Media.Brushes.White,
-            BorderBrush = (Brush)Application.Current.FindResource("OutlineVariant"),
-            BorderThickness = new Thickness(1),
-            Child = contentPanel
-        };
-
-        dialog.Content = outerBorder;
-
-        dialog.PreviewKeyDown += (s, e) =>
-        {
-            if (e.Key == Key.Escape)
-            {
-                dialog.DialogResult = false;
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Enter)
-            {
-                dialog.DialogResult = true;
-                e.Handled = true;
-            }
-        };
-
-        return dialog.ShowDialog() == true;
-    }
+    /// <summary>通用确认弹窗：统一走 MD3E ConfirmDialog（药丸 + 色调卡片），确定 = true。</summary>
+    private bool ShowConfirmDialog(string title, string message)
+        => Views.ConfirmDialog.Show(title, message, "删除");
 
     #endregion
 
@@ -326,7 +274,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         await viewModel.BrowserViewModel.LoadAsync(null);
 
         // 导航项此时已完成测量：让选中药丸对准当前选中项（不带动画的初始定位）
-        Dispatcher.BeginInvoke(new Action(() => RepositionNavPill(animate: false)),
+        _ = Dispatcher.BeginInvoke(new Action(() => RepositionNavPill(animate: false)),
             System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
@@ -557,41 +505,47 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             new DataTableColumn
             {
-                Field = "title", Label = "名称", Width = -1,
+                // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度
+                // （用户 2026-09-16 反馈"URL 被大幅压缩"）——空间来自右侧四列压到极限
+                Field = "title", Label = "名称", Width = -2,
                 SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
                     ? ((LinkItem)r).Url : ((LinkItem)r).Title),
                 CellFactory = r => BuildSearchNameCell((LinkItem)r)
             },
             new DataTableColumn
             {
-                Field = "path", Label = "位置", Width = 200,
+                // 位置列占 3 份剩余空间（名称 2 份）：层级路径最长、最需要宽度；
+                // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
+                // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
+                // 省下的宽度全部让给名称/位置（用户 2026-09-16 要求 URL 不再被压缩）
+                Field = "path", Label = "位置", Width = -3,
                 SortKey = r => (IComparable)(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签"),
                 CellFactory = r => SearchTextCell(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签", 12.5)
             },
             new DataTableColumn
             {
-                Field = "updated_at", Label = "最后更新", Width = 150,
+                Field = "updated_at", Label = "最后更新", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).UpdatedAt,
-                CellFactory = r => SearchTextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 13)
+                CellFactory = r => SearchTextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
             },
             new DataTableColumn
             {
-                Field = "last_visited_at", Label = "最后查看", Width = 150,
+                Field = "last_visited_at", Label = "最后查看", Width = 114,
                 SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
                 CellFactory = r => SearchTextCell(
-                    ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 13)
+                    ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 12.5)
             },
             new DataTableColumn
             {
-                Field = "visit_count", Label = "查看次数", Width = 90,
+                Field = "visit_count", Label = "查看次数", Width = 72,
                 SortKey = r => (IComparable)((LinkItem)r).VisitCount,
-                CellFactory = r => SearchTextCell($"{((LinkItem)r).VisitCount} 次", 13)
+                CellFactory = r => SearchTextCell($"{((LinkItem)r).VisitCount} 次", 12.5)
             },
             new DataTableColumn
             {
-                Field = "created_at", Label = "创建时间", Width = 150,
+                Field = "created_at", Label = "创建时间", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).CreatedAt,
-                CellFactory = r => SearchTextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 13)
+                CellFactory = r => SearchTextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
             },
         };
 
@@ -599,6 +553,8 @@ public partial class MainWindow : Window, Services.IUiCoordinator
         {
             _selectedSearchItem = (LinkItem)item;
             SearchJumpToLinkBtn.IsEnabled = true;
+            // 详情栏与表格「位置」列同一口径（沿文件夹树解析路径）
+            _searchDetails.UpdateFrom((LinkItem)item, FindFolderNameForLink(((LinkItem)item).ListId));
         };
         SearchResultsTable.RowDoubleClick += (_, item) => OpenLinkInBrowserPage(((LinkItem)item).LinkId);
     }
@@ -728,6 +684,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     {
         _selectedSearchItem = null;
         SearchJumpToLinkBtn.IsEnabled = false;
+        _searchDetails.UpdateFrom(null, "");
         SearchResultsTable.EmptyContent = BuildSearchState("magnify", "想找点什么？",
             "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
             "PrimaryContainer", "OnPrimaryContainer");
@@ -768,6 +725,21 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             return;
         }
 
+        // 范围守卫：四个范围全部取消勾选时没有可搜字段，直接给引导空态
+        // （原行为会无视范围全量返回，与"搜索范围"语义矛盾）
+        if (SearchPathCb.IsChecked != true && SearchUrlCb.IsChecked != true
+            && SearchTitleCb.IsChecked != true && SearchDescCb.IsChecked != true)
+        {
+            _selectedSearchItem = null;
+            SearchJumpToLinkBtn.IsEnabled = false;
+            _searchDetails.UpdateFrom(null, "");
+            SearchResultsTable.EmptyContent = BuildSearchState("alert-circle-outline", "请先选择搜索范围",
+                "至少勾选 路径 / URL / 标题 / 描述 之一，再进行搜索",
+                "SecondaryContainer", "OnSecondaryContainer");
+            SearchResultsTable.ItemsSource = null;
+            return;
+        }
+
         // 加载态：清空数据 + 加载占位
         SearchResultsTable.EmptyContent = BuildSearchState("magnify", "正在搜索…",
             null, "SecondaryContainer", "OnSecondaryContainer");
@@ -784,6 +756,7 @@ public partial class MainWindow : Window, Services.IUiCoordinator
             );
             _selectedSearchItem = null;
             SearchJumpToLinkBtn.IsEnabled = false;
+            _searchDetails.UpdateFrom(null, "");
             _lastSearchQuery = query;
 
             // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
@@ -808,6 +781,85 @@ public partial class MainWindow : Window, Services.IUiCoordinator
     private string _lastSearchQuery = "";
 
     private List<LinkItem> _lastSearchResults = new();
+
+    // —— 范围变化 → 静默刷新（非全量）：防抖 300ms 后只替换行集合，
+    //    不出现「正在搜索…」加载态、不重置排序/表头，原选中项若仍在结果中则保持选中 ——
+    private System.Windows.Threading.DispatcherTimer? _scopeDebounce;
+    private int _scopeRefreshGen;
+
+    private void SearchScope_Changed(object sender, RoutedEventArgs e)
+    {
+        _scopeDebounce ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        _scopeDebounce.Stop();
+        _scopeDebounce.Tick -= ScopeDebounce_Tick;
+        _scopeDebounce.Tick += ScopeDebounce_Tick;
+        _scopeDebounce.Start();
+    }
+
+    private void ScopeDebounce_Tick(object? sender, EventArgs e)
+    {
+        _scopeDebounce?.Stop();
+        if (DataContext is MainViewModel vm && !string.IsNullOrWhiteSpace(_lastSearchQuery))
+            _ = RefreshSearchResultsAsync(vm);
+    }
+
+    /// <summary>
+    /// 范围变化后的就地刷新：拿新范围的结果直接替换 ItemsSource（跳过加载占位与清空闪烁）；
+    /// 代次计数防止连续切换时旧结果覆盖新结果。范围全空时给引导空态（与搜索守卫同一口径）。
+    /// </summary>
+    private async Task RefreshSearchResultsAsync(MainViewModel vm)
+    {
+        var query = _lastSearchQuery;
+        if (string.IsNullOrWhiteSpace(query)) return;
+
+        int gen = ++_scopeRefreshGen;
+
+        if (SearchPathCb.IsChecked != true && SearchUrlCb.IsChecked != true
+            && SearchTitleCb.IsChecked != true && SearchDescCb.IsChecked != true)
+        {
+            _selectedSearchItem = null;
+            SearchJumpToLinkBtn.IsEnabled = false;
+            _searchDetails.UpdateFrom(null, "");
+            SearchResultsTable.EmptyContent = BuildSearchState("alert-circle-outline", "请先选择搜索范围",
+                "至少勾选 路径 / URL / 标题 / 描述 之一，再进行搜索",
+                "SecondaryContainer", "OnSecondaryContainer");
+            SearchResultsTable.ItemsSource = null;
+            return;
+        }
+
+        try
+        {
+            var results = await vm.SearchLinksByTitleAsync(
+                query,
+                searchPath: SearchPathCb.IsChecked == true,
+                searchUrl: SearchUrlCb.IsChecked == true,
+                searchTitle: SearchTitleCb.IsChecked == true,
+                searchDescription: SearchDescCb.IsChecked == true
+            );
+            if (gen != _scopeRefreshGen) return; // 已有更新的范围变化，放弃旧结果
+
+            SearchResultsTable.ItemsSource = results;
+
+            // 选中保持：原选中项仍在新结果里 → 恢复行选中与详情栏；不在 → 清空
+            if (_selectedSearchItem is { } prev)
+            {
+                var still = results.FirstOrDefault(r => r.LinkId == prev.LinkId);
+                if (still != null)
+                {
+                    _selectedSearchItem = still;
+                    SearchResultsTable.SelectItem(still);
+                    _searchDetails.UpdateFrom(still, FindFolderNameForLink(still.ListId));
+                }
+                else
+                {
+                    _selectedSearchItem = null;
+                    SearchJumpToLinkBtn.IsEnabled = false;
+                    _searchDetails.UpdateFrom(null, "");
+                }
+            }
+        }
+        catch { /* 静默刷新失败时保留旧列表 */ }
+    }
 
     /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
     private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
@@ -864,6 +916,68 @@ public partial class MainWindow : Window, Services.IUiCoordinator
 
         vm.SelectNavCommand.Execute("browser");
         _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
+    }
+
+    /// <summary>
+    /// 搜索详情栏的页面动作命令（数据模型只持契约，动作由本窗口注入）：
+    /// 打开 / 编辑都进入「浏览」页的链接详情页（详情页自带完整编辑与删除入口）；
+    /// 删除 = 确认后移入回收站（可恢复），随后重跑当前搜索刷新结果。
+    /// </summary>
+    private void WireSearchDetailsCommands()
+    {
+        _searchDetails.OpenCommand = new RelayCommand(
+            () => { if (_selectedSearchItem != null) OpenLinkInBrowserPage(_selectedSearchItem.LinkId); },
+            () => _selectedSearchItem != null);
+        _searchDetails.RenameCommand = new RelayCommand(
+            () => { if (_selectedSearchItem != null) OpenLinkInBrowserPage(_selectedSearchItem.LinkId); },
+            () => _selectedSearchItem != null);
+        _searchDetails.OpenWebsiteCommand = new RelayCommand(
+            () => _ = OpenSelectedSearchLinkWebsiteAsync(),
+            () => _selectedSearchItem != null);
+        _searchDetails.DeleteCommand = new RelayCommand(() => _ = DeleteSelectedSearchLinkAsync(),
+            () => _selectedSearchItem != null);
+    }
+
+    /// <summary>搜索侧栏「打开网站」：默认浏览器打开并记录一次访问（与浏览页侧栏同口径）。</summary>
+    private async Task OpenSelectedSearchLinkWebsiteAsync()
+    {
+        var item = _selectedSearchItem;
+        if (item == null) return;
+        try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
+        catch { /* 无法打开时保持静默 */ }
+        try
+        {
+            await Services.AppServices.Api.RecordVisitAsync(item.LinkId);
+            if (_selectedSearchItem?.LinkId == item.LinkId)
+                _searchDetails.UpdateFrom(item, FindFolderNameForLink(item.ListId)); // 统计行原位刷新
+        }
+        catch { /* 记账失败不打断 */ }
+    }
+
+    private async Task DeleteSelectedSearchLinkAsync()
+    {
+        var item = _selectedSearchItem;
+        if (item == null) return;
+
+        var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
+        if (!ShowConfirmDialog("删除链接", $"将链接「{name}」移入回收站吗？")) return;
+
+        try
+        {
+            await Services.AppServices.Api.TrashLinkAsync(item.LinkId);
+            _selectedSearchItem = null;
+            SearchJumpToLinkBtn.IsEnabled = false;
+            _searchDetails.UpdateFrom(null, "");
+
+            // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
+            if (!string.IsNullOrWhiteSpace(_lastSearchQuery) && DataContext is MainViewModel vm)
+                await ExecuteTitleSearchAsync(vm, _lastSearchQuery);
+        }
+        catch (Exception ex)
+        {
+            SearchResultsTable.EmptyContent = BuildSearchState("alert-outline", "删除出了点小问题",
+                ex.Message, "SurfaceContainerHighest", "OnSurface");
+        }
     }
 
 

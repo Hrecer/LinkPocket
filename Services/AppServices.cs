@@ -16,6 +16,13 @@ public static class AppServices
     /// <summary>通信通道（当前为进程内直连，未来可替换为 HTTP/WebSocket）。</summary>
     public static ILinkPocketTransport Transport { get; private set; } = null!;
 
+    /// <summary>
+    /// 内容定位组件（「跳转」的标准实现）：进入目标所在目录并选中目标行。
+    /// 任何页面/工具都通过它做跳转，而不是各自调用界面方法（避免定位逻辑散落在界面里）。
+    /// 界面宿主通过 BrowserLocateHost.Current 注册，组件本身不认识任何窗口类型。
+    /// </summary>
+    public static IContentLocator Locator { get; private set; } = null!;
+
     private static bool _initialized;
 
     public static void Initialize()
@@ -26,6 +33,7 @@ public static class AppServices
         var backend = new LinkPocketApi();
         Transport = new InProcessTransport(new LinkPocketApiDispatcher(backend));
         Api = new TransportedLinkPocketApi(Transport);
+        Locator = new ContentLocator(Api, () => BrowserLocateHost.Current);
 
         _initialized = true;
     }

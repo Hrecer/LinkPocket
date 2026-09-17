@@ -43,9 +43,9 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
                             </Trigger>
+                            <!-- 聚焦只做填充变浅（Lowest 比弹窗底浅一档），不出现描边（用户明确不要紫色边） -->
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLowest}"/>
                             </Trigger>
                             <Trigger Property="Validation.HasError" Value="True">
                                 <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Error}"/>
@@ -65,8 +65,7 @@
 
     <!-- 外层留白承载投影 -->
     <Grid Margin="24">
-        <Border CornerRadius="16" Background="{DynamicResource SurfaceContainerHigh}"
-                BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1">
+        <Border CornerRadius="24" Background="{DynamicResource TintBg}">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="28" ShadowDepth="3" Direction="270"
                                   Opacity="0.28" Color="#000000"/>
@@ -74,7 +73,6 @@
 
             <Grid Margin="24,20">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -94,18 +92,14 @@
                                Foreground="{DynamicResource OnSurface}"/>
                 </StackPanel>
 
-                <!-- 提示语 -->
-                <TextBlock Grid.Row="1" Text="{Binding Prompt}" TextWrapping="Wrap" FontSize="13"
-                           Margin="0,16,0,0"
-                           Foreground="{DynamicResource OnSurfaceVariant}"/>
-
-                <!-- 输入框：M3 Expressive 圆角填充文本域（绑定校验） -->
-                <TextBox Grid.Row="2" x:Name="ValueBox" Margin="0,14,0,0"
+                <!-- 输入框：M3 Expressive 圆角填充文本域（绑定校验）。
+                     聚焦只做色彩形变（填充变浅），无描边——与搜索框/地址栏同一语言 -->
+                <TextBox Grid.Row="1" x:Name="ValueBox" Margin="2,18,2,0"
                          Style="{StaticResource M3TextField}"
                          Text="{Binding Value, UpdateSourceTrigger=PropertyChanged, ValidatesOnDataErrors=True}"/>
 
                 <!-- 校验错误 -->
-                <TextBlock Grid.Row="3" Text="内容不能为空" FontSize="12" Margin="2,6,0,0"
+                <TextBlock Grid.Row="2" Text="内容不能为空" FontSize="12" Margin="2,6,0,0"
                            Foreground="{DynamicResource Error}" TextWrapping="Wrap">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
@@ -119,12 +113,15 @@
                     </TextBlock.Style>
                 </TextBlock>
 
-                <!-- 操作区：取消（描边）+ 确定（实心），空输入自动禁用 -->
-                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                <!-- 操作区：取消 = TonalButton 药丸，确定 = PrimaryPillButton 药丸（同高 32，与 ConfirmDialog 同语言），
+                     空输入自动禁用 -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
                     <Button Content="{Binding CancelText}" Command="{Binding CancelCommand}"
-                            IsCancel="True" Style="{StaticResource OutlinedButton}" MinWidth="92"/>
+                            IsCancel="True" Style="{StaticResource TonalButton}"
+                            Height="32" MinWidth="96" Padding="20,6" FontSize="13"/>
                     <Button Command="{Binding ConfirmCommand}" IsDefault="True"
-                            Style="{StaticResource FilledButton}" MinWidth="92" Margin="10,0,0,0">
+                            Style="{StaticResource PrimaryPillButton}"
+                            Height="32" MinWidth="96" Padding="20,6" FontSize="13" Margin="10,0,0,0">
                         <TextBlock Text="{Binding ConfirmText}"/>
                     </Button>
                 </StackPanel>

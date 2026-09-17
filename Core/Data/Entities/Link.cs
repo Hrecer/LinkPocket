@@ -6,18 +6,12 @@ namespace LinkPocket.Data;
 [Table("links")]
 public class Link
 {
+    /// <summary>主键：固定 16 位大小写字母+数字混合（与文件夹 12 位纯数字一眼区分），生成入口唯一在 <see cref="EntityIds"/>。</summary>
     [Key]
     [Required]
     [MaxLength(20)]
     [Column("link_id")]
-    public string LinkId { get; set; } = GenerateLinkId();
-
-    private static string GenerateLinkId()
-    {
-        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var rng = Random.Shared;
-        return new string(Enumerable.Range(0, 16).Select(_ => chars[rng.Next(chars.Length)]).ToArray());
-    }
+    public string LinkId { get; set; } = EntityIds.NewLinkId();
 
     [Required]
     [MaxLength(2048)]

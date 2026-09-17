@@ -6,9 +6,18 @@ using Microsoft.Win32;
 
 namespace LinkPocket.Views
 {
+    /// <summary>
+    /// 备份与恢复面板。
+    /// 导出 = 目录选择（回收站不备份，卡内有提示）；<b>成功后清空保存位防手滑</b>（必须重新选目录才能再导出）。
+    /// 导入 = 弹 <see cref="ImportModeDialog"/> 模态弹窗（新增导入 / 清空后导入，后者需文字确认）。
+    /// 所有结果提示走统一 <see cref="ConfirmDialog"/> 弹窗（禁原生 MessageBox）；
+    /// 进度展示复用设置页根部的 ExportOverlay（经可视树向上查找，名称契约见 SettingsPage.xaml）。
+    /// </summary>
     public partial class BackupPanel : UserControl
     {
         private string _exportDirectory = string.Empty;
+        private string _importFilePath = string.Empty;
+        private bool _pendingReplaceImport;          // 本次导入是否为「清空后导入」
 
         public BackupPanel()
         {
@@ -22,7 +31,10 @@ namespace LinkPocket.Views
             BackupImportFileTextBox.Text = string.Empty;
             BackupImportButton.IsEnabled = false;
             _exportDirectory = string.Empty;
+            _importFilePath = string.Empty;
         }
+
+        // ===== 浏览选择 =====
 
         private void BrowseBackupExportDirButton_Click(object sender, RoutedEventArgs e)
         {
@@ -50,10 +62,13 @@ namespace LinkPocket.Views
 
             if (dialog.ShowDialog() == true)
             {
+                _importFilePath = dialog.FileName;
                 BackupImportFileTextBox.Text = dialog.FileName;
                 BackupImportButton.IsEnabled = true;
             }
         }
+
+        // ===== 导出 =====
 
         private async void BackupExportButton_Click(object sender, RoutedEventArgs e)
         {
@@ -63,7 +78,7 @@ namespace LinkPocket.Views
 
             if (!System.IO.Directory.Exists(_exportDirectory))
             {
-                MessageBox.Show($"导出目录不存在\n{_exportDirectory}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ConfirmDialog.Show("导出失败", $"导出目录不存在：\n{_exportDirectory}", "确定", "alert-circle-outline");
                 return;
             }
 
@@ -79,7 +94,7 @@ namespace LinkPocket.Views
             {
                 await Services.AppServices.Api.ExportBackupAsync(outputPath);
 
-                UpdateOverlay(overlay, $"导出成功！\n共导出所有书签和文件夹", 1, 1);
+                UpdateOverlay(overlay, "导出成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);
 
                 await Task.Delay(100);
@@ -88,11 +103,10 @@ namespace LinkPocket.Views
                 try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""); }
                 catch { }
 
-                MessageBox.Show(
-                    $"备份导出成功！\n\n文件位置：{outputPath}\n\n此备份文件包含所有书签、文件夹、图标文件和元数据，可用于完全恢复数据。",
+                ConfirmDialog.Show(
                     "导出成功",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                    $"文件位置：\n{outputPath}\n\n此备份文件包含所有书签、文件夹和图标文件，可用于完全恢复数据。\n\n注意：回收站内容不会被备份。",
+                    "确定", "backup-restore", "TintPanel");
             }
             catch (Exception ex)
             {
@@ -101,72 +115,70 @@ namespace LinkPocket.Views
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
                 HideOverlay(overlay);
-                MessageBox.Show($"导出失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ConfirmDialog.Show("导出失败", $"导出失败：{ex.Message}", "确定", "alert-circle-outline");
             }
             finally
             {
-                BackupExportButton.IsEnabled = true;
+                // 防手滑：每次导出完成后清空保存位置，必须重新选目录才能再导出
                 BackupExportDirTextBox.Text = string.Empty;
                 _exportDirectory = string.Empty;
                 BackupExportButton.IsEnabled = false;
             }
         }
 
+        // ===== 导入：先弹模态方式选择 =====
+
         private async void BackupImportButton_Click(object sender, RoutedEventArgs e)
         {
             var filePath = BackupImportFileTextBox.Text;
             if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath)) return;
 
-            var confirmResult = MessageBox.Show(
-                $"确定要从以下文件导入备份数据吗？\n\n{filePath}\n\n" +
-                "注意：\n" +
-                "• 导入的数据将直接添加到现有数据库中\n" +
-                "• 不会删除或覆盖任何现有数据\n" +
-                "• 所有书签和文件夹都将获得新的ID\n" +
-                "• 图标文件将自动恢复到缓存目录",
-                "确认导入",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-
-            if (confirmResult != MessageBoxResult.Yes) return;
-
+            if (!ImportModeDialog.Show(out var replaceMode)) return;   // 模态弹窗：挡住后面无法操作
             if (DataContext is not ViewModels.MainViewModel vm) return;
+
+            _pendingReplaceImport = replaceMode;
 
             var overlay = FindOverlay();
             if (overlay == null) return;
 
-            ShowOverlay(overlay, "正在导入备份...", 0, 0);
+            ShowOverlay(overlay, _pendingReplaceImport ? "正在清空当前数据..." : "正在导入备份...", 0, 0);
             BackupImportButton.IsEnabled = false;
 
             try
             {
+                if (_pendingReplaceImport)
+                {
+                    // 完全重置：删除数据库文件（含回收站）+ 图标缓存目录后重建（与「清空数据」同机制）
+                    Services.Logger.Info("[备份导入] 清空后导入：开始完全重置");
+                    await vm.ReinitializeDatabaseAsync(resetData: true);
+                }
+
+                UpdateOverlay(overlay, "正在导入备份...", 0, 0);
                 var result = await Services.AppServices.Api.ImportBackupAsync(filePath);
 
-                if (result.Success)
-                {
-                    UpdateOverlay(overlay, $"导入成功！\n{result.FoldersCreated} 个文件夹, {result.LinksCreated} 个书签", 1, 1);
-                    SetOverlayProgressColor(overlay, true);
-
-                    await Task.Delay(100);
-                    HideOverlay(overlay);
-
-                    await vm.ReinitializeDatabaseAsync(resetData: false);
-
-                    MessageBox.Show(
-                        $"备份导入成功！\n\n统计信息：\n• 新增文件夹：{result.FoldersCreated} 个\n• 新增书签：{result.LinksCreated} 条\n• 总计新增：{result.TotalItems} 项",
-                        "导入成功",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                }
-                else
+                if (!result.Success)
                 {
                     var errMsg = string.Join("; ", result.Errors);
                     UpdateOverlay(overlay, $"导入失败\n{errMsg}", 0, 0);
                     SetOverlayProgressColor(overlay, false);
                     await Task.Delay(3000);
                     HideOverlay(overlay);
-                    MessageBox.Show($"导入失败：\n{errMsg}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    ConfirmDialog.Show("导入失败", $"导入失败：\n{errMsg}", "确定", "alert-circle-outline");
+                    return;
                 }
+
+                // 刷新界面数据（新增模式导入后也要重载）
+                await vm.ReinitializeDatabaseAsync(resetData: false);
+
+                UpdateOverlay(overlay, "导入成功！", 1, 1);
+                SetOverlayProgressColor(overlay, true);
+                await Task.Delay(100);
+                HideOverlay(overlay);
+
+                ConfirmDialog.Show(
+                    "导入成功",
+                    $"统计信息：\n• 文件夹：{result.FoldersCreated} 个\n• 书签：{result.LinksCreated} 条",
+                    "确定", "import", "TintPanel");
             }
             catch (Exception ex)
             {
@@ -175,14 +187,18 @@ namespace LinkPocket.Views
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
                 HideOverlay(overlay);
-                MessageBox.Show($"导入失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                ConfirmDialog.Show("导入失败", $"导入失败：{ex.Message}", "确定", "alert-circle-outline");
             }
             finally
             {
+                // 防手滑：导入完成后清空文件选择，必须重新选文件才能再导入（与导出同口径）
                 BackupImportFileTextBox.Text = string.Empty;
+                _importFilePath = string.Empty;
                 BackupImportButton.IsEnabled = false;
             }
         }
+
+        // ===== 进度遮罩（复用设置页根部的 ExportOverlay） =====
 
         private Border? FindOverlay()
         {
@@ -215,6 +231,12 @@ namespace LinkPocket.Views
         private void ShowOverlay(Border overlay, string message, int current, int total)
         {
             overlay.Visibility = Visibility.Visible;
+
+            // 每次开始都重置为深紫（用户定稿 AccentBtn，不吃上次完成态的颜色）
+            var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
+            if (bar != null)
+                bar.ActiveBrush = (Brush)Application.Current.FindResource("AccentBtn");
+
             UpdateOverlay(overlay, message, current, total);
         }
 
@@ -229,15 +251,14 @@ namespace LinkPocket.Views
             if (statusText != null)
                 statusText.Text = message;
 
-            var progressBar = FindNamedChild<ProgressBar>(overlay, "ExportProgressBar");
-            if (progressBar != null)
+            var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
+            if (bar != null)
             {
                 if (total > 0)
                 {
-                    progressBar.Maximum = total;
-                    progressBar.Value = current;
+                    bar.Maximum = total;
+                    bar.Value = current;
                 }
-                progressBar.Foreground = (Brush)Application.Current.FindResource("Primary");
             }
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
@@ -247,14 +268,14 @@ namespace LinkPocket.Views
 
         private static void SetOverlayProgressColor(Border overlay, bool success)
         {
-            var progressBar = FindNamedChild<ProgressBar>(overlay, "ExportProgressBar");
-            if (progressBar != null)
-                progressBar.Foreground = new SolidColorBrush(
-                    success ? Color.FromRgb(76, 175, 80) : Color.FromRgb(244, 67, 54));
+            // 波浪全程保持紫色（用户定稿）；失败 = WarnBg 奶油黄警示（项目铁律禁红色）
+            var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
+            if (bar != null && !success)
+                bar.ActiveBrush = (Brush)Application.Current.FindResource("WarnBg");
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)
-                progressText.Text = success ? "✅ 完成" : "❌ 失败";
+                progressText.Text = success ? "完成" : "失败";
         }
     }
 }

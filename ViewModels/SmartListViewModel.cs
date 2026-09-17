@@ -49,6 +49,16 @@ namespace LinkPocket.ViewModels
 
         public bool ShowResult => _resultViewModel != null;
 
+        /// <summary>单一数据源：四个智能列表的语义定义（入口卡片副标题与结果页灰色提示共用）。</summary>
+        private static (string Id, string Title, string Subtitle, string Icon) Definition(string id) => id switch
+        {
+            "recently_added" => ("recently_added", "最近添加", "近 7 天新增的书签", "plus-circle-outline"),
+            "recently_visited" => ("recently_visited", "最近查看", "近 7 天访问过的书签", "history"),
+            "recently_edited" => ("recently_edited", "最近编辑", "近 7 天修改过的书签", "pencil-outline"),
+            "most_visited" => ("most_visited", "最常查看", "访问次数前 20 的书签", "trending-up"),
+            _ => (id, "智能列表", "自动汇集的动态集合", "bookmark-outline"),
+        };
+
         private void InitializeCards()
         {
             Cards = new ObservableCollection<SmartListCardItem>
@@ -65,7 +75,11 @@ namespace LinkPocket.ViewModels
             IsLoading = true;
             try
             {
-                var resultVm = new SmartListResultViewModel(listId, GetTitleById(listId));
+                var def = Definition(listId);
+                var resultVm = new SmartListResultViewModel(listId, def.Title)
+                {
+                    Subtitle = def.Subtitle,
+                };
                 await resultVm.LoadAsync();
                 ResultViewModel = resultVm;
             }
@@ -79,15 +93,6 @@ namespace LinkPocket.ViewModels
         {
             ResultViewModel = null;
         }
-
-        private static string GetTitleById(string id) => id switch
-        {
-            "recently_added" => "最近添加",
-            "recently_visited" => "最近查看",
-            "recently_edited" => "最近编辑",
-            "most_visited" => "最常查看",
-            _ => "智能列表"
-        };
 
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {

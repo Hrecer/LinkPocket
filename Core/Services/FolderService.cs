@@ -217,25 +217,48 @@ public class FolderService
                 targetFolder.UpdateLinkCount(_db);
                 break;
 
-            default: // trash_links: 将书签移至回收站
+            default: // trash_links: 整个文件夹子树镜像进回收站（Windows 式）
+                // ① 回收站保留原有 ID（用户定稿 2026-09-17）：TrashFolderId = 原文件夹 ID，
+                //    不再生成独立的回收站 ID 系统；子单元的 ParentTrashFolderId = 原父 ID（仅当父也在本子树内，
+                //    删除根的父是活目录 → 置 NULL 挂回收站根）。同一文件夹不可能同时存在于主表与回收站，无 ID 冲突。
+                // ② 每行定格删除时位置（origin_folder_id/origin_list_id + origin_path）
+                // 单次 SaveChanges = 单事务，主表删行与回收站写入原子生效。
+                var trashedAt = DateTime.UtcNow;
+                var subtreeFolders = await _db.Folders.Where(f => descendantIds.Contains(f.FolderId)).ToListAsync();
+                var subtreeIdSet = subtreeFolders.Select(f => f.FolderId).ToHashSet();
+
+                foreach (var f in subtreeFolders)
+                {
+                    _db.TrashedFolders.Add(new TrashedFolder
+                    {
+                        TrashFolderId = f.FolderId,
+                        ParentTrashFolderId = f.ParentId != null && subtreeIdSet.Contains(f.ParentId) ? f.ParentId : null,
+                        Name = f.Name,
+                        OriginFolderId = f.FolderId,
+                        OriginPath = await OriginPath.BuildFolderPathAsync(_db, f.FolderId),
+                        DeletedAt = trashedAt
+                    });
+                }
+
                 foreach (var link in affectedLinks)
                 {
-                    var trashedLink = new TrashedLink
+                    _db.TrashedLinks.Add(new TrashedLink
                     {
                         LinkId = link.LinkId,
                         Url = link.Url,
                         Title = link.Title,
                         Description = link.Description,
                         FaviconUrl = link.FaviconUrl,
-                        ListId = link.ListId,
+                        TrashFolderId = link.ListId,
+                        OriginListId = link.ListId,
+                        OriginPath = await OriginPath.BuildListPathAsync(_db, link.ListId),
                         LastVisitedAt = link.LastVisitedAt,
                         VisitCount = link.VisitCount,
                         IsImportant = link.IsImportant,
-                        DeletedAt = DateTime.UtcNow,
+                        DeletedAt = trashedAt,
                         CreatedAt = link.CreatedAt,
                         UpdatedAt = DateTime.UtcNow
-                    };
-                    _db.TrashedLinks.Add(trashedLink);
+                    });
                     _db.Links.Remove(link);
                 }
 
@@ -245,6 +268,108 @@ public class FolderService
         }
 
         await _db.SaveChangesAsync();
+    }
+
+    /// <summary>回收站树：全部被删文件夹单元（含删除根与子单元），由 UI 层组装层级。</summary>
+    public async Task<List<TrashedFolder>> GetAllTrashFoldersAsync()
+    {
+        return await _db.TrashedFolders
+            .OrderBy(f => f.DeletedAt)
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// 永久删除一个回收站文件夹单元（含其全部子单元与单元内全部书签快照）。
+    /// 仅影响回收站表，主表不受影响。
+    /// </summary>
+    public async Task PurgeTrashFolderSubtreeAsync(string trashFolderId)
+    {
+        var all = await _db.TrashedFolders.ToListAsync();
+        var ids = new List<string> { trashFolderId };
+
+        // 内存里收拢子树（回收站数据量小，O(n²) 收敛循环足够）
+        var added = true;
+        while (added)
+        {
+            added = false;
+            foreach (var f in all)
+            {
+                if (f.ParentTrashFolderId != null && ids.Contains(f.ParentTrashFolderId) && !ids.Contains(f.TrashFolderId))
+                {
+                    ids.Add(f.TrashFolderId);
+                    added = true;
+                }
+            }
+        }
+
+        var links = await _db.TrashedLinks.Where(l => l.TrashFolderId != null && ids.Contains(l.TrashFolderId)).ToListAsync();
+        _db.TrashedLinks.RemoveRange(links);
+        _db.TrashedFolders.RemoveRange(all.Where(f => ids.Contains(f.TrashFolderId)));
+
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// 被删文件夹单元的内容（回收站「打开目录」用）：直接子单元（folder 条目）
+    /// + 子树内全部书签快照（link 条目）。schema 与平铺条目一致，UI 可直接复用表格/详情。
+    /// </summary>
+    public async Task<List<TrashEntryDto>> GetTrashUnitContentsAsync(string trashFolderId)
+    {
+        var all = await _db.TrashedFolders.ToListAsync();
+        if (!all.Any(f => f.TrashFolderId == trashFolderId))
+            throw new Exception("Trash folder not found");
+
+        // 收拢子树单元 ID（含自身）——与 PurgeTrashFolderSubtreeAsync 同款收敛循环
+        var ids = new List<string> { trashFolderId };
+        var added = true;
+        while (added)
+        {
+            added = false;
+            foreach (var f in all)
+            {
+                if (f.ParentTrashFolderId != null && ids.Contains(f.ParentTrashFolderId) && !ids.Contains(f.TrashFolderId))
+                {
+                    ids.Add(f.TrashFolderId);
+                    added = true;
+                }
+            }
+        }
+
+        var result = new List<TrashEntryDto>();
+
+        // 直接子单元（folder 条目；子单元内部的更深层内容随其自身被再次打开）
+        foreach (var f in all.Where(f => f.ParentTrashFolderId == trashFolderId).OrderBy(f => f.DeletedAt))
+        {
+            result.Add(new TrashEntryDto
+            {
+                Id = f.TrashFolderId,
+                EntryType = "folder",
+                Name = f.Name,
+                OriginPath = f.OriginPath,
+                DeletedAt = f.DeletedAt
+            });
+        }
+
+        // 子树内全部书签快照
+        var links = await _db.TrashedLinks
+            .Where(l => l.TrashFolderId != null && ids.Contains(l.TrashFolderId))
+            .OrderByDescending(l => l.DeletedAt)
+            .ToListAsync();
+        foreach (var l in links)
+        {
+            result.Add(new TrashEntryDto
+            {
+                Id = l.LinkId,
+                EntryType = "link",
+                Name = l.Title ?? l.Url ?? string.Empty,
+                Url = l.Url,
+                FaviconUrl = l.FaviconUrl,
+                OriginPath = l.OriginPath,
+                DeletedAt = l.DeletedAt
+            });
+        }
+
+        return result;
     }
 
     public async Task<object> GetFolderStatsAsync(string id)

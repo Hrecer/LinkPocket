@@ -63,6 +63,19 @@ public class LinkPocketApiDispatcher
 {
     private readonly ILinkPocketApi _api;
 
+    /// <summary>
+    /// 数据闸（2026-09-17 定稿）：后端所有协议调用共享同一个 <see cref="LinkPocket.Data.LinkPocketDbContext"/>，
+    /// 而 EF 上下文不是线程安全的——两个调用若并发在途（用户在导入进行中又去别的页面删了条链接），
+    /// 并发访问会直接抛"第二个操作已在此上下文上启动"。这里把全部协议调用串行化，
+    /// 让"任意两个数据操作互不重叠"成为架构保证。性能评估：单 UI 线程顺序使用下无竞争，
+    /// 无竞争的 WaitAsync 为亚微秒级；SQLite 本就单写者，串行化不损失任何真实并行度；
+    /// 唯一代价 = 长操作持闸推迟其它操作（秒级、有界）。
+    /// 例外见 <see cref="DispatchAsync"/>：meta.fetch 是纯网络等待、不碰数据库，不占闸。
+    /// ⚠️ 不变量：DataChanged 事件在持闸期间同步触发，订阅方**不得**在处理器内同步回调协议
+    /// （会自锁）——现有订阅方均为延迟/异步路径（防抖 DispatcherTimer），新增订阅方必须遵守。
+    /// </summary>
+    private readonly SemaphoreSlim _dataGate = new(1, 1);
+
     public LinkPocketApiDispatcher(ILinkPocketApi api) => _api = api;
 
     /// <summary>分发器持有的后端实现（用于传输层订阅数据变更事件等）。</summary>
@@ -89,7 +102,28 @@ public class LinkPocketApiDispatcher
         }
     }
 
-    private async Task<object?> DispatchAsync(string method, JsonElement p, CancellationToken ct) => method switch
+    private async Task<object?> DispatchAsync(string method, JsonElement p, CancellationToken ct)
+    {
+        // 例外：meta.fetch = 纯网络等待（HttpClient 10s 超时）且不碰数据库。
+        // 若也过闸，一个响应慢的站点会把其它所有数据操作卡住最长 10 秒 → 必须放行在闸外。
+        if (method == "meta.fetch")
+            return await _api.FetchMetadataAsync(PReqStr(p, "url"));
+
+        // 其余全部协议调用（读 + 写）都过数据闸串行执行。读也过闸的原因：
+        // 竞争对象是共享 DbContext 本身，读与写并发同样会踩上下文。
+        await _dataGate.WaitAsync(ct);
+        try
+        {
+            return await DispatchDataAsync(method, p);
+        }
+        finally
+        {
+            _dataGate.Release();
+        }
+    }
+
+    /// <summary>数据闸内的实际分发（持闸期间不会重入本分发器：处理器只调 _api，不回调传输层）。</summary>
+    private async Task<object?> DispatchDataAsync(string method, JsonElement p) => method switch
     {
         // 浏览
         "folders.contents" => await _api.GetFolderContentsAsync(
@@ -99,6 +133,7 @@ public class LinkPocketApiDispatcher
             PInt(p, "page", 1),
             PInt(p, "per_page", 0)),
         "folders.tree" => await _api.GetFolderTreeAsync(),
+        "folders.get" => await _api.GetFolderAsync(PReqStr(p, "folder_id")),
         "folders.breadcrumb" => await _api.GetBreadcrumbAsync(PStrOrNull(p, "folder_id")),
 
         // 文件夹管理
@@ -119,6 +154,7 @@ public class LinkPocketApiDispatcher
             PStr(p, "sort_by", "created_at"), PStr(p, "sort_order", "desc"),
             PInt(p, "page", 1), PInt(p, "per_page", 20)),
         "links.all" => await _api.GetAllLinksAsync(),
+        "links.get" => await _api.GetLinkAsync(PReqStr(p, "id")),
         "links.root" => await _api.GetRootLevelLinksAsync(
             PStr(p, "sort_by", "created_at"), PStr(p, "sort_order", "desc"), PInt(p, "per_page", 50)),
         "links.create" => await _api.CreateLinkAsync(
@@ -133,8 +169,9 @@ public class LinkPocketApiDispatcher
 
         // 回收站
         "trash.list" => await _api.GetTrashAsync(),
+        "trash.tree" => await _api.GetTrashTreeAsync(),
         "trash.restore" => await _api.RestoreLinkAsync(PReqStr(p, "link_id")),
-        "trash.purge" => await WrapVoid(() => _api.PurgeLinkAsync(PReqStr(p, "link_id"))),
+        "trash.purge" => await WrapVoid(() => _api.PurgeTrashAsync(PReqStr(p, "id"), PBool(p, "is_folder", false))),
 
         // 搜索与智能列表
         "search" => await _api.SearchAsync(
@@ -147,13 +184,15 @@ public class LinkPocketApiDispatcher
         "meta.fetch" => await _api.FetchMetadataAsync(PReqStr(p, "url")),
         "stats.counts" => await _api.GetCountsAsync(),
 
-        // 导入导出
+        // 导入导出（Netscape 书签文件格式：Chrome / Edge / Firefox 通用交换格式）
         "export.bookmarks_html" => await _api.ExportBookmarksHtmlAsync(PReqStr(p, "output_path")),
         "import.bookmarks_html" => await _api.ImportBookmarksHtmlAsync(PReqStr(p, "file_path")),
+        "bookmarks.inspect_html" => await _api.InspectBookmarksHtmlAsync(PReqStr(p, "file_path")),
 
         // 备份与维护
         "backup.export" => await WrapVoid(() => _api.ExportBackupAsync(PReqStr(p, "output_path"))),
         "backup.import" => await _api.ImportBackupAsync(PReqStr(p, "file_path")),
+        "trash.unit_contents" => await _api.GetTrashUnitContentsAsync(PReqStr(p, "trash_folder_id")),
         "settings.reinit_db" => await WrapVoid(() => _api.ReinitializeDatabaseAsync(PBool(p, "reset_data", true))),
 
         _ => throw new LinkPocketApiException($"未知方法: {method}", -32601)

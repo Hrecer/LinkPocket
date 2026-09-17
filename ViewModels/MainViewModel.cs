@@ -34,7 +34,8 @@ namespace LinkPocket.ViewModels
         private SmartListViewModel? _smartListViewModel;
 
         private bool _isEditPageVisible;
-        private bool _isInSecondaryPage;
+        // （原 _isInSecondaryPage / IsInSecondaryPage 已整体移除：它唯一的作用是让全局导航胶囊
+        //   在二级视图时 Collapsed，与「导航常驻」原则冲突。页面内的视图切换由各页面自持状态。）
         private bool _isEditMode;
 
         private string _linkSortField = "title";
@@ -211,12 +212,6 @@ namespace LinkPocket.ViewModels
         {
             get => _isEditPageVisible;
             set { _isEditPageVisible = value; OnPropertyChanged(); }
-        }
-
-        public bool IsInSecondaryPage
-        {
-            get => _isInSecondaryPage;
-            set { _isInSecondaryPage = value; OnPropertyChanged(); }
         }
 
         public bool IsEditMode
@@ -524,7 +519,6 @@ namespace LinkPocket.ViewModels
             if (_smartListViewModel != null && _smartListViewModel.ShowResult)
             {
                 _smartListViewModel.GoBack();
-                IsInSecondaryPage = false;
             }
 
             if (navId == "trash")
@@ -609,7 +603,6 @@ namespace LinkPocket.ViewModels
         private void ShowEditPage()
         {
             IsEditPageVisible = true;
-            IsInSecondaryPage = true;
             if (_linkViewModel != null)
                 _linkViewModel.ClearSelectionCommand.Execute(null);
             Ui?.ShowEditPage();
@@ -620,8 +613,6 @@ namespace LinkPocket.ViewModels
             IsEditPageVisible = false;
             bool returnToDetail = _editOpenedFromDetail && _viewingLink != null;
             Ui?.CloseEditPage(returnToDetail);
-            if (!returnToDetail)
-                IsInSecondaryPage = false;
         }
 
         public async Task SetLinkSortAsync(string field)
@@ -691,7 +682,6 @@ namespace LinkPocket.ViewModels
 
             if (Ui != null)
             {
-                IsInSecondaryPage = true;
                 Ui.ShowDetailView();
             }
         }
@@ -706,7 +696,6 @@ namespace LinkPocket.ViewModels
         private async void CancelDetail()
         {
             _viewingLink = null;
-            IsInSecondaryPage = false;
             Ui?.CloseDetailView();
             await RefreshFolderTreeAndUIAsync();
             if (_currentNavId == "search")
@@ -1114,11 +1103,9 @@ namespace LinkPocket.ViewModels
 
         public async Task LoadTrashTreeAsync()
         {
-            _ = await Api.GetTrashAsync();
-
-            var trashRoot = new FolderNode { Id = "-1", Name = "回收站", IconKind = "delete" };
-
-            TrashItems = new ObservableCollection<FolderNode> { trashRoot };
+            // 事件驱动的回收站刷新：加载平铺条目 + 被删文件夹树（页面绑定即渲染）
+            if (_recycleBinViewModel != null)
+                await _recycleBinViewModel.LoadAsync();
         }
 
         public async Task<List<LinkDto>> GetAllLinksAsync()
@@ -1310,6 +1297,11 @@ namespace LinkPocket.ViewModels
 
             await LoadFolderTreeAsync();
 
+            // 数据库已被删除重建：浏览页必须强制回到根并重载。
+            // （Ui.RefreshSidebar/MainList 是 no-op 占位；不清一则旧目录的行会一直挂在浏览页上，
+            //   直到用户手点「全部书签」才刷新——实测踩中。）
+            await BrowserViewModel.LoadAsync(null);
+
             if (Ui != null)
             {
                 await Ui.RefreshSidebarAsync();
@@ -1320,7 +1312,9 @@ namespace LinkPocket.ViewModels
 
             OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
 
-            _selectionManager.SelectFolder(CurrentNavId == "browser" ? string.Empty : CurrentNavId);
+            // 无论当前在哪个页（清空动作发生在设置页），选中都回到「全部书签」：
+            // 旧选中若指向已删除的文件夹则是无意义状态，且会阻碍浏览器页数据刷新。
+            _selectionManager.SelectFolder(string.Empty);
         }
     }
 }

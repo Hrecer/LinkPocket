@@ -1,0 +1,98 @@
+using System.Linq;
+using System.Windows;
+using System.Windows.Media;
+
+namespace LinkPocket.Views;
+
+/// <summary>
+/// 导入方式选择弹窗（模态）：新增导入 / 清空后导入。
+/// 复用 ConfirmDialog 视觉语言（TintBg 圆角卡 + 药丸按钮），ShowDialog 挡住后面无法操作。
+/// 「清空后导入」为危险项：选中 = WarnBg 奶油黄卡 + 需输入「我确认清空并导入」+ 确认键切换 WarnPillButton。
+/// 静态 Show；owner 自动取当前激活窗口。
+/// </summary>
+public partial class ImportModeDialog : Window
+{
+    private const string ReplaceConfirmText = "我确认清空并导入";
+
+    /// <summary>用户最终选择的导入方式：true = 清空后导入（危险），false = 新增导入。</summary>
+    public bool ReplaceMode { get; private set; }
+
+    public ImportModeDialog()
+    {
+        InitializeComponent();
+
+        CancelBtn.Click += (_, _) => DialogResult = false;
+        ConfirmBtn.Click += ConfirmBtn_Click;
+
+        // 无边框圆角窗口：WindowChrome 提供标题区拖拽（与 ConfirmDialog 同配置）
+        var chrome = new System.Windows.Shell.WindowChrome
+        {
+            CaptionHeight = 76,
+            GlassFrameThickness = new Thickness(0),
+            UseAeroCaptionButtons = false
+        };
+        System.Windows.Shell.WindowChrome.SetWindowChrome(this, chrome);
+
+        UpdateVisuals();
+    }
+
+    /// <summary>显示导入方式选择。返回是否确认；replaceMode 带出所选方式。</summary>
+    public static bool Show(out bool replaceMode)
+    {
+        var dlg = new ImportModeDialog();
+        var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                    ?? Application.Current?.MainWindow;
+        if (owner != null && owner != dlg) dlg.Owner = owner;
+
+        var ok = dlg.ShowDialog() == true;
+        replaceMode = dlg.ReplaceMode;
+        return ok;
+    }
+
+    private bool _replace;
+
+    private void AppendCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _replace = false;
+        ReplaceConfirmInput.Text = string.Empty;
+        UpdateVisuals();
+    }
+
+    private void ReplaceCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _replace = true;
+        UpdateVisuals();
+        ReplaceConfirmInput.Focus();
+    }
+
+    private void ReplaceConfirmInput_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        => UpdateVisuals();
+
+    private void ConfirmBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmBtn.IsEnabled) return;
+        ReplaceMode = _replace;
+        DialogResult = true;
+    }
+
+    private void UpdateVisuals()
+    {
+        var confirmOk = !_replace || ReplaceConfirmInput.Text == ReplaceConfirmText;
+
+        // 选中态：常规 = PrimaryContainer 卡 + Primary 单选；危险 = WarnBg 奶油黄卡
+        AppendCard.Background = BrushOf(_replace ? "SurfaceContainerHighest" : "PrimaryContainer");
+        AppendRing.BorderBrush = BrushOf(_replace ? "OutlineVariant" : "Primary");
+        AppendDot.Visibility = _replace ? Visibility.Collapsed : Visibility.Visible;
+
+        ReplaceCard.Background = BrushOf(_replace ? "WarnBg" : "SurfaceContainerHighest");
+        ReplaceRing.BorderBrush = BrushOf(_replace ? "Primary" : "OutlineVariant");
+        ReplaceDot.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
+
+        ReplaceConfirmBox.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
+        ConfirmBtn.Style = (Style)FindResource(_replace ? "WarnPillButton" : "PrimaryPillButton");
+        ConfirmBtn.IsEnabled = confirmOk;
+    }
+
+    private static Brush BrushOf(string key)
+        => Application.Current.TryFindResource(key) is Brush b ? b : Brushes.Transparent;
+}

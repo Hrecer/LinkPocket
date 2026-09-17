@@ -509,6 +509,35 @@ public class BrowserViewModel : INotifyPropertyChanged
         _anchorId ??= Rows.FirstOrDefault()?.Id;
     }
 
+    /// <summary>
+    /// 视图应把某一行滚入视口（定位/跳转后保证选中项可见）。
+    /// 由 <see cref="NavigateAndSelectAsync"/> 触发，BrowserView 订阅处理；
+    /// 视图不在场（无 UI 的会话）时无人订阅也不影响数据层结果。
+    /// </summary>
+    public event EventHandler<BrowserRowViewModel>? FocusRowRequested;
+
+    /// <summary>
+    /// 进入指定目录并选中其中一行（行可为链接或文件夹）——「跳转」的浏览页执行原语。
+    /// 由定位组件（Services/ContentLocator）经 IBrowserLocateHost 端口调用；
+    /// 目录与选中逻辑属于浏览页自身领域，故实现在此，界面只需滚动。
+    /// 返回该行是否存在并被选中。
+    /// </summary>
+    public async Task<bool> NavigateAndSelectAsync(string? folderId, string rowId)
+    {
+        if (string.IsNullOrEmpty(rowId)) return false;
+
+        // 已在目标目录时不必重载（避免无谓的列表重建与闪烁）
+        if (Controller.CurrentFolderId != folderId)
+            await LoadAsync(folderId);
+
+        var row = Rows.FirstOrDefault(r => r.Id == rowId);
+        if (row == null) return false;
+
+        SelectRowWithModifiers(row, ModifierKeys.None);
+        FocusRowRequested?.Invoke(this, row);
+        return true;
+    }
+
     public void ClearSelection()
     {
         foreach (var r in Rows)
@@ -901,14 +930,15 @@ public class BrowserViewModel : INotifyPropertyChanged
     private async Task DeleteNodeAsync(FolderNode? node)
     {
         if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
-        if (MessageBox.Show($"删除文件夹「{node.Name}」？\n其中的链接将移入回收站，子文件夹一并删除。",
-                "删除文件夹", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        // Windows 口径：删除 = 移入回收站，不再提示"子文件夹一并删除"
+        if (!Views.ConfirmDialog.Show("删除文件夹", $"将文件夹「{node.Name}」移入回收站吗？", "删除"))
             return;
         try
         {
             await Api.DeleteFolderAsync(node.FolderId, "trash_links");
             StatusText = $"已删除文件夹「{node.Name}」";
-            await RefreshPreservingSelectionAsync();
+            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
+            // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
             _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)
@@ -936,26 +966,24 @@ public class BrowserViewModel : INotifyPropertyChanged
         await DeleteItemsAsync(sel);
     }
 
-    /// <summary>删除确认文案（混合选择时列明文件夹与书签数量）。</summary>
+    /// <summary>删除确认文案（Windows 口径：一切删除 = 移入回收站，不罗列子项后果）。</summary>
     private static Task<bool> ConfirmDeleteAsync(IReadOnlyList<BrowserRowViewModel> items)
     {
         var folders = items.Count(r => r.IsFolder);
         var links = items.Count - folders;
         string msg;
         if (folders > 0 && links > 0)
-            msg = $"删除选中的 {folders} 个文件夹和 {links} 个链接？\n文件夹内的链接将移入回收站。";
+            msg = $"将选中的 {folders} 个文件夹和 {links} 个链接移入回收站吗？";
         else if (folders > 0)
             msg = folders == 1
-                ? $"删除文件夹「{items[0].Name}」？\n其中的链接将移入回收站，子文件夹一并删除。"
-                : $"删除选中的 {folders} 个文件夹？\n其中的链接将移入回收站，子文件夹一并删除。";
+                ? $"将文件夹「{items[0].Name}」移入回收站吗？"
+                : $"将选中的 {folders} 个文件夹移入回收站吗？";
         else
             msg = links == 1
-                ? $"把链接「{items[0].Name}」移入回收站？"
-                : $"把选中的 {links} 个链接移入回收站？";
+                ? $"将链接「{items[0].Name}」移入回收站吗？"
+                : $"将选中的 {links} 个链接移入回收站吗？";
 
-        var result = MessageBox.Show(msg, "删除", MessageBoxButton.YesNo,
-            folders > 0 ? MessageBoxImage.Warning : MessageBoxImage.Question);
-        return Task.FromResult(result == MessageBoxResult.Yes);
+        return Task.FromResult(Views.ConfirmDialog.Show("删除", msg, "删除"));
     }
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
@@ -969,7 +997,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
             StatusText = $"已删除 {items.Count} 项";
             ClearSelection();
-            await RefreshAsync();
+            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
+            // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
             _ = Services.UiCoordinator.Instance?.RefreshSidebarAsync();
         }
         catch (Exception ex)

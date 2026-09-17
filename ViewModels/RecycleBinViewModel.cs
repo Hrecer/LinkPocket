@@ -6,11 +6,16 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using LinkPocket.Api;
-using LinkPocket.Models;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels
 {
+    /// <summary>
+    /// 回收站页数据模型（v2 层级化回收站）：
+    /// - TreeNodes：被删文件夹单元树（纯展示层级，节点不可打开/导航）；
+    /// - Entries：平铺条目（folder 单元根 + 单独删除的书签），按删除时间倒序；
+    /// - 本期无还原：只有「永久删除」（整单元 or 单条）。
+    /// </summary>
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
         /// <summary>后端 API（经传输层代理，见 AppServices）。</summary>
@@ -19,12 +24,17 @@ namespace LinkPocket.ViewModels
         private bool _isLoading;
         private bool _hasError;
         private string _errorMessage = string.Empty;
+        private TrashEntryDto? _selectedEntry;
 
         public RecycleBinViewModel()
         {
         }
 
-        public ObservableCollection<LinkItem> Items { get; } = new();
+        /// <summary>回收站文件夹树（纯视觉层级：节点不可打开，仅展示被删文件夹结构与计数）。</summary>
+        public ObservableCollection<TrashFolderNode> TreeNodes { get; } = new();
+
+        /// <summary>平铺条目：folder 单元根 + 单独删除的书签，按删除时间倒序。</summary>
+        public ObservableCollection<TrashEntryDto> Entries { get; } = new();
 
         public bool IsLoading
         {
@@ -44,9 +54,62 @@ namespace LinkPocket.ViewModels
             set { _errorMessage = value; OnPropertyChanged(); }
         }
 
-        public bool HasItems => Items.Count > 0;
+        public bool HasItems => Entries.Count > 0;
 
-        public HashSet<string> SelectedIds { get; } = new();
+        /// <summary>状态栏口径：根 = 「回收站 · N 项」；单元内 = 「单元名 · N 项」。</summary>
+        public string StatusText => (IsInUnit ? CurrentUnitName : "回收站") + $" · {Entries.Count} 项";
+
+        /// <summary>当前选中条目（单选；点空白清除）。</summary>
+        public TrashEntryDto? SelectedEntry
+        {
+            get => _selectedEntry;
+            set { _selectedEntry = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelection)); }
+        }
+
+        public bool HasSelection => SelectedEntry != null;
+
+        // ===== 「打开目录」：进入被删文件夹单元浏览其内容（回收站设计变更 2026-09-17）=====
+
+        /// <summary>当前所在单元（null = 回收站根平铺视图）。</summary>
+        public string? CurrentUnitId { get; private set; }
+
+        /// <summary>当前单元名（面包屑 + 状态栏展示）。</summary>
+        public string CurrentUnitName { get; private set; } = string.Empty;
+
+        /// <summary>是否处于单元浏览态（控制返回钮 / 面包屑）。</summary>
+        public bool IsInUnit => CurrentUnitId != null;
+
+        /// <summary>进入被删文件夹单元：表格切换为该单元内容（直接子单元 + 子树内书签快照）。</summary>
+        public async Task EnterUnitAsync(TrashEntryDto folderEntry)
+        {
+            if (folderEntry.EntryType != "folder") return;
+            var contents = await Api.GetTrashUnitContentsAsync(folderEntry.Id);
+            CurrentUnitId = folderEntry.Id;
+            CurrentUnitName = string.IsNullOrEmpty(folderEntry.Name) ? "未命名文件夹" : folderEntry.Name;
+            FillEntries(contents);
+        }
+
+        /// <summary>返回回收站根平铺视图（重新加载，顺带反映外部数据变化）。</summary>
+        public async Task BackToRootAsync()
+        {
+            if (CurrentUnitId == null) return;
+            CurrentUnitId = null;
+            CurrentUnitName = string.Empty;
+            OnPropertyChanged(nameof(IsInUnit));
+            OnPropertyChanged(nameof(CurrentUnitName));
+            await LoadAsync();
+        }
+
+        private void FillEntries(List<TrashEntryDto> contents)
+        {
+            Entries.Clear();
+            foreach (var entry in contents) Entries.Add(entry);
+            SelectedEntry = null;
+            OnPropertyChanged(nameof(HasItems));
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(IsInUnit));
+            OnPropertyChanged(nameof(CurrentUnitName));
+        }
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -55,14 +118,31 @@ namespace LinkPocket.ViewModels
             IsLoading = true;
             HasError = false;
             ErrorMessage = string.Empty;
-            Items.Clear();
-            SelectedIds.Clear();
+            SelectedEntry = null;
 
             try
             {
-                var deletedLinks = await Api.GetTrashAsync();
-                foreach (var link in deletedLinks)
-                    Items.Add(ConvertToItem(link));
+                if (IsInUnit)
+                {
+                    // 单元内刷新：保持所在单元，仅重取内容
+                    var unitContents = await Api.GetTrashUnitContentsAsync(CurrentUnitId!);
+                    Entries.Clear();
+                    foreach (var entry in unitContents) Entries.Add(entry);
+                    OnPropertyChanged(nameof(HasItems));
+                    OnPropertyChanged(nameof(StatusText));
+                }
+                else
+                {
+                    var entries = await Api.GetTrashAsync();
+                    var folderDtos = await Api.GetTrashTreeAsync();
+
+                    Entries.Clear();
+                    foreach (var entry in entries) Entries.Add(entry);
+                    OnPropertyChanged(nameof(HasItems));
+                    OnPropertyChanged(nameof(StatusText));
+
+                    RebuildTree(folderDtos);
+                }
             }
             catch (Exception ex)
             {
@@ -75,58 +155,41 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        public async Task RestoreSelectedAsync()
+        /// <summary>按 parent_trash_folder_id 组装被删文件夹树（TrashFolderNode，纯展示）。</summary>
+        private void RebuildTree(List<TrashFolderDto> folders)
         {
-            var toRestore = Items.Where(i => SelectedIds.Contains(i.LinkId)).ToList();
-            if (toRestore.Count == 0) return;
-            foreach (var item in toRestore)
+            TreeNodes.Clear();
+
+            var nodeById = new Dictionary<string, TrashFolderNode>();
+            foreach (var f in folders)
             {
-                try { await Api.RestoreLinkAsync(item.LinkId); } catch { }
+                nodeById[f.TrashFolderId] = new TrashFolderNode
+                {
+                    TrashFolderId = f.TrashFolderId,
+                    ParentTrashFolderId = f.ParentTrashFolderId,
+                    Name = f.Name,
+                    LinkCount = f.LinkCount
+                };
             }
-            SelectedIds.Clear();
-        }
 
-        public async Task PermanentDeleteSelectedAsync()
-        {
-            var toDelete = Items.Where(i => SelectedIds.Contains(i.LinkId)).ToList();
-            if (toDelete.Count == 0) return;
-            foreach (var item in toDelete)
+            foreach (var f in folders)
             {
-                try { await Api.PurgeLinkAsync(item.LinkId); } catch { }
+                var node = nodeById[f.TrashFolderId];
+                if (f.ParentTrashFolderId != null && nodeById.TryGetValue(f.ParentTrashFolderId, out var parent))
+                    parent.Children.Add(node);
+                else
+                    TreeNodes.Add(node);
             }
-            SelectedIds.Clear();
         }
 
-        public void SelectSingle(string id)
+        /// <summary>永久删除当前选中条目（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。</summary>
+        public async Task PurgeSelectedAsync()
         {
-            SelectedIds.Clear();
-            SelectedIds.Add(id);
+            var entry = SelectedEntry;
+            if (entry == null) return;
+            await Api.PurgeTrashAsync(entry.Id, entry.EntryType == "folder");
+            SelectedEntry = null;
         }
-
-        public void ToggleMultiSelect(string id)
-        {
-            if (SelectedIds.Contains(id))
-                SelectedIds.Remove(id);
-            else
-                SelectedIds.Add(id);
-        }
-
-        public void ClearSelection() => SelectedIds.Clear();
-        public bool IsSelected(string id) => SelectedIds.Contains(id);
-
-        private static LinkItem ConvertToItem(TrashEntryDto link) => new()
-        {
-            LinkId = link.LinkId,
-            Url = link.Url,
-            Title = link.Title ?? "",
-            Description = link.Description ?? "",
-            FaviconUrl = link.FaviconUrl ?? "",
-            ListId = null,
-            LastVisitedAt = link.LastVisitedAt,
-            VisitCount = link.VisitCount,
-            IsImportant = link.IsImportant,
-            CreatedAt = link.CreatedAt,
-            UpdatedAt = link.UpdatedAt        };
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {

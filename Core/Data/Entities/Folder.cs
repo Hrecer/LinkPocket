@@ -6,18 +6,12 @@ namespace LinkPocket.Data;
 [Table("lists")]
 public class Folder
 {
+    /// <summary>主键：固定 12 位纯数字（与链接 16 位混合串一眼区分），生成入口唯一在 <see cref="EntityIds"/>。</summary>
     [Key]
     [Required]
     [MaxLength(20)]
     [Column("folder_id")]
-    public string FolderId { get; set; } = GenerateFolderId();
-
-    private static string GenerateFolderId()
-    {
-        var rng = Random.Shared;
-        long id = ((long)rng.Next(1, 10000) << 48) | ((long)rng.Next() << 16) | (long)rng.Next() & 0xFFFF;
-        return id.ToString();
-    }
+    public string FolderId { get; set; } = EntityIds.NewFolderId();
 
     [Required]
     [MaxLength(255)]

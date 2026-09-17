@@ -3,13 +3,15 @@ using System.Runtime.CompilerServices;
 
 namespace LinkPocket.ViewModels
 {
+    /// <summary>
+    /// 设置页视图模型。
+    ///
+    /// 变更记录（2026-09-16）：书签导入 / 导出已合并进工具页，相关状态（导出目录、导出进度遮罩）
+    /// 一并迁移——该流程现在由 <c>Views/ToolsPage</c> 自行管理，这里只保留与设置页相关的开关。
+    /// </summary>
     public class SettingsViewModel : INotifyPropertyChanged
     {
         private bool _autoFetchMetadata = true;
-        private string _exportDirectory = string.Empty;
-        private bool _isExporting;
-        private string _exportStatusMessage = string.Empty;
-        private bool _isExportOverlayVisible;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -21,30 +23,6 @@ namespace LinkPocket.ViewModels
         {
             get => _autoFetchMetadata;
             set { _autoFetchMetadata = value; OnPropertyChanged(); }
-        }
-
-        public string ExportDirectory
-        {
-            get => _exportDirectory;
-            set { _exportDirectory = value; OnPropertyChanged(); }
-        }
-
-        public bool IsExporting
-        {
-            get => _isExporting;
-            set { _isExporting = value; OnPropertyChanged(); }
-        }
-
-        public string ExportStatusMessage
-        {
-            get => _exportStatusMessage;
-            set { _exportStatusMessage = value; OnPropertyChanged(); }
-        }
-
-        public bool IsExportOverlayVisible
-        {
-            get => _isExportOverlayVisible;
-            set { _isExportOverlayVisible = value; OnPropertyChanged(); }
         }
 
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)

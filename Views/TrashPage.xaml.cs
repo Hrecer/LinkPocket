@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
+using LinkPocket.Api;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -13,240 +14,357 @@ using Material3.Wpf;
 
 namespace LinkPocket.Views
 {
+    /// <summary>
+    /// 回收站页（v2 层级化）：树（纯展示）+ 面包屑（纯展示）+ 共享数据表平铺。
+    /// 表格为 SortableDataTable 默认工厂模式（搜索页同款）：名称/类型/原位置/删除时间，表头可排序。
+    /// 本期无还原；「永久删除」= 单条书签 or 整个被删文件夹单元（含子树）。
+    /// </summary>
     public partial class TrashPage : UserControl
     {
-        private readonly Dictionary<string, Border> _trashCardBorders = new();
-
         public TrashPage()
         {
             InitializeComponent();
             Focusable = true;
-            Loaded += (_, _) => Keyboard.Focus(this);
+            Loaded += (_, _) => { Keyboard.Focus(this); EnsureSidebarSubscription(); RefreshCrumbs(); };
+            SetupTrashTable();
+
+            TrashSidebar.DataContext = _sidebar;
+            TrashTable.RowClick += (_, item) =>
+            {
+                if (Vm is RecycleBinViewModel vm && item is TrashEntryDto entry)
+                    vm.SelectedEntry = entry;
+            };
+            // 双击：书签 = 只读详情页；文件夹单元 = 打开目录
+            TrashTable.RowDoubleClick += (_, item) =>
+            {
+                if (item is not TrashEntryDto entry) return;
+                if (entry.EntryType == "folder") _ = EnterUnitAsync(entry);
+                else ShowLinkDetail(entry);
+            };
         }
 
-        public Task RefreshAsync()
+        private RecycleBinViewModel? Vm => (DataContext as MainViewModel)?.RecycleBinViewModel;
+
+        // ===== 右侧只读详情栏：跟随 SelectedEntry（VM INPC 驱动，含 purge/清空后的清空态） =====
+        private readonly TrashSidebarModel _sidebar = new();
+        private RecycleBinViewModel? _sidebarSubscribedVm;
+
+        private void EnsureSidebarSubscription()
         {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return Task.CompletedTask;
+            var vm = Vm;
+            if (vm == null || _sidebarSubscribedVm == vm) return;
+            vm.PropertyChanged += Vm_PropertyChanged;
+            _sidebarSubscribedVm = vm;
+            UpdateSidebar();
+        }
 
-            TrashContentPanel.Children.Clear();
-            _trashCardBorders.Clear();
+        private void Vm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(RecycleBinViewModel.SelectedEntry))
+                UpdateSidebar();
+            else if (e.PropertyName == nameof(RecycleBinViewModel.IsInUnit) ||
+                     e.PropertyName == nameof(RecycleBinViewModel.CurrentUnitName))
+                RefreshCrumbs();
+        }
 
-            var recycleVm = vm.RecycleBinViewModel;
-            if (!recycleVm.HasItems)
+        private void UpdateSidebar()
+        {
+            var entry = Vm?.SelectedEntry;
+            if (entry == null) _sidebar.Clear();
+            else _sidebar.Show(entry);
+        }
+
+        // ===== 打开目录：进入被删文件夹单元，表格切换为单元内容（面包屑 + 返回钮联动） =====
+
+        private async Task EnterUnitAsync(TrashEntryDto folderEntry)
+        {
+            if (Vm is not RecycleBinViewModel vm) return;
+            try
             {
-                TrashContentPanel.Children.Add(new TextBlock
+                await vm.EnterUnitAsync(folderEntry);
+                RefreshCrumbs();
+            }
+            catch (Exception ex)
+            {
+                Views.ConfirmDialog.Show("打开失败", $"无法打开该文件夹单元：{ex.Message}", "确定", "alert-circle-outline");
+            }
+        }
+
+        private async void UnitBack_Click(object sender, RoutedEventArgs e)
+        {
+            if (Vm is not RecycleBinViewModel vm) return;
+            try
+            {
+                await vm.BackToRootAsync();
+                RefreshCrumbs();
+            }
+            catch (Exception ex)
+            {
+                Views.ConfirmDialog.Show("返回失败", ex.Message, "确定", "alert-circle-outline");
+            }
+        }
+
+        /// <summary>面包屑随浏览层级切换：根 = [回收站]；单元内 = [回收站, 单元名]。</summary>
+        private void RefreshCrumbs()
+        {
+            var vm = Vm;
+            if (vm == null) return;
+            TrashCrumbs.Breadcrumbs = vm.IsInUnit
+                ? new BreadcrumbSegment[]
                 {
-                    Text = "回收站为空", FontSize = 14, Opacity = 0.4,
-                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 40, 0, 0)
+                    new() { Name = "回收站" },
+                    new() { Name = vm.CurrentUnitName, IsLast = true }
+                }
+                : new BreadcrumbSegment[]
+                {
+                    new() { Name = "回收站", IsLast = true }
+                };
+        }
+
+        // ===== 只读详情页（回收站书签）：整页覆盖，无任何编辑入口 =====
+
+        private TrashEntryDto? _detailEntry;
+
+        private void ShowLinkDetail(TrashEntryDto entry)
+        {
+            _detailEntry = entry;
+
+            DetailName.Text = EntryName(entry);
+            DetailUrl.Text = entry.Url ?? string.Empty;
+            DetailOrigin.Text = string.IsNullOrWhiteSpace(entry.OriginPath) ? "全部书签" : entry.OriginPath;
+            DetailDeletedAt.Text = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            DetailId.Text = entry.Id;
+
+            var favicon = FaviconService.LoadFromCache(entry.FaviconUrl);
+            DetailFavicon.Source = favicon;
+            DetailFavicon.Visibility = favicon != null ? Visibility.Visible : Visibility.Collapsed;
+            DetailFaviconFallback.Visibility = favicon == null ? Visibility.Visible : Visibility.Collapsed;
+
+            LinkDetailOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void DetailBack_Click(object sender, RoutedEventArgs e)
+            => LinkDetailOverlay.Visibility = Visibility.Collapsed;
+
+        private void DetailCopyUrl_Click(object sender, RoutedEventArgs e)
+        {
+            try { Clipboard.SetText(DetailUrl.Text); } catch { /* 剪贴板被占用时不阻断 */ }
+        }
+
+        /// <summary>表格列定义（工厂模式：CellFactory + SortKey，表头可点击排序）。</summary>
+        private void SetupTrashTable()
+        {
+            TrashTable.Columns = new[]
+            {
+                new DataTableColumn
+                {
+                    Field = "name", Label = "名称", Width = -1,
+                    SortKey = r => (IComparable)EntryName((TrashEntryDto)r),
+                    CellFactory = r => BuildNameCell((TrashEntryDto)r)
+                },
+                new DataTableColumn
+                {
+                    Field = "type", Label = "类型", Width = 90,
+                    SortKey = r => (IComparable)((TrashEntryDto)r).EntryType,
+                    CellFactory = r => TextCell(((TrashEntryDto)r).EntryType == "folder" ? "文件夹" : "链接", 12.5)
+                },
+                new DataTableColumn
+                {
+                    Field = "origin_path", Label = "原位置", Width = -2,
+                    SortKey = r => ((TrashEntryDto)r).OriginPath ?? "",
+                    CellFactory = r => TextCell(((TrashEntryDto)r).OriginPath ?? "全部书签", 12.5)
+                },
+                new DataTableColumn
+                {
+                    Field = "deleted_at", Label = "删除时间", Width = 150,
+                    SortKey = r => (IComparable)((TrashEntryDto)r).DeletedAt,
+                    CellFactory = r => TextCell(
+                        ((TrashEntryDto)r).DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                },
+            };
+        }
+
+        private static string EntryName(TrashEntryDto e) => string.IsNullOrEmpty(e.Name) ? (e.Url ?? "") : e.Name;
+
+        /// <summary>名称列：图标（文件夹琥珀灰化 / favicon 或链接图标）+ 名称。</summary>
+        private FrameworkElement BuildNameCell(TrashEntryDto entry)
+        {
+            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Orientation = Orientation.Horizontal };
+
+            var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+
+            if (entry.EntryType == "folder")
+            {
+                iconGrid.Children.Add(new M3Icon
+                {
+                    Kind = "folder", Width = 16, Height = 16,
+                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                    Opacity = 0.55,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
                 });
-                TrashRestoreBtn.IsEnabled = false;
-                TrashDeleteBtn.IsEnabled = false;
-                return Task.CompletedTask;
+            }
+            else
+            {
+                var faviconBmp = FaviconService.LoadFromCache(entry.FaviconUrl);
+                var faviconImg = new Image
+                {
+                    Stretch = Stretch.Uniform,
+                    Source = faviconBmp,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
+                if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
+
+                var linkIcon = new M3Icon
+                {
+                    Kind = "link-variant", Width = 15, Height = 15,
+                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                    Opacity = 0.55,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                if (faviconBmp != null) linkIcon.Visibility = Visibility.Collapsed;
+
+                iconGrid.Children.Add(faviconImg);
+                iconGrid.Children.Add(linkIcon);
             }
 
-            foreach (var item in recycleVm.Items)
-                TrashContentPanel.Children.Add(CreateTrashLinkCard(item, recycleVm));
+            var text = new TextBlock
+            {
+                Text = EntryName(entry),
+                FontSize = 13.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("OnSurface"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            };
 
-            SyncButtonStates(recycleVm);
-            return Task.CompletedTask;
+            panel.Children.Add(iconGrid);
+            panel.Children.Add(text);
+            return panel;
         }
 
-        private Border CreateTrashLinkCard(LinkItem item, RecycleBinViewModel recycleVm)
+        private TextBlock TextCell(string text, double fontSize) => new()
         {
-            var card = new Border
+            Text = text,
+            FontSize = fontSize,
+            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        /// <summary>加载 + 渲染：VM 装载后刷新空态/引导/面包屑/侧栏（表行由 ItemsSource 绑定自动更新）。</summary>
+        public async Task RefreshAsync()
+        {
+            if (Vm == null) return;
+            EnsureSidebarSubscription();
+            await Vm.LoadAsync();
+            UpdateSidebar();
+            RefreshCrumbs();
+            RenderStates();
+        }
+
+        private void RenderStates()
+        {
+            var vm = Vm;
+            if (vm == null) return;
+
+            TrashTable.EmptyContent = vm.HasItems
+                ? BuildState("delete-outline", "选择条目进行操作", null)
+                : BuildState("delete-outline", "回收站是空的",
+                    "删除的书签和文件夹会出现在这里，并保留删除时的位置");
+        }
+
+        /// <summary>空态/引导占位（MD3E 徽章）。</summary>
+        private FrameworkElement BuildState(string iconKind, string title, string? subtitle)
+        {
+            var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 56, 0, 0) };
+            var badge = new Border
             {
-                Tag = "TrashCard",
-                Margin = new Thickness(4, 2, 4, 2),
-                CornerRadius = new CornerRadius(10),
-                Cursor = Cursors.Hand,
-                Width = 720,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Background = (Brush)FindResource("SurfaceContainer"),
-                BorderThickness = new Thickness(2),
-                Padding = new Thickness(16, 12, 16, 12)
-            };
-
-            var style = new Style(typeof(Border));
-            style.Setters.Add(new Setter(Border.BorderBrushProperty, FindResource("OutlineVariant")));
-            style.Setters.Add(new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.08 }));
-            style.Triggers.Add(new Trigger { Property = Border.IsMouseOverProperty, Value = true,
-                Setters = { new Setter(Border.EffectProperty, new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Opacity = 0.15 }) }
-            });
-            card.Style = style;
-
-            _trashCardBorders[item.LinkId] = card;
-
-            var grid = new Grid { VerticalAlignment = VerticalAlignment.Center };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var iconBorder = new Border
-            {
-                Width = 36, Height = 36, CornerRadius = new CornerRadius(6),
-                Background = Brushes.White,
-                Margin = new Thickness(0, 0, 12, 0),
-                ClipToBounds = true
-            };
-
-            var iconGrid = new Grid();
-
-            var faviconBmp = FaviconService.LoadFromCache(item.FaviconUrl);
-            var faviconImg = new Image
-            {
-                Stretch = Stretch.Uniform,
-                Source = faviconBmp,
-                VerticalAlignment = VerticalAlignment.Center,
+                Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
+                Background = (Brush)FindResource("SecondaryContainer"),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-            if (faviconBmp == null)
-                faviconImg.Visibility = Visibility.Collapsed;
-
-            var webIcon = new M3Icon
+            badge.Child = new M3Icon
             {
-                Kind = "web",
-                Width = 20, Height = 20,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Opacity = 0.55
+                Kind = iconKind, Width = 40, Height = 40,
+                Foreground = (Brush)FindResource("OnSecondaryContainer"),
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
             };
-            if (faviconBmp != null)
-                webIcon.Visibility = Visibility.Collapsed;
-
-            iconGrid.Children.Add(faviconImg);
-            iconGrid.Children.Add(webIcon);
-
-            if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
+            sp.Children.Add(badge);
+            sp.Children.Add(new TextBlock
             {
-                _ = Task.Run(async () =>
+                Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
+                Foreground = (Brush)FindResource("OnSurface"),
+                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
+            });
+            if (subtitle != null)
+                sp.Children.Add(new TextBlock
                 {
-                    try
-                    {
-                        await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
-                        var cached = FaviconService.LoadFromCache(item.FaviconUrl);
-                        if (cached != null)
-                        {
-                            Application.Current.Dispatcher.Invoke(() =>
-                            {
-                                faviconImg.Source = cached;
-                                faviconImg.Visibility = Visibility.Visible;
-                                webIcon.Visibility = Visibility.Collapsed;
-                            });
-                        }
-                    }
-                    catch { }
+                    Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.85,
+                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
+                    MaxWidth = 420, TextAlignment = TextAlignment.Center
                 });
+            return sp;
+        }
+
+        private async void TrashPurge_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = Vm;
+            if (vm?.SelectedEntry == null) return;
+
+            var entry = vm.SelectedEntry;
+            var name = EntryName(entry);
+            var message = entry.EntryType == "folder"
+                ? $"确定要永久删除文件夹「{name}」吗？\n文件夹内的全部内容将一并删除，不可恢复。"
+                : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
+            // 统一走 MD3E 确认弹窗（删除/警告提醒色规范），替代系统 MessageBox
+            if (!Views.ConfirmDialog.Show("永久删除", message, "永久删除", "delete-forever"))
+                return;
+
+            try
+            {
+                await vm.PurgeSelectedAsync();
             }
-
-            iconBorder.Child = iconGrid;
-            Grid.SetColumn(iconBorder, 0);
-            grid.Children.Add(iconBorder);
-
-            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            textStack.Children.Add(new TextBlock
+            catch (Exception ex)
             {
-                Text = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url,
-                FontSize = 14, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
-            });
-            textStack.Children.Add(new TextBlock
-            {
-                Text = item.Url, FontSize = 11, Opacity = 0.55,
-                TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-            });
-            Grid.SetColumn(textStack, 1);
-            grid.Children.Add(textStack);
-
-            card.Child = grid;
-
-            var capturedId = item.LinkId;
-            card.PreviewMouseLeftButtonDown += (s, e) =>
-            {
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                    recycleVm.ToggleMultiSelect(capturedId);
-                else
-                    recycleVm.SelectSingle(capturedId);
-                UpdateTrashSelectionVisuals(recycleVm);
-                e.Handled = true;
-            };
-
-            return card;
-        }
-
-        public void UpdateTrashSelectionVisuals(RecycleBinViewModel recycleVm)
-        {
-            var selectedBrush = (Brush)Application.Current.FindResource("Primary");
-            var defaultBrush = (Brush)FindResource("OutlineVariant");
-            foreach (var kvp in _trashCardBorders)
-                kvp.Value.BorderBrush = recycleVm.IsSelected(kvp.Key) ? selectedBrush : defaultBrush;
-            SyncButtonStates(recycleVm);
-        }
-
-        private void SyncButtonStates(RecycleBinViewModel recycleVm)
-        {
-            bool hasSelection = recycleVm.SelectedIds.Count > 0;
-            TrashRestoreBtn.IsEnabled = hasSelection;
-            TrashDeleteBtn.IsEnabled = hasSelection;
-        }
-
-        private async void TrashRestore_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
-            var recycleVm = vm.RecycleBinViewModel;
-            if (recycleVm.SelectedIds.Count == 0) return;
-
-            await recycleVm.RestoreSelectedAsync();
-            await recycleVm.LoadAsync();
-            await RefreshAsync();
-            await vm.RefreshFolderTreeAndUIAsync();
-        }
-
-        private async void TrashPermanentDelete_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
-            var recycleVm = vm.RecycleBinViewModel;
-            if (recycleVm.SelectedIds.Count == 0) return;
-
-            await recycleVm.PermanentDeleteSelectedAsync();
-            await recycleVm.LoadAsync();
-            await RefreshAsync();
-            await vm.RefreshFolderTreeAndUIAsync();
+                MessageBox.Show($"永久删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void TrashPage_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
-            var recycleVm = vm.RecycleBinViewModel;
+            var vm = Vm;
+            if (vm == null) return;
 
-            if (e.Key == Key.Delete && recycleVm.SelectedIds.Count > 0)
+            if (e.Key == Key.Escape)
             {
-                TrashPermanentDelete_Click(this, new RoutedEventArgs());
+                // Esc 优先级：详情页 > 单元浏览 > 清除选中
+                if (LinkDetailOverlay.Visibility == Visibility.Visible)
+                {
+                    LinkDetailOverlay.Visibility = Visibility.Collapsed;
+                }
+                else if (vm.IsInUnit)
+                {
+                    UnitBack_Click(this, new RoutedEventArgs());
+                }
+                else
+                {
+                    vm.SelectedEntry = null;
+                    TrashTable.ClearSelection();
+                }
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Delete && vm.HasSelection && LinkDetailOverlay.Visibility != Visibility.Visible)
+            {
+                TrashPurge_Click(this, new RoutedEventArgs());
                 e.Handled = true;
             }
-            else if (e.Key == Key.Escape)
-            {
-                recycleVm.ClearSelection();
-                UpdateTrashSelectionVisuals(recycleVm);
-                e.Handled = true;
-            }
-        }
-
-        private void TrashPage_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (DataContext is not MainViewModel vm || vm.RecycleBinViewModel == null) return;
-            var recycleVm = vm.RecycleBinViewModel;
-            if (recycleVm.SelectedIds.Count == 0) return;
-
-            DependencyObject? hit = e.OriginalSource as DependencyObject;
-            while (hit != null)
-            {
-                if (hit is Border b && "TrashCard".Equals(b.Tag as string))
-                    return;
-                if (hit is Button)
-                    return;
-                hit = VisualTreeHelper.GetParent(hit);
-            }
-
-            recycleVm.ClearSelection();
-            UpdateTrashSelectionVisuals(recycleVm);
         }
     }
 }

@@ -71,17 +71,72 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
         <!-- 筛选 chip：药丸形，选中后变低圆角 + SecondaryContainer 强调（MD3E 形状区分状态） -->
+        <!-- 跳转按钮（M3E Filled 药丸）：搜索工具行唯一的关键动作，Primary 填色锚定注意力（色彩即层级）；
+             禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不再用透明度 hack）；
+             按压圆角形变 16→10（M3E 交互化作形变）。 -->
+        <Style x:Key="SearchJumpPillButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBtn}"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="15,0"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"
+                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <Grid>
+                                <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
+                                        Opacity="0" CornerRadius="16"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                                <Setter TargetName="Bd" Property="CornerRadius" Value="10"/>
+                                <Setter TargetName="StateLayer" Property="CornerRadius" Value="10"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 搜索范围筛选 chip（M3E：色彩 + 形变表达选中态）：
+             未选 = 透明（浮在分组容器 SurfaceContainerHigh 上）+ 悬停浮起；
+             选中 = SecondaryContainer 填色 + 内边距加宽 13→24（用户要求：选中看得见变宽）
+                    + 圆角形变 15→10 + SemiBold。
+             ⚠️ 不放图标：LpIcons 字形表未注册「check」，M3Icon 会渲染成占位的空白（见 2026-09-16 教训）。 -->
         <Style x:Key="SearchChip" TargetType="CheckBox">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Margin" Value="2,0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
-                        <Border x:Name="Bd" CornerRadius="14" Background="{DynamicResource SurfaceContainerHigh}"
-                                Padding="14,6" SnapsToDevicePixels="True">
-                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        <Border x:Name="Bd" Height="30" CornerRadius="15"
+                                Background="Transparent" Padding="13,0"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -89,6 +144,7 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+                                <Setter TargetName="Bd" Property="Padding" Value="24,0"/>
                                 <Setter TargetName="Bd" Property="CornerRadius" Value="10"/>
                                 <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
@@ -137,16 +193,16 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#E81123"/>
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource WarnBg}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#BF0F1D"/>
+                                <Setter TargetName="bd" Property="Background" Value="#EDDFA6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
-            </Setter>
-        </Style>
+                </Setter>
+            </Style>
         <local:BoolToFontWeightConverter x:Key="BoolToFontWeightConverter"/>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <vm:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVis"/>
@@ -186,19 +242,11 @@
                     </Border>
                     <TextBlock Text="LinkPocket" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
-                <!-- 分段胶囊导航：整体一个胶囊容器，选中项是滑动的 PrimaryContainer 药丸（动画由 code-behind 驱动） -->
+                <!-- 分段胶囊导航：整体一个胶囊容器，选中项是滑动的 PrimaryContainer 药丸（动画由 code-behind 驱动）。
+                     ⚠️ 全局导航常驻：任何页面（含二级视图）都不得隐藏它——历史上曾绑 IsInSecondaryPage
+                     导致进智能列表/工具详情时导航消失，已彻底移除该状态（2026-09-16 用户明令）。 -->
                 <Border Grid.Column="1" x:Name="NavCapsule" HorizontalAlignment="Center" VerticalAlignment="Center"
                         Background="{DynamicResource SurfaceContainerHighest}" CornerRadius="17" Padding="3">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsInSecondaryPage}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
                     <Grid x:Name="NavHost">
                         <Border x:Name="NavPill" CornerRadius="14" Background="{DynamicResource PrimaryContainer}"
                                 HorizontalAlignment="Left" Width="0" Height="30" IsHitTestVisible="False">
@@ -256,7 +304,10 @@
             </Grid.Style>
 
             <Grid.ColumnDefinitions>
+                <!-- 结果列表占剩余宽度；详情栏与浏览页同规格（286，可拖拽 230~400） -->
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表 -->
@@ -317,50 +368,63 @@
                                          KeyDown="SearchBox_KeyDown"/>
                             </Grid>
 
+                            <!-- Focusable=False：点击不抢走搜索框键盘焦点，避免聚焦胶囊态闪烁。
+                                 库 FilledButton 模板可能硬编码 Primary 底色 → 统一换 PrimaryPillButton（AccentBtn #A18EB0） -->
                             <Button Grid.Column="3" Content="搜索" Padding="20,9" FontSize="13" FontWeight="SemiBold"
-                                    Style="{StaticResource FilledButton}" Click="SearchButton_Click"
+                                    Style="{StaticResource PrimaryPillButton}"
+                                    Click="SearchButton_Click" Focusable="False"
                                     VerticalAlignment="Center" Margin="4,0,4,0"/>
                             <Button Grid.Column="4" Content="取消" Padding="14,9" FontSize="13"
-                                    Style="{StaticResource TextButton}" Click="SearchCancelButton_Click"
+                                    Style="{StaticResource TextButton}" Click="SearchCancelButton_Click" Focusable="False"
                                     VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
                 </Border>
 
-                <!-- 筛选 chip 行（药丸 chip：选中 → SecondaryContainer + 圆角变小） -->
+                <!-- 筛选工具行（M3E）：跳转 = Filled 药丸（关键操作，色彩锚定）；
+                     「搜索范围」+ 筛选 chip 归集进同一个圆角分组容器（M3E 重拾边界与框线：分组体现视觉重心）。
+                     chip 未选透明、选中 SecondaryContainer + 形变 + 对勾，层级由色彩直接区分。 -->
                 <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
                             Margin="0,0,0,8">
                     <Button x:Name="SearchJumpToLinkBtn" Click="SearchJumpToLinkBtn_Click" IsEnabled="False"
-                            Cursor="Hand" Margin="0,0,14,0" VerticalAlignment="Center">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Padding" Value="14,7"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsEnabled" Value="False">
-                                        <Setter Property="Opacity" Value="0.4"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
+                            Style="{StaticResource SearchJumpPillButton}" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="open-in-new" Width="16" Height="16" VerticalAlignment="Center"/>
-                            <TextBlock Text="跳转" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            <m3:M3Icon Kind="open-in-new" Width="15" Height="15" VerticalAlignment="Center"/>
+                            <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
-                    <TextBlock Text="搜索范围" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
-                               VerticalAlignment="Center" Margin="0,0,10,0"/>
-                    <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True" Style="{StaticResource SearchChip}"/>
-                    <CheckBox x:Name="SearchUrlCb" Content="URL" IsChecked="True" Style="{StaticResource SearchChip}"/>
-                    <CheckBox x:Name="SearchTitleCb" Content="标题" IsChecked="True" Style="{StaticResource SearchChip}"/>
-                    <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True" Style="{StaticResource SearchChip}"/>
+
+                    <!-- 筛选分组容器：与搜索胶囊同色调（SurfaceContainerHigh），全圆角 16 包 30 高 chip -->
+                    <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="16"
+                            Padding="5,1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="搜索范围" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
+                                       VerticalAlignment="Center" Margin="9,0,3,0"/>
+                            <CheckBox x:Name="SearchPathCb" Content="路径" IsChecked="True" Style="{StaticResource SearchChip}"
+                                      Checked="SearchScope_Changed" Unchecked="SearchScope_Changed"/>
+                            <CheckBox x:Name="SearchUrlCb" Content="URL" IsChecked="True" Style="{StaticResource SearchChip}"
+                                      Checked="SearchScope_Changed" Unchecked="SearchScope_Changed"/>
+                            <CheckBox x:Name="SearchTitleCb" Content="标题" IsChecked="True" Style="{StaticResource SearchChip}"
+                                      Checked="SearchScope_Changed" Unchecked="SearchScope_Changed"/>
+                            <CheckBox x:Name="SearchDescCb" Content="描述" IsChecked="True" Style="{StaticResource SearchChip}"
+                                      Checked="SearchScope_Changed" Unchecked="SearchScope_Changed"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- 结果区：完全可复用、数据驱动的 SortableDataTable（表头排序/表格化行/空态一体） -->
                 <views:SortableDataTable x:Name="SearchResultsTable" Grid.Row="2" Margin="12,0,12,8"/>
             </Grid>
+
+            <!-- 详情栏可拖拽分隔线（与浏览页同款交互） -->
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          Background="Transparent" Cursor="SizeWE"/>
+
+            <!-- ===== 右侧详情栏：复用 DetailSidebar 控件，大小与浏览页右侧栏一致 ===== -->
+            <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
+                    CornerRadius="24,0,0,24" Margin="0,0,0,8">
+                <views:DetailSidebar x:Name="SearchSidebar"/>
+            </Border>
 
         </Grid>
 
