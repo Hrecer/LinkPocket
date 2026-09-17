@@ -16,15 +16,20 @@
 
 ## 内部组件
 
-- `SearchSupport.MatchAsync`：四范围谓词组合；`search_path` 命中目录名时**展开整棵子树**（经 `ITreeService` 祖先/后代解析）。
-- `SearchSupport.SortHits`：结果排序（保持既有口径，含命中字段随行携带）。
+- `SearchSupport.SearchAsync`：组装多范围谓词（`LinkSearchScope`）交仓储 **SQL 下推**——过滤与排序都不再进内存；
+  `search_path` 命中目录名时**展开整棵子树**（内存 BFS，目录数量有限），命中目录集合经 `folder_id IN (...)` 下推。
+- `SearchSupport.MatchedFields`：对已筛出的候选集标注命中字段（与 SQL 谓词同义，供 explain 与高亮）。
 - `SearchDtos`：命中记录 DTO（链接 + 命中字段）。
 
 ## 关键口径（行为等价项）
 
 - 空查询 = `LP.VAL.001`；范围全不选 = 无命中（引导空态是界面职责，引擎不猜意图）。`search_path` 是"目录名命中 → 该子树下所有书签也算命中"。
-- 中缀 `LIKE '%x%'` 注定全表扫描——这是 10k 库 `search.links < 100ms` 门槛的依据，
-  在 `IndexPlanTests` 里以**负向断言**显式记录为"已知可接受的全扫描"（不为它加无效索引）。
+- **过滤在 SQL 端**：中缀 `LIKE '%x%'` 注定全表扫描（这是 10k 库 `search.links` 门槛的依据，
+  在 `IndexPlanTests` 里以**负向断言**显式记录为"已知可接受的全扫描"，不为它加无效索引）——
+  但扫描发生在库内，不再把全库读进内存逐条比对。
+- 关键词里的 `%` / `_` / `\` 按**字面**匹配（LIKE 通配符已转义）：用户输入不得改变匹配语义。
+- 匹配大小写口径：SQL `LIKE` 对 ASCII 大小写不敏感（与 `OrdinalIgnoreCase` 一致）；
+  非 ASCII 逐字节精确——两者在 Unicode 大小写对上存在理论差异，已记录为已知边界。
 
 ## 测试
 
@@ -33,4 +38,4 @@
 
 ## 复用点
 
-`search.explain` 是 AI 调用搜索后的自校验入口；路径展开逻辑与 Folders 的树服务同源（不重复实现父链遍历）。
+`search.explain` 是 AI 调用搜索后的自校验入口；范围谓词与排序一律经 `links` 域仓储下推（复用同一套白名单与排序引擎，不重复实现查询）。

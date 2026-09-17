@@ -1,89 +1,86 @@
-using System.Text.Json;
-using LinkPocket.Api;
-using LinkPocket.Contracts;
 using LinkPocket.Data;
 using LinkPocket.Kernel;
-using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Search;
 
-/// <summary>搜索域内部支撑：范围谓词匹配与路径展开（与既有 SearchAsync 逐条等价）。</summary>
+/// <summary>搜索域内部支撑：多范围谓词（SQL 下推）与命中字段标注。</summary>
 internal static class SearchSupport
 {
     /// <summary>
-    /// 四范围匹配：title / url / description（OrdinalIgnoreCase contains）+ path（文件夹名命中 → 子树展开）。
+    /// 四范围搜索：title / url / description（ASCII 大小写不敏感包含）+ path（文件夹名命中 → 子树展开）。
+    /// **过滤与排序全部 SQL 下推**——不再把全库链接读进内存逐条比对（10k/100k 库的关键路径）。
+    /// 只有「目录名匹配 + 子树展开」在内存完成（目录数量有限，且树结构本就常驻）。
     /// 空查询不是引擎职责（由 Handler 报 LP.VAL.001）；范围全不选 = 无命中（引导空态属界面）。
     /// </summary>
-    public static async Task<IReadOnlyList<(Link Link, List<string> Matched)>> MatchAsync(
+    public static async Task<IReadOnlyList<(Link Link, List<string> Matched)>> SearchAsync(
         Kernel.IUnitOfWork uow, string query,
         bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
+        string sortBy, string sortOrder,
         CancellationToken ct)
     {
-        var links = await uow.Links.ListAsync(new LinkQuerySpec(), ct);
-
-        var folders = searchPath ? await uow.Folders.ListAllAsync(ct) : null;
-        HashSet<string>? expanded = null;
-        if (folders != null)
+        var scope = new LinkSearchScope
         {
-            var matched = folders
-                .Where(f => f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .Select(f => f.FolderId)
-                .ToHashSet(StringComparer.Ordinal);
-            if (matched.Count > 0)
+            Query = query,
+            Title = searchTitle,
+            Url = searchUrl,
+            Description = searchDescription,
+            Folders = searchPath ? await ExpandMatchingFoldersAsync(uow, query, ct) : [],
+        };
+
+        if (!scope.Any) return [];   // 全范围未启用 = 无命中
+
+        var links = await uow.Links.ListAsync(
+            new LinkQuerySpec
             {
-                expanded = new HashSet<string>(matched);
-                foreach (var fid in matched)
-                    Expand(folders, fid, expanded);
-            }
-        }
+                Filter = new LinkFilter { SearchScope = scope },
+                Sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "created_at"),
+            }, ct);
 
-        var hits = new List<(Link, List<string>)>();
-        foreach (var link in links)
-        {
-            var matchedFields = new List<string>();
-            if (searchTitle && link.Title != null && link.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
-                matchedFields.Add("title");
-            if (searchUrl && link.Url.Contains(query, StringComparison.OrdinalIgnoreCase))
-                matchedFields.Add("url");
-            if (searchDescription && link.Description != null
-                && link.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-                matchedFields.Add("description");
-            if (searchPath && expanded != null && link.ListId != null && expanded.Contains(link.ListId))
-                matchedFields.Add("path");
-
-            if (matchedFields.Count > 0)
-                hits.Add((link, matchedFields));
-        }
-
-        return hits;
-
-        static void Expand(IReadOnlyList<Folder> all, string folderId, HashSet<string> into)
-        {
-            foreach (var child in all.Where(f => f.ParentId == folderId))
-            {
-                if (into.Add(child.FolderId))
-                    Expand(all, child.FolderId, into);
-            }
-        }
+        // 命中字段：对已筛出的候选集重算谓词（SQL 匹配 ⊇ 内存 OrdinalIgnoreCase 匹配，不会漏标）
+        var pathSet = scope.Folders.Select(f => f.Value).ToHashSet(StringComparer.Ordinal);
+        return links.Select(l => (l, MatchedFields(l, scope, pathSet, query))).ToList();
     }
 
-    /// <summary>排序（与既有 SortLinks 逐条等价：CurrentCulture 标题、ID 兜底）。</summary>
-    public static List<T> SortHits<T>(
-        IEnumerable<T> source, Func<T, Link> link, string sortBy, string sortOrder)
+    /// <summary>目录名命中的文件夹 + 其整棵子树（命中目录本身也算命中）。</summary>
+    private static async Task<List<FolderId>> ExpandMatchingFoldersAsync(
+        Kernel.IUnitOfWork uow, string query, CancellationToken ct)
     {
-        var desc = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
-        IOrderedEnumerable<T> ordered = sortBy switch
+        var folders = await uow.Folders.ListAllAsync(ct);
+        var childrenOf = folders
+            .Where(f => f.ParentId != null)
+            .ToLookup(f => f.ParentId!, StringComparer.Ordinal);
+
+        var expanded = new List<FolderId>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<string>(folders
+            .Where(f => f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.FolderId));
+
+        while (pending.Count > 0)
         {
-            "title" => desc
-                ? source.OrderByDescending(x => link(x).Title, StringComparer.CurrentCulture)
-                : source.OrderBy(x => link(x).Title, StringComparer.CurrentCulture),
-            "updated_at" => desc ? source.OrderByDescending(x => link(x).UpdatedAt) : source.OrderBy(x => link(x).UpdatedAt),
-            "last_visited_at" => desc
-                ? source.OrderByDescending(x => link(x).LastVisitedAt ?? DateTime.MinValue)
-                : source.OrderBy(x => link(x).LastVisitedAt ?? DateTime.MinValue),
-            "visit_count" => desc ? source.OrderByDescending(x => link(x).VisitCount) : source.OrderBy(x => link(x).VisitCount),
-            _ => desc ? source.OrderByDescending(x => link(x).CreatedAt) : source.OrderBy(x => link(x).CreatedAt),
-        };
-        return ordered.ThenBy(x => link(x).LinkId, StringComparer.Ordinal).ToList();
+            var id = pending.Dequeue();
+            if (!seen.Add(id)) continue;
+            expanded.Add(new FolderId(id));
+            foreach (var child in childrenOf[id]) pending.Enqueue(child.FolderId);
+        }
+
+        return expanded;
+    }
+
+    /// <summary>逐字段标注命中来源（与 SQL 谓词同义；供 search.explain 与结果高亮）。</summary>
+    private static List<string> MatchedFields(
+        Link link, LinkSearchScope scope, IReadOnlySet<string> pathSet, string query)
+    {
+        var matched = new List<string>();
+        if (scope.Title && link.Title != null && link.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+            matched.Add("title");
+        if (scope.Url && link.Url.Contains(query, StringComparison.OrdinalIgnoreCase))
+            matched.Add("url");
+        if (scope.Description && link.Description != null
+            && link.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+            matched.Add("description");
+        if (link.ListId != null && pathSet.Contains(link.ListId))
+            matched.Add("path");
+        return matched;
     }
 }

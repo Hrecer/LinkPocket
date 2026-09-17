@@ -489,6 +489,32 @@ public class SearchModuleTests
             () => engine.QueryAsync<List<LinkDto>>("search.links", new { query = "  " }));
         Assert.Equal(EngineErrors.RequiredParam, empty.Error.Code);
     }
+
+    [Fact]
+    public async Task Search_Keyword_Wildcards_Are_Literal()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://a.example", title = "100% 完成" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://b.example", title = "100 完成" });
+
+        // 关键词里的 % 按字面匹配：不得当 LIKE 通配符把「100 完成」也捞进来
+        var hit = Assert.Single(await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "100%" }));
+        Assert.Equal("100% 完成", hit.Title);
+    }
+
+    [Fact]
+    public async Task Search_Sorts_By_Title_Through_Sql()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example/2", title = "beta 工具" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example/1", title = "Alpha 工具" });
+
+        var asc = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "工具" });
+        Assert.Equal(new[] { "Alpha 工具", "beta 工具" }, asc.Select(l => l.Title));
+
+        var desc = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "工具", sort_order = "desc" });
+        Assert.Equal(new[] { "beta 工具", "Alpha 工具" }, desc.Select(l => l.Title));
+    }
 }
 
 public class BookmarksModuleTests

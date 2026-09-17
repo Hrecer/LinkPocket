@@ -33,15 +33,17 @@ internal sealed class SearchLinksHandler : ICommandHandler
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "asc";
 
-        var hits = await SearchSupport.MatchAsync(
+        var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,
             CommandArgs.OptionalBool(args, "search_title", true),
             CommandArgs.OptionalBool(args, "search_url"),
             CommandArgs.OptionalBool(args, "search_description"),
             CommandArgs.OptionalBool(args, "search_path"),
+            sortBy,
+            // 排序方向口径：只有 "desc" 是降序，其余一律升序（与既有搜索口径一致）
+            string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc",
             ctx.Ct);
 
-        var sorted = SearchSupport.SortHits(hits, h => h.Link, sortBy, sortOrder);
-        return CommandResult.Ok(sorted.Select(h => h.Link.ToDto()).ToList());
+        return CommandResult.Ok(hits.Select(h => h.Link.ToDto()).ToList());
     }
 }

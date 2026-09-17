@@ -27,12 +27,13 @@ internal sealed class SearchExplainHandler : ICommandHandler
     {
         var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001
 
-        var hits = await SearchSupport.MatchAsync(
+        var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,
             CommandArgs.OptionalBool(args, "search_title", true),
             CommandArgs.OptionalBool(args, "search_url"),
             CommandArgs.OptionalBool(args, "search_description"),
             CommandArgs.OptionalBool(args, "search_path"),
+            "title", "asc",
             ctx.Ct);
 
         var explanation = new SearchExplanation(hits
