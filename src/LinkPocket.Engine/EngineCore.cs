@@ -91,7 +91,7 @@ public sealed class EngineCore : IEngine
         CallOptions? options = null, CancellationToken ct = default)
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
-        var caller = options?.Caller ?? CallerRef.Test;
+        var caller = options?.Caller ?? CallerRef.Ui;
         var dryRun = options?.DryRun == true;
         var argsJson = EngineJson.ToJsonElement(args);   // 入参快照：审计 ArgsJson 与撤销登记共用
 
@@ -196,7 +196,7 @@ public sealed class EngineCore : IEngine
         CallOptions? options = null, CancellationToken ct = default)
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
-        var caller = options?.Caller ?? CallerRef.Test;
+        var caller = options?.Caller ?? CallerRef.Ui;
 
         _sessions?.Enforce(caller, isMutation: false, correlationId);
 

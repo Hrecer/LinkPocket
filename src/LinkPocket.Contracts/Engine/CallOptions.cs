@@ -13,6 +13,9 @@ public enum CallerKind
 /// <summary>调用方引用：{ Kind, SessionId }，贯穿审计/日志/错误/事件。</summary>
 public sealed record CallerRef(CallerKind Kind, string? SessionId = null)
 {
+    /// <summary>缺省调用方（未显式指定 Caller 时）：桌面界面会话——未登记会话零约束。</summary>
+    public static readonly CallerRef Ui = new(CallerKind.Ui, null);
+
     public static readonly CallerRef Test = new(CallerKind.Test, "test");
     public override string ToString() => $"{Kind.ToString().ToLowerInvariant()}:{SessionId ?? "-"}";
 }
