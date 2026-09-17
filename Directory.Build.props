@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- LinkPocket 全解决方案公共属性（ Directory.Build.props 对本目录及子目录所有项目生效 ） -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

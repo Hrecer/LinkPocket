@@ -99,7 +99,7 @@ Assert(!(await api.GetFolderTreeAsync()).Any(f => f.FolderId == sub.FolderId), "
 var tree = await api.GetTrashTreeAsync();
 var rootUnit = tree.FirstOrDefault(f => f.Name == "子目录" && f.ParentTrashFolderId == null);
 Assert(rootUnit != null, "删除根单元应挂在回收站根");
-Assert(rootUnit.LinkCount == 1, $"删除根单元 LinkCount 应为 1，实际 {rootUnit.LinkCount}");
+Assert(rootUnit!.LinkCount == 1, $"删除根单元 LinkCount 应为 1，实际 {rootUnit.LinkCount}");
 
 // 平铺：folder 条目（origin_path 含完整路径）
 var flat = await api.GetTrashAsync();

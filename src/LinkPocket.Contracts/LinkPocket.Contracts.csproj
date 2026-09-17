@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 契约层：IEngine/DTO/传输抽象等一切消费者共同依赖的类型。零项目引用、零 NuGet 依赖。 -->
+  <!-- 命名空间保持 LinkPocket.*（Phase 2 拆分不动命名空间，归一在后继阶段做）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+</Project>

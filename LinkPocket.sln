@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{703A951A-37A6-4805-8F7E-872769D314F7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Contracts", "src\LinkPocket.Contracts\LinkPocket.Contracts.csproj", "{5CCA746F-6002-4244-AD2F-1735D03279D7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Kernel", "src\LinkPocket.Kernel\LinkPocket.Kernel.csproj", "{0F2054A7-B37B-4260-A9B9-14096714F794}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Data", "src\LinkPocket.Data\LinkPocket.Data.csproj", "{D78B3106-B8F4-4412-ABB8-6516BD67609B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Infrastructure", "src\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj", "{F95C99B5-6B1D-4AF6-A7AC-64C274655291}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E0E15218-1483-42AF-BF9E-7360DEBEAEA7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "t", "tests\ProtocolSmoke\t.csproj", "{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket", "src\LinkPocket.App\LinkPocket.csproj", "{70328666-6C7C-45EF-99FC-7E7DE89A7B04}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5CCA746F-6002-4244-AD2F-1735D03279D7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5CCA746F-6002-4244-AD2F-1735D03279D7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5CCA746F-6002-4244-AD2F-1735D03279D7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5CCA746F-6002-4244-AD2F-1735D03279D7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0F2054A7-B37B-4260-A9B9-14096714F794}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0F2054A7-B37B-4260-A9B9-14096714F794}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0F2054A7-B37B-4260-A9B9-14096714F794}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0F2054A7-B37B-4260-A9B9-14096714F794}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D78B3106-B8F4-4412-ABB8-6516BD67609B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D78B3106-B8F4-4412-ABB8-6516BD67609B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D78B3106-B8F4-4412-ABB8-6516BD67609B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D78B3106-B8F4-4412-ABB8-6516BD67609B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F95C99B5-6B1D-4AF6-A7AC-64C274655291}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F95C99B5-6B1D-4AF6-A7AC-64C274655291}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F95C99B5-6B1D-4AF6-A7AC-64C274655291}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F95C99B5-6B1D-4AF6-A7AC-64C274655291}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D721AAFB-9C9A-4068-AE75-FE5D88FC5608}.Release|Any CPU.Build.0 = Release|Any CPU
+		{70328666-6C7C-45EF-99FC-7E7DE89A7B04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{70328666-6C7C-45EF-99FC-7E7DE89A7B04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{70328666-6C7C-45EF-99FC-7E7DE89A7B04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{70328666-6C7C-45EF-99FC-7E7DE89A7B04}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{5CCA746F-6002-4244-AD2F-1735D03279D7} = {703A951A-37A6-4805-8F7E-872769D314F7}
+		{0F2054A7-B37B-4260-A9B9-14096714F794} = {703A951A-37A6-4805-8F7E-872769D314F7}
+		{D78B3106-B8F4-4412-ABB8-6516BD67609B} = {703A951A-37A6-4805-8F7E-872769D314F7}
+		{F95C99B5-6B1D-4AF6-A7AC-64C274655291} = {703A951A-37A6-4805-8F7E-872769D314F7}
+		{D721AAFB-9C9A-4068-AE75-FE5D88FC5608} = {E0E15218-1483-42AF-BF9E-7360DEBEAEA7}
+		{70328666-6C7C-45EF-99FC-7E7DE89A7B04} = {703A951A-37A6-4805-8F7E-872769D314F7}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,15 @@
+<Project>
+
+  <!-- 中央包管理：所有 NuGet 版本号只在此处声明，各 csproj 用无版本 PackageReference 引用 -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageVersion Include="Material3.Wpf" Version="0.9.0" />
+    <PackageVersion Include="MdXaml" Version="1.27.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.10" />
+  </ItemGroup>
+
+</Project>

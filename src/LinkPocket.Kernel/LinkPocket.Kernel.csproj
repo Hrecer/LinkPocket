@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- L0 内核：实体 + 强类型 ID（LinkPocket.Data 命名空间暂保留）。零依赖，不引用任何 EF 包。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+</Project>

@@ -51,17 +51,4 @@ public class Folder
     public virtual Folder? Parent { get; set; }
     public virtual ICollection<Folder> Children { get; set; } = new List<Folder>();
     public virtual ICollection<Link> Links { get; set; } = new List<Link>();
-
-    // 辅助方法
-    public void UpdateLinkCount(LinkPocketDbContext db)
-    {
-        LinkCount = Links.Count;
-        db.SaveChanges();
-        
-        if (!string.IsNullOrEmpty(ParentId))
-        {
-            var parent = db.Folders.Find(ParentId);
-            parent?.UpdateLinkCount(db);
-        }
-    }
 }
