@@ -1,7 +1,4 @@
 using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,20 +15,18 @@ namespace LinkPocket.Views
     /// <summary>
     /// 智能列表页（v2 完全重做，页面自包含）：与搜索页/回收站页同构 ——
     /// 入口卡片 → 结果视图（共享 <see cref="SortableDataTable"/> 数据表 + 可复用 <see cref="DetailSidebar"/>）。
-    /// 交互口径与搜索页一致：行单击选中更新详情栏、双击进入浏览页详情页，
-    /// 侧栏动作（详情/打开/编辑/删除）同一套语义；删除 = 确认后移入回收站并重载当前列表。
-    /// 不依赖 MainWindow 注入：路径解析/页面切换都走 MainViewModel 公开契约。
+    /// 阶段 9 MVVM：选中态、详情栏与页面动作命令（详情/打开网站/删除）在
+    /// <see cref="SmartListResultViewModel"/>；本视图只做表格装配、空态渲染与键盘路由。
+    /// 交互口径与搜索页一致：行单击选中更新详情栏、双击进入浏览页详情页。
     /// </summary>
     public partial class SmartListsPage : UserControl
     {
         /// <summary>组合根（MainWindow 构造时赋值）；本页的后端访问经它。</summary>
         public Services.AppHost Host { get; set; } = null!;
 
-        private SearchDetailsViewModel? _details;
-        private LinkItem? _selectedItem;
+        private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
-        private bool _opening;     // 开卡重入守卫：防连点同一/不同卡片并发开两次
-        private bool _isDeleting;  // 删除重入守卫
+        private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
 
         public SmartListsPage()
         {
@@ -43,27 +38,20 @@ namespace LinkPocket.Views
             Loaded += (_, __) => WireOnce();
         }
 
-        /// <summary>装配详情栏 + 订阅 VM（DataContext 就绪后执行一次；失败不置位，下个事件重试）。</summary>
+        /// <summary>装配订阅（DataContext 就绪后执行一次；失败不置位，下个事件重试）。</summary>
         private void WireOnce()
         {
             if (_wired) return;
             if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
             _wired = true;
 
-            _details = new SearchDetailsViewModel();
-            SmartSidebar.DataContext = _details;
-            WireDetailsCommands();
-
-            vm.SmartListViewModel.PropertyChanged += SmartListViewModel_PropertyChanged;
+            vm.SmartListViewModel.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SmartListViewModel.ShowResult) && DataContext is MainViewModel v)
+                    ApplyShowResult(v.SmartListViewModel!.ShowResult);
+            };
             // 若装配时已处于结果页（切页往返/热重载），恢复正确状态
             ApplyShowResult(vm.SmartListViewModel.ShowResult);
-        }
-
-        private void SmartListViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-        {
-            if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
-            if (e.PropertyName == nameof(SmartListViewModel.ShowResult))
-                ApplyShowResult(vm.SmartListViewModel.ShowResult);
         }
 
         // ============================================================
@@ -84,18 +72,20 @@ namespace LinkPocket.Views
             {
                 ResultPanel.Visibility = Visibility.Collapsed;
                 CardPanel.Visibility = Visibility.Visible;
-                _selectedItem = null;
-                _details?.Clear();
+                // ⚠️ GoBack 后 ResultViewModel 已是 null：必须清「本页最后一次绑定的结果 VM」
+                // （详情栏 DataContext 就是它的 Details），否则返回卡片页后详情栏残留选中。
+                _boundResult?.ClearSelection();
+                SmartTable.ClearSelection();   // 表格选中态与详情栏必须同步（否则残留高亮无处对应）
             }
         }
 
         private void Card_Click(object sender, MouseButtonEventArgs e)
         {
-            if (_opening) return;
+            if (_openingGuard) return;
             if (sender is not FrameworkElement fe || fe.Tag is not string listId) return;
             if (DataContext is not MainViewModel vm || vm.SmartListViewModel == null) return;
 
-            _opening = true;
+            _openingGuard = true;
             try
             {
                 vm.SmartListViewModel.OpenSmartList(listId); // async void：完成后经 ShowResult 驱动面板切换
@@ -103,7 +93,7 @@ namespace LinkPocket.Views
             finally
             {
                 // 下一帧解除守卫：既挡住同刻连点，又不影响后续正常打开
-                Dispatcher.BeginInvoke(new Action(() => _opening = false),
+                Dispatcher.BeginInvoke(new Action(() => _openingGuard = false),
                     System.Windows.Threading.DispatcherPriority.Background);
             }
         }
@@ -168,20 +158,27 @@ namespace LinkPocket.Views
                 },
             };
 
-            SmartTable.RowClick += (_, item) =>
-            {
-                _selectedItem = (LinkItem)item;
-                _details?.UpdateFrom(_selectedItem, ResolveFolderName(_selectedItem.ListId));
-            };
-            SmartTable.RowDoubleClick += (_, item) => OpenSelectedInBrowserPage((LinkItem)item);
+            SmartTable.RowClick += (_, item) => ResultVm?.SelectItem((LinkItem)item);
+            SmartTable.RowDoubleClick += (_, item) => ResultVm?.OpenInBrowserCommand.Execute(null);
             // 表头点击排序 → 同步更新"当前排序"文案（列表内排序由控件自身完成）
             SmartTable.SortChanged += (_, e) => UpdateSortHint(e.Field, e.Ascending);
         }
 
+        private SmartListResultViewModel? ResultVm
+            => (DataContext as MainViewModel)?.SmartListViewModel?.ResultViewModel;
+
         /// <summary>把当前结果集绑到表格：重设默认排序（按列表语义）+ ItemsSource + 空态 + 清选中。</summary>
         private void RebindResultTable()
         {
-            if (DataContext is not MainViewModel vm || vm.SmartListViewModel?.ResultViewModel is not { } resultVm) return;
+            if (ResultVm is not { } resultVm) return;
+
+            // 删除重载 → 重绑（排序复位 + 行集替换 + 清表格选中）；换列表时旧订阅先解绑
+            if (!ReferenceEquals(_boundResult, resultVm))
+            {
+                if (_boundResult != null) _boundResult.Reloaded -= OnResultReloaded;
+                _boundResult = resultVm;
+                resultVm.Reloaded += OnResultReloaded;
+            }
 
             ApplyDefaultSort(resultVm.ListId);
 
@@ -191,10 +188,12 @@ namespace LinkPocket.Views
             SmartTable.ItemsSource = null;
             SmartTable.ItemsSource = resultVm.Items;
 
-            _selectedItem = null;
+            resultVm.ClearSelection();
             SmartTable.ClearSelection();   // 表格选中态与详情栏必须同步（否则残留高亮无处对应）
-            _details?.Clear();
+            SmartSidebar.DataContext = resultVm.Details;
         }
+
+        private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();
 
         /// <summary>
         /// 默认排序 = **名称升序**（用户硬性要求：打开任何智能列表都必须有排序，且默认按名称）
@@ -317,96 +316,15 @@ namespace LinkPocket.Views
         }
 
         // ============================================================
-        // —— 右侧详情栏动作（数据模型复用搜索页，动作在本页注入） ——
-        // ============================================================
-
-        private void WireDetailsCommands()
-        {
-            if (_details == null) return;
-            _details.OpenCommand = new RelayCommand(
-                () => { if (_selectedItem != null) OpenSelectedInBrowserPage(_selectedItem); },
-                () => _selectedItem != null);
-            _details.RenameCommand = new RelayCommand(
-                () => { if (_selectedItem != null) OpenSelectedInBrowserPage(_selectedItem); },
-                () => _selectedItem != null);
-            _details.OpenWebsiteCommand = new RelayCommand(
-                () => _ = OpenSelectedWebsiteAsync(),
-                () => _selectedItem != null);
-            _details.DeleteCommand = new RelayCommand(
-                () => _ = DeleteSelectedAsync(),
-                () => _selectedItem != null);
-        }
-
-        /// <summary>进入「浏览」页的链接详情页（详情页自带完整编辑与删除入口）。</summary>
-        private void OpenSelectedInBrowserPage(LinkItem item)
-        {
-            if (string.IsNullOrEmpty(item?.LinkId)) return;
-            if (DataContext is not MainViewModel vm) return;
-            vm.SelectNavCommand.Execute("browser");
-            _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(item.LinkId);
-        }
-
-        /// <summary>「打开网站」：默认浏览器打开并记录一次访问（与搜索页侧栏同口径）。</summary>
-        private async Task OpenSelectedWebsiteAsync()
-        {
-            var item = _selectedItem;
-            if (item == null) return;
-            try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
-            catch { /* 无法打开时保持静默 */ }
-            try
-            {
-                await Host.Api.RecordVisitAsync(item.LinkId);
-                // 统计行原位刷新（代次校验：选中未变才写回）
-                if (_details != null && _selectedItem?.LinkId == item.LinkId)
-                    _details.UpdateFrom(item, ResolveFolderName(item.ListId));
-            }
-            catch { /* 记账失败不打断 */ }
-        }
-
-        /// <summary>删除 = 确认后移入回收站（可恢复），随后重载当前列表刷新结果。</summary>
-        private async Task DeleteSelectedAsync()
-        {
-            if (_isDeleting) return;
-            var item = _selectedItem;
-            if (item == null) return;
-
-            var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
-            if (!ConfirmDialog.Show("删除链接", $"将链接「{name}」移入回收站吗？", "删除", "delete-outline")) return;
-
-            _isDeleting = true;
-            try
-            {
-                await Host.Api.TrashLinkAsync(item.LinkId);
-                _selectedItem = null;
-                _details?.Clear();
-
-                // 重载当前列表（结果集直接从 API 重拉，杜绝本地残留）
-                if (DataContext is MainViewModel vm && vm.SmartListViewModel?.ResultViewModel is { } resultVm)
-                {
-                    await resultVm.LoadAsync();
-                    RebindResultTable();
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("智能列表删除链接失败", ex);
-            }
-            finally
-            {
-                _isDeleting = false;
-            }
-        }
-
-        // ============================================================
         // —— 键盘与空态 ——
         // ============================================================
 
         private void SmartListsPage_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (ResultPanel.Visibility != Visibility.Visible) return;
-            if (e.Key == Key.Delete && _selectedItem != null)
+            if (e.Key == Key.Delete && ResultVm?.SelectedItem != null)
             {
-                _ = DeleteSelectedAsync();
+                ResultVm.DeleteCommand.Execute(null);
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)

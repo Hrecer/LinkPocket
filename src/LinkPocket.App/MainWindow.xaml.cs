@@ -1,41 +1,34 @@
 using System;
-using System.Collections.ObjectModel;
-using System.Diagnostics;
-using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
-using System.Windows.Media.Imaging;
-using LinkPocket.Api;
-using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using LinkPocket.Views;
-using Material3.Wpf;
 
 namespace LinkPocket;
 
+/// <summary>
+/// Shell（窗口壳）：标题栏/窗口态/全局导航药丸 + 端口实现（IDialogService/INavigationService/IBrowserLocateHost）。
+/// 阶段 9 后页面职责全部在各自 View + ViewModel：搜索页 = Views/SearchView + SearchViewModel，
+/// 其余页各自持有 ViewModel；本窗口只做装配与端口转发，不持有任何页面业务逻辑。
+/// </summary>
 public partial class MainWindow : Window, Services.IDialogService, Services.INavigationService, Services.IBrowserLocateHost
 {
     private readonly Services.AppHost _host;
 
     private readonly Managers.SelectionManager _selectionManager = new();
 
-    // 搜索页自己的选中态（老「链接」页删除后，主窗口只剩搜索页需要残余状态）
-    private LinkItem? _selectedSearchItem;
-
-    // 搜索页右侧详情栏：复用 Views/DetailSidebar 控件（与浏览页同一数据契约，解耦于 BrowserViewModel）
-    private readonly SearchDetailsViewModel _searchDetails = new();
+    private readonly SearchViewModel _searchVm;
 
     public MainWindow(Services.AppHost host)
     {
         _host = host;
         InitializeComponent();
-        DataContext = new MainViewModel(_host.Api, _host.Hub, _host.Ports, _selectionManager);
-        BrowserPage.DataContext = ((MainViewModel)DataContext).BrowserViewModel;
+        var vm = new MainViewModel(_host.Api, _host.Hub, _host.Ports, _selectionManager);
+        DataContext = vm;
+        BrowserPage.DataContext = vm.BrowserViewModel;
         // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
         _host.Ports.Dialogs = this;
@@ -45,28 +38,20 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         ToolsView.Host = _host;
         SmartListsView.Host = _host;
         SettingsView.Host = _host;
-        SetupSearchTable(); // 搜索结果表：列定义 + 排序 + 行交互（完全数据驱动）
-        SearchSidebar.DataContext = _searchDetails; // 搜索详情栏：同一控件，数据由 SearchDetailsViewModel 驱动
-        WireSearchDetailsCommands();
+        // 搜索页（阶段 9 MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
+        // MainViewModel 的目录树（与浏览页/智能列表同一份）。
+        _searchVm = new SearchViewModel(
+            _host.Api, _host.Ports.Navigation!, _host.Ports.Dialogs!,
+            listId => string.IsNullOrEmpty(listId)
+                ? "全部书签"
+                : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"));
+        SearchView.DataContext = _searchVm;
 
-        // 老「链接」页的 LinkNavigator（在旧列表里定位/展开/滚动到某条链接）随页面一并删除；
-        // 搜索页的「跳转」已改为在「浏览」页直接打开该链接的详情页。
-        if (DataContext is MainViewModel searchVm)
-        {
-            searchVm.OnNavigatedToSearch += (s, e) => ResetSearchUI();
-            searchVm.OnNavigatedFromSearch += (s, e) =>
-            {
-                _selectedSearchItem = null;
-                SearchJumpToLinkBtn.IsEnabled = false;
-                _searchDetails.UpdateFrom(null, "");
-            };
-            searchVm.OnSearchRefreshRequested += async (s, e) =>
-            {
-                var query = SearchBox.Text.Trim();
-                if (!string.IsNullOrWhiteSpace(query))
-                    await ExecuteTitleSearchAsync(searchVm, query);
-            };
-        }
+        // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入重置 / 离开清选中 / 数据变更重跑）
+        vm.OnNavigatedToSearch += (_, _) => _searchVm.ResetToEmpty();
+        vm.OnNavigatedFromSearch += (_, _) => _searchVm.OnNavigatedFrom();
+        vm.OnSearchRefreshRequested += (_, _) => _ = _searchVm.RefreshFromEventAsync();
+
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
         SizeChanged += (_, _) => UpdateShellClip();
@@ -100,7 +85,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             ? vm.BrowserViewModel.NavigateAndSelectAsync(folderId, rowId)
             : Task.FromResult(false);
 
-    Task Services.INavigationService.RefreshTrashPageAsync() => TrashView is Views.TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
+    Task Services.INavigationService.RefreshTrashPageAsync() => TrashView is TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
 
     void Services.INavigationService.ShowNavigationTabs()
     {
@@ -108,15 +93,16 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             navTabs.Visibility = Visibility.Visible;
     }
 
-    bool Services.IDialogService.ConfirmDeleteFolder(string folderName) => ShowDeleteFolderConfirmation(folderName);
+    bool Services.IDialogService.ConfirmDeleteFolder(string folderName)
+        => ConfirmDialog.Show("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？", "删除");
 
-    // Windows 口径：删除文件夹 = 整体移入回收站，不再罗列"子文件夹一并删除"等后果说明
-    private bool ShowDeleteFolderConfirmation(string folderName)
-        => ShowConfirmDialog("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？");
+    // Windows 口径：删除类确认 = 整体移入回收站，不罗列后果；视觉统一走 ConfirmDialog 唯一入口
+    bool Services.IDialogService.Confirm(string title, string message, string confirmText, string iconKind)
+        => ConfirmDialog.Show(title, message, confirmText, iconKind);
 
-    /// <summary>通用确认弹窗：统一走 MD3E ConfirmDialog（药丸 + 色调卡片），确定 = true。</summary>
-    private bool ShowConfirmDialog(string title, string message)
-        => Views.ConfirmDialog.Show(title, message, "删除");
+    // 提示/警告：失败提示属警告类 → 沿用 WarnBg chip（删除/警告一律奶油黄，规范不变）
+    void Services.IDialogService.Alert(string title, string message)
+        => ConfirmDialog.Show(title, message, "确定", "alert-circle-outline");
 
     #endregion
 
@@ -166,8 +152,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             WindowShell.Clip = null;
             return;
         }
-        WindowShell.Clip = new System.Windows.Media.RectangleGeometry(
-            new System.Windows.Rect(0, 0, w, h), 22, 22);
+        WindowShell.Clip = new RectangleGeometry(
+            new Rect(0, 0, w, h), 22, 22);
     }
 
     private System.ComponentModel.PropertyChangedEventHandler? _navPillHook;
@@ -248,7 +234,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         if (DataContext is not MainViewModel viewModel) return;
 
-        // 搜索页展示「所属文件夹」名称用的扁平文件夹列表
+        // 「所属文件夹」名称解析用的扁平文件夹列表（搜索页路径列 / 智能列表位置列同一份）
         await viewModel.LoadFolderTreeAsync();
 
         // 「浏览」页是默认首页（CurrentNavId 初始即 "browser"，启动时不会走 SelectNav），
@@ -261,440 +247,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
-    private static string FindFolderNameForLink(string? listId)
-    {
-        if (string.IsNullOrEmpty(listId))
-            return "全部书签";
-
-        if (Application.Current.MainWindow is MainWindow mw && mw.DataContext is MainViewModel vm)
-            return MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录";
-
-        return "未知目录";
-    }
-
-
-
-    private void ResetSearchUI()
-    {
-        SearchBox.Text = string.Empty;
-        ShowSearchEmptyState();
-        SearchBox.Focus();
-    }
-
     /// <summary>
-    /// 搜索结果表（SortableDataTable）：列定义 = 数据 + 排序键 + 单元格工厂，表头/行/排序全部由控件驱动。
-    /// </summary>
-    private void SetupSearchTable()
-    {
-        SearchResultsTable.SortField = "title";   // 默认名称升序（与主栏一致，表头初始即显示 ▲）
-        SearchResultsTable.SortAscending = true;
-        SearchResultsTable.Columns = new[]
-        {
-            new DataTableColumn
-            {
-                // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度
-                // （用户 2026-09-16 反馈"URL 被大幅压缩"）——空间来自右侧四列压到极限
-                Field = "title", Label = "名称", Width = -2,
-                SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
-                    ? ((LinkItem)r).Url : ((LinkItem)r).Title),
-                CellFactory = r => BuildSearchNameCell((LinkItem)r)
-            },
-            new DataTableColumn
-            {
-                // 位置列占 3 份剩余空间（名称 2 份）：层级路径最长、最需要宽度；
-                // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
-                // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
-                // 省下的宽度全部让给名称/位置（用户 2026-09-16 要求 URL 不再被压缩）
-                Field = "path", Label = "位置", Width = -3,
-                SortKey = r => (IComparable)(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签"),
-                CellFactory = r => SearchTextCell(FindFolderNameForLink(((LinkItem)r).ListId) ?? "全部书签", 12.5)
-            },
-            new DataTableColumn
-            {
-                Field = "updated_at", Label = "最后更新", Width = 114,
-                SortKey = r => (IComparable)((LinkItem)r).UpdatedAt,
-                CellFactory = r => SearchTextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
-            },
-            new DataTableColumn
-            {
-                Field = "last_visited_at", Label = "最后查看", Width = 114,
-                SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
-                CellFactory = r => SearchTextCell(
-                    ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 12.5)
-            },
-            new DataTableColumn
-            {
-                Field = "visit_count", Label = "查看次数", Width = 72,
-                SortKey = r => (IComparable)((LinkItem)r).VisitCount,
-                CellFactory = r => SearchTextCell($"{((LinkItem)r).VisitCount} 次", 12.5)
-            },
-            new DataTableColumn
-            {
-                Field = "created_at", Label = "创建时间", Width = 114,
-                SortKey = r => (IComparable)((LinkItem)r).CreatedAt,
-                CellFactory = r => SearchTextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
-            },
-        };
-
-        SearchResultsTable.RowClick += (_, item) =>
-        {
-            _selectedSearchItem = (LinkItem)item;
-            SearchJumpToLinkBtn.IsEnabled = true;
-            // 详情栏与表格「位置」列同一口径（沿文件夹树解析路径）
-            _searchDetails.UpdateFrom((LinkItem)item, FindFolderNameForLink(((LinkItem)item).ListId));
-        };
-        SearchResultsTable.RowDoubleClick += (_, item) => OpenLinkInBrowserPage(((LinkItem)item).LinkId);
-    }
-
-    /// <summary>名称列：favicon + 标题 + URL 副行（关键词高亮）。</summary>
-    private FrameworkElement BuildSearchNameCell(LinkItem item)
-    {
-        var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Orientation = Orientation.Horizontal };
-
-        var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-        var faviconBmp = TryLoadFavicon(item.FaviconUrl);
-        var faviconImg = new Image
-        {
-            Stretch = Stretch.Uniform,
-            Source = faviconBmp,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        System.Windows.Media.RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
-        if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
-        var earthIcon = new M3Icon
-        {
-            Kind = "earth",
-            Width = 16, Height = 16,
-            Foreground = (Brush)FindResource("OnSurfaceMuted"),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
-        iconGrid.Children.Add(faviconImg);
-        iconGrid.Children.Add(earthIcon);
-
-        if (!string.IsNullOrWhiteSpace(item.FaviconUrl) && faviconBmp == null)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
-                    var cached = FaviconService.LoadFromCache(item.FaviconUrl);
-                    if (cached != null)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            faviconImg.Source = cached;
-                            faviconImg.Visibility = Visibility.Visible;
-                            earthIcon.Visibility = Visibility.Collapsed;
-                        });
-                    }
-                }
-                catch { }
-            });
-        }
-
-        var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        var displayTitle = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url;
-        var titleBlock = new TextBlock
-        {
-            FontSize = 14, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("OnSurface"),
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-        AddHighlightedRuns(titleBlock, displayTitle, _lastSearchQuery, (Brush)FindResource("OnSurface"));
-        textStack.Children.Add(titleBlock);
-
-        var urlBlock = new TextBlock
-        {
-            FontSize = 11.5,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-        };
-        AddHighlightedRuns(urlBlock, item.Url, _lastSearchQuery, (Brush)FindResource("OnSurfaceVariant"));
-        textStack.Children.Add(urlBlock);
-
-        panel.Children.Add(iconGrid);
-        panel.Children.Add(textStack);
-        return panel;
-    }
-
-    /// <summary>普通文本单元格（表格化信息列统一规格）。</summary>
-    private TextBlock SearchTextCell(string text, double fontSize)
-        => new()
-        {
-            Text = text,
-            FontSize = fontSize,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-    /// <summary>MD3E 空状态视图：大圆角色块徽章 + 引导性文案（替代生硬的系统提示）。</summary>
-    private FrameworkElement BuildSearchState(string iconKind, string title, string? subtitle,
-        string containerBrush, string onContainerBrush)
-    {
-        var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 56, 0, 0) };
-        var badge = new Border
-        {
-            Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-            Background = (Brush)FindResource(containerBrush),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        badge.Child = new M3Icon
-        {
-            Kind = iconKind, Width = 40, Height = 40,
-            Foreground = (Brush)FindResource(onContainerBrush),
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
-        };
-        sp.Children.Add(badge);
-        sp.Children.Add(new TextBlock
-        {
-            Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("OnSurface"),
-            HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
-        });
-        if (subtitle != null)
-            sp.Children.Add(new TextBlock
-            {
-                Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.85,
-                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
-                MaxWidth = 420, TextAlignment = TextAlignment.Center
-            });
-        return sp;
-    }
-
-    private void ShowSearchEmptyState()
-    {
-        _selectedSearchItem = null;
-        SearchJumpToLinkBtn.IsEnabled = false;
-        _searchDetails.UpdateFrom(null, "");
-        SearchResultsTable.EmptyContent = BuildSearchState("magnify", "想找点什么？",
-            "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
-            "PrimaryContainer", "OnPrimaryContainer");
-        SearchResultsTable.ItemsSource = null;
-    }
-
-    private void SearchBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter && DataContext is MainViewModel vm)
-        {
-            var query = SearchBox.Text.Trim();
-            _ = ExecuteTitleSearchAsync(vm, query);
-            e.Handled = true;
-        }
-    }
-
-    private void SearchButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (DataContext is MainViewModel vm)
-        {
-            var query = SearchBox.Text.Trim();
-            _ = ExecuteTitleSearchAsync(vm, query);
-        }
-    }
-
-    private void SearchCancelButton_Click(object sender, RoutedEventArgs e)
-    {
-        SearchBox.Text = string.Empty;
-        ShowSearchEmptyState();
-        SearchBox.Focus();
-    }
-
-    private async Task ExecuteTitleSearchAsync(MainViewModel vm, string query)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            ShowSearchEmptyState();
-            return;
-        }
-
-        // 范围守卫：四个范围全部取消勾选时没有可搜字段，直接给引导空态
-        // （原行为会无视范围全量返回，与"搜索范围"语义矛盾）
-        if (SearchPathCb.IsChecked != true && SearchUrlCb.IsChecked != true
-            && SearchTitleCb.IsChecked != true && SearchDescCb.IsChecked != true)
-        {
-            _selectedSearchItem = null;
-            SearchJumpToLinkBtn.IsEnabled = false;
-            _searchDetails.UpdateFrom(null, "");
-            SearchResultsTable.EmptyContent = BuildSearchState("alert-circle-outline", "请先选择搜索范围",
-                "至少勾选 路径 / URL / 标题 / 描述 之一，再进行搜索",
-                "SecondaryContainer", "OnSecondaryContainer");
-            SearchResultsTable.ItemsSource = null;
-            return;
-        }
-
-        // 加载态：清空数据 + 加载占位
-        SearchResultsTable.EmptyContent = BuildSearchState("magnify", "正在搜索…",
-            null, "SecondaryContainer", "OnSecondaryContainer");
-        SearchResultsTable.ItemsSource = null;
-
-        try
-        {
-            var results = await vm.SearchLinksByTitleAsync(
-                query,
-                searchPath: SearchPathCb.IsChecked == true,
-                searchUrl: SearchUrlCb.IsChecked == true,
-                searchTitle: SearchTitleCb.IsChecked == true,
-                searchDescription: SearchDescCb.IsChecked == true
-            );
-            _selectedSearchItem = null;
-            SearchJumpToLinkBtn.IsEnabled = false;
-            _searchDetails.UpdateFrom(null, "");
-            _lastSearchQuery = query;
-
-            // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
-            SearchResultsTable.EmptyContent = results.Count == 0
-                ? BuildSearchState("emoticon-sad-outline",
-                    $"没有找到与「{query}」相关的内容",
-                    "换个关键词，或用上方标签扩大搜索范围再试试",
-                    "SecondaryContainer", "OnSecondaryContainer")
-                : BuildSearchState("magnify", "想找点什么？",
-                    "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
-                    "PrimaryContainer", "OnPrimaryContainer");
-            SearchResultsTable.ItemsSource = results;
-        }
-        catch (Exception ex)
-        {
-            SearchResultsTable.EmptyContent = BuildSearchState("alert-outline", "搜索出了点小问题",
-                ex.Message, "SurfaceContainerHighest", "OnSurface");
-            SearchResultsTable.ItemsSource = null;
-        }
-    }
-
-    private string _lastSearchQuery = "";
-
-    private List<LinkItem> _lastSearchResults = new();
-
-    // —— 范围变化 → 静默刷新（非全量）：防抖 300ms 后只替换行集合，
-    //    不出现「正在搜索…」加载态、不重置排序/表头，原选中项若仍在结果中则保持选中 ——
-    private System.Windows.Threading.DispatcherTimer? _scopeDebounce;
-    private int _scopeRefreshGen;
-
-    private void SearchScope_Changed(object sender, RoutedEventArgs e)
-    {
-        _scopeDebounce ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-        _scopeDebounce.Stop();
-        _scopeDebounce.Tick -= ScopeDebounce_Tick;
-        _scopeDebounce.Tick += ScopeDebounce_Tick;
-        _scopeDebounce.Start();
-    }
-
-    private void ScopeDebounce_Tick(object? sender, EventArgs e)
-    {
-        _scopeDebounce?.Stop();
-        if (DataContext is MainViewModel vm && !string.IsNullOrWhiteSpace(_lastSearchQuery))
-            _ = RefreshSearchResultsAsync(vm);
-    }
-
-    /// <summary>
-    /// 范围变化后的就地刷新：拿新范围的结果直接替换 ItemsSource（跳过加载占位与清空闪烁）；
-    /// 代次计数防止连续切换时旧结果覆盖新结果。范围全空时给引导空态（与搜索守卫同一口径）。
-    /// </summary>
-    private async Task RefreshSearchResultsAsync(MainViewModel vm)
-    {
-        var query = _lastSearchQuery;
-        if (string.IsNullOrWhiteSpace(query)) return;
-
-        int gen = ++_scopeRefreshGen;
-
-        if (SearchPathCb.IsChecked != true && SearchUrlCb.IsChecked != true
-            && SearchTitleCb.IsChecked != true && SearchDescCb.IsChecked != true)
-        {
-            _selectedSearchItem = null;
-            SearchJumpToLinkBtn.IsEnabled = false;
-            _searchDetails.UpdateFrom(null, "");
-            SearchResultsTable.EmptyContent = BuildSearchState("alert-circle-outline", "请先选择搜索范围",
-                "至少勾选 路径 / URL / 标题 / 描述 之一，再进行搜索",
-                "SecondaryContainer", "OnSecondaryContainer");
-            SearchResultsTable.ItemsSource = null;
-            return;
-        }
-
-        try
-        {
-            var results = await vm.SearchLinksByTitleAsync(
-                query,
-                searchPath: SearchPathCb.IsChecked == true,
-                searchUrl: SearchUrlCb.IsChecked == true,
-                searchTitle: SearchTitleCb.IsChecked == true,
-                searchDescription: SearchDescCb.IsChecked == true
-            );
-            if (gen != _scopeRefreshGen) return; // 已有更新的范围变化，放弃旧结果
-
-            SearchResultsTable.ItemsSource = results;
-
-            // 选中保持：原选中项仍在新结果里 → 恢复行选中与详情栏；不在 → 清空
-            if (_selectedSearchItem is { } prev)
-            {
-                var still = results.FirstOrDefault(r => r.LinkId == prev.LinkId);
-                if (still != null)
-                {
-                    _selectedSearchItem = still;
-                    SearchResultsTable.SelectItem(still);
-                    _searchDetails.UpdateFrom(still, FindFolderNameForLink(still.ListId));
-                }
-                else
-                {
-                    _selectedSearchItem = null;
-                    SearchJumpToLinkBtn.IsEnabled = false;
-                    _searchDetails.UpdateFrom(null, "");
-                }
-            }
-        }
-        catch { /* 静默刷新失败时保留旧列表 */ }
-    }
-
-    /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
-    private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
-    {
-        var accent = (Brush)FindResource("Primary");
-        tb.Inlines.Clear();
-        if (string.IsNullOrEmpty(query))
-        {
-            tb.Inlines.Add(new Run(text) { Foreground = normal });
-            return;
-        }
-        var lower = text.ToLowerInvariant();
-        var q = query.ToLowerInvariant();
-        var pos = 0;
-        while (true)
-        {
-            var hit = lower.IndexOf(q, pos, StringComparison.Ordinal);
-            if (hit < 0)
-            {
-                if (pos < text.Length)
-                    tb.Inlines.Add(new Run(text[pos..]) { Foreground = normal });
-                break;
-            }
-            if (hit > pos)
-                tb.Inlines.Add(new Run(text[pos..hit]) { Foreground = normal });
-            tb.Inlines.Add(new Run(text.Substring(hit, q.Length))
-            {
-                Foreground = accent,
-                FontWeight = FontWeights.Bold
-            });
-            pos = hit + q.Length;
-        }
-    }
-
-
-    private void SearchResultsArea_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        // 行选中/清除已由 SortableDataTable 内部管理
-    }
-
-    private void SearchJumpToLinkBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selectedSearchItem != null)
-            OpenLinkInBrowserPage(_selectedSearchItem.LinkId);
-    }
-
-    /// <summary>
-    /// 搜索结果「跳转」：老「链接」页已整体删除，改为切到「浏览」页并打开该链接的详情页
+    /// 搜索结果「跳转/打开/编辑」：切到「浏览」页并打开该链接的详情页
     /// （无需先导航到它所在的文件夹，详情页自带所属路径与打开/编辑/删除操作）。
     /// </summary>
     private void OpenLinkInBrowserPage(string linkId)
@@ -704,74 +258,4 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         vm.SelectNavCommand.Execute("browser");
         _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
     }
-
-    /// <summary>
-    /// 搜索详情栏的页面动作命令（数据模型只持契约，动作由本窗口注入）：
-    /// 打开 / 编辑都进入「浏览」页的链接详情页（详情页自带完整编辑与删除入口）；
-    /// 删除 = 确认后移入回收站（可恢复），随后重跑当前搜索刷新结果。
-    /// </summary>
-    private void WireSearchDetailsCommands()
-    {
-        _searchDetails.OpenCommand = new RelayCommand(
-            () => { if (_selectedSearchItem != null) OpenLinkInBrowserPage(_selectedSearchItem.LinkId); },
-            () => _selectedSearchItem != null);
-        _searchDetails.RenameCommand = new RelayCommand(
-            () => { if (_selectedSearchItem != null) OpenLinkInBrowserPage(_selectedSearchItem.LinkId); },
-            () => _selectedSearchItem != null);
-        _searchDetails.OpenWebsiteCommand = new RelayCommand(
-            () => _ = OpenSelectedSearchLinkWebsiteAsync(),
-            () => _selectedSearchItem != null);
-        _searchDetails.DeleteCommand = new RelayCommand(() => _ = DeleteSelectedSearchLinkAsync(),
-            () => _selectedSearchItem != null);
-    }
-
-    /// <summary>搜索侧栏「打开网站」：默认浏览器打开并记录一次访问（与浏览页侧栏同口径）。</summary>
-    private async Task OpenSelectedSearchLinkWebsiteAsync()
-    {
-        var item = _selectedSearchItem;
-        if (item == null) return;
-        try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
-        catch { /* 无法打开时保持静默 */ }
-        try
-        {
-            await _host.Api.RecordVisitAsync(item.LinkId);
-            if (_selectedSearchItem?.LinkId == item.LinkId)
-                _searchDetails.UpdateFrom(item, FindFolderNameForLink(item.ListId)); // 统计行原位刷新
-        }
-        catch { /* 记账失败不打断 */ }
-    }
-
-    private async Task DeleteSelectedSearchLinkAsync()
-    {
-        var item = _selectedSearchItem;
-        if (item == null) return;
-
-        var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
-        if (!ShowConfirmDialog("删除链接", $"将链接「{name}」移入回收站吗？")) return;
-
-        try
-        {
-            await _host.Api.TrashLinkAsync(item.LinkId);
-            _selectedSearchItem = null;
-            SearchJumpToLinkBtn.IsEnabled = false;
-            _searchDetails.UpdateFrom(null, "");
-
-            // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
-            if (!string.IsNullOrWhiteSpace(_lastSearchQuery) && DataContext is MainViewModel vm)
-                await ExecuteTitleSearchAsync(vm, _lastSearchQuery);
-        }
-        catch (Exception ex)
-        {
-            SearchResultsTable.EmptyContent = BuildSearchState("alert-outline", "删除出了点小问题",
-                ex.Message, "SurfaceContainerHighest", "OnSurface");
-        }
-    }
-
-
-
-    private static BitmapImage? TryLoadFavicon(string? faviconUrl)
-    {
-        return FaviconService.LoadFromCache(faviconUrl);
-    }
-
 }

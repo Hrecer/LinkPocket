@@ -19,15 +19,24 @@ namespace LinkPocket.ViewModels
     public class SmartListViewModel : INotifyPropertyChanged
     {
         private readonly ILinkPocketApi _api;
+        private readonly Services.UiPortProvider _ports;
+        private readonly Func<string?, string> _resolveFolderPath;
         private bool _isLoading;
         private ObservableCollection<SmartListCardItem> _cards = new();
         private SmartListResultViewModel? _resultViewModel;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public SmartListViewModel(ILinkPocketApi api)
+        /// <summary>
+        /// ports = UI 端口槽位（组合根持有，MainWindow 构造时登记）；结果页动作命令
+        /// 在打开列表时从槽位取用（此时端口必已登记）。路径解析器 = 「位置」列与
+        /// 详情栏共用的目录树路径解析（MainViewModel 注入，与浏览页同一份树）。
+        /// </summary>
+        public SmartListViewModel(ILinkPocketApi api, Services.UiPortProvider ports, Func<string?, string> resolveFolderPath)
         {
             _api = api;
+            _ports = ports;
+            _resolveFolderPath = resolveFolderPath;
             InitializeCards();
         }
 
@@ -78,7 +87,8 @@ namespace LinkPocket.ViewModels
             try
             {
                 var def = Definition(listId);
-                var resultVm = new SmartListResultViewModel(_api, listId, def.Title)
+                var resultVm = new SmartListResultViewModel(_api, listId, def.Title,
+                    _ports.Navigation, _ports.Dialogs, _resolveFolderPath)
                 {
                     Subtitle = def.Subtitle,
                 };

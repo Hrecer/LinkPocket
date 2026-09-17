@@ -1,0 +1,458 @@
+<ResourceDictionary x:Class="LinkPocket.UiKit"
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:LinkPocket.Views"
+                    xmlns:browserviews="clr-namespace:LinkPocket.Views.Browser"
+                    xmlns:vm="clr-namespace:LinkPocket.ViewModels">
+
+    <!--
+    ============================================================
+    UIKit（阶段 9 抽取）：全应用共享的控件/样式/转换器/色板唯一来源。
+    阶段 10 的 LinkPocket.UIKit 项目将以本文件为底整体迁出。
+    原则：
+    · 色板与画刷先行（AppFont/各 Tint/状态色），后定义的样式可 StaticResource 前面的键；
+    · 页面专属样式（PathEditField/PageTextField/SegmentToggle/SideIconButton 等）仍留在
+      各页资源里，随页面在阶段 10 迁往各自 UI.* 项目——本文件只收「两个及以上页面共用」的键；
+    · 已知例外：CardField 在 BackupPanel（只读域）与 ToolsPage（可输入域）定义不同，
+      属同名不同义，不在此合并，留待阶段 10 拆名。
+    ============================================================
+    -->
+
+    <FontFamily x:Key="AppFont">Microsoft YaHei UI, 微软雅黑, SimSun, 宋体, Arial</FontFamily>
+
+    <!-- 紫色调层（MD3E 色彩即层级的本地化实现）：比中性 Surface 角色带 Primary 染色的分层画刷。
+         TintSurface = 内容区（近白带紫）· TintCard = 卡片（比所在面板浅半档）
+         · TintPanel = 侧区面板（比基面深一档的紫色叠层）。 -->
+    <SolidColorBrush x:Key="TintSurface" Color="#FAF8FD"/>
+    <SolidColorBrush x:Key="TintCard" Color="#F5F1FB"/>
+    <SolidColorBrush x:Key="TintPanel" Color="#E4DCF3"/>
+    <!-- 用户定稿（2026-09-16）：弹窗背景 = 禁用态删除按钮的浅紫（#EAE4ED 上屏 ≈ 屏显 #EDE2F4） -->
+    <SolidColorBrush x:Key="TintBg" Color="#EAE4ED"/>
+    <!-- 用户定稿（2026-09-16）：主操作按钮填色 = #A18EB0（替代亮紫 Primary，按钮专用；
+         文字/图标等强调色仍走 Primary，不受影响） -->
+    <SolidColorBrush x:Key="AccentBtn" Color="#A18EB0"/>
+    <!-- 用户定稿（2026-09-16 规范）：删除/警告提醒色 = 奶油黄 #F5E9B8，禁用红色。
+         所有删除按钮、危险/警告提示统一用 WarnBg（填充/高亮），内容用深色保证可读 -->
+    <SolidColorBrush x:Key="WarnBg" Color="#F5E9B8"/>
+
+    <!-- WarnPillButton：删除/警告类药丸按钮 —— 启用 = 奶油黄底 + 深色内容。
+         禁用 = 同底色降透明度（0.4，与 TonalButton 同手法）得到变浅/变灰的黄色变体，
+         不引入任何手写的替代灰色。三层结构同 TonalButton。 -->
+    <Style x:Key="WarnPillButton" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <!-- 药丸样式不含 Height/Padding 默认值 → 调用方把垂直 Padding 写成 0 就会压扁。
+             MinHeight 兜底：无论谁怎么写 Padding，药丸都不会矮于 32（项目统一药丸高度）。 -->
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" Background="{StaticResource WarnBg}"
+                                CornerRadius="16"/>
+                        <Border x:Name="StateLayer" Background="{DynamicResource OnSurface}"
+                                Opacity="0" CornerRadius="16"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.14"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+    </Style>
+
+    <Style TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+    </Style>
+
+    <Style TargetType="TextBox">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+    </Style>
+
+    <Style TargetType="ComboBox">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+    </Style>
+
+    <!-- 列宽拖拽手柄（共享样式：浏览页主栏与 SortableDataTable 共用同一份）：
+         贴列右缘，hover/拖动显示 2px Primary 竖线 -->
+    <Style x:Key="ColumnResizeThumb" TargetType="Thumb">
+        <Setter Property="Width" Value="7"/>
+        <Setter Property="Margin" Value="0,0,-4,0"/>
+        <Setter Property="HorizontalAlignment" Value="Right"/>
+        <Setter Property="VerticalAlignment" Value="Stretch"/>
+        <Setter Property="Cursor" Value="SizeWE"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent" Padding="2,0">
+                        <Border x:Name="Line" Width="2" Background="Transparent" CornerRadius="1"
+                                HorizontalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 排序表头按钮（可复用组件）：数据驱动 —— Label/Field/Direction 三属性。
+         Direction 三态：null=未激活（无指示器）、True=升序▲、False=降序▼。 -->
+    <Style TargetType="views:SortableHeaderButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <!-- ⚠️ 文字在药丸内水平+垂直居中（用户要求）；药丸两侧由使用方留对称空隙，
+             分隔线（列边界）恰好落在两个药丸的正中心 -->
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="views:SortableHeaderButton">
+                    <!-- 悬停药丸 = Primary 12% 叠加（随旧 TextButton 的 state layer 语义：在 TintPanel 上变深）；
+                         MinHeight 24 + 表头带上下 4 = 32px，与侧栏「文件夹」标题带等高 -->
+                    <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="12"
+                            MinHeight="24" SnapsToDevicePixels="True">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                            <TextBlock x:Name="Indicator" FontSize="10" Margin="4,0,0,0"
+                                       Foreground="{DynamicResource Primary}" Visibility="Collapsed"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Pill" Property="Background" Value="#1F6750A4"/>
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                        </Trigger>
+                        <Trigger Property="Direction" Value="True">
+                            <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="Indicator" Property="Text" Value="▲"/>
+                        </Trigger>
+                        <Trigger Property="Direction" Value="False">
+                            <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="Indicator" Property="Text" Value="▼"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- TonalButton：MD3 色调按钮（SecondaryContainer 底 + OnSecondaryContainer 文）。
+         浏览页命令栏浮动胶囊组内使用。注意：模板用 TemplateBinding Padding，
+         不落入库 TextButton「Padding 硬编码 14,0」的裁切坑。
+         ⚠️ 状态层必须铺满整颗药丸（MD3 规范做法：底色 / 全幅状态层 / 内容 三层 Grid）——
+         之前状态层放在带 Padding 的 Border 里只盖住文字区，悬停会出现"只有一小块变灰"的怪相。 -->
+    <Style x:Key="TonalButton" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <!-- MinHeight 兜底（同上）：药丸不会被垂直 Padding=0 压扁 -->
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" Background="{DynamicResource SecondaryContainer}"
+                                CornerRadius="16"/>
+                        <Border x:Name="StateLayer" Background="{DynamicResource OnSecondaryContainer}"
+                                Opacity="0" CornerRadius="16"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- PrimaryPillButton：主操作按钮 = 药丸（与 TonalButton 同形状，仅颜色不同：AccentBtn #A18EB0 底白字 vs
+         SecondaryContainer 底紫字）。不使用库 FilledButton：它自带 MinHeight=40，成对排放会不等高。
+         三层结构与 TonalButton 相同：底色 / 全幅状态层 / 内容（状态层必须铺满，不许只盖文字区）。 -->
+    <Style x:Key="PrimaryPillButton" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <!-- MinHeight 兜底（同上）：主操作药丸不会被垂直 Padding=0 压扁 -->
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" Background="{StaticResource AccentBtn}"
+                                CornerRadius="16"/>
+                        <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
+                                Opacity="0" CornerRadius="16"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== 侧栏导航列表（可复用组件，工具页/设置页左栏共用）=====
+         SideNavList = ListBox 子类，选中高亮是垫在项下的滑动指示器（PrimaryContainer 药丸），
+         切换时 240ms CubicEase 滑到选中项实测几何；悬停零底色反馈（滑动方案下色块像阴影）。
+         项样式 SideNavItemStyle：无选中/悬停底色，仅选中字色加深 + 加粗。 -->
+    <Style x:Key="SideNavListStyle" TargetType="{x:Type views:SideNavList}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type views:SideNavList}">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}">
+                        <Grid>
+                            <!-- 滑动指示器：垫在项下面（先声明 = z 序在下），几何由 SideNavList 代码按选中项实测贴齐 -->
+                            <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryContainer}"
+                                    CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    IsHitTestVisible="False" Visibility="Collapsed">
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="PART_IndicatorTf"/>
+                                </Border.RenderTransform>
+                            </Border>
+                            <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SideNavItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="14,10"/>
+        <Setter Property="Margin" Value="8,1"/>
+        <Setter Property="FontSize" Value="13.5"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" CornerRadius="12" Background="Transparent"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ToolTip：自绘 M3 模板。默认模板自带 SystemDropShadowChrome 投影，
+         与右键菜单（无阴影、纯圆角色块）的视觉语言冲突 → 统一改为圆角无阴影色块。 -->
+    <Style TargetType="ToolTip">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ===== 多页共用的转换器与控件样式（自各页资源去重上收） ===== -->
+
+    <!-- 布尔可见性转换（浏览页/详情栏/编辑页/智能列表/回收站共用同一键名） -->
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+
+    <!-- 滚动条沟槽边距换算（链接详情页/编辑页共用） -->
+    <browserviews:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
+
+    <!-- 计数药丸（浏览页面包屑 / 文件夹树节点共用） -->
+    <Style x:Key="CountPill" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+        <Setter Property="CornerRadius" Value="9"/>
+        <Setter Property="MinHeight" Value="18"/>
+        <Setter Property="Padding" Value="9,0"/>
+        <Setter Property="Margin" Value="8,0,0,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <!-- 纯图标按钮（浏览页导航 / 详情栏动作共用）：自带 ControlTemplate，绝对不能 BasedOn TextButton。
+         Material3 的 TextButton 模板把 Padding 硬编码成 Padding="14,0"（不响应 Button.Padding，
+         也不受本样式 Padding=4 影响），Width=34 的按钮内容区被压到 34-28=6，
+         再被布局裁切 → 后退/前进箭头左右两端被切掉。
+         这里用 TemplateBinding Padding，内容区 = 34-2*4 = 26 ≥ 图标 20，图标完整显示。
+         同时避免继承 TextButton 的 MinHeight=40，Height 才真正等于 32。 -->
+    <Style x:Key="NavIconButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="Width" Value="34"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
+        <Setter Property="ToolTipService.InitialShowDelay" Value="0"/>
+        <Setter Property="ToolTipService.Placement" Value="Top"/>
+        <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="16" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <!-- hover / pressed 状态层：沿用 TextButton 的 Primary 叠加（8% / 12%） -->
+                            <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                    Opacity="0" CornerRadius="16" Margin="-4"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 紧凑右键菜单模板（浏览页 / 文件夹树同规格：行高 26、字号 12、无分割线） -->
+    <Style x:Key="LpMenuItem" TargetType="MenuItem">
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="Padding" Value="10,0"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Margin="3,1"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <!-- M3 菜单不用分组分割线：右键菜单里的 <Separator/> 已全部移除。
+         这条样式留着是为了万一以后有人加回分割线时不至于退回库默认的粗线。 -->
+    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+    <Style TargetType="Separator">
+        <Setter Property="Margin" Value="8,3"/>
+        <Setter Property="Background" Value="{DynamicResource OutlineVariant}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="{TemplateBinding Margin}"
+                            Background="{TemplateBinding Background}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

@@ -80,9 +80,12 @@ namespace LinkPocket.ViewModels
 
             InitializeNavigationItems();
 
-            _recycleBinViewModel = new RecycleBinViewModel(Api);
+            _recycleBinViewModel = new RecycleBinViewModel(Api, _ports);
             _settingsViewModel = new SettingsViewModel();
-            _smartListViewModel = new SmartListViewModel(Api);
+            _smartListViewModel = new SmartListViewModel(Api, _ports,
+                listId => string.IsNullOrEmpty(listId)
+                    ? "全部书签"
+                    : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"));
             BrowserViewModel = new BrowserViewModel(Api);
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
@@ -951,30 +954,8 @@ namespace LinkPocket.ViewModels
             return await Api.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
         }
 
-        public async Task<List<LinkItem>> SearchLinksByTitleAsync(string query,
-            bool searchPath = false, bool searchUrl = false,
-            bool searchTitle = true, bool searchDescription = false)
-        {
-            if (string.IsNullOrWhiteSpace(query)) return new List<LinkItem>();
-
-            // 搜索逻辑已下沉到后端协议（search）
-            var results = await Api.SearchAsync(query,
-                searchTitle: searchTitle, searchUrl: searchUrl,
-                searchDescription: searchDescription, searchPath: searchPath,
-                sortBy: _linkSortField, sortOrder: _linkSortOrder);
-
-            return results.Select(MapToLinkItem).ToList();
-        }
-
-        private static LinkItem MapToLinkItem(LinkDto l) => new()
-        {
-            LinkId = l.LinkId, Url = l.Url,
-            Title = l.Title ?? "",
-            Description = l.Description ?? "", FaviconUrl = l.FaviconUrl ?? "",
-            ListId = l.ListId, LastVisitedAt = l.LastVisitedAt,
-            VisitCount = l.VisitCount, IsImportant = l.IsImportant,
-            CreatedAt = l.CreatedAt, UpdatedAt = l.UpdatedAt
-        };
+        // 搜索页已迁往 SearchViewModel（阶段 9 MVVM）：查询执行/范围守卫在页面 VM，
+        // 本类只保留 CurrentNavId 的 search 路由事件（OnSearchRefreshRequested 等）。
 
         public async Task LoadFolderTreeAsync()
         {

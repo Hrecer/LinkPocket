@@ -27,76 +27,8 @@
     </UserControl.InputBindings>
 
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
-
-        <!-- SideCard / SideLabel / SideChip 已随详情栏抽为 Views/DetailSidebar 控件（样式控件自包含） -->
-
-        <!-- 列表行计数药丸（Material 3 Expressive 风格）：
-             全圆角 pill + 次级容器色调 + 紧凑字重，尺寸克制，跟随名称显示而不抢视觉焦点。 -->
-        <Style x:Key="CountPill" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
-            <Setter Property="CornerRadius" Value="9"/>
-            <Setter Property="MinHeight" Value="18"/>
-            <Setter Property="Padding" Value="9,0"/>
-            <Setter Property="Margin" Value="8,0,0,0"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-        </Style>
-
-        <!-- 纯图标按钮：自带 ControlTemplate，绝对不能 BasedOn TextButton。
-             Material3 的 TextButton 模板把 Padding 硬编码成 Padding="14,0"（不响应 Button.Padding，
-             也不受本样式 Padding=4 影响），Width=34 的按钮内容区被压到 34-28=6，
-             再被布局裁切 → 后退/前进箭头左右两端被切掉。
-             这里用 TemplateBinding Padding，内容区 = 34-2*4 = 26 ≥ 图标 20，图标完整显示。
-             同时避免继承 TextButton 的 MinHeight=40，Height 才真正等于 32。 -->
-        <Style x:Key="NavIconButton" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="4"/>
-            <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="SnapsToDevicePixels" Value="True"/>
-            <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
-            <Setter Property="ToolTipService.InitialShowDelay" Value="0"/>
-            <Setter Property="ToolTipService.Placement" Value="Top"/>
-            <Setter Property="ToolTipService.ShowDuration" Value="60000"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                CornerRadius="16" Padding="{TemplateBinding Padding}"
-                                SnapsToDevicePixels="True">
-                            <Grid>
-                                <!-- hover / pressed 状态层：沿用 TextButton 的 Primary 叠加（8% / 12%） -->
-                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
-                                        Opacity="0" CornerRadius="16" Margin="-4"/>
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
-                                <Setter Property="Cursor" Value="Arrow"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <!-- FolderTreeStyle/FolderTreeItemStyle/TreeExpanderToggle 已抽为 Views/FolderTreePanel（浏览页/回收站共用）；
-             PathEditField 与面包屑已抽为 Views/BreadcrumbBar。 -->
+        <!-- BoolToVis / InvBoolToVis / CountPill / NavIconButton / LpMenuItem 已上收 UIKit.xaml（阶段 9）；
+             SideCard / SideLabel / SideChip 已随详情栏抽为 Views/DetailSidebar 控件（样式控件自包含） -->
 
         <!-- 排序表头按钮已随共享数据表控件（views:SortableDataTable）统一：表头由控件按列定义生成，
              本页不再保留独立的 HeaderSortButton 样式。 -->
@@ -104,56 +36,12 @@
         <!-- 名称列可用宽度 = 列宽 - 图标/间距/计数药丸的固定占位 -->
         <local:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
 
-        <!-- 右键菜单项：库默认模板行高过大、字号偏大、文字不垂直居中，这里给一套紧凑模板（M3 菜单形态：
-             无分组分割线、行高小、字小、左右留白紧）。
-             ⚠️ 两个坑：
-             1) 菜单项若写了显式的 <MenuItem.Style>，会整体取代下面的隐式样式（不是叠加），
+        <!-- 右键菜单项已上收 UIKit.xaml（LpMenuItem + 隐式兜底）。
+             ⚠️ 两个坑（仍适用）：
+             1) 菜单项若写了显式的 <MenuItem.Style>，会整体取代隐式样式（不是叠加），
                 必须写 BasedOn="{StaticResource LpMenuItem}"，否则退回库默认模板
                 → 同一张菜单里"有显式样式的项"高而缩进、"没写的项"矮而左对齐，看起来就是没对齐。
-             2) 隐式样式与具名样式要同时存在：具名的供 BasedOn 引用，隐式的负责兜底覆盖。 -->
-        <Style x:Key="LpMenuItem" TargetType="MenuItem">
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="MenuItem">
-                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Margin="3,1"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
-        <!-- M3 菜单不用分组分割线：本页菜单里的 <Separator/> 已全部移除。
-             这条样式留着是为了万一以后有人加回分割线时不至于退回库默认的粗线。 -->
-        <Style TargetType="Separator">
-            <Setter Property="Margin" Value="8,3"/>
-            <Setter Property="Background" Value="{DynamicResource OutlineVariant}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Separator">
-                        <Border Height="1" Margin="{TemplateBinding Margin}"
-                                Background="{TemplateBinding Background}"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- PathEditField 已随面包屑抽为 Views/BreadcrumbBar 控件资源 -->
+             2) 隐式样式与具名样式同时存在：具名的供 BasedOn 引用，隐式的负责兜底覆盖。 -->
 
         <!-- 行内信息列文字（最后更新 / 最后查看 / 查看次数 / 创建时间）统一规格 -->
         <Style x:Key="RowCellText" TargetType="TextBlock">

@@ -11,7 +11,7 @@
          页面自包含：所有交互逻辑在本页 code-behind，不依赖 MainWindow 注入。 -->
 
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- BoolToVis 已上收 UIKit.xaml（阶段 9） -->
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource SurfaceContainerLow}">

@@ -21,27 +21,21 @@ namespace LinkPocket.Views
     /// 1. 「跳转」一律通过 Services 层组件 <see cref="IContentLocator"/>（组合根的 Locator）执行——
     ///    本页不直连任何界面方法，跳转语义（进入目标目录并选中该行）由组件统一承担；
     /// 2. 列表一律复用共享 <see cref="SortableDataTable"/>，不手绘卡片。
+    /// 阶段 9 MVVM：查重/ID 跳转/书签导入导出的业务逻辑在 <see cref="ToolsViewModel"/>
+    /// （后端协议调用与业务规则都在 VM），本视图只做表格装配、状态渲染与文件对话框。
     /// 依赖来源：XAML 声明的页面无法构造注入，由 Shell（MainWindow）在构造时下发组合根（Host）。
     /// </summary>
     public partial class ToolsPage : UserControl
     {
         /// <summary>组合根（MainWindow 构造时赋值）；本页一切后端访问与定位都经它。</summary>
         public Services.AppHost Host { get; set; } = null!;
+
         private sealed class ToolItem
         {
             public string Id { get; init; } = string.Empty;
             public string Name { get; init; } = string.Empty;
             /// <summary>必须是 LpIcons 已注册的字形，否则渲染为空白占位。</summary>
             public string Icon { get; init; } = string.Empty;
-        }
-
-        /// <summary>一个重复组（同一 URL 的多条链接）在表格里的行数据。</summary>
-        private sealed class DedupGroupRow
-        {
-            public string Url { get; init; } = string.Empty;
-            public List<LinkDto> Links { get; init; } = new();
-            public int Count => Links.Count;
-            public string LocationsSummary { get; init; } = string.Empty;
         }
 
         private readonly List<ToolItem> _tools = new()
@@ -59,13 +53,31 @@ namespace LinkPocket.Views
         private const string BookmarkSubtitle =
             "与 Chrome / Edge / Firefox 互通的标准 Netscape 书签格式（.html）：导入还原文件夹层级，导出可直接被浏览器导入。";
 
-        // —— 去重状态 ——
-        private bool _hasRunDedup;
+        // —— 工具页 ViewModel（懒建：需要 Host + DataContext 就绪） ——
+        private ToolsViewModel? _toolsVm;
+        private ToolsViewModel VmTools
+        {
+            get
+            {
+                if (_toolsVm != null) return _toolsVm;
+                var main = DataContext as MainViewModel;
+                return _toolsVm = new ToolsViewModel(
+                    Host.Api,
+                    Host.Locator,
+                    resolveLinkPath: listId => main != null
+                        ? main.ResolveLinkPathAsync(listId)
+                        : Task.FromResult("全部书签"),
+                    refreshFolderTree: async () =>
+                    {
+                        if (main != null) await main.RefreshFolderTreeAndUIAsync();
+                    });
+            }
+        }
+
+        // 主表行集（视图镜像 VM.Groups：探针/渲染共用；赋值只发生在 RunDedup/Clear 两处）
         private List<DedupGroupRow> _groups = new();
-        private List<LinkDto>? _currentGroupLinks;
-        private string _currentGroupUrl = string.Empty;
-        private Dictionary<string, string> _pathCache = new();
-        private readonly HashSet<string> _checkedIds = new();
+
+        private BookmarkFileInspectionDto? _importInspection;
         private Button? _dedupActionBtn;
         private TextBlock? _dedupActionText;
         private M3Icon? _dedupActionIcon;
@@ -105,7 +117,7 @@ namespace LinkPocket.Views
         private async void OnToolsDataChanged(object? sender, EventArgs e)
         {
             // 数据变更（外部增删改）后自动重跑查重，避免展示过期结果
-            if (_hasRunDedup && DetailPanel.Visibility != Visibility.Visible
+            if (VmTools.HasRunDedup && DetailPanel.Visibility != Visibility.Visible
                 && (ToolListbox.SelectedItem as ToolItem)?.Id == "dedup")
             {
                 await RunDedupAsync();
@@ -115,7 +127,8 @@ namespace LinkPocket.Views
         private void ToolListbox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (ToolListbox.SelectedItem is not ToolItem tool) return;
-            _hasRunDedup = false;
+            VmTools.ClearDedup();
+            _groups = new List<DedupGroupRow>();
             GoBackToList();
             ShowTool(tool.Id);
         }
@@ -210,9 +223,8 @@ namespace LinkPocket.Views
 
         private void ClearDedupResults()
         {
-            _hasRunDedup = false;
+            VmTools.ClearDedup();
             _groups = new List<DedupGroupRow>();
-            _pathCache.Clear();
             GoBackToList();
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
             if (_dedupActionText != null) _dedupActionText.Text = "开始查重";
@@ -280,18 +292,20 @@ namespace LinkPocket.Views
             ShowDedupPlaceholder();
         }
 
+        /// <summary>
+        /// 查重主流程：业务在 <see cref="ToolsViewModel.RunDedupAsync"/>，本方法只负责
+        /// 加载/空态/结果四种视觉状态的切换与操作按钮文案（探针经本方法反射驱动）。
+        /// </summary>
         private async Task RunDedupAsync()
         {
-            if (DataContext is not MainViewModel vm) return;
-
             PaneTable.ItemsSource = null;
             PaneTable.EmptyContent = BuildState("refresh", "正在扫描重复链接…", "全库比对 URL，请稍候");
             PaneSubtitle.Text = DedupSubtitle;
 
-            List<LinkDto> links;
+            List<DedupGroupRow> groups;
             try
             {
-                links = await vm.GetAllLinksForToolsAsync();
+                groups = await VmTools.RunDedupAsync();
             }
             catch (Exception ex)
             {
@@ -300,54 +314,22 @@ namespace LinkPocket.Views
                 return;
             }
 
-            var groups = links
-                .GroupBy(l => l.Url ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Count() > 1)
-                .OrderByDescending(g => g.Count())
-                .ToList();
-
-            _hasRunDedup = true;
+            _groups = groups;
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "refresh";
             if (_dedupActionText != null) _dedupActionText.Text = "重新查重";
             if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = true;
 
             if (groups.Count == 0)
             {
-                _groups = new List<DedupGroupRow>();
                 PaneTable.EmptyContent = BuildState("content-duplicate", "没有发现重复链接",
                     "所有链接的 URL 都互不相同");
                 PaneSubtitle.Text = "扫描完成：未发现重复";
                 return;
             }
 
-            // 位置解析（每个链接一次；同一 URL 组内共享缓存）
-            _pathCache = new Dictionary<string, string>();
-            foreach (var link in groups.SelectMany(g => g))
-            {
-                if (!_pathCache.ContainsKey(link.LinkId))
-                    _pathCache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
-            }
-
-            _groups = groups.Select(g => new DedupGroupRow
-            {
-                Url = g.Key,
-                Links = g.ToList(),
-                LocationsSummary = BuildLocationsSummary(g.ToList())
-            }).ToList();
-
-            PaneTable.ItemsSource = _groups;
+            PaneTable.ItemsSource = groups;
             PaneTable.EmptyContent = null!;
-            PaneSubtitle.Text = $"发现 {_groups.Count} 组重复链接，共 {_groups.Sum(g => g.Count)} 条";
-        }
-
-        /// <summary>位置摘要：首条所在位置，多处时补「等 N 处」（不罗列全部，避免单元格噪音）。</summary>
-        private string BuildLocationsSummary(List<LinkDto> links)
-        {
-            var paths = links
-                .Select(l => _pathCache.TryGetValue(l.LinkId, out var p) ? p : "全部书签")
-                .Distinct()
-                .ToList();
-            return paths.Count == 1 ? paths[0] : $"{paths[0]} 等 {paths.Count} 处";
+            PaneSubtitle.Text = $"发现 {groups.Count} 组重复链接，共 {groups.Sum(g => g.Count)} 条";
         }
 
         // ============================================================
@@ -373,10 +355,10 @@ namespace LinkPocket.Views
                 {
                     // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
                     Field = "path", Label = "位置", Width = -3,
-                    SortKey = r => (IComparable)ResolvePath((LinkDto)r),
+                    SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r),
                     CellFactory = r => new TextBlock
                     {
-                        Text = ResolvePath((LinkDto)r),
+                        Text = VmTools.ResolvePath((LinkDto)r),
                         FontSize = 12.5,
                         Foreground = (Brush)FindResource("OnSurfaceVariant"),
                         VerticalAlignment = VerticalAlignment.Center,
@@ -409,11 +391,10 @@ namespace LinkPocket.Views
             };
         }
 
+        /// <summary>展开明细：组状态记录在 VM（EnterGroup），本方法只做视觉切换。</summary>
         private void EnterDetail(DedupGroupRow row)
         {
-            _currentGroupUrl = row.Url;
-            _currentGroupLinks = row.Links;
-            _checkedIds.Clear();
+            VmTools.EnterGroup(row);
 
             DetailUrlText.Text = row.Url;
             DetailHintText.Text = $"共 {row.Count} 条重复链接";
@@ -429,9 +410,7 @@ namespace LinkPocket.Views
 
         private void GoBackToList()
         {
-            _checkedIds.Clear();
-            _currentGroupLinks = null;
-            _currentGroupUrl = string.Empty;
+            VmTools.LeaveGroup();
             DetailTable.ItemsSource = null;
             DetailPanel.Visibility = Visibility.Collapsed;
             MainPanel.Visibility = Visibility.Visible;
@@ -448,17 +427,17 @@ namespace LinkPocket.Views
 
         private void CopyUrl_Click(object sender, RoutedEventArgs e)
         {
-            if (!string.IsNullOrEmpty(_currentGroupUrl))
+            if (!string.IsNullOrEmpty(VmTools.CurrentGroupUrl))
             {
-                try { Clipboard.SetText(_currentGroupUrl); } catch { }
+                try { Clipboard.SetText(VmTools.CurrentGroupUrl); } catch { }
             }
         }
 
-        /// <summary>勾选单元：MD3 圆形勾选（选中 = Primary 实心 + 白勾，未选 = 描边圆）。</summary>
+        /// <summary>勾选单元：MD3 圆形勾选（选中 = Primary 实心 + 白勾，未选 = 描边圆）。守卫规则在 VM。</summary>
         private FrameworkElement BuildCheckCell(object data)
         {
             var link = (LinkDto)data;
-            var checkedNow = _checkedIds.Contains(link.LinkId);
+            var checkedNow = VmTools.CheckedIds.Contains(link.LinkId);
 
             var outline = new Border
             {
@@ -504,22 +483,13 @@ namespace LinkPocket.Views
             };
             button.Click += async (_, _) =>
             {
-                if (_checkedIds.Contains(link.LinkId))
+                if (!VmTools.ToggleChecked(link.LinkId))
                 {
-                    _checkedIds.Remove(link.LinkId);
-                }
-                else
-                {
-                    var total = _currentGroupLinks?.Count ?? 0;
-                    if (total > 0 && _checkedIds.Count >= total - 1)
-                    {
-                        await FlashSelectionInfo("至少保留一条");
-                        return;
-                    }
-                    _checkedIds.Add(link.LinkId);
+                    await FlashSelectionInfo("至少保留一条");
+                    return;
                 }
 
-                var nowChecked = _checkedIds.Contains(link.LinkId);
+                var nowChecked = VmTools.CheckedIds.Contains(link.LinkId);
                 fill.Visibility = nowChecked ? Visibility.Visible : Visibility.Collapsed;
                 UpdateDeleteState();
             };
@@ -623,13 +593,11 @@ namespace LinkPocket.Views
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
-        private string ResolvePath(LinkDto link)
-            => _pathCache.TryGetValue(link.LinkId, out var p) ? p : "全部书签";
-
         private void UpdateDeleteState()
         {
-            DeleteSelectedBtn.IsEnabled = _checkedIds.Count > 0;
-            SelectionInfoText.Text = _checkedIds.Count > 0 ? $"已勾选 {_checkedIds.Count} 条" : string.Empty;
+            var count = VmTools.CheckedIds.Count;
+            DeleteSelectedBtn.IsEnabled = count > 0;
+            SelectionInfoText.Text = count > 0 ? $"已勾选 {count} 条" : string.Empty;
         }
 
         /// <summary>临时提示（不打断操作）：显示一句短提示后恢复勾选计数。</summary>
@@ -642,36 +610,18 @@ namespace LinkPocket.Views
 
         private async void DeleteSelected_Click(object sender, RoutedEventArgs e)
         {
-            if (_checkedIds.Count == 0 || DataContext is not MainViewModel vm) return;
+            if (VmTools.CheckedIds.Count == 0) return;
 
-            var toDelete = _checkedIds.ToList();
-            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {toDelete.Count} 条链接移入回收站吗？", "删除", "delete-outline"))
+            var count = VmTools.CheckedIds.Count;
+            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {count} 条链接移入回收站吗？", "删除", "delete-outline"))
                 return;
 
             try
             {
-                foreach (var linkId in toDelete)
-                    await Host.Api.TrashLinkAsync(linkId);
-
-                // 刷新目录树计数（原经 LinkViewModel.LinksChanged 链条触发，现直调一次；
-                // 查重重跑仍由本方法后半段的就地刷新/回表重跑承担，明细展开时 OnToolsDataChanged 本就不重跑）。
-                await vm.RefreshFolderTreeAndUIAsync();
-
-                // 重算当前 URL 的重复组：仍有多条 → 就地刷新明细；已剩一条及以下 → 回主表重跑
-                var all = await vm.GetAllLinksForToolsAsync();
-                var rest = all
-                    .Where(l => string.Equals(l.Url ?? string.Empty, _currentGroupUrl, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                _checkedIds.Clear();
-                if (rest.Count > 1)
+                // 业务在 VM：逐条移入回收站 → 刷新目录树计数 → 重算当前组
+                var rest = await VmTools.DeleteCheckedAsync();
+                if (rest != null)
                 {
-                    foreach (var link in rest)
-                    {
-                        if (!_pathCache.ContainsKey(link.LinkId))
-                            _pathCache[link.LinkId] = await vm.ResolveLinkPathAsync(link.ListId);
-                    }
-                    _currentGroupLinks = rest;
                     DetailHintText.Text = $"共 {rest.Count} 条重复链接";
                     DetailTable.ItemsSource = null;
                     DetailTable.ItemsSource = rest;
@@ -691,7 +641,7 @@ namespace LinkPocket.Views
         }
 
         // ============================================================
-        // —— ID 跳转（统一走 IContentLocator 组件） ——
+        // —— ID 跳转（统一走 IContentLocator 组件；定位在 ToolsViewModel.JumpAsync） ——
         // ============================================================
 
         private void ResetIdJumpForm()
@@ -739,17 +689,10 @@ namespace LinkPocket.Views
             }
         }
 
-        /// <summary>跳转统一入口：全部经 <see cref="IContentLocator"/>（组件），本页不做任何定位算法。</summary>
+        /// <summary>跳转统一入口：定位在 <see cref="ToolsViewModel.JumpAsync"/>（组件），本方法只负责提示渲染。</summary>
         private async Task<LocateResult> JumpToIdAsync(string id)
         {
-            var locator = Host.Locator;
-            if (locator == null)
-            {
-                ShowJumpHint("定位组件不可用，请重启应用");
-                return new LocateResult(LocateStatus.NoHost, null, null, id, "定位组件不可用");
-            }
-
-            var result = await locator.LocateAsync(id);
+            var result = await VmTools.JumpAsync(id);
             if (!result.IsSuccess && DetailPanel.Visibility != Visibility.Visible)
             {
                 ShowJumpHint(result.Message ?? result.Status switch
@@ -764,25 +707,18 @@ namespace LinkPocket.Views
         }
 
         // ============================================================
-        // —— 书签导入 / 导出（合并为一项；算法全在后端契约里） ——
-        // 本页只做三件事：选文件 / 选目录、展示只读预检、展示结果。
-        // 导入导出走 ILinkPocketApi（ImportBookmarksHtmlAsync / ExportBookmarksHtmlAsync /
-        // InspectBookmarksHtmlAsync），页面不持有任何解析或写库逻辑。
+        // —— 书签导入 / 导出（协议调用在 ToolsViewModel；本页只做选文件/选目录、预检展示、结果展示） ——
         // ============================================================
-
-        private bool _bookmarkBusy;
-        private string _lastExportPath = string.Empty;
-        private BookmarkFileInspectionDto? _importInspection;
 
         private void SegImport_Click(object sender, RoutedEventArgs e)
         {
-            if (_bookmarkBusy) { SyncBookmarkSegments(); return; }
+            if (VmTools.BookmarkBusy) { SyncBookmarkSegments(); return; }
             SetBookmarkMode(importing: true);
         }
 
         private void SegExport_Click(object sender, RoutedEventArgs e)
         {
-            if (_bookmarkBusy) { SyncBookmarkSegments(); return; }
+            if (VmTools.BookmarkBusy) { SyncBookmarkSegments(); return; }
             SetBookmarkMode(importing: false);
         }
 
@@ -845,7 +781,7 @@ namespace LinkPocket.Views
             ExportProgressRow.Visibility = Visibility.Collapsed;
             ExportRevealBtn.Visibility = Visibility.Collapsed;
 
-            _lastExportPath = string.Empty;
+            VmTools.LastExportPath = string.Empty;
 
             _importFilePath = string.Empty;
             _importInspection = null;
@@ -906,7 +842,7 @@ namespace LinkPocket.Views
             _ = InspectImportFileAsync(dialog.FileName);
         }
 
-        /// <summary>导入前只读预检：格式识别 + 条目统计（不写任何数据）。</summary>
+        /// <summary>导入前只读预检（协议调用在 VM）：格式识别 + 条目统计（不写任何数据）。</summary>
         private async Task InspectImportFileAsync(string filePath)
         {
             ImportInspectChip.Visibility = Visibility.Collapsed;
@@ -918,7 +854,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var info = await Host.Api.InspectBookmarksHtmlAsync(filePath);
+                var info = await VmTools.InspectBookmarkAsync(filePath);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
 
                 if (!info.IsValid)
@@ -941,8 +877,9 @@ namespace LinkPocket.Views
                 if (info.Warnings.Count > 0)
                     parts.Add(info.Warnings[0]);
 
+                var summary = string.Join(" · ", parts);
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
-                    string.Join(" · ", parts),
+                    summary,
                     info.Warnings.Count > 0 ? ChipState.Warn : ChipState.Info);
                 ImportRunBtn.IsEnabled = true;
             }
@@ -958,9 +895,8 @@ namespace LinkPocket.Views
         private async void ImportRun_Click(object sender, RoutedEventArgs e)
         {
             var filePath = _importFilePath;
-            if (_bookmarkBusy || string.IsNullOrWhiteSpace(filePath)) return;
+            if (string.IsNullOrWhiteSpace(filePath) || !VmTools.TryBeginBookmarkFlow()) return;
 
-            _bookmarkBusy = true;
             ImportRunBtn.IsEnabled = false;
             ImportBrowseBtn.IsEnabled = false;
             ImportProgressRow.Visibility = Visibility.Visible;
@@ -968,7 +904,7 @@ namespace LinkPocket.Views
 
             try
             {
-                var count = await Host.Api.ImportBookmarksHtmlAsync(filePath);
+                var count = await VmTools.ImportBookmarksAsync(filePath);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
 
                 var detail = _importInspection is { } info
@@ -994,7 +930,7 @@ namespace LinkPocket.Views
             }
             finally
             {
-                _bookmarkBusy = false;
+                VmTools.EndBookmarkFlow();
                 ImportBrowseBtn.IsEnabled = true;
             }
         }
@@ -1011,39 +947,33 @@ namespace LinkPocket.Views
             ExportRunBtn.IsEnabled = true;
             ExportResultChip.Visibility = Visibility.Collapsed;
             ExportRevealBtn.Visibility = Visibility.Collapsed;
-            _lastExportPath = string.Empty;
+            VmTools.LastExportPath = string.Empty;
         }
 
         private async void ExportRun_Click(object sender, RoutedEventArgs e)
         {
             var directory = ExportDirBox.Text;
-            if (_bookmarkBusy || string.IsNullOrWhiteSpace(directory)) return;
+            if (string.IsNullOrWhiteSpace(directory) || !VmTools.TryBeginBookmarkFlow()) return;
 
             if (!System.IO.Directory.Exists(directory))
             {
+                VmTools.EndBookmarkFlow();
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
                     $"导出目录不存在：{directory}", ChipState.Warn);
                 return;
             }
 
-            _bookmarkBusy = true;
             ExportRunBtn.IsEnabled = false;
             ExportBrowseBtn.IsEnabled = false;
             ExportResultChip.Visibility = Visibility.Collapsed;
             ExportRevealBtn.Visibility = Visibility.Collapsed;
             ExportProgressRow.Visibility = Visibility.Visible;
-            ExportProgressText.Text = "正在导出书签...";
-
-            var outputPath = System.IO.Path.Combine(directory,
-                $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
+            ExportProgressText.Text = "正在导出书签（导出后自动校验产物）...";
 
             try
             {
-                await Host.Api.ExportBookmarksHtmlAsync(outputPath);
-
-                // 自校验：把刚写出的产物再解析一遍，用产物自身的数据报数（而不是"期望值"）
-                ExportProgressText.Text = "正在校验导出产物...";
-                var info = await Host.Api.InspectBookmarksHtmlAsync(outputPath);
+                // 协议调用 + 产物自校验在 VM（用产物自身的数据报数，而不是"期望值"）
+                var (outputPath, info) = await VmTools.ExportBookmarksAsync(directory);
                 ExportProgressRow.Visibility = Visibility.Collapsed;
 
                 if (!info.IsValid)
@@ -1054,7 +984,6 @@ namespace LinkPocket.Views
                     return;
                 }
 
-                _lastExportPath = outputPath;
                 ExportRevealBtn.Visibility = Visibility.Visible;
                 // 第二行只给文件名（完整路径就在上方域里，且可「打开所在文件夹」直达），避免长路径折行
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
@@ -1072,17 +1001,17 @@ namespace LinkPocket.Views
             }
             finally
             {
-                _bookmarkBusy = false;
+                VmTools.EndBookmarkFlow();
                 ExportBrowseBtn.IsEnabled = true;
             }
         }
 
         private void ExportReveal_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_lastExportPath)) return;
+            if (string.IsNullOrEmpty(VmTools.LastExportPath)) return;
             try
             {
-                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{_lastExportPath}\"");
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{VmTools.LastExportPath}\"");
             }
             catch (Exception ex)
             {

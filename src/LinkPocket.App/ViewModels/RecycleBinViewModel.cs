@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using LinkPocket.Api;
 using LinkPocket.Services;
 
@@ -15,20 +16,91 @@ namespace LinkPocket.ViewModels
     /// - TreeNodes：被删文件夹单元树（纯展示层级，节点不可打开/导航）；
     /// - Entries：平铺条目（folder 单元根 + 单独删除的书签），按删除时间倒序；
     /// - 本期无还原：只有「永久删除」（整单元 or 单条）。
+    /// 阶段 9 MVVM：页面动作命令（打开单元/返回/永久删除）在此，视图只做装配与渲染。
     /// </summary>
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
         /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
         private readonly ILinkPocketApi Api;
 
+        /// <summary>
+        /// UI 端口槽位（组合根持有）：MainWindow 构造时才登记实现，晚于本 VM 的创建，
+        /// 因此命令执行时惰性读取槽位（不缓存实例）。
+        /// </summary>
+        private readonly Services.UiPortProvider _ports;
+
         private bool _isLoading;
         private bool _hasError;
         private string _errorMessage = string.Empty;
         private TrashEntryDto? _selectedEntry;
 
-        public RecycleBinViewModel(ILinkPocketApi api)
+        public RecycleBinViewModel(ILinkPocketApi api, Services.UiPortProvider ports)
         {
             Api = api;
+            _ports = ports;
+
+            EnterUnitCommand = new RelayCommand<TrashEntryDto>(entry => _ = EnterUnitGuardedAsync(entry));
+            BackCommand = new RelayCommand(() => _ = BackGuardedAsync());
+            PurgeCommand = new RelayCommand(() => _ = PurgeGuardedAsync());
+        }
+
+        private IDialogService? Dialogs => _ports.Dialogs;
+
+        // ===== 页面动作命令（阶段 9 MVVM 自页面下沉；确认/失败提示统一走对话框端口）=====
+
+        /// <summary>进入被删文件夹单元（双击文件夹行 / 树节点动作）。</summary>
+        public ICommand EnterUnitCommand { get; }
+
+        /// <summary>返回回收站根平铺视图。</summary>
+        public ICommand BackCommand { get; }
+
+        /// <summary>永久删除当前选中条目：确认后执行（folder = 整单元含子树，不可恢复）。</summary>
+        public ICommand PurgeCommand { get; }
+
+        private async Task EnterUnitGuardedAsync(TrashEntryDto? folderEntry)
+        {
+            if (folderEntry == null || folderEntry.EntryType != "folder") return;
+            try
+            {
+                await EnterUnitAsync(folderEntry);
+            }
+            catch (Exception ex)
+            {
+                Dialogs?.Alert("打开失败", $"无法打开该文件夹单元：{ex.Message}");
+            }
+        }
+
+        private async Task BackGuardedAsync()
+        {
+            try
+            {
+                await BackToRootAsync();
+            }
+            catch (Exception ex)
+            {
+                Dialogs?.Alert("返回失败", ex.Message);
+            }
+        }
+
+        private async Task PurgeGuardedAsync()
+        {
+            var entry = SelectedEntry;
+            if (entry == null) return;
+
+            var name = string.IsNullOrEmpty(entry.Name) ? (entry.Url ?? "") : entry.Name;
+            var message = entry.EntryType == "folder"
+                ? $"确定要永久删除文件夹「{name}」吗？\n文件夹内的全部内容将一并删除，不可恢复。"
+                : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
+            if (Dialogs == null || !Dialogs.Confirm("永久删除", message, "永久删除", "delete-forever")) return;
+
+            try
+            {
+                await PurgeSelectedAsync();
+            }
+            catch (Exception ex)
+            {
+                Dialogs?.Alert("永久删除失败", ex.Message);
+            }
         }
 
         /// <summary>回收站文件夹树（纯视觉层级：节点不可打开，仅展示被删文件夹结构与计数）。</summary>

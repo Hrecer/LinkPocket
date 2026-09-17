@@ -6,10 +6,8 @@
              xmlns:local="clr-namespace:LinkPocket.Views.Browser">
 
     <UserControl.Resources>
-        <!-- 内容列外边距补偿：有纵向滚动条时把右侧外距减掉一个滚动条宽，
-             否则详情页/编辑页之间切换会看到整块内容横移（见转换器注释） -->
-        <local:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
-        <!-- 与 BrowserView.NavIconButton 同款的小图标按钮（右侧栏交互对齐） -->
+        <!-- ScrollGutterMargin 已上收 UIKit.xaml（阶段 9） -->
+        <!-- 与 BrowserView.NavIconButton 同款的小图标按钮（右侧栏交互对齐，28×26 比导航版小一档） -->
         <Style x:Key="SideIconButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>

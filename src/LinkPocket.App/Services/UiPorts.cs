@@ -10,6 +10,16 @@ public interface IDialogService
 {
     /// <summary>弹出删除文件夹确认对话框，返回用户是否确认。</summary>
     bool ConfirmDeleteFolder(string folderName);
+
+    /// <summary>
+    /// 通用确认弹窗（阶段 9 MVVM）：统一走 ConfirmDialog 唯一入口；
+    /// Windows 口径 = 删除类文案「将 X 移入回收站吗？」，不罗列后果。
+    /// iconKind 须在 LpIcons 字形表内（默认删除口径 delete-outline）。
+    /// </summary>
+    bool Confirm(string title, string message, string confirmText = "删除", string iconKind = "delete-outline");
+
+    /// <summary>提示/警告弹窗（信息类，非删除色调）：失败提示等，VM 不直接依赖任何窗口类型。</summary>
+    void Alert(string title, string message);
 }
 
 /// <summary>

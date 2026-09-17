@@ -34,11 +34,11 @@ namespace LinkPocket.Views
                 if (Vm is RecycleBinViewModel vm && item is TrashEntryDto entry)
                     vm.SelectedEntry = entry;
             };
-            // 双击：书签 = 只读详情页；文件夹单元 = 打开目录
+            // 双击：书签 = 只读详情页；文件夹单元 = 打开目录（EnterUnitCommand，失败提示在 VM）
             TrashTable.RowDoubleClick += (_, item) =>
             {
                 if (item is not TrashEntryDto entry) return;
-                if (entry.EntryType == "folder") _ = EnterUnitAsync(entry);
+                if (entry.EntryType == "folder") Vm?.EnterUnitCommand.Execute(entry);
                 else ShowLinkDetail(entry);
             };
         }
@@ -74,34 +74,11 @@ namespace LinkPocket.Views
             else _sidebar.Show(entry);
         }
 
-        // ===== 打开目录：进入被删文件夹单元，表格切换为单元内容（面包屑 + 返回钮联动） =====
+        // ===== 打开目录：进入被删文件夹单元（动作命令在 RecycleBinViewModel，面包屑由 INPC 驱动） =====
 
-        private async Task EnterUnitAsync(TrashEntryDto folderEntry)
+        private void UnitBack_Click(object sender, RoutedEventArgs e)
         {
-            if (Vm is not RecycleBinViewModel vm) return;
-            try
-            {
-                await vm.EnterUnitAsync(folderEntry);
-                RefreshCrumbs();
-            }
-            catch (Exception ex)
-            {
-                Views.ConfirmDialog.Show("打开失败", $"无法打开该文件夹单元：{ex.Message}", "确定", "alert-circle-outline");
-            }
-        }
-
-        private async void UnitBack_Click(object sender, RoutedEventArgs e)
-        {
-            if (Vm is not RecycleBinViewModel vm) return;
-            try
-            {
-                await vm.BackToRootAsync();
-                RefreshCrumbs();
-            }
-            catch (Exception ex)
-            {
-                Views.ConfirmDialog.Show("返回失败", ex.Message, "确定", "alert-circle-outline");
-            }
+            Vm?.BackCommand.Execute(null);
         }
 
         /// <summary>面包屑随浏览层级切换：根 = [回收站]；单元内 = [回收站, 单元名]。</summary>
@@ -311,28 +288,10 @@ namespace LinkPocket.Views
             return sp;
         }
 
-        private async void TrashPurge_Click(object sender, RoutedEventArgs e)
+        /// <summary>永久删除：确认/失败提示都在 RecycleBinViewModel.PurgeCommand（对话框端口）。</summary>
+        private void TrashPurge_Click(object sender, RoutedEventArgs e)
         {
-            var vm = Vm;
-            if (vm?.SelectedEntry == null) return;
-
-            var entry = vm.SelectedEntry;
-            var name = EntryName(entry);
-            var message = entry.EntryType == "folder"
-                ? $"确定要永久删除文件夹「{name}」吗？\n文件夹内的全部内容将一并删除，不可恢复。"
-                : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
-            // 统一走 MD3E 确认弹窗（删除/警告提醒色规范），替代系统 MessageBox
-            if (!Views.ConfirmDialog.Show("永久删除", message, "永久删除", "delete-forever"))
-                return;
-
-            try
-            {
-                await vm.PurgeSelectedAsync();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"永久删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            Vm?.PurgeCommand.Execute(null);
         }
 
         private void TrashPage_PreviewKeyDown(object sender, KeyEventArgs e)

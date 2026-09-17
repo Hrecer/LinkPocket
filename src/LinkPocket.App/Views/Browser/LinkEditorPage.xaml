@@ -8,11 +8,7 @@
          新建固定当前目录，无所属目录选择；数据由 LinkEditorViewModel 驱动。 -->
 
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <local:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
-        <!-- 内容列外边距补偿：有纵向滚动条时把右侧外距减掉一个滚动条宽，
-             否则详情页/编辑页之间切换会看到整块内容横移（见转换器注释） -->
-        <local:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
+        <!-- BoolToVis / InvBoolToVis / ScrollGutterMargin 已上收 UIKit.xaml（阶段 9） -->
 
         <!-- M3 Expressive 圆角填充文本域（单行） -->
         <Style x:Key="PageTextField" TargetType="TextBox">
