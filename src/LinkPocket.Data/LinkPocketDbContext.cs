@@ -7,6 +7,8 @@ public class LinkPocketDbContext : DbContext
 {
     public string DbPath { get; }
 
+    private readonly string? _connectionStringOverride;
+
     public LinkPocketDbContext() : this(null)
     {
     }
@@ -17,8 +19,15 @@ public class LinkPocketDbContext : DbContext
         DbPath = dbPath ?? System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
     }
 
+    /// <summary>引擎工厂专用：直接给定连接串（含 WAL 库 + foreign_keys 连接项）。同一程序集内部使用。</summary>
+    internal LinkPocketDbContext(string? contextPath, string connectionStringOverride)
+    {
+        DbPath = contextPath ?? System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
+        _connectionStringOverride = connectionStringOverride;
+    }
+
     protected override void OnConfiguring(DbContextOptionsBuilder options)
-        => options.UseSqlite($"Data Source={DbPath}");
+        => options.UseSqlite(_connectionStringOverride ?? $"Data Source={DbPath}");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

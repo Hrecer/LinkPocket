@@ -1,9 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- L0 内核：实体 + 强类型 ID（LinkPocket.Data 命名空间暂保留）。零依赖，不引用任何 EF 包。 -->
+  <!-- L0 内核：实体 + 强类型 ID + 仓储/工作单元/领域服务契约 + 命令处理器契约。
+       依赖仅 Contracts（共享词汇层）；不引用任何 EF 包。实体与 EntityIds 的
+       LinkPocket.Data 命名空间暂保留（阶段 5 schema v2 时统一归一）。 -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
 
 </Project>
