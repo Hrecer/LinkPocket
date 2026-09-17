@@ -42,44 +42,39 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
             _cache.TryRemove(key, out _);
         }
 
-        try
-        {
-            using var db = _dbFactory();
-            var connection = db.Database.GetDbConnection();
-            if (connection.State != System.Data.ConnectionState.Open) connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT result_json, at FROM idempotency WHERE key = @key";
-            AddParam(command, "@key", key);
-            using var reader = command.ExecuteReader();
-            if (!reader.Read()) return false;
+        using var db = _dbFactory();
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT result_json, at FROM idempotency WHERE key = @key";
+        AddParam(command, "@key", key);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read()) return false;
 
-            var at = DateTimeOffset.Parse(reader.GetString(1));
-            if (DateTimeOffset.Now - at > _window)
-                return false;   // 过期：视为未命中（惰性清理见 Store）
+        var at = DateTimeOffset.Parse(reader.GetString(1));
+        if (DateTimeOffset.Now - at > _window)
+            return false;   // 过期：视为未命中（惰性清理见 Store）
 
-            var persisted = JsonSerializer.Deserialize<PersistedResult>(reader.GetString(0), EngineJson.Options);
-            if (persisted is null) return false;
+        var persisted = JsonSerializer.Deserialize<PersistedResult>(reader.GetString(0), EngineJson.Options);
+        if (persisted is null) return false;
 
-            result = new CommandResult(persisted.Data, persisted.Changes, persisted.AuditRef);
-            _cache[key] = new CacheEntry(result, at);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            return false;   // 表读失败降级为未命中（幂等是防重优化，不阻断主流程）
-        }
+        result = new CommandResult(persisted.Data, persisted.Changes, persisted.AuditRef);
+        _cache[key] = new CacheEntry(result, at);
+        return true;
     }
 
+    /// <summary>
+    /// 落表 + 写内存缓存。<b>表写失败即抛</b>：schema v2 保证 idempotency 表存在，
+    /// 静默降级会让调用方误以为"防重已生效"；宁可调用失败，也不假装幂等成立。
+    /// </summary>
     public override void Store(string key, CommandResult result)
     {
-        _cache[key] = new CacheEntry(result, DateTimeOffset.Now);
-
         var json = JsonSerializer.Serialize(new PersistedResult(
             BatchEngine.ToElement(result.Data), result.Changes, result.AuditRef), EngineJson.Options);
         var at = DateTimeOffset.Now.ToString("O");
-        try
+
+        using (var db = _dbFactory())
         {
-            using var db = _dbFactory();
             var connection = db.Database.GetDbConnection();
             if (connection.State != System.Data.ConnectionState.Open) connection.Open();
             using (var command = connection.CreateCommand())
@@ -104,10 +99,8 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
                 prune.ExecuteNonQuery();
             }
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // 内存缓存已写；落表失败不影响主流程（重启后防重窗口降级为进程内）
-        }
+
+        _cache[key] = new CacheEntry(result, DateTimeOffset.Now);
     }
 
     private static void AddParam(System.Data.Common.DbCommand command, string name, object? value)

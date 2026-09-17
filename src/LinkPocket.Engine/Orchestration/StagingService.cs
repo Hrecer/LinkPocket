@@ -65,9 +65,13 @@ public sealed class StagingService : IStagingService
         {
             File.Delete(staged.FullPath);
         }
-        catch (IOException)
+        catch (FileNotFoundException)
         {
-            // 文件已 externally 消失 = 目标达成
+            // 文件已不存在 = 丢弃目标已达成（幂等语义）；其余 IO 异常照抛
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // 同上：staging 根目录已被外部清理
         }
         return Task.FromResult(true);
     }
