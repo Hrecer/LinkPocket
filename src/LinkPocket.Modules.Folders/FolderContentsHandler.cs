@@ -10,9 +10,10 @@ namespace LinkPocket.Modules.Folders;
 /// <summary>
 /// folders.contents（Query）：目录页 = 子文件夹 + 链接 + 面包屑 + 计数。
 /// 链接列表的**排序与分页全部 SQL 下推**（不再全量拉进内存排序后再 Skip/Take）；
+/// 页大小受 <see cref="EngineLimits.MaxPageSize"/> 约束，触限时响应带 <c>truncated</c> 标志（绝不静默截断）。
 /// 子文件夹/链接排序口径一致；根目录只显示根级书签；面包屑含根显示名。
 /// </summary>
-internal sealed class FolderContentsHandler : ICommandHandler
+internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.contents",
@@ -24,10 +25,10 @@ internal sealed class FolderContentsHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
             ParamSpec.Opt<int>("page", "页码（从 1 起）"),
-            ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（上限 10000）"),
+            ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（受引擎上限约束，触限时 truncated = true）"),
         ],
         Caps: CommandCaps.Query,
-        // 目录页 = 4 次查询（文件夹全量 + 直接计数 + 递归计数 + 链接），UI 每次刷新/导航都要；
+        // 目录页 = 4 次查询（文件夹全量 + 计数两口径 + 链接），UI 每次刷新/导航都要；
         // 结果只受「文件夹/链接变更」影响 → 内容类缓存（事件驱动失效）
         Cache: CachePolicy.Content());
 
@@ -38,8 +39,13 @@ internal sealed class FolderContentsHandler : ICommandHandler
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "asc";
         var page = Math.Max(1, CommandArgs.OptionalInt(args, "page", 1));
         var perPage = Math.Max(0, CommandArgs.OptionalInt(args, "per_page", 0));
-        var effectivePerPage = perPage > 0 ? perPage : 10000;   // 未启用分页沿用旧上限
         var ct = ctx.Ct;
+
+        // 页大小：0 = 调用方要全量 → 按引擎上限取；显式值超上限 → 夹到上限。
+        // 两种情况都必须在响应里可见（truncated），绝不静默截断。
+        var wantsAll = perPage == 0;
+        var effectivePerPage = wantsAll ? limits.MaxPageSize : Math.Min(perPage, limits.MaxPageSize);
+        var exceedsLimit = !wantsAll && perPage > limits.MaxPageSize;
 
         var isRoot = FolderIds.IsRoot(folderId);
         var allFolders = await ctx.Uow.Folders.ListAllAsync(ct);
@@ -58,6 +64,7 @@ internal sealed class FolderContentsHandler : ICommandHandler
             dto.FolderName = FolderIds.RootDisplayName;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
             dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
+            dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
             dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { Unfiled = true },
@@ -76,6 +83,7 @@ internal sealed class FolderContentsHandler : ICommandHandler
             dto.FolderName = folder.Name;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
             dto.DirectLinkCount = counts.Direct.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
+            dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
             dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { FolderId = new FolderId(folderId!) },

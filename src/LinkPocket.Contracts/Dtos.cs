@@ -79,6 +79,11 @@ public class FolderContentsDto
     /// 根目录为根级链接数。字段名与语义一一对应（旧名 total_link_count 会把"直接"误读成"总计"）。
     /// </summary>
     [JsonPropertyName("direct_link_count")] public int DirectLinkCount { get; set; }
+    /// <summary>
+    /// 是否因**引擎上限**而少返（true = 你要的比这里给的多，必须翻页或调大上限）。
+    /// 显式 per_page ≤ 上限时恒为 false —— 那种情况下的分页是调用方自己的选择，不算截断。
+    /// </summary>
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
     /// <summary>当前页码（从 1 开始；未启用分页时为 1）。</summary>
     [JsonPropertyName("current_page")] public int CurrentPage { get; set; } = 1;
     /// <summary>每页链接数（0 表示未启用分页，一次取回全部）。</summary>

@@ -95,6 +95,30 @@ public class FoldersModuleTests
     }
 
     [Fact]
+    public async Task Contents_Truncation_Is_Visible_Not_Silent()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "F" });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/1", title = "1", list_id = folder.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/2", title = "2", list_id = folder.Data!.FolderId });
+
+        // 显式 per_page ≤ 上限：分页是调用方自己的选择，不算截断
+        var paged = await engine.QueryAsync<FolderContentsDto>("folders.contents",
+            new { folder_id = folder.Data!.FolderId, per_page = 1 });
+        Assert.False(paged.Truncated);
+        Assert.Single(paged.Links);
+        Assert.Equal(2, paged.DirectLinkCount);
+
+        // 显式 per_page 超上限：夹到上限，且 truncated 必须为 true
+        var capped = await engine.QueryAsync<FolderContentsDto>("folders.contents",
+            new { folder_id = folder.Data!.FolderId, per_page = int.MaxValue });
+        Assert.True(capped.Truncated);
+        Assert.Equal(10_000, capped.PerPage);
+    }
+
+    [Fact]
     public async Task Contents_Wrong_Param_Type_Fails_Not_Silently_Defaults()
     {
         var (engine, _, _) = TestHost.Create();
