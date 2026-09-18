@@ -118,6 +118,11 @@ public sealed class EngineCore : IEngine
             await _writeGate.WaitAsync(ct);
             gateOwned = true;
 
+            // 幂等二次确认（写闸内）：闸外首次查重只是快路径——两并发携带同一 IdempotencyKey
+            // 可能都在提交前排过（都 miss），闸内复核保证后到者直接命中首次结果，绝不重复执行。
+            if (options?.IdempotencyKey is { } recheckKey && _idempotency.TryGet(recheckKey, out var recheckCached))
+                return ToTyped<T>(recheckCached);
+
             await using var uow = _uowFactory();
             // 干跑立即开启显式事务：绕过变更跟踪的批量语句（ExecuteDelete 等）只在本连接已有事务时才可回滚，
             // 否则"执行但不提交"会被绕开（改动直接落库）。
@@ -177,6 +182,11 @@ public sealed class EngineCore : IEngine
         }
         catch (OperationCanceledException)
         {
+            // 取消也落审计（观测面：所有调用可追溯，取消不例外）
+            _audit.Write(new AuditEntry(
+                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
+                Success: false, EngineErrors.Cancelled, null, DryRun: dryRun, IsNested: false,
+                StackTrace: null, ArgsJson: TruncateArgs(argsJson)));
             throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "调用已取消", correlationId: correlationId));
         }
         catch (Exception ex)
