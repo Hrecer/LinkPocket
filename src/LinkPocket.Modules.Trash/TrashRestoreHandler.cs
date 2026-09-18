@@ -67,9 +67,9 @@ internal sealed class TrashRestoreHandler : ICommandHandler
             : await ctx.Uow.Trees.PathDisplayAsync(new FolderId(targetListId), ct);
         return CommandResult.Ok(
             new TrashRestoreResult(restored.LinkId, targetListId, originExists),
-            ChangeSet.Of(
-                new EntityRef("link", restored.LinkId),
-                "trash.changed",
-                $"已还原「{restored.Title ?? restored.Url}」到「{location}」"));
+            new LinkPocket.Contracts.ChangeSet(
+                Touched: [new LinkPocket.Contracts.EntityRef("link", restored.LinkId)],
+                Events: ["links.changed", "trash.changed"],
+                HumanSummary: $"已还原「{restored.Title ?? restored.Url}」到「{location}」"));
     }
 }
