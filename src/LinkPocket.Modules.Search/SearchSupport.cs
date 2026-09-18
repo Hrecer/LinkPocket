@@ -33,7 +33,9 @@ internal static class SearchSupport
             new LinkQuerySpec
             {
                 Filter = new LinkFilter { SearchScope = scope },
-                Sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "created_at"),
+                // 审核 2.2：缺省/空串/非法 sort_by 统一落回「title 升序」（与 search.links 文档口径一致；
+                // 此前 fallback=created_at，`sort_by:""` 会静默变成按创建时间排序）
+                Sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "title"),
             }, ct);
 
         // 命中字段：对已筛出的候选集重算谓词（SQL 匹配 ⊇ 内存 OrdinalIgnoreCase 匹配，不会漏标）

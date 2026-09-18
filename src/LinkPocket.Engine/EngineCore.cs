@@ -60,11 +60,13 @@ public sealed class EngineCore : IEngine
     /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲，追平/轮询入口。</summary>
     public IEventStore EventStore => _eventStore;
 
-    /// <summary>批引擎（阶段 11 编排层；OrchestrationHost 装配后非空）。</summary>
-    public IBatchEngine? Batch { get; set; }
+    /// <summary>批引擎（阶段 11 编排层；OrchestrationHost 装配后非空）。
+    /// setter internal：装配由编排层宿主独占（组合根不可在装配后改写，审核 E7）。</summary>
+    public IBatchEngine? Batch { get; internal set; }
 
-    /// <summary>撤销协调器（阶段 11 编排层；OrchestrationHost 装配后非空）。</summary>
-    public IUndoCoordinator? Undo { get; set; }
+    /// <summary>撤销协调器（阶段 11 编排层；OrchestrationHost 装配后非空）。
+    /// setter internal：同上。</summary>
+    public IUndoCoordinator? Undo { get; internal set; }
 
     /// <summary>查询结果缓存（阶段 12 性能加固）：声明了 <see cref="CommandDescriptor.Cache"/> 的查询才参与。</summary>
     public QueryCache Cache => _cache;
@@ -167,8 +169,15 @@ public sealed class EngineCore : IEngine
                     RegisterObservationFailure("事件发布失败", pubEx);
                 }
 
-                // 整库影响面的命令（maintenance.reinit）：表已清空，全部条目直接作废
-                if (handler.Descriptor.Impact == ImpactSummary.Database) _cache.Clear();
+                // 整库影响面的命令（maintenance.reinit）：表已清空，全部查询缓存直接作废；
+                // **撤销栈/重做栈同样作废**（Maintenance 审核 1.1：旧条目的目标 ID 已不存在，
+                // 留着只会让 undo.undo 报 EntityNotFound 且永远可重放失败）——同步清内存栈
+                //（写闸内串行、ClearAsync 无内等待，GetAwaiter 安全）。
+                if (handler.Descriptor.Impact == ImpactSummary.Database)
+                {
+                    _cache.Clear();
+                    Undo?.ClearAsync(CancellationToken.None).GetAwaiter().GetResult();
+                }
 
                 if (options?.IdempotencyKey is { } idemKey)
                     _idempotency.Store(idemKey, result);

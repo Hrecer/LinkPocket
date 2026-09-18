@@ -12,6 +12,9 @@ internal sealed class EfFolderRepository(LinkPocketDbContext db) : IFolderReposi
     public async Task<IReadOnlyList<Folder>> ListAllAsync(CancellationToken ct)
         => await db.Folders.AsNoTracking().ToListAsync(ct);
 
+    public Task<int> CountAsync(CancellationToken ct)
+        => db.Folders.AsNoTracking().CountAsync(ct);
+
     public async Task<IReadOnlyList<Folder>> ChildrenOfAsync(FolderId? parent, CancellationToken ct)
     {
         var query = db.Folders.AsNoTracking();

@@ -48,3 +48,10 @@ public sealed record TrashRestoreBatchResult(int Restored);
 
 /// <summary>批量永久删除结果。</summary>
 public sealed record TrashPurgeBatchResult(int PurgedLinks, int PurgedFolders);
+
+// —— maintenance ——
+
+/// <summary>整库重置结果（审核 4.3：替代匿名对象，客户端可强类型读取；wire 字段名与旧匿名对象形状一致）。</summary>
+public sealed record MaintenanceReinitResult(
+    [property: System.Text.Json.Serialization.JsonPropertyName("cleared")] bool Cleared,
+    [property: System.Text.Json.Serialization.JsonPropertyName("favicon_cache_cleared")] bool FaviconCacheCleared);

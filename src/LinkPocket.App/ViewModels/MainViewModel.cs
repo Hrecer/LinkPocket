@@ -90,7 +90,7 @@ namespace LinkPocket.ViewModels
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
-            CreateFolderCommand = new RelayCommand(CreateFolderAsync, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
+            CreateFolderCommand = new RelayCommand(OpenCreateFolderDialog, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
             ConfirmCreateFolderCommand = new AsyncRelayCommand(ConfirmCreateFolderAsync, () => !string.IsNullOrWhiteSpace(NewFolderName));
             CancelCreateFolderCommand = new RelayCommand(CancelCreateFolder);
             DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedAsync, CanDeleteSelected);
@@ -160,9 +160,24 @@ namespace LinkPocket.ViewModels
                     case "search":
                         OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
                         break;
+                    // 审核 1.5：事件防抖刷新补齐三页——此前只在浏览器/回收站/搜索里路由，
+                    // 跨页操作（如浏览页删链接后切到智能列表/工具）会看到陈旧快照。
+                    case "smartlists":
+                        if (_smartListViewModel != null)
+                            await _smartListViewModel.RefreshCurrentAsync();
+                        break;
+                    case "tools":
+                        OnToolsDataChanged?.Invoke(this, EventArgs.Empty);   // ToolsView.OnExternalDataChanged（页内重跑守卫）
+                        break;
+                    case "settings":
+                        break;   // 设置页无数据面，无需刷新
                 }
             }
-            catch { /* 事件驱动的刷新失败不应打断 UI */ }
+            catch (Exception ex)
+            {
+                // 事件驱动的刷新失败不应打断 UI——记录并暴露（观测面纪律），不再纯静默
+                Logger.Error($"防抖刷新活跃页失败（{_currentNavId}）", ex);
+            }
         }
 
         public string CurrentNavId
@@ -488,30 +503,39 @@ namespace LinkPocket.ViewModels
 
         private async void SelectNav(string navId)
         {
-            CurrentNavId = navId;
-            SyncNavSelection(navId);
-
-            // P4 浏览页：首次进入从根目录加载；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制
-            if (navId == "browser")
+            try
             {
-                if (BrowserViewModel.Rows.Count == 0)
-                    _ = BrowserViewModel.LoadAsync(null);
-            }
+                CurrentNavId = navId;
+                SyncNavSelection(navId);
 
-            if (_smartListViewModel != null && _smartListViewModel.ShowResult)
-            {
-                _smartListViewModel.GoBack();
-            }
-
-            if (navId == "trash")
-            {
-                if (_recycleBinViewModel != null)
+                // P4 浏览页：首次进入从根目录加载；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制
+                if (navId == "browser")
                 {
-                    await _recycleBinViewModel.LoadAsync();
-                    var navigation = _ports.Navigation;
-                    if (navigation != null)
-                        await navigation.RefreshTrashPageAsync();
+                    if (BrowserViewModel.Rows.Count == 0)
+                        _ = BrowserViewModel.LoadAsync(null);
                 }
+
+                if (_smartListViewModel != null && _smartListViewModel.ShowResult)
+                {
+                    _smartListViewModel.GoBack();
+                }
+
+                if (navId == "trash")
+                {
+                    if (_recycleBinViewModel != null)
+                    {
+                        await _recycleBinViewModel.LoadAsync();
+                        var navigation = _ports.Navigation;
+                        if (navigation != null)
+                            await navigation.RefreshTrashPageAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // 审核 1.4：async void 里未捕获的异常会被全局 handler 吞掉且后续代码不执行——
+                // 这里就地记录 + 暴露，不让「切页失败」静默
+                Logger.Error($"切换导航到 {navId} 失败", ex);
             }
         }
 
@@ -872,7 +896,8 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private void CreateFolderAsync()
+        /// <summary>打开新建文件夹对话框（同步；审核 2.3：原命名 CreateFolderAsync 与实现矛盾——它只弹窗、无 await）。</summary>
+        private void OpenCreateFolderDialog()
         {
             if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                 throw new InvalidOperationException("新建文件夹必须先选中一个文件夹");
@@ -1000,10 +1025,9 @@ namespace LinkPocket.ViewModels
                 foreach (var node in lookup.Values)
                     SortFolderNodes(node.Children);
 
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    FolderItems = folderNodes;
-                });
+                // 审核 2.4：LoadFolderTreeAsync 的所有调用路径都在 UI 线程（命令/事件/Loaded），
+                // Dispatcher.Invoke 冗余——直接赋值（FolderItems setter 已 OnPropertyChanged）
+                FolderItems = folderNodes;
             }
             catch (Exception ex)
             {
@@ -1053,7 +1077,9 @@ namespace LinkPocket.ViewModels
             {
                 var allFolders = await _client.FolderTreeAsync();
                 var dict = allFolders.ToDictionary(f => f.FolderId);
-                if (!dict.ContainsKey(listId)) return "全部书签";
+                // 审核 2.9：未找到的目录必须如实标记「未知目录」，不得伪装成根
+                //（与 EfTreeService.PathDisplayAsync 修复同口径）
+                if (!dict.ContainsKey(listId)) return "未知目录";
                 var pathParts = new List<string>();
                 var currentId = listId;
                 for (int i = 0; i < 20 && !string.IsNullOrEmpty(currentId); i++)
@@ -1067,7 +1093,7 @@ namespace LinkPocket.ViewModels
             }
             catch
             {
-                return "全部书签";
+                return "未知目录";
             }
         }
 
@@ -1092,11 +1118,10 @@ namespace LinkPocket.ViewModels
             return await _client.FolderCycleCheckAsync(folderId, targetParentId);
         }
 
-        public async Task ReinitializeDatabaseAsync(bool resetData = true)
+        public async Task ReinitializeDatabaseAsync()
         {
             // maintenance.reinit（Destructive 两阶段确认）：引擎整库重置 = 批量删除后全新空库
-            //（行为契约 §7「重建库=全新空库」；旧链 resetData 的「删文件」差异收敛为引擎的
-            // 「清空重建」——库文件不退场，等价终态一致）。令牌经 UI 确认后自动重发，无额外弹窗。
+            //（审核 2.6：旧 resetData 参数的「删文件 vs 只清数据」差异已收敛为引擎的「清空重建」——参数恒无意义，已删）
             await EngineConfirm.RunAsync(token => _client.MaintenanceReinitAsync(new CallOptions { ConfirmToken = token }));
 
             await ResetUiAfterDatabaseResetAsync();

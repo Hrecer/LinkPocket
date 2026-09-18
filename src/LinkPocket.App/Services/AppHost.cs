@@ -59,7 +59,12 @@ public sealed class AppHost
         var composed = LinkPocket.Composition.EngineComposer.Compose(
             System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"));
 
-        var host = new AppHost(composed.Client, composed.Wire!);
+        // 审核 1.6：null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），
+        // 若未来选项被改动导致 null，这里立即失败而不是把 null 埋进 AppHost.Wire 等运行期 NRE。
+        if (composed.Wire is null)
+            throw new InvalidOperationException("默认装配必须产出 EngineWire（ComposeOptions.BuildWire 被关闭？）");
+
+        var host = new AppHost(composed.Client, composed.Wire);
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
         return host;
     }

@@ -8,7 +8,7 @@ public static class MaintenanceModule
 {
     /// <param name="runtimeStats">
     /// 引擎运行时可观测读数提供方（阶段 12：查询缓存命中/失效计数 + 事件存储游标）。
-    /// 由组合根接线（它是引擎侧状态，模块不引引擎程序集）；<b>不接线时 diagnostics 的 runtime 段为 null</b>
+    /// 由组合根接线（EngineRuntimeStats 在 Contracts——模块不引 LinkPocket.Engine 实现程序集，审核 4.7）；<b>不接线时 diagnostics 的 runtime 段为 null</b>
     /// ——宁可暴露"未接线"，也不填假值（观测面纪律）。
     /// </param>
     public static IReadOnlyList<ICommandHandler> CreateHandlers(Func<EngineRuntimeStats>? runtimeStats = null) =>

@@ -17,10 +17,11 @@ internal sealed class SearchLinksHandler : ICommandHandler
         [
             ParamSpec.Req<string>("query", "搜索关键词"),
             ParamSpec.Opt<bool>("search_title", "搜标题（缺省 true）"),
-            ParamSpec.Opt<bool>("search_url", "搜地址"),
+            ParamSpec.Opt<bool>("search_url", "搜 URL"),
             ParamSpec.Opt<bool>("search_description", "搜描述"),
-            ParamSpec.Opt<bool>("search_path", "搜位置（文件夹名命中 → 子树展开）"),
-            ParamSpec.Opt<string>("sort_by", "title | updated_at | last_visited_at | visit_count | created_at"),
+            ParamSpec.Opt<bool>("search_path", "搜路径（文件夹名命中 → 子树展开）"),
+            // 审核 2.1：与 QueryParsing.LinkSortFields / EfSortEngine.LinkFields 全量对齐（7 字段）
+            ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
         ],
         Caps: CommandCaps.Query);
@@ -29,8 +30,10 @@ internal sealed class SearchLinksHandler : ICommandHandler
     {
         var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001（引导空态是界面职责）
 
-        var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
-        var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "asc";
+        // 审核 2.2：不再 `?? "title"` 挡默认——缺省/空串/非法值统一由 ParseSort 落回 fallback "title"
+        //（此前 `sort_by: ""` 会绕过 ?? 落到 ParseSort 的 created_at，与文档「缺省 title 升序」相悖）
+        var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? string.Empty;
+        var sortOrder = CommandArgs.OptionalString(args, "sort_order");
 
         var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,

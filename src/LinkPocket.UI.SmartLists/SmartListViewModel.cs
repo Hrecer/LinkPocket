@@ -124,6 +124,32 @@ namespace LinkPocket.ViewModels
             ResultViewModel = null;
         }
 
+        /// <summary>
+        /// 事件防抖刷新入口（审核 1.5）：跨页数据变更后，让当前打开的结果列表重拉——
+        /// 与页面内删除后的重载同一条路径（LoadAsync → Reloaded → 视图重绑）。
+        /// 未打开列表（ResultViewModel null）不做事；持有期间代次递增使在途结果失效。
+        /// </summary>
+        public async Task RefreshCurrentAsync()
+        {
+            var result = ResultViewModel;
+            if (result == null || IsLoading) return;
+            _openGeneration++;   // 在途 OpenSmartList 结果作废（若与本次刷新竞争）
+            IsLoading = true;
+            try
+            {
+                await result.LoadAsync();
+                result.NotifyReloaded();   // 视图重绑（页面已订阅该实例）
+            }
+            catch (Exception ex)
+            {
+                Services.Logger.Error("智能列表刷新失败", ex);
+            }
+            finally
+            {
+                IsLoading = false;
+            }
+        }
+
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

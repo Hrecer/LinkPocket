@@ -19,7 +19,7 @@ namespace LinkPocket.Views
     public partial class SettingsPage : UserControl
     {
         /// <summary>阶段 10 模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
-        public void Configure(EngineClient client, Func<bool, Task> reinitializeAsync, Func<Task> refreshAfterImportAsync)
+        public void Configure(EngineClient client, Func<Task> reinitializeAsync, Func<Task> refreshAfterImportAsync)
         {
             Api = client;
             ReinitializeAsync = reinitializeAsync;
@@ -29,7 +29,7 @@ namespace LinkPocket.Views
         }
 
         private EngineClient Api { get; set; } = null!;
-        private Func<bool, Task> ReinitializeAsync { get; set; } = null!;
+        private Func<Task> ReinitializeAsync { get; set; } = null!;
 
         public SettingsPage()
         {
@@ -150,7 +150,7 @@ namespace LinkPocket.Views
             {
                 Services.Logger.Info("[维护] 开始清空数据");
 
-                await ReinitializeAsync(false);
+                await ReinitializeAsync();
 
                 TryClearLogFiles();   // B-5：与「清空日志」同一清理口径
 

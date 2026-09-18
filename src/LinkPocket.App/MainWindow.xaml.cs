@@ -62,7 +62,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         ToolsView.Configure(_host.Client, _host.Locator,
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
-        SettingsView.Configure(_host.Client, reset => vm.ReinitializeDatabaseAsync(reset),
+        SettingsView.Configure(_host.Client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshAfterImportAsync());
         vm.OnToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
 
@@ -74,8 +74,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
         SizeChanged += (_, _) => UpdateShellClip();
-        // 分段胶囊导航：CurrentNavId 变化时让选中药丸滑过去（弹簧曲线）
-        DataContextChanged += (_, _) => HookNavPillDriver();
+        // 分段胶囊导航：CurrentNavId 变化时让选中药丸滑过去（弹簧曲线）。
+        // 审核 3.5：DataContext 在构造尾已设好（= vm），此后不再变化——显式调用即可，
+        // DataContextChanged 订阅永不触发，属冗余，已删。
         HookNavPillDriver();
     }
 
@@ -105,12 +106,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             : Task.FromResult(false);
 
     Task Services.INavigationService.RefreshTrashPageAsync() => TrashView is TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
-
-    void Services.INavigationService.ShowNavigationTabs()
-    {
-        if (FindName("NavigationTabs") is ItemsControl navTabs)
-            navTabs.Visibility = Visibility.Visible;
-    }
 
     bool Services.IDialogService.ConfirmDeleteFolder(string folderName)
         => ConfirmDialog.Show("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？", "删除");
@@ -204,7 +199,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         }
         if (target == null || target.ActualWidth <= 0)
         {
+            // 审核 3.6：宽度归零时同步重置 X——否则下次恢复宽度会从旧偏移位置显示（视觉错位）
             NavPill.Width = 0;
+            NavPillTransform.X = 0;
             return;
         }
         var pt = target.TransformToVisual(NavHost).Transform(new Point(0, 0));
@@ -242,11 +239,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         Close();
-    }
-
-    private void SuppressContextMenu_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

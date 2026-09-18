@@ -36,22 +36,24 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var ct = ctx.Ct;
-        var standalone = await ctx.Uow.Trash.ListStandaloneLinksAsync(ct);
-        var units = await ctx.Uow.Trash.ListFoldersAsync(ct);
         var runtime = runtimeStats?.Invoke();
 
         var diagnostics = new
         {
-            generated_at = DateTimeOffset.Now,
+            // 诊断时间统一 UTC（审核 2.8：跨时区调试不混淆）
+            generated_at = DateTimeOffset.UtcNow,
             app_version = GetAppVersion(),
             schema_version = await ctx.Uow.SchemaVersionAsync(ct),
             counts = new
             {
-                folders = (await ctx.Uow.Folders.ListAllAsync(ct)).Count,
+                // 审核 1.3：只计数，绝不把整表拉进内存（此前 folders/trash 全量 SELECT）
+                folders = await ctx.Uow.Folders.CountAsync(ct),
                 links = await ctx.Uow.Links.CountAsync(new LinkFilter(), ct),
                 root_links = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct),
-                trash_links = standalone.Count,
-                trash_units = units.Count,
+                // 审核 2.1/2.2：字段名与口径严格对齐——
+                // standalone_trash_links = 单独删除的书签（不含随单元删的）；trash_folders_total = 全部被删文件夹（含子单元）
+                standalone_trash_links = await ctx.Uow.Trash.CountStandaloneLinksAsync(ct),
+                trash_folders_total = await ctx.Uow.Trash.CountFoldersAsync(ct),
             },
             // null = 未接线（观测面纪律：不假装有数据）；接线后即为引擎缓存/事件存储真实读数
             runtime = runtime is null ? null : new
@@ -70,7 +72,9 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
     }
 
     private static string GetAppVersion()
-        => System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+        // 审核 2.7：模块程序集版本才是「LinkPocket 的版本」——GetEntryAssembly 在测试/工具宿主下
+        // 会返回宿主版本，语义漂移
+        => typeof(MaintenanceModule).Assembly.GetName().Version?.ToString() ?? typeof(MaintenanceModule).Assembly.GetName().Name ?? "unknown";
 }
 
 /// <summary>
@@ -86,7 +90,8 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
         Category: "maintenance",
         Description: "整库重置：清空全部数据（链接/文件夹/回收站）并清除图标缓存；不可恢复，需两阶段确认",
         Parameters: [],
-        Caps: CommandCaps.Mutation | CommandCaps.Destructive,
+        // 审核 1.2：声明支持取消（ClearAllDataAsync 全程响应 ct；中途取消 → 事务回滚，零部分状态）
+        Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.SupportsCancellation,
         Impact: ImpactSummary.Database);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -94,27 +99,39 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
         await ctx.Uow.ClearAllDataAsync(ctx.Ct);
 
         // —— 图标缓存（尽力而为；目录被占用等失败不阻断重置）——
-        var faviconCleared = TryClearFaviconCache();
+        // dryRun 必须零副作用：文件系统操作不受事务保护，预演时跳过（审核 2.8）。
+        // Task.Run：Directory.Delete(递归) 是同步 IO，避免在 UI 线程续体上卡住（审核 2.6）。
+        var faviconCleared = ctx.DryRun
+            ? false
+            : await Task.Run(() => TryClearFaviconCache(), ctx.Ct);
 
         return CommandResult.Ok(
-            JsonSerializer.SerializeToElement(new { cleared = true, favicon_cache_cleared = faviconCleared }),
+            // 审核 4.3：强类型 DTO 落形（JsonElement 承载——既有 ExecuteAsync<JsonElement> 调用
+            // 形状不变；强类型消费者以 Client.ExecuteAsync<MaintenanceReinitResult> 反序列化获得
+            // record 形态，两种调用面都成立）
+            JsonSerializer.SerializeToElement(new MaintenanceReinitResult(Cleared: true, FaviconCacheCleared: faviconCleared)),
             new ChangeSet(
                 Touched: [new EntityRef("database", "*")],
                 Events: [DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged],
-                HumanSummary: "已清空全部数据"));
+                // 审核 2.9：措辞与实现一致——audit_log/idempotency/macros/schema_migrations 有保留策略，不清
+                HumanSummary: "已清空业务数据（书签/文件夹/回收站）"));
     }
 
     private static bool TryClearFaviconCache()
     {
         try
         {
+            // 必须与 FaviconStore.CacheDirectory 保持同步（审核 2.3）：Maintenance 模块不引 UIKit，
+            // 无法直接引用该常量——未来若图标缓存换目录，这里必须一起改
             var dir = Path.Combine(AppContext.BaseDirectory, "favicons");
             if (!Directory.Exists(dir)) return true;
             Directory.Delete(dir, recursive: true);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            // 审核 2.4：失败要暴露——不得只返回 false 后静默
+            System.Diagnostics.Trace.TraceWarning("清空图标缓存失败：{0}", ex.Message);
             return false;
         }
     }

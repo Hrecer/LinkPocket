@@ -16,9 +16,9 @@ internal sealed class SearchExplainHandler : ICommandHandler
         [
             ParamSpec.Req<string>("query", "搜索关键词"),
             ParamSpec.Opt<bool>("search_title", "搜标题（缺省 true）"),
-            ParamSpec.Opt<bool>("search_url", "搜地址"),
+            ParamSpec.Opt<bool>("search_url", "搜 URL"),
             ParamSpec.Opt<bool>("search_description", "搜描述"),
-            ParamSpec.Opt<bool>("search_path", "搜位置"),
+            ParamSpec.Opt<bool>("search_path", "搜路径（文件夹名命中 → 子树展开）"),
         ],
         Caps: CommandCaps.Query);
 
@@ -26,6 +26,8 @@ internal sealed class SearchExplainHandler : ICommandHandler
     {
         var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001
 
+        // 排序固定 title 升序（审核 4.6：explain 只关心命中字段，不翻页不排序——
+        // 与 search.links 的对象集合可能不同序，调用方不得按位置对齐，见 MODULE.md）
         var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,
             CommandArgs.OptionalBool(args, "search_title", true),

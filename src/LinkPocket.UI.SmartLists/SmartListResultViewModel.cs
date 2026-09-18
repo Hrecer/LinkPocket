@@ -53,6 +53,10 @@ namespace LinkPocket.ViewModels
         /// <summary>删除重载完成后通知视图重绑表格（排序复位 + 行集替换 + 清表格选中）。</summary>
         public event EventHandler? Reloaded;
 
+        /// <summary>宿主（SmartListViewModel.RefreshCurrentAsync 等）在跨页事件刷新后调用，
+        /// 触发视图重绑——与删除后重载同一出口（事件只能在声明类内触发，故提供公开方法）。</summary>
+        public void NotifyReloaded() => Reloaded?.Invoke(this, EventArgs.Empty);
+
         public string ListId => _listId;
 
         public string Title

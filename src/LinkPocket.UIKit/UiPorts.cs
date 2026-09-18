@@ -41,8 +41,6 @@ public interface INavigationService
     void OpenFolderInBrowser(string folderId);
 
     Task RefreshTrashPageAsync();
-
-    void ShowNavigationTabs();
 }
 
 /// <summary>

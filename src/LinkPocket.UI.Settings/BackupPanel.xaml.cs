@@ -23,7 +23,7 @@ namespace LinkPocket.Views
         public EngineClient Api { get; set; } = null!;
 
         /// <summary>整库重置委托（Shell 注入 MainViewModel.ReinitializeDatabaseAsync）：清空 / 整库重建。</summary>
-        public Func<bool, Task> ReinitializeAsync { get; set; } = null!;
+        public Func<Task> ReinitializeAsync { get; set; } = () => Task.CompletedTask;
 
         /// <summary>导入成功后的 UI 刷新委托（Shell 注入 MainViewModel.RefreshAfterImportAsync）：只刷树/计数，不清数据。</summary>
         public Func<Task> RefreshAfterImportAsync { get; set; } = () => Task.CompletedTask;

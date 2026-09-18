@@ -1139,7 +1139,7 @@ public class MaintenanceModuleTests
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("folders").GetInt32());
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("links").GetInt32());
-        Assert.Equal(0, diag.GetProperty("counts").GetProperty("trash_links").GetInt32());
+        Assert.Equal(0, diag.GetProperty("counts").GetProperty("standalone_trash_links").GetInt32());
     }
 
     [Fact]
@@ -1176,7 +1176,7 @@ public class MaintenanceModuleTests
 
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
         Assert.Equal(2, diag.GetProperty("counts").GetProperty("folders").GetInt32());
-        Assert.Equal(1, diag.GetProperty("counts").GetProperty("trash_links").GetInt32());
+        Assert.Equal(1, diag.GetProperty("counts").GetProperty("standalone_trash_links").GetInt32());
     }
 }
 
