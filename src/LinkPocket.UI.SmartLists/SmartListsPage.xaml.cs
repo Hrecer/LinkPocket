@@ -32,7 +32,6 @@ namespace LinkPocket.Views
             InitializeComponent();
             SetupTable();
             Focusable = true;
-            PreviewKeyDown += SmartListsPage_PreviewKeyDown;
             DataContextChanged += (_, __) => WireOnce();
             Loaded += (_, __) => WireOnce();
         }
@@ -317,24 +316,8 @@ namespace LinkPocket.Views
         }
 
         // ============================================================
-        // —— 键盘与空态 ——
+        // —— 空态 ——
         // ============================================================
-
-        private void SmartListsPage_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (ResultPanel.Visibility != Visibility.Visible) return;
-            if (e.Key == Key.Delete && ResultVm?.SelectedItem != null)
-            {
-                ResultVm.DeleteCommand.Execute(null);
-                e.Handled = true;
-            }
-            else if (e.Key == Key.Escape)
-            {
-                if (DataContext is SmartListViewModel slVm)
-                    slVm.GoBack();
-                e.Handled = true;
-            }
-        }
 
         /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。
         /// 实例方法 + FindResource：不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null，#13）。</summary>

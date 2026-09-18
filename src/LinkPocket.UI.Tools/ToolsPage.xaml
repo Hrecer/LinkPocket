@@ -470,7 +470,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="IdInput" Grid.Column="0" Style="{StaticResource PillTextField}"
-                                         KeyDown="IdInput_KeyDown" SpellCheck.IsEnabled="False"/>
+                                         SpellCheck.IsEnabled="False"/>
                                 <Button x:Name="JumpBtn" Grid.Column="1" Margin="10,0,0,0" Padding="18,0"
                                         Height="44"
                                         Style="{StaticResource PrimaryPillButton}" Click="Jump_Click"
@@ -502,8 +502,7 @@
         <!-- ============================================================ -->
         <!-- ===== 面板 B：重复组明细（整页） ===== -->
         <!-- ============================================================ -->
-        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True"
-              PreviewKeyDown="DetailPanel_PreviewKeyDown">
+        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>

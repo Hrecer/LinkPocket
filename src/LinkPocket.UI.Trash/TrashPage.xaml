@@ -3,8 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
-             Focusable="True"
-             PreviewKeyDown="TrashPage_PreviewKeyDown">
+             Focusable="True">
     <!-- 回收站页（v2 层级化）：与浏览页同构 ——
          顶部面包屑（纯展示「回收站」）+ 左侧被删文件夹树（FolderTreePanel 纯展示：节点不可打开）
          + 中央共享数据表 SortableDataTable（平铺：名称/类型/原位置/删除时间，搜索页同款样式）

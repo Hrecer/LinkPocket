@@ -368,38 +368,5 @@ namespace LinkPocket.Views
         {
             Vm?.PurgeCommand.Execute(null);
         }
-
-        private void TrashPage_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            var vm = Vm;
-            if (vm == null) return;
-
-            if (e.Key == Key.Escape)
-            {
-                // Esc 优先级：详情页 > 单元浏览 > 清除选中
-                if (LinkDetailOverlay.Visibility == Visibility.Visible)
-                {
-                    LinkDetailOverlay.Visibility = Visibility.Collapsed;
-                    _detailEntry = null;
-                }
-                else if (vm.IsInUnit)
-                {
-                    vm.BackCommand.Execute(null);   // 直调命令，不绕事件处理器
-                }
-                else
-                {
-                    vm.SelectedEntry = null;
-                    TrashTable.ClearSelection();
-                }
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Delete && vm.HasSelection && LinkDetailOverlay.Visibility != Visibility.Visible)
-            {
-                vm.PurgeCommand.Execute(null);   // 与 Delete 键直连命令
-                e.Handled = true;
-            }
-        }
     }
 }

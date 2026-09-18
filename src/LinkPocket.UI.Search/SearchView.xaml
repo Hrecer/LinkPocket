@@ -167,8 +167,7 @@
                             </TextBlock>
                             <TextBox x:Name="SearchBox" Style="{StaticResource SearchCapsuleBox}"
                                      Background="Transparent"
-                                     Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"
-                                     KeyDown="SearchBox_KeyDown"/>
+                                     Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}"/>
                         </Grid>
 
                         <!-- Focusable=False：点击不抢走搜索框键盘焦点，避免聚焦胶囊态闪烁。

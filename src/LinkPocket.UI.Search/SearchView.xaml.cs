@@ -146,15 +146,6 @@ public partial class SearchView : UserControl
         }
     }
 
-    private void SearchBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
-        {
-            _vm?.SearchCommand.Execute(null);
-            e.Handled = true;
-        }
-    }
-
     // —— 渲染原语（纯视图） ——
 
     /// <summary>名称列：favicon + 标题 + URL 副行（关键词高亮）。</summary>

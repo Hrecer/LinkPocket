@@ -416,13 +416,6 @@ namespace LinkPocket.Views
 
         private void DetailBack_Click(object sender, RoutedEventArgs e) => GoBackToList();
 
-        private void DetailPanel_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Escape) return;
-            GoBackToList();
-            e.Handled = true;
-        }
-
         private void CopyUrl_Click(object sender, RoutedEventArgs e)
         {
             if (!string.IsNullOrEmpty(VmTools.CurrentGroupUrl))
@@ -658,13 +651,6 @@ namespace LinkPocket.Views
         {
             JumpHintText.Text = message;
             JumpHintChip.Visibility = Visibility.Visible;
-        }
-
-        private void IdInput_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Enter) return;
-            _ = JumpFromInputAsync();
-            e.Handled = true;
         }
 
         private void Jump_Click(object sender, RoutedEventArgs e) => _ = JumpFromInputAsync();
