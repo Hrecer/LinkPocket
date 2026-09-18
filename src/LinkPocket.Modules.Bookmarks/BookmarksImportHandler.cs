@@ -8,7 +8,7 @@ namespace LinkPocket.Modules.Bookmarks;
 
 /// <summary>
 /// bookmarks.import（Mutation · LongRunning）：从 Netscape 书签文件导入（追加，顶层条目落根级）。
-/// 文件夹 ID 内存生成 → 一次性注册 → 引擎单事务提交；导入后全部文件夹 UpdatedAt 视为变动（既有口径）。
+/// 文件夹 ID 内存生成 → 一次性注册 → 引擎单事务提交；新导入的文件夹保留文件解析出的 UpdatedAt。
 /// </summary>
 internal sealed class BookmarksImportHandler : ICommandHandler
 {
@@ -58,6 +58,7 @@ internal sealed class BookmarksImportHandler : ICommandHandler
             {
                 var folder = new Folder
                 {
+                    // Truncate 签名返回 string?，但 item.Title 解析时保证非空，?? 为 nullable 流分析兜底（保留以免 CS8601）
                     Name = NetscapeReader.Truncate(item.Title, MaxFolderNameLength) ?? "未命名文件夹",
                     ParentId = parentFolderId,
                     LinkCount = 0,
@@ -97,16 +98,9 @@ internal sealed class BookmarksImportHandler : ICommandHandler
             _ = await ctx.Uow.Links.AddAsync(link, ct);
         }
 
-        // 批量写入 → 所有现有文件夹内容均视为变动（既有 TouchAllModified 口径；新导入的同样整体刷新）。
-        // ListAllAsync 是 AsNoTracking 快照：直接改快照 + UpdateAsync 挂跟踪（替代「逐条 FindAsync」的 N+1），
-        // 全部 UPDATE 在引擎提交时一次落库。
-        foreach (var folder in await ctx.Uow.Folders.ListAllAsync(ct))
-        {
-            folder.UpdatedAt = now;
-            await ctx.Uow.Folders.UpdateAsync(folder, ct);
-        }
-        foreach (var folder in foldersToAdd)
-            folder.UpdatedAt = now;
+        // 追加式导入不改动任何既有文件夹（无同名冲突改名逻辑），因此不做全表 UpdatedAt 触模
+        // （过去 ListAllAsync 全量逐条 UpdateAsync 是 N 次 UPDATE 的写放大，且会覆盖用户已有文件夹的更新语义）。
+        // 新导入的文件夹保留文件解析出的 LAST_MODIFIED（导出→导入→再导出不丢"最后更新"）。
 
         var summary = $"已导入 {foldersToAdd.Count} 个文件夹、{linksToAdd.Count} 个书签"
                       + (doc.SkippedCount > 0 ? $"（跳过 {doc.SkippedCount} 个无效条目）" : "");

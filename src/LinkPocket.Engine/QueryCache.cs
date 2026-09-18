@@ -40,6 +40,7 @@ public sealed class QueryCache
     private long _hits;
     private long _misses;
     private long _evictions;
+    private long _staleRemovals;
     private long _invalidations;
 
     public QueryCache(int capacity = DefaultCapacity)
@@ -141,12 +142,15 @@ public sealed class QueryCache
         {
             lock (_lock)
             {
-                return new QueryCacheCounters(_entries.Count, _hits, _misses, _evictions, _invalidations);
+                return new QueryCacheCounters(_entries.Count, _hits, _misses, _evictions, _staleRemovals, _invalidations);
             }
         }
     }
 
-    /// <summary>LRU 淘汰：优先清掉已失效/过期条目，仍超容量则去尾（最久未用）。</summary>
+    /// <summary>
+    /// 失效清理：先清掉已失效/过期条目（世代失配或 TTL 过期，记入 <c>StaleRemovals</c>），
+    /// 仍超容量再去尾（最久未用，记入 <c>Evictions</c>）。口径分开：Evictions 只统计「容量淘汰」。
+    /// </summary>
     private void Evict()
     {
         var now = DateTime.UtcNow.Ticks;
@@ -158,6 +162,7 @@ public sealed class QueryCache
         {
             _entries.Remove(key);
             _lru.Remove(key);
+            _staleRemovals++;
         }
 
         while (_entries.Count >= _capacity && _lru.Last is { } last)
@@ -202,4 +207,4 @@ public sealed class QueryCache
 
 /// <summary>查询缓存计数快照（引擎内部读数；对外呈现走 <see cref="EngineRuntimeStats"/>）。</summary>
 public readonly record struct QueryCacheCounters(
-    long Entries, long Hits, long Misses, long Evictions, long Invalidations);
+    long Entries, long Hits, long Misses, long Evictions, long StaleRemovals, long Invalidations);

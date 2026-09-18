@@ -26,6 +26,7 @@ public sealed class EngineCore : IEngine
     private readonly IEventStore _eventStore;
     private readonly ISessionManager? _sessions;
     private readonly QueryCache _cache;
+    private long _observationFailures;   // 观测面失败计数（审计/事件发布）：已提交成功被观测失败时 +1，不否定业务结果
 
     public EngineCore(
         CommandRegistry registry,
@@ -76,7 +77,7 @@ public sealed class EngineCore : IEngine
             var c = _cache.Counters;
             return new EngineRuntimeStats(
                 c.Entries, c.Hits, c.Misses, c.Evictions, c.Invalidations,
-                _eventStore.Head.Sequence);
+                _eventStore.Head.Sequence, Interlocked.Read(ref _observationFailures));
         }
     }
 
@@ -155,7 +156,16 @@ public sealed class EngineCore : IEngine
             {
                 // 事件发布：持闸期间同步推送（不变量：订阅方不得同步回派命令）
                 // 阶段 12：事件携带 ChangeSet 负载（订阅方可做增量处理）+ 按事件名精确失效查询缓存
-                await PublishChangesAsync(result.Changes, ctx, correlationId, caller);
+                // 观测面纪律：订阅方异常已由 IEventBus 逐方隔离，此处再兜一层——
+                // 任何事件发布失败都绝不允许把「已提交的成功写」报成失败（违规即 LP.SYS.003，见报告 1.1）。
+                try
+                {
+                    await PublishChangesAsync(result.Changes, ctx, correlationId, caller);
+                }
+                catch (Exception pubEx)
+                {
+                    RegisterObservationFailure("事件发布失败", pubEx);
+                }
 
                 // 整库影响面的命令（maintenance.reinit）：表已清空，全部条目直接作废
                 if (handler.Descriptor.Impact == ImpactSummary.Database) _cache.Clear();
@@ -167,10 +177,21 @@ public sealed class EngineCore : IEngine
                 Undo?.Record(handler.Descriptor, argsJson, caller);
             }
 
-            var auditRef = _audit.Write(new AuditEntry(
-                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
-                ArgsJson: TruncateArgs(argsJson)));
+            // 成功审计（观测面）：同样不因审计失败而否定已提交的事实（ARCHITECTURE 不变量 #10「失败要暴露」的
+            // 约束下，只记录并暴露 ObservationFailures，绝不抛异常、也不再补一条矛盾的「失败审计」）。
+            string? auditRef;
+            try
+            {
+                auditRef = _audit.Write(new AuditEntry(
+                    DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
+                    Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
+                    ArgsJson: TruncateArgs(argsJson)));
+            }
+            catch (Exception auditEx)
+            {
+                RegisterObservationFailure("写成功审计失败", auditEx);
+                auditRef = null;
+            }
 
             return new CommandResult<T>(true, (T?)result.Data, result.Changes, auditRef);
         }
@@ -261,22 +282,38 @@ public sealed class EngineCore : IEngine
     internal async Task<CommandResult> ExecuteNestedAsync(
         CommandContextImpl parent, string command, object? args, CancellationToken ct)
     {
+        // 嵌套派发按 Descriptor 形态路由：既允许 mutation（复用父 UoW/写闸），也允许 query
+        // （只读预检复用父 UoW，如 staging.inspect→bookmarks.inspect）——不强制 IsMutation，
+        // 因查询嵌套是既有合法用法（见报告 2.1：守卫会误伤只读预检）。
         var handler = ResolveOrThrow(command, parent.CorrelationId);
         var json = EngineJson.ToJsonElement(args);
 
-        var childCtx = new CommandContextImpl(parent.Uow, isNested: true, parent.DryRun,
-            parent.CorrelationId, parent.Caller, ct == default ? parent.Ct : ct, this);
-        var result = await handler.ExecuteAsync(childCtx, json);
+        // 4.6：当调用方显式传入自己的 ct（非 default）时，用 LinkedTokenSource 联合父 ct——
+        // 父取消同样会传播到子命令；传 default（缺省路径）则直接继承父 ct（零开销等价）。
+        var linked = ct == default ? null : CancellationTokenSource.CreateLinkedTokenSource(parent.Ct, ct);
+        try
+        {
+            var childCtx = new CommandContextImpl(parent.Uow, isNested: true, parent.DryRun,
+                parent.CorrelationId, parent.Caller, linked?.Token ?? parent.Ct, this);
 
-        // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
-        parent.CollectNestedChange(result.Changes);
+            var sw = Stopwatch.StartNew();
+            var result = await handler.ExecuteAsync(childCtx, json);
 
-        _audit.Write(new AuditEntry(
-            DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
-            ElapsedMs: 0, Success: true, ErrorCode: null, result.Changes,
-            DryRun: parent.DryRun, IsNested: true, StackTrace: null));
+            // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
+            parent.CollectNestedChange(result.Changes);
 
-        return result;
+            // 2.3：嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）
+            _audit.Write(new AuditEntry(
+                DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
+                sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
+                DryRun: parent.DryRun, IsNested: true, StackTrace: null));
+
+            return result;
+        }
+        finally
+        {
+            linked?.Dispose();
+        }
     }
 
     /// <summary>
@@ -370,5 +407,15 @@ public sealed class EngineCore : IEngine
         const int max = 4000;
         var raw = argsJson.GetRawText();
         return raw.Length <= max ? raw : raw[..max];
+    }
+
+    /// <summary>
+    /// 观测面失败登记：已提交的成功写遇到观测面（审计/事件发布）异常时调用——
+    /// 不否定业务结果（保持成功返回），仅计数暴露 + 写跟踪日志（ARCHITECTURE 不变量 #10「失败要暴露」）。
+    /// </summary>
+    private void RegisterObservationFailure(string what, Exception ex)
+    {
+        Interlocked.Increment(ref _observationFailures);
+        Trace.TraceWarning("观测面失败（已提交写仍返回成功）：{0}：{1}", what, ex.Message);
     }
 }

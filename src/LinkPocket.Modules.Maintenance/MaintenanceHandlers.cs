@@ -63,6 +63,7 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
                 cache_invalidations = runtime.CacheInvalidations,
                 cache_hit_rate = Math.Round(runtime.CacheHitRate, 4),
                 event_store_head = runtime.EventStoreHead,
+                observation_failures = runtime.ObservationFailures,
             },
         };
         return CommandResult.Ok(JsonSerializer.SerializeToElement(diagnostics));

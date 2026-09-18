@@ -62,6 +62,9 @@ internal static class NetscapeWriter
             .OrderBy(f => f.Name, StringComparer.Ordinal)
             .ToList();
 
+        // 根级文件夹 ID 集合：判定非根可达（悬挂父链/环）时用 HashSet 而非 List.Contains（避免 O(N²)）
+        var rootFolderIds = rootFolders.Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
+
         var html = new StringBuilder();
         var emitted = new HashSet<string>(StringComparer.Ordinal);
 
@@ -86,7 +89,7 @@ internal static class NetscapeWriter
         // 但绝不依赖调用栈深度（5k+ 深层嵌套时递归会 StackOverflow，进程无法 catch，必须迭代）。
         var pending = new Stack<(Folder Folder, int Depth)>();
         foreach (var folder in folders
-                     .Where(f => !rootFolders.Contains(f))   // 未从根可达的（悬挂父链/环）按根级补写
+                     .Where(f => !rootFolderIds.Contains(f.FolderId))   // 未从根可达的（悬挂父链/环）按根级补写
                      .OrderBy(f => f.Name, StringComparer.Ordinal)
                      .Reverse())
             pending.Push((folder, 1));
@@ -139,12 +142,12 @@ internal static class NetscapeWriter
         return Task.FromResult(html.ToString());
     }
 
-    private static string Pad(int depth) => string.Concat(Enumerable.Repeat(Indent, depth));
+    private static string Pad(int depth) => new string(' ', depth * Indent.Length);
 
     /// <summary>单条书签行：Chrome 形态 <c>&lt;DT&gt;&lt;A HREF="…" ADD_DATE="…" [ICON="…"]&gt;标题&lt;/A&gt;</c>。</summary>
     private static string FormatLink(Link link, int depth)
     {
-        var pad = string.Concat(Enumerable.Repeat(Indent, depth));
+        var pad = Pad(depth);
         var url = EscapeHtml(link.Url ?? string.Empty);
         var title = EscapeHtml(string.IsNullOrEmpty(link.Title) ? (link.Url ?? "无标题") : link.Title);
 

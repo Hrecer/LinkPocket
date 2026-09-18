@@ -44,7 +44,9 @@ internal sealed class CommandContextImpl : ICommandContext
     public Task<CommandResult> DispatchNestedAsync(string command, object? args = null, CancellationToken ct = default)
         => _engine.ExecuteNestedAsync(this, command, args, ct);
 
-    /// <summary>累积嵌套子命令的变更集（父提交成功后随父事件一并发布并失效缓存；父审计条目下附带子记录）。</summary>
+    /// <summary>累积嵌套子命令的变更集（父提交成功后随父事件一并发布并失效缓存；父审计条目下附带子记录）。
+    /// <b>设计（报告 4.5）</b>：嵌套步骤的 HumanSummary 不向上合并——人话摘要只由顶层命令产出，
+    /// 嵌套子步骤只贡献「受影响实体 + 事件名」，避免多段摘要拼接带来文案割裂。</summary>
     public void CollectNestedChange(ChangeSet? changes)
     {
         if (changes is null) return;
@@ -91,6 +93,8 @@ public static class EngineJson
             null => EmptyObject,
             // wire 直路由（方法名 = 命令名）缺省传 default(JsonElement)（Undefined）；JSON null 同理。
             // 统一归一为 {} —— 下游 Handler 一律按"对象形态"读参数，加速器与观测面不得成为故障源。
+            // 契约（报告 3.6）：对传入的 JsonElement 直接返回原引用（不 Clone）——调用方须保证其底层
+            // JsonDocument 的生命周期足够长；wire 层已先行 Clone，普通 new{...} 走下方 SerializeToElement。
             JsonElement e => e.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? EmptyObject : e,
             _ => JsonSerializer.SerializeToElement(args, Options),
         };

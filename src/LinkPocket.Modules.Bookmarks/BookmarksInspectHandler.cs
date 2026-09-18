@@ -65,8 +65,14 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
             inspection.SkippedCount = doc.SkippedCount;
             inspection.MaxDepth = doc.MaxDepth;
         }
+        catch (OperationCanceledException)
+        {
+            // 用户取消不得被降级成"读取失败"：取消沿调用链上抛，由引擎管道按 Cancelled 落审计
+            throw;
+        }
         catch (Exception ex)
         {
+            // 失败降级为读取失败（存量容错语义；失败留痕由引擎管道审计承担——模块层无日志器引用）
             inspection.IsValid = false;
             inspection.Error = "读取文件失败：" + ex.Message;
         }

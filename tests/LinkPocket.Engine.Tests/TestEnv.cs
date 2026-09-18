@@ -30,6 +30,8 @@ internal static class TestEnv
             new AddFolderHandler(),
             new DestructiveHandler(),
             new NestedAddHandler(),
+            new NestedDispatchSlowHandler(),
+            new SlowNestedChildHandler(),
             new FailingHandler(),
             new SlowWriteHandler(),
         };
@@ -169,4 +171,30 @@ internal sealed class EmitEventHandler(string eventName) : ICommandHandler
 
     public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
         => Task.FromResult(CommandResult.Ok("ok", ChangeSet.Of(new EntityRef("test", "1"), eventName)));
+}
+
+/// <summary>慢嵌套子命令（测试用）：实测耗时需 >0，供「嵌套审计记录 ElapsedMs（报告 2.3）」断言。</summary>
+internal sealed class SlowNestedChildHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        "test.slow_child", "test", "慢嵌套子命令（睡眠以产生可测耗时）", [], CommandCaps.Mutation);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        await Task.Delay(30, ctx.Ct);
+        return CommandResult.Ok("child-done");
+    }
+}
+
+/// <summary>父命令（测试用）：嵌套派发一个慢子命令，用于断言嵌套审计记录实测耗时。</summary>
+internal sealed class NestedDispatchSlowHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        "test.nested_slow", "test", "嵌套派发慢子命令", [], CommandCaps.Mutation);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        var child = await ctx.DispatchNestedAsync("test.slow_child");
+        return CommandResult.Ok(child.Data);
+    }
 }

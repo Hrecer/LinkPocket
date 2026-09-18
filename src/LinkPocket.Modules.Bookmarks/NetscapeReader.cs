@@ -92,7 +92,15 @@ internal static class NetscapeReader
     /// <summary>在 [start,end) 区间内解析 &lt;DT&gt; 条目；文件夹递归进入其子 &lt;DL&gt;。整体复杂度 O(n)。</summary>
     private static void ParseEntries(string s, int start, int end, int parentIndex, int depth, ParsedDocument doc)
     {
-        if (depth > MaxNestingDepth) return;
+        if (depth > MaxNestingDepth)
+        {
+            if (!doc.DepthLimitWarned)   // 超出嵌套上限不静默丢弃：告警一次，避免对每个深层条目重复刷屏
+            {
+                doc.Warnings.Add($"文件夹嵌套超过最大深度 {MaxNestingDepth}，超出部分已忽略");
+                doc.DepthLimitWarned = true;
+            }
+            return;
+        }
 
         var pos = start;
         while (pos < end)
@@ -536,5 +544,8 @@ internal static class NetscapeReader
         public int LinkCount { get; set; }
         public int SkippedCount { get; set; }
         public int MaxDepth { get; set; }
+
+        /// <summary>超深嵌套告警只投递一次（防止病态深层输入造成大量重复告警）。</summary>
+        internal bool DepthLimitWarned { get; set; }
     }
 }

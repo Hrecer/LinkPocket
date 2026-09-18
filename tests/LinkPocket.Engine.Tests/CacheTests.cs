@@ -117,6 +117,26 @@ public class QueryCacheUnitTests
         Assert.False(cache.TryGet("a", stamp, out _));
     }
 
+    /// <summary>stale 清理（世代失配/TTL 过期）计入 StaleRemovals，而非 Evictions（报告 2.2 口径分开）。</summary>
+    [Fact]
+    public void Stale_Stamp_Removal_Counts_As_StaleRemovals_Not_Evictions()
+    {
+        var cache = new QueryCache(capacity: 3);
+        var stamp0 = cache.Snapshot(DepFolders);
+        cache.Set("a", DepFolders, stamp0, 1, LongTtl);
+        cache.Set("b", DepFolders, stamp0, 2, LongTtl);
+        cache.Set("c", DepFolders, stamp0, 3, LongTtl);
+
+        cache.Invalidate(DepFolders);   // 世代前进 → a/b/c 全部失配（stale）
+
+        var stamp1 = cache.Snapshot(DepFolders);
+        cache.Set("d", DepFolders, stamp1, 4, LongTtl);   // 触发 Evict：先清 stale，再无容量淘汰
+
+        Assert.Equal(1L, cache.Count);                 // 只剩 d；a/b/c 被 stale 清掉
+        Assert.Equal(0L, cache.Counters.Evictions);    // 无需 LRU 淘汰 → 0
+        Assert.Equal(3L, cache.Counters.StaleRemovals); // stale 清理被计数
+    }
+
     [Fact]
     public void BuildKey_Distinguishes_Command_And_Args()
     {

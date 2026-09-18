@@ -1,5 +1,7 @@
 using LinkPocket.Contracts;
 using LinkPocket.Data;
+using LinkPocket.Engine;
+using LinkPocket.Kernel.Commands;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -268,6 +270,106 @@ public class EnginePipelineTests
             Assert.Equal(CallerKind.Ui, Assert.Single(callers).Kind);
         }
         finally { TryDelete(path); }
+    }
+
+    // ===== 观测面失败隔离（报告 1.1 / 1.2）：已提交写绝不因审计/订阅方异常被报成失败 =====
+
+    /// <summary>成功审计写入抛异常时，已提交的写仍返回成功，且失败被计数暴露（观测面铁律 #10）。</summary>
+    [Fact]
+    public async Task AuditFailure_DoesNotNegate_CommittedWrite_AndIsExposed()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var registry = new CommandRegistry();
+            registry.RegisterAll(new ICommandHandler[] { new AddFolderHandler(), new CountFoldersHandler() });
+            var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()),
+                audit: new ThrowingAuditWriter());
+
+            var result = await engine.ExecuteAsync<string>("test.add_folder", new { name = "已提交" });
+
+            Assert.True(result.Ok);                                 // 已提交写仍返回成功，未被审计失败否定
+            Assert.Null(result.AuditRef);
+            Assert.Equal(1L, engine.RuntimeStats.ObservationFailures);   // 审计失败被计数暴露（不静默）
+            Assert.Equal(1, await engine.QueryAsync<int>("test.count_folders"));   // 数据确已落库提交
+        }
+        finally { TryDelete(path); }
+    }
+
+    /// <summary>事件订阅方抛异常：后续订阅方仍收到、调用方不报错（报告 1.2 端到端：单订阅方异常不阻断、不回传）。</summary>
+    [Fact]
+    public async Task EventSubscriber_Exception_IsIsolated_OtherSubscribersStillReceive_WriteSucceeds()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var engine = TestEnv.CreateEngine(factory);
+            var received = new List<string>();
+            using (engine.Events.Subscribe(_ => throw new InvalidOperationException("恶意订阅方")))
+            using (engine.Events.Subscribe(e => received.Add(e.Name)))
+            {
+                var result = await engine.ExecuteAsync<string>("test.add_folder", new { name = "隔离" });
+
+                Assert.True(result.Ok);   // 订阅方异常被隔离 → 已提交写成功返回（修复前会抛 LP.SYS.003）
+                await Task.Yield();
+            }
+
+            Assert.Contains("folders.changed", received);   // 其余订阅方仍收到（未被首个异常阻断）
+        }
+        finally { TryDelete(path); }
+    }
+
+    // ===== 确认令牌：先校验后消费（报告 1.4）=====
+
+    [Fact]
+    public void ConfirmToken_WrongCommand_DoesNotConsume_ValidToken()
+    {
+        var tokens = new ConfirmTokenStore(TimeSpan.FromSeconds(60));
+        var token = tokens.Issue("test.destructive");
+
+        Assert.False(tokens.ValidateAndConsume(token, "other.command"));   // 命令不匹配 → false
+        Assert.True(tokens.ValidateAndConsume(token, "test.destructive"));  // token 未被误吞，修正命令后仍可用
+    }
+
+    [Fact]
+    public void ConfirmToken_Is_SingleUse_And_Expired_ReturnsFalse()
+    {
+        var tokens = new ConfirmTokenStore(TimeSpan.FromSeconds(60));
+        var token = tokens.Issue("test.destructive");
+        Assert.True(tokens.ValidateAndConsume(token, "test.destructive"));
+        Assert.False(tokens.ValidateAndConsume(token, "test.destructive"));   // 一次性消费
+
+        var expired = new ConfirmTokenStore(TimeSpan.Zero);
+        var t2 = expired.Issue("test.destructive");
+        Assert.False(expired.ValidateAndConsume(t2, "test.destructive"));     // 过期 → false（不消费）
+    }
+
+    // ===== 嵌套审计记录实测耗时（报告 2.3）=====
+
+    [Fact]
+    public async Task Nested_Step_Audit_Records_Measured_ElapsedMs()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var audit = new InMemoryAuditWriter();
+            var registry = new CommandRegistry();
+            registry.RegisterAll(new ICommandHandler[] { new NestedDispatchSlowHandler(), new SlowNestedChildHandler() });
+            var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()), audit: audit);
+
+            var result = await engine.ExecuteAsync<string>("test.nested_slow");
+            Assert.True(result.Ok);
+
+            var nested = Assert.Single(audit.Snapshot(), a => a.IsNested);
+            Assert.True(nested.ElapsedMs > 0, $"嵌套审计应记录实测耗时，实际 ElapsedMs={nested.ElapsedMs}");
+        }
+        finally { TryDelete(path); }
+    }
+
+    /// <summary>注入式失败审计写入器：Write 必抛（用于验证审计失败不否定已提交写、且失败被暴露）。</summary>
+    private sealed class ThrowingAuditWriter : IAuditWriter
+    {
+        public string Write(AuditEntry entry) => throw new InvalidOperationException("审计写入失败（注入）");
     }
 
     private static void TryDelete(string path)
