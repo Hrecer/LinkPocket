@@ -27,18 +27,33 @@ public sealed class EfUnitOfWork : IUnitOfWork
 
     public async Task ClearAllDataAsync(CancellationToken ct)
     {
-        // 回收站两表无外键依赖 → 直接批量删除（绕过变更跟踪；干跑时由外层事务回滚）
-        await _db.TrashedLinks.ExecuteDeleteAsync(ct);
-        await _db.TrashedFolders.ExecuteDeleteAsync(ct);
+        // defer_foreign_keys 是事务级 PRAGMA（在提交点校验）：大多数调用（非干跑 reinit / backup replace）
+        // 没有外层事务，裸执行会被自动提交立即重置 → 自引用 RESTRICT 的整表 DELETE 必然失败。
+        // 本方法保证「要么复用外层事务、要么自建事务」再执行清空（干跑时外层事务回滚即整体丢弃）。
+        var tx = _db.Database.CurrentTransaction;
+        var ownsTx = tx is null;
+        if (ownsTx) tx = await _db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            // 回收站两表无外键依赖 → 直接批量删除（绕过变更跟踪）
+            await _db.TrashedLinks.ExecuteDeleteAsync(ct);
+            await _db.TrashedFolders.ExecuteDeleteAsync(ct);
 
-        // links.folder_id → folders(id) ON DELETE SET NULL：先删链接，避免 SET NULL 的额外写放大
-        await _db.Links.ExecuteDeleteAsync(ct);
+            // links.folder_id → folders(id) ON DELETE SET NULL：先删链接，避免 SET NULL 的额外写放大
+            await _db.Links.ExecuteDeleteAsync(ct);
 
-        // folders 是自引用外键（ON DELETE RESTRICT），RESTRICT 按行即时校验 → 整表 DELETE 必然违规；
-        // 事务内开启 defer_foreign_keys 把校验推迟到提交点（那时表已空，必然无违规）。
-        // 本方法在干跑下已被外层显式事务包住（EngineCore 干跑先 BeginAsync），故此处的提交点是外层事务。
-        await _db.Database.ExecuteSqlRawAsync("PRAGMA defer_foreign_keys = ON;", ct);
-        await _db.Folders.ExecuteDeleteAsync(ct);
+            // folders 是自引用外键（ON DELETE RESTRICT），RESTRICT 按行即时校验 → 整表 DELETE 必然违规；
+            // 事务内开启 defer_foreign_keys 把校验推迟到提交点（那时表已空，必然无违规）。
+            await _db.Database.ExecuteSqlRawAsync("PRAGMA defer_foreign_keys = ON;", ct);
+            await _db.Folders.ExecuteDeleteAsync(ct);
+
+            if (ownsTx) await tx!.CommitAsync(ct);
+        }
+        catch
+        {
+            if (ownsTx && tx != null) await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 
     public async Task<int> SchemaVersionAsync(CancellationToken ct)

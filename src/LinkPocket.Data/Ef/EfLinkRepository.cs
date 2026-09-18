@@ -16,8 +16,8 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
 
         // 排序经 ISortEngine 白名单下推；缺省 = 名称升序 + ID 兜底
         q = EfSortEngine.Instance.Apply(q, spec.Sort, EfSortEngine.LinkFields);
-        if (spec.Sort.Count == 0)
-            q = ((IOrderedQueryable<Link>)q).ThenBy(l => l.LinkId);
+        // ID 兜底恒追加：任意非唯一排序字段下 Skip/Take 分页仍稳定（翻页不重不漏）
+        q = ((IOrderedQueryable<Link>)q).ThenBy(l => l.LinkId);
 
         if (spec.Page.Size > 0)
             q = q.Skip(spec.Page.Skip).Take(spec.Page.Size);
@@ -62,10 +62,10 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     {
         if (!string.IsNullOrEmpty(f.Search))
         {
-            var like = $"%{f.Search}%";
-            q = q.Where(l => EF.Functions.Like(l.Title, like)
-                          || EF.Functions.Like(l.Url, like)
-                          || (l.Description != null && EF.Functions.Like(l.Description, like)));
+            var like = $"%{EscapeLike(f.Search)}%";
+            q = q.Where(l => EF.Functions.Like(l.Title, like, LikeEscape)
+                          || EF.Functions.Like(l.Url, like, LikeEscape)
+                          || (l.Description != null && EF.Functions.Like(l.Description, like, LikeEscape)));
         }
         if (f.SearchScope is { } scope) q = ApplySearchScope(q, scope);
         if (f.FolderId is { } folder) q = q.Where(l => l.ListId == folder.Value);
@@ -77,23 +77,23 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (f.Unfiled is { } unfiled) q = unfiled ? q.Where(l => l.ListId == null) : q.Where(l => l.ListId != null);
         if (!string.IsNullOrEmpty(f.TitleContains))
         {
-            var like = $"%{f.TitleContains}%";
-            q = q.Where(l => l.Title != null && EF.Functions.Like(l.Title, like));
+            var like = $"%{EscapeLike(f.TitleContains)}%";
+            q = q.Where(l => l.Title != null && EF.Functions.Like(l.Title, like, LikeEscape));
         }
         if (!string.IsNullOrEmpty(f.UrlContains))
         {
-            var like = $"%{f.UrlContains}%";
-            q = q.Where(l => EF.Functions.Like(l.Url, like));
+            var like = $"%{EscapeLike(f.UrlContains)}%";
+            q = q.Where(l => EF.Functions.Like(l.Url, like, LikeEscape));
         }
         if (!string.IsNullOrEmpty(f.UrlStarts))
         {
-            var like = $"{f.UrlStarts}%";
-            q = q.Where(l => EF.Functions.Like(l.Url, like));
+            var like = $"{EscapeLike(f.UrlStarts)}%";
+            q = q.Where(l => EF.Functions.Like(l.Url, like, LikeEscape));
         }
         if (!string.IsNullOrEmpty(f.DescriptionContains))
         {
-            var like = $"%{f.DescriptionContains}%";
-            q = q.Where(l => l.Description != null && EF.Functions.Like(l.Description, like));
+            var like = $"%{EscapeLike(f.DescriptionContains)}%";
+            q = q.Where(l => l.Description != null && EF.Functions.Like(l.Description, like, LikeEscape));
         }
         if (f.UpdatedFrom is { } uFrom) q = q.Where(l => l.UpdatedAt >= uFrom);
         if (f.UpdatedTo is { } uTo) q = q.Where(l => l.UpdatedAt <= uTo);

@@ -25,6 +25,11 @@ internal sealed class FolderSortHandler : ICommandHandler
         var itemIds = CommandArgs.StringArray(args, "item_ids");
         var ct = ctx.Ct;
 
+        if (itemIds.Count != itemIds.Distinct().Count())
+            throw new EngineException(EngineErrors.Of(
+                EngineErrors.TypeMismatch, "item_ids 包含重复文件夹 ID：排序目标必须是一组唯一文件夹",
+                correlationId: ctx.CorrelationId));
+
         var siblings = await ctx.Uow.Folders.ChildrenOfAsync(parentId == null ? null : new FolderId(parentId), ct);
         var validIds = siblings.Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
         foreach (var itemId in itemIds)

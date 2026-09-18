@@ -447,6 +447,39 @@ public class OrchestrationTests
         finally { Cleanup(path); }
     }
 
+    [Fact]
+    public async Task Idempotency_Sql_Store_Restores_Typed_Result_Across_Instances()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var key = "typed-idem-1";
+
+            // 实例 1：写库（活对象命中路径）
+            var registry1 = new CommandRegistry();
+            registry1.RegisterAll(new ICommandHandler[] { new CountFoldersHandler(), new AddFolderHandler() });
+            var engine1 = new EngineCore(registry1, () => new EfUnitOfWork(factory.CreateDbContext()),
+                idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+            var first = await engine1.ExecuteAsync<string>("test.add_folder", new { name = "甲" },
+                new CallOptions(IdempotencyKey: key));
+            Assert.False(string.IsNullOrEmpty(first.Data));
+
+            // 实例 2（全新 store，内存缓存为空）：幂等命中必须走 SQL 还原（Data = JsonElement）。
+            // 旧代码 (T?)JsonElement 强转会抛 InvalidCastException，跨重启幂等必炸。
+            var registry2 = new CommandRegistry();
+            registry2.RegisterAll(new ICommandHandler[] { new CountFoldersHandler(), new AddFolderHandler() });
+            var engine2 = new EngineCore(registry2, () => new EfUnitOfWork(factory.CreateDbContext()),
+                idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+            var second = await engine2.ExecuteAsync<string>("test.add_folder", new { name = "甲" },
+                new CallOptions(IdempotencyKey: key));
+            Assert.Equal(first.Data, second.Data);
+
+            // 幂等命中 → 不重复执行（库里只有一个「甲」）
+            Assert.Equal(1, await engine2.QueryAsync<int>("test.count_folders"));
+        }
+        finally { Cleanup(path); }
+    }
+
     // ===== 辅助 =====
 
     private static readonly JsonElement EmptyObject = JsonSerializer.Deserialize<JsonElement>("{}");

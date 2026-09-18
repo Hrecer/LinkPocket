@@ -15,8 +15,8 @@ public static class LpIcons
     public static void RegisterAll()
     {
         if (_registered) return;
+        M3Icon.Register(Glyphs);   // 先注册后置位：注册失败可重试，不把「已注册」状态焊死
         _registered = true;
-        M3Icon.Register(Glyphs);
     }
 
     public static readonly Dictionary<string, string> Glyphs = new(StringComparer.OrdinalIgnoreCase)

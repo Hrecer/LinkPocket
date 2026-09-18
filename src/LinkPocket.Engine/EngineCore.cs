@@ -353,7 +353,14 @@ public sealed class EngineCore : IEngine
     }
 
     private static CommandResult<T> ToTyped<T>(CommandResult result)
-        => new(true, (T?)result.Data, result.Changes, result.AuditRef);   // 非泛型 CommandResult 只承载成功结果（失败走异常）
+    {
+        // 幂等落表（SqlIdempotencyStore 跨实例还原）的 Data 是 JsonElement：按调用方类型反序列化，
+        // 否则 (T?)JsonElement 强转会抛 InvalidCastException（同进程活对象命中路径不走这里）。
+        var data = result.Data is JsonElement je && typeof(T) != typeof(JsonElement) && typeof(T) != typeof(object)
+            ? je.Deserialize<T>(EngineJson.Options)
+            : (T?)result.Data;
+        return new(true, data, result.Changes, result.AuditRef);   // 非泛型 CommandResult 只承载成功结果（失败走异常）
+    }
 
     /// <summary>入参快照截断（审计 ArgsJson 列；空对象不记，超长截 4000 字符）。</summary>
     private static string? TruncateArgs(JsonElement argsJson)

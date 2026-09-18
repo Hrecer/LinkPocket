@@ -117,7 +117,12 @@ public class WavyProgressBar : FrameworkElement
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        if (!IsVisible) return;
+        if (!IsVisible)
+        {
+            // 隐藏期间持续刷新基准时间：恢复可见时相位不出现整段隐藏时长的跳变
+            if (e is RenderingEventArgs hidden) _lastRenderTime = hidden.RenderingTime;
+            return;
+        }
         if (e is RenderingEventArgs re)
         {
             if (_lastRenderTime.HasValue && re.RenderingTime > _lastRenderTime.Value)

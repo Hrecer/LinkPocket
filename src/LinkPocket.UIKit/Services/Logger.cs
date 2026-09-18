@@ -19,7 +19,7 @@ namespace LinkPocket.Services
                 var maxLogs = 10;
                 foreach (var file in new DirectoryInfo(LogDir).GetFiles("*.log").OrderByDescending(f => f.Name))
                 {
-                    if (--maxLogs <= 0)
+                    if (--maxLogs < 0)   // 保留 maxLogs 个最新日志（off-by-one：<=0 会只留 9 个）
                     {
                         try { file.Delete(); } catch { }
                     }

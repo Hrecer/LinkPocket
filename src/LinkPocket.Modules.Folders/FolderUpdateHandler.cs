@@ -35,7 +35,14 @@ internal sealed class FolderUpdateHandler : ICommandHandler
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
 
-        if (!string.IsNullOrEmpty(name)) folder.Name = name.Trim();
+        if (name != null)
+        {
+            var trimmedName = name.Trim();
+            if (trimmedName.Length == 0)
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.RequiredParam, "名称不能为空", correlationId: ctx.CorrelationId));
+            folder.Name = trimmedName;
+        }
         if (description != null) folder.Description = description;
         folder.UpdatedAt = DateTime.UtcNow;
 

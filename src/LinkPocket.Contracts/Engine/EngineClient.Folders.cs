@@ -13,9 +13,11 @@ public sealed partial class EngineClient
         => QueryAsync<FolderContentsDto>("folders.contents",
             new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
 
-    /// <summary>文件夹树（含根节点，侧栏树数据源）。</summary>
-    public Task<List<FolderDto>> FolderTreeAsync(CallOptions? o = null, CancellationToken ct = default)
-        => QueryAsync<List<FolderDto>>("folders.tree", null, o, ct);
+    /// <summary>文件夹树（含根节点，侧栏树数据源；sort_by 可传 sort_order 读取手工排序）。</summary>
+    public Task<List<FolderDto>> FolderTreeAsync(string sortBy = "name", string sortOrder = "asc",
+        CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<List<FolderDto>>("folders.tree",
+            new { sort_by = sortBy, sort_order = sortOrder }, o, ct);
 
     /// <summary>按 ID 取文件夹（根不是实体、无 ID：缺省/null 即向根寻址 → LP.STATE.002）。</summary>
     public Task<FolderDto> FolderGetAsync(string? folderId = null, CallOptions? o = null, CancellationToken ct = default)
@@ -52,7 +54,7 @@ public sealed partial class EngineClient
         => ExecuteAsync<FolderCopyResult>("folders.copy", new { folder_id = folderId, target_parent_id = targetParentId }, o, ct);
 
     /// <summary>手工排序（item_ids 顺序 = sort_order 顺序）。</summary>
-    public Task<CommandResult<FolderSortResult>> FolderSortAsync(string? parentId, IReadOnlyList<string> itemIds,
+    public Task<CommandResult<FolderSortResult>> FolderSortAsync(IReadOnlyList<string> itemIds, string? parentId = null,
         CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<FolderSortResult>("folders.sort", new { parent_id = parentId, item_ids = itemIds }, o, ct);
 

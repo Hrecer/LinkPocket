@@ -8,7 +8,8 @@ namespace LinkPocket.Modules.Backup;
 
 /// <summary>
 /// backup.import（Mutation · Destructive 两阶段确认 · FileIo）：从 .lpbackup 导入。
-/// replace = false：追加导入；replace = true：先清空全部数据（含回收站）再导入（= 完全重置）。
+/// replace = false：追加导入；replace = true：先清空全部数据（含回收站）再导入（= 完全重置，走
+/// <see cref="IUnitOfWork.ClearAllDataAsync"/> 批量清空，自引用 FK 由 defer_foreign_keys 事务语义兜底）。
 /// 导入整体为引擎单事务（拓扑序父先于子），任何一步失败全部回滚；导入后全部文件夹视为变动。
 /// </summary>
 internal sealed class BackupImportHandler : ICommandHandler
@@ -36,46 +37,55 @@ internal sealed class BackupImportHandler : ICommandHandler
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath, string.Join("; ", file.Errors), correlationId: ctx.CorrelationId));
 
-        // —— replace：清空全部数据（含回收站）——
+        // —— replace：清空全部数据（含回收站）。批量清空规避「逐条 Remove + 自引用 RESTRICT」的顺序炸点 ——
         if (replace)
-        {
-            foreach (var link in await uow.Trash.ListStandaloneLinksAsync(ct))
-                await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
-            foreach (var unit in await uow.Trash.ListFoldersAsync(ct))
-            {
-                foreach (var link in await uow.Trash.ListLinksByUnitAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct))
-                    await uow.Trash.RemoveLinkAsync(new LinkId(link.LinkId), ct);
-                await uow.Trash.RemoveFolderAsync(new Kernel.TrashFolderId(unit.TrashFolderId), ct);
-            }
+            await uow.ClearAllDataAsync(ct);
 
-            foreach (var link in await uow.Links.ListAsync(new LinkQuerySpec(), ct))
-                await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
-            foreach (var folder in await uow.Folders.ListAllAsync(ct))
-                await uow.Folders.RemoveAsync(new FolderId(folder.FolderId), ct);
-        }
-
-        // —— 深度计算（带循环防护）：父先于子 ——
+        // —— 深度计算（带记忆化 + 循环防护）：父先于子 ——
         var folders = file.Data.Folders ?? [];
         var links = file.Data.Links ?? [];
-        var folderByKey = folders.ToDictionary(f => f.Key);
-        var depthMemo = new Dictionary<string, int>();
+
+        // 备份文件是外部输入：重复/空 key 必须报明确的输入错误，不能冒成内部异常
+        var folderByKey = new Dictionary<string, BackupIO.BackupFolderData>(StringComparer.Ordinal);
+        foreach (var f in folders)
+        {
+            if (!folderByKey.TryAdd(f.Key, f))
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.InvalidPath, $"备份文件包含重复的文件夹 key「{f.Key}」，无法导入",
+                    correlationId: ctx.CorrelationId));
+        }
+
+        var depthMemo = new Dictionary<string, int>(StringComparer.Ordinal);
 
         int DepthOf(string? key)
         {
             if (key == null) return -1;
-            var depth = 0;
+            if (depthMemo.TryGetValue(key, out var known)) return known;
+
+            var chain = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             var cur = key;
-            while (cur != null)
+            while (cur != null && !depthMemo.ContainsKey(cur) && seen.Add(cur))
             {
-                if (depthMemo.TryGetValue(cur, out var memo)) { depth += memo; break; }
-                if (depth > folders.Count + 1)
-                    throw new EngineException(EngineErrors.Of(
-                        EngineErrors.Internal, "备份文件的文件夹层级存在循环引用，无法导入", correlationId: ctx.CorrelationId));
-                if (!folderByKey.TryGetValue(cur, out var node)) break;
+                chain.Add(cur);
+                if (!folderByKey.TryGetValue(cur, out var node)) { cur = null; break; }
                 cur = node.Parent;
-                depth++;
             }
-            return depth;
+
+            // 退出原因：null（到顶/未知父）/ 记忆命中 / seen 重复（环）
+            if (cur != null && !depthMemo.ContainsKey(cur))
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.Internal, "备份文件的文件夹层级存在循环引用，无法导入", correlationId: ctx.CorrelationId));
+
+            var baseDepth = cur == null
+                ? chain.Count
+                : depthMemo[cur] + chain.Count;
+
+            // 记忆化回填：链上各节点深度 = 基准递减（未知/到顶链末 = 1，越靠根越大，与拓扑序一致的相对量级）
+            for (var i = 0; i < chain.Count; i++)
+                depthMemo[chain[i]] = baseDepth - i;
+
+            return baseDepth;
         }
 
         var sortedFolders = folders

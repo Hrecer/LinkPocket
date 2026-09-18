@@ -17,7 +17,7 @@ public class TrashedLink
     [Required]
     [MaxLength(20)]
     [Column("id")]
-    public string LinkId { get; set; } = Guid.NewGuid().ToString();
+    public string LinkId { get; set; } = Guid.NewGuid().ToString("N")[..16];   // 与 Link 实体 16 位 ID 口径一致；默认值仅占位，运行时恒由原链接 ID 指定
 
     [Required]
     [MaxLength(2048)]

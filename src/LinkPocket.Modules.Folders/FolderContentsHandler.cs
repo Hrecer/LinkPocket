@@ -68,10 +68,12 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
             {
                 Filter = new LinkFilter { Unfiled = true },
                 Sort = sort,
-                Page = new PageSpec(1, effectivePerPage),
+                Page = new PageSpec(page, effectivePerPage),
             }, ct)).Select(l => l.ToDto()).ToList();
-            dto.CurrentPage = 1;
-            dto.LastPage = 1;
+            dto.CurrentPage = page;
+            dto.LastPage = perPage > 0
+                ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
+                : 1;
             dto.Breadcrumb = [FolderIds.RootDisplayName];
         }
         else

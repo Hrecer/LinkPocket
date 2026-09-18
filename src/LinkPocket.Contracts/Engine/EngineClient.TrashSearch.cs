@@ -19,10 +19,10 @@ public sealed partial class EngineClient
         CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<TrashEntryDto>>("trash.unit_contents", new { id }, o, ct);
 
-    /// <summary>还原（固定落根，保留原 ID）。</summary>
-    public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id,
+    /// <summary>还原（保留原 ID；toOrigin = true 还原到删除前所在目录，原目录已不存在时落根）。</summary>
+    public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id, bool toOrigin = false,
         CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<TrashRestoreResult>("trash.restore", new { id }, o, ct);
+        => ExecuteAsync<TrashRestoreResult>("trash.restore", new { id, to_origin = toOrigin }, o, ct);
 
     /// <summary>批量还原（固定落根）。</summary>
     public Task<CommandResult<TrashRestoreBatchResult>> TrashRestoreBatchAsync(IReadOnlyList<string> ids,

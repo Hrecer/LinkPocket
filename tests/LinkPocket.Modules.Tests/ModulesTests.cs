@@ -257,6 +257,62 @@ public class FoldersModuleTests
         var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
         Assert.Empty(contents.SubFolders);
     }
+
+    [Fact]
+    public async Task Delete_Move_To_List_Into_Own_Subtree_Rejected()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        var b = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X", list_id = b.Data!.FolderId });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("folders.delete",
+                new { folder_id = a.Data!.FolderId, cascade = "move_to_list", target_list_id = b.Data!.FolderId }));
+        Assert.Equal(EngineErrors.CycleDetected, ex.Error.Code);
+
+        // 目标在子树内被拒绝 → 链接未丢
+        var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
+        Assert.Equal(1, stats.Total);
+    }
+
+    [Fact]
+    public async Task Sort_Duplicate_Ids_Rejected()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B" });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("folders.sort",
+                new { item_ids = new[] { a.Data!.FolderId, a.Data!.FolderId } }));
+        Assert.Equal(EngineErrors.TypeMismatch, ex.Error.Code);
+    }
+
+    [Fact]
+    public async Task Update_Whitespace_Name_Rejected()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("folders.update", new { folder_id = a.Data!.FolderId, name = "   " }));
+        Assert.Equal(EngineErrors.RequiredParam, ex.Error.Code);
+    }
+
+    [Fact]
+    public async Task Contents_Root_Honors_Page()
+    {
+        var (engine, _, _) = TestHost.Create();
+        for (var i = 0; i < 3; i++)
+            await engine.ExecuteAsync<LinkDto>("links.create", new { url = $"https://r.example/{i}", title = $"R{i}" });
+
+        var page2 = await engine.QueryAsync<FolderContentsDto>("folders.contents", new { page = 2, per_page = 2 });
+        Assert.Equal(2, page2.CurrentPage);
+        Assert.Equal(2, page2.LastPage);
+        Assert.Single(page2.Links);
+        Assert.Equal("R2", page2.Links[0].Title);
+    }
 }
 
 public class LinksModuleTests
@@ -928,6 +984,88 @@ public class DedupModuleTests
     }
 }
 
+public class BackupRobustnessTests
+{
+    [Fact]
+    public async Task Import_Replace_Clears_Nested_Folders()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X", list_id = a.Data!.FolderId });
+
+        var backupPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        await engine.ExecuteAsync<object>("backup.export", new { output_path = backupPath });
+
+        // 目标库已有嵌套 C→D：replace 必须先清空（自引用 RESTRICT 由 ClearAllDataAsync 事务兜底）
+        var (engine2, _, _) = TestHost.Create();
+        var c = await engine2.ExecuteAsync<FolderDto>("folders.create", new { name = "C" });
+        await engine2.ExecuteAsync<FolderDto>("folders.create", new { name = "D", parent_id = c.Data!.FolderId });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine2.ExecuteAsync<object>("backup.import", new { file_path = backupPath, replace = true }));
+        Assert.Equal(EngineErrors.ConfirmRequired, ex.Error.Code);
+        var token = ex.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        await engine2.ExecuteAsync<object>("backup.import",
+            new { file_path = backupPath, replace = true }, new CallOptions(ConfirmToken: token));
+
+        var tree = await engine2.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Equal(2, tree.Count);
+        Assert.All(tree, f => Assert.NotEqual("C", f.Name));   // 旧嵌套数据已清空
+        Assert.Contains(tree, f => f.Name == "A");
+    }
+
+    [Fact]
+    public async Task Import_Malformed_Data_Json_Reports_InvalidPath()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var badPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        BuildBackup(badPath, System.Text.Encoding.UTF8.GetBytes("this is not json"));
+
+        // SHA 匹配但 data.json 非合法 JSON → 明确 InvalidPath，而非内部错误（Destructive 先取确认令牌）
+        var gate = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = badPath }));
+        Assert.Equal(EngineErrors.ConfirmRequired, gate.Error.Code);
+        var token = gate.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import",
+                new { file_path = badPath }, new CallOptions(ConfirmToken: token)));
+        Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
+        Assert.Contains("data.json", ex.Error.Message);
+    }
+
+    [Fact]
+    public async Task Import_Duplicate_Folder_Keys_Rejected()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var badPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var data = """{"folders":[{"key":"f1","name":"甲","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"},{"key":"f1","name":"乙","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"links":[]}""";
+        BuildBackup(badPath, System.Text.Encoding.UTF8.GetBytes(data));
+
+        var gate = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = badPath }));
+        var token = gate.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import",
+                new { file_path = badPath }, new CallOptions(ConfirmToken: token)));
+        Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
+        Assert.Contains("重复的文件夹 key", ex.Error.Message);
+    }
+
+    private static void BuildBackup(string path, byte[] dataBytes)
+    {
+        using var archive = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        var dataEntry = archive.CreateEntry("data.json");
+        using (var s = dataEntry.Open()) s.Write(dataBytes, 0, dataBytes.Length);
+
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataBytes)).ToLowerInvariant();
+        var manifest = $"{{\"version\":\"2.0\",\"data_sha256\":\"{sha}\",\"statistics\":{{\"total_folders\":0,\"total_links\":0}}}}";
+        var manifestEntry = archive.CreateEntry("manifest.json");
+        var manifestBytes = System.Text.Encoding.UTF8.GetBytes(manifest);
+        using (var s = manifestEntry.Open()) s.Write(manifestBytes, 0, manifestBytes.Length);
+    }
+}
+
 public class MaintenanceModuleTests
 {
     [Fact]
@@ -968,6 +1106,21 @@ public class MaintenanceModuleTests
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("folders").GetInt32());
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("links").GetInt32());
         Assert.Equal(0, diag.GetProperty("counts").GetProperty("trash_links").GetInt32());
+    }
+
+    [Fact]
+    public async Task Reinit_Clears_Nested_Folder_Tree()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.Data!.FolderId });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<object>("maintenance.reinit", null));
+        var token = ex.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        await engine.ExecuteAsync<object>("maintenance.reinit", null, new CallOptions(ConfirmToken: token));
+
+        var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
+        Assert.Equal(0, diag.GetProperty("counts").GetProperty("folders").GetInt32());
     }
 
     /// <summary>

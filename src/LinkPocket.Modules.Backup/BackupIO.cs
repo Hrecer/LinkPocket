@@ -258,7 +258,15 @@ internal static class BackupIO
             return file;
         }
 
-        file.Data = JsonSerializer.Deserialize<BackupData>(file.DataBytes, JsonOptions) ?? new BackupData();
+        try
+        {
+            // SHA-256 通过但 data.json 不是合法 JSON（手工构造/罕见损坏）也必须降级为明确错误，而非内部错误
+            file.Data = JsonSerializer.Deserialize<BackupData>(file.DataBytes, JsonOptions) ?? new BackupData();
+        }
+        catch (Exception ex)
+        {
+            file.Errors.Add("备份数据解析失败（data.json 不是合法 JSON）：" + ex.Message);
+        }
         return file;
     }
 

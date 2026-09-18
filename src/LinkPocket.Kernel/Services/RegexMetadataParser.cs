@@ -77,13 +77,16 @@ public sealed class RegexMetadataParser : IMetadataParser
         if (faviconMatch.Success)
         {
             var faviconPath = faviconMatch.Groups[1].Value;
+            // 相对/根路径按页面 URL 解析（HTML 规范）：子目录页面的相对 favicon 落在该目录下，而非站点根
             var resolvedUrl = faviconPath switch
             {
                 _ when faviconPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                     || faviconPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase) => faviconPath,
                 _ when faviconPath.StartsWith("//") => $"https:{faviconPath}",
-                _ when faviconPath.StartsWith("/") => $"{baseUrl}{faviconPath}",
-                _ => $"{baseUrl}/{faviconPath}",
+                _ when faviconPath.StartsWith("/") => new Uri(pageUri, faviconPath).ToString(),
+                _ => string.IsNullOrWhiteSpace(faviconPath)
+                    ? $"{baseUrl}/favicon.ico"
+                    : new Uri(pageUri, faviconPath).ToString(),
             };
 
             var lowerUrl = resolvedUrl.ToLower();

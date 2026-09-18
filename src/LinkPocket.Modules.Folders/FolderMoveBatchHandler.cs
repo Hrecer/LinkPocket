@@ -8,7 +8,7 @@ namespace LinkPocket.Modules.Folders;
 
 /// <summary>
 /// folders.move_batch（★ 引擎能力，不接 UI）：原子移动多个文件夹。
-/// 全部校验（存在性 + 成环）先于任何变更；目标目录下同名经 <see cref="INamingPolicy"/> 自动编号。
+/// 全部校验（目标存在性 + 成环 + 批次内祖先-后代冲突）先于任何变更；目标目录下同名经 <see cref="INamingPolicy"/> 自动编号。
 /// </summary>
 internal sealed class FolderMoveBatchHandler : ICommandHandler
 {
@@ -34,8 +34,31 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         var uow = ctx.Uow;
 
         // —— 校验阶段（零副作用承诺：全部通过才开始变更）——
+        // 目标存在性先行（与 folders.create/move 同序）：避免后续逐条成环检查全部白跑
+        if (target != null)
+            _ = await uow.Folders.FindAsync(new FolderId(target), ct)
+                ?? throw new EngineException(EngineErrors.Of(
+                    EngineErrors.EntityNotFound, $"目标文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
+
         var allFolders = await uow.Folders.ListAllAsync(ct);
         var movedFolders = new List<Folder>();
+
+        // 批次内祖先-后代同行拒绝：移动后层级无法确定（后代会被从祖先子树抽走）→ 明确报错，不改语义猜测
+        var batchSet = folderIds.ToHashSet(StringComparer.Ordinal);
+        foreach (var fid in folderIds)
+        {
+            var cur = allFolders.FirstOrDefault(f => f.FolderId == fid)?.ParentId;
+            while (cur != null)
+            {
+                if (batchSet.Contains(cur))
+                    throw new EngineException(EngineErrors.Of(
+                        EngineErrors.CycleDetected,
+                        $"folder_ids 同时包含「{fid}」及其祖先「{cur}」：批次内存在父子关系，无法原子移动",
+                        correlationId: ctx.CorrelationId));
+                cur = allFolders.FirstOrDefault(f => f.FolderId == cur)?.ParentId;
+            }
+        }
+
         foreach (var fid in folderIds)
         {
             var folder = allFolders.FirstOrDefault(f => f.FolderId == fid)
@@ -53,11 +76,6 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
 
             movedFolders.Add(folder);
         }
-
-        if (target != null)
-            _ = await uow.Folders.FindAsync(new FolderId(target), ct)
-                ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"目标文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
 
         // —— 同名自动编号：目标层已占用名 − 本次移出同名 → 逐个解析 ——
         var previousParentIds = movedFolders.Select(f => f.ParentId).ToHashSet(StringComparer.Ordinal);

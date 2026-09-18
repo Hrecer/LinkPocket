@@ -22,9 +22,9 @@ public sealed partial class EngineClient
         => ExecuteAsync<JsonElement>("bookmarks.export", new { file_path = filePath }, o, ct);
 
     /// <summary>导出 .lpbackup 备份（回收站不进备份）。</summary>
-    public Task<CommandResult<JsonElement>> BackupExportAsync(string outputPath, bool includeTrash = false,
+    public Task<CommandResult<JsonElement>> BackupExportAsync(string outputPath,
         CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<JsonElement>("backup.export", new { output_path = outputPath, include_trash = includeTrash }, o, ct);
+        => ExecuteAsync<JsonElement>("backup.export", new { output_path = outputPath }, o, ct);
 
     /// <summary>导入 .lpbackup（replace = 清空后导入，Destructive 两阶段确认）。返回 JsonElement（统计）。</summary>
     public Task<CommandResult<JsonElement>> BackupImportAsync(string filePath, bool replace = false,

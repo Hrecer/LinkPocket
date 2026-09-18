@@ -67,6 +67,10 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                 var target = await uow.Folders.FindAsync(new FolderId(targetListId), ct)
                     ?? throw new EngineException(EngineErrors.Of(
                         EngineErrors.EntityNotFound, $"目标文件夹 {targetListId} 不存在", correlationId: ctx.CorrelationId));
+                if (descendantSet.Contains(targetListId))
+                    throw new EngineException(EngineErrors.Of(
+                        EngineErrors.CycleDetected,
+                        $"目标文件夹「{target.Name}」位于待删除子树内，链接转移后会被一并删除", correlationId: ctx.CorrelationId));
 
                 foreach (var link in affectedLinks)
                 {
