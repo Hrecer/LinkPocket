@@ -379,13 +379,16 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>点击树节点：文件夹 → 进入目录；根级链接叶子 → 主区定位选中该行（进根 + 选中）。</summary>
+    /// <summary>点击树节点：文件夹 → 进入目录；根级链接叶子 → 主区定位选中该行（进根 + 选中）。
+    /// 链接叶子点击后记录目标，供 CurrentFolderId 变化时恢复树选中（否则刷新重建后高亮丢失 =「点一下就没」）。</summary>
+    private string? _pendingTreeLinkId;
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (_suppressTreeSelection) return;
         if (ViewModel == null || node is not FolderNode fn) return;
         if (fn.IsLink)
         {
+            _pendingTreeLinkId = fn.Id;
             _ = ViewModel.NavigateAndSelectAsync(null, fn.Id);
             return;
         }
@@ -413,7 +416,16 @@ public partial class BrowserView : UserControl
         _suppressTreeSelection = true;
         try
         {
-            FolderTreePanelCtl.SelectNodeById(targetId);
+            // 根级链接叶子点击：进根后 CurrentFolderId=null，树选中恢复到该链接叶子（避免「点一下高亮就没了」）
+            if (targetId == null && _pendingTreeLinkId != null)
+            {
+                FolderTreePanelCtl.SelectNodeById(_pendingTreeLinkId);
+                _pendingTreeLinkId = null;
+            }
+            else
+            {
+                FolderTreePanelCtl.SelectNodeById(targetId);
+            }
         }
         finally
         {

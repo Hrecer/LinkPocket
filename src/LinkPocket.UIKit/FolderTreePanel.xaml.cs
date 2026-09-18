@@ -71,14 +71,15 @@ namespace LinkPocket.Views
         }
 
         /// <summary>
-        /// 按 folderId 选中节点并展开沿途祖先（浏览页 CurrentFolderId 同步）。
-        /// 程序化选中会触发 NodeSelected，宿主自行用守卫抑制。
-        /// 注意：树容器是惰性生成的——未展开的子级无法程序化选中（与旧版行为一致）。
-        /// </summary>
-        public bool SelectNodeById(string? folderId)
-        {
-            return SelectAmong(FolderTreeControl.Items, folderId, FolderTreeControl.ItemContainerGenerator);
-        }
+    /// 按 folderId 选中节点并展开沿途祖先（浏览页 CurrentFolderId 同步）；folderId 也可为根级链接叶子的
+    /// 链接 ID（链接叶子 FolderId=null、Id=linkId，见 MatchesId）——点击链接叶子定位后树保持高亮该叶子。
+    /// 程序化选中会触发 NodeSelected，宿主自行用守卫抑制。
+    /// 注意：树容器是惰性生成的——未展开的子级无法程序化选中（与旧版行为一致）。
+    /// </summary>
+    public bool SelectNodeById(string? folderId)
+    {
+        return SelectAmong(FolderTreeControl.Items, folderId, FolderTreeControl.ItemContainerGenerator);
+    }
 
         private bool SelectAmong(ItemCollection items, string? folderId, ItemContainerGenerator generator)
         {
@@ -103,17 +104,26 @@ namespace LinkPocket.Views
             return false;
         }
 
-        /// <summary>ID 属性反射缓存：只按类型缓存一次 PropertyInfo（避免每次遍历都 GetProperty），
-    /// 且不引入 UIKit → UI.Browser/UI.Trash 的引用（原 MatchesId 用反射正是为此——审阅建议的
-    /// switch 模式匹配会强引用这两个类型，破坏分层，故采用缓存反射实现同等优化）。</summary>
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> IdPropertyCache = new();
+        /// <summary>ID 属性反射缓存：只按类型缓存一次（避免每次遍历都反射），
+    /// 且不引入 UIKit → UI.Browser/UI.Trash 的引用（审阅建议的 switch 模式匹配会强引用这两个类型，
+    /// 破坏分层，故采用缓存反射实现同等优化）。三元组 = (FolderId, TrashFolderId, Id)。
+    /// 匹配优先级：FolderId（文件夹）→ TrashFolderId（回收站单元）→ Id（根级链接叶子 FolderId=null）。</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type,
+        (System.Reflection.PropertyInfo? Folder, System.Reflection.PropertyInfo? Trash, System.Reflection.PropertyInfo? Link)> IdPropsCache = new();
 
-    private static bool MatchesId(object item, string? folderId)
-        {
-            if (folderId == null) return false;
-            var prop = IdPropertyCache.GetOrAdd(item.GetType(),
-                t => t.GetProperty("FolderId") ?? t.GetProperty("TrashFolderId"));
-            return string.Equals(prop?.GetValue(item) as string, folderId, StringComparison.Ordinal);
-        }
+    private static bool MatchesId(object item, string? id)
+    {
+        if (id == null) return false;
+        var props = IdPropsCache.GetOrAdd(item.GetType(), t => (
+            t.GetProperty("FolderId"),
+            t.GetProperty("TrashFolderId"),
+            t.GetProperty("Id")));
+        var folder = props.Folder?.GetValue(item) as string;
+        if (folder != null) return string.Equals(folder, id, StringComparison.Ordinal);
+        var trash = props.Trash?.GetValue(item) as string;
+        if (trash != null) return string.Equals(trash, id, StringComparison.Ordinal);
+        var link = props.Link?.GetValue(item) as string;   // 链接叶子：FolderId=null、Id=linkId
+        return string.Equals(link, id, StringComparison.Ordinal);
+    }
     }
 }

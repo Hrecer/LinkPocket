@@ -180,12 +180,12 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_根级链接与文件夹按名称升序混排()
+    public async Task 目录树_根级链接与文件夹同主区口径_文件夹在前链接在后各自名称升序()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            // 纯 ASCII 名称：CurrentCulture 升序结果确定（避免中文拼音比较歧义），验证「唯一排序口径 = 名称升序、链接与文件夹混排」
+            // 纯 ASCII 名称：CurrentCulture 升序结果确定；验证树与主区同口径（升序：文件夹组在前、链接组在后）
             var linkA = (await client.LinkCreateAsync("https://a-root.example", title: "Alpha 根级", autoFetchMetadata: false)).Data!;
             var linkZ = (await client.LinkCreateAsync("https://z-root.example", title: "Zulu 根级", autoFetchMetadata: false)).Data!;
             await client.FolderCreateAsync("Charlie 文件夹");
@@ -197,16 +197,14 @@ public class BrowserViewModelTests
 
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
-            // 链接与文件夹混排，整体按名称升序（Alpha < Bravo? 不——Bravo 在子目录不进树；Alpha < Charlie < Delta < Zulu）
+            // 文件夹组在前（名称升序）、链接组在后（名称升序）——链接绝不骑在文件夹之前
             var children = root.Children;
             Assert.Equal(4, children.Count);
-            Assert.Equal(new[] { "Alpha 根级", "Charlie 文件夹", "Delta 文件夹", "Zulu 根级" },
+            Assert.Equal(new[] { "Charlie 文件夹", "Delta 文件夹", "Alpha 根级", "Zulu 根级" },
                 children.Select(c => c.Name).ToArray());
-            Assert.True(children[0].IsLink && children[0].Id == linkA.LinkId);
+            Assert.False(children[0].IsLink);
             Assert.False(children[1].IsLink);
-            Assert.Equal("Charlie 文件夹", children[1].Name);
-            Assert.False(children[2].IsLink);
-            Assert.Equal("Delta 文件夹", children[2].Name);
+            Assert.True(children[2].IsLink && children[2].Id == linkA.LinkId);
             // 子目录（Delta）内的链接不进树
             Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId);
             Assert.DoesNotContain(children, c => c.Name == "Bravo 子级");

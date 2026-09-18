@@ -192,9 +192,10 @@
                       VirtualizingPanel.IsVirtualizing="True">
                 <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <!-- 行级交互反馈（用户 2026-09-18 定稿）：整行可点（手型）+ 悬停浅高亮；
-                             选中态药丸 SecondaryContainer 圆角容器（MD3E 形状区分选中，优先级高于悬停） -->
-                        <Border CornerRadius="8" Padding="6,3" Margin="0,1" Background="Transparent" Cursor="Hand">
+                        <!-- 行级交互反馈：与主区「名称」行 RowSkin 完全同款（用户 2026-09-18 定稿）——
+                             悬停 SurfaceContainerHighest、选中 PrimaryContainer、圆角 12、整行手型可点；
+                             选中优先级高于悬停（选中时悬停不换色，与主栏一致）。 -->
+                        <Border CornerRadius="12" Padding="8,3" Margin="0,1" Background="Transparent" Cursor="Hand">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Style.Triggers>
@@ -202,7 +203,7 @@
                                             <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True">
-                                            <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+                                            <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
