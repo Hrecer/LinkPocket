@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 引擎目录（方案 4.5 IEngineCatalog / 4.6 扩展机制）：命令元数据的机械导出。
+/// 引擎目录（IEngineCatalog / 扩展机制）：命令元数据的机械导出。
 /// Manifest = registry 全量 + 批三命令（batch.* 由 wire 直路由，不进 registry）；
 /// Export 三格式 = AI FunctionCalling 工具清单 / 轻量 OpenAPI / Markdown 文档，
 /// 全部由 Descriptor 单一事实源生成，杜绝文档漂移。
@@ -172,8 +172,8 @@ public sealed class EngineCatalog : IEngineCatalog
 
     /// <summary>
     /// 单个参数在 AI 工具清单/OpenAPI 中的 JSON Schema 形态：标量 = { type }；
-    /// 集合（IReadOnlyList&lt;T&gt; / List&lt;T&gt;）= { type: "array", items: { type: 元素类型 } }（审核 2.1：
-    /// 此前集合被一律归为 "object"，AI 调用方无法得知它是数组）。
+    /// 集合（IReadOnlyList&lt;T&gt; / List&lt;T&gt;）= { type: "array", items: { type: 元素类型 } }（此前集合
+    /// 被一律归为 "object"，AI 调用方无法得知它是数组）。
     /// </summary>
     private static Dictionary<string, object> MapParameter(ParamSpec p)
     {

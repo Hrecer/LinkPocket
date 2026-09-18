@@ -3,9 +3,9 @@ using System.Text.Json;
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 领域事件（方案 4.4）：提交成功后发布；持闸期间同步推送给内存订阅方
+/// 领域事件：提交成功后发布；持闸期间同步推送给内存订阅方
 /// （不变量：订阅方不得在处理器内同步回派命令，违者死锁——架构单测 + 文档双保险）；
-/// 同时写入事件存储供追平/轮询（阶段 8 已落地：<see cref="IEventStore"/> 进程内环形缓冲）。
+/// 同时写入事件存储供追平/轮询（已落地：<see cref="IEventStore"/> 进程内环形缓冲）。
 /// </summary>
 public sealed record DomainEvent(
     string Name,

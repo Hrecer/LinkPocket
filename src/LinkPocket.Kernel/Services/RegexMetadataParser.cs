@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace LinkPocket.Kernel;
 
 /// <summary>
-/// 页面元数据解析（方案 4.1，自 LinkService 正则组下沉为 L0 纯函数）：
+/// 页面元数据解析（自 LinkService 正则组下沉为 L0 纯函数）：
 /// HTML → 标题 / 描述 / favicon 地址。解析规则与既有实现逐条等价（行为等价项）：
 /// <list type="bullet">
 /// <item>标题：&lt;title&gt;，被 og:title / twitter:title 覆盖；</item>

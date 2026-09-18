@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- WPF Shell（阶段 10）：组合根 + 窗口壳 + 区域装配 + 端口实现 + UiEventHub。
+  <!-- WPF Shell：组合根 + 窗口壳 + 区域装配 + 端口实现 + UiEventHub。
        UI 已模块化为 UIKit + UI.* 六项目（视图注册/路由装配见 Services/ViewRegistry）。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>

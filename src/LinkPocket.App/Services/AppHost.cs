@@ -7,7 +7,7 @@ namespace LinkPocket.Services;
 /// 前端组合根：应用启动时装配一次（全工程唯一允许 new 具体实现的地方）。
 /// 后端 = 引擎组合根（由共享 Composition 的 <c>EngineComposer</c> 收敛装配：EngineCore +
 /// EngineWire + 九模块命令注册 + 编排层）；前端 = 引擎客户端门面 + 内容定位器 + 端口槽位。
-/// 阶段 7（前端端口）：AppServices / UiCoordinator / BrowserLocateHost 三个静态定位器
+/// 前端端口：AppServices / UiCoordinator / BrowserLocateHost 三个静态定位器
 /// 由本类实例替代，依赖经构造注入流向 ViewModel 与页面。
 /// </summary>
 public sealed class AppHost
@@ -29,8 +29,8 @@ public sealed class AppHost
     public UiPortProvider Ports { get; } = new();
 
     /// <summary>
-    /// UI 事件枢纽（阶段 8 定稿）：后端数据变更 → 界面刷新的唯一 300ms 防抖通道。
-    /// 自 A1 起事件源 = 新引擎事件总线（<see cref="LinkPocket.Contracts.Engine.IEventBus"/>），
+    /// UI 事件枢纽：后端数据变更 → 界面刷新的唯一 300ms 防抖通道。
+    /// 事件源 = 引擎事件总线（<see cref="LinkPocket.Contracts.Engine.IEventBus"/>），
     /// 经 <c>Hub.Attach(engine.Events)</c> 并入；ChangeSet 增量投递 + 防抖行级刷新由此生效。
     /// </summary>
     public UiEventHub Hub { get; } = new();
@@ -59,7 +59,7 @@ public sealed class AppHost
         var composed = LinkPocket.Composition.EngineComposer.Compose(
             System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"));
 
-        // 审核 1.6：null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），
+        // null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），
         // 若未来选项被改动导致 null，这里立即失败而不是把 null 埋进 AppHost.Wire 等运行期 NRE。
         if (composed.Wire is null)
             throw new InvalidOperationException("默认装配必须产出 EngineWire（ComposeOptions.BuildWire 被关闭？）");

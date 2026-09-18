@@ -44,9 +44,9 @@ internal static partial class SmokeRunner
         Asserts.That(Count("folders") == 14 && Count("links") == 16 && Count("trash") == 7
             && Count("search") == 2 && Count("bookmarks") == 3 && Count("backup") == 3
             && Count("dedup") == 3 && Count("favicon") == 2 && Count("maintenance") == 3,
-            "九个域的命令数应与方案 4.2 总表一致");
+            "九个域的命令数与目录总表不一致");
         Asserts.That(Count("macro") == 5 && Count("undo") == 4 && Count("staging") == 6,
-            "编排域命令数应与阶段 11 定义一致（macro 5 / undo 4 / staging 6）");
+            "编排域命令数不正确（macro 5 / undo 4 / staging 6）");
 
         var destructive = manifest.Commands.Where(c => c.IsDestructive).Select(c => c.Name).ToHashSet();
         Asserts.That(destructive.SetEquals(["trash.purge", "trash.purge_batch", "maintenance.reinit", "backup.import"]),

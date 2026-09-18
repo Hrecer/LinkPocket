@@ -15,7 +15,7 @@ public interface ITransactionScope : IAsyncDisposable
 }
 
 /// <summary>
-/// 工作单元（方案 4.1）：每个调用一个短生命周期工作单元（不共享可变长命上下文），
+/// 工作单元：每个调用一个短生命周期工作单元（不共享可变长命上下文），
 /// CommitAsync = 单次 SaveChanges；BeginTransaction 供批/导入/干跑使用。
 /// </summary>
 public interface IUnitOfWork : IAsyncDisposable
@@ -24,7 +24,7 @@ public interface IUnitOfWork : IAsyncDisposable
     IFolderRepository Folders { get; }
     ITrashRepository Trash { get; }
 
-    /// <summary>树领域服务（父链遍历/递归计数/环检测/路径显示——唯一出处，方案 4.1）。</summary>
+    /// <summary>树领域服务（父链遍历/递归计数/环检测/路径显示——唯一出处）。</summary>
     ITreeService Trees { get; }
 
     Task CommitAsync(CancellationToken ct);
@@ -40,7 +40,7 @@ public interface IUnitOfWork : IAsyncDisposable
     Task ClearAllDataAsync(CancellationToken ct);
 
     /// <summary>
-    /// 当前库 schema 版本（schema_migrations 表 MAX(version)，方案 6.1/6.2；
+    /// 当前库 schema 版本（schema_migrations 表 MAX(version)；
     /// v2 全新建库起步，仅服务 v2 内部常规演进）。维护/诊断命令消费。
     /// </summary>
     Task<int> SchemaVersionAsync(CancellationToken ct);

@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Folders;
 
 /// <summary>
 /// folders.overview（Query）：浏览页主视图专用组合快照 —— 目录页 + 全量文件夹树 + 根级链接数，
-/// 三次消费一次取齐、同一读池 UoW（2.10-45 单快照：contents/tree/root 计数不再跨命令漂移）。
+/// 三次消费一次取齐、同一读池 UoW（单快照：contents/tree/root 计数不再跨命令漂移）。
 /// 参数与 folders.contents 完全一致；响应 = contentsDTO + tree + root_link_count。
 /// 消费者：浏览页 RefreshAsync（原三条命令 → 一条）。
 /// </summary>

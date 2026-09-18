@@ -5,7 +5,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 引擎 wire 层（方案 3.1/3.2 定稿）：JSON-RPC 2.0 端点，与内存层同一语义。
+/// 引擎 wire 层（定稿）：JSON-RPC 2.0 端点，与内存层同一语义。
 ///
 /// <para><b>方法路由</b>：<c>engine.execute</c>（params = { command, args?, options? }）、
 /// <c>engine.query</c>（params = { command, args? }）、<c>engine.describe</c>（params = { category? }），
@@ -122,7 +122,7 @@ public sealed class EngineWire(IEngine engine)
             }
             case "batch.run" or "batch.dry_run" or "batch.status":
             {
-                // 编排命令（方案 3.1：wire 方法 = engine.* 三标准方法 + <编排命令>）：
+                // 编排命令（wire 方法 = engine.* 三标准方法 + <编排命令>）：
                 // 批引擎自身即管道父调用，直路由 IBatchEngine，不经标准命令管道。
                 var batch = engine.Batch
                     ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal, "批引擎未装配（OrchestrationHost）"));
@@ -200,7 +200,7 @@ public sealed class EngineWire(IEngine engine)
             $"缺少必填参数「{name}」", details: JsonSerializer.SerializeToElement(new { param = name })));
     }
 
-    /// <summary>错误码 → JSON-RPC 数值码（方案 3.2 约定②）。</summary>
+    /// <summary>错误码 → JSON-RPC 数值码（约定②）。</summary>
     private static (int Code, bool) MapError(string engineCode) => engineCode switch
     {
         EngineErrors.UnknownCommand => (-32601, true),

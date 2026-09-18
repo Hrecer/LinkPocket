@@ -5,7 +5,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Services;
 
 /// <summary>
-/// UI 事件枢纽（方案 2.3 事件流终点 / 阶段 8 定稿）：后端数据变更抵达界面的**唯一防抖通道**。
+/// UI 事件枢纽（事件流终点）：后端数据变更抵达界面的**唯一防抖通道**。
 /// - 事件源 = 新引擎领域事件总线（<see cref="IEventBus"/>）：UI 切换完成后经
 ///   <c>Hub.Attach(engine.Events)</c> 接入；ChangeSet 增量投递 + 300ms 防抖刷新由此生效。
 /// - 防抖：任一事件 → 300ms 计时重启（尾沿触发），期间再来事件只顺延——

@@ -70,7 +70,7 @@ internal static partial class SmokeRunner
         Asserts.That(!(await client.FolderTreeAsync()).Any(f => f.Name == "干跑目录"), "干跑不得落库");
         Asserts.That(s.Events.Count == dryEvents, "干跑不得发布事件");
 
-        // ★ 事件存储（阶段 8，方案 4.4）：发布即入环形存储；追平回放到 Head / 游标续读 / 轮询 limit
+        // ★ 事件存储：发布即入环形存储；追平回放到 Head / 游标续读 / 轮询 limit
         var store = client.EventStore;
         Asserts.That(store.Head.Sequence > 0, "事件存储应有事件（Head > 0）");
         var replay = new List<StoredEvent>();
@@ -162,7 +162,7 @@ internal static partial class SmokeRunner
         throw new Exception("应抛 EngineException");
     }
 
-    // —— §9 10k 性能门槛（方案 7.3；DEBUG 构建放宽 ×5，见 Asserts.Within）——
+    // —— §9 10k 性能门槛（DEBUG 构建放宽 ×5，见 Asserts.Within）——
     private static async Task SectionPerformance(SmokeState s)
     {
         var perfDb = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_perf_{Guid.NewGuid():N}.db");
@@ -240,7 +240,7 @@ internal static partial class SmokeRunner
                 "10k 导入应产出 10000 条书签");
             Asserts.Within(sw.ElapsedMilliseconds, 5_000, "10k 书签导入");
 
-            // 缓存命中路径（阶段 12）：同一个 10k 库上冷查询 vs 命中
+            // 缓存命中路径：同一个 10k 库上冷查询 vs 命中
             await MeasureCacheLatency(client);
 
             File.Delete(htmlPath);

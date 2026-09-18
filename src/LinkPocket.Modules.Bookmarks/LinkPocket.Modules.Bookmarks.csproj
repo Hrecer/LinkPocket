@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- 书签互导模块（方案 4.2/第五章）：Netscape 书签文件格式（Chrome/Edge/Firefox 通用）导入/导出/只读预检。
+  <!-- 书签互导模块（第五章）：Netscape 书签文件格式（Chrome/Edge/Firefox 通用）导入/导出/只读预检。
        解析器与写出器为纯算法（internal 平移既有实现）；黑盒封装：除模块入口 CreateHandlers 外全部 internal。 -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>

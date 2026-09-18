@@ -4,7 +4,7 @@ namespace LinkPocket.Services;
 
 /// <summary>
 /// 对话框端口：ViewModel 通过它弹确认框，不直接依赖任何窗口类型。
-/// 原 IUiCoordinator 的对话职责（阶段 7 拆分）；确认弹窗视觉走 ConfirmDialog 唯一入口，语义与文案不变。
+/// 原 IUiCoordinator 的对话职责（拆分）；确认弹窗视觉走 ConfirmDialog 唯一入口，语义与文案不变。
 /// </summary>
 public interface IDialogService
 {
@@ -12,7 +12,7 @@ public interface IDialogService
     bool ConfirmDeleteFolder(string folderName);
 
     /// <summary>
-    /// 通用确认弹窗（阶段 9 MVVM）：统一走 ConfirmDialog 唯一入口；
+    /// 通用确认弹窗（MVVM）：统一走 ConfirmDialog 唯一入口；
     /// Windows 口径 = 删除类文案「将 X 移入回收站吗？」，不罗列后果。
     /// iconKind 须在 LpIcons 字形表内（默认删除口径 delete-outline）。
     /// </summary>
@@ -25,7 +25,7 @@ public interface IDialogService
 /// <summary>
 /// 导航端口：ViewModel 通过它切页/开详情/刷新回收站，不直接依赖 MainWindow 类型。
 /// 当前由 MainWindow 实现；未来更换 UI 时由新窗口重新实现，逻辑层无需改动。
-/// 原 IUiCoordinator 的导航职责（阶段 7 拆分）。
+/// 原 IUiCoordinator 的导航职责（拆分）。
 /// </summary>
 public interface INavigationService
 {

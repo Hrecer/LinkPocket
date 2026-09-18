@@ -4,13 +4,13 @@ using Xunit;
 namespace LinkPocket.Architecture.Tests;
 
 /// <summary>
-/// 架构依赖规则测试（阶段 10 上线，规则 = 方案 2.2，A1/组合抽取更新）：
+/// 架构依赖规则测试：
 /// - UI 任何项目禁止引用 Engine/Kernel/Data/Modules.* 实现程序集；
 ///   UIKit 只依赖 Contracts；UI.* 页面项目只依赖 UIKit+Contracts；
 ///   Shell(App) 直引共享 Composition（引擎组合根）+ UIKit + 全部 UI.*（组合根唯一例外）；
 /// - UI 项目之间零互相引用（模块可单独删除/演进）；
 /// - Composition（共享引擎组合根）引用面被精确卡死：Contracts/Kernel/Data/Engine + 九模块；
-/// - 静态服务定位器零残留（AppServices/UiCoordinator 已于阶段 7 灭绝，防止还潮）。
+/// - 静态服务定位器零残留（AppServices/UiCoordinator 已灭绝，防止还潮）。
 /// 判定基于 csproj 的 ProjectReference 声明（引用图 = 编译期事实）。
 /// </summary>
 public class DependencyRulesTests
@@ -135,7 +135,7 @@ public class DependencyRulesTests
     [Fact]
     public void 静态服务定位器_零残留()
     {
-        // 阶段 7 灭绝的三件套静态定位器；架构测试防止还潮（任何源文件不得再出现这些类型名）。
+        // 灭绝的三件套静态定位器；架构测试防止还潮（任何源文件不得再出现这些类型名）。
         var banned = new[] { "class AppServices", "class UiCoordinator", "class BrowserLocateHost" };
         var srcDir = Path.Combine(RepoRoot, "src");
         foreach (var file in Directory.EnumerateFiles(srcDir, "*.cs", SearchOption.AllDirectories))

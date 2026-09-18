@@ -21,7 +21,7 @@ internal sealed class FolderTreeHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
         ],
         Caps: CommandCaps.Query,
-        // 树 = 文件夹全量 + 计数两口径全量重算（7.2：树快照缓存 + folders.changed 精确失效）
+        // 树 = 文件夹全量 + 计数两口径全量重算（树快照缓存 + folders.changed 精确失效）
         Cache: CachePolicy.Content());
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)

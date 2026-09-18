@@ -5,7 +5,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 撤销协调器（方案 4.3 IUndoCoordinator）：纯状态机（撤销栈 + 重做栈，上限 100 条）。
+/// 撤销协调器（IUndoCoordinator）：纯状态机（撤销栈 + 重做栈，上限 100 条）。
 /// 登记面：引擎在顶层可撤销命令（Reversible + UndoInverse）成功后调 <see cref="Record"/>。
 /// 消费面：undo.undo / undo.redo 命令处理器调 TakeUndoAsync/TakeRedoAsync 拿到条目后，
 /// 在自身管道内嵌套派发逆向命令/原命令（与撤销命令同事务；引擎会为逆向执行再次登记新条目——
@@ -18,7 +18,7 @@ public sealed class UndoCoordinator : IUndoCoordinator
     private readonly ConcurrentStack<UndoEntry> _undo = new();
     private readonly ConcurrentStack<UndoEntry> _redo = new();
     /// <summary>
-    /// 栈操作互斥（审核 1.3/1.4）：TakeUndoAsync(id) 的快照→清空→重放之间若并发放置会吞掉新条目；
+    /// 栈操作互斥：TakeUndoAsync(id) 的快照→清空→重放之间若并发放置会吞掉新条目；
     /// 公开调用面虽经引擎写闸串行化，但协调器本身应自洽——不经管道直调的并发也绝不丢条目。
     /// </summary>
     private readonly object _lock = new();

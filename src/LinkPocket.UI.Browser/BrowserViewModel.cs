@@ -27,7 +27,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>刷新挂起标志：加载进行中又来刷新请求时置位，当前加载收尾后自动补刷一次（最后请求胜出）。</summary>
     private bool _refreshPending;
 
-    /// <summary>补刷递归深度（2.10-44）：最后一次补刷的 finally 里自身再次触发最多 3 层，
+    /// <summary>补刷递归深度：最后一次补刷的 finally 里自身再次触发最多 3 层，
     /// 超过说明数据在持续高频变动——本轮放弃"必处理"承诺，交还给 300ms 事件防抖继续追平，杜绝无限递归。</summary>
     private int _refreshRecursionDepth;
 
@@ -193,7 +193,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DeleteMenuHeader));
     }
 
-    // —— 对话框端口（S7 分层债收口）——
+    // —— 对话框端口 ——
     // VM 不再直用 MessageBox / ConfirmDialog 静态入口；优先走 IDialogService 端口
     //（组合根注入 UiPortProvider，MainWindow 登记实现），无端口（无头/单测）时退化为系统弹窗，
     // 保证 VM 零控件依赖、行为等价。
@@ -427,7 +427,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             _refreshPending = true;
             return;
         }
-        // 2.10-44：数据持续高频变动时，补刷递归不能无限延续（见 finally 内的深度计数）
+        // 数据持续高频变动时，补刷递归不能无限延续（见 finally 内的深度计数）
         if (_refreshRecursionDepth >= MaxRefreshRecursion)
         {
             _refreshPending = false;   // 弃掉挂起：交还 300ms 事件防抖继续追平（不丢数据，只是晚一拍）
@@ -436,7 +436,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         IsLoading = true;
         try
         {
-            // 2.10-45 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
+            // 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
             // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
             var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
@@ -695,8 +695,8 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>由 folders.overview 的树快照重建左侧树（ParentId == null 即根级）。保留既有展开状态。
     /// rootLinkCount = 同快照的根级直挂链接数（原另查 links.stats，现由 overview 一次交付）。
-    /// 纯同步（2.7）：无 IO/等待，签名用 void 不误导调用方。
-    /// 1.2：ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
+    /// 纯同步：无 IO/等待，签名用 void 不误导调用方。
+    /// ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
     private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount)
     {
         var expandedIds = new HashSet<string?>();
@@ -720,7 +720,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         foreach (var node in nodes.Values)
         {
             if (node.ParentId != null
-                && node.ParentId != node.FolderId   // 1.2：自环坏数据 → 按根级兜底，避免自引用节点
+                && node.ParentId != node.FolderId   // 自环坏数据 → 按根级兜底，避免自引用节点
                 && nodes.TryGetValue(node.ParentId, out var parent))
             {
                 parent.Children.Add(node);
@@ -1196,7 +1196,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
         }
 
-        // 1.6：文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
+        // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
         StatusText = failed == 0
             ? $"已删除 {deleted} 项"
             : deleted == 0
@@ -1297,11 +1297,11 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         var parts = new List<string> { "全部书签" };
         foreach (var (id, name) in BuildBreadcrumbIds(folderId))
-            parts.Add(EscapePathSegment(name));   // 名字里的 / 转义为 \/，编辑往返不丢（2.10-52/E1）
+            parts.Add(EscapePathSegment(name));   // 名字里的 / 转义为 \/，编辑往返不丢
         return string.Join("/", parts);
     }
 
-    // —— 路径编辑转义（2.10-52/E1）——
+    // —— 路径编辑转义 ——
     // 分隔符 / 与文件夹名里的字面 / 冲突：名内 / 以 \/ 转义（\\ 转义 \）。解析侧按
     // "未转义的 /"切段并解码转义对，保证任何名字都能在地址栏无损往返。
 
@@ -1423,7 +1423,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         folderId = null;
         invalidSegment = null;
-        var segments = SplitPathSegments(text);   // 转义感知切分：'\/' 不是分隔符（2.10-52/E1）
+        var segments = SplitPathSegments(text);   // 转义感知切分：'\/' 不是分隔符
         foreach (var seg in segments)
         {
             if (folderId == null && seg.Equals("全部书签", StringComparison.OrdinalIgnoreCase))

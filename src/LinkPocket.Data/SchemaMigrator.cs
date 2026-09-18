@@ -3,12 +3,12 @@ using Microsoft.Data.Sqlite;
 namespace LinkPocket.Data;
 
 /// <summary>
-/// schema v2 建库与版本演进（方案 6.1/6.2，零责任定稿）：
+/// schema v2 建库与版本演进（零责任定稿）：
 ///
 /// <para><b>全新建库</b>：首次使用（库文件不存在或为空）时在单个事务内执行<b>完整版本链</b>
 /// （v2 基线 DDL + 全部演进脚本，见 <c>Scripts</c>）并逐版本写入 <c>schema_migrations</c>。
-/// 全库表/列/索引 = 方案 6.1 逐字定稿（lists→folders、list_id→folder_id、哨兵 "0" 不存在、
-/// 主键统一 id、根 = NULL）+ 阶段 12 索引复核追加的 v3 索引。</para>
+/// 全库表/列/索引 = 逐字定稿（lists→folders、list_id→folder_id、哨兵 "0" 不存在、
+/// 主键统一 id、根 = NULL）+ 索引复核追加的 v3 索引。</para>
 ///
 /// <para><b>版本表</b>：<c>schema_migrations</c> 仅服务 v2 之后的<b>内部常规演进</b>
 /// （新增列/索引/表时追加版本脚本，按版本号顺序应用、幂等跳过已应用版本），
@@ -124,7 +124,7 @@ public static class SchemaMigrator
         tx.Commit();
     }
 
-    /// <summary>版本脚本表（方案 6.2：schema_migrations 仅服务 v2 之后的内部常规演进）。</summary>
+    /// <summary>版本脚本表（schema_migrations 仅服务 v2 之后的内部常规演进）。</summary>
     private static (int Version, string Sql)[] Scripts =>
     [
         (2, BaselineV2 + VersionRow(2)),
@@ -137,7 +137,7 @@ public static class SchemaMigrator
         DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ") + "');";
 
     /// <summary>
-    /// v2 基线 DDL（方案 6.1 逐字）。与 EF 实体映射的一致性由 Modules.Tests 全量黑盒回归卡住。
+    /// v2 基线 DDL（逐字）。与 EF 实体映射的一致性由 Modules.Tests 全量黑盒回归卡住。
     /// </summary>
     private const string BaselineV2 =
         """
@@ -180,7 +180,7 @@ public static class SchemaMigrator
         """;
 
     /// <summary>
-    /// v3 版本脚本（阶段 12 索引复核）：<b>只加索引，不动表/列</b>——三个候选都是
+    /// v3 版本脚本（索引复核）：<b>只加索引，不动表/列</b>——三个候选都是
     /// 用 <c>EXPLAIN QUERY PLAN</c> 在实测计划里定位出来的空缺，不是凭感觉加的：
     ///
     /// <list type="bullet">

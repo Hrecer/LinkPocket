@@ -34,7 +34,7 @@ public class LinkPocketDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // ⚠️ 索引的单一事实源是 SchemaMigrator 的 DDL 脚本（建库走原生 SQL，EF 的 EnsureCreated/迁移都不参与）。
-        // 这里的 HasIndex 声明只用于「模型与库形状一致」的可读性/审计；阶段 12 索引复核已逐条对齐：
+        // 这里的 HasIndex 声明只用于「模型与库形状一致」的可读性/审计；索引复核已逐条对齐：
         // 删掉基线里并不存在的 links(is_important)，补上 v3 新加的 created_at / url COLLATE NOCASE / trash_folders(deleted_at)。
         modelBuilder.Entity<Link>(entity =>
         {

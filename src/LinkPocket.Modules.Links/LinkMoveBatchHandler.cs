@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Links;
 
 /// <summary>
 /// links.move_batch（★ 引擎能力，不接 UI）：批量移动链接到目标目录。
-/// 单命令单事务（方案 7.2：消灭前端逐条过协议的 O(n²)）；新旧目录父链 Touch + LinkCount 回填。
+/// 单命令单事务（消灭前端逐条过协议的 O(n²)）；新旧目录父链 Touch + LinkCount 回填。
 /// </summary>
 internal sealed class LinkMoveBatchHandler : ICommandHandler
 {

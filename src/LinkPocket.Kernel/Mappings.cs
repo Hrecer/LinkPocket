@@ -4,7 +4,7 @@ using LinkPocket.Data;
 namespace LinkPocket.Kernel;
 
 /// <summary>
-/// 实体 → 契约 DTO 映射（跨模块复用的唯一合法形式 = L0，方案 2.2/4.1）。
+/// 实体 → 契约 DTO 映射（跨模块复用的唯一合法形式 = L0）。
 /// 九个业务模块共用同一份映射，保证任何命令产出的 DTO 字段口径完全一致。
 /// </summary>
 public static class Mappings

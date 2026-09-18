@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- UI.Search（阶段 10）：搜索页（Views/SearchView + SearchViewModel）。 -->
+  <!-- UI.Search：搜索页（Views/SearchView + SearchViewModel）。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

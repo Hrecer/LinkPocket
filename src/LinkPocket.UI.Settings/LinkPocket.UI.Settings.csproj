@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- UI.Settings（阶段 10）：设置页（存储管理 + 备份与恢复 BackupPanel）。 -->
+  <!-- UI.Settings：设置页（存储管理 + 备份与恢复 BackupPanel）。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

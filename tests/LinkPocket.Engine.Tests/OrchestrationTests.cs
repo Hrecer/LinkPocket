@@ -8,7 +8,7 @@ using Xunit;
 namespace LinkPocket.Engine.Tests;
 
 /// <summary>
-/// 编排层（阶段 11）：批（事务回滚/continue/dry_run/ref 模板/独立批/状态表）+ 宏/撤销（命令面）
+/// 编排层：批（事务回滚/continue/dry_run/ref 模板/独立批/状态表）+ 宏/撤销（命令面）
 /// + 会话（只读门/限流）+ 目录导出 + Staging 纯函数管道 + 审计/幂等落表。
 /// </summary>
 public class OrchestrationTests

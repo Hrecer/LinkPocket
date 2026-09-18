@@ -28,7 +28,7 @@
     </UserControl.InputBindings>
 
     <UserControl.Resources>
-        <!-- BoolToVis / InvBoolToVis / CountPill / NavIconButton / LpMenuItem 已上收 UIKit.xaml（阶段 9）；
+        <!-- BoolToVis / InvBoolToVis / CountPill / NavIconButton / LpMenuItem 已上收 UIKit.xaml；
              SideCard / SideLabel / SideChip 已随详情栏抽为 Views/DetailSidebar 控件（样式控件自包含） -->
 
         <!-- 排序表头按钮已随共享数据表控件（views:SortableDataTable）统一：表头由控件按列定义生成，

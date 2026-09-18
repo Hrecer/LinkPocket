@@ -99,7 +99,7 @@ public class FolderContentsDto
 
     /// <summary>
     /// 全量文件夹平铺（与 folders.tree 同构；层级由调用方组装）。仅 <c>folders.overview</c> 填充：
-    /// 浏览页主视图一次的「目录页 + 树 + 统计」一致快照（2.10-45）。<c>folders.contents</c> 恒为 null。
+    /// 浏览页主视图一次的「目录页 + 树 + 统计」一致快照。<c>folders.contents</c> 恒为 null。
     /// </summary>
     [JsonPropertyName("tree"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<FolderDto>? Tree { get; set; }
@@ -119,7 +119,7 @@ public class PagedLinksDto
     [JsonPropertyName("last_page")] public int LastPage { get; set; }
 }
 
-/// <summary>回收站平铺条目类型常量（审核 2.7：杜绝 "link"/"folder" 魔法值拼写错即静默失效）。</summary>
+/// <summary>回收站平铺条目类型常量（杜绝 "link"/"folder" 魔法值拼写错即静默失效）。</summary>
 public static class TrashEntryType
 {
     /// <summary>单独删除的书签条目。</summary>

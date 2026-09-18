@@ -16,7 +16,7 @@ namespace LinkPocket.ViewModels
     /// - TreeNodes：被删文件夹单元树（纯展示层级，节点不可打开/导航）；
     /// - Entries：平铺条目（folder 单元根 + 单独删除的书签），按删除时间倒序；
     /// - 本期无还原：只有「永久删除」（整单元 or 单条）。
-    /// 阶段 9 MVVM：页面动作命令（打开单元/返回/永久删除）在此，视图只做装配与渲染。
+    /// MVVM：页面动作命令（打开单元/返回/永久删除）在此，视图只做装配与渲染。
     /// </summary>
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
@@ -34,10 +34,10 @@ namespace LinkPocket.ViewModels
         private string _errorMessage = string.Empty;
         private TrashEntryDto? _selectedEntry;
 
-        /// <summary>加载重入守卫（2.2-10/C4）：加载进行中又来请求只置挂起，收尾补刷一次（同浏览页模式）。</summary>
+        /// <summary>加载重入守卫：加载进行中又来请求只置挂起，收尾补刷一次（同浏览页模式）。</summary>
         private bool _loadPending;
 
-        /// <summary>进入单元代次（S5/C7）：连点两个文件夹时只让最后发起者胜出。</summary>
+        /// <summary>进入单元代次：连点两个文件夹时只让最后发起者胜出。</summary>
         private int _unitGeneration;
 
         public RecycleBinViewModel(EngineClient client, Services.UiPortProvider ports)
@@ -52,7 +52,7 @@ namespace LinkPocket.ViewModels
 
         private IDialogService? Dialogs => _ports.Dialogs;
 
-        // ===== 页面动作命令（阶段 9 MVVM 自页面下沉；确认/失败提示统一走对话框端口）=====
+        // ===== 页面动作命令（MVVM 自页面下沉；确认/失败提示统一走对话框端口）=====
 
         /// <summary>进入被删文件夹单元（双击文件夹行 / 树节点动作）。</summary>
         public ICommand EnterUnitCommand { get; }
@@ -72,7 +72,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Services.Logger.Error($"打开回收站文件夹单元失败：{folderEntry.Id}", ex);   // 观测面：失败必须留痕（2.4-21）
+                Services.Logger.Error($"打开回收站文件夹单元失败：{folderEntry.Id}", ex);   // 观测面：失败必须留痕
                 if (Dialogs != null) Dialogs.Alert("打开失败", $"无法打开该文件夹单元：{ex.Message}");
             }
         }
@@ -101,7 +101,7 @@ namespace LinkPocket.ViewModels
                 : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
             if (Dialogs == null)
             {
-                Services.Logger.Error("对话框端口未登记：永久删除确认被跳过（无 UI 环境）", null);   // 2.4-22：功能不可用不等于静默取消
+                Services.Logger.Error("对话框端口未登记：永久删除确认被跳过（无 UI 环境）", null);   // 功能不可用不等于静默取消
                 return;
             }
             if (!Dialogs.Confirm("永久删除", message, "永久删除", "delete-forever")) return;
@@ -145,7 +145,7 @@ namespace LinkPocket.ViewModels
 
         public bool HasItems => Entries.Count > 0;
 
-        /// <summary>状态栏口径：出错时优先报错（2.1-4，错误不能只在无绑定的属性里）；根 = 「回收站 · N 项」；单元内 = 「单元名 · N 项」。</summary>
+        /// <summary>状态栏口径：出错时优先报错（错误不能只在无绑定的属性里）；根 = 「回收站 · N 项」；单元内 = 「单元名 · N 项」。</summary>
         public string StatusText => HasError
             ? ErrorMessage
             : (IsInUnit ? CurrentUnitName : "回收站") + $" · {Entries.Count} 项";
@@ -171,7 +171,7 @@ namespace LinkPocket.ViewModels
         public bool IsInUnit => CurrentUnitId != null;
 
         /// <summary>进入被删文件夹单元：表格切换为该单元内容（直接子单元 + 子树内书签快照）。
-    /// 先立单元状态再取数据（C7：避免取数期间事件刷新把根列表盖进来）；代次让连点最后发起者胜出（S5）。
+    /// 先立单元状态再取数据（避免取数期间事件刷新把根列表盖进来）；代次让连点最后发起者胜出。
     /// 取数失败回滚到根视图并抛错（由 guarded 层提示）。</summary>
     public async Task EnterUnitAsync(TrashEntryDto folderEntry)
     {
@@ -230,7 +230,7 @@ namespace LinkPocket.ViewModels
         {
             if (IsLoading)
             {
-                _loadPending = true;   // 重入守卫（2.2-10/C4）：加载中又来请求 → 收尾补刷
+                _loadPending = true;   // 重入守卫：加载中又来请求 → 收尾补刷
                 return;
             }
             IsLoading = true;
@@ -280,8 +280,8 @@ namespace LinkPocket.ViewModels
         }
 
         /// <summary>按 parent_trash_folder_id 组装被删文件夹树（TrashFolderNode，纯展示）。
-    /// 保留既有展开状态（S7，与浏览页 RebuildFolderTreeAsync 同口径）；
-    /// 成环数据不丢节点：环内节点兜底挂到根（2.4-25，坏数据不死循环、不凭空消失）。</summary>
+    /// 保留既有展开状态（与浏览页 RebuildFolderTreeAsync 同口径）；
+    /// 成环数据不丢节点：环内节点兜底挂到根（坏数据不死循环、不凭空消失）。</summary>
     private void RebuildTree(List<TrashFolderDto> folders)
     {
         var expandedIds = CollectExpandedIds(TreeNodes);
@@ -345,7 +345,7 @@ namespace LinkPocket.ViewModels
 
         /// <summary>永久删除（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。
         /// trash.purge 为破坏性命令：首次调用拿引擎确认令牌，确认后带令牌重发（EngineConfirm 编排）。
-        /// 无论成败都清选中（2.4-26：异常后不得残留指向已删条目的选中态）。</summary>
+        /// 无论成败都清选中（异常后不得残留指向已删条目的选中态）。</summary>
         public async Task PurgeSelectedAsync()
         {
             var entry = SelectedEntry;

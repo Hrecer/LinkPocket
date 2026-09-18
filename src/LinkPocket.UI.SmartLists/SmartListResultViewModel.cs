@@ -12,7 +12,7 @@ using LinkPocket.Services;
 namespace LinkPocket.ViewModels
 {
     /// <summary>
-    /// 智能列表结果页 ViewModel（阶段 9 MVVM）：数据装载（LoadAsync）之外，
+    /// 智能列表结果页 ViewModel（MVVM）：数据装载（LoadAsync）之外，
     /// 行选中态、右侧详情栏与页面动作命令（详情/打开网站/删除）也在此——
     /// 视图（Views/SmartListsPage）只负责表格装配与渲染。
     /// 动作语义与搜索页同一套：「详情/编辑」= 进入浏览页链接详情页；
@@ -103,7 +103,7 @@ namespace LinkPocket.ViewModels
             set { _totalCount = value; OnPropertyChanged(); }
         }
 
-        // —— 选中态与详情栏（阶段 9 MVVM 自页面下沉） ——
+        // —— 选中态与详情栏（MVVM 自页面下沉） ——
 
         private LinkItem? _selectedItem;
         /// <summary>当前选中行（视图 RowClick 调 <see cref="SelectItem"/>）。</summary>

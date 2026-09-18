@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Kernel.Commands;
 
 /// <summary>
-/// 命令入参读取器（方案 3.2/4.2）：全部模块 Handler 共用的 JSON 参数提取原语。
+/// 命令入参读取器：全部模块 Handler 共用的 JSON 参数提取原语。
 /// 校验类错误（LP.VAL.001/002）在此抛出——参数在进写闸前全量校验完毕（零副作用承诺）。
 /// 参数命名 = snake_case；读取大小写不敏感（与 <see cref="LinkPocket.Contracts.EngineJson"/> 序列化口径一致）。
 /// </summary>

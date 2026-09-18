@@ -5,7 +5,7 @@ using LinkPocket.Engine;
 namespace ProtocolSmoke;
 
 /// <summary>
-/// 冒烟组装根（阶段 6 定稿，2026-09-18 组合抽取）：全新临时库（SchemaMigrator 经工厂建库）+
+/// 冒烟组装根（定稿，2026-09-18 组合抽取）：全新临时库（SchemaMigrator 经工厂建库）+
 /// 引擎组合根（由共享 Composition 收敛：九模块全量注册 + EngineCore 审计/幂等落库 + 编排层）。
 /// 「整库重置」语义 = 丢弃当前引擎与库文件、另起全新实例（引擎无删文件命令，等价终态：全新空库）。
 /// </summary>

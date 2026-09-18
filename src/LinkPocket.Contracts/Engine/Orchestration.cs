@@ -3,12 +3,12 @@ using System.Text.Json;
 namespace LinkPocket.Contracts;
 
 // ============================================================
-// L2 编排层契约（方案 4.3）：Batch / Macro / Staging / Undo。
+// L2 编排层契约：Batch / Macro / Staging / Undo。
 // 编排的一切皆走唯一调用模型——编排命令（batch.*/macro.*/undo.*/staging.*）
 // 与普通命令同协议、同错误模型、同审计口径（AI 就绪的最后一公里）。
 // ============================================================
 
-/// <summary>批的事务范围（方案 3.5：批 = 显式事务边界）。</summary>
+/// <summary>批的事务范围（批 = 显式事务边界）。</summary>
 public enum BatchScope
 {
     /// <summary>事务批：全部步骤共享一个工作单元，abort 时整批回滚（默认）。</summary>
@@ -35,7 +35,7 @@ public sealed record BatchStep(
     JsonElement Args,
     ErrorPolicy OnError = ErrorPolicy.Abort);
 
-/// <summary>批脚本（方案 4.3 BatchScript）。</summary>
+/// <summary>批脚本（BatchScript）。</summary>
 public sealed record BatchScript(
     string Name,
     IReadOnlyList<BatchStep> Steps,
@@ -52,7 +52,7 @@ public sealed record BatchStepResult(
     string? Message,
     long ElapsedMs);
 
-/// <summary>批执行报告：每步结果 + 总变更集 + 审计关联（方案 2.3 批流）。</summary>
+/// <summary>批执行报告：每步结果 + 总变更集 + 审计关联（批流）。</summary>
 public sealed record BatchReport(
     string BatchId,
     string Name,
@@ -63,7 +63,7 @@ public sealed record BatchReport(
     long ElapsedMs,
     string CorrelationId);
 
-/// <summary>批运行状态（长批处理进度观测；方案 4.3 GetStatus）。</summary>
+/// <summary>批运行状态（长批处理进度观测；GetStatus）。</summary>
 public sealed record BatchStatus(
     string BatchId,
     string Name,
@@ -71,7 +71,7 @@ public sealed record BatchStatus(
     int CompletedSteps,
     int TotalSteps);
 
-/// <summary>批引擎（方案 4.3 IBatchEngine）。</summary>
+/// <summary>批引擎（IBatchEngine）。</summary>
 public interface IBatchEngine
 {
     Task<BatchReport> RunAsync(BatchScript script, CallOptions? options = null, CancellationToken ct = default);
@@ -109,7 +109,7 @@ public sealed record StagingTransformReport(
     IReadOnlyList<string> AppliedOps,
     string? PreviewJson);
 
-/// <summary>Staging 服务（方案 4.3 IStagingService）：AI 文件准备区——拷入/检视/纯函数变换/转正式命令。</summary>
+/// <summary>Staging 服务（IStagingService）：AI 文件准备区——拷入/检视/纯函数变换/转正式命令。</summary>
 public interface IStagingService
 {
     Task<StagedFile> StageAsync(string sourcePath, CancellationToken ct);
@@ -135,7 +135,7 @@ public sealed record UndoEntry(
     CallerRef Caller);
 
 /// <summary>
-/// 撤销协调器（方案 4.3 IUndoCoordinator）：纯状态机（撤销栈 + 重做栈，上限 100 条）。
+/// 撤销协调器（IUndoCoordinator）：纯状态机（撤销栈 + 重做栈，上限 100 条）。
 /// 行为由 undo.list / undo.undo / undo.redo / undo.clear 四个命令驱动；
 /// 逆向命令在撤销命令的管道内经嵌套派发执行（与被撤销命令同事务语义）。
 /// </summary>
@@ -159,7 +159,7 @@ public interface IUndoCoordinator
 }
 
 // ============================================================
-// L4 会话 / 系统 API（方案 4.5）
+// L4 会话 / 系统 API
 // ============================================================
 
 /// <summary>会话类别：ui = 桌面界面；agent = AI 代理（限流）；agent_readonly = 只读 AI；test = 测试。</summary>
@@ -181,7 +181,7 @@ public sealed record Session(
     int RateLimitPerMinute,
     DateTimeOffset StartedAt);
 
-/// <summary>会话管理器（方案 4.5 ISessionManager）：Begin/End + 每次 Execute/Query 前的能力校验。</summary>
+/// <summary>会话管理器（ISessionManager）：Begin/End + 每次 Execute/Query 前的能力校验。</summary>
 public interface ISessionManager
 {
     Task<Session> BeginAsync(SessionProfile profile, CancellationToken ct = default);
@@ -191,7 +191,7 @@ public interface ISessionManager
     void Enforce(CallerRef caller, bool isMutation, string correlationId);
 }
 
-/// <summary>目录导出格式（方案 4.5 IEngineCatalog.Export）。</summary>
+/// <summary>目录导出格式（IEngineCatalog.Export）。</summary>
 public enum ManifestFormat
 {
     /// <summary>AI FunctionCalling 工具清单（OpenAI tools 兼容形态）。</summary>

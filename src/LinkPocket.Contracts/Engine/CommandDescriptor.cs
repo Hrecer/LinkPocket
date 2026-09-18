@@ -1,6 +1,6 @@
 namespace LinkPocket.Contracts;
 
-/// <summary>命令能力标志（方案 4.2 Descriptor.Caps）。</summary>
+/// <summary>命令能力标志（Descriptor.Caps）。</summary>
 [Flags]
 public enum CommandCaps
 {
@@ -32,11 +32,11 @@ public sealed record ImpactSummary(string Text)
     public override string ToString() => Text;
 }
 
-/// <summary>命令参数描述（目录自描述用；TypeName 机器可读，Phase 4 起参与入参校验）。</summary>
+/// <summary>命令参数描述（目录自描述用；TypeName 机器可读，参与入参校验）。</summary>
 public sealed record ParamSpec(string Name, string TypeName, string Description, bool Required)
 {
     /// <summary>
-    /// 类型名规范化（审核 3.1）：<c>typeof(IReadOnlyList&lt;string&gt;).Name</c> 是带反引号的
+    /// 类型名规范化：<c>typeof(IReadOnlyList&lt;string&gt;).Name</c> 是带反引号的
     /// <c>"IReadOnlyList`1"</c>——落到目录/AI 工具清单里既畸形又丢失泛型信息；这里展平成可读形态
     /// <c>"IReadOnlyList&lt;string&gt;"</c>（泛型参数递归规范化）。
     /// </summary>
@@ -50,7 +50,7 @@ public sealed record ParamSpec(string Name, string TypeName, string Description,
 }
 
 /// <summary>
-/// 命令描述符：命令的唯一自描述事实源（方案 4.2）。
+/// 命令描述符：命令的唯一自描述事实源。
 /// 目录（AI 工具清单/用户文档/测试骨架）由它机械生成，杜绝文档漂移。
 /// </summary>
 public sealed record CommandDescriptor(
@@ -67,7 +67,7 @@ public sealed record CommandDescriptor(
     public bool IsMutation => Caps.HasFlag(CommandCaps.Mutation);
     public bool IsDestructive => Caps.HasFlag(CommandCaps.Destructive);
 
-    /// <summary>本查询是否参与结果缓存（方案 7.2：只有声明了依赖与 TTL 的查询才缓存）。</summary>
+    /// <summary>本查询是否参与结果缓存（只有声明了依赖与 TTL 的查询才缓存）。</summary>
     public bool IsCacheable => IsQuery && Cache is not null;
 }
 

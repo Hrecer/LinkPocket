@@ -1114,7 +1114,7 @@ public class MaintenanceModuleTests
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);
         Assert.Equal(1, diag.GetProperty("counts").GetProperty("folders").GetInt32());
 
-        // runtime 段（阶段 12）：组合根已接线 → 必须是引擎真实读数而不是 null/假值
+        // runtime 段：组合根已接线 → 必须是引擎真实读数而不是 null/假值
         var runtime = diag.GetProperty("runtime");
         Assert.Equal(JsonValueKind.Object, runtime.ValueKind);
         Assert.Equal(0L, runtime.GetProperty("cache_hits").GetInt64());

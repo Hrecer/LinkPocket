@@ -6,7 +6,7 @@ using LinkPocket.Kernel;
 namespace LinkPocket.Data;
 
 /// <summary>
-/// 工作单元 EF 实现（方案 4.1）：短生命周期（每调用一个），
+/// 工作单元 EF 实现：短生命周期（每调用一个），
 /// CommitAsync = 单次 SaveChanges；仓储经属性惰性创建。经工厂/组合根暴露为 IUnitOfWork。
 /// </summary>
 public sealed class EfUnitOfWork : IUnitOfWork
@@ -61,7 +61,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
                 }
                 catch (Exception rollbackEx)
                 {
-                    // 回滚失败绝不能覆盖原始异常（审核 1.2）：保留「哪一步 DELETE 失败」的根因
+                    // 回滚失败绝不能覆盖原始异常：保留「哪一步 DELETE 失败」的根因
                     System.Diagnostics.Trace.TraceWarning("清空数据回滚失败：{0}", rollbackEx.Message);
                 }
             }
@@ -70,7 +70,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
 
         // 自管事务场景（ownedTx）：清空是整库级物理操作——池化连接仍持有 WAL 文件句柄，
         // 显式断开 + 截断 checkpoint，避免 backup.export / maintenance.reinit 的文件操作被占住、
-        // WAL 持续膨胀（审核 3.4/4.7）。外层事务（干跑）场景跳过：未提交的回滚本就把体积还原。
+        // WAL 持续膨胀。外层事务（干跑）场景跳过：未提交的回滚本就把体积还原。
         if (ownsTx)
         {
             var connectionString = _db.Database.GetDbConnection().ConnectionString;

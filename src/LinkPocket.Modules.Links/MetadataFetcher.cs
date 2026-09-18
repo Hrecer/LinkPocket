@@ -8,7 +8,7 @@ namespace LinkPocket.Modules.Links;
 /// <summary>
 /// 元数据网络抓取（internal）：HttpClient 池化 + 10s 超时 + 5 次重定向 + 浏览器 UA。
 /// 解析交给 <see cref="RegexMetadataParser"/>（L0 纯函数）；网络命令在引擎里走读池（免写闸）——
-/// 慢站点不阻塞任何数据操作（方案 7.1「网络在闸外」的落点）。
+/// 慢站点不阻塞任何数据操作（「网络在闸外」的落点）。
 /// </summary>
 internal static class MetadataFetcher
 {
@@ -29,7 +29,7 @@ internal static class MetadataFetcher
         return client;
     }
 
-    /// <summary>URL 是否为合法的 http/https 绝对地址（方案 3.2 LP.VAL.005 判定口径）。</summary>
+    /// <summary>URL 是否为合法的 http/https 绝对地址（LP.VAL.005 判定口径）。</summary>
     public static bool IsValidUrl(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);

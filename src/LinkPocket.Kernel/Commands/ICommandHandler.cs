@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Kernel.Commands;
 
 /// <summary>
-/// 命令上下文（方案 4.2）：Handler 只经由它取得工作单元/参数/取消令牌/嵌套派发能力。
+/// 命令上下文：Handler 只经由它取得工作单元/参数/取消令牌/嵌套派发能力。
 /// 引擎在管道中构造；嵌套调用复用父调用的工作单元与写闸（同链串行，绝无死锁）。
 /// </summary>
 public interface ICommandContext
@@ -32,7 +32,7 @@ public interface ICommandContext
 }
 
 /// <summary>
-/// 命令处理器（方案 4.2）：模块对外动作的唯一形态。
+/// 命令处理器：模块对外动作的唯一形态。
 /// 处理器不调用 CommitAsync——提交由引擎管道统一负责（单命令隐式事务、嵌套由父提交）。
 /// 失败抛 <see cref="EngineException"/>（引擎捕获→审计→上抛）。
 /// </summary>

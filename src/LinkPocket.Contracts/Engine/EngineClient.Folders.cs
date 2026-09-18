@@ -13,7 +13,7 @@ public sealed partial class EngineClient
         => QueryAsync<FolderContentsDto>("folders.contents",
             new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
 
-    /// <summary>浏览页主视图一致快照：目录页 + 全量树 + 根级链接数（同一事务快照，2.10-45）。</summary>
+    /// <summary>浏览页主视图一致快照：目录页 + 全量树 + 根级链接数（同一事务快照）。</summary>
     public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null,
         string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0,
         CallOptions? o = null, CancellationToken ct = default)

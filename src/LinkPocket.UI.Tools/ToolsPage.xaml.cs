@@ -21,13 +21,13 @@ namespace LinkPocket.Views
     /// 1. 「跳转」一律通过 Services 层组件 <see cref="IContentLocator"/>（组合根的 Locator）执行——
     ///    本页不直连任何界面方法，跳转语义（进入目标目录并选中该行）由组件统一承担；
     /// 2. 列表一律复用共享 <see cref="SortableDataTable"/>，不手绘卡片。
-    /// 阶段 9 MVVM：查重/ID 跳转/书签导入导出的业务逻辑在 <see cref="ToolsViewModel"/>
+    /// MVVM：查重/ID 跳转/书签导入导出的业务逻辑在 <see cref="ToolsViewModel"/>
     /// （引擎客户端调用与业务规则都在 VM），本视图只做表格装配、状态渲染与文件对话框。
     /// 依赖来源：XAML 声明的页面无法构造注入，由 Shell（MainWindow）在构造时下发组合根（Host）。
     /// </summary>
     public partial class ToolsPage : UserControl
     {
-        // —— 阶段 10 模块化：页面不认识组合根/MainViewModel，依赖由 Shell 经 Configure 窄注入 ——
+        // —— 模块化：页面不认识组合根/MainViewModel，依赖由 Shell 经 Configure 窄注入 ——
         private EngineClient _api = null!;
         private IContentLocator? _locator;
         private Func<string?, Task<string>> _resolveLinkPath = _ => Task.FromResult("全部书签");
@@ -110,7 +110,7 @@ namespace LinkPocket.Views
 
         /// <summary>
         /// 外部数据变更转发入口（Shell 订阅 MainViewModel.OnToolsDataChanged 后调用；
-        /// 阶段 10 起页面不再直接订阅 MainViewModel）。
+        /// 页面不再直接订阅 MainViewModel）。
         /// 数据变更（外部增删改）后自动重跑查重，避免展示过期结果。
         /// </summary>
         public async void OnExternalDataChanged()

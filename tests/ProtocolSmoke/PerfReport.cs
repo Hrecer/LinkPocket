@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ProtocolSmoke;
 
 /// <summary>
-/// 性能门槛记录与 CI 消费点（方案 7.3：10k 基准进 CI）。
+/// 性能门槛记录与 CI 消费点（10k 基准进 CI）。
 /// 每次 <see cref="Asserts.Within"/> 都把「实测值 / 生效门槛 / 是否达标」记进本报告，
 /// 运行结束后落盘 <c>perf_report.json</c>，供 CI 归档、趋势对比与失败定位
 /// （门槛只在断言里，报告只呈现——两者不重复定义，避免"报告与门槛漂移"）。
@@ -18,7 +18,7 @@ internal sealed class PerfReport
 
     private PerfReport() { }
 
-    /// <summary>严格模式（CI）：不加放宽倍数，按方案 7.3 原始门槛判定。</summary>
+    /// <summary>严格模式（CI）：不加放宽倍数，按原始门槛判定。</summary>
     public bool Strict { get; set; }
 
     /// <summary>当前放宽倍数（Debug 缺省 5；严格模式恒为 1）。</summary>
@@ -98,7 +98,7 @@ internal sealed class PerfReport
 
 /// <summary>
 /// 计时助手（性能节专用）：冷却 GC 噪声不是目的——用「同一台机器、同一次运行内的相对比较」
-/// 与宽松门槛来保证稳定；绝对门槛按方案 7.3 标定，Debug 下统一放宽 <see cref="PerfReport.Relaxation"/> 倍。
+/// 与宽松门槛来保证稳定；绝对门槛按基准标定，Debug 下统一放宽 <see cref="PerfReport.Relaxation"/> 倍。
 /// </summary>
 internal static class Perf
 {

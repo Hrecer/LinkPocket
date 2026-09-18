@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 审计落表写入器（阶段 11）：AuditEntry → schema v2 audit_log 表。
+/// 审计落表写入器：AuditEntry → schema v2 audit_log 表。
 /// 连接与主事务无重叠：调用点均在主事务提交/回滚之后（成功路径在 Commit 后，失败路径在 UoW 释放后），
 /// 因此这里的独立短连接永远不会与在途写事务竞争。
 /// 审计失败即抛（不吞、不自愈）——audit_log 由 schema v2 基线创建，表缺失属宿主库状态异常，

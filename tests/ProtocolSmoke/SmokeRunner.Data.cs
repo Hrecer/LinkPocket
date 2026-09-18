@@ -61,7 +61,7 @@ internal static partial class SmokeRunner
         Asserts.That(names.Contains("重名") && names.Contains("重名 (2)") && names.Contains("重名 (3)"),
             $"同名文件夹应自动编号，实际 {string.Join(", ", names)}");
 
-        // folders.overview 单快照：contents + tree + root_link_count 一次取齐（2.10-45）
+        // folders.overview 单快照：contents + tree + root_link_count 一次取齐
         var overview = (await client.QueryAsync<FolderContentsDto>("folders.overview",
             new { folder_id = folder.FolderId }));
         Asserts.That(overview.Tree != null && overview.SubFolders.Count == 1

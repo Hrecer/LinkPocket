@@ -9,7 +9,7 @@ namespace LinkPocket.Modules.Folders;
 /// <summary>
 /// 目录页视图的共享构建核心（folders.contents / folders.overview 共用）：
 /// 一次调用内完成"目录页 + 全量文件夹树 + 根级链接数"，全部位于同一个读池短 UoW
-/// （同一 DbContext/连接）——三条命令各自独立时点的问题收敛为<b>命令内单快照</b>（2.10-45）。
+/// （同一 DbContext/连接）——三条命令各自独立时点的问题收敛为<b>命令内单快照</b>。
 /// folders.contents 交付时清空 tree/root_link_count 保持原响应形状；folders.overview 全量交付。
 /// </summary>
 internal static class FolderViewCore

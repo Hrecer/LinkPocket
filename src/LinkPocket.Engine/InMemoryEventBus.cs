@@ -4,8 +4,8 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 进程内事件总线（方案 4.4）：持闸期间同步推送（订阅方纪律：不得同步回派命令——架构单测强制 + 文档双保险）。
-/// 每个订阅方独立 try/catch（报告 1.2）：单个订阅方的异常只记录日志、不阻断其余订阅方，
+/// 进程内事件总线：持闸期间同步推送（订阅方纪律：不得同步回派命令——架构单测强制 + 文档双保险）。
+/// 每个订阅方独立 try/catch：单个订阅方的异常只记录日志、不阻断其余订阅方，
 /// 且绝不回传调用方——「已提交的写必须成功返回，订阅方异常不能回传」（否则会让已落库的写报成 LP.SYS.003）。
 /// </summary>
 public sealed class InMemoryEventBus : IEventBus

@@ -7,7 +7,7 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 引擎核心（方案 2.3/3.1/4.2）。
+/// 引擎核心（读流 / wire / 命令注册）。
 /// 写流：解析 → 幂等查重 → 能力门（破坏性确认）→ 审计开始 → 写闸 → UoW → Handler → 提交 → 事件发布 → 审计完成。
 /// 读流：解析 → 读池短 UoW → Handler → 结果（免写闸/免审计/免撤销）。
 /// 嵌套：复用父 UoW 与写闸（同链串行），事件随父提交一并发布，审计合并为父条目子记录。
@@ -57,18 +57,18 @@ public sealed class EngineCore : IEngine
     /// <summary>事件总线（宿主可订阅做 UI 防抖刷新等；订阅方纪律 = 不得同步回派命令）。</summary>
     public IEventBus Events => _events;
 
-    /// <summary>事件存储（方案 4.4 L3）：发布即写入的环形缓冲，追平/轮询入口。</summary>
+    /// <summary>事件存储（L3）：发布即写入的环形缓冲，追平/轮询入口。</summary>
     public IEventStore EventStore => _eventStore;
 
-    /// <summary>批引擎（阶段 11 编排层；OrchestrationHost 装配后非空）。
-    /// setter internal：装配由编排层宿主独占（组合根不可在装配后改写，审核 E7）。</summary>
+    /// <summary>批引擎（编排层；OrchestrationHost 装配后非空）。
+    /// setter internal：装配由编排层宿主独占（组合根不可在装配后改写）。</summary>
     public IBatchEngine? Batch { get; internal set; }
 
-    /// <summary>撤销协调器（阶段 11 编排层；OrchestrationHost 装配后非空）。
+    /// <summary>撤销协调器（编排层；OrchestrationHost 装配后非空）。
     /// setter internal：同上。</summary>
     public IUndoCoordinator? Undo { get; internal set; }
 
-    /// <summary>查询结果缓存（阶段 12 性能加固）：声明了 <see cref="CommandDescriptor.Cache"/> 的查询才参与。</summary>
+    /// <summary>查询结果缓存（性能加固）：声明了 <see cref="CommandDescriptor.Cache"/> 的查询才参与。</summary>
     public QueryCache Cache => _cache;
 
     /// <summary>运行时统计快照（诊断面；宿主/Host 接线进 diagnostics.collect）。</summary>
@@ -98,7 +98,7 @@ public sealed class EngineCore : IEngine
         var dryRun = options?.DryRun == true;
         var argsJson = EngineJson.ToJsonElement(args);   // 入参快照：审计 ArgsJson 与撤销登记共用
 
-        // 能力门（方案 4.5）：会话存在性 + 只读拒绝写 + 限流（未登记会话零约束，兼容宿主自有调用）
+        // 能力门：会话存在性 + 只读拒绝写 + 限流（未登记会话零约束，兼容宿主自有调用）
         _sessions?.Enforce(caller, isMutation: true, correlationId);
 
         var handler = ResolveOrThrow(command, correlationId);
@@ -157,9 +157,9 @@ public sealed class EngineCore : IEngine
             if (!dryRun)
             {
                 // 事件发布：持闸期间同步推送（不变量：订阅方不得同步回派命令）
-                // 阶段 12：事件携带 ChangeSet 负载（订阅方可做增量处理）+ 按事件名精确失效查询缓存
+                // 事件携带 ChangeSet 负载（订阅方可做增量处理）+ 按事件名精确失效查询缓存
                 // 观测面纪律：订阅方异常已由 IEventBus 逐方隔离，此处再兜一层——
-                // 任何事件发布失败都绝不允许把「已提交的成功写」报成失败（违规即 LP.SYS.003，见报告 1.1）。
+                // 任何事件发布失败都绝不允许把「已提交的成功写」报成失败（违规即 LP.SYS.003）。
                 try
                 {
                     await PublishChangesAsync(result.Changes, ctx, correlationId, caller);
@@ -170,7 +170,7 @@ public sealed class EngineCore : IEngine
                 }
 
                 // 整库影响面的命令（maintenance.reinit）：表已清空，全部查询缓存直接作废；
-                // **撤销栈/重做栈同样作废**（Maintenance 审核 1.1：旧条目的目标 ID 已不存在，
+                // **撤销栈/重做栈同样作废**（Maintenance：旧条目的目标 ID 已不存在，
                 // 留着只会让 undo.undo 报 EntityNotFound 且永远可重放失败）——同步清内存栈
                 //（写闸内串行、ClearAsync 无内等待，GetAwaiter 安全）。
                 if (handler.Descriptor.Impact == ImpactSummary.Database)
@@ -182,7 +182,7 @@ public sealed class EngineCore : IEngine
                 if (options?.IdempotencyKey is { } idemKey)
                     _idempotency.Store(idemKey, result);
 
-                // 撤销登记（阶段 11）：顶层可撤销命令（Reversible + UndoInverse）成功后入栈
+                // 撤销登记：顶层可撤销命令（Reversible + UndoInverse）成功后入栈
                 Undo?.Record(handler.Descriptor, argsJson, caller);
             }
 
@@ -253,7 +253,7 @@ public sealed class EngineCore : IEngine
         var argsJson = EngineJson.ToJsonElement(args);
         var policy = handler.Descriptor.Cache;
 
-        // 缓存路径（方案 2.3 读流）：先取依赖世代快照，再触库；条目按快照存回。
+        // 缓存路径（读流）：先取依赖世代快照，再触库；条目按快照存回。
         // 快照必须在读取之前取 —— 读取期间发生的写会推进世代戳，使本次条目立即失配（冷启动宁多回填一次，绝不留陈旧值）。
         if (policy is not null)
         {
@@ -293,11 +293,11 @@ public sealed class EngineCore : IEngine
     {
         // 嵌套派发按 Descriptor 形态路由：既允许 mutation（复用父 UoW/写闸），也允许 query
         // （只读预检复用父 UoW，如 staging.inspect→bookmarks.inspect）——不强制 IsMutation，
-        // 因查询嵌套是既有合法用法（见报告 2.1：守卫会误伤只读预检）。
+        // 因查询嵌套是既有合法用法（守卫会误伤只读预检）。
         var handler = ResolveOrThrow(command, parent.CorrelationId);
         var json = EngineJson.ToJsonElement(args);
 
-        // 4.6：当调用方显式传入自己的 ct（非 default）时，用 LinkedTokenSource 联合父 ct——
+        // 当调用方显式传入自己的 ct（非 default）时，用 LinkedTokenSource 联合父 ct——
         // 父取消同样会传播到子命令；传 default（缺省路径）则直接继承父 ct（零开销等价）。
         var linked = ct == default ? null : CancellationTokenSource.CreateLinkedTokenSource(parent.Ct, ct);
         try
@@ -311,7 +311,7 @@ public sealed class EngineCore : IEngine
             // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
             parent.CollectNestedChange(result.Changes);
 
-            // 2.3：嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）
+            // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）
             _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
                 sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,

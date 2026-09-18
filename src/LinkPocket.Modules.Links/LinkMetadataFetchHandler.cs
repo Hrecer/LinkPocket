@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Links;
 
 /// <summary>
 /// links.metadata_fetch（Query）：抓取页面元数据（标题/描述/favicon）。
-/// 读池执行、免写闸——慢站点不阻塞任何数据操作（方案 7.1）；网络失败 = NETWORK_ERROR（可重试）。
+/// 读池执行、免写闸——慢站点不阻塞任何数据操作；网络失败 = NETWORK_ERROR（可重试）。
 /// </summary>
 internal sealed class LinkMetadataFetchHandler : ICommandHandler
 {

@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace ProtocolSmoke;
 
 /// <summary>
-/// §10 编排层（阶段 11）：批（事务回滚/continue/独立/dry_run/status/ref 模板）→ 宏 → 撤销/重做
+/// §10 编排层：批（事务回滚/continue/独立/dry_run/status/ref 模板）→ 宏 → 撤销/重做
 /// → Staging 全生命周期 → diagnostics.collect → audit_log/idempotency 落表。
 /// </summary>
 internal static partial class SmokeRunner

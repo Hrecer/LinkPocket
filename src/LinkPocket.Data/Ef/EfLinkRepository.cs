@@ -106,7 +106,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     }
 
     /// <summary>
-    /// search.links 多范围搜索的 SQL 下推（方案 3.3）：三字段 OR 包含 ∪ 目录集合，两段之间亦为 OR。
+    /// search.links 多范围搜索的 SQL 下推：三字段 OR 包含 ∪ 目录集合，两段之间亦为 OR。
     /// 中缀 LIKE 注定全表扫描（已知且接受，见 IndexPlanTests 负向断言）——但过滤发生在 SQL 端，
     /// 不再把全库读进内存逐条比对。
     /// </summary>

@@ -1,7 +1,7 @@
 namespace LinkPocket.Kernel;
 
 /// <summary>
-/// 标准参数解析（方案 3.3）：sortBy/sortOrder 字符串 → <see cref="SortSpec"/> 列表。
+/// 标准参数解析：sortBy/sortOrder 字符串 → <see cref="SortSpec"/> 列表。
 /// 字段白名单 = 排序引擎可下推的全部稳定字段名；白名单外字段回落 <paramref name="fallback"/>（既有口径）。
 /// </summary>
 public static class QueryParsing

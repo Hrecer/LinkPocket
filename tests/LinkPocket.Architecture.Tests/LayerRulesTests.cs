@@ -4,7 +4,7 @@ using Xunit;
 namespace LinkPocket.Architecture.Tests;
 
 /// <summary>
-/// 后端依赖层级规则（阶段 13 收尾补全，方案 2.2 依赖规则表）：把「依赖只能向下」逐层写成断言。
+/// 后端依赖层级规则（收尾补全，依赖规则表）：把「依赖只能向下」逐层写成断言。
 /// 与 <see cref="DependencyRulesTests"/>（UI 侧规则）互补：本文件管内核/数据/引擎分层与模块黑盒。
 ///
 /// <para>判定基于 csproj 的 ProjectReference（引用图 = 编译期事实），不做文本猜测；
@@ -78,15 +78,15 @@ public class LayerRulesTests
     public void Engine_只依赖契约内核与数据层_不引用业务模块()
         => AssertRefs(Engine, Contracts, Kernel, Data);
 
-    /// <summary>A1 红线：旧协议容器 LinkPocket.Infrastructure 程序集必须不存在（零残留）。
-    /// 与其配套的旧协议门面（Transport/ILinkPocketApi/TransportedLinkPocketApi 类型）在
+    /// <summary>架构红线：协议容器 LinkPocket.Infrastructure 程序集必须不存在（零残留）。
+    /// 与其配套的协议门面（Transport/ILinkPocketApi/TransportedLinkPocketApi 类型）在
     /// <see cref="Contracts_禁止旧协议门面类型"/> 另行断言。</summary>
     [Fact]
     public void Infrastructure_程序集不存在_零残留()
         => Assert.False(File.Exists(CsprojPath(Infrastructure)),
-            "LinkPocket.Infrastructure 已随 A1 删除；任何让该程序集复活的改动都违反零兼容红线");
+            "LinkPocket.Infrastructure 已删除；任何让该程序集复活的改动都违反零兼容红线");
 
-    /// <summary>A1 红线：Contracts 程序集内禁止出现旧协议门面类型（Transport 系 / ILinkPocketApi 系）。
+    /// <summary>架构红线：Contracts 程序集内禁止出现协议门面类型（Transport 系 / ILinkPocketApi 系）。
     /// Contracts = 零依赖纯契约层，只承载 IEngine / 错误模型 / Descriptor / 事件 DTO / 缓存策略。</summary>
     [Theory]
     [InlineData("namespace LinkPocket.Api;")]

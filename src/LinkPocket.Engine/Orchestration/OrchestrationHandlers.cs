@@ -6,10 +6,10 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 编排命令处理器集（阶段 11，方案 4.2/4.3）：15 个注册命令
+/// 编排命令处理器集：15 个注册命令
 /// （macro.* 5 / undo.* 4 / staging.* 6）。
 /// batch.run / batch.dry_run / batch.status 不注册——由 wire 层直路由 <see cref="BatchEngine"/>；
-/// diagnostics.collect 归属 Maintenance 模块（方案 4.2 总表），引擎侧诊断数据经其 ctx.Uow 取数。
+/// diagnostics.collect 归属 Maintenance 模块（总表），引擎侧诊断数据经其 ctx.Uow 取数。
 /// 逆向命令执行统一走嵌套派发（与撤销命令同事务、同审计父条目）。
 /// </summary>
 internal static class OrchestrationHandlers
@@ -117,7 +117,7 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
         }
 
-        // 宏实际运行耗时（审核 2.3：此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
+        // 宏实际运行耗时（此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
         var sw = Stopwatch.StartNew();
         var (results, touched, events) = await BatchEngine.RunStepsNestedAsync(
             (CommandContextImpl)ctx, script with { Name = $"macro:{name}" }, ctx.Ct);

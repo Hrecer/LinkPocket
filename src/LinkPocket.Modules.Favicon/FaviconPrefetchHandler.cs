@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Favicon;
 
 /// <summary>
 /// favicon.prefetch（Mutation）：把缺失图标的链接加入后台预取队列（fire-and-forget，
-/// 立即返回排队数——写闸只持有入队瞬间；队列内部并发 4、按地址去重，方案 7.2「预取后台化」）。
+/// 立即返回排队数——写闸只持有入队瞬间；队列内部并发 4、按地址去重，「预取后台化」）。
 /// link_ids 缺省 = 全库缺失图标的链接。
 /// </summary>
 internal sealed class FaviconPrefetchHandler : ICommandHandler

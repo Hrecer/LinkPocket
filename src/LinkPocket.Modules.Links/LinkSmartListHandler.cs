@@ -22,7 +22,7 @@ internal sealed class LinkSmartListHandler : ICommandHandler
             ParamSpec.Opt<int>("days", "时间窗天数，只对 recently_* 三类生效（缺省 7）"),
         ],
         Caps: CommandCaps.Query,
-        // 智能列表只查 links 表且结果只受链接表变更影响（7.2：recently_* 三键都有索引，缓存省掉重复排序）
+        // 智能列表只查 links 表且结果只受链接表变更影响（recently_* 三键都有索引，缓存省掉重复排序）
         Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)

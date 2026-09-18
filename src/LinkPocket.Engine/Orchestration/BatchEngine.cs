@@ -7,7 +7,7 @@ using LinkPocket.Kernel;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 批引擎（方案 4.3 IBatchEngine / 2.3 批流 / 3.5 并发事务语义）。
+/// 批引擎（IBatchEngine / 批流 / 并发事务语义）。
 /// 事务批（Transactional，默认）：持有写闸 + 单一工作单元，每步经嵌套派发复用父 UoW；
 /// 步骤全部成功才提交（abort / 抛异常 = 不提交即回滚）；dry_run 回滚事务。
 /// 独立批（Independent）：每步走完整顶层管道（各自隐式事务）；abort 只停后续步骤，已执行步骤保持生效。
@@ -54,7 +54,7 @@ public sealed class BatchEngine : IBatchEngine
         foreach (var key in stale) _status.TryRemove(key, out _);
     }
 
-    /// <summary>取当前已完成的步数；状态缺失时退化为 0（拒绝 KeyNotFoundException 覆盖原始异常，审核 1.5）。</summary>
+    /// <summary>取当前已完成的步数；状态缺失时退化为 0（拒绝 KeyNotFoundException 覆盖原始异常）。</summary>
     private int CompletedStepsOf(string batchId)
         => _status.TryGetValue(batchId, out var status) ? status.CompletedSteps : 0;
 

@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 会话管理器（方案 4.5 ISessionManager）：会话登记 + 能力门校验。
+/// 会话管理器（ISessionManager）：会话登记 + 能力门校验。
 /// 校验规则（EngineCore 在每次 Execute/Query 前调用 <see cref="Enforce"/>）：
 /// ① Caller 未带 SessionId 或会话未登记 = 宿主自有会话，不做引擎侧约束（向后兼容既有调用方）；
 /// ② 只读会话（agent_readonly）拒绝一切变更命令（READONLY_SESSION）；
@@ -19,7 +19,7 @@ public sealed class SessionManager : ISessionManager
         public readonly object Lock = new();
     }
 
-    /// <summary>agent 类会话的缺省限流（方案 4.5：agent 默认 30 cmd/min）。</summary>
+    /// <summary>agent 类会话的缺省限流（agent 默认 30 cmd/min）。</summary>
     public const int DefaultAgentRateLimitPerMinute = 30;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.Ordinal);
@@ -57,7 +57,7 @@ public sealed class SessionManager : ISessionManager
     {
         if (caller.SessionId is not { } id)
             return;   // 未带会话 = 宿主自有调用，零约束（既有兼容口径）
-        // 已显式 End 的会话：带旧 id 的后续调用一律拒绝——只读保护与限流不能被「End + 重放」绕过（审核 1.2）
+        // 已显式 End 的会话：带旧 id 的后续调用一律拒绝——只读保护与限流不能被「End + 重放」绕过
         if (_ended.ContainsKey(id))
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound,

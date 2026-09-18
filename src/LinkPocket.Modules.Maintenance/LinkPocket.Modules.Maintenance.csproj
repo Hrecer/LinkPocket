@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- 维护模块（方案 4.2/第五章）：schema 版本查询/诊断信息收集/整库重置（两阶段确认）。
-       schema_migrations 版本表随阶段 5 schema v2 落库；黑盒封装。 -->
+  <!-- 维护模块（第五章）：schema 版本查询/诊断信息收集/整库重置（两阶段确认）。
+      schema_migrations 版本表随 schema v2 落库；黑盒封装。 -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>

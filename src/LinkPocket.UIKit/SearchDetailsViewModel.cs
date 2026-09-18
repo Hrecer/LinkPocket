@@ -20,7 +20,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
         () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } },
-        () => IsLink && !string.IsNullOrEmpty(IdText));   // 3.3：与 CopyUrlCommand 对齐（单选链接且非空）
+        () => IsLink && !string.IsNullOrEmpty(IdText));   // 与 CopyUrlCommand 对齐（单选链接且非空）
     private RelayCommand? _copyIdCommand;
 
     public SearchDetailsViewModel()
@@ -75,7 +75,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
                     await FaviconService.PrefetchAndCacheAsync(faviconUrl);
                     var cached = FaviconService.LoadFromCache(faviconUrl);
                     if (cached == null || gen != _generation) return;
-                    // 2.5：INPC 必须回到 UI 线程（后台线程触发属性通知在特定绑定路径下会抛异常）
+                    // INPC 必须回到 UI 线程（后台线程触发属性通知在特定绑定路径下会抛异常）
                     System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                     {
                         if (gen != _generation) return;

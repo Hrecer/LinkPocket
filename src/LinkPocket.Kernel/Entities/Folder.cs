@@ -25,7 +25,7 @@ public class Folder
     public string? ParentId { get; set; }
 
     /// <summary>
-    /// v2 folders 表不再落 link_count 列（方案 6.1）：目录计数一律经
+    /// v2 folders 表不再落 link_count 列：目录计数一律经
     /// ITreeService.RecursiveLinkCountsAsync 即时计算并进 DTO，本属性仅存内存语义
     /// （导入/删除等路径的批内直接计数），<c>[NotMapped]</c> 不参与任何 SQL。
     /// </summary>

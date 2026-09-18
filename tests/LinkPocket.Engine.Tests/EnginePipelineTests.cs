@@ -272,7 +272,7 @@ public class EnginePipelineTests
         finally { TryDelete(path); }
     }
 
-    // ===== 观测面失败隔离（报告 1.1 / 1.2）：已提交写绝不因审计/订阅方异常被报成失败 =====
+    // ===== 观测面失败隔离：已提交写绝不因审计/订阅方异常被报成失败 =====
 
     /// <summary>成功审计写入抛异常时，已提交的写仍返回成功，且失败被计数暴露（观测面铁律 #10）。</summary>
     [Fact]
@@ -296,7 +296,7 @@ public class EnginePipelineTests
         finally { TryDelete(path); }
     }
 
-    /// <summary>事件订阅方抛异常：后续订阅方仍收到、调用方不报错（报告 1.2 端到端：单订阅方异常不阻断、不回传）。</summary>
+    /// <summary>事件订阅方抛异常：后续订阅方仍收到、调用方不报错（端到端：单订阅方异常不阻断、不回传）。</summary>
     [Fact]
     public async Task EventSubscriber_Exception_IsIsolated_OtherSubscribersStillReceive_WriteSucceeds()
     {
@@ -319,7 +319,7 @@ public class EnginePipelineTests
         finally { TryDelete(path); }
     }
 
-    // ===== 确认令牌：先校验后消费（报告 1.4）=====
+    // ===== 确认令牌：先校验后消费 =====
 
     [Fact]
     public void ConfirmToken_WrongCommand_DoesNotConsume_ValidToken()
@@ -344,7 +344,7 @@ public class EnginePipelineTests
         Assert.False(expired.ValidateAndConsume(t2, "test.destructive"));     // 过期 → false（不消费）
     }
 
-    // ===== 嵌套审计记录实测耗时（报告 2.3）=====
+    // ===== 嵌套审计记录实测耗时 =====
 
     [Fact]
     public async Task Nested_Step_Audit_Records_Measured_ElapsedMs()

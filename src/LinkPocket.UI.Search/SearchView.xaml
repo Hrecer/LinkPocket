@@ -5,7 +5,7 @@
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              Background="{DynamicResource SurfaceContainerLow}">
 
-    <!-- ===== 搜索页（阶段 9 MVVM 启用）：视图只负责装配与渲染，逻辑在 SearchViewModel ===== -->
+    <!-- ===== 搜索页：视图只负责装配与渲染，逻辑在 SearchViewModel ===== -->
 
     <UserControl.Resources>
         <!-- 胶囊搜索栏内的透明输入框：视觉由外层 SearchBarShell 承担 -->

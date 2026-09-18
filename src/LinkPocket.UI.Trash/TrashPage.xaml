@@ -10,7 +10,7 @@
          + 中央共享数据表 SortableDataTable（平铺：名称/类型/原位置/删除时间，搜索页同款样式）
          + 直角通栏状态栏。本期无还原，仅单条/整单元「永久删除」。 -->
     <UserControl.Resources>
-        <!-- BoolToVis 已上收 UIKit.xaml（阶段 9） -->
+        <!-- BoolToVis 已上收 UIKit.xaml -->
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource SurfaceContainerLow}">

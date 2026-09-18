@@ -125,7 +125,7 @@ namespace LinkPocket.ViewModels
         }
 
         /// <summary>
-        /// 事件防抖刷新入口（审核 1.5）：跨页数据变更后，让当前打开的结果列表重拉——
+        /// 事件防抖刷新入口：跨页数据变更后，让当前打开的结果列表重拉——
         /// 与页面内删除后的重载同一条路径（LoadAsync → Reloaded → 视图重绑）。
         /// 未打开列表（ResultViewModel null）不做事；持有期间代次递增使在途结果失效。
         /// </summary>

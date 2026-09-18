@@ -45,7 +45,7 @@ internal sealed class CommandContextImpl : ICommandContext
         => _engine.ExecuteNestedAsync(this, command, args, ct);
 
     /// <summary>累积嵌套子命令的变更集（父提交成功后随父事件一并发布并失效缓存；父审计条目下附带子记录）。
-    /// <b>设计（报告 4.5）</b>：嵌套步骤的 HumanSummary 不向上合并——人话摘要只由顶层命令产出，
+    /// <b>设计</b>：嵌套步骤的 HumanSummary 不向上合并——人话摘要只由顶层命令产出，
     /// 嵌套子步骤只贡献「受影响实体 + 事件名」，避免多段摘要拼接带来文案割裂。</summary>
     public void CollectNestedChange(ChangeSet? changes)
     {
@@ -59,7 +59,7 @@ internal sealed class CommandContextImpl : ICommandContext
     public ChangeSet TakeNestedChanges()
     {
         if (_nestedTouched.Count == 0 && _nestedEvents.Count == 0 && _nestedWarnings.Count == 0)
-            return ChangeSet.Empty;   // 无嵌套变更 = 空集短路，不为零集合反复分配新实例（审核 3.5）
+            return ChangeSet.Empty;   // 无嵌套变更 = 空集短路，不为零集合反复分配新实例
 
         var merged = new ChangeSet(
             _nestedTouched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
@@ -73,7 +73,7 @@ internal sealed class CommandContextImpl : ICommandContext
     }
 }
 
-/// <summary>引擎入参序列化约定：snake_case 命名 + 大小写不敏感读取（方案 3.3 标准参数口径）。</summary>
+/// <summary>引擎入参序列化约定：snake_case 命名 + 大小写不敏感读取（标准参数口径）。</summary>
 public static class EngineJson
 {
     public static readonly JsonSerializerOptions Options = new()
@@ -96,7 +96,7 @@ public static class EngineJson
             null => EmptyObject,
             // wire 直路由（方法名 = 命令名）缺省传 default(JsonElement)（Undefined）；JSON null 同理。
             // 统一归一为 {} —— 下游 Handler 一律按"对象形态"读参数，加速器与观测面不得成为故障源。
-            // 契约（报告 3.6）：对传入的 JsonElement 直接返回原引用（不 Clone）——调用方须保证其底层
+            // 契约：对传入的 JsonElement 直接返回原引用（不 Clone）——调用方须保证其底层
             // JsonDocument 的生命周期足够长；wire 层已先行 Clone，普通 new{...} 走下方 SerializeToElement。
             JsonElement e => e.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ? EmptyObject : e,
             _ => JsonSerializer.SerializeToElement(args, Options),

@@ -9,12 +9,12 @@ namespace LinkPocket.Engine.Tests;
 
 /// <summary>
 /// 三份审核报告（Engine / Data / Contracts）修复的针对性回归测试：
-/// 1.1 幂等过期清理不再因 reader 未关闭而静默失败；1.2 会话 End 后无法再绕过能力门；
-/// 1.3 撤销协调器并发取 id 不丢条目；2.1 + 3.1 目录/AI 工具清单的数组参数类型机读化。
+/// 幂等过期清理不再因 reader 未关闭而静默失败；会话 End 后无法再绕过能力门；
+/// 撤销协调器并发取 id 不丢条目；目录/AI 工具清单的数组参数类型机读化。
 /// </summary>
 public class AuditReviewFixesTests
 {
-    // ===== 审核 1.1：SqlIdempotencyStore.TryGet 的 reader-DELETE 组合 =====
+    // ===== SqlIdempotencyStore.TryGet 的 reader-DELETE 组合 =====
 
     [Fact]
     public async Task Idempotency_Expired_Row_Is_Cleaned_Without_Throwing()
@@ -41,7 +41,7 @@ public class AuditReviewFixesTests
         finally { Cleanup(path); }
     }
 
-    // ===== 审核 1.2：SessionManager.EndAsync 后能力门不得失效 =====
+    // ===== SessionManager.EndAsync 后能力门不得失效 =====
 
     [Fact]
     public async Task Session_After_End_Never_Passes_Enforce()
@@ -64,7 +64,7 @@ public class AuditReviewFixesTests
         finally { Cleanup(path); }
     }
 
-    // ===== 审核 1.3：UndoCoordinator 并发 TakeUndoAsync(id) + Record 不丢条目 =====
+    // ===== UndoCoordinator 并发 TakeUndoAsync(id) + Record 不丢条目 =====
 
     [Fact]
     public async Task UndoCoordinator_Concurrent_TakeById_And_Record_Keeps_All_Entries()
@@ -93,7 +93,7 @@ public class AuditReviewFixesTests
         Assert.Equal(8, remaining.Count);
     }
 
-    // ===== 审核 2.1 + 3.1：目录/AI 工具清单的数组参数类型 =====
+    // ===== 目录/AI 工具清单的数组参数类型 =====
 
     [Fact]
     public void ParamSpec_TypeName_Is_Normalized_For_Generics()

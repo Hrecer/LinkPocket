@@ -4,7 +4,7 @@ namespace LinkPocket.Contracts;
 public sealed record EntityRef(string Type, string Id);
 
 /// <summary>
-/// 变更集（方案 3.1）：本调用的受影响实体、发布的事件与人类可读摘要。
+/// 变更集：本调用的受影响实体、发布的事件与人类可读摘要。
 /// HumanSummary 示例：「将移动 12 个链接到「工作」（2 个同名自动编号）」。
 /// </summary>
 public sealed record ChangeSet(
@@ -19,7 +19,7 @@ public sealed record ChangeSet(
 {
     public static readonly ChangeSet Empty = new([], [], null);
 
-    /// <summary>单实体单事件（审核 1.6：补 warnings 参数，避免「一遇 Warnings 就手写 new」）。</summary>
+    /// <summary>单实体单事件（补 warnings 参数，避免「一遇 Warnings 就手写 new」）。</summary>
     public static ChangeSet Of(EntityRef touched, string evt, string? summary = null,
         IReadOnlyList<string>? warnings = null)
         => new([touched], [evt], summary, warnings);

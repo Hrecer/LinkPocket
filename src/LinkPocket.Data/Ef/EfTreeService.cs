@@ -5,7 +5,7 @@ using LinkPocket.Kernel;
 namespace LinkPocket.Data;
 
 /// <summary>
-/// 树算法 EF 实现（方案 4.1，internal 黑盒——经 <see cref="IUnitOfWork.Trees"/> 暴露）。
+/// 树算法 EF 实现（internal 黑盒——经 <see cref="IUnitOfWork.Trees"/> 暴露）。
 /// 父链遍历/递归计数的唯一出处；同一工作单元上下文内操作，变更由引擎统一提交。
 ///
 /// 父链一律「一次取索引 + 内存走链」（取代每级一次查询的 N+1）；
@@ -18,7 +18,7 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
         var parents = await LoadParentIndexAsync(ct);
         var direct = await DirectCountsAsync(ct);
 
-        // 记忆化递归（审核 1.1）：原先「每个有直接链接的文件夹都独立沿父链上溯累加」复杂度 O(N×深度)，
+        // 记忆化递归：原先「每个有直接链接的文件夹都独立沿父链上溯累加」复杂度 O(N×深度)，
         // 链式树形下退化为 O(N²)；这里把递归计数定义为 count(x) = direct[x] + Σ count(子)，
         // 每个节点恰好计算一次 → 整体 O(N)（文件夹数量级下递归深度受用户建树能力限制，安全）。
         var children = parents
@@ -73,7 +73,7 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
         if (id is null) return FolderIds.RootDisplayName;
 
         var nodes = await LoadNodeIndexAsync(ct);
-        // 审核 2.3：id 指向的文件夹在库里不存在（数据不一致/已被删）时，必须如实标记「未知目录」，
+        // id 指向的文件夹在库里不存在（数据不一致/已被删）时，必须如实标记「未知目录」，
         // 不得把空路径伪装成「全部书签」——回收站的 OriginPath 会拿这个结果做快照，误导用户以为是根目录。
         if (!nodes.ContainsKey(id.Value.Value))
             return "未知目录";

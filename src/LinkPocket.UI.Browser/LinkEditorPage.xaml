@@ -8,7 +8,7 @@
          新建固定当前目录，无所属目录选择；数据由 LinkEditorViewModel 驱动。 -->
 
     <UserControl.Resources>
-        <!-- BoolToVis / InvBoolToVis / ScrollGutterMargin 已上收 UIKit.xaml（阶段 9） -->
+        <!-- BoolToVis / InvBoolToVis / ScrollGutterMargin 已上收 UIKit.xaml -->
 
         <!-- M3 Expressive 圆角填充文本域（单行） -->
         <Style x:Key="PageTextField" TargetType="TextBox">

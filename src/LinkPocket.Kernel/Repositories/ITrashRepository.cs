@@ -12,7 +12,7 @@ public interface ITrashRepository
     Task<IReadOnlyList<TrashedLink>> ListStandaloneLinksAsync(CancellationToken ct);
 
     /// <summary>单独删除的书签计数（与 <see cref="ListStandaloneLinksAsync"/> 同口径的 SQL COUNT；
-    /// diagnostics 等只计数场景使用，绝不拉全量，Maintenance 审核 1.3）。</summary>
+    /// diagnostics 等只计数场景使用，绝不拉全量）。</summary>
     Task<int> CountStandaloneLinksAsync(CancellationToken ct);
 
     /// <summary>某回收站单元的直接书签快照（TrashFolderId == unit）。</summary>

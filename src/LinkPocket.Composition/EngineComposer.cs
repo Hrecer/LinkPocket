@@ -52,9 +52,9 @@ public static class EngineComposer
     /// <summary>真实库路径入口：缺省建 <see cref="LinkPocketDbContextFactory"/>（构造即启 WAL + 建 schema）。</summary>
     public static EngineComposition Compose(string dbPath, ComposeOptions? options = null)
     {
-        // 审核 1.1：空串会绕过 ThrowIfNull（空串非 null），随后 Path.GetDirectoryName("")
+        // 空串会绕过 ThrowIfNull（空串非 null），随后 Path.GetDirectoryName("")
         // 返回 null → Path.Combine 抛「参数为 null」——错误信息误导；这里显式拒绝 + 归一化
-        // 绝对路径（审核 2.5：相对路径的 cwd 漂移风险收敛）
+        // 绝对路径（相对路径的 cwd 漂移风险收敛）
         if (string.IsNullOrWhiteSpace(dbPath))
             throw new ArgumentException("dbPath 不能为空", nameof(dbPath));
         dbPath = Path.GetFullPath(dbPath);
@@ -86,9 +86,9 @@ public static class EngineComposer
     {
         var registry = new CommandRegistry();
 
-        // diagnostics.collect 的 runtime 段由组合根接线（阶段 12）：引擎在注册之后才构造，
+        // diagnostics.collect 的 runtime 段由组合根接线：引擎在注册之后才构造，
         // 故用延迟读取的闭包 —— 引擎 = 观测对象本身，接线不得引入第二份统计源。
-        // ⚠️ 审核 1.3：该闭包在 new EngineCore 之后才可求值（届时 engineRef 已赋值）；
+        // ⚠️ 该闭包在 new EngineCore 之后才可求值（届时 engineRef 已赋值）；
         // 若构造中途抛异常，registry 不会对外泄漏，闭包也不会被求值——仅登记时序依赖，勿提前解引用。
         EngineCore? engineRef = null;
         registry.RegisterAll(LinkPocket.Modules.Folders.FoldersModule.CreateHandlers());
@@ -109,7 +109,7 @@ public static class EngineComposer
             idempotency: options.SqlIdempotency ? new SqlIdempotencyStore(dbContextFactory) : null);
         engineRef = engine;
 
-        // 审核 1.2/1.4：fallbackStagingRoot 仅在「库路径入口」非空；uowFactory 入口传 null →
+        // fallbackStagingRoot 仅在「库路径入口」非空；uowFactory 入口传 null →
         // 由 StagingService 走 TempArea 兜底。选项优先级 = StagingRoot（显式）> fallbackStagingRoot（推导）> TempArea（缺省）。
         if (options.IncludeOrchestration)
             registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, dbContextFactory,

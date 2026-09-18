@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace LinkPocket.Kernel;
 
 /// <summary>
-/// Windows 风格同名自动编号（方案 4.1，唯一出处）：
+/// Windows 风格同名自动编号（唯一出处）：
 /// 「abc」撞名 → 「abc (2)」→「abc (3)」…；输入名本身已带「(N)」尾缀时先剥掉再编号
 /// （与既有前端内联算法 <c>GenerateUniqueName</c> 逐字等价——行为等价项）。
 /// 纯函数、零依赖、可表驱动单测；跨场景复用点 = 文件夹移动/复制/粘贴/批量移动/导入。

@@ -11,7 +11,7 @@ public sealed record FolderLinkCounts(
     IReadOnlyDictionary<FolderId, int> Recursive);
 
 /// <summary>
-/// 树算法唯一出处（方案 4.1）：消灭各处重复的父链遍历。
+/// 树算法唯一出处：消灭各处重复的父链遍历。
 /// 实现于 Data（经 EF 查询），模块经 UoW 所在组合获得。
 /// </summary>
 public interface ITreeService

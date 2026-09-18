@@ -7,7 +7,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// Staging 服务（方案 4.3 IStagingService）：AI 文件准备区。
+/// Staging 服务（IStagingService）：AI 文件准备区。
 /// StageAsync = 拷入 + SHA256 + 登记；TransformAsync = 纯函数算子管道（filter_links /
 /// rename_folder / map_field / strip_prefix / dedupe / reencode），产物仍 staged，dry_run 只出预览；
 /// CommitAsync = 把 staged 文件转交正式命令（如 bookmarks.import，file_path 自动并入参数）。

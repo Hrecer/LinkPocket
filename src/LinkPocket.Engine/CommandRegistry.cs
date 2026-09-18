@@ -4,7 +4,7 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 命令注册表（方案 4.2）：模块经 RegisterCommands 注册处理器；命令名 = 域.动作 全小写下划线。
+/// 命令注册表：模块经 RegisterCommands 注册处理器；命令名 = 域.动作 全小写下划线。
 /// 注册即自描述——目录/文档/测试骨架全部由 Descriptor 机械生成（单一事实源）。
 /// </summary>
 public sealed class CommandRegistry

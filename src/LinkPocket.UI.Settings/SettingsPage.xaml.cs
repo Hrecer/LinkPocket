@@ -18,7 +18,7 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class SettingsPage : UserControl
     {
-        /// <summary>阶段 10 模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
+        /// <summary>模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
         public void Configure(EngineClient client, Func<Task> reinitializeAsync, Func<Task> refreshAfterImportAsync)
         {
             Api = client;

@@ -6,7 +6,7 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// SchemaMigrator（方案 6.1/6.2）：从零建库（完整版本链）、版本脚本幂等、v2→v3 升级路径、旧库零责任拒绝。
+/// SchemaMigrator：从零建库（完整版本链）、版本脚本幂等、v2→v3 升级路径、旧库零责任拒绝。
 /// 与 v1 无任何关系——不存在迁移路径，只有「全新库」与「拒绝旧库」两种结局。
 /// EF 实体映射与 DDL 的一致性由 ModulesTests 全量黑盒回归（跑在 SchemaMigrator 建的库上）卡住，
 /// 索引覆盖（查询计划）由 <see cref="IndexPlanTests"/> 卡住。
@@ -38,7 +38,7 @@ public class SchemaMigratorTests
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
-    /// <summary>库内全部显式索引名（排序数组）——索引集合是阶段 12 复核后的可执行期望。</summary>
+    /// <summary>库内全部显式索引名（排序数组）——索引集合是复核后的可执行期望。</summary>
     private static string[] IndexNames(string dbPath)
     {
         using var conn = new SqliteConnection($"Data Source={dbPath}");
@@ -76,7 +76,7 @@ public class SchemaMigratorTests
             Assert.Equal(11, Convert.ToInt64(Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('links')")));
         }
 
-        // v3（阶段 12 索引复核）：新建库路径必须与升级路径产出同一套索引
+        // v3（索引复核）：新建库路径必须与升级路径产出同一套索引
         Assert.Equal(
             new[]
             {

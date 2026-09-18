@@ -19,7 +19,7 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class BackupPanel : UserControl
     {
-        /// <summary>引擎客户端门面（阶段 10：由宿主 SettingsPage 经 Configure 窄注入，不再持有组合根）。</summary>
+        /// <summary>引擎客户端门面（由宿主 SettingsPage 经 Configure 窄注入，不再持有组合根）。</summary>
         public EngineClient Api { get; set; } = null!;
 
         /// <summary>整库重置委托（Shell 注入 MainViewModel.ReinitializeDatabaseAsync）：清空 / 整库重建。</summary>

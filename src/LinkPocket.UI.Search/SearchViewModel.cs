@@ -17,7 +17,7 @@ public sealed record SearchEmptyState(string IconKind, string Title, string? Sub
     string ContainerBrush, string OnContainerBrush);
 
 /// <summary>
-/// 搜索页 ViewModel（阶段 9 MVVM 启用）：查询执行、范围守卫与防抖、选中态、
+/// 搜索页 ViewModel（MVVM）：查询执行、范围守卫与防抖、选中态、
 /// 页面动作命令（搜索/取消/跳转/打开网站/删除）全部在此；视图（Views/SearchView）
 /// 只负责表格装配、单元格与空态渲染、关键词高亮——界面不持有任何搜索逻辑。
 /// 数据口径：结果 = 后端 search 协议（默认排序 名称升序，与主栏一致）；

@@ -1,7 +1,7 @@
 namespace LinkPocket.Kernel;
 
 /// <summary>
-/// Windows 风格同名自动编号——唯一出处（方案 4.1，自 BrowserViewModel 内联算法下沉）。
+/// Windows 风格同名自动编号——唯一出处（自 BrowserViewModel 内联算法下沉）。
 /// 纯函数、零依赖、可表驱动单测：重名时生成「name (2)」「name (3)」…。
 /// </summary>
 public interface INamingPolicy

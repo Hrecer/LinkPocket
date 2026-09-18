@@ -10,8 +10,8 @@ public sealed record StoredEvent(EventCursor Cursor, DomainEvent Event);
 public sealed record StoredEventPage(IReadOnlyList<StoredEvent> Items, EventCursor? Next);
 
 /// <summary>
-/// 事件存储（方案 4.4 L3）：环形容量默认 5000 条，超出淘汰最旧；发布路径由引擎自动写入。
-/// 实现口径（阶段 8 定稿）：追平/轮询的消费方（新加入的会话、AI 宿主）都存活在引擎进程内，
+/// 事件存储（L3）：环形容量默认 5000 条，超出淘汰最旧；发布路径由引擎自动写入。
+/// 实现口径（定稿）：追平/轮询的消费方（新加入的会话、AI 宿主）都存活在引擎进程内，
 /// 跨重启的持久历史已由 audit_log 承载 → 本存储为进程内环形缓冲，不落库（schema v2 定稿不动）。
 /// </summary>
 public interface IEventStore

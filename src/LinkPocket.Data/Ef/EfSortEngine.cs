@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LinkPocket.Data;
 
-/// <summary>排序引擎实现（方案 4.1）：白名单表达式映射 → EF 翻译 SQL 下推，消灭两套排序实现。</summary>
+/// <summary>排序引擎实现：白名单表达式映射 → EF 翻译 SQL 下推，消灭两套排序实现。</summary>
 internal sealed class EfSortEngine : ISortEngine
 {
     internal static readonly EfSortEngine Instance = new();
@@ -59,7 +59,7 @@ internal sealed class EfSortEngine : ISortEngine
                     EngineErrors.Of("LP.VAL.003", $"未知排序字段「{clause.Field}」"));
 
             // 「为空恒排最后」（行为契约 §9）：该列是 NullLastField 时前置判空子句
-            // （ORDER BY (col IS NULL) ASC, col）。审核 1.4：先前只在【首列】时前置，复合排序里
+            // （ORDER BY (col IS NULL) ASC, col）。先前只在【首列】时前置，复合排序里
             // 非首列的 NullLastField 会退化为 SQLite 默认（ASC 时 NULL 排最前）——现在对每个
             // 声明了 NullLastField 的 clause 都生效；单列排序（现状全部调用方）输出不变。
             if (clause.Field == fieldMap.NullLastField && fieldMap.NullLastSelector is { } nullLast)

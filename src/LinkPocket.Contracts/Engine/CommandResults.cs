@@ -1,7 +1,7 @@
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 命令结果 DTO 组（wire 对外形状 = 契约；阶段 6 自模块提升，模型归位阶段随域归位）。
+/// 命令结果 DTO 组（wire 对外形状 = 契约；自模块提升，模型归位随域归位）。
 /// snake_case JSON 字段名由引擎序列化约定统一生成。
 /// </summary>
 
@@ -51,7 +51,7 @@ public sealed record TrashPurgeBatchResult(int PurgedLinks, int PurgedFolders);
 
 // —— maintenance ——
 
-/// <summary>整库重置结果（审核 4.3：替代匿名对象，客户端可强类型读取；wire 字段名与旧匿名对象形状一致）。</summary>
+/// <summary>整库重置结果（替代匿名对象，客户端可强类型读取；wire 字段名与旧匿名对象形状一致）。</summary>
 public sealed record MaintenanceReinitResult(
     [property: System.Text.Json.Serialization.JsonPropertyName("cleared")] bool Cleared,
     [property: System.Text.Json.Serialization.JsonPropertyName("favicon_cache_cleared")] bool FaviconCacheCleared);

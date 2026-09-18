@@ -19,7 +19,7 @@ public partial class BrowserView : UserControl
 {
     private bool _suppressTreeSelection;
 
-    /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——1.1：`-=` 只能解当前绑定的实例）。</summary>
+    /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
 
     public BrowserView()
@@ -188,7 +188,7 @@ public partial class BrowserView : UserControl
 
     /// <summary>订阅行集合变更的轻量钩子（DataContext 换绑时自动迁移/解除）。
     /// 刷新重建列表 = 一次 Reset + N 次 Add，若每次变更都直接入队动画回调，单次刷新会积压
-    /// 数十次同帧 Dispatcher 回调（2.9-38/E11）；这里聚合为"同帧只入队一次"。</summary>
+    /// 数十次同帧 Dispatcher 回调；这里聚合为"同帧只入队一次"。</summary>
     private sealed class ObservableCollectionHook
     {
         private readonly INotifyCollectionChanged _source;

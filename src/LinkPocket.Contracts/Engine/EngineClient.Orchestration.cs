@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace LinkPocket.Contracts;
 
-/// <summary>编排层便利方法（阶段 11）：批 / 宏 / 撤销 / 暂存 / 诊断的强类型入口。
+/// <summary>编排层便利方法：批 / 宏 / 撤销 / 暂存 / 诊断的强类型入口。
 /// 目录导出（IEngineCatalog）由 Engine 侧 OrchestrationHost 装配，不经客户端透传。</summary>
 public sealed partial class EngineClient
 {

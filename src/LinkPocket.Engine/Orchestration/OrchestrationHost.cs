@@ -5,7 +5,7 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 编排层装配宿主（阶段 11）：在引擎构造完成后调用——
+/// 编排层装配宿主：在引擎构造完成后调用——
 /// 创建 <see cref="BatchEngine"/>（挂到 <see cref="IEngine.Batch"/>）、
 /// <see cref="UndoCoordinator"/>（挂到 <see cref="EngineCore.Undo"/>）、
 /// <see cref="StagingService"/>、<see cref="MacroStore"/>，并把 16 个编排命令注册进命令表。

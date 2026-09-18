@@ -1,7 +1,7 @@
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 查询缓存策略（方案 2.3 读流「校验 → 缓存 → 读池」/ 7.2 关键路径优化表）。
+/// 查询缓存策略（读流「校验 → 缓存 → 读池」/ 关键路径优化表）。
 /// 由命令描述符声明（Descriptor 是单一事实源）：<see cref="CommandDescriptor.Cache"/> 非空 = 该查询走结果缓存。
 ///
 /// <para><b>失效语义 = 事件名精确失效</b>：读路径在执行前对 <see cref="DependsOn"/> 里的每个事件名取

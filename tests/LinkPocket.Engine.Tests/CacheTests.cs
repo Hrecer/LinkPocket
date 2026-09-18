@@ -5,7 +5,7 @@ using Xunit;
 namespace LinkPocket.Engine.Tests;
 
 /// <summary>
-/// 查询缓存单元测试（阶段 12）：世代戳语义、事件名精确失效、TTL 兜底、LRU 容量、键构造。
+/// 查询缓存单元测试：世代戳语义、事件名精确失效、TTL 兜底、LRU 容量、键构造。
 /// 这些断言是「缓存不会读到陈旧数据」这条不变量在单元层的证据。
 /// </summary>
 public class QueryCacheUnitTests
@@ -117,7 +117,7 @@ public class QueryCacheUnitTests
         Assert.False(cache.TryGet("a", stamp, out _));
     }
 
-    /// <summary>stale 清理（世代失配/TTL 过期）计入 StaleRemovals，而非 Evictions（报告 2.2 口径分开）。</summary>
+    /// <summary>stale 清理（世代失配/TTL 过期）计入 StaleRemovals，而非 Evictions（口径分开）。</summary>
     [Fact]
     public void Stale_Stamp_Removal_Counts_As_StaleRemovals_Not_Evictions()
     {
@@ -167,7 +167,7 @@ public class QueryCacheUnitTests
 }
 
 /// <summary>
-/// 查询缓存接入管道后的行为（阶段 12）：
+/// 查询缓存接入管道后的行为：
 /// 命中不触库、变更按声明的事件名精确失效、整库影响面命令清空缓存、读数可观测。
 /// 断言一律以「Handler 实际执行次数」为准 —— 只比结果值无法区分"命中缓存"与"数据没变"。
 /// </summary>

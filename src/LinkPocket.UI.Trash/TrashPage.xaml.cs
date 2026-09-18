@@ -77,7 +77,7 @@ namespace LinkPocket.Views
             return false;
         }
 
-        /// <summary>阶段 10 模块化：DataContext = RecycleBinViewModel（Shell 装配注入），本视图不认识 MainViewModel。</summary>
+        /// <summary>模块化：DataContext = RecycleBinViewModel（Shell 装配注入），本视图不认识 MainViewModel。</summary>
         private RecycleBinViewModel? Vm => DataContext as RecycleBinViewModel;
 
         // ===== 右侧只读详情栏：跟随 SelectedEntry（VM INPC 驱动，含 purge/清空后的清空态） =====
@@ -155,7 +155,7 @@ namespace LinkPocket.Views
             DetailDeletedAt.Text = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
             DetailId.Text = entry.Id;
 
-            // 2.2-9：favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径）
+            // favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径）
             var faviconUrl = entry.FaviconUrl;
             var favicon = FaviconService.LoadFromCache(faviconUrl);
             if (favicon == null && !string.IsNullOrWhiteSpace(faviconUrl))
@@ -188,7 +188,7 @@ namespace LinkPocket.Views
 
         private void DetailCopyUrl_Click(object sender, RoutedEventArgs e)
         {
-            // 2.2-13：读数据源而非 UI 元素（未来 URL 截断展示也不受影响）
+            // 读数据源而非 UI 元素（未来 URL 截断展示也不受影响）
             try { if (!string.IsNullOrEmpty(_detailEntry?.Url)) Clipboard.SetText(_detailEntry.Url); } catch { /* 剪贴板被占用时不阻断 */ }
         }
 
@@ -304,7 +304,7 @@ namespace LinkPocket.Views
             EnsureSidebarSubscription();
             await Vm.LoadAsync();
 
-            // S4/C2：详情页打开的条目若已被删除 → 关闭详情页
+            // 详情页打开的条目若已被删除 → 关闭详情页
             if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailEntry != null)
             {
                 var stillThere = Vm.Entries.Any(x => x.Id == _detailEntry.Id);
@@ -324,7 +324,7 @@ namespace LinkPocket.Views
         {
             var vm = Vm;
             if (vm == null) return;
-            // 2.2-11：EmptyContent 只在无行时显示；HasItems 分支永远不可见（死代码），只保留真空态
+            // EmptyContent 只在无行时显示；HasItems 分支永远不可见（死代码），只保留真空态
             TrashTable.EmptyContent = BuildState("delete-outline", "回收站是空的",
                 "删除的书签和文件夹会出现在这里，并保留删除时的位置");
         }
@@ -384,7 +384,7 @@ namespace LinkPocket.Views
                 }
                 else if (vm.IsInUnit)
                 {
-                    vm.BackCommand.Execute(null);   // 2.2-12：直调命令，不绕事件处理器
+                    vm.BackCommand.Execute(null);   // 直调命令，不绕事件处理器
                 }
                 else
                 {

@@ -11,7 +11,7 @@ namespace LinkPocket;
 
 /// <summary>
 /// Shell（窗口壳）：标题栏/窗口态/全局导航药丸 + 端口实现（IDialogService/INavigationService/IBrowserLocateHost）。
-/// 阶段 9 后页面职责全部在各自 View + ViewModel：搜索页 = Views/SearchView + SearchViewModel，
+/// 页面职责全部在各自 View + ViewModel：搜索页 = Views/SearchView + SearchViewModel，
 /// 其余页各自持有 ViewModel；本窗口只做装配与端口转发，不持有任何页面业务逻辑。
 /// </summary>
 public partial class MainWindow : Window, Services.IDialogService, Services.INavigationService, Services.IBrowserLocateHost
@@ -30,13 +30,13 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         InitializeComponent();
         var vm = new MainViewModel(_host.Client, _host.Hub, _host.Ports, _selectionManager);
         DataContext = vm;
-        // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
+        // 端口登记：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
         _host.Ports.Dialogs = this;
         _host.Ports.Navigation = this;
         _host.LocateHost = this;
 
-        // ===== 区域视图注册 / 路由装配（阶段 10）：navId → 页面的专一装配登记点 =====
+        // ===== 区域视图注册 / 路由装配：navId → 页面的专一装配登记点 =====
         // 页面不再持有组合根（Host 已废除），依赖由 Shell 经窄接口注入；
         // 页面 DataContext = 各自的 ViewModel（浏览页=BrowserViewModel，其余页见下）。
         // ⚠️ 语义说明：注册表只承载「navId → 页面 + 依赖注入」的装配登记契约（供未来宿主复用，
@@ -50,7 +50,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _regions.Register("settings", SettingsView);
 
         BrowserPage.DataContext = vm.BrowserViewModel;
-        // 搜索页（阶段 9 MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
+        // 搜索页（MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
         // MainViewModel 的目录树（与浏览页/智能列表同一份）。
         _searchVm = new SearchViewModel(
             _host.Client, _host.Ports.Navigation!, _host.Ports.Dialogs!,
@@ -78,7 +78,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         StateChanged += Window_StateChanged;
         SizeChanged += (_, _) => UpdateShellClip();
         // 分段胶囊导航：CurrentNavId 变化时让选中药丸滑过去（弹簧曲线）。
-        // 审核 3.5：DataContext 在构造尾已设好（= vm），此后不再变化——显式调用即可，
+        // DataContext 在构造尾已设好（= vm），此后不再变化——显式调用即可，
         // DataContextChanged 订阅永不触发，属冗余，已删。
         HookNavPillDriver();
     }
@@ -205,7 +205,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         }
         if (target == null || target.ActualWidth <= 0)
         {
-            // 审核 3.6：宽度归零时同步重置 X——否则下次恢复宽度会从旧偏移位置显示（视觉错位）
+            // 宽度归零时同步重置 X——否则下次恢复宽度会从旧偏移位置显示（视觉错位）
             // ⚠️ 先清动画：DoubleAnimation 默认 FillBehavior=HoldEnd，动画结束后仍持续压过本地赋值
             NavPillTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
             NavPill.BeginAnimation(WidthProperty, null);

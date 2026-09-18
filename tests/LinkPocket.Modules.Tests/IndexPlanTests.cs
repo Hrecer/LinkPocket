@@ -5,15 +5,15 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// 索引覆盖复核（阶段 12，方案 7.2/7.3）：对<b>真实引擎建的库</b>跑 <c>EXPLAIN QUERY PLAN</c>，
+/// 索引覆盖复核：对<b>真实引擎建的库</b>跑 <c>EXPLAIN QUERY PLAN</c>，
 /// 把「哪些查询形态必须走索引」固化成可执行断言——索引不是"加完就算"，要能被回归卡住。
 ///
 /// <para>SQL 语句镜像仓储层的实际谓词：<c>EfLinkRepository.ApplyFilter / ListAsync</c>、
 /// <c>EfTreeService.RecursiveLinkCountsAsync</c>、<c>EfTrashRepository</c>、<c>EfSortEngine</c> 下推的排序。
-/// 预期值与阶段 12 的实测计划逐条对应（见 SchemaMigrator.IndexesV3 的复核说明）。</para>
+/// 预期值与实测计划逐条对应（见 SchemaMigrator.IndexesV3 的复核说明）。</para>
 ///
 /// <para>负向断言同样重要：<c>title LIKE '%x%'</c>（search.links 的中缀包含）<b>注定</b>全表扫描，
-/// 这正是 7.3「10k 库 search.links &lt; 100ms」门槛的依据；把"已知可接受的全扫描"写进测试，
+/// 这正是「10k 库 search.links &lt; 100ms」门槛的依据；把"已知可接受的全扫描"写进测试，
 /// 才能让将来新增的意外全扫描无处藏身。</para>
 /// </summary>
 public class IndexPlanTests
@@ -82,7 +82,7 @@ public class IndexPlanTests
 
     /// <summary>
     /// 负向复核：中缀包含（<c>%x%</c>）与低选择性等值（is_important）注定全表扫描，
-    /// 这里显式记录「已知且接受」——它们的量级由 7.3 的 10k 门槛兜底，
+    /// 这里显式记录「已知且接受」——它们的量级由 10k 门槛兜底，
     /// 而不是靠加一个不会生效的索引假装解决。
     /// </summary>
     [Theory]

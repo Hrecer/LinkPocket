@@ -1,13 +1,13 @@
 using ProtocolSmoke;
 
-// LinkPocket 协议冒烟测试（阶段 6 重写，阶段 12 接入 CI 性能门槛）
+// LinkPocket 协议冒烟测试（含 CI 性能门槛）
 // 运行：dotnet run --project tests/ProtocolSmoke                       （Debug，门槛放宽 ×5）
 //       dotnet run --project tests/ProtocolSmoke -c Release -- --strict-perf   （CI 口径，严格门槛）
 // 退出码：0 = 全部通过；非 0 = 断言失败（含性能门槛超标）。
 // 报告：运行结束落盘 perf_report.json（工作目录；可用 LP_PERF_REPORT 指定路径）。
-// 面向 = 新引擎（EngineClient 强类型面 + EngineWire JSON-RPC 面），
-// 断言由附录 B 行为等价表导出（引擎侧可断言项）+ 并发压测 + 10k 性能门槛（7.3）+ 缓存与增量失效（12）。
-// 旧协议层（LinkPocket.Infrastructure/ILinkPocketApi/Transport 系）已随 A1 整体删除，不在本测试范围。
+// 面向 = 引擎（EngineClient 强类型面 + EngineWire JSON-RPC 面），
+// 断言由附录 B 行为等价表导出（引擎侧可断言项）+ 并发压测 + 10k 性能门槛 + 缓存与增量失效。
+// 独立协议层（LinkPocket.Infrastructure/ILinkPocketApi/Transport 系）已整体删除，不在本测试范围。
 // 测试库 = 进程内临时库（SchemaMigrator 建库），不污染正式数据。
 
 var strictPerf = args.Contains("--strict-perf", StringComparer.Ordinal)
@@ -15,7 +15,7 @@ var strictPerf = args.Contains("--strict-perf", StringComparer.Ordinal)
 if (strictPerf)
 {
     PerfReport.Instance.Strict = true;
-    PerfReport.Instance.Relaxation = 1.0;   // 严格模式 = 按方案 7.3 原始门槛判定
+    PerfReport.Instance.Relaxation = 1.0;   // 严格模式 = 按原始门槛判定
 }
 
 try

@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 审计条目（方案 2.3 写流"全程携带 correlationId 与幂等键"；阶段 11 落 audit_log 表）。
+/// 审计条目（写流"全程携带 correlationId 与幂等键"；落 audit_log 表）。
 /// ArgsJson = 入参快照（超长截断）；BatchId = 批父条目关联列；两列均可空、缺省不传。
 /// </summary>
 public sealed record AuditEntry(
@@ -22,7 +22,7 @@ public sealed record AuditEntry(
     string? ArgsJson = null,
     string? BatchId = null);
 
-/// <summary>审计写入器契约（进程内环形 + 阶段 11 落 audit_log 表）。</summary>
+/// <summary>审计写入器契约（进程内环形 + 落 audit_log 表）。</summary>
 public interface IAuditWriter
 {
     /// <summary>写入并返回审计引用（correlationId 即引用锚点）。</summary>

@@ -125,7 +125,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
             LastVisitedText = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
             VisitCountText = $"{link.VisitCount} 次";
             IdText = link.LinkId;
-            // 4.4：favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径；页面渲染不因图标卡顿）
+            // favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径；页面渲染不因图标卡顿）
             var faviconUrl = link.FaviconUrl;
             Favicon = string.IsNullOrEmpty(faviconUrl)
                 ? null
@@ -133,7 +133,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            // 加载失败反馈：不留下永远空白的详情页（2.2-7）。闭页前可见可读
+            // 加载失败反馈：不留下永远空白的详情页。闭页前可见可读
             Logger.Error("链接详情页加载失败", ex);
             Title = "加载失败";
             Description = "读取链接数据出错，请返回列表重试。\n" + ex.Message;
@@ -142,13 +142,13 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
 
     private void OpenWebsite() => _ = OpenWebsiteAsync();
 
-    /// <summary>打开网站访问记账防重入：连点时不并发记账/重读（E15）。</summary>
+    /// <summary>打开网站访问记账防重入：连点时不并发记账/重读。</summary>
     private bool _visitBusy;
 
     /// <summary>打开网站 = 又一次查看：先记账、再重新读取，页面上的统计立刻反映这一次。</summary>
     private async Task OpenWebsiteAsync()
     {
-        if (string.IsNullOrEmpty(Url) || _linkId == null) return;   // 检查在打开前：无目标就不启动浏览器（2.2-11）
+        if (string.IsNullOrEmpty(Url) || _linkId == null) return;   // 检查在打开前：无目标就不启动浏览器
         if (_visitBusy) return;   // 前一次访问记账进行中：连点跳过重复记账
         _visitBusy = true;
         try
@@ -181,7 +181,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         {
             if (string.IsNullOrEmpty(Url)) return;
             System.Windows.Clipboard.SetText(Url);
-            _host.StatusText = "已复制链接";   // 复制反馈（2.2-9）
+            _host.StatusText = "已复制链接";   // 复制反馈
         }
         catch { }
     }
@@ -198,7 +198,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         {
             if (string.IsNullOrEmpty(IdText)) return;
             System.Windows.Clipboard.SetText(IdText);
-            _host.StatusText = "已复制 ID";   // 复制反馈（2.2-9）
+            _host.StatusText = "已复制 ID";   // 复制反馈
         }
         catch { }
     }
@@ -208,7 +208,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     {
         if (_linkId == null) return;
         // 删除确认唯一入口（行为契约 §1.3）：详情页删除与浏览页共用 ConfirmDialog 文案；
-        // 优先走宿主对话框端口（S7），无端口退化 ConfirmDialog 直用
+        // 优先走宿主对话框端口，无端口退化 ConfirmDialog 直用
         var dlg = _host.Dialogs;
         if (dlg != null)
         {

@@ -15,9 +15,9 @@ namespace LinkPocket.Views
     /// <summary>
     /// 智能列表页（v2 完全重做，页面自包含）：与搜索页/回收站页同构 ——
     /// 入口卡片 → 结果视图（共享 <see cref="SortableDataTable"/> 数据表 + 可复用 <see cref="DetailSidebar"/>）。
-    /// 阶段 9 MVVM：选中态、详情栏与页面动作命令（详情/打开网站/删除）在
+    /// MVVM：选中态、详情栏与页面动作命令（详情/打开网站/删除）在
     /// <see cref="SmartListViewModel"/>/<see cref="SmartListResultViewModel"/>；
-    /// 阶段 10 模块化：DataContext = SmartListViewModel（Shell 装配注入），本视图不认识 MainViewModel。
+    /// 模块化：DataContext = SmartListViewModel（Shell 装配注入），本视图不认识 MainViewModel。
     /// 交互口径与搜索页一致：行单击选中更新详情栏、双击进入浏览页详情页。
     /// </summary>
     public partial class SmartListsPage : UserControl

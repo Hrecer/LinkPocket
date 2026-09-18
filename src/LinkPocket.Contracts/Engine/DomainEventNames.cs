@@ -1,7 +1,7 @@
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 领域事件名常量（方案 4.4 / 审核 1.2）：模块声明变更集、查询声明缓存依赖、宿主订阅筛选都用这一份常量，
+/// 领域事件名常量：模块声明变更集、查询声明缓存依赖、宿主订阅筛选都用这一份常量，
 /// 杜绝各处手写字符串导致的「拼错即静默失效」。**新增事件名必须在此登记常量**。
 /// </summary>
 public static class DomainEventNames

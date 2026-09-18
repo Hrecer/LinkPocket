@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 命名批处理（宏/技能库）持久化（方案 4.3 IMacroStore）：schema v2 的 macros 表
+/// 命名批处理（宏/技能库）持久化（IMacroStore）：schema v2 的 macros 表
 /// （name 主键 / script_json / created_at / updated_at）。宏 = 命名批脚本，
 /// 经 macro.run 在撤销/批同一条管道内按事务批语义执行。
 /// </summary>

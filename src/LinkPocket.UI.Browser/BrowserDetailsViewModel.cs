@@ -87,7 +87,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     /// <summary>
     /// 打开网站 = 系统默认浏览器打开 URL 并记录一次访问（与链接详情页「打开网站」同口径）。
     /// 记账后回读列表，让「最后查看 / 累计查看」的派生统计及时反映这一次。
-    /// await 刷新防止详情栏闪"读取中…"（2.5-24）。
+    /// await 刷新防止详情栏闪"读取中…"。
     /// </summary>
     private async Task OpenWebsiteInBrowserAsync()
     {
@@ -192,7 +192,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
 
             if (link == null || _host == null)
             {
-                MarkUnavailable();   // 源已删除/宿主缺失：占位回落，不留"读取中…"（E10）
+                MarkUnavailable();   // 源已删除/宿主缺失：占位回落，不留"读取中…"
                 return;
             }
 
@@ -218,13 +218,13 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         }
         catch
         {
-            if (gen != _generation) return;   // 2.4：切选后到达的异常不得影响新选中信息卡
+            if (gen != _generation) return;   // 切选后到达的异常不得影响新选中信息卡
             Services.Logger.Error("详情栏链接补拉失败（保持行内基础信息）", null);   // 观测面留痕
-            MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"（E10）
+            MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"
         }
     }
 
-    /// <summary>「读取中…」占位文案（UpdateFrom 与 MarkUnavailable 共用单一数据源，3.3：防文案改动静默失效）。</summary>
+    /// <summary>「读取中…」占位文案（UpdateFrom 与 MarkUnavailable 共用单一数据源，防文案改动静默失效）。</summary>
     private const string LoadingPlaceholder = "读取中…";
 
     /// <summary>补拉失败/源已删除的收口：把「读取中…」占位回落为中性值（其余占位本就是 —/从未）。</summary>

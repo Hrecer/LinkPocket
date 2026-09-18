@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 查询结果缓存（方案 2.3 读流 / 7.2 关键路径优化表）。
+/// 查询结果缓存（读流 / 关键路径优化表）。
 ///
 /// <para><b>失效模型 = 世代戳 + 事件名</b>（与 <see cref="CachePolicy"/> 配套）：
 /// 每个事件名持有一个单调递增的世代戳；读路径在<b>触库之前</b>对依赖取快照

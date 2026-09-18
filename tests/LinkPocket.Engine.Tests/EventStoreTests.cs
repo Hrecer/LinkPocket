@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LinkPocket.Engine.Tests;
 
-/// <summary>事件存储断言（方案 4.4 L3 / 阶段 8）：追平、游标续读、轮询、环形淘汰、引擎发布落存储。</summary>
+/// <summary>事件存储断言（L3）：追平、游标续读、轮询、环形淘汰、引擎发布落存储。</summary>
 public class EventStoreTests
 {
     private static DomainEvent Ev(string name) => new(name, DateTimeOffset.Now, null, "corr", null);

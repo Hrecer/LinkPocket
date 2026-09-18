@@ -10,14 +10,14 @@ public enum SortDir
 /// <summary>排序子句：白名单字段（由 ISortEngine 的字段映射校验，防注入）+ 方向。</summary>
 public sealed record SortSpec(string Field, SortDir Dir);
 
-/// <summary>分页：size = 0 表示全量（保留现状语义，方案 3.3）。</summary>
+/// <summary>分页：size = 0 表示全量（保留现状语义）。</summary>
 public sealed record PageSpec(int Index = 1, int Size = 0)
 {
     public int Skip => (Math.Max(1, Index) - 1) * Math.Max(0, Size);
 }
 
 /// <summary>
-/// search.links 的多范围搜索谓词（SQL 下推，方案 3.3）：三字段 OR 包含（各范围可开关）
+/// search.links 的多范围搜索谓词（SQL 下推）：三字段 OR 包含（各范围可开关）
 /// ∪ 目录集合（path 范围命中目录名 → 子树展开结果）。
 /// 两类范围之间亦为 OR（任一命中即算命中）；与 <see cref="LinkFilter"/> 的其它条件为 AND。
 /// </summary>
@@ -38,8 +38,7 @@ public sealed record LinkSearchScope
 
 /// <summary>
 /// 链接过滤（纯过滤条件；null = 不过滤）。
-/// 基础字段服务既有查询（links.list 等）；后段结构化字段服务 links.query（方案 3.3）——
-/// 字段名/操作符白名单在 Links 模块校验，这里只是强类型数据形态，EF 实现逐条 SQL 下推。
+/// 基础字段服务既有查询（links.list 等）；后段结构化字段服务 links.query：字段名/操作符白名单在 Links 模块校验，这里只是强类型数据形态，EF 实现逐条 SQL 下推。
 /// 同一字段的重复条件由模块层拒绝（一条过滤一个值）。
 /// </summary>
 public sealed record LinkFilter
@@ -86,7 +85,7 @@ public sealed record LinkFilter
     public int? VisitCountMax { get; init; }
 }
 
-/// <summary>链接查询规格 = 过滤 + 排序 + 分页（方案 3.3 标准参数的强类型形态）。</summary>
+/// <summary>链接查询规格 = 过滤 + 排序 + 分页（标准参数的强类型形态）。</summary>
 public sealed record LinkQuerySpec
 {
     public LinkFilter Filter { get; init; } = new();

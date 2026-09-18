@@ -43,7 +43,7 @@ internal static class TestEnv
         var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()), sessions: sessions);
         if (withOrchestration)
         {
-            // 阶段 11：编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致）
+            // 编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致）
             registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext()));
         }
         return engine;
@@ -173,7 +173,7 @@ internal sealed class EmitEventHandler(string eventName) : ICommandHandler
         => Task.FromResult(CommandResult.Ok("ok", ChangeSet.Of(new EntityRef("test", "1"), eventName)));
 }
 
-/// <summary>慢嵌套子命令（测试用）：实测耗时需 >0，供「嵌套审计记录 ElapsedMs（报告 2.3）」断言。</summary>
+/// <summary>慢嵌套子命令（测试用）：实测耗时需 >0，供「嵌套审计记录 ElapsedMs」断言。</summary>
 internal sealed class SlowNestedChildHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(

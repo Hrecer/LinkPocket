@@ -1,6 +1,6 @@
 namespace LinkPocket.Kernel;
 
-/// <summary>强类型文件夹 ID（编译期杜绝"按 ID 形状猜类型"，方案 4.1）。</summary>
+/// <summary>强类型文件夹 ID（编译期杜绝"按 ID 形状猜类型"）。</summary>
 public readonly record struct FolderId(string Value)
 {
     public override string ToString() => Value;

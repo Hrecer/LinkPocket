@@ -56,7 +56,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- 搜索页样式已随页面迁往 Views/SearchView.xaml（阶段 9 MVVM） -->
+        <!-- 搜索页样式已随页面迁往 Views/SearchView.xaml -->
 
         <Style x:Key="TitleBarButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -189,7 +189,7 @@
             </Grid>
         </Border>
 
-        <!-- ===== 搜索页（阶段 9 MVVM）：视图/逻辑在 Views/SearchView + SearchViewModel，
+        <!-- ===== 搜索页：视图/逻辑在 Views/SearchView + SearchViewModel，
              显隐与其它页面统一走 CurrentNavId 触发器；DataContext 由 Shell 下发为 SearchViewModel ===== -->
         <uisearch:SearchView Grid.Row="1" x:Name="SearchView"
                           HorizontalAlignment="Stretch" VerticalAlignment="Stretch">

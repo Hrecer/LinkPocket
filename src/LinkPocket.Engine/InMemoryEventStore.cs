@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 进程内环形事件存储（方案 4.4 L3 的阶段 8 实现口径）：
+/// 进程内环形事件存储（L3 实现口径）：
 /// - 追平/轮询的消费方（新加入的会话、AI 宿主）都存活在引擎进程内，环形缓冲即可满足；
 /// - 跨重启的持久历史由 audit_log 承载，schema v2 无事件表（定稿不动）；
 /// - Append 由引擎发布路径自动调用（随总线订阅，见 EngineCore），消费方一般不直调。

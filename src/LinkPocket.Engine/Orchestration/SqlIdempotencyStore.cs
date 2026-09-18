@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LinkPocket.Engine;
 
 /// <summary>
-/// 幂等键落表存储（方案 3.4，阶段 11）：内存缓存命中优先，未命中查 schema v2 的 idempotency 表
+/// 幂等键落表存储：内存缓存命中优先，未命中查 schema v2 的 idempotency 表
 /// （key → 首次结果 JSON，24h 窗口）；Store 双写（内存 + 表）并顺带清理过期行。
 /// 落库副本以 JSON 形态还原（Data = JsonElement），与进程内活对象结果在 wire/DTO 层面等价。
 /// </summary>
@@ -58,7 +58,7 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
             atText = reader.GetString(1);
         }   // reader 在此完全关闭 —— Microsoft.Data.Sqlite 不支持同连接多活动结果集（MARS），
             // 之前在用着 reader 时直接对同一连接发 DELETE 会抛
-            // 「An open reader is already associated with this command」，过期清理因此永远不生效（审核 1.1）。
+            // 「An open reader is already associated with this command」，过期清理因此永远不生效。
 
         var at = DateTimeOffset.ParseExact(atText, "O",
             System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
@@ -118,7 +118,7 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
 
             // 每 64 次写入顺带清理过期行（防表膨胀；幂等写入本身低频）。
             // Interlocked.Increment 从 1 起计数：`% 64 == 0` 在第 64/128/... 次触发——避免
-            // 进程第一次写就白跑一次「表里几乎必然没有过期行」的 DELETE（审核 2.6）。
+            // 进程第一次写就白跑一次「表里几乎必然没有过期行」的 DELETE。
             if (Interlocked.Increment(ref _storeCount) % 64 == 0)
             {
                 using var prune = connection.CreateCommand();

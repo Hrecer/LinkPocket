@@ -6,7 +6,7 @@
              xmlns:local="clr-namespace:LinkPocket.Views.Browser">
 
     <UserControl.Resources>
-        <!-- ScrollGutterMargin 已上收 UIKit.xaml（阶段 9） -->
+        <!-- ScrollGutterMargin 已上收 UIKit.xaml -->
         <!-- 与 BrowserView.NavIconButton 同款的小图标按钮（右侧栏交互对齐，28×26 比导航版小一档） -->
         <Style x:Key="SideIconButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>

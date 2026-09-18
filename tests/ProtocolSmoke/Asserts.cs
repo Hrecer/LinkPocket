@@ -9,7 +9,7 @@ internal static class Asserts
     }
 
     /// <summary>
-    /// 性能断言：方案 7.3 的门槛按 <b>Release/CI 口径</b>标定。
+    /// 性能断言：门槛按 <b>Release/CI 口径</b>标定。
     /// Debug 构建统一放宽 <see cref="PerfReport.Relaxation"/> 倍（JIT 未优化、无内联），
     /// 严格模式（<c>--strict-perf</c> 或 <c>LP_PERF_STRICT=1</c>）下不放宽 —— 这就是"基准进 CI"的开关。
     /// 实测值同时记入 <see cref="PerfReport"/>，随运行落盘 perf_report.json。

@@ -22,7 +22,7 @@ public partial class ImportModeDialog : Window
         InitializeComponent();
 
         CancelBtn.Click += (_, _) => DialogResult = false;
-        // ConfirmBtn 的 Click 已在 XAML 声明（ConfirmBtn_Click）——这里不再重复订阅（1.3：重复注册 = 每次点击两遍）
+        // ConfirmBtn 的 Click 已在 XAML 声明（ConfirmBtn_Click）——这里不再重复订阅（重复注册 = 每次点击两遍）
 
         // 无边框圆角窗口：WindowChrome 提供标题区拖拽（与 ConfirmDialog 同配置）
         var chrome = new System.Windows.Shell.WindowChrome

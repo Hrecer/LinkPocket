@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Links;
 
 /// <summary>
 /// links.visit_record（Mutation）：记录一次「查看」——链接 LastVisitedAt/VisitCount +
-/// 所在文件夹沿父链刷新（同一工作单元一次提交，方案 7.2 性能项）。查看不改 UpdatedAt。
+/// 所在文件夹沿父链刷新（同一工作单元一次提交，性能项）。查看不改 UpdatedAt。
 /// </summary>
 internal sealed class LinkVisitRecordHandler : ICommandHandler
 {

@@ -6,7 +6,7 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// UiEventHub 金标准（阶段 8 定稿的行为契约）：后端数据变更抵达界面的唯一 300ms 防抖通道。
+/// UiEventHub 金标准（定稿的行为契约）：后端数据变更抵达界面的唯一 300ms 防抖通道。
 /// 断言口径 = 可观测结果（RefreshRequested 触发次数与时机），用真实 Dispatcher 泵走真实计时器。
 /// </summary>
 public class UiEventHubTests

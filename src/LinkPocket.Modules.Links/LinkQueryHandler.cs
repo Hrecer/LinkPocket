@@ -6,13 +6,13 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Modules.Links;
 
 /// <summary>
-/// links.query（★ 引擎能力，不接 UI）：结构化查询器（方案 3.3 标准参数）——
+/// links.query（★ 引擎能力，不接 UI）：结构化查询器（标准参数）——
 /// filter（字段/操作符白名单）+ sort（白名单下推）+ page（size=0 全量）+ fields 投影。
 /// AI 可表达任意过滤；UI 不消费本命令。
 /// </summary>
 internal sealed class LinkQueryHandler : ICommandHandler
 {
-    /// <summary>字段 → 允许操作符白名单（方案 3.3 的 Phase 4 集合；扩展 = 在此登记字段映射）。</summary>
+    /// <summary>字段 → 允许操作符白名单（字段集合；扩展 = 在此登记字段映射）。</summary>
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> FieldOps =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
         {

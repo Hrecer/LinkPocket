@@ -18,7 +18,7 @@ public sealed class DedupGroupRow
 }
 
 /// <summary>
-/// 工具页 ViewModel（阶段 9 MVVM）：三个工具的业务逻辑全部在此——
+/// 工具页 ViewModel（MVVM）：三个工具的业务逻辑全部在此——
 /// 去重（扫描/分组/位置缓存/勾选守卫/删除并重算）、ID 跳转（统一走
 /// <see cref="IContentLocator"/> 组件）、书签导入导出（预检/导入/导出+自校验，
 /// 算法全在引擎契约，本类只转发命令调用）。视图（Views/ToolsPage）只做

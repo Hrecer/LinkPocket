@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  LinkPocket CI 门禁（阶段 12 起：把 10k 性能基准真正接进流水线；阶段 13 补目录文档漂移门）。
+  LinkPocket CI 门禁（10k 性能基准接进流水线；并有目录文档漂移门）。
 
 .DESCRIPTION
   单一入口，任何 CI 提供商（GitHub Actions / Jenkins / 本地预提交）都只需调用本脚本。

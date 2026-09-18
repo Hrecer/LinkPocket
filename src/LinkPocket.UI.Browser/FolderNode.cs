@@ -74,7 +74,7 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>环保护深度上限（坏数据成环时终止递归；合法深树极少超此值）。</summary>
     private const int MaxTreeDepth = 256;
 
-    /// <summary>2.5：递归计数用「访问集合 + 深度」双保险——环数据立即停止（而非递归到深度上限），
+    /// <summary>递归计数用「访问集合 + 深度」双保险——环数据立即停止（而非递归到深度上限），
     /// 合法深度只在极限（>256 层，实际不可达）时截断。与 BrowserViewModel.IsSelfOrDescendant 同策略。</summary>
     public int TotalLinkCount => TotalLinkCountCore(new HashSet<string?>(), 0);
 

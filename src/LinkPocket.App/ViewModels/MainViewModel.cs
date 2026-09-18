@@ -53,7 +53,7 @@ namespace LinkPocket.ViewModels
                 listId => string.IsNullOrEmpty(listId)
                     ? "全部书签"
                     : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"));
-            BrowserViewModel = new BrowserViewModel(client, _ports);   // 共享端口槽位：对话框/导航走 IDialogService（S7）
+            BrowserViewModel = new BrowserViewModel(client, _ports);   // 共享端口槽位：对话框/导航走 IDialogService
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
 
@@ -64,7 +64,7 @@ namespace LinkPocket.ViewModels
                 new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "bookmark-outline", LinkCount = 0 }
             };
 
-            // 事件推送（阶段 8 定稿）：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
+            // 事件推送（定稿）：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
             // 本 VM 只按当前活跃视图路由刷新（防抖在枢纽内完成）。
             _events.RefreshRequested += OnBackendRefresh;
         }
@@ -93,7 +93,7 @@ namespace LinkPocket.ViewModels
                     case "search":
                         OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
                         break;
-                    // 审核 1.5：事件防抖刷新补齐三页——此前只在浏览器/回收站/搜索里路由，
+                    // 事件防抖刷新补齐三页——此前只在浏览器/回收站/搜索里路由，
                     // 跨页操作（如浏览页删链接后切到智能列表/工具）会看到陈旧快照。
                     case "smartlists":
                         if (_smartListViewModel != null)
@@ -222,7 +222,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                // 审核 1.4：async void 里未捕获的异常会被全局 handler 吞掉且后续代码不执行——
+                // async void 里未捕获的异常会被全局 handler 吞掉且后续代码不执行——
                 // 这里就地记录 + 暴露，不让「切页失败」静默
                 Logger.Error($"切换导航到 {navId} 失败", ex);
             }
@@ -247,7 +247,7 @@ namespace LinkPocket.ViewModels
                 await _recycleBinViewModel.LoadAsync();
         }
 
-        // 搜索页已迁往 SearchViewModel（阶段 9 MVVM）：查询执行/范围守卫在页面 VM，
+        // 搜索页已迁往 SearchViewModel（MVVM）：查询执行/范围守卫在页面 VM，
         // 本类只保留 CurrentNavId 的 search 路由事件（OnSearchRefreshRequested 等）。
 
         public async Task LoadFolderTreeAsync()
@@ -293,7 +293,7 @@ namespace LinkPocket.ViewModels
                 foreach (var node in lookup.Values)
                     SortFolderNodes(node.Children);
 
-                // 审核 2.4：LoadFolderTreeAsync 的所有调用路径都在 UI 线程（命令/事件/Loaded），
+                // LoadFolderTreeAsync 的所有调用路径都在 UI 线程（命令/事件/Loaded），
                 // Dispatcher.Invoke 冗余——直接赋值（FolderItems setter 已 OnPropertyChanged）
                 FolderItems = folderNodes;
             }
@@ -337,7 +337,7 @@ namespace LinkPocket.ViewModels
             {
                 var allFolders = await _client.FolderTreeAsync();
                 var dict = allFolders.ToDictionary(f => f.FolderId);
-                // 审核 2.9：未找到的目录必须如实标记「未知目录」，不得伪装成根
+                // 未找到的目录必须如实标记「未知目录」，不得伪装成根
                 //（与 EfTreeService.PathDisplayAsync 修复同口径）
                 if (!dict.ContainsKey(listId)) return "未知目录";
                 var pathParts = new List<string>();
@@ -365,7 +365,7 @@ namespace LinkPocket.ViewModels
         public async Task ReinitializeDatabaseAsync()
         {
             // maintenance.reinit（Destructive 两阶段确认）：引擎整库重置 = 批量删除后全新空库
-            //（审核 2.6：旧 resetData 参数的「删文件 vs 只清数据」差异已收敛为引擎的「清空重建」——参数恒无意义，已删）
+            //（旧 resetData 参数的「删文件 vs 只清数据」差异已收敛为引擎的「清空重建」——参数恒无意义，已删）
             await EngineConfirm.RunAsync(token => _client.MaintenanceReinitAsync(new CallOptions { ConfirmToken = token }));
 
             await ResetUiAfterDatabaseResetAsync();

@@ -16,7 +16,7 @@ using Material3.Wpf;
 namespace LinkPocket.Views;
 
 /// <summary>
-/// 搜索页视图（阶段 9 MVVM 启用）：只做视图层装配——
+/// 搜索页视图（MVVM）：只做视图层装配——
 /// 结果表列定义/单元格工厂/空态渲染/关键词高亮在这里，查询执行、范围守卫、
 /// 选中态与页面动作命令全部在 <see cref="SearchViewModel"/>（构造注入组合根）。
 /// </summary>

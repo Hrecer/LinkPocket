@@ -10,7 +10,7 @@ public interface IFolderRepository
     /// <summary>全部文件夹（树装配/递归计数在 ITreeService 组合）。</summary>
     Task<IReadOnlyList<Folder>> ListAllAsync(CancellationToken ct);
 
-    /// <summary>文件夹总数（SQL COUNT；diagnostics 等只计数场景，绝不拉全量，Maintenance 审核 1.3）。</summary>
+    /// <summary>文件夹总数（SQL COUNT；diagnostics 等只计数场景，绝不拉全量）。</summary>
     Task<int> CountAsync(CancellationToken ct);
 
     /// <summary>某文件夹的直接子文件夹；parent = null 时返回根层（ParentId == NULL，根不是实体）。</summary>

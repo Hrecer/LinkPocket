@@ -32,13 +32,13 @@ public class TrashSidebarModel : DetailSidebarModel
         Favicon = isFolder ? null : FaviconService.LoadFromCache(entry.FaviconUrl);
 
         // 复制命令：复用公共 RelayCommand（CanExecuteChanged 走 CommandManager）；
-        // 空 URL 时禁点（2.3-17：绝不 Clipboard.SetText("") 覆盖用户剪贴板）
+        // 空 URL 时禁点（绝不 Clipboard.SetText("") 覆盖用户剪贴板）
         _copyCommand ??= new RelayCommand(() =>
         {
             try { System.Windows.Clipboard.SetText(UrlText); } catch { /* 剪贴板被占用时不阻断 */ }
         }, () => !string.IsNullOrEmpty(UrlText));
 
-        // 行序：类型 / 原位置 / [网址(仅链接带网址)] / 删除时间 / ID（2.3-18：按序追加，不再用 Insert 魔法位）
+        // 行序：类型 / 原位置 / [网址(仅链接带网址)] / 删除时间 / ID（按序追加，不再用 Insert 魔法位）
         var rows = new List<DetailSidebarRow>
         {
             new()

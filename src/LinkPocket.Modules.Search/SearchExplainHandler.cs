@@ -26,7 +26,7 @@ internal sealed class SearchExplainHandler : ICommandHandler
     {
         var query = CommandArgs.RequireString(args, "query");   // 空查询 = LP.VAL.001
 
-        // 排序固定 title 升序（审核 4.6：explain 只关心命中字段，不翻页不排序——
+        // 排序固定 title 升序（explain 只关心命中字段，不翻页不排序——
         // 与 search.links 的对象集合可能不同序，调用方不得按位置对齐，见 MODULE.md）
         var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,

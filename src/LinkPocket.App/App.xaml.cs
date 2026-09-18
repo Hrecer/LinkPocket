@@ -35,8 +35,8 @@ public partial class App : Application
             System.Windows.Media.Color.FromRgb(0xE3, 0xD9, 0xEB));
         base.OnStartup(e);
 
-        // 组合根装配（阶段 7）：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
-        // 审核 1.8：装配失败（典型 = 旧格式库被 schema 红线拒绝 / 库文件损坏）必须对用户可见——
+        // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
+        // 装配失败（典型 = 旧格式库被 schema 红线拒绝 / 库文件损坏）必须对用户可见——
         // 启动期尚无窗口，用原生 MessageBox 一次性暴露原因后退出（红线特例：启动失败必须暴露）。
         try
         {
@@ -61,7 +61,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Logger.Info("应用退出，强制结束进程");
-        // 审核 1.3（两阶段）：
+        //（两阶段）：
         // ① 先把 SQLite 连接池全部断开——池化连接持有的 WAL 文件句柄会阻止 checkpoint，
         //    显式清池触发 SQLite 把 WAL 收拢回主库文件（否则强杀后日志/WAL 可能丢尾）；
         // ② 再交 WPF 完成正常关闭序（base.OnExit），最后兜底强杀确保无残留进程。
@@ -84,7 +84,7 @@ public partial class App : Application
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
         Logger.Error("UI线程未处理异常", e.Exception);
-        // 审核 1.2：不静默吞——异常必须暴露给用户（多数情况界面状态已不可信），
+        // 不静默吞——异常必须暴露给用户（多数情况界面状态已不可信），
         // 但保留「已提交写不被否定」语义：不崩溃、提示用户自行决策（重启/继续）。
         // 弹窗本身放 try/catch：异常处理路径出错时以日志为准，绝不二次弹窗死循环。
         try
