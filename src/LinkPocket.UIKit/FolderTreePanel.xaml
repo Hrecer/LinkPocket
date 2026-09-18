@@ -144,7 +144,7 @@
                          子级整体缩进一格（20 = chevron 列宽）→ chevron 对齐父文本，Windows 资源管理器式层级 -->
                     <ControlTemplate TargetType="TreeViewItem">
                         <StackPanel>
-                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand">
+                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand" MouseLeftButtonUp="FolderTreeItem_MouseLeftButtonUp">
                                 <Border.Style>
                                     <!-- 选中态数据驱动（FolderNode.IsSelected，VM 唯一事实来源）：数据触发器在派生层，
                                          优先级高于基样式悬停 = 选中行悬停不换色（与主栏 RowSkin 同构；容器重建不影响高亮） -->
@@ -177,8 +177,14 @@
                             <Trigger Property="IsExpanded" Value="False">
                                 <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
                             </Trigger>
-                            <Trigger Property="HasItems" Value="False">
+                            <!-- chevron 只服务展开/收起：链接叶子无子级不显示 chevron；
+                                 空文件夹保留 hollow chevron（降透明度）= Windows 资源管理器语义（所有文件夹可展开/收起）。
+                                 选中/进入由行主体 MouseLeftButtonUp 显式转发，与 chevron 物理分离 -->
+                            <DataTrigger Binding="{Binding IsLink}" Value="True">
                                 <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                            </DataTrigger>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="Expander" Property="Opacity" Value="0.4"/>
                             </Trigger>
                             <!-- 选中高亮已由数据驱动（见上方 RowCard 派生样式 DataTrigger），此处无需容器 IsSelected 触发器 -->
                         </ControlTemplate.Triggers>
@@ -204,11 +210,13 @@
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource OnSurfaceVariant}"/>
             </Border>
+            <!-- 选中/进入不经容器 SelectedItemChanged（键盘/展开都走同一通道 = 耦合）：
+                 行主体单击由模板层 RowCard 的 MouseLeftButtonUp 显式转发（FolderTreeItem_MouseLeftButtonUp），
+                 chevron 展开由 ToggleButton 自捕获鼠标、绝不触发行选择 —— 展开 ≠ 选中 ≠ 进入 物理分离 -->
             <TreeView Grid.Row="1" x:Name="FolderTreeControl"
                       Style="{StaticResource FolderTreeStyle}"
                       ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
                       ItemsSource="{Binding ItemsSource, ElementName=Root}"
-                      SelectedItemChanged="FolderTree_SelectedItemChanged"
                       MouseLeftButtonUp="FolderTree_MouseLeftButtonUp"
                       VirtualizingPanel.IsVirtualizing="True">
                 <TreeView.ItemTemplate>

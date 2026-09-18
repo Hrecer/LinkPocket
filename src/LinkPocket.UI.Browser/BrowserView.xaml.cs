@@ -378,12 +378,13 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>点击树节点统一交给 VM（数据驱动选中）：文件夹/根 → 导航进目录；根级链接叶子 → 主区定位选中该行。
-    /// 树高亮由 FolderNode.IsSelected 数据回写并经 VM.ApplyTreeSelection 重放，无需在此记录目标或操作容器。</summary>
+    /// <summary>点击树节点行主体统一交给 VM（数据驱动选中）：
+    /// 文件夹 → 选中并进入；链接叶子 → 主区定位选中该行；「全部书签」虚拟根 → 忽略（只可展开/收起）。
+    /// 树高亮由 FolderNode.IsSelected 从 VM 唯一选中集合派生，无需在此记录目标或操作容器。</summary>
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (ViewModel == null || node is not FolderNode fn) return;
-        ViewModel.SelectTreeNode(fn);
+        _ = ViewModel.SelectTreeNodeAsync(fn);
     }
 
     /// <summary>点击文件夹树空白：清空选中（主栏 + 树一起取消，唯一事实来源清空）。</summary>

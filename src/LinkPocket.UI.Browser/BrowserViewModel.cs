@@ -469,12 +469,11 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
             var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
-            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树（与目录页同快照的树/计数）
+            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
+            //（与目录页同快照的树/计数 + 全量链接叶子：每文件夹直接链接一并注入，Windows 资源管理器语义）
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
-            // 根级直挂链接注入「全部书签」节点下（文件夹之前；点击 = 主区定位选中该行）
-            await LoadTreeRootLinkNodesAsync();
+            RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<LinkDto>());
             // 树已重建：选中态由 _selectedIds（唯一事实）派生重放，无需容器时序
 
             Rows.Clear();
@@ -703,26 +702,32 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 点击树节点统一入口：根级链接叶子 = 主区定位选中该链接（进根 + 单选集）；
-    /// 文件夹 / 虚拟根 = 导航进目录。树自身不持有持久选中状态，
-    /// 叶子高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="_selectedIds"/> 派生，二者天然一致。
+    /// 点击树节点统一入口（展开 ≠ 选中 ≠ 进入，三者物理分离）：
+    /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此 ——
+    /// 链接叶子 = 进其父目录 + 选中该行（定位）；文件夹 = 选中该文件夹 + 进入该目录（选中即进入）；
+    /// 「全部书签」虚拟根 = 特殊目录容器，只可展开/收起，不可选中、不可进入（左栏与主栏皆不可）。
+    /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="_selectedIds"/>
+    /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
     /// </summary>
-    public void SelectTreeNode(FolderNode node)
+    public async Task SelectTreeNodeAsync(FolderNode node)
     {
+        if (node.IsRoot) return;   // 虚拟根「全部书签」：只可展开/收起，不可选中、不可进入
+
         if (node.IsLink)
         {
-            // 根级链接叶子：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
-            // 即使该行尚未出现在 Rows（分页），也先记录选中，由导航/刷新投影补齐
+            // 链接叶子：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
+            // 定位到其所属目录（ParentId，null = 根级）并选中该行；即使该行尚未出现在 Rows（分页），
+            // 也先记录选中，由导航/刷新投影补齐
             SetSelection(new[] { node.Id }, node.Id);
-            _ = NavigateAndSelectAsync(null, node.Id);
+            await NavigateAndSelectAsync(node.ParentId, node.Id);
         }
         else
         {
-            // 文件夹 / 虚拟根：「全部书签」的 FolderId 为 null = 根目录。
-            // 这是导航（进目录 + 面包屑更新），不是选中：清空选中集合、不把该文件夹加入集合，
-            // 因此树/主栏都不会因"进入"而高亮该文件夹——位置语义由面包屑承担（用户：位置 ≠ 选中）。
-            SetSelection(Enumerable.Empty<string>(), anchor: null);
-            _ = LoadAsync(node.FolderId);
+            // 树文件夹行主体单击 = 选中该文件夹 + 进入（主栏导航到该目录）——选中即进入，
+            // Windows 资源管理器口径（用户 2026-09-18/19 定稿）。树高亮由 _selectedIds 派生，
+            // 与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中，仅当用户真正选中实体才高亮）。
+            SetSelection(new[] { node.FolderId! }, node.FolderId);
+            await LoadAsync(node.FolderId);
         }
     }
 
@@ -772,10 +777,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     private bool IsAtRoot() => Controller.CurrentFolderId == null;
 
     /// <summary>由 folders.overview 的树快照重建左侧树（ParentId == null 即根级）。保留既有展开状态。
-    /// rootLinkCount = 同快照的根级直挂链接数（原另查 links.stats，现由 overview 一次交付）。
+    /// rootLinkCount = 同快照的根级直挂链接数；treeLinks = 同快照的全库活动链接（每文件夹直接链接叶子注入源）。
     /// 纯同步：无 IO/等待，签名用 void 不误导调用方。
     /// ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
-    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount)
+    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount, List<LinkDto> treeLinks)
     {
         var expandedIds = new HashSet<string?>();
         CollectExpandedIds(FolderTree, expandedIds);
@@ -809,6 +814,13 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
         }
 
+        // 每文件夹直接链接叶子（全量注入，Windows 资源管理器语义：展开任意文件夹可见其直接书签）。
+        // 用 ToLookup（允许 null 键 = 根级链接）分组，按所属目录挂到对应节点下
+        var linksByParent = treeLinks.ToLookup(l => l.ListId);
+        foreach (var node in nodes.Values)
+            AppendTreeLinkLeaves(node, linksByParent[node.FolderId]);
+        AppendTreeLinkLeaves(root, linksByParent[null]);
+
         // 根节点计数 = 顶层文件夹递归计数之和 + 根级直挂链接数（内核递归计数）
         root.LinkCount = tree.Where(f => f.ParentId == null)
             .Sum(f => f.LinkCount) + rootLinkCount;
@@ -816,41 +828,21 @@ public class BrowserViewModel : INotifyPropertyChanged
         FolderTree.Add(root);
     }
 
-    /// <summary>
-    /// 把根级直挂链接作为叶子节点加入树根「全部书签」的 Children。
-    /// 排序与主区列表**同口径**（BEHAVIOR-CONTRACT 1.1）：升序时**文件夹在前、链接在后**，
-    /// 各自按名称升序——树绝不让链接骑在文件夹之前（用户 2026-09-18 铁律）。
-    /// 链接叶子的点击语义 = 主区定位选中（BrowserView 处理）；此处只负责数据注入与排序。
-    /// 上限 200：根级直挂链接海量时树不至于失控（正常使用远低于此量级）。
-    /// </summary>
-    private async Task LoadTreeRootLinkNodesAsync()
+    /// <summary>把某文件夹的直接链接作为叶子挂到该节点下：名称升序（树唯一排序口径）；
+    /// 叶子 Id = 链接 ID、FolderId = null、ParentId = 所属目录（定位 = 进父目录 + 选中该行）。
+    /// 文件夹节点先于链接组已由构建顺序保证（链接组恒排在文件夹之后，Windows 口径）。</summary>
+    private void AppendTreeLinkLeaves(FolderNode folder, IEnumerable<LinkDto> links)
     {
-        var root = FolderTree.FirstOrDefault();
-        if (root == null) return;
-        try
+        foreach (var l in links.OrderBy(l => l.Title, StringComparer.CurrentCulture))
         {
-            var roots = await _client.LinkRootsAsync(sortBy: "title", sortOrder: "asc", perPage: 200);
-            foreach (var l in roots)
+            folder.Children.Add(new FolderNode
             {
-                root.Children.Add(new FolderNode
-                {
-                    IsLink = true,
-                    Id = l.LinkId,
-                    Name = string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title,
-                    Host = this
-                });
-            }
-            // 与主区同口径：文件夹组在前、链接组在后，各组按名称升序（无链接时也只重排文件夹，口径唯一）
-            var folders = root.Children.Where(c => !c.IsLink).OrderBy(c => c.Name, StringComparer.CurrentCulture).ToList();
-            var links = root.Children.Where(c => c.IsLink).OrderBy(c => c.Name, StringComparer.CurrentCulture).ToList();
-            root.Children.Clear();
-            foreach (var f in folders) root.Children.Add(f);
-            foreach (var l in links) root.Children.Add(l);
-        }
-        catch (Exception ex)
-        {
-            // 树注入失败不阻断主列表（根级链接只影响树的展示；失败留痕）
-            Services.Logger.Error("加载根级链接注入目录树失败", ex);
+                IsLink = true,
+                Id = l.LinkId,
+                ParentId = folder.FolderId,
+                Name = string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title,
+                Host = this
+            });
         }
     }
 

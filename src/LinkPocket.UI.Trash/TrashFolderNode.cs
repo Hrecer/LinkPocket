@@ -26,6 +26,8 @@ public class TrashFolderNode : INotifyPropertyChanged
     public int LinkCount { get; set; }
 
     public bool IsRoot => false;
+    /// <summary>回收站树无链接叶子（模板绑定面与 FolderNode 一致，恒 false：chevron 按 HasItems 显示）。</summary>
+    public bool IsLink => false;
     /// <summary>回收站树纯展示，无选中语义（与 FolderNode 绑定面一致，恒 false）。</summary>
     public bool IsSelected => false;
     public bool IsTrashed => true;

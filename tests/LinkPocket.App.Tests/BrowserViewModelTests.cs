@@ -180,7 +180,7 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_根级链接与文件夹同主区口径_文件夹在前链接在后各自名称升序()
+    public async Task 目录树_全量链接叶子_文件夹在前链接在后各自名称升序_子目录链接注入其下()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -189,8 +189,9 @@ public class BrowserViewModelTests
             var linkA = (await client.LinkCreateAsync("https://a-root.example", title: "Alpha 根级", autoFetchMetadata: false)).Data!;
             var linkZ = (await client.LinkCreateAsync("https://z-root.example", title: "Zulu 根级", autoFetchMetadata: false)).Data!;
             await client.FolderCreateAsync("Charlie 文件夹");
-            await client.LinkCreateAsync("https://sub.example", title: "Bravo 子级",
-                listId: (await client.FolderCreateAsync("Delta 文件夹")).Data!.FolderId, autoFetchMetadata: false);
+            var delta = (await client.FolderCreateAsync("Delta 文件夹")).Data!;
+            var bravo = (await client.LinkCreateAsync("https://sub.example", title: "Bravo 子级",
+                listId: delta.FolderId, autoFetchMetadata: false)).Data!;
 
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
@@ -204,10 +205,97 @@ public class BrowserViewModelTests
                 children.Select(c => c.Name).ToArray());
             Assert.False(children[0].IsLink);
             Assert.False(children[1].IsLink);
-            Assert.True(children[2].IsLink && children[2].Id == linkA.LinkId);
-            // 子目录（Delta）内的链接不进树
-            Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId);
-            Assert.DoesNotContain(children, c => c.Name == "Bravo 子级");
+            // 根级链接叶子：ParentId = null（所属目录 = 根）
+            Assert.True(children[2].IsLink && children[2].Id == linkA.LinkId && children[2].ParentId == null);
+            Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId && children[3].ParentId == null);
+
+            // 子目录（Delta）的直接链接注入其节点下（名称升序叶子；ParentId = 所属目录）
+            var deltaNode = children[1];
+            Assert.Equal(delta.FolderId, deltaNode.FolderId);
+            var deltaLeaf = Assert.Single(deltaNode.Children);
+            Assert.True(deltaLeaf.IsLink && deltaLeaf.Id == bravo.LinkId && deltaLeaf.ParentId == delta.FolderId);
+            Assert.Equal("Bravo 子级", deltaLeaf.Name);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 目录树_文件夹行单击_选中该文件夹并进入()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            await client.LinkCreateAsync("https://a.example/1", title: "One", listId: a.FolderId, autoFetchMetadata: false);
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            var node = Assert.Single(vm.FolderTree[0].Children, c => !c.IsLink);
+            Assert.Equal(a.FolderId, node.FolderId);
+
+            await vm.SelectTreeNodeAsync(node);
+
+            Assert.Equal(a.FolderId, vm.CurrentFolderId);                 // 已进入该目录
+            Assert.True(vm.IsSelectedId(a.FolderId));                     // 该文件夹进入选中集合（树高亮唯一事实源）
+            var nodeNow = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
+            Assert.True(nodeNow.IsSelected);                              // 树节点投影高亮（重建后仍成立）
+            Assert.Equal("One", Assert.Single(vm.Rows).Name);             // 主栏显示该目录内容
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 目录树_链接叶子单击_定位到父目录并选中该行()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var link = (await client.LinkCreateAsync("https://a.example/1", title: "One",
+                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+
+            var aNode = vm.FolderTree[0].Children.Single(c => !c.IsLink);
+            var leaf = Assert.Single(aNode.Children);
+            Assert.True(leaf.IsLink && leaf.Id == link.LinkId && leaf.ParentId == a.FolderId);
+
+            await vm.SelectTreeNodeAsync(leaf);
+
+            Assert.Equal(a.FolderId, vm.CurrentFolderId);     // 进入链接所在父目录
+            Assert.True(vm.IsSelectedId(link.LinkId));        // 该链接进入选中集合（主栏 + 树叶子同时投影）
+            Assert.Equal(link.LinkId, Assert.Single(vm.SelectedRows).Id);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 目录树_根节点单击_不可选中不可进入()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.FolderCreateAsync("A");
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            Assert.Null(vm.CurrentFolderId);
+
+            var root = Assert.Single(vm.FolderTree);
+            Assert.True(root.IsRoot);
+            await vm.SelectTreeNodeAsync(root);
+
+            Assert.Null(vm.CurrentFolderId);   // 未进入
+            Assert.Equal(0, vm.SelectionCount); // 未选中
         }
         finally
         {
