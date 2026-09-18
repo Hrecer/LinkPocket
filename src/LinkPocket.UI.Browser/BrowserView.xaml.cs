@@ -79,6 +79,36 @@ public partial class BrowserView : UserControl
     }
 
     /// <summary>
+    /// **焦点不变式**：页面可见且应用在前台时，键盘焦点必须在页内。
+    /// 快捷键（ShortcutHost）挂在页面根、按焦点路由——焦点一旦掉出页面，整页快捷键静默失效。
+    /// 而刷新会重建树 / 面包屑 / 列表：被聚焦的容器（树节点 TreeViewItem、面包屑按钮）随 `Clear()`
+    /// 被移出可视树，**WPF 此时把焦点交给窗口（页外）**——于是"进入文件夹后 Ctrl+V 没反应，
+    /// 必须点一下列表空白才恢复"（用户 2026-09-19 报障，探针 ③ 实测焦点从 TreeViewItem → MainWindow）。
+    /// 修复 = 页面自己守住这条不变式（重建后把焦点收回），不再依赖"焦点碰巧在页内"。
+    /// 三条不抢：页不可见（切到别的页）/ 应用不在前台（切走了或弹窗打开）/ 正在编辑文本。
+    /// </summary>
+    private void EnsurePageFocus()
+    {
+        if (!IsLoaded || !IsVisible) return;
+        if (Window.GetWindow(this)?.IsActive != true) return;
+        if (IsFocusWithinPage()) return;
+        if (ShortcutHost.IsTextInputFocused()) return;   // 编辑中（地址栏）绝不抢
+        Keyboard.Focus(this);
+    }
+
+    /// <summary>当前键盘焦点是否落在本页（含后代）。</summary>
+    private bool IsFocusWithinPage()
+    {
+        var d = Keyboard.FocusedElement as DependencyObject;
+        while (d != null)
+        {
+            if (ReferenceEquals(d, this)) return true;
+            d = VisualTreeHelper.GetParent(d);
+        }
+        return false;
+    }
+
+    /// <summary>
     /// Shift+F10 / 菜单键：为当前选中行弹右键菜单（Windows 口径：键盘打开与右键同一张菜单）。
     /// 菜单挂在行模板的 Border 上（ContextMenu 半离线，只能从行容器取），故先按选中行找到容器再打开。
     /// </summary>
@@ -201,10 +231,13 @@ public partial class BrowserView : UserControl
     // 后台刷新（写操作后的 300ms 防抖、排序、跳转定位到当前目录…）一律静默——
     // 曾按"Rows 集合有无变更"触发，导致移动/粘贴后的那次刷新也重播入场动画（用户实测报障）。
 
-    /// <summary>刷新链结束：只有导航加载才播行入场动画。</summary>
+    /// <summary>刷新链结束：只有导航加载才播行入场动画；并守住"焦点在页内"不变式（见 EnsurePageFocus）。</summary>
     private void OnRefreshCompleted(object? sender, bool wasNavigation)
     {
         if (wasNavigation) QueueRowEntrance();
+        // 本轮刷新重建过树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
+        // 延到布局之后执行（容器重建完成再判焦点归属），保证"进入文件夹后 Ctrl+V 立即可用"。
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(EnsurePageFocus));
     }
 
     private void QueueRowEntrance()
