@@ -188,7 +188,13 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             LinkPocket.Contracts.LinkDto? link;
             try { link = await _client.LinkGetAsync(linkId); }   // 单点查询（原全量拉取后 FirstOrDefault，100k 库下点击即全表）
             catch (LinkPocket.Contracts.EngineException) { link = null; }
-            if (gen != _generation || link == null || _host == null) return; // 已切换选中或源已删除
+            if (gen != _generation) return; // 已切换选中：本批结果作废，新选中会重建信息卡
+
+            if (link == null || _host == null)
+            {
+                MarkUnavailable();   // 源已删除/宿主缺失：占位回落，不留"读取中…"（E10）
+                return;
+            }
 
             DescriptionText = link.Description ?? "";
 
@@ -210,6 +216,19 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             OnPropertyChanged(nameof(DescriptionText));
             OnPropertyChanged(nameof(HasDescription));
         }
-        catch { /* 补拉失败时保留行内基础信息 */ }
+        catch
+        {
+            Services.Logger.Error("详情栏链接补拉失败（保持行内基础信息）", null);   // 观测面留痕
+            MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"（E10）
+        }
+    }
+
+    /// <summary>补拉失败/源已删除的收口：把「读取中…」占位回落为中性值（其余占位本就是 —/从未）。</summary>
+    private void MarkUnavailable()
+    {
+        var pathRow = FindRow("位置");
+        if (pathRow != null && pathRow.Value == "读取中…") pathRow.Value = "未获取到信息";
+        var visitedRow = FindRow("最后查看");
+        if (visitedRow != null && visitedRow.Value == "—") visitedRow.Value = "从未";
     }
 }
