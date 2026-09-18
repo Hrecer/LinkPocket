@@ -27,6 +27,13 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>刷新挂起标志：加载进行中又来刷新请求时置位，当前加载收尾后自动补刷一次（最后请求胜出）。</summary>
     private bool _refreshPending;
 
+    /// <summary>补刷递归深度（2.10-44）：最后一次补刷的 finally 里自身再次触发最多 3 层，
+    /// 超过说明数据在持续高频变动——本轮放弃"必处理"承诺，交还给 300ms 事件防抖继续追平，杜绝无限递归。</summary>
+    private int _refreshRecursionDepth;
+
+    /// <summary>补刷递归深度上限（超过后本轮不再递归补刷）。</summary>
+    private const int MaxRefreshRecursion = 3;
+
     public BrowserHistory Controller { get; } = new();
 
     public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
@@ -418,9 +425,18 @@ public class BrowserViewModel : INotifyPropertyChanged
             _refreshPending = true;
             return;
         }
+        // 2.10-44：数据持续高频变动时，补刷递归不能无限延续（见 finally 内的深度计数）
+        if (_refreshRecursionDepth >= MaxRefreshRecursion)
+        {
+            _refreshPending = false;   // 弃掉挂起：交还 300ms 事件防抖继续追平（不丢数据，只是晚一拍）
+            return;
+        }
         IsLoading = true;
         try
         {
+            // 2.10-45 快照语义（如实说明）：contents / tree / stats 是三个引擎命令各自的快照，
+            // 高速写入期间可能跨命令看到不同时点。下一轮刷新（事件防抖 300ms）自动追平；
+            // 真正的"单快照一致"需引擎侧合并命令（当前不为 UI 单独加引擎接口，保持命令最小面）。
             var contents = await _client.FolderContentsAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
             // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
@@ -545,7 +561,9 @@ public class BrowserViewModel : INotifyPropertyChanged
             if (_refreshPending)
             {
                 _refreshPending = false;
-                await RefreshAsync(SelectedRows.FirstOrDefault()?.Id);
+                _refreshRecursionDepth++;
+                try { await RefreshAsync(SelectedRows.FirstOrDefault()?.Id); }
+                finally { _refreshRecursionDepth--; }
             }
         }
     }
@@ -1229,8 +1247,60 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         var parts = new List<string> { "全部书签" };
         foreach (var (id, name) in BuildBreadcrumbIds(folderId))
-            parts.Add(name);
+            parts.Add(EscapePathSegment(name));   // 名字里的 / 转义为 \/，编辑往返不丢（2.10-52/E1）
         return string.Join("/", parts);
+    }
+
+    // —— 路径编辑转义（2.10-52/E1）——
+    // 分隔符 / 与文件夹名里的字面 / 冲突：名内 / 以 \/ 转义（\\ 转义 \）。解析侧按
+    // "未转义的 /"切段并解码转义对，保证任何名字都能在地址栏无损往返。
+
+    /// <summary>段名 → 地址栏文本（先 \\ 后 /，避免转义序列互相污染）。</summary>
+    private static string EscapePathSegment(string name)
+        => name.Replace("\\", "\\\\").Replace("/", "\\/");
+
+    /// <summary>地址栏段 → 真实名字（先 \/ 后 \\）。</summary>
+    private static string UnescapePathSegment(string seg)
+        => seg.Replace("\\/", "/").Replace("\\\\", "\\");
+
+    /// <summary>最后一次"未转义的 /"分隔符的位置（前面反斜杠数为偶）；无则 -1。</summary>
+    private static int LastIndexOfPathSeparator(string text)
+    {
+        var slash = -1;
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '/') continue;
+            var bs = 0;
+            for (var j = i - 1; j >= 0 && text[j] == '\\'; j--) bs++;
+            if (bs % 2 == 0) slash = i;
+        }
+        return slash;
+    }
+
+    /// <summary>按转义规则切分并解码路径段（'\/'= 名字里的字面斜杠，'\\'= 字面反斜杠），剔除空段并修饰空白。</summary>
+    private static IEnumerable<string> SplitPathSegments(string text)
+    {
+        var segments = new List<string>();
+        var current = new System.Text.StringBuilder();
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '\\' && i + 1 < text.Length && (text[i + 1] == '\\' || text[i + 1] == '/'))
+            {
+                current.Append(text[i + 1]);   // 转义对 → 字面字符
+                i++;
+                continue;
+            }
+            if (c == '/')
+            {
+                if (current.Length > 0) segments.Add(current.ToString().Trim());
+                current.Clear();
+                continue;
+            }
+            current.Append(c);
+        }
+        if (current.Length > 0) segments.Add(current.ToString().Trim());
+        return segments;
     }
 
     /// <summary>Enter：逐级按名解析路径（同级重名取排序第一；不区分大小写）。失败 → 边框标红并提示。</summary>
@@ -1260,9 +1330,9 @@ public class BrowserViewModel : INotifyPropertyChanged
     public void ChooseCandidate(string name)
     {
         var text = PathEditText ?? string.Empty;
-        var idx = text.LastIndexOf('/');
+        var idx = LastIndexOfPathSeparator(text);
         var prefix = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
-        PathEditText = prefix + name + "/";
+        PathEditText = prefix + EscapePathSegment(name) + "/";   // 候选名含 / 时同样转义写入
         SelectedCandidateIndex = 0;
     }
 
@@ -1277,7 +1347,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     private void UpdatePathCandidates()
     {
         var text = _pathEditText ?? string.Empty;
-        var idx = text.LastIndexOf('/');
+        var idx = LastIndexOfPathSeparator(text);
         var headText = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
         var typed = idx >= 0 ? text.Substring(idx + 1) : text;
 
@@ -1287,9 +1357,11 @@ public class BrowserViewModel : INotifyPropertyChanged
             return;
         }
 
+        var typedPlain = UnescapePathSegment(typed.Trim());   // 用户输入的可能是转义名（如 "A\/B" 查找 A/B）
+
         PathCandidates = _folderMap
             .Where(kvp => ParentMatches(kvp.Value.ParentId, head))
-            .Where(kvp => typed.Length == 0 || kvp.Value.Name.StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+            .Where(kvp => typedPlain.Length == 0 || kvp.Value.Name.StartsWith(typedPlain, StringComparison.OrdinalIgnoreCase))
             .OrderBy(kvp => kvp.Value.Name, StringComparer.CurrentCulture)
             .Select(kvp => kvp.Value.Name)
             .Take(8)
@@ -1301,7 +1373,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         folderId = null;
         invalidSegment = null;
-        var segments = text.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = SplitPathSegments(text);   // 转义感知切分：'\/' 不是分隔符（2.10-52/E1）
         foreach (var seg in segments)
         {
             if (folderId == null && seg.Equals("全部书签", StringComparison.OrdinalIgnoreCase))
