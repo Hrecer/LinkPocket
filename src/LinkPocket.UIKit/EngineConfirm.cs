@@ -41,6 +41,9 @@ public static class EngineConfirm
             return token.GetString()!;
         }
 
-        throw;   // Observability：没有令牌可重试，把原始引擎错误交给调用方展示（throw; 保留原始堆栈）
+        // Observability：没有令牌可重试，把原始引擎错误交给调用方展示。
+        // 用 ExceptionDispatchInfo 保留原始堆栈（catch 外的普通方法里 `throw;` 非法，`throw ex` 会重置堆栈）
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+        throw new InvalidOperationException("unreachable");
     }
 }

@@ -103,16 +103,17 @@ namespace LinkPocket.Views
             return false;
         }
 
-        private static bool MatchesId(object item, string? folderId)
+        /// <summary>ID 属性反射缓存：只按类型缓存一次 PropertyInfo（避免每次遍历都 GetProperty），
+    /// 且不引入 UIKit → UI.Browser/UI.Trash 的引用（原 MatchesId 用反射正是为此——审阅建议的
+    /// switch 模式匹配会强引用这两个类型，破坏分层，故采用缓存反射实现同等优化）。</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> IdPropertyCache = new();
+
+    private static bool MatchesId(object item, string? folderId)
         {
             if (folderId == null) return false;
-            // 2.7：静态类型模式匹配（原反射 GetProperty 每次遍历都做）；仅两类树节点
-            return item switch
-            {
-                LinkPocket.ViewModels.FolderNode f => string.Equals(f.FolderId, folderId, StringComparison.Ordinal),
-                LinkPocket.ViewModels.TrashFolderNode t => string.Equals(t.TrashFolderId, folderId, StringComparison.Ordinal),
-                _ => false,
-            };
+            var prop = IdPropertyCache.GetOrAdd(item.GetType(),
+                t => t.GetProperty("FolderId") ?? t.GetProperty("TrashFolderId"));
+            return string.Equals(prop?.GetValue(item) as string, folderId, StringComparison.Ordinal);
         }
     }
 }
