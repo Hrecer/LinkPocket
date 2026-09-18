@@ -85,7 +85,8 @@ public class BrowserRowViewModel : INotifyPropertyChanged
             if (_isSelected == value) return;
             _isSelected = value;
             OnPropertyChanged();
-            Host?.NotifySelectionChanged();
+            // 批量选择（Shift 区间 / 全选 / 清空）经 Host 的抑制计数合并为批末一次通知，防 N 次全量重评估
+            Host?.OnRowSelectionChanged();
         }
     }
 

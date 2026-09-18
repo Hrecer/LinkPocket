@@ -212,6 +212,30 @@ public class BrowserViewModel : INotifyPropertyChanged
         CommandManager.InvalidateRequerySuggested();
     }
 
+    // —— S1 选中通知批量抑制 ——
+    // 批量选择（Shift 区间 / 全选 / 清空）会逐行翻转 IsSelected；若不抑制，每行都触发一次
+    // NotifySelectionChanged（4+ 属性通知 + Details.UpdateFrom + 命令重查询），10k 行下 = 上万次
+    // 全量重评估。抑制期只发行自身 INPC，批末统一一次全量通知。
+
+    /// <summary>抑制计数：>0 时行选中变更不即时通知（批内聚合）。</summary>
+    private int _selectionNotifySuppress;
+
+    /// <summary>行选中变更入口（行 VM 回调）：抑制期内静默，批末由 RunSelectionBatch 统一通知一次。</summary>
+    internal void OnRowSelectionChanged()
+    {
+        if (_selectionNotifySuppress > 0) return;
+        NotifySelectionChanged();
+    }
+
+    /// <summary>批量选中操作的护栏：body 内逐行变更静默，收尾无论成败都统一通知一次。</summary>
+    private void RunSelectionBatch(Action body)
+    {
+        _selectionNotifySuppress++;
+        try { body(); }
+        finally { _selectionNotifySuppress--; }
+        NotifySelectionChanged();
+    }
+
     /// <summary>
     /// 文件夹完整路径展示（详情栏用）："全部书签 / A / B"；根返回"全部书签"。
     /// includeSelf=false 时用于「选中文件夹本身」的场景：位置只显示其祖先链，不包含自己。
@@ -503,8 +527,11 @@ public class BrowserViewModel : INotifyPropertyChanged
     private void SelectRow(BrowserRowViewModel? row)
     {
         if (row == null) return;
-        foreach (var r in Rows)
-            r.IsSelected = ReferenceEquals(r, row);
+        RunSelectionBatch(() =>
+        {
+            foreach (var r in Rows)
+                r.IsSelected = ReferenceEquals(r, row);
+        });
         _anchorId = row.Id;
     }
 
@@ -515,7 +542,7 @@ public class BrowserViewModel : INotifyPropertyChanged
 
         if (mods.HasFlag(ModifierKeys.Control))
         {
-            row.IsSelected = !row.IsSelected;
+            row.IsSelected = !row.IsSelected;   // 单行翻转：无需批量抑制
             _anchorId ??= row.Id;
         }
         else if (mods.HasFlag(ModifierKeys.Shift))
@@ -524,20 +551,29 @@ public class BrowserViewModel : INotifyPropertyChanged
             var i1 = Rows.IndexOf(anchor);
             var i2 = Rows.IndexOf(row);
             if (i1 > i2) (i1, i2) = (i2, i1);
-            for (var i = 0; i < Rows.Count; i++)
-                Rows[i].IsSelected = i >= i1 && i <= i2;
+            RunSelectionBatch(() =>
+            {
+                for (var i = 0; i < Rows.Count; i++)
+                    Rows[i].IsSelected = i >= i1 && i <= i2;
+            });
         }
         else
         {
-            foreach (var r in Rows)
-                r.IsSelected = ReferenceEquals(r, row);
+            RunSelectionBatch(() =>
+            {
+                foreach (var r in Rows)
+                    r.IsSelected = ReferenceEquals(r, row);
+            });
             _anchorId = row.Id;
         }
     }
 
     public void SelectAllRows()
     {
-        foreach (var r in Rows) r.IsSelected = true;
+        RunSelectionBatch(() =>
+        {
+            foreach (var r in Rows) r.IsSelected = true;
+        });
         _anchorId ??= Rows.FirstOrDefault()?.Id;
     }
 
@@ -572,8 +608,11 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     public void ClearSelection()
     {
-        foreach (var r in Rows)
-            r.IsSelected = false;
+        RunSelectionBatch(() =>
+        {
+            foreach (var r in Rows)
+                r.IsSelected = false;
+        });
         _anchorId = null;
     }
 
