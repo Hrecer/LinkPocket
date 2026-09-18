@@ -74,7 +74,7 @@ namespace LinkPocket.Views
         /// <summary>
         /// 行主体单击（chevron 由 ToggleButton 自捕获鼠标、绝不进入此路径）：
         /// 选中/进入语义由宿主（NodeSelected）决定 —— 文件夹 = 选中并进入；链接叶子 = 定位到父目录；
-        /// 「全部书签」虚拟根 = 忽略（只可展开/收起）。行单击与 chevron 展开物理分离，
+        /// 「全部书签」虚拟根 = 进入根目录（不写选中）。行单击与 chevron 展开物理分离，
         /// 不经容器 SelectedItemChanged（键盘/展开同通道 = 耦合）。回收站页不订阅 = 纯展示。
         /// </summary>
         private void FolderTreeItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)

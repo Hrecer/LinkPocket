@@ -705,13 +705,19 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// 点击树节点统一入口（展开 ≠ 选中 ≠ 进入，三者物理分离）：
     /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此 ——
     /// 链接叶子 = 进其父目录 + 选中该行（定位）；文件夹 = 选中该文件夹 + 进入该目录（选中即进入）；
-    /// 「全部书签」虚拟根 = 特殊目录容器，只可展开/收起，不可选中、不可进入（左栏与主栏皆不可）。
+    /// 「全部书签」虚拟根 = 单击进入根目录（导航；它不是实体，位置由面包屑表达，故不写选中）。
     /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="_selectedIds"/>
     /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
     /// </summary>
     public async Task SelectTreeNodeAsync(FolderNode node)
     {
-        if (node.IsRoot) return;   // 虚拟根「全部书签」：只可展开/收起，不可选中、不可进入
+        if (node.IsRoot)
+        {
+            // 虚拟根「全部书签」：不是实体 → 永不进入选中集合（根没有可高亮的身份）；
+            // 行主体单击 = 进入根目录（导航），这正是它唯一该做的事（已在根则不重复重载）。
+            if (Controller.CurrentFolderId != null) await LoadAsync(null);
+            return;
+        }
 
         if (node.IsLink)
         {

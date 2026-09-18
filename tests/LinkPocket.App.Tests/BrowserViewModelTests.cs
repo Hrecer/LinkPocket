@@ -280,22 +280,34 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_根节点单击_不可选中不可进入()
+    public async Task 目录树_根节点单击_进入根目录且虚根永不选中()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            await client.FolderCreateAsync("A");
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            await client.LinkCreateAsync("https://a.example/1", title: "One", listId: a.FolderId, autoFetchMetadata: false);
+
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
-            Assert.Null(vm.CurrentFolderId);
 
+            // 已在根：单击「全部书签」不重载、不写选中（虚根不是实体）
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
             await vm.SelectTreeNodeAsync(root);
+            Assert.Null(vm.CurrentFolderId);
+            Assert.False(root.IsSelected);
+            Assert.False(vm.IsSelectedId(root.Id));      // 虚根无身份可选中（Id 为空，永不入集合）
 
-            Assert.Null(vm.CurrentFolderId);   // 未进入
-            Assert.Equal(0, vm.SelectionCount); // 未选中
+            // 先进入子目录，再单击「全部书签」= 回根目录（导航；位置由面包屑表达，不产生选中高亮）
+            var aNode = vm.FolderTree[0].Children.Single(c => !c.IsLink);
+            await vm.SelectTreeNodeAsync(aNode);
+            Assert.Equal(a.FolderId, vm.CurrentFolderId);
+
+            var rootNow = Assert.Single(vm.FolderTree);
+            await vm.SelectTreeNodeAsync(rootNow);
+            Assert.Null(vm.CurrentFolderId);             // 已回到根目录
+            Assert.False(rootNow.IsSelected);            // 虚根仍不显示选中
         }
         finally
         {
