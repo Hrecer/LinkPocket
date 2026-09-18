@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
 using LinkPocket.ViewModels;
@@ -109,6 +110,25 @@ public class BrowserViewModelTests
             await vm.RefreshPreservingSelectionAsync();
             Assert.DoesNotContain(vm.Rows, r => r.Id == link.LinkId);  // 已移出目录 A 的行
             Assert.Empty(vm.Rows);                                     // A 目录此刻为空
+
+            // 遮罩口径（区分"刷新次数"与"要不要给用户看"两件事）：
+            // 写操作与随后的后台刷新都不亮遮罩；只有"导航加载"亮，且完成即收。
+            Assert.False(vm.IsNavigating);                             // 移动（写操作）不亮遮罩
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.False(vm.IsNavigating);                             // 后台事件口径的刷新也不亮遮罩
+
+            // 导航加载（navigating: true）完成后遮罩必须收回——不留僵住的遮罩
+            //（引擎在本环境可能同步完成整个加载，故只锁"终态必为收起"，不锁中途瞬时值）
+            await vm.RefreshAsync(navigating: true);
+            Assert.False(vm.IsNavigating);
+
+            // 行入场动画的触发口径：只有导航加载的那次刷新链才允许播（后台刷新一律静默）——
+            // 界面的行错峰入场动画订阅 RefreshCompleted，参数即"是不是导航加载"。
+            var refreshEvents = new List<bool>();
+            vm.RefreshCompleted += (_, wasNavigation) => refreshEvents.Add(wasNavigation);
+            await vm.LoadAsync(null);                        // 打开目录（导航）→ 播
+            await vm.RefreshPreservingSelectionAsync();      // 后台刷新（写操作后的防抖口径）→ 不播
+            Assert.Equal(new[] { true, false }, refreshEvents);
         }
         finally
         {

@@ -92,6 +92,16 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>挂起补刷是否属于导航加载（与 <see cref="_clearSelectionOnPendingRefresh"/> 同机制，逐轮继承）。</summary>
     private bool _navigatingOnPendingRefresh;
 
+    /// <summary>本轮刷新链（含挂起补刷）里是否出现过导航加载——链条结束一次性告知界面。</summary>
+    private bool _navigatingInChain;
+
+    /// <summary>
+    /// 一次刷新链（含挂起补刷）**完成**时触发；参数 = 该链是否属于"导航加载"。
+    /// 界面据此决定"行入场动画"播不播：只有打开文件夹这类导航才播，后台刷新（含写操作后的防抖刷新）静默——
+    /// 绝不按"集合有没有变更"来播（曾在每次刷新都重播，用户报"移动后那次刷新还有动画"）。
+    /// </summary>
+    public event EventHandler<bool>? RefreshCompleted;
+
     private BrowserPane _activePane = BrowserPane.Main;
 
     /// <summary>
@@ -493,9 +503,6 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public async Task RefreshAsync(bool clearSelection = false, bool navigating = false)
     {
-        // 导航加载：遮罩只在"用户发起"的这类刷新上亮（事件驱动的后台刷新一律静默，不闪动画）
-        if (navigating) IsNavigating = true;
-
         // 导航切换目录：清空选中集合（行/树投影一起归零）；原地刷新则保留
         if (clearSelection)
         {
@@ -515,6 +522,9 @@ public class BrowserViewModel : INotifyPropertyChanged
             _refreshPending = false;   // 弃掉挂起：交还 300ms 事件防抖继续追平（不丢数据，只是晚一拍）
             return;
         }
+        // 遮罩只在"这次加载真的开始了"且属于**用户发起的导航/刷新**时亮：被挂起/被丢弃的请求不亮，
+        // 挂起补刷按 _navigatingOnPendingRefresh 逐轮继承（事件驱动的后台刷新一律静默，不闪动画）。
+        if (navigating) { IsNavigating = true; _navigatingInChain = true; }
         IsLoading = true;
         try
         {
@@ -650,6 +660,9 @@ public class BrowserViewModel : INotifyPropertyChanged
             else
             {
                 IsNavigating = false;   // 本轮（含挂起补刷链）全部结束 → 收加载遮罩
+                var wasNavigation = _navigatingInChain;
+                _navigatingInChain = false;
+                RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
             }
         }
     }

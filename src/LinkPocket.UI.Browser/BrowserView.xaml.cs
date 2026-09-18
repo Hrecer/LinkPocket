@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
@@ -38,16 +37,15 @@ public partial class BrowserView : UserControl
                 _wiredVm.PropertyChanged -= OnViewModelPropertyChanged;
                 _wiredVm.FocusRowRequested -= OnFocusRowRequested;
                 _wiredVm.PaneActivated -= OnPaneActivated;
+                _wiredVm.RefreshCompleted -= OnRefreshCompleted;
             }
-            _rowsHook?.Detach();
-            _rowsHook = null;
             _wiredVm = ViewModel;
 
             ViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);   // 实例注入：无头/多窗口下不与其它页共享
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.FocusRowRequested += OnFocusRowRequested;
             ViewModel.PaneActivated += OnPaneActivated;
-            HookRowsCollection(ViewModel);
+            ViewModel.RefreshCompleted += OnRefreshCompleted;
             WireMainTableOnce();
         };
 
@@ -147,15 +145,15 @@ public partial class BrowserView : UserControl
         return 36;
     }
 
-    // —— 行错峰入场（MD3E）：目录装载/刷新后淡入 + 轻微上移，弹簧曲线 ——
-    private ObservableCollectionHook? _rowsHook;
+    // —— 行错峰入场（MD3E）：**只在打开文件夹（导航加载）时**淡入 + 轻微上移，弹簧曲线 ——
+    // 触发条件由 VM 的 RefreshCompleted 明确给出（该次刷新链是不是导航加载）：
+    // 后台刷新（写操作后的 300ms 防抖、排序、跳转定位到当前目录…）一律静默——
+    // 曾按"Rows 集合有无变更"触发，导致移动/粘贴后的那次刷新也重播入场动画（用户实测报障）。
 
-    private void HookRowsCollection(BrowserViewModel? vm)
+    /// <summary>刷新链结束：只有导航加载才播行入场动画。</summary>
+    private void OnRefreshCompleted(object? sender, bool wasNavigation)
     {
-        _rowsHook?.Detach();
-        _rowsHook = null;
-        if (vm == null) return;
-        _rowsHook = new ObservableCollectionHook(vm.Rows, QueueRowEntrance);
+        if (wasNavigation) QueueRowEntrance();
     }
 
     private void QueueRowEntrance()
@@ -199,40 +197,6 @@ public partial class BrowserView : UserControl
 
         tt.BeginAnimation(TranslateTransform.YProperty, oy);
         el.BeginAnimation(UIElement.OpacityProperty, oo);
-    }
-
-    /// <summary>订阅行集合变更的轻量钩子（DataContext 换绑时自动迁移/解除）。
-    /// 刷新重建列表 = 一次 Reset + N 次 Add，若每次变更都直接入队动画回调，单次刷新会积压
-    /// 数十次同帧 Dispatcher 回调；这里聚合为"同帧只入队一次"。</summary>
-    private sealed class ObservableCollectionHook
-    {
-        private readonly INotifyCollectionChanged _source;
-        private readonly Action _onChange;
-        private bool _queued;
-
-        public ObservableCollectionHook(INotifyCollectionChanged source, Action onChange)
-        {
-            _source = source;
-            _onChange = onChange;
-            _source.CollectionChanged += OnChanged;
-        }
-
-        private void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        {
-            if (e.Action != NotifyCollectionChangedAction.Reset && e.Action != NotifyCollectionChangedAction.Add)
-                return;
-            if (_queued) return;   // 同帧内已在等待队列：合并后续变更为一次回调
-            _queued = true;
-            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                System.Windows.Threading.DispatcherPriority.Background,
-                new Action(() => { _queued = false; _onChange(); }));
-        }
-
-        public void Detach()
-        {
-            _source.CollectionChanged -= OnChanged;
-            _queued = false;
-        }
     }
 
     // （列头与列宽拖拽已由共享数据表控件 SortableDataTable 内部驱动：
