@@ -1,5 +1,5 @@
-﻿using System;
-using LinkPocket.Api;
+using System;
+using LinkPocket.Contracts;
 using System.Collections.Generic;
 
 namespace LinkPocket.ViewModels;

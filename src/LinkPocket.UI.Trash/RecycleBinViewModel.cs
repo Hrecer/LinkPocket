@@ -6,7 +6,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 

@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 
 namespace LinkPocket.Kernel;
@@ -8,7 +9,7 @@ namespace LinkPocket.Kernel;
 /// </summary>
 public static class Mappings
 {
-    public static Api.LinkDto ToDto(this Link link) => new()
+    public static Contracts.LinkDto ToDto(this Link link) => new()
     {
         LinkId = link.LinkId,
         Url = link.Url,
@@ -28,7 +29,7 @@ public static class Mappings
     /// <c>LinkCount</c> = 递归（含子孙），<c>DirectLinkCount</c> = 直接子链接数。
     /// 传 null 时两个字段置 0（调用方明确放弃计数口径，如纯列表场景）。
     /// </param>
-    public static Api.FolderDto ToDto(this Folder folder, FolderLinkCounts? counts)
+    public static Contracts.FolderDto ToDto(this Folder folder, FolderLinkCounts? counts)
         => new()
         {
             FolderId = folder.FolderId,

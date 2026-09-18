@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;

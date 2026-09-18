@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 
 namespace LinkPocket.Services;

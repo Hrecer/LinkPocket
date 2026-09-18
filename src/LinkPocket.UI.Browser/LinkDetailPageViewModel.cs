@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 

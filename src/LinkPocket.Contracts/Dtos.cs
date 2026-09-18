@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace LinkPocket.Api;
+namespace LinkPocket.Contracts;
 
 /// <summary>
 /// 前后端通信 DTO。全部为可 JSON 序列化的纯数据对象，

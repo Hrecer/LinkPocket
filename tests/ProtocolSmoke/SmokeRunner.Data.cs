@@ -1,4 +1,3 @@
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 
 namespace ProtocolSmoke;

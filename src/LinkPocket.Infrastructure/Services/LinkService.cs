@@ -1,5 +1,5 @@
-﻿using LinkPocket.Data;
-using LinkPocket.Api;
+using LinkPocket.Data;
+using LinkPocket.Contracts;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http;
 using System.Text.RegularExpressions;

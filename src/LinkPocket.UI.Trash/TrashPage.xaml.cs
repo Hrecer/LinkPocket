@@ -6,7 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;

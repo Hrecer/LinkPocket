@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Data;
 
@@ -219,7 +218,7 @@ internal static partial class SmokeRunner
             var ten = tenPage.Items.OfType<LinkDto>().Select(l => l.LinkId).ToList();
             Asserts.That(ten.Count == 10, "应取到 10 条待移动链接");
             sw = Stopwatch.StartNew();
-            var moveResult = await client.ExecuteAsync<LinkPocket.Api.LinkBatchResult>("links.move_batch",
+            var moveResult = await client.ExecuteAsync<LinkPocket.Contracts.LinkBatchResult>("links.move_batch",
                 new { link_ids = ten, target_list_id = target.FolderId });
             sw.Stop();
             Asserts.That(moveResult.Data!.Affected == 10, "批量移动应处理 10 条");

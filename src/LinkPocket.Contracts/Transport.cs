@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Api;
 

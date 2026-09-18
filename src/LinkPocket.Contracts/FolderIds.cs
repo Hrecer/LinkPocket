@@ -1,4 +1,4 @@
-namespace LinkPocket.Api;
+namespace LinkPocket.Contracts;
 
 /// <summary>
 /// 文件夹 ID 的语义定义。

@@ -1,5 +1,4 @@
 using LinkPocket.Contracts;
-using LinkPocket.Api;
 using LinkPocket.Data;
 using LinkPocket.Kernel;
 

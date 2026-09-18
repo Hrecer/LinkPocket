@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;

@@ -1,4 +1,4 @@
-using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 using LinkPocket.Services;
 using Microsoft.EntityFrameworkCore;

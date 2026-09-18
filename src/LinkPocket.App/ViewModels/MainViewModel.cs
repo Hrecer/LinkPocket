@@ -8,7 +8,6 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;

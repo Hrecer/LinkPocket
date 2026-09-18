@@ -1,4 +1,4 @@
-using LinkPocket.Api;
+using LinkPocket.Contracts;
 using System.Text.Json;
 
 namespace LinkPocket.Contracts;

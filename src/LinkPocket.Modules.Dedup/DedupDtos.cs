@@ -5,7 +5,7 @@ namespace LinkPocket.Modules.Dedup;
 public sealed record DedupGroup(
     string Url,
     int Count,
-    IReadOnlyList<LinkPocket.Api.LinkDto> Links);
+    IReadOnlyList<LinkPocket.Contracts.LinkDto> Links);
 
 /// <summary>保留策略。</summary>
 public static class DedupStrategy
@@ -21,8 +21,8 @@ public static class DedupStrategy
 /// <summary>计划中的一个组的处置。</summary>
 public sealed record DedupPlanGroup(
     string Url,
-    LinkPocket.Api.LinkDto Keep,
-    IReadOnlyList<LinkPocket.Api.LinkDto> Trash);
+    LinkPocket.Contracts.LinkDto Keep,
+    IReadOnlyList<LinkPocket.Contracts.LinkDto> Trash);
 
 /// <summary>完整计划（plan 纯干跑产出；apply 内部重建同一计划后执行）。</summary>
 public sealed record DedupPlan(

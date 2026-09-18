@@ -1,5 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using LinkPocket.Api;
+using Microsoft.EntityFrameworkCore;
+using LinkPocket.Contracts;
 using LinkPocket.Kernel;
 
 namespace LinkPocket.Data;

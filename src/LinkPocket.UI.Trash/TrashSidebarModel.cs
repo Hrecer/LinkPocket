@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows.Input;
-using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;

@@ -1,4 +1,4 @@
-namespace LinkPocket.Api;
+namespace LinkPocket.Contracts;
 
 /// <summary>
 /// 命令结果 DTO 组（wire 对外形状 = 契约；阶段 6 自模块提升，模型归位阶段随域归位）。

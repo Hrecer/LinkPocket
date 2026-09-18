@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using LinkPocket.Api;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using Microsoft.Win32;

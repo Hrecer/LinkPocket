@@ -1,4 +1,4 @@
-using LinkPocket.Api;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Api;
 
