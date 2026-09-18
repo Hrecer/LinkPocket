@@ -541,4 +541,44 @@ public class BrowserViewModelTests
             AppTestEnv.Delete(dbPath);
         }
     }
+
+    [Fact]
+    public async Task 剪贴板矩阵_新复制剪切覆盖旧载荷_源失效项粘贴时跳过()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var b = (await client.FolderCreateAsync("B")).Data!;
+            var keep = (await client.LinkCreateAsync("https://keep.example", title: "保留",
+                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+            var gone = (await client.LinkCreateAsync("https://gone.example", title: "失效",
+                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(a.FolderId);
+
+            // 覆盖：剪切「保留」→ 再复制「失效」→ 载荷整体替换为复制（旧剪切半透明视觉同时复位）
+            vm.SelectRowWithModifiers(vm.Rows.Single(r => r.Id == keep.LinkId), ModifierKeys.None);
+            vm.CutCommand.Execute(null);
+            Assert.True(vm.Rows.Single(r => r.Id == keep.LinkId).IsCut);
+            vm.SelectRowWithModifiers(vm.Rows.Single(r => r.Id == gone.LinkId), ModifierKeys.None);
+            vm.CopyCommand.Execute(null);
+            Assert.True(vm.Clipboard.BrowserPayload is { IsCut: false });   // 载荷已整体替换
+            Assert.False(vm.Rows.Single(r => r.Id == keep.LinkId).IsCut);   // 旧剪切视觉复位
+
+            // 源失效：被复制的链接移入回收站 → 粘贴时单项跳过，目标目录零写入（不是数据不一致）
+            await client.LinkTrashAsync(gone.LinkId);
+            await vm.LoadAsync(b.FolderId);
+            vm.PasteCommand.Execute(null);
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("没有可粘贴"), TimeSpan.FromSeconds(5)),
+                $"期望「没有可粘贴的项目」，实际：{vm.StatusText}");
+            var inB = await client.LinkListAsync(listId: b.FolderId, perPage: 0);
+            Assert.Empty(inB.Links);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
 }
