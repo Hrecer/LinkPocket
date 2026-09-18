@@ -93,6 +93,13 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _ = vm.BrowserViewModel.LoadAsync(folderId);
     }
 
+    /// <summary>切到搜索页（Ctrl+E / Ctrl+F）：切页后由 MainViewModel.OnNavigatedToSearch → ResetToEmpty
+    /// 触发搜索页把焦点收进搜索框，无需本窗口再持有搜索框引用。</summary>
+    void Services.INavigationService.NavigateToSearch()
+    {
+        if (DataContext is MainViewModel vm) vm.SelectNavCommand.Execute("search");
+    }
+
     // —— IBrowserLocateHost（「跳转」= 进入目标目录并选中目标行）——
     // 本窗口只提供两个原语：切页 + 委托浏览页执行"进入目录并选中一行"。
     // 目标类型判别、容器目录推导等算法全部在 Services/ContentLocator（组件），窗口不参与。

@@ -47,6 +47,7 @@ public partial class BrowserView : UserControl
                 _wiredVm.FocusRowRequested -= OnFocusRowRequested;
                 _wiredVm.PaneActivated -= OnPaneActivated;
                 _wiredVm.RefreshCompleted -= OnRefreshCompleted;
+                _wiredVm.ContextMenuRequested -= OnContextMenuRequested;
             }
             _wiredVm = ViewModel;
 
@@ -55,6 +56,7 @@ public partial class BrowserView : UserControl
             ViewModel.FocusRowRequested += OnFocusRowRequested;
             ViewModel.PaneActivated += OnPaneActivated;
             ViewModel.RefreshCompleted += OnRefreshCompleted;
+            ViewModel.ContextMenuRequested += OnContextMenuRequested;
             WireMainTableOnce();
 
             // 快捷键子系统（Phase 1）：键位表 = BrowserShortcuts（唯一事实源，已从 XAML InputBindings 迁入），
@@ -74,6 +76,40 @@ public partial class BrowserView : UserControl
     private void FocusPage()
     {
         if (IsLoaded && IsVisible) Keyboard.Focus(this);
+    }
+
+    /// <summary>
+    /// Shift+F10 / 菜单键：为当前选中行弹右键菜单（Windows 口径：键盘打开与右键同一张菜单）。
+    /// 菜单挂在行模板的 Border 上（ContextMenu 半离线，只能从行容器取），故先按选中行找到容器再打开。
+    /// </summary>
+    private void OnContextMenuRequested(object? sender, EventArgs e)
+    {
+        if (ViewModel == null) return;
+        var row = ViewModel.SelectedRows.FirstOrDefault();
+        if (row == null) return;
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (MainTable.RowsList.ItemContainerGenerator.ContainerFromItem(row) is not DependencyObject container) return;
+            var border = FindTaggedBorder(container);
+            if (border?.ContextMenu is not { } menu) return;
+            ViewModel.SetContextRow(row);          // 删除文案按"这一次会删掉什么"算
+            menu.PlacementTarget = border;
+            menu.IsOpen = true;
+        }));
+    }
+
+    /// <summary>行容器（模板模式）内部承载右键菜单的 RowBorder（Tag=BrowserRow）。</summary>
+    private static Border? FindTaggedBorder(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Border b && "BrowserRow".Equals(b.Tag as string)) return b;
+            if (FindTaggedBorder(child) is { } hit) return hit;
+        }
+        return null;
     }
 
     /// <summary>某栏被激活（点击主栏/左栏）→ 焦点归位到本页，页面级快捷键随即可用。</summary>

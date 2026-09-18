@@ -40,6 +40,9 @@ public interface INavigationService
     /// <summary>在浏览页定位到某个文件夹（进入该目录）。</summary>
     void OpenFolderInBrowser(string folderId);
 
+    /// <summary>切到搜索页（全局快捷键 Ctrl+E / Ctrl+F；错误：如空串不动作）。</summary>
+    void NavigateToSearch();
+
     Task RefreshTrashPageAsync();
 }
 

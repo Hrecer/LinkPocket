@@ -220,6 +220,29 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand RenameSelectionCommand { get; }
     public ICommand OpenSelectionCommand { get; }
     public ICommand TogglePathEditCommand { get; }
+    /// <summary>Alt+D：聚焦地址栏（进编辑态，由视图聚焦并全选）。</summary>
+    public ICommand EnterPathEditCommand { get; }
+    /// <summary>F5：真刷新当前目录（主栏 + 左栏树，带加载动画）。</summary>
+    public ICommand RefreshCommand { get; }
+    /// <summary>Ctrl+E / Ctrl+F（Global）：切到搜索页。</summary>
+    public ICommand NavigateToSearchCommand { get; }
+    /// <summary>Ctrl+Shift+E：展开左栏树到当前所在位置（只展开，不选中）。</summary>
+    public ICommand ExpandTreeToCurrentCommand { get; }
+    /// <summary>Ctrl+Shift+C：复制当前目录路径（面包屑文本）。</summary>
+    public ICommand CopyPathCommand { get; }
+    /// <summary>主栏 ↑/↓：移动选中（单选）+ 滚入视口，到边界停住。</summary>
+    public ICommand MoveSelectionCommand { get; }
+    /// <summary>主栏 End：选中末项 + 滚入视口。</summary>
+    public ICommand SelectLastCommand { get; }
+    /// <summary>左栏 ↑/↓：按树的可见视觉顺序移动（文件夹 = 选中 + 进入；链接叶子 = 定位）。</summary>
+    public ICommand MoveTreeSelectionCommand { get; }
+    /// <summary>左栏 ←/→：折叠 / 展开当前树节点（链接叶子无操作）。</summary>
+    public ICommand ToggleTreeExpandCommand { get; }
+    /// <summary>Ctrl+Z / Ctrl+Y：撤销 / 重做最近一条可撤销命令。</summary>
+    public ICommand UndoCommand { get; }
+    public ICommand RedoCommand { get; }
+    /// <summary>Shift+F10 / 菜单键：对当前选中行弹出右键菜单（视图订阅 ContextMenuRequested 执行）。</summary>
+    public ICommand ShowContextMenuCommand { get; }
     public ICommand ConfirmPathCommand { get; }
     public ICommand CancelPathEditCommand { get; }
     public ICommand CompletePathCommand { get; }
@@ -459,6 +482,19 @@ public class BrowserViewModel : INotifyPropertyChanged
         RenameSelectionCommand = new RelayCommand(() => _ = RenameSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
         TogglePathEditCommand = new RelayCommand(TogglePathEdit);
+        EnterPathEditCommand = new RelayCommand(() => { if (!IsPathEditing) EnterPathEdit(); }, () => !IsPathEditing);
+        // F5 = 真刷新（导航加载口径）：主栏内容 + 左栏树一起重建，亮遮罩与入场动画（Windows 口径）
+        RefreshCommand = new RelayCommand(() => _ = RefreshAsync(navigating: true));
+        NavigateToSearchCommand = new RelayCommand(() => _ports?.Navigation?.NavigateToSearch());
+        ExpandTreeToCurrentCommand = new RelayCommand(ExpandTreeToCurrentLocation);
+        CopyPathCommand = new RelayCommand(CopyCurrentPath);
+        MoveSelectionCommand = new RelayCommand<object?>(p => MoveMainSelection(ParseDirection(p)));
+        SelectLastCommand = new RelayCommand(SelectLastRow);
+        MoveTreeSelectionCommand = new RelayCommand<object?>(p => MoveTreeSelection(ParseDirection(p)));
+        ToggleTreeExpandCommand = new RelayCommand(ToggleFocusedTreeExpand);
+        UndoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: false), () => CanUndo);
+        RedoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: true), () => CanRedo);
+        ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection);
         ConfirmPathCommand = new RelayCommand(ConfirmPath);
         CancelPathEditCommand = new RelayCommand(CancelPathEdit);
         CompletePathCommand = new RelayCommand(CompletePath);
@@ -664,6 +700,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             IsLoading = false;
             CommandManager.InvalidateRequerySuggested();
+            // 撤销/重做可用性轻量同步（Ctrl+Z/Y 的 CanExecute 要准）：每次刷新链收尾取一次 undo 栈态。
+            // 只读查询、不产生事件 → 不会引发刷新循环；失败静默保持保守禁用（见 RefreshUndoStateAsync）。
+            _ = RefreshUndoStateAsync();
 
             // 加载期间有新的刷新请求（导航/防抖事件）→ 立即补刷一次，保证最后请求被处理
             if (_refreshPending)
@@ -1528,6 +1567,227 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     // —— 面包屑内联路径编辑 ——
+
+    /// <summary>
+    /// Ctrl+Shift+E：把左栏树展开到当前所在位置（只展开、**不选中**——位置 ≠ 选中）。
+    /// 展开链 = 当前目录的祖先链（含自身），让当前目录在树里可见；根目录无需展开（虚根恒展开）。
+    /// </summary>
+    public void ExpandTreeToCurrentLocation()
+    {
+        if (IsAtRoot()) return;
+        var chain = new HashSet<string>(BuildBreadcrumbIds(Controller.CurrentFolderId).Select(c => c.Id),
+            StringComparer.Ordinal);
+        foreach (var node in AllTreeNodes())
+            if (node.FolderId != null && chain.Contains(node.FolderId))
+                node.IsExpanded = true;
+    }
+
+    /// <summary>
+    /// Ctrl+Shift+C：复制当前目录路径（面包屑文本「全部书签 / A / B」，可被 Alt+D 地址栏解析）。
+    /// 只写内部载荷会"复制了但别处粘不出来"，故此处走系统剪贴板（与右键「复制链接」同口径）。
+    /// </summary>
+    private void CopyCurrentPath()
+    {
+        var text = GetFolderPathDisplay(Controller.CurrentFolderId);
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+            StatusText = "已复制路径";
+        }
+        catch
+        {
+            StatusText = "复制路径失败（剪贴板被占用）";
+        }
+    }
+
+    // —— 键盘导航（主栏 ↑/↓/End；左栏 ↑/↓/←/→）——
+
+    /// <summary>
+    /// 左栏键盘移动游标 = 上一次键盘落点的**节点对象**（记录"上一个落到哪"以便连续 ↓/↑ 前进）。
+    /// 用对象引用而非 Id：虚根「全部书签」没有 Id（根 = null，零哨兵红线），只有引用能表示它。
+    /// 与选中（<see cref="_selectedIds"/>）、位置（CurrentFolderId）正交；树重建后引用自然失效 →
+    /// 自动回退到"选中实体 → 当前位置"，不会指向已废弃节点。
+    /// </summary>
+    private FolderNode? _treeNavNode;
+
+    /// <summary>命令参数的方向字面量（↑=+1 语义以"下移"为正）。</summary>
+    private static int ParseDirection(object? p)
+    {
+        var s = (p as string is string str ? str : p?.ToString()) ?? string.Empty;
+        return s.Contains("up") ? -1 : s.Contains("down") ? 1 : 0;
+    }
+
+    /// <summary>主栏 ↑/↓：基于当前选中的末位行索引 ±delta，单选并滚入视口；无选中则从顶/底开始；到边界停住。</summary>
+    private void MoveMainSelection(int delta)
+    {
+        if (Rows.Count == 0 || delta == 0) return;
+        var current = SelectedRows.Select(r => Rows.IndexOf(r)).Where(i => i >= 0).OrderBy(i => i).LastOrDefault(-1);
+        var next = current < 0
+            ? (delta > 0 ? 0 : Rows.Count - 1)
+            : Math.Clamp(current + delta, 0, Rows.Count - 1);
+        var target = Rows[next];
+        SelectRow(target);
+        FocusRowRequested?.Invoke(this, target);
+    }
+
+    /// <summary>主栏 End：选中末项并滚入视口。</summary>
+    private void SelectLastRow()
+    {
+        if (Rows.Count == 0) return;
+        var target = Rows[Rows.Count - 1];
+        SelectRow(target);
+        FocusRowRequested?.Invoke(this, target);
+    }
+
+    /// <summary>主栏当前实现无多选语义下，ShowContextMenu 需要的"当前行" = 唯一选中行，先聚焦该行再弹菜单。</summary>
+    private void ShowContextMenuForSelection()
+    {
+        var row = SelectedRows.FirstOrDefault();
+        if (row != null) FocusRowRequested?.Invoke(this, row);
+        ContextMenuRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>左栏 ↑/↓：沿**可见视觉顺序**移动并落到该节点（语义完全复用 <see cref="SelectTreeNodeAsync"/>）。</summary>
+    private void MoveTreeSelection(int delta)
+    {
+        if (delta == 0) return;
+        var flat = VisibleTreeNodes().ToList();
+        if (flat.Count == 0) return;
+
+        var current = CurrentTreeIndex(flat);
+        var next = current < 0
+            ? (delta > 0 ? 0 : flat.Count - 1)
+            : Math.Clamp(current + delta, 0, flat.Count - 1);
+        var target = flat[next];
+        _treeNavNode = target;   // 下一次移动从这次落点继续（游标独立于选中/位置）
+
+        // 落点语义 = 与鼠标点击树行**完全同一条路径**（文件夹 = 选中 + 进入；链接叶子 = 定位；虚根 = 进根不选中）——
+        // 键盘绝不另造一套"只移选中"的语义（那会让"点树"与"按树"行为分叉）。
+        _ = SelectTreeNodeAsync(target);
+    }
+
+    /// <summary>
+    /// 树节点的**可见**深度优先序列（= 屏幕上实际看到的行序）：
+    /// 未展开的节点其子级不在视觉序列里（用户 2026-09-19 定稿：没展开就没看到子文件夹，不进入子级）；
+    /// 虚根恒展开（RebuildFolderTree 里置位），故顶层始终可见。
+    /// ⚠️ 不能直接用 <see cref="AllTreeNodes"/>：Children 里含全部子节点（展开只是视觉态），必须按 IsExpanded 过滤。
+    /// </summary>
+    private IEnumerable<FolderNode> VisibleTreeNodes()
+    {
+        foreach (var root in FolderTree)
+            foreach (var node in Walk(root))
+                yield return node;
+
+        static IEnumerable<FolderNode> Walk(FolderNode node)
+        {
+            yield return node;
+            if (!node.IsExpanded) yield break;
+            foreach (var child in node.Children)
+                foreach (var sub in Walk(child))
+                    yield return sub;
+        }
+    }
+
+    /// <summary>当前"聚焦树节点"索引：优先当前选中的树节点，其次当前所在目录节点（无则 -1 = 由调用方取顶/底）。</summary>
+    private int CurrentTreeIndex(List<FolderNode> flat)
+    {
+        var focused = CurrentFocusedTreeNode();
+        if (focused != null)
+        {
+            var idx = flat.IndexOf(focused);
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// 当前聚焦的树节点，优先级：键盘移动游标（<see cref="_treeNavId"/>，连续 ↓/↑ 的落点）→
+    /// 选中实体在树里的节点 → 当前所在目录节点（根目录 = 虚根）→ null（由调用方取顶/底）。
+    /// ⚠️ 虚根必须参与：它的 Id 为空，只能按 <see cref="FolderNode.IsRoot"/> 匹配——
+    /// 否则"在根目录按 ↓"每次都会重新从顶开始（落点永远停在虚根，走不动）。
+    /// </summary>
+    private FolderNode? CurrentFocusedTreeNode()
+    {
+        var all = AllTreeNodes().ToList();
+
+        // ① 键盘游标（仍在当前树里才有效；树重建后旧引用自然落空 → 回退）
+        if (_treeNavNode != null && all.Contains(_treeNavNode)) return _treeNavNode;
+
+        // ② 选中实体（鼠标点树 / 上一次键盘落子写下的选中）
+        foreach (var node in all)
+        {
+            if (node.IsLink && _selectedIds.Contains(node.Id)) return node;
+            if (node.FolderId != null && _selectedIds.Contains(node.FolderId)) return node;
+        }
+
+        // ③ 当前所在目录（根目录 → 虚根行）
+        var currentId = Controller.CurrentFolderId;
+        foreach (var node in all)
+            if (currentId == null ? node.IsRoot : node.FolderId == currentId) return node;
+        return null;
+    }
+
+    // —— 撤销 / 重做（Ctrl+Z / Ctrl+Y，轻量同步引擎 undo 栈态）——
+
+    private bool _canUndo;
+    private bool _canRedo;
+    /// <summary>可撤销（有 undo 栈）：撤销命令可用性（轻量：在写操作/undo 后由事件刷新时同步一次）。</summary>
+    public bool CanUndo => _canUndo && !IsPathEditing;
+    /// <summary>可重做（有 redo 栈）。</summary>
+    public bool CanRedo => _canRedo && !IsPathEditing;
+
+    private async Task UndoRedoAsync(bool redo)
+    {
+        try
+        {
+            if (redo) await _client.RedoAsync();
+            else
+            {
+                await _client.UndoAsync();
+                _canRedo = true;   // 执行过撤销 → 重做可用（引擎未暴露重做栈查询，按本地事实维护）
+            }
+            await RefreshUndoStateAsync();
+            // 刷新交给后端事件（写操作不显式刷新）：undo 生效后事件链刷当前活跃页
+        }
+        catch (Exception ex)
+        {
+            ShowError(redo ? "重做失败" : "撤销失败", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 轻量同步 undo/redo 可用性：从引擎 undo.list 取撤销栈态（每次刷新链收尾 / undo 后调用一次）。
+    /// 引擎未暴露"重做栈清单"查询（只有 undo.list），故重做可用性按本地事实维护：
+    /// 本次会话执行过撤销即置位（redo 后撤销栈仍可能有剩余，由下一次同步如实反映）。
+    /// </summary>
+    public async Task RefreshUndoStateAsync()
+    {
+        try
+        {
+            // ⚠️ undo.list 的返回是**对象** `{ "entries": [...] }`（不是裸数组）——按数组解析会恒为空
+            //（曾据此误判"无可撤销"，Ctrl+Z 永远灰着）。
+            var list = await _client.UndoListAsync();
+            _canUndo = list.ValueKind is System.Text.Json.JsonValueKind.Object
+                       && list.TryGetProperty("entries", out var entries)
+                       && entries.ValueKind is System.Text.Json.JsonValueKind.Array
+                       && entries.GetArrayLength() > 0;
+            OnPropertyChanged(nameof(CanUndo));
+            OnPropertyChanged(nameof(CanRedo));
+            CommandManager.InvalidateRequerySuggested();
+        }
+        catch { /* 查询失败不阻断；CanExecute 保守禁用（观测面纪律：不弹窗打断输入） */ }
+    }
+
+    /// <summary>视图请求：为当前选中行弹右键菜单（Shift+F10 / 菜单键；视图订阅后聚焦并 open 行 ContextMenu）。</summary>
+    public event EventHandler? ContextMenuRequested;
+
+    /// <summary>左栏 ←/→：折叠 / 展开当前树节点（链接叶子 / 虚根无操作）。</summary>
+    private void ToggleFocusedTreeExpand()
+    {
+        var node = CurrentFocusedTreeNode();
+        if (node == null || node.IsLink || node.IsRoot) return;
+        node.IsExpanded = !node.IsExpanded;
+    }
 
     private void TogglePathEdit()
     {
