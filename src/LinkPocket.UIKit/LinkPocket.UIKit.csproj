@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- UIKit（阶段 10）：共享控件/样式/转换器/图标/图像服务/定位组件/UI 端口契约。
-       依赖只有 Contracts + Infrastructure（引擎/内核/数据实现程序集禁引，架构测试强制）。 -->
+       依赖只有 Contracts（引擎/内核/数据实现程序集禁引，架构测试强制）。
+       UI 支撑类型（LinkItem/SelectionManager/ClipboardManager/Logger/FaviconStore）自 A1 起归属本层。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -10,7 +11,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
-    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

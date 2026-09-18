@@ -4,10 +4,10 @@ using Xunit;
 namespace LinkPocket.Architecture.Tests;
 
 /// <summary>
-/// 架构依赖规则测试（阶段 10 上线，规则 = 方案 2.2）：
+/// 架构依赖规则测试（阶段 10 上线，规则 = 方案 2.2，A1 更新）：
 /// - UI 任何项目禁止引用 Engine/Kernel/Data/Modules.* 实现程序集；
-///   UIKit 只依赖 Contracts+Infrastructure；UI.* 页面项目只依赖 UIKit+Contracts+Infrastructure；
-///   Shell(App) 装配全部 UI 项目；
+///   UIKit 只依赖 Contracts；UI.* 页面项目只依赖 UIKit+Contracts；
+///   Shell(App) 装配引擎组合根（Engine/Data/Modules.*）与全部 UI.*（组合根唯一例外）；
 /// - UI 项目之间零互相引用（模块可单独删除/演进）；
 /// - 静态服务定位器零残留（AppServices/UiCoordinator 已于阶段 7 灭绝，防止还潮）。
 /// 判定基于 csproj 的 ProjectReference 声明（引用图 = 编译期事实）。
@@ -38,7 +38,6 @@ public class DependencyRulesTests
     }
 
     private const string Contracts = "LinkPocket.Contracts";
-    private const string Infrastructure = "LinkPocket.Infrastructure";
     private const string UIKit = "LinkPocket.UIKit";
     private const string Shell = "LinkPocket.App";
     private const string Engine = "LinkPocket.Engine";
@@ -59,18 +58,18 @@ public class DependencyRulesTests
     public static IEnumerable<object[]> UiPageProjects() => UiPages.Select(p => new object[] { p });
 
     [Fact]
-    public void UIKit_只依赖Contracts与Infrastructure()
+    public void UIKit_只依赖Contracts()
     {
         var refs = ProjectReferences("src/LinkPocket.UIKit/LinkPocket.UIKit.csproj");
-        Assert.Equal(new[] { Contracts, Infrastructure }.OrderBy(n => n), refs);
+        Assert.Equal(new[] { Contracts }.OrderBy(n => n), refs);
     }
 
     [Theory]
     [MemberData(nameof(UiPageProjects))]
-    public void UI页面项目_只依赖UIKitContracts与Infrastructure(string project)
+    public void UI页面项目_只依赖UIKit与Contracts(string project)
     {
         var refs = ProjectReferences($"src/{project}/{project}.csproj");
-        var allowed = new[] { UIKit, Contracts, Infrastructure }.OrderBy(n => n);
+        var allowed = new[] { UIKit, Contracts }.OrderBy(n => n);
         Assert.Equal(allowed, refs);
     }
 

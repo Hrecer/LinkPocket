@@ -75,11 +75,35 @@ public class LayerRulesTests
     public void Data_只依赖Kernel() => AssertRefs(Data, Kernel);
 
     [Fact]
-    public void Infrastructure_只依赖契约与数据层() => AssertRefs(Infrastructure, Contracts, Kernel, Data);
-
-    [Fact]
     public void Engine_只依赖契约内核与数据层_不引用业务模块()
         => AssertRefs(Engine, Contracts, Kernel, Data);
+
+    /// <summary>A1 红线：旧协议容器 LinkPocket.Infrastructure 程序集必须不存在（零残留）。
+    /// 与其配套的旧协议门面（Transport/ILinkPocketApi/TransportedLinkPocketApi 类型）在
+    /// <see cref="Contracts_禁止旧协议门面类型"/> 另行断言。</summary>
+    [Fact]
+    public void Infrastructure_程序集不存在_零残留()
+        => Assert.False(File.Exists(CsprojPath(Infrastructure)),
+            "LinkPocket.Infrastructure 已随 A1 删除；任何让该程序集复活的改动都违反零兼容红线");
+
+    /// <summary>A1 红线：Contracts 程序集内禁止出现旧协议门面类型（Transport 系 / ILinkPocketApi 系）。
+    /// Contracts = 零依赖纯契约层，只承载 IEngine / 错误模型 / Descriptor / 事件 DTO / 缓存策略。</summary>
+    [Theory]
+    [InlineData("namespace LinkPocket.Api;")]
+    [InlineData("interface ILinkPocketApi")]
+    [InlineData("class TransportedLinkPocketApi")]
+    [InlineData("class InProcessTransport")]
+    [InlineData("class LinkPocketApiDispatcher")]
+    public void Contracts_禁止旧协议门面类型(string forbidden)
+    {
+        var dir = Path.Combine(RepoRoot, "src", Contracts);
+        foreach (var file in Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(file);
+            Assert.False(text.Contains(forbidden, StringComparison.Ordinal),
+                $"{file} 出现被禁止的旧协议门面残留: {forbidden}");
+        }
+    }
 
     [Theory]
     [MemberData(nameof(Modules))]
@@ -94,7 +118,6 @@ public class LayerRulesTests
     [Theory]
     [InlineData(Kernel)]
     [InlineData(Data)]
-    [InlineData(Infrastructure)]
     public void 下层不得向上引用(string project)
         => Assert.DoesNotContain(ProjectReferences(project),
             r => r == Engine || r.StartsWith("LinkPocket.Modules.", StringComparison.Ordinal));

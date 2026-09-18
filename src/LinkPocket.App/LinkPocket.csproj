@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
-    <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
     <ProjectReference Include="..\LinkPocket.Engine\LinkPocket.Engine.csproj" />
     <ProjectReference Include="..\LinkPocket.Data\LinkPocket.Data.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Folders\LinkPocket.Modules.Folders.csproj" />
