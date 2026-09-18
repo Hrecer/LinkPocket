@@ -14,20 +14,8 @@
              FocusVisualStyle="{x:Null}"
              Background="{DynamicResource SurfaceContainerLow}">
 
-    <UserControl.InputBindings>
-        <KeyBinding Modifiers="Control" Key="X" Command="{Binding CutCommand}"/>
-        <KeyBinding Modifiers="Control" Key="C" Command="{Binding CopyCommand}"/>
-        <KeyBinding Modifiers="Control" Key="V" Command="{Binding PasteCommand}"/>
-        <KeyBinding Modifiers="Control" Key="A" Command="{Binding SelectAllCommand}"/>
-        <KeyBinding Key="Delete" Command="{Binding DeleteSelectionCommand}"/>
-        <KeyBinding Key="F2" Command="{Binding RenameSelectionCommand}"/>
-        <KeyBinding Key="Enter" Command="{Binding OpenSelectionCommand}"/>
-        <KeyBinding Key="Backspace" Command="{Binding GoUpCommand}"/>
-        <KeyBinding Modifiers="Alt" Key="Left" Command="{Binding GoBackCommand}"/>
-        <KeyBinding Modifiers="Alt" Key="Right" Command="{Binding GoForwardCommand}"/>
-        <!-- Esc 分层（Windows 口径）：有剪切态先取消剪切，否则清空选中；路径编辑态让位给「取消路径编辑」 -->
-        <KeyBinding Key="Escape" Command="{Binding EscapeCommand}"/>
-    </UserControl.InputBindings>
+    <!-- 快捷键不再用 XAML InputBindings 声明：键位唯一事实源 = BrowserShortcuts（LinkPocket.Input 子系统），
+         由 ShortcutHost 按"栏作用域"统一分发（点击主栏/左栏即切换活跃作用域，见 BrowserView.xaml.cs）。 -->
 
     <UserControl.Resources>
         <!-- BoolToVis / InvBoolToVis / CountPill / NavIconButton / LpMenuItem 已上收 UIKit.xaml；

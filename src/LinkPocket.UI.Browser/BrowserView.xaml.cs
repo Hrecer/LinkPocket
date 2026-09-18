@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using LinkPocket.Input;
 using LinkPocket.ViewModels;
 
 namespace LinkPocket.Views.Browser;
@@ -19,6 +20,14 @@ public partial class BrowserView : UserControl
 
     /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
+
+    /// <summary>快捷键宿主（键位表注册 + 栏作用域分发；见 LinkPocket.Input.ShortcutHost）。</summary>
+    private ShortcutHost? _shortcutHost;
+
+    /// <summary>快捷键活跃作用域：按**栏归属**（点击主栏/左栏即切换）——"↑/↓ 两栏语义不同"的仲裁依据。</summary>
+    private ShortcutScope ActiveScope => ViewModel?.ActivePane == BrowserPane.Tree
+        ? ShortcutScope.BrowserTree
+        : ShortcutScope.BrowserMain;
 
     public BrowserView()
     {
@@ -47,10 +56,16 @@ public partial class BrowserView : UserControl
             ViewModel.PaneActivated += OnPaneActivated;
             ViewModel.RefreshCompleted += OnRefreshCompleted;
             WireMainTableOnce();
+
+            // 快捷键子系统（Phase 1）：键位表 = BrowserShortcuts（唯一事实源，已从 XAML InputBindings 迁入），
+            // 活跃作用域按"栏归属"（ActivePane）解析——点击主栏/左栏即切换，不再依赖"焦点碰巧在页面里"。
+            _shortcutHost?.Detach();
+            _shortcutHost = new ShortcutHost(BrowserShortcuts.CreateRegistry(ViewModel), () => ActiveScope);
+            _shortcutHost.Attach(this);
         };
 
         // 页面被切到前台（全局导航切页）→ 键盘焦点收进本页：
-        // 页面级快捷键（InputBindings）只在"焦点在页面内"时才被路由到——主栏行是不可聚焦 Border，
+        // 快捷键（ShortcutHost 挂在页面根）只在"焦点在页面内"时才被路由到——主栏行是不可聚焦 Border，
         // 点行不会自己带走焦点；不主动收焦点就会出现"快捷键时灵时不灵"（曾实测：切页后 Ctrl+C 无效）。
         IsVisibleChanged += (_, _) => { if (IsVisible) FocusPage(); };
     }
