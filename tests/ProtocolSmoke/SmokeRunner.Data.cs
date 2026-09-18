@@ -61,7 +61,24 @@ internal static partial class SmokeRunner
         Asserts.That(names.Contains("重名") && names.Contains("重名 (2)") && names.Contains("重名 (3)"),
             $"同名文件夹应自动编号，实际 {string.Join(", ", names)}");
 
-        Console.WriteLine("[OK] §2 数据流：分页/直接子计数/名称升序/面包屑/递归计数/环检测/同名自动编号");
+        // folders.overview 单快照：contents + tree + root_link_count 一次取齐（2.10-45）
+        var overview = (await client.QueryAsync<FolderContentsDto>("folders.overview",
+            new { folder_id = folder.FolderId }));
+        Asserts.That(overview.Tree != null && overview.SubFolders.Count == 1
+            && overview.SubFolders[0].Name == "子目录", "overview 目录页应与 contents 同构且携带 Tree");
+        var treeNow = (await client.FolderTreeAsync());   // 与 overview 同时点取树作对比（同库同刻）
+        Asserts.That(overview.Tree!.Count == treeNow.Count
+            && overview.Tree.All(f => treeNow.Any(t => t.FolderId == f.FolderId)),
+            "overview.Tree 应与 folders.tree 同集合（同一快照）");
+        var rootOverview = (await client.QueryAsync<FolderContentsDto>("folders.overview"));
+        var rootStats = (await client.LinkStatsAsync());
+        Asserts.That(rootOverview.RootLinkCount == rootStats.RootLevel,
+            "overview.RootLinkCount 应与 links.stats.RootLevel 一致");
+        var contentsCompat = (await client.FolderContentsAsync(folder.FolderId));
+        Asserts.That(contentsCompat.Tree == null && contentsCompat.RootLinkCount == null,
+            "folders.contents 响应形状不变（tree/root_link_count 恒 null）");
+
+        Console.WriteLine("[OK] §2 数据流：分页/直接子计数/名称升序/面包屑/递归计数/环检测/同名自动编号/overview 单快照");
     }
 
     private static async Task SectionTrash(SmokeState s)

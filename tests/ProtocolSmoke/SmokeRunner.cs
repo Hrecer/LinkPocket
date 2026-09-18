@@ -31,17 +31,17 @@ internal static partial class SmokeRunner
         }
     }
 
-    // —— §0 目录自描述：67 命令（52 模块 + 15 编排）、分类、能力标志 ——
+    // —— §0 目录自描述：68 命令（53 模块 + 15 编排）、分类、能力标志 ——
     private static Task SectionCatalog(SmokeState s)
     {
         var manifest = s.Client.Describe();
-        Asserts.That(manifest.Commands.Count == 67, $"目录应有 67 条命令，实际 {manifest.Commands.Count}");
-        Asserts.That(manifest.Commands.Select(c => c.Name).Distinct().Count() == 67, "命令名不得重复");
+        Asserts.That(manifest.Commands.Count == 68, $"目录应有 68 条命令，实际 {manifest.Commands.Count}");
+        Asserts.That(manifest.Commands.Select(c => c.Name).Distinct().Count() == 68, "命令名不得重复");
         Asserts.That(manifest.Commands.All(c => System.Text.RegularExpressions.Regex.IsMatch(c.Name, @"^[a-z_]+\.[a-z_]+$")),
             "命令名必须是 域.动作 形态");
 
         int Count(string cat) => manifest.Commands.Count(c => c.Category == cat);
-        Asserts.That(Count("folders") == 13 && Count("links") == 16 && Count("trash") == 7
+        Asserts.That(Count("folders") == 14 && Count("links") == 16 && Count("trash") == 7
             && Count("search") == 2 && Count("bookmarks") == 3 && Count("backup") == 3
             && Count("dedup") == 3 && Count("favicon") == 2 && Count("maintenance") == 3,
             "九个域的命令数应与方案 4.2 总表一致");
@@ -53,10 +53,10 @@ internal static partial class SmokeRunner
             $"破坏性命令应为 purge/purge_batch/reinit/import，实际 {string.Join(", ", destructive)}");
 
         var queries = manifest.Commands.Where(c => c.IsQuery).ToList();
-        Asserts.That(queries.All(c => !c.IsMutation) && manifest.Commands.Count(c => c.IsMutation) == 67 - queries.Count,
+        Asserts.That(queries.All(c => !c.IsMutation) && manifest.Commands.Count(c => c.IsMutation) == 68 - queries.Count,
             "Query/Mutation 互斥且每条命令必有其一");
 
-        Console.WriteLine("[OK] §0 目录自描述：67 命令（52 模块 + 15 编排）/ 十二域 / 破坏性标志");
+        Console.WriteLine("[OK] §0 目录自描述：68 命令（53 模块 + 15 编排）/ 十二域 / 破坏性标志");
         return Task.CompletedTask;
     }
 
@@ -67,7 +67,7 @@ internal static partial class SmokeRunner
         var describe = await s.Wire.HandleAsync("""{"jsonrpc":"2.0","id":1,"method":"engine.describe","params":{}}""");
         var doc = JsonDocument.Parse(describe);
         Asserts.That(doc.RootElement.TryGetProperty("result", out var result), "describe 应返回 result");
-        Asserts.That(result.GetProperty("commands").GetArrayLength() == 67, "describe 应含 67 条命令");
+        Asserts.That(result.GetProperty("commands").GetArrayLength() == 68, "describe 应含 68 条命令");
         Asserts.That(doc.RootElement.GetProperty("id").GetInt32() == 1, "响应应回显请求 id");
 
         // engine.query（直接命令名同效）

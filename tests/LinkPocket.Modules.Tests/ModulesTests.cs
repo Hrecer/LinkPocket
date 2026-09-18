@@ -10,13 +10,13 @@ namespace LinkPocket.Modules.Tests;
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_52_Commands()
+    public void Describe_Returns_All_53_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(52, manifest.Commands.Count);
-        Assert.Equal(52, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(53, manifest.Commands.Count);
+        Assert.Equal(53, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -24,13 +24,15 @@ public class CatalogTests
     public void Describe_By_Category_Splits_Correctly()
     {
         var (engine, _, _) = TestHost.Create();
-        Assert.Equal(13, engine.Describe("folders").Commands.Count);
+        Assert.Equal(14, engine.Describe("folders").Commands.Count);
         Assert.Equal(16, engine.Describe("links").Commands.Count);
         Assert.Equal(7, engine.Describe("trash").Commands.Count);
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
 
         var contents = engine.Describe("folders").Commands.Single(c => c.Name == "folders.contents");
         Assert.True(contents.IsQuery);
+        var overview = engine.Describe("folders").Commands.Single(c => c.Name == "folders.overview");
+        Assert.True(overview.IsQuery);
         var create = engine.Describe("folders").Commands.Single(c => c.Name == "folders.create");
         Assert.True(create.IsMutation);
         var purge = engine.Describe("trash").Commands.Single(c => c.Name == "trash.purge");
@@ -58,6 +60,38 @@ public class FoldersModuleTests
         var child = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料", parent_id = created.Data!.FolderId });
         var breadcrumb = await engine.QueryAsync<List<string>>("folders.breadcrumb", new { folder_id = child.Data!.FolderId });
         Assert.Equal(new[] { FolderIds.RootDisplayName, "工作", "资料" }, breadcrumb);
+    }
+
+    [Fact]
+    public async Task Overview_Single_Snapshot_Contents_Plus_Tree_Plus_RootCount()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "快照" });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/1", title = "内部链接", list_id = folder.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example/root", title = "根级链接" });
+
+        // 子目录分支：overview = contents 目录页 + 全量树 + 根级计数（同一 UoW 单快照）
+        var overview = await engine.QueryAsync<FolderContentsDto>("folders.overview", new { folder_id = folder.Data!.FolderId });
+        Assert.Equal("快照", overview.FolderName);
+        Assert.Single(overview.Links);
+        Assert.NotNull(overview.Tree);
+        Assert.Contains(overview.Tree, f => f.FolderId == folder.Data!.FolderId && f.LinkCount == 1);
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Equal(tree.Count, overview.Tree!.Count);
+        Assert.All(overview.Tree, f => Assert.Contains(tree, t => t.FolderId == f.FolderId));
+
+        // 根级计数与 links.stats.RootLevel 同口径；根分支复用目录页计数
+        var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
+        var rootOverview = await engine.QueryAsync<FolderContentsDto>("folders.overview", null);
+        Assert.Equal(stats.RootLevel, rootOverview.RootLinkCount);
+        Assert.Equal(rootOverview.DirectLinkCount, rootOverview.RootLinkCount);
+
+        // 契约：folders.contents 响应形状不变（tree/root_link_count 恒 null）
+        var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", new { folder_id = folder.Data!.FolderId });
+        Assert.Null(contents.Tree);
+        Assert.Null(contents.RootLinkCount);
     }
 
     [Fact]

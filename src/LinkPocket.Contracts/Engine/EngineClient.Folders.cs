@@ -2,7 +2,7 @@ using LinkPocket.Contracts;
 
 namespace LinkPocket.Contracts;
 
-/// <summary>EngineClient · folders 域（13 命令，参数与 FoldersModule Handler 逐一对齐）。</summary>
+/// <summary>EngineClient · folders 域（14 命令，参数与 FoldersModule Handler 逐一对齐）。</summary>
 public sealed partial class EngineClient
 {
     /// <summary>目录内容（folder_id 缺省 = 根「全部书签」；per_page=0 不分页一次取回）。
@@ -11,6 +11,13 @@ public sealed partial class EngineClient
         string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0,
         CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<FolderContentsDto>("folders.contents",
+            new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
+
+    /// <summary>浏览页主视图一致快照：目录页 + 全量树 + 根级链接数（同一事务快照，2.10-45）。</summary>
+    public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null,
+        string sortBy = "title", string sortOrder = "asc", int page = 1, int perPage = 0,
+        CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<FolderContentsDto>("folders.overview",
             new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
 
     /// <summary>文件夹树（含根节点，侧栏树数据源；sort_by 可传 sort_order 读取手工排序）。</summary>
