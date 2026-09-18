@@ -139,4 +139,43 @@ public class BrowserViewModelTests
             AppTestEnv.Delete(dbPath);
         }
     }
+
+    [Fact]
+    public async Task 编辑模式打开_预填字段携带链接数据()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://edit.example/zh-cn/3",
+                title: "编辑目标", description: "描述文本", autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            vm.OpenEditorForEdit(link.LinkId);
+
+            // fire-and-forget 预填：轮询直到字段就位（带超时，等的是引擎异步取数 + 续体）
+            var urlReady = await WaitUntilAsync(
+                () => vm.EditorPage is { Url: "https://edit.example/zh-cn/3" }, TimeSpan.FromSeconds(3));
+            Assert.True(urlReady, "预填未在超时内完成（编辑页字段空白根因复现点）");
+            Assert.True(vm.IsEditorPageOpen);
+            Assert.Equal("编辑链接", vm.EditorPage!.TitleText);
+            Assert.Equal("编辑目标", vm.EditorPage.LinkTitle);
+            Assert.Equal("描述文本", vm.EditorPage.Description);
+            Assert.True(vm.EditorPage.IsEditMode);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            await Task.Delay(50);
+        }
+        return condition();
+    }
 }

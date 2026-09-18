@@ -125,7 +125,7 @@
 
                 <Border Grid.Row="0" Padding="12,0,12,8">
                     <DockPanel VerticalAlignment="Center" LastChildFill="True">
-                        <!-- 返回圆钮：与详情页/编辑页顶部返回钮同款（40px 圆、TintCard 底、Primary 状态层） -->
+                        <!-- 返回圆钮：与详情页顶部返回钮同款（40px 圆、TintCard 底、Primary 状态层；编辑页无返回钮，取消即返回） -->
                         <Button DockPanel.Dock="Left" Click="BackButton_Click" Focusable="False"
                                 ToolTip="返回卡片页（Esc）" Width="40" Height="40" VerticalAlignment="Center"
                                 Foreground="{DynamicResource OnSurface}">

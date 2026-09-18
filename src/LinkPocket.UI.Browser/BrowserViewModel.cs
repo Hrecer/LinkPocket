@@ -120,15 +120,17 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>新建链接：在当前目录创建（不再选择所属目录），打开整页编辑器。</summary>
     public void OpenEditorForCreate()
     {
-        EditorPage = new LinkEditorViewModel(_client, this, IsAtRoot() ? null : CurrentFolderId);
+        // 必须先置开页标志再建实例：编辑器 ctor 会 fire-and-forget 预填（编辑模式），
+        // 其 await 续体可能同步 inline —— 若开页标志还没设，会被「用户已取消」守卫吞掉 → 字段空白（实测复现）。
         IsEditorPageOpen = true;
+        EditorPage = new LinkEditorViewModel(_client, this, IsAtRoot() ? null : CurrentFolderId);
     }
 
     /// <summary>编辑链接：整页编辑器预填数据（不改变所属目录）。</summary>
     public void OpenEditorForEdit(string linkId)
     {
-        EditorPage = LinkEditorViewModel.ForEdit(_client, this, linkId);
         IsEditorPageOpen = true;
+        EditorPage = LinkEditorViewModel.ForEdit(_client, this, linkId);
     }
 
     /// <summary>关闭编辑器页（由编辑器 VM 回调）。</summary>

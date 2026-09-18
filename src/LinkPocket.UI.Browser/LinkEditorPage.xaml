@@ -138,7 +138,8 @@
 
     <Grid Background="{DynamicResource SurfaceContainerLow}">
         <!-- ===== 沉浸式 hero 头部（与详情页同骨架）：
-             无传统顶栏 —— 返回是左上浮动圆钮，取消/保存收进右上浮动胶囊组，页面标题由 hero 头部卡的小字幕承担。 -->
+         无传统顶栏 —— 编辑/新建页没有独立返回按钮：取消即返回（左上返回与取消使命重复，已彻底删除），
+         取消/保存收进右上浮动胶囊组；页面标题由 hero 头部卡的小字幕承担。 -->
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
@@ -293,39 +294,16 @@
             </Grid>
         </ScrollViewer>
 
-        <!-- 浮动控制层：返回圆钮 + 右上 取消/保存 胶囊组。
+        <!-- 浮动控制层：右上 取消/保存 胶囊组（编辑/新建页无返回按钮——取消即返回）。
              ⚠️ 必须声明在整页 ScrollViewer 之后（= z 序在上层）：
              Material3.Wpf 0.9.0 的 ScrollViewer 模板铺了一块与底色同色的不透明 Rectangle，
              悬浮层若在它下面，顶部按钮的鼠标命中会被整页 ScrollViewer 吃掉（同 LinkDetailPage）。 -->
         <Grid Grid.Row="0">
-            <!-- 与主界面导航胶囊同语言：圆形返回钮 + 大药丸容器（内含 取消/保存 两个紫色小药丸），并列同高 40。
-                 容器底色 = TintCard（与左侧返回圆钮同款白底，同浏览页命令栏胶囊组口径） -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0">
-                <Button Command="{Binding CancelCommand}" ToolTip="返回（放弃更改）"
-                        Width="40" Height="40" Foreground="{DynamicResource OnSurface}">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
-                                <Grid>
-                                    <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
-                                            Opacity="0" CornerRadius="20"/>
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.16"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
-                </Button>
+            <!-- 大药丸容器（内含 取消/保存 两个紫色小药丸），居右；容器底色 = TintCard
+                 （同浏览页命令栏胶囊组口径）。返回语义收敛到「取消」（与详情页返回钮不重复）。 -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,20,0">
                 <Border Background="{DynamicResource TintCard}" CornerRadius="20" Padding="4"
-                        Margin="10,0,0,0" VerticalAlignment="Center">
+                        VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <!-- 成对规范：同为药丸（TonalButton / PrimaryPillButton 16），同高 32，仅颜色不同 -->
                         <Button Command="{Binding CancelCommand}" Style="{StaticResource TonalButton}"
