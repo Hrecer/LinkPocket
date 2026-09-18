@@ -24,7 +24,7 @@
         <Border Grid.Row="0" Background="Transparent" Padding="12,0,12,8">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
                 <Button DockPanel.Dock="Right" Cursor="Hand" Focusable="False" Click="TrashPurge_Click"
-                        IsEnabled="{Binding RecycleBinViewModel.HasSelection}"
+                        IsEnabled="{Binding HasSelection}"
                         Style="{StaticResource WarnPillButton}" Padding="12,6"
                         ToolTip="永久删除选中项（文件夹将连同内部全部内容删除，不可恢复）">
                     <StackPanel Orientation="Horizontal">
@@ -32,17 +32,17 @@
                         <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <!-- 返回钮：仅在单元浏览态出现（与智能列表结果页同款圆形返回钮） -->
-                <Button DockPanel.Dock="Left" x:Name="UnitBackButton" Width="36" Height="36"
+                <!-- 返回钮：仅在单元浏览态出现（与智能列表结果页同款圆形返回钮，40px） -->
+                <Button DockPanel.Dock="Left" x:Name="UnitBackButton" Width="40" Height="40"
                         Cursor="Hand" Focusable="False" Margin="0,0,8,0"
                         Click="UnitBack_Click" ToolTip="返回回收站"
-                        Visibility="{Binding RecycleBinViewModel.IsInUnit, Converter={StaticResource BoolToVis}}">
+                        Visibility="{Binding IsInUnit, Converter={StaticResource BoolToVis}}">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="18">
+                            <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
                                 <Grid>
                                     <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
-                                            Opacity="0" CornerRadius="18"/>
+                                            Opacity="0" CornerRadius="20"/>
                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Grid>
                             </Border>
@@ -77,12 +77,12 @@
             </Grid.ColumnDefinitions>
 
             <views:FolderTreePanel Grid.Column="0" HeaderText="已删除的文件夹"
-                                   ItemsSource="{Binding RecycleBinViewModel.TreeNodes}"/>
+                                   ItemsSource="{Binding TreeNodes}"/>
 
-            <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
+            <Border Grid.Column="1" x:Name="TrashArea" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
                 <views:SortableDataTable x:Name="TrashTable" HeaderBandMargin="0"
-                                         ItemsSource="{Binding RecycleBinViewModel.Entries}"/>
+                                         ItemsSource="{Binding Entries}"/>
             </Border>
 
             <!-- 右侧详情栏（只读）：TintPanel 叠层面板，与浏览/搜索详情栏同款 DetailSidebar 控件 -->
@@ -95,9 +95,9 @@
         <!-- ===== 状态栏：直角通栏 ===== -->
         <Border Grid.Row="2" Background="{DynamicResource TintPanel}" Height="32">
             <Grid Margin="12,0">
-                <TextBlock Text="{Binding RecycleBinViewModel.StatusText}" FontSize="11.5"
+                <TextBlock Text="{Binding StatusText}" FontSize="11.5"
                            Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"/>
-                <TextBlock Text="回收站内容不占用书签计数；选中条目可在右侧查看详情（只读），双击书签打开详情页" FontSize="11.5" Opacity="0.55"
+                <TextBlock Text="回收站内容不占用书签计数；选中条目可在右侧查看详情（只读），双击书签打开详情页，双击文件夹进入单元" FontSize="11.5" Opacity="0.55"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
                            Foreground="{DynamicResource OnSurfaceVariant}"/>
             </Grid>

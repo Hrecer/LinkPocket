@@ -34,6 +34,12 @@ namespace LinkPocket.ViewModels
         private string _errorMessage = string.Empty;
         private TrashEntryDto? _selectedEntry;
 
+        /// <summary>加载重入守卫（2.2-10/C4）：加载进行中又来请求只置挂起，收尾补刷一次（同浏览页模式）。</summary>
+        private bool _loadPending;
+
+        /// <summary>进入单元代次（S5/C7）：连点两个文件夹时只让最后发起者胜出。</summary>
+        private int _unitGeneration;
+
         public RecycleBinViewModel(EngineClient client, Services.UiPortProvider ports)
         {
             _client = client;
@@ -66,7 +72,8 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Dialogs?.Alert("打开失败", $"无法打开该文件夹单元：{ex.Message}");
+                Services.Logger.Error($"打开回收站文件夹单元失败：{folderEntry.Id}", ex);   // 观测面：失败必须留痕（2.4-21）
+                if (Dialogs != null) Dialogs.Alert("打开失败", $"无法打开该文件夹单元：{ex.Message}");
             }
         }
 
@@ -78,7 +85,8 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Dialogs?.Alert("返回失败", ex.Message);
+                Services.Logger.Error("返回回收站根失败", ex);
+                if (Dialogs != null) Dialogs.Alert("返回失败", ex.Message);
             }
         }
 
@@ -91,7 +99,12 @@ namespace LinkPocket.ViewModels
             var message = entry.EntryType == "folder"
                 ? $"确定要永久删除文件夹「{name}」吗？\n文件夹内的全部内容将一并删除，不可恢复。"
                 : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
-            if (Dialogs == null || !Dialogs.Confirm("永久删除", message, "永久删除", "delete-forever")) return;
+            if (Dialogs == null)
+            {
+                Services.Logger.Error("对话框端口未登记：永久删除确认被跳过（无 UI 环境）", null);   // 2.4-22：功能不可用不等于静默取消
+                return;
+            }
+            if (!Dialogs.Confirm("永久删除", message, "永久删除", "delete-forever")) return;
 
             try
             {
@@ -99,7 +112,10 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Dialogs?.Alert("永久删除失败", ex.Message);
+                Services.Logger.Error($"永久删除失败（服务端可能已删，已强制刷新）: {entry.Id}", ex);
+                if (Dialogs != null) Dialogs.Alert("永久删除失败", ex.Message);
+                // S6：请求可能已在服务端生效（如响应超时）→ 重拉最新状态，避免 UI 残留已删条目
+                try { await LoadAsync(); } catch { /* 刷新失败已由 LoadAsync 内部留痕 */ }
             }
         }
 
@@ -129,8 +145,10 @@ namespace LinkPocket.ViewModels
 
         public bool HasItems => Entries.Count > 0;
 
-        /// <summary>状态栏口径：根 = 「回收站 · N 项」；单元内 = 「单元名 · N 项」。</summary>
-        public string StatusText => (IsInUnit ? CurrentUnitName : "回收站") + $" · {Entries.Count} 项";
+        /// <summary>状态栏口径：出错时优先报错（2.1-4，错误不能只在无绑定的属性里）；根 = 「回收站 · N 项」；单元内 = 「单元名 · N 项」。</summary>
+        public string StatusText => HasError
+            ? ErrorMessage
+            : (IsInUnit ? CurrentUnitName : "回收站") + $" · {Entries.Count} 项";
 
         /// <summary>当前选中条目（单选；点空白清除）。</summary>
         public TrashEntryDto? SelectedEntry
@@ -152,26 +170,48 @@ namespace LinkPocket.ViewModels
         /// <summary>是否处于单元浏览态（控制返回钮 / 面包屑）。</summary>
         public bool IsInUnit => CurrentUnitId != null;
 
-        /// <summary>进入被删文件夹单元：表格切换为该单元内容（直接子单元 + 子树内书签快照）。</summary>
-        public async Task EnterUnitAsync(TrashEntryDto folderEntry)
+        /// <summary>进入被删文件夹单元：表格切换为该单元内容（直接子单元 + 子树内书签快照）。
+    /// 先立单元状态再取数据（C7：避免取数期间事件刷新把根列表盖进来）；代次让连点最后发起者胜出（S5）。
+    /// 取数失败回滚到根视图并抛错（由 guarded 层提示）。</summary>
+    public async Task EnterUnitAsync(TrashEntryDto folderEntry)
+    {
+        if (folderEntry.EntryType != "folder") return;
+        var gen = ++_unitGeneration;
+        CurrentUnitId = folderEntry.Id;   // 立即进入单元态：后续任何 LoadAsync 都走单元分支
+        CurrentUnitName = string.IsNullOrEmpty(folderEntry.Name) ? "未命名文件夹" : folderEntry.Name;
+        OnPropertyChanged(nameof(IsInUnit));
+        OnPropertyChanged(nameof(CurrentUnitName));
+        try
         {
-            if (folderEntry.EntryType != "folder") return;
             var contents = await _client.TrashUnitContentsAsync(folderEntry.Id);
-            CurrentUnitId = folderEntry.Id;
-            CurrentUnitName = string.IsNullOrEmpty(folderEntry.Name) ? "未命名文件夹" : folderEntry.Name;
+            if (gen != _unitGeneration) return;   // 期间用户已进入别的单元/回根：本批结果作废
             FillEntries(contents);
         }
-
-        /// <summary>返回回收站根平铺视图（重新加载，顺带反映外部数据变化）。</summary>
-        public async Task BackToRootAsync()
+        catch
         {
-            if (CurrentUnitId == null) return;
-            CurrentUnitId = null;
-            CurrentUnitName = string.Empty;
-            OnPropertyChanged(nameof(IsInUnit));
-            OnPropertyChanged(nameof(CurrentUnitName));
-            await LoadAsync();
+            // 单元已不存在等：回滚到根视图（与 BackToRootAsync 一致的口径）
+            if (gen == _unitGeneration)
+            {
+                CurrentUnitId = null;
+                CurrentUnitName = string.Empty;
+                OnPropertyChanged(nameof(IsInUnit));
+                OnPropertyChanged(nameof(CurrentUnitName));
+            }
+            throw;
         }
+    }
+
+    /// <summary>返回回收站根平铺视图（重新加载，顺带反映外部数据变化）。</summary>
+    public async Task BackToRootAsync()
+    {
+        if (CurrentUnitId == null) return;
+        _unitGeneration++;   // 使在途 EnterUnit 结果失效
+        CurrentUnitId = null;
+        CurrentUnitName = string.Empty;
+        OnPropertyChanged(nameof(IsInUnit));
+        OnPropertyChanged(nameof(CurrentUnitName));
+        await LoadAsync();
+    }
 
         private void FillEntries(List<TrashEntryDto> contents)
         {
@@ -188,6 +228,11 @@ namespace LinkPocket.ViewModels
 
         public async Task LoadAsync()
         {
+            if (IsLoading)
+            {
+                _loadPending = true;   // 重入守卫（2.2-10/C4）：加载中又来请求 → 收尾补刷
+                return;
+            }
             IsLoading = true;
             HasError = false;
             ErrorMessage = string.Empty;
@@ -221,51 +266,103 @@ namespace LinkPocket.ViewModels
             {
                 HasError = true;
                 ErrorMessage = $"加载回收站失败: {ex.Message}";
+                Services.Logger.Error("回收站加载失败", ex);   // 观测面：失败必须留痕
             }
             finally
             {
                 IsLoading = false;
-            }
-        }
-
-        /// <summary>按 parent_trash_folder_id 组装被删文件夹树（TrashFolderNode，纯展示）。</summary>
-        private void RebuildTree(List<TrashFolderDto> folders)
-        {
-            TreeNodes.Clear();
-
-            var nodeById = new Dictionary<string, TrashFolderNode>();
-            foreach (var f in folders)
-            {
-                nodeById[f.TrashFolderId] = new TrashFolderNode
+                if (_loadPending)
                 {
-                    TrashFolderId = f.TrashFolderId,
-                    ParentTrashFolderId = f.ParentTrashFolderId,
-                    Name = f.Name,
-                    LinkCount = f.LinkCount
-                };
-            }
-
-            foreach (var f in folders)
-            {
-                var node = nodeById[f.TrashFolderId];
-                if (f.ParentTrashFolderId != null && nodeById.TryGetValue(f.ParentTrashFolderId, out var parent))
-                    parent.Children.Add(node);
-                else
-                    TreeNodes.Add(node);
+                    _loadPending = false;
+                    await LoadAsync();   // 补刷一次，保证最后请求被处理
+                }
             }
         }
 
-        /// <summary>永久删除当前选中条目（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。
-        /// trash.purge 为破坏性命令：首次调用拿引擎确认令牌，确认后带令牌重发（EngineConfirm 编排）。</summary>
+        /// <summary>按 parent_trash_folder_id 组装被删文件夹树（TrashFolderNode，纯展示）。
+    /// 保留既有展开状态（S7，与浏览页 RebuildFolderTreeAsync 同口径）；
+    /// 成环数据不丢节点：环内节点兜底挂到根（2.4-25，坏数据不死循环、不凭空消失）。</summary>
+    private void RebuildTree(List<TrashFolderDto> folders)
+    {
+        var expandedIds = CollectExpandedIds(TreeNodes);
+
+        TreeNodes.Clear();
+
+        var nodeById = new Dictionary<string, TrashFolderNode>();
+        foreach (var f in folders)
+        {
+            nodeById[f.TrashFolderId] = new TrashFolderNode
+            {
+                TrashFolderId = f.TrashFolderId,
+                ParentTrashFolderId = f.ParentTrashFolderId,
+                Name = f.Name,
+                LinkCount = f.LinkCount,
+                IsExpanded = expandedIds.Contains(f.TrashFolderId)
+            };
+        }
+
+        // 环保护：沿父链追链，若链中出现节点自身 = 成环（坏数据）→ 兜底挂根，绝不无限往复
+        foreach (var f in folders)
+        {
+            var node = nodeById[f.TrashFolderId];
+            if (f.ParentTrashFolderId != null
+                && nodeById.TryGetValue(f.ParentTrashFolderId, out var parent)
+                && !IsSelfInLineage(nodeById, f.ParentTrashFolderId, f.TrashFolderId))
+            {
+                parent.Children.Add(node);
+            }
+            else
+            {
+                TreeNodes.Add(node);   // 根级 / 父缺失 / 成环节点：兜底挂根
+            }
+        }
+    }
+
+    /// <summary>沿 parent 链向上查找：self 是否出现在祖先链中（是 = 成环）。guard 防坏数据不死循环。</summary>
+    private static bool IsSelfInLineage(Dictionary<string, TrashFolderNode> nodeById, string? start, string self)
+    {
+        var cur = start;
+        for (var guard = 0; cur != null && guard < 64; guard++)
+        {
+            if (cur == self) return true;
+            if (!nodeById.TryGetValue(cur, out var p)) return false;
+            cur = p.ParentTrashFolderId;
+        }
+        return false;
+    }
+
+    /// <summary>收集当前树的展开单元 ID（重建前调用，与浏览页同款）。</summary>
+    private static HashSet<string> CollectExpandedIds(IEnumerable<TrashFolderNode> nodes)
+    {
+        var ids = new HashSet<string>();
+        foreach (var node in nodes)
+        {
+            if (node.IsExpanded) ids.Add(node.TrashFolderId);
+            foreach (var child in node.Children) ids.UnionWith(CollectExpandedIds([child]));
+        }
+        return ids;
+    }
+
+        /// <summary>永久删除（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。
+        /// trash.purge 为破坏性命令：首次调用拿引擎确认令牌，确认后带令牌重发（EngineConfirm 编排）。
+        /// 无论成败都清选中（2.4-26：异常后不得残留指向已删条目的选中态）。</summary>
         public async Task PurgeSelectedAsync()
         {
             var entry = SelectedEntry;
             if (entry == null) return;
             var isFolder = entry.EntryType == "folder";
-            // 破坏性两阶段：首次（无令牌）→ LP.SEC.003 拿 token → 带令牌重发
-            await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(entry.Id, isFolder,
-                new CallOptions { ConfirmToken = token }));
-            SelectedEntry = null;
+            try
+            {
+                await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(entry.Id, isFolder,
+                    new CallOptions { ConfirmToken = token }));
+            }
+            finally
+            {
+                SelectedEntry = null;
+            }
+            // E1/S6：删除成功后重拉当前视图（单元内重取单元内容；根视图重拉列表/树），
+            // 避免旧快照残留被删条目
+            await LoadAsync();
         }
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

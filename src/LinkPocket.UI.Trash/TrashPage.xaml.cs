@@ -25,7 +25,18 @@ namespace LinkPocket.Views
         {
             InitializeComponent();
             Focusable = true;
-            Loaded += (_, _) => { Keyboard.Focus(this); EnsureSidebarSubscription(); RefreshCrumbs(); };
+            // S2：页面切换靠 Visibility（不移除视觉树），Loaded 只触发一次 → 用 IsVisibleChanged 保证每次切回都聚焦
+            IsVisibleChanged += (_, e) =>
+            {
+                if (e.NewValue is true)
+                {
+                    Keyboard.Focus(this);
+                    EnsureSidebarSubscription();
+                    RefreshCrumbs();
+                }
+            };
+            // S8：切页隐藏时解绑（页面实例可能被重建；VM 常驻，不解绑 = 页面泄漏被 VM 引用）
+            Unloaded += (_, _) => UnsubscribeSidebar();
             SetupTrashTable();
 
             TrashSidebar.DataContext = _sidebar;
@@ -41,6 +52,29 @@ namespace LinkPocket.Views
                 if (entry.EntryType == "folder") Vm?.EnterUnitCommand.Execute(entry);
                 else ShowLinkDetail(entry);
             };
+            // S3：点表格空白区清除选中（VM 注释承诺"点空白清除"，表格控件自身不做此交互）
+            TrashArea.MouseLeftButtonUp += TrashArea_MouseLeftButtonUp;
+        }
+
+        private void TrashArea_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (Vm is not { } vm) return;
+            if (IsRowHit(e)) return;   // 点中行内部（行自身已处理选中）不清
+            vm.SelectedEntry = null;
+            TrashTable.ClearSelection();
+        }
+
+        /// <summary>命中判定：鼠标位置是否落在表格的行容器（ContentPresenter）树内。</summary>
+        private bool IsRowHit(MouseButtonEventArgs e)
+        {
+            var list = TrashTable.RowsList;
+            var hit = list.InputHitTest(e.GetPosition(list)) as DependencyObject;
+            while (hit != null)
+            {
+                if (hit is ContentPresenter) return true;
+                hit = VisualTreeHelper.GetParent(hit);
+            }
+            return false;
         }
 
         /// <summary>阶段 10 模块化：DataContext = RecycleBinViewModel（Shell 装配注入），本视图不认识 MainViewModel。</summary>
@@ -57,6 +91,14 @@ namespace LinkPocket.Views
             vm.PropertyChanged += Vm_PropertyChanged;
             _sidebarSubscribedVm = vm;
             UpdateSidebar();
+        }
+
+        /// <summary>S8：解绑侧栏订阅（页面实例回收时防止 VM 常驻引用本页面）。</summary>
+        private void UnsubscribeSidebar()
+        {
+            if (_sidebarSubscribedVm == null) return;
+            _sidebarSubscribedVm.PropertyChanged -= Vm_PropertyChanged;
+            _sidebarSubscribedVm = null;
         }
 
         private void Vm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -105,7 +147,7 @@ namespace LinkPocket.Views
 
         private void ShowLinkDetail(TrashEntryDto entry)
         {
-            _detailEntry = entry;
+            _detailEntry = entry;   // S4：记录展示中的条目，刷新时校验是否仍存在
 
             DetailName.Text = EntryName(entry);
             DetailUrl.Text = entry.Url ?? string.Empty;
@@ -113,10 +155,30 @@ namespace LinkPocket.Views
             DetailDeletedAt.Text = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
             DetailId.Text = entry.Id;
 
-            var favicon = FaviconService.LoadFromCache(entry.FaviconUrl);
-            DetailFavicon.Source = favicon;
-            DetailFavicon.Visibility = favicon != null ? Visibility.Visible : Visibility.Collapsed;
-            DetailFaviconFallback.Visibility = favicon == null ? Visibility.Visible : Visibility.Collapsed;
+            // 2.2-9：favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径）
+            var faviconUrl = entry.FaviconUrl;
+            var favicon = FaviconService.LoadFromCache(faviconUrl);
+            if (favicon == null && !string.IsNullOrWhiteSpace(faviconUrl))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await FaviconStore.EnsureCachedAsync(faviconUrl); } catch { }
+                    return FaviconService.LoadFromCache(faviconUrl);
+                }).ContinueWith(t => System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    if (_detailEntry?.Id != entry.Id) return;   // 期间已切到别的条目
+                    var bmp = t.Result;
+                    DetailFavicon.Source = bmp;
+                    DetailFavicon.Visibility = bmp != null ? Visibility.Visible : Visibility.Collapsed;
+                    DetailFaviconFallback.Visibility = bmp == null ? Visibility.Visible : Visibility.Collapsed;
+                }), TaskContinuationOptions.OnlyOnRanToCompletion);
+            }
+            else
+            {
+                DetailFavicon.Source = favicon;
+                DetailFavicon.Visibility = favicon != null ? Visibility.Visible : Visibility.Collapsed;
+                DetailFaviconFallback.Visibility = favicon == null ? Visibility.Visible : Visibility.Collapsed;
+            }
 
             LinkDetailOverlay.Visibility = Visibility.Visible;
         }
@@ -126,7 +188,8 @@ namespace LinkPocket.Views
 
         private void DetailCopyUrl_Click(object sender, RoutedEventArgs e)
         {
-            try { Clipboard.SetText(DetailUrl.Text); } catch { /* 剪贴板被占用时不阻断 */ }
+            // 2.2-13：读数据源而非 UI 元素（未来 URL 截断展示也不受影响）
+            try { if (!string.IsNullOrEmpty(_detailEntry?.Url)) Clipboard.SetText(_detailEntry.Url); } catch { /* 剪贴板被占用时不阻断 */ }
         }
 
         /// <summary>表格列定义（工厂模式：CellFactory + SortKey，表头可点击排序）。</summary>
@@ -233,12 +296,25 @@ namespace LinkPocket.Views
             TextTrimming = TextTrimming.CharacterEllipsis
         };
 
-        /// <summary>加载 + 渲染：VM 装载后刷新空态/引导/面包屑/侧栏（表行由 ItemsSource 绑定自动更新）。</summary>
-        public async Task RefreshAsync()
+        /// <summary>加载 + 渲染：VM 装载后刷新空态/引导/面包屑/侧栏（表行由 ItemsSource 绑定自动更新）。
+    /// S4：详情页展示的条目如果已经不在当前集合（被外部 purge），关闭详情页避免残留旧数据。</summary>
+    public async Task RefreshAsync()
         {
             if (Vm == null) return;
             EnsureSidebarSubscription();
             await Vm.LoadAsync();
+
+            // S4/C2：详情页打开的条目若已被删除 → 关闭详情页
+            if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailEntry != null)
+            {
+                var stillThere = Vm.Entries.Any(x => x.Id == _detailEntry.Id);
+                if (!stillThere)
+                {
+                    LinkDetailOverlay.Visibility = Visibility.Collapsed;
+                    _detailEntry = null;
+                }
+            }
+
             UpdateSidebar();
             RefreshCrumbs();
             RenderStates();
@@ -248,11 +324,9 @@ namespace LinkPocket.Views
         {
             var vm = Vm;
             if (vm == null) return;
-
-            TrashTable.EmptyContent = vm.HasItems
-                ? BuildState("delete-outline", "选择条目进行操作", null)
-                : BuildState("delete-outline", "回收站是空的",
-                    "删除的书签和文件夹会出现在这里，并保留删除时的位置");
+            // 2.2-11：EmptyContent 只在无行时显示；HasItems 分支永远不可见（死代码），只保留真空态
+            TrashTable.EmptyContent = BuildState("delete-outline", "回收站是空的",
+                "删除的书签和文件夹会出现在这里，并保留删除时的位置");
         }
 
         /// <summary>空态/引导占位（MD3E 徽章）。</summary>
@@ -306,10 +380,11 @@ namespace LinkPocket.Views
                 if (LinkDetailOverlay.Visibility == Visibility.Visible)
                 {
                     LinkDetailOverlay.Visibility = Visibility.Collapsed;
+                    _detailEntry = null;
                 }
                 else if (vm.IsInUnit)
                 {
-                    UnitBack_Click(this, new RoutedEventArgs());
+                    vm.BackCommand.Execute(null);   // 2.2-12：直调命令，不绕事件处理器
                 }
                 else
                 {
@@ -322,7 +397,7 @@ namespace LinkPocket.Views
 
             if (e.Key == Key.Delete && vm.HasSelection && LinkDetailOverlay.Visibility != Visibility.Visible)
             {
-                TrashPurge_Click(this, new RoutedEventArgs());
+                vm.PurgeCommand.Execute(null);   // 与 Delete 键直连命令
                 e.Handled = true;
             }
         }

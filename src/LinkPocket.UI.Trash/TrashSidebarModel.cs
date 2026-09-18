@@ -31,11 +31,14 @@ public class TrashSidebarModel : DetailSidebarModel
         DescriptionText = string.Empty;
         Favicon = isFolder ? null : FaviconService.LoadFromCache(entry.FaviconUrl);
 
-        _copyCommand ??= new RelayCommand(_ =>
+        // 复制命令：复用公共 RelayCommand（CanExecuteChanged 走 CommandManager）；
+        // 空 URL 时禁点（2.3-17：绝不 Clipboard.SetText("") 覆盖用户剪贴板）
+        _copyCommand ??= new RelayCommand(() =>
         {
             try { System.Windows.Clipboard.SetText(UrlText); } catch { /* 剪贴板被占用时不阻断 */ }
-        });
+        }, () => !string.IsNullOrEmpty(UrlText));
 
+        // 行序：类型 / 原位置 / [网址(仅链接带网址)] / 删除时间 / ID（2.3-18：按序追加，不再用 Insert 魔法位）
         var rows = new List<DetailSidebarRow>
         {
             new()
@@ -51,26 +54,10 @@ public class TrashSidebarModel : DetailSidebarModel
                 Label = "原位置",
                 Value = string.IsNullOrWhiteSpace(entry.OriginPath) ? "全部书签" : entry.OriginPath
             },
-            new()
-            {
-                IconKind = "history",
-                Label = "删除时间",
-                Value = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-            },
-            new()
-            {
-                IconKind = "fingerprint",
-                Label = "ID",
-                Value = entry.Id,
-                IsMono = true,
-                CopyCommand = _copyCommand,
-                CopyToolTip = "复制 ID"
-            },
         };
-
         if (!isFolder && !string.IsNullOrWhiteSpace(UrlText))
         {
-            rows.Insert(2, new DetailSidebarRow
+            rows.Add(new DetailSidebarRow
             {
                 IconKind = "link-variant",
                 Label = "网址",
@@ -79,18 +66,23 @@ public class TrashSidebarModel : DetailSidebarModel
                 CopyToolTip = "复制网址"
             });
         }
+        rows.Add(new DetailSidebarRow
+        {
+            IconKind = "history",
+            Label = "删除时间",
+            Value = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+        });
+        rows.Add(new DetailSidebarRow
+        {
+            IconKind = "fingerprint",
+            Label = "ID",
+            Value = entry.Id,
+            IsMono = true,
+            CopyCommand = _copyCommand,
+            CopyToolTip = "复制 ID"
+        });
 
         SetRows(rows);
         RaiseAll();
-    }
-
-    /// <summary>极简 always-can-execute 命令（复制类动作，无可用态）。</summary>
-    private sealed class RelayCommand : ICommand
-    {
-        private readonly Action<object?> _execute;
-        public RelayCommand(Action<object?> execute) => _execute = execute;
-        public bool CanExecute(object? parameter) => true;
-        public void Execute(object? parameter) => _execute(parameter);
-        public event EventHandler? CanExecuteChanged { add { } remove { } }
     }
 }
