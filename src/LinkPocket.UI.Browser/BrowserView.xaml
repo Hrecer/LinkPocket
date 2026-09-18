@@ -104,7 +104,7 @@
                             Command="{Binding GoForwardCommand}">
                         <m3:M3Icon Kind="arrow-right" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Button>
-                    <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Backspace)"
+                    <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Alt+↑)"
                             Command="{Binding GoUpCommand}">
                         <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Button>
