@@ -714,8 +714,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (node.IsRoot)
         {
             // 虚拟根「全部书签」：不是实体 → 永不进入选中集合（根没有可高亮的身份）；
-            // 行主体单击 = 进入根目录（导航），这正是它唯一该做的事（已在根则不重复重载）。
-            if (Controller.CurrentFolderId != null) await LoadAsync(null);
+            // 行主体单击 = 进入根目录。无条件重载（与文件夹行点"当前所在目录"同口径）：
+            // 点当前所在位置同样刷新一次是 Windows 直觉；已在根也照刷。
+            // 重复导航不会污染历史（BrowserHistory.NavigateTo 对同目录直接忽略）。
+            await LoadAsync(null);
             return;
         }
 
