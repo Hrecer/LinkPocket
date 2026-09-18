@@ -276,18 +276,20 @@ public class BrowserViewModel : INotifyPropertyChanged
         foreach (var r in Rows) r.InvalidateIsSelected();
     }
 
-    /// <summary>目录树投影：根级链接叶子高亮 = 该链接在选中集合；文件夹/根节点高亮 = 当前目录。
-    /// 树不持久任何选中状态，全部由 <see cref="_selectedIds"/> 与 CurrentFolderId 派生——因此
-    /// 进入目录、清空选中都自然反映到树，无需任何时序补丁。</summary>
+    /// <summary>
+    /// 目录树投影：树节点高亮 = 用户在选中集合中真正选中的实体，**与当前所处目录无关**。
+    /// 「位于某文件夹 / 根目录」是导航位置，由面包屑表达，绝不转换为树高亮——
+    /// 进入某个文件夹不代表该文件夹"被选中"（用户 2026-09-18/19 明确：位置 ≠ 选中）。
+    /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="_selectedIds"/> 派生：
+    /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当用户选中了该文件夹实体）。
+    /// </summary>
     private void SyncTreeSelection()
     {
         foreach (var node in AllTreeNodes())
         {
-            var selected =
-                node.IsLink ? _selectedIds.Contains(node.Id)
-                : node.IsRoot ? string.IsNullOrEmpty(CurrentFolderId)
-                : node.FolderId == CurrentFolderId;
-            node.IsSelected = selected;
+            // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当用户选中了真实实体（链接叶子或文件夹）才高亮
+            string? entityId = node.IsLink ? node.Id : node.FolderId;
+            node.IsSelected = entityId != null && _selectedIds.Contains(entityId);
         }
     }
 
@@ -716,8 +718,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         else
         {
-            // 文件夹 / 虚拟根：「全部书签」的 FolderId 为 null = 根目录
-            SetSelection(Enumerable.Empty<string>(), anchor: null);   // 进目录清空主栏选中，树派生存根节点
+            // 文件夹 / 虚拟根：「全部书签」的 FolderId 为 null = 根目录。
+            // 这是导航（进目录 + 面包屑更新），不是选中：清空选中集合、不把该文件夹加入集合，
+            // 因此树/主栏都不会因"进入"而高亮该文件夹——位置语义由面包屑承担（用户：位置 ≠ 选中）。
+            SetSelection(Enumerable.Empty<string>(), anchor: null);
             _ = LoadAsync(node.FolderId);
         }
     }
