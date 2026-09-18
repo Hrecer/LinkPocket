@@ -34,7 +34,7 @@ internal sealed class BookmarksImportHandler : ICommandHandler
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath, $"文件不存在：{filePath}", correlationId: ctx.CorrelationId));
 
-        var doc = await NetscapeReader.ParseFileAsync(filePath);
+        var doc = await NetscapeReader.ParseFileAsync(filePath, ct);
         if (!doc.IsValid)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath,
@@ -47,7 +47,6 @@ internal sealed class BookmarksImportHandler : ICommandHandler
         var folderIds = new string[doc.Items.Count];
         var foldersToAdd = new List<Folder>(doc.FolderCount);
         var linksToAdd = new List<Link>(doc.LinkCount);
-        var directLinkCounts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         for (var i = 0; i < doc.Items.Count; i++)
         {
@@ -83,27 +82,28 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                     UpdatedAt = item.LastModified ?? item.AddDate ?? now,
                 };
                 linksToAdd.Add(link);
-
-                if (parentFolderId != null)
-                    directLinkCounts[parentFolderId] = directLinkCounts.TryGetValue(parentFolderId, out var c) ? c + 1 : 1;
             }
         }
 
-        // 文件夹「链接数」缓存字段按直接子链接数回填（与库内其它写入路径口径一致）
+        // 写入循环同样保持可取消（Add 只登记不落盘，但批量循环可能很长）
         foreach (var folder in foldersToAdd)
-            folder.LinkCount = directLinkCounts.TryGetValue(folder.FolderId, out var n) ? n : 0;
-
-        foreach (var folder in foldersToAdd)
+        {
+            ct.ThrowIfCancellationRequested();
             _ = await ctx.Uow.Folders.AddAsync(folder, ct);
+        }
         foreach (var link in linksToAdd)
+        {
+            ct.ThrowIfCancellationRequested();
             _ = await ctx.Uow.Links.AddAsync(link, ct);
+        }
 
-        // 批量写入 → 所有文件夹（既有的 + 新导入的）内容均视为变动（既有 TouchAllModified 口径）。
-        // ListAllAsync 是 AsNoTracking 快照，取 ID 后经 FindAsync 取跟踪态实体再改写。
+        // 批量写入 → 所有现有文件夹内容均视为变动（既有 TouchAllModified 口径；新导入的同样整体刷新）。
+        // ListAllAsync 是 AsNoTracking 快照：直接改快照 + UpdateAsync 挂跟踪（替代「逐条 FindAsync」的 N+1），
+        // 全部 UPDATE 在引擎提交时一次落库。
         foreach (var folder in await ctx.Uow.Folders.ListAllAsync(ct))
         {
-            var tracked = await ctx.Uow.Folders.FindAsync(new FolderId(folder.FolderId), ct);
-            if (tracked != null) tracked.UpdatedAt = now;
+            folder.UpdatedAt = now;
+            await ctx.Uow.Folders.UpdateAsync(folder, ct);
         }
         foreach (var folder in foldersToAdd)
             folder.UpdatedAt = now;
@@ -123,6 +123,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                     .Concat(linksToAdd.Select(l => new EntityRef("link", l.LinkId)))
                     .ToList(),
                 Events: ["links.changed", "folders.changed"],
-                HumanSummary: summary));
+                HumanSummary: summary,
+                // 容错告警同时走 ChangeSet.Warnings（观测面契约：绝不静默吞掉；data.warnings 供 UI 展示保留）
+                Warnings: doc.Warnings.Count > 0 ? doc.Warnings : null));
     }
 }

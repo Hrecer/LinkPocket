@@ -55,7 +55,7 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
 
             inspection.FileBytes = new FileInfo(filePath).Length;
 
-            var doc = await NetscapeReader.ParseFileAsync(filePath);
+            var doc = await NetscapeReader.ParseFileAsync(filePath, ct);
             inspection.IsValid = doc.IsValid;
             inspection.Error = doc.Error;
             inspection.Warnings = doc.Warnings;

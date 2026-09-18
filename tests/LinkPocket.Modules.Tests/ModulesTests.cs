@@ -698,6 +698,80 @@ public class BookmarksModuleTests
             engine.ExecuteAsync<object>("bookmarks.import", new { file_path = badPath }));
         Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
     }
+
+    [Fact]
+    public async Task Import_Surrogate_Code_Point_Does_Not_Crash()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
+        // &#xD800; 是代理区非法标量：过去会抛 ArgumentOutOfRange → 冒成 LP.SYS.003；现在按无法解码实体保留字面量
+        await File.WriteAllTextAsync(htmlPath,
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>\r\n<DL><p>\r\n" +
+            "<DT><A HREF=\"https://s.example\" ADD_DATE=\"1600000000\">代理 &#xD800; 码点</A>\r\n</DL><p>");
+
+        var imported = await engine.ExecuteAsync<JsonElement>("bookmarks.import", new { file_path = htmlPath });
+        Assert.Equal(1, imported.Data.GetProperty("links_created").GetInt32());
+
+        var found = await engine.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://s.example" });
+        Assert.Single(found);
+        Assert.Equal("代理 &#xD800; 码点", found[0].Title);
+    }
+
+    [Fact]
+    public async Task Import_Ignores_Tags_Inside_Comments()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
+        // 注释里的假 <DL>/<DT> 不应被当成真实标签；只有真实顶层 <DL> 算数
+        await File.WriteAllTextAsync(htmlPath,
+            "<!-- 假标签 <DL> 与 <DT></DT> 不应被解析 -->\r\n" +
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>\r\n<DL><p>\r\n" +
+            "<DT><H3 ADD_DATE=\"1600000000\">真实目录</H3>\r\n<DL><p>\r\n" +
+            "<DT><A HREF=\"https://c.example\" ADD_DATE=\"1600000100\">C</A>\r\n</DL><p>\r\n</DL><p>");
+
+        var inspection = await engine.QueryAsync<BookmarkFileInspectionDto>("bookmarks.inspect", new { file_path = htmlPath });
+        Assert.True(inspection.IsValid);
+        Assert.Equal(1, inspection.FolderCount);
+        Assert.Equal(1, inspection.LinkCount);
+    }
+
+    [Fact]
+    public async Task Export_Description_Uses_Crlf()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "F" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new
+        {
+            url = "https://d.example",
+            title = "D",
+            description = "desc 描述",
+            list_id = folder.Data!.FolderId,
+        });
+
+        var exportPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
+        await engine.ExecuteAsync<object>("bookmarks.export", new { file_path = exportPath });
+        var text = await File.ReadAllTextAsync(exportPath);
+
+        // <DD> 行与全文一致用 CRLF（修复前混入孤立的 \n <DD>；\r\n 里天然含 \n，须用正则判「裸 \n」）
+        Assert.Matches("\r\n        <DD>desc 描述\r\n", text);
+        Assert.DoesNotMatch(@"(?<!\r)\n[ \t]*<DD>desc 描述", text);
+    }
+
+    [Fact]
+    public async Task Import_Warnings_Flow_To_ChangeSet()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
+        // 缺顶层 </DL>：解析走容错 → 告警应经 ChangeSet.Warnings 上行（不能只留在 data.warnings）
+        await File.WriteAllTextAsync(htmlPath,
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>\r\n<DL><p>\r\n" +
+            "<DT><A HREF=\"https://w.example\" ADD_DATE=\"1600000000\">W</A>");
+
+        var imported = await engine.ExecuteAsync<JsonElement>("bookmarks.import", new { file_path = htmlPath });
+        Assert.Equal(1, imported.Data.GetProperty("links_created").GetInt32());
+        Assert.NotNull(imported.Changes!.Warnings);
+        Assert.Contains(imported.Changes!.Warnings!, w => w.Contains("文件结构不完整"));
+    }
 }
 
 public class BackupModuleTests

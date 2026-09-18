@@ -27,11 +27,12 @@ internal static class NetscapeReader
     // —— 对外入口 ——
     // ============================================================
 
-    /// <summary>读取文件并解析（只读，不碰数据库）。</summary>
-    public static async Task<ParsedDocument> ParseFileAsync(string filePath)
+    /// <summary>读取文件并解析（只读，不碰数据库；可取消）。</summary>
+    public static async Task<ParsedDocument> ParseFileAsync(string filePath, CancellationToken ct = default)
     {
         using var reader = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var html = await reader.ReadToEndAsync();
+        var html = await reader.ReadToEndAsync(ct);
+        ct.ThrowIfCancellationRequested();
         return Parse(html);
     }
 
@@ -260,6 +261,7 @@ internal static class NetscapeReader
         {
             i = s.IndexOf('<', i);
             if (i < 0 || i >= end) return -1;
+            if (TrySkipComment(s, ref i, end)) continue;   // HTML 注释（<!-- … -->）内的标签名一律不算
             if (MatchesTagName(s, i + 1, end, name)) return i;
             i++;
         }
@@ -273,6 +275,7 @@ internal static class NetscapeReader
         {
             i = s.IndexOf('<', i);
             if (i < 0 || i + 1 >= end) return -1;
+            if (TrySkipComment(s, ref i, end)) continue;   // HTML 注释内的标签名一律不算
             if (s[i + 1] == '/' && MatchesTagName(s, i + 2, end, name)) return i;
             i++;
         }
@@ -332,6 +335,15 @@ internal static class NetscapeReader
         if (dt < 0) return dl;
         if (dl < 0) return dt;
         return Math.Min(dt, dl);
+    }
+
+    /// <summary>若 s[i] 起是 HTML 注释（&lt;!-- … --&gt;），跳过整个注释并把 i 置到注释之后；否则返回 false。</summary>
+    private static bool TrySkipComment(string s, ref int i, int end)
+    {
+        if (i + 3 >= end || s[i + 1] != '!' || s[i + 2] != '-' || s[i + 3] != '-') return false;
+        var close = s.IndexOf("-->", i + 4, StringComparison.Ordinal);
+        i = close < 0 ? end : close + 3;
+        return true;
     }
 
     private static Dictionary<string, string> ParseAttributes(string s, int tagStart, int tagEnd)
@@ -459,7 +471,7 @@ internal static class NetscapeReader
                 return null;
             }
 
-            if (code <= 0 || code > 0x10FFFF) return null;
+            if (code <= 0 || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) return null;   // 代理区非法标量：ConvertFromUtf32 会抛，外部输入必须容错
             return char.ConvertFromUtf32(code);
         }
 

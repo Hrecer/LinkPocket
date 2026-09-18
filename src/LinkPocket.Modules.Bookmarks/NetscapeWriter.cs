@@ -22,7 +22,7 @@ internal static class NetscapeWriter
     }
 
     /// <summary>由全量文件夹/链接构建 Netscape HTML（不落盘——落盘归 Handler，便于单测）。</summary>
-    public static async Task<string> BuildHtmlAsync(
+    public static Task<string> BuildHtmlAsync(
         IReadOnlyList<Folder> folders, IReadOnlyList<Link> links,
         WriteStats stats, CancellationToken ct)
     {
@@ -41,6 +41,7 @@ internal static class NetscapeWriter
         var rootLinks = new List<Link>();
         foreach (var link in links.OrderBy(l => ToUtc(l.CreatedAt)))
         {
+            ct.ThrowIfCancellationRequested();
             var listId = link.ListId;
             if (!string.IsNullOrEmpty(listId) && folderIds.Contains(listId))
             {
@@ -76,60 +77,69 @@ internal static class NetscapeWriter
         // 根级书签（含无归属）——与 Chrome 一致：直接挂在顶层 DL 下
         foreach (var link in rootLinks)
         {
+            ct.ThrowIfCancellationRequested();
             html.Append(FormatLink(link, 1)).Append("\r\n");
             stats.RootLinksExported++;
         }
 
-        // 文件夹树
-        foreach (var folder in rootFolders)
-            await EmitFolderAsync(html, folder, 1, childrenByParent, linksByFolder, emitted, stats, ct);
+        // 文件夹树（含环引用兜底）：显式栈先序遍历 + 后序关标签——语义等价原递归版本，
+        // 但绝不依赖调用栈深度（5k+ 深层嵌套时递归会 StackOverflow，进程无法 catch，必须迭代）。
+        var pending = new Stack<(Folder Folder, int Depth)>();
+        foreach (var folder in folders
+                     .Where(f => !rootFolders.Contains(f))   // 未从根可达的（悬挂父链/环）按根级补写
+                     .OrderBy(f => f.Name, StringComparer.Ordinal)
+                     .Reverse())
+            pending.Push((folder, 1));
+        foreach (var folder in ((IEnumerable<Folder>)rootFolders).Reverse())   // List<T>.Reverse() 是 void 实例方法，须显式走后序 LINQ 扩展
+            pending.Push((folder, 1));
 
-        // 环引用兜底：未被输出的文件夹按根级补写（否则其链接会丢失）
-        foreach (var folder in folders.OrderBy(f => f.Name, StringComparer.Ordinal))
+        while (pending.Count > 0)
         {
-            if (emitted.Contains(folder.FolderId)) continue;
-            await EmitFolderAsync(html, folder, 1, childrenByParent, linksByFolder, emitted, stats, ct);
-        }
-
-        html.Append("</DL><p>\r\n");
-        return html.ToString();
-    }
-
-    private static async Task EmitFolderAsync(
-        StringBuilder html, Folder folder, int depth,
-        Dictionary<string, List<Folder>> childrenByParent,
-        Dictionary<string, List<Link>> linksByFolder,
-        HashSet<string> emitted, WriteStats stats, CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-        if (!emitted.Add(folder.FolderId)) return;   // 已输出（含环引用）→ 跳过
-
-        var pad = string.Concat(Enumerable.Repeat(Indent, depth));
-        var name = EscapeHtml(folder.Name ?? "未命名文件夹");
-
-        html.Append(pad).Append("<DT><H3 ADD_DATE=\"").Append(ToUnix(folder.CreatedAt))
-            .Append("\" LAST_MODIFIED=\"").Append(ToUnix(folder.UpdatedAt))
-            .Append("\">").Append(name).Append("</H3>\r\n");
-        html.Append(pad).Append("<DL><p>\r\n");
-        stats.FoldersExported++;
-
-        if (linksByFolder.TryGetValue(folder.FolderId, out var links))
-        {
-            foreach (var link in links)
+            var (folder, depth) = pending.Pop();
+            if (depth < 0)   // 关标签标记：其子树输出完毕后闭合 <DL>
             {
-                html.Append(FormatLink(link, depth + 1)).Append("\r\n");
-                stats.LinksExported++;
+                html.Append(Pad(-depth)).Append("</DL><p>\r\n");
+                continue;
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (!emitted.Add(folder.FolderId)) continue;   // 已输出（含环引用）→ 跳过
+
+            var pad = Pad(depth);
+            var name = EscapeHtml(folder.Name ?? "未命名文件夹");
+
+            html.Append(pad).Append("<DT><H3 ADD_DATE=\"").Append(ToUnix(folder.CreatedAt))
+                .Append("\" LAST_MODIFIED=\"").Append(ToUnix(folder.UpdatedAt))
+                .Append("\">").Append(name).Append("</H3>\r\n");
+            html.Append(pad).Append("<DL><p>\r\n");
+            stats.FoldersExported++;
+
+            if (linksByFolder.TryGetValue(folder.FolderId, out var folderLinks))
+            {
+                foreach (var link in folderLinks)
+                {
+                    html.Append(FormatLink(link, depth + 1)).Append("\r\n");
+                    stats.LinksExported++;
+                }
+            }
+
+            if (childrenByParent.TryGetValue(folder.FolderId, out var children))
+            {
+                pending.Push((folder, -depth));   // 后序：子树输出完再闭合本层
+                foreach (var child in ((IEnumerable<Folder>)children).Reverse())
+                    pending.Push((child, depth + 1));
+            }
+            else
+            {
+                html.Append(pad).Append("</DL><p>\r\n");
             }
         }
 
-        if (childrenByParent.TryGetValue(folder.FolderId, out var children))
-        {
-            foreach (var child in children)
-                await EmitFolderAsync(html, child, depth + 1, childrenByParent, linksByFolder, emitted, stats, ct);
-        }
-
-        html.Append(pad).Append("</DL><p>\r\n");
+        html.Append("</DL><p>\r\n");
+        return Task.FromResult(html.ToString());
     }
+
+    private static string Pad(int depth) => string.Concat(Enumerable.Repeat(Indent, depth));
 
     /// <summary>单条书签行：Chrome 形态 <c>&lt;DT&gt;&lt;A HREF="…" ADD_DATE="…" [ICON="…"]&gt;标题&lt;/A&gt;</c>。</summary>
     private static string FormatLink(Link link, int depth)
@@ -148,7 +158,7 @@ internal static class NetscapeWriter
         sb.Append('>').Append(title).Append("</A>");
 
         if (!string.IsNullOrWhiteSpace(link.Description))
-            sb.Append('\n').Append(pad).Append("<DD>").Append(EscapeHtml(link.Description));
+            sb.Append("\r\n").Append(pad).Append("<DD>").Append(EscapeHtml(link.Description));
 
         return sb.ToString();
     }
