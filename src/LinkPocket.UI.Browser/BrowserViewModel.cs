@@ -434,15 +434,14 @@ public class BrowserViewModel : INotifyPropertyChanged
         IsLoading = true;
         try
         {
-            // 2.10-45 快照语义（如实说明）：contents / tree / stats 是三个引擎命令各自的快照，
-            // 高速写入期间可能跨命令看到不同时点。下一轮刷新（事件防抖 300ms）自动追平；
-            // 真正的"单快照一致"需引擎侧合并命令（当前不为 UI 单独加引擎接口，保持命令最小面）。
-            var contents = await _client.FolderContentsAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
+            // 2.10-45 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
+            // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
+            var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
-            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
-            var tree = await _client.FolderTreeAsync();
+            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树（与目录页同快照的树/计数）
+            var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            await RebuildFolderTreeAsync(tree);
+            await RebuildFolderTreeAsync(tree, contents.RootLinkCount ?? 0);
             // 树已重建：重发当前目录通知，让视图重新定位树的选中项
             OnPropertyChanged(nameof(CurrentFolderId));
 
@@ -686,8 +685,9 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     private bool IsAtRoot() => Controller.CurrentFolderId == null;
 
-    /// <summary>由 GetFolderTreeAsync 的扁平结果重建左侧树（ParentId == null 即根级）。保留既有展开状态。</summary>
-    private async Task RebuildFolderTreeAsync(List<FolderDto> tree)
+    /// <summary>由 folders.overview 的树快照重建左侧树（ParentId == null 即根级）。保留既有展开状态。
+    /// rootLinkCount = 同快照的根级直挂链接数（原另查 links.stats，现由 overview 一次交付）。</summary>
+    private Task RebuildFolderTreeAsync(List<FolderDto> tree, int rootLinkCount)
     {
         var expandedIds = new HashSet<string?>();
         CollectExpandedIds(FolderTree, expandedIds);
@@ -720,11 +720,11 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
 
         // 根节点计数 = 顶层文件夹递归计数之和 + 根级直挂链接数（内核递归计数）
-        var rootLevel = (await _client.LinkStatsAsync()).RootLevel;
         root.LinkCount = tree.Where(f => f.ParentId == null)
-            .Sum(f => f.LinkCount) + rootLevel;
+            .Sum(f => f.LinkCount) + rootLinkCount;
 
         FolderTree.Add(root);
+        return Task.CompletedTask;
     }
 
     private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
