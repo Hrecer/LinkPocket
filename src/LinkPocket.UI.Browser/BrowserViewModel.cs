@@ -1012,6 +1012,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         var target = targetFolderId;
         var moved = 0;
         var renamedNotes = new List<string>();
+        // 撤销分组：一次拖拽多选 = 一个用户动作 → 合并为一条撤销记录
+        var callOptions = new LinkPocket.Contracts.CallOptions(UndoGroupId: Guid.NewGuid().ToString("N"));
         try
         {
             foreach (var (id, isFolder) in items)
@@ -1021,12 +1023,12 @@ public class BrowserViewModel : INotifyPropertyChanged
                     if (id == target || IsSelfOrDescendant(id, target)) continue;
                     if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
                         continue; // 已在目标目录
-                    var unique = await MoveFolderWithConflictRenameAsync(id, target, renamedNotes);
+                    var unique = await MoveFolderWithConflictRenameAsync(id, target, renamedNotes, callOptions);
                     if (unique) moved++;
                 }
                 else
                 {
-                    if (await MoveLinkAsync(id, target)) moved++;
+                    if (await MoveLinkAsync(id, target, callOptions)) moved++;
                 }
             }
             StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
@@ -1043,18 +1045,19 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。
     /// 单项失败不中断整批（与 MoveLink/Copy* 一致）；改名失败只记备注，移动结果不受影响。</summary>
-    private async Task<bool> MoveFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
+    private async Task<bool> MoveFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes,
+        LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
             var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-            await _client.FolderMoveAsync(folderId, target);
+            await _client.FolderMoveAsync(folderId, target, o);
             if (unique != name)
             {
                 try
                 {
-                    await _client.FolderUpdateAsync(folderId, name: unique);
+                    await _client.FolderUpdateAsync(folderId, name: unique, o: o);
                     renamedNotes.Add($"「{name}」→「{unique}」");
                 }
                 catch
@@ -1071,7 +1074,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task<bool> MoveLinkAsync(string linkId, string? target)
+    private async Task<bool> MoveLinkAsync(string linkId, string? target, LinkPocket.Contracts.CallOptions? o = null)
     {
         // 同目录粘贴/拖放 = 无操作
         try
@@ -1079,7 +1082,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取后 FirstOrDefault）
             if (link == null) return false; // 源已被删除，跳过
             if (NormalizeParentId(link.ListId) == target) return false;
-            await _client.LinkUpdateAsync(linkId, listId: target);
+            await _client.LinkUpdateAsync(linkId, listId: target, o: o);
             return true;
         }
         catch
@@ -1244,6 +1247,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         var renamedNotes = new List<string>();
         var pasted = 0;
         var pinnedIds = new List<string>();   // 本次粘贴的落点 ID（复制 = 新 ID；剪切 = 原 ID 不变）→ 置尾 + 选中 + 定位
+        // 撤销分组：一次粘贴 = 一个用户动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
+        var undoGroup = Guid.NewGuid().ToString("N");
+        var callOptions = new LinkPocket.Contracts.CallOptions(UndoGroupId: undoGroup);
         try
         {
             foreach (var fid in payload.FolderIds)
@@ -1252,11 +1258,11 @@ public class BrowserViewModel : INotifyPropertyChanged
                 if (payload.IsCut)
                 {
                     if (NormalizeParentId(_folderMap.TryGetValue(fid, out var info) ? info.ParentId : null) == target) continue;
-                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes)) { pasted++; pinnedIds.Add(fid); }
+                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes, callOptions)) { pasted++; pinnedIds.Add(fid); }
                 }
                 else
                 {
-                    var newId = await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes);
+                    var newId = await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes, callOptions);
                     if (newId != null) { pasted++; pinnedIds.Add(newId); }
                 }
             }
@@ -1265,11 +1271,11 @@ public class BrowserViewModel : INotifyPropertyChanged
             {
                 if (payload.IsCut)
                 {
-                    if (await MoveLinkAsync(lid, target)) { pasted++; pinnedIds.Add(lid); }
+                    if (await MoveLinkAsync(lid, target, callOptions)) { pasted++; pinnedIds.Add(lid); }
                 }
                 else
                 {
-                    var newId = await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes);
+                    var newId = await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes, callOptions);
                     if (newId != null) { pasted++; pinnedIds.Add(newId); }
                 }
             }
@@ -1300,18 +1306,19 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>深拷贝文件夹；同名自动编号。返回新文件夹 ID（源已删除等情况 → null，单项跳过）。</summary>
-    private async Task<string?> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
+    private async Task<string?> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes,
+        LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
             var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-            var copy = await _client.FolderCopyAsync(folderId, target);
+            var copy = await _client.FolderCopyAsync(folderId, target, o);
             var newId = copy.Data?.NewFolderId;
             if (string.IsNullOrEmpty(newId)) return null;
             if (unique != name)
             {
-                await _client.FolderUpdateAsync(newId, name: unique);
+                await _client.FolderUpdateAsync(newId, name: unique, o: o);
                 renamedNotes.Add($"「{name}」→「{unique}」");   // 仅真正重命名才记备注（与移动/复制链接一致）
             }
             return newId;
@@ -1323,7 +1330,8 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>复制书签（全量字段）；同名自动编号。返回新链接 ID（源已删除等情况 → null，单项跳过）。</summary>
-    private async Task<string?> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes)
+    private async Task<string?> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes,
+        LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
@@ -1344,7 +1352,8 @@ public class BrowserViewModel : INotifyPropertyChanged
                 listId: targetNorm,
                 isImportant: link.IsImportant,
                 autoFetchMetadata: false,
-                faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl);
+                faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl,
+                o: o);
             var newId = created.Data?.LinkId;
             if (string.IsNullOrEmpty(newId)) return null;
             if (unique != link.Title) renamedNotes.Add($"「{link.Title}」→「{unique}」");
@@ -1727,27 +1736,27 @@ public class BrowserViewModel : INotifyPropertyChanged
         return null;
     }
 
-    // —— 撤销 / 重做（Ctrl+Z / Ctrl+Y，轻量同步引擎 undo 栈态）——
+    // —— 撤销 / 重做（Ctrl+Z / Ctrl+Y）——
+    // 可用性口径 = 引擎两个栈的**真实状态**（undo.list / undo.list_redo），不再靠本地猜测：
+    // 新写操作会清空重做栈（标准 redo 语义），本地事实会在那时失真。
 
     private bool _canUndo;
     private bool _canRedo;
-    /// <summary>可撤销（有 undo 栈）：撤销命令可用性（轻量：在写操作/undo 后由事件刷新时同步一次）。</summary>
+    /// <summary>可撤销（引擎撤销栈非空）。</summary>
     public bool CanUndo => _canUndo && !IsPathEditing;
-    /// <summary>可重做（有 redo 栈）。</summary>
+    /// <summary>可重做（引擎重做栈非空）。</summary>
     public bool CanRedo => _canRedo && !IsPathEditing;
 
     private async Task UndoRedoAsync(bool redo)
     {
         try
         {
-            if (redo) await _client.RedoAsync();
-            else
-            {
-                await _client.UndoAsync();
-                _canRedo = true;   // 执行过撤销 → 重做可用（引擎未暴露重做栈查询，按本地事实维护）
-            }
+            var result = redo ? await _client.RedoAsync() : await _client.UndoAsync();
+            // 撤销/重做成功后：回到受影响实体所在位置并选中它（Windows 资源管理器口径）——
+            // 实体 ID 从变更集的 Touched 取（引擎已把逆向命令的受影响实体聚合上来），
+            // 复用既有「跳转」语义（进目录 + 选中该行 + 滚入视口），不另造一套导航。
             await RefreshUndoStateAsync();
-            // 刷新交给后端事件（写操作不显式刷新）：undo 生效后事件链刷当前活跃页
+            await LocateAfterUndoAsync(result.Changes);
         }
         catch (Exception ex)
         {
@@ -1756,27 +1765,58 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 轻量同步 undo/redo 可用性：从引擎 undo.list 取撤销栈态（每次刷新链收尾 / undo 后调用一次）。
-    /// 引擎未暴露"重做栈清单"查询（只有 undo.list），故重做可用性按本地事实维护：
-    /// 本次会话执行过撤销即置位（redo 后撤销栈仍可能有剩余，由下一次同步如实反映）。
+    /// 撤销/重做后定位到受影响实体：取变更集里第一个链接/文件夹，进其所在目录并选中该行。
+    /// 无受影响实体（或引擎未回报）时什么都不做——绝不猜测位置。
+    /// </summary>
+    private async Task LocateAfterUndoAsync(LinkPocket.Contracts.ChangeSet? changes)
+    {
+        var touched = changes?.Touched;
+        if (touched == null || touched.Count == 0) return;
+
+        foreach (var entity in touched)
+        {
+            if (entity.Type == "link")
+            {
+                var link = await _client.LinkGetAsync(entity.Id);
+                if (link == null) continue;   // 已被撤销掉（如撤销"新建链接"）→ 试下一个
+                await NavigateAndSelectAsync(link.ListId, entity.Id);
+                return;
+            }
+            if (entity.Type == "folder")
+            {
+                var tree = await _client.FolderTreeAsync();
+                var folder = tree.FirstOrDefault(f => f.FolderId == entity.Id);
+                if (folder == null) continue;   // 已进回收站（撤销"新建文件夹"）→ 试下一个
+                await NavigateAndSelectAsync(folder.ParentId, entity.Id);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 同步撤销/重做可用性 = 引擎两个栈的**真实状态**（undo.list / undo.list_redo，
+    /// 每次刷新链收尾与撤销/重做后各取一次）。查询失败时保持保守禁用（观测面纪律：不弹窗打断输入）。
     /// </summary>
     public async Task RefreshUndoStateAsync()
     {
         try
         {
-            // ⚠️ undo.list 的返回是**对象** `{ "entries": [...] }`（不是裸数组）——按数组解析会恒为空
+            // ⚠️ 两个查询的返回都是**对象** `{ "entries": [...] }`（不是裸数组）——按数组解析会恒为空
             //（曾据此误判"无可撤销"，Ctrl+Z 永远灰着）。
-            var list = await _client.UndoListAsync();
-            _canUndo = list.ValueKind is System.Text.Json.JsonValueKind.Object
-                       && list.TryGetProperty("entries", out var entries)
-                       && entries.ValueKind is System.Text.Json.JsonValueKind.Array
-                       && entries.GetArrayLength() > 0;
+            _canUndo = await HasEntriesAsync(await _client.UndoListAsync());
+            _canRedo = await HasEntriesAsync(await _client.UndoListRedoAsync());
             OnPropertyChanged(nameof(CanUndo));
             OnPropertyChanged(nameof(CanRedo));
             CommandManager.InvalidateRequerySuggested();
         }
-        catch { /* 查询失败不阻断；CanExecute 保守禁用（观测面纪律：不弹窗打断输入） */ }
+        catch { /* 查询失败不阻断；CanExecute 保守禁用 */ }
     }
+
+    private static Task<bool> HasEntriesAsync(System.Text.Json.JsonElement list)
+        => Task.FromResult(list.ValueKind is System.Text.Json.JsonValueKind.Object
+                           && list.TryGetProperty("entries", out var entries)
+                           && entries.ValueKind is System.Text.Json.JsonValueKind.Array
+                           && entries.GetArrayLength() > 0);
 
     /// <summary>视图请求：为当前选中行弹右键菜单（Shift+F10 / 菜单键；视图订阅后聚焦并 open 行 ContextMenu）。</summary>
     public event EventHandler? ContextMenuRequested;

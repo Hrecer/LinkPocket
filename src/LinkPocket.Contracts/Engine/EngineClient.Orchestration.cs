@@ -50,6 +50,10 @@ public sealed partial class EngineClient
     public Task<JsonElement> UndoListAsync(CancellationToken ct = default)
         => QueryAsync<JsonElement>("undo.list", null, null, ct);
 
+    /// <summary>重做栈清单（最近在前）——Ctrl+Y 的可用性据此精确判定（不靠本地猜测）。</summary>
+    public Task<JsonElement> UndoListRedoAsync(CancellationToken ct = default)
+        => QueryAsync<JsonElement>("undo.list_redo", null, null, ct);
+
     /// <summary>撤销最近一条（或 id 指定条目）可撤销命令。</summary>
     public Task<CommandResult<JsonElement>> UndoAsync(string? id = null,
         CallOptions? options = null, CancellationToken ct = default)

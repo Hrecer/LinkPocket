@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：52 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：54 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_53_Commands()
+    public void Describe_Returns_All_54_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(53, manifest.Commands.Count);
-        Assert.Equal(53, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(54, manifest.Commands.Count);
+        Assert.Equal(54, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -26,7 +26,7 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(14, engine.Describe("folders").Commands.Count);
         Assert.Equal(16, engine.Describe("links").Commands.Count);
-        Assert.Equal(7, engine.Describe("trash").Commands.Count);
+        Assert.Equal(8, engine.Describe("trash").Commands.Count);   // 新增 trash.restore_unit（文件夹单元还原）
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
 
         var contents = engine.Describe("folders").Commands.Single(c => c.Name == "folders.contents");
