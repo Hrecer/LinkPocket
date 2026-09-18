@@ -42,6 +42,14 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>回收站树模式：被删文件夹单元（灰化图标 + 无右键菜单）。浏览页恒为 false。</summary>
     public bool IsTrashed { get; set; }
 
+    /// <summary>树选中态（数据驱动，VM 唯一事实来源）：与主栏 BrowserRowViewModel.IsSelected 同构，容器重建不影响高亮。</summary>
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { _isSelected = value; OnPropertyChanged(); }
+    }
+
     /// <summary>是否显示节点右键菜单（回收站树节点 = false）。ContextMenu 半离线，走 DataContext 绑定。</summary>
     public bool ShowNodeMenu => Host != null;
 

@@ -26,6 +26,8 @@ public class TrashFolderNode : INotifyPropertyChanged
     public int LinkCount { get; set; }
 
     public bool IsRoot => false;
+    /// <summary>回收站树纯展示，无选中语义（与 FolderNode 绑定面一致，恒 false）。</summary>
+    public bool IsSelected => false;
     public bool IsTrashed => true;
     public bool ShowNodeMenu => false;
     public object? Host => null;

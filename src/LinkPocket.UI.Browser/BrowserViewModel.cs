@@ -173,6 +173,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>Shift 区间选择的起点行 ID。</summary>
     private string? _anchorId;
 
+    /// <summary>树选中唯一事实来源：当前选中的根级链接叶子 ID（null = 未选中链接）。
+    /// 选中完全由数据（FolderNode.IsSelected）驱动并在此重放，不依赖 TreeView 容器时序。</summary>
+    private string? _treeSelectedLinkId;
+
     public IEnumerable<BrowserRowViewModel> SelectedRows => Rows.Where(r => r.IsSelected);
     public int SelectionCount => Rows.Count(r => r.IsSelected);
     public bool HasSelection => SelectionCount > 0;
@@ -446,8 +450,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
             // 根级直挂链接注入「全部书签」节点下（文件夹之前；点击 = 主区定位选中该行）
             await LoadTreeRootLinkNodesAsync();
-            // 树已重建：重发当前目录通知，让视图重新定位树的选中项
-            OnPropertyChanged(nameof(CurrentFolderId));
+            // 树已重建：数据重放选中态（根级直挂链接 / 当前目录文件夹 / 根），不依赖容器时序
+            ApplyTreeSelection();
 
             Rows.Clear();
             SetContextRow(null); // 行对象已重建：右键命中行引用作废（删除文案随之复位）
@@ -658,6 +662,89 @@ public class BrowserViewModel : INotifyPropertyChanged
         FocusRowRequested?.Invoke(this, row);
         return true;
     }
+
+    /// <summary>
+    /// 点击树节点的统一入口（文件夹/根 = 导航进目录；根级链接叶子 = 主区定位选中）。
+    /// 选中态完全由数据驱动：先数据高亮命中节点，再按类型导航；导航重建树后经
+    /// <see cref="ApplyTreeSelection"/> 重放选中。此方法内不再有任何"容器时序"补丁，
+    /// 高亮唯一的持久事实来源 = <see cref="_treeSelectedLinkId"/> + CurrentFolderId。
+    /// </summary>
+    public void SelectTreeNode(FolderNode node)
+    {
+        // 加载期间的点击不丢弃：LoadAsync/RefreshAsync 已有 "最后请求必被处理" 重入守卫，
+        // 这里直接数据高亮并进入既有异步链，避免快速二次点击被静默吞掉。
+        // 点击即数据高亮命中节点（文件夹/链接一致）：不依赖容器时序，刷新重建后由 ApplyTreeSelection 收敛
+        SetTreeSelection(node);
+        if (node.IsLink)
+        {
+            // 根级链接叶子：选中即主区定位该行（导航到根 + 选中）；树保持该叶子高亮
+            _treeSelectedLinkId = node.Id;
+            _ = NavigateAndSelectAsync(null, node.Id);
+        }
+        else
+        {
+            // 文件夹 / 虚拟根：「全部书签」的 FolderId 为 null = 根目录
+            _treeSelectedLinkId = null;
+            _ = LoadAsync(node.FolderId);
+        }
+    }
+
+    /// <summary>
+    /// 数据重放树选中（树全量重建后调用，见 RefreshAsync）：根级链接叶子优先（若已定位），
+    /// 否则按 CurrentFolderId 选中对应文件夹（null = 根）。遍历中的数据回写，
+    /// 容器是否已生成、生成顺序都不影响高亮。找不到目标（如坏数据）时静默不选。
+    /// </summary>
+    private void ApplyTreeSelection()
+    {
+        // 链接叶子仅置于根目录之下：只在当前是根目录时才优先选中已定位的链接；
+        // 一旦进入任何子目录（面包屑/双击等非树导航），残留的链接定位必须让位于当前文件夹
+        if (string.IsNullOrEmpty(CurrentFolderId) && _treeSelectedLinkId != null)
+        {
+            var link = FindTreeNode(n => n.IsLink && n.Id == _treeSelectedLinkId);
+            if (link != null) { SetTreeSelection(link); return; }
+        }
+
+        // 根目录（CurrentFolderId == null）：选中虚拟根「全部书签」
+        if (string.IsNullOrEmpty(CurrentFolderId))
+        {
+            var root = FindTreeNode(n => n.IsRoot);
+            if (root != null) SetTreeSelection(root);
+            return;
+        }
+
+        // 普通文件夹
+        var folder = FindTreeNode(n => !n.IsLink && n.FolderId == CurrentFolderId);
+        if (folder != null) SetTreeSelection(folder);
+    }
+
+    /// <summary>先清空整棵树选中，再把目标节点置为选中（数据回写）；全量遍历保证单选。</summary>
+    private void SetTreeSelection(FolderNode target)
+    {
+        foreach (var node in AllTreeNodes())
+        {
+            node.IsSelected = ReferenceEquals(node, target);
+        }
+    }
+
+    /// <summary>遍历整棵树（含虚拟根「全部书签」），返回全部节点的深度优先序列。</summary>
+    private IEnumerable<FolderNode> AllTreeNodes()
+    {
+        foreach (var root in FolderTree)
+            foreach (var node in EnumerateSelfAndChildren(root))
+                yield return node;
+    }
+
+    private static IEnumerable<FolderNode> EnumerateSelfAndChildren(FolderNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+            foreach (var sub in EnumerateSelfAndChildren(child))
+                yield return sub;
+    }
+
+    /// <summary>在整棵树上深度优先查找第一个满足条件的节点。</summary>
+    private FolderNode? FindTreeNode(Func<FolderNode, bool> predicate)
+        => AllTreeNodes().FirstOrDefault(predicate);
 
     public void ClearSelection()
     {

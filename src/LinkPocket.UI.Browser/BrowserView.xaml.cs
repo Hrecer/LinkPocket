@@ -17,7 +17,6 @@ namespace LinkPocket.Views.Browser;
 /// </summary>
 public partial class BrowserView : UserControl
 {
-    private bool _suppressTreeSelection;
 
     /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
@@ -379,23 +378,15 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>点击树节点：文件夹 → 进入目录；根级链接叶子 → 主区定位选中该行（进根 + 选中）。
-    /// 链接叶子点击后记录目标，供 CurrentFolderId 变化时恢复树选中（否则刷新重建后高亮丢失 =「点一下就没」）。</summary>
-    private string? _pendingTreeLinkId;
+    /// <summary>点击树节点统一交给 VM（数据驱动选中）：文件夹/根 → 导航进目录；根级链接叶子 → 主区定位选中该行。
+    /// 树高亮由 FolderNode.IsSelected 数据回写并经 VM.ApplyTreeSelection 重放，无需在此记录目标或操作容器。</summary>
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
-        if (_suppressTreeSelection) return;
         if (ViewModel == null || node is not FolderNode fn) return;
-        if (fn.IsLink)
-        {
-            _pendingTreeLinkId = fn.Id;
-            _ = ViewModel.NavigateAndSelectAsync(null, fn.Id);
-            return;
-        }
-        _ = ViewModel.LoadAsync(fn.FolderId);
+        ViewModel.SelectTreeNode(fn);
     }
 
-    /// <summary>VM 当前目录变化（双击行/面包屑/后退前进）→ 同步左侧树选中；进入路径编辑态 → 聚焦并全选。</summary>
+    /// <summary>VM 属性变化：仅路径编辑态需要视图介入（聚焦全选）；树选中同步已内聚在 VM 数据驱动。</summary>
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(BrowserViewModel.IsPathEditing))
@@ -407,29 +398,6 @@ public partial class BrowserView : UserControl
                 editBox?.Focus();
                 editBox?.SelectAll();
             }
-            return;
-        }
-
-        if (e.PropertyName != nameof(BrowserViewModel.CurrentFolderId) || ViewModel == null) return;
-
-        var targetId = ViewModel.CurrentFolderId;
-        _suppressTreeSelection = true;
-        try
-        {
-            // 根级链接叶子点击：进根后 CurrentFolderId=null，树选中恢复到该链接叶子（避免「点一下高亮就没了」）
-            if (targetId == null && _pendingTreeLinkId != null)
-            {
-                FolderTreePanelCtl.SelectNodeById(_pendingTreeLinkId);
-                _pendingTreeLinkId = null;
-            }
-            else
-            {
-                FolderTreePanelCtl.SelectNodeById(targetId);
-            }
-        }
-        finally
-        {
-            _suppressTreeSelection = false;
         }
     }
 

@@ -144,8 +144,18 @@
                          子级整体缩进一格（20 = chevron 列宽）→ chevron 对齐父文本，Windows 资源管理器式层级 -->
                     <ControlTemplate TargetType="TreeViewItem">
                         <StackPanel>
-                            <Border x:Name="RowCard" Style="{StaticResource LpRowCard}"
-                                    Padding="8,3" Cursor="Hand">
+                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand">
+                                <Border.Style>
+                                    <!-- 选中态数据驱动（FolderNode.IsSelected，VM 唯一事实来源）：数据触发器在派生层，
+                                         优先级高于基样式悬停 = 选中行悬停不换色（与主栏 RowSkin 同构；容器重建不影响高亮） -->
+                                    <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="20"/>
@@ -170,10 +180,7 @@
                             <Trigger Property="HasItems" Value="False">
                                 <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
                             </Trigger>
-                            <!-- 选中态在模板触发器层：优先级天然高于基样式悬停 = 选中行悬停不换色（与主栏一致） -->
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="RowCard" Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                            </Trigger>
+                            <!-- 选中高亮已由数据驱动（见上方 RowCard 派生样式 DataTrigger），此处无需容器 IsSelected 触发器 -->
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
