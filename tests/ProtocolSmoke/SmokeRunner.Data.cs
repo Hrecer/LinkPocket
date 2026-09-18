@@ -70,13 +70,19 @@ internal static partial class SmokeRunner
         Asserts.That(overview.Tree!.Count == treeNow.Count
             && overview.Tree.All(f => treeNow.Any(t => t.FolderId == f.FolderId)),
             "overview.Tree 应与 folders.tree 同集合（同一快照）");
+        // 全量链接快照：每文件夹直接链接随 overview 单快照交付（树叶子注入数据源，携带 list_id 归属目录）
+        Asserts.That(overview.TreeLinks != null
+            && overview.TreeLinks.Any(l => l.ListId == folder.FolderId && l.Title == "链接1")
+            && overview.TreeLinks.Any(l => l.ListId == sub.FolderId && l.Title == "子链接"),
+            "overview.TreeLinks 应包含每个文件夹的直接链接");
         var rootOverview = (await client.QueryAsync<FolderContentsDto>("folders.overview"));
         var rootStats = (await client.LinkStatsAsync());
         Asserts.That(rootOverview.RootLinkCount == rootStats.RootLevel,
             "overview.RootLinkCount 应与 links.stats.RootLevel 一致");
         var contentsCompat = (await client.FolderContentsAsync(folder.FolderId));
-        Asserts.That(contentsCompat.Tree == null && contentsCompat.RootLinkCount == null,
-            "folders.contents 响应形状不变（tree/root_link_count 恒 null）");
+        Asserts.That(contentsCompat.Tree == null && contentsCompat.RootLinkCount == null
+            && contentsCompat.TreeLinks == null,
+            "folders.contents 响应形状不变（tree/root_link_count/tree_links 恒 null）");
 
         Console.WriteLine("[OK] §2 数据流：分页/直接子计数/名称升序/面包屑/递归计数/环检测/同名自动编号/overview 单快照");
     }

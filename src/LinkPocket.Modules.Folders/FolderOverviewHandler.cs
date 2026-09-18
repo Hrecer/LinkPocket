@@ -16,7 +16,7 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.overview",
         Category: "folders",
-        Description: "浏览页主视图一致的快照：目录页(contents) + 全量文件夹树 + 根级链接数（参数同 folders.contents）",
+        Description: "浏览页主视图一致的快照：目录页(contents) + 全量文件夹树 + 根级链接数 + 全量链接（树叶子注入；参数同 folders.contents）",
         Parameters:
         [
             ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根「全部书签」（根不是实体、无 ID）"),
@@ -31,7 +31,7 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var dto = await FolderViewCore.BuildAsync(ctx, args, limits);
+        var dto = await FolderViewCore.BuildAsync(ctx, args, limits, withTreeLinks: true);
         return CommandResult.Ok(dto);
     }
 }

@@ -109,6 +109,14 @@ public class FolderContentsDto
     /// </summary>
     [JsonPropertyName("root_link_count"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? RootLinkCount { get; set; }
+
+    /// <summary>
+    /// 全库活动链接平铺（树叶子注入数据源）：每链接携带归属目录 <c>list_id</c>（null = 根级），
+    /// 调用方按父目录分组后把直接链接叶子挂到对应文件夹节点下。仅 <c>folders.overview</c> 填充；
+    /// <c>folders.contents</c> 恒为 null。
+    /// </summary>
+    [JsonPropertyName("tree_links"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LinkDto>? TreeLinks { get; set; }
 }
 
 public class PagedLinksDto

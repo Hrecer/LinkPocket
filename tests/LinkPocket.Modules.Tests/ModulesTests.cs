@@ -82,6 +82,11 @@ public class FoldersModuleTests
         Assert.Equal(tree.Count, overview.Tree!.Count);
         Assert.All(overview.Tree, f => Assert.Contains(tree, t => t.FolderId == f.FolderId));
 
+        // 全量链接快照（树叶子注入数据源）：每链接携带归属目录 list_id，根级/子目录同一 UoW 单快照
+        Assert.Equal(2, overview.TreeLinks!.Count);
+        Assert.Contains(overview.TreeLinks, l => l.Title == "内部链接" && l.ListId == folder.Data!.FolderId);
+        Assert.Contains(overview.TreeLinks, l => l.Title == "根级链接" && l.ListId == null);
+
         // 根级计数与 links.stats.RootLevel 同口径；根分支复用目录页计数
         var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
         var rootOverview = await engine.QueryAsync<FolderContentsDto>("folders.overview", null);
@@ -91,6 +96,7 @@ public class FoldersModuleTests
         // 契约：folders.contents 响应形状不变（tree/root_link_count 恒 null）
         var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", new { folder_id = folder.Data!.FolderId });
         Assert.Null(contents.Tree);
+        Assert.Null(contents.TreeLinks);
         Assert.Null(contents.RootLinkCount);
     }
 

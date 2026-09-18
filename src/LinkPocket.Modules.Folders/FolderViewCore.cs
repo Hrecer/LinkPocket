@@ -14,7 +14,8 @@ namespace LinkPocket.Modules.Folders;
 /// </summary>
 internal static class FolderViewCore
 {
-    public static async Task<FolderContentsDto> BuildAsync(ICommandContext ctx, JsonElement args, EngineLimits limits)
+    public static async Task<FolderContentsDto> BuildAsync(ICommandContext ctx, JsonElement args, EngineLimits limits,
+        bool withTreeLinks = false)
     {
         var folderId = CommandArgs.OptionalString(args, "folder_id");
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
@@ -89,6 +90,21 @@ internal static class FolderViewCore
         dto.RootLinkCount = isRoot
             ? dto.DirectLinkCount                                // 根分支已算过根级数，直接复用
             : await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
+
+        // 全库活动链接（树叶子注入数据源）：每链接携带 list_id 归属目录（null = 根级），
+        // UI 按父目录分组后把直接链接叶子挂到对应文件夹节点下；同一 UoW 单快照（不跨命令漂移），
+        // 名称升序 + ID 兜底 = 与树同口径的确定性输出（size 0 = 全量）。
+        // 仅 folders.overview 需要（withTreeLinks=true）：folders.contents 是 10k 库性能门槛命令，
+        // 不为它付全量链接代价（响应形状本来就恒 null）。
+        if (withTreeLinks)
+        {
+            dto.TreeLinks = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            {
+                Filter = new LinkFilter(),
+                Sort = new[] { new SortSpec("title", SortDir.Asc) },
+                Page = new PageSpec(1, 0),
+            }, ct)).Select(l => l.ToDto()).ToList();
+        }
 
         return dto;
     }

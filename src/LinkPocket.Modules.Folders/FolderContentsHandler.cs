@@ -35,6 +35,7 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
         var dto = await FolderViewCore.BuildAsync(ctx, args, limits);
         dto.Tree = null;
         dto.RootLinkCount = null;
+        dto.TreeLinks = null;
         return CommandResult.Ok(dto);
     }
 }
