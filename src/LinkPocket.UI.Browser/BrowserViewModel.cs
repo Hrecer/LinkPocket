@@ -712,7 +712,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 普通文件夹
+        // 普通文件夹：进入子目录即回收链接定位（链接叶子只存在于根），返回根时按目录对齐选中，不残留 stale 链接高亮
+        _treeSelectedLinkId = null;
         var folder = FindTreeNode(n => !n.IsLink && n.FolderId == CurrentFolderId);
         if (folder != null) SetTreeSelection(folder);
     }
