@@ -12,6 +12,16 @@ using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
 
+/// <summary>浏览页的两栏：主栏（目录内容列表）/ 左栏（文件夹树）。键盘语义按栏归属——
+/// 例如 ↑/↓ 在两栏含义不同（主栏移动行选中；左栏按树的视觉顺序移动）。</summary>
+public enum BrowserPane
+{
+    /// <summary>主栏（内容列表）。</summary>
+    Main,
+    /// <summary>左栏（文件夹树）。</summary>
+    Tree
+}
+
 /// <summary>
 /// 资源管理器式浏览页（P4）：一切数据经引擎查询命令（folders.contents 等）获取，
 /// 渲染由 XAML ItemsControl + DataTemplate 完成，本类不持有任何控件引用。
@@ -60,10 +70,48 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     private bool _isLoading;
+    /// <summary>刷新在途标志（同时是 RefreshAsync 的重入守卫）：任何刷新都会置位，含后台事件刷新。</summary>
     public bool IsLoading
     {
         get => _isLoading;
         set { _isLoading = value; OnPropertyChanged(); }
+    }
+
+    private bool _isNavigating;
+    /// <summary>
+    /// 导航加载（界面加载遮罩的唯一来源）：**只有用户发起的导航/刷新**才为 true——
+    /// 打开文件夹、跳转定位、返回上级、后退/前进、F5；事件驱动的后台刷新一律静默（不闪动画）。
+    /// 与 <see cref="IsLoading"/> 的区别：后者是"有没有刷新在途"（内部重入守卫），前者是"这次刷新要不要给用户看"。
+    /// </summary>
+    public bool IsNavigating
+    {
+        get => _isNavigating;
+        private set { if (_isNavigating == value) return; _isNavigating = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>挂起补刷是否属于导航加载（与 <see cref="_clearSelectionOnPendingRefresh"/> 同机制，逐轮继承）。</summary>
+    private bool _navigatingOnPendingRefresh;
+
+    private BrowserPane _activePane = BrowserPane.Main;
+
+    /// <summary>
+    /// 当前活跃栏（键盘语义归属）：用户点击哪一栏，哪一栏就活跃（默认主栏）。
+    /// 快捷键按栏路由的事实源（如 ↑/↓ 在两栏语义不同）；视图据 <see cref="PaneActivated"/> 把键盘焦点收进页面。
+    /// </summary>
+    public BrowserPane ActivePane
+    {
+        get => _activePane;
+        private set { if (_activePane == value) return; _activePane = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>某一栏被用户激活（点击行/空白）。视图订阅后把键盘焦点归位到页内。</summary>
+    public event EventHandler<BrowserPane>? PaneActivated;
+
+    /// <summary>激活某一栏：记录归属 + 通知视图（焦点归位）。任何"点击某栏"的入口都只调这一个方法。</summary>
+    public void ActivatePane(BrowserPane pane)
+    {
+        ActivePane = pane;
+        PaneActivated?.Invoke(this, pane);
     }
 
     // —— 链接详情页（全页覆盖层，参考链接页书签详情） ——
@@ -427,24 +475,27 @@ public class BrowserViewModel : INotifyPropertyChanged
         _ = RefreshPreservingSelectionAsync();
     }
 
-    /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。</summary>
+    /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。
+    /// 这是"用户发起的导航"（树行点击/面包屑/后退前进/返回上级/F5）→ 带加载遮罩。</summary>
     public async Task LoadAsync(string? folderId)
     {
         Controller.NavigateTo(folderId);
         CurrentFolderId = Controller.CurrentFolderId;
-        await RefreshAsync();
+        await RefreshAsync(navigating: true);
     }
 
     /// <summary>
-    /// 重新加载当前目录（供事件推送订阅/操作收尾调用）。
+    /// 重新加载当前目录（事件推送订阅 / 导航显式调用；写操作不自行刷新，见 WARNINGS #18）。
     /// 选中的唯一事实来源是 <see cref="_selectedIds"/>（行与树均为投影），故此方法本身不恢复选中——
     /// 集合并未因刷新而消失。仅当 <paramref name="clearSelection"/> 为 true（导航切换目录）时清空选中。
-    /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 移动粘贴后的收尾刷新 /
-    /// 防抖事件）只置挂起标志，当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：
-    /// 导航后列表停在旧目录、移动粘贴后只剩事件链一条刷新路径）。
+    /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 防抖事件刷新）只置挂起标志，
+    /// 当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：导航后列表停在旧目录）。
     /// </summary>
-    public async Task RefreshAsync(bool clearSelection = false)
+    public async Task RefreshAsync(bool clearSelection = false, bool navigating = false)
     {
+        // 导航加载：遮罩只在"用户发起"的这类刷新上亮（事件驱动的后台刷新一律静默，不闪动画）
+        if (navigating) IsNavigating = true;
+
         // 导航切换目录：清空选中集合（行/树投影一起归零）；原地刷新则保留
         if (clearSelection)
         {
@@ -454,6 +505,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (IsLoading)
         {
             _refreshPending = true;
+            _clearSelectionOnPendingRefresh |= clearSelection;
+            _navigatingOnPendingRefresh |= navigating;
             return;
         }
         // 数据持续高频变动时，补刷递归不能无限延续（见 finally 内的深度计数）
@@ -582,15 +635,21 @@ public class BrowserViewModel : INotifyPropertyChanged
             IsLoading = false;
             CommandManager.InvalidateRequerySuggested();
 
-            // 加载期间有新的刷新请求（导航/操作收尾/防抖事件）→ 立即补刷一次，保证最后请求被处理
+            // 加载期间有新的刷新请求（导航/防抖事件）→ 立即补刷一次，保证最后请求被处理
             if (_refreshPending)
             {
                 _refreshPending = false;
                 var clear = _clearSelectionOnPendingRefresh;
                 _clearSelectionOnPendingRefresh = false;
+                var nav = _navigatingOnPendingRefresh;
+                _navigatingOnPendingRefresh = false;
                 _refreshRecursionDepth++;
-                try { await RefreshAsync(clearSelection: clear); }
+                try { await RefreshAsync(clearSelection: clear, navigating: nav); }
                 finally { _refreshRecursionDepth--; }
+            }
+            else
+            {
+                IsNavigating = false;   // 本轮（含挂起补刷链）全部结束 → 收加载遮罩
             }
         }
     }
@@ -647,8 +706,11 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     private void SetSelection(IEnumerable<string>? ids = null, string? anchor = null, Action<HashSet<string>>? mutate = null)
     {
-        var next = new HashSet<string>(StringComparer.Ordinal);
-        if (ids != null) { foreach (var id in ids) next.Add(id); }
+        // ⚠️ mutate 的起点必须是**当前集合**：Ctrl 翻转 = "在当前选中上增/删目标 ID"。
+        // 曾把起点写成空集合 → Ctrl+点击退化成单选（多选永远做不到），用例已锁死。
+        var next = ids != null
+            ? new HashSet<string>(ids, StringComparer.Ordinal)
+            : new HashSet<string>(_selectedIds, StringComparer.Ordinal);
         mutate?.Invoke(next);
         _selectedIds.Clear();
         foreach (var id in next) _selectedIds.Add(id);
@@ -878,7 +940,6 @@ public class BrowserViewModel : INotifyPropertyChanged
         var target = targetFolderId;
         var moved = 0;
         var renamedNotes = new List<string>();
-        IsLoading = true;
         try
         {
             foreach (var (id, isFolder) in items)
@@ -903,14 +964,9 @@ public class BrowserViewModel : INotifyPropertyChanged
             StatusText = "移动失败";
             ShowError("移动失败", ex.Message);
         }
-        finally
-        {
-            IsLoading = false;
-        }
-
-        // 收尾刷新必须放在 IsLoading=false 之后：在调用方自己撑起的 IsLoading 期间调刷新，
-        // 会被重入守卫挂起且无人消费（历史上即因此只剩事件链一条刷新路径）——列表在此重建
-        await RefreshPreservingSelectionAsync();
+        // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），与删除流同口径：
+        // 显式 + 事件双重刷新 = "移动/粘贴后主栏刷两遍"的根因；写操作也不得占用 IsLoading
+        // （它是刷新的重入标志，被写操作占用期间事件刷新会被挂起）。
     }
 
     /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。
@@ -1032,7 +1088,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             return;
         }
 
-        IsLoading = true;
         var renamedNotes = new List<string>();
         var pasted = 0;
         try
@@ -1069,13 +1124,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             StatusText = "粘贴失败";
             ShowError("粘贴失败", ex.Message);
         }
-        finally
-        {
-            IsLoading = false;
-        }
-
-        // 收尾刷新同样放在 IsLoading=false 之后（与 MoveItemsAsync 同理，见其注释）
-        await RefreshPreservingSelectionAsync();
+        // 刷新统一交给后端事件（与移动/删除同口径）：显式 + 事件双重刷新会让主栏刷两遍，
+        // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
     }
 
     /// <summary>深拷贝文件夹；同名自动编号。返回是否执行。</summary>
@@ -1154,7 +1204,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             await _client.FolderCreateAsync(name, target);
             StatusText = $"已创建文件夹「{name}」";
-            await RefreshPreservingSelectionAsync();
+            // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）
         }
         catch (Exception ex)
         {
@@ -1181,8 +1231,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         try
         {
             await _client.FolderUpdateAsync(node.FolderId, name: name);
-            await RefreshPreservingSelectionAsync();
             StatusText = $"已重命名为「{name}」";
+            // 刷新交给后端事件（300ms 防抖）：事件链的刷新本就保留选中，无需显式再刷一次
         }
         catch (Exception ex)
         {
@@ -1307,9 +1357,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         try
         {
             await _client.FolderUpdateAsync(row.Id, name: name);
-            // 原地刷新并保留选中：重命名不该把选中态（以及右侧栏）清掉
-            await RefreshPreservingSelectionAsync();
             StatusText = $"已重命名为「{name}」";
+            // 刷新交给后端事件（300ms 防抖）：事件链的刷新本就保留选中（选中在 _selectedIds，不随重建丢）
         }
         catch (Exception ex)
         {

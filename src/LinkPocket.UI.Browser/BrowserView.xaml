@@ -11,6 +11,7 @@
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="1000"
              Focusable="True"
+             FocusVisualStyle="{x:Null}"
              Background="{DynamicResource SurfaceContainerLow}">
 
     <UserControl.InputBindings>
@@ -444,7 +445,7 @@
                             <MultiDataTrigger>
                                 <MultiDataTrigger.Conditions>
                                     <Condition Binding="{Binding Rows.Count}" Value="0"/>
-                                    <Condition Binding="{Binding IsLoading}" Value="False"/>
+                                    <Condition Binding="{Binding IsNavigating}" Value="False"/>
                                 </MultiDataTrigger.Conditions>
                                 <Setter Property="Visibility" Value="Visible"/>
                             </MultiDataTrigger>
@@ -468,13 +469,14 @@
                 </StackPanel>
             </Grid>
 
-            <!-- 加载遮罩 -->
+            <!-- 加载遮罩：只在**导航加载**（用户发起：打开文件夹/跳转/返回/F5）时显示；
+                     事件驱动的后台刷新（300ms 防抖）不闪动画——那些刷新没有可见的加载语义。 -->
             <Border Grid.Row="0" Background="#80FFFFFF">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsLoading}" Value="True">
+                            <DataTrigger Binding="{Binding IsNavigating}" Value="True">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                         </Style.Triggers>

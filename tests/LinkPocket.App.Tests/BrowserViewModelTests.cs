@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Windows.Input;
 using LinkPocket.ViewModels;
 using Xunit;
 
@@ -83,7 +84,7 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 移动链接后_列表同步刷新_不依赖事件链()
+    public async Task 移动链接后_不自行刷新_刷新归事件链_无订阅宿主需显式刷新()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -97,12 +98,17 @@ public class BrowserViewModelTests
             await vm.LoadAsync(a.FolderId);
             Assert.Contains(vm.Rows, r => r.Id == link.LinkId);
 
-            // 移动后收尾显式刷新必须生效——修复前被 IsLoading 重入守卫吞掉，列表停在旧状态
-            //（该场景无事件订阅，显式刷新是唯一路径，正好验证"最后请求必被处理"）。
             await vm.MoveItemsAsync(new[] { (link.LinkId, false) }, b.FolderId);
 
-            Assert.DoesNotContain(vm.Rows, r => r.Id == link.LinkId);   // 已移出目录 A 的行（刷新已生效）
-            Assert.Empty(vm.Rows);                             // A 目录此刻为空
+            // 口径（与删除流一致，WARNINGS #18）：写操作**不自行刷新**——界面刷新由后端事件链
+            // （MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）负责；
+            // 显式 + 事件双重刷新就是"移动/粘贴后主栏刷两遍"的根因。
+            Assert.Contains(vm.Rows, r => r.Id == link.LinkId);       // 行仍是旧状态（未被显式刷新）
+
+            // 无事件订阅的宿主（单测/无头）自己调刷新即可取到新状态
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.DoesNotContain(vm.Rows, r => r.Id == link.LinkId);  // 已移出目录 A 的行
+            Assert.Empty(vm.Rows);                                     // A 目录此刻为空
         }
         finally
         {
@@ -311,6 +317,55 @@ public class BrowserViewModelTests
             await vm.SelectTreeNodeAsync(rootNow);
             Assert.Null(vm.CurrentFolderId);                      // 已回到根目录
             Assert.False(Assert.Single(vm.FolderTree).IsSelected); // 虚根仍不显示选中（重建后的新节点）
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 多选_Ctrl翻转_Shift区间_CtrlA全选与清空()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.LinkCreateAsync("https://a.example/1", title: "A", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://b.example/2", title: "B", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://c.example/3", title: "C", autoFetchMetadata: false);
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            var a = vm.Rows[0];
+            var b = vm.Rows[1];
+            var c = vm.Rows[2];
+
+            // 单选 → Ctrl 加选：两行同时留在集合（曾因 mutate 从空集合起步退化成单选 = 多选永远做不到）
+            vm.SelectRowWithModifiers(a, ModifierKeys.None);
+            vm.SelectRowWithModifiers(b, ModifierKeys.Control);
+            Assert.True(vm.IsSelectedId(a.Id) && vm.IsSelectedId(b.Id));
+            Assert.Equal(2, vm.SelectionCount);
+            Assert.Equal(2, vm.Rows.Count(r => r.IsSelected));   // 行投影同步（主栏高亮同源）
+
+            // Ctrl 再点已选中行 = 只翻掉它，其余保留
+            vm.SelectRowWithModifiers(a, ModifierKeys.Control);
+            Assert.False(vm.IsSelectedId(a.Id));
+            Assert.True(vm.IsSelectedId(b.Id));
+            Assert.Equal(1, vm.SelectionCount);
+
+            // Shift 区间选：以当前锚点（b）扩到 c → {b, c}
+            vm.SelectRowWithModifiers(b, ModifierKeys.None);
+            vm.SelectRowWithModifiers(c, ModifierKeys.Shift);
+            Assert.Equal(
+                new[] { b.Id, c.Id }.OrderBy(x => x, StringComparer.Ordinal),
+                vm.Rows.Where(r => r.IsSelected).Select(r => r.Id).OrderBy(x => x, StringComparer.Ordinal));
+
+            // Ctrl+A 全选 → Esc/空白清空
+            vm.SelectAllRows();
+            Assert.Equal(3, vm.SelectionCount);
+            vm.ClearSelection();
+            Assert.Equal(0, vm.SelectionCount);
+            Assert.False(vm.HasSelection);
         }
         finally
         {

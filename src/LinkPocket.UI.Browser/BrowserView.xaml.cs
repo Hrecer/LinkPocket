@@ -37,6 +37,7 @@ public partial class BrowserView : UserControl
             {
                 _wiredVm.PropertyChanged -= OnViewModelPropertyChanged;
                 _wiredVm.FocusRowRequested -= OnFocusRowRequested;
+                _wiredVm.PaneActivated -= OnPaneActivated;
             }
             _rowsHook?.Detach();
             _rowsHook = null;
@@ -45,10 +46,25 @@ public partial class BrowserView : UserControl
             ViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);   // 实例注入：无头/多窗口下不与其它页共享
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.FocusRowRequested += OnFocusRowRequested;
+            ViewModel.PaneActivated += OnPaneActivated;
             HookRowsCollection(ViewModel);
             WireMainTableOnce();
         };
+
+        // 页面被切到前台（全局导航切页）→ 键盘焦点收进本页：
+        // 页面级快捷键（InputBindings）只在"焦点在页面内"时才被路由到——主栏行是不可聚焦 Border，
+        // 点行不会自己带走焦点；不主动收焦点就会出现"快捷键时灵时不灵"（曾实测：切页后 Ctrl+C 无效）。
+        IsVisibleChanged += (_, _) => { if (IsVisible) FocusPage(); };
     }
+
+    /// <summary>把键盘焦点收进页面根（Focusable=True；无焦点视觉框，见 XAML FocusVisualStyle=null）。</summary>
+    private void FocusPage()
+    {
+        if (IsLoaded && IsVisible) Keyboard.Focus(this);
+    }
+
+    /// <summary>某栏被激活（点击主栏/左栏）→ 焦点归位到本页，页面级快捷键随即可用。</summary>
+    private void OnPaneActivated(object? sender, BrowserPane pane) => FocusPage();
 
     /// <summary>共享表是否已装载列定义（仅在成功装载后置位，见构造函数中的注释）。</summary>
     private bool _mainTableWired;
@@ -226,7 +242,9 @@ public partial class BrowserView : UserControl
 
     private void RowBorder_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is BrowserRowViewModel row && ViewModel != null)
+        if (ViewModel == null) return;
+        ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
+        if ((sender as FrameworkElement)?.DataContext is BrowserRowViewModel row)
             ViewModel.SelectRowWithModifiers(row, Keyboard.Modifiers);
     }
 
@@ -384,12 +402,14 @@ public partial class BrowserView : UserControl
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (ViewModel == null || node is not FolderNode fn) return;
+        ViewModel.ActivatePane(BrowserPane.Tree);   // 点左栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         _ = ViewModel.SelectTreeNodeAsync(fn);
     }
 
     /// <summary>点击文件夹树空白：清空选中（主栏 + 树一起取消，唯一事实来源清空）。</summary>
     private void FolderTreePanel_BackgroundClicked(object? sender, EventArgs e)
     {
+        ViewModel?.ActivatePane(BrowserPane.Tree);
         if (ViewModel != null) ViewModel.ClearSelection();
     }
 
@@ -430,6 +450,7 @@ public partial class BrowserView : UserControl
     /// </summary>
     private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        ViewModel?.ActivatePane(BrowserPane.Main);
         var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
         if (hitTest?.VisualHit == null || IsBrowserRow(hitTest.VisualHit))
             return;
