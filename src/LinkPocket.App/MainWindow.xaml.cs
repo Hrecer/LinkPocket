@@ -36,9 +36,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _host.Ports.Navigation = this;
         _host.LocateHost = this;
 
-        // ===== 区域视图注册 / 路由装配（阶段 10）：navId → 页面的唯一装配点 =====
+        // ===== 区域视图注册 / 路由装配（阶段 10）：navId → 页面的专一装配登记点 =====
         // 页面不再持有组合根（Host 已废除），依赖由 Shell 经窄接口注入；
         // 页面 DataContext = 各自的 ViewModel（浏览页=BrowserViewModel，其余页见下）。
+        // ⚠️ 语义说明：注册表只承载「navId → 页面 + 依赖注入」的装配登记契约（供未来宿主复用，
+        // 见 Services/ViewRegistry 文档）；页面显隐由 XAML 的 CurrentNavId 数据触发器驱动，
+        // 运行期不经过注册表解析。新增页面 = 注册一条 + 注入依赖即可。
         _regions.Register("browser", BrowserPage);
         _regions.Register("search", SearchView);
         _regions.Register("trash", TrashView);
@@ -153,7 +156,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             WindowShell.CornerRadius = new CornerRadius(22);
         }
         UpdateShellClip();
-        RepositionNavPill(animate: false);
+        // StateChanged 触发时新尺寸的布局尚未重算（ActualWidth/TransformToVisual 仍是旧坐标）——
+        // 药丸重定位推迟到 Loaded 优先级，等布局完成后再取几何（与 MainWindow_Loaded 同法）。
+        _ = Dispatcher.BeginInvoke(new Action(() => RepositionNavPill(animate: false)),
+            System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>CornerRadius 不会圆角裁切子内容：用 RectangleGeometry 裁出窗口圆角。</summary>
@@ -200,6 +206,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         if (target == null || target.ActualWidth <= 0)
         {
             // 审核 3.6：宽度归零时同步重置 X——否则下次恢复宽度会从旧偏移位置显示（视觉错位）
+            // ⚠️ 先清动画：DoubleAnimation 默认 FillBehavior=HoldEnd，动画结束后仍持续压过本地赋值
+            NavPillTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            NavPill.BeginAnimation(WidthProperty, null);
             NavPill.Width = 0;
             NavPillTransform.X = 0;
             return;
@@ -209,6 +218,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         var targetW = target.ActualWidth;
         if (!animate || SystemParameters.ClientAreaAnimation == false)
         {
+            // ⚠️ 同上：趁手的动画钟（HoldEnd）会把直接赋值压成一帧后回到旧值——必须先清再写
+            NavPillTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, null);
+            NavPill.BeginAnimation(WidthProperty, null);
             NavPillTransform.X = targetX;
             NavPill.Width = targetW;
             return;
