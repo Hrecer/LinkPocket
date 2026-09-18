@@ -703,40 +703,34 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 点击树节点统一入口（展开 ≠ 选中 ≠ 进入，三者物理分离）：
-    /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此 ——
-    /// 链接叶子 = 进其父目录 + 选中该行（定位）；文件夹 = 选中该文件夹 + 进入该目录（选中即进入）；
-    /// 「全部书签」虚拟根 = 单击进入根目录（导航；它不是实体，位置由面包屑表达，故不写选中）。
+    /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此。
+    /// 只有两类行、两个动词，零特例：
+    /// · **位置行**（文件夹 / 虚根「全部书签」）= 进入目录：无条件 `LoadAsync`——
+    ///   点是当前位置同样重载刷新一次（Windows 口径：点当前文件夹、已在根点「全部书签」都刷新）；
+    ///   重复导航不污染历史（<see cref="BrowserHistory.NavigateTo"/> 对同目录直接忽略）；
+    ///   重载也不动选中（选中是独立集合，重载后按 ID 重新投影）。
+    ///   两类位置行唯一差异 = 有没有实体身份：文件夹把自己写入选中集合（单击 = 选中该文件夹 + 进入）；
+    ///   虚根 <c>FolderId == null</c>（不是实体、没有可高亮的身份）→ 只进入、不写选中。
+    /// · **实体行**（链接叶子）= 定位：进入其所属目录（已在目标目录则免重载——行本来就在，无谓重建只会闪烁）
+    ///   并把该链接写入选中集合。
     /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="_selectedIds"/>
     /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
     /// </summary>
     public async Task SelectTreeNodeAsync(FolderNode node)
     {
-        if (node.IsRoot)
+        if (node.IsLink)
         {
-            // 虚拟根「全部书签」：不是实体 → 永不进入选中集合（根没有可高亮的身份）；
-            // 行主体单击 = 进入根目录。无条件重载（与文件夹行点"当前所在目录"同口径）：
-            // 点当前所在位置同样刷新一次是 Windows 直觉；已在根也照刷。
-            // 重复导航不会污染历史（BrowserHistory.NavigateTo 对同目录直接忽略）。
-            await LoadAsync(null);
+            // 实体行：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
+            // 即使该行尚未出现在 Rows（分页），也先记录选中，由导航/刷新投影补齐。
+            SetSelection(new[] { node.Id }, node.Id);
+            await NavigateAndSelectAsync(node.ParentId, node.Id);
             return;
         }
 
-        if (node.IsLink)
-        {
-            // 链接叶子：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
-            // 定位到其所属目录（ParentId，null = 根级）并选中该行；即使该行尚未出现在 Rows（分页），
-            // 也先记录选中，由导航/刷新投影补齐
-            SetSelection(new[] { node.Id }, node.Id);
-            await NavigateAndSelectAsync(node.ParentId, node.Id);
-        }
-        else
-        {
-            // 树文件夹行主体单击 = 选中该文件夹 + 进入（主栏导航到该目录）——选中即进入，
-            // Windows 资源管理器口径（用户 2026-09-18/19 定稿）。树高亮由 _selectedIds 派生，
-            // 与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中，仅当用户真正选中实体才高亮）。
-            SetSelection(new[] { node.FolderId! }, node.FolderId);
-            await LoadAsync(node.FolderId);
-        }
+        // 位置行：进入目录（无条件重载 = 点是当前位置也刷新）；只有真实文件夹有实体身份，虚根不写选中。
+        // 树高亮由 _selectedIds 派生，与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中）。
+        if (node.FolderId != null) SetSelection(new[] { node.FolderId }, node.FolderId);
+        await LoadAsync(node.FolderId);
     }
 
     /// <summary>遍历整棵树（含虚拟根「全部书签」），返回全部节点的深度优先序列。</summary>
