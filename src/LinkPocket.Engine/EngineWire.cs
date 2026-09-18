@@ -37,6 +37,10 @@ public sealed class EngineWire(IEngine engine)
 
     public async Task<string> HandleAsync(string jsonRequest, CancellationToken ct = default)
     {
+        // JSON-RPC：空/非法请求体 → -32600；Deserialize(null) 会抛 ArgumentNullException
+        // 落到通用 catch 变成 -32000，分类错误。
+        if (jsonRequest is null)
+            return Error(hasId: false, default, -32600, "请求体不能为空");
         JsonElement request;
         var hasId = false;
         JsonElement idValue = default;
@@ -44,17 +48,22 @@ public sealed class EngineWire(IEngine engine)
         try
         {
             request = JsonSerializer.Deserialize<JsonElement>(jsonRequest);
+
+            // 先取 id：即使 method 缺失/非法，错误响应也必须回传请求的 id（JSON-RPC 关联语义，
+            // 否则 host 无法把错误响应对齐到对应请求——曾因先校验 method 后取 id，非法 method
+            // 的错误帧 id 恒为 null）。
+            if (request.ValueKind == JsonValueKind.Object && request.TryGetProperty("id", out var idEl)
+                && idEl.ValueKind is not JsonValueKind.Undefined)
+            {
+                hasId = true;
+                idValue = idEl.Clone();
+            }
+
             if (request.ValueKind != JsonValueKind.Object
                 || !request.TryGetProperty("method", out var methodEl)
                 || methodEl.ValueKind != JsonValueKind.String)
             {
                 return Error(hasId, idValue, -32600, "请求体不是合法的 JSON-RPC 2.0 对象");
-            }
-
-            if (request.TryGetProperty("id", out var idEl))
-            {
-                hasId = true;
-                idValue = idEl.Clone();
             }
 
             var method = methodEl.GetString()!;

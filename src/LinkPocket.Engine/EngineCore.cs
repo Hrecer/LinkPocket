@@ -103,8 +103,9 @@ public sealed class EngineCore : IEngine
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
                 $"「{command}」不是变更命令，请走 QueryAsync", correlationId: correlationId));
 
-        // 幂等查重（在写闸之前；24h 窗口内命中即返回首次结果，不重复执行）
-        if (options?.IdempotencyKey is { } key && _idempotency.TryGet(key, out var cached))
+        // 幂等查重（在写闸之前；24h 窗口内命中即返回首次结果，不重复执行）。
+        // 干跑跳过查重：干跑语义 = 「无论如何执行一遍（执行但不提交）」，命中历史缓存会把它变成 no-op。
+        if (!dryRun && options?.IdempotencyKey is { } key && _idempotency.TryGet(key, out var cached))
             return ToTyped<T>(cached);
 
         // 能力门：破坏性命令两阶段确认（干跑不消耗确认）
@@ -119,8 +120,9 @@ public sealed class EngineCore : IEngine
             gateOwned = true;
 
             // 幂等二次确认（写闸内）：闸外首次查重只是快路径——两并发携带同一 IdempotencyKey
-            // 可能都在提交前排过（都 miss），闸内复核保证后到者直接命中首次结果，绝不重复执行。
-            if (options?.IdempotencyKey is { } recheckKey && _idempotency.TryGet(recheckKey, out var recheckCached))
+            // 可能都在提交前排过（都 miss），闸内复核保证后到者直接命中首次结果，绝不重复执行；
+            // 干跑同样跳过（与闸外查重一致，见上方注释）。
+            if (!dryRun && options?.IdempotencyKey is { } recheckKey && _idempotency.TryGet(recheckKey, out var recheckCached))
                 return ToTyped<T>(recheckCached);
 
             await using var uow = _uowFactory();

@@ -51,9 +51,25 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
         using var reader = command.ExecuteReader();
         if (!reader.Read()) return false;
 
-        var at = DateTimeOffset.Parse(reader.GetString(1));
+        var at = DateTimeOffset.ParseExact(reader.GetString(1), "O",
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
         if (DateTimeOffset.Now - at > _window)
-            return false;   // 过期：视为未命中（惰性清理见 Store）
+        {
+            // 过期：视为未命中；顺手清掉该行（清理原挂在 Store 的写路径 %64 上，长期只读不写的
+            // 幂等命中会让过期行永久滞留且每次 TryGet 都白跑一次 SQL）
+            try
+            {
+                using var del = connection.CreateCommand();
+                del.CommandText = "DELETE FROM idempotency WHERE key = @key";
+                AddParam(del, "@key", key);
+                del.ExecuteNonQuery();
+            }
+            catch
+            {
+                // 清理尽力而为，不影响「未命中」语义（观测面：真正的查询失败仍会由上层暴露）
+            }
+            return false;
+        }
 
         var persisted = JsonSerializer.Deserialize<PersistedResult>(reader.GetString(0), EngineJson.Options);
         if (persisted is null) return false;

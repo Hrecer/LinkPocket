@@ -25,9 +25,9 @@ public sealed class EngineCatalog : IEngineCatalog
         var commands = _registry.Describe(category);
         if (_includeBatch && category is null or "batch")
         {
-            var batch = BatchEngine.Descriptors
-                .Where(d => category == null || string.Equals(d.Category, category, StringComparison.Ordinal));
-            commands = commands.Concat(batch)
+            // 批三命令 Category 恒为 "batch"：外层已限定 category ∈ {null, "batch"}，
+            // 直接全量并入（原 Where 恒真，纯死条件）
+            commands = commands.Concat(BatchEngine.Descriptors)
                 .OrderBy(d => d.Name, StringComparer.Ordinal)
                 .ToList();
         }
@@ -90,29 +90,7 @@ public sealed class EngineCatalog : IEngineCatalog
             foreach (var p in d.Parameters)
                 properties[p.Name] = new Dictionary<string, object?> { ["type"] = MapJsonType(p.TypeName), ["description"] = p.Description };
 
-            paths[$"/{d.Name.Replace('.', '/')}"] = new Dictionary<string, object?>
-            {
-                [d.IsQuery ? "get" : "post"] = new Dictionary<string, object?>
-                {
-                    ["operationId"] = d.Name,
-                    ["summary"] = d.Description,
-                    ["tags"] = new[] { d.Category },
-                    ["requestBody"] = new Dictionary<string, object?>
-                    {
-                        ["content"] = new Dictionary<string, object?>
-                        {
-                            ["application/json"] = new Dictionary<string, object?>
-                            {
-                                ["schema"] = new Dictionary<string, object?>
-                                {
-                                    ["type"] = "object",
-                                    ["properties"] = properties,
-                                },
-                            },
-                        },
-                    },
-                },
-            };
+            paths[$"/{d.Name.Replace('.', '/')}"] = BuildOperation(d, properties);
         }
 
         var document = new Dictionary<string, object?>
@@ -127,6 +105,47 @@ public sealed class EngineCatalog : IEngineCatalog
             ["paths"] = paths,
         };
         return JsonSerializer.Serialize(document, DocOptions);
+    }
+
+    /// <summary>单个操作的 OpenAPI 形态：查询走 parameters（query 位置参数，GET 不接受 requestBody——
+    /// Swagger UI/codegen 会直接忽略 GET 上的 requestBody，查询参数必须进 query 参数列表）；变更走 requestBody。</summary>
+    private static Dictionary<string, object?> BuildOperation(CommandDescriptor d, Dictionary<string, object> properties)
+    {
+        var operation = new Dictionary<string, object?>
+        {
+            ["operationId"] = d.Name,
+            ["summary"] = d.Description,
+            ["tags"] = new[] { d.Category },
+        };
+
+        if (d.IsQuery)
+        {
+            operation["parameters"] = d.Parameters.Select(p => new Dictionary<string, object?>
+            {
+                ["name"] = p.Name,
+                ["in"] = "query",
+                ["description"] = p.Description,
+                ["schema"] = new Dictionary<string, object?> { ["type"] = MapJsonType(p.TypeName) },
+            }).ToArray();
+        }
+        else
+        {
+            operation["requestBody"] = new Dictionary<string, object?>
+            {
+                ["content"] = new Dictionary<string, object?>
+                {
+                    ["application/json"] = new Dictionary<string, object?>
+                    {
+                        ["schema"] = new Dictionary<string, object?>
+                        {
+                            ["type"] = "object",
+                            ["properties"] = properties,
+                        },
+                    },
+                },
+            };
+        }
+        return operation;
     }
 
     private string ExportMarkdown(string? category)

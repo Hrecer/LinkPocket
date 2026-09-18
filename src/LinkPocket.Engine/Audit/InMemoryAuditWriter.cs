@@ -50,11 +50,17 @@ public sealed class InMemoryAuditWriter : IAuditWriter
 {
     private readonly ConcurrentQueue<AuditEntry> _entries = new();
     private const int Capacity = 10_000;
+    private int _count;   // 软容量计数器：ConcurrentQueue.Count 是 O(n) 快照，审计为热路径不可每次全遍历
 
     public string Write(AuditEntry entry)
     {
         _entries.Enqueue(entry);
-        while (_entries.Count > Capacity) _entries.TryDequeue(out _);
+        // 双检查顺序：先进后量——并发下容量仅为软上限（原 while(Count>Cap) 同理）
+        if (Interlocked.Increment(ref _count) > Capacity)
+        {
+            _entries.TryDequeue(out _);
+            Interlocked.Decrement(ref _count);
+        }
         return entry.CorrelationId;
     }
 
