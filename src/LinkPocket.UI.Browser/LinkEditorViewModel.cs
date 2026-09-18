@@ -50,7 +50,18 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public string Url
     {
         get => _url;
-        set { if (_url != value) { _url = value; OnPropertyChanged(); ClearError(); } }
+        set
+        {
+            if (_url != value)
+            {
+                _url = value;
+                OnPropertyChanged();
+                ClearError();
+                // URL 变更 = 目标站点变化：旧解析的 favicon 与「清除」标志一并作废（防张冠李戴写错图标）
+                _pendingFaviconUrl = null;
+                _clearFavicon = false;
+            }
+        }
     }
 
     private string _linkTitle = string.Empty;
@@ -64,7 +75,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public string Description
     {
         get => _description;
-        set { if (_description != value) { _description = value; OnPropertyChanged(); } }
+        set { if (_description != value) { _description = value; OnPropertyChanged(); ClearError(); } }
     }
 
     private bool _isLoading;

@@ -164,7 +164,9 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     {
         try
         {
-            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            LinkPocket.Contracts.LinkDto? link;
+            try { link = await _client.LinkGetAsync(linkId); }   // 单点查询（原全量拉取后 FirstOrDefault，100k 库下点击即全表）
+            catch (LinkPocket.Contracts.EngineException) { link = null; }
             if (gen != _generation || link == null || _host == null) return; // 已切换选中或源已删除
 
             DescriptionText = link.Description ?? "";

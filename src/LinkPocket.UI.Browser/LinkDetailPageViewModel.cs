@@ -111,7 +111,9 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
                 if (gen != _generation) return;
             }
 
-            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            LinkPocket.Contracts.LinkDto? link;
+            try { link = await _client.LinkGetAsync(linkId); }   // 单点查询；不存在抛 EntityNotFound → 归一 null 走既有空档处理
+            catch (LinkPocket.Contracts.EngineException) { link = null; }
             if (link == null || gen != _generation) { Close(); return; }
 
             Title = link.Title;
@@ -175,6 +177,9 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     private async Task DeleteAsync()
     {
         if (_linkId == null) return;
+        // 删除确认唯一入口（行为契约 §1.3）：详情页删除与浏览页共用 ConfirmDialog 文案
+        if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", "删除"))
+            return;
         try
         {
             await _client.LinkTrashAsync(_linkId);

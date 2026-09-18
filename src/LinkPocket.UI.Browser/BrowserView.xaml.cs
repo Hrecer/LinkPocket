@@ -49,10 +49,9 @@ public partial class BrowserView : UserControl
     private void WireMainTableOnce()
     {
         if (_mainTableWired || ViewModel == null) return;
-        _mainTableWired = true;
-
-        MainTable.SortField = ViewModel.SortBy;
+        MainTable.SortField = ViewModel.SortBy;   // 关键装配语句先行：中途抛异常不应把 flag 置位导致永不重试
         MainTable.SortAscending = ViewModel.SortOrder != "desc";
+        _mainTableWired = true;
         MainTable.Columns = new[]
         {
             new DataTableColumn { Field = "title", Label = "名称", Width = -1 },

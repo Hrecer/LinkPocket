@@ -50,5 +50,5 @@ public class BrowserHistory
         return CurrentFolderId;
     }
 
-    private static string? Normalize(string? folderId) => folderId;
+    private static string? Normalize(string? folderId) => string.IsNullOrEmpty(folderId) ? null : folderId;   // 空串不得进入历史（根 = null，无哨兵）
 }
