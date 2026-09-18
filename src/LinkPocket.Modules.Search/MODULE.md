@@ -19,7 +19,10 @@
 - `SearchSupport.SearchAsync`：组装多范围谓词（`LinkSearchScope`）交仓储 **SQL 下推**——过滤与排序都不再进内存；
   `search_path` 命中目录名时**展开整棵子树**（内存 BFS，目录数量有限），命中目录集合经 `folder_id IN (...)` 下推。
 - `SearchSupport.MatchedFields`：对已筛出的候选集标注命中字段（与 SQL 谓词同义，供 explain 与高亮）。
-- `SearchDtos`：命中记录 DTO（链接 + 命中字段）。
+- `SearchDtos`：命中记录 DTO（**链接 ID + 命中字段列表**；`matched` 为空 = SQL 端 LIKE 命中但内存谓词
+  在 Unicode 大小写边界下未匹配——已知边界，不作未知处理）。
+- `search.explain` 与 `search.links` 是**两次独立执行**（各自快照，中途写可致集合不一致；排序口径也不同：
+  explain 固定 title 升序）——调用方不得按位置对齐两结果，需按 `LinkId` 关联。
 
 ## 关键口径（行为等价项）
 

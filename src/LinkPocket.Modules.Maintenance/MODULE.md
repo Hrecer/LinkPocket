@@ -26,16 +26,20 @@
 
 ## 关于 `maintenance.reinit` 的语义
 
-旧实现是"删库文件再建"，引擎语义等价改为**单事务清空全部行**（用户可见终态相同：空库），
-因此不需要停连接、不怕句柄占用。撤销栈与查询缓存随之作废（`Impact = Database` → 引擎清空全缓存）。
+旧实现是"删库文件再建"，引擎语义等价改为**单事务清空业务表**（链接/文件夹/回收站两表；
+`audit_log` / `idempotency` / `macros` / `schema_migrations` 有保留策略，不清），
+因此不需要停连接、不怕句柄占用。整库重置时引擎**同步清空查询缓存与撤销/重做栈**
+（`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，
+留着只会让 `undo.undo` 报 EntityNotFound）。dryRun 下不执行 favicon 清理（文件系统不可回滚，
+必须保持零副作用）。`audit_log` 的清理/归档策略尚未落地（`audit.prune` 待实现），长期使用需关注审计表增长。
 
 ## 测试
 
-- `ModulesTests.cs` → `MaintenanceModuleTests`（schema 版本 + 诊断 runtime 段接线 / 两阶段重置清空）
-- `SchemaMigratorTests.cs`（建库完整版本链 / 幂等 / v2→v3 升级路径 / 旧库拒绝）
-- `IndexPlanTests.cs`（索引覆盖的查询计划断言）
+- `ModulesTests.cs` → `MaintenanceModuleTests`（schema 版本 + 诊断 runtime 段接线 / 两阶段重置清空 / 干跑零副作用 / 计数口径）
+- `DataReviewFixesTests.cs`（链式递归计数 / 未知目录路径显示——跨模块引用，Data 层口径）
+- `SchemaMigratorTests.cs` / `IndexPlanTests.cs`（Data 层测试：建库版本链 / 索引计划，非本模块专用）
 
 ## 复用点
 
 `diagnostics.collect` 是排障与 AI 自校验的统一入口；`runtimeStats` 的接线方式（委托注入）是
-"模块不引引擎程序集、又要读引擎状态"的通用解法。
+"模块不引 `LinkPocket.Engine` 实现程序集（`EngineRuntimeStats` 在 Contracts）、又要读引擎状态"的通用解法。
