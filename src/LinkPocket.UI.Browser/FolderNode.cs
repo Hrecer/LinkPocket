@@ -32,6 +32,13 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>是否为虚拟根节点「全部书签」：无 ID、不可重命名/删除，只作为树的根与移动目标。</summary>
     public bool IsRoot { get; set; }
 
+    /// <summary>
+    /// 是否为树中的根级链接叶子节点（「全部书签」节点下、文件夹之前的直挂链接）。
+    /// 链接叶子：Id = 链接 ID、FolderId 恒 null、LinkCount 恒 0（右侧不显示计数）、
+    /// 无子节点（chevron 自动隐藏）、无右键菜单、不可作为拖放目标（只能被定位/选中）。
+    /// </summary>
+    public bool IsLink { get; set; }
+
     /// <summary>回收站树模式：被删文件夹单元（灰化图标 + 无右键菜单）。浏览页恒为 false。</summary>
     public bool IsTrashed { get; set; }
 

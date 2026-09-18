@@ -50,6 +50,44 @@
         </Style>
         <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
 
+        <!-- 树节点右键菜单（提为资源以便按节点类型注入：链接叶子 = 不挂菜单） -->
+        <ContextMenu x:Key="TreeContextMenu">
+            <ContextMenu.Resources>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+            </ContextMenu.Resources>
+            <!-- 根节点/回收站节点（ShowNodeMenu=false）不显示菜单项 -->
+            <MenuItem Header="重命名" Command="{Binding Host.RenameNodeCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding ShowNodeMenu}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{Binding DeleteMenuHeader}" Command="{Binding Host.DeleteNodeCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding ShowNodeMenu}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+        </ContextMenu>
+
         <Style x:Key="FolderTreeStyle" TargetType="TreeView">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -154,11 +192,15 @@
                       VirtualizingPanel.IsVirtualizing="True">
                 <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <!-- 选中态药丸：SecondaryContainer 圆角容器（MD3E 形状区分选中） -->
-                        <Border CornerRadius="8" Padding="6,3" Margin="0,1" Background="Transparent">
+                        <!-- 行级交互反馈（用户 2026-09-18 定稿）：整行可点（手型）+ 悬停浅高亮；
+                             选中态药丸 SecondaryContainer 圆角容器（MD3E 形状区分选中，优先级高于悬停） -->
+                        <Border CornerRadius="8" Padding="6,3" Margin="0,1" Background="Transparent" Cursor="Hand">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                        </DataTrigger>
                                         <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True">
                                             <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
                                         </DataTrigger>
@@ -166,45 +208,17 @@
                                 </Style>
                             </Border.Style>
                             <StackPanel Orientation="Horizontal">
-                                <StackPanel.ContextMenu>
-                                    <ContextMenu>
-                                        <ContextMenu.Resources>
-                                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
-                                        </ContextMenu.Resources>
-                                        <!-- 根节点/回收站节点（ShowNodeMenu=false）不显示菜单项 -->
-                                        <MenuItem Header="重命名" Command="{Binding Host.RenameNodeCommand}" CommandParameter="{Binding}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsRoot}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding ShowNodeMenu}" Value="False">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <MenuItem Header="{Binding DeleteMenuHeader}" Command="{Binding Host.DeleteNodeCommand}" CommandParameter="{Binding}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsRoot}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding ShowNodeMenu}" Value="False">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                    </ContextMenu>
-                                </StackPanel.ContextMenu>
-                                <!-- 浏览页：实心琥珀文件夹；根节点用书签图标；回收站节点灰化 -->
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Setter Property="ContextMenu" Value="{StaticResource TreeContextMenu}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsLink}" Value="True">
+                                                <Setter Property="ContextMenu" Value="{x:Null}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+                                <!-- 图标：文件夹实心琥珀；根节点书签；根级链接 link 图标紫；回收站节点灰化 -->
                                 <m3:M3Icon Width="16" Height="16" VerticalAlignment="Center">
                                     <m3:M3Icon.Style>
                                         <Style TargetType="m3:M3Icon">
@@ -213,6 +227,10 @@
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsRoot}" Value="True">
                                                     <Setter Property="Kind" Value="bookmark"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsLink}" Value="True">
+                                                    <Setter Property="Kind" Value="link-variant"/>
                                                     <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTrashed}" Value="True">
@@ -226,8 +244,18 @@
                                 <TextBlock Text="{Binding Name}" FontSize="13" Margin="6,0,0,0"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                            ToolTip="{Binding Name}"/>
-                                <!-- 链接数药丸 -->
-                                <Border Style="{StaticResource CountPill}" Padding="7,0" MinHeight="16">
+                                <!-- 链接数药丸：链接叶子（根级直挂链接）不显示计数 -->
+                                <Border Padding="7,0" MinHeight="16">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource CountPill}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLink}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
                                     <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource OnSecondaryContainer}"/>

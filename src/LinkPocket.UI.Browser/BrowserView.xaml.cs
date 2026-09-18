@@ -347,14 +347,14 @@ public partial class BrowserView : UserControl
 
     // —— 树节点拖放/选中（FolderTreePanel 事件转发）——
 
-    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受。</summary>
+    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
         try
         {
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
-            var ok = node != null && IsDropValid(payload, node.FolderId);
+            var ok = node != null && !node.IsLink && IsDropValid(payload, node.FolderId);
             e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally
@@ -363,14 +363,14 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>树节点落放：移入对应文件夹（根节点「全部书签」= 移到根）。</summary>
+    /// <summary>树节点落放：移入对应文件夹（根节点「全部书签」= 移到根）；链接叶子不接受落放。</summary>
     private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
     {
         try
         {
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
-            if (payload != null && node != null && IsDropValid(payload, node.FolderId))
+            if (payload != null && node != null && !node.IsLink && IsDropValid(payload, node.FolderId))
                 _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), node.FolderId);
         }
         finally
@@ -379,12 +379,17 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>点击树节点 → 进入对应目录。</summary>
+    /// <summary>点击树节点：文件夹 → 进入目录；根级链接叶子 → 主区定位选中该行（进根 + 选中）。</summary>
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (_suppressTreeSelection) return;
-        if (node is FolderNode fn && ViewModel != null)
-            _ = ViewModel.LoadAsync(fn.FolderId);
+        if (ViewModel == null || node is not FolderNode fn) return;
+        if (fn.IsLink)
+        {
+            _ = ViewModel.NavigateAndSelectAsync(null, fn.Id);
+            return;
+        }
+        _ = ViewModel.LoadAsync(fn.FolderId);
     }
 
     /// <summary>VM 当前目录变化（双击行/面包屑/后退前进）→ 同步左侧树选中；进入路径编辑态 → 聚焦并全选。</summary>

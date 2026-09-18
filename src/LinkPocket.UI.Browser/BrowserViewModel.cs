@@ -444,6 +444,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
             RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
+            // 根级直挂链接注入「全部书签」节点下（文件夹之前；点击 = 主区定位选中该行）
+            await LoadTreeRootLinkNodesAsync();
             // 树已重建：重发当前目录通知，让视图重新定位树的选中项
             OnPropertyChanged(nameof(CurrentFolderId));
 
@@ -482,33 +484,17 @@ public class BrowserViewModel : INotifyPropertyChanged
                 });
             }
 
-            // favicon 懒加载：磁盘缓存未命中时拉取，完成后补到对应行
+            // favicon 懒加载清单：磁盘缓存未命中时后台拉取，完成后补到对应行
             var missing = linkRows
                 .Where(r => r.Favicon == null)
                 .Select(r => contents.Links.First(l => l.LinkId == r.Id).FaviconUrl)
                 .Where(url => !string.IsNullOrEmpty(url))
                 .Distinct()
                 .ToList();
-            if (missing.Count > 0)
-            {
-                // favicon 属附属数据：预取失败绝不拖垮整列（行已构建好，只跳过图标加载，下次事件刷新再看）
-                try
-                {
-                    await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync));
-                }
-                catch
-                {
-                    // 单个/多个图标取不到 → 行保持无图标；网络失败属预期波动，不应清空整个目录
-                }
-                foreach (var row in linkRows.Where(r => r.Favicon == null))
-                {
-                    var dto = contents.Links.FirstOrDefault(l => l.LinkId == row.Id);
-                    if (dto != null)
-                        row.SetFavicon(Services.FaviconService.LoadFromCache(dto.FaviconUrl));
-                }
-            }
 
-            // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）
+            // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
+            // ⚠️ 行必须先同步就位（favicon 属附属数据，网络预取绝不阻塞行渲染——
+            //    曾因「await 预取再建行」在网络慢时把 Rows 长时间留在上一目录，跳转定位读到旧行集 → RowMissing 间歇回归）。
             if (SortOrder == "desc")
             {
                 foreach (var row in linkRows) Rows.Add(row);
@@ -518,6 +504,26 @@ public class BrowserViewModel : INotifyPropertyChanged
             {
                 foreach (var row in folderRows) Rows.Add(row);
                 foreach (var row in linkRows) Rows.Add(row);
+            }
+
+            // favicon 后台预取 + Dispatcher 回填：行已可见，失败只丢图标（下次事件刷新追平）
+            if (missing.Count > 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
+                    catch { /* 网络失败属预期波动，行保持无图标 */ }
+                    foreach (var row in linkRows.Where(r => r.Favicon == null))
+                    {
+                        var dto = contents.Links.FirstOrDefault(l => l.LinkId == row.Id);
+                        if (dto != null)
+                        {
+                            var img = Services.FaviconService.LoadFromCache(dto.FaviconUrl);
+                            if (img != null)
+                                System.Windows.Application.Current?.Dispatcher.Invoke(() => row.SetFavicon(img));
+                        }
+                    }
+                });
             }
 
             // 目录切换后旧选中与锚点失效；原地刷新（preserveSelectionId）时恢复原选中
@@ -730,6 +736,39 @@ public class BrowserViewModel : INotifyPropertyChanged
             .Sum(f => f.LinkCount) + rootLinkCount;
 
         FolderTree.Add(root);
+    }
+
+    /// <summary>
+    /// 把根级直挂链接作为叶子节点注入树根「全部书签」的 Children 前部（文件夹之前，用户定稿）。
+    /// 链接叶子的点击语义 = 主区定位选中（BrowserView 处理）；此处只负责数据注入。
+    /// 上限 200：根级直挂链接海量时树不至于失控（正常使用远低于此量级）。
+    /// </summary>
+    private async Task LoadTreeRootLinkNodesAsync()
+    {
+        var root = FolderTree.FirstOrDefault();
+        if (root == null) return;
+        try
+        {
+            var roots = await _client.LinkRootsAsync(sortBy: "title", sortOrder: "asc", perPage: 200);
+            if (roots.Count == 0) return;
+            // 倒序 Insert(0) 保持升序在前；链接叶子整体排在文件夹之前
+            for (var i = roots.Count - 1; i >= 0; i--)
+            {
+                var l = roots[i];
+                root.Children.Insert(0, new FolderNode
+                {
+                    IsLink = true,
+                    Id = l.LinkId,
+                    Name = string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title,
+                    Host = this
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            // 树注入失败不阻断主列表（根级链接只影响树的展示；失败留痕）
+            Services.Logger.Error("加载根级链接注入目录树失败", ex);
+        }
     }
 
     private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
