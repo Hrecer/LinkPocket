@@ -41,7 +41,7 @@
                                FontSize="12.5" Foreground="{DynamicResource OnSurfaceVariant}"
                                Margin="2,5,0,20"/>
 
-                    <ItemsControl ItemsSource="{Binding SmartListViewModel.Cards}">
+                    <ItemsControl ItemsSource="{Binding Cards}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <!-- 纵向卡片：内边距 24（8pt 网格），圆角收敛到 10，微投影增强体积感。
@@ -155,7 +155,7 @@
                                     Margin="0,0,2,0">
                             <TextBlock Text="共" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding SmartListViewModel.ResultViewModel.TotalCount, Mode=OneWay}" FontSize="12"
+                            <TextBlock Text="{Binding ResultViewModel.TotalCount, Mode=OneWay}" FontSize="12"
                                        Foreground="{DynamicResource OnSurfaceVariant}" Margin="3,0,3,0"
                                        VerticalAlignment="Center"/>
                             <TextBlock Text="项" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
@@ -163,10 +163,10 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                            <TextBlock Text="{Binding SmartListViewModel.ResultViewModel.Title}" FontSize="15" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding ResultViewModel.Title}" FontSize="15" FontWeight="SemiBold"
                                        Foreground="{DynamicResource OnSurface}" VerticalAlignment="Center"/>
                             <!-- 灰色提示：列表语义说明（与入口卡片副标题同一数据源） -->
-                            <TextBlock Text="{Binding SmartListViewModel.ResultViewModel.Subtitle}" FontSize="12.5"
+                            <TextBlock Text="{Binding ResultViewModel.Subtitle}" FontSize="12.5"
                                        Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"
                                        Margin="12,1,0,0" TextTrimming="CharacterEllipsis"/>
                             <!-- 当前排序（默认排序可见化：列头箭头之外再给一句文字，避免"像没排序"） -->

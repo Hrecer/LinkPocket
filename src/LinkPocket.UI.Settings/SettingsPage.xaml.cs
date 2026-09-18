@@ -77,10 +77,18 @@ namespace LinkPocket.Views
             }
 
             var count = 0;
-            foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
+            try
             {
-                try { System.IO.File.Delete(f); count++; }
-                catch { }
+                foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
+                {
+                    try { System.IO.File.Delete(f); count++; }
+                    catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                Services.Logger.Error("清空日志失败", ex);
+                LogStatusText.Text = "清空日志失败：目录不可访问或文件被占用";
             }
 
             LogStatusText.Text = count > 0
@@ -121,6 +129,8 @@ namespace LinkPocket.Views
             ExportOverlay.Visibility = Visibility.Visible;
             ExportStatusText.Text = "正在清空数据...";
             ExportProgressBar.Value = 0;
+            // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带到本轮（铁律色语义）
+            ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBtn");
             ExportProgressText.Text = "清除中...";
 
             try

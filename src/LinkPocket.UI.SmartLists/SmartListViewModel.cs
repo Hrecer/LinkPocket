@@ -22,6 +22,7 @@ namespace LinkPocket.ViewModels
         private readonly Services.UiPortProvider _ports;
         private readonly Func<string?, string> _resolveFolderPath;
         private bool _isLoading;
+        private int _openGeneration;   // 打开代次：GoBack / 重新打开时递增，使在途结果失效
         private ObservableCollection<SmartListCardItem> _cards = new();
         private SmartListResultViewModel? _resultViewModel;
 
@@ -64,30 +65,34 @@ namespace LinkPocket.ViewModels
 
         public bool ShowResult => _resultViewModel != null;
 
-        /// <summary>单一数据源：四个智能列表的语义定义（入口卡片副标题与结果页灰色提示共用）。</summary>
-        private static (string Id, string Title, string Subtitle, string Icon) Definition(string id) => id switch
+        /// <summary>单一数据源：四张入口卡片（副标题/结果页灰色提示共用）；Definition 反查语义。</summary>
+        private static readonly (string Id, string Title, string Subtitle, string Icon, string Color)[] CardDefs =
+        [
+            ("recently_added", "最近添加", "近 7 天新增的书签", "plus-circle-outline", "Success"),
+            ("recently_visited", "最近查看", "近 7 天访问过的书签", "history", "Primary"),
+            ("recently_edited", "最近编辑", "近 7 天修改过的书签", "pencil-outline", "Warning"),
+            ("most_visited", "最常查看", "访问次数前 20 的书签", "trending-up", "Tertiary"),
+        ];
+
+        private static (string Id, string Title, string Subtitle, string Icon) Definition(string id)
         {
-            "recently_added" => ("recently_added", "最近添加", "近 7 天新增的书签", "plus-circle-outline"),
-            "recently_visited" => ("recently_visited", "最近查看", "近 7 天访问过的书签", "history"),
-            "recently_edited" => ("recently_edited", "最近编辑", "近 7 天修改过的书签", "pencil-outline"),
-            "most_visited" => ("most_visited", "最常查看", "访问次数前 20 的书签", "trending-up"),
-            _ => (id, "智能列表", "自动汇集的动态集合", "bookmark-outline"),
-        };
+            foreach (var d in CardDefs)
+                if (d.Id == id) return (d.Id, d.Title, d.Subtitle, d.Icon);
+            return (id, "智能列表", "自动汇集的动态集合", "bookmark-outline");
+        }
 
         private void InitializeCards()
         {
-            Cards = new ObservableCollection<SmartListCardItem>
-            {
-                new() { Id = "recently_added", Title = "最近添加", Subtitle = "近 7 天新增的书签", IconKind = "plus-circle-outline", Color = "Success" },
-                new() { Id = "recently_visited", Title = "最近查看", Subtitle = "近 7 天访问过的书签", IconKind = "history", Color = "Primary" },
-                new() { Id = "recently_edited", Title = "最近编辑", Subtitle = "近 7 天修改过的书签", IconKind = "pencil-outline", Color = "Warning" },
-                new() { Id = "most_visited", Title = "最常查看", Subtitle = "访问次数前 20 的书签", IconKind = "trending-up", Color = "Tertiary" }
-            };
+            var cards = new ObservableCollection<SmartListCardItem>();
+            foreach (var d in CardDefs)
+                cards.Add(new SmartListCardItem { Id = d.Id, Title = d.Title, Subtitle = d.Subtitle, IconKind = d.Icon, Color = d.Color });
+            Cards = cards;
         }
 
         public async void OpenSmartList(string listId)
         {
             IsLoading = true;
+            var generation = ++_openGeneration;
             try
             {
                 var def = Definition(listId);
@@ -97,7 +102,14 @@ namespace LinkPocket.ViewModels
                     Subtitle = def.Subtitle,
                 };
                 await resultVm.LoadAsync();
+                // 代次校验：期间用户已返回卡片页或打开了别的列表 → 晚到结果不覆盖
+                if (generation != _openGeneration) return;
                 ResultViewModel = resultVm;
+            }
+            catch (Exception ex)
+            {
+                Services.Logger.Error("智能列表加载失败", ex);
+                if (generation == _openGeneration) ResultViewModel = null;
             }
             finally
             {
@@ -107,6 +119,7 @@ namespace LinkPocket.ViewModels
 
         public void GoBack()
         {
+            _openGeneration++;   // 使在途加载结果失效
             ResultViewModel = null;
         }
 

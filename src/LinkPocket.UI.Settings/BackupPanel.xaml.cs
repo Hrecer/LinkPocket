@@ -236,7 +236,12 @@ namespace LinkPocket.Views
             // 每次开始都重置为深紫（用户定稿 AccentBtn，不吃上次完成态的颜色）
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null)
+            {
+                // 每次开始都重置为深紫 + 进度归零（不吃上次完成态 1/1 满格与失败态颜色）
                 bar.ActiveBrush = (Brush)Application.Current.FindResource("AccentBtn");
+                bar.Value = 0;
+                bar.Maximum = 100;
+            }
 
             UpdateOverlay(overlay, message, current, total);
         }

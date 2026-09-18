@@ -185,9 +185,12 @@ namespace LinkPocket.ViewModels
             try
             {
                 await _client.LinkVisitRecordAsync(item.LinkId);
-                // 统计行原位刷新（代次校验：选中未变才写回）
+                // 统计行原位刷新（代次校验：选中未变才写回）；记账已落库 → 本地同步 VisitCount 再渲染
                 if (SelectedItem?.LinkId == item.LinkId)
+                {
+                    item.VisitCount++;
                     Details.UpdateFrom(item, _resolveFolderPath(item.ListId));
+                }
             }
             catch { /* 记账失败不打断 */ }
         }
