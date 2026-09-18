@@ -379,7 +379,7 @@ public partial class BrowserView : UserControl
     }
 
     /// <summary>点击树节点行主体统一交给 VM（数据驱动选中）：
-    /// 文件夹 → 选中并进入；链接叶子 → 主区定位选中该行；「全部书签」虚拟根 → 忽略（只可展开/收起）。
+    /// 文件夹 → 选中并进入；链接叶子 → 主区定位选中该行；「全部书签」虚拟根 → 进入根目录（不写选中）。
     /// 树高亮由 FolderNode.IsSelected 从 VM 唯一选中集合派生，无需在此记录目标或操作容器。</summary>
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
@@ -421,32 +421,20 @@ public partial class BrowserView : UserControl
         return null;
     }
 
-    /// <summary>点击空白处清除选中（命中行内元素时不处理，由行命令负责）。</summary>
-    private void ContentArea_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// 点击列表卡空白处清除选中（命中行内元素时不处理，由行命令负责）。
+    /// 语义边界 = 列表卡本身：处理器挂在卡面上，不挂内容区外层 Grid——
+    /// 外层 Grid 同时包含目录树面板，树行点击（选中/进入）会冒泡到外层并被当成"空白"清掉
+    /// （实测缺陷：点树里的链接叶子/文件夹，两栏都不显示选中）。清选中归各区域自己：
+    /// 树面板内部自管（TreeBackgroundClicked），列表卡在此自管，详情栏/分隔线不在本卡内、天然不受影响。
+    /// </summary>
+    private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
         if (hitTest?.VisualHit == null || IsBrowserRow(hitTest.VisualHit))
             return;
 
-        // 点击右侧详情栏 / 分隔线不清除选中（侧栏内可能有需要保持选中的交互与拖拽）
-        if (IsDescendantOf(hitTest.VisualHit, DetailsPanel) || IsDescendantOf(hitTest.VisualHit, DetailSplitter))
-            return;
-
         ViewModel?.ClearSelection();
-    }
-
-    private static bool IsDescendantOf(DependencyObject? element, DependencyObject? ancestor)
-    {
-        if (ancestor == null) return false;
-        while (element != null)
-        {
-            if (ReferenceEquals(element, ancestor)) return true;
-            if (element is Visual || element is System.Windows.Media.Media3D.Visual3D)
-                element = VisualTreeHelper.GetParent(element);
-            else
-                element = System.Windows.LogicalTreeHelper.GetParent(element);
-        }
-        return false;
     }
 
     private static bool IsBrowserRow(DependencyObject element)

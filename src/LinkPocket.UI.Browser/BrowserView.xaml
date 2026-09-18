@@ -152,8 +152,10 @@
             </DockPanel>
         </Border>
 
-        <!-- ===== 内容区：左侧文件夹树 / 右侧列表 / 详情栏 ===== -->
-        <Grid Grid.Row="2" MouseLeftButtonUp="ContentArea_MouseLeftButtonUp">
+        <!-- ===== 内容区：左侧文件夹树 / 右侧列表 / 详情栏 =====
+             ⚠️ 本层不得挂"点空白清选中"：外层处理器会连带吞掉子区域（树行点击）的点击语义——
+             清选中归各区域自己：树面板内部自管（TreeBackgroundClicked），列表卡在卡面上自管。 -->
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="210"/>
                 <ColumnDefinition Width="*"/>
@@ -175,8 +177,11 @@
             <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩。
                  列表区卡片化（MD3E shape separation）：大圆角 24 + 四周基面沟槽，
                  消除与两侧面板之间生硬的竖直色块边界。 -->
+            <!-- 列表卡自管"点空白清选中"（卡面上的点击才属于本区域；行内点击由行模板负责，见 IsBrowserRow）。
+                 详情栏/分隔线在别的列，天然不经过这里——不再需要"豁免清单"。 -->
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
-                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
+                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
+                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp">
             <Grid>
                 <Grid.ContextMenu>
                     <ContextMenu>
