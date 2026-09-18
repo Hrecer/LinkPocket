@@ -392,4 +392,153 @@ public class BrowserViewModelTests
             AppTestEnv.Delete(dbPath);
         }
     }
+
+    [Fact]
+    public async Task 粘贴_复制语义_新项临时置尾并被选中_真刷新后才归位()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.LinkCreateAsync("https://a.example/1", title: "A", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://b.example/2", title: "B", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://c.example/3", title: "C", autoFetchMetadata: false);
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            Assert.Equal(new[] { "A", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
+
+            // 复制 A → 粘贴（命令是 fire-and-forget：轮询状态栏确认完成）
+            vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
+            vm.CopyCommand.Execute(null);
+            vm.PasteCommand.Execute(null);
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
+                $"粘贴未在超时内完成（状态：{vm.StatusText}）");
+
+            // 写操作不显式刷新（WARNINGS #18）：模拟事件链的刷新取新状态
+            await vm.RefreshPreservingSelectionAsync();
+
+            // 置尾（Windows）：新项（A (2)）临时排在末尾（不参与排序），不再紧跟 A
+            Assert.Equal(new[] { "A", "B", "C", "A (2)" }, vm.Rows.Select(r => r.Name).ToArray());
+            // 新项被选中（粘贴后选中新内容）
+            var newRow = vm.Rows[3];
+            Assert.True(newRow.IsSelected);
+            Assert.Equal(newRow.Id, Assert.Single(vm.SelectedRows).Id);
+
+            // 后台事件刷新（写操作后的防抖口径）不归位：置尾保持不变（否则粘贴后那次刷新就抹掉置尾效果）
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.Equal(new[] { "A", "B", "C", "A (2)" }, vm.Rows.Select(r => r.Name).ToArray());
+
+            // 点列头排序 = 真刷新 → 置尾归位（按名称升序）
+            vm.ApplySort("title", true);
+            Assert.True(await WaitUntilAsync(
+                    () => vm.Rows.Count == 4 && vm.Rows[3].Name == "C", TimeSpan.FromSeconds(5)),
+                $"点列头排序后置尾未归位：{string.Join(",", vm.Rows.Select(r => r.Name))}");
+            Assert.Equal(new[] { "A", "A (2)", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
+
+            // 重新进入目录（导航）= 真刷新：置尾同样归位
+            vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
+            vm.CopyCommand.Execute(null);
+            vm.PasteCommand.Execute(null);
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)));
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.Equal("A (3)", vm.Rows[^1].Name);                    // 置尾生效
+
+            await vm.LoadAsync(null);
+            Assert.Equal(new[] { "A", "A (2)", "A (3)", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 剪切_同目录粘贴无操作且明确提示_跨目录粘贴移动并置尾选中()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var b = (await client.FolderCreateAsync("B")).Data!;
+            var link = (await client.LinkCreateAsync("https://x.example", title: "X",
+                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(a.FolderId);
+            Assert.Equal("X", Assert.Single(vm.Rows).Name);
+
+            vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
+            vm.CutCommand.Execute(null);
+            Assert.True(vm.Clipboard.BrowserPayload is { IsCut: true });   // 剪切载荷就位
+            Assert.True(vm.Rows.Single(r => r.Id == link.LinkId).IsCut);   // 半透明视觉就位
+
+            // 同目录粘贴 = 无操作 + 明确提示（载荷保留）——
+            // 静默早退曾让"剪切后粘贴没反应"看起来像数据不一致（用户 2026-09-19 报障）
+            vm.PasteCommand.Execute(null);
+            Assert.Equal("剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）", vm.StatusText);
+            Assert.True(vm.Clipboard.BrowserPayload is { IsCut: true });   // 剪切态未被消费
+
+            // 跨目录粘贴：移动 + 置尾 + 选中 + 剪切态遗忘
+            await vm.LoadAsync(b.FolderId);
+            vm.PasteCommand.Execute(null);
+            Assert.True(await WaitUntilAsync(() => vm.Clipboard.BrowserPayload == null, TimeSpan.FromSeconds(5)),
+                $"粘贴未消费剪切载荷（状态：{vm.StatusText}）");
+            Assert.Equal("已粘贴 1 项", vm.StatusText);
+
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.Equal("X", Assert.Single(vm.Rows).Name);                // 已移动到 B 并置尾于列表末尾（唯一项）
+            Assert.True(vm.Rows[0].IsSelected);                            // 新落点被选中
+            Assert.False(vm.Rows[0].IsCut);                                // 剪切视觉已复位
+
+            // 源目录 A 里不再有 X（剪切 = 移动语义）
+            await vm.LoadAsync(a.FolderId);
+            Assert.Empty(vm.Rows);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Esc_有剪切态先取消剪切_无剪切态才清空选中()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.LinkCreateAsync("https://a.example/1", title: "A", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://b.example/2", title: "B", autoFetchMetadata: false);
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+
+            vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
+            vm.CutCommand.Execute(null);
+            Assert.True(vm.Rows[0].IsCut);
+
+            // 第一层：取消剪切（清载荷 + 复位半透明视觉 + 状态栏反馈），选中不动
+            vm.EscapeCommand.Execute(null);
+            Assert.Null(vm.Clipboard.BrowserPayload);
+            Assert.False(vm.Rows[0].IsCut);
+            Assert.True(vm.Rows[0].IsSelected);
+            Assert.Equal("已取消剪切", vm.StatusText);
+            Assert.False(vm.PasteCommand.CanExecute(null));                // 粘贴随之禁用
+
+            // 第二层：无剪切态 → 清空选中
+            vm.EscapeCommand.Execute(null);
+            Assert.False(vm.HasSelection);
+            Assert.Equal(0, vm.SelectionCount);
+
+            // 复制载荷不受 Esc 影响（Windows：Esc 只取消剪切态），此时 Esc 走"清空选中"分支
+            vm.SelectRowWithModifiers(vm.Rows[1], ModifierKeys.None);
+            vm.CopyCommand.Execute(null);
+            vm.EscapeCommand.Execute(null);
+            Assert.NotNull(vm.Clipboard.BrowserPayload);                   // 复制载荷保留
+            Assert.False(vm.HasSelection);                                 // 选中被清（Esc 第二层）
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
 }

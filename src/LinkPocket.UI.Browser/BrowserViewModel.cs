@@ -214,7 +214,8 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand CopyCommand { get; }
     public ICommand PasteCommand { get; }
     public ICommand SelectAllCommand { get; }
-    public ICommand ClearSelectionCommand { get; }
+    /// <summary>Esc（分层，Windows 口径）：有剪切态先取消剪切，否则清空选中（见 <see cref="HandleEscape"/>）。</summary>
+    public ICommand EscapeCommand { get; }
     public ICommand DeleteSelectionCommand { get; }
     public ICommand RenameSelectionCommand { get; }
     public ICommand OpenSelectionCommand { get; }
@@ -451,8 +452,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing);
         PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing);
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing);
-        // Esc 在路径编辑态里归属「取消路径编辑」；此时清除选中必须让位，避免两者互抢按键
-        ClearSelectionCommand = new RelayCommand(ClearSelection, () => !IsPathEditing);
+        // Esc 在路径编辑态里归属「取消路径编辑」；此时本命令让位，避免两者互抢按键。
+        // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
+        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing);
         DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing);
         RenameSelectionCommand = new RelayCommand(() => _ = RenameSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
@@ -476,19 +478,23 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 应用排序（字段与方向已由共享表控件切换完毕）并重排。
     /// 走 RefreshPreservingSelectionAsync：重排不丢选中（Windows 点列头也不丢）。
+    /// 点列头 = 真刷新：刚置入项的临时置尾同时归位（Windows 口径）。
     /// </summary>
     public void ApplySort(string? field, bool ascending)
     {
         if (string.IsNullOrEmpty(field)) return;
         SortBy = field;
         SortOrder = ascending ? "asc" : "desc";
+        ClearRecentlyPinned();
         _ = RefreshPreservingSelectionAsync();
     }
 
     /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。
-    /// 这是"用户发起的导航"（树行点击/面包屑/后退前进/返回上级/F5）→ 带加载遮罩。</summary>
+    /// 这是"用户发起的导航"（树行点击/面包屑/后退前进/返回上级/F5）→ 带加载遮罩（真刷新，
+    /// 在 <see cref="RefreshAsync"/> 里归位置尾）；导航即作废未消费的粘贴定位请求。</summary>
     public async Task LoadAsync(string? folderId)
     {
+        _pendingFocusId = null;
         Controller.NavigateTo(folderId);
         CurrentFolderId = Controller.CurrentFolderId;
         await RefreshAsync(navigating: true);
@@ -524,7 +530,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         // 遮罩只在"这次加载真的开始了"且属于**用户发起的导航/刷新**时亮：被挂起/被丢弃的请求不亮，
         // 挂起补刷按 _navigatingOnPendingRefresh 逐轮继承（事件驱动的后台刷新一律静默，不闪动画）。
-        if (navigating) { IsNavigating = true; _navigatingInChain = true; }
+        // 真刷新（导航加载 = 进入目录 / 点当前位置重载 / F5）同时让"刚置入项临时置尾"归位（Windows 口径）。
+        if (navigating) { IsNavigating = true; _navigatingInChain = true; ClearRecentlyPinned(); }
         IsLoading = true;
         try
         {
@@ -585,15 +592,25 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
             // ⚠️ 行必须先同步就位（favicon 属附属数据，网络预取绝不阻塞行渲染——
             //    曾因「await 预取再建行」在网络慢时把 Rows 长时间留在上一目录，跳转定位读到旧行集 → RowMissing 间歇回归）。
-            if (SortOrder == "desc")
+            var ordered = SortOrder == "desc"
+                ? linkRows.Concat(folderRows).ToList()
+                : folderRows.Concat(linkRows).ToList();
+
+            // 临时置尾（Windows）：刚粘贴的项追加到列表末尾（不参与排序），直到真刷新才按排序归位。
+            // 只对"属于当前目录且此刻仍在数据里"的 ID 生效——已被移走/删除的置尾项自动跳过。
+            var pinned = ActivePinnedIds();
+            if (pinned.Count == 0)
             {
-                foreach (var row in linkRows) Rows.Add(row);
-                foreach (var row in folderRows) Rows.Add(row);
+                foreach (var row in ordered) Rows.Add(row);
             }
             else
             {
-                foreach (var row in folderRows) Rows.Add(row);
-                foreach (var row in linkRows) Rows.Add(row);
+                var pinnedSet = new HashSet<string>(pinned, StringComparer.Ordinal);
+                var byId = ordered.ToDictionary(r => r.Id, StringComparer.Ordinal);
+                foreach (var row in ordered)
+                    if (!pinnedSet.Contains(row.Id)) Rows.Add(row);
+                foreach (var id in pinned)
+                    if (byId.TryGetValue(id, out var row)) Rows.Add(row);
             }
 
             // favicon 后台预取 + Dispatcher 回填：行已可见，失败只丢图标（下次事件刷新追平）
@@ -619,6 +636,9 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 选中的唯一事实来源是 _selectedIds：Rows 已重建且行是投影，这里只需把集合同步到
             // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 _selectedIds 本身。
             ApplySelectionToView();
+
+            // 粘贴完成后的定位：新行已在本轮重建中就位 → 滚入视口（行不在本轮数据里则留待下次刷新）
+            ConsumePendingFocus();
 
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
             Breadcrumbs.Clear();
@@ -1062,6 +1082,84 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     // —— 剪切 / 复制 / 粘贴（Ctrl+X / C / V）——
 
+    // —— 刚置入项临时置尾（Windows 资源管理器语义）——
+    // 粘贴（复制/剪切）完成后，新项**临时排在列表末尾**（不参与排序、不按名称归位），并被选中、滚入视口——
+    // 文件多、滚到中部的场景下也能立刻看到刚粘贴的东西（微软官方口径：避免文件多时找不到）。
+    // **只有真刷新才归位**：重新进入目录（含点当前目录的树行/虚根）、点列头排序、F5（用户发起的导航刷新）；
+    // 后台事件刷新（写操作后的 300ms 防抖）**绝不归位**——否则粘贴后的那次刷新就把置尾效果抹掉了。
+
+    /// <summary>置尾 ID（按置入顺序，后一批在后）；仅对 <see cref="_pinnedFolderId"/> 目录生效。</summary>
+    private readonly List<string> _recentlyPinned = new();
+
+    /// <summary>置尾所属目录（null = 根目录）；与当前目录不一致时置尾自动失效并清空。</summary>
+    private string? _pinnedFolderId;
+
+    /// <summary>粘贴完成后的定位目标（滚入视口）；行重建（事件刷新）后被消费一次。</summary>
+    private string? _pendingFocusId;
+
+    /// <summary>记录刚置入的项（粘贴完成时调用）：同 ID 先移除再追加（后到者排更后）。</summary>
+    private void MarkRecentlyPinned(IEnumerable<string> ids)
+    {
+        var list = ids.ToList();
+        if (list.Count == 0) return;
+        _pinnedFolderId = Controller.CurrentFolderId;
+        foreach (var id in list) _recentlyPinned.Remove(id);
+        _recentlyPinned.AddRange(list);
+    }
+
+    /// <summary>清空置尾（真刷新：导航加载 / 点列头排序 / F5）。</summary>
+    private void ClearRecentlyPinned()
+    {
+        _recentlyPinned.Clear();
+        _pinnedFolderId = null;
+    }
+
+    /// <summary>当前生效的置尾 ID（目录不匹配即失效清空——换目录后置尾无意义）。</summary>
+    private IReadOnlyList<string> ActivePinnedIds()
+    {
+        if (_recentlyPinned.Count == 0) return _recentlyPinned;
+        if (_pinnedFolderId != Controller.CurrentFolderId) ClearRecentlyPinned();
+        return _recentlyPinned;
+    }
+
+    /// <summary>消费粘贴定位请求：把目标行滚入视口（行不在本轮数据里则保持待命，下轮再试）。</summary>
+    private void ConsumePendingFocus()
+    {
+        if (_pendingFocusId == null) return;
+        var row = Rows.FirstOrDefault(r => r.Id == _pendingFocusId);
+        if (row == null) return;
+        _pendingFocusId = null;
+        FocusRowRequested?.Invoke(this, row);
+    }
+
+    // —— Esc 分层（Windows 口径）——
+
+    /// <summary>
+    /// Esc 分层语义：
+    /// ① 有剪切态（剪贴板里是待粘贴的剪切载荷）→ **取消剪切**（清载荷 + 清半透明视觉 + 状态栏反馈）；
+    /// ② 无剪切态 → 清空选中（原语义）。
+    /// 剪切态是应用级剪贴板状态，**与当前所在目录无关**：任何目录按 Esc 都能取消（Windows 同口径——
+    /// Explorer 的 Esc 是全局清剪贴板，不是"仅当前文件夹"）；换目录/刷新也都不会遗忘它。
+    /// 遗忘时机只有：Esc 取消 / 被新的复制剪切覆盖 / 粘贴完成（复制载荷不清，可多次粘贴）/ 关闭应用。
+    /// </summary>
+    private void HandleEscape()
+    {
+        if (Clipboard.BrowserPayload is { IsCut: true, IsEmpty: false })
+        {
+            CancelCut();
+            return;
+        }
+        ClearSelection();
+    }
+
+    /// <summary>取消剪切：清空剪贴板载荷（复制载荷不受影响——Windows 里 Esc 只取消剪切），复位行半透明视觉。</summary>
+    private void CancelCut()
+    {
+        Clipboard.SetBrowserPayload(null);
+        foreach (var r in Rows) r.IsCut = false;
+        StatusText = "已取消剪切";
+    }
+
     private LinkPocket.Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<BrowserRowViewModel> source, bool isCut) => new()
     {
         FolderIds = source.Where(r => r.IsFolder).Select(r => r.Id).ToList(),
@@ -1097,12 +1195,16 @@ public class BrowserViewModel : INotifyPropertyChanged
         var target = Controller.CurrentFolderId;
         if (payload.IsCut && payload.SourceFolderId == target)
         {
-            StatusText = "项目已在当前文件夹中";
+            // 剪切到源目录 = 无操作（Windows 同口径）；但必须明确提示——
+            // 含糊的"没反应"曾让用户以为"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
+            // 载荷**保留**（剪切态不消费）：导航到目标文件夹后仍可粘贴。
+            StatusText = "剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）";
             return;
         }
 
         var renamedNotes = new List<string>();
         var pasted = 0;
+        var pinnedIds = new List<string>();   // 本次粘贴的落点 ID（复制 = 新 ID；剪切 = 原 ID 不变）→ 置尾 + 选中 + 定位
         try
         {
             foreach (var fid in payload.FolderIds)
@@ -1111,23 +1213,40 @@ public class BrowserViewModel : INotifyPropertyChanged
                 if (payload.IsCut)
                 {
                     if (NormalizeParentId(_folderMap.TryGetValue(fid, out var info) ? info.ParentId : null) == target) continue;
-                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes)) pasted++;
+                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes)) { pasted++; pinnedIds.Add(fid); }
                 }
-                else if (await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes)) pasted++;
+                else
+                {
+                    var newId = await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes);
+                    if (newId != null) { pasted++; pinnedIds.Add(newId); }
+                }
             }
 
             foreach (var lid in payload.LinkIds)
             {
                 if (payload.IsCut)
                 {
-                    if (await MoveLinkAsync(lid, target)) pasted++;
+                    if (await MoveLinkAsync(lid, target)) { pasted++; pinnedIds.Add(lid); }
                 }
-                else if (await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes)) pasted++;
+                else
+                {
+                    var newId = await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes);
+                    if (newId != null) { pasted++; pinnedIds.Add(newId); }
+                }
+            }
+
+            if (pasted > 0)
+            {
+                // Windows 口径：刚粘贴的项临时置尾 + 被选中 + 滚入视口。
+                // 行要等事件刷新重建后才出现（写操作不显式刷新），定位请求先待命、重建后消费（ConsumePendingFocus）。
+                MarkRecentlyPinned(pinnedIds);
+                SetSelection(pinnedIds, pinnedIds[0]);
+                _pendingFocusId = pinnedIds[0];
             }
 
             if (payload.IsCut)
             {
-                Clipboard.SetBrowserPayload(null); // 剪切语义：粘贴后清空
+                Clipboard.SetBrowserPayload(null); // 剪切语义：粘贴完成即遗忘（复制载荷保留，可多次粘贴——Windows 同口径）
                 foreach (var r in Rows) r.IsCut = false;
             }
             StatusText = pasted > 0 ? $"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}" : "没有可粘贴的项目";
@@ -1141,8 +1260,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
     }
 
-    /// <summary>深拷贝文件夹；同名自动编号。返回是否执行。</summary>
-    private async Task<bool> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
+    /// <summary>深拷贝文件夹；同名自动编号。返回新文件夹 ID（源已删除等情况 → null，单项跳过）。</summary>
+    private async Task<string?> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
     {
         try
         {
@@ -1150,22 +1269,22 @@ public class BrowserViewModel : INotifyPropertyChanged
             var unique = GenerateUniqueName(name, SiblingFolderNames(target));
             var copy = await _client.FolderCopyAsync(folderId, target);
             var newId = copy.Data?.NewFolderId;
-            if (string.IsNullOrEmpty(newId)) return false;
+            if (string.IsNullOrEmpty(newId)) return null;
             if (unique != name)
             {
                 await _client.FolderUpdateAsync(newId, name: unique);
                 renamedNotes.Add($"「{name}」→「{unique}」");   // 仅真正重命名才记备注（与移动/复制链接一致）
             }
-            return true;
+            return newId;
         }
         catch
         {
-            return false; // 源已被删除等情况：单项跳过
+            return null; // 源已被删除等情况：单项跳过
         }
     }
 
-    /// <summary>复制书签（全量字段）；同名自动编号。返回是否执行。</summary>
-    private async Task<bool> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes)
+    /// <summary>复制书签（全量字段）；同名自动编号。返回新链接 ID（源已删除等情况 → null，单项跳过）。</summary>
+    private async Task<string?> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes)
     {
         try
         {
@@ -1180,19 +1299,21 @@ public class BrowserViewModel : INotifyPropertyChanged
             var unique = GenerateUniqueName(link.Title ?? string.Empty, siblingTitles);
 
             // 复制书签 = 全量字段（URL/标题/描述/收藏/图标；内核无标签系统，无其它字段可丢）
-            await _client.LinkCreateAsync(link.Url,
+            var created = await _client.LinkCreateAsync(link.Url,
                 title: unique,
                 description: string.IsNullOrEmpty(link.Description) ? null : link.Description,
                 listId: targetNorm,
                 isImportant: link.IsImportant,
                 autoFetchMetadata: false,
                 faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl);
+            var newId = created.Data?.LinkId;
+            if (string.IsNullOrEmpty(newId)) return null;
             if (unique != link.Title) renamedNotes.Add($"「{link.Title}」→「{unique}」");
-            return true;
+            return newId;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
