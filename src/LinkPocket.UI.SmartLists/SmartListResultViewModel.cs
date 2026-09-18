@@ -27,6 +27,19 @@ namespace LinkPocket.ViewModels
         private readonly Func<string?, string> _resolveFolderPath;
         private bool _isDeleting;
 
+        /// <summary>删除进行中：命令可用性与防重入共用同一开关（删除过程中禁用再次触发）。</summary>
+        public bool IsDeleting
+        {
+            get => _isDeleting;
+            private set
+            {
+                if (_isDeleting == value) return;
+                _isDeleting = value;
+                OnPropertyChanged();
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();   // CanExecute 依赖（RelayCommand 走 WPF 查询）
+            }
+        }
+
         private readonly string _listId;
         private bool _isLoading;
         private bool _hasData;
@@ -111,9 +124,10 @@ namespace LinkPocket.ViewModels
 
             OpenInBrowserCommand = new RelayCommand(
                 () => { if (SelectedItem is { } item) _navigation?.OpenLinkInBrowser(item.LinkId); },
-                () => SelectedItem != null);
-            OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => SelectedItem != null);
-            DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedItem != null);
+                () => SelectedItem != null && !IsDeleting);
+            OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => SelectedItem != null && !IsDeleting);
+            // 删除过程中（IsDeleting）禁用删除与其余行动作 —— 防重入不再只靠方法内 if（#8/9）
+            DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedItem != null && !IsDeleting);
 
             Details.OpenCommand = OpenInBrowserCommand;
             Details.RenameCommand = OpenInBrowserCommand;
@@ -166,7 +180,8 @@ namespace LinkPocket.ViewModels
                 }
 
                 var items = links.Select(ConvertToLinkItem).ToList();
-                foreach (var item in items) Items.Add(item);
+                // 一次性整体替换（#6）：逐条 Add 会触发 N 次 CollectionChanged，重排行 N 次
+                Items = new ObservableCollection<LinkItem>(items);
                 HasData = true;
             }
             finally
@@ -198,14 +213,14 @@ namespace LinkPocket.ViewModels
         /// <summary>删除 = 确认后移入回收站（可恢复），随后重载当前列表刷新结果。</summary>
         private async Task DeleteSelectedAsync()
         {
-            if (_isDeleting) return;
+            if (IsDeleting) return;   // 命令可用性已拦，这里双保险（键盘路径等不经 CanExecute 时）
             var item = SelectedItem;
             if (item == null) return;
 
             var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
             if (_dialogs == null || !_dialogs.Confirm("删除链接", $"将链接「{name}」移入回收站吗？")) return;
 
-            _isDeleting = true;
+            IsDeleting = true;
             try
             {
                 await _client.LinkTrashAsync(item.LinkId);
@@ -221,7 +236,7 @@ namespace LinkPocket.ViewModels
             }
             finally
             {
-                _isDeleting = false;
+                IsDeleting = false;
             }
         }
 

@@ -22,13 +22,13 @@ public partial class BrowserView : UserControl
     public BrowserView()
     {
         InitializeComponent();
-        BrowserViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);
         DataContextChanged += (_, _) =>
         {
             // ⚠️ MainWindow 先设自身 DataContext（MainViewModel）→ 继承级联会先触发本事件，
             // 此时 ViewModel 还不是 BrowserViewModel；必须跳过并等待真正的一次，
             // 「装载过就置守卫」只能在成功路径上做（否则守卫被中间态污染，列定义永远装不进去）。
             if (ViewModel == null) return;
+            ViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);   // 实例注入：无头/多窗口下不与其它页共享
             ViewModel.PropertyChanged -= OnViewModelPropertyChanged; // 防重复订阅
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.FocusRowRequested -= OnFocusRowRequested;
@@ -173,11 +173,14 @@ public partial class BrowserView : UserControl
         el.BeginAnimation(UIElement.OpacityProperty, oo);
     }
 
-    /// <summary>订阅行集合变更的轻量钩子（DataContext 换绑时自动迁移/解除）。</summary>
+    /// <summary>订阅行集合变更的轻量钩子（DataContext 换绑时自动迁移/解除）。
+    /// 刷新重建列表 = 一次 Reset + N 次 Add，若每次变更都直接入队动画回调，单次刷新会积压
+    /// 数十次同帧 Dispatcher 回调（2.9-38/E11）；这里聚合为"同帧只入队一次"。</summary>
     private sealed class ObservableCollectionHook
     {
         private readonly INotifyCollectionChanged _source;
         private readonly Action _onChange;
+        private bool _queued;
 
         public ObservableCollectionHook(INotifyCollectionChanged source, Action onChange)
         {
@@ -188,11 +191,20 @@ public partial class BrowserView : UserControl
 
         private void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (e.Action == NotifyCollectionChangedAction.Reset || e.Action == NotifyCollectionChangedAction.Add)
-                _onChange();
+            if (e.Action != NotifyCollectionChangedAction.Reset && e.Action != NotifyCollectionChangedAction.Add)
+                return;
+            if (_queued) return;   // 同帧内已在等待队列：合并后续变更为一次回调
+            _queued = true;
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => { _queued = false; _onChange(); }));
         }
 
-        public void Detach() => _source.CollectionChanged -= OnChanged;
+        public void Detach()
+        {
+            _source.CollectionChanged -= OnChanged;
+            _queued = false;
+        }
     }
 
     // （列头与列宽拖拽已由共享数据表控件 SortableDataTable 内部驱动：
@@ -291,21 +303,33 @@ public partial class BrowserView : UserControl
 
     private void RowBorder_DragOver(object sender, DragEventArgs e)
     {
-        var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+        try
+        {
+            var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
 
-        var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
-        e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
+            var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
+            e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+        }
+        finally
+        {
+            e.Handled = true;   // 无论沿途是否异常，本事件归属拖拽流程（防冒泡到其它落点）
+        }
     }
 
     private void RowBorder_Drop(object sender, DragEventArgs e)
     {
-        var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
-        if (payload != null && row is { IsFolder: true } && IsDropValid(payload, row.Id))
-            _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), row.Id);
-        e.Handled = true;
+        try
+        {
+            var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+            if (payload != null && row is { IsFolder: true } && IsDropValid(payload, row.Id))
+                _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), row.Id);
+        }
+        finally
+        {
+            e.Handled = true;
+        }
     }
 
     // —— 树节点拖放/选中（FolderTreePanel 事件转发）——
@@ -313,21 +337,33 @@ public partial class BrowserView : UserControl
     /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
-        var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var node = e.Node as FolderNode;
-        var ok = node != null && IsDropValid(payload, node.FolderId);
-        e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-        e.Args.Handled = true;
+        try
+        {
+            var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            var node = e.Node as FolderNode;
+            var ok = node != null && IsDropValid(payload, node.FolderId);
+            e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+        }
+        finally
+        {
+            e.Args.Handled = true;
+        }
     }
 
     /// <summary>树节点落放：移入对应文件夹（根节点「全部书签」= 移到根）。</summary>
     private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
     {
-        var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
-        var node = e.Node as FolderNode;
-        if (payload != null && node != null && IsDropValid(payload, node.FolderId))
-            _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), node.FolderId);
-        e.Args.Handled = true;
+        try
+        {
+            var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            var node = e.Node as FolderNode;
+            if (payload != null && node != null && IsDropValid(payload, node.FolderId))
+                _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), node.FolderId);
+        }
+        finally
+        {
+            e.Args.Handled = true;
+        }
     }
 
     /// <summary>点击树节点 → 进入对应目录。</summary>

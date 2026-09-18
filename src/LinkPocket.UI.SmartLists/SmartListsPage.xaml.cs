@@ -25,6 +25,7 @@ namespace LinkPocket.Views
         private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
         private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
+        private int _cellGen;      // 表格代次：重绑自增，favicon 异步补拉回来时校验行是否已废弃（#12）
 
         public SmartListsPage()
         {
@@ -169,6 +170,7 @@ namespace LinkPocket.Views
         private void RebindResultTable()
         {
             if (ResultVm is not { } resultVm) return;
+            _cellGen++;   // 表格代次自增：重绑后到达的 favicon 补拉结果一律作废（行已重建）
 
             // 删除重载 → 重绑（排序复位 + 行集替换 + 清表格选中）；换列表时旧订阅先解绑
             if (!ReferenceEquals(_boundResult, resultVm))
@@ -223,9 +225,11 @@ namespace LinkPocket.Views
                 : $"· 按{label}{(ascending ? "升序" : "降序")}";
         }
 
-        /// <summary>名称列：favicon + 标题 + URL 副行（favicon 未命中缓存时异步补拉、原位刷新）。</summary>
+        /// <summary>名称列：favicon + 标题 + URL 副行（favicon 未命中缓存时异步补拉、原位刷新）。
+        /// 补拉回写前校验表格代次：行可能已随重绑/换列表被回收（#12）。</summary>
         private FrameworkElement BuildNameCell(LinkItem item)
         {
+            var cellGen = _cellGen;   // 捕获当前代次（Rebind 已自增）
             var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Orientation = Orientation.Horizontal };
 
             var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
@@ -259,15 +263,14 @@ namespace LinkPocket.Views
                     {
                         await FaviconService.PrefetchAndCacheAsync(item.FaviconUrl);
                         var cached = FaviconService.LoadFromCache(item.FaviconUrl);
-                        if (cached != null)
+                        if (cached == null || cellGen != _cellGen) return;   // 表格已重绑/行已回收：丢弃补拉结果
+                        Dispatcher.Invoke(() =>
                         {
-                            Dispatcher.Invoke(() =>
-                            {
-                                faviconImg.Source = cached;
-                                faviconImg.Visibility = Visibility.Visible;
-                                earthIcon.Visibility = Visibility.Collapsed;
-                            });
-                        }
+                            if (cellGen != _cellGen) return;   // 主线程再核验一次（重绑可能恰在排队期间发生）
+                            faviconImg.Source = cached;
+                            faviconImg.Visibility = Visibility.Visible;
+                            earthIcon.Visibility = Visibility.Collapsed;
+                        });
                     }
                     catch { }
                 });
@@ -333,8 +336,9 @@ namespace LinkPocket.Views
             }
         }
 
-        /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。</summary>
-        private static FrameworkElement BuildSmartState(string iconKind, string title, string? subtitle)
+        /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。
+        /// 实例方法 + FindResource：不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null，#13）。</summary>
+        private FrameworkElement BuildSmartState(string iconKind, string title, string? subtitle)
         {
             var sp = new StackPanel
             {
@@ -345,13 +349,13 @@ namespace LinkPocket.Views
             var badge = new Border
             {
                 Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-                Background = (Brush)Application.Current.FindResource("TintPanel"),
+                Background = (Brush)FindResource("TintPanel"),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             badge.Child = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("OnSurface"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -360,14 +364,14 @@ namespace LinkPocket.Views
             sp.Children.Add(new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("OnSurface"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             });
             if (!string.IsNullOrEmpty(subtitle))
                 sp.Children.Add(new TextBlock
                 {
                     Text = subtitle, FontSize = 12,
-                    Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
+                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
                     Opacity = 0.7,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
                 });

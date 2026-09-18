@@ -129,37 +129,57 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            // 加载失败反馈：不留下永远空白的详情页（2.2-7）。闭页前可见可读
             Logger.Error("链接详情页加载失败", ex);
+            Title = "加载失败";
+            Description = "读取链接数据出错，请返回列表重试。\n" + ex.Message;
         }
     }
 
     private void OpenWebsite() => _ = OpenWebsiteAsync();
 
+    /// <summary>打开网站访问记账防重入：连点时不并发记账/重读（E15）。</summary>
+    private bool _visitBusy;
+
     /// <summary>打开网站 = 又一次查看：先记账、再重新读取，页面上的统计立刻反映这一次。</summary>
     private async Task OpenWebsiteAsync()
     {
-        if (string.IsNullOrEmpty(Url)) return;
+        if (string.IsNullOrEmpty(Url) || _linkId == null) return;   // 检查在打开前：无目标就不启动浏览器（2.2-11）
+        if (_visitBusy) return;   // 前一次访问记账进行中：连点跳过重复记账
+        _visitBusy = true;
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true });
-        }
-        catch { /* 无法打开时保持静默 */ }
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true });
+            }
+            catch (Exception ex) { Logger.Error("打开网站失败（静默返回，页面保持）", ex); }   // 观测面：失败留痕
 
-        if (_linkId == null) return;
-        try
-        {
-            await _client.LinkVisitRecordAsync(_linkId);
-            await ReloadIfOpenAsync(); // 不重复计数，只把「含本次」的最新统计取回来
+            try
+            {
+                await _client.LinkVisitRecordAsync(_linkId);
+                await ReloadIfOpenAsync(); // 不重复计数，只把「含本次」的最新统计取回来
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("记录访问失败", ex);
+            }
         }
-        catch (Exception ex)
+        finally
         {
-            Logger.Error("记录访问失败", ex);
+            _visitBusy = false;
         }
     }
 
     private void CopyUrl()
     {
-        try { if (!string.IsNullOrEmpty(Url)) System.Windows.Clipboard.SetText(Url); } catch { }
+        try
+        {
+            if (string.IsNullOrEmpty(Url)) return;
+            System.Windows.Clipboard.SetText(Url);
+            _host.StatusText = "已复制链接";   // 复制反馈（2.2-9）
+        }
+        catch { }
     }
 
     private void Edit()
@@ -170,7 +190,13 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
 
     private void CopyId()
     {
-        try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { }
+        try
+        {
+            if (string.IsNullOrEmpty(IdText)) return;
+            System.Windows.Clipboard.SetText(IdText);
+            _host.StatusText = "已复制 ID";   // 复制反馈（2.2-9）
+        }
+        catch { }
     }
 
     /// <summary>删除链接（移入回收站）：与右侧栏删除行为一致，删除后关闭详情页并刷新列表。</summary>

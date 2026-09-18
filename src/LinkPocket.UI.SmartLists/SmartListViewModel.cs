@@ -12,7 +12,8 @@ namespace LinkPocket.ViewModels
         public string Id { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Subtitle { get; set; } = string.Empty;
-        public string IconKind { get; set; } = "StarOutline";
+        /// <summary>M3 字形名（小写连字符，见 LpIcons/M3 字形表）。原默认 "StarOutline"（PascalCase）不是已注册字形。</summary>
+        public string IconKind { get; set; } = "bookmark-outline";
         public string Color { get; set; } = "Primary";
     }
 

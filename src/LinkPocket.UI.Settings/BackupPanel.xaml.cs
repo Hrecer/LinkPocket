@@ -30,7 +30,6 @@ namespace LinkPocket.Views
 
         private string _exportDirectory = string.Empty;
         private string _importFilePath = string.Empty;
-        private bool _pendingReplaceImport;          // 本次导入是否为「清空后导入」
 
         public BackupPanel()
         {
@@ -149,12 +148,13 @@ namespace LinkPocket.Views
             if (!ImportModeDialog.Show(out var replaceMode)) return;   // 模态弹窗：挡住后面无法操作
             if (Api == null || ReinitializeAsync == null) return;
 
-            _pendingReplaceImport = replaceMode;
+            // S5/B-8：是否「清空后导入」只用局部变量贯穿本次流程，不再跨 await 持有实例可变状态
+            var pendingReplaceImport = replaceMode;
 
             var overlay = FindOverlay();
             if (overlay == null) return;
 
-            ShowOverlay(overlay, _pendingReplaceImport ? "正在清空当前数据..." : "正在导入备份...", 0, 0);
+            ShowOverlay(overlay, pendingReplaceImport ? "正在清空当前数据..." : "正在导入备份...", 0, 0);
             BackupImportButton.IsEnabled = false;
 
             try
@@ -163,10 +163,10 @@ namespace LinkPocket.Views
                 // 引擎 backup.import：replace=true = 同一 UoW 清空（含回收站）后导入，原子；
                 // destructive 两阶段令牌经 EngineConfirm 内联（UI 确认已由 ImportModeDialog 承担）。
                 var result = await EngineConfirm.RunAsync(token => Api.BackupImportAsync(
-                    filePath, replace: _pendingReplaceImport, new CallOptions { ConfirmToken = token }));
+                    filePath, replace: pendingReplaceImport, new CallOptions { ConfirmToken = token }));
 
-                var folders = ReadCount(result.Data, "folders_created");
-                var links = ReadCount(result.Data, "links_created");
+                var folders = ReadCount(result.Data, "folders_created", out var foldersKnown);
+                var links = ReadCount(result.Data, "links_created", out var linksKnown);
 
                 // 刷新界面数据（replace 模式引擎已同步清空；两模式都要重载树/计数，不清数据）
                 await RefreshAfterImportAsync();
@@ -176,9 +176,10 @@ namespace LinkPocket.Views
                 await Task.Delay(100);
                 HideOverlay(overlay);
 
+                // B-10：计数缺失时显示「未知」，绝不静默显示 0 条（导入成功却报 0 = 最差失败模式）
                 ConfirmDialog.Show(
                     "导入成功",
-                    $"统计信息：\n• 文件夹：{folders} 个\n• 书签：{links} 条",
+                    $"统计信息：\n• 文件夹：{(foldersKnown ? folders.ToString() : "未知")} 个\n• 书签：{(linksKnown ? links.ToString() : "未知")} 条",
                     "确定", "import", "TintPanel");
             }
             catch (Exception ex)
@@ -284,12 +285,18 @@ namespace LinkPocket.Views
                 progressText.Text = success ? "完成" : "失败";
         }
 
-        /// <summary>从引擎命令结果 JsonElement 读整数字段（缺失按 0 处理——引擎成功必有，纯防御）。</summary>
-        private static int ReadCount(JsonElement? data, string property)
+        /// <summary>从引擎命令结果 JsonElement 读整数字段。缺失/非数字 = 引擎产出违约输入，
+        /// 按 B-10 观测面规则必须留痕（此前静默返回 0 会让"导入成功却显示 0 条"）。</summary>
+        private static int ReadCount(JsonElement? data, string property, out bool known)
         {
             if (data is { } d && d.ValueKind == JsonValueKind.Object
                 && d.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.Number)
+            {
+                known = true;
                 return el.GetInt32();
+            }
+            known = false;
+            Services.Logger.Error($"备份导入结果缺少计数字段 {property}（引擎 backup.import 应保证返回）", null);
             return 0;
         }
     }

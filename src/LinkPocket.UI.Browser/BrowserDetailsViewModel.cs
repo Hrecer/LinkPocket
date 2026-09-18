@@ -30,7 +30,16 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     public string BookmarkCountText => $"{FolderBookmarkCount} 个链接";
 
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
-        () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } });
+        () =>
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(IdText)) return;
+                System.Windows.Clipboard.SetText(IdText);
+                if (_host != null) _host.StatusText = "已复制 ID";
+            }
+            catch { }
+        });
     private RelayCommand? _copyIdCommand;
 
     /// <summary>查看链接详情页（仅单选链接可用；复用 Host 的详情页能力）。</summary>
@@ -62,23 +71,35 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             () => _host?.DeleteSelectionCommand.Execute(null),
             () => _host?.DeleteSelectionCommand.CanExecute(null) == true);
         CopyUrlCommand = new RelayCommand(
-            () => { try { if (!string.IsNullOrEmpty(UrlText)) System.Windows.Clipboard.SetText(UrlText); } catch { } },
+            () =>
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(UrlText)) return;
+                    System.Windows.Clipboard.SetText(UrlText);
+                    if (_host != null) _host.StatusText = "已复制链接";
+                }
+                catch { }
+            },
             () => IsLink && !string.IsNullOrEmpty(UrlText));
     }
 
     /// <summary>
     /// 打开网站 = 系统默认浏览器打开 URL 并记录一次访问（与链接详情页「打开网站」同口径）。
     /// 记账后回读列表，让「最后查看 / 累计查看」的派生统计及时反映这一次。
+    /// await 刷新防止详情栏闪"读取中…"（2.5-24）。
     /// </summary>
     private async Task OpenWebsiteInBrowserAsync()
     {
         if (string.IsNullOrEmpty(UrlText)) return;
+        var host = _host;
+        if (host == null) return;
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UrlText) { UseShellExecute = true }); }
-        catch { /* 无法打开时保持静默 */ }
+        catch { Services.Logger.Error($"打开网站失败: {UrlText}", null); }   // 观测面：失败留痕而非完全静默
         try
         {
             await _client.LinkVisitRecordAsync(IdText);
-            _ = _host?.RefreshPreservingSelectionAsync();
+            await host.RefreshPreservingSelectionAsync();
         }
         catch { /* 记账失败不打断 */ }
     }

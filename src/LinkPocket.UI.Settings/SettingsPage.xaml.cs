@@ -65,38 +65,47 @@ namespace LinkPocket.Views
                 BackupPanelControl.ResetState();
         }
 
+        /// <summary>B-1：状态文案的"2 秒后清空"竞态护栏 —— 只清自己那次触发时的文案（新文案不被旧计时的清空覆盖）。</summary>
+        private int _logStatusGen;
+
         private async void ClearLogsButton_Click(object sender, RoutedEventArgs e)
         {
-            var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
-            if (!System.IO.Directory.Exists(logDir))
-            {
-                LogStatusText.Text = "无需清理";
-                await Task.Delay(2000);
-                LogStatusText.Text = string.Empty;
-                return;
-            }
-
+            var gen = ++_logStatusGen;
             var count = 0;
             try
             {
-                foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
-                {
-                    try { System.IO.File.Delete(f); count++; }
-                    catch { }
-                }
+                count = TryClearLogFiles();
             }
             catch (Exception ex)
             {
                 Services.Logger.Error("清空日志失败", ex);
-                LogStatusText.Text = "清空日志失败：目录不可访问或文件被占用";
+                await ShowLogStatus("清空日志失败：目录不可访问或文件被占用", gen);
+                return;
             }
 
-            LogStatusText.Text = count > 0
-                ? $"已清除 {count} 个日志文件"
-                : "无需清理";
+            await ShowLogStatus(count > 0 ? $"已清除 {count} 个日志文件" : "无需清理", gen);
+        }
 
+        /// <summary>B-5：清空日志文件逻辑唯一入口（ClearLogsButton 与「清空数据」共用）。返回删除的文件数。</summary>
+        private static int TryClearLogFiles()
+        {
+            var count = 0;
+            var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
+            if (!System.IO.Directory.Exists(logDir)) return 0;
+            foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
+            {
+                try { System.IO.File.Delete(f); count++; }
+                catch { }
+            }
+            return count;
+        }
+
+        private async Task ShowLogStatus(string text, int gen)
+        {
+            LogStatusText.Text = text;
             await Task.Delay(2000);
-            LogStatusText.Text = string.Empty;
+            if (gen == _logStatusGen)   // 期间有新状态则不清（B-1）
+                LogStatusText.Text = string.Empty;
         }
 
         private void ClearAllDataButton_Click(object sender, RoutedEventArgs e)
@@ -119,11 +128,15 @@ namespace LinkPocket.Views
             ConfirmErrorText.Text = ExecuteClearButton.IsEnabled ? "" : "输入内容不匹配";
         }
 
+        private bool _clearInProgress;   // B-3：清空数据防重入（长操作期间连点二次触发）
+
         private async void ExecuteClearButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_clearInProgress) return;
             if (ConfirmInputBox.Text != "我确认清除全部数据")
                 return;
 
+            _clearInProgress = true;
             ConfirmOverlay.Visibility = Visibility.Collapsed;
 
             ExportOverlay.Visibility = Visibility.Visible;
@@ -139,14 +152,7 @@ namespace LinkPocket.Views
 
                 await ReinitializeAsync(false);
 
-                var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
-                if (System.IO.Directory.Exists(logDir))
-                {
-                    foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
-                    {
-                        try { System.IO.File.Delete(f); } catch { }
-                    }
-                }
+                TryClearLogFiles();   // B-5：与「清空日志」同一清理口径
 
                 ExportStatusText.Text = "数据已全部清空！";
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
@@ -164,6 +170,10 @@ namespace LinkPocket.Views
                 ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("WarnBg");
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                _clearInProgress = false;
             }
         }
     }

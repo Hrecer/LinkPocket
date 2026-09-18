@@ -151,8 +151,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand CancelPathEditCommand { get; }
     public ICommand CompletePathCommand { get; }
 
-    /// <summary>文本输入委托：由视图层注入（InputDialog.Show），避免 VM 直接依赖控件。参数 (标题, 默认值)，返回输入或 null 取消。</summary>
-    public static Func<string, string, string?>? Prompt { get; set; }
+    /// <summary>文本输入委托：由视图层注入（InputDialog.Show），避免 VM 直接依赖控件。参数 (标题, 默认值)，返回输入或 null 取消。
+    /// 实例属性（原静态版本在多窗口共享同一委托，且无头环境下是"全局静默"状态）——由视图在 DataContext 就绪后注入本页实例；
+    /// <c>null</c> 时（无头/单测）调用方按取消处理，绝不因 VM 而崩溃。</summary>
+    public Func<string, string, string?>? Prompt { get; set; }
 
     // —— 多选（Windows 资源管理器语义：锚点 + Ctrl/Shift 修饰键）——
 
@@ -307,7 +309,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing);
         PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing);
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing);
-        ClearSelectionCommand = new RelayCommand(ClearSelection);
+        // Esc 在路径编辑态里归属「取消路径编辑」；此时清除选中必须让位，避免两者互抢按键
+        ClearSelectionCommand = new RelayCommand(ClearSelection, () => !IsPathEditing);
         DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing);
         RenameSelectionCommand = new RelayCommand(() => _ = RenameSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
@@ -654,7 +657,8 @@ public class BrowserViewModel : INotifyPropertyChanged
     public bool IsSelfOrDescendant(string folderId, string? targetId)
     {
         var current = targetId;
-        while (current != null)
+        var visited = new HashSet<string>();   // 环保护：坏数据（父链成环）时终止而非死循环
+        while (current != null && visited.Add(current))
         {
             if (current == folderId) return true;
             current = _folderMap.TryGetValue(current, out var info) ? info.ParentId : null;
@@ -774,7 +778,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             var candidate = $"{baseName} ({i})";
             if (!taken.Contains(candidate)) return candidate;
         }
-        return $"{baseName} ({DateTime.Now:HHmmss})";
+        // 编号耗尽（几乎不可达）：时间戳后缀。带毫秒避免同秒内两次调用撞名（与内核 WindowsNamingPolicy 同口径）
+        return $"{baseName} ({DateTime.Now:HHmmssff})";
     }
 
     private static string FormatRenamedNotes(List<string> notes)
@@ -1039,22 +1044,32 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
     {
-        try
+        // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报
+        var deleted = 0;
+        var failed = 0;
+        foreach (var item in items)
         {
-            foreach (var item in items)
+            try
             {
                 if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
                 else await _client.LinkTrashAsync(item.Id);
+                deleted++;
             }
-            StatusText = $"已删除 {items.Count} 项";
-            ClearSelection();
-            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
-            // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
+            catch (Exception ex)
+            {
+                failed++;
+                Services.Logger.Error($"删除「{item.Name}」失败（Retry 可跳过该项）", ex);   // 观测面铁律：失败必须暴露
+            }
         }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+
+        StatusText = failed == 0
+            ? $"已删除 {deleted} 项"
+            : failed >= deleted
+                ? "删除失败（详见日志）"
+                : $"已删除 {deleted} 项，{failed} 项失败";
+        if (deleted > 0) ClearSelection();
+        // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
+        // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
     }
 
     private async Task RenameSelectedAsync()
@@ -1112,7 +1127,8 @@ public class BrowserViewModel : INotifyPropertyChanged
 
         var chain = new List<(string Id, string Name)>();
         var current = folderId;
-        while (!string.IsNullOrEmpty(current) && _folderMap.TryGetValue(current, out var info))
+        var visited = new HashSet<string>();   // 环保护：坏数据（父链成环）时终止而非死循环
+        while (!string.IsNullOrEmpty(current) && visited.Add(current) && _folderMap.TryGetValue(current, out var info))
         {
             chain.Add((current, info.Name));
             current = info.ParentId;

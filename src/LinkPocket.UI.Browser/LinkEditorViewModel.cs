@@ -133,6 +133,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         {
             IsFetching = true;
             var meta = await _client.LinkMetadataFetchAsync(Url.Trim());
+            if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（E9 并发覆盖）
             if (meta == null) { Error = "未能解析该网站（请检查 URL 是否可访问）"; return; }
 
             if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
@@ -186,6 +187,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         {
             var link = await _client.LinkGetAsync(_editLinkId!);
             if (link == null) { _host.CloseEditorPage(); return; }
+            if (!_host.IsEditorPageOpen) return;   // 加载期间用户已取消：丢弃结果，不再写已废弃的 VM
             // 仅当字段仍为空才填充：用户此刻的输入优先，预填只补缺
             if (string.IsNullOrEmpty(Url)) Url = link.Url;
             if (string.IsNullOrWhiteSpace(LinkTitle)) LinkTitle = link.Title;
@@ -245,6 +247,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                     faviconUrl: _pendingFaviconUrl);
             }
 
+            IsLoading = false;   // 保存完成即收加载态（页面随后关闭，属性通知变窄窗口）
             _host.CloseEditorPage();
             // 列表刷新交给后端 links.changed 事件统一驱动（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）。
             // 这里不再显式 RefreshAsync：内核写操作必然推事件，显式刷新会和事件刷新叠成"外面刷新两次"。

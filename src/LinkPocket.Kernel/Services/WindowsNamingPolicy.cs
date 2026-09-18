@@ -13,7 +13,7 @@ public sealed class WindowsNamingPolicy : INamingPolicy
     /// <summary>无状态单例（纯函数线程安全）。</summary>
     public static readonly WindowsNamingPolicy Instance = new();
 
-    /// <summary>兜底上限：999 个编号之后按时间戳命名（与既有算法一致，几乎不可达）。</summary>
+    /// <summary>兜底上限：999 个编号之后按时间戳命名（与既有算法一致，几乎不可达）；毫秒粒度防同秒撞名。</summary>
     private const int MaxNumberedAttempts = 999;
 
     /// <inheritdoc />
@@ -38,6 +38,6 @@ public sealed class WindowsNamingPolicy : INamingPolicy
             if (!siblings.Contains(candidate)) return candidate;
         }
 
-        return $"{baseName} ({DateTime.Now:HHmmss})";
+        return $"{baseName} ({DateTime.Now:HHmmssff})";   // 毫秒粒度：与前端 GenerateUniqueName 逐字等价
     }
 }

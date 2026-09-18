@@ -59,12 +59,24 @@ public class FolderNode : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 右键菜单「删除」文案：与列表行一致 —— 删除文件夹时其内链接全部进回收站，
-    /// 所以显示该文件夹内的链接数（递归），而不是无信息的「删除」。
+    /// 右键菜单「删除」文案：与列表行一致 —— 文件夹内链接数（递归）> 0 才报数，
+    /// 空文件夹只显示「删除」（不得出现"删除 (0 项)"，与 BrowserViewModel.DeleteMenuHeader 同口径）。
     /// </summary>
-    public string DeleteMenuHeader => $"删除 ({LinkCount} 项)";
+    public string DeleteMenuHeader => LinkCount > 0 ? $"删除 ({LinkCount} 项)" : "删除";
 
-    public int TotalLinkCount => _linkCount + _children.Sum(c => c.TotalLinkCount);
+    /// <summary>环保护深度上限（坏数据成环时终止递归，量级同引擎沿父链护栏）。</summary>
+    private const int MaxTreeDepth = 256;
+
+    public int TotalLinkCount => TotalLinkCountAtDepth(0);
+
+    private int TotalLinkCountAtDepth(int depth)
+    {
+        var own = _linkCount;
+        if (depth >= MaxTreeDepth) return own;
+        foreach (var child in _children)
+            own += child.TotalLinkCountAtDepth(depth + 1);
+        return own;
+    }
 
     public string IconKind
     {
@@ -85,7 +97,13 @@ public class FolderNode : INotifyPropertyChanged
     public ObservableCollection<FolderNode> Children
     {
         get => _children;
-        set { _children = value; OnPropertyChanged(); }
+        set
+        {
+            if (ReferenceEquals(_children, value)) return;
+            _children = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TotalLinkCount));   // 整体换集合 ⇒ 递归计数可能变化，必须通知
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using LinkPocket.Contracts;
 using System.Collections.Generic;
 
@@ -11,6 +12,9 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class BrowserHistory
 {
+    /// <summary>历史栈容量上限：防无限增长（正常使用 50 条足够，超出后丢最旧）。</summary>
+    private const int MaxHistory = 100;
+
     private readonly Stack<string?> _back = new();
     private readonly Stack<string?> _forward = new();
 
@@ -27,6 +31,7 @@ public class BrowserHistory
         if (normalized == CurrentFolderId) return false;
 
         _back.Push(CurrentFolderId);
+        TrimToMax(_back);   // 超出上限丢最旧
         _forward.Clear();
         CurrentFolderId = normalized;
         return true;
@@ -37,6 +42,7 @@ public class BrowserHistory
     {
         if (_back.Count == 0) return CurrentFolderId;
         _forward.Push(CurrentFolderId);
+        TrimToMax(_forward);
         CurrentFolderId = _back.Pop();
         return CurrentFolderId;
     }
@@ -46,8 +52,19 @@ public class BrowserHistory
     {
         if (_forward.Count == 0) return CurrentFolderId;
         _back.Push(CurrentFolderId);
+        TrimToMax(_back);
         CurrentFolderId = _forward.Pop();
         return CurrentFolderId;
+    }
+
+    /// <summary>容量上限裁剪：保留栈顶（最新）MaxHistory 个，丢栈底（最旧）。Stack 只能弹顶，故重建。</summary>
+    private static void TrimToMax(Stack<string?> stack)
+    {
+        if (stack.Count <= MaxHistory) return;
+        var kept = stack.Take(MaxHistory).ToArray();   // 自顶向下取最新 MaxHistory 个
+        stack.Clear();
+        for (var i = kept.Length - 1; i >= 0; i--)
+            stack.Push(kept[i]);                        // 反向入栈，保持原顺序
     }
 
     private static string? Normalize(string? folderId) => string.IsNullOrEmpty(folderId) ? null : folderId;   // 空串不得进入历史（根 = null，无哨兵）
