@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.ViewModels;
 
@@ -14,8 +15,8 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class BrowserDetailsViewModel : DetailSidebarModel
 {
-    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-    private readonly ILinkPocketApi Api;
+    /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+    private readonly EngineClient _client;
 
     private BrowserViewModel? _host;
 
@@ -39,9 +40,9 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         () => _host != null && IsSingle && !IsFolder);
     private RelayCommand? _showDetailCommand;
 
-    public BrowserDetailsViewModel(ILinkPocketApi api)
+    public BrowserDetailsViewModel(EngineClient client)
     {
-        Api = api;
+        _client = client;
         // 页面动作命令：复用 Host 的既有能力，避免第二套业务逻辑
         OpenCommand = new RelayCommand(
             () =>
@@ -77,7 +78,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         catch { /* 无法打开时保持静默 */ }
         try
         {
-            await Api.RecordVisitAsync(IdText);
+            await _client.LinkVisitRecordAsync(IdText);
             _ = _host?.RefreshPreservingSelectionAsync();
         }
         catch { /* 记账失败不打断 */ }
@@ -164,7 +165,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     {
         try
         {
-            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
             if (gen != _generation || link == null || _host == null) return; // 已切换选中或源已删除
 
             DescriptionText = link.Description ?? "";

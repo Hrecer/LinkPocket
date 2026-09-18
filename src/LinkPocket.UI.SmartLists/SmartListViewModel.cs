@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -18,7 +19,7 @@ namespace LinkPocket.ViewModels
 
     public class SmartListViewModel : INotifyPropertyChanged
     {
-        private readonly ILinkPocketApi _api;
+        private readonly EngineClient _api;
         private readonly Services.UiPortProvider _ports;
         private readonly Func<string?, string> _resolveFolderPath;
         private bool _isLoading;
@@ -35,7 +36,7 @@ namespace LinkPocket.ViewModels
         /// 在打开列表时从槽位取用（此时端口必已登记）。路径解析器 = 「位置」列与
         /// 详情栏共用的目录树路径解析（MainViewModel 注入，与浏览页同一份树）。
         /// </summary>
-        public SmartListViewModel(ILinkPocketApi api, Services.UiPortProvider ports, Func<string?, string> resolveFolderPath)
+        public SmartListViewModel(EngineClient api, Services.UiPortProvider ports, Func<string?, string> resolveFolderPath)
         {
             _api = api;
             _ports = ports;

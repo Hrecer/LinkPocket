@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels
@@ -20,8 +21,8 @@ namespace LinkPocket.ViewModels
     /// </summary>
     public class RecycleBinViewModel : INotifyPropertyChanged
     {
-        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-        private readonly ILinkPocketApi Api;
+        /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+        private readonly EngineClient _client;
 
         /// <summary>
         /// UI 端口槽位（组合根持有）：MainWindow 构造时才登记实现，晚于本 VM 的创建，
@@ -34,9 +35,9 @@ namespace LinkPocket.ViewModels
         private string _errorMessage = string.Empty;
         private TrashEntryDto? _selectedEntry;
 
-        public RecycleBinViewModel(ILinkPocketApi api, Services.UiPortProvider ports)
+        public RecycleBinViewModel(EngineClient client, Services.UiPortProvider ports)
         {
-            Api = api;
+            _client = client;
             _ports = ports;
 
             EnterUnitCommand = new RelayCommand<TrashEntryDto>(entry => _ = EnterUnitGuardedAsync(entry));
@@ -156,7 +157,7 @@ namespace LinkPocket.ViewModels
         public async Task EnterUnitAsync(TrashEntryDto folderEntry)
         {
             if (folderEntry.EntryType != "folder") return;
-            var contents = await Api.GetTrashUnitContentsAsync(folderEntry.Id);
+            var contents = await _client.TrashUnitContentsAsync(folderEntry.Id);
             CurrentUnitId = folderEntry.Id;
             CurrentUnitName = string.IsNullOrEmpty(folderEntry.Name) ? "未命名文件夹" : folderEntry.Name;
             FillEntries(contents);
@@ -198,7 +199,7 @@ namespace LinkPocket.ViewModels
                 if (IsInUnit)
                 {
                     // 单元内刷新：保持所在单元，仅重取内容
-                    var unitContents = await Api.GetTrashUnitContentsAsync(CurrentUnitId!);
+                    var unitContents = await _client.TrashUnitContentsAsync(CurrentUnitId!);
                     Entries.Clear();
                     foreach (var entry in unitContents) Entries.Add(entry);
                     OnPropertyChanged(nameof(HasItems));
@@ -206,8 +207,8 @@ namespace LinkPocket.ViewModels
                 }
                 else
                 {
-                    var entries = await Api.GetTrashAsync();
-                    var folderDtos = await Api.GetTrashTreeAsync();
+                    var entries = await _client.TrashListAsync();
+                    var folderDtos = await _client.TrashTreeAsync();
 
                     Entries.Clear();
                     foreach (var entry in entries) Entries.Add(entry);
@@ -255,12 +256,16 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        /// <summary>永久删除当前选中条目（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。</summary>
+        /// <summary>永久删除当前选中条目（folder = 整单元含子树；link = 单条）。无还原，调用方负责确认。
+        /// trash.purge 为破坏性命令：首次调用拿引擎确认令牌，确认后带令牌重发（EngineConfirm 编排）。</summary>
         public async Task PurgeSelectedAsync()
         {
             var entry = SelectedEntry;
             if (entry == null) return;
-            await Api.PurgeTrashAsync(entry.Id, entry.EntryType == "folder");
+            var isFolder = entry.EntryType == "folder";
+            // 破坏性两阶段：首次（无令牌）→ LP.SEC.003 拿 token → 带令牌重发
+            await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(entry.Id, isFolder,
+                new CallOptions { ConfirmToken = token }));
             SelectedEntry = null;
         }
 

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
@@ -20,17 +22,17 @@ public sealed class DedupGroupRow
 /// 工具页 ViewModel（阶段 9 MVVM）：三个工具的业务逻辑全部在此——
 /// 去重（扫描/分组/位置缓存/勾选守卫/删除并重算）、ID 跳转（统一走
 /// <see cref="IContentLocator"/> 组件）、书签导入导出（预检/导入/导出+自校验，
-/// 算法全在后端契约，本类只转发协议调用）。视图（Views/ToolsPage）只做
-/// 表格装配、状态渲染与文件对话框——界面不持有任何协议调用与业务规则。
+/// 算法全在引擎契约，本类只转发命令调用）。视图（Views/ToolsPage）只做
+/// 表格装配、状态渲染与文件对话框——界面不持有任何命令调用与业务规则。
 /// </summary>
 public sealed class ToolsViewModel
 {
-    private readonly ILinkPocketApi _api;
+    private readonly EngineClient _api;
     private readonly IContentLocator? _locator;
     private readonly Func<string?, Task<string>> _resolveLinkPath;
     private readonly Func<Task> _refreshFolderTree;
 
-    public ToolsViewModel(ILinkPocketApi api, IContentLocator? locator,
+    public ToolsViewModel(EngineClient api, IContentLocator? locator,
         Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
     {
         _api = api;
@@ -66,7 +68,7 @@ public sealed class ToolsViewModel
     /// </summary>
     public async Task<List<DedupGroupRow>> RunDedupAsync()
     {
-        var links = await _api.GetAllLinksAsync();
+        var links = await _api.LinkAllAsync();
 
         var groups = links
             .GroupBy(l => l.Url ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -164,12 +166,12 @@ public sealed class ToolsViewModel
         if (CheckedIds.Count == 0) return CurrentGroupLinks;
 
         foreach (var linkId in CheckedIds.ToList())
-            await _api.TrashLinkAsync(linkId);
+            await _api.LinkTrashAsync(linkId);
 
         // 刷新目录树计数（事件防抖链路不动；查重重跑由视图在回表后承担）
         await _refreshFolderTree();
 
-        var all = await _api.GetAllLinksAsync();
+        var all = await _api.LinkAllAsync();
         var rest = all
             .Where(l => string.Equals(l.Url ?? string.Empty, CurrentGroupUrl, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -203,7 +205,7 @@ public sealed class ToolsViewModel
     }
 
     // ============================================================
-    // —— 书签导入 / 导出（算法全在后端契约里，本类只转发协议调用） ——
+    // —— 书签导入 / 导出（算法全在引擎契约里，本类只转发命令调用） ——
     // ============================================================
 
     /// <summary>导入/导出流程忙态（互斥：同一时刻只允许一个流程在跑）。</summary>
@@ -225,23 +227,44 @@ public sealed class ToolsViewModel
 
     /// <summary>导入前只读预检：格式识别 + 条目统计（不写任何数据）。</summary>
     public Task<BookmarkFileInspectionDto> InspectBookmarkAsync(string filePath)
-        => _api.InspectBookmarksHtmlAsync(filePath);
+        => _api.BookmarksInspectAsync(filePath);
 
-    /// <summary>导入：追加式还原文件夹层级，返回导入条数。</summary>
-    public Task<int> ImportBookmarksAsync(string filePath)
-        => _api.ImportBookmarksHtmlAsync(filePath);
+    /// <summary>导入：追加式还原文件夹层级，返回导入条数（引擎命令的结果 JsonElement）。</summary>
+    public async Task<int> ImportBookmarksAsync(string filePath)
+    {
+        var result = await _api.BookmarksImportAsync(filePath);
+        return ReadCount(result.Data, "links_created") + ReadCount(result.Data, "folders_created");
+    }
 
     /// <summary>
     /// 导出：写到 <paramref name="directory"/> 下的时间戳文件名，并对产物自校验
     /// （把刚写出的文件再解析一遍，用产物自身的数据报数）。返回产物路径与校验信息。
+    /// 引擎命令输出的 file_path 才是权威产物路径（含同名自动编号），以它为准。
     /// </summary>
     public async Task<(string OutputPath, BookmarkFileInspectionDto Info)> ExportBookmarksAsync(string directory)
     {
-        var outputPath = System.IO.Path.Combine(directory,
+        var suggestedPath = System.IO.Path.Combine(directory,
             $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
-        await _api.ExportBookmarksHtmlAsync(outputPath);
-        var info = await _api.InspectBookmarksHtmlAsync(outputPath);
+        var result = await _api.BookmarksExportAsync(suggestedPath);
+        var outputPath = ReadString(result.Data, "file_path") ?? suggestedPath;
+        var info = await _api.BookmarksInspectAsync(outputPath);
         LastExportPath = outputPath;
         return (outputPath, info);
+    }
+
+    private static int ReadCount(JsonElement? data, string property)
+    {
+        if (data is { } d && d.ValueKind == JsonValueKind.Object
+            && d.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.Number)
+            return el.GetInt32();
+        return 0;
+    }
+
+    private static string? ReadString(JsonElement? data, string property)
+    {
+        if (data is { } d && d.ValueKind == JsonValueKind.Object
+            && d.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.String)
+            return el.GetString();
+        return null;
     }
 }

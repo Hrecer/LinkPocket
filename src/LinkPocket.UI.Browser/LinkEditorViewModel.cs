@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
@@ -11,20 +12,18 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 链接编辑器视图模型（新建 / 编辑共用，整页覆盖层形态，与链接详情页对齐）。
 /// 新建：固定在浏览模块当前目录创建（不再选择所属目录）；
-/// 编辑：仅更新 URL/标题/描述，不移动所属目录（UpdateLinkAsync 不传 listId 即保持原目录）。
+/// 编辑：仅更新 URL/标题/描述，不移动所属目录（LinkUpdateAsync 不传 listId 即保持原目录）。
 /// </summary>
 public class LinkEditorViewModel : INotifyPropertyChanged
 {
-    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-    private readonly ILinkPocketApi Api;
-
     private readonly BrowserViewModel _host;
     private readonly string? _editLinkId;
     private readonly string? _createListId;
+    private readonly EngineClient _client;
 
-    private LinkEditorViewModel(ILinkPocketApi api, BrowserViewModel host, string? editLinkId, string? createListId)
+    private LinkEditorViewModel(EngineClient client, BrowserViewModel host, string? editLinkId, string? createListId)
     {
-        Api = api;
+        _client = client;
         _host = host;
         _editLinkId = editLinkId;
         _createListId = createListId;
@@ -37,12 +36,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>新建模式：在浏览模块当前目录创建（null = 根级）。</summary>
-    public LinkEditorViewModel(ILinkPocketApi api, BrowserViewModel host, string? initialListId)
-        : this(api, host, null, initialListId) { }
+    public LinkEditorViewModel(EngineClient client, BrowserViewModel host, string? initialListId)
+        : this(client, host, null, initialListId) { }
 
     /// <summary>编辑模式工厂：预填链接数据。</summary>
-    public static LinkEditorViewModel ForEdit(ILinkPocketApi api, BrowserViewModel host, string linkId)
-        => new(api, host, linkId, null);
+    public static LinkEditorViewModel ForEdit(EngineClient client, BrowserViewModel host, string linkId)
+        => new(client, host, linkId, null);
 
     public bool IsEditMode => _editLinkId != null;
     public string TitleText => IsEditMode ? "编辑链接" : "新建链接";
@@ -123,7 +122,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         try
         {
             IsFetching = true;
-            var meta = await Api.FetchMetadataAsync(Url.Trim());
+            var meta = await _client.LinkMetadataFetchAsync(Url.Trim());
             if (meta == null) { Error = "未能解析该网站（请检查 URL 是否可访问）"; return; }
 
             if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
@@ -172,7 +171,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     {
         try
         {
-            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == _editLinkId);
+            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == _editLinkId);
             if (link == null) { _host.CloseEditorPage(); return; }
             Url = link.Url;
             LinkTitle = link.Title;
@@ -211,12 +210,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             {
                 // 不传 listId → 保持原所属目录不变；faviconUrl：清除标志写空串，有解析结果写新值，否则不动
                 var favicon = _clearFavicon ? "" : _pendingFaviconUrl;
-                await Api.UpdateLinkAsync(_editLinkId!, url: Url.Trim(), title: LinkTitle.Trim(),
+                await _client.LinkUpdateAsync(_editLinkId!, url: Url.Trim(), title: LinkTitle.Trim(),
                     description: Description.Trim(), faviconUrl: favicon);
             }
             else
             {
-                await Api.CreateLinkAsync(
+                await _client.LinkCreateAsync(
                     url: Uri.UnescapeDataString(Url.Trim()),
                     title: LinkTitle.Trim(),
                     description: string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),

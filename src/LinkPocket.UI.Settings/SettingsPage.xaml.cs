@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.Views
@@ -13,21 +14,22 @@ namespace LinkPocket.Views
     /// 变更记录（2026-09-16）：书签「导入 / 导出」两项已合并为**工具页**的一项工具
     /// （左栏「书签导入 / 导出」，界面见 <see cref="ToolsPage"/>）；
     /// 算法在后端 <c>Services/BookmarkImporter</c> / <c>Services/BookmarkExporter</c>，
-    /// 经 <c>ILinkPocketApi</c> 暴露，设置页不再保留任何书签导入导出入口。
+    /// 经 <c>EngineClient</c> 暴露，设置页不再保留任何书签导入导出入口。
     /// 变更记录（2026-09-17）：「数据维护」更名「存储管理」并卡片化；危险色统一 WarnBg 奶油黄（禁红）。
     /// </summary>
     public partial class SettingsPage : UserControl
     {
-        /// <summary>阶段 10 模块化：Shell 经 Configure 窄注入（协议访问 + 整库重置委托），页面不认识组合根。</summary>
-        public void Configure(ILinkPocketApi api, Func<bool, Task> reinitializeAsync)
+        /// <summary>阶段 10 模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
+        public void Configure(EngineClient client, Func<bool, Task> reinitializeAsync, Func<Task> refreshAfterImportAsync)
         {
-            Api = api;
+            Api = client;
             ReinitializeAsync = reinitializeAsync;
-            BackupPanelControl.Api = api;
+            BackupPanelControl.Api = client;
             BackupPanelControl.ReinitializeAsync = reinitializeAsync;
+            BackupPanelControl.RefreshAfterImportAsync = refreshAfterImportAsync;
         }
 
-        private ILinkPocketApi Api { get; set; } = null!;
+        private EngineClient Api { get; set; } = null!;
         private Func<bool, Task> ReinitializeAsync { get; set; } = null!;
 
         public SettingsPage()

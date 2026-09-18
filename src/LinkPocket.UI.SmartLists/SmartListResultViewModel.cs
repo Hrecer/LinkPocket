@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -20,8 +21,8 @@ namespace LinkPocket.ViewModels
     /// </summary>
     public class SmartListResultViewModel : INotifyPropertyChanged
     {
-        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-        private readonly ILinkPocketApi Api;
+        /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+        private readonly EngineClient _client;
         private readonly INavigationService? _navigation;
         private readonly IDialogService? _dialogs;
         private readonly Func<string?, string> _resolveFolderPath;
@@ -99,10 +100,10 @@ namespace LinkPocket.ViewModels
         /// <summary>右侧详情栏（复用搜索页同一 DetailSidebar 数据契约）。</summary>
         public SearchDetailsViewModel Details { get; } = new();
 
-        public SmartListResultViewModel(ILinkPocketApi api, string listId, string title,
+        public SmartListResultViewModel(EngineClient client, string listId, string title,
             INavigationService? navigation, IDialogService? dialogs, Func<string?, string> resolveFolderPath)
         {
-            Api = api;
+            _client = client;
             _listId = listId;
             Title = title;
             _navigation = navigation;
@@ -148,7 +149,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 var limit = _listId == "most_visited" ? 20 : 100;
-                List<LinkDto> links = await Api.GetSmartListAsync(_listId, limit);
+                List<LinkDto> links = await _client.LinkSmartListAsync(_listId, limit);
 
                 TotalCount = links.Count;
 
@@ -184,7 +185,7 @@ namespace LinkPocket.ViewModels
             catch { /* 无法打开时保持静默 */ }
             try
             {
-                await Api.RecordVisitAsync(item.LinkId);
+                await _client.LinkVisitRecordAsync(item.LinkId);
                 // 统计行原位刷新（代次校验：选中未变才写回）
                 if (SelectedItem?.LinkId == item.LinkId)
                     Details.UpdateFrom(item, _resolveFolderPath(item.ListId));
@@ -205,7 +206,7 @@ namespace LinkPocket.ViewModels
             _isDeleting = true;
             try
             {
-                await Api.TrashLinkAsync(item.LinkId);
+                await _client.LinkTrashAsync(item.LinkId);
                 ClearSelection();
 
                 // 重载当前列表（结果集直接从 API 重拉，杜绝本地残留）

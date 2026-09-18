@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -8,18 +8,19 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 资源管理器式浏览页（P4）：一切数据经 folders.contents 协议获取，
+/// 资源管理器式浏览页（P4）：一切数据经引擎查询命令（folders.contents 等）获取，
 /// 渲染由 XAML ItemsControl + DataTemplate 完成，本类不持有任何控件引用。
 /// </summary>
 public class BrowserViewModel : INotifyPropertyChanged
 {
-    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-    private readonly ILinkPocketApi Api;
+    /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+    private readonly EngineClient _client;
 
     public BrowserHistory Controller { get; } = new();
 
@@ -107,14 +108,14 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>新建链接：在当前目录创建（不再选择所属目录），打开整页编辑器。</summary>
     public void OpenEditorForCreate()
     {
-        EditorPage = new LinkEditorViewModel(Api, this, IsAtRoot() ? null : CurrentFolderId);
+        EditorPage = new LinkEditorViewModel(_client, this, IsAtRoot() ? null : CurrentFolderId);
         IsEditorPageOpen = true;
     }
 
     /// <summary>编辑链接：整页编辑器预填数据（不改变所属目录）。</summary>
     public void OpenEditorForEdit(string linkId)
     {
-        EditorPage = LinkEditorViewModel.ForEdit(Api, this, linkId);
+        EditorPage = LinkEditorViewModel.ForEdit(_client, this, linkId);
         IsEditorPageOpen = true;
     }
 
@@ -281,10 +282,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
     private Dictionary<string, (string? ParentId, string Name)> _folderMap = new();
 
-    public BrowserViewModel(ILinkPocketApi api)
+    public BrowserViewModel(EngineClient client)
     {
-        Api = api;
-        Details = new BrowserDetailsViewModel(Api);
+        _client = client;
+        Details = new BrowserDetailsViewModel(client);
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
         GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot());
@@ -297,7 +298,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string));
         NewLinkCommand = new RelayCommand(OpenEditorForCreate);
         OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
-        DetailPage = new LinkDetailPageViewModel(Api, this);
+        DetailPage = new LinkDetailPageViewModel(client, this);
         RenameNodeCommand = new RelayCommand<FolderNode?>(node => _ = RenameNodeAsync(node));
         DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
         CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing);
@@ -356,10 +357,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         IsLoading = true;
         try
         {
-            var contents = await Api.GetFolderContentsAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
+            var contents = await _client.FolderContentsAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
 
             // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
-            var tree = await Api.GetFolderTreeAsync();
+            var tree = await _client.FolderTreeAsync();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
             await RebuildFolderTreeAsync(tree);
             // 树已重建：重发当前目录通知，让视图重新定位树的选中项
@@ -606,7 +607,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
 
         // 根节点计数 = 顶层文件夹递归计数之和 + 根级直挂链接数（内核递归计数）
-        var rootLevel = (await Api.GetCountsAsync()).RootLevel;
+        var rootLevel = (await _client.LinkStatsAsync()).RootLevel;
         root.LinkCount = tree.Where(f => f.ParentId == null)
             .Sum(f => f.LinkCount) + rootLevel;
 
@@ -679,10 +680,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
         var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-        await Api.MoveFolderAsync(folderId, target);
+        await _client.FolderMoveAsync(folderId, target);
         if (unique != name)
         {
-            await Api.UpdateFolderAsync(folderId, name: unique);
+            await _client.FolderUpdateAsync(folderId, name: unique);
             renamedNotes.Add($"「{name}」→「{unique}」");
         }
         return true;
@@ -693,10 +694,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 同目录粘贴/拖放 = 无操作
         try
         {
-            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
             if (link == null) return false; // 源已被删除，跳过
             if (NormalizeParentId(link.ListId) == target) return false;
-            await Api.UpdateLinkAsync(linkId, listId: target);
+            await _client.LinkUpdateAsync(linkId, listId: target);
             return true;
         }
         catch
@@ -827,8 +828,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
             var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-            var newId = await Api.CopyFolderAsync(folderId, target);
-            if (unique != name) await Api.UpdateFolderAsync(newId, name: unique);
+            var copy = await _client.FolderCopyAsync(folderId, target);
+            var newId = copy.Data?.NewFolderId;
+            if (string.IsNullOrEmpty(newId)) return false;
+            if (unique != name) await _client.FolderUpdateAsync(newId, name: unique);
             renamedNotes.Add($"「{name}」→「{unique}」");
             return true;
         }
@@ -843,17 +846,17 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         try
         {
-            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
             if (link == null) return false;
 
             var targetNorm = target;
-            var siblingTitles = (await Api.GetAllLinksAsync())
+            var siblingTitles = (await _client.LinkAllAsync())
                 .Where(l => l.ListId == targetNorm)
                 .Select(l => l.Title)
                 .ToHashSet(StringComparer.CurrentCulture);
             var unique = GenerateUniqueName(link.Title, siblingTitles);
 
-            await Api.CreateLinkAsync(link.Url,
+            await _client.LinkCreateAsync(link.Url,
                 title: unique,
                 description: string.IsNullOrEmpty(link.Description) ? null : link.Description,
                 listId: targetNorm,
@@ -888,7 +891,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(name)) return;
         try
         {
-            await Api.CreateFolderAsync(name, target);
+            await _client.FolderCreateAsync(name, target);
             StatusText = $"已创建文件夹「{name}」";
             await RefreshPreservingSelectionAsync();
         }
@@ -916,7 +919,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(name) || name == node.Name) return;
         try
         {
-            await Api.UpdateFolderAsync(node.FolderId, name: name);
+            await _client.FolderUpdateAsync(node.FolderId, name: name);
             await RefreshPreservingSelectionAsync();
             StatusText = $"已重命名为「{name}」";
         }
@@ -934,7 +937,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             return;
         try
         {
-            await Api.DeleteFolderAsync(node.FolderId, "trash_links");
+            await _client.FolderDeleteAsync(node.FolderId, "trash_links");
             StatusText = $"已删除文件夹「{node.Name}」";
             // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
             // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
@@ -990,8 +993,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             foreach (var item in items)
             {
-                if (item.IsFolder) await Api.DeleteFolderAsync(item.Id, "trash_links");
-                else await Api.TrashLinkAsync(item.Id);
+                if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
+                else await _client.LinkTrashAsync(item.Id);
             }
             StatusText = $"已删除 {items.Count} 项";
             ClearSelection();
@@ -1031,7 +1034,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(name) || name == row.Name) return;
         try
         {
-            await Api.UpdateFolderAsync(row.Id, name: name);
+            await _client.FolderUpdateAsync(row.Id, name: name);
             // 原地刷新并保留该行选中：重命名不该把选中态（以及右侧栏）清掉
             await RefreshAsync(row.Id);
             StatusText = $"已重命名为「{name}」";

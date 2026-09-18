@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
@@ -22,19 +23,19 @@ namespace LinkPocket.Views
     ///    本页不直连任何界面方法，跳转语义（进入目标目录并选中该行）由组件统一承担；
     /// 2. 列表一律复用共享 <see cref="SortableDataTable"/>，不手绘卡片。
     /// 阶段 9 MVVM：查重/ID 跳转/书签导入导出的业务逻辑在 <see cref="ToolsViewModel"/>
-    /// （后端协议调用与业务规则都在 VM），本视图只做表格装配、状态渲染与文件对话框。
+    /// （引擎客户端调用与业务规则都在 VM），本视图只做表格装配、状态渲染与文件对话框。
     /// 依赖来源：XAML 声明的页面无法构造注入，由 Shell（MainWindow）在构造时下发组合根（Host）。
     /// </summary>
     public partial class ToolsPage : UserControl
     {
         // —— 阶段 10 模块化：页面不认识组合根/MainViewModel，依赖由 Shell 经 Configure 窄注入 ——
-        private ILinkPocketApi _api = null!;
+        private EngineClient _api = null!;
         private IContentLocator? _locator;
         private Func<string?, Task<string>> _resolveLinkPath = _ => Task.FromResult("全部书签");
         private Func<Task> _refreshFolderTree = () => Task.CompletedTask;
 
-        /// <summary>Shell 在构造时注入：协议访问、定位组件、路径解析与目录树刷新委托。</summary>
-        public void Configure(ILinkPocketApi api, IContentLocator? locator,
+        /// <summary>Shell 在构造时注入：引擎客户端、定位组件、路径解析与目录树刷新委托。</summary>
+        public void Configure(EngineClient api, IContentLocator? locator,
             Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
         {
             _api = api;

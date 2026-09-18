@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
@@ -14,16 +15,16 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class LinkDetailPageViewModel : INotifyPropertyChanged
 {
-    /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-    private readonly ILinkPocketApi Api;
+    /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+    private readonly EngineClient _client;
 
     private readonly BrowserViewModel _host;
     private string? _linkId;
     private int _generation;
 
-    public LinkDetailPageViewModel(ILinkPocketApi api, BrowserViewModel host)
+    public LinkDetailPageViewModel(EngineClient client, BrowserViewModel host)
     {
-        Api = api;
+        _client = client;
         _host = host;
         BackCommand = new RelayCommand(() => _ = BackAsync());
         // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（_linkId/Url 尚空），
@@ -106,12 +107,12 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
             // EF DbContext 是非线程安全的（UI 线程同时可能因事件防抖在刷新列表）。
             if (recordVisit)
             {
-                try { await Api.RecordVisitAsync(linkId); }
+                try { await _client.LinkVisitRecordAsync(linkId); }
                 catch { /* 链接可能已不存在：交给下面的读取判定 */ }
                 if (gen != _generation) return;
             }
 
-            var link = (await Api.GetAllLinksAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
             if (link == null || gen != _generation) { Close(); return; }
 
             Title = link.Title;
@@ -146,7 +147,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         if (_linkId == null) return;
         try
         {
-            await Api.RecordVisitAsync(_linkId);
+            await _client.LinkVisitRecordAsync(_linkId);
             await ReloadIfOpenAsync(); // 不重复计数，只把「含本次」的最新统计取回来
         }
         catch (Exception ex)
@@ -177,7 +178,7 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         if (_linkId == null) return;
         try
         {
-            await Api.TrashLinkAsync(_linkId);
+            await _client.LinkTrashAsync(_linkId);
             Close();
             await _host.RefreshAsync();
         }

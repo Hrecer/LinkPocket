@@ -41,6 +41,8 @@ public class DependencyRulesTests
     private const string Infrastructure = "LinkPocket.Infrastructure";
     private const string UIKit = "LinkPocket.UIKit";
     private const string Shell = "LinkPocket.App";
+    private const string Engine = "LinkPocket.Engine";
+    private const string Data = "LinkPocket.Data";
     private static readonly string[] UiPages =
     {
         "LinkPocket.UI.Browser", "LinkPocket.UI.Search", "LinkPocket.UI.Trash",
@@ -88,13 +90,16 @@ public class DependencyRulesTests
     }
 
     [Fact]
-    public void Shell_装配全部UI模块且不引用引擎实现()
+    public void Shell_装配全部UI模块与引擎组合根()
     {
+        // Shell（AppHost 组合根）是「组合根 new 具体实现」的唯一合法位置：它装配
+        // 引擎实现（Engine/Data/Modules.*）与全部 UI.*。UI 页面/UIKit 仍禁引引擎实现
+        // （见 UI页面项目_禁止引用引擎实现与彼此）。
         var refs = ProjectReferences("src/LinkPocket.App/LinkPocket.csproj");
-        Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r));
+        Assert.Contains(Engine, refs);
+        Assert.Contains(Data, refs);
         Assert.Contains(UIKit, refs);
         Assert.Contains(Contracts, refs);
-        Assert.Contains(Infrastructure, refs);
         foreach (var page in UiPages)
             Assert.Contains(page, refs);
     }

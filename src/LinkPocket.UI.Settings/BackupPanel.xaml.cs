@@ -1,7 +1,10 @@
+using System.Linq;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 using Microsoft.Win32;
 
@@ -10,17 +13,21 @@ namespace LinkPocket.Views
     /// <summary>
     /// 备份与恢复面板。
     /// 导出 = 目录选择（回收站不备份，卡内有提示）；<b>成功后清空保存位防手滑</b>（必须重新选目录才能再导出）。
-    /// 导入 = 弹 <see cref="ImportModeDialog"/> 模态弹窗（新增导入 / 清空后导入，后者需文字确认）。
+    /// 导入 = 弹 <see cref="ImportModeDialog"/> 模态弹窗（新增导入 / 清空后导入，后者需文字确认）；
+    ///       引擎 backup.import 自带 replace 语义（同一 UoW 清空 + 导入，原子），destructive 两阶段令牌内联。
     /// 所有结果提示走统一 <see cref="ConfirmDialog"/> 弹窗（禁原生 MessageBox）；
     /// 进度展示复用设置页根部的 ExportOverlay（经可视树向上查找，名称契约见 SettingsPage.xaml）。
     /// </summary>
     public partial class BackupPanel : UserControl
     {
-        /// <summary>协议访问（阶段 10：由宿主 SettingsPage 经 Configure 窄注入，不再持有组合根）。</summary>
-        public ILinkPocketApi Api { get; set; } = null!;
+        /// <summary>引擎客户端门面（阶段 10：由宿主 SettingsPage 经 Configure 窄注入，不再持有组合根）。</summary>
+        public EngineClient Api { get; set; } = null!;
 
-        /// <summary>整库重置委托（resetData=true = 完全重置后重建；Shell 注入 MainViewModel.ReinitializeDatabaseAsync）。</summary>
+        /// <summary>整库重置委托（Shell 注入 MainViewModel.ReinitializeDatabaseAsync）：清空 / 整库重建。</summary>
         public Func<bool, Task> ReinitializeAsync { get; set; } = null!;
+
+        /// <summary>导入成功后的 UI 刷新委托（Shell 注入 MainViewModel.RefreshAfterImportAsync）：只刷树/计数，不清数据。</summary>
+        public Func<Task> RefreshAfterImportAsync { get; set; } = () => Task.CompletedTask;
 
         private string _exportDirectory = string.Empty;
         private string _importFilePath = string.Empty;
@@ -99,7 +106,7 @@ namespace LinkPocket.Views
 
             try
             {
-                await Api.ExportBackupAsync(outputPath);
+                await Api.BackupExportAsync(outputPath);
 
                 UpdateOverlay(overlay, "导出成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);
@@ -153,29 +160,17 @@ namespace LinkPocket.Views
 
             try
             {
-                if (_pendingReplaceImport)
-                {
-                    // 完全重置：删除数据库文件（含回收站）+ 图标缓存目录后重建（与「清空数据」同机制）
-                    Services.Logger.Info("[备份导入] 清空后导入：开始完全重置");
-                    await ReinitializeAsync(true);
-                }
-
                 UpdateOverlay(overlay, "正在导入备份...", 0, 0);
-                var result = await Api.ImportBackupAsync(filePath);
+                // 引擎 backup.import：replace=true = 同一 UoW 清空（含回收站）后导入，原子；
+                // destructive 两阶段令牌经 EngineConfirm 内联（UI 确认已由 ImportModeDialog 承担）。
+                var result = await EngineConfirm.RunAsync(token => Api.BackupImportAsync(
+                    filePath, replace: _pendingReplaceImport, new CallOptions { ConfirmToken = token }));
 
-                if (!result.Success)
-                {
-                    var errMsg = string.Join("; ", result.Errors);
-                    UpdateOverlay(overlay, $"导入失败\n{errMsg}", 0, 0);
-                    SetOverlayProgressColor(overlay, false);
-                    await Task.Delay(3000);
-                    HideOverlay(overlay);
-                    ConfirmDialog.Show("导入失败", $"导入失败：\n{errMsg}", "确定", "alert-circle-outline");
-                    return;
-                }
+                var folders = ReadCount(result.Data, "folders_created");
+                var links = ReadCount(result.Data, "links_created");
 
-                // 刷新界面数据（新增模式导入后也要重载）
-                await ReinitializeAsync(false);
+                // 刷新界面数据（replace 模式引擎已同步清空；两模式都要重载树/计数，不清数据）
+                await RefreshAfterImportAsync();
 
                 UpdateOverlay(overlay, "导入成功！", 1, 1);
                 SetOverlayProgressColor(overlay, true);
@@ -184,7 +179,7 @@ namespace LinkPocket.Views
 
                 ConfirmDialog.Show(
                     "导入成功",
-                    $"统计信息：\n• 文件夹：{result.FoldersCreated} 个\n• 书签：{result.LinksCreated} 条",
+                    $"统计信息：\n• 文件夹：{folders} 个\n• 书签：{links} 条",
                     "确定", "import", "TintPanel");
             }
             catch (Exception ex)
@@ -283,6 +278,15 @@ namespace LinkPocket.Views
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)
                 progressText.Text = success ? "完成" : "失败";
+        }
+
+        /// <summary>从引擎命令结果 JsonElement 读整数字段（缺失按 0 处理——引擎成功必有，纯防御）。</summary>
+        private static int ReadCount(JsonElement? data, string property)
+        {
+            if (data is { } d && d.ValueKind == JsonValueKind.Object
+                && d.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.Number)
+                return el.GetInt32();
+            return 0;
         }
     }
 }

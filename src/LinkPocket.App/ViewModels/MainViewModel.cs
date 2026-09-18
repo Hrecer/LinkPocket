@@ -9,6 +9,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using Material3.Wpf;
@@ -19,8 +20,8 @@ namespace LinkPocket.ViewModels
     {
         private readonly Managers.SelectionManager _selectionManager;
 
-        /// <summary>后端 API（经传输层代理，由组合根注入）。</summary>
-        private readonly ILinkPocketApi Api;
+        /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
+        private readonly EngineClient _client;
         private readonly Services.UiEventHub _events;
         private readonly Services.UiPortProvider _ports;
         
@@ -70,23 +71,23 @@ namespace LinkPocket.ViewModels
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        public MainViewModel(ILinkPocketApi api, Services.UiEventHub events,
+        public MainViewModel(EngineClient client, Services.UiEventHub events,
             Services.UiPortProvider ports, Managers.SelectionManager selectionManager)
         {
-            Api = api;
+            _client = client;
             _events = events;
             _ports = ports;
             _selectionManager = selectionManager;
 
             InitializeNavigationItems();
 
-            _recycleBinViewModel = new RecycleBinViewModel(Api, _ports);
+            _recycleBinViewModel = new RecycleBinViewModel(client, _ports);
             _settingsViewModel = new SettingsViewModel();
-            _smartListViewModel = new SmartListViewModel(Api, _ports,
+            _smartListViewModel = new SmartListViewModel(client, _ports,
                 listId => string.IsNullOrEmpty(listId)
                     ? "全部书签"
                     : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"));
-            BrowserViewModel = new BrowserViewModel(Api);
+            BrowserViewModel = new BrowserViewModel(client);
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
@@ -606,7 +607,7 @@ namespace LinkPocket.ViewModels
             // 先记账、再展示：展示的就是"含本次"的统计。
             // 不要用 Task.Run —— 后台线程与 UI 线程并发使用同一个 EF DbContext 是非线程安全的
             // （UI 线程同时可能因事件防抖在刷新列表）。
-            try { await Api.RecordVisitAsync(link.LinkId); } catch { }
+            try { await _client.LinkVisitRecordAsync(link.LinkId); } catch { }
             link.LastVisitedAt = DateTime.UtcNow;
             link.VisitCount++;
             DetailUrl = link.Url ?? string.Empty;
@@ -663,7 +664,7 @@ namespace LinkPocket.ViewModels
                 EditLinkHasError = false;
 
                 var url = EditLinkUrl.Trim();
-                var metadata = await Api.FetchMetadataAsync(url);
+                var metadata = await _client.LinkMetadataFetchAsync(url);
 
                 if (metadata != null)
                 {
@@ -739,7 +740,7 @@ namespace LinkPocket.ViewModels
 
                 if (IsEditMode && !string.IsNullOrEmpty(_editingLinkId))
                 {
-                    await Api.UpdateLinkAsync(
+                    await _client.LinkUpdateAsync(
                         id: _editingLinkId,
                         url: url,
                         title: title,
@@ -752,7 +753,7 @@ namespace LinkPocket.ViewModels
                 {
                     if (string.IsNullOrEmpty(_selectionManager.SelectedFolderId))
                         throw new InvalidOperationException("添加书签必须先选中一个文件夹");
-                    await Api.CreateLinkAsync(
+                    await _client.LinkCreateAsync(
                         url: url,
                         title: title,
                         description: description,
@@ -859,7 +860,7 @@ namespace LinkPocket.ViewModels
                     if (_ports.Dialogs?.ConfirmDeleteFolder(folderName) != true)
                         return;
 
-                    await Api.DeleteFolderAsync(_selectionManager.SelectedFolderId);
+                    await _client.FolderDeleteAsync(_selectionManager.SelectedFolderId);
                     Logger.Info($"文件夹 {_selectionManager.SelectedFolderId} 已删除");
                     await RefreshFolderTreeAndUIAsync();
                     return;
@@ -890,7 +891,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 string? parentId = string.IsNullOrEmpty(_selectionManager.SelectedFolderId) ? null : _selectionManager.SelectedFolderId;
-                await Api.CreateFolderAsync(NewFolderName.Trim(), parentId);
+                await _client.FolderCreateAsync(NewFolderName.Trim(), parentId);
                 await RefreshFolderTreeAndUIAsync();
             }
             catch (Exception ex)
@@ -932,17 +933,17 @@ namespace LinkPocket.ViewModels
 
         public async Task<List<LinkDto>> GetAllLinksAsync()
         {
-            return await Api.GetAllLinksAsync();
+            return await _client.LinkAllAsync();
         }
 
         public async Task<List<LinkDto>> GetAllLinksForToolsAsync()
         {
-            return await Api.GetAllLinksAsync();
+            return await _client.LinkAllAsync();
         }
 
         public async Task<(List<LinkDto> Links, int TotalCount, int CurrentPage, int LastPage)> GetLinksForSidebarAsync(string? listId = null)
         {
-            var page = await Api.GetLinksAsync(
+            var page = await _client.LinkListAsync(
                 listId: listId,
                 sortBy: _linkSortField, sortOrder: _linkSortOrder,
                 page: 1, perPage: 50);
@@ -951,7 +952,7 @@ namespace LinkPocket.ViewModels
 
         public async Task<List<LinkDto>> GetRootLevelLinksAsync()
         {
-            return await Api.GetRootLevelLinksAsync(_linkSortField, _linkSortOrder);
+            return await _client.LinkRootsAsync(_linkSortField, _linkSortOrder);
         }
 
         // 搜索页已迁往 SearchViewModel（阶段 9 MVVM）：查询执行/范围守卫在页面 VM，
@@ -961,8 +962,8 @@ namespace LinkPocket.ViewModels
         {
             try
             {
-                var counts = await Api.GetCountsAsync();
-                var allFolders = await Api.GetFolderTreeAsync();
+                var counts = await _client.LinkStatsAsync();
+                var allFolders = await _client.FolderTreeAsync();
 
                 var folderNodes = new ObservableCollection<FolderNode>();
 
@@ -1051,7 +1052,7 @@ namespace LinkPocket.ViewModels
             if (treePath != null) return treePath;
             try
             {
-                var allFolders = await Api.GetFolderTreeAsync();
+                var allFolders = await _client.FolderTreeAsync();
                 var dict = allFolders.ToDictionary(f => f.FolderId);
                 if (!dict.ContainsKey(listId)) return "全部书签";
                 var pathParts = new List<string>();
@@ -1078,26 +1079,37 @@ namespace LinkPocket.ViewModels
 
         public async Task MoveFolderAsync(string folderId, string? targetParentId)
         {
-            await Api.MoveFolderAsync(folderId, targetParentId);
+            await _client.FolderMoveAsync(folderId, targetParentId);
         }
 
         public async Task<string> CopyFolderDeepAsync(string folderId, string? targetParentId)
         {
-            return await Api.CopyFolderAsync(folderId, targetParentId);
+            var result = await _client.FolderCopyAsync(folderId, targetParentId);
+            return result.Data?.NewFolderId ?? string.Empty;
         }
 
         public async Task<bool> WouldFolderMoveCreateCycleAsync(string folderId, string targetParentId)
         {
-            return await Api.WouldMoveCreateCycleAsync(folderId, targetParentId);
+            return await _client.FolderCycleCheckAsync(folderId, targetParentId);
         }
 
         public async Task ReinitializeDatabaseAsync(bool resetData = true)
         {
-            await Api.ReinitializeDatabaseAsync(resetData);
+            // maintenance.reinit（Destructive 两阶段确认）：引擎整库重置 = 批量删除后全新空库
+            //（行为契约 §7「重建库=全新空库」；旧链 resetData 的「删文件」差异收敛为引擎的
+            // 「清空重建」——库文件不退场，等价终态一致）。令牌经 UI 确认后自动重发，无额外弹窗。
+            await EngineConfirm.RunAsync(token => _client.MaintenanceReinitAsync(new CallOptions { ConfirmToken = token }));
 
+            await ResetUiAfterDatabaseResetAsync();
+        }
+
+        /// <summary>整库重置后的 UI 收尾（清树回根）：库已清空，浏览页必须强制回根
+        /// 重载，否则旧目录行一直挂着；选中回到「全部书签」。此方法不触达引擎。</summary>
+        public async Task ResetUiAfterDatabaseResetAsync()
+        {
             await LoadFolderTreeAsync();
 
-            // 数据库已被删除重建：浏览页必须强制回到根并重载，
+            // 库已清空：浏览页必须强制回到根并重载，
             // 否则旧目录的行会一直挂在浏览页上，直到用户手点「全部书签」才刷新——实测踩中。
             await BrowserViewModel.LoadAsync(null);
 
@@ -1106,6 +1118,14 @@ namespace LinkPocket.ViewModels
             // 无论当前在哪个页（清空动作发生在设置页），选中都回到「全部书签」：
             // 旧选中若指向已删除的文件夹则是无意义状态，且会阻碍浏览器页数据刷新。
             _selectionManager.SelectFolder(string.Empty);
+        }
+
+        /// <summary>备份导入成功后的刷新（只刷数据不重置）：树/计数重载，
+        /// 列表由各页事件防抖驱动，不清选不回根（区别于整库重置的 ResetUiAfterDatabaseResetAsync）。</summary>
+        public async Task RefreshAfterImportAsync()
+        {
+            await LoadFolderTreeAsync();
+            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

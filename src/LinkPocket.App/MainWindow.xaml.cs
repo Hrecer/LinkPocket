@@ -28,7 +28,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         _host = host;
         InitializeComponent();
-        var vm = new MainViewModel(_host.Api, _host.Hub, _host.Ports, _selectionManager);
+        var vm = new MainViewModel(_host.Client, _host.Hub, _host.Ports, _selectionManager);
         DataContext = vm;
         // 端口登记（阶段 7）：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
@@ -50,19 +50,20 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 搜索页（阶段 9 MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
         // MainViewModel 的目录树（与浏览页/智能列表同一份）。
         _searchVm = new SearchViewModel(
-            _host.Api, _host.Ports.Navigation!, _host.Ports.Dialogs!,
+            _host.Client, _host.Ports.Navigation!, _host.Ports.Dialogs!,
             listId => string.IsNullOrEmpty(listId)
                 ? "全部书签"
                 : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"));
         SearchView.DataContext = _searchVm;
         TrashView.DataContext = vm.RecycleBinViewModel;
         SmartListsView.DataContext = vm.SmartListViewModel;
-        // 工具页：协议访问/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
+        // 工具页：引擎客户端/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
         // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。
-        ToolsView.Configure(_host.Api, _host.Locator,
+        ToolsView.Configure(_host.Client, _host.Locator,
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
-        SettingsView.Configure(_host.Api, reset => vm.ReinitializeDatabaseAsync(reset));
+        SettingsView.Configure(_host.Client, reset => vm.ReinitializeDatabaseAsync(reset),
+            () => vm.RefreshAfterImportAsync());
         vm.OnToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
 
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入重置 / 离开清选中 / 数据变更重跑）

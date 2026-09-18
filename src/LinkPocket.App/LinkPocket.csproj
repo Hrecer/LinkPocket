@@ -14,6 +14,17 @@
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
     <ProjectReference Include="..\LinkPocket.Infrastructure\LinkPocket.Infrastructure.csproj" />
+    <ProjectReference Include="..\LinkPocket.Engine\LinkPocket.Engine.csproj" />
+    <ProjectReference Include="..\LinkPocket.Data\LinkPocket.Data.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Folders\LinkPocket.Modules.Folders.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Links\LinkPocket.Modules.Links.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Trash\LinkPocket.Modules.Trash.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Search\LinkPocket.Modules.Search.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Bookmarks\LinkPocket.Modules.Bookmarks.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Backup\LinkPocket.Modules.Backup.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Dedup\LinkPocket.Modules.Dedup.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Favicon\LinkPocket.Modules.Favicon.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Maintenance\LinkPocket.Modules.Maintenance.csproj" />
     <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Browser\LinkPocket.UI.Browser.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Search\LinkPocket.UI.Search.csproj" />

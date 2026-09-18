@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Threading;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 
@@ -25,12 +26,12 @@ public sealed record SearchEmptyState(string IconKind, string Title, string? Sub
 /// </summary>
 public sealed class SearchViewModel : INotifyPropertyChanged
 {
-    private readonly ILinkPocketApi _api;
+    private readonly EngineClient _api;
     private readonly INavigationService _navigation;
     private readonly IDialogService _dialogs;
     private readonly Func<string?, string> _resolveFolderPath;
 
-    public SearchViewModel(ILinkPocketApi api, INavigationService navigation, IDialogService dialogs,
+    public SearchViewModel(EngineClient api, INavigationService navigation, IDialogService dialogs,
         Func<string?, string> resolveFolderPath)
     {
         _api = api;
@@ -194,7 +195,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         try
         {
-            var dtos = await _api.SearchAsync(query,
+            var dtos = await _api.SearchLinksAsync(query,
                 searchTitle: SearchTitle, searchUrl: SearchUrl,
                 searchDescription: SearchDesc, searchPath: SearchPath,
                 sortBy: "title", sortOrder: "asc");
@@ -276,7 +277,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         try
         {
-            var dtos = await _api.SearchAsync(query,
+            var dtos = await _api.SearchLinksAsync(query,
                 searchTitle: SearchTitle, searchUrl: SearchUrl,
                 searchDescription: SearchDesc, searchPath: SearchPath,
                 sortBy: "title", sortOrder: "asc");
@@ -306,7 +307,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         catch { /* 无法打开时保持静默 */ }
         try
         {
-            await _api.RecordVisitAsync(item.LinkId);
+            await _api.LinkVisitRecordAsync(item.LinkId);
             if (SelectedItem?.LinkId == item.LinkId)
                 Details.UpdateFrom(item, _resolveFolderPath(item.ListId)); // 统计行原位刷新
         }
@@ -323,7 +324,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         try
         {
-            await _api.TrashLinkAsync(item.LinkId);
+            await _api.LinkTrashAsync(item.LinkId);
             SelectedItem = null;
 
             // 重跑当前搜索刷新结果（无在搜关键词时只清详情）

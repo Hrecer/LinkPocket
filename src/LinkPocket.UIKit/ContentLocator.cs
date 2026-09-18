@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using LinkPocket.Api;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Services;
 
@@ -86,17 +87,19 @@ public interface IContentLocator
 
 /// <summary>
 /// 内容定位器（前端服务层组件，独立于任何界面）：
-/// 依赖两项抽象——数据契约 <see cref="ILinkPocketApi"/> 与界面端口 <see cref="IBrowserLocateHost"/>。
+/// 依赖两项抽象——引擎客户端门面 <see cref="EngineClient"/> 与界面端口 <see cref="IBrowserLocateHost"/>。
 /// 界面只负责"执行"，算法（目标类型判别 / 容器目录推导 / 结果建模）都在这里。
+/// 「ID 不存在」由引擎以 <c>LP.STATE.001</c> 表达（零兼容：查询就报错，不返回 null），
+/// 本组件把它映射为 <see cref="LocateStatus.NotFound"/> 反馈——不发散业务码。
 /// </summary>
 public sealed class ContentLocator : IContentLocator
 {
-    private readonly ILinkPocketApi _api;
+    private readonly EngineClient _client;
     private readonly Func<IBrowserLocateHost?> _hostProvider;
 
-    public ContentLocator(ILinkPocketApi api, Func<IBrowserLocateHost?> hostProvider)
+    public ContentLocator(EngineClient client, Func<IBrowserLocateHost?> hostProvider)
     {
-        _api = api;
+        _client = client;
         _hostProvider = hostProvider;
     }
 
@@ -132,9 +135,7 @@ public sealed class ContentLocator : IContentLocator
 
         try
         {
-            var link = await _api.GetLinkAsync(linkId.Trim());
-            if (link == null) return LocateResult.Missing(ContentKind.Link);
-
+            var link = await _client.LinkGetAsync(linkId.Trim());
             var host = _hostProvider();
             if (host == null)
                 return new LocateResult(LocateStatus.NoHost, ContentKind.Link, link.ListId, link.LinkId, "界面宿主不可用");
@@ -146,6 +147,10 @@ public sealed class ContentLocator : IContentLocator
             return selected
                 ? new LocateResult(LocateStatus.Success, ContentKind.Link, link.ListId, link.LinkId, null)
                 : new LocateResult(LocateStatus.RowMissing, ContentKind.Link, link.ListId, link.LinkId, "目标行未出现在所在目录");
+        }
+        catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
+        {
+            return LocateResult.Missing(ContentKind.Link);
         }
         catch (Exception ex)
         {
@@ -160,9 +165,7 @@ public sealed class ContentLocator : IContentLocator
 
         try
         {
-            var folder = await _api.GetFolderAsync(folderId.Trim());
-            if (folder == null) return LocateResult.Missing(ContentKind.Folder);
-
+            var folder = await _client.FolderGetAsync(folderId.Trim());
             var host = _hostProvider();
             if (host == null)
                 return new LocateResult(LocateStatus.NoHost, ContentKind.Folder, folder.ParentId, folder.FolderId, "界面宿主不可用");
@@ -174,6 +177,10 @@ public sealed class ContentLocator : IContentLocator
             return selected
                 ? new LocateResult(LocateStatus.Success, ContentKind.Folder, folder.ParentId, folder.FolderId, null)
                 : new LocateResult(LocateStatus.RowMissing, ContentKind.Folder, folder.ParentId, folder.FolderId, "目标行未出现在父目录");
+        }
+        catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
+        {
+            return LocateResult.Missing(ContentKind.Folder);
         }
         catch (Exception ex)
         {
