@@ -64,17 +64,20 @@ public class FolderNode : INotifyPropertyChanged
     /// </summary>
     public string DeleteMenuHeader => LinkCount > 0 ? $"删除 ({LinkCount} 项)" : "删除";
 
-    /// <summary>环保护深度上限（坏数据成环时终止递归，量级同引擎沿父链护栏）。</summary>
+    /// <summary>环保护深度上限（坏数据成环时终止递归；合法深树极少超此值）。</summary>
     private const int MaxTreeDepth = 256;
 
-    public int TotalLinkCount => TotalLinkCountAtDepth(0);
+    /// <summary>2.5：递归计数用「访问集合 + 深度」双保险——环数据立即停止（而非递归到深度上限），
+    /// 合法深度只在极限（>256 层，实际不可达）时截断。与 BrowserViewModel.IsSelfOrDescendant 同策略。</summary>
+    public int TotalLinkCount => TotalLinkCountCore(new HashSet<string?>(), 0);
 
-    private int TotalLinkCountAtDepth(int depth)
+    private int TotalLinkCountCore(HashSet<string?> visited, int depth)
     {
         var own = _linkCount;
         if (depth >= MaxTreeDepth) return own;
+        if (!string.IsNullOrEmpty(FolderId) && !visited.Add(FolderId)) return own;   // 已在访问链上 = 环 → 停止本支
         foreach (var child in _children)
-            own += child.TotalLinkCountAtDepth(depth + 1);
+            own += child.TotalLinkCountCore(visited, depth + 1);
         return own;
     }
 

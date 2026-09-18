@@ -159,7 +159,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 // 同步先用行内已有数据渲染，再异步补拉描述/统计/路径
                 SetRows(new List<DetailSidebarRow>
                 {
-                    new() { IconKind = "folder-outline", Label = "位置", Value = "读取中…" },
+                    new() { IconKind = "folder-outline", Label = "位置", Value = LoadingPlaceholder },
                     new() { IconKind = "refresh", Label = "最后更新", Value = row.ModifiedText },
                     new() { IconKind = "history", Label = "最后查看", Value = "—" },
                     new() { IconKind = "trending-up", Label = "查看次数", Value = "—" },
@@ -218,16 +218,20 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         }
         catch
         {
+            if (gen != _generation) return;   // 2.4：切选后到达的异常不得影响新选中信息卡
             Services.Logger.Error("详情栏链接补拉失败（保持行内基础信息）", null);   // 观测面留痕
             MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"（E10）
         }
     }
 
+    /// <summary>「读取中…」占位文案（UpdateFrom 与 MarkUnavailable 共用单一数据源，3.3：防文案改动静默失效）。</summary>
+    private const string LoadingPlaceholder = "读取中…";
+
     /// <summary>补拉失败/源已删除的收口：把「读取中…」占位回落为中性值（其余占位本就是 —/从未）。</summary>
     private void MarkUnavailable()
     {
         var pathRow = FindRow("位置");
-        if (pathRow != null && pathRow.Value == "读取中…") pathRow.Value = "未获取到信息";
+        if (pathRow != null && pathRow.Value == LoadingPlaceholder) pathRow.Value = "未获取到信息";
         var visitedRow = FindRow("最后查看");
         if (visitedRow != null && visitedRow.Value == "—") visitedRow.Value = "从未";
     }

@@ -54,12 +54,17 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         {
             if (_url != value)
             {
+                var prevEmpty = string.IsNullOrWhiteSpace(_url);
+                var nextEmpty = string.IsNullOrWhiteSpace(value);
                 _url = value;
                 OnPropertyChanged();
                 ClearError();
                 // URL 变更 = 目标站点变化：旧解析的 favicon 与「清除」标志一并作废（防张冠李戴写错图标）
                 _pendingFaviconUrl = null;
                 _clearFavicon = false;
+                // 1.7：CanExecute 只依赖「空/非空」布尔；无错误时 ClearError 不触发通知 →
+                // 空↔非空翻转必须显式重评估命令（否则按钮可用态不刷新）
+                if (prevEmpty != nextEmpty) CommandManager.InvalidateRequerySuggested();
             }
         }
     }
@@ -110,7 +115,17 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public System.Windows.Media.Imaging.BitmapImage? Favicon
     {
         get => _favicon;
-        private set { if (_favicon != value) { _favicon = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasFavicon)); } }
+        private set
+        {
+            if (_favicon != value)
+            {
+                _favicon = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasFavicon));
+                OnPropertyChanged(nameof(CanClearFavicon));   // 2.2：图标有无驱动清除按钮可用性
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
     }
     public bool HasFavicon => Favicon != null;
 
@@ -122,8 +137,9 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         set { if (_isFetching != value) { _isFetching = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanClearFavicon)); CommandManager.InvalidateRequerySuggested(); } }
     }
 
-    /// <summary>是否可清除图标：仅编辑模式且当前有图标（原链接带图标或已解析出图标）。</summary>
-    public bool CanClearFavicon => IsEditMode && !IsLoading && !IsFetching;
+    /// <summary>是否可清除图标：仅编辑模式、当前确实有图标（原链接带图标或已解析出图标）且不在加载/解析中
+    /// （2.2：无图标时按钮不应出现——"清除不存在的图标"是无意义操作；清除后图标置空，按钮随之隐藏）。</summary>
+    public bool CanClearFavicon => IsEditMode && HasFavicon && !IsLoading && !IsFetching;
 
     /// <summary>自动解析：抓取网站标题/描述/图标，空缺字段自动填充，不覆盖用户已输入内容。</summary>
     private async Task FetchMetadataAsync()
@@ -132,8 +148,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         try
         {
             IsFetching = true;
-            var meta = await _client.LinkMetadataFetchAsync(Url.Trim());
+            var url = Url.Trim();   // 2.1：URL 快照——解析期间 URL 被用户修改则丢弃旧结果（防 A 的结果写进 B）
+            var meta = await _client.LinkMetadataFetchAsync(url);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（E9 并发覆盖）
+            if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // 2.1：URL 已改 → 旧解析结果作废
             if (meta == null) { Error = "未能解析该网站（请检查 URL 是否可访问）"; return; }
 
             if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
@@ -197,9 +215,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             {
                 _pendingFaviconUrl = link.FaviconUrl;
                 var favUrl = link.FaviconUrl;
-                Favicon = await Task.Run(() =>
+                // 3.4：async lambda + await，不在 Task.Run 里同步 GetAwaiter().GetResult()（与 FetchMetadataAsync 同构）
+                Favicon = await Task.Run(async () =>
                 {
-                    try { Services.FaviconStore.EnsureCachedAsync(favUrl).GetAwaiter().GetResult(); } catch { }
+                    try { await Services.FaviconStore.EnsureCachedAsync(favUrl); } catch { }
                     return Services.FaviconService.LoadFromCache(favUrl);
                 });
             }

@@ -441,7 +441,7 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树（与目录页同快照的树/计数）
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            await RebuildFolderTreeAsync(tree, contents.RootLinkCount ?? 0);
+            RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
             // 树已重建：重发当前目录通知，让视图重新定位树的选中项
             OnPropertyChanged(nameof(CurrentFolderId));
 
@@ -686,8 +686,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     private bool IsAtRoot() => Controller.CurrentFolderId == null;
 
     /// <summary>由 folders.overview 的树快照重建左侧树（ParentId == null 即根级）。保留既有展开状态。
-    /// rootLinkCount = 同快照的根级直挂链接数（原另查 links.stats，现由 overview 一次交付）。</summary>
-    private Task RebuildFolderTreeAsync(List<FolderDto> tree, int rootLinkCount)
+    /// rootLinkCount = 同快照的根级直挂链接数（原另查 links.stats，现由 overview 一次交付）。
+    /// 纯同步（2.7）：无 IO/等待，签名用 void 不误导调用方。
+    /// 1.2：ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
+    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount)
     {
         var expandedIds = new HashSet<string?>();
         CollectExpandedIds(FolderTree, expandedIds);
@@ -709,7 +711,9 @@ public class BrowserViewModel : INotifyPropertyChanged
 
         foreach (var node in nodes.Values)
         {
-            if (node.ParentId != null && nodes.TryGetValue(node.ParentId, out var parent))
+            if (node.ParentId != null
+                && node.ParentId != node.FolderId   // 1.2：自环坏数据 → 按根级兜底，避免自引用节点
+                && nodes.TryGetValue(node.ParentId, out var parent))
             {
                 parent.Children.Add(node);
             }
@@ -724,7 +728,6 @@ public class BrowserViewModel : INotifyPropertyChanged
             .Sum(f => f.LinkCount) + rootLinkCount;
 
         FolderTree.Add(root);
-        return Task.CompletedTask;
     }
 
     private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
@@ -1147,9 +1150,10 @@ public class BrowserViewModel : INotifyPropertyChanged
             }
         }
 
+        // 1.6：文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
         StatusText = failed == 0
             ? $"已删除 {deleted} 项"
-            : failed >= deleted
+            : deleted == 0
                 ? "删除失败（详见日志）"
                 : $"已删除 {deleted} 项，{failed} 项失败";
         if (deleted > 0) ClearSelection();

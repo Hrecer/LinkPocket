@@ -125,7 +125,11 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
             LastVisitedText = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
             VisitCountText = $"{link.VisitCount} 次";
             IdText = link.LinkId;
-            Favicon = string.IsNullOrEmpty(link.FaviconUrl) ? null : FaviconService.LoadFromCache(link.FaviconUrl);
+            // 4.4：favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径；页面渲染不因图标卡顿）
+            var faviconUrl = link.FaviconUrl;
+            Favicon = string.IsNullOrEmpty(faviconUrl)
+                ? null
+                : await Task.Run(() => FaviconService.LoadFromCache(faviconUrl));
         }
         catch (Exception ex)
         {

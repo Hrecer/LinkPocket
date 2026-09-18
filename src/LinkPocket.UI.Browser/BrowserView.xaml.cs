@@ -19,6 +19,9 @@ public partial class BrowserView : UserControl
 {
     private bool _suppressTreeSelection;
 
+    /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——1.1：`-=` 只能解当前绑定的实例）。</summary>
+    private BrowserViewModel? _wiredVm;
+
     public BrowserView()
     {
         InitializeComponent();
@@ -28,10 +31,20 @@ public partial class BrowserView : UserControl
             // 此时 ViewModel 还不是 BrowserViewModel；必须跳过并等待真正的一次，
             // 「装载过就置守卫」只能在成功路径上做（否则守卫被中间态污染，列定义永远装不进去）。
             if (ViewModel == null) return;
+            if (ReferenceEquals(_wiredVm, ViewModel)) return;   // 同一 VM 重复触发：已装配
+
+            // 换绑到新 VM 前，先解绑旧 VM 的订阅（否则旧 VM 的变更仍会驱动本视图，且订阅线性增长）
+            if (_wiredVm != null)
+            {
+                _wiredVm.PropertyChanged -= OnViewModelPropertyChanged;
+                _wiredVm.FocusRowRequested -= OnFocusRowRequested;
+            }
+            _rowsHook?.Detach();
+            _rowsHook = null;
+            _wiredVm = ViewModel;
+
             ViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);   // 实例注入：无头/多窗口下不与其它页共享
-            ViewModel.PropertyChanged -= OnViewModelPropertyChanged; // 防重复订阅
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
-            ViewModel.FocusRowRequested -= OnFocusRowRequested;
             ViewModel.FocusRowRequested += OnFocusRowRequested;
             HookRowsCollection(ViewModel);
             WireMainTableOnce();
