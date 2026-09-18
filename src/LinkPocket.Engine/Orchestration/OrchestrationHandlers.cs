@@ -20,7 +20,7 @@ internal static class OrchestrationHandlers
         [
             new MacroSaveHandler(macros), new MacroGetHandler(macros), new MacroListHandler(macros),
             new MacroDeleteHandler(macros), new MacroRunHandler(macros),
-            new UndoListHandler(undo), new UndoUndoHandler(undo), new UndoRedoHandler(undo),
+            new UndoListHandler(undo), new UndoListRedoHandler(undo), new UndoUndoHandler(undo), new UndoRedoHandler(undo),
             new UndoClearHandler(undo),
             new StagingStageHandler(staging), new StagingListHandler(staging), new StagingDiscardHandler(staging),
             new StagingInspectHandler(staging), new StagingTransformHandler(staging), new StagingCommitHandler(staging),
@@ -146,10 +146,23 @@ internal sealed class UndoListHandler(IUndoCoordinator undo) : ICommandHandler
     }
 }
 
+internal sealed class UndoListRedoHandler(IUndoCoordinator undo) : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        Name: "undo.list_redo", Category: "undo", Description: "列出重做栈（最近在前，上限 100 条）",
+        Parameters: [], Caps: CommandCaps.Query);
+
+    public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+    {
+        var entries = await undo.ListRedoAsync(ctx.Ct);
+        return CommandResult.Ok(JsonSerializer.SerializeToElement(new { entries }, EngineJson.Options));
+    }
+}
+
 internal sealed class UndoUndoHandler(UndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
-        Name: "undo.undo", Category: "undo", Description: "撤销最近一条可撤销命令（嵌套派发其逆向命令；弹出后转入重做栈）",
+        Name: "undo.undo", Category: "undo", Description: "撤销最近一条可撤销动作（多步记录按逆序逐步回退；弹出后转入重做栈）",
         Parameters: [ParamSpec.Opt<string>("id", "撤销条目 ID（缺省 = 最近一条）")],
         Caps: CommandCaps.Mutation);
 
@@ -166,18 +179,48 @@ internal sealed class UndoUndoHandler(UndoCoordinator undo) : ICommandHandler
         if (entry is null)
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可撤销的命令"));
 
-        var result = await ctx.DispatchNestedAsync(entry.InverseCommand, entry.InverseArgs, ctx.Ct);
+        // 逆序回退：一次动作的多步（如一次粘贴多项）按**相反顺序**撤销，避免中途引用已消失的目标。
+        // 单项失败不中断整批（与 UI 侧批量语义一致）：失败项如实记录并跳过，整条最终被消费
+        // ——"报错并跳过"是定稿口径（绝不静默卡在同一条上让 Ctrl+Z 永远失败）。
+        var failures = new List<string>();
+        ChangeSet? lastChanges = null;
+        object? lastData = null;
+        for (var i = entry.Steps.Count - 1; i >= 0; i--)
+        {
+            var step = entry.Steps[i];
+            try
+            {
+                var result = await ctx.DispatchNestedAsync(step.InverseCommand, step.InverseArgs, ctx.Ct);
+                lastChanges = result.Changes;
+                lastData = result.Data;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{step.InverseCommand}: {ex.Message}");
+            }
+        }
 
+        // 部分失败不转入重做栈（重做会重放整条原始命令，对已成功回退的步骤会二次施加 → 状态错乱）
         var taken = await undo.TakeUndoAsync(entry.Id, ctx.Ct);
-        if (taken != null) undo.MarkUndone(taken);
-        return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
+        if (taken != null && failures.Count == 0) undo.MarkUndone(taken);
+
+        var summary = failures.Count == 0
+            ? $"已撤销 {entry.Steps.Count} 步"
+            : $"已撤销 {entry.Steps.Count - failures.Count} 步，{failures.Count} 步失败（已跳过）";
+        return CommandResult.Ok(
+            BatchEngine.ToElement(lastData),
+            new ChangeSet(
+                lastChanges?.Touched ?? [],
+                lastChanges?.Events ?? [],
+                summary,
+                failures.Count > 0 ? failures : null));
     }
 }
 
 internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
-        Name: "undo.redo", Category: "undo", Description: "重做：按原参数重放最近一条被撤销的命令（重放成功重新入撤销栈）",
+        Name: "undo.redo", Category: "undo", Description: "重做：按正序重放最近一条被撤销的动作（重放成功重新入撤销栈）",
         Parameters: [], Caps: CommandCaps.Mutation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -188,14 +231,47 @@ internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
         if (entry is null)
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可重做的命令"));
 
-        var result = await ctx.DispatchNestedAsync(entry.Command, entry.Args, ctx.Ct);
+        // 正序重放（撤销时是逆序，重做对称回来）。重做动作 = 步骤显式给出者优先
+        //（创建类必须显式：重放 links.create 会生成**新 ID**，原 ID 丢失且回收站留旧快照），否则重放原命令原参数。
+        var failures = new List<string>();
+        ChangeSet? lastChanges = null;
+        object? lastData = null;
+        foreach (var step in entry.Steps)
+        {
+            var action = step.RedoAction;
+            try
+            {
+                var result = await ctx.DispatchNestedAsync(action.Command, action.Args, ctx.Ct);
+                lastChanges = result.Changes;
+                lastData = result.Data;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{action.Command}: {ex.Message}");
+            }
+        }
 
         var taken = await undo.TakeRedoAsync(ctx.Ct);
-        if (taken == null) return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
-        var handler = ((CommandContextImpl)ctx).Engine.Registry.Resolve(taken.Command);
-        if (handler != null)
-            undo.Record(handler.Descriptor, taken.Args, ctx.Caller);   // 新动作使后续重做链失效（Record 内清重做栈）
-        return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
+        if (taken == null || failures.Count > 0)
+        {
+            // 部分失败：不重新入撤销栈（否则会留下"半重放"的可撤销记录，语义混乱）
+            return CommandResult.Ok(BatchEngine.ToElement(lastData),
+                new ChangeSet(lastChanges?.Touched ?? [], lastChanges?.Events ?? [],
+                    failures.Count == 0 ? null : $"重做 {failures.Count} 步失败（已跳过）",
+                    failures.Count > 0 ? failures : null));
+        }
+
+        // 重新入撤销栈：逆向步骤直接复用原记录（重做重放的是同一动作，其逆向不变），
+        // 无需再读一次旧值；分组 ID 沿用，保证"撤销→重做→再撤销"的批量语义一致。
+        foreach (var step in taken.Steps)
+        {
+            var handler = ((CommandContextImpl)ctx).Engine.Registry.Resolve(step.Command);
+            if (handler == null) continue;
+            undo.Record(handler.Descriptor, step.Args, ctx.Caller,
+                [new UndoInverseStep(step.InverseCommand, step.InverseArgs, step.Redo)], taken.GroupId);
+        }
+
+        return CommandResult.Ok(BatchEngine.ToElement(lastData), lastChanges);
     }
 }
 

@@ -74,25 +74,58 @@ public sealed class UndoCoordinator : IUndoCoordinator
         }
     }
 
-    public void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller)
+/// <summary>
+    /// 登记一条（或合并进一条）可撤销记录。
+    /// 逆向步骤来源：① 处理器回填的 <paramref name="inverse"/>（能带旧值，重命名/移动靠它）；
+    /// ② 退回描述符声明的 UndoInverse + 原参数（对称对 links.trash↔trash.restore 走这条）。
+    /// 两者都没有 → 不入栈（例如 folders.update 改名：明确不可撤销）。
+    /// <paramref name="groupId"/> 与栈顶同组 → **追加合并**（一次粘贴多选 = 一个用户动作 = 一条记录）。
+    /// </summary>
+    public void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller,
+        IReadOnlyList<UndoInverseStep>? inverse = null, string? groupId = null)
     {
-        if (!descriptor.IsMutation || descriptor.UndoInverse is not { Length: > 0 } inverse)
-            return;
+        if (!descriptor.IsMutation) return;
+
+        var steps = BuildSteps(descriptor, args, inverse);
+        if (steps.Count == 0) return;
 
         lock (_lock)
         {
             _redo.Clear();   // 新撤销使重做链失效（标准 redo 语义）
+
+            // 分组：与栈顶同组 → 合并进同一条（不进新条，容量不变）
+            if (groupId is { Length: > 0 } && _undo.TryPeek(out var top)
+                && string.Equals(top.GroupId, groupId, StringComparison.Ordinal))
+            {
+                _undo.TryPop(out _);
+                _undo.Push(top with { Steps = [.. top.Steps, .. steps] });
+                return;
+            }
+
             _undo.Push(new UndoEntry(
                 Id: Guid.NewGuid().ToString("N"),
                 At: DateTimeOffset.Now,
-                Command: descriptor.Name,
-                Args: args.Clone(),
-                InverseCommand: inverse,
-                InverseArgs: args.Clone(),
-                Caller: caller));
+                Steps: steps,
+                Caller: caller,
+                GroupId: groupId));
 
             while (_undo.Count > Capacity) _undo.TryPop(out _);
         }
+    }
+
+    /// <summary>构造本次调用的可撤销步骤（处理器回填优先；否则退回描述符 + 原参数）。</summary>
+    private static IReadOnlyList<UndoStep> BuildSteps(
+        CommandDescriptor descriptor, JsonElement args, IReadOnlyList<UndoInverseStep>? inverse)
+    {
+        if (inverse is { Count: > 0 })
+            return inverse
+                .Select(s => new UndoStep(descriptor.Name, args.Clone(), s.Command, s.Args.Clone(), s.Redo))
+                .ToArray();
+
+        if (descriptor.UndoInverse is not { Length: > 0 } fallbackInverse)
+            return [];   // 无回填也无声明 → 不可撤销
+
+        return [new UndoStep(descriptor.Name, args.Clone(), fallbackInverse, args.Clone())];
     }
 
     /// <summary>undo.undo 处理器在逆向命令派发成功后调（把弹出条目转入重做栈）。</summary>

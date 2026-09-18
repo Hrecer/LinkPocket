@@ -251,13 +251,18 @@ public class OrchestrationTests
             var entries = await UndoListAsync(engine);
             Assert.Single(entries);
             Assert.Equal("test.trash", entries[0].Command);
-            Assert.Equal("test.restore", entries[0].InverseCommand);
+            Assert.Equal("test.restore", Assert.Single(entries[0].Steps).InverseCommand);
 
             await engine.ExecuteAsync<JsonElement>("undo.undo", null);   // 撤销 = restore
             Assert.Equal(0, TrashPairHandlers.State);
+            // 重做栈查询（undo.list_redo）与撤销栈同形状：撤销后重做可用、撤销栈空
+            Assert.Single(await UndoListRedoAsync(engine));
+            Assert.Empty(await UndoListAsync(engine));
 
             await engine.ExecuteAsync<JsonElement>("undo.redo", null);   // 重做 = 重放 trash
             Assert.Equal(1, TrashPairHandlers.State);
+            Assert.Empty(await UndoListRedoAsync(engine));
+            Assert.Single(await UndoListAsync(engine));                  // 重做后重新入撤销栈
         }
         finally { TrashPairHandlers.Reset(); Cleanup(path); }
     }
@@ -282,17 +287,31 @@ public class OrchestrationTests
     private static async Task<IReadOnlyList<UndoEntry>> UndoListAsync(EngineCore engine)
     {
         var list = await engine.QueryAsync<JsonElement>("undo.list");
-        return list.GetProperty("entries").EnumerateArray()
+        return ParseEntries(list);
+    }
+
+    /// <summary>重做栈清单（undo.list_redo 与 undo.list 同形状）。</summary>
+    private static async Task<IReadOnlyList<UndoEntry>> UndoListRedoAsync(EngineCore engine)
+    {
+        var list = await engine.QueryAsync<JsonElement>("undo.list_redo");
+        return ParseEntries(list);
+    }
+
+    private static IReadOnlyList<UndoEntry> ParseEntries(JsonElement list)
+        => list.GetProperty("entries").EnumerateArray()
             .Select(e => new UndoEntry(
                 e.GetProperty("id").GetString()!,
                 DateTimeOffset.Parse(e.GetProperty("at").GetString()!),
-                e.GetProperty("command").GetString()!,
-                e.GetProperty("args").Clone(),
-                e.GetProperty("inverse_command").GetString()!,
-                e.GetProperty("inverse_args").Clone(),
-                new CallerRef(CallerKind.Test, e.GetProperty("caller").GetProperty("session_id").GetString())))
+                e.GetProperty("steps").EnumerateArray()
+                    .Select(s => new UndoStep(
+                        s.GetProperty("command").GetString()!,
+                        s.GetProperty("args").Clone(),
+                        s.GetProperty("inverse_command").GetString()!,
+                        s.GetProperty("inverse_args").Clone()))
+                    .ToArray(),
+                new CallerRef(CallerKind.Test, e.GetProperty("caller").GetProperty("session_id").GetString()),
+                e.TryGetProperty("group_id", out var g) && g.ValueKind == JsonValueKind.String ? g.GetString() : null))
             .ToList();
-    }
 
     // ===== 会话（能力门）=====
 

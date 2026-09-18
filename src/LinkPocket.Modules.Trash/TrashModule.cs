@@ -14,6 +14,7 @@ public static class TrashModule
         new TrashTreeHandler(),
         new TrashUnitContentsHandler(),
         new TrashRestoreHandler(),
+        new TrashRestoreUnitHandler(),
         new TrashRestoreBatchHandler(),
         new TrashPurgeHandler(),
         new TrashPurgeBatchHandler(),

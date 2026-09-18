@@ -25,7 +25,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             ParamSpec.Opt<string>("target_list_id", "move_to_list 模式的目标文件夹 ID"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
-        UndoInverse: null,
+        UndoInverse: null,   // 逆向参数需计算（且仅 trash_links 可逆）→ 由处理器回填，见下方 undo
         Impact: ImpactSummary.Folder);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -136,12 +136,24 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         var events = new List<string> { LinkPocket.Contracts.DomainEventNames.FoldersChanged, LinkPocket.Contracts.DomainEventNames.LinksChanged };
         if (cascade == "trash_links") events.Add(LinkPocket.Contracts.DomainEventNames.TrashChanged);
 
+        // 撤销载荷：**仅 trash_links（整子树进回收站）可撤销** —— 逆向 = 还原该单元回原父。
+        // delete_all（物理删除）与 move_to_list（链接已转移、空子树已删）**不可逆** → 不发载荷，不入撤销栈。
+        var undo = cascade == "trash_links"
+            ? new[]
+            {
+                new UndoInverseStep("trash.restore_unit",
+                    System.Text.Json.JsonSerializer.SerializeToElement(
+                        new { unit_id = id.Value, target_parent_id = folder.ParentId }))
+            }
+            : null;
+
         return CommandResult.Ok(
             new FolderDeleteResult(cascade, subtreeFolders.Count, trashedLinkCount),
             new ChangeSet(
                 Touched: [new EntityRef("folder", id.Value)],
                 Events: events,
-                HumanSummary: $"已删除文件夹「{folder.Name}」（{cascade}）"));
+                HumanSummary: $"已删除文件夹「{folder.Name}」（{cascade}）"),
+            undo);
     }
 
     /// <summary>直接子链接计数缓存回填（LinkCount 列的既有维护口径）。</summary>

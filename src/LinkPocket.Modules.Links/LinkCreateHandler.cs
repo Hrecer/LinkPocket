@@ -84,12 +84,19 @@ internal sealed class LinkCreateHandler : ICommandHandler
 
         var summary = $"已创建链接「{link.Title ?? link.Url}」"
                       + (warnings == null ? "" : "（元数据未抓取到）");
+        // 撤销载荷：撤销"新建链接"（也覆盖"复制粘贴链接"）= 把刚建的链接移入回收站（软删除）。
+        // **重做必须显式给出** = 从回收站还原（保留原 ID）：若按缺省重放 links.create，会生成**新 ID**，
+        // 原 ID 丢失且回收站里留下旧快照（同一个用户动作变成两条数据）。
         return CommandResult.Ok(
             link.ToDto(),
             new ChangeSet(
                 Touched: [new EntityRef("link", link.LinkId)],
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: summary,
-                Warnings: warnings));
+                Warnings: warnings),
+            [new UndoInverseStep("links.trash",
+                JsonSerializer.SerializeToElement(new { id = link.LinkId }),
+                new UndoAction("trash.restore",
+                    JsonSerializer.SerializeToElement(new { id = link.LinkId, to_origin = true })))]);
     }
 }

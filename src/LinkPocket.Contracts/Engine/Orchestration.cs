@@ -124,19 +124,45 @@ public interface IStagingService
     Task<string> ReadTextAsync(string stagingId, CancellationToken ct);
 }
 
-/// <summary>撤销栈条目：命令级逆向（逆向命令 = Descriptor.UndoInverse，逆向参数 = 原参数；对称对 trash↔restore 天然成立）。</summary>
+/// <summary>一个可执行动作（命令 + 参数）：撤销/重做都表达为动作。</summary>
+public sealed record UndoAction(string Command, JsonElement Args);
+
+/// <summary>
+/// 逆向步骤：撤销该步时要执行的动作（+ 可选的重做动作）。
+/// **由处理器在同一个事务内读到旧值后回填**（如移动前的父目录、新建出的新 ID）——
+/// 引擎无法从"原参数"反推旧值，这正是"重命名/移动过去无法撤销"的结构原因。
+/// Redo 缺省 null = **重放原命令原参数**；创建类命令必须显式给出（否则重做会生成**新 ID**、
+/// 原 ID 丢失且回收站里留下旧快照——重做应是"从回收站还原原 ID"）。
+/// </summary>
+public sealed record UndoInverseStep(string Command, JsonElement Args, UndoAction? Redo = null);
+
+/// <summary>一个可撤销步骤：原命令（重做默认重放）+ 逆向命令（撤销执行）+ 可选显式重做动作。</summary>
+public sealed record UndoStep(
+    string Command, JsonElement Args, string InverseCommand, JsonElement InverseArgs, UndoAction? Redo = null)
+{
+    /// <summary>重做该步要执行的动作（显式给出优先，否则重放原命令原参数）。</summary>
+    public UndoAction RedoAction => Redo ?? new UndoAction(Command, Args);
+}
+
+/// <summary>
+/// 撤销记录：**一条 = 一个用户动作**。通常单步；同组 ID 的多次调用（一次粘贴多选）合并为多步，
+/// 撤销时按**逆序**逐步执行、重做时按**正序**重放。
+/// GroupId = 同一次用户动作的多次调用共享的分组 ID；null = 独立动作。
+/// </summary>
 public sealed record UndoEntry(
     string Id,
     DateTimeOffset At,
-    string Command,
-    JsonElement Args,
-    string InverseCommand,
-    JsonElement InverseArgs,
-    CallerRef Caller);
+    IReadOnlyList<UndoStep> Steps,
+    CallerRef Caller,
+    string? GroupId = null)
+{
+    /// <summary>最近一步的原命令（撤销清单展示用；多步记录取最后一步）。</summary>
+    public string Command => Steps.Count > 0 ? Steps[^1].Command : string.Empty;
+}
 
 /// <summary>
 /// 撤销协调器（IUndoCoordinator）：纯状态机（撤销栈 + 重做栈，上限 100 条）。
-/// 行为由 undo.list / undo.undo / undo.redo / undo.clear 四个命令驱动；
+/// 行为由 undo.list / undo.list_redo / undo.undo / undo.redo / undo.clear 五个命令驱动；
 /// 逆向命令在撤销命令的管道内经嵌套派发执行（与被撤销命令同事务语义）。
 /// </summary>
 public interface IUndoCoordinator
@@ -154,8 +180,14 @@ public interface IUndoCoordinator
     /// <summary>弹出待重做条目（重放原命令原参数；栈空返回 null）。</summary>
     Task<UndoEntry?> TakeRedoAsync(CancellationToken ct);
 
-    /// <summary>引擎在顶层可撤销命令（Reversible + UndoInverse）成功后登记；栈满丢最旧。</summary>
-    void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller);
+    /// <summary>
+    /// 引擎在顶层可撤销命令成功后登记。
+    /// <paramref name="inverse"/> = 处理器回填的逆向步骤（可多步，如批量移动每项一步）；
+    /// 为 null 时退回"描述符声明的 UndoInverse + 原参数"（对称对 links.trash↔trash.restore 走这条）。
+    /// <paramref name="groupId"/> 非空且与栈顶同组时**追加合并**为同一条记录（一次粘贴多选 = 一个动作）。
+    /// </summary>
+    void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller,
+        IReadOnlyList<UndoInverseStep>? inverse = null, string? groupId = null);
 }
 
 // ============================================================

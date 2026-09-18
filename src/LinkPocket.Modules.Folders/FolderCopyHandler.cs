@@ -62,12 +62,18 @@ internal sealed class FolderCopyHandler : ICommandHandler
 
         await uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
 
+        // 撤销载荷：撤销"复制"= 把副本（含整棵子树）移入回收站。
+        // **重做必须显式给出** = 从回收站还原副本（保留原 ID）；重放 folders.copy 会再复制一份新 ID。
         return CommandResult.Ok(
             new FolderCopyResult(newFolder.FolderId),
             ChangeSet.Of(
                 new EntityRef("folder", newFolder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已复制文件夹「{source.Name}」"));
+                $"已复制文件夹「{source.Name}」"),
+            [new UndoInverseStep("folders.delete",
+                JsonSerializer.SerializeToElement(new { folder_id = newFolder.FolderId, cascade = "trash_links" }),
+                new UndoAction("trash.restore_unit",
+                    JsonSerializer.SerializeToElement(new { unit_id = newFolder.FolderId, target_parent_id = target })))]);
     }
 
     private static async Task CopyChildrenAsync(

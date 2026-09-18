@@ -17,7 +17,7 @@ internal sealed class FolderMoveHandler : ICommandHandler
             ParamSpec.Req<string>("folder_id", "文件夹 ID"),
             ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根级"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（见 undo）
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -52,11 +52,22 @@ internal sealed class FolderMoveHandler : ICommandHandler
             previousParentId == null ? null : new FolderId(previousParentId), ct);
         await ctx.Uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
 
+        // 撤销载荷：仅当父目录真的变了才可撤销（移到自己所在层 = 无操作，不入栈）。
+        // 逆向参数带**旧父目录**——引擎无法从原参数反推旧值，这正是过去"移动不可撤销"的结构原因。
+        var undo = previousParentId == target
+            ? null
+            : new[]
+            {
+                new UndoInverseStep("folders.move",
+                    JsonSerializer.SerializeToElement(new { folder_id = id.Value, target_parent_id = previousParentId }))
+            };
+
         return CommandResult.Ok(
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已移动文件夹「{folder.Name}」"));
+                $"已移动文件夹「{folder.Name}」"),
+            undo);
     }
 }

@@ -182,8 +182,10 @@ public sealed class EngineCore : IEngine
                 if (options?.IdempotencyKey is { } idemKey)
                     _idempotency.Store(idemKey, result);
 
-                // 撤销登记：顶层可撤销命令（Reversible + UndoInverse）成功后入栈
-                Undo?.Record(handler.Descriptor, argsJson, caller);
+                // 撤销登记：顶层可撤销命令成功后入栈。
+                // 逆向步骤优先取**处理器回填**（能带旧值，重命名/移动靠它）；没有则退回描述符 + 原参数。
+                // UndoGroupId：同一次用户动作拆成的多次调用（一次粘贴多选）合并为一条记录。
+                Undo?.Record(handler.Descriptor, argsJson, caller, result.Undo, options?.UndoGroupId);
             }
 
             // 成功审计（观测面）：同样不因审计失败而否定已提交的事实（ARCHITECTURE 不变量 #10「失败要暴露」的

@@ -59,11 +59,24 @@ internal sealed class LinkUpdateHandler : ICommandHandler
             await ctx.Uow.Trees.TouchModifiedAsync(
                 previousListId == null ? null : new FolderId(previousListId), ct);
 
+        // 撤销载荷：**仅当归属真的变了**（跨目录移动）才可撤销——改名/改描述/改收藏**绝不入撤销栈**
+        // （用户 2026-09-19 定稿：重命名与改属性不属于可撤销动作）。
+        // 描述符**不声明** UndoInverse：否则引擎的"退回原参数"路径会把纯改名也变成可撤销。
+        // 逆向用 links.move_batch（唯一能表达"移回根级"的命令：target_list_id 缺省 = 根）。
+        var undo = previousListId == link.ListId
+            ? null
+            : new[]
+            {
+                new UndoInverseStep("links.move_batch",
+                    JsonSerializer.SerializeToElement(new { link_ids = new[] { id.Value }, target_list_id = previousListId }))
+            };
+
         return CommandResult.Ok(
             link.ToDto(),
             ChangeSet.Of(
                 new EntityRef("link", link.LinkId),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已更新链接「{link.Title ?? link.Url}」"));
+                $"已更新链接「{link.Title ?? link.Url}」"),
+            undo);
     }
 }

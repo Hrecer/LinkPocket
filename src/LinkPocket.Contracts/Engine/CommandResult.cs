@@ -30,14 +30,21 @@ public sealed record ChangeSet(
         => new(touched, events, summary, warnings);
 }
 
-/// <summary>命令执行成功结果（处理器返回；引擎包装为强类型 <see cref="CommandResult{T}"/> 给消费者）。</summary>
+/// <summary>
+/// 命令执行成功结果（处理器返回；引擎包装为强类型 <see cref="CommandResult{T}"/> 给消费者）。
+/// Undo = 处理器回填的**逆向步骤**（撤销这个动作要执行什么）——可空：
+/// 为 null 时引擎退回"描述符声明的 UndoInverse + 原参数"；两者都没有则本命令不入撤销栈。
+/// 处理器必须在同一个事务内读到旧值后回填（如移动前的父目录）——引擎无法从原参数反推旧值。
+/// </summary>
 public sealed record CommandResult(
     object? Data,
     ChangeSet? Changes,
-    string? AuditRef)
+    string? AuditRef,
+    IReadOnlyList<UndoInverseStep>? Undo = null)
 {
-    public static CommandResult Ok(object? data, ChangeSet? changes = null)
-        => new(data, changes, null);
+    public static CommandResult Ok(object? data, ChangeSet? changes = null,
+        IReadOnlyList<UndoInverseStep>? undo = null)
+        => new(data, changes, null, undo);
 }
 
 /// <summary>命令执行成功结果（强类型视图）。</summary>

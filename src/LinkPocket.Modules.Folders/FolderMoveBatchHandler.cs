@@ -21,7 +21,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             ParamSpec.Req<IReadOnlyList<string>>("folder_ids", "要移动的文件夹 ID 列表"),
             ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根级"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（每项一步）
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -102,6 +102,8 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         }
 
         // —— 变更阶段 ——
+        // 旧父快照必须在变更**之前**取（撤销载荷要带旧值；变更后再读已是新值）
+        var oldParents = movedFolders.ToDictionary(f => f.FolderId, f => f.ParentId, StringComparer.Ordinal);
         foreach (var folder in movedFolders)
         {
             folder.ParentId = target;
@@ -115,11 +117,21 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         await uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
 
         var summary = $"已移动 {movedFolders.Count} 个文件夹" + (renamedNotes.Count > 0 ? $"（重命名：{string.Join("、", renamedNotes)}）" : "");
+
+        // 撤销载荷：**每项一步**（各文件夹的旧父可能不同）——逆向 = 各自移回原父。
+        // 注意：批量路径的"同名自动编号"改名不在撤销范围内（改名本身不可撤销，见契约）。
+        var undo = movedFolders
+            .Where(f => oldParents[f.FolderId] != target)
+            .Select(f => new UndoInverseStep("folders.move",
+                JsonSerializer.SerializeToElement(new { folder_id = f.FolderId, target_parent_id = oldParents[f.FolderId] })))
+            .ToList();
+
         return CommandResult.Ok(
             new FolderMoveBatchResult(movedFolders.Count, renamedNotes),
             new ChangeSet(
                 Touched: movedFolders.Select(f => new EntityRef("folder", f.FolderId)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.FoldersChanged],
-                HumanSummary: summary));
+                HumanSummary: summary),
+            undo.Count > 0 ? undo : null);
     }
 }

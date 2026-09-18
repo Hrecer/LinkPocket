@@ -51,11 +51,17 @@ internal sealed class FolderCreateHandler : ICommandHandler
         await ctx.Uow.Trees.TouchModifiedAsync(
             parentId == null ? null : new FolderId(parentId), ct);
 
+        // 撤销载荷：撤销"新建"= 把刚建的文件夹移入回收站（软删除）。
+        // **重做必须显式给出** = 从回收站还原该单元（保留原 ID + 回原父）；重放 folders.create 会生成新 ID。
         return CommandResult.Ok(
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已创建文件夹「{folder.Name}」"));
+                $"已创建文件夹「{folder.Name}」"),
+            [new UndoInverseStep("folders.delete",
+                JsonSerializer.SerializeToElement(new { folder_id = folder.FolderId, cascade = "trash_links" }),
+                new UndoAction("trash.restore_unit",
+                    JsonSerializer.SerializeToElement(new { unit_id = folder.FolderId, target_parent_id = parentId })))]);
     }
 }

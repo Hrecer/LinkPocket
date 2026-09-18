@@ -53,6 +53,13 @@ public sealed record ParamSpec(string Name, string TypeName, string Description,
 /// 命令描述符：命令的唯一自描述事实源。
 /// 目录（AI 工具清单/用户文档/测试骨架）由它机械生成，杜绝文档漂移。
 /// </summary>
+/// <param name="UndoInverse">
+/// 逆向命令名——**仅当"逆向参数 = 原参数"时声明**（对称对 links.trash↔trash.restore 是唯一形态）。
+/// 需要旧值的命令（移动/新建/复制/删文件夹）**留空**，由处理器经 <see cref="CommandResult.Undo"/> 回填
+/// 逆向步骤（含计算出的参数）。「这个命令可撤销」由 <see cref="CommandCaps.Reversible"/> 表达。
+/// 留空的另一个必要性：否则引擎的"退回原参数"路径会把**不可逆的调用形态**（如 folders.delete 的
+/// delete_all）也记进撤销栈，让 Ctrl+Z 给出"撤销成功"的假象。
+/// </param>
 public sealed record CommandDescriptor(
     string Name,
     string Category,
