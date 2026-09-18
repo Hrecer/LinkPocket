@@ -7,8 +7,9 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Modules.Folders;
 
 /// <summary>
-/// folders.copy（Mutation）：深层复制文件夹（含子树与链接；名称保持原样——
-/// 同名自动编号是调用方/UI 层的既有职责）。新 ID 由实体构造生成，单工作单元一次提交。
+/// folders.copy（Mutation）：深层复制文件夹（含子树与链接）。
+/// **目标层同层唯一命名**（Windows 口径）：副本与目标目录已有兄弟撞名 → 「名 (2)」；
+/// 子树内部名保持原样（源子树自身已满足同层唯一不变量）。新 ID 由实体构造生成，单工作单元一次提交。
 /// </summary>
 internal sealed class FolderCopyHandler : ICommandHandler
 {
@@ -49,7 +50,8 @@ internal sealed class FolderCopyHandler : ICommandHandler
         // 深拷贝：新实体在内存建立父子关系，一次注册、单提交（与既有最终状态逐字段等价）
         var newFolder = new Folder
         {
-            Name = source.Name,
+            // 目标层同层唯一命名（编号口径唯一出处 = Kernel FolderNaming）
+            Name = await FolderNaming.ResolveAsync(uow, target, source.Name, null, ct),
             Description = source.Description,
             ParentId = target,
             LinkCount = 0,
@@ -65,7 +67,7 @@ internal sealed class FolderCopyHandler : ICommandHandler
         // 撤销载荷：撤销"复制"= 把副本（含整棵子树）移入回收站。
         // **重做必须显式给出** = 从回收站还原副本（保留原 ID）；重放 folders.copy 会再复制一份新 ID。
         return CommandResult.Ok(
-            new FolderCopyResult(newFolder.FolderId),
+            new FolderCopyResult(newFolder.FolderId, newFolder.Name),
             ChangeSet.Of(
                 new EntityRef("folder", newFolder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,

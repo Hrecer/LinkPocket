@@ -8,6 +8,7 @@ namespace LinkPocket.Modules.Folders;
 /// <summary>
 /// folders.update（Mutation）：改名 / 改描述——**只改自身属性，绝不换父**。
 /// 换父是唯一的另一条语义，收敛到 <c>folders.move</c>：一个动作一个入口，不存在"两处都能换父"的误用面。
+/// **改名走同层唯一命名**（Windows 口径）：撞名自动编号「名 (2)」，自身不算占用者。
 /// 自身被改名 → 自身与父链的 UpdatedAt 刷新。
 /// </summary>
 internal sealed class FolderUpdateHandler : ICommandHandler
@@ -37,11 +38,11 @@ internal sealed class FolderUpdateHandler : ICommandHandler
 
         if (name != null)
         {
-            var trimmedName = name.Trim();
-            if (trimmedName.Length == 0)
+            if (name.Trim().Length == 0)
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.RequiredParam, "名称不能为空", correlationId: ctx.CorrelationId));
-            folder.Name = trimmedName;
+            // 同层唯一命名（排除自身）：改名撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = Kernel FolderNaming）
+            folder.Name = await FolderNaming.ResolveAsync(ctx.Uow, folder.ParentId, name, folder.FolderId, ct);
         }
         if (description != null) folder.Description = description;
         folder.UpdatedAt = DateTime.UtcNow;

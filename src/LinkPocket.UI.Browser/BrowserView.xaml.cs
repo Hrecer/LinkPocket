@@ -51,7 +51,6 @@ public partial class BrowserView : UserControl
             }
             _wiredVm = ViewModel;
 
-            ViewModel.Prompt ??= (title, defaultValue) => InputDialog.Show(title, defaultValue);   // 实例注入：无头/多窗口下不与其它页共享
             ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.FocusRowRequested += OnFocusRowRequested;
             ViewModel.PaneActivated += OnPaneActivated;
@@ -309,6 +308,16 @@ public partial class BrowserView : UserControl
 
         if (ViewModel == null || row == null) return;
         if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
+
+        // Windows 口径（慢双击改名）：对**按下时已是唯一选中**的行再次单击（单击 / 无修饰键 / 未拖拽）
+        // → 进入就地改名。首次单击只是选中（按下即反馈），第二次单击才改名；
+        // 双击的第二击 ClickCount = 2 已被上面的 `clicks > 1` 挡掉，二者互不干扰。
+        if (_pressWasSoleSelection && mods == ModifierKeys.None && !ViewModel.IsRenaming)
+        {
+            ViewModel.BeginRenameRow(row);
+            return;
+        }
+
         ViewModel.SelectRowWithModifiers(row, mods);
     }
 
@@ -367,6 +376,9 @@ public partial class BrowserView : UserControl
     /// <summary>本次手势是否已进入拖拽（拖拽结束的抬起不得再补做选择收敛）。</summary>
     private bool _dragStarted;
 
+    /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
+    private bool _pressWasSoleSelection;
+
     /// <summary>拖拽数据：选中集合（拖未选中的行时为其临时单项集合）。</summary>
     public record BrowserDragPayload(IReadOnlyList<BrowserRowViewModel> Rows);
 
@@ -375,12 +387,20 @@ public partial class BrowserView : UserControl
     {
         _rowDragStart = e.GetPosition(this);
         _dragStarted = false;
-        _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+        _pressRow = null;                      // 先清凭据：下面任何早退都不得留下上一次的手势
+        _pressWasSoleSelection = false;
         _pressModifiers = Keyboard.Modifiers;
         _pressClickCount = e.ClickCount;
 
+        // 就地改名编辑框内的鼠标操作（定位光标 / 选词 / 双击选词）归编辑框自己：
+        // 不参与行选择、不进入拖拽、也不承载双击打开（否则双击编辑框会把目录打开）。
+        if (InlineNameEditor.IsWithin(e.OriginalSource as DependencyObject)) return;
+
+        _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         if (ViewModel == null || _pressRow == null) return;
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
+        // 记下"按下时它已是唯一选中"——抬起据此判定"再次单击同一项"（Windows 慢双击改名）
+        _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
         if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)
             ViewModel.SelectRowWithModifiers(_pressRow, ModifierKeys.None);
     }
@@ -388,6 +408,7 @@ public partial class BrowserView : UserControl
     private void RowBorder_MouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed) return;
+        if (_pressRow == null) return;   // 按下不在行主体（如落在改名编辑框内）→ 不进入行拖拽
         var pos = e.GetPosition(this);
         if (Math.Abs(pos.X - _rowDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(pos.Y - _rowDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)

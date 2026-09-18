@@ -94,10 +94,13 @@ namespace LinkPocket.Views
         private object? _pressNode;
         private int _pressNodeClickCount;
 
-        /// <summary>树行按下（隧道先于行主体）：记录命中的节点 + 点击计数。</summary>
+        /// <summary>树行按下（隧道先于行主体）：记录命中的节点 + 点击计数。
+        /// 就地改名编辑框内的鼠标操作归编辑框自己 → 不记节点（后续选择/进入/拖拽一律让位）。</summary>
         private void FolderTreeItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _pressNode = (sender as FrameworkElement)?.DataContext;
+            _pressNode = InlineNameEditor.IsWithin(e.OriginalSource as DependencyObject)
+                ? null
+                : (sender as FrameworkElement)?.DataContext;
             _pressNodeClickCount = e.ClickCount;
         }
 

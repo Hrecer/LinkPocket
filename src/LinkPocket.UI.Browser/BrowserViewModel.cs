@@ -204,6 +204,8 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand CrumbClickCommand { get; }
     public ICommand CopyUrlCommand { get; }
     public ICommand RenameRowCommand { get; }
+    /// <summary>链接行右键「编辑」：打开整页编辑器（URL / 名称 / 描述 / 图标）。</summary>
+    public ICommand EditRowCommand { get; }
     public ICommand DeleteRowCommand { get; }
     public ICommand NewFolderCommand { get; }
     public ICommand NewLinkCommand { get; }
@@ -246,11 +248,6 @@ public class BrowserViewModel : INotifyPropertyChanged
     public ICommand ConfirmPathCommand { get; }
     public ICommand CancelPathEditCommand { get; }
     public ICommand CompletePathCommand { get; }
-
-    /// <summary>文本输入委托：由视图层注入（InputDialog.Show），避免 VM 直接依赖控件。参数 (标题, 默认值)，返回输入或 null 取消。
-    /// 实例属性（原静态版本在多窗口共享同一委托，且无头环境下是"全局静默"状态）——由视图在 DataContext 就绪后注入本页实例；
-    /// <c>null</c> 时（无头/单测）调用方按取消处理，绝不因 VM 而崩溃。</summary>
-    public Func<string, string, string?>? Prompt { get; set; }
 
     // —— 多选（Windows 资源管理器语义：锚点 + Ctrl/Shift 修饰键）——
 
@@ -390,6 +387,133 @@ public class BrowserViewModel : INotifyPropertyChanged
         return "全部书签 / " + string.Join(" / ", chain.Select(c => c.Name));
     }
 
+    // —— 就地重命名（Windows 口径：主栏行与目录树节点都能就地改名，链接改的是标题）——
+    // **唯一事实来源** = 下面的重命名会话状态（目标 ID + 是否文件夹 + 编辑面 + 编辑文本 + 原名）；
+    // 行与树节点上的 IsRenaming 全部是它的投影（与 IsSelected 同构），
+    // 绝不各自持一份"我在编辑"的标记，也绝不靠"谁先谁后"的时序去拉齐（用户硬性红线）。
+
+    /// <summary>正在改名的实体 ID（null = 未在改名）。</summary>
+    private string? _renameId;
+
+    /// <summary>改名目标是不是文件夹（决定提交走 folders.update 还是 links.update）。</summary>
+    private bool _renameIsFolder;
+
+    /// <summary>编辑面：主栏行 or 左栏树——同一实体只在**一处**显示编辑框，避免两个编辑框互相抢焦点/双重提交。</summary>
+    private BrowserPane _renameSurface;
+
+    /// <summary>进入改名时的原名（提交时判"没改"用；不依赖行对象存活）。</summary>
+    private string _renameOriginalName = string.Empty;
+
+    private string _editingName = string.Empty;
+
+    /// <summary>改名编辑中的文本（编辑框 TwoWay 绑定；输入即回写）。</summary>
+    public string EditingName
+    {
+        get => _editingName;
+        set { if (_editingName == value) return; _editingName = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>是否正在就地改名（页面级动作一律让位：编辑语义优先）。</summary>
+    public bool IsRenaming => _renameId != null;
+
+    /// <summary>某实体此刻是否显示改名编辑框（投影判据：目标一致 + 编辑面一致）。</summary>
+    public bool IsRenamingId(string? id, BrowserPane surface)
+        => id != null && _renameId != null && _renameSurface == surface
+           && string.Equals(_renameId, id, StringComparison.Ordinal);
+
+    /// <summary>Enter / 失焦：提交改名（空名或未改 = 还原，Windows 口径）。</summary>
+    public ICommand CommitRenameCommand { get; }
+
+    /// <summary>Esc：取消改名（还原原名，不动数据）。</summary>
+    public ICommand CancelRenameCommand { get; }
+
+    /// <summary>进入改名（主栏行入口：F2 / 右键菜单「重命名」/ 再次单击已选中行）。</summary>
+    public void BeginRenameRow(BrowserRowViewModel? row)
+        => BeginRename(row?.Id, row?.IsFolder ?? false, row?.Name, BrowserPane.Main);
+
+    /// <summary>进入改名（左栏树入口：F2 / 右键菜单「重命名」）。虚根「全部书签」不是实体 → 不进入。</summary>
+    public void BeginRenameNode(FolderNode? node)
+    {
+        if (node == null || node.IsRoot) return;
+        BeginRename(node.IsLink ? node.Id : node.FolderId, !node.IsLink, node.Name, BrowserPane.Tree);
+    }
+
+    private void BeginRename(string? id, bool isFolder, string? name, BrowserPane surface)
+    {
+        if (string.IsNullOrEmpty(id) || name == null) return;
+        _renameId = id;
+        _renameIsFolder = isFolder;
+        _renameSurface = surface;
+        _renameOriginalName = name;
+        EditingName = name;
+        ApplyRenameToView();
+        OnPropertyChanged(nameof(IsRenaming));
+        CommandManager.InvalidateRequerySuggested();
+
+        // 行若已实例化：滚入视口（编辑框由 InlineNameEditor 自己在显示后聚焦并全选）
+        var row = Rows.FirstOrDefault(r => r.Id == id);
+        if (row != null && surface == BrowserPane.Main) FocusRowRequested?.Invoke(this, row);
+    }
+
+    /// <summary>结束改名会话（提交与取消的**唯一收口**；会话状态一次性归零并重投影）。</summary>
+    private void EndRename()
+    {
+        if (_renameId == null) return;
+        _renameId = null;
+        _renameIsFolder = false;
+        _renameOriginalName = string.Empty;
+        EditingName = string.Empty;
+        ApplyRenameToView();
+        OnPropertyChanged(nameof(IsRenaming));
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    /// <summary>取消改名（Esc）：只收会话，不写数据。</summary>
+    public void CancelRename() => EndRename();
+
+    /// <summary>
+    /// 提交改名：文件夹 → <c>folders.update{name}</c>；链接 → <c>links.update{title}</c>（重命名 = 标题）。
+    /// 空名 / 未改 = 视为取消并还原（Windows 口径）。**重命名不入撤销栈**（用户 2026-09-19 定稿）。
+    /// 同层撞名的自动编号由**引擎**负责（Kernel FolderNaming），界面只如实展示引擎返回的最终名。
+    /// </summary>
+    public async Task CommitRenameAsync()
+    {
+        var id = _renameId;
+        if (id == null) return;
+        var isFolder = _renameIsFolder;
+        var original = _renameOriginalName;
+        var name = (EditingName ?? string.Empty).Trim();
+        EndRename();
+        if (name.Length == 0 || string.Equals(name, original, StringComparison.Ordinal)) return;
+
+        try
+        {
+            if (isFolder)
+            {
+                var updated = await _client.FolderUpdateAsync(id, name: name);
+                StatusText = $"已重命名为「{updated.Data?.Name ?? name}」";
+            }
+            else
+            {
+                await _client.LinkUpdateAsync(id, title: name);
+                StatusText = $"已重命名为「{name}」";
+            }
+            // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 _selectedIds，不随重建丢）
+        }
+        catch (Exception ex)
+        {
+            ShowError("重命名失败", ex.Message);
+        }
+    }
+
+    /// <summary>重命名态投影：行与树节点上的 IsRenaming 全部从会话状态派生（与选中投影同构）。</summary>
+    private void ApplyRenameToView()
+    {
+        foreach (var r in Rows) r.InvalidateIsRenaming();
+        foreach (var node in AllTreeNodes())
+            node.IsRenaming = IsRenamingId(node.IsLink ? node.Id : node.FolderId, BrowserPane.Tree);
+    }
+
     // —— 剪贴板（Ctrl+X / C / V，载荷见 ClipboardManager.BrowserClipboardPayload）——
 
     public Managers.ClipboardManager Clipboard { get; } = new();
@@ -458,31 +582,37 @@ public class BrowserViewModel : INotifyPropertyChanged
         Details = new BrowserDetailsViewModel(client);
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
-        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot() && !IsPathEditing);
+        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot() && !IsPathEditing && !IsRenaming);
         RowClickCommand = new RelayCommand<BrowserRowViewModel?>(SelectRow);
-        RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row));
+        // 双击打开：改名编辑中让位（编辑框内的双击绝不打开目录/详情）
+        RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row), _ => !IsRenaming);
         CrumbClickCommand = new RelayCommand<BrowserCrumbViewModel?>(crumb => _ = LoadAsync(crumb?.FolderId));
         CopyUrlCommand = new RelayCommand<BrowserRowViewModel?>(CopyUrl);
-        RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = RenameRowAsync(row));
+        // 重命名 = **就地编辑**（Windows 口径）：行/树右键菜单与 F2 都只是"进入编辑"，不再弹输入框
+        RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(BeginRenameRow);
+        EditRowCommand = new RelayCommand<BrowserRowViewModel?>(row => { if (row is { IsFolder: false }) OpenEditorForEdit(row.Id); });
         DeleteRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = DeleteRowAsync(row));
         NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string));
         NewLinkCommand = new RelayCommand(OpenEditorForCreate);
         OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
         DetailPage = new LinkDetailPageViewModel(client, this);
-        RenameNodeCommand = new RelayCommand<FolderNode?>(node => _ = RenameNodeAsync(node));
+        RenameNodeCommand = new RelayCommand<FolderNode?>(BeginRenameNode);
         DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
-        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing);
-        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing);
-        PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing);
-        SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing);
-        // Esc 在路径编辑态里归属「取消路径编辑」；此时本命令让位，避免两者互抢按键。
+        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing && !IsRenaming);
+        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing && !IsRenaming);
+        PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing && !IsRenaming);
+        SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing && !IsRenaming);
+        // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
         // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
-        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing);
-        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing);
-        RenameSelectionCommand = new RelayCommand(() => _ = RenameSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
-        OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing);
+        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming);
+        RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
+        OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
+        // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态
+        CommitRenameCommand = new RelayCommand(() => _ = CommitRenameAsync());
+        CancelRenameCommand = new RelayCommand(CancelRename);
         TogglePathEditCommand = new RelayCommand(TogglePathEdit);
-        EnterPathEditCommand = new RelayCommand(() => { if (!IsPathEditing) EnterPathEdit(); }, () => !IsPathEditing);
+        EnterPathEditCommand = new RelayCommand(() => { if (!IsPathEditing) EnterPathEdit(); }, () => !IsPathEditing && !IsRenaming);
         // F5 = 真刷新（导航加载口径）：主栏内容 + 左栏树一起重建，亮遮罩与入场动画（Windows 口径）
         RefreshCommand = new RelayCommand(() => _ = RefreshAsync(navigating: true));
         NavigateToSearchCommand = new RelayCommand(() => _ports?.Navigation?.NavigateToSearch());
@@ -492,9 +622,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         SelectLastCommand = new RelayCommand(SelectLastRow);
         MoveTreeSelectionCommand = new RelayCommand<object?>(p => MoveTreeSelection(ParseDirection(p)));
         ToggleTreeExpandCommand = new RelayCommand(ToggleFocusedTreeExpand);
-        UndoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: false), () => CanUndo);
-        RedoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: true), () => CanRedo);
-        ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection);
+        UndoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: false), () => CanUndo && !IsRenaming);
+        RedoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: true), () => CanRedo && !IsRenaming);
+        ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection, () => !IsRenaming);
         ConfirmPathCommand = new RelayCommand(ConfirmPath);
         CancelPathEditCommand = new RelayCommand(CancelPathEdit);
         CompletePathCommand = new RelayCommand(CompletePath);
@@ -672,6 +802,8 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 选中的唯一事实来源是 _selectedIds：Rows 已重建且行是投影，这里只需把集合同步到
             // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 _selectedIds 本身。
             ApplySelectionToView();
+            // 重命名态同样是投影：刷新重建行/树后按会话状态重放（编辑框在重建出的行/节点上重新出现并自动聚焦）
+            ApplyRenameToView();
 
             // 粘贴完成后的定位：新行已在本轮重建中就位 → 滚入视口（行不在本轮数据里则留待下次刷新）
             ConsumePendingFocus();
@@ -1023,8 +1155,7 @@ public class BrowserViewModel : INotifyPropertyChanged
                     if (id == target || IsSelfOrDescendant(id, target)) continue;
                     if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
                         continue; // 已在目标目录
-                    var unique = await MoveFolderWithConflictRenameAsync(id, target, renamedNotes, callOptions);
-                    if (unique) moved++;
+                    if (await MoveFolderAsync(id, target, renamedNotes, callOptions)) moved++;
                 }
                 else
                 {
@@ -1043,29 +1174,20 @@ public class BrowserViewModel : INotifyPropertyChanged
         // （它是刷新的重入标志，被写操作占用期间事件刷新会被挂起）。
     }
 
-    /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。
-    /// 单项失败不中断整批（与 MoveLink/Copy* 一致）；改名失败只记备注，移动结果不受影响。</summary>
-    private async Task<bool> MoveFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes,
+    /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel FolderNaming）。
+    /// 返回是否执行了移动；单项失败不中断整批（与 MoveLink/Copy* 一致）。</summary>
+    private async Task<bool> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
-            var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-            await _client.FolderMoveAsync(folderId, target, o);
-            if (unique != name)
-            {
-                try
-                {
-                    await _client.FolderUpdateAsync(folderId, name: unique, o: o);
-                    renamedNotes.Add($"「{name}」→「{unique}」");
-                }
-                catch
-                {
-                    // 改名失败不中断整批：文件夹已移动成功，只有撞名尚未消除（备注如实记录）
-                    renamedNotes.Add($"「{name}」(改名未完成)");
-                }
-            }
+            var moved = await _client.FolderMoveAsync(folderId, target, o);
+            // 编号由引擎统一负责（单一实现）；UI 只按返回名生成提示，绝不自己再补发一条改名命令
+            //（那正是"移动 + 改名两次写、且批量内各算各的"造成 6 个同名文件夹的根因）
+            var resolved = moved.Data?.Name;
+            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
+                renamedNotes.Add($"「{name}」→「{resolved}」");
             return true;
         }
         catch
@@ -1093,31 +1215,6 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>把父目录 ID 归一化成可比较的值（null = 根）。</summary>
     private static string? NormalizeParentId(string? parentId) => parentId;
-
-    /// <summary>目标目录下已存在的文件夹名集合。</summary>
-    private HashSet<string> SiblingFolderNames(string? targetId)
-    {
-        var target = NormalizeParentId(targetId);
-        return _folderMap
-            .Where(kvp => NormalizeParentId(kvp.Value.ParentId) == target)
-            .Select(kvp => kvp.Value.Name)
-            .ToHashSet(StringComparer.CurrentCulture);
-    }
-
-    /// <summary>Windows 风格重名编号："abc" → "abc (2)" → "abc (3)"…；输入名本身已带 "(N)" 时剥掉再编号。</summary>
-    private static string GenerateUniqueName(string original, HashSet<string> taken)
-    {
-        if (!taken.Contains(original)) return original;
-        var baseName = System.Text.RegularExpressions.Regex.Replace(original, @"\s*\(\d+\)$", string.Empty);
-        if (string.IsNullOrWhiteSpace(baseName)) baseName = "未命名";
-        for (var i = 2; i < 1000; i++)
-        {
-            var candidate = $"{baseName} ({i})";
-            if (!taken.Contains(candidate)) return candidate;
-        }
-        // 编号耗尽（几乎不可达）：时间戳后缀。带毫秒避免同秒内两次调用撞名（与内核 WindowsNamingPolicy 同口径）
-        return $"{baseName} ({DateTime.Now:HHmmssff})";
-    }
 
     private static string FormatRenamedNotes(List<string> notes)
         => notes.Count > 0 ? $"（重命名：{string.Join("、", notes)}）" : string.Empty;
@@ -1258,11 +1355,11 @@ public class BrowserViewModel : INotifyPropertyChanged
                 if (payload.IsCut)
                 {
                     if (NormalizeParentId(_folderMap.TryGetValue(fid, out var info) ? info.ParentId : null) == target) continue;
-                    if (await MoveFolderWithConflictRenameAsync(fid, target, renamedNotes, callOptions)) { pasted++; pinnedIds.Add(fid); }
+                    if (await MoveFolderAsync(fid, target, renamedNotes, callOptions)) { pasted++; pinnedIds.Add(fid); }
                 }
                 else
                 {
-                    var newId = await CopyFolderWithConflictRenameAsync(fid, target, renamedNotes, callOptions);
+                    var newId = await CopyFolderAsync(fid, target, renamedNotes, callOptions);
                     if (newId != null) { pasted++; pinnedIds.Add(newId); }
                 }
             }
@@ -1275,7 +1372,7 @@ public class BrowserViewModel : INotifyPropertyChanged
                 }
                 else
                 {
-                    var newId = await CopyLinkWithConflictRenameAsync(lid, target, renamedNotes, callOptions);
+                    var newId = await CopyLinkAsync(lid, target, callOptions);
                     if (newId != null) { pasted++; pinnedIds.Add(newId); }
                 }
             }
@@ -1305,22 +1402,20 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
     }
 
-    /// <summary>深拷贝文件夹；同名自动编号。返回新文件夹 ID（源已删除等情况 → null，单项跳过）。</summary>
-    private async Task<string?> CopyFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes,
+    /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。返回新文件夹 ID（源已删除等情况 → null，单项跳过）。</summary>
+    private async Task<string?> CopyFolderAsync(string folderId, string? target, List<string> renamedNotes,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
-            var unique = GenerateUniqueName(name, SiblingFolderNames(target));
             var copy = await _client.FolderCopyAsync(folderId, target, o);
             var newId = copy.Data?.NewFolderId;
             if (string.IsNullOrEmpty(newId)) return null;
-            if (unique != name)
-            {
-                await _client.FolderUpdateAsync(newId, name: unique, o: o);
-                renamedNotes.Add($"「{name}」→「{unique}」");   // 仅真正重命名才记备注（与移动/复制链接一致）
-            }
+            // 副本名由引擎编号决定（folders.copy 返回最终名）；UI 只按差异生成提示
+            var resolved = copy.Data?.Name;
+            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
+                renamedNotes.Add($"「{name}」→「{resolved}」");
             return newId;
         }
         catch
@@ -1329,35 +1424,26 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>复制书签（全量字段）；同名自动编号。返回新链接 ID（源已删除等情况 → null，单项跳过）。</summary>
-    private async Task<string?> CopyLinkWithConflictRenameAsync(string linkId, string? target, List<string> renamedNotes,
+    /// <summary>复制书签（全量字段）。返回新链接 ID（源已删除等情况 → null，单项跳过）。
+    /// 链接标题**不做唯一化**：链接身份 = URL，标题只是标签（用户 2026-09-19 定稿）。</summary>
+    private async Task<string?> CopyLinkAsync(string linkId, string? target,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取）
 
-            var targetNorm = target;
-            // 目标目录的既有标题集合：分页接口 per_page=0 = 全量，替代第二次全库拉取
-            var siblingTitles = (await _client.LinkListAsync(listId: targetNorm, perPage: 0))
-                .Links
-                .Select(l => l.Title)
-                .ToHashSet(StringComparer.CurrentCulture);
-            var unique = GenerateUniqueName(link.Title ?? string.Empty, siblingTitles);
-
             // 复制书签 = 全量字段（URL/标题/描述/收藏/图标；内核无标签系统，无其它字段可丢）
             var created = await _client.LinkCreateAsync(link.Url,
-                title: unique,
+                title: link.Title,
                 description: string.IsNullOrEmpty(link.Description) ? null : link.Description,
-                listId: targetNorm,
+                listId: target,
                 isImportant: link.IsImportant,
                 autoFetchMetadata: false,
                 faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl,
                 o: o);
             var newId = created.Data?.LinkId;
-            if (string.IsNullOrEmpty(newId)) return null;
-            if (unique != link.Title) renamedNotes.Add($"「{link.Title}」→「{unique}」");
-            return newId;
+            return string.IsNullOrEmpty(newId) ? null : newId;
         }
         catch
         {
@@ -1372,20 +1458,37 @@ public class BrowserViewModel : INotifyPropertyChanged
         return p is { IsCut: true } && (isFolder ? p.FolderIds.Contains(id) : p.LinkIds.Contains(id));
     }
 
+    /// <summary>新建文件夹的默认名（Windows 口径；同层撞名由引擎自动编号「新建文件夹 (2)」）。</summary>
+    private const string DefaultFolderName = "新建文件夹";
+
     /// <summary>
-    /// 新建文件夹（Windows 语义）：
-    /// 参数为空 → 在当前目录新建；参数为目标文件夹 ID（行右键）→ 在该文件夹内新建。
+    /// 新建文件夹（Windows 口径，**不再弹输入框**）：
+    /// 直接以默认名创建（同层撞名由引擎自动编号），随后**立刻进入就地改名**——
+    /// 新项临时置尾 + 选中 + 滚入视口 + 聚焦编辑框；行要等事件刷新（300ms 防抖）重建后才出现，
+    /// 故改名会话与定位请求先待命，重建时由投影/消费落地（**不做显式刷新**：显式 + 事件双重刷新是"刷两遍"的根因）。
+    /// 参数为空 → 在当前目录新建；参数为目标文件夹 ID（行右键）→ 在该文件夹内新建
+    /// （那种情况新文件夹不在当前视图里，只如实报告，不进入不可见的改名态）。
     /// </summary>
     private async Task NewFolderAsync(string? parentId)
     {
         // 参数为空 → 当前目录；参数为真实文件夹 ID → 在该文件夹内新建
         var target = FolderIds.IsRoot(parentId) ? Controller.CurrentFolderId : parentId;
-        var name = Prompt?.Invoke("新建文件夹", "新建文件夹");
-        if (string.IsNullOrWhiteSpace(name)) return;
         try
         {
-            await _client.FolderCreateAsync(name, target);
+            var created = await _client.FolderCreateAsync(DefaultFolderName, parentId: target);
+            var newId = created.Data?.FolderId;
+            if (string.IsNullOrEmpty(newId)) return;
+            var name = created.Data?.Name ?? DefaultFolderName;
             StatusText = $"已创建文件夹「{name}」";
+
+            // 新项不在当前视图（在别的文件夹内新建）→ 无可见行可改名，只报告
+            if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId)) return;
+
+            // Windows 口径：新项临时置尾（不参与排序）+ 选中 + 滚入视口，并直接进入就地改名
+            MarkRecentlyPinned(new[] { newId });
+            SetSelection(new[] { newId }, newId);
+            _pendingFocusId = newId;
+            BeginRename(newId, isFolder: true, name, BrowserPane.Main);
             // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）
         }
         catch (Exception ex)
@@ -1404,23 +1507,6 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public Task RefreshPreservingSelectionAsync()
         => RefreshAsync(clearSelection: false);
-
-    private async Task RenameNodeAsync(FolderNode? node)
-    {
-        if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
-        var name = Prompt?.Invoke("重命名文件夹", node.Name);
-        if (string.IsNullOrWhiteSpace(name) || name == node.Name) return;
-        try
-        {
-            await _client.FolderUpdateAsync(node.FolderId, name: name);
-            StatusText = $"已重命名为「{name}」";
-            // 刷新交给后端事件（300ms 防抖）：事件链的刷新本就保留选中，无需显式再刷一次
-        }
-        catch (Exception ex)
-        {
-            ShowError("重命名失败", ex.Message);
-        }
-    }
 
     private async Task DeleteNodeAsync(FolderNode? node)
     {
@@ -1511,41 +1597,26 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
     }
 
-    private async Task RenameSelectedAsync()
+    /// <summary>
+    /// F2：对当前唯一选中项进入就地改名。编辑面 = 当前活跃栏（Windows 口径：哪一栏有焦点就在哪一栏改），
+    /// 树里找不到对应节点时回落到主栏。选中集合是唯一事实来源，两栏共用同一个目标 ID。
+    /// </summary>
+    private void BeginRenameSelection()
     {
         var row = SelectedRows.FirstOrDefault();
-        if (row != null) await RenameRowAsync(row);
+        if (row == null) return;
+        if (ActivePane == BrowserPane.Tree)
+        {
+            var node = AllTreeNodes().FirstOrDefault(n => (n.IsLink ? n.Id : n.FolderId) == row.Id);
+            if (node != null) { BeginRenameNode(node); return; }
+        }
+        BeginRenameRow(row);
     }
 
     private async Task OpenSelectedAsync()
     {
         var row = SelectedRows.FirstOrDefault();
         if (row != null) await OpenRowAsync(row);
-    }
-
-    private async Task RenameRowAsync(BrowserRowViewModel? row)
-    {
-        if (row == null) return;
-
-        // 链接没有"重命名"语义（名称/URL/描述/图标都属于可编辑内容）→ 打开整页编辑器
-        if (!row.IsFolder)
-        {
-            OpenEditorForEdit(row.Id);
-            return;
-        }
-
-        var name = Prompt?.Invoke("重命名文件夹", row.Name);
-        if (string.IsNullOrWhiteSpace(name) || name == row.Name) return;
-        try
-        {
-            await _client.FolderUpdateAsync(row.Id, name: name);
-            StatusText = $"已重命名为「{name}」";
-            // 刷新交给后端事件（300ms 防抖）：事件链的刷新本就保留选中（选中在 _selectedIds，不随重建丢）
-        }
-        catch (Exception ex)
-        {
-            ShowError("重命名失败", ex.Message);
-        }
     }
 
     private async Task DeleteRowAsync(BrowserRowViewModel? row)

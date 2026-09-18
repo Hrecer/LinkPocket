@@ -87,6 +87,15 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>选中集合变化后由宿主调用：仅重发本行 IsSelected 的绑定通知（值由集合投影）。</summary>
     public void InvalidateIsSelected() => OnPropertyChanged(nameof(IsSelected));
 
+    /// <summary>
+    /// 本行是否显示就地改名编辑框 = 宿主重命名会话状态的纯投影（与 <see cref="IsSelected"/> 同构）：
+    /// 行对象随 Rows 重建销毁，所以"我在编辑"绝不持久在行上，只从 VM 读值。
+    /// </summary>
+    public bool IsRenaming => Host != null && Host.IsRenamingId(Id, BrowserPane.Main);
+
+    /// <summary>重命名会话变化后由宿主调用：仅重发本行 IsRenaming 的绑定通知（值由会话投影）。</summary>
+    public void InvalidateIsRenaming() => OnPropertyChanged(nameof(IsRenaming));
+
     private bool _isCut;
     /// <summary>剪切态视觉（Ctrl+X）：行整体半透明，由绑定驱动。</summary>
     public bool IsCut

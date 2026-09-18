@@ -7,8 +7,8 @@ namespace LinkPocket.Contracts;
 
 // —— folders ——
 
-/// <summary>深层复制的产出。</summary>
-public sealed record FolderCopyResult(string NewFolderId);
+/// <summary>深层复制的产出（Name = 引擎同层唯一编号后的最终名，供调用方提示"重命名"）。</summary>
+public sealed record FolderCopyResult(string NewFolderId, string Name);
 
 /// <summary>删除结果（含级联模式与连带统计）。</summary>
 public sealed record FolderDeleteResult(

@@ -417,8 +417,9 @@ public class BrowserViewModelTests
             // 写操作不显式刷新（WARNINGS #18）：模拟事件链的刷新取新状态
             await vm.RefreshPreservingSelectionAsync();
 
-            // 置尾（Windows）：新项（A (2)）临时排在末尾（不参与排序），不再紧跟 A
-            Assert.Equal(new[] { "A", "B", "C", "A (2)" }, vm.Rows.Select(r => r.Name).ToArray());
+            // 置尾（Windows）：新项临时排在末尾（不参与排序），不再紧跟原项。
+            // 链接标题**不做唯一化**（链接身份 = URL，标题只是标签）→ 复制出来的仍是 "A"。
+            Assert.Equal(new[] { "A", "B", "C", "A" }, vm.Rows.Select(r => r.Name).ToArray());
             // 新项被选中（粘贴后选中新内容）
             var newRow = vm.Rows[3];
             Assert.True(newRow.IsSelected);
@@ -426,14 +427,14 @@ public class BrowserViewModelTests
 
             // 后台事件刷新（写操作后的防抖口径）不归位：置尾保持不变（否则粘贴后那次刷新就抹掉置尾效果）
             await vm.RefreshPreservingSelectionAsync();
-            Assert.Equal(new[] { "A", "B", "C", "A (2)" }, vm.Rows.Select(r => r.Name).ToArray());
+            Assert.Equal(new[] { "A", "B", "C", "A" }, vm.Rows.Select(r => r.Name).ToArray());
 
             // 点列头排序 = 真刷新 → 置尾归位（按名称升序）
             vm.ApplySort("title", true);
             Assert.True(await WaitUntilAsync(
                     () => vm.Rows.Count == 4 && vm.Rows[3].Name == "C", TimeSpan.FromSeconds(5)),
                 $"点列头排序后置尾未归位：{string.Join(",", vm.Rows.Select(r => r.Name))}");
-            Assert.Equal(new[] { "A", "A (2)", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
+            Assert.Equal(new[] { "A", "A", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
 
             // 重新进入目录（导航）= 真刷新：置尾同样归位
             vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
@@ -441,10 +442,12 @@ public class BrowserViewModelTests
             vm.PasteCommand.Execute(null);
             Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)));
             await vm.RefreshPreservingSelectionAsync();
-            Assert.Equal("A (3)", vm.Rows[^1].Name);                    // 置尾生效
+            // 置尾生效：新项（同标题，按 ID 分辨）在末尾
+            var pasted = Assert.Single(vm.SelectedRows);
+            Assert.Equal(pasted.Id, vm.Rows[^1].Id);
 
             await vm.LoadAsync(null);
-            Assert.Equal(new[] { "A", "A (2)", "A (3)", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
+            Assert.Equal(new[] { "A", "A", "A", "B", "C" }, vm.Rows.Select(r => r.Name).ToArray());
         }
         finally
         {

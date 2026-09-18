@@ -48,6 +48,13 @@ internal sealed class BookmarksImportHandler : ICommandHandler
         var foldersToAdd = new List<Folder>(doc.FolderCount);
         var linksToAdd = new List<Link>(doc.LinkCount);
 
+        // 同层唯一命名（Windows 口径）：根级先预置库里已有的根级文件夹名，导入出来的每一层在内存里逐项累积。
+        // 缺了这一步会出现两种重名：① 文件里同一父下两个同名兄弟；② 导入项与既有文件夹同名。
+        var naming = WindowsNamingPolicy.Instance;
+        var takenByParent = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var existing in await ctx.Uow.Folders.ChildrenOfAsync(null, ct))
+            TakenFor(takenByParent, naming, null).Add(existing.Name);
+
         for (var i = 0; i < doc.Items.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -56,10 +63,15 @@ internal sealed class BookmarksImportHandler : ICommandHandler
 
             if (item.IsFolder)
             {
+                var taken = TakenFor(takenByParent, naming, parentFolderId);
+                // Truncate 签名返回 string?，但 item.Title 解析时保证非空，?? 为 nullable 流分析兜底（保留以免 CS8601）
+                var desired = NetscapeReader.Truncate(item.Title, MaxFolderNameLength) ?? "未命名文件夹";
+                var name = naming.Resolve(desired, taken);
+                taken.Add(name);
+
                 var folder = new Folder
                 {
-                    // Truncate 签名返回 string?，但 item.Title 解析时保证非空，?? 为 nullable 流分析兜底（保留以免 CS8601）
-                    Name = NetscapeReader.Truncate(item.Title, MaxFolderNameLength) ?? "未命名文件夹",
+                    Name = name,
                     ParentId = parentFolderId,
                     LinkCount = 0,
                     CreatedAt = item.AddDate ?? now,
@@ -98,7 +110,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
             _ = await ctx.Uow.Links.AddAsync(link, ct);
         }
 
-        // 追加式导入不改动任何既有文件夹（无同名冲突改名逻辑），因此不做全表 UpdatedAt 触模
+        // 追加式导入不改动任何既有文件夹（同层撞名只在**新导入项**之间/与既有名之间做编号，绝不改动既有文件夹），
+        // 因此不做全表 UpdatedAt 触模
         // （过去 ListAllAsync 全量逐条 UpdateAsync 是 N 次 UPDATE 的写放大，且会覆盖用户已有文件夹的更新语义）。
         // 新导入的文件夹保留文件解析出的 LAST_MODIFIED（导出→导入→再导出不丢"最后更新"）。
 
@@ -120,5 +133,18 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                 HumanSummary: summary,
                 // 容错告警同时走 ChangeSet.Warnings（观测面契约：绝不静默吞掉；data.warnings 供 UI 展示保留）
                 Warnings: doc.Warnings.Count > 0 ? doc.Warnings : null));
+    }
+
+    /// <summary>取（必要时创建）某父目录的已占用名集合——比较器取自命名策略，命名口径只有一处。</summary>
+    private static HashSet<string> TakenFor(
+        Dictionary<string, HashSet<string>> map, INamingPolicy naming, string? parentId)
+    {
+        var key = parentId ?? string.Empty;   // 根 = null（零哨兵）；空串只是字典键，不是实体 ID 形状
+        if (!map.TryGetValue(key, out var set))
+        {
+            set = new HashSet<string>(naming.Comparer);
+            map[key] = set;
+        }
+        return set;
     }
 }

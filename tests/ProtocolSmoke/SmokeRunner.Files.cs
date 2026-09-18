@@ -204,7 +204,10 @@ internal static partial class SmokeRunner
             $"活数据书签应恢复 4 条，实际 {import.GetProperty("links_created").GetInt32()}");
 
         var afterTree = (await fresh.FolderTreeAsync());
-        Asserts.That(afterTree.Count(f => f.Name == "工作") == 2, "同父重名文件夹应原样恢复两个");
+        // 同层唯一命名（v4）后同父重名已不可能存在：种子里的两个「工作」在创建时就被编号为「工作」「工作 (2)」，
+        // 备份往返（名字键格式）必须原样保留这两个名字——这是最容易串位的地方
+        Asserts.That(afterTree.Count(f => f.Name == "工作") == 1 && afterTree.Count(f => f.Name == "工作 (2)") == 1,
+            "备份往返应原样保留「工作」与「工作 (2)」两个文件夹");
         var afterLinks = (await fresh.LinkListAsync(perPage: 0)).Links;
         Asserts.That(afterLinks.Count == 4, "恢复后活数据书签应为 4 条");
         Asserts.That(afterLinks.First(l => l.Title == "链接一").ListId != afterLinks.First(l => l.Title == "链接二").ListId,

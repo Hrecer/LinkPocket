@@ -19,22 +19,24 @@
 | `folders.breadcrumb` | 查询 | 名称列表，含根显示名「全部书签」；未知目录回落根 |
 | `folders.find` | 查询 | 按名定位（精确/`contains`，大小写不敏感）——★ 引擎能力，不接 UI |
 | `folders.cycle_check` | 查询 | 移动是否会成环（`target_parent_id` 缺省 = 根，永不成环） |
-| `folders.create` / `folders.update` | 变更 | 建目录（可指定父级与描述）/ 改名称与描述（**不换父**；换父只走 `folders.move`） |
+| `folders.create` / `folders.update` | 变更 | 建目录（可指定父级与描述）/ 改名称与描述（**不换父**；换父只走 `folders.move`）；两者都做**同层唯一命名** |
 | `folders.delete` | 变更 | 三模式：缺省整子树移入回收站、`delete_all`、`move_to_list`（可带 `target_list_id`） |
-| `folders.move` / `folders.move_batch` | 变更 | 单移 / 批量原子移动（任一校验失败整批不动；同名自动编号「名 (2)」） |
-| `folders.copy` | 变更 | 深层复制（含全部子目录与书签，生成新 ID） |
+| `folders.move` / `folders.move_batch` | 变更 | 单移 / 批量原子移动（任一校验失败整批不动）；目标层**同层唯一命名** |
+| `folders.copy` | 变更 | 深层复制（含全部子目录与书签，生成新 ID）；顶层做**同层唯一命名**，子树内部名保持原样 |
 | `folders.sort` | 变更 | 同级重排，`sort_order` = `item_ids` 下标；非同级 ID → `LP.STATE.001` |
 
 ## 内部组件
 
 - `FolderSupport`：子目录/链接排序口径、面包屑构造、`ToDto`（注入递归计数）。
+- **同层唯一命名**：一律走 `Kernel.FolderNaming`（唯一实现 `WindowsNamingPolicy`）——本模块**不自己拼编号**，
+  也绝不把编号职责留给调用方（见 `docs/WARNINGS.md` 第 32 条：双实现 + 一半入口不编号曾造出 6 个同名文件夹）。
 - 递归计数、祖先链、成环判定、路径显示一律走 **`Kernel.ITreeService`**（树算法唯一出处，本模块不自己遍历父链）。
 
 ## 测试
 
-- `tests/LinkPocket.Modules.Tests/ModulesTests.cs` → `FoldersModuleTests`（建/删/移/复制/批量/干跑）
+- `tests/LinkPocket.Modules.Tests/ModulesTests.cs` → `FoldersModuleTests`（建/删/移/复制/批量/干跑/**同层唯一命名全入口**）
 - `tests/LinkPocket.Modules.Tests/CommandCoverageTests.cs` → `FoldersQueryCoverageTests`（find/get/breadcrumb/cycle_check/sort）
-- 端到端：`ProtocolSmoke` §2（分页、直接子计数、名称升序、面包屑、递归计数、环检测、同名编号）
+- 端到端：`ProtocolSmoke` §2（分页、直接子计数、名称升序、面包屑、递归计数、环检测、同层编号）
 
 ## 复用点
 

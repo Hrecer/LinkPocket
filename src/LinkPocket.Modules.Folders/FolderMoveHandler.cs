@@ -5,7 +5,8 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Folders;
 
-/// <summary>folders.move（Mutation）：移动文件夹；target 缺省 = 根。成环即拒绝；新旧两个父链 Touch。</summary>
+/// <summary>folders.move（Mutation）：移动文件夹；target 缺省 = 根。成环即拒绝；新旧两个父链 Touch。
+/// **目标层同层唯一命名**（Windows 口径）：撞名自动编号「名 (2)」。</summary>
 internal sealed class FolderMoveHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
@@ -44,6 +45,9 @@ internal sealed class FolderMoveHandler : ICommandHandler
                     EngineErrors.EntityNotFound, $"父文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
         }
 
+        // 同层唯一命名（目标层，排除自身）：撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = Kernel FolderNaming）。
+        // 移到自己所在层时自身被排除 → 名字保持不变，无需任何特例分支。
+        folder.Name = await FolderNaming.ResolveAsync(ctx.Uow, target, folder.Name, folder.FolderId, ct);
         folder.ParentId = target;
         folder.UpdatedAt = DateTime.UtcNow;
 

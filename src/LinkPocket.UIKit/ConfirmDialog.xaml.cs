@@ -19,7 +19,7 @@ public partial class ConfirmDialog : Window
         CancelBtn.Click += (_, _) => DialogResult = false;
         ConfirmBtn.Click += (_, _) => DialogResult = true;
 
-        // 无边框圆角窗口：WindowChrome 提供标题区拖拽（与 InputDialog 同配置）
+        // 无边框圆角窗口：WindowChrome 提供标题区拖拽（与其余弹窗同配置）
         var chrome = new System.Windows.Shell.WindowChrome
         {
             CaptionHeight = 76,

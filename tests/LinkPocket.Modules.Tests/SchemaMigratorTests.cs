@@ -6,7 +6,7 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// SchemaMigrator：从零建库（完整版本链）、版本脚本幂等、v2→v3 升级路径、旧库零责任拒绝。
+/// SchemaMigrator：从零建库（完整版本链）、版本脚本幂等、v2→最新版升级路径、同层唯一名硬约束、旧库零责任拒绝。
 /// 与 v1 无任何关系——不存在迁移路径，只有「全新库」与「拒绝旧库」两种结局。
 /// EF 实体映射与 DDL 的一致性由 ModulesTests 全量黑盒回归（跑在 SchemaMigrator 建的库上）卡住，
 /// 索引覆盖（查询计划）由 <see cref="IndexPlanTests"/> 卡住。
@@ -61,8 +61,8 @@ public class SchemaMigratorTests
         Assert.Equal(
             new[] { "audit_log", "folders", "idempotency", "links", "macros", "schema_migrations", "trash_folders", "trash_links" },
             UserTables(dbPath));
-        // 全新库跑的是完整版本链（v2 基线 + v3 索引复核），版本表落最高版本
-        Assert.Equal(3, SchemaVersion(dbPath));
+        // 全新库跑的是完整版本链（v2 基线 + v3 索引复核 + v4 同层唯一索引），版本表落最高版本
+        Assert.Equal(4, SchemaVersion(dbPath));
 
         // v2 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
         using (var conn = new SqliteConnection($"Data Source={dbPath}"))
@@ -76,11 +76,12 @@ public class SchemaMigratorTests
             Assert.Equal(11, Convert.ToInt64(Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('links')")));
         }
 
-        // v3（索引复核）：新建库路径必须与升级路径产出同一套索引
+        // v3/v4（索引复核 + 同层唯一约束）：新建库路径必须与升级路径产出同一套索引
         Assert.Equal(
             new[]
             {
                 "idx_folders_parent",
+                "idx_folders_parent_name",
                 "idx_links_created",
                 "idx_links_folder",
                 "idx_links_last_visited",
@@ -96,17 +97,17 @@ public class SchemaMigratorTests
     }
 
     /// <summary>
-    /// v2 → v3 升级路径：既有库只补索引脚本，索引集合必须与新建库逐项一致
-    /// （否则"老用户"永远拿不到性能修复）。
+    /// v2 → 最新版升级路径：既有库只补增量脚本，索引集合必须与新建库逐项一致
+    /// （否则"老用户"永远拿不到性能修复与同层唯一约束）。
     /// </summary>
     [Fact]
-    public void EnsureSchema_Upgrades_V2_Database_To_V3_Indexes()
+    public void EnsureSchema_Upgrades_V2_Database_To_Latest_Indexes()
     {
         var source = TempDbPath();
         SchemaMigrator.EnsureSchema(source);
         var expected = IndexNames(source);
 
-        // 造一个"升级前"的库副本（版本行 = 2、无 v3 索引）：SchemaMigrator 从未见过该路径 → 走完整检查
+        // 造一个"升级前"的库副本（版本行 = 2、无 v3/v4 索引）：SchemaMigrator 从未见过该路径 → 走完整检查
         using (var conn = new SqliteConnection($"Data Source={source}"))
         {
             conn.Open();
@@ -121,20 +122,24 @@ public class SchemaMigratorTests
         using (var conn = new SqliteConnection($"Data Source={legacy}"))
         {
             conn.Open();
-            foreach (var index in new[] { "idx_links_created", "idx_links_url_nocase", "idx_trash_folders_deleted" })
+            foreach (var index in new[]
+                     {
+                         "idx_links_created", "idx_links_url_nocase", "idx_trash_folders_deleted",
+                         "idx_folders_parent_name",
+                     })
             {
                 using var drop = conn.CreateCommand();
                 drop.CommandText = $"DROP INDEX {index}";
                 drop.ExecuteNonQuery();
             }
             using var rollback = conn.CreateCommand();
-            rollback.CommandText = "DELETE FROM schema_migrations WHERE version = 3";
+            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4)";
             rollback.ExecuteNonQuery();
         }
 
         SchemaMigrator.EnsureSchema(legacy);
 
-        Assert.Equal(3, SchemaVersion(legacy));
+        Assert.Equal(4, SchemaVersion(legacy));
         Assert.Equal(expected, IndexNames(legacy));
     }
 
@@ -164,7 +169,7 @@ public class SchemaMigratorTests
 
         // 整库重置（删文件重建）路径：文件存在性守卫失效后自动重新建库
         SchemaMigrator.EnsureSchema(dbPath);
-        Assert.Equal(3, SchemaVersion(dbPath));
+        Assert.Equal(4, SchemaVersion(dbPath));
         Assert.Equal(8, UserTables(dbPath).Length);
     }
 
@@ -211,8 +216,42 @@ public class SchemaMigratorTests
             Assert.Equal(1, await verify.Links.CountAsync());
             Assert.Equal(1, await verify.TrashedLinks.CountAsync());
             Assert.Equal(1, await verify.TrashedFolders.CountAsync());
-            Assert.Equal(3, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(4, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
         }
+    }
+
+    /// <summary>
+    /// v4 同层唯一名硬约束（表达式唯一索引）：同一父目录内（含根级）不允许重名（大小写不敏感），
+    /// 不同父目录可同名。这是"路径解析不会歧义"的最后防线——绕过引擎编号直接写库也挡得住。
+    /// </summary>
+    [Fact]
+    public void EnsureSchema_Enforces_Unique_Sibling_Folder_Names()
+    {
+        var dbPath = TempDbPath();
+        SchemaMigrator.EnsureSchema(dbPath);
+
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        conn.Open();
+
+        // 根级 'Python' + 根级 'P' + P 下的 'Python'：不同父目录可同名 → 全部成功
+        Exec(conn,
+            "INSERT INTO folders (id, parent_id, name, sort_order, created_at, updated_at, visit_count) VALUES " +
+            "('100000000001', NULL, 'Python', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0)," +
+            "('100000000002', NULL, 'P', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0)," +
+            "('100000000003', '100000000002', 'Python', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0);");
+
+        // 同一父目录重名（含大小写不同）→ 唯一约束拒绝
+        var sameParent = Assert.Throws<SqliteException>(() => Exec(conn,
+            "INSERT INTO folders (id, parent_id, name, sort_order, created_at, updated_at, visit_count) " +
+            "VALUES ('100000000004', NULL, 'python', 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 0);"));
+        Assert.Contains("UNIQUE", sameParent.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void Exec(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
     }
 
     private static object Scalar(SqliteConnection conn, string sql)

@@ -27,6 +27,9 @@ public class ShortcutRulesTests
             "只在编辑框获得焦点时生效，属控件编辑语义，不参与页面级快捷键仲裁",
         ["LinkPocket.UIKit/BreadcrumbBar.xaml.cs"] =
             "同上：地址栏编辑框的 PreviewKeyDown（候选列表 ↑/↓ 移动）——控件内编辑语义",
+        ["LinkPocket.UIKit/InlineNameEditor.xaml"] =
+            "就地改名编辑框（主栏行 / 目录树节点共用）自身的编辑键：Enter 提交 / Esc 取消——" +
+            "只在编辑框获得焦点时生效，属控件编辑语义，不参与页面级快捷键仲裁",
     };
 
     private static string RepoRoot

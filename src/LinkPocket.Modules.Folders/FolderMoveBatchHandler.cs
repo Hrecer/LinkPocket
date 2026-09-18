@@ -82,15 +82,18 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         var renamedNotes = new List<string>();
         if (movedFolders.Count > 0)
         {
+            var policy = WindowsNamingPolicy.Instance;
+            // 占用名集合的比较器必须取自策略本身（命名口径只能有一处）：曾用 CurrentCulture（大小写敏感），
+            // 与 DB 唯一索引（NOCASE）口径不一致 → 策略放行而索引拒绝。
             var siblings = (await uow.Folders.ChildrenOfAsync(
                     target == null ? null : new FolderId(target), ct))
                 .Where(f => !movedFolders.Any(m => m.FolderId == f.FolderId))
                 .Select(f => f.Name)
-                .ToHashSet(StringComparer.CurrentCulture);
+                .ToHashSet(policy.Comparer);
 
             foreach (var folder in movedFolders)
             {
-                var resolved = WindowsNamingPolicy.Instance.Resolve(folder.Name, siblings);
+                var resolved = policy.Resolve(folder.Name, siblings);
                 if (!string.Equals(resolved, folder.Name, StringComparison.Ordinal))
                 {
                     renamedNotes.Add($"「{folder.Name}」→「{resolved}」");

@@ -24,8 +24,9 @@
         <!-- 排序表头按钮已随共享数据表控件（views:SortableDataTable）统一：表头由控件按列定义生成，
              本页不再保留独立的 HeaderSortButton 样式。 -->
 
-        <!-- 名称列可用宽度 = 列宽 - 图标/间距/计数药丸的固定占位 -->
-        <uikit:SubtractConverter x:Key="NameCellTextWidth" Min="60"/>
+        <!-- 名称列文本可用宽度 = 名称列实宽（Star 按权重换算成像素）- 图标/间距/计数药丸的固定占位。
+             ⚠️ 不能直接拿 ColumnWidths[0].Value：Star 列上它是权重(1) 而非像素，会让 MaxWidth 恒等于下限。 -->
+        <uikit:NameColumnWidthConverter x:Key="NameCellTextWidth" Reserved="78" Min="60"/>
 
         <!-- 右键菜单项已上收 UIKit.xaml（LpMenuItem + 隐式兜底）。
              ⚠️ 两个坑（仍适用）：
@@ -238,8 +239,9 @@
                                                 </Style>
                                             </MenuItem.Style>
                                         </MenuItem>
-                                        <!-- 链接没有「重命名」语义：编辑 = 打开整页编辑器（URL / 名称 / 描述 / 图标） -->
-                                        <MenuItem Header="编辑" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}"
+                                        <!-- 编辑 = 打开整页编辑器（URL / 名称 / 描述 / 图标）；仅链接有，且单选时显示。
+                                             只想改标题请用下面的「重命名」（就地编辑，与 Windows F2 同效）。 -->
+                                        <MenuItem Header="编辑" Command="{Binding Host.EditRowCommand}" CommandParameter="{Binding}"
                                                   ToolTip="编辑链接（URL / 名称 / 描述 / 图标）">
                                             <MenuItem.Style>
                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
@@ -256,19 +258,15 @@
                                                 </Style>
                                             </MenuItem.Style>
                                         </MenuItem>
-                                        <!-- 文件夹：本身只有名称，保留「重命名」 -->
+                                        <!-- 重命名（就地编辑，F2 同效）：文件夹改名称、链接改标题；单选时显示 -->
                                         <MenuItem Header="重命名" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}">
                                             <MenuItem.Style>
                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                                                     <Setter Property="Visibility" Value="Collapsed"/>
                                                     <Style.Triggers>
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsFolder}" Value="True"/>
-                                                                <Condition Binding="{Binding Host.HasMultipleSelection}" Value="False"/>
-                                                            </MultiDataTrigger.Conditions>
+                                                        <DataTrigger Binding="{Binding Host.HasMultipleSelection}" Value="False">
                                                             <Setter Property="Visibility" Value="Visible"/>
-                                                        </MultiDataTrigger>
+                                                        </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </MenuItem.Style>
@@ -311,7 +309,7 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Border.Style>
-                                <Grid>
+                                <Grid x:Name="RowColumns">
                                     <!-- 与列头共用同一份列宽（拖拽列头即同步到每一行） -->
                                     <Grid.ColumnDefinitions>
                                         <!-- 与共享控件表头共用同一份列宽（ColumnWidths 单一数据源，拖拽即同步） -->
@@ -381,11 +379,19 @@
                                                 </m3:M3Icon.Style>
                                             </m3:M3Icon>
                                         </Grid>
-                                        <!-- 名称文本宽度跟随列宽，列变窄时省略号收窄，药丸不会被挤出到相邻列 -->
+                                        <!-- 名称文本宽度跟随**名称列实宽**：列变窄时省略号收窄（药丸不会被挤出到相邻列），
+                                             列够宽时不再无端截断（见 NameColumnWidthConverter 类型注释） -->
                                         <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                                   MaxWidth="{Binding ColumnWidths[0].Value, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}, Converter={StaticResource NameCellTextWidth}, ConverterParameter=78}"
-                                                   ToolTip="{Binding Name}"/>
+                                                   ToolTip="{Binding Name}">
+                                            <TextBlock.MaxWidth>
+                                                <MultiBinding Converter="{StaticResource NameCellTextWidth}">
+                                                    <Binding Path="ColumnWidths[0]" RelativeSource="{RelativeSource AncestorType=views:SortableDataTable}"/>
+                                                    <Binding Path="ColumnWidths" RelativeSource="{RelativeSource AncestorType=views:SortableDataTable}"/>
+                                                    <Binding Path="ActualWidth" ElementName="RowColumns"/>
+                                                </MultiBinding>
+                                            </TextBlock.MaxWidth>
+                                        </TextBlock>
                                         <!-- 链接数药丸（仅文件夹）：紧贴名称，与左侧树完全一致（只显示数字） -->
                                         <Border Grid.Column="2" Padding="7,0" MinHeight="16" Margin="8,0,0,0">
                                             <Border.Style>
@@ -402,6 +408,15 @@
                                                        VerticalAlignment="Center"
                                                        Foreground="{DynamicResource OnSecondaryContainer}"/>
                                         </Border>
+                                        <!-- 就地改名编辑框（Windows 口径）：覆盖在名称文本与计数药丸之上，
+                                             宽度 = 名称列剩余整宽（跨 文本/药丸/余白 三列，由 * 列吸收剩余）；
+                                             数据驱动（IsRenaming 是 VM 重命名会话的投影）+ 自持 Enter/Esc/失焦语义 -->
+                                        <views:InlineNameEditor Grid.Column="1" Grid.ColumnSpan="3"
+                                                                HorizontalAlignment="Stretch"
+                                                                IsEditing="{Binding IsRenaming}"
+                                                                Text="{Binding Host.EditingName, Mode=TwoWay}"
+                                                                CommitCommand="{Binding Host.CommitRenameCommand}"
+                                                                CancelCommand="{Binding Host.CancelRenameCommand}"/>
                                     </Grid>
 
                                     <!-- 最后更新（文件夹 = 内容含子孙最后变动时间；查看不算变动，内核维护） -->

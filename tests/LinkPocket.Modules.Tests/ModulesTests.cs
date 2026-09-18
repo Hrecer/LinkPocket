@@ -258,9 +258,12 @@ public class FoldersModuleTests
     public async Task MoveBatch_Auto_Numbering_Windows_Style()
     {
         var (engine, _, _) = TestHost.Create();
-        var source1 = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
-        var source2 = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
         var dest = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "归档" });
+        var staging = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "中转" });
+        // 同层唯一（v4）：同名只能存在于不同目录 → 两个「工作」分别建在根级与「中转」下
+        var source1 = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+        var source2 = await engine.ExecuteAsync<FolderDto>(
+            "folders.create", new { name = "工作", parent_id = staging.Data!.FolderId });
 
         var result = await engine.ExecuteAsync<FolderMoveBatchResult>(
             "folders.move_batch", new { folder_ids = new[] { source1.Data!.FolderId, source2.Data!.FolderId }, target_parent_id = dest.Data!.FolderId });
@@ -271,6 +274,40 @@ public class FoldersModuleTests
         var names = contents.SubFolders.Select(f => f.Name).ToList();
         Assert.Contains("工作", names);
         Assert.Contains("工作 (2)", names);
+    }
+
+    /// <summary>同层唯一命名（v4）：新建/改名/移动/复制四条写名路径都必须自动编号，且不同目录可同名。</summary>
+    [Fact]
+    public async Task Sibling_Names_Are_Unique_Across_All_Write_Paths()
+    {
+        var (engine, _, _) = TestHost.Create();
+
+        // ① 新建：同层撞名 → 「(2)」
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+        var b = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+        Assert.Equal("工作", a.Data!.Name);
+        Assert.Equal("工作 (2)", b.Data!.Name);
+
+        // ② 改名：改成自己已有的名字 = 不变（自身不算占用者）；撞上别人 → 继续编号
+        var renamedSelf = await engine.ExecuteAsync<FolderDto>("folders.update", new { folder_id = a.Data!.FolderId, name = "工作" });
+        Assert.Equal("工作", renamedSelf.Data!.Name);
+        var c = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料" });
+        var renamed = await engine.ExecuteAsync<FolderDto>("folders.update", new { folder_id = c.Data!.FolderId, name = "工作" });
+        Assert.Equal("工作 (3)", renamed.Data!.Name);   // 根级已有「工作」「工作 (2)」
+
+        // ③ 移动：源名在目标层已被占用 → 「(2)」（空闲则保持原名，编号只在真冲突时发生）
+        var staging = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "中转" });
+        var other = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作", parent_id = staging.Data!.FolderId });
+        var dest = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "归档" });
+        var inside = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作", parent_id = dest.Data!.FolderId });
+        var moved = await engine.ExecuteAsync<FolderDto>("folders.move", new { folder_id = other.Data!.FolderId, target_parent_id = dest.Data!.FolderId });
+        Assert.Equal("工作 (2)", moved.Data!.Name);
+
+        // ④ 复制：目标层撞名 → 「(3)」（目标层已有「工作」「工作 (2)」）
+        var copy = await engine.ExecuteAsync<FolderCopyResult>(
+            "folders.copy", new { folder_id = inside.Data!.FolderId, target_parent_id = dest.Data!.FolderId });
+        var copied = await engine.QueryAsync<FolderDto>("folders.get", new { folder_id = copy.Data!.NewFolderId });
+        Assert.Equal("工作 (3)", copied.Name);
     }
 
     [Fact]
@@ -1113,8 +1150,8 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // 全新建库 = 完整版本链（v2 基线 + v3 索引复核），版本表落最高版本
-        Assert.Equal(3, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 完整版本链（v2 基线 + v3 索引复核 + v4 同层唯一索引），版本表落最高版本
+        Assert.Equal(4, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

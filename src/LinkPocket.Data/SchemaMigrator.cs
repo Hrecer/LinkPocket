@@ -129,6 +129,7 @@ public static class SchemaMigrator
     [
         (2, BaselineV2 + VersionRow(2)),
         (3, IndexesV3 + VersionRow(3)),
+        (4, IndexesV4 + VersionRow(4)),
     ];
 
     /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
@@ -208,5 +209,24 @@ public static class SchemaMigrator
         CREATE INDEX idx_links_created ON links(created_at);
         CREATE INDEX idx_links_url_nocase ON links(url COLLATE NOCASE);
         CREATE INDEX idx_trash_folders_deleted ON trash_folders(deleted_at);
+        """;
+
+    /// <summary>
+    /// v4 版本脚本：文件夹**同层唯一名**的硬约束（唯一索引）。
+    ///
+    /// <list type="bullet">
+    /// <item><b>为什么是表达式索引</b>：SQLite 里 NULL 互不相等，普通 <c>UNIQUE(parent_id, name)</c>
+    /// 挡不住根级（<c>parent_id IS NULL</c>）的重名；<c>COALESCE(parent_id,'')</c> 把根归一到同一键，
+    /// 根级也纳入唯一性。空串不是实体 ID 形状（零哨兵红线），不会与真实文件夹 ID 冲突。</item>
+    /// <item><b>比较口径</b>：<c>COLLATE NOCASE</c>（ASCII 大小写折叠）比命名策略（OrdinalIgnoreCase）更宽松——
+    /// 策略只会更严格，不存在"策略放行、索引拒绝"的方向。</item>
+    /// <item><b>定位</b>：这是最后防线（任何旁路/未来新入口都绕不过）。正常路径由
+    /// <see cref="LinkPocket.Kernel.FolderNaming"/> 统一编号，不会撞到它。</item>
+    /// <item><b>既有重名</b>：建索引失败即明确报错拒绝（零兼容：不迁移、不自动改名，处置权归用户）。</item>
+    /// </list>
+    /// </summary>
+    private const string IndexesV4 =
+        """
+        CREATE UNIQUE INDEX idx_folders_parent_name ON folders(COALESCE(parent_id, ''), name COLLATE NOCASE);
         """;
 }

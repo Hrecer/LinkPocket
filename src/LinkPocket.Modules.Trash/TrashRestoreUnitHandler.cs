@@ -53,6 +53,14 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         var ordered = units.Where(u => string.Equals(u.TrashFolderId, unitId, StringComparison.Ordinal))
             .Concat(units.Where(u => !string.Equals(u.TrashFolderId, unitId, StringComparison.Ordinal)));
 
+        // 落点层同层唯一命名（Windows 口径）：只有「单元根」会落到已有内容的目录
+        //（子单元的父是本次一起还原的单元，其内部原本就满足同层唯一），撞名 → 「名 (2)」。
+        var rootUnitName = ordered.First().Name;
+        var rootName = await FolderNaming.ResolveAsync(uow, landing, rootUnitName, null, ct);
+        var renameNote = string.Equals(rootName, rootUnitName, StringComparison.Ordinal)
+            ? string.Empty
+            : $"（重命名：「{rootUnitName}」→「{rootName}」）";
+
         var restoredFolders = 0;
         foreach (var unit in ordered)
         {
@@ -60,7 +68,7 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
             _ = await uow.Folders.AddAsync(new Folder
             {
                 FolderId = unit.TrashFolderId,     // 保留原 ID
-                Name = unit.Name,
+                Name = isRoot ? rootName : unit.Name,
                 ParentId = isRoot ? landing : unit.ParentTrashFolderId,
                 LinkCount = 0,
                 CreatedAt = DateTime.UtcNow,
@@ -116,7 +124,7 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
                 Events: [LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                          LinkPocket.Contracts.DomainEventNames.LinksChanged,
                          LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"已还原文件夹单元（{restoredFolders} 个文件夹 / {restoredLinks} 个链接）到「{location}」"),
+                HumanSummary: $"已还原文件夹单元（{restoredFolders} 个文件夹 / {restoredLinks} 个链接）到「{location}」{renameNote}"),
             // 撤销"还原单元" = 再次删除该单元（回到回收站）——逆向参数带单元 ID
             [new UndoInverseStep("folders.delete",
                 JsonSerializer.SerializeToElement(new { folder_id = unitId, cascade = "trash_links" }))]);

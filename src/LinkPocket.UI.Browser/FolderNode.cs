@@ -50,6 +50,14 @@ public class FolderNode : INotifyPropertyChanged
         set { _isSelected = value; OnPropertyChanged(); }
     }
 
+    /// <summary>是否显示就地改名编辑框（VM 重命名会话状态的投影，与 IsSelected 同处推送）。</summary>
+    private bool _isRenaming;
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
+    }
+
     /// <summary>是否显示节点右键菜单（回收站树节点 = false）。ContextMenu 半离线，走 DataContext 绑定。</summary>
     public bool ShowNodeMenu => Host != null;
 

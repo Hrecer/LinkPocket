@@ -1,0 +1,57 @@
+<UserControl x:Class="LinkPocket.Views.InlineNameEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root">
+    <!-- 行内就地改名编辑框（主栏行 / 目录树节点共用；数据驱动）：
+         - IsEditing（由宿主 VM 的**重命名态投影**驱动）→ 显示 + 自动聚焦并全选；
+         - Enter 提交 / Esc 取消 / 失焦提交（Windows 口径）；
+         - 覆盖在名称文本之上（不透明填充底），宽度由宿主决定。
+         ⚠️ 这里的 KeyBinding 属**控件级编辑语义**（仅编辑框获得焦点时生效，与页面级快捷键无关），
+            已登记在架构红线 ShortcutRulesTests 的控件级白名单（与地址栏编辑框同款）。 -->
+    <UserControl.Resources>
+        <!-- 紧凑填充式编辑框：26 高（贴合行高），圆角 6，Primary 描边表示"正在编辑" -->
+        <Style x:Key="InlineEditField" TargetType="TextBox">
+            <Setter Property="FontSize" Value="13.5"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="EditRoot" CornerRadius="6"
+                                Background="{DynamicResource SurfaceContainerHighest}"
+                                BorderThickness="2" BorderBrush="{DynamicResource Primary}"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" Focusable="False"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsEditing, ElementName=Root}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <TextBox x:Name="EditBox" Style="{StaticResource InlineEditField}"
+             Text="{Binding Text, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+             VerticalAlignment="Center"
+             LostFocus="EditBox_LostFocus">
+        <TextBox.InputBindings>
+            <KeyBinding Key="Enter" Command="{Binding CommitCommand, ElementName=Root}"/>
+            <KeyBinding Key="Escape" Command="{Binding CancelCommand, ElementName=Root}"/>
+        </TextBox.InputBindings>
+    </TextBox>
+</UserControl>
