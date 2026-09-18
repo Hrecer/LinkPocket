@@ -298,18 +298,16 @@
                                                   CommandParameter="{Binding}"/>
                                 </Border.InputBindings>
                                 <!-- 内层 RowSkin：MD3E 悬浮行容器（大圆角 12 + 左右外距 10）。
-                                     底色触发器挂在这里：hover/选中底色是圆角的，且不会撑出横向滚动条。 -->
-                                <Border Margin="0,1" CornerRadius="12" Padding="16,7" SnapsToDevicePixels="True">
+                                     底色触发器挂在这里：hover/选中底色是圆角的，且不会撑出横向滚动条。
+                                     视觉单一来源 = UIKit LpRowCard（几何 + 悬停）；本层只挂选中/剪切态，
+                                     派生触发器优先于基样式悬停 = 选中行悬停不换色（与文件夹树一致）。 -->
+                                <Border Padding="16,7">
                                     <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Background" Value="Transparent"/>
+                                        <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                                 </DataTrigger>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                                </Trigger>
                                                 <DataTrigger Binding="{Binding IsCut}" Value="True">
                                                     <Setter Property="Opacity" Value="0.45"/>
                                                 </DataTrigger>

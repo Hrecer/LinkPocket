@@ -412,6 +412,23 @@
         </Setter>
     </Style>
 
+    <!-- 行级悬浮卡片（共享行皮肤）：浏览页列表行与文件夹树行的"悬停高亮"唯一来源。
+         几何（圆角 12 + 上下 1 外距 + 透明底）与悬停底色（SurfaceContainerHighest）在此定义；
+         各方 BasedOn 后只挂自己的选中态（PrimaryContainer）——派生层触发器优先于基样式悬停，
+         保证"选中行悬停不换色"在两处语义一致（历史坑：两处各自手写悬停，行为/视觉漂移；
+         文件夹树行曾只高亮文字块，未撑满整行）。 -->
+    <Style x:Key="LpRowCard" TargetType="Border">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Margin" Value="0,1"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- 紧凑右键菜单模板（浏览页 / 文件夹树同规格：行高 26、字号 12、无分割线） -->
     <Style x:Key="LpMenuItem" TargetType="MenuItem">
         <Setter Property="Height" Value="26"/>
