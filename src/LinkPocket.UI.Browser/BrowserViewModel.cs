@@ -739,8 +739,9 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 把根级直挂链接作为叶子节点注入树根「全部书签」的 Children 前部（文件夹之前，用户定稿）。
-    /// 链接叶子的点击语义 = 主区定位选中（BrowserView 处理）；此处只负责数据注入。
+    /// 把根级直挂链接作为叶子节点加入树根「全部书签」的 Children，并与文件夹一起
+    /// **统一按名称升序重排**（左侧目录树唯一排序口径 = 名称升序，链接与文件夹混排，绝无第二种顺序）。
+    /// 链接叶子的点击语义 = 主区定位选中（BrowserView 处理）；此处只负责数据注入与排序。
     /// 上限 200：根级直挂链接海量时树不至于失控（正常使用远低于此量级）。
     /// </summary>
     private async Task LoadTreeRootLinkNodesAsync()
@@ -750,12 +751,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         try
         {
             var roots = await _client.LinkRootsAsync(sortBy: "title", sortOrder: "asc", perPage: 200);
-            if (roots.Count == 0) return;
-            // 倒序 Insert(0) 保持升序在前；链接叶子整体排在文件夹之前
-            for (var i = roots.Count - 1; i >= 0; i--)
+            foreach (var l in roots)
             {
-                var l = roots[i];
-                root.Children.Insert(0, new FolderNode
+                root.Children.Add(new FolderNode
                 {
                     IsLink = true,
                     Id = l.LinkId,
@@ -763,6 +761,10 @@ public class BrowserViewModel : INotifyPropertyChanged
                     Host = this
                 });
             }
+            // 统一重排：即使本轮没有链接，也保证文件夹子节点本身按名称升序（口径唯一、确定性可见）
+            var ordered = root.Children.OrderBy(c => c.Name, StringComparer.CurrentCulture).ToList();
+            root.Children.Clear();
+            foreach (var n in ordered) root.Children.Add(n);
         }
         catch (Exception ex)
         {

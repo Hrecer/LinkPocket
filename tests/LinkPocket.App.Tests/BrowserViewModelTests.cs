@@ -180,35 +180,36 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_根级链接作为叶子显示在全部书签下_文件夹之前()
+    public async Task 目录树_根级链接与文件夹按名称升序混排()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            var linkA = (await client.LinkCreateAsync("https://a-root.example", title: "A 根级链接", autoFetchMetadata: false)).Data!;
-            var linkZ = (await client.LinkCreateAsync("https://z-root.example", title: "Z 根级链接", autoFetchMetadata: false)).Data!;
-            await client.FolderCreateAsync("文件夹甲");
-            await client.LinkCreateAsync("https://sub.example", title: "子级链接",
-                listId: (await client.FolderCreateAsync("文件夹乙")).Data!.FolderId, autoFetchMetadata: false);
+            // 纯 ASCII 名称：CurrentCulture 升序结果确定（避免中文拼音比较歧义），验证「唯一排序口径 = 名称升序、链接与文件夹混排」
+            var linkA = (await client.LinkCreateAsync("https://a-root.example", title: "Alpha 根级", autoFetchMetadata: false)).Data!;
+            var linkZ = (await client.LinkCreateAsync("https://z-root.example", title: "Zulu 根级", autoFetchMetadata: false)).Data!;
+            await client.FolderCreateAsync("Charlie 文件夹");
+            await client.LinkCreateAsync("https://sub.example", title: "Bravo 子级",
+                listId: (await client.FolderCreateAsync("Delta 文件夹")).Data!.FolderId, autoFetchMetadata: false);
 
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
 
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
-            // 根级链接叶子：整体在文件夹之前，按标题升序；子目录内的链接不进树
+            // 链接与文件夹混排，整体按名称升序（Alpha < Bravo? 不——Bravo 在子目录不进树；Alpha < Charlie < Delta < Zulu）
             var children = root.Children;
             Assert.Equal(4, children.Count);
+            Assert.Equal(new[] { "Alpha 根级", "Charlie 文件夹", "Delta 文件夹", "Zulu 根级" },
+                children.Select(c => c.Name).ToArray());
             Assert.True(children[0].IsLink && children[0].Id == linkA.LinkId);
-            Assert.Equal("A 根级链接", children[0].Name);
-            Assert.True(children[1].IsLink && children[1].Id == linkZ.LinkId);
-            Assert.Equal("Z 根级链接", children[1].Name);
-            // 文件夹节点在链接之后（甲、乙，名序）；「文件夹乙」内的 sub.example 链接不进树
+            Assert.False(children[1].IsLink);
+            Assert.Equal("Charlie 文件夹", children[1].Name);
             Assert.False(children[2].IsLink);
-            Assert.Equal("文件夹甲", children[2].Name);
-            Assert.False(children[3].IsLink);
-            Assert.Equal("文件夹乙", children[3].Name);
-            Assert.DoesNotContain(children, c => c.Name == "子级链接");
+            Assert.Equal("Delta 文件夹", children[2].Name);
+            // 子目录（Delta）内的链接不进树
+            Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId);
+            Assert.DoesNotContain(children, c => c.Name == "Bravo 子级");
         }
         finally
         {
