@@ -31,11 +31,28 @@ public sealed class BatchEngine : IBatchEngine
             CommandCaps.Query),
     ];
 
+    /// <summary>批状态字典容量上限：宿主长跑（AI 轮询/宏）会持续新增 batch_id，
+    /// 无上限会无限膨胀（每个 BatchStatus 还挂着步骤结果）。超限清理已完成/中止的旧条目。</summary>
+    private const int MaxStatusEntries = 256;
+
     private readonly EngineCore _engine;
     private readonly ConcurrentDictionary<string, BatchStatus> _status = new(StringComparer.Ordinal);
 
     public BatchEngine(EngineCore engine)
         => _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+
+    private void TrackStatus(string batchId, BatchStatus status)
+    {
+        _status[batchId] = status;
+        if (_status.Count <= MaxStatusEntries) return;
+        // 只清终态（running 的进行中批保留）：移除任意已完成条目，凑回容量之内
+        var stale = _status
+            .Where(kv => kv.Value.State is "completed" or "failed" or "aborted")
+            .Select(kv => kv.Key)
+            .Take(64)
+            .ToList();
+        foreach (var key in stale) _status.TryRemove(key, out _);
+    }
 
     public Task<BatchReport> RunAsync(BatchScript script, CallOptions? options = null, CancellationToken ct = default)
         => RunCoreAsync(script, dryRun: options?.DryRun == true, options, ct);
@@ -56,39 +73,37 @@ public sealed class BatchEngine : IBatchEngine
         var caller = options?.Caller ?? new CallerRef(CallerKind.Batch, batchId);
         var sw = Stopwatch.StartNew();
 
-        _status[batchId] = new BatchStatus(batchId, script.Name, "running", 0, script.Steps.Count);
+        TrackStatus(batchId, new BatchStatus(batchId, script.Name, "running", 0, script.Steps.Count));
 
         List<BatchStepResult> results;
         var touched = new List<EntityRef>();
         var events = new List<string>();
-        bool aborted;
         try
         {
             if (script.Scope == BatchScope.Transactional)
             {
                 (results, touched, events) = await RunTransactionalAsync(script, dryRun, correlationId, caller, ct);
-                aborted = false;
             }
             else
             {
-                (results, aborted) = await RunIndependentAsync(script, dryRun, correlationId, caller, batchId, ct);
+                results = await RunIndependentAsync(script, dryRun, correlationId, caller, batchId, ct);
             }
         }
         catch (EngineException ex) when (ex.Error.Code == EngineErrors.BatchAborted)
         {
-            _status[batchId] = new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count);
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
             throw;   // 嵌套步骤循环已带报告详情（batch_id + step）
         }
         catch (EngineException ex) when (ex.Error.Code is EngineErrors.TypeMismatch or EngineErrors.RequiredParam or EngineErrors.ProtocolMalformed)
         {
             // 校验类错误（含模板坏引用）零副作用，按原错误码透传，不包装成批失败
-            _status[batchId] = new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count);
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
             throw;
         }
         catch (EngineException ex)
         {
             // 事务批中途异常：工作单元未提交已回滚
-            _status[batchId] = new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count);
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.BatchAborted,
                 $"批「{script.Name}」执行失败（{ex.Error.Code}）：事务批已整体回滚",
@@ -97,13 +112,13 @@ public sealed class BatchEngine : IBatchEngine
         }
         catch (OperationCanceledException)
         {
-            _status[batchId] = new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count);
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
             throw;
         }
 
-        var report = BuildReport(batchId, script.Name, results, touched, events, aborted, sw.ElapsedMilliseconds, correlationId);
-        _status[batchId] = new BatchStatus(batchId, script.Name, aborted ? "aborted" : report.Ok ? "completed" : "failed",
-            results.Count, script.Steps.Count);
+        var report = BuildReport(batchId, script.Name, results, touched, events, sw.ElapsedMilliseconds, correlationId);
+        TrackStatus(batchId, new BatchStatus(batchId, script.Name, report.Ok ? "completed" : "failed",
+            results.Count, script.Steps.Count));
 
         // 父级审计条目（batch_id 列关联；每步已有 IsNested 子记录）
         _engine.Audit.Write(new AuditEntry(
@@ -166,8 +181,10 @@ public sealed class BatchEngine : IBatchEngine
         }
     }
 
-    /// <summary>独立批：每步走完整顶层管道（各自隐式事务；abort 只停后续步骤，已执行步骤保持生效）。</summary>
-    private async Task<(List<BatchStepResult> Results, bool Aborted)> RunIndependentAsync(
+    /// <summary>独立批：每步走完整顶层管道（各自隐式事务；abort 只停后续步骤，已执行步骤保持生效）。
+    /// 中止（OnError=Abort 失败）通过抛 <see cref="EngineErrors.BatchAborted"/> 表达，由调用方 catch 转状态——
+    /// 本方法只返回逐步骤结果，不再有「aborted 标志」这一恒 false 的死字段。</summary>
+    private async Task<List<BatchStepResult>> RunIndependentAsync(
         BatchScript script, bool dryRun, string correlationId, CallerRef caller, string batchId, CancellationToken ct)
     {
         var results = new List<BatchStepResult>();
@@ -198,9 +215,9 @@ public sealed class BatchEngine : IBatchEngine
                     Skipped: step.OnError == ErrorPolicy.SkipAndLog, null, ex.Error.Code, ex.Error.Message,
                     stepSw.ElapsedMilliseconds));
             }
-            _status[batchId] = new BatchStatus(batchId, script.Name, "running", results.Count, script.Steps.Count);
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "running", results.Count, script.Steps.Count));
         }
-        return (results, Aborted: false);
+        return results;
     }
 
     /// <summary>
@@ -280,14 +297,12 @@ public sealed class BatchEngine : IBatchEngine
     }
 
     private static BatchReport BuildReport(string batchId, string name, List<BatchStepResult> results,
-        List<EntityRef> touched, List<string> events, bool aborted, long elapsedMs, string correlationId)
+        List<EntityRef> touched, List<string> events, long elapsedMs, string correlationId)
     {
-        var ok = !aborted && results.All(r => r.Ok);
-        var summary = aborted
-            ? $"批「{name}」中止：{results.Count(r => r.Ok)}/{results.Count} 步成功（独立批已执行步骤保持生效）"
-            : ok
-                ? $"批「{name}」完成：{results.Count} 步全部成功"
-                : $"批「{name}」完成（有失败）：{results.Count(r => r.Ok)}/{results.Count} 步成功";
+        var ok = results.All(r => r.Ok);
+        var summary = ok
+            ? $"批「{name}」完成：{results.Count} 步全部成功"
+            : $"批「{name}」完成（有失败）：{results.Count(r => r.Ok)}/{results.Count} 步成功";
 
         return new BatchReport(batchId, name, ok, results,
             new ChangeSet(touched, events, summary), summary, elapsedMs, correlationId);

@@ -14,12 +14,12 @@ namespace LinkPocket.Engine;
 internal static class OrchestrationHandlers
 {
     public static IReadOnlyList<ICommandHandler> CreateAll(
-        IMacroStore macros, IUndoCoordinator undo, StagingService staging)
+        IMacroStore macros, UndoCoordinator undo, StagingService staging)
         =>
         [
             new MacroSaveHandler(macros), new MacroGetHandler(macros), new MacroListHandler(macros),
             new MacroDeleteHandler(macros), new MacroRunHandler(macros),
-            new UndoListHandler(undo), new UndoUndoHandler((UndoCoordinator)undo), new UndoRedoHandler((UndoCoordinator)undo),
+            new UndoListHandler(undo), new UndoUndoHandler(undo), new UndoRedoHandler(undo),
             new UndoClearHandler(undo),
             new StagingStageHandler(staging), new StagingListHandler(staging), new StagingDiscardHandler(staging),
             new StagingInspectHandler(staging), new StagingTransformHandler(staging), new StagingCommitHandler(staging),
@@ -104,8 +104,17 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
         var name = CommandArgs.RequireString(args, "name");
         var scriptJson = await macros.GetAsync(name, ctx.Ct)
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"宏「{name}」不存在"));
-        var script = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
-            ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        BatchScript script;
+        try
+        {
+            script = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        }
+        catch (JsonException)
+        {
+            // 坏 JSON 是输入问题而非内部错误：必须报 ProtocolMalformed，不得冒泡成 LP.INTERNAL
+            throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        }
 
         var (results, touched, events) = await BatchEngine.RunStepsNestedAsync(
             (CommandContextImpl)ctx, script with { Name = $"macro:{name}" }, ctx.Ct);
@@ -143,10 +152,20 @@ internal sealed class UndoUndoHandler(UndoCoordinator undo) : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var id = CommandArgs.OptionalString(args, "id");
-        var entry = await undo.TakeUndoAsync(id, ctx.Ct)
-            ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可撤销的命令"));
+
+        // 先取（不弹）再执行：逆向命令失败或事务回滚时条目必须仍在撤销栈（曾先 Take 后执行，
+        // 失败即丢条目，用户无法重试）；执行成功后才弹栈并转入重做栈。
+        var entries = await undo.ListAsync(ctx.Ct);
+        var entry = id is null
+            ? entries.FirstOrDefault()
+            : entries.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal));
+        if (entry is null)
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可撤销的命令"));
+
         var result = await ctx.DispatchNestedAsync(entry.InverseCommand, entry.InverseArgs, ctx.Ct);
-        undo.MarkUndone(entry);
+
+        var taken = await undo.TakeUndoAsync(entry.Id, ctx.Ct);
+        if (taken != null) undo.MarkUndone(taken);
         return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
     }
 }
@@ -159,12 +178,19 @@ internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var entry = await undo.TakeRedoAsync(ctx.Ct)
-            ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可重做的命令"));
+        // 先取（不弹）再执行：失败时条目留在重做栈（同 undo.undo 的防丢语义）
+        var redoEntries = await undo.ListRedoAsync(ctx.Ct);
+        var entry = redoEntries.FirstOrDefault();
+        if (entry is null)
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "没有可重做的命令"));
+
         var result = await ctx.DispatchNestedAsync(entry.Command, entry.Args, ctx.Ct);
-        var handler = ((CommandContextImpl)ctx).Engine.Registry.Resolve(entry.Command);
+
+        var taken = await undo.TakeRedoAsync(ctx.Ct);
+        if (taken == null) return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
+        var handler = ((CommandContextImpl)ctx).Engine.Registry.Resolve(taken.Command);
         if (handler != null)
-            undo.Record(handler.Descriptor, entry.Args, ctx.Caller);   // 新动作使后续重做链失效（Record 内清重做栈）
+            undo.Record(handler.Descriptor, taken.Args, ctx.Caller);   // 新动作使后续重做链失效（Record 内清重做栈）
         return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);
     }
 }
@@ -262,9 +288,17 @@ internal sealed class StagingTransformHandler(StagingService staging) : ICommand
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "缺少必填参数「ops」", details: JsonSerializer.SerializeToElement(new { @param = "ops" })));
         var ops = opsJson.ValueKind == JsonValueKind.Array
-            ? opsJson.EnumerateArray().Select(o => new TransformOp(
-                CommandArgs.RequireString(o, "op"),
-                o.TryGetProperty("args", out var a) ? a.Clone() : JsonSerializer.Deserialize<JsonElement>("{}")))
+            ? opsJson.EnumerateArray().Select(o =>
+            {
+                // 每个算子必须是对象形态 [{op, args}]：非对象元素显式报 TypeMismatch（
+                // 直接 TryGetProperty 会在底层抛路径异常并被引擎兜成 INTERNAL）
+                if (o.ValueKind != JsonValueKind.Object)
+                    throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch,
+                        "ops 的每个算子必须是对象 { op, args? }"));
+                return new TransformOp(
+                    CommandArgs.RequireString(o, "op"),
+                    o.TryGetProperty("args", out var a) ? a.Clone() : JsonSerializer.Deserialize<JsonElement>("{}"));
+            })
             : throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch, "ops 必须是算子对象数组"));
         var report = await staging.TransformAsync(id, [.. ops], dryRun, ctx.Ct);
         return CommandResult.Ok(report);

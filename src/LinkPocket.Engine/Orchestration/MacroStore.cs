@@ -20,8 +20,16 @@ public sealed class MacroStore : IMacroStore
     public async Task SaveAsync(string name, string scriptJson, CancellationToken ct)
     {
         // 保存前校验脚本可解析（无效脚本禁止入库——宏是技能库，坏脚本比缺脚本更危险）
-        _ = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
-            ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        try
+        {
+            _ = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        }
+        catch (JsonException)
+        {
+            // 坏 JSON 是输入问题而非内部错误：报 ProtocolMalformed，不冒泡成 LP.INTERNAL
+            throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+        }
 
         using var db = _dbFactory();
         var connection = db.Database.GetDbConnection();
@@ -61,7 +69,9 @@ public sealed class MacroStore : IMacroStore
         var list = new List<(string, string, DateTimeOffset)>();
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
-            list.Add((reader.GetString(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2))));
+            list.Add((reader.GetString(0), reader.GetString(1),
+                DateTimeOffset.ParseExact(reader.GetString(2), "O", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind)));
         return list;
     }
 

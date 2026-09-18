@@ -24,6 +24,12 @@ public sealed class UndoCoordinator : IUndoCoordinator
         return Task.FromResult(list);
     }
 
+    public Task<IReadOnlyList<UndoEntry>> ListRedoAsync(CancellationToken ct)
+    {
+        IReadOnlyList<UndoEntry> list = _redo.ToArray();   // 栈序 = 最近在前
+        return Task.FromResult(list);
+    }
+
     public Task<int> ClearAsync(CancellationToken ct)
     {
         var count = _undo.Count + _redo.Count;

@@ -142,6 +142,10 @@ public sealed record UndoEntry(
 public interface IUndoCoordinator
 {
     Task<IReadOnlyList<UndoEntry>> ListAsync(CancellationToken ct);
+
+    /// <summary>重做栈条目快照（最近在前）——redo 消费前先观察（执行成功才弹出，失败不丢栈）。</summary>
+    Task<IReadOnlyList<UndoEntry>> ListRedoAsync(CancellationToken ct);
+
     Task<int> ClearAsync(CancellationToken ct);
 
     /// <summary>弹出待撤销条目（id 缺省 = 最近一条；未找到返回 null），弹出后转入重做栈。</summary>

@@ -94,6 +94,12 @@ public sealed class StagingService : IStagingService
             ct.ThrowIfCancellationRequested();
             if (op.Op == "reencode")
             {
+                // reencode 必须以「未解析 JSON」前的字节流为输入：一旦任一 JSON 算子已解析 root，
+                // 最终落盘走 root 的序列化、bytes 会被整体忽略 → 该算子沦为静默空操作。
+                // 这里显式拒绝而非假装生效（曾静默吞掉：applied 记了但内容没变）。
+                if (parsed)
+                    throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch,
+                        "reencode 必须位于首个 JSON 变换算子（filter_links/rename_folder/map_field/strip_prefix/dedupe）之前"));
                 var from = GetString(op.Args, "from") ?? "utf-8";
                 var source = Encoding.GetEncoding(from);
                 var text = source.GetString(bytes);
