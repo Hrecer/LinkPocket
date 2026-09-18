@@ -7,7 +7,7 @@ using ProtocolSmoke;
 // 报告：运行结束落盘 perf_report.json（工作目录；可用 LP_PERF_REPORT 指定路径）。
 // 面向 = 新引擎（EngineClient 强类型面 + EngineWire JSON-RPC 面），
 // 断言由附录 B 行为等价表导出（引擎侧可断言项）+ 并发压测 + 10k 性能门槛（7.3）+ 缓存与增量失效（12）。
-// 旧协议（LinkPocketApi/Dispatcher/TransportedLinkPocketApi）由 UI 现役使用，不在本测试范围。
+// 旧协议层（LinkPocket.Infrastructure/ILinkPocketApi/Transport 系）已随 A1 整体删除，不在本测试范围。
 // 测试库 = 进程内临时库（SchemaMigrator 建库），不污染正式数据。
 
 var strictPerf = args.Contains("--strict-perf", StringComparer.Ordinal)
