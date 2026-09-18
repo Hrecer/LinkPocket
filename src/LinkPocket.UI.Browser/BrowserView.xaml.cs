@@ -279,12 +279,13 @@ public partial class BrowserView : UserControl
     /// <summary>目标合法性：目标行/节点不在拖动集合内，且没有任何被拖文件夹包含目标（防环）。</summary>
     private bool IsDropValid(BrowserDragPayload? payload, string? targetFolderId)
     {
-        if (payload == null || targetFolderId == null || ViewModel == null) return false;
-        if (targetFolderId == null) return true;
+        if (payload == null || ViewModel == null) return false;
+        // 根节点「全部书签」（folderId == null）= 移到根目录，是合法目标（与 NodeDrop 注释一致）；
+        // 防环只在目标是真实文件夹时才有意义（根没有「被移入自身」的概念）。
         foreach (var item in payload.Rows)
         {
             if (item.Id == targetFolderId) return false;
-            if (item.IsFolder && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId)) return false;
+            if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId)) return false;
         }
         return true;
     }

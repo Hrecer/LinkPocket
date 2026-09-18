@@ -21,6 +21,9 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
     private readonly EngineClient _client;
 
+    /// <summary>刷新挂起标志：加载进行中又来刷新请求时置位，当前加载收尾后自动补刷一次（最后请求胜出）。</summary>
+    private bool _refreshPending;
+
     public BrowserHistory Controller { get; } = new();
 
     public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
@@ -346,13 +349,20 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 重新加载当前目录（供事件推送订阅调用）。
+    /// 重新加载当前目录（供事件推送订阅/操作收尾调用）。
     /// preserveSelectionId：原地刷新场景（如从链接详情页返回）传入原选中项 id，
     /// 刷新后恢复该选中，避免"刷新即清空右侧栏"。
+    /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 移动粘贴后的收尾刷新 /
+    /// 防抖事件）只置挂起标志，当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：
+    /// 导航后列表停在旧目录、移动粘贴后只剩事件链一条刷新路径）。
     /// </summary>
     public async Task RefreshAsync(string? preserveSelectionId = null)
     {
-        if (IsLoading) return;
+        if (IsLoading)
+        {
+            _refreshPending = true;
+            return;
+        }
         IsLoading = true;
         try
         {
@@ -409,7 +419,15 @@ public class BrowserViewModel : INotifyPropertyChanged
                 .ToList();
             if (missing.Count > 0)
             {
-                await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync));
+                // favicon 属附属数据：预取失败绝不拖垮整列（行已构建好，只跳过图标加载，下次事件刷新再看）
+                try
+                {
+                    await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync));
+                }
+                catch
+                {
+                    // 单个/多个图标取不到 → 行保持无图标；网络失败属预期波动，不应清空整个目录
+                }
                 foreach (var row in linkRows.Where(r => r.Favicon == null))
                 {
                     var dto = contents.Links.FirstOrDefault(l => l.LinkId == row.Id);
@@ -458,14 +476,22 @@ public class BrowserViewModel : INotifyPropertyChanged
             StatusText = $"共 {contents.SubFolders.Count + contents.Links.Count} 项" +
                          $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个链接）";
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             StatusText = "加载失败";
+            Services.Logger.Error("浏览目录刷新失败", ex);   // 失败必须留痕，不能只有一行状态文案
         }
         finally
         {
             IsLoading = false;
             CommandManager.InvalidateRequerySuggested();
+
+            // 加载期间有新的刷新请求（导航/操作收尾/防抖事件）→ 立即补刷一次，保证最后请求被处理
+            if (_refreshPending)
+            {
+                _refreshPending = false;
+                await RefreshAsync(SelectedRows.FirstOrDefault()?.Id);
+            }
         }
     }
 
@@ -661,7 +687,6 @@ public class BrowserViewModel : INotifyPropertyChanged
                 }
             }
             StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
-            await RefreshPreservingSelectionAsync();
         }
         catch (Exception ex)
         {
@@ -672,20 +697,40 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             IsLoading = false;
         }
+
+        // 收尾刷新必须放在 IsLoading=false 之后：在调用方自己撑起的 IsLoading 期间调刷新，
+        // 会被重入守卫挂起且无人消费（历史上即因此只剩事件链一条刷新路径）——列表在此重建
+        await RefreshPreservingSelectionAsync();
     }
 
-    /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。</summary>
+    /// <summary>移动文件夹；目标目录存在同名时自动编号重命名（绝不覆盖）。返回是否执行了移动。
+    /// 单项失败不中断整批（与 MoveLink/Copy* 一致）；改名失败只记备注，移动结果不受影响。</summary>
     private async Task<bool> MoveFolderWithConflictRenameAsync(string folderId, string? target, List<string> renamedNotes)
     {
-        var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
-        var unique = GenerateUniqueName(name, SiblingFolderNames(target));
-        await _client.FolderMoveAsync(folderId, target);
-        if (unique != name)
+        try
         {
-            await _client.FolderUpdateAsync(folderId, name: unique);
-            renamedNotes.Add($"「{name}」→「{unique}」");
+            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
+            var unique = GenerateUniqueName(name, SiblingFolderNames(target));
+            await _client.FolderMoveAsync(folderId, target);
+            if (unique != name)
+            {
+                try
+                {
+                    await _client.FolderUpdateAsync(folderId, name: unique);
+                    renamedNotes.Add($"「{name}」→「{unique}」");
+                }
+                catch
+                {
+                    // 改名失败不中断整批：文件夹已移动成功，只有撞名尚未消除（备注如实记录）
+                    renamedNotes.Add($"「{name}」(改名未完成)");
+                }
+            }
+            return true;
         }
-        return true;
+        catch
+        {
+            return false;   // 单项移动失败 → 跳过该项继续批内其余项
+        }
     }
 
     private async Task<bool> MoveLinkAsync(string linkId, string? target)
@@ -693,7 +738,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 同目录粘贴/拖放 = 无操作
         try
         {
-            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
+            var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取后 FirstOrDefault）
             if (link == null) return false; // 源已被删除，跳过
             if (NormalizeParentId(link.ListId) == target) return false;
             await _client.LinkUpdateAsync(linkId, listId: target);
@@ -807,7 +852,6 @@ public class BrowserViewModel : INotifyPropertyChanged
                 foreach (var r in Rows) r.IsCut = false;
             }
             StatusText = pasted > 0 ? $"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}" : "没有可粘贴的项目";
-            await RefreshPreservingSelectionAsync();
         }
         catch (Exception ex)
         {
@@ -818,6 +862,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             IsLoading = false;
         }
+
+        // 收尾刷新同样放在 IsLoading=false 之后（与 MoveItemsAsync 同理，见其注释）
+        await RefreshPreservingSelectionAsync();
     }
 
     /// <summary>深拷贝文件夹；同名自动编号。返回是否执行。</summary>
@@ -830,8 +877,11 @@ public class BrowserViewModel : INotifyPropertyChanged
             var copy = await _client.FolderCopyAsync(folderId, target);
             var newId = copy.Data?.NewFolderId;
             if (string.IsNullOrEmpty(newId)) return false;
-            if (unique != name) await _client.FolderUpdateAsync(newId, name: unique);
-            renamedNotes.Add($"「{name}」→「{unique}」");
+            if (unique != name)
+            {
+                await _client.FolderUpdateAsync(newId, name: unique);
+                renamedNotes.Add($"「{name}」→「{unique}」");   // 仅真正重命名才记备注（与移动/复制链接一致）
+            }
             return true;
         }
         catch
@@ -845,16 +895,17 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         try
         {
-            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == linkId);
-            if (link == null) return false;
+            var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取）
 
             var targetNorm = target;
-            var siblingTitles = (await _client.LinkAllAsync())
-                .Where(l => l.ListId == targetNorm)
+            // 目标目录的既有标题集合：分页接口 per_page=0 = 全量，替代第二次全库拉取
+            var siblingTitles = (await _client.LinkListAsync(listId: targetNorm, perPage: 0))
+                .Links
                 .Select(l => l.Title)
                 .ToHashSet(StringComparer.CurrentCulture);
-            var unique = GenerateUniqueName(link.Title, siblingTitles);
+            var unique = GenerateUniqueName(link.Title ?? string.Empty, siblingTitles);
 
+            // 复制书签 = 全量字段（URL/标题/描述/收藏/图标；内核无标签系统，无其它字段可丢）
             await _client.LinkCreateAsync(link.Url,
                 title: unique,
                 description: string.IsNullOrEmpty(link.Description) ? null : link.Description,

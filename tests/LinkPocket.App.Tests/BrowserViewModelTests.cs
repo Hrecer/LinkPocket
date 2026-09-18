@@ -83,6 +83,34 @@ public class BrowserViewModelTests
     }
 
     [Fact]
+    public async Task 移动链接后_列表同步刷新_不依赖事件链()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var b = (await client.FolderCreateAsync("B")).Data!;
+            var link = (await client.LinkCreateAsync("https://move.example", title: "M",
+                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(a.FolderId);
+            Assert.Contains(vm.Rows, r => r.Id == link.LinkId);
+
+            // 移动后收尾显式刷新必须生效——修复前被 IsLoading 重入守卫吞掉，列表停在旧状态
+            //（该场景无事件订阅，显式刷新是唯一路径，正好验证"最后请求必被处理"）。
+            await vm.MoveItemsAsync(new[] { (link.LinkId, false) }, b.FolderId);
+
+            Assert.DoesNotContain(vm.Rows, r => r.Id == link.LinkId);   // 已移出目录 A 的行（刷新已生效）
+            Assert.Empty(vm.Rows);                             // A 目录此刻为空
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 跳转导航_进入目标目录并选中目标行_已在该目录不重载()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

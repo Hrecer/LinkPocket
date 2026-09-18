@@ -30,7 +30,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         CancelCommand = new RelayCommand(() => _host.CloseEditorPage());
         FetchMetadataCommand = new RelayCommand(() => _ = FetchMetadataAsync(),
             () => !IsLoading && !IsFetching && !string.IsNullOrWhiteSpace(Url));
-        ClearFaviconCommand = new RelayCommand(ClearFavicon, () => IsEditMode && !IsLoading);
+        ClearFaviconCommand = new RelayCommand(ClearFavicon, () => CanClearFavicon);   // 与属性口径一致（含 IsFetching）
         if (IsEditMode) _ = LoadForEditAsync();
     }
 
@@ -165,16 +165,20 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         Favicon = null;
     }
 
-    /// <summary>编辑模式预填。</summary>
+    /// <summary>编辑模式预填。加载期间置 IsLoading（禁用保存/解析）；预填只填空字段——
+    /// 慢加载完成不得覆盖用户已输入的内容（消除 fire-and-forget 与用户输入的竞态）。
+    /// 取数走 LinkGetAsync 单点查询，不再全量拉取后 FirstOrDefault。</summary>
     private async Task LoadForEditAsync()
     {
+        IsLoading = true;
         try
         {
-            var link = (await _client.LinkAllAsync()).FirstOrDefault(l => l.LinkId == _editLinkId);
+            var link = await _client.LinkGetAsync(_editLinkId!);
             if (link == null) { _host.CloseEditorPage(); return; }
-            Url = link.Url;
-            LinkTitle = link.Title;
-            Description = link.Description ?? "";
+            // 仅当字段仍为空才填充：用户此刻的输入优先，预填只补缺
+            if (string.IsNullOrEmpty(Url)) Url = link.Url;
+            if (string.IsNullOrWhiteSpace(LinkTitle)) LinkTitle = link.Title;
+            if (string.IsNullOrEmpty(Description)) Description = link.Description ?? "";
             // 已有 favicon 时头部直接展示真实图标（与详情页一致）
             if (!string.IsNullOrEmpty(link.FaviconUrl))
             {
@@ -190,6 +194,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             Error = $"加载链接数据失败: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
         }
     }
 
@@ -214,8 +222,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             }
             else
             {
+                // 原文保存（与编辑分支一致）：绝不二次解码——%23/%2F/%3F 等合法编码在
+                // 校验时已验证为合法 http(s) URL，UnescapeDataString 会破坏其语义
                 await _client.LinkCreateAsync(
-                    url: Uri.UnescapeDataString(Url.Trim()),
+                    url: Url.Trim(),
                     title: LinkTitle.Trim(),
                     description: string.IsNullOrWhiteSpace(Description) ? null : Description.Trim(),
                     listId: _createListId,
