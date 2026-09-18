@@ -36,9 +36,9 @@ public sealed partial class EngineClient
         CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<JsonElement>("backup.inspect", new { file_path = filePath }, o, ct);
 
-    /// <summary>执行查重处置（嵌套派发 links.trash；支持 DryRun 预演）。返回 JsonElement（strategy/groups/trashed）。</summary>
-    public Task<CommandResult<JsonElement>> DedupApplyAsync(string? strategy = null, object? groupUrls = null,
-        object? explicitKeep = null, CallOptions? o = null, CancellationToken ct = default)
+    /// <summary>执行查重处置（嵌套派发 links.trash；支持 DryRun 预演；keep_explicit 未列出的组跳过）。返回 JsonElement（strategy/groups/trashed）。</summary>
+    public Task<CommandResult<JsonElement>> DedupApplyAsync(string? strategy = null, IReadOnlyList<string>? groupUrls = null,
+        IReadOnlyDictionary<string, string>? explicitKeep = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<JsonElement>("dedup.apply", new { strategy, group_urls = groupUrls, explicit_keep = explicitKeep }, o, ct);
 
     /// <summary>图标缓存统计。</summary>

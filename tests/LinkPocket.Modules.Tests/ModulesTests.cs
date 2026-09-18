@@ -787,6 +787,71 @@ public class DedupModuleTests
         var plan2 = await engine.QueryAsync<Modules.Dedup.DedupPlan>("dedup.plan", new { strategy = "keep_newest" });
         Assert.Empty(plan2.Groups);
     }
+
+    [Fact]
+    public async Task Keep_Explicit_Skips_Groups_Not_Listed()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://a.example", title = "A1" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://a.example", title = "A2" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://b.example", title = "B1" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://b.example", title = "B2" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://b.example", title = "B3" });
+
+        // explicit_keep 只列 a.example → 计划只含该组；b.example 组必须跳过（不回落到别的策略）
+        var groups = await engine.QueryAsync<List<Modules.Dedup.DedupGroup>>("dedup.scan", null);
+        var groupA = groups.Single(g => g.Url == "https://a.example");
+        var explicitKeep = new Dictionary<string, string> { [groupA.Url] = groupA.Links[0].LinkId };
+
+        var plan = await engine.QueryAsync<Modules.Dedup.DedupPlan>("dedup.plan",
+            new { strategy = "keep_explicit", explicit_keep = explicitKeep });
+        var planned = Assert.Single(plan.Groups);
+        Assert.Equal(groupA.Url, planned.Url);
+        Assert.Equal(groupA.Links.Count - 1, plan.TotalToTrash);
+
+        var applied = await engine.ExecuteAsync<JsonElement>("dedup.apply",
+            new { strategy = "keep_explicit", explicit_keep = explicitKeep });
+        Assert.Equal(1, applied.Data.GetProperty("trashed").GetInt32());
+        Assert.Contains("trash.changed", applied.Changes!.Events);
+
+        // 未点名的 b.example 组原样保留（仍有重复），a.example 组已被处置
+        var after = await engine.QueryAsync<List<Modules.Dedup.DedupGroup>>("dedup.scan", null);
+        var remaining = Assert.Single(after);
+        Assert.Equal("https://b.example", remaining.Url);
+        Assert.Equal(3, remaining.Count);
+    }
+
+    [Fact]
+    public async Task Group_Urls_With_Non_String_Element_Reports_TypeMismatch()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://dup.example", title = "X" });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.QueryAsync<Modules.Dedup.DedupPlan>("dedup.plan", new { group_urls = new object[] { 1 } }));
+        Assert.Equal(EngineErrors.TypeMismatch, ex.Error.Code);
+    }
+
+    [Fact]
+    public async Task Apply_Without_Duplicates_Publishes_No_Events()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://unique.example", title = "U" });
+
+        var applied = await engine.ExecuteAsync<JsonElement>("dedup.apply", null);
+        Assert.Equal(0, applied.Data.GetProperty("trashed").GetInt32());
+        // 空计划 = 零实际变更：不得发布 trash.changed（空事件会假失效缓存/假刷新）
+        Assert.Empty(applied.Changes!.Events);
+    }
+
+    [Fact]
+    public void Dedup_Apply_Descriptor_Is_Not_Reversible()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var manifest = engine.Describe("dedup");
+        var apply = Assert.Single(manifest.Commands, c => c.Name == "dedup.apply");
+        Assert.False(apply.Caps.HasFlag(CommandCaps.Reversible));
+    }
 }
 
 public class MaintenanceModuleTests
