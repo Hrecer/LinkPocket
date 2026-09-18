@@ -28,8 +28,6 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class BreadcrumbBar : UserControl
     {
-        private bool _suppressCandidateChoose;
-
         public BreadcrumbBar()
         {
             InitializeComponent();
@@ -154,16 +152,12 @@ namespace LinkPocket.Views
         {
             if (e.Key == Key.Down)
             {
-                _suppressCandidateChoose = true;
-                try { CandidateMoveRequested?.Invoke(this, new CandidateMoveEventArgs { Delta = 1 }); }
-                finally { _suppressCandidateChoose = false; }
+                CandidateMoveRequested?.Invoke(this, new CandidateMoveEventArgs { Delta = 1 });
                 e.Handled = true;
             }
             else if (e.Key == Key.Up)
             {
-                _suppressCandidateChoose = true;
-                try { CandidateMoveRequested?.Invoke(this, new CandidateMoveEventArgs { Delta = -1 }); }
-                finally { _suppressCandidateChoose = false; }
+                CandidateMoveRequested?.Invoke(this, new CandidateMoveEventArgs { Delta = -1 });
                 e.Handled = true;
             }
         }
@@ -174,11 +168,26 @@ namespace LinkPocket.Views
         private void PathCandidatesPopup_Closed(object? sender, EventArgs e)
             => EditPopupClosed?.Invoke(this, EventArgs.Empty);
 
-        private void PathCandidates_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        /// <summary>
+        /// 候选只由<b>鼠标点选</b>触发 Choose（1.2）：VM 每次输入都会重建候选并把
+        /// SelectedCandidateIndex 置 0 —— 若再经 SelectionChanged 自动 Choose，会形成
+        /// "输入一个字符 → 自动补全整段路径 → 再输入…"的闭环。SelectedIndex 双向绑定仅用于
+        /// 高亮跟随（↑/↓ 与 Tab 补全由 CompletePathCommand 显式触发）。
+        /// </summary>
+        private void PathCandidatesList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (_suppressCandidateChoose) return;
-            if (e.AddedItems.Count == 0 || e.AddedItems[0] is not string name) return;
-            CandidateChosen?.Invoke(this, name);
+            var hit = e.OriginalSource as DependencyObject;
+            while (hit != null)
+            {
+                if (hit is ListBoxItem item)
+                {
+                    if (item.DataContext is string name)
+                        CandidateChosen?.Invoke(this, name);
+                    e.Handled = true;
+                    return;
+                }
+                hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+            }
         }
     }
 }

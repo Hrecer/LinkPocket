@@ -51,5 +51,8 @@ namespace LinkPocket.ViewModels
         }
 
         public void Execute(object? parameter) => _execute((T?)parameter);
+
+        /// <summary>与无泛型版对齐（3.2）：显式触发命令可用性重评估。</summary>
+        public void RaiseCanExecuteChanged() => CommandManager.InvalidateRequerySuggested();
     }
 }

@@ -32,6 +32,8 @@ public class InputDialogViewModel : INotifyPropertyChanged, IDataErrorInfo
             _value = value;
             MarkTouched();
             OnPropertyChanged();
+            // 2.6：ConfirmCommand.CanExecute 依赖值是否为空 —— 立即重评估，不依赖下一次输入事件
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
     }
 

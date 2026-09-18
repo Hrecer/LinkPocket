@@ -106,9 +106,13 @@ namespace LinkPocket.Views
         private static bool MatchesId(object item, string? folderId)
         {
             if (folderId == null) return false;
-            var idProp = item.GetType().GetProperty("FolderId")
-                         ?? item.GetType().GetProperty("TrashFolderId");
-            return string.Equals(idProp?.GetValue(item) as string, folderId, StringComparison.Ordinal);
+            // 2.7：静态类型模式匹配（原反射 GetProperty 每次遍历都做）；仅两类树节点
+            return item switch
+            {
+                LinkPocket.ViewModels.FolderNode f => string.Equals(f.FolderId, folderId, StringComparison.Ordinal),
+                LinkPocket.ViewModels.TrashFolderNode t => string.Equals(t.TrashFolderId, folderId, StringComparison.Ordinal),
+                _ => false,
+            };
         }
     }
 }

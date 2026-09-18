@@ -231,8 +231,12 @@ public class SortableDataTable : Grid
 
     private static ItemsPanelTemplate BuildRowsPanel()
     {
-        // UI 虚拟化（windowing）：VirtualizingStackPanel 只实例化可视区 ± 缓存页的行，
-        // 数千行时布局/内存都是常数级（与 React windowing / RecyclerView cell 复用同一算法）。
+        // UI 虚拟化（windowing）：VirtualizingStackPanel 只实例化可视区 ± 缓存页的「数据容器」。
+        // ⚠️ 1.1 如实说明：虚拟化只对【模板模式】（ItemsSource=数据对象 + ItemTemplate，浏览页大表）
+        // 生效；【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），Panel 会直接
+        // 挂进可视树，不做容器化 → 行数 = 实例化的控件数。工厂模式用于搜索/智能列表/回收站：
+        // 数据量受分页（per_page）/列表上限（≤100）/业务规模约束，全量实例化内可接受；
+        // 若未来工厂模式要支撑万级行，需改为 DataTemplate + 数据对象（配合 _rowMap 的选中/排序恢复）。
         const string xaml =
             "<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>" +
             "<VirtualizingStackPanel/>" +

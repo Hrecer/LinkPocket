@@ -41,6 +41,6 @@ public static class EngineConfirm
             return token.GetString()!;
         }
 
-        throw ex;   // Observability：没有令牌可重试，把原始引擎错误交给调用方展示
+        throw;   // Observability：没有令牌可重试，把原始引擎错误交给调用方展示（throw; 保留原始堆栈）
     }
 }

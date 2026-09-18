@@ -158,7 +158,7 @@
                              ItemsSource="{Binding PathCandidates, ElementName=Root}"
                              SelectedIndex="{Binding SelectedCandidateIndex, ElementName=Root, Mode=TwoWay}"
                              BorderThickness="0" Background="Transparent"
-                             SelectionChanged="PathCandidates_SelectionChanged">
+                             PreviewMouseLeftButtonUp="PathCandidatesList_PreviewMouseLeftButtonUp">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding}" FontSize="12" Height="26" Margin="12,0"

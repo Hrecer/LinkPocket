@@ -18,11 +18,16 @@ public class DetailSidebarRow : INotifyPropertyChanged
     public string Label { get; init; } = "";
 
     private string _value = "";
-    /// <summary>行值：异步补拉时原位更新（INPC 通知，无需重建整行）。</summary>
+    /// <summary>行值：异步补拉时原位更新（INPC 通知，无需重建整行；3.5：值未变不发多余通知）。</summary>
     public string Value
     {
         get => _value;
-        set { _value = value; OnPropertyChanged(); }
+        set
+        {
+            if (_value == value) return;
+            _value = value;
+            OnPropertyChanged();
+        }
     }
 
     /// <summary>强调值（如「11 个链接」→ Primary + SemiBold）。</summary>
