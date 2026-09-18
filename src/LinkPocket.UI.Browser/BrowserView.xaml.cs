@@ -386,6 +386,12 @@ public partial class BrowserView : UserControl
         ViewModel.SelectTreeNode(fn);
     }
 
+    /// <summary>点击文件夹树空白：清空选中（主栏 + 树一起取消，唯一事实来源清空）。</summary>
+    private void FolderTreePanel_BackgroundClicked(object? sender, EventArgs e)
+    {
+        if (ViewModel != null) ViewModel.ClearSelection();
+    }
+
     /// <summary>VM 属性变化：仅路径编辑态需要视图介入（聚焦全选）；树选中同步已内聚在 VM 数据驱动。</summary>
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

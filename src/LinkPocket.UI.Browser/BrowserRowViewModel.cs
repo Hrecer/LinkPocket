@@ -76,19 +76,16 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>所属 VM：行内右键菜单经此绑定命令（ContextMenu 不在可视树，无法 RelativeSource 向上找）。</summary>
     public BrowserViewModel? Host { get; set; }
 
-    private bool _isSelected;
-    public bool IsSelected
-    {
-        get => _isSelected;
-        set
-        {
-            if (_isSelected == value) return;
-            _isSelected = value;
-            OnPropertyChanged();
-            // 批量选择（Shift 区间 / 全选 / 清空）经 Host 的抑制计数合并为批末一次通知，防 N 次全量重评估
-            Host?.OnRowSelectionChanged();
-        }
-    }
+    /// <summary>
+    /// 行选中态 = 宿主选中集合（<see cref="BrowserViewModel.IsSelectedId"/>）的纯投影。
+    /// 不再把选中持久在行对象上——行对象会随 Rows 重建销毁，持久于行根本无法跨刷新存活；
+    /// 选中唯一事实来源在 VM，行只是从集合读值。集合变化时由宿主调用 <see cref="InvalidateIsSelected"/>
+    /// 通知绑定刷新，绝不在行自身写选中。
+    /// </summary>
+    public bool IsSelected => Host != null && Host.IsSelectedId(Id);
+
+    /// <summary>选中集合变化后由宿主调用：仅重发本行 IsSelected 的绑定通知（值由集合投影）。</summary>
+    public void InvalidateIsSelected() => OnPropertyChanged(nameof(IsSelected));
 
     private bool _isCut;
     /// <summary>剪切态视觉（Ctrl+X）：行整体半透明，由绑定驱动。</summary>

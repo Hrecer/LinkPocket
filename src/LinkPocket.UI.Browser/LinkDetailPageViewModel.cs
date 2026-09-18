@@ -238,9 +238,10 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     /// </summary>
     private async Task BackAsync()
     {
-        var keepId = _linkId;
+        // 从详情页返回：把该链接重新纳入选中集合（唯一事实来源）再原地刷新，投影自动恢复两栏高亮
+        if (!string.IsNullOrEmpty(_linkId)) _host.RestoreSelection(_linkId);
         Close();
-        await _host.RefreshAsync(preserveSelectionId: keepId);
+        await _host.RefreshPreservingSelectionAsync();
     }
 
     public void Close()

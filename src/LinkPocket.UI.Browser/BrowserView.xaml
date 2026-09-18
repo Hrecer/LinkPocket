@@ -168,6 +168,7 @@
                                    HeaderText="文件夹"
                                    ItemsSource="{Binding FolderTree}"
                                    NodeSelected="FolderTreePanel_NodeSelected"
+                                   TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
                                    NodeDragOver="FolderTreePanel_NodeDragOver"
                                    NodeDrop="FolderTreePanel_NodeDrop"/>
 

@@ -209,6 +209,7 @@
                       ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
                       ItemsSource="{Binding ItemsSource, ElementName=Root}"
                       SelectedItemChanged="FolderTree_SelectedItemChanged"
+                      MouseLeftButtonUp="FolderTree_MouseLeftButtonUp"
                       VirtualizingPanel.IsVirtualizing="True">
                 <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">

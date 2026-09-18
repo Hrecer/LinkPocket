@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace LinkPocket.Views
 {
@@ -49,11 +50,26 @@ namespace LinkPocket.Views
         /// <summary>节点选中（参数 = 节点对象；虚拟根选中也会触发，宿主自行处理）。</summary>
         public event EventHandler<object?>? NodeSelected;
 
+        /// <summary>点击树面板空白区域（未命中任何节点）：宿主应清空选中。</summary>
+        public event EventHandler? TreeBackgroundClicked;
+
         /// <summary>拖拽经过节点（宿主设置 e.Args.Effects；不订阅 = 不接受拖放）。</summary>
         public event EventHandler<TreeItemDragEventArgs>? NodeDragOver;
 
         /// <summary>落放到节点。</summary>
         public event EventHandler<TreeItemDragEventArgs>? NodeDrop;
+
+        /// <summary>树空白点击：命中目标不在 TreeViewItem 内时视为点击空白 → 通知宿主清空选中。</summary>
+        private void FolderTree_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            var hit = System.Windows.Media.VisualTreeHelper.HitTest((Visual)FolderTreeControl, e.GetPosition(FolderTreeControl));
+            if (hit == null) return;
+            var el = hit.VisualHit;
+            while (el != null && el is not TreeViewItem)
+                el = System.Windows.Media.VisualTreeHelper.GetParent(el);
+            if (el == null)
+                TreeBackgroundClicked?.Invoke(this, EventArgs.Empty);
+        }
 
         private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
             => NodeSelected?.Invoke(this, e.NewValue);
