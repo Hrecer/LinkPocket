@@ -1,4 +1,3 @@
-using System;
 using LinkPocket.Contracts;
 using LinkPocket.Engine;
 
@@ -6,8 +5,8 @@ namespace LinkPocket.Services;
 
 /// <summary>
 /// 前端组合根：应用启动时装配一次（全工程唯一允许 new 具体实现的地方）。
-/// 后端 = 引擎组合根（EngineCore + EngineWire + 九模块命令注册 + 编排层）；
-/// 前端 = 引擎客户端门面 + 内容定位器 + 端口槽位。
+/// 后端 = 引擎组合根（由共享 Composition 的 <c>EngineComposer</c> 收敛装配：EngineCore +
+/// EngineWire + 九模块命令注册 + 编排层）；前端 = 引擎客户端门面 + 内容定位器 + 端口槽位。
 /// 阶段 7（前端端口）：AppServices / UiCoordinator / BrowserLocateHost 三个静态定位器
 /// 由本类实例替代，依赖经构造注入流向 ViewModel 与页面。
 /// </summary>
@@ -46,48 +45,22 @@ public sealed class AppHost
         Locator = new ContentLocator(client, () => LocateHost);
     }
 
-    /// <summary>默认装配：引擎组合根（九模块全量注册 + 编排层）+ 引擎客户端 + 事件枢纽接线。</summary>
+    /// <summary>
+    /// 默认装配：引擎组合根（九模块全量注册 + 编排层；组合由共享 Composition 收敛）+
+    /// 引擎客户端 + 事件枢纽接线。
+    /// </summary>
     public static AppHost CreateDefault()
     {
         // 组合根 = 全仓库唯一允许 new 具体实现的地方。
+        // 引擎装配（DB 工厂 → 九模块 → EngineCore → 编排层 → EngineClient/EngineWire）由
+        // LinkPocket.Composition.EngineComposer 统一收敛（审计/幂等落库 + 编排 + wire 全量选项）。
         // 数据库路径沿用旧面默认（AppContext.BaseDirectory/linkpocket.db，WAL + schema 版本链
         // 由 LinkPocketDbContextFactory 一次性启好），保证既有用户数据无缝接管（同一文件，零迁移）。
-        var dbPath = System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
-        var factory = new LinkPocket.Data.LinkPocketDbContextFactory(dbPath);
+        var composed = LinkPocket.Composition.EngineComposer.Compose(
+            System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"));
 
-        var registry = new LinkPocket.Engine.CommandRegistry();
-        EngineCore? engineRef = null;   // diagnostics.collect 的 runtime 段接线（引擎后于注册构造）
-
-        registry.RegisterAll(LinkPocket.Modules.Folders.FoldersModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Links.LinksModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Trash.TrashModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Search.SearchModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Bookmarks.BookmarksModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Backup.BackupModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Dedup.DedupModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Favicon.FaviconModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers(
-            () => engineRef!.RuntimeStats));
-
-        // 编排层（批引擎/撤销协调器挂引擎）+ 16 个编排命令入目录 + audit_log/idempotency 落表
-        var engine = new EngineCore(registry, () => new LinkPocket.Data.EfUnitOfWork(factory.CreateDbContext()),
-            audit: new LinkPocket.Engine.CompositeAuditWriter(
-                new LinkPocket.Engine.InMemoryAuditWriter(),
-                new LinkPocket.Engine.SqlAuditWriter(() => factory.CreateDbContext())),
-            idempotency: new LinkPocket.Engine.SqlIdempotencyStore(() => factory.CreateDbContext()));
-        engineRef = engine;
-        registry.RegisterAll(LinkPocket.Engine.OrchestrationHost.CreateHandlers(
-            engine, () => factory.CreateDbContext(), StagingRootFor(dbPath)));
-
-        var client = new EngineClient(engine);
-        var wire = new EngineWire(engine);
-        var host = new AppHost(client, wire);
-        host.Hub.Attach(engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
+        var host = new AppHost(composed.Client, composed.Wire!);
+        host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
         return host;
     }
-
-    /// <summary>暂存区根 = 库文件同目录下的派生目录（staging.transform 的文件准备区）。</summary>
-    private static string StagingRootFor(string dbPath)
-        => System.IO.Path.Combine(System.IO.Path.GetDirectoryName(dbPath)!,
-            $"linkpocket_staging_{System.IO.Path.GetFileNameWithoutExtension(dbPath)}");
 }
