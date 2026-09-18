@@ -25,7 +25,8 @@
         <KeyBinding Key="Backspace" Command="{Binding GoUpCommand}"/>
         <KeyBinding Modifiers="Alt" Key="Left" Command="{Binding GoBackCommand}"/>
         <KeyBinding Modifiers="Alt" Key="Right" Command="{Binding GoForwardCommand}"/>
-        <KeyBinding Key="Escape" Command="{Binding ClearSelectionCommand}"/>
+        <!-- Esc 分层（Windows 口径）：有剪切态先取消剪切，否则清空选中；路径编辑态让位给「取消路径编辑」 -->
+        <KeyBinding Key="Escape" Command="{Binding EscapeCommand}"/>
     </UserControl.InputBindings>
 
     <UserControl.Resources>
@@ -182,6 +183,7 @@
                  详情栏/分隔线在别的列，天然不经过这里——不再需要"豁免清单"。 -->
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
+                    PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
                     MouseLeftButtonUp="ListCard_MouseLeftButtonUp">
             <Grid>
                 <Grid.ContextMenu>

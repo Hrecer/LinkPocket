@@ -144,7 +144,9 @@
                          子级整体缩进一格（20 = chevron 列宽）→ chevron 对齐父文本，Windows 资源管理器式层级 -->
                     <ControlTemplate TargetType="TreeViewItem">
                         <StackPanel>
-                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand" MouseLeftButtonUp="FolderTreeItem_MouseLeftButtonUp">
+                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand"
+                                    PreviewMouseLeftButtonDown="FolderTreeItem_PreviewMouseLeftButtonDown"
+                                    MouseLeftButtonUp="FolderTreeItem_MouseLeftButtonUp">
                                 <Border.Style>
                                     <!-- 选中态数据驱动（FolderNode.IsSelected，VM 唯一事实来源）：数据触发器在派生层，
                                          优先级高于基样式悬停 = 选中行悬停不换色（与主栏 RowSkin 同构；容器重建不影响高亮）。
@@ -228,6 +230,7 @@
                       Style="{StaticResource FolderTreeStyle}"
                       ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
                       ItemsSource="{Binding ItemsSource, ElementName=Root}"
+                      PreviewMouseLeftButtonDown="FolderTree_PreviewMouseLeftButtonDown"
                       MouseLeftButtonUp="FolderTree_MouseLeftButtonUp"
                       VirtualizingPanel.IsVirtualizing="True">
                 <TreeView.ItemTemplate>

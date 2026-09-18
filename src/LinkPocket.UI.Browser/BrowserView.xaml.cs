@@ -203,13 +203,29 @@ public partial class BrowserView : UserControl
     //   表头按 Columns 生成，拖拽只改控件的 ColumnWidths 单一数据源。）
 
     // —— 行点击路由（读修饰键：无=单选，Ctrl=翻转，Shift=区间）——
+    // Windows 语义复刻（deferred selection，契约见 BEHAVIOR-CONTRACT §1.3）：
+    // · 按下未选中行（无修饰键）→ **立即**单选（视觉即时反馈，且紧接着可以拖拽该行）；
+    // · 按下已选中行 → 不动选中（多选拖拽要拖整个集合），收敛/翻转语义留到抬起；
+    // · 抬起只处理"与按下属于同一次手势"的点击完成（见 Up 的归属校验），
+    //   双击打开文件夹时列表会重建——第二击的按下发生在旧列表、抬起落在新列表上，
+    //   该抬起绝不能被当作新列表行的单击（否则 = "双击进入后同位置行被误选"）。
 
+    /// <summary>
+    /// 抬起 = 点击完成：对"同一次手势"重放选择语义（无修饰键 = 收敛为该项；Ctrl = 翻转；Shift = 区间）。
+    /// 归属校验三条件（缺一即丢弃，绝不作用于抬起处新命中的行）：
+    /// ① 抬起与按下命中同一行对象；② 期间未进入拖拽；③ 按下是单击（ClickCount ≤ 1）。
+    /// </summary>
     private void RowBorder_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (ViewModel == null) return;
-        ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
-        if ((sender as FrameworkElement)?.DataContext is BrowserRowViewModel row)
-            ViewModel.SelectRowWithModifiers(row, Keyboard.Modifiers);
+        var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+        var pressed = _pressRow;
+        var mods = _pressModifiers;
+        var clicks = _pressClickCount;
+        _pressRow = null;
+
+        if (ViewModel == null || row == null) return;
+        if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
+        ViewModel.SelectRowWithModifiers(row, mods);
     }
 
     /// <summary>
@@ -255,11 +271,35 @@ public partial class BrowserView : UserControl
 
     private Point _rowDragStart;
 
+    /// <summary>本次按下命中的行（手势归属凭据；抬起时校验"同一次手势"用）。</summary>
+    private BrowserRowViewModel? _pressRow;
+
+    /// <summary>按下时的修饰键：抬起沿用按下时刻的值（中途变键不改变本次点击语义）。</summary>
+    private ModifierKeys _pressModifiers;
+
+    /// <summary>按下时的点击计数：≥2 = 双击手势的第二击，绝不承载选择语义（第二击只作打开）。</summary>
+    private int _pressClickCount;
+
+    /// <summary>本次手势是否已进入拖拽（拖拽结束的抬起不得再补做选择收敛）。</summary>
+    private bool _dragStarted;
+
     /// <summary>拖拽数据：选中集合（拖未选中的行时为其临时单项集合）。</summary>
     public record BrowserDragPayload(IReadOnlyList<BrowserRowViewModel> Rows);
 
+    /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        => _rowDragStart = e.GetPosition(this);
+    {
+        _rowDragStart = e.GetPosition(this);
+        _dragStarted = false;
+        _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+        _pressModifiers = Keyboard.Modifiers;
+        _pressClickCount = e.ClickCount;
+
+        if (ViewModel == null || _pressRow == null) return;
+        ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
+        if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)
+            ViewModel.SelectRowWithModifiers(_pressRow, ModifierKeys.None);
+    }
 
     private void RowBorder_MouseMove(object sender, MouseEventArgs e)
     {
@@ -268,6 +308,7 @@ public partial class BrowserView : UserControl
         if (Math.Abs(pos.X - _rowDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(pos.Y - _rowDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
+        _dragStarted = true;
 
         if ((sender as FrameworkElement)?.DataContext is not BrowserRowViewModel row || ViewModel == null) return;
 
@@ -405,16 +446,33 @@ public partial class BrowserView : UserControl
         return null;
     }
 
+    // 卡内按下的手势凭据（见 ListCard_MouseLeftButtonUp 的归属校验）。
+    private bool _cardPressEmpty;
+    private int _cardPressClickCount;
+
+    /// <summary>卡内按下（隧道先于行）：记录"按下是否落在非行区域"+ 点击计数。</summary>
+    private void ListCard_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var hit = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender))?.VisualHit;
+        _cardPressEmpty = hit == null || !IsBrowserRow(hit);
+        _cardPressClickCount = e.ClickCount;
+    }
+
     /// <summary>
     /// 点击列表卡空白处清除选中（命中行内元素时不处理，由行命令负责）。
     /// 语义边界 = 列表卡本身：处理器挂在卡面上，不挂内容区外层 Grid——
     /// 外层 Grid 同时包含目录树面板，树行点击（选中/进入）会冒泡到外层并被当成"空白"清掉
     /// （实测缺陷：点树里的链接叶子/文件夹，两栏都不显示选中）。清选中归各区域自己：
     /// 树面板内部自管（TreeBackgroundClicked），列表卡在此自管，详情栏/分隔线不在本卡内、天然不受影响。
+    /// **归属校验**：只有"按下也在卡内非行区域"的单击才算点空白——
+    /// 双击打开文件夹时列表会重建，第二击的抬起可能落在新列表空白处（按下却在旧列表行上），
+    /// 那种抬起绝不能当作"点空白清选中"（否则刚打开目录就把选中清没了）。
     /// </summary>
     private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         ViewModel?.ActivatePane(BrowserPane.Main);
+        if (!_cardPressEmpty || _cardPressClickCount > 1) return;
+
         var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
         if (hitTest?.VisualHit == null || IsBrowserRow(hitTest.VisualHit))
             return;

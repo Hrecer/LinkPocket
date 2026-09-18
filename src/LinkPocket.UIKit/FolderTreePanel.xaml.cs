@@ -59,16 +59,46 @@ namespace LinkPocket.Views
         /// <summary>落放到节点。</summary>
         public event EventHandler<TreeItemDragEventArgs>? NodeDrop;
 
-        /// <summary>树空白点击：命中目标不在 TreeViewItem 内时视为点击空白 → 通知宿主清空选中。</summary>
+        // 树面板按下的手势凭据（见 FolderTree_MouseLeftButtonUp 的归属校验）。
+        private bool _pressOnTreeBackground;
+        private int _pressTreeClickCount;
+
+        /// <summary>树面板按下（隧道先于行）：记录"按下是否在空白"+ 点击计数。</summary>
+        private void FolderTree_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _pressOnTreeBackground = HitNode(e) == null;
+            _pressTreeClickCount = e.ClickCount;
+        }
+
+        /// <summary>树空白点击：命中目标不在 TreeViewItem 内时视为点击空白 → 通知宿主清空选中。
+        /// **归属校验**：只有"按下也在空白"的单击才算点空白——双击行进入目录后树会重建，
+        /// 第二击抬起可能落在新树空白处（按下却在旧节点上），不得当作"点空白清选中"。</summary>
         private void FolderTree_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            if (!_pressOnTreeBackground || _pressTreeClickCount > 1) return;
+            if (HitNode(e) == null)
+                TreeBackgroundClicked?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>命中测试：返回点击位置所在的 TreeViewItem（不在任何节点内 = null）。</summary>
+        private TreeViewItem? HitNode(System.Windows.Input.MouseEventArgs e)
+        {
             var hit = System.Windows.Media.VisualTreeHelper.HitTest((Visual)FolderTreeControl, e.GetPosition(FolderTreeControl));
-            if (hit == null) return;
-            var el = hit.VisualHit;
+            var el = hit?.VisualHit;
             while (el != null && el is not TreeViewItem)
                 el = System.Windows.Media.VisualTreeHelper.GetParent(el);
-            if (el == null)
-                TreeBackgroundClicked?.Invoke(this, EventArgs.Empty);
+            return el as TreeViewItem;
+        }
+
+        // 树行按下的手势凭据（见 FolderTreeItem_MouseLeftButtonUp 的归属校验）。
+        private object? _pressNode;
+        private int _pressNodeClickCount;
+
+        /// <summary>树行按下（隧道先于行主体）：记录命中的节点 + 点击计数。</summary>
+        private void FolderTreeItem_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _pressNode = (sender as FrameworkElement)?.DataContext;
+            _pressNodeClickCount = e.ClickCount;
         }
 
         /// <summary>
@@ -76,11 +106,18 @@ namespace LinkPocket.Views
         /// 选中/进入语义由宿主（NodeSelected）决定 —— 文件夹 = 选中并进入；链接叶子 = 定位到父目录；
         /// 「全部书签」虚拟根 = 进入根目录（不写选中）。行单击与 chevron 展开物理分离，
         /// 不经容器 SelectedItemChanged（键盘/展开同通道 = 耦合）。回收站页不订阅 = 纯展示。
+        /// **归属校验**：抬起必须与按下命中同一节点、且按下是单击——双击的第二击落在导航重建后
+        /// 新位置节点上时绝不能再触发一次"选中+进入"（会误进入/误选另一个文件夹，与主栏同根）。
         /// </summary>
         private void FolderTreeItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             var node = (sender as FrameworkElement)?.DataContext;
+            var pressed = _pressNode;
+            var clicks = _pressNodeClickCount;
+            _pressNode = null;
+
             if (node == null) return;
+            if (!ReferenceEquals(node, pressed) || clicks > 1) return;
             NodeSelected?.Invoke(this, node);
         }
 
