@@ -63,7 +63,7 @@ internal sealed class LinkUpdateHandler : ICommandHandler
             link.ToDto(),
             ChangeSet.Of(
                 new EntityRef("link", link.LinkId),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已更新链接「{link.Title ?? link.Url}」"));
     }
 }

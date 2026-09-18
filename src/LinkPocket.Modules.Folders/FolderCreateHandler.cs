@@ -55,7 +55,7 @@ internal sealed class FolderCreateHandler : ICommandHandler
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
-                "folders.changed",
+                LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                 $"已创建文件夹「{folder.Name}」"));
     }
 }

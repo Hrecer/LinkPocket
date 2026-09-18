@@ -54,6 +54,10 @@ public sealed class BatchEngine : IBatchEngine
         foreach (var key in stale) _status.TryRemove(key, out _);
     }
 
+    /// <summary>取当前已完成的步数；状态缺失时退化为 0（拒绝 KeyNotFoundException 覆盖原始异常，审核 1.5）。</summary>
+    private int CompletedStepsOf(string batchId)
+        => _status.TryGetValue(batchId, out var status) ? status.CompletedSteps : 0;
+
     public Task<BatchReport> RunAsync(BatchScript script, CallOptions? options = null, CancellationToken ct = default)
         => RunCoreAsync(script, dryRun: options?.DryRun == true, options, ct);
 
@@ -91,19 +95,19 @@ public sealed class BatchEngine : IBatchEngine
         }
         catch (EngineException ex) when (ex.Error.Code == EngineErrors.BatchAborted)
         {
-            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
             throw;   // 嵌套步骤循环已带报告详情（batch_id + step）
         }
         catch (EngineException ex) when (ex.Error.Code is EngineErrors.TypeMismatch or EngineErrors.RequiredParam or EngineErrors.ProtocolMalformed)
         {
             // 校验类错误（含模板坏引用）零副作用，按原错误码透传，不包装成批失败
-            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
             throw;
         }
         catch (EngineException ex)
         {
             // 事务批中途异常：工作单元未提交已回滚
-            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.BatchAborted,
                 $"批「{script.Name}」执行失败（{ex.Error.Code}）：事务批已整体回滚",
@@ -112,7 +116,7 @@ public sealed class BatchEngine : IBatchEngine
         }
         catch (OperationCanceledException)
         {
-            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", _status[batchId].CompletedSteps, script.Steps.Count));
+            TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
             throw;
         }
 

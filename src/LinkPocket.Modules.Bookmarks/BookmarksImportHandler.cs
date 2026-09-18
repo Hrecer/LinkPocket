@@ -116,7 +116,7 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                 Touched: foldersToAdd.Select(f => new EntityRef("folder", f.FolderId))
                     .Concat(linksToAdd.Select(l => new EntityRef("link", l.LinkId)))
                     .ToList(),
-                Events: ["links.changed", "folders.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.FoldersChanged],
                 HumanSummary: summary,
                 // 容错告警同时走 ChangeSet.Warnings（观测面契约：绝不静默吞掉；data.warnings 供 UI 展示保留）
                 Warnings: doc.Warnings.Count > 0 ? doc.Warnings : null));

@@ -35,8 +35,18 @@ public sealed record ImpactSummary(string Text)
 /// <summary>命令参数描述（目录自描述用；TypeName 机器可读，Phase 4 起参与入参校验）。</summary>
 public sealed record ParamSpec(string Name, string TypeName, string Description, bool Required)
 {
-    public static ParamSpec Req<T>(string name, string description) => new(name, typeof(T).Name, description, true);
-    public static ParamSpec Opt<T>(string name, string description) => new(name, typeof(T).Name, description, false);
+    /// <summary>
+    /// 类型名规范化（审核 3.1）：<c>typeof(IReadOnlyList&lt;string&gt;).Name</c> 是带反引号的
+    /// <c>"IReadOnlyList`1"</c>——落到目录/AI 工具清单里既畸形又丢失泛型信息；这里展平成可读形态
+    /// <c>"IReadOnlyList&lt;string&gt;"</c>（泛型参数递归规范化）。
+    /// </summary>
+    public static ParamSpec Req<T>(string name, string description) => new(name, TypeNameOf(typeof(T)), description, true);
+    public static ParamSpec Opt<T>(string name, string description) => new(name, TypeNameOf(typeof(T)), description, false);
+
+    internal static string TypeNameOf(Type type)
+        => type.IsGenericType
+            ? $"{type.Name[..type.Name.IndexOf('`')]}<{string.Join(", ", type.GetGenericArguments().Select(TypeNameOf))}>"
+            : type.Name;
 }
 
 /// <summary>

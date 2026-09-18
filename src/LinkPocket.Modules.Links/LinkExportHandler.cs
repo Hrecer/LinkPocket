@@ -65,7 +65,7 @@ internal sealed class LinkExportHandler : ICommandHandler
             new LinkExportResult(fullPath, format, dtos.Count, bytes),
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已导出 {dtos.Count} 个链接到 {fullPath}"));
     }
 

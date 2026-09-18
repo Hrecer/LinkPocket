@@ -58,6 +58,9 @@ internal sealed class CommandContextImpl : ICommandContext
     /// <summary>取走嵌套变更集（事件名去重、受影响实体去重）：父级只发布/失效一次。</summary>
     public ChangeSet TakeNestedChanges()
     {
+        if (_nestedTouched.Count == 0 && _nestedEvents.Count == 0 && _nestedWarnings.Count == 0)
+            return ChangeSet.Empty;   // 无嵌套变更 = 空集短路，不为零集合反复分配新实例（审核 3.5）
+
         var merged = new ChangeSet(
             _nestedTouched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
             _nestedEvents.Distinct(StringComparer.Ordinal).ToArray(),

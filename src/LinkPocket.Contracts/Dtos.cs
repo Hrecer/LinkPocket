@@ -119,15 +119,25 @@ public class PagedLinksDto
     [JsonPropertyName("last_page")] public int LastPage { get; set; }
 }
 
+/// <summary>回收站平铺条目类型常量（审核 2.7：杜绝 "link"/"folder" 魔法值拼写错即静默失效）。</summary>
+public static class TrashEntryType
+{
+    /// <summary>单独删除的书签条目。</summary>
+    public const string Link = "link";
+
+    /// <summary>被删文件夹单元根条目。</summary>
+    public const string Folder = "folder";
+}
+
 /// <summary>
-/// 回收站平铺条目（Windows 式）：entry_type = "link" | "folder"。
+/// 回收站平铺条目（Windows 式）：entry_type = "link" | "folder"（见 <see cref="TrashEntryType"/>）。
 /// folder 条目 = 「删除操作」的直接对象（被删文件夹单元的根），单元内部内容在回收站树里展示；
 /// link 条目 = 单独删除的书签。id 对 link = 原 link_id，对 folder = trash_folder_id。
 /// </summary>
 public class TrashEntryDto
 {
     [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
-    [JsonPropertyName("entry_type")] public string EntryType { get; set; } = "link";
+    [JsonPropertyName("entry_type")] public string EntryType { get; set; } = TrashEntryType.Link;
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     [JsonPropertyName("url")] public string? Url { get; set; }
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
@@ -159,21 +169,6 @@ public class LinkCountsDto
     [JsonPropertyName("trash")] public int Trash { get; set; }
     [JsonPropertyName("root_level")] public int RootLevel { get; set; }
     [JsonPropertyName("by_folder")] public Dictionary<string, int> ByFolder { get; set; } = new();
-}
-
-public class ApiResultDto
-{
-    [JsonPropertyName("ok")] public bool Ok { get; set; } = true;
-    [JsonPropertyName("message")] public string? Message { get; set; }
-}
-
-public class BackupImportDto
-{
-    [JsonPropertyName("folders_created")] public int FoldersCreated { get; set; }
-    [JsonPropertyName("links_created")] public int LinksCreated { get; set; }
-    [JsonPropertyName("total_items")] public int TotalItems { get; set; }
-    [JsonPropertyName("success")] public bool Success { get; set; }
-    [JsonPropertyName("errors")] public List<string> Errors { get; set; } = new();
 }
 
 /// <summary>

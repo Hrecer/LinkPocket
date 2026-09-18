@@ -7,7 +7,7 @@ namespace LinkPocket.Data;
 internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashRepository
 {
     public async Task<TrashedLink?> FindLinkAsync(LinkId id, CancellationToken ct)
-        => await db.TrashedLinks.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
+        => await db.TrashedLinks.AsNoTracking().FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
 
     public async Task<IReadOnlyList<TrashedLink>> ListStandaloneLinksAsync(CancellationToken ct)
         => await db.TrashedLinks.AsNoTracking()
@@ -43,7 +43,7 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
     }
 
     public async Task<TrashedFolder?> FindFolderAsync(TrashFolderId id, CancellationToken ct)
-        => await db.TrashedFolders.FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct);
+        => await db.TrashedFolders.AsNoTracking().FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct);
 
     public async Task<IReadOnlyList<TrashedFolder>> ListFoldersAsync(CancellationToken ct)
         => await db.TrashedFolders.AsNoTracking().OrderByDescending(f => f.DeletedAt).ToListAsync(ct);

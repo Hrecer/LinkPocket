@@ -88,7 +88,7 @@ internal sealed class LinkCreateHandler : ICommandHandler
             link.ToDto(),
             new ChangeSet(
                 Touched: [new EntityRef("link", link.LinkId)],
-                Events: ["links.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: summary,
                 Warnings: warnings));
     }

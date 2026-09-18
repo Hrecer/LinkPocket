@@ -45,13 +45,22 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
         using var db = _dbFactory();
         var connection = db.Database.GetDbConnection();
         if (connection.State != System.Data.ConnectionState.Open) connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT result_json, at FROM idempotency WHERE key = @key";
-        AddParam(command, "@key", key);
-        using var reader = command.ExecuteReader();
-        if (!reader.Read()) return false;
 
-        var at = DateTimeOffset.ParseExact(reader.GetString(1), "O",
+        string? resultJson;
+        string atText;
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT result_json, at FROM idempotency WHERE key = @key";
+            AddParam(command, "@key", key);
+            using var reader = command.ExecuteReader();
+            if (!reader.Read()) return false;
+            resultJson = reader.GetString(0);
+            atText = reader.GetString(1);
+        }   // reader 在此完全关闭 —— Microsoft.Data.Sqlite 不支持同连接多活动结果集（MARS），
+            // 之前在用着 reader 时直接对同一连接发 DELETE 会抛
+            // 「An open reader is already associated with this command」，过期清理因此永远不生效（审核 1.1）。
+
+        var at = DateTimeOffset.ParseExact(atText, "O",
             System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
         if (DateTimeOffset.Now - at > _window)
         {
@@ -64,14 +73,15 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
                 AddParam(del, "@key", key);
                 del.ExecuteNonQuery();
             }
-            catch
+            catch (Exception cleanupEx)
             {
-                // 清理尽力而为，不影响「未命中」语义（观测面：真正的查询失败仍会由上层暴露）
+                // 清理尽力而为，不影响「未命中」语义——但必须暴露（观测面纪律：失败禁止静默吞掉）
+                System.Diagnostics.Trace.TraceWarning("幂等过期行清理失败（key={0}）：{1}", key, cleanupEx.Message);
             }
             return false;
         }
 
-        var persisted = JsonSerializer.Deserialize<PersistedResult>(reader.GetString(0), EngineJson.Options);
+        var persisted = JsonSerializer.Deserialize<PersistedResult>(resultJson, EngineJson.Options);
         if (persisted is null) return false;
 
         result = new CommandResult(persisted.Data, persisted.Changes, persisted.AuditRef);
@@ -106,8 +116,10 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
                 command.ExecuteNonQuery();
             }
 
-            // 每 64 次写入顺带清理过期行（防表膨胀；幂等写入本身低频）
-            if (Interlocked.Increment(ref _storeCount) % 64 == 1)
+            // 每 64 次写入顺带清理过期行（防表膨胀；幂等写入本身低频）。
+            // Interlocked.Increment 从 1 起计数：`% 64 == 0` 在第 64/128/... 次触发——避免
+            // 进程第一次写就白跑一次「表里几乎必然没有过期行」的 DELETE（审核 2.6）。
+            if (Interlocked.Increment(ref _storeCount) % 64 == 0)
             {
                 using var prune = connection.CreateCommand();
                 prune.CommandText = "DELETE FROM idempotency WHERE at < @cutoff";

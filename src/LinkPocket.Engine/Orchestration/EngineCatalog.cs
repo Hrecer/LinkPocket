@@ -53,11 +53,7 @@ public sealed class EngineCatalog : IEngineCatalog
             var required = new List<string>();
             foreach (var p in d.Parameters)
             {
-                properties[p.Name] = new Dictionary<string, object?>
-                {
-                    ["type"] = MapJsonType(p.TypeName),
-                    ["description"] = p.Description,
-                };
+                properties[p.Name] = MapParameter(p);
                 if (p.Required) required.Add(p.Name);
             }
 
@@ -88,7 +84,7 @@ public sealed class EngineCatalog : IEngineCatalog
         {
             var properties = new Dictionary<string, object>();
             foreach (var p in d.Parameters)
-                properties[p.Name] = new Dictionary<string, object?> { ["type"] = MapJsonType(p.TypeName), ["description"] = p.Description };
+                properties[p.Name] = MapParameter(p);
 
             paths[$"/{d.Name.Replace('.', '/')}"] = BuildOperation(d, properties);
         }
@@ -174,11 +170,48 @@ public sealed class EngineCatalog : IEngineCatalog
         return sb.ToString();
     }
 
+    /// <summary>
+    /// 单个参数在 AI 工具清单/OpenAPI 中的 JSON Schema 形态：标量 = { type }；
+    /// 集合（IReadOnlyList&lt;T&gt; / List&lt;T&gt;）= { type: "array", items: { type: 元素类型 } }（审核 2.1：
+    /// 此前集合被一律归为 "object"，AI 调用方无法得知它是数组）。
+    /// </summary>
+    private static Dictionary<string, object> MapParameter(ParamSpec p)
+    {
+        if (TryItemType(p.TypeName, out var itemTypeName))
+        {
+            return new Dictionary<string, object>
+            {
+                ["type"] = "array",
+                ["items"] = new Dictionary<string, object?> { ["type"] = itemTypeName },
+                ["description"] = p.Description,
+            };
+        }
+        return new Dictionary<string, object>
+        {
+            ["type"] = MapJsonType(p.TypeName),
+            ["description"] = p.Description,
+        };
+    }
+
+    /// <summary>集合类型名（ParamSpec 规范化后形如 IReadOnlyList&lt;string&gt;）→ 元素 JSON 类型；非集合返回 false。</summary>
+    private static bool TryItemType(string typeName, out string itemType)
+    {
+        itemType = "object";
+        var open = typeName.IndexOf('<');
+        if (open < 0 || !typeName.EndsWith('>')) return false;
+        var elementTypeName = typeName[(open + 1)..^1].Trim();
+        if (elementTypeName.Contains('<')) return true;   // 嵌套泛型：保守整体视为对象
+        itemType = MapJsonType(elementTypeName);
+        return true;
+    }
+
     private static string MapJsonType(string typeName) => typeName switch
     {
         "String" => "string",
         "Int32" or "Int64" => "integer",
         "Boolean" => "boolean",
+        "Double" or "Single" or "Decimal" => "number",
+        "JsonElement" => "object",
         _ => "object",
     };
 

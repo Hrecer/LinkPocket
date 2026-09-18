@@ -44,7 +44,7 @@ internal sealed class DedupApplyHandler : ICommandHandler
             ? ChangeSet.Empty
             : new ChangeSet(
                 Touched: plan.Groups.SelectMany(g => g.Trash).Select(l => new EntityRef("link", l.LinkId)).ToList(),
-                Events: ["trash.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.TrashChanged],
                 HumanSummary: $"查重完成：{plan.Groups.Count} 组，移入回收站 {trashed} 个重复书签（策略 {plan.Strategy}）");
 
         return CommandResult.Ok(

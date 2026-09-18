@@ -30,7 +30,7 @@ internal sealed class TrashListHandler : ICommandHandler
             entries.Add(new TrashEntryDto
             {
                 Id = f.TrashFolderId,
-                EntryType = "folder",
+                EntryType = LinkPocket.Contracts.TrashEntryType.Folder,
                 Name = f.Name,
                 OriginPath = f.OriginPath,
                 DeletedAt = f.DeletedAt,
@@ -42,7 +42,7 @@ internal sealed class TrashListHandler : ICommandHandler
             entries.Add(new TrashEntryDto
             {
                 Id = t.LinkId,
-                EntryType = "link",
+                EntryType = LinkPocket.Contracts.TrashEntryType.Link,
                 Name = string.IsNullOrEmpty(t.Title) ? t.Url : t.Title!,
                 Url = t.Url,
                 FaviconUrl = t.FaviconUrl,

@@ -56,7 +56,7 @@ internal sealed class FolderMoveHandler : ICommandHandler
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
-                "folders.changed",
+                LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                 $"已移动文件夹「{folder.Name}」"));
     }
 }

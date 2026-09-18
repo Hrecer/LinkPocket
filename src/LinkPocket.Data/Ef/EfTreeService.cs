@@ -18,16 +18,35 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
         var parents = await LoadParentIndexAsync(ct);
         var direct = await DirectCountsAsync(ct);
 
-        // 子 → 父索引，沿父链上溯累加（每个文件夹的「直接子链接数」计入自身与全部祖先）
-        var recursive = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var folderId in parents.Keys)
-        {
-            var own = direct.TryGetValue(new FolderId(folderId), out var dc) ? dc : 0;
-            if (own == 0) continue;
+        // 记忆化递归（审核 1.1）：原先「每个有直接链接的文件夹都独立沿父链上溯累加」复杂度 O(N×深度)，
+        // 链式树形下退化为 O(N²)；这里把递归计数定义为 count(x) = direct[x] + Σ count(子)，
+        // 每个节点恰好计算一次 → 整体 O(N)（文件夹数量级下递归深度受用户建树能力限制，安全）。
+        var children = parents
+            .Where(kv => kv.Value is not null)
+            .GroupBy(kv => kv.Value!)
+            .ToDictionary(g => g.Key, g => g.Select(kv => kv.Key).ToList(), StringComparer.Ordinal);
 
-            foreach (var node in WalkExisting(folderId, parents))
-                recursive[node] = recursive.TryGetValue(node, out var total) ? total + own : own;
+        var recursive = new Dictionary<string, int>(StringComparer.Ordinal);
+        var memo = new Dictionary<string, int>(StringComparer.Ordinal);
+        var visiting = new HashSet<string>(StringComparer.Ordinal);   // 环保护（坏数据不无限递归，也不把环上重复节点多算一次）
+
+        int CountRecursive(string id)
+        {
+            if (memo.TryGetValue(id, out var cached)) return cached;
+            if (!visiting.Add(id)) return 0;   // 环内重复访问：环上节点的计数值由首次进入的路径累加
+
+            var total = direct.TryGetValue(new FolderId(id), out var dc) ? dc : 0;
+            if (children.TryGetValue(id, out var kids))
+                foreach (var kid in kids)
+                    total += CountRecursive(kid);
+
+            visiting.Remove(id);
+            memo[id] = total;
+            return total;
         }
+
+        foreach (var id in parents.Keys)
+            recursive[id] = CountRecursive(id);
 
         return new FolderLinkCounts(
             direct,
@@ -54,6 +73,11 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
         if (id is null) return FolderIds.RootDisplayName;
 
         var nodes = await LoadNodeIndexAsync(ct);
+        // 审核 2.3：id 指向的文件夹在库里不存在（数据不一致/已被删）时，必须如实标记「未知目录」，
+        // 不得把空路径伪装成「全部书签」——回收站的 OriginPath 会拿这个结果做快照，误导用户以为是根目录。
+        if (!nodes.ContainsKey(id.Value.Value))
+            return "未知目录";
+
         var names = WalkExisting(id.Value.Value, ToParentIndex(nodes))
             .Select(x => nodes[x].Name)
             .ToList();

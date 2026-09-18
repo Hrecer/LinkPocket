@@ -119,7 +119,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             new FolderMoveBatchResult(movedFolders.Count, renamedNotes),
             new ChangeSet(
                 Touched: movedFolders.Select(f => new EntityRef("folder", f.FolderId)).ToList(),
-                Events: ["folders.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.FoldersChanged],
                 HumanSummary: summary));
     }
 }

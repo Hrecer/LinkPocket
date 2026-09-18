@@ -38,7 +38,7 @@ internal sealed class LinkVisitRecordHandler : ICommandHandler
             JsonSerializer.SerializeToElement(new { link_id = link.LinkId, visit_count = link.VisitCount }),
             ChangeSet.Of(
                 new EntityRef("link", id.Value),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已记录查看「{link.Title ?? link.Url}」"));
     }
 }

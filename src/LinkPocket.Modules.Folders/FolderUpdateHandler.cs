@@ -53,7 +53,7 @@ internal sealed class FolderUpdateHandler : ICommandHandler
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
-                "folders.changed",
+                LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                 $"已更新文件夹「{folder.Name}」"));
     }
 }

@@ -51,7 +51,7 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
             new TrashRestoreBatchResult(ids.Count),
             new ChangeSet(
                 Touched: ids.Select(i => new EntityRef("link", i)).ToList(),
-                Events: ["links.changed", "trash.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
                 HumanSummary: $"已还原 {ids.Count} 个书签"));
     }
 }

@@ -69,7 +69,7 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
                 Touched: linkIds.Select(i => new EntityRef("trash_link", i))
                     .Concat(folderIds.Select(i => new EntityRef("trash_unit", i)))
                     .ToList(),
-                Events: ["trash.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.TrashChanged],
                 HumanSummary: $"已永久删除 {linkIds.Count} 个书签、{purgedFolders} 个回收站单元"));
     }
 }

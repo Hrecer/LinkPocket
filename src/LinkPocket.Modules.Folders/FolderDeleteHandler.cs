@@ -133,8 +133,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         if (cascade == "move_to_list" && !string.IsNullOrEmpty(targetListId))
             await uow.Trees.TouchModifiedAsync(new FolderId(targetListId), ct);
 
-        var events = new List<string> { "folders.changed", "links.changed" };
-        if (cascade == "trash_links") events.Add("trash.changed");
+        var events = new List<string> { LinkPocket.Contracts.DomainEventNames.FoldersChanged, LinkPocket.Contracts.DomainEventNames.LinksChanged };
+        if (cascade == "trash_links") events.Add(LinkPocket.Contracts.DomainEventNames.TrashChanged);
 
         return CommandResult.Ok(
             new FolderDeleteResult(cascade, subtreeFolders.Count, trashedLinkCount),

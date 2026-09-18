@@ -69,7 +69,7 @@ internal sealed class TrashRestoreHandler : ICommandHandler
             new TrashRestoreResult(restored.LinkId, targetListId, originExists),
             new LinkPocket.Contracts.ChangeSet(
                 Touched: [new LinkPocket.Contracts.EntityRef("link", restored.LinkId)],
-                Events: ["links.changed", "trash.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
                 HumanSummary: $"已还原「{restored.Title ?? restored.Url}」到「{location}」"));
     }
 }

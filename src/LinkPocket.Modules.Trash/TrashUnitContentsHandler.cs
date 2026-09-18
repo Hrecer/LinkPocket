@@ -40,7 +40,7 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
             result.Add(new TrashEntryDto
             {
                 Id = f.TrashFolderId,
-                EntryType = "folder",
+                EntryType = LinkPocket.Contracts.TrashEntryType.Folder,
                 Name = f.Name,
                 OriginPath = f.OriginPath,
                 DeletedAt = f.DeletedAt,
@@ -55,7 +55,7 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
                 result.Add(new TrashEntryDto
                 {
                     Id = l.LinkId,
-                    EntryType = "link",
+                    EntryType = LinkPocket.Contracts.TrashEntryType.Link,
                     Name = l.Title ?? l.Url ?? string.Empty,
                     Url = l.Url,
                     FaviconUrl = l.FaviconUrl,

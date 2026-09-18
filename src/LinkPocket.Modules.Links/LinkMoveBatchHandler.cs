@@ -59,7 +59,7 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
             new LinkBatchResult("moved", linkIds.Count),
             new ChangeSet(
                 Touched: linkIds.Select(id => new EntityRef("link", id)).ToList(),
-                Events: ["links.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: $"已移动 {linkIds.Count} 个链接"));
     }
 }

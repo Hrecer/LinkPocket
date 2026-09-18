@@ -54,7 +54,7 @@ internal sealed class TrashPurgeHandler : ICommandHandler
                 JsonSerializer.SerializeToElement(new { purged = "folder", units = ids.Count }),
                 ChangeSet.Of(
                     new EntityRef("trash_unit", id),
-                    "trash.changed",
+                    LinkPocket.Contracts.DomainEventNames.TrashChanged,
                     $"已永久删除回收站单元（含 {ids.Count} 个单元）"));
         }
         else
@@ -68,7 +68,7 @@ internal sealed class TrashPurgeHandler : ICommandHandler
                 JsonSerializer.SerializeToElement(new { purged = "link" }),
                 ChangeSet.Of(
                     new EntityRef("trash_link", id),
-                    "trash.changed",
+                    LinkPocket.Contracts.DomainEventNames.TrashChanged,
                     "已永久删除回收站书签"));
         }
     }

@@ -66,7 +66,7 @@ internal sealed class FolderCopyHandler : ICommandHandler
             new FolderCopyResult(newFolder.FolderId),
             ChangeSet.Of(
                 new EntityRef("folder", newFolder.FolderId),
-                "folders.changed",
+                LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                 $"已复制文件夹「{source.Name}」"));
     }
 

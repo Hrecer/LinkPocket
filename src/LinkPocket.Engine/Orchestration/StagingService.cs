@@ -156,7 +156,9 @@ public sealed class StagingService : IStagingService
         object? extraArgs = null, CallOptions? options = null, CancellationToken ct = default)
     {
         if (_engineAccessor is null)
-            throw new InvalidOperationException("StagingService 未装配引擎访问器，无法在管道外提交");
+            throw new EngineException(EngineErrors.Of(
+                EngineErrors.Internal,
+                "StagingService 未装配引擎访问器，无法在管道外提交（请经 staging.commit 命令执行）"));
         var merged = BuildCommitArgs(stagingId, extraArgs);
         var r = await _engineAccessor().ExecuteAsync<object>(targetCommand, merged, options, ct);
         return new CommandResult(r.Data, r.Changes, r.AuditRef);

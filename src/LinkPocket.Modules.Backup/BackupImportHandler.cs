@@ -156,8 +156,8 @@ internal sealed class BackupImportHandler : ICommandHandler
             folder.UpdatedAt = DateTime.UtcNow;
         }
 
-        var events = new List<string> { "links.changed", "folders.changed" };
-        if (replace) events.Add("trash.changed");
+        var events = new List<string> { LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.FoldersChanged };
+        if (replace) events.Add(LinkPocket.Contracts.DomainEventNames.TrashChanged);
 
         return CommandResult.Ok(
             JsonSerializer.SerializeToElement(new

@@ -58,7 +58,7 @@ internal sealed class BookmarksExportHandler : ICommandHandler
             }),
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已导出 {stats.FoldersExported} 个文件夹、{stats.LinksExported + stats.RootLinksExported} 个书签"));
     }
 }

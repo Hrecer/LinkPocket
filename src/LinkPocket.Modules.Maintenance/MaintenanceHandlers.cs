@@ -100,7 +100,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
             JsonSerializer.SerializeToElement(new { cleared = true, favicon_cache_cleared = faviconCleared }),
             new ChangeSet(
                 Touched: [new EntityRef("database", "*")],
-                Events: ["links.changed", "folders.changed", "trash.changed"],
+                Events: [DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged],
                 HumanSummary: "已清空全部数据"));
     }
 

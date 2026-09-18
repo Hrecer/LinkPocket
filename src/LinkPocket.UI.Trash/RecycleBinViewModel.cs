@@ -65,7 +65,7 @@ namespace LinkPocket.ViewModels
 
         private async Task EnterUnitGuardedAsync(TrashEntryDto? folderEntry)
         {
-            if (folderEntry == null || folderEntry.EntryType != "folder") return;
+            if (folderEntry == null || folderEntry.EntryType != LinkPocket.Contracts.TrashEntryType.Folder) return;
             try
             {
                 await EnterUnitAsync(folderEntry);
@@ -96,7 +96,7 @@ namespace LinkPocket.ViewModels
             if (entry == null) return;
 
             var name = string.IsNullOrEmpty(entry.Name) ? (entry.Url ?? "") : entry.Name;
-            var message = entry.EntryType == "folder"
+            var message = entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder
                 ? $"确定要永久删除文件夹「{name}」吗？\n文件夹内的全部内容将一并删除，不可恢复。"
                 : $"确定要永久删除「{name}」吗？\n此操作不可恢复。";
             if (Dialogs == null)
@@ -175,7 +175,7 @@ namespace LinkPocket.ViewModels
     /// 取数失败回滚到根视图并抛错（由 guarded 层提示）。</summary>
     public async Task EnterUnitAsync(TrashEntryDto folderEntry)
     {
-        if (folderEntry.EntryType != "folder") return;
+        if (folderEntry.EntryType != LinkPocket.Contracts.TrashEntryType.Folder) return;
         var gen = ++_unitGeneration;
         CurrentUnitId = folderEntry.Id;   // 立即进入单元态：后续任何 LoadAsync 都走单元分支
         CurrentUnitName = string.IsNullOrEmpty(folderEntry.Name) ? "未命名文件夹" : folderEntry.Name;
@@ -350,7 +350,7 @@ namespace LinkPocket.ViewModels
         {
             var entry = SelectedEntry;
             if (entry == null) return;
-            var isFolder = entry.EntryType == "folder";
+            var isFolder = entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder;
             try
             {
                 await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(entry.Id, isFolder,

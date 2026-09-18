@@ -51,7 +51,7 @@ internal sealed class FolderSortHandler : ICommandHandler
             new FolderSortResult(itemIds.Count),
             ChangeSet.Of(
                 new EntityRef("folder", parentId ?? "*"),
-                "folders.changed",
+                LinkPocket.Contracts.DomainEventNames.FoldersChanged,
                 $"已重排 {itemIds.Count} 个文件夹"));
     }
 }

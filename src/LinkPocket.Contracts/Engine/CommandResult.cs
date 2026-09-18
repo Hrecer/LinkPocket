@@ -19,8 +19,15 @@ public sealed record ChangeSet(
 {
     public static readonly ChangeSet Empty = new([], [], null);
 
-    public static ChangeSet Of(EntityRef touched, string evt, string? summary = null)
-        => new([touched], [evt], summary);
+    /// <summary>单实体单事件（审核 1.6：补 warnings 参数，避免「一遇 Warnings 就手写 new」）。</summary>
+    public static ChangeSet Of(EntityRef touched, string evt, string? summary = null,
+        IReadOnlyList<string>? warnings = null)
+        => new([touched], [evt], summary, warnings);
+
+    /// <summary>多实体 / 多事件（批量命令的常见形态，替代冗长手写构造函数）。</summary>
+    public static ChangeSet OfMany(IReadOnlyList<EntityRef> touched, IReadOnlyList<string> events,
+        string? summary = null, IReadOnlyList<string>? warnings = null)
+        => new(touched, events, summary, warnings);
 }
 
 /// <summary>命令执行成功结果（处理器返回；引擎包装为强类型 <see cref="CommandResult{T}"/> 给消费者）。</summary>

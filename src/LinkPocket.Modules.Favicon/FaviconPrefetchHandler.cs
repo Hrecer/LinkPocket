@@ -52,7 +52,7 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
             JsonSerializer.SerializeToElement(new { queued }),
             ChangeSet.Of(
                 new EntityRef("favicon_cache", "*"),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已排队 {queued} 个待预取图标"));
     }
 }

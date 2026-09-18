@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel.Commands;
@@ -43,7 +44,7 @@ internal sealed class MacroSaveHandler(IMacroStore macros) : ICommandHandler
                 "缺少必填参数「script」", details: JsonSerializer.SerializeToElement(new { @param = "script" })));
         await macros.SaveAsync(name, script.GetRawText(), ctx.Ct);
         return CommandResult.Ok(JsonSerializer.SerializeToElement(name),
-            ChangeSet.Of(new EntityRef("macro", name), "macro.saved", $"已保存宏「{name}」"));
+            ChangeSet.Of(new EntityRef("macro", name), DomainEventNames.MacroSaved, $"已保存宏「{name}」"));
     }
 }
 
@@ -88,7 +89,7 @@ internal sealed class MacroDeleteHandler(IMacroStore macros) : ICommandHandler
         if (!await macros.DeleteAsync(name, ctx.Ct))
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"宏「{name}」不存在"));
         return CommandResult.Ok(JsonSerializer.SerializeToElement(name),
-            ChangeSet.Of(new EntityRef("macro", name), "macro.deleted", $"已删除宏「{name}」"));
+            ChangeSet.Of(new EntityRef("macro", name), DomainEventNames.MacroDeleted, $"已删除宏「{name}」"));
     }
 }
 
@@ -116,13 +117,16 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
         }
 
+        // 宏实际运行耗时（审核 2.3：此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
+        var sw = Stopwatch.StartNew();
         var (results, touched, events) = await BatchEngine.RunStepsNestedAsync(
             (CommandContextImpl)ctx, script with { Name = $"macro:{name}" }, ctx.Ct);
+        sw.Stop();
 
         var summary = $"宏「{name}」运行完成：{results.Count(r => r.Ok)}/{results.Count} 步成功";
         var report = new BatchReport(
             ctx.CorrelationId, $"macro:{name}", results.All(r => r.Ok), results,
-            new ChangeSet(touched, events, summary), summary, ElapsedMs: 0, ctx.CorrelationId);
+            new ChangeSet(touched, events, summary), summary, sw.ElapsedMilliseconds, ctx.CorrelationId);
         return CommandResult.Ok(BatchEngine.ToElement(report), new ChangeSet(touched, events, summary));
     }
 }
@@ -204,7 +208,7 @@ internal sealed class UndoClearHandler(IUndoCoordinator undo) : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var count = await undo.ClearAsync(ctx.Ct);
-        return CommandResult.Ok(count, ChangeSet.Of(new EntityRef("undo", "*"), "undo.cleared", $"已清空 {count} 条撤销/重做记录"));
+        return CommandResult.Ok(count, ChangeSet.Of(new EntityRef("undo", "*"), DomainEventNames.UndoCleared, $"已清空 {count} 条撤销/重做记录"));
     }
 }
 
@@ -221,7 +225,7 @@ internal sealed class StagingStageHandler(StagingService staging) : ICommandHand
     {
         var source = CommandArgs.RequireString(args, "source_path");
         var staged = await staging.StageAsync(source, ctx.Ct);
-        return CommandResult.Ok(staged, ChangeSet.Of(new EntityRef("staged", staged.StagingId), "staging.staged", $"已暂存「{staged.FileName}」"));
+        return CommandResult.Ok(staged, ChangeSet.Of(new EntityRef("staged", staged.StagingId), DomainEventNames.StagingStaged, $"已暂存「{staged.FileName}」"));
     }
 }
 
@@ -251,7 +255,7 @@ internal sealed class StagingDiscardHandler(StagingService staging) : ICommandHa
         if (!await staging.DiscardAsync(id, ctx.Ct))
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"暂存文件不存在：{id}"));
         return CommandResult.Ok(JsonSerializer.SerializeToElement(id),
-            ChangeSet.Of(new EntityRef("staged", id), "staging.discarded", "已丢弃暂存文件"));
+            ChangeSet.Of(new EntityRef("staged", id), DomainEventNames.StagingDiscarded, "已丢弃暂存文件"));
     }
 }
 

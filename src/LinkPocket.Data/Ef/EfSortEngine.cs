@@ -52,15 +52,18 @@ internal sealed class EfSortEngine : ISortEngine
 
         IOrderedQueryable<T>? ordered = null;
 
-        // 「为空恒排最后」（行为契约 §9）：前置判空子句 —— ORDER BY (col IS NULL), col
-        if (fieldMap.NullLastSelector is { } nullLast && clauses[0].Field == fieldMap.NullLastField)
-            ordered = source.OrderBy(nullLast);
-
         foreach (var clause in clauses)
         {
             if (!fieldMap.TryGetSelector(clause.Field, out var selector))
                 throw new EngineException(
                     EngineErrors.Of("LP.VAL.003", $"未知排序字段「{clause.Field}」"));
+
+            // 「为空恒排最后」（行为契约 §9）：该列是 NullLastField 时前置判空子句
+            // （ORDER BY (col IS NULL) ASC, col）。审核 1.4：先前只在【首列】时前置，复合排序里
+            // 非首列的 NullLastField 会退化为 SQLite 默认（ASC 时 NULL 排最前）——现在对每个
+            // 声明了 NullLastField 的 clause 都生效；单列排序（现状全部调用方）输出不变。
+            if (clause.Field == fieldMap.NullLastField && fieldMap.NullLastSelector is { } nullLast)
+                ordered = ordered is null ? source.OrderBy(nullLast) : ordered.ThenBy(nullLast);
 
             ordered = ordered switch
             {

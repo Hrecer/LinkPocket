@@ -41,7 +41,7 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
             new LinkBatchResult("recorded", linkIds.Count),
             new ChangeSet(
                 Touched: linkIds.Select(id => new EntityRef("link", id)).ToList(),
-                Events: ["links.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: $"已记录 {linkIds.Count} 次查看"));
     }
 }

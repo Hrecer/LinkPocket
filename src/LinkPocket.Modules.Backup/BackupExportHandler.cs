@@ -64,7 +64,7 @@ internal sealed class BackupExportHandler : ICommandHandler
             }),
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
-                "links.changed",
+                LinkPocket.Contracts.DomainEventNames.LinksChanged,
                 $"已导出备份（{folders.Count} 个文件夹、{links.Count} 个书签）"));
     }
 }

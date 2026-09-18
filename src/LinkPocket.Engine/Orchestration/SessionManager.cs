@@ -23,6 +23,9 @@ public sealed class SessionManager : ISessionManager
     public const int DefaultAgentRateLimitPerMinute = 30;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new(StringComparer.Ordinal);
+    /// <summary>已结束会话的 tombstone：End 后携带旧 SessionId 的调用一律拒绝（能力门不得绕过）。
+    /// 仅登记 id，不存状态；Begin 生成全新 id，永不撞车。</summary>
+    private readonly ConcurrentDictionary<string, byte> _ended = new(StringComparer.Ordinal);
 
     public Task<Session> BeginAsync(SessionProfile profile, CancellationToken ct = default)
     {
@@ -32,23 +35,35 @@ public sealed class SessionManager : ISessionManager
             SessionId: $"s-{Guid.NewGuid():N}",
             Kind: profile.Kind,
             RateLimitPerMinute: rate,
-            StartedAt: DateTimeOffset.Now);
+            StartedAt: DateTimeOffset.UtcNow);
         _sessions[session.SessionId] = new SessionState { Session = session };
         return Task.FromResult(session);
     }
 
     public Task EndAsync(string sessionId, CancellationToken ct = default)
     {
-        _sessions.TryRemove(sessionId, out _);
+        if (_sessions.TryRemove(sessionId, out _))
+            _ended[sessionId] = 0;   // tombstone：不再出现于 _sessions → 未被 End 的老流程读不到，但 Enforce 仍可识别
         return Task.CompletedTask;
     }
 
     public Session? Get(string sessionId)
-        => _sessions.TryGetValue(sessionId, out var state) ? state.Session : null;
+    {
+        if (_ended.ContainsKey(sessionId)) return null;
+        return _sessions.TryGetValue(sessionId, out var state) ? state.Session : null;
+    }
 
     public void Enforce(CallerRef caller, bool isMutation, string correlationId)
     {
-        if (caller.SessionId is not { } id || !_sessions.TryGetValue(id, out var state))
+        if (caller.SessionId is not { } id)
+            return;   // 未带会话 = 宿主自有调用，零约束（既有兼容口径）
+        // 已显式 End 的会话：带旧 id 的后续调用一律拒绝——只读保护与限流不能被「End + 重放」绕过（审核 1.2）
+        if (_ended.ContainsKey(id))
+            throw new EngineException(EngineErrors.Of(
+                EngineErrors.EntityNotFound,
+                "会话已结束，无法继续调用（请重新 BeginAsync 开启新会话）",
+                correlationId: correlationId));
+        if (!_sessions.TryGetValue(id, out var state))
             return;
 
         var session = state.Session;
@@ -61,7 +76,7 @@ public sealed class SessionManager : ISessionManager
         if (session.RateLimitPerMinute <= 0)
             return;
 
-        var now = DateTimeOffset.Now;
+        var now = DateTimeOffset.UtcNow;
         lock (state.Lock)
         {
             while (state.Calls.Count > 0 && now - state.Calls.Peek() > TimeSpan.FromMinutes(1))

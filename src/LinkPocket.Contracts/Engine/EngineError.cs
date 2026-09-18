@@ -13,7 +13,8 @@ public sealed record EngineError(
     bool Retryable,
     string CorrelationId)
 {
-    public override string ToString() => $"{Code}: {Message}";
+    public override string ToString()
+        => $"{Code}: {Message}（correlation_id={CorrelationId}）";   // 审核 3.5：日志直接 ToString 也能关联到调用
 }
 
 /// <summary>引擎调用失败异常：携带 <see cref="EngineError"/>，由管道在审计后抛出（Execute 捕获转 wire error，Query 直接上抛）。</summary>

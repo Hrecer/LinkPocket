@@ -19,7 +19,7 @@ public class TrashSidebarModel : DetailSidebarModel
     /// <summary>按选中的回收站条目填充详情（平铺条目；folder = 被删单元根）。</summary>
     public void Show(TrashEntryDto entry)
     {
-        var isFolder = entry.EntryType == "folder";
+        var isFolder = entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder;
 
         HasSelection = true;
         IsMulti = false;
@@ -43,7 +43,7 @@ public class TrashSidebarModel : DetailSidebarModel
         {
             new()
             {
-                IconKind = isFolder ? "folder" : "link-variant",
+                IconKind = isFolder ? LinkPocket.Contracts.TrashEntryType.Folder : "link-variant",
                 Label = "类型",
                 Value = isFolder ? "文件夹单元（含子树）" : "书签",
                 IsAccent = true

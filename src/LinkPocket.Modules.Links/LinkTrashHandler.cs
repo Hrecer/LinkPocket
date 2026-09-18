@@ -62,7 +62,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
             new LinkTrashResult(id.Value, snapshot.OriginPath),
             new LinkPocket.Contracts.ChangeSet(
                 Touched: [new LinkPocket.Contracts.EntityRef("link", id.Value)],
-                Events: ["links.changed", "trash.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
                 HumanSummary: $"已将「{link.Title ?? link.Url}」移入回收站"));
     }
 }

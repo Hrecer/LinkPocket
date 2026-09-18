@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using LinkPocket.Kernel;
@@ -35,7 +36,8 @@ public sealed class EfUnitOfWork : IUnitOfWork
         if (ownsTx) tx = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            // 回收站两表无外键依赖 → 直接批量删除（绕过变更跟踪）
+            // 回收站两表之间没有 FK 约束（schema 未声明外键；trash_links.trash_folder_id 只是逻辑关联）→
+            // 直接批量删除（绕过变更跟踪）。注意：未来若补 FK 约束，必须先删 trash_links 再删 trash_folders。
             await _db.TrashedLinks.ExecuteDeleteAsync(ct);
             await _db.TrashedFolders.ExecuteDeleteAsync(ct);
 
@@ -51,8 +53,33 @@ public sealed class EfUnitOfWork : IUnitOfWork
         }
         catch
         {
-            if (ownsTx && tx != null) await tx.RollbackAsync(ct);
+            if (ownsTx && tx != null)
+            {
+                try
+                {
+                    await tx.RollbackAsync(ct);
+                }
+                catch (Exception rollbackEx)
+                {
+                    // 回滚失败绝不能覆盖原始异常（审核 1.2）：保留「哪一步 DELETE 失败」的根因
+                    System.Diagnostics.Trace.TraceWarning("清空数据回滚失败：{0}", rollbackEx.Message);
+                }
+            }
             throw;
+        }
+
+        // 自管事务场景（ownedTx）：清空是整库级物理操作——池化连接仍持有 WAL 文件句柄，
+        // 显式断开 + 截断 checkpoint，避免 backup.export / maintenance.reinit 的文件操作被占住、
+        // WAL 持续膨胀（审核 3.4/4.7）。外层事务（干跑）场景跳过：未提交的回滚本就把体积还原。
+        if (ownsTx)
+        {
+            var connectionString = _db.Database.GetDbConnection().ConnectionString;
+            SqliteConnection.ClearAllPools();
+            await using var checkpointConn = new SqliteConnection(connectionString);
+            await checkpointConn.OpenAsync(ct);
+            await using var checkpoint = checkpointConn.CreateCommand();
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await checkpoint.ExecuteNonQueryAsync(ct);
         }
     }
 

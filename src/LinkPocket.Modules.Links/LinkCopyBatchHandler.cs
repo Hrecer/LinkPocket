@@ -65,7 +65,7 @@ internal sealed class LinkCopyBatchHandler : ICommandHandler
             new LinkBatchResult("copied", created.Count),
             new ChangeSet(
                 Touched: created.Select(id => new EntityRef("link", id)).ToList(),
-                Events: ["links.changed"],
+                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: $"已复制 {created.Count} 个链接"));
     }
 }

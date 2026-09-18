@@ -17,6 +17,11 @@ public sealed class UndoCoordinator : IUndoCoordinator
 
     private readonly ConcurrentStack<UndoEntry> _undo = new();
     private readonly ConcurrentStack<UndoEntry> _redo = new();
+    /// <summary>
+    /// 栈操作互斥（审核 1.3/1.4）：TakeUndoAsync(id) 的快照→清空→重放之间若并发放置会吞掉新条目；
+    /// 公开调用面虽经引擎写闸串行化，但协调器本身应自洽——不经管道直调的并发也绝不丢条目。
+    /// </summary>
+    private readonly object _lock = new();
 
     public Task<IReadOnlyList<UndoEntry>> ListAsync(CancellationToken ct)
     {
@@ -32,50 +37,70 @@ public sealed class UndoCoordinator : IUndoCoordinator
 
     public Task<int> ClearAsync(CancellationToken ct)
     {
-        var count = _undo.Count + _redo.Count;
-        _undo.Clear();
-        _redo.Clear();
-        return Task.FromResult(count);
+        lock (_lock)
+        {
+            var count = _undo.Count + _redo.Count;
+            _undo.Clear();
+            _redo.Clear();
+            return Task.FromResult(count);
+        }
     }
 
     public Task<UndoEntry?> TakeUndoAsync(string? id, CancellationToken ct)
     {
-        if (id is null)
+        lock (_lock)
         {
-            return Task.FromResult(_undo.TryPop(out var entry) ? entry : null);
-        }
+            if (id is null)
+            {
+                return Task.FromResult(_undo.TryPop(out var entry) ? entry : null);
+            }
 
-        // 按 id 取指定条目：重排栈（栈内其余条目保持原序）
-        var items = _undo.ToArray();
-        var taken = items.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal));
-        if (taken is null) return Task.FromResult<UndoEntry?>(null);
-        var rest = items.Where(e => !string.Equals(e.Id, id, StringComparison.Ordinal));
-        _undo.Clear();
-        foreach (var e in rest) _undo.Push(e);
-        return Task.FromResult<UndoEntry?>(taken);
+            // 按 id 取指定条目：重排栈（栈内其余条目保持原序）
+            var items = _undo.ToArray();
+            var taken = items.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal));
+            if (taken is null) return Task.FromResult<UndoEntry?>(null);
+            var rest = items.Where(e => !string.Equals(e.Id, id, StringComparison.Ordinal));
+            _undo.Clear();
+            foreach (var e in rest) _undo.Push(e);
+            return Task.FromResult<UndoEntry?>(taken);
+        }
     }
 
     public Task<UndoEntry?> TakeRedoAsync(CancellationToken ct)
-        => Task.FromResult(_redo.TryPop(out var entry) ? entry : null);
+    {
+        lock (_lock)
+        {
+            return Task.FromResult(_redo.TryPop(out var entry) ? entry : null);
+        }
+    }
 
     public void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller)
     {
         if (!descriptor.IsMutation || descriptor.UndoInverse is not { Length: > 0 } inverse)
             return;
 
-        _redo.Clear();   // 新撤销使重做链失效（标准 redo 语义）
-        _undo.Push(new UndoEntry(
-            Id: Guid.NewGuid().ToString("N"),
-            At: DateTimeOffset.Now,
-            Command: descriptor.Name,
-            Args: args.Clone(),
-            InverseCommand: inverse,
-            InverseArgs: args.Clone(),
-            Caller: caller));
+        lock (_lock)
+        {
+            _redo.Clear();   // 新撤销使重做链失效（标准 redo 语义）
+            _undo.Push(new UndoEntry(
+                Id: Guid.NewGuid().ToString("N"),
+                At: DateTimeOffset.Now,
+                Command: descriptor.Name,
+                Args: args.Clone(),
+                InverseCommand: inverse,
+                InverseArgs: args.Clone(),
+                Caller: caller));
 
-        while (_undo.Count > Capacity) _undo.TryPop(out _);
+            while (_undo.Count > Capacity) _undo.TryPop(out _);
+        }
     }
 
     /// <summary>undo.undo 处理器在逆向命令派发成功后调（把弹出条目转入重做栈）。</summary>
-    public void MarkUndone(UndoEntry entry) => _redo.Push(entry);
+    public void MarkUndone(UndoEntry entry)
+    {
+        lock (_lock)
+        {
+            _redo.Push(entry);
+        }
+    }
 }

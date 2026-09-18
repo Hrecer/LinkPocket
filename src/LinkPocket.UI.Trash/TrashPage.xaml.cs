@@ -49,7 +49,7 @@ namespace LinkPocket.Views
             TrashTable.RowDoubleClick += (_, item) =>
             {
                 if (item is not TrashEntryDto entry) return;
-                if (entry.EntryType == "folder") Vm?.EnterUnitCommand.Execute(entry);
+                if (entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder) Vm?.EnterUnitCommand.Execute(entry);
                 else ShowLinkDetail(entry);
             };
             // S3：点表格空白区清除选中（VM 注释承诺"点空白清除"，表格控件自身不做此交互）
@@ -207,7 +207,7 @@ namespace LinkPocket.Views
                 {
                     Field = "type", Label = "类型", Width = 90,
                     SortKey = r => (IComparable)((TrashEntryDto)r).EntryType,
-                    CellFactory = r => TextCell(((TrashEntryDto)r).EntryType == "folder" ? "文件夹" : "链接", 12.5)
+                    CellFactory = r => TextCell(((TrashEntryDto)r).EntryType == LinkPocket.Contracts.TrashEntryType.Folder ? "文件夹" : "链接", 12.5)
                 },
                 new DataTableColumn
                 {
@@ -234,11 +234,11 @@ namespace LinkPocket.Views
 
             var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
 
-            if (entry.EntryType == "folder")
+            if (entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder)
             {
                 iconGrid.Children.Add(new M3Icon
                 {
-                    Kind = "folder", Width = 16, Height = 16,
+                    Kind = LinkPocket.Contracts.TrashEntryType.Folder, Width = 16, Height = 16,
                     Foreground = (Brush)FindResource("OnSurfaceVariant"),
                     Opacity = 0.55,
                     HorizontalAlignment = HorizontalAlignment.Center,
