@@ -21,6 +21,9 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
     private readonly EngineClient _client;
 
+    /// <summary>UI 端口槽位（组合根持有；笔者端口：对话框/导航）。null = 无 UI 环境（无头/单测），弹窗退化系统 MessageBox。</summary>
+    private readonly Services.UiPortProvider? _ports;
+
     /// <summary>刷新挂起标志：加载进行中又来刷新请求时置位，当前加载收尾后自动补刷一次（最后请求胜出）。</summary>
     private bool _refreshPending;
 
@@ -181,6 +184,30 @@ public class BrowserViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DeleteMenuHeader));
     }
 
+    // —— 对话框端口（S7 分层债收口）——
+    // VM 不再直用 MessageBox / ConfirmDialog 静态入口；优先走 IDialogService 端口
+    //（组合根注入 UiPortProvider，MainWindow 登记实现），无端口（无头/单测）时退化为系统弹窗，
+    // 保证 VM 零控件依赖、行为等价。
+
+    /// <summary>对话框端口（详情页等宿主内 VM 共用）。null = 无 UI 环境。</summary>
+    internal Services.IDialogService? Dialogs => _ports?.Dialogs;
+
+    /// <summary>错误提示：优先端口 Alert，无端口退化 MessageBox（与旧行为视觉一致）。</summary>
+    private void ShowError(string title, string message)
+    {
+        var dlg = _ports?.Dialogs;
+        if (dlg != null) { dlg.Alert(title, message); return; }
+        MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+
+    /// <summary>删除确认（Windows 口径「将 X 移入回收站吗？」）：优先端口 Confirm，无端口退化 ConfirmDialog 直用。</summary>
+    private bool ConfirmDelete(string title, string message)
+    {
+        var dlg = _ports?.Dialogs;
+        if (dlg != null) return dlg.Confirm(title, message);
+        return Views.ConfirmDialog.Show(title, message, "删除");
+    }
+
     /// <summary>
     /// 「删除」菜单文案，口径与 <see cref="DeleteRowAsync"/> 的删除目标严格一致，且只在"数字有意义"时才报数：
     /// 单个链接 / 空文件夹 → 只显示「删除」；单个文件夹 → 显示其内链接数（删除文件夹 = 其中链接进回收站）；
@@ -310,9 +337,10 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
     private Dictionary<string, (string? ParentId, string Name)> _folderMap = new();
 
-    public BrowserViewModel(EngineClient client)
+    public BrowserViewModel(EngineClient client, Services.UiPortProvider? ports = null)
     {
         _client = client;
+        _ports = ports;
         Details = new BrowserDetailsViewModel(client);
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
@@ -734,7 +762,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             StatusText = "移动失败";
-            MessageBox.Show($"移动失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("移动失败", ex.Message);
         }
         finally
         {
@@ -900,7 +928,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             StatusText = "粘贴失败";
-            MessageBox.Show($"粘贴失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("粘贴失败", ex.Message);
         }
         finally
         {
@@ -991,7 +1019,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"新建文件夹失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("新建文件夹失败", ex.Message);
         }
     }
 
@@ -1019,7 +1047,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"重命名失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("重命名失败", ex.Message);
         }
     }
 
@@ -1027,7 +1055,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     {
         if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
         // Windows 口径：删除 = 移入回收站，不再提示"子文件夹一并删除"
-        if (!Views.ConfirmDialog.Show("删除文件夹", $"将文件夹「{node.Name}」移入回收站吗？", "删除"))
+        if (!ConfirmDelete("删除文件夹", $"将文件夹「{node.Name}」移入回收站吗？"))
             return;
         try
         {
@@ -1038,7 +1066,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("删除失败", ex.Message);
         }
     }
 
@@ -1061,8 +1089,8 @@ public class BrowserViewModel : INotifyPropertyChanged
         await DeleteItemsAsync(sel);
     }
 
-    /// <summary>删除确认文案（Windows 口径：一切删除 = 移入回收站，不罗列子项后果）。</summary>
-    private static Task<bool> ConfirmDeleteAsync(IReadOnlyList<BrowserRowViewModel> items)
+    /// <summary>删除确认文案（Windows 口径：一切删除 = 移入回收站，不罗列子项后果）。实例方法：确认走对话框端口。</summary>
+    private Task<bool> ConfirmDeleteAsync(IReadOnlyList<BrowserRowViewModel> items)
     {
         var folders = items.Count(r => r.IsFolder);
         var links = items.Count - folders;
@@ -1078,7 +1106,7 @@ public class BrowserViewModel : INotifyPropertyChanged
                 ? $"将链接「{items[0].Name}」移入回收站吗？"
                 : $"将选中的 {links} 个链接移入回收站吗？";
 
-        return Task.FromResult(Views.ConfirmDialog.Show("删除", msg, "删除"));
+        return Task.FromResult(ConfirmDelete("删除", msg));
     }
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
@@ -1145,7 +1173,7 @@ public class BrowserViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"重命名失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("重命名失败", ex.Message);
         }
     }
 

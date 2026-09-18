@@ -203,9 +203,17 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     private async Task DeleteAsync()
     {
         if (_linkId == null) return;
-        // 删除确认唯一入口（行为契约 §1.3）：详情页删除与浏览页共用 ConfirmDialog 文案
-        if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", "删除"))
+        // 删除确认唯一入口（行为契约 §1.3）：详情页删除与浏览页共用 ConfirmDialog 文案；
+        // 优先走宿主对话框端口（S7），无端口退化 ConfirmDialog 直用
+        var dlg = _host.Dialogs;
+        if (dlg != null)
+        {
+            if (!dlg.Confirm("删除链接", $"将链接「{Title}」移入回收站吗？")) return;
+        }
+        else if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", "删除"))
+        {
             return;
+        }
         try
         {
             await _client.LinkTrashAsync(_linkId);

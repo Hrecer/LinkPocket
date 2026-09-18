@@ -86,7 +86,7 @@ namespace LinkPocket.ViewModels
                 listId => string.IsNullOrEmpty(listId)
                     ? "全部书签"
                     : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"));
-            BrowserViewModel = new BrowserViewModel(client);
+            BrowserViewModel = new BrowserViewModel(client, _ports);   // 共享端口槽位：对话框/导航走 IDialogService（S7）
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
             ShowAddLinkCommand = new RelayCommand(ShowAddLink, () => !string.IsNullOrEmpty(_selectionManager.SelectedFolderId));
