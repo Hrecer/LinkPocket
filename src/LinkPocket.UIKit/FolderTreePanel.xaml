@@ -147,12 +147,23 @@
                             <Border x:Name="RowCard" Padding="8,3" Cursor="Hand" MouseLeftButtonUp="FolderTreeItem_MouseLeftButtonUp">
                                 <Border.Style>
                                     <!-- 选中态数据驱动（FolderNode.IsSelected，VM 唯一事实来源）：数据触发器在派生层，
-                                         优先级高于基样式悬停 = 选中行悬停不换色（与主栏 RowSkin 同构；容器重建不影响高亮） -->
+                                         优先级高于基样式悬停 = 选中行悬停不换色（与主栏 RowSkin 同构；容器重建不影响高亮）。
+                                         悬停反馈按命中区互斥——「展开 chevron」与「行主体（选中/进入）」是两个按钮，
+                                         chevron 在 RowCard 内部，若只挂悬停两者会同色叠成一块"分不清按哪个"；
+                                         故指针落在 chevron 上时行药丸必须熄灭（只留 chevron 圆形高亮），
+                                         落在行主体上时才亮整行药丸——两块反馈永不同时出现。 -->
                                     <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                 <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMouseOver, ElementName=Expander}" Value="True"/>
+                                                    <Condition Binding="{Binding IsSelected}" Value="False"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Background" Value="Transparent"/>
+                                            </MultiDataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
