@@ -21,6 +21,15 @@ public sealed partial class EngineClient
     public Task<LinkDto> LinkGetAsync(string id, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<LinkDto>("links.get", new { id }, o, ct);
 
+    /// <summary>全库活动链接（per_page=0 一次取回；工具页去重等全量场景）。
+    /// 读流每查询一个短 UoW，与旧面 <c>GetAllLinksAsync</c> 同等语义。</summary>
+    public async Task<List<LinkDto>> LinkAllAsync(CallOptions? o = null, CancellationToken ct = default)
+    {
+        var page = await QueryAsync<PagedLinksDto>("links.list",
+            new { page = 1, per_page = 0 }, o, ct);
+        return page.Links;
+    }
+
     /// <summary>根级（未归类）链接。</summary>
     public Task<List<LinkDto>> LinkRootsAsync(string sortBy = "created_at", string sortOrder = "desc",
         int perPage = 50, CallOptions? o = null, CancellationToken ct = default)
