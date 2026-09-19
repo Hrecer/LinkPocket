@@ -7,14 +7,14 @@ namespace LinkPocket.Views;
 /// <summary>
 /// 回收站键位表 = **唯一事实源**（与浏览页 BrowserShortcuts 同一子系统；禁止在 XAML/C# 散落键盘处理）。
 ///
-/// <para>**阉割项**（用户定稿 2026-09-19："回收站不加入撤销、不做恢复"）：
-/// 无 Ctrl+Z / Ctrl+Y（撤销/重做——回收站操作不入撤销栈）、无 Ctrl+X/C/V（**回收站只读，不可搬移**；
-/// 剪贴板语义会把主表/回收站两种模型混在一起）、无 F2（无重命名）、无 Ctrl+Shift+N（无新建）、
+/// <para>**阉割项**（用户定稿 2026-09-19）：无 Ctrl+Z / Ctrl+Y（撤销/重做——回收站内操作不入撤销栈）、
+/// 无 Ctrl+X/C/V（**回收站只读，不可搬移**；剪贴板语义会把主表/回收站两种模型混在一起）、
+/// 无 F2（无重命名）、无 Ctrl+Shift+N（无新建）、
 /// 无 Ctrl+Shift+C / Ctrl+Shift+E（无外部路径语义 / 树展开到当前位置）、**不继承任何全局键**
 /// （Ctrl+E/F 只挂浏览页；本表不注册 Global 作用域）。</para>
 ///
 /// <para>保留：导航（后退/前进/返回上级/F5）、选择（↑↓/Ctrl+A/Esc）、打开（Enter）、
-/// 永久删除（Delete，带确认）与右键菜单键。</para>
+/// **还原（Ctrl+R 到原位置 / Ctrl+Shift+R 到根目录，D1 拍板）**、永久删除（Delete，带确认）与右键菜单键。</para>
 /// </summary>
 public static class TrashShortcuts
 {
@@ -35,6 +35,8 @@ public static class TrashShortcuts
             new ShortcutBinding { Key = Key.A, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Trash, Command = vm.SelectAllCommand, Description = "全选" },
             new ShortcutBinding { Key = Key.Enter, Scope = ShortcutScope.Trash, Command = vm.OpenSelectionCommand, Description = "打开选中项" },
             new ShortcutBinding { Key = Key.Delete, Scope = ShortcutScope.Trash, Command = vm.PurgeSelectionCommand, Description = "永久删除选中项" },
+            new ShortcutBinding { Key = Key.R, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Trash, Command = vm.RestoreSelectionCommand, Description = "还原选中项到原位置" },
+            new ShortcutBinding { Key = Key.R, Modifiers = ModifierKeys.Control | ModifierKeys.Shift, Scope = ShortcutScope.Trash, Command = vm.RestoreSelectionToRootCommand, Description = "还原选中项到根目录" },
             new ShortcutBinding { Key = Key.Escape, Scope = ShortcutScope.Trash, Command = vm.ClearSelectionCommand, Description = "取消选中" },
 
             // —— 右键菜单键（当前选中行） ——

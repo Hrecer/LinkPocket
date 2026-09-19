@@ -289,6 +289,75 @@ public class TrashViewModelTests
     }
 
     [Fact]
+    public async Task 还原_混合选择_回原位置_选中清空_状态栏计数()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            vm.SetSelection(new[] { unitA, l0 });            // 混合：单元 + 单独删除的链接
+            vm.RestoreSelectionCommand.Execute(null);
+
+            TrashOverviewDto overview = new();
+            for (var i = 0; i < 100; i++)                    // fire-and-forget → 轮询落库
+            {
+                overview = await client.TrashOverviewAsync();
+                if (overview.Folders.Count == 0 && overview.Links.Count == 0) break;
+                await Task.Delay(20);
+            }
+
+            Assert.Empty(overview.Folders);
+            Assert.Empty(overview.Links);
+            Assert.False(vm.HasSelection);                    // 条目已离开回收站：选中清空
+            Assert.Contains("已还原 2 项到原位置", vm.StatusText);
+
+            // 缺省 = 原位置（D3）：单元 A（含子夹 B 与两条链接）与 L0 都回主表（二者原位均为根）
+            Assert.Contains(await client.FolderTreeAsync(), f => f.FolderId == unitA && f.ParentId == null);
+            Assert.Contains((await client.LinkListAsync(perPage: 0)).Links, l => l.LinkId == l0 && l.ListId == null);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 还原到根目录_显式落根_不回原位置()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            // 链接原位在「原位夹」（夹仍在主表）：缺省会回夹内——显式"到根目录"必须落根
+            var folder = (await client.FolderCreateAsync("原位夹")).Data!;
+            var link = (await client.LinkCreateAsync("https://restore-root.example", title: "R",
+                listId: folder.FolderId, autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();                             // 单独删除的链接在回收站根，平铺可见
+            vm.SetSelection(new[] { link.LinkId });
+            vm.RestoreSelectionToRootCommand.Execute(null);
+
+            LinkDto? got = null;
+            for (var i = 0; i < 100; i++)
+            {
+                try { got = await client.LinkGetAsync(link.LinkId); break; }
+                catch { await Task.Delay(20); }
+            }
+            Assert.NotNull(got);
+            Assert.Null(got!.ListId);                         // 显式到根目录（而非回「原位夹」）
+            Assert.Contains("到根目录", vm.StatusText);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public void 键位表_无撤销无剪贴板无全局键()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
@@ -315,6 +384,10 @@ public class TrashViewModelTests
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Delete, ModifierKeys.None));
             Assert.NotNull(registry.Resolve(ShortcutScope.TrashMain, Key.A, ModifierKeys.Control));
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Escape, ModifierKeys.None));
+
+            // 还原键位（D1 拍板）：Ctrl+R 到原位置 / Ctrl+Shift+R 到根目录
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control));
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control | ModifierKeys.Shift));
         }
         finally
         {

@@ -72,6 +72,12 @@ public partial class TrashViewModel : INotifyPropertyChanged
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1);
         PurgeSelectionCommand = new RelayCommand(() => _ = PurgeSelectionGuardedAsync(), () => HasSelection);
         PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node));
+        RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection);
+        RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection);
+        RestoreNodeCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "origin"),
+            node => node is { IsRoot: false, IsLink: false });
+        RestoreNodeToRootCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "root"),
+            node => node is { IsRoot: false, IsLink: false });
         ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection);
         CopyLinkAddressCommand = new RelayCommand<TrashRowViewModel?>(CopyLinkAddress, row => row is { IsFolder: false });
         SelectAllCommand = new RelayCommand(SelectAllRows);
@@ -937,6 +943,10 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ICommand OpenSelectionCommand { get; }
     public ICommand PurgeSelectionCommand { get; }
     public ICommand PurgeNodeCommand { get; }
+    public ICommand RestoreSelectionCommand { get; }
+    public ICommand RestoreSelectionToRootCommand { get; }
+    public ICommand RestoreNodeCommand { get; }
+    public ICommand RestoreNodeToRootCommand { get; }
     public ICommand ShowContextMenuCommand { get; }
     public ICommand CopyLinkAddressCommand { get; }
     public ICommand SelectAllCommand { get; }

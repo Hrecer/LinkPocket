@@ -443,8 +443,14 @@ namespace LinkPocket.Views
             catch { /* 剪贴板被占用时不阻断 */ }
         }
 
-        // ================= 永久删除按钮 =================
+        // ================= 工具栏按钮（还原 / 还原到根目录 / 永久删除） =================
         // （右栏详情栏不在此刷新：数据源 = VM 的 Details，由 VM 在选中投影点重建）
+
+        private void TrashRestore_Click(object sender, RoutedEventArgs e)
+            => ViewModel?.RestoreSelectionCommand.Execute(null);
+
+        private void TrashRestoreToRoot_Click(object sender, RoutedEventArgs e)
+            => ViewModel?.RestoreSelectionToRootCommand.Execute(null);
 
         private void TrashPurge_Click(object sender, RoutedEventArgs e)
             => ViewModel?.PurgeSelectionCommand.Execute(null);

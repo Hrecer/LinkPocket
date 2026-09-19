@@ -44,6 +44,30 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
+            <MenuItem Header="还原" Command="{Binding Host.RestoreNodeCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="还原到根目录" Command="{Binding Host.RestoreNodeToRootCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
             <MenuItem Header="永久删除" Command="{Binding Host.PurgeNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
@@ -76,6 +100,24 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Right" x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
+                        IsEnabled="{Binding HasSelection}"
+                        Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,5" Margin="12,0,0,0"
+                        ToolTip="还原选中项到根目录 (Ctrl+Shift+R)">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="还原到根目录" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button DockPanel.Dock="Right" x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
+                        IsEnabled="{Binding HasSelection}"
+                        Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,5" Margin="12,0,0,0"
+                        ToolTip="还原选中项到原位置 (Ctrl+R)">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="还原" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
@@ -182,6 +224,8 @@
                                                     </Style>
                                                 </MenuItem.Style>
                                             </MenuItem>
+                                            <MenuItem Header="还原" Command="{Binding Host.RestoreSelectionCommand}"/>
+                                            <MenuItem Header="还原到根目录" Command="{Binding Host.RestoreSelectionToRootCommand}"/>
                                             <MenuItem Header="永久删除" Command="{Binding Host.PurgeSelectionCommand}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
