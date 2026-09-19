@@ -468,29 +468,41 @@ public partial class BrowserView : UserControl
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move);
 
-        // 拖拽结束（松手）：过程若曾落到**成环目标**（拖到它自己或它的子文件夹）→ 弹窗说明。
-        // Windows 口径：拖拽成环同样报错（不是"毫无反应"）；在松手后弹是为了不打断按着鼠标的拖拽手势。
-        if (_dragBlockedAsCycle)
-        {
-            _dragBlockedAsCycle = false;
-            ViewModel?.ReportBlockedDrop(items);
-        }
+        // 拖拽结束（松手）：**按松手那一刻的落点**判定是否属于成环（拖到它自己 / 它的子文件夹）→ 弹窗说明。
+        // ⚠️ 绝不能按"拖拽途中经过过谁"判定：拖拽必然从源行出发，起点自己就是"拖到它自己"，
+        // 一旦按途经记账，任何文件夹拖拽都会在移动成功后误报（用户实测报障）。
+        ReportCycleDropOnRelease(items);
     }
 
-    /// <summary>本次拖拽是否曾落到成环目标（拖拽结束统一弹窗一次；在 <see cref="RowBorder_DragOver"/> 置位）。</summary>
-    private bool _dragBlockedAsCycle;
-
-    /// <summary>落点是否属于"成环"（拖到它自己 / 拖进它的子文件夹）——仅用于拖拽结束后的说明弹窗。</summary>
-    private bool IsCycleBlocked(BrowserDragPayload? payload, string? targetFolderId)
+    /// <summary>
+    /// 拖拽收尾：取**松手位置**做命中测试得到落点实体，再交给 VM 判定是否成环。
+    /// 落点为空（空白 / 非落点）→ 什么都不弹（无操作）。判定的唯一实现是 VM 的
+    /// <see cref="BrowserViewModel.ReportBlockedDropIfCycle"/>（视图不再自带第二份成环判定）。
+    /// </summary>
+    private void ReportCycleDropOnRelease(IReadOnlyList<DragItem> items)
     {
-        if (payload == null || ViewModel == null) return false;
-        foreach (var item in payload.Items)
+        if (ViewModel == null) return;
+        ViewModel.ReportBlockedDropIfCycle(items, HitDropTargetId(Mouse.GetPosition(this)));
+    }
+
+    /// <summary>
+    /// 命中测试：从松手位置的视觉元素上溯，找出它承载的**落点实体 ID**。
+    /// 主栏行 → 文件夹行才作落点（链接行不是落点）；树节点 → 非链接节点（「全部书签」虚根 FolderId 为 null →
+    /// 返回 null，与"不是实体"一致）。都不命中 = 空白 → null。
+    /// </summary>
+    private string? HitDropTargetId(Point point)
+    {
+        var hit = VisualTreeHelper.HitTest(this, point)?.VisualHit;
+        while (hit != null)
         {
-            if (item.Id == targetFolderId) return true;   // 拖到它自己
-            if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId))
-                return true;                              // 拖进它的子文件夹
+            if (hit is FrameworkElement fe)
+            {
+                if (fe.DataContext is BrowserRowViewModel { IsFolder: true } row) return row.Id;
+                if (fe.DataContext is FolderNode { IsLink: false } node) return node.FolderId;
+            }
+            hit = VisualTreeHelper.GetParent(hit);
         }
-        return false;
+        return null;
     }
 
     /// <summary>目标合法性：目标行/节点不在拖动集合内，且没有任何被拖文件夹包含目标（防环）。</summary>
@@ -514,8 +526,9 @@ public partial class BrowserView : UserControl
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
 
+            // 拖拽中只表达"能不能放"（合法 = 移动光标 / 非法 = 禁止光标），不记账、不弹窗：
+            // 途经成环目标（含起点自己）是正常拖拽路径的一部分，"非法"只在**松手落点**上成立。
             var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
-            if (!ok && row is { IsFolder: true } && IsCycleBlocked(payload, row.Id)) _dragBlockedAsCycle = true;
             e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally
@@ -544,7 +557,8 @@ public partial class BrowserView : UserControl
     /// <summary>
     /// 树节点**拖拽源**：载荷与选中语义完全复用主栏那一套（VM <see cref="BrowserViewModel.PrepareDragFromNode"/>）——
     /// 拖未选中节点先单选该节点、拖已选中节点拖动整个选中集合（树选中同样落在唯一选中集合里）。
-    /// 「全部书签」虚根不是实体 → 载荷为空 → 不发起拖拽。拖拽结束若曾落到成环目标 → 与主栏同一套文案弹窗。
+    /// 「全部书签」虚根不是实体 → 载荷为空 → 不发起拖拽。
+    /// 收尾与主栏**同一个入口**（按松手落点判定成环，不按途经记账）——两条拖拽路径不会各错一次。
     /// </summary>
     private void FolderTreePanel_NodeDragStartRequested(object? sender, TreeItemDragStartEventArgs e)
     {
@@ -554,14 +568,11 @@ public partial class BrowserView : UserControl
 
         DragDrop.DoDragDrop(e.Source, new DataObject(new BrowserDragPayload(items)), DragDropEffects.Move);
 
-        if (_dragBlockedAsCycle)
-        {
-            _dragBlockedAsCycle = false;
-            ViewModel.ReportBlockedDrop(items);
-        }
+        ReportCycleDropOnRelease(items);
     }
 
-    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。</summary>
+    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。
+    /// 与主栏同口径：只表达光标（合法 Move / 非法 None），不记账、不弹窗。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
         try
@@ -569,7 +580,6 @@ public partial class BrowserView : UserControl
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
             var ok = node != null && !node.IsLink && IsDropValid(payload, node.FolderId);
-            if (!ok && node is { IsLink: false } && IsCycleBlocked(payload, node.FolderId)) _dragBlockedAsCycle = true;
             e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally

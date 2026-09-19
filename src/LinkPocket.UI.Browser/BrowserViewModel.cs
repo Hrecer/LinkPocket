@@ -1542,12 +1542,28 @@ public class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 拖拽落到**非法目标（成环：拖到它自己或它的子文件夹）**后由视图调用：
-    /// 按 Windows 口径**弹窗说明**（与粘贴共用同一套文案生成——反馈口径只有一处）。
-    /// 为什么在拖拽**结束后**才弹：拖拽过程中鼠标还按着，弹窗会打断手势；Windows 也是松手后报错。
+    /// 拖拽收尾的**唯一入口**（视图在 <c>DoDragDrop</c> 返回后调用，落点 ID 由视图按**松手位置**命中测试得出）：
+    /// **仅当松手落点确实是被拖项自身或其后代时**才弹窗说明（与粘贴共用同一套文案生成——反馈口径只有一处）。
+    ///
+    /// <para>⚠️ 判据必须是「松手那一刻的落点」，绝不能是「拖拽途中经过过谁」：拖拽**必然从源行/源节点出发**，
+    /// 起点自己就是"拖到它自己"，若按"途经即记账"实现，任何一次文件夹拖拽都会在**移动成功之后**误弹
+    /// "不能移到它自己或它的子文件夹里"（实测用户报障：拖 A 到同目录下的 B，弹窗了、A 也确实搬过去了）。
+    /// 途经成环目标本来就该是"禁止光标"，而不是错误——Windows 同样只在真正放下时报错。</para>
+    ///
+    /// <para><paramref name="dropTargetId"/> 为 null/空 = 松手在空白或非落点：**无操作、不弹窗**（Explorer 口径）。</para>
     /// </summary>
-    public void ReportBlockedDrop(IReadOnlyList<DragItem> items)
-        => ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, items.Select(i => i.Name).ToList()));
+    public void ReportBlockedDropIfCycle(IReadOnlyList<DragItem> items, string? dropTargetId)
+    {
+        if (string.IsNullOrEmpty(dropTargetId)) return;
+        foreach (var item in items)
+        {
+            if (item.Id == dropTargetId || (item.IsFolder && IsSelfOrDescendant(item.Id, dropTargetId)))
+            {
+                ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, items.Select(i => i.Name).ToList()));
+                return;
+            }
+        }
+    }
 
     /// <summary>非法粘贴目标（成环）的弹窗标题——按动作区分（剪切 = 移动 / 复制 = 复制）。</summary>
     private static string BlockedTitle(bool isCut) => isCut ? "无法移动" : "无法复制";
