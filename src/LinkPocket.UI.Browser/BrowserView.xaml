@@ -76,6 +76,16 @@
                         <TextBlock Text="新建链接" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
+                <!-- 重命名：与 F2 / 右键「重命名」**同一条命令**（就地编辑；文件夹改名称、链接改标题）。
+                     未选中或非单选时自动禁用（CanExecute 与 F2 同源）。 -->
+                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand"
+                        Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
+                        ToolTip="重命名选中项 (F2)">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="pencil" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="重命名" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    </StackPanel>
+                </Button>
                 <!-- 删除：删除选中项（文件夹/链接一律移入回收站，Windows 语义），未选中时禁用。
                      删除/警告提醒色 = 奶油黄 WarnBg（规范：不用红色） -->
                 <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand"

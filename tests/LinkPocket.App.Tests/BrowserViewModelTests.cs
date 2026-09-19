@@ -570,12 +570,13 @@ public class BrowserViewModelTests
             Assert.True(vm.Clipboard.BrowserPayload is { IsCut: false });   // 载荷已整体替换
             Assert.False(vm.Rows.Single(r => r.Id == keep.LinkId).IsCut);   // 旧剪切视觉复位
 
-            // 源失效：被复制的链接移入回收站 → 粘贴时单项跳过，目标目录零写入（不是数据不一致）
+            // 源失效：被复制的链接移入回收站 → 粘贴时单项失败（**如实报数**，不再含混成"没有可粘贴的项目"），
+            // 目标目录零写入（不是数据不一致）；失败同时写日志（观测面铁律）
             await client.LinkTrashAsync(gone.LinkId);
             await vm.LoadAsync(b.FolderId);
             vm.PasteCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("没有可粘贴"), TimeSpan.FromSeconds(5)),
-                $"期望「没有可粘贴的项目」，实际：{vm.StatusText}");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Contains("失败"), TimeSpan.FromSeconds(5)),
+                $"期望如实报告失败项，实际：{vm.StatusText}");
             var inB = await client.LinkListAsync(listId: b.FolderId, perPage: 0);
             Assert.Empty(inB.Links);
         }

@@ -1207,11 +1207,11 @@ public class BrowserViewModel : INotifyPropertyChanged
                     if (id == target || IsSelfOrDescendant(id, target)) continue;
                     if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
                         continue; // 已在目标目录
-                    if (await MoveFolderAsync(id, target, renamedNotes, callOptions)) moved++;
+                    if (await MoveFolderAsync(id, target, renamedNotes, callOptions) == OpOutcome.Done) moved++;
                 }
                 else
                 {
-                    if (await MoveLinkAsync(id, target, callOptions)) moved++;
+                    if (await MoveLinkAsync(id, target, callOptions) == OpOutcome.Done) moved++;
                 }
             }
             StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
@@ -1226,9 +1226,16 @@ public class BrowserViewModel : INotifyPropertyChanged
         // （它是刷新的重入标志，被写操作占用期间事件刷新会被挂起）。
     }
 
+    /// <summary>
+    /// 单项移动/复制结果（**三态**，结果文案必须如实分派）：
+    /// <see cref="Done"/> = 已执行；<see cref="Skipped"/> = 无操作跳过（同目录，不是错误）；
+    /// <see cref="Failed"/> = 执行失败（源已消失、引擎拒绝等，必须留痕）。
+    /// </summary>
+    private enum OpOutcome { Done, Skipped, Failed }
+
     /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel FolderNaming）。
-    /// 返回是否执行了移动；单项失败不中断整批（与 MoveLink/Copy* 一致）。</summary>
-    private async Task<bool> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
+    /// 单项失败不中断整批（与 MoveLink/Copy* 一致），失败必须留痕（观测面铁律）。</summary>
+    private async Task<OpOutcome> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
@@ -1240,28 +1247,34 @@ public class BrowserViewModel : INotifyPropertyChanged
             var resolved = moved.Data?.Name;
             if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
                 renamedNotes.Add($"「{name}」→「{resolved}」");
-            return true;
+            return OpOutcome.Done;
         }
-        catch
+        catch (Exception ex)
         {
-            return false;   // 单项移动失败 → 跳过该项继续批内其余项
+            Services.Logger.Error($"移动文件夹「{folderId}」失败", ex);
+            return OpOutcome.Failed;
         }
     }
 
-    private async Task<bool> MoveLinkAsync(string linkId, string? target, LinkPocket.Contracts.CallOptions? o = null)
+    /// <summary>移动链接：同目录 = <see cref="OpOutcome.Skipped"/>（无操作，非错误）；源已消失/引擎拒绝 = 失败（留痕）。</summary>
+    private async Task<OpOutcome> MoveLinkAsync(string linkId, string? target, LinkPocket.Contracts.CallOptions? o = null)
     {
-        // 同目录粘贴/拖放 = 无操作
         try
         {
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取后 FirstOrDefault）
-            if (link == null) return false; // 源已被删除，跳过
-            if (NormalizeParentId(link.ListId) == target) return false;
+            if (link == null)
+            {
+                Services.Logger.Error($"移动链接「{linkId}」失败：源已不存在");
+                return OpOutcome.Failed;
+            }
+            if (NormalizeParentId(link.ListId) == target) return OpOutcome.Skipped;
             await _client.LinkUpdateAsync(linkId, listId: target, o: o);
-            return true;
+            return OpOutcome.Done;
         }
-        catch
+        catch (Exception ex)
         {
-            return false; // 单项失败不中断整批
+            Services.Logger.Error($"移动链接「{linkId}」失败", ex);
+            return OpOutcome.Failed;
         }
     }
 
@@ -1395,6 +1408,8 @@ public class BrowserViewModel : INotifyPropertyChanged
 
         var renamedNotes = new List<string>();
         var pasted = 0;
+        var failed = 0;
+        var blocked = new List<string>();   // 非法目标（自身 / 自己的子文件夹）→ 明确反馈，绝不静默（Explorer 同样拒绝并弹窗）
         var pinnedIds = new List<string>();   // 本次粘贴的落点 ID（复制 = 新 ID；剪切 = 原 ID 不变）→ 置尾 + 选中 + 定位
         // 撤销分组：一次粘贴 = 一个用户动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
         var undoGroup = Guid.NewGuid().ToString("N");
@@ -1403,16 +1418,24 @@ public class BrowserViewModel : INotifyPropertyChanged
         {
             foreach (var fid in payload.FolderIds)
             {
-                if (fid == target || IsSelfOrDescendant(fid, target)) continue;
+                _folderMap.TryGetValue(fid, out var info);
+                var name = string.IsNullOrEmpty(info.Name) ? "文件夹" : info.Name;
+                if (fid == target || IsSelfOrDescendant(fid, target))
+                {
+                    blocked.Add(name);   // 放进自己 / 自己的子文件夹：成环，拒绝（Explorer 口径）
+                    continue;
+                }
                 if (payload.IsCut)
                 {
-                    if (NormalizeParentId(_folderMap.TryGetValue(fid, out var info) ? info.ParentId : null) == target) continue;
-                    if (await MoveFolderAsync(fid, target, renamedNotes, callOptions)) { pasted++; pinnedIds.Add(fid); }
+                    if (NormalizeParentId(info.ParentId) == target) continue;   // 已在目标目录 = 无操作（非错误）
+                    if (await MoveFolderAsync(fid, target, renamedNotes, callOptions) == OpOutcome.Done) { pasted++; pinnedIds.Add(fid); }
+                    else failed++;
                 }
                 else
                 {
-                    var newId = await CopyFolderAsync(fid, target, renamedNotes, callOptions);
-                    if (newId != null) { pasted++; pinnedIds.Add(newId); }
+                    var (outcome, newId) = await CopyFolderAsync(fid, target, renamedNotes, callOptions);
+                    if (outcome == OpOutcome.Done && newId != null) { pasted++; pinnedIds.Add(newId); }
+                    else failed++;
                 }
             }
 
@@ -1420,12 +1443,15 @@ public class BrowserViewModel : INotifyPropertyChanged
             {
                 if (payload.IsCut)
                 {
-                    if (await MoveLinkAsync(lid, target, callOptions)) { pasted++; pinnedIds.Add(lid); }
+                    var outcome = await MoveLinkAsync(lid, target, callOptions);
+                    if (outcome == OpOutcome.Done) { pasted++; pinnedIds.Add(lid); }
+                    else if (outcome == OpOutcome.Failed) failed++;   // Skipped（已在目标目录）= 无操作
                 }
                 else
                 {
-                    var newId = await CopyLinkAsync(lid, target, callOptions);
-                    if (newId != null) { pasted++; pinnedIds.Add(newId); }
+                    var (outcome, newId) = await CopyLinkAsync(lid, target, callOptions);
+                    if (outcome == OpOutcome.Done && newId != null) { pasted++; pinnedIds.Add(newId); }
+                    else failed++;
                 }
             }
 
@@ -1438,12 +1464,23 @@ public class BrowserViewModel : INotifyPropertyChanged
                 _pendingFocusId = pinnedIds[0];
             }
 
-            if (payload.IsCut)
+            // 剪切载荷消费：**只有真的有项被粘贴**才遗忘（Windows 同口径）。
+            // 全部被拒/全部失败时必须保留——否则"粘贴进自己的子文件夹被拒"之后，
+            // 用户导航到合法位置就再也粘贴不了了（那才是真正的"剪切不见了"）。
+            if (payload.IsCut && pasted > 0)
             {
                 Clipboard.SetBrowserPayload(null); // 剪切语义：粘贴完成即遗忘（复制载荷保留，可多次粘贴——Windows 同口径）
                 foreach (var r in Rows) r.IsCut = false;
             }
-            StatusText = pasted > 0 ? $"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}" : "没有可粘贴的项目";
+
+            // 结果**如实分派**：成功数 / 失败数 / 无操作 分开说，绝不把"部分失败"含混成"已完成"
+            var parts = new List<string>();
+            if (pasted > 0) parts.Add($"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}");
+            if (failed > 0) parts.Add($"{failed} 项失败（详见日志）");
+            StatusText = parts.Count > 0 ? string.Join("，", parts) : "没有可粘贴的项目";
+
+            // 非法目标（成环）：明确弹窗说明——用户明确操作后"毫无反应"会被读成数据损坏（与"同目录粘贴"同一教训）
+            if (blocked.Count > 0) ShowError(BlockedTitle(payload.IsCut), BlockedMessage(payload.IsCut, blocked));
         }
         catch (Exception ex)
         {
@@ -1454,36 +1491,62 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
     }
 
-    /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。返回新文件夹 ID（源已删除等情况 → null，单项跳过）。</summary>
-    private async Task<string?> CopyFolderAsync(string folderId, string? target, List<string> renamedNotes,
-        LinkPocket.Contracts.CallOptions? o = null)
+    /// <summary>非法粘贴目标（成环）的弹窗标题——按动作区分（剪切 = 移动 / 复制 = 复制）。</summary>
+    private static string BlockedTitle(bool isCut) => isCut ? "无法移动" : "无法复制";
+
+    /// <summary>
+    /// 非法粘贴目标的说明文案（Explorer 口径：明确说清为何不能，而不是"操作后毫无反应"）。
+    /// 成环 = 目标是自己或自己的子文件夹（文件夹不能成为自己的后代）；同目录粘贴**不在此列**（那只是无操作）。
+    /// </summary>
+    private static string BlockedMessage(bool isCut, IReadOnlyList<string> names)
+    {
+        var action = isCut ? "移动" : "复制";
+        if (names.Count == 1)
+            return $"无法将文件夹「{names[0]}」{action}到它自己或它的子文件夹里。";
+        return $"以下文件夹无法{action}到它们自己或它们的子文件夹里：\n" +
+               string.Join("、", names.Select(n => $"「{n}」"));
+    }
+
+    /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。失败必须留痕（观测面铁律）。</summary>
+    private async Task<(OpOutcome Outcome, string? NewId)> CopyFolderAsync(string folderId, string? target,
+        List<string> renamedNotes, LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
             var copy = await _client.FolderCopyAsync(folderId, target, o);
             var newId = copy.Data?.NewFolderId;
-            if (string.IsNullOrEmpty(newId)) return null;
+            if (string.IsNullOrEmpty(newId))
+            {
+                Services.Logger.Error($"复制文件夹「{name}」失败：引擎未返回新 ID");
+                return (OpOutcome.Failed, null);
+            }
             // 副本名由引擎编号决定（folders.copy 返回最终名）；UI 只按差异生成提示
             var resolved = copy.Data?.Name;
             if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
                 renamedNotes.Add($"「{name}」→「{resolved}」");
-            return newId;
+            return (OpOutcome.Done, newId);
         }
-        catch
+        catch (Exception ex)
         {
-            return null; // 源已被删除等情况：单项跳过
+            Services.Logger.Error($"复制文件夹「{folderId}」失败", ex);
+            return (OpOutcome.Failed, null);
         }
     }
 
-    /// <summary>复制书签（全量字段）。返回新链接 ID（源已删除等情况 → null，单项跳过）。
+    /// <summary>复制书签（全量字段）。失败必须留痕（观测面铁律）。
     /// 链接标题**不做唯一化**：链接身份 = URL，标题只是标签（用户 2026-09-19 定稿）。</summary>
-    private async Task<string?> CopyLinkAsync(string linkId, string? target,
+    private async Task<(OpOutcome Outcome, string? NewId)> CopyLinkAsync(string linkId, string? target,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取）
+            if (link == null)
+            {
+                Services.Logger.Error($"复制链接「{linkId}」失败：源已不存在");
+                return (OpOutcome.Failed, null);
+            }
 
             // 复制书签 = 全量字段（URL/标题/描述/收藏/图标；内核无标签系统，无其它字段可丢）
             var created = await _client.LinkCreateAsync(link.Url,
@@ -1495,11 +1558,12 @@ public class BrowserViewModel : INotifyPropertyChanged
                 faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl,
                 o: o);
             var newId = created.Data?.LinkId;
-            return string.IsNullOrEmpty(newId) ? null : newId;
+            return string.IsNullOrEmpty(newId) ? (OpOutcome.Failed, null) : (OpOutcome.Done, newId);
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            Services.Logger.Error($"复制链接「{linkId}」失败", ex);
+            return (OpOutcome.Failed, null);
         }
     }
 
