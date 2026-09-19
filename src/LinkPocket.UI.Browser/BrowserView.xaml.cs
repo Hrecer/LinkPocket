@@ -642,6 +642,12 @@ public partial class BrowserView : UserControl
     /// </summary>
     private (IReadOnlyList<DragItem> Items, string? TargetId, TransferMode Mode)? _pendingDrop;
 
+    /// <summary>本次拖拽**从哪一栏发起**（主栏行 = Main / 树节点 = Tree）；不在拖拽中时为 null。</summary>
+    private BrowserPane? _dragSourcePane;
+
+    /// <summary>本次拖动集合（与浮层/执行同一份快照）——落点候选据此排除"同栏里自己拖动的那几项"。</summary>
+    private IReadOnlyList<DragItem> _dragItems = [];
+
     /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
     private bool _pressWasSoleSelection;
 
@@ -725,7 +731,7 @@ public partial class BrowserView : UserControl
         if (ViewModel == null) return;
         var items = ViewModel.PrepareDragFromRow(row);
         if (items.Count == 0) return;
-        StartDrag(source, items, rightButton);
+        StartDrag(source, items, rightButton, BrowserPane.Main);
     }
 
     /// <summary>
@@ -740,11 +746,18 @@ public partial class BrowserView : UserControl
     ///
     /// <para>Esc 取消 = OLE 不派发 Drop → 待执行单为空 → 什么都不做（**结构性保证**：
     /// 再也没有"途经记账"那类判据可以出错）。</para>
+    ///
+    /// <para><paramref name="sourcePane"/> = 本次拖拽**从哪一栏发起**（主栏行 = Main / 树节点 = Tree）：
+    /// 与"本次拖动集合"一起决定落点候选是否排除**该项自身的元素**（同栏放回原处 = 取消，见
+    /// <see cref="IsDropPositionCandidate"/>）。跨栏拖到同一实体仍是落点 → 照常高亮，松手由执行层判成环并弹窗。</para>
     /// </summary>
-    private void StartDrag(DependencyObject source, IReadOnlyList<DragItem> items, bool rightButton)
+    private void StartDrag(DependencyObject source, IReadOnlyList<DragItem> items, bool rightButton,
+        BrowserPane sourcePane)
     {
         _rightDragGesture = rightButton;
         _pendingDrop = null;
+        _dragSourcePane = sourcePane;
+        _dragItems = items;
         ShowDragVisual(items);
         DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move | DragDropEffects.Copy);
@@ -757,6 +770,9 @@ public partial class BrowserView : UserControl
         var drop = _pendingDrop;
         _pendingDrop = null;
         ClearDropTarget();
+        // 覆盖式 + 及时复位：拖拽结束即不再有"源栏 / 拖动集合"的概念（跨事件状态绝不留常驻标志）
+        _dragSourcePane = null;
+        _dragItems = [];
 
         if (rightButton)
         {
@@ -836,12 +852,34 @@ public partial class BrowserView : UserControl
     /// 落点候选判定（**唯一实现**，主栏行与树节点共用）：**主栏文件夹行 / 树非链接节点**才作落点。
     /// 链接行与树上的链接叶子**不是**落点（拖到书签上什么都不发生，与 Explorer 一致）。
     ///
-    /// <para>⚠️ 成环（自身 / 自身后代）**不在这里判定**——落点一视同仁地高亮 + 显示提示，
+    /// <para><b>同栏里「自己拖动的那几项」不作落点</b>（用户令 2026-09-20）：把文件夹拖回它自己在**同一栏**里的
+    /// 行/节点 = 「放回原处」= 取消——不记意图、不高亮、不弹窗（原先会走到执行层判成环并弹「无法移动」）。
+    /// 判据是「**动作真正落在哪**」：候选栏 = 本次拖拽的发起栏（<see cref="_dragSourcePane"/>）且候选实体 ∈
+    /// 本次拖动集合（<see cref="_dragItems"/>）。**跨栏**拖到同一实体（树 → 主栏那一行 / 主栏 → 树那个节点）
+    /// 仍是落点 → 照常高亮 + 提示，松手由执行层统一判成环并弹规范弹窗（这是"真的在把它搬进它自己"）。
+    /// 「全部书签」虚根的 <c>FolderId</c> 为 null（= 根目录）→ 与集合无关，照常可作落点。</para>
+    ///
+    /// <para>⚠️ 成环（自身后代）**不在这里判定**——真正的成环落点一视同仁地高亮 + 显示提示，
     /// 松手之后由执行层（传输流水线）统一拒绝并弹规范弹窗；这是用户要求的统一口径
     /// （过去"悬停禁用光标 + 无提示"与"粘贴弹窗"是两套，现统一为都弹窗）。</para>
     /// </summary>
-    private static bool IsDropPositionCandidate(object? dataContext)
-        => dataContext is BrowserRowViewModel { IsFolder: true } or FolderNode { IsLink: false };
+    private bool IsDropPositionCandidate(object? dataContext, BrowserPane candidatePane)
+    {
+        if (dataContext is not (BrowserRowViewModel { IsFolder: true } or FolderNode { IsLink: false }))
+            return false;
+
+        var id = dataContext switch
+        {
+            BrowserRowViewModel row => row.Id,
+            FolderNode node => node.FolderId,
+            _ => null
+        };
+        if (id == null || candidatePane != _dragSourcePane) return true;
+
+        foreach (var item in _dragItems)
+            if (string.Equals(item.Id, id, StringComparison.Ordinal)) return false;
+        return true;
+    }
 
     private void RowBorder_DragOver(object sender, DragEventArgs e)
     {
@@ -852,7 +890,7 @@ public partial class BrowserView : UserControl
             // 拖拽中只表达"落在哪个文件夹"（高亮 + 「移动到/复制到 X」提示 + 对应光标），**不判成环**：
             // 落点是不是自己/自己的后代，由执行层在**松手之后**统一拒绝并弹窗。
             // 模式（Ctrl = 复制）随修饰键走同一条落点状态：提示文案与光标永远说的是同一件事。
-            var ok = IsDropPositionCandidate(row);
+            var ok = IsDropPositionCandidate(row, BrowserPane.Main);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(row!.Id, BrowserPane.Main, row.Name, mode) : null);
             e.Effects = ok ? DragSupport.EffectFor(mode) : DragDropEffects.None;
@@ -874,7 +912,7 @@ public partial class BrowserView : UserControl
         {
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
-            if (payload != null && IsDropPositionCandidate(row))
+            if (payload != null && IsDropPositionCandidate(row, BrowserPane.Main))
                 _pendingDrop = (payload.Items, row!.Id, ViewModel?.DropTargetMode ?? TransferMode.Move);
         }
         finally
@@ -944,7 +982,7 @@ public partial class BrowserView : UserControl
         if (ViewModel == null || e.Node is not FolderNode node || e.Source == null) return;
         var items = ViewModel.PrepareDragFromNode(node);
         if (items.Count == 0) return;
-        StartDrag(e.Source, items, e.RightButton);
+        StartDrag(e.Source, items, e.RightButton, BrowserPane.Tree);
     }
 
     /// <summary>树节点拖拽经过：命中节点是真实文件夹才作落点（链接叶子不是移动目标——**拖到书签上什么也不发生**）。
@@ -955,7 +993,7 @@ public partial class BrowserView : UserControl
         try
         {
             var node = e.Node as FolderNode;
-            var ok = IsDropPositionCandidate(node);
+            var ok = IsDropPositionCandidate(node, BrowserPane.Tree);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(node!.FolderId, BrowserPane.Tree, node.Name, mode) : null);
             e.Args.Effects = ok ? DragSupport.EffectFor(mode) : DragDropEffects.None;
@@ -977,7 +1015,7 @@ public partial class BrowserView : UserControl
         {
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
-            if (payload != null && IsDropPositionCandidate(node))
+            if (payload != null && IsDropPositionCandidate(node, BrowserPane.Tree))
                 _pendingDrop = (payload.Items, node!.FolderId, ViewModel?.DropTargetMode ?? TransferMode.Move);
         }
         finally

@@ -609,4 +609,44 @@ public class BrowserViewModelTests
             AppTestEnv.Delete(dbPath);
         }
     }
+
+    /// <summary>
+    /// 侧栏动作面（用户定稿 2026-09-20）：链接 = 两行排布 + 独立「重命名」图标钮（就地改标题，
+    /// 命令 = 本页就地改名命令**同一实例**）；文件夹不开该钮（铅笔即重命名，同一动作不摆两枚）。
+    /// </summary>
+    [Fact]
+    public async Task 侧栏动作面_链接开重命名图标钮_文件夹不开_一律两行排布()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.LinkCreateAsync("https://a.example", title: "A 链接", autoFetchMetadata: false);
+            await client.FolderCreateAsync("A 文件夹");
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);                        // 根级：链接 + 文件夹
+
+            var linkRow = vm.Rows.First(r => !r.IsFolder);
+            vm.SelectRowWithModifiers(linkRow, ModifierKeys.None);
+            Assert.True(vm.Details.IsLink);
+            Assert.True(vm.Details.StackedActions);          // 两行排布（药丸一行 / 图标钮一行靠右）
+            Assert.True(vm.Details.ShowRenameAction);
+            Assert.Equal("重命名", vm.Details.RenameActionLabel);
+            Assert.Same(vm.RenameSelectionCommand, vm.Details.RenameActionCommand);   // 复用同一命令实例
+            Assert.True(vm.Details.RenameActionCommand!.CanExecute(null));
+
+            var folderRow = vm.Rows.First(r => r.IsFolder);
+            vm.SelectRowWithModifiers(folderRow, ModifierKeys.None);
+            Assert.True(vm.Details.IsFolder);
+            Assert.False(vm.Details.ShowRenameAction);       // 文件夹由铅笔承担重命名
+            Assert.Equal("重命名", vm.Details.EditLabel);
+
+            vm.ClearSelection();
+            Assert.False(vm.Details.ShowRenameAction);       // 清空选中：动作面不复用上一次的位
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
 }

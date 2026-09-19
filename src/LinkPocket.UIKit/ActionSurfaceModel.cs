@@ -18,6 +18,9 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     /// <summary>「打开网站」第二枚药丸（侧栏用；详情页的主按钮本身即打开网站/还原）。</summary>
     public bool ShowOpenWebsite { get; protected set; } = true;
     public bool ShowEditAction { get; protected set; } = true;
+    /// <summary>独立的「重命名」图标钮（侧栏：链接就地改标题；缺省不显示，只有浏览页侧栏的链接开它）。
+    /// 与 <see cref="ShowEditAction"/> 是两件事：铅笔「编辑」= 打开整页编辑器，本钮 = 就地改标题。</summary>
+    public bool ShowRenameAction { get; protected set; }
     public bool ShowDeleteAction { get; protected set; } = true;
     /// <summary>「还原」动作（回收站：详情页第二枚药丸 / 侧栏图标钮；缺省不显示）。</summary>
     public bool ShowRestoreAction { get; protected set; }
@@ -39,6 +42,8 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public string OpenIconKind { get; protected set; } = "open-in-new";
     /// <summary>铅笔按钮提示（链接 = 编辑；文件夹 = 重命名；回收站不用）。</summary>
     public string EditLabel { get; protected set; } = "编辑";
+    /// <summary>「重命名」图标钮提示（同款 32×32 铅笔，仅取色与「编辑」区分：重命名 = AccentBtn 深紫）。</summary>
+    public string RenameActionLabel { get; protected set; } = "重命名";
     /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
     public string DeleteActionLabel { get; protected set; } = "删除";
     /// <summary>多选删除按钮文案与提示。</summary>
@@ -60,7 +65,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public int OpenColumnSpan { get; protected set; } = 1;
 
     /// <summary>动作卡是否显示（任一动作可见）。</summary>
-    public bool HasActions => ShowOpenAction || ShowEditAction || ShowDeleteAction
+    public bool HasActions => ShowOpenAction || ShowEditAction || ShowRenameAction || ShowDeleteAction
         || ShowRestoreAction || ShowRestoreToRootAction;
 
     // —— 命令槽（由各页注入；一律复用该页既有能力，绝不另写业务逻辑） ——
@@ -68,6 +73,9 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public ICommand? OpenCommand { get; set; }
     public ICommand? OpenWebsiteCommand { get; set; }
     public ICommand? RenameCommand { get; set; }
+    /// <summary>「重命名」图标钮的命令（就地改标题）。与 <see cref="RenameCommand"/>（铅笔槽，页面自定义）分开：
+    /// 浏览页侧栏的铅笔槽 = 链接开编辑器 / 文件夹就地改名，本槽 = 链接就地改名。</summary>
+    public ICommand? RenameActionCommand { get; set; }
     public ICommand? DeleteCommand { get; set; }
     public ICommand? RestoreCommand { get; set; }
     public ICommand? RestoreToRootCommand { get; set; }
@@ -83,11 +91,13 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ShowOpenAction));
         OnPropertyChanged(nameof(ShowOpenWebsite));
         OnPropertyChanged(nameof(ShowEditAction));
+        OnPropertyChanged(nameof(ShowRenameAction));
         OnPropertyChanged(nameof(ShowDeleteAction));
         OnPropertyChanged(nameof(OpenLabel));
         OnPropertyChanged(nameof(OpenToolTip));
         OnPropertyChanged(nameof(OpenIconKind));
         OnPropertyChanged(nameof(EditLabel));
+        OnPropertyChanged(nameof(RenameActionLabel));
         OnPropertyChanged(nameof(DeleteActionLabel));
         OnPropertyChanged(nameof(DeleteSelectionLabel));
         OnPropertyChanged(nameof(ShowRestoreAction));
@@ -111,6 +121,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     protected void ResetActionSurface()
     {
         ShowOpenAction = ShowOpenWebsite = ShowEditAction = ShowDeleteAction = true;
+        ShowRenameAction = false;
         ShowRestoreAction = ShowRestoreToRootAction = false;
         OpenLabel = "打开";
         OpenToolTip = "打开";
@@ -118,6 +129,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OpenTone = PillTone.Primary;
         StackedActions = false;
         EditLabel = "编辑";
+        RenameActionLabel = "重命名";
         DeleteActionLabel = "删除";
         DeleteSelectionLabel = "删除所选";
         RestoreLabel = "还原";

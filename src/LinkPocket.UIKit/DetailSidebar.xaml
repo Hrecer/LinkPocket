@@ -146,6 +146,17 @@
                         Visibility="{Binding ShowRestoreToRootAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="{Binding RestoreToRootIconKind}" Width="15" Height="15"/>
                 </Button>
+                <!-- 链接：「重命名」（就地改标题，位置 = 药丸右侧 / 编辑键左侧；用户定稿 2026-09-20）。
+                     与「编辑」同一枚 32×32 铅笔，仅取色区分：重命名 = AccentBtn 深紫（工具栏主按钮 /
+                     回收站还原图标同款），编辑 = 图标钮缺省的 Primary。缺省不显示（只有浏览页侧栏的链接开它）。 -->
+                <Button Style="{StaticResource NavIconButton}"
+                        Tag="{Binding RenameActionLabel}"
+                        Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Foreground="{StaticResource AccentBtn}"
+                        Command="{Binding RenameActionCommand}"
+                        Visibility="{Binding ShowRenameAction, Converter={StaticResource BoolToVis}}">
+                    <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
+                </Button>
                 <!-- 链接：编辑（整页编辑器）；文件夹：重命名 -->
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding EditLabel}"

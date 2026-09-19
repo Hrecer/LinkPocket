@@ -353,6 +353,10 @@
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+        <!-- 导航条不参与键盘导航（结构性，不靠关掉项的可聚焦性——那会让点击选中整条链路短路，见项样式注释）：
+             Tab 进不来（None）、进条后方向键也不改选中（选中只由「点击」与 VM 的 SelectedNavItem 驱动）。 -->
+        <Setter Property="KeyboardNavigation.TabNavigation" Value="None"/>
+        <Setter Property="KeyboardNavigation.DirectionalNavigation" Value="None"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type views:SlidingNavStrip}">
@@ -381,8 +385,12 @@
         <Setter Property="Height" Value="30"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="Cursor" Value="Hand"/>
-        <!-- 项不取键盘焦点：点击导航后焦点留在页面内（整页快捷键不变式），也避免方向键在条上改变选中 -->
-        <Setter Property="Focusable" Value="False"/>
+        <!-- ⚠️ 必须可聚焦：WPF 的点击选中链路是 `ListBoxItem.HandleMouseButtonDown`：
+             `if (Selector.UiGetIsSelectable(this) && Focus()) parent.NotifyListItemClicked(...)`
+             —— `Focusable="False"` 会让 Focus() 静默返回 false，点击**整条链路短路**（不选中、不换页、
+             指示器也不动）。「不参与键盘导航」的原意改由控件侧的结构性开关承担（见 SlidingNavStripStyle 的
+             KeyboardNavigation.TabNavigation/DirectionalNavigation = None），绝不靠关掉可聚焦性。见 WARNINGS 59。 -->
+        <Setter Property="Focusable" Value="True"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
         <Setter Property="Template">

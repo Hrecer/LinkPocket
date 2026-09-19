@@ -64,9 +64,20 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         OpenWebsiteCommand = new RelayCommand(
             () => _ = OpenWebsiteInBrowserAsync(),
             () => IsLink && !string.IsNullOrEmpty(UrlText));
+        // 铅笔槽（一枚钮，按行类型分派）：链接 = 打开整页编辑器；文件夹 = 就地改标题。
+        // 「重命名」图标钮（独立那枚）= 就地改标题，只对链接开——两者都复用 Host 既有命令，不写第二套逻辑。
         RenameCommand = new RelayCommand(
-            () => _host?.RenameSelectionCommand.Execute(null),
-            () => _host?.RenameSelectionCommand.CanExecute(null) == true);
+            () =>
+            {
+                var row = _host?.SelectedRows.FirstOrDefault();
+                if (row == null || _host == null) return;
+                if (row.IsFolder) _host.RenameSelectionCommand.Execute(null);
+                else _host.EditRowCommand.Execute(row);
+            },
+            () => IsFolder
+                ? _host?.RenameSelectionCommand.CanExecute(null) == true
+                : IsLink && _host != null);
+        // 「重命名」图标钮的命令在 UpdateFrom 里直接挂宿主既有命令实例（同一实例，不是第二套逻辑）
         DeleteCommand = new RelayCommand(
             () => _host?.DeleteSelectionCommand.Execute(null),
             () => _host?.DeleteSelectionCommand.CanExecute(null) == true);
@@ -118,6 +129,12 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         IsMulti = rows.Count > 1;
         IsFolder = rows.Count == 1 && rows[0].IsFolder;
         ConfigureSidebarActionLabels(IsFolder);   // 动作面缺省文案/列宽（共享基类，按行类型）
+        // 侧栏动作面（浏览页）：两行排布（药丸一行 / 图标钮一行靠右——286 宽同排必然裁字，
+        // 与回收站右栏同一套能力位与同一对按钮模板，不是第二套详情栏）；
+        // 「重命名」图标钮只对**链接**开（就地改标题；文件夹由铅笔承担，避免同一动作两枚钮）。
+        StackedActions = rows.Count > 0;   // 有选中时动作卡才出现；本页一律两行排布
+        ShowRenameAction = IsLink;
+        RenameActionCommand = host.RenameSelectionCommand;   // 同一实例：复用本页就地改名命令，不写第二套
 
         SelectedTotal = rows.Count;
         SelectedFolders = rows.Count(r => r.IsFolder);
