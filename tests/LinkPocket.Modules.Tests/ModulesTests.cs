@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：55 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：56 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_55_Commands()
+    public void Describe_Returns_All_56_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(55, manifest.Commands.Count);
-        Assert.Equal(55, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(56, manifest.Commands.Count);
+        Assert.Equal(56, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 

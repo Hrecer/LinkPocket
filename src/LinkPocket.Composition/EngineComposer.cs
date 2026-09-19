@@ -99,6 +99,7 @@ public static class EngineComposer
         registry.RegisterAll(LinkPocket.Modules.Backup.BackupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Dedup.DedupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Favicon.FaviconModule.CreateHandlers());
+        registry.RegisterAll(LinkPocket.Modules.Locate.LocateModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers(
             () => engineRef!.RuntimeStats));
 

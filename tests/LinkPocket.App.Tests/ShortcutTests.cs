@@ -9,13 +9,93 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 快捷键子系统金标准（Phase 3）：作用域仲裁（同键两栏不同语义）+ 键位表完整性
+/// 快捷键子系统金标准：作用域仲裁（同键两栏不同语义）+ **总表不变量**（每页一组、组不跨页、同组无重复键）
 /// + 键盘导航行为（主栏 ↑/↓/End、左栏 ↑/↓ 可见顺序）+ 新增命令（撤销/重做可用性、展开到当前位置、复制路径）。
-/// 键位表 = <see cref="BrowserShortcuts"/>（唯一事实源）；本文件断言它的**可观测行为**，
+/// 键位 = <see cref="ShortcutCatalog"/>（全站唯一事实源）；本文件断言它的**结构与可观测行为**，
 /// 不复制一份键位清单（避免"测试与实现各写一份、改一处忘一处"）。
 /// </summary>
 public class ShortcutTests
 {
+    // —— 总表不变量（键位只声明在 ShortcutCatalog；页面之间互不影响、互不互通）——
+
+    [Fact]
+    public void 总表_每页一组且作用域链不落到别的页面()
+    {
+        var roots = ShortcutCatalog.Pages.Select(p => p.RootScope).ToList();
+        Assert.Equal(roots.Count, roots.Distinct().Count());                       // 一页一组，组不共享根作用域
+        Assert.Equal(Enum.GetValues<ShortcutPage>().Length, ShortcutCatalog.Pages.Count);   // 每个页面都有声明（含空表）
+
+        foreach (var page in ShortcutCatalog.Pages)
+        {
+            var own = page.Specs.Where(s => s.ControlName == null).Select(s => s.Scope).ToHashSet();
+            own.Add(page.RootScope);
+            foreach (var scope in own)
+                foreach (var chained in ShortcutScopes.Chain(scope))
+                    Assert.True(chained == ShortcutScope.Global || own.Contains(chained),
+                        $"页 {page.Page} 的作用域 {scope} 的解析链落到 {chained}——它不属于本页（页面之间不允许互相继承）");
+        }
+    }
+
+    [Fact]
+    public void 总表_只有浏览页注册全局键_其它页面不继承全局()
+    {
+        var globalOwners = ShortcutCatalog.Pages
+            .Where(p => p.Specs.Any(s => s.Scope == ShortcutScope.Global))
+            .Select(p => p.Page)
+            .ToList();
+        Assert.Equal(new[] { ShortcutPage.Browser }, globalOwners);
+
+        // 其它页面的作用域链不含 Global —— Ctrl+E/F 在那些页面上不响应
+        foreach (var page in ShortcutCatalog.Pages.Where(p => p.Page != ShortcutPage.Browser))
+            Assert.DoesNotContain(ShortcutScope.Global, ShortcutScopes.Chain(page.RootScope));
+    }
+
+    [Fact]
+    public void 总表_每页可装配_同页无重复键_控件锚定声明合法()
+    {
+        foreach (var page in ShortcutCatalog.Pages)
+        {
+            var registry = ShortcutCatalog.Build(page.Page, StubShortcutCommands.Instance);   // 同组重复键在此抛
+            Assert.Equal(page.Specs.Count(s => s.ControlName == null), registry.Bindings.Count);
+
+            // 控件锚定绑定：必须带控件名、作用域属于本页、且不进页面级注册表
+            foreach (var spec in page.Specs.Where(s => s.ControlName != null))
+            {
+                Assert.False(string.IsNullOrWhiteSpace(spec.ControlName));
+                Assert.Equal(page.RootScope, spec.Scope);
+                Assert.DoesNotContain(registry.Bindings, b => b.Description == spec.Description && b.Key == spec.Key);
+            }
+
+            // 每个动作 id 都能被映射解析（键位表与页面接线不一致会在真实装配时抛；此处保证 id 本身可用）
+            foreach (var spec in page.Specs)
+                Assert.NotNull(StubShortcutCommands.Instance.Command(spec.ActionId));
+        }
+    }
+
+    [Fact]
+    public void 总表_每个动作id都带页码前缀_且描述非空()
+    {
+        foreach (var page in ShortcutCatalog.Pages)
+            foreach (var spec in page.Specs)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(spec.ActionId));
+                Assert.False(string.IsNullOrWhiteSpace(spec.Description));
+                Assert.StartsWith(page.Page.ToString().ToLowerInvariant().Substring(0, 4), spec.ActionId);
+            }
+    }
+
+    [Fact]
+    public void 总表_清单导出_含各页标题与键位()
+    {
+        var text = ShortcutCatalog.Describe();
+        foreach (var page in ShortcutCatalog.Pages)
+        {
+            Assert.Contains(page.Title, text);
+            foreach (var spec in page.Specs)
+                Assert.Contains(ShortcutBinding.FormatGesture(spec.Key, spec.Modifiers), text);
+        }
+    }
+
     // —— 作用域仲裁（子系统纯逻辑，不需要 VM）——
 
     [Fact]
@@ -71,33 +151,25 @@ public class ShortcutTests
         Assert.Equal("Del", new ShortcutBinding { Key = Key.Delete, Command = new ProbeCommand() }.GestureText);
     }
 
-    // —— 键位表完整性（不复制清单：断言"每条命令都被真实声明过"）——
+    // —— 键位表完整性（不复制清单：断言结构与"同键两栏各有一条"）——
 
     [Fact]
-    public async System.Threading.Tasks.Task 浏览页键位表_可装配且覆盖两栏与全局()
+    public void 浏览页键位表_可装配且覆盖两栏与全局()
     {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var vm = new BrowserViewModel(client);
-            await vm.LoadAsync(null);
-            var registry = BrowserShortcuts.CreateRegistry(vm);   // 重复键会在此抛（键位表自身的冲突检测）
+        var registry = ShortcutCatalog.Build(ShortcutPage.Browser, StubShortcutCommands.Instance);
 
-            Assert.NotEmpty(registry.Bindings);
-            foreach (var scope in new[] { ShortcutScope.Global, ShortcutScope.Browser, ShortcutScope.BrowserMain, ShortcutScope.BrowserTree })
-                Assert.Contains(registry.Bindings, b => b.Scope == scope);
+        Assert.NotEmpty(registry.Bindings);
+        foreach (var scope in new[] { ShortcutScope.Global, ShortcutScope.Browser, ShortcutScope.BrowserMain, ShortcutScope.BrowserTree })
+            Assert.Contains(registry.Bindings, b => b.Scope == scope);
 
-            // 两栏同键（↑）必须各自有声明——这是"同一键两栏语义不同"的结构前提
-            Assert.Contains(registry.Bindings, b => b.Scope == ShortcutScope.BrowserMain && b.Key == Key.Up);
-            Assert.Contains(registry.Bindings, b => b.Scope == ShortcutScope.BrowserTree && b.Key == Key.Up);
-            Assert.NotSame(
-                registry.Resolve(ShortcutScope.BrowserMain, Key.Up, ModifierKeys.None)!.Command,
-                registry.Resolve(ShortcutScope.BrowserTree, Key.Up, ModifierKeys.None)!.Command);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
+        // 两栏同键（↑）必须各自有声明——这是"同一键两栏语义不同"的结构前提
+        var main = registry.Resolve(ShortcutScope.BrowserMain, Key.Up, ModifierKeys.None);
+        var tree = registry.Resolve(ShortcutScope.BrowserTree, Key.Up, ModifierKeys.None);
+        Assert.NotNull(main);
+        Assert.NotNull(tree);
+        Assert.NotSame(main!.Command, tree!.Command);
+        Assert.Equal(ShortcutAction.BrowserMoveUp, ((StubShortcutCommands.ProbeCommand)main.Command).ActionId);
+        Assert.Equal(ShortcutAction.BrowserTreeUp, ((StubShortcutCommands.ProbeCommand)tree.Command).ActionId);
     }
 
     // —— 键盘导航行为 ——

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
@@ -43,6 +44,7 @@ namespace LinkPocket.ViewModels
             _ports = ports;
             _resolveFolderPath = resolveFolderPath;
             ResolveFolderPath = resolveFolderPath;
+            GoBackCommand = new RelayCommand(GoBack, () => ResultViewModel != null);
             InitializeCards();
         }
 
@@ -61,7 +63,7 @@ namespace LinkPocket.ViewModels
         public SmartListResultViewModel? ResultViewModel
         {
             get => _resultViewModel;
-            set { _resultViewModel = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResult)); }
+            set { _resultViewModel = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResult)); CommandManager.InvalidateRequerySuggested(); }
         }
 
         public bool ShowResult => _resultViewModel != null;
@@ -123,6 +125,9 @@ namespace LinkPocket.ViewModels
             _openGeneration++;   // 使在途加载结果失效
             ResultViewModel = null;
         }
+
+        /// <summary>Esc 返回卡片列表（键位在 ShortcutCatalog；返回按钮与本命令同源）。</summary>
+        public ICommand GoBackCommand { get; }
 
         /// <summary>
         /// 事件防抖刷新入口：跨页数据变更后，让当前打开的结果列表重拉——

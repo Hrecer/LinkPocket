@@ -53,7 +53,8 @@ namespace LinkPocket.Views
                 WireTrashTable();
 
                 _shortcutHost?.Detach();
-                _shortcutHost = new ShortcutHost(TrashShortcuts.CreateRegistry(ViewModel), () => ActiveScope);
+                _shortcutHost = new ShortcutHost(
+                    ShortcutCatalog.Build(ShortcutPage.Trash, BuildShortcutCommands(ViewModel)), () => ActiveScope);
                 _shortcutHost.Attach(this);
             };
 
@@ -92,6 +93,30 @@ namespace LinkPocket.Views
         private ShortcutScope ActiveScope => ViewModel?.ActivePane == TrashPane.Tree
             ? ShortcutScope.TrashTree
             : ShortcutScope.TrashMain;
+
+        /// <summary>
+        /// 本页「动作 id → 命令」映射（**键位不在本文件**：全站键位只声明在 <see cref="ShortcutCatalog"/>）。
+        /// 阉割项（用户定稿）：无 Ctrl+Z/Y、无 Ctrl+X/C/V、无 F2/Ctrl+Shift+N、**不注册任何全局键**。
+        /// </summary>
+        private static ShortcutCommandMap BuildShortcutCommands(TrashViewModel vm) => new ShortcutCommandMap()
+            .Add(ShortcutAction.TrashGoBack, vm.GoBackCommand)
+            .Add(ShortcutAction.TrashGoUp, vm.GoUpCommand)
+            .Add(ShortcutAction.TrashGoForward, vm.GoForwardCommand)
+            .Add(ShortcutAction.TrashRefresh, vm.RefreshCommand)
+            .Add(ShortcutAction.TrashSelectAll, vm.SelectAllCommand)
+            .Add(ShortcutAction.TrashOpen, vm.OpenSelectionCommand)
+            .Add(ShortcutAction.TrashPurge, vm.PurgeSelectionCommand)
+            .Add(ShortcutAction.TrashRestoreOrigin, vm.RestoreSelectionCommand)
+            .Add(ShortcutAction.TrashRestoreRoot, vm.RestoreSelectionToRootCommand)
+            .Add(ShortcutAction.TrashEscape, vm.EscapeCommand)
+            .Add(ShortcutAction.TrashContextMenu, vm.ShowContextMenuCommand)
+            .Add(ShortcutAction.TrashMoveUp, vm.MoveSelectionCommand)
+            .Add(ShortcutAction.TrashMoveDown, vm.MoveSelectionCommand)
+            .Add(ShortcutAction.TrashSelectLast, vm.SelectLastCommand)
+            .Add(ShortcutAction.TrashTreeUp, vm.MoveTreeSelectionCommand)
+            .Add(ShortcutAction.TrashTreeDown, vm.MoveTreeSelectionCommand)
+            .Add(ShortcutAction.TrashTreeCollapse, vm.ToggleTreeExpandCommand)
+            .Add(ShortcutAction.TrashTreeExpand, vm.ToggleTreeExpandCommand);
 
         // ================= 焦点不变式（与浏览页同口径） =================
 

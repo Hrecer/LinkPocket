@@ -760,7 +760,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing && !IsRenaming);
         // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
         // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
-        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming);
+        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming && !IsEditorPageOpen);
         // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，XAML 按区域挂载）：
         // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
         ClearMainPaneSelectionCommand = new RelayCommand(ClearMainPaneSelection);
@@ -1494,6 +1494,15 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     private void HandleEscape()
     {
+        // 分层（Windows 口径 + 用户令 2026-09-19 加一层）：
+        // ① 详情页打开 → 退出详情页（与左上返回钮**同一条路径**：还原选中 + 原地刷新）；
+        // ② 有剪切态 → 取消剪切；③ 否则清空选中。
+        // ⚠️ 编辑器页打开时整条命令不分发（CanExecute 挡掉）——用户令：编辑页不加 Esc 快捷键，防误触。
+        if (IsDetailPageOpen && DetailPage?.BackCommand is { } back && back.CanExecute(null))
+        {
+            back.Execute(null);
+            return;
+        }
         if (Clipboard.BrowserPayload is { IsCut: true, IsEmpty: false })
         {
             CancelCut();

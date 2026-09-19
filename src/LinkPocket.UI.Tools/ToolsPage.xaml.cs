@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using LinkPocket.Contracts;
+using LinkPocket.Input;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
@@ -96,7 +97,17 @@ namespace LinkPocket.Views
             {
                 if ((bool)e.NewValue) ResetIdJumpForm();
             };
+
+            // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— **ID 输入框内 Enter 执行跳转**，属控件锚定：
+            // 只在 ID 输入框获得焦点时生效）。命令 = 本页跳转流程，与「跳转」按钮同一条路径。
+            var commands = new ShortcutCommandMap().Add(ShortcutAction.ToolsIdJump,
+                new RelayCommand(() => _ = JumpFromInputAsync()));
+            _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Tools, commands), () => ShortcutScope.Tools);
+            _shortcutHost.Attach(this);
+            _shortcutHost.AttachControls(ShortcutPage.Tools, this, commands);
         }
+
+        private ShortcutHost? _shortcutHost;
 
         // ============================================================
         // —— 生命周期与工具切换 ——
@@ -381,11 +392,8 @@ namespace LinkPocket.Views
                     SortKey = r => (IComparable)((LinkDto)r).VisitCount,
                     CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
                 },
-                new DataTableColumn
-                {
-                    Field = "action", Label = "操作", Width = 56,
-                    CellFactory = BuildJumpCell
-                },
+                // 重复组明细**没有**「操作」列 / 行内跳转按钮（用户令 2026-09-19）：
+                // 对比页是"看差异"的只读视图，跳转能力保留在定位组件（IContentLocator）与 ID 跳转工具里。
             };
         }
 
@@ -485,23 +493,6 @@ namespace LinkPocket.Views
                 UpdateDeleteState();
             };
 
-            return button;
-        }
-
-        /// <summary>「跳转」单元：走标准组件（进入目标目录并选中该行），不直连界面方法。</summary>
-        private FrameworkElement BuildJumpCell(object data)
-        {
-            var link = (LinkDto)data;
-            var button = new Button
-            {
-                Width = 30, Height = 26,
-                Cursor = Cursors.Hand,
-                FocusVisualStyle = null,
-                Style = (Style)FindResource("RowIconButton"),
-                ToolTip = "跳转：进入所在目录并选中它",
-                Content = new M3Icon { Kind = "arrow-right", Width = 15, Height = 15 }
-            };
-            button.Click += async (_, _) => await JumpToIdAsync(link.LinkId);
             return button;
         }
 

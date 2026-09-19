@@ -3,10 +3,14 @@ using Xunit;
 namespace LinkPocket.Architecture.Tests;
 
 /// <summary>
-/// 快捷键架构红线（2026-09-19 用户定稿，D9）：
-/// **键位只能声明在 LinkPocket.Input 子系统（含浏览页键位表 BrowserShortcuts）**——
-/// 全仓其余位置不得出现 <c>&lt;KeyBinding&gt;</c> / <c>KeyDown</c> 处理，杜绝"快捷键散落各页、
-/// 键位表与实际行为不一致、同一键在不同页语义打架"的历史问题（本轮已删除 5 处散落实现）。
+/// 快捷键架构红线（2026-09-19 用户定稿）：
+/// **键位只声明在 <c>LinkPocket.UIKit/Input/ShortcutCatalog.cs</c>（全站唯一键位总表）**——
+/// 全仓其余位置不得出现 <c>&lt;KeyBinding&gt;</c> / <c>KeyDown</c> 处理、也不得自行构造绑定
+/// （<c>new ShortcutBinding</c> / <c>new ShortcutSpec</c>），杜绝"快捷键散落各页、
+/// 键位表与实际行为不一致、同一键在不同页语义打架"的历史问题。
+///
+/// <para>**页面只做「动作 id → 命令」映射**（<c>IShortcutCommands</c>），键位一律来自总表；
+/// 页面之间不共享作用域、不互相继承（由 App.Tests 的总表不变量测试与 <c>ShortcutScopes.Chain</c> 保证）。</para>
 ///
 /// <para>**控件级白名单**（例外必须在此登记并写明理由）：输入控件自身的编辑键——
 /// 它们的语义属于"文本框编辑"而不是"页面命令"，且只在控件获得焦点时生效，天然不参与页面级仲裁。</para>
@@ -106,7 +110,7 @@ public class ShortcutRulesTests
         }
 
         Assert.True(offenders.Count == 0,
-            "键位声明（<KeyBinding>）散落在快捷键子系统之外，必须迁入 BrowserShortcuts 键位表："
+            "键位声明（<KeyBinding>）散落在快捷键子系统之外，必须迁入 ShortcutCatalog 键位总表："
             + string.Join("、", offenders));
     }
 
@@ -129,7 +133,7 @@ public class ShortcutRulesTests
         }
 
         Assert.True(offenders.Count == 0,
-            $"键盘事件处理（{handler}）散落在快捷键子系统之外，必须迁入 BrowserShortcuts 键位表："
+            $"键盘事件处理（{handler}）散落在快捷键子系统之外，必须迁入 ShortcutCatalog 键位总表："
             + string.Join("、", offenders));
     }
 
@@ -144,13 +148,40 @@ public class ShortcutRulesTests
         }
     }
 
-    /// <summary>键位唯一事实源必须存在：浏览页键位表（键位声明集中处，防止被整体删除后红线形同虚设）。</summary>
+    /// <summary>
+    /// 键位唯一事实源必须存在：全站键位总表 <c>LinkPocket.UIKit/Input/ShortcutCatalog.cs</c>
+    /// （防止被整体删除后红线形同虚设），且必须声明全部页面的键位组。
+    /// </summary>
     [Fact]
-    public void 浏览页键位表_存在且集中声明键位()
+    public void 键位总表_存在且声明全部页面()
     {
-        var path = Path.Combine(RepoRoot, "src", "LinkPocket.UI.Browser", "BrowserShortcuts.cs");
-        Assert.True(File.Exists(path), "浏览页键位表 BrowserShortcuts.cs 不存在（键位唯一事实源缺失）");
+        var path = Path.Combine(RepoRoot, "src", "LinkPocket.UIKit", "Input", "ShortcutCatalog.cs");
+        Assert.True(File.Exists(path), "键位总表 ShortcutCatalog.cs 不存在（键位唯一事实源缺失）");
         var text = File.ReadAllText(path);
-        Assert.Contains("ShortcutBinding", text, StringComparison.Ordinal);
+        Assert.Contains("ShortcutSpec", text, StringComparison.Ordinal);
+        foreach (var page in new[] { "Browser", "Trash", "Search", "SmartLists", "Tools", "Settings" })
+            Assert.Contains($"ShortcutPage.{page}", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// **绑定只能由总表构造**：全仓（除 Input/ 子系统）不得出现 <c>new ShortcutBinding</c> /
+    /// <c>new ShortcutSpec</c> —— 页面只提供「动作 id → 命令」映射，键位一律来自总表。
+    /// </summary>
+    [Fact]
+    public void 绑定构造_只允许出现在Input子系统()
+    {
+        var offenders = new List<string>();
+        foreach (var (relative, full) in SourceFiles())
+        {
+            if (IsWhitelisted(relative)) continue;
+            var text = File.ReadAllText(full);
+            if (text.Contains("new ShortcutBinding", StringComparison.Ordinal)
+                || text.Contains("new ShortcutSpec", StringComparison.Ordinal))
+                offenders.Add(relative);
+        }
+
+        Assert.True(offenders.Count == 0,
+            "键位绑定在总表之外被构造，必须迁入 ShortcutCatalog（页面只做动作 id → 命令 映射）："
+            + string.Join("、", offenders));
     }
 }

@@ -230,3 +230,21 @@ public class BookmarkFileInspectionDto
     [JsonPropertyName("file_bytes")] public long FileBytes { get; set; }
     [JsonPropertyName("total_items")] public int TotalItems { get; set; }
 }
+
+/// <summary>
+/// 定位解析结果（<c>locate.resolve</c>）：一个 ID 在目录里的位置——与界面无关的纯坐标。
+/// 界面的「跳转」= 切到浏览页 + 进入 <see cref="ContainerFolderId"/> + 选中 <see cref="Id"/>。
+/// </summary>
+public class LocateResolveDto
+{
+    /// <summary>目标类型：<c>link</c> / <c>folder</c>。</summary>
+    [JsonPropertyName("kind")] public string Kind { get; set; } = string.Empty;
+    [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
+    [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+    /// <summary>**容器目录**：进哪个目录才能看到目标那一行；null = 根「全部书签」（零哨兵）。</summary>
+    [JsonPropertyName("container_folder_id")] public string? ContainerFolderId { get; set; }
+    /// <summary>容器的显示路径（「全部书签 / A / B」）。</summary>
+    [JsonPropertyName("container_path")] public string ContainerPath { get; set; } = string.Empty;
+    /// <summary>目标自身的显示路径（容器路径 + 「 / 」 + 名称）。</summary>
+    [JsonPropertyName("path")] public string Path { get; set; } = string.Empty;
+}

@@ -86,10 +86,11 @@ public interface IContentLocator
 
 /// <summary>
 /// 内容定位器（前端服务层组件，独立于任何界面）：
-/// 依赖两项抽象——引擎客户端门面 <see cref="EngineClient"/> 与界面端口 <see cref="IBrowserLocateHost"/>。
-/// 界面只负责"执行"，算法（目标类型判别 / 容器目录推导 / 结果建模）都在这里。
-/// 「ID 不存在」由引擎以 <c>LP.STATE.001</c> 表达（零兼容：查询就报错，不返回 null），
+/// **解析在内核**（引擎查询 <c>locate.resolve</c>：类型判别 / 容器目录推导 / 路径都在引擎里，一切读取皆查询），
+/// 本组件只把解析结果翻译成界面端口上的三个原语——切到浏览页、进入容器目录、选中目标行；
+/// 「ID 不存在」由引擎以 <c>ENTITY_NOT_FOUND</c> 表达（零兼容：查询就报错，不返回 null），
 /// 本组件把它映射为 <see cref="LocateStatus.NotFound"/> 反馈——不发散业务码。
+/// 因此任何消费者（界面 / 无头宿主 / 未来的 AI）都能用同一套语义定位。
 /// </summary>
 public sealed class ContentLocator : IContentLocator
 {
@@ -107,84 +108,50 @@ public sealed class ContentLocator : IContentLocator
         if (string.IsNullOrWhiteSpace(id))
             return LocateResult.Empty();
 
-        var targetId = id.Trim();
-
-        // ID 在链接与文件夹之间唯一：先按提示类型查，未命中再用另一类型兜底（最多两次单条查询）。
-        var order = kindHint == ContentKind.Folder
-            ? new[] { ContentKind.Folder, ContentKind.Link }
-            : new[] { ContentKind.Link, ContentKind.Folder };
-
-        LocateResult? lastMiss = null;
-        foreach (var kind in order)
+        try
         {
-            var result = kind == ContentKind.Link
-                ? await LocateLinkAsync(targetId)
-                : await LocateFolderAsync(targetId);
+            var resolved = await _client.LocateResolveAsync(id.Trim());
+            var kind = resolved.Kind == "folder" ? ContentKind.Folder : ContentKind.Link;
 
-            if (result.Status != LocateStatus.NotFound) return result;
-            lastMiss = result;
+            var host = _hostProvider();
+            if (host == null)
+                return new LocateResult(LocateStatus.NoHost, kind, resolved.ContainerFolderId, resolved.Id, "界面宿主不可用");
+
+            host.ShowBrowser();
+
+            // 跳转 = 进入容器目录（null = 根「全部书签」）+ 选中目标行本身
+            var selected = await host.EnterAndSelectAsync(resolved.ContainerFolderId, resolved.Id);
+            return selected
+                ? new LocateResult(LocateStatus.Success, kind, resolved.ContainerFolderId, resolved.Id, null)
+                : new LocateResult(LocateStatus.RowMissing, kind, resolved.ContainerFolderId, resolved.Id, "目标行未出现在所在目录");
         }
-
-        return lastMiss ?? LocateResult.Missing();
+        catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
+        {
+            return kindHint switch
+            {
+                ContentKind.Folder => LocateResult.Missing(ContentKind.Folder),
+                ContentKind.Link => LocateResult.Missing(ContentKind.Link),
+                _ => new LocateResult(LocateStatus.NotFound, null, null, null, "未找到匹配的 ID"),
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("定位失败", ex);
+            return new LocateResult(LocateStatus.Failed, null, null, id, ex.Message);
+        }
     }
 
+    /// <summary>按链接 ID 定位（解析为该类型才成功；指向文件夹时按"未找到该 ID"如实反馈）。</summary>
     public async Task<LocateResult> LocateLinkAsync(string linkId)
     {
-        if (string.IsNullOrWhiteSpace(linkId)) return LocateResult.Empty();
-
-        try
-        {
-            var link = await _client.LinkGetAsync(linkId.Trim());
-            var host = _hostProvider();
-            if (host == null)
-                return new LocateResult(LocateStatus.NoHost, ContentKind.Link, link.ListId, link.LinkId, "界面宿主不可用");
-
-            host.ShowBrowser();
-
-            // 链接：容器目录 = 它所属的文件夹（null = 根「全部书签」），选中链接行本身
-            var selected = await host.EnterAndSelectAsync(link.ListId, link.LinkId);
-            return selected
-                ? new LocateResult(LocateStatus.Success, ContentKind.Link, link.ListId, link.LinkId, null)
-                : new LocateResult(LocateStatus.RowMissing, ContentKind.Link, link.ListId, link.LinkId, "目标行未出现在所在目录");
-        }
-        catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
-        {
-            return LocateResult.Missing(ContentKind.Link);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("定位链接失败", ex);
-            return new LocateResult(LocateStatus.Failed, ContentKind.Link, null, linkId, ex.Message);
-        }
+        var result = await LocateAsync(linkId, ContentKind.Link);
+        return result.IsSuccess && result.Kind != ContentKind.Link ? LocateResult.Missing(ContentKind.Link) : result;
     }
 
+    /// <summary>按文件夹 ID 定位（解析为该类型才成功；指向链接时按"未找到该 ID"如实反馈）。</summary>
     public async Task<LocateResult> LocateFolderAsync(string folderId)
     {
-        if (string.IsNullOrWhiteSpace(folderId)) return LocateResult.Empty();
-
-        try
-        {
-            var folder = await _client.FolderGetAsync(folderId.Trim());
-            var host = _hostProvider();
-            if (host == null)
-                return new LocateResult(LocateStatus.NoHost, ContentKind.Folder, folder.ParentId, folder.FolderId, "界面宿主不可用");
-
-            host.ShowBrowser();
-
-            // 文件夹：容器目录 = 它的父目录（null = 根），选中文件夹行本身
-            var selected = await host.EnterAndSelectAsync(folder.ParentId, folder.FolderId);
-            return selected
-                ? new LocateResult(LocateStatus.Success, ContentKind.Folder, folder.ParentId, folder.FolderId, null)
-                : new LocateResult(LocateStatus.RowMissing, ContentKind.Folder, folder.ParentId, folder.FolderId, "目标行未出现在父目录");
-        }
-        catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
-        {
-            return LocateResult.Missing(ContentKind.Folder);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("定位文件夹失败", ex);
-            return new LocateResult(LocateStatus.Failed, ContentKind.Folder, null, folderId, ex.Message);
-        }
+        var result = await LocateAsync(folderId, ContentKind.Folder);
+        return result.IsSuccess && result.Kind != ContentKind.Folder ? LocateResult.Missing(ContentKind.Folder) : result;
     }
 }

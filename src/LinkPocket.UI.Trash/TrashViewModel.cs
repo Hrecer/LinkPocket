@@ -93,6 +93,8 @@ public partial class TrashViewModel : INotifyPropertyChanged
         CopyLinkAddressCommand = new RelayCommand<TrashRowViewModel?>(CopyLinkAddress, row => row is { IsFolder: false });
         SelectAllCommand = new RelayCommand(SelectAllRows);
         ClearSelectionCommand = new RelayCommand(ClearSelection);
+        // Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。
+        EscapeCommand = new RelayCommand(Escape);
         // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，按区域挂载；命令里带栏归属语义）：
         // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
         ClearMainPaneSelectionCommand = new RelayCommand(() => { ActivatePane(TrashPane.Main); ClearSelection(); });
@@ -273,6 +275,17 @@ public partial class TrashViewModel : INotifyPropertyChanged
     }
 
     public void ClearSelection() => SetSelection(Array.Empty<string>());
+
+    /// <summary>Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。</summary>
+    private void Escape()
+    {
+        if (IsDetailOverlayOpen)
+        {
+            CloseDetailOverlay();
+            return;
+        }
+        ClearSelection();
+    }
 
     /// <summary>行点击选择（Ctrl 翻转 / Shift 区间；无修饰键 = 单选）。</summary>
     public void SelectRowWithModifiers(TrashRowViewModel row, ModifierKeys modifiers)
@@ -1059,6 +1072,8 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ICommand CopyLinkAddressCommand { get; }
     public ICommand SelectAllCommand { get; }
     public ICommand ClearSelectionCommand { get; }
+    /// <summary>Esc：覆盖层打开 → 退出覆盖层；否则取消选中（键位在 ShortcutCatalog）。</summary>
+    public ICommand EscapeCommand { get; }
     public ICommand MoveSelectionCommand { get; }
     public ICommand SelectLastCommand { get; }
     public ICommand MoveTreeSelectionCommand { get; }

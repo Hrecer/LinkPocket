@@ -18,12 +18,13 @@ public class LayerRulesTests
     private const string Infrastructure = "LinkPocket.Infrastructure";
     private const string Engine = "LinkPocket.Engine";
 
-    /// <summary>九个业务模块（方案第五章）。</summary>
+    /// <summary>十个业务模块（方案第五章 + 定位模块）。</summary>
     private static readonly string[] BusinessModules =
     {
         "LinkPocket.Modules.Folders", "LinkPocket.Modules.Links", "LinkPocket.Modules.Trash",
         "LinkPocket.Modules.Search", "LinkPocket.Modules.Bookmarks", "LinkPocket.Modules.Backup",
         "LinkPocket.Modules.Dedup", "LinkPocket.Modules.Favicon", "LinkPocket.Modules.Maintenance",
+        "LinkPocket.Modules.Locate",
     };
 
     private static string RepoRoot

@@ -24,19 +24,19 @@ namespace LinkPocket.Input
         /// <summary>描述文案（冲突报错与提示文案生成共用，如右键菜单里的「(Ctrl+X)」）。</summary>
         public string Description { get; init; } = string.Empty;
 
-        /// <summary>键位显示文本（如 "Ctrl+Shift+N"、"Alt+←"）——提示文案的唯一生成处。</summary>
-        public string GestureText
+        /// <summary>键位显示文本（如 "Ctrl+Shift+N"、"Alt+←"）——提示文案与键位清单的唯一生成处。</summary>
+        public string GestureText => FormatGesture(Key, Modifiers);
+
+        /// <summary>键位显示文本（总表/清单导出与绑定共用同一份格式化）。</summary>
+        public static string FormatGesture(Key key, ModifierKeys modifiers)
         {
-            get
-            {
-                var parts = new List<string>(4);
-                if (Modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
-                if (Modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
-                if (Modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
-                if (Modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-                parts.Add(KeyText(Key));
-                return string.Join("+", parts);
-            }
+            var parts = new List<string>(4);
+            if (modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
+            if (modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
+            if (modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
+            if (modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
+            parts.Add(KeyText(key));
+            return string.Join("+", parts);
         }
 
         /// <summary>可打印键名（方向键/常见功能键用符号与缩写，其余取枚举名）。</summary>

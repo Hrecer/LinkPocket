@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -33,13 +34,45 @@ namespace LinkPocket.Input
             host.PreviewKeyDown += OnPreviewKeyDown;
         }
 
-        /// <summary>解绑（VM 换绑 / 页面卸载时调用）。</summary>
+        /// <summary>
+        /// 挂上该页在**总表**里声明的控件锚定绑定（输入框内的 Enter 这类"输入框内按键"）：
+        /// 只在该控件获得焦点时生效，且不参与页面级分发（编辑语义优先，互不打架）。
+        /// 控件名在宿主的命名域里找不到即抛 —— 键位表与页面接线不一致属于装配缺陷，启动就暴露。
+        /// </summary>
+        public void AttachControls(ShortcutPage page, FrameworkElement nameScopeOwner, IShortcutCommands commands)
+        {
+            _controlHandlers.Clear();
+            foreach (var (controlName, binding) in ShortcutCatalog.ControlBindings(page, commands))
+            {
+                if (nameScopeOwner.FindName(controlName) is not FrameworkElement control)
+                    throw new InvalidOperationException(
+                        $"快捷键控件锚点不存在：页 {page} 的键位绑定了控件「{controlName}」，但页面命名域里找不到它。");
+                KeyEventHandler handler = (_, e) => OnControlKeyDown(control, binding, e);
+                control.PreviewKeyDown += handler;
+                _controlHandlers.Add((control, handler));
+            }
+        }
+
+        private void OnControlKeyDown(FrameworkElement control, ShortcutBinding binding, KeyEventArgs e)
+        {
+            if (_host is not { IsVisible: true }) return;   // 宿主页不可见（切页）时一律不分发
+            if (e.Key != binding.Key || Keyboard.Modifiers != binding.Modifiers) return;
+            if (binding.Command.CanExecute(binding.CommandParameter))
+                binding.Command.Execute(binding.CommandParameter);
+            e.Handled = true;
+        }
+
+        /// <summary>解绑（VM 换绑 / 页面卸载时调用；含控件锚定绑定的解绑）。</summary>
         public void Detach()
         {
+            foreach (var (control, handler) in _controlHandlers) control.PreviewKeyDown -= handler;
+            _controlHandlers.Clear();
             if (_host == null) return;
             _host.PreviewKeyDown -= OnPreviewKeyDown;
             _host = null;
         }
+
+        private readonly List<(FrameworkElement Control, KeyEventHandler Handler)> _controlHandlers = new();
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LinkPocket.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -34,6 +35,16 @@ namespace LinkPocket.Views
             Focusable = true;
             DataContextChanged += (_, __) => WireOnce();
             Loaded += (_, __) => WireOnce();
+            // 切到本页 → 焦点收进页内（快捷键按焦点路由；焦点掉出页面则 Esc 静默失效）
+            IsVisibleChanged += (_, _) => { if (IsVisible) FocusPage(); };
+        }
+
+        private ShortcutHost? _shortcutHost;
+
+        /// <summary>把键盘焦点收进页面根（Focusable=True；与浏览页/回收站同一套焦点不变式）。</summary>
+        private void FocusPage()
+        {
+            if (IsLoaded && IsVisible) Keyboard.Focus(this);
         }
 
         /// <summary>装配订阅（DataContext 就绪后执行一次；失败不置位，下个事件重试）。</summary>
@@ -50,6 +61,15 @@ namespace LinkPocket.Views
             };
             // 若装配时已处于结果页（切页往返/热重载），恢复正确状态
             ApplyShowResult(slVm.ShowResult);
+
+            // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— 结果页 Esc 返回卡片列表）；
+            // 本文件不出现任何键位声明，只做「动作 id → 命令」接线。
+            _shortcutHost?.Detach();
+            _shortcutHost = new ShortcutHost(
+                ShortcutCatalog.Build(ShortcutPage.SmartLists,
+                    new ShortcutCommandMap().Add(ShortcutAction.SmartListsBack, slVm.GoBackCommand)),
+                () => ShortcutScope.SmartLists);
+            _shortcutHost.Attach(this);
         }
 
         // ============================================================
@@ -98,8 +118,12 @@ namespace LinkPocket.Views
 
         private void BackButton_Click(object sender, RoutedEventArgs e)
         {
+            // 与 Esc 同一条命令（键位在 ShortcutCatalog；按钮与快捷键不各写一份）
             if (DataContext is SmartListViewModel slVm)
-                slVm.GoBack();
+            {
+                slVm.GoBackCommand.Execute(null);
+                FocusPage();
+            }
         }
 
         // ============================================================

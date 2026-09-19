@@ -20,6 +20,7 @@
     <ProjectReference Include="..\LinkPocket.Modules.Backup\LinkPocket.Modules.Backup.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Dedup\LinkPocket.Modules.Dedup.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Favicon\LinkPocket.Modules.Favicon.csproj" />
+    <ProjectReference Include="..\LinkPocket.Modules.Locate\LinkPocket.Modules.Locate.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Maintenance\LinkPocket.Modules.Maintenance.csproj" />
   </ItemGroup>
 

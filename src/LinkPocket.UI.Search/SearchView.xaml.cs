@@ -8,6 +8,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LinkPocket.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -23,6 +24,7 @@ namespace LinkPocket.Views;
 public partial class SearchView : UserControl
 {
     private SearchViewModel? _vm;
+    private ShortcutHost? _shortcutHost;
 
     public SearchView()
     {
@@ -40,6 +42,14 @@ public partial class SearchView : UserControl
                 // 迟挂的 DataContext：把 VM 当前的空态/结果同步到表上
                 ApplyEmptyState();
                 ApplyResults();
+
+                // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— **搜索框内 Enter 执行搜索**，属控件锚定：
+                // 输入框里的编辑键不受影响，页面级没有其它快捷键）。
+                _shortcutHost?.Detach();
+                var commands = new ShortcutCommandMap().Add(ShortcutAction.SearchRun, _vm.SearchCommand);
+                _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Search, commands), () => ShortcutScope.Search);
+                _shortcutHost.Attach(this);
+                _shortcutHost.AttachControls(ShortcutPage.Search, this, commands);
             }
         };
     }

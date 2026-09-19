@@ -615,8 +615,8 @@ public class TrashViewModelTests
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            var vm = NewVm(client);
-            var registry = TrashShortcuts.CreateRegistry(vm);
+            // 键位来自全站总表（ShortcutCatalog）：本页不再自带键位表
+            var registry = ShortcutCatalog.Build(ShortcutPage.Trash, StubShortcutCommands.Instance);
 
             // 用户定稿：阉割 Ctrl+Z/Y（撤销/重做）与 Ctrl+X/C/V（剪贴板）、F2（重命名）
             Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.Z, ModifierKeys.Control));
@@ -640,6 +640,38 @@ public class TrashViewModelTests
             // 还原键位（D1 拍板）：Ctrl+R 到原位置 / Ctrl+Shift+R 到根目录
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control));
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control | ModifierKeys.Shift));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 详情覆盖层_Esc退出覆盖层_无覆盖层时清空选中()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://esc-overlay.example", title: "Esc 覆盖层",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.SetSelection(new[] { link.LinkId });
+
+            // 无覆盖层：Esc = 清空选中
+            vm.EscapeCommand.Execute(null);
+            Assert.False(vm.HasSelection);
+
+            // 覆盖层打开：Esc = 退出覆盖层（选中保留，符合"查看面不反向作用"）
+            vm.SetSelection(new[] { link.LinkId });
+            vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
+            Assert.True(vm.IsDetailOverlayOpen);
+            vm.EscapeCommand.Execute(null);
+            Assert.False(vm.IsDetailOverlayOpen);
+            Assert.True(vm.HasSelection);
         }
         finally
         {

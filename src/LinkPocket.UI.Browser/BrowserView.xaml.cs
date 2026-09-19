@@ -29,6 +29,39 @@ public partial class BrowserView : UserControl
         ? ShortcutScope.BrowserTree
         : ShortcutScope.BrowserMain;
 
+    /// <summary>
+    /// 本页「动作 id → 命令」映射（**键位不在本文件**：全站键位只声明在 <see cref="ShortcutCatalog"/>；
+    /// 本页只负责把总表里的动作接到自己的命令上）。漏接线会在装配时抛（启动即暴露）。
+    /// </summary>
+    private static ShortcutCommandMap BuildShortcutCommands(BrowserViewModel vm) => new ShortcutCommandMap()
+        .Add(ShortcutAction.BrowserCut, vm.CutCommand)
+        .Add(ShortcutAction.BrowserCopy, vm.CopyCommand)
+        .Add(ShortcutAction.BrowserPaste, vm.PasteCommand)
+        .Add(ShortcutAction.BrowserSelectAll, vm.SelectAllCommand)
+        .Add(ShortcutAction.BrowserDelete, vm.DeleteSelectionCommand)
+        .Add(ShortcutAction.BrowserRename, vm.RenameSelectionCommand)
+        .Add(ShortcutAction.BrowserOpen, vm.OpenSelectionCommand)
+        .Add(ShortcutAction.BrowserGoBack, vm.GoBackCommand)
+        .Add(ShortcutAction.BrowserGoUp, vm.GoUpCommand)
+        .Add(ShortcutAction.BrowserGoForward, vm.GoForwardCommand)
+        .Add(ShortcutAction.BrowserRefresh, vm.RefreshCommand)
+        .Add(ShortcutAction.BrowserFocusPath, vm.EnterPathEditCommand)
+        .Add(ShortcutAction.BrowserExpandTreeToCurrent, vm.ExpandTreeToCurrentCommand)
+        .Add(ShortcutAction.BrowserNewFolder, vm.NewFolderCommand)
+        .Add(ShortcutAction.BrowserCopyPath, vm.CopyPathCommand)
+        .Add(ShortcutAction.BrowserUndo, vm.UndoCommand)
+        .Add(ShortcutAction.BrowserRedo, vm.RedoCommand)
+        .Add(ShortcutAction.BrowserContextMenu, vm.ShowContextMenuCommand)
+        .Add(ShortcutAction.BrowserMoveUp, vm.MoveSelectionCommand)
+        .Add(ShortcutAction.BrowserMoveDown, vm.MoveSelectionCommand)
+        .Add(ShortcutAction.BrowserSelectLast, vm.SelectLastCommand)
+        .Add(ShortcutAction.BrowserTreeUp, vm.MoveTreeSelectionCommand)
+        .Add(ShortcutAction.BrowserTreeDown, vm.MoveTreeSelectionCommand)
+        .Add(ShortcutAction.BrowserTreeCollapse, vm.ToggleTreeExpandCommand)
+        .Add(ShortcutAction.BrowserTreeExpand, vm.ToggleTreeExpandCommand)
+        .Add(ShortcutAction.BrowserEscape, vm.EscapeCommand)
+        .Add(ShortcutAction.BrowserNavigateToSearch, vm.NavigateToSearchCommand);
+
     public BrowserView()
     {
         InitializeComponent();
@@ -56,10 +89,11 @@ public partial class BrowserView : UserControl
             ViewModel.ContextMenuRequested += OnContextMenuRequested;
             WireMainTableOnce();
 
-            // 快捷键子系统（Phase 1）：键位表 = BrowserShortcuts（唯一事实源，已从 XAML InputBindings 迁入），
-            // 活跃作用域按"栏归属"（ActivePane）解析——点击主栏/左栏即切换，不再依赖"焦点碰巧在页面里"。
+            // 快捷键子系统：键位表 = ShortcutCatalog（全站唯一事实源——本页不再声明任何键位，
+            // 只提供「动作 id → 命令」映射）；活跃作用域按"栏归属"（ActivePane）解析。
             _shortcutHost?.Detach();
-            _shortcutHost = new ShortcutHost(BrowserShortcuts.CreateRegistry(ViewModel), () => ActiveScope);
+            _shortcutHost = new ShortcutHost(
+                ShortcutCatalog.Build(ShortcutPage.Browser, BuildShortcutCommands(ViewModel)), () => ActiveScope);
             _shortcutHost.Attach(this);
         };
 

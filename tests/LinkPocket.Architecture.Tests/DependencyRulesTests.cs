@@ -55,6 +55,7 @@ public class DependencyRulesTests
         "LinkPocket.Modules.Folders", "LinkPocket.Modules.Links", "LinkPocket.Modules.Trash",
         "LinkPocket.Modules.Search", "LinkPocket.Modules.Bookmarks", "LinkPocket.Modules.Backup",
         "LinkPocket.Modules.Dedup", "LinkPocket.Modules.Favicon", "LinkPocket.Modules.Maintenance",
+        "LinkPocket.Modules.Locate",
     };
     private static readonly string[] ForbiddenForUi =
     {
@@ -62,6 +63,7 @@ public class DependencyRulesTests
         "LinkPocket.Modules.Folders", "LinkPocket.Modules.Links", "LinkPocket.Modules.Trash",
         "LinkPocket.Modules.Search", "LinkPocket.Modules.Bookmarks", "LinkPocket.Modules.Backup",
         "LinkPocket.Modules.Dedup", "LinkPocket.Modules.Favicon", "LinkPocket.Modules.Maintenance",
+        "LinkPocket.Modules.Locate",
     };
 
     public static IEnumerable<object[]> UiPageProjects() => UiPages.Select(p => new object[] { p });
