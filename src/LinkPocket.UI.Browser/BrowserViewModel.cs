@@ -278,21 +278,19 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public ICommand CompletePathCommand { get; }
 
     // —— 多选（Windows 资源管理器语义：锚点 + Ctrl/Shift 修饰键）——
+    // 核心 = 全站共享的 ListSelection（与回收站/搜索/智能列表/去重明细同一实现）
 
-    /// <summary>Shift 区间选择的起点行 ID。</summary>
-    private string? _anchorId;
-
-    /// <summary>主栏选中集合 = 整个浏览模块选中状态的唯一事实来源。
-    /// 主栏行的 IsSelected 与目录树的叶子高亮都从它投影（见 <see cref="ApplySelectionToRows"/> 与
-    /// <see cref="ApplyTreeSelection"/>）：任何一次 Rows/Tree 重建都按该集合重放，
+    /// <summary>主栏选中集合（**共享 ListSelection 核心**：唯一选中集合 + 锚点 + 修饰键语义）。
+    /// 主栏行的 IsSelected 与目录树的叶子高亮都从它投影（见 <see cref="ApplySelectionToView"/> /
+    /// <see cref="SyncTreeSelection"/>）：任何一次 Rows/Tree 重建都按该集合重放，
     /// 不依赖行对象引用存活、不依赖 TreeView 容器时序。点空白 = 清空此集合 = 主栏与树同时取消。</summary>
-    private readonly HashSet<string> _selectedIds = new(StringComparer.Ordinal);
+    public ListSelection Selection { get; } = new();
 
     /// <summary>目标 ID 当前是否处于选中集合（行投影与树叶子投影共用此判据）。</summary>
-    public bool IsSelectedId(string? id) => id != null && _selectedIds.Contains(id);
+    public bool IsSelectedId(string? id) => Selection.Contains(id);
 
-    public IEnumerable<BrowserRowViewModel> SelectedRows => Rows.Where(r => _selectedIds.Contains(r.Id));
-    public int SelectionCount => Rows.Count(r => _selectedIds.Contains(r.Id));
+    public IEnumerable<BrowserRowViewModel> SelectedRows => Rows.Where(r => Selection.Contains(r.Id));
+    public int SelectionCount => Rows.Count(r => Selection.Contains(r.Id));
     public bool HasSelection => SelectionCount > 0;
     public bool HasMultipleSelection => SelectionCount > 1;
     public string SelectionInfoText => HasSelection ? $"已选中 {SelectionCount} 项" : string.Empty;
@@ -366,7 +364,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         CommandManager.InvalidateRequerySuggested();
     }
 
-    /// <summary>把两个唯一事实来源（选中集合 <see cref="_selectedIds"/> + 拖拽落点 <see cref="_dropTargetId"/>）
+    /// <summary>把两个唯一事实来源（选中集合 <see cref="Selection"/> + 拖拽落点 <see cref="_dropTargetId"/>）
     /// 投影到主栏行 + 目录树，并刷新派生状态。
     /// 在选中写入（<see cref="SetSelection"/>）、落点写入（<see cref="SetDropTarget"/>）与 Rows/Tree 重建后（RefreshAsync）调用；
     /// 行与树都是这两个集合的只读投影，无任何独立状态。</summary>
@@ -389,7 +387,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// 目录树投影：树节点高亮 = 用户在选中集合中真正选中的实体，**与当前所处目录无关**。
     /// 「位于某文件夹 / 根目录」是导航位置，由面包屑表达，绝不转换为树高亮——
     /// 进入某个文件夹不代表该文件夹"被选中"（用户 2026-09-18/19 明确：位置 ≠ 选中）。
-    /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="_selectedIds"/> 派生：
+    /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="Selection"/>（共享 ListSelection）派生：
     /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当用户选中了该文件夹实体）。
     /// </summary>
     private void SyncTreeSelection()
@@ -398,7 +396,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         {
             // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当用户选中了真实实体（链接叶子或文件夹）才高亮
             string? entityId = node.IsLink ? node.Id : node.FolderId;
-            node.IsSelected = entityId != null && _selectedIds.Contains(entityId);
+            node.IsSelected = entityId != null && Selection.Contains(entityId);
         }
     }
 
@@ -655,7 +653,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
                 await _client.LinkUpdateAsync(session.Id, title: name);
                 StatusText = $"已重命名为「{name}」";
             }
-            // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 _selectedIds，不随重建丢）
+            // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 Selection，不随重建丢）
         }
         catch (Exception ex)
         {
@@ -790,6 +788,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
         // 剪贴板载荷变化（含被其他页面/操作清空）→ 刷新粘贴命令可用性
         Clipboard.ClipboardChanged += (_, _) => CommandManager.InvalidateRequerySuggested();
+
+        // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（主栏行 + 树 + 派生状态）
+        Selection.Changed += ApplySelectionToView;
     }
 
     // —— 排序（服务端排序：视图层共享数据表控件 SortableDataTable 点列头后经 SortChanged 事件转到这里）——
@@ -827,7 +828,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 重新加载当前目录（事件推送订阅 / 导航显式调用；写操作不自行刷新，见 WARNINGS #18）。
-    /// 选中的唯一事实来源是 <see cref="_selectedIds"/>（行与树均为投影），故此方法本身不恢复选中——
+    /// 选中的唯一事实来源是 <see cref="Selection"/>（行与树均为投影），故此方法本身不恢复选中——
     /// 集合并未因刷新而消失。仅当 <paramref name="clearSelection"/> 为 true（导航切换目录）时清空选中。
     /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 防抖事件刷新）只置挂起标志，
     /// 当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：导航后列表停在旧目录）。
@@ -836,10 +837,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     {
         // 导航切换目录：清空选中集合（行/树投影一起归零）；原地刷新则保留
         if (clearSelection)
-        {
-            _selectedIds.Clear();
-            _anchorId = null;
-        }
+            Selection.Clear();
         if (IsLoading)
         {
             _refreshPending = true;
@@ -869,7 +867,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
             RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<LinkDto>());
-            // 树已重建：选中态由 _selectedIds（唯一事实）派生重放，无需容器时序
+            // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
             Rows.Clear();
             SetContextRow(null); // 行对象已重建：右键命中行引用作废（删除文案随之复位）
@@ -958,8 +956,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
                 });
             }
 
-            // 选中的唯一事实来源是 _selectedIds：Rows 已重建且行是投影，这里只需把集合同步到
-            // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 _selectedIds 本身。
+            // 选中的唯一事实来源是 Selection：Rows 已重建且行是投影，这里只需把集合同步到
+            // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 Selection 本身。
             ApplySelectionToView();
             // 重命名态同样是投影：刷新重建行/树后按会话状态重放（编辑框在重建出的行/节点上重新出现并自动聚焦）
             ApplyRenameToView();
@@ -1023,72 +1021,43 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     private void SelectRow(BrowserRowViewModel? row)
     {
         if (row == null) return;
-        SetSelection(new[] { row.Id }, row.Id);
+        Selection.SelectSingle(row.Id);
     }
 
     /// <summary>
-    /// 带修饰键的选择路由（由视图在鼠标抬起时调用，读 Keyboard.Modifiers）。
-    /// 修改的是 <see cref="_selectedIds"/>（唯一事实来源），绝不直接改行状态；
-    /// 计算出的目标集合经 <see cref="SetSelection"/> 一处落盘并投影到主栏行 + 树。
+    /// 带修饰键的选择路由（共享 <see cref="ListSelection.Click"/>：Ctrl 翻转 / Shift 以锚点画区间 /
+    /// 无修饰 = 单选）。由视图在鼠标抬起时调用（读 Keyboard.Modifiers）；
+    /// 选中集合是唯一事实来源，绝不直接改行状态。
     /// </summary>
     public void SelectRowWithModifiers(BrowserRowViewModel? row, ModifierKeys mods)
     {
         if (row == null) return;
-
-        if (mods.HasFlag(ModifierKeys.Control))
-        {
-            // 单行翻转：基于当前集合增/删目标 ID
-            SetSelection(mutate: s =>
-            {
-                if (!s.Remove(row.Id)) s.Add(row.Id);
-            }, anchor: _anchorId ?? row.Id);
-        }
-        else if (mods.HasFlag(ModifierKeys.Shift))
-        {
-            var anchor = Rows.FirstOrDefault(r => r.Id == _anchorId) ?? row;
-            var i1 = Rows.IndexOf(anchor);
-            var i2 = Rows.IndexOf(row);
-            if (i1 > i2) (i1, i2) = (i2, i1);
-            SetSelection(Rows.Where((_, i) => i >= i1 && i <= i2).Select(r => r.Id), _anchorId ?? row.Id);
-        }
-        else
-        {
-            SetSelection(new[] { row.Id }, row.Id);
-        }
+        Selection.Click(row.Id, mods.HasFlag(ModifierKeys.Control), mods.HasFlag(ModifierKeys.Shift),
+            Rows.Select(r => r.Id).ToList());
     }
 
     public void SelectAllRows()
     {
-        SetSelection(Rows.Select(r => r.Id), _anchorId ?? Rows.FirstOrDefault()?.Id ?? string.Empty);
+        Selection.SelectAll(Rows.Select(r => r.Id).ToList());
     }
 
     /// <summary>
-    /// 选中唯一的写入入口：本次调用是主栏选中/清除动作的目标 ID 集，全部落在 <see cref="_selectedIds"/>，
-    /// 随后把集合投影到主栏行 + 目录树 + 派生状态。任何选择路径（行点击/树点击/全选/清空）都只调这一个方法，
-    /// 不直接在行对象或树节点上写选中——选中事实来源唯一、且跨 Rows/Tree 重建存活。
+    /// 选中唯一的写入入口（全部经共享 <see cref="ListSelection"/>）：本次调用是主栏选中/清除动作的
+    /// 目标 ID 集，写完后由核心触发 Changed → <see cref="ApplySelectionToView"/> 投影到主栏行 + 目录树 + 派生状态。
+    /// 任何选择路径（行点击/树点击/全选/清空）都只走这里，不直接在行对象或树上写选中——
+    /// 事实来源唯一、且跨 Rows/Tree 重建存活。
     /// </summary>
     private void SetSelection(IEnumerable<string>? ids = null, string? anchor = null, Action<HashSet<string>>? mutate = null)
     {
-        // ⚠️ mutate 的起点必须是**当前集合**：Ctrl 翻转 = "在当前选中上增/删目标 ID"。
-        // 曾把起点写成空集合 → Ctrl+点击退化成单选（多选永远做不到），用例已锁死。
-        var next = ids != null
-            ? new HashSet<string>(ids, StringComparer.Ordinal)
-            : new HashSet<string>(_selectedIds, StringComparer.Ordinal);
-        mutate?.Invoke(next);
-        _selectedIds.Clear();
-        foreach (var id in next) _selectedIds.Add(id);
-        _anchorId = string.IsNullOrEmpty(anchor) ? _anchorId : anchor;
-        ApplySelectionToView();
+        // ⚠️ mutate 的起点必须是**当前集合**（ListSelection.Mutate 内部保证）：
+        // Ctrl 翻转 = "在当前选中上增/删目标 ID"；曾从空集起步 → 多选永远做不到（用例已锁死）。
+        if (mutate != null) Selection.Mutate(mutate, anchor);
+        else if (ids != null) Selection.Set(ids, anchor);
+        else if (!string.IsNullOrEmpty(anchor)) Selection.Mutate(_ => { }, anchor);
     }
 
     /// <summary>把指定 ID 纳入选中集合（不清空其他选中）并投影两栏——用于从详情页返回等"还原选中"语义。</summary>
-    public void RestoreSelection(string id)
-    {
-        if (string.IsNullOrEmpty(id)) return;
-        _selectedIds.Add(id);
-        _anchorId ??= id;
-        ApplySelectionToView();
-    }
+    public void RestoreSelection(string id) => Selection.Restore(id);
 
     /// <summary>
     /// 视图应把某一行滚入视口（定位/跳转后保证选中项可见）。
@@ -1105,7 +1074,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     /// <summary>
     /// 进入指定目录并选中其中一行（行可为链接或文件夹）——「跳转」的浏览页执行原语。
-    /// 选中直接写 <see cref="_selectedIds"/>（唯一事实来源），不依赖行对象引用：
+    /// 选中直接写 <see cref="Selection"/>（唯一事实来源），不依赖行对象引用：
     /// 即使该行未在当前 Rows（分页/目录重建中），ID 也照常落在选中集合，树叶子按
     /// <see cref="SyncTreeSelection"/> 同步高亮；此后导航成功该行出现在 Rows 即由主栏行投影选中。
     /// 返回 true 表示定位目标已纳入选中集合；界面可据此滚动。
@@ -1138,7 +1107,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     ///   虚根 <c>FolderId == null</c>（不是实体、没有可高亮的身份）→ 只进入、不写选中。
     /// · **实体行**（链接叶子）= 定位：进入其所属目录（已在目标目录则免重载——行本来就在，无谓重建只会闪烁）
     ///   并把该链接写入选中集合。
-    /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="_selectedIds"/>
+    /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="Selection"/>
     /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
     /// </summary>
     public async Task SelectTreeNodeAsync(FolderNode node)
@@ -1153,7 +1122,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         }
 
         // 位置行：进入目录（无条件重载 = 点是当前位置也刷新）；只有真实文件夹有实体身份，虚根不写选中。
-        // 树高亮由 _selectedIds 派生，与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中）。
+        // 树高亮由 Selection 派生，与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中）。
         if (node.FolderId != null) SetSelection(new[] { node.FolderId }, node.FolderId);
         await LoadAsync(node.FolderId);
     }
@@ -1313,23 +1282,23 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合 <see cref="_selectedIds"/> 投影成载荷项。
+    /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合（<see cref="Selection"/> 共享核心）投影成载荷项。
     /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）；
     /// <paramref name="grabbedId"/>（用户**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
-    /// （集合是无序的 HashSet，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
+    /// （集合是无序的，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
     /// 解析不到的 ID（实体已被外部事件改掉等）不进载荷，但**如实提示**，绝不静默少搬几项。
     /// </summary>
     private IReadOnlyList<DragItem> BuildDragItems(string? grabbedId = null)
     {
         var items = new List<DragItem>();
         if (!string.IsNullOrEmpty(grabbedId) && ResolveDragItem(grabbedId) is { } head) items.Add(head);
-        foreach (var id in _selectedIds)
+        foreach (var id in Selection.Ids)
         {
             if (string.Equals(id, grabbedId, StringComparison.Ordinal)) continue;   // 已作为首项
             if (ResolveDragItem(id) is { } item) items.Add(item);
         }
 
-        var missing = _selectedIds.Count - items.Count;
+        var missing = Selection.Count - items.Count;
         if (missing > 0) StatusText = $"{missing} 项已不在当前视图，未参与本次操作";
         return items;
     }
@@ -1365,7 +1334,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         if (node == null) return [];
         var id = node.IsLink ? node.Id : node.FolderId;
         if (string.IsNullOrEmpty(id)) return [];
-        if (!_selectedIds.Contains(id)) SetSelection(new[] { id }, id);
+        if (!Selection.Contains(id)) Selection.SelectSingle(id);
         return BuildDragItems(id);
     }
 
@@ -1673,7 +1642,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// 就地刷新并保留当前选中。用于两类收尾：
     /// ① 非导航类操作（重命名 / 新建 / 移动 / 粘贴 / 排序 / 从树里删节点）——它们不改变所在目录；
     /// ② 后端数据变更事件驱动的刷新（<c>MainViewModel.OnBackendRefresh</c>，经 UiEventHub 防抖）。
-    /// 选中的唯一事实来源是 <see cref="_selectedIds"/>，行/树均为投影，刷新并不抹掉集合，
+    /// 选中的唯一事实来源是 <see cref="Selection"/>，行/树均为投影，刷新并不抹掉集合，
     /// 故此处只需不带清空标志地刷新（这是保留选中的关键——无需任何"重新选中"步骤）。
     /// 只有"切换目录"才用 <see cref="LoadAsync"/>（它带清空标志）。
     /// </summary>
@@ -1857,7 +1826,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 左栏键盘移动游标 = 上一次键盘落点的**节点对象**（记录"上一个落到哪"以便连续 ↓/↑ 前进）。
     /// 用对象引用而非 Id：虚根「全部书签」没有 Id（根 = null，零哨兵红线），只有引用能表示它。
-    /// 与选中（<see cref="_selectedIds"/>）、位置（CurrentFolderId）正交；树重建后引用自然失效 →
+    /// 与选中（<see cref="Selection"/>）、位置（CurrentFolderId）正交；树重建后引用自然失效 →
     /// 自动回退到"选中实体 → 当前位置"，不会指向已废弃节点。
     /// </summary>
     private FolderNode? _treeNavNode;
@@ -1968,8 +1937,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // ② 选中实体（鼠标点树 / 上一次键盘落子写下的选中）
         foreach (var node in all)
         {
-            if (node.IsLink && _selectedIds.Contains(node.Id)) return node;
-            if (node.FolderId != null && _selectedIds.Contains(node.FolderId)) return node;
+            if (node.IsLink && Selection.Contains(node.Id)) return node;
+            if (node.FolderId != null && Selection.Contains(node.FolderId)) return node;
         }
 
         // ③ 当前所在目录（根目录 → 虚根行）

@@ -118,8 +118,10 @@
                 <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧：工具行 + 表格 -->
-            <Grid Grid.Column="0">
+            <!-- 左侧：工具行 + 表格。
+                 点空白清选中（BlankClick 唯一实现，与浏览/搜索同口径）：命中行/按钮/文本不算空白；
+                 右栏（选中集合的投影）在范围之外、绝不反向取消选中。 -->
+            <Grid Grid.Column="0" views:BlankClick.Command="{Binding ResultViewModel.ClearSelectionCommand}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -179,10 +181,13 @@
                     </DockPanel>
                 </Border>
 
-                <!-- 表格容器：与回收站页同款圆角 24 卡片，表头色带边距归零 -->
+                <!-- 表格容器：与回收站页同款圆角 24 卡片，表头色带边距归零。
+                     SelectionEnabled=False = 外部托管：单选中由结果 VM 的 ListSelection 承载，
+                     绘制经 code-behind 投影（↑/↓/End/Esc/点空白 = 全站共享选择机械）。 -->
                 <Border Grid.Row="1" Background="{DynamicResource SurfaceContainerHigh}"
                         CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
-                    <views:SortableDataTable x:Name="SmartTable" HeaderBandMargin="0"/>
+                    <views:SortableDataTable x:Name="SmartTable" HeaderBandMargin="0"
+                                             SelectionEnabled="False"/>
                 </Border>
             </Grid>
 

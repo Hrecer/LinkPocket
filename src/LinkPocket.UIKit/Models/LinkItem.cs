@@ -2,11 +2,28 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Models
 {
     public class LinkItem : INotifyPropertyChanged
     {
+        /// <summary>DTO → 行模型的**唯一映射**（搜索页 / 智能列表 / 去重明细共用，勿再各写一份）。</summary>
+        public static LinkItem FromDto(LinkDto link) => new()
+        {
+            LinkId = link.LinkId,
+            Url = link.Url,
+            Title = link.Title ?? "",
+            Description = link.Description ?? "",
+            FaviconUrl = link.FaviconUrl ?? "",
+            ListId = link.ListId,
+            LastVisitedAt = link.LastVisitedAt,
+            VisitCount = link.VisitCount,
+            IsImportant = link.IsImportant,
+            CreatedAt = link.CreatedAt,
+            UpdatedAt = link.UpdatedAt
+        };
+
         public string LinkId { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;

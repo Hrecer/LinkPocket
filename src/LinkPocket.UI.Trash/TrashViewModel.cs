@@ -63,6 +63,9 @@ public partial class TrashViewModel : INotifyPropertyChanged
         Details = new TrashSidebarModel();
         DetailPane = new TrashDetailPaneModel();   // 只读详情覆盖层 = 共享详情页（与浏览页同一份界面）
 
+        // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（行 + 树 + 右栏 + 命令可用性）
+        Selection.Changed += ApplySelectionToView;
+
         GoBackCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoForward()), () => Controller.CanGoForward);
         GoUpCommand = new RelayCommand(() => _ = NavigateAsync(GetParentId(CurrentUnitId)), () => !IsAtRoot);
@@ -227,23 +230,24 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public TrashSidebarModel Details { get; }
 
     // ================= 选中（唯一事实来源 + 投影） =================
+    // 核心 = 全站共享的 ListSelection（与浏览页/搜索/智能列表/去重明细同一实现）
 
-    private readonly HashSet<string> _selectedIds = new(StringComparer.Ordinal);
-    private string? _anchorId;
+    /// <summary>选中集合（**共享 ListSelection 核心**：唯一选中集合 + 锚点 + 修饰键语义）。</summary>
+    public ListSelection Selection { get; } = new();
 
     /// <summary>本行/节点是否在选中集合（行与树都是它的只读投影）。</summary>
-    public bool IsSelectedId(string id) => _selectedIds.Contains(id);
+    public bool IsSelectedId(string id) => Selection.Contains(id);
 
-    public int SelectionCount => _selectedIds.Count;
-    public bool HasSelection => _selectedIds.Count > 0;
+    public int SelectionCount => Selection.Count;
+    public bool HasSelection => Selection.HasAny;
 
     /// <summary>选中提示文案（状态栏药丸）：单选显示名称、多选显示项数。</summary>
     public string SelectionInfoText => SelectionCount == 1
-        ? (Rows.FirstOrDefault(r => _selectedIds.Contains(r.Id))?.Name ?? "已选中 1 项")
+        ? (Rows.FirstOrDefault(r => Selection.Contains(r.Id))?.Name ?? "已选中 1 项")
         : $"已选中 {SelectionCount} 项";
 
     /// <summary>当前选中行（主栏视角；顺序 = 行序）。</summary>
-    public IEnumerable<TrashRowViewModel> SelectedRows => Rows.Where(r => _selectedIds.Contains(r.Id));
+    public IEnumerable<TrashRowViewModel> SelectedRows => Rows.Where(r => Selection.Contains(r.Id));
 
     /// <summary>选中投影到行 + 树 + 右栏详情栏（唯一写入入口之后的唯一投影点）。</summary>
     private void ApplySelectionToView()
@@ -266,15 +270,10 @@ public partial class TrashViewModel : INotifyPropertyChanged
         else Details.ShowMulti(selected);
     }
 
-    /// <summary>写入选中集合的**唯一入口**（覆盖式）：空集合 = 清空。</summary>
-    public void SetSelection(IEnumerable<string> ids)
-    {
-        _selectedIds.Clear();
-        foreach (var id in ids) _selectedIds.Add(id);
-        ApplySelectionToView();
-    }
+    /// <summary>写入选中集合的**唯一入口**（覆盖式，经共享 <see cref="ListSelection"/>）：空集合 = 清空。</summary>
+    public void SetSelection(IEnumerable<string> ids) => Selection.Set(ids);
 
-    public void ClearSelection() => SetSelection(Array.Empty<string>());
+    public void ClearSelection() => Selection.Clear();
 
     /// <summary>Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。</summary>
     private void Escape()
@@ -287,35 +286,15 @@ public partial class TrashViewModel : INotifyPropertyChanged
         ClearSelection();
     }
 
-    /// <summary>行点击选择（Ctrl 翻转 / Shift 区间；无修饰键 = 单选）。</summary>
+    /// <summary>行点击选择（共享 <see cref="ListSelection.Click"/>：Ctrl 翻转 / Shift 以锚点画区间 /
+    /// 无修饰 = 单选——与浏览页同一实现、同一语义）。</summary>
     public void SelectRowWithModifiers(TrashRowViewModel row, ModifierKeys modifiers)
     {
-        if (modifiers == ModifierKeys.Control)
-        {
-            var next = new HashSet<string>(_selectedIds, StringComparer.Ordinal);
-            if (!next.Remove(row.Id)) next.Add(row.Id);
-            SetSelection(next);
-            _anchorId = row.Id;
-            return;
-        }
-
-        if (modifiers == ModifierKeys.Shift && _anchorId != null)
-        {
-            var ids = Rows.Select(r => r.Id).ToList();
-            var from = ids.IndexOf(_anchorId);
-            var to = ids.IndexOf(row.Id);
-            if (from >= 0 && to >= 0)
-            {
-                SetSelection(ids.Skip(Math.Min(from, to)).Take(Math.Abs(to - from) + 1));
-                return;
-            }
-        }
-
-        SetSelection(new[] { row.Id });
-        _anchorId = row.Id;
+        Selection.Click(row.Id, modifiers.HasFlag(ModifierKeys.Control), modifiers.HasFlag(ModifierKeys.Shift),
+            Rows.Select(r => r.Id).ToList());
     }
 
-    public void SelectAllRows() => SetSelection(Rows.Select(r => r.Id));
+    public void SelectAllRows() => Selection.SelectAll(Rows.Select(r => r.Id).ToList());
 
     // ================= 快照与加载 =================
 
@@ -349,7 +328,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         ErrorMessage = string.Empty;
         if (navigating) IsNavigating = true;
         var wasNavigation = navigating;
-        var selectedIds = _selectedIds.ToList();      // 刷新保留选中（按 ID 重新投影；已删 ID 自动消失）
+        var selectedIds = Selection.Ids.ToList();     // 刷新保留选中（按 ID 重新投影；已删 ID 自动消失）
 
         try
         {
@@ -801,22 +780,19 @@ public partial class TrashViewModel : INotifyPropertyChanged
     private void MoveMainSelection(int delta)
     {
         if (Rows.Count == 0 || delta == 0) return;
-        var current = SelectedRows.Select(r => Rows.IndexOf(r)).Where(i => i >= 0).OrderBy(i => i).LastOrDefault(-1);
-        var next = current < 0
-            ? (delta > 0 ? 0 : Rows.Count - 1)
-            : Math.Clamp(current + delta, 0, Rows.Count - 1);
-        var target = Rows[next];
-        SetSelection(new[] { target.Id });
-        _anchorId = target.Id;
-        FocusRowRequested?.Invoke(this, target);
+        var target = Selection.Move(delta, Rows.Select(r => r.Id).ToList());
+        if (target == null) return;
+        var row = Rows.FirstOrDefault(r => r.Id == target);
+        if (row != null) FocusRowRequested?.Invoke(this, row);
     }
 
     private void SelectLastRow()
     {
         if (Rows.Count == 0) return;
-        var target = Rows[^1];
-        SetSelection(new[] { target.Id });
-        FocusRowRequested?.Invoke(this, target);
+        var target = Selection.SelectLast(Rows.Select(r => r.Id).ToList());
+        if (target == null) return;
+        var row = Rows.FirstOrDefault(r => r.Id == target);
+        if (row != null) FocusRowRequested?.Invoke(this, row);
     }
 
     /// <summary>左栏 ↑/↓：按**可见视觉顺序**移动；落点语义与鼠标点树完全同一条路径（与浏览页同口径）。</summary>
@@ -854,7 +830,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         foreach (var node in all)
         {
             if (node.IsRoot) continue;
-            if (_selectedIds.Contains(node.Id)) return node;
+            if (Selection.Contains(node.Id)) return node;
         }
 
         var currentId = CurrentUnitId;

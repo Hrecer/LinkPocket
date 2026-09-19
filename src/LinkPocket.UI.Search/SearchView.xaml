@@ -66,9 +66,9 @@
             </Setter>
         </Style>
 
-        <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊，不做形变）；
-             未选 = 透明（浮在 TintCard 分组容器上）+ 悬停 SurfaceContainerHighest；
-             选中 = SecondaryContainer 填色 + 内边距加宽 13→22（用户口径：选中看得见变宽）+ SemiBold。
+        <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊）。
+             ⚠️ 用户令 2026-09-19：**选中 / 未选尺寸完全一致**——不再加宽、不做形变，
+             只以颜色 + 字重区分（未选透明 + 悬停 SurfaceContainerHighest；选中 SecondaryContainer + SemiBold）。
              ⚠️ 不放图标：LpIcons 字形表未注册「check」，M3Icon 会渲染成占位的空白（见 2026-09-16 教训）。 -->
         <Style x:Key="SearchChip" TargetType="CheckBox">
             <Setter Property="FontSize" Value="12"/>
@@ -80,7 +80,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
                         <Border x:Name="Bd" Height="32" CornerRadius="16"
-                                Background="Transparent" Padding="13,0"
+                                Background="Transparent" Padding="15,0"
                                 SnapsToDevicePixels="True">
                             <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"
                                               RecognizesAccessKey="True"/>
@@ -91,7 +91,6 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SecondaryContainer}"/>
-                                <Setter TargetName="Bd" Property="Padding" Value="22,0"/>
                                 <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </Trigger>
@@ -110,8 +109,10 @@
             <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
         </Grid.ColumnDefinitions>
 
-        <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表 -->
-        <Grid Grid.Column="0">
+        <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表。
+             点空白清选中（BlankClick 唯一实现，用户令 2026-09-19）：命中搜索框/chip/行等可交互元素
+             不算空白；右栏（选中集合的投影）在范围之外、绝不反向取消选中。 -->
+        <Grid Grid.Column="0" views:BlankClick.Command="{Binding ClearSelectionCommand}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -212,8 +213,11 @@
             </StackPanel>
 
             <!-- 结果区：完全可复用、数据驱动的 SortableDataTable（表头排序/表格化行/空态一体）；
-                 列定义/行交互/空态渲染由 code-behind 按 SearchViewModel 装配 -->
-            <views:SortableDataTable x:Name="ResultsTable" Grid.Row="2" Margin="12,0,12,8"/>
+                 列定义/行交互/空态渲染由 code-behind 按 SearchViewModel 装配。
+                 SelectionEnabled=False = **外部托管**：选中由 VM 的 ListSelection 承载，
+                 绘制经 ApplySelectionPaint 投影（多选 Ctrl/Shift 由 code-behind 按修饰键路由）。 -->
+            <views:SortableDataTable x:Name="ResultsTable" Grid.Row="2" Margin="12,0,12,8"
+                                     SelectionEnabled="False"/>
         </Grid>
 
         <!-- 详情栏可拖拽分隔线（与浏览页同款交互） -->

@@ -13,7 +13,5 @@ public partial class NavigationItem : ObservableObject
 
     [ObservableProperty]
     private string _iconKind = "folder-outline";
-
-    [ObservableProperty]
-    private bool _isSelected;
+    // 注：选中态不再是项上的标记——由 MainViewModel.SelectedNavItem（SlidingNavStrip 双向绑定）表达
 }

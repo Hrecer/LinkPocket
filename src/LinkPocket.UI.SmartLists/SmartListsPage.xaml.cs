@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -62,12 +63,21 @@ namespace LinkPocket.Views
             // 若装配时已处于结果页（切页往返/热重载），恢复正确状态
             ApplyShowResult(slVm.ShowResult);
 
-            // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— 结果页 Esc 返回卡片列表）；
-            // 本文件不出现任何键位声明，只做「动作 id → 命令」接线。
+            // 快捷键：键位在 ShortcutCatalog（结果页 = 只读集：↑/↓/End/Esc 分层/Enter 打开/F5 查询）；
+            // 本文件不出现任何键位声明，只做「动作 id → 命令」接线（命令体委托给当前结果 VM）。
             _shortcutHost?.Detach();
             _shortcutHost = new ShortcutHost(
-                ShortcutCatalog.Build(ShortcutPage.SmartLists,
-                    new ShortcutCommandMap().Add(ShortcutAction.SmartListsBack, slVm.GoBackCommand)),
+                ShortcutCatalog.Build(ShortcutPage.SmartLists, new ShortcutCommandMap()
+                    .Add(ShortcutAction.SmartListsBack, new RelayCommand(() =>
+                    {
+                        slVm.EscapeOrBack();
+                        if (!slVm.ShowResult) FocusPage();
+                    }))
+                    .Add(ShortcutAction.SmartListsMoveUp, new RelayCommand(() => ResultVm?.MoveSelectionCommand.Execute("up")))
+                    .Add(ShortcutAction.SmartListsMoveDown, new RelayCommand(() => ResultVm?.MoveSelectionCommand.Execute("down")))
+                    .Add(ShortcutAction.SmartListsSelectLast, new RelayCommand(() => ResultVm?.SelectLastCommand.Execute(null)))
+                    .Add(ShortcutAction.SmartListsOpen, new RelayCommand(() => ResultVm?.OpenInBrowserCommand.Execute(null)))
+                    .Add(ShortcutAction.SmartListsRefresh, new RelayCommand(() => ResultVm?.RefreshCommand.Execute(null)))),
                 () => ShortcutScope.SmartLists);
             _shortcutHost.Attach(this);
         }
@@ -180,8 +190,13 @@ namespace LinkPocket.Views
                 },
             };
 
-            SmartTable.RowClick += (_, item) => ResultVm?.SelectItem((LinkItem)item);
-            SmartTable.RowDoubleClick += (_, item) => ResultVm?.OpenInBrowserCommand.Execute(null);
+            // 外部托管选中（SelectionEnabled=False）：单选中由结果 VM 的 ListSelection 承载
+            SmartTable.RowClick += (_, item) => ResultVm?.ClickItem((LinkItem)item);
+            SmartTable.RowDoubleClick += (_, item) =>
+            {
+                ResultVm?.ClickItem((LinkItem)item);
+                ResultVm?.OpenInBrowserCommand.Execute(null);
+            };
             // 表头点击排序 → 同步更新"当前排序"文案（列表内排序由控件自身完成）
             SmartTable.SortChanged += (_, e) => UpdateSortHint(e.Field, e.Ascending);
         }
@@ -198,10 +213,19 @@ namespace LinkPocket.Views
             // 删除重载 → 重绑（排序复位 + 行集替换 + 清表格选中）；换列表时旧订阅先解绑
             if (!ReferenceEquals(_boundResult, resultVm))
             {
-                if (_boundResult != null) _boundResult.Reloaded -= OnResultReloaded;
+                if (_boundResult != null)
+                {
+                    _boundResult.Reloaded -= OnResultReloaded;
+                    _boundResult.FocusRowRequested -= OnResultFocusRowRequested;
+                    _boundResult.Selection.Changed -= OnResultSelectionChanged;
+                }
                 _boundResult = resultVm;
                 resultVm.Reloaded += OnResultReloaded;
+                resultVm.FocusRowRequested += OnResultFocusRowRequested;
+                resultVm.Selection.Changed += OnResultSelectionChanged;
             }
+            // 视觉顺序注入（↑/↓、Ctrl+A 语义据此计算；单一来源 = 共享表格当前排序）
+            resultVm.OrderProvider = () => SmartTable.OrderedItems().OfType<LinkItem>().Select(i => i.LinkId).ToList();
 
             ApplyDefaultSort(resultVm.ListId);
 
@@ -212,11 +236,22 @@ namespace LinkPocket.Views
             SmartTable.ItemsSource = resultVm.Items;
 
             resultVm.ClearSelection();
-            SmartTable.ClearSelection();   // 表格选中态与详情栏必须同步（否则残留高亮无处对应）
+            OnResultSelectionChanged();   // 行重建后重新投影选中（外部托管：绘制随 ItemsSource 重建清零）
             SmartSidebar.DataContext = resultVm.Details;
         }
 
         private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();
+
+        /// <summary>选中投影（**外部托管**）：把结果 VM 的选中集合画到表上——覆盖式更新，绝不累积。</summary>
+        private void OnResultSelectionChanged()
+        {
+            if (ResultVm is not { } vm) return;
+            SmartTable.ApplySelection(vm.Items.Where(i => vm.Selection.Contains(i.LinkId)).Cast<object>());
+        }
+
+        /// <summary>移动选中后把该行滚入视口（与浏览页 FocusRowRequested 同一语义）。</summary>
+        private void OnResultFocusRowRequested(object? sender, LinkItem item)
+            => SmartTable.ScrollItemIntoView(item);
 
         /// <summary>
         /// 默认排序 = **名称升序**（用户硬性要求：打开任何智能列表都必须有排序，且默认按名称）

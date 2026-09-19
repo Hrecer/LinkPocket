@@ -11,6 +11,7 @@
         xmlns:uisl="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.SmartLists"
         xmlns:uitools="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Tools"
         xmlns:uisettings="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Settings"
+        xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
         mc:Ignorable="d"
         Title="LinkPocket"
         Height="860" Width="1400"
@@ -31,32 +32,8 @@
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <Style x:Key="NavTabButton" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-            <Setter Property="Padding" Value="14,6"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="14"
-                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
-                    <Setter Property="FontWeight" Value="SemiBold"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- 搜索页样式已随页面迁往 Views/SearchView.xaml -->
+        <!-- 顶部导航药丸条样式已随组件迁往 UIKit.xaml（SlidingNavStripStyle / SlidingNavStripItemStyle） -->
 
         <Style x:Key="TitleBarButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
@@ -141,39 +118,26 @@
                     </Border>
                     <TextBlock Text="LinkPocket" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
-                <!-- 分段胶囊导航：整体一个胶囊容器，选中项是滑动的 PrimaryContainer 药丸（动画由 code-behind 驱动）。
+                <!-- 分段胶囊导航 = 可复用组件 SlidingNavStrip（ListBox 基座 + 组件内部的滑动指示器）——
+                     几何贴齐与滑动动画由组件自持，本窗口不再有任何导航动画 code-behind（同 SideNavList 模式）。
                      ⚠️ 全局导航常驻：任何页面（含二级视图）都不得隐藏它——历史上曾绑 IsInSecondaryPage
                      导致进智能列表/工具详情时导航消失，已彻底移除该状态（2026-09-16 用户明令）。 -->
-                <Border Grid.Column="1" x:Name="NavCapsule" HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Background="{DynamicResource SurfaceContainerHighest}" CornerRadius="17" Padding="3">
-                    <Grid x:Name="NavHost">
-                        <Border x:Name="NavPill" CornerRadius="14" Background="{DynamicResource PrimaryContainer}"
-                                HorizontalAlignment="Left" Width="0" Height="30" IsHitTestVisible="False">
-                            <Border.RenderTransform>
-                                <TranslateTransform x:Name="NavPillTransform"/>
-                            </Border.RenderTransform>
-                        </Border>
-                        <ItemsControl x:Name="NavigationTabs" ItemsSource="{Binding NavigationItems}" WindowChrome.IsHitTestVisibleInChrome="True">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Style="{StaticResource NavTabButton}"
-                                            Command="{Binding DataContext.SelectNavCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                            CommandParameter="{Binding Id}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Grid>
-                </Border>
+                <views:SlidingNavStrip Grid.Column="1" x:Name="NavigationStrip"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Style="{StaticResource SlidingNavStripStyle}"
+                                       ItemContainerStyle="{StaticResource SlidingNavStripItemStyle}"
+                                       ItemsSource="{Binding NavigationItems}"
+                                       SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
+                                       WindowChrome.IsHitTestVisibleInChrome="True">
+                    <views:SlidingNavStrip.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </views:SlidingNavStrip.ItemTemplate>
+                </views:SlidingNavStrip>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right"
                             WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="最小化">

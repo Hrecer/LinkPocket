@@ -23,6 +23,8 @@ namespace LinkPocket.ViewModels
         private readonly Services.UiPortProvider _ports;
 
         private string _currentNavId = "browser";
+        /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）。</summary>
+        private NavigationItem? _selectedNavItem;
         private ObservableCollection<NavigationItem> _navigationItems = new();
         private ObservableCollection<FolderNode> _folderItems = new();
 
@@ -57,7 +59,8 @@ namespace LinkPocket.ViewModels
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
 
-            SyncNavSelection("browser");
+            // 导航条（SlidingNavStrip）的选中项 = SelectedNavItem（TwoWay）；启动即指向默认首页（无副作用）
+            SelectedNavItem = NavigationItems.FirstOrDefault(i => i.Id == _currentNavId);
 
             FolderItems = new ObservableCollection<FolderNode>
             {
@@ -180,7 +183,7 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline", IsSelected = true },
+                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline" },
                 new() { Id = "search", Label = "搜索", IconKind = "magnify" },
                 new() { Id = "smartlists", Label = "智能列表", IconKind = "auto-fix" },
                 new() { Id = "tools", Label = "工具", IconKind = "wrench-outline" },
@@ -194,7 +197,7 @@ namespace LinkPocket.ViewModels
             try
             {
                 CurrentNavId = navId;
-                SyncNavSelection(navId);
+                SelectedNavItem = NavigationItems.FirstOrDefault(i => i.Id == navId);
 
                 // P4 浏览页：首次进入从根目录加载；已加载则原地重载（**入口对齐**——防抖刷新只送达
                 // "事件发生时的活跃页"，非活跃期间的变更必须在这里补：去重删除 / 书签导入 / 备份导入 /
@@ -233,10 +236,19 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        private void SyncNavSelection(string navId)
+        /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）：用户点选变化即切换页面；
+        /// 程序内切页（SelectNavCommand / 端口）反写本属性让药丸滑过去——单一来源、闭环。</summary>
+        public NavigationItem? SelectedNavItem
         {
-            foreach (var item in NavigationItems)
-                item.IsSelected = item.Id == navId;
+            get => _selectedNavItem;
+            set
+            {
+                if (ReferenceEquals(_selectedNavItem, value)) return;
+                _selectedNavItem = value;
+                OnPropertyChanged();
+                if (value != null && value.Id != CurrentNavId)
+                    SelectNav(value.Id);   // 递归安全：SelectNav 回写同实例 → setter 命中 ReferenceEquals 短路
+            }
         }
 
         public async Task RefreshFolderTreeAndUIAsync()

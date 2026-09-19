@@ -67,12 +67,31 @@ public static class ShortcutAction
     public const string TrashTreeDown = "trash.treeDown";
     public const string TrashTreeCollapse = "trash.treeCollapse";
     public const string TrashTreeExpand = "trash.treeExpand";
+    public const string TrashFocusPath = "trash.focusPath";
 
     // 搜索页 / 智能列表 / 工具页
     public const string SearchRun = "search.run";
+    public const string SearchOpen = "search.open";
+    public const string SearchMoveUp = "search.moveUp";
+    public const string SearchMoveDown = "search.moveDown";
+    public const string SearchSelectLast = "search.selectLast";
+    public const string SearchSelectAll = "search.selectAll";
+    public const string SearchDelete = "search.delete";
+    public const string SearchRefresh = "search.refresh";
+    public const string SearchEscape = "search.escape";
     public const string SmartListsBack = "smartlists.back";
+    public const string SmartListsOpen = "smartlists.open";
+    public const string SmartListsMoveUp = "smartlists.moveUp";
+    public const string SmartListsMoveDown = "smartlists.moveDown";
+    public const string SmartListsSelectLast = "smartlists.selectLast";
+    public const string SmartListsRefresh = "smartlists.refresh";
     public const string ToolsIdJump = "tools.idJump";
     public const string ToolsEscape = "tools.escape";
+    public const string ToolsDetailUp = "tools.detailUp";
+    public const string ToolsDetailDown = "tools.detailDown";
+    public const string ToolsDetailSelectLast = "tools.detailSelectLast";
+    public const string ToolsDetailOpen = "tools.detailOpen";
+    public const string ToolsDetailRefresh = "tools.detailRefresh";
 }
 
 /// <summary>
@@ -164,6 +183,9 @@ public static class ShortcutCatalog
         new(ShortcutAction.TrashGoBack, Key.Left, ShortcutScope.Trash, "后退", ModifierKeys.Alt),
         new(ShortcutAction.TrashGoForward, Key.Right, ShortcutScope.Trash, "前进", ModifierKeys.Alt),
         new(ShortcutAction.TrashRefresh, Key.F5, ShortcutScope.Trash, "刷新回收站"),
+        // 审计补齐（与浏览页 Alt+D 对齐）：回收站地址栏同样可点空白即编辑，缺的是键盘入口
+        new(ShortcutAction.TrashFocusPath, Key.D, ShortcutScope.Trash, "聚焦地址栏", ModifierKeys.Alt,
+            ContextGate: "路径编辑中禁用"),
 
         // —— 选择 / 打开 / 永久删除（两栏通用） ——
         new(ShortcutAction.TrashSelectAll, Key.A, ShortcutScope.Trash, "全选", ModifierKeys.Control, ContextGate: "路径编辑中禁用"),
@@ -194,12 +216,33 @@ public static class ShortcutCatalog
         // 输入框内按键：焦点在搜索框里时按 Enter = 执行搜索（输入框自身的编辑键不受影响）
         new(ShortcutAction.SearchRun, Key.Enter, ShortcutScope.Search, "执行搜索", ControlName: "SearchBox",
             ContextGate: "仅在搜索框获得焦点时"),
+
+        // 结果列表上下文（搜索页**可操作** = 完整集，对齐浏览页主栏的"通用选择机械"；
+        // ↑/↓/End/Ctrl+A/点空白/Esc 与浏览页共用 ListSelection 同一实现）
+        new(ShortcutAction.SearchMoveUp, Key.Up, ShortcutScope.Search, "上移选中", CommandParameter: "up"),
+        new(ShortcutAction.SearchMoveDown, Key.Down, ShortcutScope.Search, "下移选中", CommandParameter: "down"),
+        new(ShortcutAction.SearchSelectLast, Key.End, ShortcutScope.Search, "选中末项"),
+        new(ShortcutAction.SearchSelectAll, Key.A, ShortcutScope.Search, "全选", ModifierKeys.Control),
+        new(ShortcutAction.SearchOpen, Key.Enter, ShortcutScope.Search, "打开选中项",
+            ContextGate: "有选中（搜索框内 Enter 仍 = 执行搜索）"),
+        new(ShortcutAction.SearchDelete, Key.Delete, ShortcutScope.Search, "删除选中项", ContextGate: "有选中（危险键受宿主守卫）"),
+        new(ShortcutAction.SearchRefresh, Key.F5, ShortcutScope.Search, "重新搜索", ContextGate: "已执行过查询"),
+        new(ShortcutAction.SearchEscape, Key.Escape, ShortcutScope.Search, "取消选中 / 清空搜索",
+            ContextGate: "有选中 → 清选中；否则清空（=「取消」）"),
     };
 
     private static readonly ShortcutSpec[] SmartListsSpecs =
     {
-        // 结果页返回卡片列表（关闭细节：非破坏动作，不弹确认）
-        new(ShortcutAction.SmartListsBack, Key.Escape, ShortcutScope.SmartLists, "返回列表", ContextGate: "仅在已打开某个列表（结果页）时"),
+        // 结果页返回卡片列表（分层：有选中 → 先清选中；否则返回。关闭细节：非破坏动作，不弹确认）
+        new(ShortcutAction.SmartListsBack, Key.Escape, ShortcutScope.SmartLists, "取消选中 / 返回列表",
+            ContextGate: "有选中 → 清选中；否则返回卡片列表"),
+        // 结果列表上下文（结果页 = **只读**：可读、可选、不可操作——无删除/无 Ctrl+A；
+        // ↑/↓/End/Esc/点空白 与浏览页共用 ListSelection 同一实现）
+        new(ShortcutAction.SmartListsMoveUp, Key.Up, ShortcutScope.SmartLists, "上移选中", CommandParameter: "up"),
+        new(ShortcutAction.SmartListsMoveDown, Key.Down, ShortcutScope.SmartLists, "下移选中", CommandParameter: "down"),
+        new(ShortcutAction.SmartListsSelectLast, Key.End, ShortcutScope.SmartLists, "选中末项"),
+        new(ShortcutAction.SmartListsOpen, Key.Enter, ShortcutScope.SmartLists, "打开选中项（进浏览页）", ContextGate: "有选中"),
+        new(ShortcutAction.SmartListsRefresh, Key.F5, ShortcutScope.SmartLists, "重新查询", ContextGate: "结果页打开时"),
     };
 
     private static readonly ShortcutSpec[] ToolsSpecs =
@@ -207,9 +250,19 @@ public static class ShortcutCatalog
         // 输入框内按键：焦点在 ID 输入框里时按 Enter = 执行 ID 跳转
         new(ShortcutAction.ToolsIdJump, Key.Enter, ShortcutScope.Tools, "执行 ID 跳转", ControlName: "IdInput",
             ContextGate: "仅在 ID 输入框获得焦点时"),
-        // 去重明细的选中出口之一（与"点空白"同一命令；无选中时无操作）
+        // 去重明细（只读对比页）：选中出口 + 只读延伸键（↑/↓/End/Esc/点空白 = ListSelection 同一实现）
         new(ShortcutAction.ToolsEscape, Key.Escape, ShortcutScope.Tools, "取消明细选中",
             ContextGate: "去重明细有选中行时"),
+        new(ShortcutAction.ToolsDetailUp, Key.Up, ShortcutScope.Tools, "上移明细选中",
+            CommandParameter: "up", ContextGate: "去重明细打开时"),
+        new(ShortcutAction.ToolsDetailDown, Key.Down, ShortcutScope.Tools, "下移明细选中",
+            CommandParameter: "down", ContextGate: "去重明细打开时"),
+        new(ShortcutAction.ToolsDetailSelectLast, Key.End, ShortcutScope.Tools, "选中明细末项",
+            ContextGate: "去重明细打开时"),
+        new(ShortcutAction.ToolsDetailOpen, Key.Enter, ShortcutScope.Tools, "打开所选网站",
+            ContextGate: "去重明细有选中行时"),
+        new(ShortcutAction.ToolsDetailRefresh, Key.F5, ShortcutScope.Tools, "重新查重",
+            ContextGate: "去重明细打开时"),
     };
 
     /// <summary>全部页面的键位组（**顺序即文档顺序**；每页一组，组不共享根作用域）。</summary>

@@ -38,15 +38,25 @@ public partial class SearchView : UserControl
             {
                 _vm.PropertyChanged += OnVmPropertyChanged;
                 _vm.ResetRequested += (_, _) => SearchBox.Focus();
+                _vm.FocusRowRequested += (_, item) => ResultsTable.ScrollItemIntoView(item);
                 SetupTable(_vm);
                 // 迟挂的 DataContext：把 VM 当前的空态/结果同步到表上
                 ApplyEmptyState();
                 ApplyResults();
 
-                // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— **搜索框内 Enter 执行搜索**，属控件锚定：
-                // 输入框里的编辑键不受影响，页面级没有其它快捷键）。
+                // 快捷键：键位在 ShortcutCatalog（本页 = 搜索框内 Enter + 结果列表的完整集；
+                // 搜索框内 Enter 属控件锚定，其余为页面级 —— 页面只做「动作 id → 命令」映射）
                 _shortcutHost?.Detach();
-                var commands = new ShortcutCommandMap().Add(ShortcutAction.SearchRun, _vm.SearchCommand);
+                var commands = new ShortcutCommandMap()
+                    .Add(ShortcutAction.SearchRun, _vm.SearchCommand)
+                    .Add(ShortcutAction.SearchMoveUp, _vm.MoveSelectionCommand)
+                    .Add(ShortcutAction.SearchMoveDown, _vm.MoveSelectionCommand)
+                    .Add(ShortcutAction.SearchSelectLast, _vm.SelectLastCommand)
+                    .Add(ShortcutAction.SearchSelectAll, _vm.SelectAllCommand)
+                    .Add(ShortcutAction.SearchOpen, _vm.JumpCommand)
+                    .Add(ShortcutAction.SearchDelete, _vm.DeleteSelectionCommand)
+                    .Add(ShortcutAction.SearchRefresh, _vm.RefreshCommand)
+                    .Add(ShortcutAction.SearchEscape, _vm.EscapeCommand);
                 _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Search, commands), () => ShortcutScope.Search);
                 _shortcutHost.Attach(this);
                 _shortcutHost.AttachControls(ShortcutPage.Search, this, commands);
@@ -108,8 +118,15 @@ public partial class SearchView : UserControl
             },
         };
 
-        ResultsTable.RowClick += (_, item) => vm.SelectItem((LinkItem)item);
-        ResultsTable.RowDoubleClick += (_, item) => vm.JumpCommand.Execute(null);
+        // 外部托管选中（SelectionEnabled=False）：点击按修饰键路由（Ctrl 翻转 / Shift 区间），
+        // 绘制统一走 ApplySelectionPaint（VM 的 ListSelection 是唯一事实来源）。
+        vm.OrderProvider = () => ResultsTable.OrderedItems().OfType<LinkItem>().Select(i => i.LinkId).ToList();
+        ResultsTable.RowClick += (_, item) => vm.ClickItem((LinkItem)item, Keyboard.Modifiers);
+        ResultsTable.RowDoubleClick += (_, item) =>
+        {
+            vm.ClickItem((LinkItem)item, ModifierKeys.None);
+            vm.JumpCommand.Execute(null);
+        };
     }
 
     // —— VM 状态 → 视图渲染 ——
@@ -124,13 +141,17 @@ public partial class SearchView : UserControl
             case nameof(SearchViewModel.EmptyState):
                 ApplyEmptyState();
                 break;
-            case nameof(SearchViewModel.SelectedItem):
-                ApplySelection();
+            case nameof(SearchViewModel.SelectedItems):
+                ApplySelectionPaint();
                 break;
         }
     }
 
-    private void ApplyResults() => ResultsTable.ItemsSource = _vm?.Results;
+    private void ApplyResults()
+    {
+        ResultsTable.ItemsSource = _vm?.Results;
+        ApplySelectionPaint();   // 行重建后把选中集合重新投影（外部托管：绘制随 ItemsSource 重建清零）
+    }
 
     private void ApplyEmptyState()
     {
@@ -142,18 +163,11 @@ public partial class SearchView : UserControl
             ResultsTable.ItemsSource = null;
     }
 
-    /// <summary>选中同步：VM 恢复的选中回写到表格（RowClick 反向不需要，表格自己已选中）。</summary>
-    private void ApplySelection()
+    /// <summary>选中投影（**外部托管**）：把 VM 的选中集合整体画到表上——覆盖式更新（铁律 9），绝不累积。</summary>
+    private void ApplySelectionPaint()
     {
         if (_vm == null) return;
-        if (_vm.SelectedItem == null)
-        {
-            ResultsTable.ClearSelection();
-        }
-        else if (!ReferenceEquals(ResultsTable.SelectedItem, _vm.SelectedItem))
-        {
-            ResultsTable.SelectItem(_vm.SelectedItem);
-        }
+        ResultsTable.ApplySelection(_vm.SelectedItems.Cast<object>());
     }
 
     // —— 渲染原语（纯视图） ——

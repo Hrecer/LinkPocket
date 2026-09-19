@@ -10,6 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using LinkPocket.Contracts;
 using LinkPocket.Input;
+using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
@@ -42,6 +43,11 @@ namespace LinkPocket.Views
             _locator = locator;
             _resolveLinkPath = resolveLinkPath;
             _refreshFolderTree = refreshFolderTree;
+
+            // ⚠️ 明细选中/右栏接线必须在这里（Configure 之后）——构造函数里访问 VmTools 会
+            // 用 null 的 _api 提前创建 VM（懒建只建一次），之后所有引擎调用都会 NRE（实测踩中）。
+            DetailSidebar.DataContext = _detailSidebar;
+            VmTools.DetailSelection.Changed += ApplyDetailSelectionProjection;
         }
 
         private sealed class ToolItem
@@ -100,14 +106,21 @@ namespace LinkPocket.Views
 
             // 去重明细的选中出口一：点空白（BlankClick 挂在明细页区域上——行容器自带 Tag=DataRow，
             // 点行不算空白；只有真正的页面空白才清选中。用户报障修复 2026-09-19）
-            ClearDetailSelectionCommand = new RelayCommand(() => DetailTable.ClearSelection());
+            // 注：选中核心/右栏接线在 Configure（本页构造时引擎尚未注入，不得提前触发 VmTools 懒建）
+            ClearDetailSelectionCommand = new RelayCommand(() => VmTools.DetailSelection.Clear());
             BlankClick.SetCommand(DetailPanel, ClearDetailSelectionCommand);
+            OpenDetailWebsiteCommand = new RelayCommand(OpenDetailWebsite, () => VmTools.DetailSelection.HasAny);
 
             // 快捷键：键位在 ShortcutCatalog（ID 输入框内 Enter 执行跳转 = 控件锚定；
-            // Esc = 取消明细选中 = 与"点空白"同一个命令）。页面只做「动作 id → 命令」映射。
+            // 去重明细 = 只读集：↑/↓/End/Esc/Enter 打开网站/F5 重查）。页面只做「动作 id → 命令」映射。
             var commands = new ShortcutCommandMap()
                 .Add(ShortcutAction.ToolsIdJump, new RelayCommand(() => _ = JumpFromInputAsync()))
-                .Add(ShortcutAction.ToolsEscape, ClearDetailSelectionCommand);
+                .Add(ShortcutAction.ToolsEscape, ClearDetailSelectionCommand)
+                .Add(ShortcutAction.ToolsDetailUp, new RelayCommand<object?>(p => MoveDetailSelection(ParseDetailDirection(p))))
+                .Add(ShortcutAction.ToolsDetailDown, new RelayCommand<object?>(p => MoveDetailSelection(ParseDetailDirection(p))))
+                .Add(ShortcutAction.ToolsDetailSelectLast, new RelayCommand(SelectLastDetailRow))
+                .Add(ShortcutAction.ToolsDetailOpen, OpenDetailWebsiteCommand)
+                .Add(ShortcutAction.ToolsDetailRefresh, new RelayCommand(() => _ = RefreshDetailAsync()));
             _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Tools, commands), () => ShortcutScope.Tools);
             _shortcutHost.Attach(this);
             _shortcutHost.AttachControls(ShortcutPage.Tools, this, commands);
@@ -115,6 +128,12 @@ namespace LinkPocket.Views
 
         /// <summary>清除去重明细的行选中（点空白 / Esc 的同一命令；无选中时无操作）。</summary>
         public ICommand ClearDetailSelectionCommand { get; }
+
+        /// <summary>明细右栏「打开网站」/ Enter：默认浏览器打开并记一次访问（与搜索页右栏同口径）。</summary>
+        public ICommand OpenDetailWebsiteCommand { get; }
+
+        /// <summary>明细右栏数据模型（共享 SearchDetailsViewModel：链接 → 信息行 + 复制）。</summary>
+        private readonly SearchDetailsViewModel _detailSidebar = new();
 
         private ShortcutHost? _shortcutHost;
 
@@ -154,18 +173,93 @@ namespace LinkPocket.Views
         {
             if ((ToolListbox.SelectedItem as ToolItem)?.Id != "dedup" || !VmTools.HasRunDedup) return;
 
-            var openUrl = VmTools.CurrentGroupUrl;
             var inDetail = DetailPanel.Visibility == Visibility.Visible;
-
             await RunDedupAsync();
-            if (!inDetail || string.IsNullOrEmpty(openUrl)) return;
+            if (inDetail) ReconcileOpenDetail();
+        }
 
+        /// <summary>重扫后按 URL 重组当前明细组（组已不再重复 → 退回主表，主表即最新）。</summary>
+        private void ReconcileOpenDetail()
+        {
+            var openUrl = VmTools.CurrentGroupUrl;
+            if (string.IsNullOrEmpty(openUrl)) return;
             var row = _groups.FirstOrDefault(g =>
                 string.Equals(g.Url, openUrl, StringComparison.OrdinalIgnoreCase));
             if (row == null)
                 GoBackToList();      // 组已不再重复：退回即见最新主表
             else
-                EnterDetail(row);    // 组仍在：重进明细（明细表 / 头部计数 / 勾选态一并刷新）
+                EnterDetail(row);    // 组仍在：重进明细（明细表 / 头部计数 / 勾选态 / 行选一并刷新）
+        }
+
+        /// <summary>F5 重新查重（明细视图）：重扫 + 按 URL 重组当前组（与入口对齐同一条链路）。</summary>
+        private async Task RefreshDetailAsync()
+        {
+            if (DetailPanel.Visibility != Visibility.Visible) return;
+            await RunDedupAsync();
+            ReconcileOpenDetail();
+        }
+
+        // ============================================================
+        // —— 明细选中：投影 + 只读键位（↑/↓/End/Enter/F5；核心 = 共享 ListSelection） ——
+        // ============================================================
+
+        /// <summary>明细选中的**唯一投影点**：集合 → 行绘制 + 右栏（只读信息 + 打开网站）。</summary>
+        private void ApplyDetailSelectionProjection()
+        {
+            var sel = VmTools.DetailSelection;
+            var row = sel.HasAny ? _detailLinks.FirstOrDefault(l => sel.Contains(l.LinkId)) : null;
+            DetailTable.ApplySelection(row == null ? Array.Empty<object>() : new object[] { row });
+            _detailSidebar.UpdateFrom(row == null ? null : LinkItem.FromDto(row),
+                row == null ? "" : VmTools.ResolvePath(row));
+            CommandManager.InvalidateRequerySuggested();
+        }
+
+        /// <summary>命令参数的方向字面量（↑ = -1 / ↓ = +1）。</summary>
+        private static int ParseDetailDirection(object? p)
+        {
+            var s = (p as string is string str ? str : p?.ToString()) ?? string.Empty;
+            return s.Contains("up") ? -1 : s.Contains("down") ? 1 : 0;
+        }
+
+        private void MoveDetailSelection(int delta)
+        {
+            var order = DetailTable.OrderedItems().OfType<LinkDto>().Select(l => l.LinkId).ToList();
+            var target = VmTools.DetailSelection.Move(delta, order);
+            ScrollDetailTo(target);
+        }
+
+        private void SelectLastDetailRow()
+        {
+            var order = DetailTable.OrderedItems().OfType<LinkDto>().Select(l => l.LinkId).ToList();
+            ScrollDetailTo(VmTools.DetailSelection.SelectLast(order));
+        }
+
+        private void ScrollDetailTo(string? linkId)
+        {
+            if (linkId == null) return;
+            var row = _detailLinks.FirstOrDefault(l => l.LinkId == linkId);
+            if (row != null) DetailTable.ScrollItemIntoView(row);
+        }
+
+        /// <summary>明细右栏「打开网站」/ Enter：默认浏览器打开并记一次访问（与搜索页右栏同口径）。</summary>
+        private void OpenDetailWebsite()
+        {
+            var sel = VmTools.DetailSelection;
+            var row = sel.HasAny ? _detailLinks.FirstOrDefault(l => sel.Contains(l.LinkId)) : null;
+            if (row == null || string.IsNullOrWhiteSpace(row.Url)) return;
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(row.Url) { UseShellExecute = true });
+            }
+            catch { /* 无法打开时保持静默 */ }
+            _ = RecordDetailVisitAsync(row.LinkId);
+        }
+
+        private async Task RecordDetailVisitAsync(string linkId)
+        {
+            try { await _api.LinkVisitRecordAsync(linkId); }
+            catch { /* 记账失败不打断（与搜索页右栏同口径） */ }
         }
 
         private void ToolListbox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -430,12 +524,20 @@ namespace LinkPocket.Views
                 // 重复组明细**没有**「操作」列 / 行内跳转按钮（用户令 2026-09-19）：
                 // 对比页是"看差异"的只读视图，跳转能力保留在定位组件（IContentLocator）与 ID 跳转工具里。
             };
+
+            // 外部托管选中（SelectionEnabled=False）：单选中由 ToolsViewModel.DetailSelection（共享核心）承载，
+            // 行绘制 + 右栏统一经 ApplyDetailSelectionProjection 一处投影
+            DetailTable.RowClick += (_, item) => VmTools.DetailSelection.SelectSingle(((LinkDto)item).LinkId);
         }
+
+        /// <summary>当前明细行的数据镜像（EnterDetail 赋值；选中投影 / ↑↓ 顺序 / 右栏都读它）。</summary>
+        private List<LinkDto> _detailLinks = new();
 
         /// <summary>展开明细：组状态记录在 VM（EnterGroup），本方法只做视觉切换。</summary>
         private void EnterDetail(DedupGroupRow row)
         {
             VmTools.EnterGroup(row);
+            _detailLinks = row.Links;
 
             DetailUrlText.Text = row.Url;
             DetailHintText.Text = $"共 {row.Count} 条重复链接";
@@ -443,6 +545,7 @@ namespace LinkPocket.Views
             DetailTable.ItemsSource = row.Links;
             DetailTable.EmptyContent = null!;
 
+            ApplyDetailSelectionProjection();   // EnterGroup 已清选中：行重建后同步清行绘制与右栏
             UpdateDeleteState();
             MainPanel.Visibility = Visibility.Collapsed;
             DetailPanel.Visibility = Visibility.Visible;
@@ -452,6 +555,7 @@ namespace LinkPocket.Views
         private void GoBackToList()
         {
             VmTools.LeaveGroup();
+            _detailLinks = new List<LinkDto>();
             DetailTable.ItemsSource = null;
             DetailPanel.Visibility = Visibility.Collapsed;
             MainPanel.Visibility = Visibility.Visible;

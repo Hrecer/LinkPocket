@@ -343,6 +343,67 @@
         </Setter>
     </Style>
 
+    <!-- ===== 顶部导航药丸条（可复用组件，Shell 标题栏导航）=====
+         SlidingNavStrip = ListBox 子类（水平）：胶囊容器 + 滑动指示器（PrimaryContainer 药丸，
+         300ms BackEase 弹簧滑到选中项实测几何）。几何/动画全在组件内部，Shell 只做 XAML 装配。
+         项样式 SlidingNavStripItemStyle：无选中/悬停底色，仅选中字色加深 + 加粗（与左栏 SideNav 同语言）。 -->
+    <Style x:Key="SlidingNavStripStyle" TargetType="{x:Type views:SlidingNavStrip}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type views:SlidingNavStrip}">
+                    <!-- 胶囊容器 = 分段导航的既有语言（SurfaceContainerHighest 面 + 内距 3 + 圆角 17） -->
+                    <Border Background="{DynamicResource SurfaceContainerHighest}" CornerRadius="17"
+                            Padding="3" SnapsToDevicePixels="True">
+                        <Grid>
+                            <!-- 滑动指示器：垫在项下面（先声明 = z 序在下），几何由组件代码按选中项实测贴齐 -->
+                            <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryContainer}"
+                                    CornerRadius="14" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                    Width="0" IsHitTestVisible="False" Visibility="Collapsed">
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="PART_IndicatorTf"/>
+                                </Border.RenderTransform>
+                            </Border>
+                            <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SlidingNavStripItemStyle" TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <!-- 项不取键盘焦点：点击导航后焦点留在页面内（整页快捷键不变式），也避免方向键在条上改变选中 -->
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" CornerRadius="14" Background="Transparent"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <ContentPresenter VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ToolTip：自绘 M3 模板。默认模板自带 SystemDropShadowChrome 投影，
          与右键菜单（无阴影、纯圆角色块）的视觉语言冲突 → 统一改为圆角无阴影色块。 -->
     <Style TargetType="ToolTip">

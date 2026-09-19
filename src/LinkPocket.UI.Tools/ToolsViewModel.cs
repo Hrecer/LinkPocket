@@ -119,20 +119,25 @@ public sealed class ToolsViewModel
         return paths.Count == 1 ? paths[0] : $"{paths[0]} 等 {paths.Count} 处";
     }
 
-    /// <summary>展开某组明细：记录当前组并清空勾选。</summary>
+    /// <summary>去重明细的行选中（**共享 ListSelection 核心**；对照页 = 只读：可读、可选、不可操作）。</summary>
+    public ListSelection DetailSelection { get; } = new();
+
+    /// <summary>展开某组明细：记录当前组并清空勾选与行选中。</summary>
     public void EnterGroup(DedupGroupRow row)
     {
         CurrentGroupUrl = row.Url;
         CurrentGroupLinks = row.Links;
         CheckedIds.Clear();
+        DetailSelection.Clear();
     }
 
-    /// <summary>退出明细回主表：清当前组与勾选。</summary>
+    /// <summary>退出明细回主表：清当前组、勾选与行选中。</summary>
     public void LeaveGroup()
     {
         CheckedIds.Clear();
         CurrentGroupLinks = null;
         CurrentGroupUrl = string.Empty;
+        DetailSelection.Clear();
     }
 
     /// <summary>

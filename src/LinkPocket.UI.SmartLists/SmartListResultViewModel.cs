@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -17,6 +18,8 @@ namespace LinkPocket.ViewModels
     /// 视图（Views/SmartListsPage）只负责表格装配与渲染。
     /// 动作语义与搜索页同一套：「详情/编辑」= 进入浏览页链接详情页；
     /// 删除 = 确认后移入回收站并重载当前列表（Reloaded 事件驱动视图重绑）。
+    /// 选中由全站共享的 <see cref="ListSelection"/> 承载（本页为**单选中**：结果页 = 只读页，
+    /// 可读、可选、不可操作——不引入删除/Ctrl+A 等操作键）。
     /// </summary>
     public class SmartListResultViewModel : INotifyPropertyChanged
     {
@@ -103,15 +106,23 @@ namespace LinkPocket.ViewModels
             set { _totalCount = value; OnPropertyChanged(); }
         }
 
-        // —— 选中态与详情栏（MVVM 自页面下沉） ——
+        // —— 选中态与详情栏（MVVM 自页面下沉；共享 ListSelection 核心，单选中） ——
 
-        private LinkItem? _selectedItem;
-        /// <summary>当前选中行（视图 RowClick 调 <see cref="SelectItem"/>）。</summary>
-        public LinkItem? SelectedItem
-        {
-            get => _selectedItem;
-            private set { _selectedItem = value; OnPropertyChanged(); }
-        }
+        /// <summary>**选中核心（全站共享实现）**：结果页为单选中。</summary>
+        public ListSelection Selection { get; } = new();
+
+        /// <summary>视图注入：当前结果的**视觉顺序**（共享表格的当前排序）——↑/↓ 据此计算。</summary>
+        public Func<IReadOnlyList<string>>? OrderProvider { get; set; }
+
+        /// <summary>把某行滚入视口（移动选中后由视图订阅执行）。</summary>
+        public event EventHandler<LinkItem>? FocusRowRequested;
+
+        /// <summary>当前选中行（按结果集顺序取首项；本页恒为单选中）。</summary>
+        private LinkItem? PrimarySelected =>
+            Items.FirstOrDefault(r => Selection.Contains(r.LinkId));
+
+        /// <summary>是否存在选中（命令 CanExecute 用）。</summary>
+        public bool HasSelection => Selection.HasAny;
 
         /// <summary>右侧详情栏（复用搜索页同一 DetailSidebar 数据契约）。</summary>
         public SearchDetailsViewModel Details { get; } = new();
@@ -126,12 +137,20 @@ namespace LinkPocket.ViewModels
             _dialogs = dialogs;
             _resolveFolderPath = resolveFolderPath;
 
+            Selection.Changed += OnSelectionChanged;
+
             OpenInBrowserCommand = new RelayCommand(
-                () => { if (SelectedItem is { } item) _navigation?.OpenLinkInBrowser(item.LinkId); },
-                () => SelectedItem != null && !IsDeleting);
-            OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => SelectedItem != null && !IsDeleting);
+                () => { if (PrimarySelected is { } item) _navigation?.OpenLinkInBrowser(item.LinkId); },
+                () => Selection.HasAny && !IsDeleting);
+            OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.HasAny && !IsDeleting);
             // 删除过程中（IsDeleting）禁用删除与其余行动作 —— 防重入不再只靠方法内 if（#8/9）
-            DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => SelectedItem != null && !IsDeleting);
+            DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => Selection.HasAny && !IsDeleting);
+            // 只读页的键位延伸（↑/↓/End/F5；不引入任何会改数据的键）
+            MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
+            SelectLastCommand = new RelayCommand(SelectLast);
+            RefreshCommand = new RelayCommand(() => _ = ReloadAsync());
+            // 点空白清选中（BlankClick 挂在结果区；与 Esc 分层共用同一"出口"语义）
+            ClearSelectionCommand = new RelayCommand(() => Selection.Clear());
 
             Details.OpenCommand = OpenInBrowserCommand;
             Details.RenameCommand = OpenInBrowserCommand;
@@ -142,19 +161,51 @@ namespace LinkPocket.ViewModels
         public ICommand OpenInBrowserCommand { get; }
         public ICommand OpenWebsiteCommand { get; }
         public ICommand DeleteCommand { get; }
+        public ICommand MoveSelectionCommand { get; }
+        public ICommand SelectLastCommand { get; }
+        public ICommand RefreshCommand { get; }
+        public ICommand ClearSelectionCommand { get; }
 
-        /// <summary>视图在用户点击行时调用（表格行选中 → 选中态 + 详情栏）。</summary>
-        public void SelectItem(LinkItem item)
-        {
-            SelectedItem = item;
-            Details.UpdateFrom(item, _resolveFolderPath(item.ListId));
-        }
+        /// <summary>视图在用户点击行时调用（单选中：只读页只有"读 + 选"）。</summary>
+        public void ClickItem(LinkItem item) => Selection.SelectSingle(item.LinkId);
 
         /// <summary>清空选中与详情栏（返回卡片页/重载列表时由视图或本类调用）。</summary>
-        public void ClearSelection()
+        public void ClearSelection() => Selection.Clear();
+
+        /// <summary>选中的**唯一投影点**：集合 → 属性通知 + 右栏（恒为单选详情态）。</summary>
+        private void OnSelectionChanged()
         {
-            SelectedItem = null;
-            Details.Clear();
+            OnPropertyChanged(nameof(HasSelection));
+            var item = PrimarySelected;
+            Details.UpdateFrom(item, item == null ? "" : _resolveFolderPath(item.ListId));
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+
+        // —— ↑/↓ / End（与浏览页主栏同一套共享语义；顺序由视图注入） ——
+
+        private static int ParseDirection(object? p)
+        {
+            var s = (p as string is string str ? str : p?.ToString()) ?? string.Empty;
+            return s.Contains("up") ? -1 : s.Contains("down") ? 1 : 0;
+        }
+
+        private void MoveSelection(int delta)
+        {
+            var target = Selection.Move(delta, OrderProvider?.Invoke() ?? Array.Empty<string>());
+            FocusOn(target);
+        }
+
+        private void SelectLast()
+        {
+            var target = Selection.SelectLast(OrderProvider?.Invoke() ?? Array.Empty<string>());
+            FocusOn(target);
+        }
+
+        private void FocusOn(string? linkId)
+        {
+            if (linkId == null) return;
+            var item = Items.FirstOrDefault(r => r.LinkId == linkId);
+            if (item != null) FocusRowRequested?.Invoke(this, item);
         }
 
         public async Task LoadAsync()
@@ -176,14 +227,14 @@ namespace LinkPocket.ViewModels
                     {
                         "recently_added" => "最近 7 天没有添加新书签",
                         "recently_visited" => "最近 7 天没有访问过书签",
-                        "recently_edited" => "最近 7 天没有编辑过书签",
+                        "recently_edited" => "最近 7 天没有修改过书签",
                         "most_visited" => "暂无访问记录",
                         _ => "暂无数据"
                     };
                     return;
                 }
 
-                var items = links.Select(ConvertToLinkItem).ToList();
+                var items = links.Select(LinkItem.FromDto).ToList();
                 // 一次性整体替换（#6）：逐条 Add 会触发 N 次 CollectionChanged，重排行 N 次
                 Items = new ObservableCollection<LinkItem>(items);
                 HasData = true;
@@ -194,10 +245,25 @@ namespace LinkPocket.ViewModels
             }
         }
 
+        /// <summary>F5 重新查询：重拉当前列表并通知视图重绑（与删除后重载同一条出口）。</summary>
+        private async Task ReloadAsync()
+        {
+            if (IsLoading) return;
+            try
+            {
+                await LoadAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("智能列表重新查询失败", ex);
+            }
+            Reloaded?.Invoke(this, EventArgs.Empty);
+        }
+
         /// <summary>「打开网站」：默认浏览器打开并记录一次访问（与搜索页侧栏同口径）。</summary>
         private async Task OpenSelectedWebsiteAsync()
         {
-            var item = SelectedItem;
+            var item = PrimarySelected;
             if (item == null) return;
             try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
             catch { /* 无法打开时保持静默 */ }
@@ -205,7 +271,7 @@ namespace LinkPocket.ViewModels
             {
                 await _client.LinkVisitRecordAsync(item.LinkId);
                 // 统计行原位刷新（代次校验：选中未变才写回）；记账已落库 → 本地同步 VisitCount 再渲染
-                if (SelectedItem?.LinkId == item.LinkId)
+                if (Selection.Count == 1 && Selection.Contains(item.LinkId))
                 {
                     item.VisitCount++;
                     Details.UpdateFrom(item, _resolveFolderPath(item.ListId));
@@ -218,7 +284,7 @@ namespace LinkPocket.ViewModels
         private async Task DeleteSelectedAsync()
         {
             if (IsDeleting) return;   // 命令可用性已拦，这里双保险（键盘路径等不经 CanExecute 时）
-            var item = SelectedItem;
+            var item = PrimarySelected;
             if (item == null) return;
 
             var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
@@ -243,21 +309,6 @@ namespace LinkPocket.ViewModels
                 IsDeleting = false;
             }
         }
-
-        private static LinkItem ConvertToLinkItem(LinkDto link) => new()
-        {
-            LinkId = link.LinkId,
-            Url = link.Url,
-            Title = link.Title ?? "",
-            Description = link.Description ?? "",
-            FaviconUrl = link.FaviconUrl ?? "",
-            ListId = link.ListId,
-            LastVisitedAt = link.LastVisitedAt,
-            VisitCount = link.VisitCount,
-            IsImportant = link.IsImportant,
-            CreatedAt = link.CreatedAt,
-            UpdatedAt = link.UpdatedAt
-        };
 
         protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {

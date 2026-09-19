@@ -92,4 +92,32 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
     private static string FormatTime(DateTime utc)
         => utc.Year <= 1 ? "—" : utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
+    /// <summary>
+    /// 多选投影（搜索页完整多选模型）：显示项数（搜索页恒为链接）；动作面收窄为「删除所选」。
+    /// 与回收站多选同一条口径（同一 DetailSidebar 控件、同一能力位系统）。
+    /// </summary>
+    public void ShowMulti(IReadOnlyList<LinkItem> items)
+    {
+        _generation++;   // 使在途 favicon 补拉失效
+        HasSelection = true;
+        IsMulti = true;
+        IsFolder = false;
+        IsReadOnly = false;
+        ShowOpenAction = false;
+        ShowOpenWebsite = false;
+        ShowOpenWebsiteButton = false;
+        ShowEditAction = false;
+        ShowDeleteAction = true;
+        DisplayName = $"已选中 {items.Count} 项";
+        IdText = string.Empty;
+        UrlText = string.Empty;
+        DescriptionText = string.Empty;
+        Favicon = null;
+        SelectedTotal = items.Count;
+        SelectedFolders = 0;
+        SelectedLinks = items.Count;
+        SetRows(Array.Empty<DetailSidebarRow>());
+        RaiseAll();
+    }
 }

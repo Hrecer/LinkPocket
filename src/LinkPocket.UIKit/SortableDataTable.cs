@@ -88,8 +88,11 @@ public class SortableDataTable : Grid
         nameof(HeaderBandMargin), typeof(Thickness), typeof(SortableDataTable),
         new PropertyMetadata(new Thickness(8, 0, 8, 0)));
 
-    /// <summary>行选中开关（默认开）。关闭后点击行不再绘制常驻选中底色（RowClick/RowDoubleClick 照常触发）——
-    /// 供"点击行 = 导航、没有选中概念"的表格使用（去重工具：主表与明细表）。</summary>
+    /// <summary>行选中开关（默认开）。两种模式：
+    /// · 开启 = 控件内部绘制（点击行 → SelectItem 单选自绘）；
+    /// · 关闭 = **外部托管**：点击行不绘制，页面用 <see cref="ApplySelection"/> 把
+    ///   VM 的选中集合投影到行上（搜索 / 智能列表 / 去重明细）。
+    /// RowClick/RowDoubleClick 两种模式下都照常触发。</summary>
     public static readonly DependencyProperty SelectionEnabledProperty = DependencyProperty.Register(
         nameof(SelectionEnabled), typeof(bool), typeof(SortableDataTable), new PropertyMetadata(true));
 
@@ -152,8 +155,11 @@ public class SortableDataTable : Grid
     /// <summary>表头点击排序（Field + 方向已切换完毕）。外部 VM 排序模式在此接手。</summary>
     public event EventHandler<SortEventArgs>? SortChanged;
 
-    /// <summary>当前选中项（默认工厂模式内部绘制 PrimaryContainer 选中态；模板模式下不使用）。</summary>
+    /// <summary>当前选中项（= 已绘制选中集里的第一项；多选以 <see cref="ApplySelection"/> 为准）。</summary>
     public object? SelectedItem { get; private set; }
+
+    /// <summary>已绘制选中底色的行集合（**唯一绘制事实源**：内部单选自绘与外部托管投影共用一套）。</summary>
+    private readonly HashSet<object> _paintedSelection = new();
 
     /// <summary>行单击时触发（参数 = 数据项；仅默认工厂模式）。</summary>
     public event EventHandler<object>? RowClick;
@@ -570,12 +576,13 @@ public class SortableDataTable : Grid
         if (IsTemplateMode) return; // 模板模式行由 ItemsSource 直通驱动
 
         // 排序只是重排同一批数据：应保留选中行与滚动位置（否则"点一下表头，选中没了、详情栏还在"）
-        var previousSelection = preserveView ? SelectedItem : null;
+        var previousSelection = preserveView ? _paintedSelection.ToList() : null;
         var previousOffset = preserveView ? _rowsScroller.VerticalOffset : 0;
         var keepView = preserveView && RowHasData();
 
         var items = SortedItems().ToList();
         _rowMap.Clear();
+        _paintedSelection.Clear();
         SelectedItem = null;
 
         if (items.Count == 0)
@@ -601,12 +608,9 @@ public class SortableDataTable : Grid
 
         if (!keepView) return;
 
-        // 选中项在新行列表里找回并恢复高亮（详情栏与表格保持一致）
-        if (previousSelection is { } kept && _rowMap.TryGetValue(kept, out var keptRow))
-        {
-            SelectedItem = kept;
-            keptRow.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
-        }
+        // 选中集合在新行列表里找回并恢复高亮（覆盖式：只恢复仍在数据里的项）
+        if (previousSelection != null)
+            ApplySelection(previousSelection.Where(item => _rowMap.ContainsKey(item)));
 
         // 滚动位置恢复要等新行完成布局（虚拟化下偏移单位是像素，直接设回去即可）
         if (previousOffset > 0)
@@ -679,23 +683,49 @@ public class SortableDataTable : Grid
         return row;
     }
 
-    /// <summary>选中某一项（更新内部绘制；不匹配的项恢复默认态。仅默认工厂模式）。
-    /// <see cref="SelectionEnabled"/> 关闭时整体无操作（表无选中概念时不得画选中）。</summary>
+    /// <summary>选中某一项（单选；更新内部绘制；不匹配的项恢复默认态。仅默认工厂模式）。
+    /// <see cref="SelectionEnabled"/> 关闭时整体无操作——外部托管表请用 <see cref="ApplySelection"/>。</summary>
     public void SelectItem(object item)
     {
         if (IsTemplateMode || !SelectionEnabled) return;
-        ResetRowBackground(SelectedItem);
-        SelectedItem = item;
-        if (_rowMap.TryGetValue(item, out var newRow))
-            newRow.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
+        ApplySelection(new[] { item });
     }
 
     /// <summary>清除选中（仅默认工厂模式）。</summary>
     public void ClearSelection()
     {
         if (IsTemplateMode) return;
-        ResetRowBackground(SelectedItem);
+        ApplySelection(Array.Empty<object>());
+    }
+
+    /// <summary>
+    /// **外部托管模式的选中绘制**（与 <see cref="SelectionEnabled"/>=false 配套）：把绘制集合整体
+    /// 替换为 <paramref name="items"/>，其余行复位。页面 VM 的 `ListSelection` 是选中的唯一事实来源，
+    /// 本方法只是它的**投影**——每次调用覆盖式更新（铁律 9），绝不累积。
+    /// </summary>
+    public void ApplySelection(IEnumerable<object> items)
+    {
+        if (IsTemplateMode) return;
+        foreach (var old in _paintedSelection) ResetRowBackground(old);
+        _paintedSelection.Clear();
         SelectedItem = null;
+        foreach (var item in items)
+        {
+            _paintedSelection.Add(item);
+            SelectedItem ??= item;
+            if (_rowMap.TryGetValue(item, out var row))
+                row.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
+        }
+    }
+
+    /// <summary>当前**视觉顺序**的数据项（含当前排序）——外部托管页面据此做 ↑/↓、Ctrl+A。</summary>
+    public IReadOnlyList<object> OrderedItems() => SortedItems().ToList();
+
+    /// <summary>把某数据行滚入视口（移动选中 / 定位后保证可见）。</summary>
+    public void ScrollItemIntoView(object item)
+    {
+        if (_rowMap.TryGetValue(item, out var row))
+            row.BringIntoView();
     }
 
     /// <summary>

@@ -126,6 +126,18 @@ namespace LinkPocket.ViewModels
             ResultViewModel = null;
         }
 
+        /// <summary>Esc 分层（用户令 2026-09-19）：结果页有选中 → 先清选中；否则返回卡片列表。
+        /// 键位在 ShortcutCatalog（`smartlists.back`）；返回按钮与本命令同源。</summary>
+        public void EscapeOrBack()
+        {
+            if (ResultViewModel is { HasSelection: true } result)
+            {
+                result.ClearSelection();
+                return;
+            }
+            GoBack();
+        }
+
         /// <summary>Esc 返回卡片列表（键位在 ShortcutCatalog；返回按钮与本命令同源）。</summary>
         public ICommand GoBackCommand { get; }
 

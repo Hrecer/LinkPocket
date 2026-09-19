@@ -504,12 +504,18 @@
         <!-- ===== 面板 B：重复组明细（整页） ===== -->
         <!-- ============================================================ -->
         <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True">
+            <Grid.ColumnDefinitions>
+                <!-- 明细表 | 可拖拽分隔 | 右栏（选中行的只读投影；与搜索/智能列表同规格 286） -->
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="286" MinWidth="230" MaxWidth="400"/>
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="0" Padding="12,0,12,8">
+            <Border Grid.Row="0" Grid.Column="0" Padding="12,0,12,8">
                 <DockPanel LastChildFill="True" VerticalAlignment="Center">
                     <Button DockPanel.Dock="Left" Click="DetailBack_Click" ToolTip="返回重复组列表（Esc）"
                             Style="{StaticResource RoundBackButton}">
@@ -543,12 +549,20 @@
                 </DockPanel>
             </Border>
 
-            <!-- 明细对比表**保留行选中**（用户令 2026-09-19：后续功能要基于选中行）；
-                 取消出口 = 点空白（BlankClick 挂在 DetailPanel）/ Esc——修复"进过明细后选中无法退出"。
-                 行内空白不误清：工厂行容器自带 Tag=DataRow（BlankClick 行容器约定）。 -->
-            <Border Grid.Row="1" Background="{DynamicResource SurfaceContainerHigh}"
+            <!-- 明细对比表（**保留行选中**，用户令 2026-09-19）+ 取消出口 = 点空白（BlankClick 挂 DetailPanel）/ Esc；
+                 ↑/↓/End 移动选中、Enter 打开网站、F5 重查（只读集：可读、可选、不可操作）。
+                 SelectionEnabled=False = 外部托管：选中由 ToolsViewModel.DetailSelection（共享 ListSelection）承载。 -->
+            <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,16,16" ClipToBounds="True">
-                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0"/>
+                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0" SelectionEnabled="False"/>
+            </Border>
+
+            <!-- 右栏：选中行的只读投影（共享 DetailSidebar；信息 + 打开网站，与搜索页右栏同一数据契约） -->
+            <GridSplitter Grid.RowSpan="2" Grid.Column="1" Width="4" HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+            <Border Grid.RowSpan="2" Grid.Column="2" Background="{DynamicResource TintPanel}"
+                    CornerRadius="24,0,0,24" Margin="0,0,16,16">
+                <views:DetailSidebar x:Name="DetailSidebar"/>
             </Border>
         </Grid>
     </Grid>

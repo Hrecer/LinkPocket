@@ -103,6 +103,7 @@ namespace LinkPocket.Views
             .Add(ShortcutAction.TrashGoUp, vm.GoUpCommand)
             .Add(ShortcutAction.TrashGoForward, vm.GoForwardCommand)
             .Add(ShortcutAction.TrashRefresh, vm.RefreshCommand)
+            .Add(ShortcutAction.TrashFocusPath, vm.EnterPathEditCommand)
             .Add(ShortcutAction.TrashSelectAll, vm.SelectAllCommand)
             .Add(ShortcutAction.TrashOpen, vm.OpenSelectionCommand)
             .Add(ShortcutAction.TrashPurge, vm.PurgeSelectionCommand)
