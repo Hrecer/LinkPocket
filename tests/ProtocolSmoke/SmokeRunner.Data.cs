@@ -107,11 +107,17 @@ internal static partial class SmokeRunner
         Asserts.That(!(await client.TrashTreeAsync()).Any(f => f.TrashFolderId == link.LinkId),
             "单独删除书签不应产生回收站树节点");
 
+        // 还原缺省 = 回到删除前所在目录（to 缺省 "origin"）
         await client.TrashRestoreAsync(link.LinkId);
         Asserts.That(s.Events.Contains("trash.changed"), "还原应推 trash.changed");
         Asserts.That(!(await client.TrashListAsync()).Any(e => e.Id == link.LinkId), "还原后平铺条目应消失");
-        var restored = (await client.LinkGetAsync(link.LinkId));
-        Asserts.That(restored.ListId == null, "还原固定落根（行为等价项）");
+        Asserts.That((await client.LinkGetAsync(link.LinkId)).ListId == folder.FolderId,
+            "还原缺省应落回删除前所在目录（origin）");
+
+        // 显式 to = "root"：落根级
+        await client.LinkTrashAsync(link.LinkId);
+        await client.TrashRestoreAsync(link.LinkId, "root");
+        Asserts.That((await client.LinkGetAsync(link.LinkId)).ListId == null, "to=root 应显式落根");
 
         // 文件夹整树进回收站 → 平铺 folder 条目 + 树单元（含子树书签计数）→ 永久删除（两阶段确认）
         var child = (await client.FolderCreateAsync("回收子目录", parentId: folder.FolderId)).Data!;
@@ -163,6 +169,6 @@ internal static partial class SmokeRunner
         Asserts.That(!(await client.TrashListAsync()).Any(e => e.EntryType == "folder" && e.Name == "回收源目录"),
             "永久删除后平铺 folder 条目应消失");
 
-        Console.WriteLine("[OK] §3 回收站闭环：原 ID + origin_path 快照 / 树与平铺 / 还原落根 / purge 两阶段确认");
+        Console.WriteLine("[OK] §3 回收站闭环：原 ID + origin_path 快照 / 树与平铺 / 还原（origin 缺省 + root 显式）/ purge 两阶段确认");
     }
 }

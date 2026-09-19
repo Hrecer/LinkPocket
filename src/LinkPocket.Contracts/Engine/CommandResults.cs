@@ -39,12 +39,21 @@ public sealed record LinkExportResult(string FilePath, string Format, int Count,
 
 /// <summary>
 /// 还原结果。<paramref name="ListId"/> = 实际落点目录（null = 根）；
-/// <paramref name="RestoredToOrigin"/> = 是否按原位置还原（<c>to_origin: true</c> 且原目录仍存在）。
+/// <paramref name="FellBackToRoot"/> = 原目录已不存在而回落根（如实回报，绝不静默）。
 /// </summary>
-public sealed record TrashRestoreResult(string LinkId, string? ListId = null, bool RestoredToOrigin = false);
+public sealed record TrashRestoreResult(string LinkId, string? ListId = null, bool FellBackToRoot = false);
 
-/// <summary>批量还原结果。</summary>
-public sealed record TrashRestoreBatchResult(int Restored);
+/// <summary>混合批量还原结果（<paramref name="RestoredFolders"/> = 单元含其子单元的还原行数）。</summary>
+public sealed record TrashRestoreBatchResult(
+    int RestoredLinks,
+    int RestoredFolders,
+    int RestoredUnits,
+    IReadOnlyList<string> FellBackToRoot,
+    IReadOnlyList<TrashRestoreRename> Renamed,
+    int DuplicateUrls);
+
+/// <summary>还原时撞名自动编号（同层唯一命名服务）：From → To。</summary>
+public sealed record TrashRestoreRename(string From, string To);
 
 /// <summary>批量永久删除结果。</summary>
 public sealed record TrashPurgeBatchResult(int PurgedLinks, int PurgedFolders);

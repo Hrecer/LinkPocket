@@ -1,57 +1,58 @@
 using System.Text.Json;
 using LinkPocket.Contracts;
-using LinkPocket.Data;
-using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Trash;
 
-/// <summary>trash.restore_batch（★ 引擎能力，不接 UI）：批量还原链接（固定落根；任一失败整批失败）。</summary>
+/// <summary>
+/// trash.restore_batch（Mutation · 混合批量）：链接与单元**同一条流水线**、单事务原子
+/// （任一项硬失败 → 整批回滚 + 指明失败 id）。形状对齐 <c>purge_batch</c>（link_ids / folder_ids），
+/// 落点语义与单条命令一致（to 缺省 origin；先单元后链接——链接的 origin 可指向同批还原的单元）。
+/// </summary>
 internal sealed class TrashRestoreBatchHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.restore_batch",
         Category: "trash",
-        Description: "批量从回收站还原链接（固定落根；原子单事务）",
-        Parameters: [ParamSpec.Req<IReadOnlyList<string>>("ids", "回收站书签快照 ID 列表")],
+        Description: "批量从回收站还原链接与单元（混合；缺省回删除前位置；原子单事务）",
+        Parameters:
+        [
+            ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "回收站书签快照 ID 列表"),
+            ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "回收站单元 ID 列表"),
+            ParamSpec.Opt<string>("to", "origin（缺省）= 删除前位置；root = 根级"),
+        ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var ids = CommandArgs.StringArray(args, "ids");
-        if (ids.Count == 0)
+        var linkIds = CommandArgs.StringArray(args, "link_ids");
+        var folderIds = CommandArgs.StringArray(args, "folder_ids");
+        if (linkIds.Count == 0 && folderIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "ids 不能为空", correlationId: ctx.CorrelationId));
-        var ct = ctx.Ct;
+                EngineErrors.RequiredParam, "link_ids 与 folder_ids 不能同时为空",
+                JsonSerializer.SerializeToElement(new { @param = "link_ids" })));
+        var to = TrashRestoreSupport.ReadLandingMode(args);
 
-        foreach (var id in ids)
-        {
-            var snapshot = await ctx.Uow.Trash.FindLinkAsync(new LinkId(id), ct)
-                ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"回收站中不存在书签 {id}", correlationId: ctx.CorrelationId));
+        var outcome = await TrashRestoreSupport.RestoreAsync(ctx, linkIds, folderIds, to, null, ctx.Ct);
 
-            _ = await ctx.Uow.Links.AddAsync(new Link
-            {
-                LinkId = snapshot.LinkId,
-                Url = snapshot.Url,
-                Title = snapshot.Title,
-                Description = snapshot.Description,
-                FaviconUrl = snapshot.FaviconUrl,
-                ListId = null,
-                LastVisitedAt = snapshot.LastVisitedAt,
-                VisitCount = snapshot.VisitCount,
-                IsImportant = snapshot.IsImportant,
-                CreatedAt = snapshot.CreatedAt,
-                UpdatedAt = DateTime.UtcNow,
-            }, ct);
-            await ctx.Uow.Trash.RemoveLinkAsync(new LinkId(id), ct);
-        }
-
+        var touched = outcome.Links.Select(l => new EntityRef("link", l.LinkId))
+            .Concat(outcome.Units.Select(u => new EntityRef("folder", u.UnitId)))
+            .ToList();
+        var fellNote = outcome.FellBackToRoot.Count > 0
+            ? $"；{outcome.FellBackToRoot.Count} 项原位置已不存在落根"
+            : string.Empty;
         return CommandResult.Ok(
-            new TrashRestoreBatchResult(ids.Count),
+            new TrashRestoreBatchResult(
+                outcome.Links.Count,
+                outcome.RestoredFolderIds.Count,
+                outcome.Units.Count,
+                outcome.FellBackToRoot,
+                outcome.Renamed,
+                outcome.Links.Count(l => l.Duplicate)),
             new ChangeSet(
-                Touched: ids.Select(i => new EntityRef("link", i)).ToList(),
-                Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"已还原 {ids.Count} 个书签"));
+                Touched: touched,
+                Events: [DomainEventNames.FoldersChanged, DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
+                HumanSummary: $"已还原 {outcome.Links.Count} 个链接、{outcome.Units.Count} 个单元（{outcome.RestoredFolderIds.Count} 个文件夹）{fellNote}"),
+            outcome.UndoSteps);
     }
 }

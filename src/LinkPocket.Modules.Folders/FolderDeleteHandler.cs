@@ -142,14 +142,15 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         var events = new List<string> { LinkPocket.Contracts.DomainEventNames.FoldersChanged, LinkPocket.Contracts.DomainEventNames.LinksChanged };
         if (cascade == "trash_links") events.Add(LinkPocket.Contracts.DomainEventNames.TrashChanged);
 
-        // 撤销载荷：**仅 trash_links（整子树进回收站）可撤销** —— 逆向 = 还原该单元回原父。
+        // 撤销载荷：**仅 trash_links（整子树进回收站）可撤销** —— 逆向 = 还原该单元回**原父目录**
+        // （v5：origin_parent_folder_id 是数据事实，回填 to: origin 即可，不再传原父 ID）。
         // delete_all（物理删除）与 move_to_list（链接已转移、空子树已删）**不可逆** → 不发载荷，不入撤销栈。
         var undo = cascade == "trash_links"
             ? new[]
             {
                 new UndoInverseStep("trash.restore_unit",
                     System.Text.Json.JsonSerializer.SerializeToElement(
-                        new { unit_id = id.Value, target_parent_id = folder.ParentId }))
+                        new { unit_id = id.Value, to = "origin" }))
             }
             : null;
 

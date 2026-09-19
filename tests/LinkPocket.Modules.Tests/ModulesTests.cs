@@ -448,9 +448,10 @@ public class LinksModuleTests
 
         var restored = await engine.ExecuteAsync<TrashRestoreResult>("trash.restore", new { id = link.Data!.LinkId });
         Assert.Equal(link.Data!.LinkId, restored.Data!.LinkId);
+        Assert.False(restored.Data!.FellBackToRoot);
 
         var got = await engine.QueryAsync<LinkDto>("links.get", new { id = link.Data!.LinkId });
-        Assert.Null(got.ListId);   // 还原落根
+        Assert.Equal(folder.Data!.FolderId, got.ListId);   // 缺省 to = origin：落回删除前所在目录
     }
 
     [Fact]
@@ -463,8 +464,8 @@ public class LinksModuleTests
         await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
 
         var restored = await engine.ExecuteAsync<TrashRestoreResult>(
-            "trash.restore", new { id = link.Data!.LinkId, to_origin = true });
-        Assert.True(restored.Data!.RestoredToOrigin);
+            "trash.restore", new { id = link.Data!.LinkId, to = "origin" });
+        Assert.False(restored.Data!.FellBackToRoot);
         Assert.Equal(folder.Data!.FolderId, restored.Data!.ListId);
 
         var got = await engine.QueryAsync<LinkDto>("links.get", new { id = link.Data!.LinkId });
@@ -474,9 +475,19 @@ public class LinksModuleTests
         await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
         await engine.ExecuteAsync<object>("folders.delete", new { folder_id = folder.Data!.FolderId });
         var fallback = await engine.ExecuteAsync<TrashRestoreResult>(
-            "trash.restore", new { id = link.Data!.LinkId, to_origin = true });
-        Assert.False(fallback.Data!.RestoredToOrigin);
+            "trash.restore", new { id = link.Data!.LinkId, to = "origin" });
+        Assert.True(fallback.Data!.FellBackToRoot);
         Assert.Null(fallback.Data!.ListId);
+
+        // to = "root" 显式落根；to 越界 → LP.VAL.003（校验先于存在性检查）
+        await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
+        var toRoot = await engine.ExecuteAsync<TrashRestoreResult>(
+            "trash.restore", new { id = link.Data!.LinkId, to = "root" });
+        Assert.False(toRoot.Data!.FellBackToRoot);
+        Assert.Null(toRoot.Data!.ListId);
+        var bad = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<TrashRestoreResult>(
+            "trash.restore", new { id = link.Data!.LinkId, to = "everywhere" }));
+        Assert.Equal(EngineErrors.EnumOutOfRange, bad.Error.Code);
     }
 
     [Fact]
@@ -690,20 +701,166 @@ public class TrashModuleTests
     }
 
     [Fact]
-    public async Task RestoreBatch_Works()
+    public async Task RestoreBatch_Mixed_Links_And_Units()
     {
         var (engine, _, _) = TestHost.Create();
-        var l1 = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://1.example", title = "1" });
-        var l2 = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://2.example", title = "2" });
-        await engine.ExecuteAsync<object>("links.trash", new { id = l1.Data!.LinkId });
-        await engine.ExecuteAsync<object>("links.trash", new { id = l2.Data!.LinkId });
+        var home = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" })).Data!;
+        var l1 = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://1.example", title = "1", list_id = home.FolderId })).Data!;
+        var l2 = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://2.example", title = "2" })).Data!;
+        await engine.ExecuteAsync<object>("links.trash", new { id = l1.LinkId });
+        await engine.ExecuteAsync<object>("links.trash", new { id = l2.LinkId });
+
+        // 单元：整目录删除（含 1 链接）
+        var doomed = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料" })).Data!;
+        var inner = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://in.example", title = "内", list_id = doomed.FolderId })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = doomed.FolderId });
 
         var restored = await engine.ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
-            new { ids = new[] { l1.Data!.LinkId, l2.Data!.LinkId } });
-        Assert.Equal(2, restored.Data!.Restored);
+            new { link_ids = new[] { l1.LinkId, l2.LinkId }, folder_ids = new[] { doomed.FolderId } });
+        Assert.Equal(3, restored.Data!.RestoredLinks);      // 2 独立 + 1 随单元
+        Assert.Equal(1, restored.Data!.RestoredUnits);
+        Assert.Equal(1, restored.Data!.RestoredFolders);
+        Assert.Empty(restored.Data!.FellBackToRoot);
+        Assert.Empty(restored.Data!.Renamed);
+        Assert.Equal(0, restored.Data!.DuplicateUrls);
 
+        // 缺省回原位置：l1 回「工作」、l2 回根、单元回根、夹内链接回夹
+        Assert.Equal(home.FolderId, (await engine.QueryAsync<LinkDto>("links.get", new { id = l1.LinkId })).ListId);
+        Assert.Null((await engine.QueryAsync<LinkDto>("links.get", new { id = l2.LinkId })).ListId);
+        Assert.Contains(await engine.QueryAsync<List<FolderDto>>("folders.tree", null),
+            f => f.FolderId == doomed.FolderId && f.ParentId == null);
+        Assert.Equal(doomed.FolderId, (await engine.QueryAsync<LinkDto>("links.get", new { id = inner.LinkId })).ListId);
+        Assert.Empty(await engine.QueryAsync<List<TrashEntryDto>>("trash.list", null));
+
+        // 空批量 → LP.VAL.001
+        var empty = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<TrashRestoreBatchResult>(
+            "trash.restore_batch", new { link_ids = Array.Empty<string>(), folder_ids = Array.Empty<string>() }));
+        Assert.Equal(EngineErrors.RequiredParam, empty.Error.Code);
+    }
+
+    [Fact]
+    public async Task RestoreBatch_Link_Returns_Into_Same_Batch_Unit()
+    {
+        // C2：链接 origin = 同批还原的单元 → 先单元后链接 → 按 ID 落回该目录
+        var (engine, _, _) = TestHost.Create();
+        var unit = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "U" })).Data!;
+        var link = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://u.example", title = "U", list_id = unit.FolderId })).Data!;
+        await engine.ExecuteAsync<object>("links.trash", new { id = link.LinkId });
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = unit.FolderId });
+
+        var restored = await engine.ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
+            new { link_ids = new[] { link.LinkId }, folder_ids = new[] { unit.FolderId } });
+        Assert.Equal(1, restored.Data!.RestoredLinks);
+        Assert.Equal(unit.FolderId, (await engine.QueryAsync<LinkDto>("links.get", new { id = link.LinkId })).ListId);
+    }
+
+    [Fact]
+    public async Task Restore_Link_From_Inside_Unit_Falls_Back_To_Root()
+    {
+        // A12：链接在单元内、单独还原"到原位置"——原目录（所属单元）在回收站 → 落根 + 如实回报
+        var (engine, _, _) = TestHost.Create();
+        var unit = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "单元" })).Data!;
+        var link = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://a12.example", title = "内链", list_id = unit.FolderId })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = unit.FolderId });
+
+        var restored = await engine.ExecuteAsync<TrashRestoreResult>("trash.restore", new { id = link.LinkId });
+        Assert.True(restored.Data!.FellBackToRoot);
+        Assert.Null(restored.Data!.ListId);
+        Assert.Contains(await engine.QueryAsync<List<TrashFolderDto>>("trash.tree", null),
+            t => t.TrashFolderId == unit.FolderId);   // 单元不受影响
+    }
+
+    [Fact]
+    public async Task RestoreBatch_Two_Same_Name_Units_Numbered()
+    {
+        // B12：批内两个同名单元共享占用表 → 「资料」「资料 (2)」
+        var (engine, _, _) = TestHost.Create();
+        var u1 = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料" })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = u1.FolderId });
+        var u2 = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料" })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = u2.FolderId });
+
+        var restored = await engine.ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
+            new { folder_ids = new[] { u1.FolderId, u2.FolderId } });
+        Assert.Equal(2, restored.Data!.RestoredUnits);
+        var rename = Assert.Single(restored.Data!.Renamed);
+        Assert.Equal("资料", rename.From);
+        Assert.Equal("资料 (2)", rename.To);
+
+        var root = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
+        var names = root.SubFolders.Select(f => f.Name).ToList();
+        Assert.Contains("资料", names);
+        Assert.Contains("资料 (2)", names);
+    }
+
+    [Fact]
+    public async Task RestoreBatch_Reports_Duplicate_Urls()
+    {
+        // D7：落点已有同 URL 链接 → 计数如实提示（不阻断、不合并、忠实保留重复）
+        var (engine, _, _) = TestHost.Create();
+        var link = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://dup.example", title = "原" })).Data!;
+        await engine.ExecuteAsync<object>("links.trash", new { id = link.LinkId });
+        await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://dup.example", title = "已在根" });
+
+        var restored = await engine.ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
+            new { link_ids = new[] { link.LinkId } });
+        Assert.Equal(1, restored.Data!.RestoredLinks);
+        Assert.Equal(1, restored.Data!.DuplicateUrls);
         var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
         Assert.Equal(2, stats.Total);
+    }
+
+    [Fact]
+    public async Task RestoreBatch_Missing_Id_Fails_Whole_Batch()
+    {
+        // C3：任一项不存在 → 硬失败（预检先于任何变更）+ 指明失败 id
+        var (engine, _, _) = TestHost.Create();
+        var link = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://rollback.example", title = "R" })).Data!;
+        await engine.ExecuteAsync<object>("links.trash", new { id = link.LinkId });
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<TrashRestoreBatchResult>(
+            "trash.restore_batch", new { link_ids = new[] { link.LinkId, "no-such-id" } }));
+        Assert.Equal(EngineErrors.EntityNotFound, ex.Error.Code);
+        Assert.Contains("no-such-id", ex.Error.Message);
+
+        Assert.Contains(await engine.QueryAsync<List<TrashEntryDto>>("trash.list", null), e => e.Id == link.LinkId);
+        Assert.Equal(0, (await engine.QueryAsync<LinkCountsDto>("links.stats", null)).Total);
+    }
+
+    [Fact]
+    public async Task RestoreBatch_SubUnit_Conflict_Rolls_Back_Whole_Batch()
+    {
+        // 坏数据防御：处理中途发现主表已有同 ID（子单元）→ 硬失败 → 已还原的项整批回滚，绝不覆盖既有实体
+        var (engine, factory, _) = TestHost.Create();
+        var parent = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "父单元" })).Data!;
+        var child = (await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "子单元", parent_id = parent.FolderId })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = parent.FolderId });
+
+        await using (var ctx = factory.CreateDbContext())
+        {
+            ctx.Add(new LinkPocket.Data.Folder { FolderId = child.FolderId, Name = "冒名子" });
+            await ctx.SaveChangesAsync();
+        }
+
+        var ex = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<TrashRestoreBatchResult>(
+            "trash.restore_batch", new { folder_ids = new[] { parent.FolderId } }));
+        Assert.Equal(EngineErrors.DbError, ex.Error.Code);
+        Assert.Contains(child.FolderId, ex.Error.Message);
+
+        // 整批回滚：父未落地、单元仍在回收站、坏数据行未被覆盖
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.DoesNotContain(tree, f => f.FolderId == parent.FolderId);
+        Assert.Contains(tree, f => f.Name == "冒名子");
+        Assert.Contains(await engine.QueryAsync<List<TrashFolderDto>>("trash.tree", null),
+            t => t.TrashFolderId == parent.FolderId);
     }
 
     [Fact]

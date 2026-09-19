@@ -29,15 +29,17 @@ public sealed partial class EngineClient
         => ExecuteAsync<JsonElement>("trash.move",
             new { id, is_folder = isFolder, target_trash_folder_id = targetTrashFolderId }, o, ct);
 
-    /// <summary>还原（保留原 ID；toOrigin = true 还原到删除前所在目录，原目录已不存在时落根）。</summary>
-    public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id, bool toOrigin = false,
+    /// <summary>还原单条链接（保留原 ID；to = origin（缺省）回删除前位置 / root 落根）。</summary>
+    public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id, string to = "origin",
         CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<TrashRestoreResult>("trash.restore", new { id, to_origin = toOrigin }, o, ct);
+        => ExecuteAsync<TrashRestoreResult>("trash.restore", new { id, to }, o, ct);
 
-    /// <summary>批量还原（固定落根）。</summary>
-    public Task<CommandResult<TrashRestoreBatchResult>> TrashRestoreBatchAsync(IReadOnlyList<string> ids,
+    /// <summary>混合批量还原（链接 + 单元；缺省回删除前位置；原子单事务）。</summary>
+    public Task<CommandResult<TrashRestoreBatchResult>> TrashRestoreBatchAsync(
+        IReadOnlyList<string> linkIds, IReadOnlyList<string> folderIds, string to = "origin",
         CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch", new { ids }, o, ct);
+        => ExecuteAsync<TrashRestoreBatchResult>("trash.restore_batch",
+            new { link_ids = linkIds, folder_ids = folderIds, to }, o, ct);
 
     /// <summary>永久删除（破坏性：两阶段确认）。link = 单独删除的书签；folder = 整单元。</summary>
     public Task<CommandResult<JsonElement>> TrashPurgeAsync(string id, bool isFolder,

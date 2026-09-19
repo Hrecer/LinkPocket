@@ -176,6 +176,72 @@ public class UndoInverseTests
         finally { AppTestEnv.Delete(dbPath); }
     }
 
+    // —— 删链接：撤销 = 还原回删除前目录（v5 修正：旧实现撤销后落根）——
+
+    [Fact]
+    public async Task 删链接_撤销后回删除前目录()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("原目录")).Data!;
+            var link = (await client.LinkCreateAsync("https://undo-origin.example", title: "U",
+                listId: folder.FolderId, autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var top = (await UndoEntries(client))[0];
+            Assert.Equal("links.trash", top.Command);
+            var step = Assert.Single(top.Steps);
+            Assert.Equal("trash.restore", step.InverseCommand);
+            // 逆向参数必须带落点（to: origin）——描述符"退回原参数"会丢落点信息（旧实现 = 撤销后落根）
+            Assert.Equal("origin", step.InverseArgs.GetProperty("to").GetString());
+
+            await client.UndoAsync();
+            Assert.Equal(folder.FolderId, (await client.LinkGetAsync(link.LinkId)).ListId);   // 回原目录
+
+            await client.RedoAsync();
+            Assert.Contains(await client.TrashListAsync(), t => t.Id == link.LinkId);          // 重做 → 再进回收站
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    // —— 批量还原：链接落回同批还原的单元 → 撤销步覆盖去重（只发单元步，撤销/重做不双次处理）——
+
+    [Fact]
+    public async Task 批量还原_链接落回同批单元_撤销重做往返()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("还原夹")).Data!;
+            var link = (await client.LinkCreateAsync("https://undo-batch.example", title: "B",
+                listId: folder.FolderId, autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);                        // 链接单独删除（回收站根）
+            await client.FolderDeleteAsync(folder.FolderId, "trash_links");  // 目录整删（单元）
+
+            // 混合批量还原：链接 origin = 同批还原的单元 → 落回夹内
+            await client.TrashRestoreBatchAsync(new[] { link.LinkId }, new[] { folder.FolderId });
+            Assert.Equal(folder.FolderId, (await client.LinkGetAsync(link.LinkId)).ListId);
+
+            // 一次用户动作 = 一条撤销记录；链接落点被单元步覆盖 → 只发 1 步（覆盖去重）
+            var top = (await UndoEntries(client))[0];
+            Assert.Equal("trash.restore_batch", top.Command);
+            Assert.Equal("folders.delete", Assert.Single(top.Steps).InverseCommand);
+
+            // 撤销 → 单元（含夹内链接）回回收站
+            await client.UndoAsync();
+            Assert.Contains(await client.TrashTreeAsync(), t => t.TrashFolderId == folder.FolderId);
+            Assert.Contains(await client.TrashUnitContentsAsync(folder.FolderId), e => e.Id == link.LinkId);
+            Assert.DoesNotContain((await client.LinkListAsync(perPage: 0)).Links, l => l.LinkId == link.LinkId);
+
+            // 重做 → 原样回来（链接回夹、原 ID 不变）
+            await client.RedoAsync();
+            Assert.Equal(folder.FolderId, (await client.LinkGetAsync(link.LinkId)).ListId);
+            Assert.Contains(await client.FolderTreeAsync(), f => f.FolderId == folder.FolderId);
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
     // —— 明确排除：重命名 / 改属性绝不入撤销栈 ——
 
     [Fact]
