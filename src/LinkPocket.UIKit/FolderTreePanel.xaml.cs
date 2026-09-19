@@ -160,7 +160,7 @@ namespace LinkPocket.Views
             if (e.RightButton == MouseButtonState.Pressed)
             {
                 if (_rightPressNode == null) return;
-                if (!BeyondDragThreshold(e.GetPosition(this), _nodeRightDragStart)) return;
+                if (!DragSupport.BeyondThreshold(e.GetPosition(this), _nodeRightDragStart)) return;
                 if ((sender as FrameworkElement) is not { DataContext: { } rnode } rsource) return;
                 _rightPressNode = null;   // 本次手势只发起一次
                 NodeDragStartRequested?.Invoke(this, new TreeItemDragStartEventArgs
@@ -174,17 +174,14 @@ namespace LinkPocket.Views
 
             if (e.LeftButton != MouseButtonState.Pressed) return;
             if (_pressNode == null || _nodeDragStarted) return;   // 按下不在行主体（改名编辑框内）→ 不进入拖拽
-            if (!BeyondDragThreshold(e.GetPosition(this), _nodeDragStart)) return;
+            if (!DragSupport.BeyondThreshold(e.GetPosition(this), _nodeDragStart)) return;
 
             if ((sender as FrameworkElement) is not { DataContext: { } node } source) return;
             _nodeDragStarted = true;
             NodeDragStartRequested?.Invoke(this, new TreeItemDragStartEventArgs { Node = node, Source = source });
         }
 
-        /// <summary>移动是否超过系统拖拽阈值（**唯一实现**：左键与右键两条路径共用同一判定口径）。</summary>
-        private static bool BeyondDragThreshold(Point pos, Point start)
-            => Math.Abs(pos.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance ||
-               Math.Abs(pos.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
+        // 起手阈值已上收 UIKit（Views.DragSupport.BeyondThreshold，左键/右键/两页共用同一口径）。
 
         /// <summary>
         /// 行主体单击（chevron 由 ToggleButton 自捕获鼠标、绝不进入此路径）：

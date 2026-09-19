@@ -9,7 +9,7 @@ using System.Windows.Media.Effects;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
 
-namespace LinkPocket.Views.Browser;
+namespace LinkPocket.Views;
 
 /// <summary>
 /// 拖拽浮层（复刻 Windows 11 资源管理器的拖拽手感）：
@@ -24,8 +24,11 @@ namespace LinkPocket.Views.Browser;
 ///
 /// <para>⚠️ 必须 <c>IsHitTestVisible = false</c>：否则浮层会吃掉指针下方的 DragOver/Drop，
 /// 落点判定与光标会全部失效。位置更新走宿主在 <c>GiveFeedback</c> 里读屏幕坐标（拖拽期间 WPF 不再派发 MouseMove）。</para>
+///
+/// <para>归属 <c>LinkPocket.UIKit</c>（2026-09-19 自 UI.Browser 上收）：浏览页与回收站
+/// 两页共用同一份浮层实现（public——页面程序集都要用；内部可见性后门是架构红线，不开）。</para>
 /// </summary>
-internal sealed class DragVisualAdorner : Adorner
+public sealed class DragVisualAdorner : Adorner
 {
     /// <summary>浮层相对指针的偏移（与 Windows 的手感一致：图像落在指针右下，不遮住指针本身）。</summary>
     private const double PointerOffsetX = 12;
@@ -126,7 +129,7 @@ internal sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>在宿主所在的可视树上挂一个浮层（同一宿主只挂一个）。</summary>
-    internal static DragVisualAdorner? Attach(FrameworkElement owner)
+    public static DragVisualAdorner? Attach(FrameworkElement owner)
     {
         var layer = AdornerLayer.GetAdornerLayer(owner);
         if (layer == null) return null;
@@ -144,7 +147,7 @@ internal sealed class DragVisualAdorner : Adorner
     /// 计数口径 = 拖动集合里的实体数（文件夹 / 链接各算一项，**不含**文件夹里的子项），与选中统计一致。</item>
     /// </list>
     /// </summary>
-    internal void Show(IReadOnlyList<DragItem> items)
+    public void Show(IReadOnlyList<DragItem> items)
     {
         var first = items.FirstOrDefault();
         if (first == null) return;
@@ -164,7 +167,7 @@ internal sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。</summary>
-    internal void UpdateHint(string hintText)
+    public void UpdateHint(string hintText)
     {
         var show = !string.IsNullOrEmpty(hintText);
         if (show) _hintText.Text = hintText;
@@ -173,7 +176,7 @@ internal sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>更新位置（宿主给的坐标须相对被装饰元素）。</summary>
-    internal void UpdatePosition(Point ownerPoint)
+    public void UpdatePosition(Point ownerPoint)
     {
         _offset = ownerPoint;
         RefreshLayer();
@@ -191,7 +194,7 @@ internal sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>从可视树摘掉浮层（拖拽结束 / 页面卸载）。</summary>
-    internal void Detach() => (Parent as AdornerLayer)?.Remove(this);
+    public void Detach() => (Parent as AdornerLayer)?.Remove(this);
 
     protected override Size MeasureOverride(Size constraint)
     {

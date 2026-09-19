@@ -6,11 +6,11 @@ using System.Collections.Generic;
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 资源管理器式浏览的导航状态（P4；自 Managers/NavigationController 归位为 BrowserHistory）：
-/// 维护 currentFolderId 与后退 / 前进历史栈（只存 folderId，null = 根目录「全部书签」）。
-/// 不持有任何 UI 引用；目录内容加载由 BrowserViewModel 完成。
+/// 资源管理器式浏览的导航状态（P4；自 Managers/NavigationController 归位，2026-09-19 自 UI.Browser 上收 UIKit）：
+/// 维护当前位置 ID 与后退 / 前进历史栈（只存 ID，null = 根——浏览页 = 「全部书签」，回收站 = 「回收站」）。
+/// 不持有任何 UI 引用；内容加载由各页 VM 完成。浏览页与回收站两页共用同一份实现（唯一一份历史栈口径）。
 /// </summary>
-public class BrowserHistory
+public class NavigationHistory
 {
     /// <summary>历史栈容量上限：防无限增长（正常使用 50 条足够，超出后丢最旧）。</summary>
     private const int MaxHistory = 100;

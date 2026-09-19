@@ -51,7 +51,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>补刷递归深度上限（超过后本轮不再递归补刷）。</summary>
     private const int MaxRefreshRecursion = 3;
 
-    public BrowserHistory Controller { get; } = new();
+    public NavigationHistory Controller { get; } = new();
 
     public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
     public ObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
@@ -400,11 +400,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>当前落点会做什么（无落点 = 移动，仅作默认值；调用方只在有落点时用它）。</summary>
     public TransferMode DropTargetMode => _dropTarget?.Mode ?? TransferMode.Move;
 
-    /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」` / `复制到「X」`（动作词由落点模式决定，单一来源）。</summary>
+    /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」` / `复制到「X」`——文案口径在
+    /// <see cref="Views.DragSupport.HintText"/>（唯一实现，与回收站页共用）。</summary>
     public string DropTargetHintText
-        => _dropTarget == null || string.IsNullOrEmpty(_dropTarget.Name)
-            ? string.Empty
-            : $"{(_dropTarget.Mode == TransferMode.Copy ? "复制到" : "移动到")}「{_dropTarget.Name}」";
+        => _dropTarget == null ? string.Empty : Views.DragSupport.HintText(_dropTarget.Name, _dropTarget.Mode);
 
     /// <summary>
     /// 修饰键 → 传输模式的**唯一实现**（默认移动；按住 Ctrl = 复制——Windows 单卷口径）。
@@ -2033,69 +2032,23 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     private string BuildPathText(string? folderId)
-    {
-        var parts = new List<string> { "全部书签" };
-        foreach (var (id, name) in BuildBreadcrumbIds(folderId))
-            parts.Add(EscapePathSegment(name));   // 名字里的 / 转义为 \/，编辑往返不丢
-        return string.Join("/", parts);
-    }
+        => Paths.BuildText(BuildBreadcrumbIds(folderId));   // 名字里的 / 转义为 \/，编辑往返不丢
 
-    // —— 路径编辑转义 ——
-    // 分隔符 / 与文件夹名里的字面 / 冲突：名内 / 以 \/ 转义（\\ 转义 \）。解析侧按
-    // "未转义的 /"切段并解码转义对，保证任何名字都能在地址栏无损往返。
+    /// <summary>路径解析/候选（唯一实现在 UIKit Views.PathResolver；本页只提供文件夹层级数据源）。</summary>
+    private Views.PathResolver? _pathResolver;
+    private Views.PathResolver Paths => _pathResolver ??= new Views.PathResolver(
+        FolderIds.RootDisplayName,
+        parentId => _folderMap
+            .Where(kvp => kvp.Value.ParentId == parentId)
+            .Select(kvp => new Views.PathNode(kvp.Key, kvp.Value.Name))
+            .ToList());
 
-    /// <summary>段名 → 地址栏文本（先 \\ 后 /，避免转义序列互相污染）。</summary>
-    private static string EscapePathSegment(string name)
-        => name.Replace("\\", "\\\\").Replace("/", "\\/");
-
-    /// <summary>地址栏段 → 真实名字（先 \/ 后 \\）。</summary>
-    private static string UnescapePathSegment(string seg)
-        => seg.Replace("\\/", "/").Replace("\\\\", "\\");
-
-    /// <summary>最后一次"未转义的 /"分隔符的位置（前面反斜杠数为偶）；无则 -1。</summary>
-    private static int LastIndexOfPathSeparator(string text)
-    {
-        var slash = -1;
-        for (var i = 0; i < text.Length; i++)
-        {
-            if (text[i] != '/') continue;
-            var bs = 0;
-            for (var j = i - 1; j >= 0 && text[j] == '\\'; j--) bs++;
-            if (bs % 2 == 0) slash = i;
-        }
-        return slash;
-    }
-
-    /// <summary>按转义规则切分并解码路径段（'\/'= 名字里的字面斜杠，'\\'= 字面反斜杠），剔除空段并修饰空白。</summary>
-    private static IEnumerable<string> SplitPathSegments(string text)
-    {
-        var segments = new List<string>();
-        var current = new System.Text.StringBuilder();
-        for (var i = 0; i < text.Length; i++)
-        {
-            var c = text[i];
-            if (c == '\\' && i + 1 < text.Length && (text[i + 1] == '\\' || text[i + 1] == '/'))
-            {
-                current.Append(text[i + 1]);   // 转义对 → 字面字符
-                i++;
-                continue;
-            }
-            if (c == '/')
-            {
-                if (current.Length > 0) segments.Add(current.ToString().Trim());
-                current.Clear();
-                continue;
-            }
-            current.Append(c);
-        }
-        if (current.Length > 0) segments.Add(current.ToString().Trim());
-        return segments;
-    }
+    // 路径文本转义/切分与逐级解析/候选已上收 UIKit（Views.PathText / Views.PathResolver，浏览页与回收站共用同一实现）。
 
     /// <summary>Enter：逐级按名解析路径（同级重名取排序第一；不区分大小写）。失败 → 边框标红并提示。</summary>
     private void ConfirmPath()
     {
-        if (TryResolvePath(PathEditText, out var folderId, out var invalidSegment))
+        if (Paths.TryResolve(PathEditText, out var folderId, out var invalidSegment))
         {
             IsPathEditing = false;
             PathCandidates = new List<string>();
@@ -2118,10 +2071,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>选择候选（点击或 Tab）：改写文本后保留编辑态，继续输入下一级。</summary>
     public void ChooseCandidate(string name)
     {
-        var text = PathEditText ?? string.Empty;
-        var idx = LastIndexOfPathSeparator(text);
-        var prefix = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
-        PathEditText = prefix + EscapePathSegment(name) + "/";   // 候选名含 / 时同样转义写入
+        PathEditText = Views.PathResolver.ApplyCandidate(PathEditText ?? string.Empty, name);   // 候选名含 / 时同样转义写入
         SelectedCandidateIndex = 0;
     }
 
@@ -2135,56 +2085,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     private void UpdatePathCandidates()
     {
-        var text = _pathEditText ?? string.Empty;
-        var idx = LastIndexOfPathSeparator(text);
-        var headText = idx >= 0 ? text.Substring(0, idx + 1) : string.Empty;
-        var typed = idx >= 0 ? text.Substring(idx + 1) : text;
-
-        if (!TryResolvePath(headText, out var head, out _))
-        {
-            PathCandidates = new List<string>();
-            return;
-        }
-
-        var typedPlain = UnescapePathSegment(typed.Trim());   // 用户输入的可能是转义名（如 "A\/B" 查找 A/B）
-
-        PathCandidates = _folderMap
-            .Where(kvp => ParentMatches(kvp.Value.ParentId, head))
-            .Where(kvp => typedPlain.Length == 0 || kvp.Value.Name.StartsWith(typedPlain, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(kvp => kvp.Value.Name, StringComparer.CurrentCulture)
-            .Select(kvp => kvp.Value.Name)
-            .Take(8)
-            .ToList();
+        PathCandidates = Paths.Candidates(_pathEditText ?? string.Empty).ToList();
         SelectedCandidateIndex = PathCandidates.Count > 0 ? 0 : -1;
     }
-
-    private bool TryResolvePath(string text, out string? folderId, out string? invalidSegment)
-    {
-        folderId = null;
-        invalidSegment = null;
-        var segments = SplitPathSegments(text);   // 转义感知切分：'\/' 不是分隔符
-        foreach (var seg in segments)
-        {
-            if (folderId == null && seg.Equals("全部书签", StringComparison.OrdinalIgnoreCase))
-                continue;
-            var current = folderId; // out 参数不能被 lambda 捕获，先复制
-            var match = _folderMap
-                .Where(kvp => ParentMatches(kvp.Value.ParentId, current)
-                              && string.Equals(kvp.Value.Name, seg, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
-                .ToList();
-            if (match.Count == 0)
-            {
-                invalidSegment = seg;
-                return false;
-            }
-            folderId = match[0].Key;
-        }
-        return true;
-    }
-
-    private static bool ParentMatches(string? parentId, string? current)
-        => parentId == current;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

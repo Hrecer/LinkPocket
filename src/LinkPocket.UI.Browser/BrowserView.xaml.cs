@@ -424,7 +424,7 @@ public partial class BrowserView : UserControl
                 var mode = CurrentDropMode();
                 ApplyDropTarget(new BrowserDropTarget(id, BrowserPane.Breadcrumb, name, mode));
                 Breadcrumb.SetDropHighlight(e.Segment);
-                e.Args.Effects = EffectFor(mode);
+                e.Args.Effects = DragSupport.EffectFor(mode);
             }
             finally
             {
@@ -662,7 +662,7 @@ public partial class BrowserView : UserControl
         if (e.RightButton == MouseButtonState.Pressed)
         {
             if (_rightPressRow == null) return;
-            if (!BeyondDragThreshold(e.GetPosition(this), _rowRightDragStart)) return;
+            if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowRightDragStart)) return;
             var rightRow = _rightPressRow;
             _rightPressRow = null;   // 本次手势只发起一次
             StartRowDrag((DependencyObject)sender, rightRow, rightButton: true);
@@ -671,23 +671,16 @@ public partial class BrowserView : UserControl
 
         if (e.LeftButton != MouseButtonState.Pressed) return;
         if (_pressRow == null) return;   // 按下不在行主体（如落在改名编辑框内）→ 不进入行拖拽
-        if (!BeyondDragThreshold(e.GetPosition(this), _rowDragStart)) return;
+        if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowDragStart)) return;
         _dragStarted = true;             // 拖拽结束的抬起不得再补做选择收敛
         StartRowDrag((DependencyObject)sender, _pressRow, rightButton: false);
     }
 
-    /// <summary>移动是否超过系统拖拽阈值（**唯一实现**：行左键 / 行右键 / 树节点共用同一口径）。</summary>
-    private static bool BeyondDragThreshold(Point pos, Point start)
-        => Math.Abs(pos.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance ||
-           Math.Abs(pos.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
+    // 起手阈值与 OLE 效果映射已上收 UIKit（Views.DragSupport，浏览页/回收站共用同一口径）。
 
     /// <summary>当前修饰键 → 落点模式（**唯一**：Ctrl = 复制；各行/节点 DragOver 的提示与光标都读它）。</summary>
     private static TransferMode CurrentDropMode()
         => BrowserViewModel.ResolveDropMode((Keyboard.Modifiers & ModifierKeys.Control) != 0);
-
-    /// <summary>模式 → OLE 效果（**唯一映射**：Copy 时 Windows 会画带加号的光标）。</summary>
-    private static DragDropEffects EffectFor(TransferMode mode)
-        => mode == TransferMode.Copy ? DragDropEffects.Copy : DragDropEffects.Move;
 
     /// <summary>
     /// 发起一次主栏行拖拽：载荷与选中语义收敛在 VM（<c>PrepareDragFromRow</c>——拖未选中行先单选、
@@ -828,7 +821,7 @@ public partial class BrowserView : UserControl
             var ok = IsDropPositionCandidate(row);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(row!.Id, BrowserPane.Main, row.Name, mode) : null);
-            e.Effects = ok ? EffectFor(mode) : DragDropEffects.None;
+            e.Effects = ok ? DragSupport.EffectFor(mode) : DragDropEffects.None;
         }
         finally
         {
@@ -871,7 +864,7 @@ public partial class BrowserView : UserControl
             var mode = CurrentDropMode();
             ApplyDropTarget(new BrowserDropTarget(
                 ViewModel.CurrentFolderId, BrowserPane.Main, ViewModel.CurrentFolderDisplayName, mode));
-            e.Effects = EffectFor(mode);
+            e.Effects = DragSupport.EffectFor(mode);
         }
         finally
         {
@@ -931,7 +924,7 @@ public partial class BrowserView : UserControl
             var ok = IsDropPositionCandidate(node);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(node!.FolderId, BrowserPane.Tree, node.Name, mode) : null);
-            e.Args.Effects = ok ? EffectFor(mode) : DragDropEffects.None;
+            e.Args.Effects = ok ? DragSupport.EffectFor(mode) : DragDropEffects.None;
         }
         finally
         {
