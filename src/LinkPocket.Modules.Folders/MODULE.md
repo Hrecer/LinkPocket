@@ -31,7 +31,7 @@
 - **同层唯一命名**：一律走**唯一命名服务** `uow.Naming`（Kernel `IFolderNaming`；编号算法 `WindowsNamingPolicy`
   程序集内可见 → 本模块**既不自己拼编号、也拿不到算法**）。单条用 `ResolveAsync`，批量（`folders.move_batch`）
   用 `CreateTable()` 取占用表：**先 Seed 目标层被占用名，再逐项累积**。绝不把编号职责留给调用方
-  （见 `docs/WARNINGS.md` 第 32 条：双实现 + 一半入口不编号曾造出 6 个同名文件夹）。
+  （见 `文档/WARNINGS.md` 第 32 条：双实现 + 一半入口不编号曾造出 6 个同名文件夹）。
 - 递归计数、祖先链、成环判定、路径显示一律走 **`Kernel.ITreeService`**（树算法唯一出处，本模块不自己遍历父链）。
 
 ## 测试

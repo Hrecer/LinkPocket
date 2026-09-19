@@ -26,9 +26,9 @@
 
 ## 关于 `maintenance.reinit` 的语义
 
-旧实现是"删库文件再建"，引擎语义等价改为**单事务清空业务表**（链接/文件夹/回收站两表；
-`audit_log` / `idempotency` / `macros` / `schema_migrations` 有保留策略，不清），
-因此不需要停连接、不怕句柄占用。整库重置时引擎**同步清空查询缓存与撤销/重做栈**
+实现 = **单事务清空业务表**（链接/文件夹/回收站两表；`audit_log` / `idempotency` / `macros` /
+`schema_migrations` 有保留策略，不清），不做"删库文件再建"——因此不需要停连接、不怕句柄占用。
+整库重置时引擎**同步清空查询缓存与撤销/重做栈**
 （`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，
 留着只会让 `undo.undo` 报 EntityNotFound）。dryRun 下不执行 favicon 清理（文件系统不可回滚，
 必须保持零副作用）。`audit_log` 的清理/归档策略尚未落地（`audit.prune` 待实现），长期使用需关注审计表增长。
