@@ -9,7 +9,7 @@ namespace LinkPocket.Modules.Folders;
 /// <summary>
 /// folders.create（Mutation）：新建文件夹。
 /// **同层唯一命名**（Windows 口径）：与父目录下已有兄弟撞名一律自动编号「名 (2)」，
-/// 编号口径由 Kernel <see cref="FolderNaming"/> 单一决定（不同目录可同名）。
+/// 编号口径由**唯一命名服务**（Kernel <see cref="IFolderNaming"/>，经 <c>ctx.Uow.Naming</c> 取得）单一决定（不同目录可同名）。
 /// 新建 → 父链内容有变（TouchModified）。
 /// </summary>
 internal sealed class FolderCreateHandler : ICommandHandler
@@ -38,8 +38,8 @@ internal sealed class FolderCreateHandler : ICommandHandler
                 ?? throw new EngineException(EngineErrors.Of(
                     EngineErrors.EntityNotFound, $"父文件夹 {parentId} 不存在", correlationId: ctx.CorrelationId));
 
-        // 同层唯一命名：与父目录下已有兄弟撞名 → 「名 (2)」（编号口径唯一出处 = Kernel FolderNaming）
-        var resolvedName = await FolderNaming.ResolveAsync(ctx.Uow, parentId, name, null, ct);
+        // 同层唯一命名：与父目录下已有兄弟撞名 → 「名 (2)」（编号口径唯一出处 = 命名服务 IFolderNaming）
+        var resolvedName = await ctx.Uow.Naming.ResolveAsync(parentId, name, null, ct);
 
         var folder = new Folder
         {

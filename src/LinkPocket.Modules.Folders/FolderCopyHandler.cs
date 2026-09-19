@@ -8,8 +8,10 @@ namespace LinkPocket.Modules.Folders;
 
 /// <summary>
 /// folders.copy（Mutation）：深层复制文件夹（含子树与链接）。
-/// **目标层同层唯一命名**（Windows 口径）：副本与目标目录已有兄弟撞名 → 「名 (2)」；
-/// 子树内部名保持原样（源子树自身已满足同层唯一不变量）。新 ID 由实体构造生成，单工作单元一次提交。
+/// **目标层与子树内部一律经单一命名服务**（Windows 口径）：副本与目标目录已有兄弟撞名 → 「名 (2)」；
+/// 子树每一层也用同一张占用表累积（不再依赖"源子树自身已满足同层唯一"这一隐性假设——
+/// 坏数据/外部来源一旦不满足，直写原名的旧写法会让 v4 唯一索引拒绝整条命令）。
+/// 新 ID 由实体构造生成，单工作单元一次提交。
 /// </summary>
 internal sealed class FolderCopyHandler : ICommandHandler
 {
@@ -50,8 +52,8 @@ internal sealed class FolderCopyHandler : ICommandHandler
         // 深拷贝：新实体在内存建立父子关系，一次注册、单提交（与既有最终状态逐字段等价）
         var newFolder = new Folder
         {
-            // 目标层同层唯一命名（编号口径唯一出处 = Kernel FolderNaming）
-            Name = await FolderNaming.ResolveAsync(uow, target, source.Name, null, ct),
+            // 目标层同层唯一命名（编号口径唯一出处 = Kernel 命名服务）
+            Name = await uow.Naming.ResolveAsync(target, source.Name, null, ct),
             Description = source.Description,
             ParentId = target,
             LinkCount = 0,
@@ -60,7 +62,10 @@ internal sealed class FolderCopyHandler : ICommandHandler
         };
         _ = await uow.Folders.AddAsync(newFolder, ct);
         await CopyLinksAsync(uow, id.Value, newFolder.FolderId, linksByFolder, ct);
-        await CopyChildrenAsync(uow, allFolders, id.Value, newFolder.FolderId, linksByFolder, ct);
+
+        // 子树每一层共用一张占用表：键 = 目标父层，各层独立累积（新文件夹在库里还没有子项，无需查库预置）
+        await CopyChildrenAsync(uow, allFolders, id.Value, newFolder.FolderId, linksByFolder,
+            uow.Naming.CreateTable(), ct);
 
         await uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
 
@@ -81,13 +86,14 @@ internal sealed class FolderCopyHandler : ICommandHandler
     private static async Task CopyChildrenAsync(
         Kernel.IUnitOfWork uow, IReadOnlyList<Folder> allFolders,
         string sourceParentId, string destParentId,
-        IReadOnlyDictionary<string, List<Link>> linksByFolder, CancellationToken ct)
+        IReadOnlyDictionary<string, List<Link>> linksByFolder, SiblingNameTable naming, CancellationToken ct)
     {
         foreach (var child in allFolders.Where(f => f.ParentId == sourceParentId))
         {
             var newChild = new Folder
             {
-                Name = child.Name,
+                // 子层同样经命名服务（占用表按目标父层累积；源子树不满足同层唯一也不至于整条命令被索引拒绝）
+                Name = naming.Resolve(destParentId, child.Name),
                 Description = child.Description,
                 ParentId = destParentId,
                 LinkCount = 0,
@@ -96,7 +102,7 @@ internal sealed class FolderCopyHandler : ICommandHandler
             };
             _ = await uow.Folders.AddAsync(newChild, ct);
             await CopyLinksAsync(uow, child.FolderId, newChild.FolderId, linksByFolder, ct);
-            await CopyChildrenAsync(uow, allFolders, child.FolderId, newChild.FolderId, linksByFolder, ct);
+            await CopyChildrenAsync(uow, allFolders, child.FolderId, newChild.FolderId, linksByFolder, naming, ct);
         }
     }
 

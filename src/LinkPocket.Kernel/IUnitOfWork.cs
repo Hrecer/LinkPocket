@@ -27,6 +27,13 @@ public interface IUnitOfWork : IAsyncDisposable
     /// <summary>树领域服务（父链遍历/递归计数/环检测/路径显示——唯一出处）。</summary>
     ITreeService Trees { get; }
 
+    /// <summary>
+    /// 命名领域服务（文件夹同层唯一命名的**唯一**入口：单条查库解析 + 批量占用表——唯一出处）。
+    /// 与 <see cref="Trees"/> 同一种接线：服务绑当前工作单元，同一事务内可见未提交变更，
+    /// 因此不能被抓成长命单例注入模块。
+    /// </summary>
+    IFolderNaming Naming { get; }
+
     Task CommitAsync(CancellationToken ct);
 
     ITransactionScope BeginTransaction();

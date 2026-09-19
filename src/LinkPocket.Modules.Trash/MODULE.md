@@ -15,7 +15,7 @@
 | `trash.tree` | 查询 | 全部单元节点（含子单元），`link_count` = 单元子树内书签总数；声明缓存 |
 | `trash.unit_contents` | 查询 | 单元内容 = 直接子单元 + 子树内全部书签快照（回收站「打开目录」用） |
 | `trash.restore` | 变更 | 还原单条：**缺省落根级**（既有口径）；`to_origin = true` 还原到删除前所在目录（原目录已不存在时落根，结果如实回报落点） |
-| `trash.restore_unit` | 变更 | **还原整单元**（整棵被删文件夹子树 + 单元内书签，全部保留原 ID）；`target_parent_id` 指定落点，缺省落根、原父不存在时回落根并如实回报。**是 `folders.delete`(trash_links) 的逆向**，使"删文件夹"可被 Ctrl+Z 撤销（2026-09-19 新增） |
+| `trash.restore_unit` | 变更 | **还原整单元**（整棵被删文件夹子树 + 单元内书签，全部保留原 ID）；`target_parent_id` 指定落点，缺省落根、原父不存在时回落根并如实回报。**是 `folders.delete`(trash_links) 的逆向**，使"删文件夹"可被 Ctrl+Z 撤销（2026-09-19 新增）。同层唯一命名经**唯一命名服务** `uow.Naming`：落点层预置既有名 + 单元内子层随还原累积（都不靠调用方查库） |
 | `trash.restore_batch` | 变更 | 批量还原，**固定落根级**；批量原子单事务 |
 | `trash.purge` / `trash.purge_batch` | 变更 | 永久删除（单条快照 / 整单元子树）；**破坏性：两阶段确认令牌** |
 
@@ -33,6 +33,8 @@
 ## 测试
 
 - `ModulesTests.cs` → `TrashModuleTests`（两阶段确认 / 单元子树清除 / 批量还原）
+- `NamingServiceTests.cs` → 还原单元的同层命名（落点层占用名预置；**单元内子层重名兜底**——回收站表无唯一索引，
+  坏数据/外部来源的重名在还原时被编号，而不是撞 v4 唯一索引让整条还原失败）
 - `CommandCoverageTests.cs` → `TrashQueryCoverageTests`（平铺口径、单元树计数、单元内容、未知单元报错）
 - 端到端：`ProtocolSmoke` §3（原 ID + `origin_path` 快照 / 树与平铺 / 还原落根 / purge 两阶段）
 

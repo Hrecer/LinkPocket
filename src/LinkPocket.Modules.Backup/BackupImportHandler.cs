@@ -98,8 +98,7 @@ internal sealed class BackupImportHandler : ICommandHandler
         // 备份是外部输入，且**增量模式**下会与既有数据共存：不编号会让 v4 唯一索引直接拒绝**整包**（导入永远失败）；
         // 备份文件内部也可能自带同层重名（来自旧库时代）。规则与粘贴/书签导入完全一致：撞名自动编号「名 (2)」。
         // 占用表 = 内存累积（同批内后面的项还不在库里，查库查不到）；根层先预置既有名（replace 已清空 → 自然为空）。
-        var naming = new SiblingNameTable();
-        naming.Seed(null, (await uow.Folders.ChildrenOfAsync(null, ct)).Select(f => f.Name));
+        var naming = await uow.Naming.CreateTableAsync(null, ct);
         var foldersRenamed = 0;
 
         // —— 文件夹（临时 key → 新实体 ID 映射）——

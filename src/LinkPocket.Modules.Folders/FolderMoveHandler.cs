@@ -45,9 +45,9 @@ internal sealed class FolderMoveHandler : ICommandHandler
                     EngineErrors.EntityNotFound, $"父文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
         }
 
-        // 同层唯一命名（目标层，排除自身）：撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = Kernel FolderNaming）。
+        // 同层唯一命名（目标层，排除自身）：撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = 命名服务 IFolderNaming）。
         // 移到自己所在层时自身被排除 → 名字保持不变，无需任何特例分支。
-        folder.Name = await FolderNaming.ResolveAsync(ctx.Uow, target, folder.Name, folder.FolderId, ct);
+        folder.Name = await ctx.Uow.Naming.ResolveAsync(target, folder.Name, folder.FolderId, ct);
         folder.ParentId = target;
         folder.UpdatedAt = DateTime.UtcNow;
 

@@ -22,19 +22,22 @@
 | `folders.create` / `folders.update` | 变更 | 建目录（可指定父级与描述）/ 改名称与描述（**不换父**；换父只走 `folders.move`）；两者都做**同层唯一命名** |
 | `folders.delete` | 变更 | 三模式：缺省整子树移入回收站、`delete_all`、`move_to_list`（可带 `target_list_id`） |
 | `folders.move` / `folders.move_batch` | 变更 | 单移 / 批量原子移动（任一校验失败整批不动）；目标层**同层唯一命名** |
-| `folders.copy` | 变更 | 深层复制（含全部子目录与书签，生成新 ID）；顶层做**同层唯一命名**，子树内部名保持原样 |
+| `folders.copy` | 变更 | 深层复制（含全部子目录与书签，生成新 ID）；顶层与**子树各层**都做**同层唯一命名**（同一张占用表按目标层累积，坏数据不至于让整条复制失败） |
 | `folders.sort` | 变更 | 同级重排，`sort_order` = `item_ids` 下标；非同级 ID → `LP.STATE.001` |
 
 ## 内部组件
 
 - `FolderSupport`：子目录/链接排序口径、面包屑构造、`ToDto`（注入递归计数）。
-- **同层唯一命名**：一律走 `Kernel.FolderNaming`（唯一实现 `WindowsNamingPolicy`）——本模块**不自己拼编号**，
-  也绝不把编号职责留给调用方（见 `docs/WARNINGS.md` 第 32 条：双实现 + 一半入口不编号曾造出 6 个同名文件夹）。
+- **同层唯一命名**：一律走**唯一命名服务** `uow.Naming`（Kernel `IFolderNaming`；编号算法 `WindowsNamingPolicy`
+  程序集内可见 → 本模块**既不自己拼编号、也拿不到算法**）。单条用 `ResolveAsync`，批量（`folders.move_batch`）
+  用 `CreateTable()` 取占用表：**先 Seed 目标层被占用名，再逐项累积**。绝不把编号职责留给调用方
+  （见 `docs/WARNINGS.md` 第 32 条：双实现 + 一半入口不编号曾造出 6 个同名文件夹）。
 - 递归计数、祖先链、成环判定、路径显示一律走 **`Kernel.ITreeService`**（树算法唯一出处，本模块不自己遍历父链）。
 
 ## 测试
 
 - `tests/LinkPocket.Modules.Tests/ModulesTests.cs` → `FoldersModuleTests`（建/删/移/复制/批量/干跑/**同层唯一命名全入口**）
+- `tests/LinkPocket.Modules.Tests/NamingServiceTests.cs` → 命名服务占用表语义（批量移动 Seed+累积、复制子树子层兜底）
 - `tests/LinkPocket.Modules.Tests/CommandCoverageTests.cs` → `FoldersQueryCoverageTests`（find/get/breadcrumb/cycle_check/sort）
 - 端到端：`ProtocolSmoke` §2（分页、直接子计数、名称升序、面包屑、递归计数、环检测、同层编号）
 

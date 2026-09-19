@@ -53,10 +53,11 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         var ordered = units.Where(u => string.Equals(u.TrashFolderId, unitId, StringComparison.Ordinal))
             .Concat(units.Where(u => !string.Equals(u.TrashFolderId, unitId, StringComparison.Ordinal)));
 
-        // 落点层同层唯一命名（Windows 口径）：只有「单元根」会落到已有内容的目录
-        //（子单元的父是本次一起还原的单元，其内部原本就满足同层唯一），撞名 → 「名 (2)」。
+        // 落点层同层唯一命名（Windows 口径）：只有「单元根」会落到已有内容的目录，撞名 → 「名 (2)」。
+        // 经单一命名服务的占用表：落点层先预置库里既有名，子单元层在下面随还原逐项累积（都不用查库）。
+        var naming = await uow.Naming.CreateTableAsync(landing, ct);
         var rootUnitName = ordered.First().Name;
-        var rootName = await FolderNaming.ResolveAsync(uow, landing, rootUnitName, null, ct);
+        var rootName = naming.Resolve(landing, rootUnitName);
         var renameNote = string.Equals(rootName, rootUnitName, StringComparison.Ordinal)
             ? string.Empty
             : $"（重命名：「{rootUnitName}」→「{rootName}」）";
@@ -65,10 +66,13 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         foreach (var unit in ordered)
         {
             var isRoot = string.Equals(unit.TrashFolderId, unitId, StringComparison.Ordinal);
+            // 子单元：父 = 本次一起还原的单元（回收站镜像原层级且 ID 保留），其内部原本满足同层唯一；
+            // 仍经占用表兜底——坏数据/异常来源的重名在这里被编号，而不是撞 v4 唯一索引让整条还原失败。
+            var unitName = isRoot ? rootName : naming.Resolve(unit.ParentTrashFolderId, unit.Name);
             _ = await uow.Folders.AddAsync(new Folder
             {
                 FolderId = unit.TrashFolderId,     // 保留原 ID
-                Name = isRoot ? rootName : unit.Name,
+                Name = unitName,
                 ParentId = isRoot ? landing : unit.ParentTrashFolderId,
                 LinkCount = 0,
                 CreatedAt = DateTime.UtcNow,

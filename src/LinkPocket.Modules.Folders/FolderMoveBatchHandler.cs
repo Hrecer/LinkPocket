@@ -8,7 +8,9 @@ namespace LinkPocket.Modules.Folders;
 
 /// <summary>
 /// folders.move_batch（★ 引擎能力，不接 UI）：原子移动多个文件夹。
-/// 全部校验（目标存在性 + 成环 + 批次内祖先-后代冲突）先于任何变更；目标目录下同名经 <see cref="INamingPolicy"/> 自动编号。
+/// 全部校验（目标存在性 + 成环 + 批次内祖先-后代冲突）先于任何变更；
+/// 目标目录下同名经**单一命名服务**（<see cref="IUnitOfWork.Naming"/>）的同层占用表自动编号「名 (2)」——
+/// 本模块不接触编号算法，也不自建比较器。
 /// </summary>
 internal sealed class FolderMoveBatchHandler : ICommandHandler
 {
@@ -77,30 +79,28 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             movedFolders.Add(folder);
         }
 
-        // —— 同名自动编号：目标层已占用名 − 本次移出同名 → 逐个解析 ——
+        // —— 同名自动编号：目标层已占用名 − 本次移动的项自身 → 逐个解析并累积 ——
+        // 唯一入口 = 命名服务的占用表（先 Seed 目标层被占用名，再逐项 Resolve）；编号算法与比较口径都在 Kernel，
+        // 本模块既不碰策略也不自建 HashSet——历史上正是这里"顺手用策略 + 自建集合"留下了最后一个旁路。
         var previousParentIds = movedFolders.Select(f => f.ParentId).ToHashSet(StringComparer.Ordinal);
         var renamedNotes = new List<string>();
         if (movedFolders.Count > 0)
         {
-            var policy = WindowsNamingPolicy.Instance;
-            // 占用名集合的比较器必须取自策略本身（命名口径只能有一处）：曾用 CurrentCulture（大小写敏感），
-            // 与 DB 唯一索引（NOCASE）口径不一致 → 策略放行而索引拒绝。
-            var siblings = (await uow.Folders.ChildrenOfAsync(
-                    target == null ? null : new FolderId(target), ct))
+            var naming = uow.Naming.CreateTable();
+            var siblings = await uow.Folders.ChildrenOfAsync(
+                target == null ? null : new FolderId(target), ct);
+            naming.Seed(target, siblings
                 .Where(f => !movedFolders.Any(m => m.FolderId == f.FolderId))
-                .Select(f => f.Name)
-                .ToHashSet(policy.Comparer);
+                .Select(f => f.Name));
 
             foreach (var folder in movedFolders)
             {
-                var resolved = policy.Resolve(folder.Name, siblings);
+                var resolved = naming.Resolve(target, folder.Name);
                 if (!string.Equals(resolved, folder.Name, StringComparison.Ordinal))
                 {
                     renamedNotes.Add($"「{folder.Name}」→「{resolved}」");
                     folder.Name = resolved;
                 }
-
-                siblings.Add(resolved);
             }
         }
 

@@ -16,6 +16,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
     private EfFolderRepository? _folders;
     private EfTrashRepository? _trash;
     private EfTreeService? _trees;
+    private FolderNamingService? _naming;
 
     public EfUnitOfWork(LinkPocketDbContext db) => _db = db;
 
@@ -23,6 +24,9 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public IFolderRepository Folders => _folders ??= new EfFolderRepository(_db);
     public ITrashRepository Trash => _trash ??= new EfTrashRepository(_db);
     public ITreeService Trees => _trees ??= new EfTreeService(_db);
+
+    /// <summary>命名服务（唯一实现，Kernel 提供）：绑本工作单元，本事务内的未提交变更对它可见。</summary>
+    public IFolderNaming Naming => _naming ??= new FolderNamingService(this);
 
     public Task CommitAsync(CancellationToken ct) => _db.SaveChangesAsync(ct);
 

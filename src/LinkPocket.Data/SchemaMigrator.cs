@@ -221,7 +221,7 @@ public static class SchemaMigrator
     /// <item><b>比较口径</b>：<c>COLLATE NOCASE</c>（ASCII 大小写折叠）比命名策略（OrdinalIgnoreCase）更宽松——
     /// 策略只会更严格，不存在"策略放行、索引拒绝"的方向。</item>
     /// <item><b>定位</b>：这是最后防线（任何旁路/未来新入口都绕不过）。正常路径由
-    /// <see cref="LinkPocket.Kernel.FolderNaming"/> 统一编号，不会撞到它。</item>
+    /// <see cref="LinkPocket.Kernel.IFolderNaming"/>（经 <see cref="LinkPocket.Kernel.IUnitOfWork.Naming"/> 取得）统一编号，不会撞到它。</item>
     /// <item><b>既有重名</b>：建索引失败即明确报错拒绝（零兼容：不迁移、不自动改名，处置权归用户）。</item>
     /// </list>
     /// </summary>

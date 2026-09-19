@@ -41,8 +41,8 @@ internal sealed class FolderUpdateHandler : ICommandHandler
             if (name.Trim().Length == 0)
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.RequiredParam, "名称不能为空", correlationId: ctx.CorrelationId));
-            // 同层唯一命名（排除自身）：改名撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = Kernel FolderNaming）
-            folder.Name = await FolderNaming.ResolveAsync(ctx.Uow, folder.ParentId, name, folder.FolderId, ct);
+            // 同层唯一命名（排除自身）：改名撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = 命名服务 IFolderNaming）
+            folder.Name = await ctx.Uow.Naming.ResolveAsync(folder.ParentId, name, folder.FolderId, ct);
         }
         if (description != null) folder.Description = description;
         folder.UpdatedAt = DateTime.UtcNow;

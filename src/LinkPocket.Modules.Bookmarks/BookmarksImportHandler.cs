@@ -50,9 +50,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
 
         // 同层唯一命名（Windows 口径）：占用表先预置**库里已有的根级名**，导入出来的每一层在内存里逐项累积。
         // 缺了这一步会出现两种重名：① 文件里同一父下两个同名兄弟；② 导入项与既有文件夹同名。
-        // 口径只由 Kernel 提供（SiblingNameTable 只管占用集合，编号算法在 WindowsNamingPolicy）。
-        var naming = new SiblingNameTable();
-        naming.Seed(null, (await ctx.Uow.Folders.ChildrenOfAsync(null, ct)).Select(f => f.Name));
+        // 口径只由命名服务提供（SiblingNameTable 只管占用集合；编号算法在 Kernel 内，模块拿不到、也立不了第二份）。
+        var naming = await ctx.Uow.Naming.CreateTableAsync(null, ct);
         var foldersRenamed = 0;
 
         for (var i = 0; i < doc.Items.Count; i++)

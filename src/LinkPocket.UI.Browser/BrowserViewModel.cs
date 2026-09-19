@@ -522,7 +522,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 提交改名：文件夹 → <c>folders.update{name}</c>；链接 → <c>links.update{title}</c>（重命名 = 标题）。
     /// 空名 / 未改 = 视为取消并还原（Windows 口径）。**重命名不入撤销栈**（用户 2026-09-19 定稿）。
-    /// 同层撞名的自动编号由**引擎**负责（Kernel FolderNaming），界面只如实展示引擎返回的最终名。
+    /// 同层撞名的自动编号由**引擎**负责（Kernel 唯一命名服务 IFolderNaming），界面只如实展示引擎返回的最终名。
     /// </summary>
     public async Task CommitRenameAsync()
     {
@@ -1233,7 +1233,7 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     private enum OpOutcome { Done, Skipped, Failed }
 
-    /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel FolderNaming）。
+    /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel IFolderNaming）。
     /// 单项失败不中断整批（与 MoveLink/Copy* 一致），失败必须留痕（观测面铁律）。</summary>
     private async Task<OpOutcome> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
         LinkPocket.Contracts.CallOptions? o = null)
