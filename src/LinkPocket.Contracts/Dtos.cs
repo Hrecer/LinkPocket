@@ -151,6 +151,11 @@ public class TrashEntryDto
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
     [JsonPropertyName("origin_path")] public string? OriginPath { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
+
+    /// <summary>归属的回收站单元（**仅 link 条目有意义**）：null = 根级（单独删除）；非 null = 属于该单元的直接内容。
+    /// 仅 <c>trash.overview</c> 填充（树叶子注入数据源）；<c>trash.list</c> / <c>trash.unit_contents</c> 恒为 null。</summary>
+    [JsonPropertyName("trash_folder_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TrashFolderId { get; set; }
 }
 
 /// <summary>回收站文件夹树节点（层级展示用；回收站内文件夹不可打开/导航）。</summary>
@@ -162,6 +167,25 @@ public class TrashFolderDto
     /// <summary>单元内书签总数（含子孙单元）。</summary>
     [JsonPropertyName("link_count")] public int LinkCount { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
+
+    /// <summary>删除时的原位置路径快照（仅 <c>trash.overview</c> 填充，供「原位置」列展示；其它查询恒 null）。</summary>
+    [JsonPropertyName("origin_path"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OriginPath { get; set; }
+}
+
+/// <summary>
+/// trash.overview（回收站页主视图快照）：**单元树 + 全量链接快照（每项携归属单元）一次取齐**——
+/// 与 <c>folders.overview</c> 同哲学（树/列表/计数同一快照，页面导航与刷新不再逐单元取数）。
+/// 消费者：回收站页（树叶子注入 + 主栏内容按 <c>trash_folder_id</c> 过滤 + 面包屑路径）。
+/// </summary>
+public class TrashOverviewDto
+{
+    /// <summary>全量单元平铺（层级由调用方按 parent_trash_folder_id 组装；link_count = 子树书签总数）。</summary>
+    [JsonPropertyName("folders")] public List<TrashFolderDto> Folders { get; set; } = new();
+
+    /// <summary>全量书签快照（含根级单独删除的；每项 trash_folder_id = 归属单元，null = 根级）。
+    /// 调用方按父单元分组后把直接链接叶子挂到对应单元节点下（与 folders.overview.tree_links 同口径）。</summary>
+    [JsonPropertyName("links")] public List<TrashEntryDto> Links { get; set; } = new();
 }
 
 public class MetadataDto

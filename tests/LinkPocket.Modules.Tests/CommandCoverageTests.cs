@@ -237,6 +237,43 @@ public class TrashQueryCoverageTests
             () => engine.QueryAsync<List<TrashEntryDto>>("trash.unit_contents", new { id = "no-such-unit" }));
         Assert.Equal(EngineErrors.EntityNotFound, missing.Error.Code);
     }
+
+    [Fact]
+    public async Task Overview_Snapshot_Carries_Units_Direct_Links_And_Root_Links()
+    {
+        var (engine, _, _) = TestHost.Create();
+        // 结构：单元 A（直挂 L1 + 子单元 B；B 内 L2）+ 根级单独删除的 S
+        var a = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" })).Data!;
+        var b = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.FolderId })).Data!;
+        var l1 = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://a.example/", title = "A 链接", list_id = a.FolderId })).Data!;
+        var l2 = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://b.example/", title = "B 链接", list_id = b.FolderId })).Data!;
+        var s = (await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://s.example/", title = "根级删除" })).Data!;
+
+        await engine.ExecuteAsync<object>("links.trash", new { id = s.LinkId });
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = a.FolderId });
+
+        var overview = await engine.QueryAsync<TrashOverviewDto>("trash.overview", null);
+
+        // 单元：全量 + 子树计数 + 原位置快照（主栏「原位置」列的数据源）
+        Assert.Equal(2, overview.Folders.Count);
+        var unitA = Assert.Single(overview.Folders, f => f.Name == "A");
+        var unitB = Assert.Single(overview.Folders, f => f.Name == "B");
+        Assert.Equal(2, unitA.LinkCount);
+        Assert.Equal(1, unitB.LinkCount);
+        Assert.Equal(unitA.TrashFolderId, unitB.ParentTrashFolderId);
+        // 原位置快照 = 单元**自身**删除前的完整路径（与 folders.delete 写快照的口径一致）
+        Assert.Equal("全部书签 / A", unitA.OriginPath);
+        Assert.Equal("全部书签 / A / B", unitB.OriginPath);
+
+        // 链接：全量 + 每项携归属单元（null = 根级）——树叶子注入的唯一数据源
+        Assert.Equal(3, overview.Links.Count);
+        Assert.Null(Assert.Single(overview.Links, l => l.Id == s.LinkId).TrashFolderId);
+        Assert.Equal(unitA.TrashFolderId, Assert.Single(overview.Links, l => l.Id == l1.LinkId).TrashFolderId);
+        Assert.Equal(unitB.TrashFolderId, Assert.Single(overview.Links, l => l.Id == l2.LinkId).TrashFolderId);
+    }
 }
 
 public class FaviconCoverageTests

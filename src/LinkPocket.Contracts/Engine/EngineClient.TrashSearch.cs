@@ -19,6 +19,16 @@ public sealed partial class EngineClient
         CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<TrashEntryDto>>("trash.unit_contents", new { id }, o, ct);
 
+    /// <summary>回收站页快照（全量单元 + 全量书签快照，每项携归属单元 trash_folder_id；null = 根级）。</summary>
+    public Task<TrashOverviewDto> TrashOverviewAsync(CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<TrashOverviewDto>("trash.overview", null, o, ct);
+
+    /// <summary>回收站内搬移（书签快照 / 单元；targetTrashFolderId 缺省 = 回收站根；不是还原、无撤销）。</summary>
+    public Task<CommandResult<JsonElement>> TrashMoveAsync(string id, bool isFolder,
+        string? targetTrashFolderId = null, CallOptions? o = null, CancellationToken ct = default)
+        => ExecuteAsync<JsonElement>("trash.move",
+            new { id, is_folder = isFolder, target_trash_folder_id = targetTrashFolderId }, o, ct);
+
     /// <summary>还原（保留原 ID；toOrigin = true 还原到删除前所在目录，原目录已不存在时落根）。</summary>
     public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id, bool toOrigin = false,
         CallOptions? o = null, CancellationToken ct = default)
