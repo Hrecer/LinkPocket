@@ -20,6 +20,15 @@ public partial class TrashViewModel
         await PurgeIdsAsync(new[] { node.Id }, isFolder: true, name: node.Name);
     }
 
+    /// <summary>只读详情覆盖层的「永久删除」：作用对象 = **覆盖层正在展示的那一份书签快照**
+    /// （与选中集合无关、也不受覆盖层门禁影响）。删完条目消失 → 覆盖层由"条目消失即关"收尾。</summary>
+    private async Task PurgeDetailAsync()
+    {
+        var id = _detailLinkId;
+        if (id == null) return;
+        await PurgeIdsAsync(new[] { id }, isFolder: false, name: DetailPane.Title);
+    }
+
     /// <summary>Delete 键 / 工具栏「永久删除」：删除当前选中项（可多选，批量命令 purge_batch）。</summary>
     private async Task PurgeSelectionGuardedAsync()
     {

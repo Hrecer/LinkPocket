@@ -56,7 +56,8 @@
 
         <!-- ===== 命令栏（悬浮式）：两枚新建命令收进一枚浮动胶囊组，不占整行 ===== -->
         <Border Grid.Row="1" Background="Transparent"
-                Padding="12,0,12,8">
+                Padding="12,0,12,8"
+                views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Border HorizontalAlignment="Left" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
@@ -100,9 +101,12 @@
             </Border>
         </Border>
 
-        <!-- ===== 导航行（悬浮式）：无整行底带 —— 三枚导航键收进一枚圆胶囊，地址栏自成胶囊，编辑键独立圆胶囊 ===== -->
+        <!-- ===== 导航行（悬浮式）：无整行底带 —— 三枚导航键收进一枚圆胶囊，地址栏自成胶囊，编辑键独立圆胶囊 =====
+             导航行 / 命令栏 / 内容区 / 状态栏的空白都可清选中（BlankClick 附加行为，按区域挂载；
+             判定 = 命中链归属：命中行、按钮、可拖选文本、滚动条或地址栏胶囊一律不算空白）。 -->
         <Border Grid.Row="0" Background="Transparent"
-                Padding="12,0,12,8">
+                Padding="12,0,12,8"
+                views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
                 <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
                         CornerRadius="17" Padding="2" VerticalAlignment="Center">
@@ -149,9 +153,12 @@
         </Border>
 
         <!-- ===== 内容区：左侧文件夹树 / 右侧列表 / 详情栏 =====
-             ⚠️ 本层不得挂"点空白清选中"：外层处理器会连带吞掉子区域（树行点击）的点击语义——
-             清选中归各区域自己：树面板内部自管（TreeBackgroundClicked），列表卡在卡面上自管。 -->
-        <Grid Grid.Row="2">
+             本层也挂"点空白清选中"：空白判定 = **命中链归属**（UIKit BlankClick）——
+             命中树节点/列表行/按钮/可拖选文本一律不算空白，因此不会吞掉子区域的点击语义
+             （旧实现按"祖先层级"判定才必须禁挂本层，见 docs/WARNINGS 第 30 条）。
+             列表卡自身的空白由卡上那份同一实现处理（更内层先命中，外层自动让位）。 -->
+        <Grid Grid.Row="2" Background="Transparent"
+              views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="210"/>
                 <ColumnDefinition Width="*"/>
@@ -175,12 +182,11 @@
             <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩。
                  列表区卡片化（MD3E shape separation）：大圆角 24 + 四周基面沟槽，
                  消除与两侧面板之间生硬的竖直色块边界。 -->
-            <!-- 列表卡自管"点空白清选中"（卡面上的点击才属于本区域；行内点击由行模板负责，见 IsBrowserRow）。
-                 详情栏/分隔线在别的列，天然不经过这里——不再需要"豁免清单"。 -->
+            <!-- 列表卡自管"点空白清选中"（与其它区域同一实现 UIKit BlankClick；命中行不算空白）。
+                 详情栏/分隔线在别的列，不经过这里。 -->
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
-                    PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
-                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp"
+                    views:BlankClick.Command="{Binding ClearMainPaneSelectionCommand}"
                     AllowDrop="True" DragOver="ListCard_DragOver" DragLeave="ListCard_DragLeave" Drop="ListCard_Drop">
             <Grid>
                 <Grid.ContextMenu>
@@ -526,7 +532,8 @@
         <!-- ===== 状态栏：左右贴边的通栏（无侧向圆角），顶部圆角仅在中央沟槽处与卡片衔接 ===== -->
         <Border Grid.Row="3" MinHeight="36" Background="{DynamicResource TintPanel}"
                 CornerRadius="0" Margin="0"
-                Padding="16,0">
+                Padding="16,0"
+                views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>

@@ -244,6 +244,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public ICommand SelectAllCommand { get; }
     /// <summary>Esc（分层，Windows 口径）：有剪切态先取消剪切，否则清空选中（见 <see cref="HandleEscape"/>）。</summary>
     public ICommand EscapeCommand { get; }
+    /// <summary>点空白清选中（BlankClick 附加行为按区域挂载）：列表卡 / 页面其它空白两档归属语义。</summary>
+    public ICommand ClearMainPaneSelectionCommand { get; }
+    public ICommand ClearPageSelectionCommand { get; }
     public ICommand DeleteSelectionCommand { get; }
     public ICommand RenameSelectionCommand { get; }
     public ICommand OpenSelectionCommand { get; }
@@ -758,6 +761,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
         // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
         EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming);
+        // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，XAML 按区域挂载）：
+        // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
+        ClearMainPaneSelectionCommand = new RelayCommand(ClearMainPaneSelection);
+        ClearPageSelectionCommand = new RelayCommand(ClearPageSelection);
         DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
         RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming && IsListContextActive);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
@@ -1170,6 +1177,21 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public void ClearSelection()
     {
         SetSelection(Enumerable.Empty<string>(), anchor: null);
+    }
+
+    /// <summary>点列表卡空白：主栏获得键盘语义归属 + 清空选中（唯一实现 UIKit BlankClick 的命令端）。</summary>
+    private void ClearMainPaneSelection()
+    {
+        ActivatePane(BrowserPane.Main);
+        ClearSelection();
+    }
+
+    /// <summary>点页面其它空白（导航行 / 命令栏 / 内容区 / 状态栏）：保持当前栏归属，只清选中
+    /// （ActivatePane 会把键盘焦点收回页内——"清焦点"语义）。</summary>
+    private void ClearPageSelection()
+    {
+        ActivatePane(ActivePane);
+        ClearSelection();
     }
 
     private async Task OpenRowAsync(BrowserRowViewModel? row)

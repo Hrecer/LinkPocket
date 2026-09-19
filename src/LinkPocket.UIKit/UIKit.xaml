@@ -94,6 +94,32 @@
         <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
     </Style>
 
+    <!-- ===== 可拖选的展示型文本（全站唯一实现，Views.SelectableText）=====
+         只读 TextBox 的外观 = 纯文本：透明底 / 无边框 / 无内距 / 无焦点视觉 / 隐藏插入符 / 可换行 /
+         失焦仍保留选区高亮；选区高亮 = Primary 25%（与选中行同一色相）。
+         用法：<views:SelectableText Text="{Binding X, Mode=OneWay}"/>；要改视觉用 BasedOn 派生样式或局部属性。
+         ⚠️ 主栏 / 结果表格的行不用它（行要保持整行选中与拖拽手势，文本拖选会冲突）。 -->
+    <Style x:Key="SelectableTextStyle" TargetType="{x:Type views:SelectableText}">
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Cursor" Value="IBeam"/>
+        <Setter Property="CaretBrush" Value="Transparent"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+        <Setter Property="SelectionOpacity" Value="0.25"/>
+        <Setter Property="IsInactiveSelectionHighlightEnabled" Value="True"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="AllowDrop" Value="False"/>
+    </Style>
+    <!-- 隐式样式 = 上面那份（控件处不写 Style 也成立） -->
+    <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}"/>
+
     <Style TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
@@ -347,6 +373,9 @@
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
     <vm:HalfCornerRadiusConverter x:Key="HalfRadius"/>
+    <!-- 药丸色调 → 药丸样式 / 图标强调色（唯一映射点；样式仍只在 UIKit 定义一份） -->
+    <vm:PillToneToStyleConverter x:Key="PillToneStyle"/>
+    <vm:PillToneToBrushConverter x:Key="PillToneBrush"/>
 
     <!-- 滚动条沟槽边距换算（链接详情页/编辑页共用） -->
     <browserviews:ScrollGutterMarginConverter x:Key="ScrollGutterMargin"/>
@@ -527,10 +556,11 @@
                        Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
             <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12" Opacity="0.6"
                        Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-            <!-- ⚠️ 基态视觉值必须写在 Style.Setters：本地值优先级高于触发器 -->
-            <TextBlock Grid.Column="2" Text="{Binding Value}" VerticalAlignment="Top">
-                <TextBlock.Style>
-                    <Style TargetType="TextBlock">
+            <!-- 值 = 可鼠标拖选的展示型文本（唯一实现 Views.SelectableText）；
+                 ⚠️ 基态视觉值必须写在 Style.Setters：本地值优先级高于触发器 -->
+            <views:SelectableText Grid.Column="2" Text="{Binding Value, Mode=OneWay}" VerticalAlignment="Top">
+                <views:SelectableText.Style>
+                    <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}">
                         <Setter Property="FontSize" Value="12"/>
                         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
                         <Setter Property="TextWrapping" Value="Wrap"/>
@@ -543,14 +573,14 @@
                                 <Setter Property="FontFamily" Value="Consolas"/>
                                 <Setter Property="FontSize" Value="11"/>
                                 <Setter Property="Opacity" Value="0.6"/>
+                                <!-- ⚠️ TextBox 没有 TextTrimming（整行不换行，靠观感与 ID 长度兜住） -->
                                 <Setter Property="TextWrapping" Value="NoWrap"/>
-                                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                 <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </TextBlock.Style>
-            </TextBlock>
+                </views:SelectableText.Style>
+            </views:SelectableText>
             <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="{Binding CopyToolTip}"
                     Width="24" Height="22" Padding="3" Margin="4,0,0,0" VerticalAlignment="Center"
                     Command="{Binding CopyCommand}"

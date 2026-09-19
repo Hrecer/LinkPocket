@@ -90,8 +90,11 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 导航行：三枚导航键圆胶囊 + 面包屑地址栏（点空白即编辑）+ 右侧处置按钮组 ===== -->
-        <Border Grid.Row="0" Background="Transparent" Padding="12,0,12,8">
+        <!-- ===== 导航行：三枚导航键圆胶囊 + 面包屑地址栏（点空白即编辑）+ 右侧处置按钮组 =====
+             本行空白 / 内容区空白 / 状态栏空白都可清选中（BlankClick 附加行为，按区域挂载；
+             判定 = 命中链归属：命中地址栏胶囊、按钮、行、可拖选文本一律不算空白）。 -->
+        <Border Grid.Row="0" Background="Transparent" Padding="12,0,12,8"
+                views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
                 <!-- 处置按钮组（与浏览页命令栏同一形态：TintCard 白底大药丸容器 + 三枚**同规格**药丸——
                      同高 32 / 同圆角 16 / 同内距，仅长度不同；顺序 = 还原 · 还原到根目录 · 永久删除） -->
@@ -168,9 +171,11 @@
         </Border>
 
         <!-- ===== 内容区：左栏导航树 / 中栏列表卡 / 右栏只读详情栏 =====
-             ⚠️ 本层不得挂"点空白清选中"（外层处理器会吞子区域点击，见 WARNINGS 30）：
-             清选中归各区域自己（树面板自管、列表卡自管）。 -->
-        <Grid Grid.Row="1">
+             本层也挂"点空白清选中"：空白判定 = **命中链归属**（UIKit BlankClick）——
+             命中树节点/列表行/按钮/可拖选文本一律不算空白，不会吞掉子区域的点击语义
+             （旧实现按"祖先层级"判定才必须禁挂本层，见 docs/WARNINGS 第 30 条）。 -->
+        <Grid Grid.Row="1" Background="Transparent"
+              views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="210"/>
                 <ColumnDefinition Width="*"/>
@@ -186,11 +191,10 @@
                                    NodeSelected="FolderTreePanel_NodeSelected"
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"/>
 
-            <!-- 中栏：列表卡（自管空白点击清选中；行模板在下方共享表里） -->
+            <!-- 中栏：列表卡（自管空白点击清选中 = 同一实现 BlankClick；命中行不算空白） -->
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
-                    PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
-                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp">
+                    views:BlankClick.Command="{Binding ClearMainPaneSelectionCommand}">
                 <Grid>
                     <Grid.ContextMenu>
                         <ContextMenu>
@@ -425,7 +429,8 @@
         </Grid>
 
         <!-- ===== 状态栏：左右贴边通栏（状态文案 + 选中药丸 + 右侧提示） ===== -->
-        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource TintPanel}" Padding="16,0">
+        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource TintPanel}" Padding="16,0"
+                views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>

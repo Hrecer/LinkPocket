@@ -59,12 +59,16 @@ namespace LinkPocket.Input
             e.Handled = true;   // 命中即消费（无论 CanExecute 与否）：绝不穿透到其它语义
         }
 
-        /// <summary>焦点是否在输入控件内（文本框 / 密码框 / 可编辑下拉）：是则让位。</summary>
+        /// <summary>焦点是否在输入控件内（文本框 / 密码框 / 可编辑下拉）：是则让位。
+        /// ⚠️ **只读**文本（展示型可拖选文本 <see cref="Views.SelectableText"/>）只有**真的选中了内容**才让位
+        /// （此时 Ctrl+C 复制选区是用户预期）；否则页面快捷键照常可用——否则点一下网址 / 描述，
+        /// 整页快捷键（Ctrl+A / Delete / Esc / ↑↓ / Ctrl+R…）就会静默失效，而这页根本没有编辑语义。</summary>
         public static bool IsTextInputFocused()
         {
             return Keyboard.FocusedElement switch
             {
-                TextBoxBase => true,
+                TextBox tb => !tb.IsReadOnly || tb.SelectionLength > 0,
+                TextBoxBase => true,   // 其它可编辑文本宿主（如 RichTextBox）：按输入控件让位
                 PasswordBox => true,
                 ComboBox { IsEditable: true } => true,
                 _ => false

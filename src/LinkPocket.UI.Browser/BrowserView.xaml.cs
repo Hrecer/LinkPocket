@@ -972,51 +972,7 @@ public partial class BrowserView : UserControl
     // 进入路径编辑态时的"聚焦 + 全选"归 BreadcrumbBar 控件自身（编辑框一见可见就聚焦）：
     // 视图不再订阅 VM 属性通知去抓编辑框——通知链里可视状态尚未落地，聚焦会静默失败（实测见 WARNINGS）。
 
-    // 卡内按下的手势凭据（见 ListCard_MouseLeftButtonUp 的归属校验）。
-    private bool _cardPressEmpty;
-    private int _cardPressClickCount;
-
-    /// <summary>卡内按下（隧道先于行）：记录"按下是否落在非行区域"+ 点击计数。</summary>
-    private void ListCard_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        var hit = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender))?.VisualHit;
-        _cardPressEmpty = hit == null || !IsBrowserRow(hit);
-        _cardPressClickCount = e.ClickCount;
-    }
-
-    /// <summary>
-    /// 点击列表卡空白处清除选中（命中行内元素时不处理，由行命令负责）。
-    /// 语义边界 = 列表卡本身：处理器挂在卡面上，不挂内容区外层 Grid——
-    /// 外层 Grid 同时包含目录树面板，树行点击（选中/进入）会冒泡到外层并被当成"空白"清掉
-    /// （实测缺陷：点树里的链接叶子/文件夹，两栏都不显示选中）。清选中归各区域自己：
-    /// 树面板内部自管（TreeBackgroundClicked），列表卡在此自管，详情栏/分隔线不在本卡内、天然不受影响。
-    /// **归属校验**：只有"按下也在卡内非行区域"的单击才算点空白——
-    /// 双击打开文件夹时列表会重建，第二击的抬起可能落在新列表空白处（按下却在旧列表行上），
-    /// 那种抬起绝不能当作"点空白清选中"（否则刚打开目录就把选中清没了）。
-    /// </summary>
-    private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        ViewModel?.ActivatePane(BrowserPane.Main);
-        if (!_cardPressEmpty || _cardPressClickCount > 1) return;
-
-        var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
-        if (hitTest?.VisualHit == null || IsBrowserRow(hitTest.VisualHit))
-            return;
-
-        ViewModel?.ClearSelection();
-    }
-
-    private static bool IsBrowserRow(DependencyObject element)
-    {
-        while (element != null)
-        {
-            if (element is Border border && "BrowserRow".Equals(border.Tag as string))
-                return true;
-            if (element is Visual)
-                element = VisualTreeHelper.GetParent(element);
-            else
-                break;
-        }
-        return false;
-    }
+    // 列表卡"点空白清选中"已收口到唯一实现 UIKit `Views.BlankClick`（XAML 上按区域挂载，
+    // 含"按下/抬起双空白 + 单击"归属校验；命中列表行不算空白——行外层 Border 带 Tag="BrowserRow"）。
+    // 本文件不再保留第二份手写命中测试（铁律 10：同类行为只有一条实现）。
 }

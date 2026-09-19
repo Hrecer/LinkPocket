@@ -30,6 +30,14 @@ public partial class TrashViewModel
             ? Task.CompletedTask
             : ExecuteRestoreAsync([], [node.Id], to);
 
+    /// <summary>只读详情覆盖层的还原：作用对象 = **覆盖层正在展示的那一份书签快照**
+    /// （与选中集合无关、也不受覆盖层门禁影响——动作就发生在眼前这一项上）。</summary>
+    private Task RestoreDetailAsync(string to)
+    {
+        var id = _detailLinkId;
+        return id == null ? Task.CompletedTask : ExecuteRestoreAsync(new[] { id }, Array.Empty<string>(), to);
+    }
+
     private async Task ExecuteRestoreAsync(IReadOnlyList<string> linkIds, IReadOnlyList<string> folderIds, string to)
     {
         try

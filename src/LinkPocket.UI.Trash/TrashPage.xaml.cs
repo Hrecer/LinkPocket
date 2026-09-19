@@ -281,36 +281,9 @@ namespace LinkPocket.Views
         }
 
         // ================= 列表卡：空白点击清选中 =================
-
-        private bool _cardPressEmpty;
-        private int _cardPressClickCount;
-
-        private void ListCard_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            var hit = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender))?.VisualHit;
-            _cardPressEmpty = hit == null || !IsTrashRow(hit);
-            _cardPressClickCount = e.ClickCount;
-        }
-
-        private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            ViewModel?.ActivatePane(TrashPane.Main);
-            if (!_cardPressEmpty || _cardPressClickCount > 1) return;
-            var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
-            if (hitTest?.VisualHit == null || IsTrashRow(hitTest.VisualHit)) return;
-            ViewModel?.ClearSelection();
-        }
-
-        private static bool IsTrashRow(DependencyObject element)
-        {
-            while (element != null)
-            {
-                if (element is Border border && "TrashRow".Equals(border.Tag as string)) return true;
-                if (element is Visual) element = VisualTreeHelper.GetParent(element);
-                else break;
-            }
-            return false;
-        }
+        // 唯一实现 = UIKit `Views.BlankClick`（XAML 上按区域挂载：列表卡用 ClearMainPaneSelectionCommand，
+        // 内容区/导航行/状态栏空白用 ClearPageSelectionCommand）；命中回收站行不算空白
+        // （行外层 Border 带 Tag="TrashRow"）。本文件不再保留手写命中测试（铁律 10）。
 
         // ================= 树（FolderTreePanel 事件转发） =================
 

@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             xmlns:views="clr-namespace:LinkPocket.Views"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="286">
 
@@ -86,6 +87,83 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- ===== 动作卡的**按钮定义（各只有一份）**：排布由能力位 StackedActions 决定（见下方两个宿主）=====
+             这样"回收站右栏排两行 / 浏览页右栏排一行"只是排布差异，按钮本身与命令仍是同一份，
+             不存在第二套详情栏（用户令 2026-09-19）。 -->
+
+        <!-- 药丸组：文件夹=「打开」跨两列占满整行；链接=「详情」+「打开」两列等宽 -->
+        <DataTemplate x:Key="SidebarActionPills">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Height="32"
+                        VerticalAlignment="Center" Padding="12,0"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Style="{StaticResource PrimaryPillButton}"
+                        Grid.ColumnSpan="{Binding OpenColumnSpan}"
+                        Command="{Binding OpenCommand}"
+                        ToolTip="{Binding OpenToolTip}"
+                        Visibility="{Binding ShowOpenAction, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="eye-outline" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <!-- 打开：仅链接（系统默认浏览器打开并记录一次访问） -->
+                <Button Grid.Column="1" Style="{StaticResource TonalButton}" Height="32" Padding="12,0" Margin="6,0,0,0"
+                        VerticalAlignment="Center" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch"
+                        Command="{Binding OpenWebsiteCommand}"
+                        ToolTip="在浏览器中打开"
+                        Visibility="{Binding ShowOpenWebsiteButton, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
+                        <TextBlock Text="打开" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </DataTemplate>
+
+        <!-- 图标钮组：回收站 = 还原 / 还原到根目录 / 永久删除（32×32，顺序与工具栏一致）；
+             颜色由色调位驱动（PillToneBrush：深紫 / 浅紫） -->
+        <DataTemplate x:Key="SidebarActionIcons">
+            <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource NavIconButton}"
+                        Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Tag="{Binding RestoreLabel}"
+                        Foreground="{Binding RestoreTone, Converter={StaticResource PillToneBrush}}"
+                        Command="{Binding RestoreCommand}"
+                        Visibility="{Binding ShowRestoreAction, Converter={StaticResource BoolToVis}}">
+                    <m3:M3Icon Kind="{Binding RestoreIconKind}" Width="15" Height="15"/>
+                </Button>
+                <Button Style="{StaticResource NavIconButton}"
+                        Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Tag="{Binding RestoreToRootLabel}"
+                        Foreground="{Binding RestoreToRootTone, Converter={StaticResource PillToneBrush}}"
+                        Command="{Binding RestoreToRootCommand}"
+                        Visibility="{Binding ShowRestoreToRootAction, Converter={StaticResource BoolToVis}}">
+                    <m3:M3Icon Kind="{Binding RestoreToRootIconKind}" Width="15" Height="15"/>
+                </Button>
+                <!-- 链接：编辑（整页编辑器）；文件夹：重命名 -->
+                <Button Style="{StaticResource NavIconButton}"
+                        Tag="{Binding EditLabel}"
+                        Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
+                        Command="{Binding RenameCommand}"
+                        Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
+                    <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
+                </Button>
+                <Button Style="{StaticResource NavIconButton}" Tag="{Binding DeleteActionLabel}"
+                        Width="32" Height="32" VerticalAlignment="Center"
+                        Command="{Binding DeleteCommand}"
+                        Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
+                    <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
+                    <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
+                               Foreground="{StaticResource WarnBg}"/>
+                </Button>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -214,9 +292,10 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{Binding UrlText}" FontSize="12"
-                               FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Center"
-                               Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <!-- 网址 = 可拖选的展示型文本（唯一实现 Views.SelectableText） -->
+                    <views:SelectableText Grid.Column="0" Text="{Binding UrlText, Mode=OneWay}" FontSize="12"
+                                          FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Center"
+                                          Foreground="{DynamicResource OnSurfaceVariant}"/>
                     <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="复制链接"
                             Width="26" Height="24" Padding="4" Margin="6,0,0,0" VerticalAlignment="Center"
                             Command="{Binding CopyUrlCommand}">
@@ -258,8 +337,9 @@
                 </Border.Style>
                 <StackPanel>
                     <TextBlock Text="描述" Style="{StaticResource SideLabel}"/>
-                    <TextBlock Text="{Binding DescriptionText}" FontSize="12.5" TextWrapping="Wrap"
-                               LineHeight="19" Foreground="{DynamicResource OnSurface}"/>
+                    <!-- 描述 = 可拖选的展示型文本（TextBox 无 LineHeight，行距按字体默认，比原 TextBlock 略紧） -->
+                    <views:SelectableText Text="{Binding DescriptionText, Mode=OneWay}" FontSize="12.5"
+                                          TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
                 </StackPanel>
             </Border>
 
@@ -284,57 +364,23 @@
                 </Border.Style>
                 <StackPanel>
                     <TextBlock Text="操作" Style="{StaticResource SideLabel}"/>
-                    <Grid Margin="0,2,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <!-- 文件夹=「打开」（进入目录，跨两列占满整行）；链接=「详情」+「打开」两列等宽。
-                             成对规范：同为药丸（PrimaryPillButton / TonalButton 16），同高 32，仅颜色不同 -->
-                        <!-- 主按钮跨列 = OpenColumnSpan（文件夹 / 未开「打开网站」时占满两列） -->
-                        <Button Grid.Column="0" Height="32"
-                                VerticalAlignment="Center" Padding="12,0"
-                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                                Style="{StaticResource PrimaryPillButton}"
-                                Grid.ColumnSpan="{Binding OpenColumnSpan}"
-                                Command="{Binding OpenCommand}"
-                                ToolTip="{Binding OpenToolTip}"
-                                Visibility="{Binding ShowOpenAction, Converter={StaticResource BoolToVis}}">
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="eye-outline" Width="14" Height="14" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <!-- 打开：仅链接（系统默认浏览器打开并记录一次访问） -->
-                        <Button Grid.Column="1" Style="{StaticResource TonalButton}" Height="32" Padding="12,0" Margin="6,0,0,0"
-                                VerticalAlignment="Center" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch"
-                                Command="{Binding OpenWebsiteCommand}"
-                                ToolTip="在浏览器中打开"
-                                Visibility="{Binding ShowOpenWebsiteButton, Converter={StaticResource BoolToVis}}">
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
-                                <TextBlock Text="打开" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                        <!-- 链接：编辑（整页编辑器）；文件夹：重命名 -->
-                        <Button Grid.Column="2" Style="{StaticResource NavIconButton}"
-                                Tag="{Binding EditLabel}"
-                                Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
-                                Command="{Binding RenameCommand}"
-                                Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
-                            <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
-                        </Button>
-                        <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="{Binding DeleteActionLabel}"
-                                Width="32" Height="32" VerticalAlignment="Center"
-                                Command="{Binding DeleteCommand}"
-                                Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
-                            <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
-                            <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                       Foreground="{StaticResource WarnBg}"/>
-                        </Button>
-                    </Grid>
+                    <!-- 排布一（缺省：浏览页 / 搜索页）= 一行：药丸填满余宽，图标钮靠右 -->
+                    <DockPanel Margin="0,2,0,0"
+                               Visibility="{Binding StackedActions, Converter={StaticResource InvBoolToVis}}">
+                        <ContentControl DockPanel.Dock="Right" Content="{Binding}"
+                                        ContentTemplate="{StaticResource SidebarActionIcons}"/>
+                        <ContentControl Content="{Binding}"
+                                        ContentTemplate="{StaticResource SidebarActionPills}"/>
+                    </DockPanel>
+                    <!-- 排布二（回收站右栏）= 两行：药丸一行、图标钮一行靠右 ——
+                         286 宽放不下"两枚药丸 + 三枚 32 图标钮"（同排会把药丸压到裁字，用户定稿两行） -->
+                    <StackPanel Margin="0,2,0,0"
+                                Visibility="{Binding StackedActions, Converter={StaticResource BoolToVis}}">
+                        <ContentControl Content="{Binding}"
+                                        ContentTemplate="{StaticResource SidebarActionPills}"/>
+                        <ContentControl Content="{Binding}" HorizontalAlignment="Right" Margin="0,8,0,0"
+                                        ContentTemplate="{StaticResource SidebarActionIcons}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

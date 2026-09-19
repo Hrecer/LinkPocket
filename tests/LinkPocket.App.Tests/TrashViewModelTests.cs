@@ -380,26 +380,35 @@ public class TrashViewModelTests
             Assert.True(vm.Details.HasDescription);
             Assert.Equal("这是一段描述", vm.Details.DescriptionText);
 
-            // 动作面 = 共享框架内定制：打开/详情 + 永久删除；无 编辑/重命名、无 打开网站
+            // 动作面 = 共享框架内定制：详情 + 打开（打开网站）+ 还原/还原到根目录/永久删除；无 编辑/重命名
             Assert.True(vm.Details.IsReadOnly);
             Assert.True(vm.Details.ShowOpenAction);
+            Assert.True(vm.Details.ShowOpenWebsiteButton);       // 链接行：两枚药丸（详情 / 打开）
             Assert.True(vm.Details.ShowDeleteAction);
+            Assert.True(vm.Details.ShowRestoreAction);
+            Assert.True(vm.Details.ShowRestoreToRootAction);
+            Assert.True(vm.Details.StackedActions);              // 286 宽右栏：药丸一行 + 图标钮一行
             Assert.False(vm.Details.ShowEditAction);
-            Assert.False(vm.Details.ShowOpenWebsiteButton);
             Assert.Equal("永久删除", vm.Details.DeleteActionLabel);
             Assert.True(vm.Details.HasActions);
 
             // 命令 = 复用本页既有能力（不是第二套业务逻辑）
             Assert.Same(vm.OpenSelectionCommand, vm.Details.OpenCommand);
             Assert.Same(vm.PurgeSelectionCommand, vm.Details.DeleteCommand);
+            Assert.Same(vm.RestoreSelectionCommand, vm.Details.RestoreCommand);
+            Assert.Same(vm.RestoreSelectionToRootCommand, vm.Details.RestoreToRootCommand);
             Assert.True(vm.Details.OpenCommand!.CanExecute(null));
             Assert.True(vm.Details.DeleteCommand!.CanExecute(null));
+            Assert.True(vm.Details.RestoreCommand!.CanExecute(null));
+            Assert.True(vm.Details.RestoreToRootCommand!.CanExecute(null));
 
-            // 多选：只留永久删除（文案按页定制）
+            // 多选：只留永久删除（文案按页定制；两枚还原钮与药丸一并收起）
             vm.SelectAllCommand.Execute(null);
             Assert.True(vm.Details.IsMulti);
             Assert.False(vm.Details.ShowOpenAction);
             Assert.True(vm.Details.ShowDeleteAction);
+            Assert.False(vm.Details.ShowRestoreAction);
+            Assert.False(vm.Details.ShowRestoreToRootAction);
             Assert.Equal("永久删除所选", vm.Details.DeleteSelectionLabel);
         }
         finally
@@ -458,15 +467,20 @@ public class TrashViewModelTests
             Assert.True(vm.DetailPane.HasDescription);
             Assert.Equal("覆盖层描述", vm.DetailPane.Description);
             Assert.Equal(3, vm.DetailPane.Rows.Count);                   // 原位置 / 删除时间 / ID
-            // 动作面（共享面内定制）：还原 + 永久删除；无编辑
-            Assert.Equal("还原", vm.DetailPane.OpenLabel);
-            Assert.Equal("restore", vm.DetailPane.OpenIconKind);
+            // 动作面（共享面内定制）= 三枚等大药丸：打开网站 / 还原 / 还原到根目录 + 永久删除；无编辑
+            Assert.Equal("打开", vm.DetailPane.OpenLabel);
+            Assert.Equal("open-in-new", vm.DetailPane.OpenIconKind);
+            Assert.Equal(PillTone.Tonal, vm.DetailPane.OpenTone);
             Assert.True(vm.DetailPane.ShowOpenAction);
+            Assert.True(vm.DetailPane.ShowRestoreAction);
+            Assert.True(vm.DetailPane.ShowRestoreToRootAction);
             Assert.False(vm.DetailPane.ShowEditAction);
             Assert.True(vm.DetailPane.ShowDeleteAction);
             Assert.Equal("永久删除", vm.DetailPane.DeleteActionLabel);
+            Assert.Equal(PillTone.Primary, vm.DetailPane.RestoreTone);
+            Assert.Equal(PillTone.Tonal, vm.DetailPane.RestoreToRootTone);
             Assert.NotNull(vm.DetailPane.BackCommand);
-            // 覆盖层打开期间处置键让位；关闭后复位
+            // 覆盖层打开期间，**作用于选中**的处置键让位；关闭后复位
             Assert.False(vm.RestoreSelectionCommand.CanExecute(null));
             vm.CloseDetailOverlayCommand.Execute(null);
             Assert.False(vm.IsDetailOverlayOpen);
@@ -497,6 +511,97 @@ public class TrashViewModelTests
             await client.TrashRestoreBatchAsync(new[] { link.LinkId }, Array.Empty<string>());
             await vm.LoadAsync();
             Assert.False(vm.IsDetailOverlayOpen);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 详情覆盖层_动作按展示项生效_不依赖选中且不受覆盖层门禁()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://detail-act.example", title: "详情动作",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
+
+            // 用户报障根因：详情页动作的作用对象 = 展示项 → 覆盖层打开时依然可用
+            Assert.Same(vm.OpenDetailWebsiteCommand, vm.DetailPane.OpenCommand);
+            Assert.Same(vm.RestoreDetailCommand, vm.DetailPane.RestoreCommand);
+            Assert.Same(vm.RestoreDetailToRootCommand, vm.DetailPane.RestoreToRootCommand);
+            Assert.Same(vm.PurgeDetailCommand, vm.DetailPane.DeleteCommand);
+            Assert.True(vm.DetailPane.OpenCommand!.CanExecute(null));
+            Assert.True(vm.DetailPane.RestoreCommand!.CanExecute(null));
+            Assert.True(vm.DetailPane.RestoreToRootCommand!.CanExecute(null));
+            Assert.True(vm.DetailPane.DeleteCommand!.CanExecute(null));
+            // 而作用于"选中集合"的处置命令照旧让位（两层语义不再混为一谈）
+            Assert.False(vm.RestoreSelectionCommand.CanExecute(null));
+            Assert.False(vm.RestoreSelectionToRootCommand.CanExecute(null));
+            Assert.False(vm.PurgeSelectionCommand.CanExecute(null));
+
+            // 清空选中也不影响详情页动作（不看 HasSelection）
+            var detailId = link.LinkId;
+            vm.ClearSelectionCommand.Execute(null);
+            Assert.False(vm.HasSelection);
+            Assert.True(vm.RestoreDetailCommand.CanExecute(null));
+            Assert.Contains(detailId, vm.DetailPane.Rows.Single(r => r.Label == "ID").Value);
+
+            // 按展示项执行「还原到根目录」→ 条目离开回收站、覆盖层自动关闭
+            vm.RestoreDetailToRootCommand.Execute(null);
+            LinkDto? got = null;
+            for (var i = 0; i < 100; i++)
+            {
+                try { got = await client.LinkGetAsync(link.LinkId); break; }
+                catch { await Task.Delay(20); }
+            }
+            Assert.NotNull(got);
+            Assert.Null(got!.ListId);                                  // 显式到根目录
+            Assert.Contains("到根目录", vm.StatusText);
+            await vm.LoadAsync();
+            Assert.False(vm.IsDetailOverlayOpen);                       // 条目消失即关
+            Assert.False(vm.RestoreDetailCommand.CanExecute(null));     // 没有展示项 → 一律禁用
+            Assert.False(vm.PurgeDetailCommand.CanExecute(null));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 点空白清选中_两档栏归属语义_主栏卡与页面空白()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://blank-click.example", title: "空白点",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.ActivatePane(TrashPane.Tree);
+            vm.SetSelection(new[] { link.LinkId });
+            Assert.True(vm.HasSelection);
+
+            // 列表卡空白：主栏获得键盘语义归属 + 清选中
+            vm.ClearMainPaneSelectionCommand.Execute(null);
+            Assert.False(vm.HasSelection);
+            Assert.Equal(TrashPane.Main, vm.ActivePane);
+
+            // 页面其它空白：保持当前栏归属，只清选中
+            vm.ActivatePane(TrashPane.Tree);
+            vm.SetSelection(new[] { link.LinkId });
+            vm.ClearPageSelectionCommand.Execute(null);
+            Assert.False(vm.HasSelection);
+            Assert.Equal(TrashPane.Tree, vm.ActivePane);
         }
         finally
         {

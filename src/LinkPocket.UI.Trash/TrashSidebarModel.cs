@@ -9,8 +9,10 @@ namespace LinkPocket.ViewModels;
 /// 回收站详情栏模型（<see cref="Views.DetailSidebar"/> 的数据源；由 <see cref="TrashViewModel.Details"/> 持有，
 /// 在选中投影点按选中项数重建 —— 视图只绑定，不另持一份状态）：
 /// 只读 —— 展示 类型 / 原位置 / 描述 / 删除时间 / ID（链接附网址卡与 favicon），IsReadOnly = true。
-/// 「快捷操作」卡**在共享框架内定制动作面**（不是另写一套界面）：只开 打开/详情 + 永久删除，
-/// 关 编辑/重命名 与 打开网站；命令复用本页既有能力（<c>OpenSelectionCommand</c> / <c>PurgeSelectionCommand</c>）。
+/// 「快捷操作」卡**在共享框架内定制动作面**（不是另写一套界面）：两枚药丸 = 详情 / 打开（打开网站），
+/// 右侧三枚图标钮 = 还原 / 还原到根目录 / 永久删除（沿用现有，顺序与工具栏一致）；
+/// 命令复用本页既有能力（<c>OpenSelectionCommand</c> / <c>RestoreSelectionCommand</c> /
+/// <c>RestoreSelectionToRootCommand</c> / <c>PurgeSelectionCommand</c>）。
 /// </summary>
 public class TrashSidebarModel : DetailSidebarModel
 {
@@ -23,12 +25,17 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = false;
         IsFolder = row.IsFolder;
         IsReadOnly = true;
-        // 动作面：打开/详情 + 永久删除（无 编辑/重命名、无 打开网站）
+        // 动作面：详情/打开 + 打开网站 + 还原/还原到根目录/永久删除（无编辑/重命名）
         ShowOpenAction = true;
-        ShowOpenWebsite = false;
+        ShowOpenWebsite = true;                       // 「打开」药丸（打开网站；即使是废弃条目也能打开）
         ShowEditAction = false;
         ShowDeleteAction = true;
         DeleteActionLabel = "永久删除";
+        ShowRestoreAction = true;
+        RestoreTone = PillTone.Primary;               // 还原 = 深紫（与工具栏主按钮同一色系）
+        ShowRestoreToRootAction = true;
+        RestoreToRootTone = PillTone.Tonal;           // 还原到根目录 = 浅紫
+        StackedActions = true;                        // 两行排布：药丸一行 / 三枚图标钮一行（286 宽同排会裁字）
         ConfigureSidebarActionLabels(row.IsFolder);   // 主按钮文案：单元=打开（进入）/ 链接=详情（只读覆盖层）
         DisplayName = string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name;
         IdText = row.Id;
@@ -103,6 +110,8 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowOpenWebsite = false;
         ShowEditAction = false;
         ShowDeleteAction = true;
+        ShowRestoreAction = false;
+        ShowRestoreToRootAction = false;
         DeleteSelectionLabel = "永久删除所选";
         DisplayName = $"已选中 {rows.Count} 项";
         IdText = string.Empty;

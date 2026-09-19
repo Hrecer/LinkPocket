@@ -75,6 +75,13 @@ public partial class TrashViewModel : INotifyPropertyChanged
         PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node));
         RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection && !IsDetailOverlayOpen);
         RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection && !IsDetailOverlayOpen);
+
+        // 详情覆盖层的动作：作用对象 = **覆盖层正在展示的那一项**，与"有没有被选中"无关，也不受覆盖层门禁约束
+        // （门禁的意义是"别作用于被覆盖层挡住、看不见的选中"，而眼前这一项正是当前操作对象）。
+        OpenDetailWebsiteCommand = new RelayCommand(OpenDetailWebsite, () => _detailLinkId != null);
+        RestoreDetailCommand = new RelayCommand(() => _ = RestoreDetailAsync("origin"), () => _detailLinkId != null);
+        RestoreDetailToRootCommand = new RelayCommand(() => _ = RestoreDetailAsync("root"), () => _detailLinkId != null);
+        PurgeDetailCommand = new RelayCommand(() => _ = PurgeDetailAsync(), () => _detailLinkId != null);
         CloseDetailOverlayCommand = new RelayCommand(CloseDetailOverlay);
         CopyDetailUrlCommand = new RelayCommand(CopyDetailUrl);
         CopyDetailIdCommand = new RelayCommand(CopyDetailId);
@@ -86,6 +93,10 @@ public partial class TrashViewModel : INotifyPropertyChanged
         CopyLinkAddressCommand = new RelayCommand<TrashRowViewModel?>(CopyLinkAddress, row => row is { IsFolder: false });
         SelectAllCommand = new RelayCommand(SelectAllRows);
         ClearSelectionCommand = new RelayCommand(ClearSelection);
+        // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，按区域挂载；命令里带栏归属语义）：
+        // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
+        ClearMainPaneSelectionCommand = new RelayCommand(() => { ActivatePane(TrashPane.Main); ClearSelection(); });
+        ClearPageSelectionCommand = new RelayCommand(() => { ActivatePane(ActivePane); ClearSelection(); });
         MoveSelectionCommand = new RelayCommand<object?>(p => MoveMainSelection(ParseDirection(p)));
         SelectLastCommand = new RelayCommand(SelectLastRow);
         MoveTreeSelectionCommand = new RelayCommand<object?>(p => MoveTreeSelection(ParseDirection(p)));
@@ -97,14 +108,19 @@ public partial class TrashViewModel : INotifyPropertyChanged
 
         // 右侧栏动作 = **复用本页既有命令**（绝不另写一套逻辑）：
         // 打开/详情 = OpenSelectionCommand（链接 → 只读详情覆盖层；单元 → 进入）；
-        // 删除 = PurgeSelectionCommand（永久删除，含规范确认弹窗）。
+        // 还原 / 还原到根目录 / 删除 = 作用于**选中集合**的既有命令。
         Details.OpenCommand = OpenSelectionCommand;
         Details.DeleteCommand = PurgeSelectionCommand;
+        Details.RestoreCommand = RestoreSelectionCommand;
+        Details.RestoreToRootCommand = RestoreSelectionToRootCommand;
 
-        // 共享详情页（只读覆盖层）同样复用本页既有命令：
+        // 共享详情页（只读覆盖层）的动作**按展示项构造**（不是"作用于选中集合"的第二套逻辑：
+        // 命令槽仍复用本页既有能力，只有作用对象 = 覆盖层正在展示的那一项，见 _detailLinkId）：
         DetailPane.BackCommand = CloseDetailOverlayCommand;
-        DetailPane.OpenCommand = RestoreSelectionCommand;    // 主按钮 = 还原（到原位置）
-        DetailPane.DeleteCommand = PurgeSelectionCommand;    // 垃圾桶 = 永久删除
+        DetailPane.OpenCommand = OpenDetailWebsiteCommand;                  // 主药丸 = 打开网站（浏览器打开）
+        DetailPane.RestoreCommand = RestoreDetailCommand;                   // 还原（到原位置）
+        DetailPane.RestoreToRootCommand = RestoreDetailToRootCommand;       // 还原到根目录
+        DetailPane.DeleteCommand = PurgeDetailCommand;                      // 垃圾桶 = 永久删除
         DetailPane.CopyUrlCommand = CopyDetailUrlCommand;
         DetailPane.CopyIdCommand = CopyDetailIdCommand;
     }
@@ -703,6 +719,22 @@ public partial class TrashViewModel : INotifyPropertyChanged
         catch { /* 剪贴板被占用时不阻断 */ }
     }
 
+    /// <summary>详情覆盖层的「打开网站」：即使是已废弃（在回收站里）的条目也应能打开；
+    /// **不记访问**（回收站条目不在主表，没有访问统计口径）。</summary>
+    private void OpenDetailWebsite()
+    {
+        var url = DetailPane.Url;
+        if (string.IsNullOrEmpty(url)) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("打开网站失败（静默返回，页面保持）", ex);   // 观测面：失败留痕
+        }
+    }
+
     /// <summary>树节点被点击（视图转发；与浏览页 SelectTreeNodeAsync 同口径）：单元 = 选中 + 进入；链接叶子 = 主栏定位选中；虚根 = 回根。</summary>
     public Task SelectTreeNodeAsync(TrashNode node) => OpenNodeAsync(node);
 
@@ -1038,4 +1070,12 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ICommand CloseDetailOverlayCommand { get; }
     public ICommand CopyDetailUrlCommand { get; }
     public ICommand CopyDetailIdCommand { get; }
+    /// <summary>详情覆盖层：打开网站 / 还原 / 还原到根目录 / 永久删除（作用对象 = 当前展示项）。</summary>
+    public ICommand OpenDetailWebsiteCommand { get; }
+    public ICommand RestoreDetailCommand { get; }
+    public ICommand RestoreDetailToRootCommand { get; }
+    public ICommand PurgeDetailCommand { get; }
+    /// <summary>点空白清选中：列表卡（主栏获得键盘语义归属）/ 页面其它空白（保持当前栏归属）。</summary>
+    public ICommand ClearMainPaneSelectionCommand { get; }
+    public ICommand ClearPageSelectionCommand { get; }
 }

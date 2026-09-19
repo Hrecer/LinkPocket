@@ -5,9 +5,11 @@ namespace LinkPocket.ViewModels;
 
 /// <summary>
 /// 回收站只读详情页模型（共享 <see cref="LinkDetailPaneModel"/> 的定制）：
-/// 与浏览页详情页**同一份界面**（<c>Views.LinkDetailPane</c>）；本页只声明动作面 = 「还原」+「永久删除」，
-/// 行内容 = 回收站快照（原位置 / 删除时间 / ID），描述 = 删除时的描述快照。
-/// 命令由 <see cref="TrashViewModel"/> 注入（复用本页既有能力，绝不另写逻辑）。
+/// 与浏览页详情页**同一份界面**（<c>Views.LinkDetailPane</c>）；本页只声明动作面 = 三枚**等大药丸**
+/// （打开网站 / 还原到原位置 / 还原到根目录）+ 永久删除图标钮，行内容 = 回收站快照
+/// （原位置 / 删除时间 / ID），描述 = 删除时的描述快照。
+/// 命令由 <see cref="TrashViewModel"/> 注入，且**作用对象 = 本覆盖层正在展示的那一项**
+/// （不依赖"有没有被选中"，也不受覆盖层门禁影响——见 TrashViewModel 的 Detail* 命令）。
 /// </summary>
 public class TrashDetailPaneModel : LinkDetailPaneModel
 {
@@ -17,13 +19,18 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
     /// <summary>按选中的回收站行填充（只读：数据全部来自快照，不查主表）。</summary>
     public void Show(TrashRowViewModel row)
     {
-        // 动作面：还原（主按钮）+ 永久删除（无编辑 / 无打开网站）
+        // 动作面：三枚等大药丸（打开网站 / 还原 / 还原到根目录）+ 永久删除（无编辑 / 无重命名）
         ShowOpenAction = true;
+        OpenLabel = "打开";
+        OpenToolTip = "在浏览器中打开";
+        OpenIconKind = "open-in-new";
+        OpenTone = PillTone.Tonal;                 // 主处置是「还原」，打开降为次要色
+        ShowRestoreAction = true;
+        RestoreTone = PillTone.Primary;
+        ShowRestoreToRootAction = true;
+        RestoreToRootTone = PillTone.Tonal;
         ShowEditAction = false;
         ShowDeleteAction = true;
-        OpenLabel = "还原";
-        OpenToolTip = "还原到删除前所在位置";
-        OpenIconKind = "restore";
         DeleteActionLabel = "永久删除";
 
         SetContent(

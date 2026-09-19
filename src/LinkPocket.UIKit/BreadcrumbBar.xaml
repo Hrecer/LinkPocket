@@ -58,6 +58,7 @@
          点空白 = 请求进入路径编辑（Windows 11 口径：无需任何按钮；段点击被 Button 吃掉不会到这）。
          ⚠️ 本地值优先级高于样式触发器 —— 基态值必须写在 Style.Setters。 -->
     <Border x:Name="CapsuleShell" Height="40" BorderThickness="2" VerticalAlignment="Center"
+            local:BlankClick.IsInteractive="True"
             MouseLeftButtonDown="CrumbHost_MouseLeftButtonDown">
         <Border.Style>
             <Style TargetType="Border">
