@@ -69,6 +69,28 @@ public class DetailSidebarModel : INotifyPropertyChanged
     /// </summary>
     public bool IsReadOnly { get; protected set; }
 
+    /// <summary>
+    /// 单选「快捷操作」卡的动作面（**显式能力位**，默认全开 = 浏览/搜索现役口径）：
+    /// 只读页（回收站）按自己的处置面定制（只开 打开/详情 + 永久删除，关 编辑 与 打开网站），
+    /// 而不是把整卡一刀隐藏——界面与命令都复用本框架，各页只声明"有哪些动作"。
+    /// </summary>
+    public bool ShowOpenAction { get; protected set; } = true;
+    /// <summary>「打开网站」按钮（仅链接有意义；与 <see cref="IsLink"/> 合并为 <see cref="ShowOpenWebsiteButton"/>）。</summary>
+    public bool ShowOpenWebsite { get; protected set; } = true;
+    public bool ShowEditAction { get; protected set; } = true;
+    public bool ShowDeleteAction { get; protected set; } = true;
+
+    /// <summary>动作卡是否显示（任一动作可见）。</summary>
+    public bool HasActions => ShowOpenAction || ShowEditAction || ShowDeleteAction;
+    /// <summary>「打开网站」按钮最终可见性（链接 + 页面开启）。</summary>
+    public bool ShowOpenWebsiteButton => IsLink && ShowOpenWebsite;
+    /// <summary>主按钮跨列数：文件夹（单按钮占满）或未开「打开网站」时跨两列。</summary>
+    public int OpenColumnSpan => IsFolder || !ShowOpenWebsiteButton ? 2 : 1;
+    /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
+    public string DeleteActionLabel { get; protected set; } = "删除";
+    /// <summary>多选删除按钮文案与提示。</summary>
+    public string DeleteSelectionLabel { get; protected set; } = "删除所选";
+
     // —— 单选公共 ——
     public string DisplayName { get; protected set; } = "";
     public string IdText { get; protected set; } = "";
@@ -78,7 +100,8 @@ public class DetailSidebarModel : INotifyPropertyChanged
     // —— 单选书签 ——
     public string UrlText { get; protected set; } = "";
     public string DescriptionText { get; protected set; } = "";
-    public bool HasDescription => IsLink && !string.IsNullOrWhiteSpace(DescriptionText);
+    /// <summary>描述卡是否显示（链接与单元通用；空描述不显示）。</summary>
+    public bool HasDescription => !string.IsNullOrWhiteSpace(DescriptionText);
 
     /// <summary>
     /// 操作卡里铅笔按钮的文案：链接是「编辑」（打开整页编辑器），
@@ -125,6 +148,9 @@ public class DetailSidebarModel : INotifyPropertyChanged
         IsMulti = false;
         IsFolder = false;
         IsReadOnly = false;
+        ShowOpenAction = ShowOpenWebsite = ShowEditAction = ShowDeleteAction = true;
+        DeleteActionLabel = "删除";
+        DeleteSelectionLabel = "删除所选";
         DisplayName = "";
         IdText = "";
         UrlText = "";
@@ -144,6 +170,15 @@ public class DetailSidebarModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFolder));
         OnPropertyChanged(nameof(IsLink));
         OnPropertyChanged(nameof(IsReadOnly));
+        OnPropertyChanged(nameof(ShowOpenAction));
+        OnPropertyChanged(nameof(ShowOpenWebsite));
+        OnPropertyChanged(nameof(ShowEditAction));
+        OnPropertyChanged(nameof(ShowDeleteAction));
+        OnPropertyChanged(nameof(HasActions));
+        OnPropertyChanged(nameof(ShowOpenWebsiteButton));
+        OnPropertyChanged(nameof(OpenColumnSpan));
+        OnPropertyChanged(nameof(DeleteActionLabel));
+        OnPropertyChanged(nameof(DeleteSelectionLabel));
         OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(IdText));
         OnPropertyChanged(nameof(Favicon));

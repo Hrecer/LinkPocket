@@ -360,6 +360,85 @@ public class TrashViewModelTests
     }
 
     [Fact]
+    public async Task 侧栏_描述链路与定制动作面_复用共享框架与既有命令()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://desc.example", title: "带描述",
+                description: "这是一段描述", autoFetchMetadata: false)).Data!;
+            var link2 = (await client.LinkCreateAsync("https://desc2.example", title: "第二条",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+            await client.LinkTrashAsync(link2.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.SetSelection(new[] { link.LinkId });
+
+            // 描述链路（架构缺口回归：DTO → 行 → 共享详情栏）
+            Assert.True(vm.Details.HasDescription);
+            Assert.Equal("这是一段描述", vm.Details.DescriptionText);
+
+            // 动作面 = 共享框架内定制：打开/详情 + 永久删除；无 编辑/重命名、无 打开网站
+            Assert.True(vm.Details.IsReadOnly);
+            Assert.True(vm.Details.ShowOpenAction);
+            Assert.True(vm.Details.ShowDeleteAction);
+            Assert.False(vm.Details.ShowEditAction);
+            Assert.False(vm.Details.ShowOpenWebsiteButton);
+            Assert.Equal("永久删除", vm.Details.DeleteActionLabel);
+            Assert.True(vm.Details.HasActions);
+
+            // 命令 = 复用本页既有能力（不是第二套业务逻辑）
+            Assert.Same(vm.OpenSelectionCommand, vm.Details.OpenCommand);
+            Assert.Same(vm.PurgeSelectionCommand, vm.Details.DeleteCommand);
+            Assert.True(vm.Details.OpenCommand!.CanExecute(null));
+            Assert.True(vm.Details.DeleteCommand!.CanExecute(null));
+
+            // 多选：只留永久删除（文案按页定制）
+            vm.SelectAllCommand.Execute(null);
+            Assert.True(vm.Details.IsMulti);
+            Assert.False(vm.Details.ShowOpenAction);
+            Assert.True(vm.Details.ShowDeleteAction);
+            Assert.Equal("永久删除所选", vm.Details.DeleteSelectionLabel);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 回收站_详情覆盖层打开时_处置动作让位()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://gate-trash.example", title: "覆盖层门",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.SetSelection(new[] { link.LinkId });
+            Assert.True(vm.PurgeSelectionCommand.CanExecute(null));
+            Assert.True(vm.RestoreSelectionCommand.CanExecute(null));
+
+            vm.IsDetailOverlayOpen = true;                       // 视图打开只读覆盖层 → 危险键让位
+            Assert.False(vm.PurgeSelectionCommand.CanExecute(null));
+            Assert.False(vm.RestoreSelectionCommand.CanExecute(null));
+            Assert.False(vm.RestoreSelectionToRootCommand.CanExecute(null));
+
+            vm.IsDetailOverlayOpen = false;                      // 关闭覆盖层 → 复位
+            Assert.True(vm.PurgeSelectionCommand.CanExecute(null));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public void 键位表_无撤销无剪贴板无全局键()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

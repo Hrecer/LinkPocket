@@ -29,6 +29,9 @@ public class TrashRowViewModel : INotifyPropertyChanged
 
     public string? Url { get; init; }
 
+    /// <summary>描述快照（链接 = 原描述；单元 = 被删文件夹的描述，v5 保真列）。</summary>
+    public string? Description { get; init; }
+
     /// <summary>单元子树链接总数（链接行恒 0）。</summary>
     public int LinkCount { get; init; }
 

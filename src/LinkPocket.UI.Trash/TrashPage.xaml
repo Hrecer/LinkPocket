@@ -541,6 +541,17 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
+
+                        <!-- 描述（与浏览页详情页同款卡片；空描述整卡隐藏） -->
+                        <Border x:Name="DetailDescriptionCard" Background="{DynamicResource TintCard}"
+                                CornerRadius="16" Padding="20,16" Margin="0,14,0,0" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="描述" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                <TextBlock x:Name="DetailDescription" FontSize="12.5" TextWrapping="Wrap"
+                                           LineHeight="19" Margin="0,6,0,0"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </ScrollViewer>

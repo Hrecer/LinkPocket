@@ -341,6 +341,43 @@ public class UndoInverseTests
         finally { AppTestEnv.Delete(dbPath); }
     }
 
+    [Fact]
+    public async Task 撤销重做_仅列表上下文可用_详情页或编辑器打开时让位()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var vm = new LinkPocket.ViewModels.BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            var link = (await client.LinkCreateAsync("https://gate.example", title: "门",
+                autoFetchMetadata: false)).Data!;
+            await vm.LoadAsync(null);
+            await vm.RefreshUndoStateAsync();
+
+            var row = vm.Rows.Single(r => r.Id == link.LinkId);
+            vm.SelectRowWithModifiers(row, System.Windows.Input.ModifierKeys.None);
+            Assert.True(vm.IsListContextActive);
+            Assert.True(vm.UndoCommand.CanExecute(null));                 // 列表上下文：可撤销
+            Assert.True(vm.CutCommand.CanExecute(null));
+
+            // 详情页覆盖列表 → 列表动作（危险键）一律让位
+            await vm.OpenDetailPageAsync(row);
+            Assert.False(vm.IsListContextActive);
+            Assert.False(vm.UndoCommand.CanExecute(null));
+            Assert.False(vm.CutCommand.CanExecute(null));
+            vm.CloseDetailPage();
+            Assert.True(vm.UndoCommand.CanExecute(null));
+
+            // 编辑器覆盖列表 → 同样让位
+            vm.OpenEditorForCreate();
+            Assert.False(vm.UndoCommand.CanExecute(null));
+            Assert.False(vm.CutCommand.CanExecute(null));
+            vm.CloseEditorPage();
+            Assert.True(vm.UndoCommand.CanExecute(null));
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
     // —— 工具 ——
 
     private static async Task<string?> ParentOf(EngineClient client, string folderId)

@@ -129,6 +129,13 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         PaneActivated?.Invoke(this, pane);
     }
 
+    /// <summary>
+    /// 「列表上下文」是否活跃：**详情页 / 编辑器页打开时列表动作一律让位**——
+    /// 撤销/重做/剪贴板/删除/新建/改名这些会改数据的键只在"用户确实在浏览页整理文件"时可执行
+    /// （用户令 2026-09-19：危险键绝不能在任何别的上下文里被误触而不自知）。
+    /// </summary>
+    public bool IsListContextActive => !IsDetailPageOpen && !IsEditorPageOpen;
+
     // —— 链接详情页（全页覆盖层，参考链接页书签详情） ——
 
     public LinkDetailPageViewModel DetailPage { get; }
@@ -138,7 +145,14 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public bool IsDetailPageOpen
     {
         get => _isDetailPageOpen;
-        private set { _isDetailPageOpen = value; OnPropertyChanged(); }
+        private set
+        {
+            if (_isDetailPageOpen == value) return;
+            _isDetailPageOpen = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsListContextActive));
+            CommandManager.InvalidateRequerySuggested();   // 列表动作让位/复位（危险键门）
+        }
     }
 
     /// <summary>打开链接详情页（行命令 / 右键菜单 / 右侧栏操作卡共用）。</summary>
@@ -179,7 +193,14 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public bool IsEditorPageOpen
     {
         get => _isEditorPageOpen;
-        private set { _isEditorPageOpen = value; OnPropertyChanged(); }
+        private set
+        {
+            if (_isEditorPageOpen == value) return;
+            _isEditorPageOpen = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsListContextActive));
+            CommandManager.InvalidateRequerySuggested();   // 列表动作让位/复位（危险键门）
+        }
     }
 
     /// <summary>新建链接：在当前目录创建（不再选择所属目录），打开整页编辑器。</summary>
@@ -722,21 +743,22 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(BeginRenameRow);
         EditRowCommand = new RelayCommand<BrowserRowViewModel?>(row => { if (row is { IsFolder: false }) OpenEditorForEdit(row.Id); });
         DeleteRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = DeleteRowAsync(row));
-        NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string));
+        NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string),
+            _ => !IsPathEditing && !IsRenaming && IsListContextActive);
         NewLinkCommand = new RelayCommand(OpenEditorForCreate);
         OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
         DetailPage = new LinkDetailPageViewModel(client, this);
         RenameNodeCommand = new RelayCommand<FolderNode?>(BeginRenameNode);
         DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
-        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing && !IsRenaming);
-        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing && !IsRenaming);
-        PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing && !IsRenaming);
+        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing && !IsRenaming && IsListContextActive);
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing && !IsRenaming);
         // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
         // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
         EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming);
-        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming);
-        RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming && IsListContextActive);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
         // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态
         CommitRenameCommand = new RelayCommand(() => _ = CommitRenameAsync());
@@ -751,8 +773,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         SelectLastCommand = new RelayCommand(SelectLastRow);
         MoveTreeSelectionCommand = new RelayCommand<object?>(p => MoveTreeSelection(ParseDirection(p)));
         ToggleTreeExpandCommand = new RelayCommand(ToggleFocusedTreeExpand);
-        UndoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: false), () => CanUndo && !IsRenaming);
-        RedoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: true), () => CanRedo && !IsRenaming);
+        UndoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: false), () => CanUndo && !IsRenaming && IsListContextActive);
+        RedoCommand = new RelayCommand(() => _ = UndoRedoAsync(redo: true), () => CanRedo && !IsRenaming && IsListContextActive);
         ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection, () => !IsRenaming);
         ConfirmPathCommand = new RelayCommand(ConfirmPath);
         CancelPathEditCommand = new RelayCommand(CancelPathEdit);

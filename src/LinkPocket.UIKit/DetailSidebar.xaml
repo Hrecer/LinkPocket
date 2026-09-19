@@ -311,7 +311,9 @@
             </Border>
 
             <!-- ===== 单选：快捷操作 =====
-                 只读模式（IsReadOnly，如回收站详情栏）下整卡隐藏：只展示信息，不提供动作入口 -->
+                 动作面 = 模型**显式能力位**（ShowOpenAction / ShowOpenWebsite / ShowEditAction / ShowDeleteAction）：
+                 各页在共享框架内声明"有哪些动作"（浏览页全开；回收站只开 打开/详情 + 永久删除），
+                 界面与命令都复用本控件，绝不另写第二套详情栏 -->
             <Border>
                 <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
@@ -320,7 +322,7 @@
                             <MultiDataTrigger>
                                 <MultiDataTrigger.Conditions>
                                     <Condition Binding="{Binding IsSingle}" Value="True"/>
-                                    <Condition Binding="{Binding IsReadOnly}" Value="False"/>
+                                    <Condition Binding="{Binding HasActions}" Value="True"/>
                                 </MultiDataTrigger.Conditions>
                                 <Setter Property="Visibility" Value="Visible"/>
                             </MultiDataTrigger>
@@ -338,20 +340,15 @@
                         </Grid.ColumnDefinitions>
                         <!-- 文件夹=「打开」（进入目录，跨两列占满整行）；链接=「详情」+「打开」两列等宽。
                              成对规范：同为药丸（PrimaryPillButton / TonalButton 16），同高 32，仅颜色不同 -->
+                        <!-- 主按钮跨列 = OpenColumnSpan（文件夹 / 未开「打开网站」时占满两列） -->
                         <Button Grid.Column="0" Height="32"
                                 VerticalAlignment="Center" Padding="12,0"
                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                Style="{StaticResource PrimaryPillButton}"
+                                Grid.ColumnSpan="{Binding OpenColumnSpan}"
                                 Command="{Binding OpenCommand}"
-                                ToolTip="{Binding OpenToolTip}">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource PrimaryPillButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                                            <Setter Property="Grid.ColumnSpan" Value="2"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
+                                ToolTip="{Binding OpenToolTip}"
+                                Visibility="{Binding ShowOpenAction, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="eye-outline" Width="14" Height="14" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
@@ -362,7 +359,7 @@
                                 VerticalAlignment="Center" HorizontalContentAlignment="Center" HorizontalAlignment="Stretch"
                                 Command="{Binding OpenWebsiteCommand}"
                                 ToolTip="在浏览器中打开"
-                                Visibility="{Binding IsLink, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowOpenWebsiteButton, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="open-in-new" Width="14" Height="14" VerticalAlignment="Center"/>
                                 <TextBlock Text="打开" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
@@ -372,12 +369,14 @@
                         <Button Grid.Column="2" Style="{StaticResource NavIconButton}"
                                 Tag="{Binding EditLabel}"
                                 Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
-                                Command="{Binding RenameCommand}">
+                                Command="{Binding RenameCommand}"
+                                Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
                             <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                         </Button>
-                        <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="删除"
+                        <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="{Binding DeleteActionLabel}"
                                 Width="32" Height="32" VerticalAlignment="Center"
-                                Command="{Binding DeleteCommand}">
+                                Command="{Binding DeleteCommand}"
+                                Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                             <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
                                        Foreground="{StaticResource WarnBg}"/>
@@ -430,19 +429,11 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Ctrl+点击 可增减选择" FontSize="11" Opacity="0.45" VerticalAlignment="Center"
                                    Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        <Button Grid.Column="1" Tag="删除所选"
-                                Width="32" Height="32" Margin="6,0,0,0" Command="{Binding DeleteCommand}">
-                            <!-- 只读详情栏（回收站）不提供任何动作入口：多选的「删除所选」同样隐藏
-                                 （永久删除仍由页面工具栏 WarnPill 与右键菜单负责，见 BEHAVIOR-CONTRACT §5） -->
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource NavIconButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
+                        <Button Grid.Column="1" Style="{StaticResource NavIconButton}"
+                                Tag="{Binding DeleteSelectionLabel}"
+                                Width="32" Height="32" Margin="6,0,0,0" Command="{Binding DeleteCommand}"
+                                Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
+                            <!-- 与浏览页同一枚按钮/样式；文案按页定制（回收站 = 「永久删除所选」） -->
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
                                        Foreground="{StaticResource WarnBg}"/>
                         </Button>

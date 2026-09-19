@@ -39,6 +39,7 @@ internal sealed class TrashOverviewHandler : ICommandHandler
                 ParentTrashFolderId = f.ParentTrashFolderId,
                 Name = f.Name,
                 LinkCount = subtreeIds.Sum(id => counts.GetValueOrDefault(new TrashFolderId(id))),
+                Description = f.Description,
                 DeletedAt = f.DeletedAt,
                 OriginPath = f.OriginPath,
             });
@@ -63,6 +64,7 @@ internal sealed class TrashOverviewHandler : ICommandHandler
         EntryType = TrashEntryType.Link,
         Name = string.IsNullOrEmpty(l.Title) ? l.Url : l.Title!,
         Url = l.Url,
+        Description = l.Description,
         FaviconUrl = l.FaviconUrl,
         OriginPath = l.OriginPath,
         DeletedAt = l.DeletedAt,

@@ -148,6 +148,9 @@ public class TrashEntryDto
     [JsonPropertyName("entry_type")] public string EntryType { get; set; } = TrashEntryType.Link;
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     [JsonPropertyName("url")] public string? Url { get; set; }
+    /// <summary>描述快照（link 条目 = 原链接描述；folder 条目 = 被删文件夹的描述）。</summary>
+    [JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
     [JsonPropertyName("origin_path")] public string? OriginPath { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }
@@ -164,6 +167,9 @@ public class TrashFolderDto
     [JsonPropertyName("trash_folder_id")] public string TrashFolderId { get; set; } = string.Empty;
     [JsonPropertyName("parent_trash_folder_id")] public string? ParentTrashFolderId { get; set; }
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+    /// <summary>删除时的描述快照（v5 保真列；仅 <see cref="TrashOverviewDto"/> 填充）。</summary>
+    [JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Description { get; set; }
     /// <summary>单元内书签总数（含子孙单元）。</summary>
     [JsonPropertyName("link_count")] public int LinkCount { get; set; }
     [JsonPropertyName("deleted_at")] public DateTime DeletedAt { get; set; }

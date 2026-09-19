@@ -398,6 +398,11 @@ namespace LinkPocket.Views
             DetailOrigin.Text = row.OriginText;
             DetailDeletedAt.Text = row.DeletedText;
             DetailId.Text = row.Id;
+            // 描述（快照保真）：空描述整卡隐藏（与浏览页详情页同款卡片）
+            DetailDescription.Text = row.Description ?? string.Empty;
+            DetailDescriptionCard.Visibility = string.IsNullOrWhiteSpace(row.Description)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
 
             var favicon = FaviconService.LoadFromCache(row.FaviconUrl);
             if (favicon == null && !string.IsNullOrWhiteSpace(row.FaviconUrl))
@@ -424,12 +429,14 @@ namespace LinkPocket.Views
             }
 
             LinkDetailOverlay.Visibility = Visibility.Visible;
+            if (ViewModel is { } detailVm) detailVm.IsDetailOverlayOpen = true;   // 覆盖层打开：处置动作让位
         }
 
         private void CloseLinkDetail()
         {
             LinkDetailOverlay.Visibility = Visibility.Collapsed;
             _detailRow = null;
+            if (ViewModel is { } vm) vm.IsDetailOverlayOpen = false;   // 覆盖层关闭：处置动作复位
         }
 
         private void DetailBack_Click(object sender, RoutedEventArgs e) => CloseLinkDetail();

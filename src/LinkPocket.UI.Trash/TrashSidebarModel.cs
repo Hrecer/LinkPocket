@@ -8,9 +8,9 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 回收站详情栏模型（<see cref="Views.DetailSidebar"/> 的数据源；由 <see cref="TrashViewModel.Details"/> 持有，
 /// 在选中投影点按选中项数重建 —— 视图只绑定，不另持一份状态）：
-/// 只读 —— 展示 类型 / 原位置 / 删除时间 / ID（链接附网址卡与 favicon），IsReadOnly = true
-/// 隐藏「快捷操作」卡（不提供打开 / 编辑 / 删除入口；永久删除仍由页面工具栏与右键菜单负责）。
-/// 无还原功能，亦不在详情栏加入任何还原入口（用户定稿）。
+/// 只读 —— 展示 类型 / 原位置 / 描述 / 删除时间 / ID（链接附网址卡与 favicon），IsReadOnly = true。
+/// 「快捷操作」卡**在共享框架内定制动作面**（不是另写一套界面）：只开 打开/详情 + 永久删除，
+/// 关 编辑/重命名 与 打开网站；命令复用本页既有能力（<c>OpenSelectionCommand</c> / <c>PurgeSelectionCommand</c>）。
 /// </summary>
 public class TrashSidebarModel : DetailSidebarModel
 {
@@ -23,10 +23,16 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = false;
         IsFolder = row.IsFolder;
         IsReadOnly = true;
+        // 动作面：打开/详情 + 永久删除（无 编辑/重命名、无 打开网站）
+        ShowOpenAction = true;
+        ShowOpenWebsite = false;
+        ShowEditAction = false;
+        ShowDeleteAction = true;
+        DeleteActionLabel = "永久删除";
         DisplayName = string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name;
         IdText = row.Id;
         UrlText = row.Url ?? string.Empty;
-        DescriptionText = string.Empty;
+        DescriptionText = row.Description ?? string.Empty;   // 描述快照（链接与单元通用）
         Favicon = row.IsFolder ? null : FaviconService.LoadFromCache(row.FaviconUrl);
 
         // 复制命令：复用公共 RelayCommand（CanExecuteChanged 走 CommandManager）；
@@ -91,6 +97,12 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = true;
         IsFolder = false;
         IsReadOnly = true;
+        // 多选：只提供永久删除（与浏览页同款按钮/样式，文案按页定制）
+        ShowOpenAction = false;
+        ShowOpenWebsite = false;
+        ShowEditAction = false;
+        ShowDeleteAction = true;
+        DeleteSelectionLabel = "永久删除所选";
         DisplayName = $"已选中 {rows.Count} 项";
         IdText = string.Empty;
         UrlText = string.Empty;

@@ -42,6 +42,7 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
                 Id = f.TrashFolderId,
                 EntryType = LinkPocket.Contracts.TrashEntryType.Folder,
                 Name = f.Name,
+                Description = f.Description,
                 OriginPath = f.OriginPath,
                 DeletedAt = f.DeletedAt,
             });
@@ -58,6 +59,7 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
                     EntryType = LinkPocket.Contracts.TrashEntryType.Link,
                     Name = l.Title ?? l.Url ?? string.Empty,
                     Url = l.Url,
+                    Description = l.Description,
                     FaviconUrl = l.FaviconUrl,
                     OriginPath = l.OriginPath,
                     DeletedAt = l.DeletedAt,

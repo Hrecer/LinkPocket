@@ -70,10 +70,10 @@ public partial class TrashViewModel : INotifyPropertyChanged
         OpenRowCommand = new RelayCommand<TrashRowViewModel?>(row => _ = OpenRowAsync(row));
         OpenNodeCommand = new RelayCommand<TrashNode?>(node => _ = OpenNodeAsync(node));
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1);
-        PurgeSelectionCommand = new RelayCommand(() => _ = PurgeSelectionGuardedAsync(), () => HasSelection);
+        PurgeSelectionCommand = new RelayCommand(() => _ = PurgeSelectionGuardedAsync(), () => HasSelection && !IsDetailOverlayOpen);
         PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node));
-        RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection);
-        RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection);
+        RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection && !IsDetailOverlayOpen);
+        RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection && !IsDetailOverlayOpen);
         RestoreNodeCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "origin"),
             node => node is { IsRoot: false, IsLink: false });
         RestoreNodeToRootCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "root"),
@@ -90,6 +90,12 @@ public partial class TrashViewModel : INotifyPropertyChanged
         ConfirmPathCommand = new RelayCommand(ConfirmPath);
         CancelPathEditCommand = new RelayCommand(CancelPathEdit);
         CompletePathCommand = new RelayCommand(CompletePath);
+
+        // 右侧栏动作 = **复用本页既有命令**（绝不另写一套逻辑）：
+        // 打开/详情 = OpenSelectionCommand（链接 → 只读详情覆盖层；单元 → 进入）；
+        // 删除 = PurgeSelectionCommand（永久删除，含规范确认弹窗）。
+        Details.OpenCommand = OpenSelectionCommand;
+        Details.DeleteCommand = PurgeSelectionCommand;
     }
 
     private IDialogService? Dialogs => _ports.Dialogs;
@@ -498,6 +504,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
             rows.Add(new TrashRowViewModel(f.TrashFolderId, isFolder: true, f.Name)
             {
                 LinkCount = f.LinkCount,
+                Description = f.Description,
                 OriginPath = f.OriginPath,
                 DeletedAt = f.DeletedAt,
                 Host = this,
@@ -513,6 +520,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
                     string.IsNullOrEmpty(l.Name) ? (l.Url ?? string.Empty) : l.Name)
                 {
                     Url = l.Url,
+                    Description = l.Description,
                     FaviconUrl = l.FaviconUrl,
                     OriginPath = l.OriginPath,
                     DeletedAt = l.DeletedAt,
@@ -775,6 +783,21 @@ public partial class TrashViewModel : INotifyPropertyChanged
     }
 
     // ================= 地址栏（面包屑内联路径编辑；与浏览页同口径，解析器共享） =================
+
+    private bool _isDetailOverlayOpen;
+    /// <summary>只读详情覆盖层是否打开（视图回写）：打开时**处置动作一律让位**——
+    /// 永久删除/还原这类危险键不得作用于"被覆盖层挡住、看不见"的选中（与浏览页详情页的门控对称）。</summary>
+    public bool IsDetailOverlayOpen
+    {
+        get => _isDetailOverlayOpen;
+        set
+        {
+            if (_isDetailOverlayOpen == value) return;
+            _isDetailOverlayOpen = value;
+            OnPropertyChanged();
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
 
     private bool _isPathEditing;
     public bool IsPathEditing
