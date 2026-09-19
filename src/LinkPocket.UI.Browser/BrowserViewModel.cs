@@ -1491,6 +1491,14 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
     }
 
+    /// <summary>
+    /// 拖拽落到**非法目标（成环：拖到它自己或它的子文件夹）**后由视图调用：
+    /// 按 Windows 口径**弹窗说明**（与粘贴共用同一套文案生成——反馈口径只有一处）。
+    /// 为什么在拖拽**结束后**才弹：拖拽过程中鼠标还按着，弹窗会打断手势；Windows 也是松手后报错。
+    /// </summary>
+    public void ReportBlockedDrop(IReadOnlyList<BrowserRowViewModel> rows)
+        => ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, rows.Select(r => r.Name).ToList()));
+
     /// <summary>非法粘贴目标（成环）的弹窗标题——按动作区分（剪切 = 移动 / 复制 = 复制）。</summary>
     private static string BlockedTitle(bool isCut) => isCut ? "无法移动" : "无法复制";
 

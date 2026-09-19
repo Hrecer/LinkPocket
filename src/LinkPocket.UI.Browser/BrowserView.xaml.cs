@@ -467,6 +467,30 @@ public partial class BrowserView : UserControl
 
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move);
+
+        // 拖拽结束（松手）：过程若曾落到**成环目标**（拖到它自己或它的子文件夹）→ 弹窗说明。
+        // Windows 口径：拖拽成环同样报错（不是"毫无反应"）；在松手后弹是为了不打断按着鼠标的拖拽手势。
+        if (_dragBlockedAsCycle)
+        {
+            _dragBlockedAsCycle = false;
+            ViewModel?.ReportBlockedDrop(items);
+        }
+    }
+
+    /// <summary>本次拖拽是否曾落到成环目标（拖拽结束统一弹窗一次；在 <see cref="RowBorder_DragOver"/> 置位）。</summary>
+    private bool _dragBlockedAsCycle;
+
+    /// <summary>落点是否属于"成环"（拖到它自己 / 拖进它的子文件夹）——仅用于拖拽结束后的说明弹窗。</summary>
+    private bool IsCycleBlocked(BrowserDragPayload? payload, string? targetFolderId)
+    {
+        if (payload == null || ViewModel == null) return false;
+        foreach (var item in payload.Rows)
+        {
+            if (item.Id == targetFolderId) return true;   // 拖到它自己
+            if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId))
+                return true;                              // 拖进它的子文件夹
+        }
+        return false;
     }
 
     /// <summary>目标合法性：目标行/节点不在拖动集合内，且没有任何被拖文件夹包含目标（防环）。</summary>
@@ -491,6 +515,7 @@ public partial class BrowserView : UserControl
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
 
             var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
+            if (!ok && row is { IsFolder: true } && IsCycleBlocked(payload, row.Id)) _dragBlockedAsCycle = true;
             e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally
@@ -524,6 +549,7 @@ public partial class BrowserView : UserControl
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
             var ok = node != null && !node.IsLink && IsDropValid(payload, node.FolderId);
+            if (!ok && node is { IsLink: false } && IsCycleBlocked(payload, node.FolderId)) _dragBlockedAsCycle = true;
             e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally

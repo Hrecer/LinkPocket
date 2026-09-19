@@ -201,6 +201,34 @@ public class PasteBoundaryTests
         }
     }
 
+    /// <summary>
+    /// 拖拽落到成环目标后，视图调用 <see cref="BrowserViewModel.ReportBlockedDrop"/> —— 与粘贴**同一套文案**、
+    /// 同一个规范弹窗（Windows 口径：拖拽成环也报错，不是"毫无反应"）。
+    /// </summary>
+    [Fact]
+    public async Task 拖拽_成环落点_弹窗说明与粘贴同口径()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.FolderCreateAsync("A");
+            var dialogs = new RecordingDialogs();
+            var vm = NewVm(client, dialogs);
+            await vm.LoadAsync(null);
+
+            vm.ReportBlockedDrop(new[] { vm.Rows[0] });
+
+            var (title, message) = Assert.Single(dialogs.Alerts);
+            Assert.Equal("无法移动", title);              // 拖拽 = 移动语义
+            Assert.Contains("子文件夹", message);
+            Assert.Contains("A", message);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
     private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;
