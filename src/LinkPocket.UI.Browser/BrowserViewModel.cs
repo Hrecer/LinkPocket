@@ -364,104 +364,63 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         CommandManager.InvalidateRequerySuggested();
     }
 
-    /// <summary>把两个唯一事实来源（选中集合 <see cref="Selection"/> + 拖拽落点 <see cref="_dropTargetId"/>）
-    /// 投影到主栏行 + 目录树，并刷新派生状态。
-    /// 在选中写入（<see cref="SetSelection"/>）、落点写入（<see cref="SetDropTarget"/>）与 Rows/Tree 重建后（RefreshAsync）调用；
-    /// 行与树都是这两个集合的只读投影，无任何独立状态。</summary>
-    private void ApplySelectionToView()
-    {
-        SyncMainRowSelection();
-        SyncTreeSelection();
-        SyncTreeDropTarget();      // 树节点重建后落点高亮同样要重放（行侧是 getter 投影，无需重放）
-        NotifySelectionChanged();
-    }
-
-    /// <summary>主栏行投影：每行 IsSelected = 其 Id 是否在选中集合（行只读，集合是唯一事实）。
-    /// 行的 IsSelected getter 已直接读 <see cref="IsSelectedId"/>，此处仅为强制刷新绑定。</summary>
-    private void SyncMainRowSelection()
-    {
-        foreach (var r in Rows) r.InvalidateIsSelected();
-    }
-
-    /// <summary>
-    /// 目录树投影：树节点高亮 = 用户在选中集合中真正选中的实体，**与当前所处目录无关**。
-    /// 「位于某文件夹 / 根目录」是导航位置，由面包屑表达，绝不转换为树高亮——
-    /// 进入某个文件夹不代表该文件夹"被选中"（用户 2026-09-18/19 明确：位置 ≠ 选中）。
-    /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="Selection"/>（共享 ListSelection）派生：
-    /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当用户选中了该文件夹实体）。
-    /// </summary>
-    private void SyncTreeSelection()
-    {
-        foreach (var node in AllTreeNodes())
-        {
-            // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当用户选中了真实实体（链接叶子或文件夹）才高亮
-            string? entityId = node.IsLink ? node.Id : node.FolderId;
-            node.IsSelected = entityId != null && Selection.Contains(entityId);
-        }
-    }
-
     // —— 拖拽落点（悬停高亮 + 「移动到 X」提示的唯一事实来源）——
+    // 状态机 = 独立控制器 BrowserDropState（覆盖式更新，铁律 9）；VM 只做"写状态 + 投影"。
 
-    /// <summary>当前拖拽落点（**覆盖式**更新，绝不累积——铁律 9）；<c>null</c> 整个对象 = 指针不在任何可落点上。</summary>
-    private BrowserDropTarget? _dropTarget;
+    /// <summary>拖拽落点状态（**控制器**）：目标 / 模式 / 提示文案的唯一事实来源。</summary>
+    public BrowserDropState DropState { get; } = new();
 
     /// <summary>当前目录显示名（根 = 「全部书签」）：列表空白落点的提示文案用。</summary>
     public string CurrentFolderDisplayName
         => Breadcrumbs.Count > 0 ? Breadcrumbs[^1].Name : FolderIds.RootDisplayName;
 
     /// <summary>主栏某行是否为当前落点（行 <c>IsDropTarget</c> 直接读这里——行是只读投影）。</summary>
-    public bool IsDropTargetRow(string id)
-        => _dropTarget is { Pane: BrowserPane.Main } t && string.Equals(t.FolderId, id, StringComparison.Ordinal);
+    public bool IsDropTargetRow(string id) => DropState.IsRowTarget(id);
 
     /// <summary>
     /// 当前拖拽落点（只读投影）：视图在拖拽收尾时读它——左键拖拽的成环判定与右键拖拽的
     /// 「复制到此处 / 移动到此处」菜单都用<b>这一个</b>事实来源，绝不各自再做一次命中测试或修饰键判定。
     /// </summary>
-    public BrowserDropTarget? DropTarget => _dropTarget;
+    public BrowserDropTarget? DropTarget => DropState.Target;
 
     /// <summary>当前落点会做什么（无落点 = 移动，仅作默认值；调用方只在有落点时用它）。</summary>
-    public TransferMode DropTargetMode => _dropTarget?.Mode ?? TransferMode.Move;
+    public TransferMode DropTargetMode => DropState.Mode;
 
     /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」` / `复制到「X」`——文案口径在
     /// <see cref="Views.DragSupport.HintText"/>（唯一实现，与回收站页共用）。</summary>
-    public string DropTargetHintText
-        => _dropTarget == null ? string.Empty : Views.DragSupport.HintText(_dropTarget.Name, _dropTarget.Mode);
+    public string DropTargetHintText => DropState.HintText;
 
     /// <summary>
     /// 修饰键 → 传输模式的**唯一实现**（默认移动；按住 Ctrl = 复制——Windows 单卷口径）。
     /// 三处调用（DragOver 的光标与提示、QueryContinueDrag 的即时刷新、Drop 的最终动作）都走这里，
     /// 不允许任何地方再写第二份 Ctrl 判定。
     /// </summary>
-    public static TransferMode ResolveDropMode(bool controlPressed)
-        => controlPressed ? TransferMode.Copy : TransferMode.Move;
+    public static TransferMode ResolveDropMode(bool controlPressed) => BrowserDropState.ResolveMode(controlPressed);
 
     /// <summary>
     /// 写入拖拽落点：拖拽悬停的**唯一入口**，**覆盖式**（每次 DragOver 重写当前值，既不清零也不累积）。
     /// 传 <c>null</c> = 指针不在任何可落点上（空白 / 非法目标 / 链接）→ 两栏高亮熄灭、提示不显示；
     /// 非法目标（拖到自己或自己的后代）也传 null：光标已用禁止态表达，不该再高亮或提示"移动到"。
     /// </summary>
-    public void SetDropTarget(BrowserDropTarget? target)
-    {
-        if (Equals(_dropTarget, target)) return;   // record 值相等 = 同一落点：不重复投影（DragOver 会高频触发）
-        _dropTarget = target;
-        foreach (var r in Rows) r.InvalidateIsDropTarget();
-        SyncTreeDropTarget();
-        OnPropertyChanged(nameof(DropTargetHintText));
-    }
+    public void SetDropTarget(BrowserDropTarget? target) => DropState.Set(target);
 
     /// <summary>
     /// 落点**不变、只换动作**（拖拽中按下/松开 Ctrl）：鼠标没动时 OLE 不会再派发 DragOver，
     /// 但 `QueryContinueDrag` 每次修饰键变化都会触发 → 由此把模式补进落点状态，保证
     /// **松手时执行的动作与提示条说的一致**（光标由 OLE 决定，可能滞后一次，见 WARNINGS）。
     /// </summary>
-    public void SetDropTargetMode(TransferMode mode)
-    {
-        if (_dropTarget == null || _dropTarget.Mode == mode) return;
-        SetDropTarget(_dropTarget with { Mode = mode });
-    }
+    public void SetDropTargetMode(TransferMode mode) => DropState.SetMode(mode);
 
     /// <summary>拖拽结束（松手 / Esc 取消 / 拖出可落点）统一清空落点：绝不留残留高亮。</summary>
-    public void ClearDropTarget() => SetDropTarget(null);
+    public void ClearDropTarget() => DropState.Clear();
+
+    /// <summary>落点状态变化 → 投影：行高亮（拉刷）+ 树高亮（推送）+ 提示文案属性。</summary>
+    private void OnDropStateChanged()
+    {
+        foreach (var r in Rows) r.InvalidateIsDropTarget();
+        SyncTreeDropTarget();
+        OnPropertyChanged(nameof(DropTargetHintText));
+    }
 
     /// <summary>目录树落点投影（节点侧是推送式，与 IsSelected 同构）：只有指针所在栏是树、
     /// 且节点实体 ID 等于当前落点时才高亮；链接叶子与虚根永不作落点。</summary>
@@ -470,10 +429,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         foreach (var node in AllTreeNodes())
         {
             string? entityId = node.IsLink ? node.Id : node.FolderId;
-            node.IsDropTarget = _dropTarget is { Pane: BrowserPane.Tree } t
-                && !node.IsLink
-                && entityId != null
-                && string.Equals(t.FolderId, entityId, StringComparison.Ordinal);
+            node.IsDropTarget = !node.IsLink && DropState.IsNodeTarget(entityId);
         }
     }
 
@@ -495,34 +451,21 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     // 行与树节点上的 IsRenaming 全部是它的投影（与 IsSelected 同构），
     // 绝不各自持一份"我在编辑"的标记，也绝不靠"谁先谁后"的时序去拉齐（用户硬性红线）。
 
-    /// <summary>正在改名的实体 ID（null = 未在改名）。</summary>
-    private string? _renameId;
-
-    /// <summary>改名目标是不是文件夹（决定提交走 folders.update 还是 links.update）。</summary>
-    private bool _renameIsFolder;
-
-    /// <summary>编辑面：主栏行 or 左栏树——同一实体只在**一处**显示编辑框，避免两个编辑框互相抢焦点/双重提交。</summary>
-    private BrowserPane _renameSurface;
-
-    /// <summary>进入改名时的原名（提交时判"没改"用；不依赖行对象存活）。</summary>
-    private string _renameOriginalName = string.Empty;
-
-    private string _editingName = string.Empty;
+    /// <summary>改名会话状态机（**控制器**）：目标 / 编辑面 / 原名 / 编辑文本 / 挂起提交的唯一事实来源。</summary>
+    private readonly BrowserRenameController _rename = new();
 
     /// <summary>改名编辑中的文本（编辑框 TwoWay 绑定；输入即回写）。</summary>
     public string EditingName
     {
-        get => _editingName;
-        set { if (_editingName == value) return; _editingName = value; OnPropertyChanged(); }
+        get => _rename.EditingName;
+        set { if (_rename.EditingName == value) return; _rename.EditingName = value; OnPropertyChanged(); }
     }
 
     /// <summary>是否正在就地改名（页面级动作一律让位：编辑语义优先）。</summary>
-    public bool IsRenaming => _renameId != null;
+    public bool IsRenaming => _rename.IsActive;
 
     /// <summary>某实体此刻是否显示改名编辑框（投影判据：目标一致 + 编辑面一致）。</summary>
-    public bool IsRenamingId(string? id, BrowserPane surface)
-        => id != null && _renameId != null && _renameSurface == surface
-           && string.Equals(_renameId, id, StringComparison.Ordinal);
+    public bool IsRenamingId(string? id, BrowserPane surface) => _rename.IsRenamingId(id, surface);
 
     /// <summary>Enter / 失焦：提交改名（空名或未改 = 还原，Windows 口径）。</summary>
     public ICommand CommitRenameCommand { get; }
@@ -548,15 +491,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 切换改名目标 = 旧会话按 Windows 口径**提交**（不丢已输入内容；无改动等价无操作）。
         // 顺序不可换：先捕获旧会话快照 → 收旧会话 → 起新会话 → 最后才异步提交旧快照
         //（否则提交逻辑会读到刚上位的**新**会话）。目标相同（重复进入同一次改名）时不重复提交。
-        var previous = CaptureSession();
+        var previous = _rename.Capture();
         if (previous != null) EndRename();
 
-        _renameId = id;
-        _renameIsFolder = isFolder;
-        _renameSurface = surface;
-        _renameOriginalName = name;
-        EditingName = name;
+        _rename.Begin(id, isFolder, name, surface);
         ApplyRenameToView();
+        OnPropertyChanged(nameof(EditingName));   // 文本由控制器直写，属性通知在这里补
         OnPropertyChanged(nameof(IsRenaming));
         CommandManager.InvalidateRequerySuggested();
 
@@ -571,27 +511,15 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>结束改名会话（提交与取消的**唯一收口**；会话状态一次性归零并重投影）。</summary>
     private void EndRename()
     {
-        if (_renameId == null) return;
-        _renameId = null;
-        _renameIsFolder = false;
-        _renameOriginalName = string.Empty;
-        EditingName = string.Empty;
+        if (_rename.End() == null) return;
         ApplyRenameToView();
+        OnPropertyChanged(nameof(EditingName));   // 文本已清空（控制器直写），属性通知在这里补
         OnPropertyChanged(nameof(IsRenaming));
         CommandManager.InvalidateRequerySuggested();
     }
 
     /// <summary>取消改名（Esc）：只收会话，不写数据。</summary>
     public void CancelRename() => EndRename();
-
-    /// <summary>改名会话快照（提交动作的**唯一凭据**：不读会话字段，杜绝异步途中被切换目标串味）。</summary>
-    private sealed record RenameSession(string Id, bool IsFolder, string OriginalName, string Name);
-
-    /// <summary>捕获当前会话快照；未在改名 → null。</summary>
-    private RenameSession? CaptureSession()
-        => _renameId == null
-            ? null
-            : new RenameSession(_renameId, _renameIsFolder, _renameOriginalName, EditingName ?? string.Empty);
 
     /// <summary>
     /// 页面级收尾动作：**收掉当前改名的编辑态**（右键菜单打开时调用）。
@@ -604,22 +532,17 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public void CommitActiveRename()
     {
         FlushDeferredCommit();               // 上一次挂起的先落地，避免被本次覆盖而丢失
-        var session = CaptureSession();
+        var session = _rename.Capture();
         if (session == null) return;
         EndRename();                         // 编辑态立即收起（投影归零）
-        _deferredCommit = session;
+        _rename.Defer(session);
     }
-
-    /// <summary>待提交的改名快照（右键收尾时挂起，菜单关闭后落地；单元素，非状态源——会话状态已由 EndRename 收口）。</summary>
-    private RenameSession? _deferredCommit;
 
     /// <summary>落地挂起的改名提交（菜单关闭时调用）。</summary>
     public void FlushDeferredCommit()
     {
-        var session = _deferredCommit;
-        if (session == null) return;
-        _deferredCommit = null;
-        _ = CommitSessionAsync(session);
+        if (_rename.TakeDeferred() is { } session)
+            _ = CommitSessionAsync(session);
     }
 
     /// <summary>
@@ -629,14 +552,14 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public async Task CommitRenameAsync()
     {
-        var session = CaptureSession();
+        var session = _rename.Capture();
         if (session == null) return;
         EndRename();                       // 先收会话：此后任何失焦/重复提交都成为空操作
         await CommitSessionAsync(session);
     }
 
     /// <summary>提交一个**已捕获**的会话快照（切换目标时提交旧会话也走这里，不丢用户输入）。</summary>
-    private async Task CommitSessionAsync(RenameSession session)
+    private async Task CommitSessionAsync(BrowserRenameController.Session session)
     {
         var name = (session.Name ?? string.Empty).Trim();
         if (name.Length == 0 || string.Equals(name, session.OriginalName, StringComparison.Ordinal)) return;
@@ -670,58 +593,51 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     // —— 剪贴板（Ctrl+X / C / V，载荷见 ClipboardManager.BrowserClipboardPayload）——
+    // 语义（剪切/复制/取消/载荷构造）= 控制器 BrowserClipboardController；存储 = Clipboard；传输 = TransferAsync（唯一流水线）。
 
     public Managers.ClipboardManager Clipboard { get; } = new();
 
+    /// <summary>剪贴板语义控制器（构造于 ctor：注入拖动集合出口 / 剪切视觉投影 / 状态文案）。</summary>
+    private readonly BrowserClipboardController _clipboardCtl;
+
     // —— 面包屑内联路径编辑（Explorer 地址栏两态）——
+    // 状态机 = 独立控制器 BrowserPathEditController（编辑态 / 文本 / 校验 / 候选的唯一事实来源）；
+    // 解析算法在 UIKit Views.PathResolver；VM 只转发属性 + 提供"当前路径文本"。
 
-    private bool _isPathEditing;
-    public bool IsPathEditing
-    {
-        get => _isPathEditing;
-        set
-        {
-            if (_isPathEditing == value) return;
-            _isPathEditing = value;
-            OnPropertyChanged();
-            CommandManager.InvalidateRequerySuggested();
-        }
-    }
+    /// <summary>路径编辑控制器（构造于 ctor：注入解析器 + 导航 / 提示回调）。</summary>
+    private readonly BrowserPathEditController _pathEdit;
 
-    private string _pathEditText = string.Empty;
+    public bool IsPathEditing => _pathEdit.IsEditing;
+
     public string PathEditText
     {
-        get => _pathEditText;
-        set
-        {
-            if (_pathEditText == value) return;
-            _pathEditText = value;
-            OnPropertyChanged();
-            IsPathInvalid = false;
-            UpdatePathCandidates();
-        }
+        get => _pathEdit.Text;
+        set => _pathEdit.Text = value;
     }
 
-    private bool _isPathInvalid;
-    public bool IsPathInvalid
-    {
-        get => _isPathInvalid;
-        set { if (_isPathInvalid != value) { _isPathInvalid = value; OnPropertyChanged(); } }
-    }
+    public bool IsPathInvalid => _pathEdit.IsInvalid;
 
-    private List<string> _pathCandidates = new();
-    public List<string> PathCandidates
-    {
-        get => _pathCandidates;
-        private set { _pathCandidates = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasPathCandidates)); }
-    }
-    public bool HasPathCandidates => IsPathEditing && _pathCandidates.Count > 0;
+    public List<string> PathCandidates => _pathEdit.Candidates.ToList();
+    public bool HasPathCandidates => _pathEdit.HasCandidates;
 
-    private int _selectedCandidateIndex = -1;
     public int SelectedCandidateIndex
     {
-        get => _selectedCandidateIndex;
-        set { _selectedCandidateIndex = value; OnPropertyChanged(); }
+        get => _pathEdit.SelectedCandidateIndex;
+        set => _pathEdit.SelectedCandidateIndex = value;
+    }
+
+    /// <summary>路径编辑状态变化 → 属性通知 + 命令可用性（控制器只发一个 Changed）。
+    /// ⚠️ **顺序敏感**（实测）：文本类通知必须先于 `IsPathEditing` —— 控件在"进入编辑态"的通知里
+    /// 做聚焦 + 整名全选，若此时 TextBox 还是旧文本，随后的文本更新会把选区清掉（探针"进入即全选"红）。</summary>
+    private void OnPathEditChanged()
+    {
+        OnPropertyChanged(nameof(PathEditText));
+        OnPropertyChanged(nameof(IsPathInvalid));
+        OnPropertyChanged(nameof(PathCandidates));
+        OnPropertyChanged(nameof(HasPathCandidates));
+        OnPropertyChanged(nameof(SelectedCandidateIndex));
+        OnPropertyChanged(nameof(IsPathEditing));   // 最后发：控件据此聚焦+全选，此时文本已就位
+        CommandManager.InvalidateRequerySuggested();
     }
 
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
@@ -732,6 +648,20 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         _client = client;
         _ports = ports;
         Details = new BrowserDetailsViewModel(client);
+        // 剪贴板语义（**控制器**）：载荷构造 / 剪切态视觉 / 取消都在控制器内；
+        // VM 只注入"拖动集合唯一出口 + 行半透明投影 + 状态文案"三个回调。
+        _clipboardCtl = new BrowserClipboardController(
+            Clipboard, () => BuildDragItems(), () => Controller.CurrentFolderId, ApplyCutVisual, s => StatusText = s);
+        // 路径编辑（**控制器**）：解析器用本页文件夹映射（与 BuildPathText 同源）；导航/提示回注本类
+        _pathEdit = new BrowserPathEditController(
+            new Views.PathResolver(FolderIds.RootDisplayName,
+                parentId => _folderMap
+                    .Where(kvp => kvp.Value.ParentId == parentId)
+                    .Select(kvp => new Views.PathNode(kvp.Key, kvp.Value.Name))
+                    .ToList()),
+            folderId => _ = LoadAsync(folderId),
+            msg => StatusText = msg);
+        _pathEdit.Changed += OnPathEditChanged;
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
         GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot() && !IsPathEditing && !IsRenaming);
@@ -752,8 +682,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         DetailPage = new LinkDetailPageViewModel(client, this);
         RenameNodeCommand = new RelayCommand<FolderNode?>(BeginRenameNode);
         DeleteNodeCommand = new RelayCommand<FolderNode?>(node => _ = DeleteNodeAsync(node));
-        CutCommand = new RelayCommand(CutSelection, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
-        CopyCommand = new RelayCommand(CopySelection, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        CutCommand = new RelayCommand(_clipboardCtl.Cut, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        CopyCommand = new RelayCommand(_clipboardCtl.Copy, () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
         PasteCommand = new RelayCommand(() => _ = PasteAsync(), () => Clipboard.BrowserPayload is { IsEmpty: false } && !IsPathEditing && !IsRenaming && IsListContextActive);
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing && !IsRenaming);
         // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
@@ -791,6 +721,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
         // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（主栏行 + 树 + 派生状态）
         Selection.Changed += ApplySelectionToView;
+
+        // 拖拽落点状态（控制器）变化 → 唯一的投影点（行高亮拉刷 + 树高亮推送 + 提示文案属性）
+        DropState.Changed += OnDropStateChanged;
     }
 
     // —— 排序（服务端排序：视图层共享数据表控件 SortableDataTable 点列头后经 SortChanged 事件转到这里）——
@@ -801,367 +734,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public string SortBy { get; private set; } = DefaultSortBy;
     public string SortOrder { get; private set; } = DefaultSortOrder;
 
-    /// <summary>
-    /// 应用排序（字段与方向已由共享表控件切换完毕）并重排。
-    /// 走 RefreshPreservingSelectionAsync：重排不丢选中（Windows 点列头也不丢）。
-    /// 点列头 = 真刷新：刚置入项的临时置尾同时归位（Windows 口径）。
-    /// </summary>
-    public void ApplySort(string? field, bool ascending)
-    {
-        if (string.IsNullOrEmpty(field)) return;
-        SortBy = field;
-        SortOrder = ascending ? "asc" : "desc";
-        ClearRecentlyPinned();
-        _ = RefreshPreservingSelectionAsync();
-    }
-
-    /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。
-    /// 这是"用户发起的导航"（树行点击/面包屑/后退前进/返回上级/F5）→ 带加载遮罩（真刷新，
-    /// 在 <see cref="RefreshAsync"/> 里归位置尾）；导航即作废未消费的粘贴定位请求。</summary>
-    public async Task LoadAsync(string? folderId)
-    {
-        _pendingFocusId = null;
-        Controller.NavigateTo(folderId);
-        CurrentFolderId = Controller.CurrentFolderId;
-        await RefreshAsync(navigating: true);
-    }
-
-    /// <summary>
-    /// 重新加载当前目录（事件推送订阅 / 导航显式调用；写操作不自行刷新，见 WARNINGS #18）。
-    /// 选中的唯一事实来源是 <see cref="Selection"/>（行与树均为投影），故此方法本身不恢复选中——
-    /// 集合并未因刷新而消失。仅当 <paramref name="clearSelection"/> 为 true（导航切换目录）时清空选中。
-    /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 防抖事件刷新）只置挂起标志，
-    /// 当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：导航后列表停在旧目录）。
-    /// </summary>
-    public async Task RefreshAsync(bool clearSelection = false, bool navigating = false)
-    {
-        // 导航切换目录：清空选中集合（行/树投影一起归零）；原地刷新则保留
-        if (clearSelection)
-            Selection.Clear();
-        if (IsLoading)
-        {
-            _refreshPending = true;
-            _clearSelectionOnPendingRefresh |= clearSelection;
-            _navigatingOnPendingRefresh |= navigating;
-            return;
-        }
-        // 数据持续高频变动时，补刷递归不能无限延续（见 finally 内的深度计数）
-        if (_refreshRecursionDepth >= MaxRefreshRecursion)
-        {
-            _refreshPending = false;   // 弃掉挂起：交还 300ms 事件防抖继续追平（不丢数据，只是晚一拍）
-            return;
-        }
-        // 遮罩只在"这次加载真的开始了"且属于**用户发起的导航/刷新**时亮：被挂起/被丢弃的请求不亮，
-        // 挂起补刷按 _navigatingOnPendingRefresh 逐轮继承（事件驱动的后台刷新一律静默，不闪动画）。
-        // 真刷新（导航加载 = 进入目录 / 点当前位置重载 / F5）同时让"刚置入项临时置尾"归位（Windows 口径）。
-        if (navigating) { IsNavigating = true; _navigatingInChain = true; ClearRecentlyPinned(); }
-        IsLoading = true;
-        try
-        {
-            // 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
-            // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
-            var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
-
-            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
-            //（与目录页同快照的树/计数 + 全量链接叶子：每文件夹直接链接一并注入，Windows 资源管理器语义）
-            var tree = contents.Tree ?? new List<FolderDto>();
-            _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<LinkDto>());
-            // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
-
-            Rows.Clear();
-            SetContextRow(null); // 行对象已重建：右键命中行引用作废（删除文案随之复位）
-
-            // Windows 逻辑：升序时文件夹在前，降序时文件夹在后（任何排序维度都如此）
-            var folderRows = new List<BrowserRowViewModel>();
-            foreach (var folder in contents.SubFolders)
-            {
-                folderRows.Add(new BrowserRowViewModel(folder.FolderId, isFolder: true, folder.Name)
-                {
-                    LinkCount = folder.LinkCount,
-                    ModifiedAt = folder.UpdatedAt, // 内核维护：文件夹内容（含子孙）最后变动时间
-                    CreatedAt = folder.CreatedAt,  // 内核维护：文件夹创建时间
-                    LastViewedAt = folder.LastVisitedAt, // 内核维护：子孙链接被查看时沿父链刷新
-                    ViewCount = folder.VisitCount,       // 内核维护：子孙链接被查看时沿父链 +1
-                    Host = this,
-                    IsCut = IsCutInClipboard(folder.FolderId, true)
-                });
-            }
-
-            var linkRows = new List<BrowserRowViewModel>();
-            foreach (var link in contents.Links)
-            {
-                linkRows.Add(new BrowserRowViewModel(link.LinkId, isFolder: false, link.Title)
-                {
-                    Url = link.Url,
-                    ModifiedAt = link.UpdatedAt,        // 内核维护：内容变动时间（查看不影响）
-                    CreatedAt = link.CreatedAt,          // 内核维护：链接创建时间
-                    LastViewedAt = link.LastVisitedAt,   // 内核维护：链接最后查看时间
-                    ViewCount = link.VisitCount,         // 内核维护：链接查看次数
-                    Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl),
-                    Host = this,
-                    IsCut = IsCutInClipboard(link.LinkId, false)
-                });
-            }
-
-            // favicon 懒加载清单：磁盘缓存未命中时后台拉取，完成后补到对应行
-            var missing = linkRows
-                .Where(r => r.Favicon == null)
-                .Select(r => contents.Links.First(l => l.LinkId == r.Id).FaviconUrl)
-                .Where(url => !string.IsNullOrEmpty(url))
-                .Distinct()
-                .ToList();
-
-            // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
-            // ⚠️ 行必须先同步就位（favicon 属附属数据，网络预取绝不阻塞行渲染——
-            //    曾因「await 预取再建行」在网络慢时把 Rows 长时间留在上一目录，跳转定位读到旧行集 → RowMissing 间歇回归）。
-            var ordered = SortOrder == "desc"
-                ? linkRows.Concat(folderRows).ToList()
-                : folderRows.Concat(linkRows).ToList();
-
-            // 临时置尾（Windows）：刚粘贴的项追加到列表末尾（不参与排序），直到真刷新才按排序归位。
-            // 只对"属于当前目录且此刻仍在数据里"的 ID 生效——已被移走/删除的置尾项自动跳过。
-            var pinned = ActivePinnedIds();
-            if (pinned.Count == 0)
-            {
-                foreach (var row in ordered) Rows.Add(row);
-            }
-            else
-            {
-                var pinnedSet = new HashSet<string>(pinned, StringComparer.Ordinal);
-                var byId = ordered.ToDictionary(r => r.Id, StringComparer.Ordinal);
-                foreach (var row in ordered)
-                    if (!pinnedSet.Contains(row.Id)) Rows.Add(row);
-                foreach (var id in pinned)
-                    if (byId.TryGetValue(id, out var row)) Rows.Add(row);
-            }
-
-            // favicon 后台预取 + Dispatcher 回填：行已可见，失败只丢图标（下次事件刷新追平）
-            if (missing.Count > 0)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try { await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
-                    catch { /* 网络失败属预期波动，行保持无图标 */ }
-                    foreach (var row in linkRows.Where(r => r.Favicon == null))
-                    {
-                        var dto = contents.Links.FirstOrDefault(l => l.LinkId == row.Id);
-                        if (dto != null)
-                        {
-                            var img = Services.FaviconService.LoadFromCache(dto.FaviconUrl);
-                            if (img != null)
-                                System.Windows.Application.Current?.Dispatcher.Invoke(() => row.SetFavicon(img));
-                        }
-                    }
-                });
-            }
-
-            // 选中的唯一事实来源是 Selection：Rows 已重建且行是投影，这里只需把集合同步到
-            // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 Selection 本身。
-            ApplySelectionToView();
-            // 重命名态同样是投影：刷新重建行/树后按会话状态重放（编辑框在重建出的行/节点上重新出现并自动聚焦）
-            ApplyRenameToView();
-
-            // 粘贴完成后的定位：新行已在本轮重建中就位 → 滚入视口（行不在本轮数据里则留待下次刷新）
-            ConsumePendingFocus();
-
-            // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
-            Breadcrumbs.Clear();
-            var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
-            Breadcrumbs.Add(new BrowserCrumbViewModel(null, "全部书签") { IsLast = chain.Count == 0 });
-            for (int i = 0; i < chain.Count; i++)
-            {
-                Breadcrumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)
-                {
-                    IsLast = i == chain.Count - 1
-                });
-            }
-
-            StatusText = $"共 {contents.SubFolders.Count + contents.Links.Count} 项" +
-                         $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个链接）";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "加载失败";
-            Services.Logger.Error("浏览目录刷新失败", ex);   // 失败必须留痕，不能只有一行状态文案
-        }
-        finally
-        {
-            IsLoading = false;
-            CommandManager.InvalidateRequerySuggested();
-            // 撤销/重做可用性轻量同步（Ctrl+Z/Y 的 CanExecute 要准）：每次刷新链收尾取一次 undo 栈态。
-            // 只读查询、不产生事件 → 不会引发刷新循环；失败静默保持保守禁用（见 RefreshUndoStateAsync）。
-            _ = RefreshUndoStateAsync();
-
-            // 加载期间有新的刷新请求（导航/防抖事件）→ 立即补刷一次，保证最后请求被处理
-            if (_refreshPending)
-            {
-                _refreshPending = false;
-                var clear = _clearSelectionOnPendingRefresh;
-                _clearSelectionOnPendingRefresh = false;
-                var nav = _navigatingOnPendingRefresh;
-                _navigatingOnPendingRefresh = false;
-                _refreshRecursionDepth++;
-                try { await RefreshAsync(clearSelection: clear, navigating: nav); }
-                finally { _refreshRecursionDepth--; }
-            }
-            else
-            {
-                IsNavigating = false;   // 本轮（含挂起补刷链）全部结束 → 收加载遮罩
-                var wasNavigation = _navigatingInChain;
-                _navigatingInChain = false;
-                RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
-            }
-        }
-    }
-
     // —— 交互 ——
-
-    /// <summary>主栏单选：把选中集合收敛为仅 <paramref name="row"/>.Id（唯一事实来源写入）。</summary>
-    private void SelectRow(BrowserRowViewModel? row)
-    {
-        if (row == null) return;
-        Selection.SelectSingle(row.Id);
-    }
-
-    /// <summary>
-    /// 带修饰键的选择路由（共享 <see cref="ListSelection.Click"/>：Ctrl 翻转 / Shift 以锚点画区间 /
-    /// 无修饰 = 单选）。由视图在鼠标抬起时调用（读 Keyboard.Modifiers）；
-    /// 选中集合是唯一事实来源，绝不直接改行状态。
-    /// </summary>
-    public void SelectRowWithModifiers(BrowserRowViewModel? row, ModifierKeys mods)
-    {
-        if (row == null) return;
-        Selection.Click(row.Id, mods.HasFlag(ModifierKeys.Control), mods.HasFlag(ModifierKeys.Shift),
-            Rows.Select(r => r.Id).ToList());
-    }
-
-    public void SelectAllRows()
-    {
-        Selection.SelectAll(Rows.Select(r => r.Id).ToList());
-    }
-
-    /// <summary>
-    /// 选中唯一的写入入口（全部经共享 <see cref="ListSelection"/>）：本次调用是主栏选中/清除动作的
-    /// 目标 ID 集，写完后由核心触发 Changed → <see cref="ApplySelectionToView"/> 投影到主栏行 + 目录树 + 派生状态。
-    /// 任何选择路径（行点击/树点击/全选/清空）都只走这里，不直接在行对象或树上写选中——
-    /// 事实来源唯一、且跨 Rows/Tree 重建存活。
-    /// </summary>
-    private void SetSelection(IEnumerable<string>? ids = null, string? anchor = null, Action<HashSet<string>>? mutate = null)
-    {
-        // ⚠️ mutate 的起点必须是**当前集合**（ListSelection.Mutate 内部保证）：
-        // Ctrl 翻转 = "在当前选中上增/删目标 ID"；曾从空集起步 → 多选永远做不到（用例已锁死）。
-        if (mutate != null) Selection.Mutate(mutate, anchor);
-        else if (ids != null) Selection.Set(ids, anchor);
-        else if (!string.IsNullOrEmpty(anchor)) Selection.Mutate(_ => { }, anchor);
-    }
-
-    /// <summary>把指定 ID 纳入选中集合（不清空其他选中）并投影两栏——用于从详情页返回等"还原选中"语义。</summary>
-    public void RestoreSelection(string id) => Selection.Restore(id);
-
-    /// <summary>
-    /// 视图应把某一行滚入视口（定位/跳转后保证选中项可见）。
-    /// 由 <see cref="NavigateAndSelectAsync"/> 触发，BrowserView 订阅处理；
-    /// 视图不在场（无 UI 的会话）时无人订阅也不影响数据层结果。
-    /// </summary>
-    public event EventHandler<BrowserRowViewModel>? FocusRowRequested;
-
-    /// <summary>
-    /// 进入指定目录并选中其中一行（行可为链接或文件夹）——「跳转」的浏览页执行原语。
-    /// 由定位组件（Services/ContentLocator）经 IBrowserLocateHost 端口调用；
-    /// 目录与选中逻辑属于浏览页自身领域，故实现在此，界面只需滚动。
-    /// 返回该行是否存在并被选中。
-    /// </summary>
-    /// <summary>
-    /// 进入指定目录并选中其中一行（行可为链接或文件夹）——「跳转」的浏览页执行原语。
-    /// 选中直接写 <see cref="Selection"/>（唯一事实来源），不依赖行对象引用：
-    /// 即使该行未在当前 Rows（分页/目录重建中），ID 也照常落在选中集合，树叶子按
-    /// <see cref="SyncTreeSelection"/> 同步高亮；此后导航成功该行出现在 Rows 即由主栏行投影选中。
-    /// 返回 true 表示定位目标已纳入选中集合；界面可据此滚动。
-    /// </summary>
-    public async Task<bool> NavigateAndSelectAsync(string? folderId, string rowId)
-    {
-        if (string.IsNullOrEmpty(rowId)) return false;
-
-        // 已在目标目录时不必重载（避免无谓的列表重建与闪烁）
-        // 注意：链接叶子定位=进根（folderId null）、CurrentFolderId 已是 null 时也直接下单选集，
-        // 无需重载，避免异步重建导致"主栏闪一下"。
-        if (Controller.CurrentFolderId != folderId)
-            await LoadAsync(folderId);
-
-        SetSelection(new[] { rowId }, rowId);
-        var row = Rows.FirstOrDefault(r => r.Id == rowId);
-        if (row != null) FocusRowRequested?.Invoke(this, row);
-        return true;
-    }
-
-    /// <summary>
-    /// 点击树节点统一入口（展开 ≠ 选中 ≠ 进入，三者物理分离）：
-    /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此。
-    /// 只有两类行、两个动词，零特例：
-    /// · **位置行**（文件夹 / 虚根「全部书签」）= 进入目录：无条件 `LoadAsync`——
-    ///   点是当前位置同样重载刷新一次（Windows 口径：点当前文件夹、已在根点「全部书签」都刷新）；
-    ///   重复导航不污染历史（<see cref="BrowserHistory.NavigateTo"/> 对同目录直接忽略）；
-    ///   重载也不动选中（选中是独立集合，重载后按 ID 重新投影）。
-    ///   两类位置行唯一差异 = 有没有实体身份：文件夹把自己写入选中集合（单击 = 选中该文件夹 + 进入）；
-    ///   虚根 <c>FolderId == null</c>（不是实体、没有可高亮的身份）→ 只进入、不写选中。
-    /// · **实体行**（链接叶子）= 定位：进入其所属目录（已在目标目录则免重载——行本来就在，无谓重建只会闪烁）
-    ///   并把该链接写入选中集合。
-    /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="Selection"/>
-    /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
-    /// </summary>
-    public async Task SelectTreeNodeAsync(FolderNode node)
-    {
-        if (node.IsLink)
-        {
-            // 实体行：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
-            // 即使该行尚未出现在 Rows（分页），也先记录选中，由导航/刷新投影补齐。
-            SetSelection(new[] { node.Id }, node.Id);
-            await NavigateAndSelectAsync(node.ParentId, node.Id);
-            return;
-        }
-
-        // 位置行：进入目录（无条件重载 = 点是当前位置也刷新）；只有真实文件夹有实体身份，虚根不写选中。
-        // 树高亮由 Selection 派生，与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中）。
-        if (node.FolderId != null) SetSelection(new[] { node.FolderId }, node.FolderId);
-        await LoadAsync(node.FolderId);
-    }
-
-    /// <summary>遍历整棵树（含虚拟根「全部书签」），返回全部节点的深度优先序列。</summary>
-    private IEnumerable<FolderNode> AllTreeNodes()
-    {
-        foreach (var root in FolderTree)
-            foreach (var node in EnumerateSelfAndChildren(root))
-                yield return node;
-    }
-
-    private static IEnumerable<FolderNode> EnumerateSelfAndChildren(FolderNode node)
-    {
-        yield return node;
-        foreach (var child in node.Children)
-            foreach (var sub in EnumerateSelfAndChildren(child))
-                yield return sub;
-    }
-
-    public void ClearSelection()
-    {
-        SetSelection(Enumerable.Empty<string>(), anchor: null);
-    }
-
-    /// <summary>点列表卡空白：主栏获得键盘语义归属 + 清空选中（唯一实现 UIKit BlankClick 的命令端）。</summary>
-    private void ClearMainPaneSelection()
-    {
-        ActivatePane(BrowserPane.Main);
-        ClearSelection();
-    }
-
-    /// <summary>点页面其它空白（导航行 / 命令栏 / 内容区 / 状态栏）：保持当前栏归属，只清选中
-    /// （ActivatePane 会把键盘焦点收回页内——"清焦点"语义）。</summary>
-    private void ClearPageSelection()
-    {
-        ActivatePane(ActivePane);
-        ClearSelection();
-    }
 
     private async Task OpenRowAsync(BrowserRowViewModel? row)
     {
@@ -1187,272 +760,6 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     private bool IsAtRoot() => Controller.CurrentFolderId == null;
 
-    /// <summary>由 folders.overview 的树快照重建左侧树（ParentId == null 即根级）。保留既有展开状态。
-    /// rootLinkCount = 同快照的根级直挂链接数；treeLinks = 同快照的全库活动链接（每文件夹直接链接叶子注入源）。
-    /// 纯同步：无 IO/等待，签名用 void 不误导调用方。
-    /// ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
-    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount, List<LinkDto> treeLinks)
-    {
-        var expandedIds = new HashSet<string?>();
-        CollectExpandedIds(FolderTree, expandedIds);
-
-        FolderTree.Clear();
-
-        var root = new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "folder-open-outline", IsExpanded = true, Host = this };
-        var nodes = tree.ToDictionary(
-            f => f.FolderId,
-            f => new FolderNode
-            {
-                FolderId = f.FolderId,
-                ParentId = f.ParentId,
-                Name = f.Name,
-                LinkCount = f.LinkCount,
-                Host = this,
-                IsExpanded = expandedIds.Contains(f.FolderId)
-            });
-
-        foreach (var node in nodes.Values)
-        {
-            if (node.ParentId != null
-                && node.ParentId != node.FolderId   // 自环坏数据 → 按根级兜底，避免自引用节点
-                && nodes.TryGetValue(node.ParentId, out var parent))
-            {
-                parent.Children.Add(node);
-            }
-            else
-            {
-                root.Children.Add(node);
-            }
-        }
-
-        // 每文件夹直接链接叶子（全量注入，Windows 资源管理器语义：展开任意文件夹可见其直接书签）。
-        // 用 ToLookup（允许 null 键 = 根级链接）分组，按所属目录挂到对应节点下
-        var linksByParent = treeLinks.ToLookup(l => l.ListId);
-        foreach (var node in nodes.Values)
-            AppendTreeLinkLeaves(node, linksByParent[node.FolderId]);
-        AppendTreeLinkLeaves(root, linksByParent[null]);
-
-        // 根节点计数 = 顶层文件夹递归计数之和 + 根级直挂链接数（内核递归计数）
-        root.LinkCount = tree.Where(f => f.ParentId == null)
-            .Sum(f => f.LinkCount) + rootLinkCount;
-
-        FolderTree.Add(root);
-    }
-
-    /// <summary>把某文件夹的直接链接作为叶子挂到该节点下：名称升序（树唯一排序口径）；
-    /// 叶子 Id = 链接 ID、FolderId = null、ParentId = 所属目录（定位 = 进父目录 + 选中该行）。
-    /// 文件夹节点先于链接组已由构建顺序保证（链接组恒排在文件夹之后，Windows 口径）。</summary>
-    private void AppendTreeLinkLeaves(FolderNode folder, IEnumerable<LinkDto> links)
-    {
-        foreach (var l in links.OrderBy(l => l.Title, StringComparer.CurrentCulture))
-        {
-            folder.Children.Add(new FolderNode
-            {
-                IsLink = true,
-                Id = l.LinkId,
-                ParentId = folder.FolderId,
-                Name = string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title,
-                Host = this
-            });
-        }
-    }
-
-    private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
-    {
-        foreach (var node in nodes)
-        {
-            if (node.IsExpanded && node.FolderId != null) ids.Add(node.FolderId);
-            CollectExpandedIds(node.Children, ids);
-        }
-    }
-
-    // —— 右键菜单 / 拖拽移动（参考 Files、Alist 的文件管理范式）——
-
-    /// <summary>目标文件夹是否为 folderId 自身或其后代（用于阻止把文件夹移进自己）。</summary>
-    public bool IsSelfOrDescendant(string folderId, string? targetId)
-    {
-        var current = targetId;
-        var visited = new HashSet<string>();   // 环保护：坏数据（父链成环）时终止而非死循环
-        while (current != null && visited.Add(current))
-        {
-            if (current == folderId) return true;
-            current = _folderMap.TryGetValue(current, out var info) ? info.ParentId : null;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合（<see cref="Selection"/> 共享核心）投影成载荷项。
-    /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）；
-    /// <paramref name="grabbedId"/>（用户**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
-    /// （集合是无序的，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
-    /// 解析不到的 ID（实体已被外部事件改掉等）不进载荷，但**如实提示**，绝不静默少搬几项。
-    /// </summary>
-    private IReadOnlyList<DragItem> BuildDragItems(string? grabbedId = null)
-    {
-        var items = new List<DragItem>();
-        if (!string.IsNullOrEmpty(grabbedId) && ResolveDragItem(grabbedId) is { } head) items.Add(head);
-        foreach (var id in Selection.Ids)
-        {
-            if (string.Equals(id, grabbedId, StringComparison.Ordinal)) continue;   // 已作为首项
-            if (ResolveDragItem(id) is { } item) items.Add(item);
-        }
-
-        var missing = Selection.Count - items.Count;
-        if (missing > 0) StatusText = $"{missing} 项已不在当前视图，未参与本次操作";
-        return items;
-    }
-
-    /// <summary>把一个实体 ID 解析成载荷项（主栏行优先，其次目录树）；解析不到 = null（绝不猜类型）。</summary>
-    private DragItem? ResolveDragItem(string id)
-    {
-        var row = Rows.FirstOrDefault(r => r.Id == id);
-        if (row != null) return new DragItem(row.Id, row.IsFolder, row.Name);
-
-        var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
-        return node != null ? new DragItem(id, !node.IsLink, node.Name) : null;
-    }
-
-    /// <summary>
-    /// 主栏行拖拽起点：未选中 → 先单选该行（Explorer 口径：拖未选中项先选中）；已选中 → 拖动整个选中集合。
-    /// 返回本次拖动的载荷快照（视图据此调 DoDragDrop），抓住的行在首位。
-    /// </summary>
-    public IReadOnlyList<DragItem> PrepareDragFromRow(BrowserRowViewModel? row)
-    {
-        if (row == null) return [];
-        if (!row.IsSelected) SelectRowWithModifiers(row, ModifierKeys.None);
-        return BuildDragItems(row.Id);
-    }
-
-    /// <summary>
-    /// 树节点拖拽起点：语义与主栏**完全一致**（未选中 → 先单选该节点；已选中 → 拖动整个选中集合）。
-    /// 实体 ID：文件夹 = <c>FolderId</c>、链接叶子 = <c>Id</c>；「全部书签」虚根不是实体 → 空载荷（不可拖）。
-    /// 选中仍只经 <see cref="SetSelection"/>（唯一写入入口）落盘，不在此旁路写节点状态。
-    /// </summary>
-    public IReadOnlyList<DragItem> PrepareDragFromNode(FolderNode? node)
-    {
-        if (node == null) return [];
-        var id = node.IsLink ? node.Id : node.FolderId;
-        if (string.IsNullOrEmpty(id)) return [];
-        if (!Selection.Contains(id)) Selection.SelectSingle(id);
-        return BuildDragItems(id);
-    }
-
-    // 拖拽落点入口见 `BrowserViewModel.Transfer.cs`：`DropItemsAsync(items, target, mode)`。
-    // 拖拽与剪贴板粘贴共用同一条传输流水线（`TransferAsync`），此处不再有第二份逐项循环。
-
-    /// <summary>
-    /// 单项移动/复制结果（**三态**，结果文案必须如实分派）：
-    /// <see cref="Done"/> = 已执行；<see cref="Skipped"/> = 无操作跳过（同目录，不是错误）；
-    /// <see cref="Failed"/> = 执行失败（源已消失、引擎拒绝等，必须留痕）。
-    /// </summary>
-    private enum OpOutcome { Done, Skipped, Failed }
-
-    /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel IFolderNaming）。
-    /// 单项失败不中断整批（与 MoveLink/Copy* 一致），失败必须留痕（观测面铁律）。</summary>
-    private async Task<OpOutcome> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
-        LinkPocket.Contracts.CallOptions? o = null)
-    {
-        try
-        {
-            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
-            var moved = await _client.FolderMoveAsync(folderId, target, o);
-            // 编号由引擎统一负责（单一实现）；UI 只按返回名生成提示，绝不自己再补发一条改名命令
-            //（那正是"移动 + 改名两次写、且批量内各算各的"造成 6 个同名文件夹的根因）
-            var resolved = moved.Data?.Name;
-            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
-                renamedNotes.Add($"「{name}」→「{resolved}」");
-            return OpOutcome.Done;
-        }
-        catch (Exception ex)
-        {
-            Services.Logger.Error($"移动文件夹「{folderId}」失败", ex);
-            return OpOutcome.Failed;
-        }
-    }
-
-    /// <summary>移动链接：同目录 = <see cref="OpOutcome.Skipped"/>（无操作，非错误）；源已消失/引擎拒绝 = 失败（留痕）。</summary>
-    private async Task<OpOutcome> MoveLinkAsync(string linkId, string? target, LinkPocket.Contracts.CallOptions? o = null)
-    {
-        try
-        {
-            var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取后 FirstOrDefault）
-            if (link == null)
-            {
-                Services.Logger.Error($"移动链接「{linkId}」失败：源已不存在");
-                return OpOutcome.Failed;
-            }
-            if (NormalizeParentId(link.ListId) == target) return OpOutcome.Skipped;
-            await _client.LinkUpdateAsync(linkId, listId: target, o: o);
-            return OpOutcome.Done;
-        }
-        catch (Exception ex)
-        {
-            Services.Logger.Error($"移动链接「{linkId}」失败", ex);
-            return OpOutcome.Failed;
-        }
-    }
-
-    /// <summary>把父目录 ID 归一化成可比较的值（null = 根）。</summary>
-    private static string? NormalizeParentId(string? parentId) => parentId;
-
-    private static string FormatRenamedNotes(List<string> notes)
-        => notes.Count > 0 ? $"（重命名：{string.Join("、", notes)}）" : string.Empty;
-
-    // —— 剪切 / 复制 / 粘贴（Ctrl+X / C / V）——
-
-    // —— 刚置入项临时置尾（Windows 资源管理器语义）——
-    // 粘贴（复制/剪切）完成后，新项**临时排在列表末尾**（不参与排序、不按名称归位），并被选中、滚入视口——
-    // 文件多、滚到中部的场景下也能立刻看到刚粘贴的东西（微软官方口径：避免文件多时找不到）。
-    // **只有真刷新才归位**：重新进入目录（含点当前目录的树行/虚根）、点列头排序、F5（用户发起的导航刷新）；
-    // 后台事件刷新（写操作后的 300ms 防抖）**绝不归位**——否则粘贴后的那次刷新就把置尾效果抹掉了。
-
-    /// <summary>置尾 ID（按置入顺序，后一批在后）；仅对 <see cref="_pinnedFolderId"/> 目录生效。</summary>
-    private readonly List<string> _recentlyPinned = new();
-
-    /// <summary>置尾所属目录（null = 根目录）；与当前目录不一致时置尾自动失效并清空。</summary>
-    private string? _pinnedFolderId;
-
-    /// <summary>粘贴完成后的定位目标（滚入视口）；行重建（事件刷新）后被消费一次。</summary>
-    private string? _pendingFocusId;
-
-    /// <summary>记录刚置入的项（粘贴完成时调用）：同 ID 先移除再追加（后到者排更后）。</summary>
-    private void MarkRecentlyPinned(IEnumerable<string> ids)
-    {
-        var list = ids.ToList();
-        if (list.Count == 0) return;
-        _pinnedFolderId = Controller.CurrentFolderId;
-        foreach (var id in list) _recentlyPinned.Remove(id);
-        _recentlyPinned.AddRange(list);
-    }
-
-    /// <summary>清空置尾（真刷新：导航加载 / 点列头排序 / F5）。</summary>
-    private void ClearRecentlyPinned()
-    {
-        _recentlyPinned.Clear();
-        _pinnedFolderId = null;
-    }
-
-    /// <summary>当前生效的置尾 ID（目录不匹配即失效清空——换目录后置尾无意义）。</summary>
-    private IReadOnlyList<string> ActivePinnedIds()
-    {
-        if (_recentlyPinned.Count == 0) return _recentlyPinned;
-        if (_pinnedFolderId != Controller.CurrentFolderId) ClearRecentlyPinned();
-        return _recentlyPinned;
-    }
-
-    /// <summary>消费粘贴定位请求：把目标行滚入视口（行不在本轮数据里则保持待命，下轮再试）。</summary>
-    private void ConsumePendingFocus()
-    {
-        if (_pendingFocusId == null) return;
-        var row = Rows.FirstOrDefault(r => r.Id == _pendingFocusId);
-        if (row == null) return;
-        _pendingFocusId = null;
-        FocusRowRequested?.Invoke(this, row);
-    }
-
-    // —— Esc 分层（Windows 口径）——
-
     /// <summary>
     /// Esc 分层语义：
     /// ① 有剪切态（剪贴板里是待粘贴的剪切载荷）→ **取消剪切**（清载荷 + 清半透明视觉 + 状态栏反馈）；
@@ -1472,592 +779,35 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             back.Execute(null);
             return;
         }
-        if (Clipboard.BrowserPayload is { IsCut: true, IsEmpty: false })
+        if (_clipboardCtl.HasCutPayload)
         {
-            CancelCut();
+            _clipboardCtl.Cancel();
             return;
         }
         ClearSelection();
     }
 
-    /// <summary>取消剪切：清空剪贴板载荷（复制载荷不受影响——Windows 里 Esc 只取消剪切），复位行半透明视觉。</summary>
-    private void CancelCut()
-    {
-        Clipboard.SetBrowserPayload(null);
-        foreach (var r in Rows) r.IsCut = false;
-        StatusText = "已取消剪切";
-    }
-
-    /// <summary>
-    /// 剪贴板载荷（**存储格式** = ID 清单；传输时再投影成 <see cref="DragItem"/> 走同一条流水线）。
-    /// 项集合取 <see cref="BuildDragItems"/>——与拖拽共用"拖动集合唯一出口"，
-    /// 因此树里选中、主栏不可见的项同样可被复制/剪切（过去只认主栏行，同一件事有两套集合来源）。
-    /// </summary>
-    private LinkPocket.Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<DragItem> items, bool isCut) => new()
-    {
-        FolderIds = items.Where(i => i.IsFolder).Select(i => i.Id).ToList(),
-        LinkIds = items.Where(i => !i.IsFolder).Select(i => i.Id).ToList(),
-        SourceFolderId = Controller.CurrentFolderId,
-        IsCut = isCut
-    };
-
-    private void CutSelection()
-    {
-        var items = BuildDragItems();
-        if (items.Count == 0) return;
-        Clipboard.SetBrowserPayload(BuildPayload(items, isCut: true));
-        ApplyCutVisual(items);
-        StatusText = $"已剪切 {items.Count} 项（Ctrl+V 粘贴到目标文件夹）";
-    }
-
-    private void CopySelection()
-    {
-        var items = BuildDragItems();
-        if (items.Count == 0) return;
-        Clipboard.SetBrowserPayload(BuildPayload(items, isCut: false));
-        ApplyCutVisual(null);   // 复制覆盖剪切，清除半透明视觉
-        StatusText = $"已复制 {items.Count} 项";
-    }
-
-    /// <summary>剪切半透明视觉（行侧投影；传 null = 全清）。</summary>
+    /// <summary>剪切半透明视觉（行侧投影；传 null = 全清）。剪贴板语义在控制器，视觉投影留宿主。</summary>
     private void ApplyCutVisual(IReadOnlyList<DragItem>? items)
     {
         foreach (var r in Rows)
             r.IsCut = items != null && items.Any(i => string.Equals(i.Id, r.Id, StringComparison.Ordinal));
     }
 
-    // 粘贴入口见 `BrowserViewModel.Transfer.cs`：与拖拽共用同一条传输流水线（`TransferAsync`）。
-    // 这里只保留**剪贴板自身的语义**（载荷构造 / 剪切态视觉 / 取消 / 遗忘条件），不再有逐项循环。
+    // 剪贴板语义（载荷构造 / 剪切 / 复制 / 取消）已上收控制器 `BrowserClipboardController`；
+    // 传输入口见 `BrowserViewModel.Transfer.cs`：与拖拽共用同一条传输流水线（`TransferAsync`）。
 
     // 成环（非法目标）的弹窗文案在 `BrowserViewModel.Transfer.cs`（`BlockedTitle` / `BlockedMessage`，按 TransferMode 出词）：
     // 拖拽与粘贴**共用同一套**（反馈口径只有一处）。
 
-    /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。失败必须留痕（观测面铁律）。</summary>
-    private async Task<(OpOutcome Outcome, string? NewId)> CopyFolderAsync(string folderId, string? target,
-        List<string> renamedNotes, LinkPocket.Contracts.CallOptions? o = null)
-    {
-        try
-        {
-            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
-            var copy = await _client.FolderCopyAsync(folderId, target, o);
-            var newId = copy.Data?.NewFolderId;
-            if (string.IsNullOrEmpty(newId))
-            {
-                Services.Logger.Error($"复制文件夹「{name}」失败：引擎未返回新 ID");
-                return (OpOutcome.Failed, null);
-            }
-            // 副本名由引擎编号决定（folders.copy 返回最终名）；UI 只按差异生成提示
-            var resolved = copy.Data?.Name;
-            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
-                renamedNotes.Add($"「{name}」→「{resolved}」");
-            return (OpOutcome.Done, newId);
-        }
-        catch (Exception ex)
-        {
-            Services.Logger.Error($"复制文件夹「{folderId}」失败", ex);
-            return (OpOutcome.Failed, null);
-        }
-    }
+    private void EnterPathEdit() => _pathEdit.Enter(BuildPathText(Controller.CurrentFolderId));
 
-    /// <summary>复制书签（全量字段）。失败必须留痕（观测面铁律）。
-    /// 链接标题**不做唯一化**：链接身份 = URL，标题只是标签（用户 2026-09-19 定稿）。</summary>
-    private async Task<(OpOutcome Outcome, string? NewId)> CopyLinkAsync(string linkId, string? target,
-        LinkPocket.Contracts.CallOptions? o = null)
-    {
-        try
-        {
-            var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取）
-            if (link == null)
-            {
-                Services.Logger.Error($"复制链接「{linkId}」失败：源已不存在");
-                return (OpOutcome.Failed, null);
-            }
-
-            // 复制书签 = 全量字段（URL/标题/描述/收藏/图标；内核无标签系统，无其它字段可丢）
-            var created = await _client.LinkCreateAsync(link.Url,
-                title: link.Title,
-                description: string.IsNullOrEmpty(link.Description) ? null : link.Description,
-                listId: target,
-                isImportant: link.IsImportant,
-                autoFetchMetadata: false,
-                faviconUrl: string.IsNullOrEmpty(link.FaviconUrl) ? null : link.FaviconUrl,
-                o: o);
-            var newId = created.Data?.LinkId;
-            return string.IsNullOrEmpty(newId) ? (OpOutcome.Failed, null) : (OpOutcome.Done, newId);
-        }
-        catch (Exception ex)
-        {
-            Services.Logger.Error($"复制链接「{linkId}」失败", ex);
-            return (OpOutcome.Failed, null);
-        }
-    }
-
-    /// <summary>刷新重建行后，按剪贴板载荷恢复剪切半透明视觉（仅剪切语义）。</summary>
-    private bool IsCutInClipboard(string id, bool isFolder)
-    {
-        var p = Clipboard.BrowserPayload;
-        return p is { IsCut: true } && (isFolder ? p.FolderIds.Contains(id) : p.LinkIds.Contains(id));
-    }
-
-    /// <summary>新建文件夹的默认名（Windows 口径；同层撞名由引擎自动编号「新建文件夹 (2)」）。</summary>
-    private const string DefaultFolderName = "新建文件夹";
-
-    /// <summary>
-    /// 新建文件夹（Windows 口径，**不再弹输入框**）：
-    /// 直接以默认名创建（同层撞名由引擎自动编号），随后**立刻进入就地改名**——
-    /// 新项临时置尾 + 选中 + 滚入视口 + 聚焦编辑框；行要等事件刷新（300ms 防抖）重建后才出现，
-    /// 故改名会话与定位请求先待命，重建时由投影/消费落地（**不做显式刷新**：显式 + 事件双重刷新是"刷两遍"的根因）。
-    /// 参数为空 → 在当前目录新建；参数为目标文件夹 ID（行右键）→ 在该文件夹内新建
-    /// （那种情况新文件夹不在当前视图里，只如实报告，不进入不可见的改名态）。
-    /// </summary>
-    private async Task NewFolderAsync(string? parentId)
-    {
-        // 参数为空 → 当前目录；参数为真实文件夹 ID → 在该文件夹内新建
-        var target = FolderIds.IsRoot(parentId) ? Controller.CurrentFolderId : parentId;
-        try
-        {
-            var created = await _client.FolderCreateAsync(DefaultFolderName, parentId: target);
-            var newId = created.Data?.FolderId;
-            if (string.IsNullOrEmpty(newId)) return;
-            var name = created.Data?.Name ?? DefaultFolderName;
-            StatusText = $"已创建文件夹「{name}」";
-
-            // 新项不在当前视图（在别的文件夹内新建）→ 无可见行可改名，只报告
-            if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId)) return;
-
-            // Windows 口径：新项临时置尾（不参与排序）+ 选中 + 滚入视口，并直接进入就地改名
-            MarkRecentlyPinned(new[] { newId });
-            SetSelection(new[] { newId }, newId);
-            _pendingFocusId = newId;
-            BeginRename(newId, isFolder: true, name, BrowserPane.Main);
-            // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）
-        }
-        catch (Exception ex)
-        {
-            ShowError("新建文件夹失败", ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// 就地刷新并保留当前选中。用于两类收尾：
-    /// ① 非导航类操作（重命名 / 新建 / 移动 / 粘贴 / 排序 / 从树里删节点）——它们不改变所在目录；
-    /// ② 后端数据变更事件驱动的刷新（<c>MainViewModel.OnBackendRefresh</c>，经 UiEventHub 防抖）。
-    /// 选中的唯一事实来源是 <see cref="Selection"/>，行/树均为投影，刷新并不抹掉集合，
-    /// 故此处只需不带清空标志地刷新（这是保留选中的关键——无需任何"重新选中"步骤）。
-    /// 只有"切换目录"才用 <see cref="LoadAsync"/>（它带清空标志）。
-    /// </summary>
-    public Task RefreshPreservingSelectionAsync()
-        => RefreshAsync(clearSelection: false);
-
-    private async Task DeleteNodeAsync(FolderNode? node)
-    {
-        if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
-        // Windows 口径：删除 = 移入回收站，不再提示"子文件夹一并删除"
-        if (!ConfirmDelete("删除文件夹", $"将文件夹「{node.Name}」移入回收站吗？"))
-            return;
-        try
-        {
-            await _client.FolderDeleteAsync(node.FolderId, "trash_links");
-            StatusText = $"已删除文件夹「{node.Name}」";
-            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
-            // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
-        }
-        catch (Exception ex)
-        {
-            ShowError("删除失败", ex.Message);
-        }
-    }
-
-    private void CopyUrl(BrowserRowViewModel? row)
-    {
-        if (row == null || row.IsFolder || string.IsNullOrEmpty(row.Url)) return;
-        try
-        {
-            System.Windows.Clipboard.SetText(row.Url);
-            StatusText = "已复制链接";
-        }
-        catch { /* 剪贴板被占用时静默 */ }
-    }
-
-    private async Task DeleteSelectedAsync()
-    {
-        var sel = SelectedRows.ToList();
-        if (sel.Count == 0) return;
-        if (!await ConfirmDeleteAsync(sel)) return;
-        await DeleteItemsAsync(sel);
-    }
-
-    /// <summary>删除确认文案（Windows 口径：一切删除 = 移入回收站，不罗列子项后果）。实例方法：确认走对话框端口。</summary>
-    private Task<bool> ConfirmDeleteAsync(IReadOnlyList<BrowserRowViewModel> items)
-    {
-        var folders = items.Count(r => r.IsFolder);
-        var links = items.Count - folders;
-        string msg;
-        if (folders > 0 && links > 0)
-            msg = $"将选中的 {folders} 个文件夹和 {links} 个链接移入回收站吗？";
-        else if (folders > 0)
-            msg = folders == 1
-                ? $"将文件夹「{items[0].Name}」移入回收站吗？"
-                : $"将选中的 {folders} 个文件夹移入回收站吗？";
-        else
-            msg = links == 1
-                ? $"将链接「{items[0].Name}」移入回收站吗？"
-                : $"将选中的 {links} 个链接移入回收站吗？";
-
-        return Task.FromResult(ConfirmDelete("删除", msg));
-    }
-
-    private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
-    {
-        // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报
-        var deleted = 0;
-        var failed = 0;
-        foreach (var item in items)
-        {
-            try
-            {
-                if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
-                else await _client.LinkTrashAsync(item.Id);
-                deleted++;
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                Services.Logger.Error($"删除「{item.Name}」失败（Retry 可跳过该项）", ex);   // 观测面铁律：失败必须暴露
-            }
-        }
-
-        // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
-        StatusText = failed == 0
-            ? $"已删除 {deleted} 项"
-            : deleted == 0
-                ? "删除失败（详见日志）"
-                : $"已删除 {deleted} 项，{failed} 项失败";
-        if (deleted > 0) ClearSelection();
-        // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
-        // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
-    }
-
-    /// <summary>
-    /// F2：对当前唯一选中项进入就地改名。编辑面 = 当前活跃栏（Windows 口径：哪一栏有焦点就在哪一栏改），
-    /// 树里找不到对应节点时回落到主栏。选中集合是唯一事实来源，两栏共用同一个目标 ID。
-    /// </summary>
-    private void BeginRenameSelection()
-    {
-        var row = SelectedRows.FirstOrDefault();
-        if (row == null) return;
-        if (ActivePane == BrowserPane.Tree)
-        {
-            var node = AllTreeNodes().FirstOrDefault(n => (n.IsLink ? n.Id : n.FolderId) == row.Id);
-            if (node != null) { BeginRenameNode(node); return; }
-        }
-        BeginRenameRow(row);
-    }
-
-    private async Task OpenSelectedAsync()
-    {
-        var row = SelectedRows.FirstOrDefault();
-        if (row != null) await OpenRowAsync(row);
-    }
-
-    private async Task DeleteRowAsync(BrowserRowViewModel? row)
-    {
-        if (row == null) return;
-        // 右键命中的行已在多选集合内 → 批量删除；否则只删该行（Explorer 语义）
-        var targets = row.IsSelected && SelectionCount > 1
-            ? SelectedRows.ToList()
-            : new List<BrowserRowViewModel> { row };
-        if (!await ConfirmDeleteAsync(targets)) return;
-        await DeleteItemsAsync(targets);
-    }
-
-    private IEnumerable<(string Id, string Name)> BuildBreadcrumbIds(string? folderId)
-    {
-        if (IsAtRoot()) yield break;
-
-        var chain = new List<(string Id, string Name)>();
-        var current = folderId;
-        var visited = new HashSet<string>();   // 环保护：坏数据（父链成环）时终止而非死循环
-        while (!string.IsNullOrEmpty(current) && visited.Add(current) && _folderMap.TryGetValue(current, out var info))
-        {
-            chain.Add((current, info.Name));
-            current = info.ParentId;
-        }
-        chain.Reverse();
-        foreach (var item in chain) yield return item;
-    }
-
-    // —— 面包屑内联路径编辑 ——
-
-    /// <summary>
-    /// Ctrl+Shift+E：把左栏树展开到当前所在位置（只展开、**不选中**——位置 ≠ 选中）。
-    /// 展开链 = 当前目录的祖先链（含自身），让当前目录在树里可见；根目录无需展开（虚根恒展开）。
-    /// </summary>
-    public void ExpandTreeToCurrentLocation()
-    {
-        if (IsAtRoot()) return;
-        var chain = new HashSet<string>(BuildBreadcrumbIds(Controller.CurrentFolderId).Select(c => c.Id),
-            StringComparer.Ordinal);
-        foreach (var node in AllTreeNodes())
-            if (node.FolderId != null && chain.Contains(node.FolderId))
-                node.IsExpanded = true;
-    }
-
-    /// <summary>
-    /// Ctrl+Shift+C：复制当前目录路径（面包屑文本「全部书签 / A / B」，可被 Alt+D 地址栏解析）。
-    /// 只写内部载荷会"复制了但别处粘不出来"，故此处走系统剪贴板（与右键「复制链接」同口径）。
-    /// </summary>
-    private void CopyCurrentPath()
-    {
-        var text = GetFolderPathDisplay(Controller.CurrentFolderId);
-        try
-        {
-            System.Windows.Clipboard.SetText(text);
-            StatusText = "已复制路径";
-        }
-        catch
-        {
-            StatusText = "复制路径失败（剪贴板被占用）";
-        }
-    }
-
-    // —— 键盘导航（主栏 ↑/↓/End；左栏 ↑/↓/←/→）——
-
-    /// <summary>
-    /// 左栏键盘移动游标 = 上一次键盘落点的**节点对象**（记录"上一个落到哪"以便连续 ↓/↑ 前进）。
-    /// 用对象引用而非 Id：虚根「全部书签」没有 Id（根 = null，零哨兵红线），只有引用能表示它。
-    /// 与选中（<see cref="Selection"/>）、位置（CurrentFolderId）正交；树重建后引用自然失效 →
-    /// 自动回退到"选中实体 → 当前位置"，不会指向已废弃节点。
-    /// </summary>
-    private FolderNode? _treeNavNode;
-
-    /// <summary>命令参数的方向字面量（↑=+1 语义以"下移"为正）。</summary>
-    private static int ParseDirection(object? p)
-    {
-        var s = (p as string is string str ? str : p?.ToString()) ?? string.Empty;
-        return s.Contains("up") ? -1 : s.Contains("down") ? 1 : 0;
-    }
-
-    /// <summary>主栏 ↑/↓：基于当前选中的末位行索引 ±delta，单选并滚入视口；无选中则从顶/底开始；到边界停住。</summary>
-    private void MoveMainSelection(int delta)
-    {
-        if (Rows.Count == 0 || delta == 0) return;
-        var current = SelectedRows.Select(r => Rows.IndexOf(r)).Where(i => i >= 0).OrderBy(i => i).LastOrDefault(-1);
-        var next = current < 0
-            ? (delta > 0 ? 0 : Rows.Count - 1)
-            : Math.Clamp(current + delta, 0, Rows.Count - 1);
-        var target = Rows[next];
-        SelectRow(target);
-        FocusRowRequested?.Invoke(this, target);
-    }
-
-    /// <summary>主栏 End：选中末项并滚入视口。</summary>
-    private void SelectLastRow()
-    {
-        if (Rows.Count == 0) return;
-        var target = Rows[Rows.Count - 1];
-        SelectRow(target);
-        FocusRowRequested?.Invoke(this, target);
-    }
-
-    /// <summary>主栏当前实现无多选语义下，ShowContextMenu 需要的"当前行" = 唯一选中行，先聚焦该行再弹菜单。</summary>
-    private void ShowContextMenuForSelection()
-    {
-        var row = SelectedRows.FirstOrDefault();
-        if (row != null) FocusRowRequested?.Invoke(this, row);
-        ContextMenuRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>左栏 ↑/↓：沿**可见视觉顺序**移动并落到该节点（语义完全复用 <see cref="SelectTreeNodeAsync"/>）。</summary>
-    private void MoveTreeSelection(int delta)
-    {
-        if (delta == 0) return;
-        var flat = VisibleTreeNodes().ToList();
-        if (flat.Count == 0) return;
-
-        var current = CurrentTreeIndex(flat);
-        var next = current < 0
-            ? (delta > 0 ? 0 : flat.Count - 1)
-            : Math.Clamp(current + delta, 0, flat.Count - 1);
-        var target = flat[next];
-        _treeNavNode = target;   // 下一次移动从这次落点继续（游标独立于选中/位置）
-
-        // 落点语义 = 与鼠标点击树行**完全同一条路径**（文件夹 = 选中 + 进入；链接叶子 = 定位；虚根 = 进根不选中）——
-        // 键盘绝不另造一套"只移选中"的语义（那会让"点树"与"按树"行为分叉）。
-        _ = SelectTreeNodeAsync(target);
-    }
-
-    /// <summary>
-    /// 树节点的**可见**深度优先序列（= 屏幕上实际看到的行序）：
-    /// 未展开的节点其子级不在视觉序列里（用户 2026-09-19 定稿：没展开就没看到子文件夹，不进入子级）；
-    /// 虚根恒展开（RebuildFolderTree 里置位），故顶层始终可见。
-    /// ⚠️ 不能直接用 <see cref="AllTreeNodes"/>：Children 里含全部子节点（展开只是视觉态），必须按 IsExpanded 过滤。
-    /// </summary>
-    private IEnumerable<FolderNode> VisibleTreeNodes()
-    {
-        foreach (var root in FolderTree)
-            foreach (var node in Walk(root))
-                yield return node;
-
-        static IEnumerable<FolderNode> Walk(FolderNode node)
-        {
-            yield return node;
-            if (!node.IsExpanded) yield break;
-            foreach (var child in node.Children)
-                foreach (var sub in Walk(child))
-                    yield return sub;
-        }
-    }
-
-    /// <summary>当前"聚焦树节点"索引：优先当前选中的树节点，其次当前所在目录节点（无则 -1 = 由调用方取顶/底）。</summary>
-    private int CurrentTreeIndex(List<FolderNode> flat)
-    {
-        var focused = CurrentFocusedTreeNode();
-        if (focused != null)
-        {
-            var idx = flat.IndexOf(focused);
-            if (idx >= 0) return idx;
-        }
-        return -1;
-    }
-
-    /// <summary>
-    /// 当前聚焦的树节点，优先级：键盘移动游标（<see cref="_treeNavId"/>，连续 ↓/↑ 的落点）→
-    /// 选中实体在树里的节点 → 当前所在目录节点（根目录 = 虚根）→ null（由调用方取顶/底）。
-    /// ⚠️ 虚根必须参与：它的 Id 为空，只能按 <see cref="FolderNode.IsRoot"/> 匹配——
-    /// 否则"在根目录按 ↓"每次都会重新从顶开始（落点永远停在虚根，走不动）。
-    /// </summary>
-    private FolderNode? CurrentFocusedTreeNode()
-    {
-        var all = AllTreeNodes().ToList();
-
-        // ① 键盘游标（仍在当前树里才有效；树重建后旧引用自然落空 → 回退）
-        if (_treeNavNode != null && all.Contains(_treeNavNode)) return _treeNavNode;
-
-        // ② 选中实体（鼠标点树 / 上一次键盘落子写下的选中）
-        foreach (var node in all)
-        {
-            if (node.IsLink && Selection.Contains(node.Id)) return node;
-            if (node.FolderId != null && Selection.Contains(node.FolderId)) return node;
-        }
-
-        // ③ 当前所在目录（根目录 → 虚根行）
-        var currentId = Controller.CurrentFolderId;
-        foreach (var node in all)
-            if (currentId == null ? node.IsRoot : node.FolderId == currentId) return node;
-        return null;
-    }
-
-    // —— 撤销 / 重做（Ctrl+Z / Ctrl+Y）——
-    // 可用性口径 = 引擎两个栈的**真实状态**（undo.list / undo.list_redo），不再靠本地猜测：
-    // 新写操作会清空重做栈（标准 redo 语义），本地事实会在那时失真。
-
-    private bool _canUndo;
-    private bool _canRedo;
-    /// <summary>可撤销（引擎撤销栈非空）。</summary>
-    public bool CanUndo => _canUndo && !IsPathEditing;
-    /// <summary>可重做（引擎重做栈非空）。</summary>
-    public bool CanRedo => _canRedo && !IsPathEditing;
-
-    private async Task UndoRedoAsync(bool redo)
-    {
-        try
-        {
-            var result = redo ? await _client.RedoAsync() : await _client.UndoAsync();
-            // 撤销/重做成功后：回到受影响实体所在位置并选中它（Windows 资源管理器口径）——
-            // 实体 ID 从变更集的 Touched 取（引擎已把逆向命令的受影响实体聚合上来），
-            // 复用既有「跳转」语义（进目录 + 选中该行 + 滚入视口），不另造一套导航。
-            await RefreshUndoStateAsync();
-            await LocateAfterUndoAsync(result.Changes);
-        }
-        catch (Exception ex)
-        {
-            ShowError(redo ? "重做失败" : "撤销失败", ex.Message);
-        }
-    }
-
-    /// <summary>
-    /// 撤销/重做后定位到受影响实体：取变更集里第一个链接/文件夹，进其所在目录并选中该行。
-    /// 无受影响实体（或引擎未回报）时什么都不做——绝不猜测位置。
-    /// </summary>
-    private async Task LocateAfterUndoAsync(LinkPocket.Contracts.ChangeSet? changes)
-    {
-        var touched = changes?.Touched;
-        if (touched == null || touched.Count == 0) return;
-
-        foreach (var entity in touched)
-        {
-            if (entity.Type == "link")
-            {
-                var link = await _client.LinkGetAsync(entity.Id);
-                if (link == null) continue;   // 已被撤销掉（如撤销"新建链接"）→ 试下一个
-                await NavigateAndSelectAsync(link.ListId, entity.Id);
-                return;
-            }
-            if (entity.Type == "folder")
-            {
-                var tree = await _client.FolderTreeAsync();
-                var folder = tree.FirstOrDefault(f => f.FolderId == entity.Id);
-                if (folder == null) continue;   // 已进回收站（撤销"新建文件夹"）→ 试下一个
-                await NavigateAndSelectAsync(folder.ParentId, entity.Id);
-                return;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 同步撤销/重做可用性 = 引擎两个栈的**真实状态**（undo.list / undo.list_redo，
-    /// 每次刷新链收尾与撤销/重做后各取一次）。查询失败时保持保守禁用（观测面纪律：不弹窗打断输入）。
-    /// </summary>
-    public async Task RefreshUndoStateAsync()
-    {
-        try
-        {
-            // ⚠️ 两个查询的返回都是**对象** `{ "entries": [...] }`（不是裸数组）——按数组解析会恒为空
-            //（曾据此误判"无可撤销"，Ctrl+Z 永远灰着）。
-            _canUndo = await HasEntriesAsync(await _client.UndoListAsync());
-            _canRedo = await HasEntriesAsync(await _client.UndoListRedoAsync());
-            OnPropertyChanged(nameof(CanUndo));
-            OnPropertyChanged(nameof(CanRedo));
-            CommandManager.InvalidateRequerySuggested();
-        }
-        catch { /* 查询失败不阻断；CanExecute 保守禁用 */ }
-    }
-
-    private static Task<bool> HasEntriesAsync(System.Text.Json.JsonElement list)
-        => Task.FromResult(list.ValueKind is System.Text.Json.JsonValueKind.Object
-                           && list.TryGetProperty("entries", out var entries)
-                           && entries.ValueKind is System.Text.Json.JsonValueKind.Array
-                           && entries.GetArrayLength() > 0);
-
-    /// <summary>视图请求：为当前选中行弹右键菜单（Shift+F10 / 菜单键；视图订阅后聚焦并 open 行 ContextMenu）。</summary>
-    public event EventHandler? ContextMenuRequested;
-
-    /// <summary>左栏 ←/→：折叠 / 展开当前树节点（链接叶子 / 虚根无操作）。</summary>
-    private void ToggleFocusedTreeExpand()
-    {
-        var node = CurrentFocusedTreeNode();
-        if (node == null || node.IsLink || node.IsRoot) return;
-        node.IsExpanded = !node.IsExpanded;
-    }
-
-    private void EnterPathEdit()
-    {
-        PathEditText = BuildPathText(Controller.CurrentFolderId);
-        IsPathInvalid = false;
-        IsPathEditing = true;
-    }
-
-    private void CancelPathEdit()
-    {
-        IsPathEditing = false;
-        PathCandidates = new List<string>();
-    }
+    private void CancelPathEdit() => _pathEdit.Cancel();
 
     private string BuildPathText(string? folderId)
         => Paths.BuildText(BuildBreadcrumbIds(folderId));   // 名字里的 / 转义为 \/，编辑往返不丢
 
-    /// <summary>路径解析/候选（唯一实现在 UIKit Views.PathResolver；本页只提供文件夹层级数据源）。</summary>
+    /// <summary>路径文本构建用的解析器（唯一实现在 UIKit Views.PathResolver；控制器内另持一份同源实例）。</summary>
     private Views.PathResolver? _pathResolver;
     private Views.PathResolver Paths => _pathResolver ??= new Views.PathResolver(
         FolderIds.RootDisplayName,
@@ -2068,49 +818,16 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     // 路径文本转义/切分与逐级解析/候选已上收 UIKit（Views.PathText / Views.PathResolver，浏览页与回收站共用同一实现）。
 
-    /// <summary>Enter：逐级按名解析路径（同级重名取排序第一；不区分大小写）。失败 → 边框标红并提示。</summary>
-    private void ConfirmPath()
-    {
-        if (Paths.TryResolve(PathEditText, out var folderId, out var invalidSegment))
-        {
-            IsPathEditing = false;
-            PathCandidates = new List<string>();
-            _ = LoadAsync(folderId);
-        }
-        else
-        {
-            IsPathInvalid = true;
-            StatusText = $"路径不存在：{invalidSegment}";
-        }
-    }
+    private void ConfirmPath() => _pathEdit.Confirm();
 
     /// <summary>Tab：用当前候选补全最后一级。</summary>
-    private void CompletePath()
-    {
-        if (SelectedCandidateIndex >= 0 && SelectedCandidateIndex < PathCandidates.Count)
-            ChooseCandidate(PathCandidates[SelectedCandidateIndex]);
-    }
+    private void CompletePath() => _pathEdit.Complete();
 
     /// <summary>选择候选（点击或 Tab）：改写文本后保留编辑态，继续输入下一级。</summary>
-    public void ChooseCandidate(string name)
-    {
-        PathEditText = Views.PathResolver.ApplyCandidate(PathEditText ?? string.Empty, name);   // 候选名含 / 时同样转义写入
-        SelectedCandidateIndex = 0;
-    }
+    public void ChooseCandidate(string name) => _pathEdit.Choose(name);
 
     /// <summary>↑/↓ 移动候选高亮（由视图键盘事件调用）。</summary>
-    public void MoveCandidate(int delta)
-    {
-        if (PathCandidates.Count == 0) return;
-        var next = Math.Clamp(SelectedCandidateIndex + delta, 0, PathCandidates.Count - 1);
-        SelectedCandidateIndex = next;
-    }
-
-    private void UpdatePathCandidates()
-    {
-        PathCandidates = Paths.Candidates(_pathEditText ?? string.Empty).ToList();
-        SelectedCandidateIndex = PathCandidates.Count > 0 ? 0 : -1;
-    }
+    public void MoveCandidate(int delta) => _pathEdit.MoveCandidate(delta);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

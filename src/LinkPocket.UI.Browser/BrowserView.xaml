@@ -131,7 +131,7 @@
                      Windows 11 口径：点胶囊空白即进入路径编辑（无编辑按钮），Enter 导航、Esc 取消。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
                                      Breadcrumbs="{Binding Breadcrumbs}"
-                                     IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"
+                                     IsPathEditing="{Binding IsPathEditing, Mode=OneWay}"
                                      PathEditText="{Binding PathEditText, Mode=TwoWay}"
                                      PathCandidates="{Binding PathCandidates}"
                                      SelectedCandidateIndex="{Binding SelectedCandidateIndex, Mode=TwoWay}"

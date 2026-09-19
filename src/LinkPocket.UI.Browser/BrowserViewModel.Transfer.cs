@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using LinkPocket.Contracts;
 
 namespace LinkPocket.ViewModels;
@@ -232,4 +233,67 @@ public partial class BrowserViewModel
     /// <summary>链接显示名（当前视图行优先；不可见时给中性名——只用于提示文案，不参与任何判定）。</summary>
     private string LinkDisplayName(string linkId)
         => Rows.FirstOrDefault(r => r.Id == linkId)?.Name ?? "链接";
+
+    // —— 拖拽载荷构造（拖动集合的唯一出口；从主文件迁入）——
+
+    /// <summary>
+    /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合（<see cref="Selection"/> 共享核心）投影成载荷项。
+    /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）；
+    /// <paramref name="grabbedId"/>（用户**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
+    /// （集合是无序的，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
+    /// 解析不到的 ID（实体已被外部事件改掉等）不进载荷，但**如实提示**，绝不静默少搬几项。
+    /// </summary>
+    private IReadOnlyList<DragItem> BuildDragItems(string? grabbedId = null)
+    {
+        var items = new List<DragItem>();
+        if (!string.IsNullOrEmpty(grabbedId) && ResolveDragItem(grabbedId) is { } head) items.Add(head);
+        foreach (var id in Selection.Ids)
+        {
+            if (string.Equals(id, grabbedId, StringComparison.Ordinal)) continue;   // 已作为首项
+            if (ResolveDragItem(id) is { } item) items.Add(item);
+        }
+
+        var missing = Selection.Count - items.Count;
+        if (missing > 0) StatusText = $"{missing} 项已不在当前视图，未参与本次操作";
+        return items;
+    }
+
+    /// <summary>把一个实体 ID 解析成载荷项（主栏行优先，其次目录树）；解析不到 = null（绝不猜类型）。</summary>
+    private DragItem? ResolveDragItem(string id)
+    {
+        var row = Rows.FirstOrDefault(r => r.Id == id);
+        if (row != null) return new DragItem(row.Id, row.IsFolder, row.Name);
+
+        var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
+        return node != null ? new DragItem(id, !node.IsLink, node.Name) : null;
+    }
+
+    /// <summary>
+    /// 主栏行拖拽起点：未选中 → 先单选该行（Explorer 口径：拖未选中项先选中）；已选中 → 拖动整个选中集合。
+    /// 返回本次拖动的载荷快照（视图据此调 DoDragDrop），抓住的行在首位。
+    /// </summary>
+    public IReadOnlyList<DragItem> PrepareDragFromRow(BrowserRowViewModel? row)
+    {
+        if (row == null) return [];
+        if (!row.IsSelected) SelectRowWithModifiers(row, ModifierKeys.None);
+        return BuildDragItems(row.Id);
+    }
+
+    /// <summary>
+    /// 树节点拖拽起点：语义与主栏**完全一致**（未选中 → 先单选该节点；已选中 → 拖动整个选中集合）。
+    /// 实体 ID：文件夹 = <c>FolderId</c>、链接叶子 = <c>Id</c>；「全部书签」虚根不是实体 → 空载荷（不可拖）。
+    /// 选中仍只经 <see cref="SetSelection"/>（唯一写入入口）落盘，不在此旁路写节点状态。
+    /// </summary>
+    public IReadOnlyList<DragItem> PrepareDragFromNode(FolderNode? node)
+    {
+        if (node == null) return [];
+        var id = node.IsLink ? node.Id : node.FolderId;
+        if (string.IsNullOrEmpty(id)) return [];
+        if (!Selection.Contains(id)) Selection.SelectSingle(id);
+        return BuildDragItems(id);
+    }
+
+    // 拖拽落点入口见 `BrowserViewModel.Transfer.cs`：`DropItemsAsync(items, target, mode)`。
+    // 拖拽与剪贴板粘贴共用同一条传输流水线（`TransferAsync`），此处不再有第二份逐项循环。
+
 }
