@@ -1,0 +1,348 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+using LinkPocket.Contracts;
+using LinkPocket.Input;
+using LinkPocket.Services;
+using LinkPocket.ViewModels;
+using LinkPocket.Views;
+using Xunit;
+
+namespace LinkPocket.App.Tests;
+
+/// <summary>
+/// 回收站页 VM（"回收站浏览器"，2026-09-19 用户令：最彻底复用浏览页组件）：
+/// 树含链接叶子 + 虚根「回收站」、主栏平铺（默认删除时间倒序）、面包屑 + 地址栏、唯一选中集合、
+/// **站内搬移**（trash.move，只经拖拽）、永久删除（批量）、**无撤销/无剪贴板**的键位收口。
+/// </summary>
+public class TrashViewModelTests
+{
+    private sealed class RecordingDialogs : IDialogService
+    {
+        public List<(string Title, string Message)> Alerts { get; } = new();
+        public List<(string Title, string Message)> Confirms { get; } = new();
+
+        public bool ConfirmDeleteFolder(string folderName) => true;
+
+        public bool Confirm(string title, string message, string confirmText = "删除", string iconKind = "delete-outline")
+        {
+            Confirms.Add((title, message));
+            return true;
+        }
+
+        public void Alert(string title, string message) => Alerts.Add((title, message));
+    }
+
+    private static TrashViewModel NewVm(EngineClient client, RecordingDialogs? dialogs = null)
+        => new(client, new UiPortProvider { Dialogs = dialogs ?? new RecordingDialogs() });
+
+    /// <summary>造数据：单元 A（直挂 L1 + 子单元 B；B 内 L2）+ 根级单独删除的 L0。</summary>
+    private static async Task<(string unitA, string unitB, string l0, string l1, string l2)> SeedAsync(EngineClient client)
+    {
+        var a = (await client.FolderCreateAsync("A")).Data!;
+        var b = (await client.FolderCreateAsync("B", parentId: a.FolderId)).Data!;
+        var l1 = (await client.LinkCreateAsync("https://a.example/", "A 链接", autoFetchMetadata: false, listId: a.FolderId)).Data!;
+        var l2 = (await client.LinkCreateAsync("https://b.example/", "B 链接", autoFetchMetadata: false, listId: b.FolderId)).Data!;
+        var l0 = (await client.LinkCreateAsync("https://root.example/", "根级链接", autoFetchMetadata: false)).Data!;
+
+        await client.LinkTrashAsync(l0.LinkId);                     // 单独删除
+        await client.FolderDeleteAsync(a.FolderId);                 // 整单元（A + B + L1 + L2）
+        return (a.FolderId, b.FolderId, l0.LinkId, l1.LinkId, l2.LinkId);
+    }
+
+    [Fact]
+    public async Task 树_含链接叶子与虚根_计数与排序与浏览页同口径()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, unitB, l0, l1, l2) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            // 虚根「回收站」：不是实体、恒展开；计数 = 根级单独删除的链接数
+            var root = Assert.Single(vm.Tree);
+            Assert.True(root.IsRoot);
+            Assert.True(root.IsExpanded);
+            Assert.Equal(1, root.LinkCount);
+
+            // 根的直接子：单元在前、链接在后（各自名称升序）
+            Assert.Collection(root.Children,
+                n => { Assert.Equal(unitA, n.Id); Assert.False(n.IsLink); },
+                n => { Assert.Equal(l0, n.Id); Assert.True(n.IsLink); });
+
+            // 单元 A：子单元 B 在前、直挂链接 L1 在后（这就是"回收站左栏也能看到链接"）
+            var nodeA = root.Children.Single(n => n.Id == unitA);
+            Assert.Equal(2, nodeA.LinkCount);   // 子树计数（L1 + L2）
+            Assert.Collection(nodeA.Children,
+                n => Assert.Equal(unitB, n.Id),
+                n => Assert.Equal(l1, n.Id));
+
+            var nodeB = nodeA.Children.Single(n => n.Id == unitB);
+            Assert.Single(nodeB.Children, n => n.Id == l2);
+            Assert.Equal(1, nodeB.LinkCount);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 主栏_默认删除时间倒序_进单元只看该层()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, unitB, l0, l1, l2) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            // 根层 = 单元 A + 单独删除的 L0；默认排序 = 删除时间倒序（不假设两次删除的时间戳必然不同）
+            Assert.Equal(2, vm.Rows.Count);
+            Assert.Contains(vm.Rows, r => r.Id == unitA && r.IsFolder);
+            Assert.Contains(vm.Rows, r => r.Id == l0 && !r.IsFolder);
+            Assert.Equal("deleted_at", vm.SortField);
+            Assert.False(vm.SortAscending);
+            var times = vm.Rows.Select(r => r.DeletedAt).ToList();
+            Assert.True(times.SequenceEqual(times.OrderByDescending(t => t)), "默认排序必须是删除时间倒序");
+
+            // 进单元 A：只显示该层直接内容（子单元 B + 直挂链接 L1），深层内容随子单元再打开
+            await vm.NavigateAsync(unitA);
+            Assert.Equal(2, vm.Rows.Count);
+            Assert.Contains(vm.Rows, r => r.Id == unitB && r.IsFolder);
+            Assert.Contains(vm.Rows, r => r.Id == l1 && !r.IsFolder);
+            Assert.DoesNotContain(vm.Rows, r => r.Id == l2);
+
+            // 面包屑：回收站 / A
+            Assert.Equal(new[] { "回收站", "A" }, vm.Breadcrumbs.Select(c => c.Name).ToArray());
+            Assert.True(vm.Breadcrumbs[^1].IsLast);
+
+            // 返回上级 → 根
+            await vm.NavigateAsync(vm.GetParentId(vm.CurrentUnitId));
+            Assert.True(vm.IsAtRoot);
+
+            // 点名称列排序：名称升序（平铺混排，不再按组）
+            vm.ApplySort("name", ascending: true);
+            var names = vm.Rows.Select(r => r.Name).ToList();
+            Assert.Equal(names.OrderBy(n => n, System.StringComparer.CurrentCulture).ToList(), names);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 地址栏_按名解析_候选补全_根段名可省略()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, unitB, _, _, _) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            vm.EnterPathEditCommand.Execute(null);
+            Assert.True(vm.IsPathEditing);
+            Assert.Equal("回收站", vm.PathEditText);
+
+            // 逐级解析：回收站 / A / B（根段名可省略）
+            vm.PathEditText = "A/B";
+            vm.ConfirmPathCommand.Execute(null);
+            Assert.False(vm.IsPathEditing);
+            Assert.Equal(unitB, vm.CurrentUnitId);
+
+            // 候选：输入 "A" 时给出以 A 开头的单元名（Tab 补全走同一条）
+            await vm.NavigateAsync(null);
+            vm.EnterPathEditCommand.Execute(null);
+            vm.PathEditText = "A";
+            Assert.Contains("A", vm.PathCandidates);
+
+            // 路径不存在：标红 + 明确报错，不导航
+            vm.PathEditText = "不存在的单元";
+            vm.ConfirmPathCommand.Execute(null);
+            Assert.True(vm.IsPathInvalid);
+            Assert.Equal(unitA, vm.GetParentId(unitB));   // A 仍在快照里（数据未动）
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 选中_唯一集合与投影_多选可批量()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            var rowA = vm.Rows.Single(r => r.Id == unitA);
+            var row0 = vm.Rows.Single(r => r.Id == l0);
+
+            vm.SelectRowWithModifiers(rowA, ModifierKeys.None);
+            Assert.True(vm.HasSelection && vm.SelectionCount == 1);
+            Assert.True(rowA.IsSelected);              // 行 = 集合投影
+            var root = Assert.Single(vm.Tree);
+            Assert.True(root.Children.Single(n => n.Id == unitA).IsSelected);   // 树 = 同一个集合的投影
+
+            vm.SelectRowWithModifiers(row0, ModifierKeys.Control);
+            Assert.Equal(2, vm.SelectionCount);        // Ctrl 加选
+
+            vm.ClearSelectionCommand.Execute(null);    // Esc / 点空白 = 清空
+            Assert.False(vm.HasSelection);
+
+            vm.SelectAllCommand.Execute(null);
+            Assert.Equal(vm.Rows.Count, vm.SelectionCount);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 站内搬移_链接移入单元_如实计数_成环拒绝()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var dialogs = new RecordingDialogs();
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client, dialogs);
+            await vm.LoadAsync();
+
+            // 把根级 L0 拖进单元 A（站内搬移 = trash.move）
+            var items = new[] { new DragItem(l0, false, "根级链接") };
+            await vm.DropItemsAsync(items, unitA);
+
+            var overview = await client.TrashOverviewAsync();
+            Assert.Equal(unitA, overview.Links.Single(l => l.Id == l0).TrashFolderId);
+            Assert.Contains("已移动 1 项", vm.StatusText);
+
+            // 已在目标位置 = 无操作（不报错、如实计数）
+            await vm.DropItemsAsync(items, unitA);
+            Assert.Contains("已在目标位置", vm.StatusText);
+            Assert.Empty(dialogs.Alerts);
+
+            // 成环：把单元 A 拖进它自己的子单元 B → 执行层拒绝 + 规范弹窗（只列成环项）
+            var unitB = overview.Folders.Single(f => f.Name == "B").TrashFolderId;
+            var folderItems = new[] { new DragItem(unitA, true, "A") };
+            await vm.DropItemsAsync(folderItems, unitB);
+            var alert = Assert.Single(dialogs.Alerts);
+            Assert.Equal("无法移动", alert.Title);
+            Assert.Contains("「A」", alert.Message);
+            Assert.DoesNotContain("B", alert.Message.Replace("「A」", ""));   // 只列成环项
+
+            // 引擎侧确认：A 仍在根、B 仍是 A 的子单元
+            var after = await client.TrashOverviewAsync();
+            Assert.Null(after.Folders.Single(f => f.TrashFolderId == unitA).ParentTrashFolderId);
+            Assert.Equal(unitA, after.Folders.Single(f => f.TrashFolderId == unitB).ParentTrashFolderId);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 站内搬移_不入撤销栈_不影响主表()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            // 建库本身会产生撤销记录（新建/删除都可撤销）→ 以"搬移前后条数不变"为判据
+            var before = (await client.UndoListAsync()).GetProperty("entries").GetArrayLength();
+            await vm.DropItemsAsync(new[] { new DragItem(l0, false, "根级链接") }, unitA);
+            var after = (await client.UndoListAsync()).GetProperty("entries").GetArrayLength();
+
+            // 用户定稿：回收站不给撤销/重做（搬移只改归属，不入撤销栈）
+            Assert.Equal(before, after);
+
+            // 搬移 ≠ 还原：主表计数不变（0 条活动链接）
+            var stats = await client.LinkStatsAsync();
+            Assert.Equal(0, stats.Total);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 永久删除_批量_带确认_清空选中()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var dialogs = new RecordingDialogs();
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client, dialogs);
+            await vm.LoadAsync();
+
+            vm.SetSelection(new[] { unitA, l0 });
+            vm.PurgeSelectionCommand.Execute(null);
+
+            // 命令是"fire-and-forget"（与页面同构）→ 轮询等它落库（本地 SQLite，毫秒级）
+            TrashOverviewDto overview = new();
+            for (var i = 0; i < 100; i++)
+            {
+                overview = await client.TrashOverviewAsync();
+                if (overview.Folders.Count == 0 && overview.Links.Count == 0) break;
+                await Task.Delay(20);
+            }
+
+            Assert.Contains("不可恢复", dialogs.Confirms.Single().Message);
+            Assert.Empty(overview.Folders);
+            Assert.Empty(overview.Links);
+            Assert.False(vm.HasSelection);                  // 条目已消失：绝不残留选中
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public void 键位表_无撤销无剪贴板无全局键()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var vm = NewVm(client);
+            var registry = TrashShortcuts.CreateRegistry(vm);
+
+            // 用户定稿：阉割 Ctrl+Z/Y（撤销/重做）与 Ctrl+X/C/V（剪贴板）、F2（重命名）
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.Z, ModifierKeys.Control));
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.Y, ModifierKeys.Control));
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.X, ModifierKeys.Control));
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.C, ModifierKeys.Control));
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.V, ModifierKeys.Control));
+            Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.F2, ModifierKeys.None));
+
+            // 不注册任何全局作用域键（Ctrl+E/F 只挂浏览页）——回收站内不应命中
+            Assert.DoesNotContain(registry.Bindings, b => b.Scope == ShortcutScope.Global);
+
+            // 保留的关键键位：F5 / Backspace / Alt+↑ / Delete / Ctrl+A / Esc
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.F5, ModifierKeys.None));
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Back, ModifierKeys.None));
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Up, ModifierKeys.Alt));
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Delete, ModifierKeys.None));
+            Assert.NotNull(registry.Resolve(ShortcutScope.TrashMain, Key.A, ModifierKeys.Control));
+            Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Escape, ModifierKeys.None));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+}

@@ -28,7 +28,7 @@ namespace LinkPocket.ViewModels
 
         /// <summary>资源管理器式浏览页（P4）：由 MainWindow 取用并设为 BrowserView 的 DataContext。</summary>
         public BrowserViewModel BrowserViewModel { get; }
-        private RecycleBinViewModel? _recycleBinViewModel;
+        private TrashViewModel? _trashViewModel;
         private SettingsViewModel? _settingsViewModel;
         private SmartListViewModel? _smartListViewModel;
 
@@ -47,7 +47,7 @@ namespace LinkPocket.ViewModels
 
             InitializeNavigationItems();
 
-            _recycleBinViewModel = new RecycleBinViewModel(client, _ports);
+            _trashViewModel = new TrashViewModel(client, _ports);
             _settingsViewModel = new SettingsViewModel();
             _smartListViewModel = new SmartListViewModel(client, _ports,
                 listId => string.IsNullOrEmpty(listId)
@@ -88,7 +88,7 @@ namespace LinkPocket.ViewModels
                         await BrowserViewModel.RefreshPreservingSelectionAsync();
                         break;
                     case "trash":
-                        await LoadTrashTreeAsync();
+                        await RefreshTrashAsync();
                         break;
                     case "search":
                         OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
@@ -150,17 +150,11 @@ namespace LinkPocket.ViewModels
 
         public bool HasFolderItems => FolderItems?.Count > 0;
 
-        private ObservableCollection<FolderNode>? _trashItems;
-        public ObservableCollection<FolderNode>? TrashItems
+        /// <summary>回收站页视图模型（与浏览页 BrowserViewModel 同构的"回收站浏览器"）。</summary>
+        public TrashViewModel? TrashViewModel
         {
-            get => _trashItems;
-            set { _trashItems = value; OnPropertyChanged(); }
-        }
-
-        public RecycleBinViewModel? RecycleBinViewModel
-        {
-            get => _recycleBinViewModel;
-            set { _recycleBinViewModel = value; OnPropertyChanged(); }
+            get => _trashViewModel;
+            set { _trashViewModel = value; OnPropertyChanged(); }
         }
 
         public SettingsViewModel? SettingsViewModel
@@ -211,13 +205,9 @@ namespace LinkPocket.ViewModels
 
                 if (navId == "trash")
                 {
-                    if (_recycleBinViewModel != null)
-                    {
-                        await _recycleBinViewModel.LoadAsync();
-                        var navigation = _ports.Navigation;
-                        if (navigation != null)
-                            await navigation.RefreshTrashPageAsync();
-                    }
+                    // 切页进入 = 导航加载（亮遮罩 + 入场动画）：由页面入口装载（页面还要同步只读详情栏）
+                    var navigation = _ports.Navigation;
+                    if (navigation != null) await navigation.RefreshTrashPageAsync();
                 }
             }
             catch (Exception ex)
@@ -240,11 +230,11 @@ namespace LinkPocket.ViewModels
             OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public async Task LoadTrashTreeAsync()
+        /// <summary>事件驱动的回收站刷新（静默：后台刷新不亮遮罩——与浏览页同口径）。</summary>
+        public async Task RefreshTrashAsync()
         {
-            // 事件驱动的回收站刷新：加载平铺条目 + 被删文件夹树（页面绑定即渲染）
-            if (_recycleBinViewModel != null)
-                await _recycleBinViewModel.LoadAsync();
+            if (_trashViewModel != null)
+                await _trashViewModel.LoadAsync();
         }
 
         // 搜索页已迁往 SearchViewModel（MVVM）：查询执行/范围守卫在页面 VM，

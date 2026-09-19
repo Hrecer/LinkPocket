@@ -3,71 +3,125 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
-             Focusable="True">
-    <!-- 回收站页（v2 层级化）：与浏览页同构 ——
-         顶部面包屑（纯展示「回收站」）+ 左侧被删文件夹树（FolderTreePanel 纯展示：节点不可打开）
-         + 中央共享数据表 SortableDataTable（平铺：名称/类型/原位置/删除时间，搜索页同款样式）
-         + 直角通栏状态栏。本期无还原，仅单条/整单元「永久删除」。 -->
+             xmlns:uikit="clr-namespace:LinkPocket.Views.Browser;assembly=LinkPocket.UIKit"
+             Focusable="True"
+             FocusVisualStyle="{x:Null}"
+             Background="{DynamicResource SurfaceContainerLow}">
+    <!-- 回收站页（与浏览页同构的"回收站浏览器"；用户令 2026-09-19）：
+         导航行（后退/前进/返回上级 + 面包屑地址栏 + 右侧「永久删除」）+ 左栏导航树（含链接叶子）
+         + 中栏共享数据表（模板行 + 同一套行皮肤/多选）+ 右栏只读详情栏 + 状态栏。
+         ⚠️ 只读语义：无还原、无撤销/重做、无新建/重命名/编辑、无剪贴板；站内搬移只经拖拽（trash.move）。
+         快捷键 = TrashShortcuts（唯一事实源，按栏作用域分发）。 -->
     <UserControl.Resources>
         <!-- BoolToVis 已上收 UIKit.xaml -->
+
+        <!-- 名称列文本可用宽度（与浏览页同口径；基准取名称列实宽） -->
+        <uikit:NameColumnWidthConverter x:Key="NameCellTextWidth" Reserved="78" Min="60"/>
+
+        <!-- 行内信息列文字（类型 / 原位置 / 删除时间）统一规格 -->
+        <Style x:Key="RowCellText" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+        </Style>
+
+        <!-- 左栏节点菜单（控件级插槽：FolderTreePanel.NodeMenu；链接叶子由面板置空） -->
+        <ContextMenu x:Key="TrashNodeMenu">
+            <ContextMenu.Resources>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+            </ContextMenu.Resources>
+            <MenuItem Header="打开" Command="{Binding Host.OpenNodeCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="永久删除" Command="{Binding Host.PurgeNodeCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+        </ContextMenu>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource SurfaceContainerLow}">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 面包屑行：返回钮（单元内） + 面包屑 + 右侧「永久删除」 ===== -->
+        <!-- ===== 导航行：三枚导航键圆胶囊 + 面包屑地址栏（点空白即编辑）+ 右侧「永久删除」 ===== -->
         <Border Grid.Row="0" Background="Transparent" Padding="12,0,12,8">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
-                <Button DockPanel.Dock="Right" Cursor="Hand" Focusable="False" Click="TrashPurge_Click"
+                <Button DockPanel.Dock="Right" Cursor="Hand" Click="TrashPurge_Click"
                         IsEnabled="{Binding HasSelection}"
-                        Style="{StaticResource WarnPillButton}" Padding="12,6"
-                        ToolTip="永久删除选中项（文件夹将连同内部全部内容删除，不可恢复）">
+                        Style="{StaticResource WarnPillButton}" Padding="12,5" MinHeight="32" Margin="12,0,0,0"
+                        ToolTip="永久删除选中项 (Del)（文件夹将连同内部全部内容删除，不可恢复）">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <!-- 返回钮：仅在单元浏览态出现（与智能列表结果页同款圆形返回钮，40px） -->
-                <Button DockPanel.Dock="Left" x:Name="UnitBackButton" Width="40" Height="40"
-                        Cursor="Hand" Focusable="False" Margin="0,0,8,0"
-                        Click="UnitBack_Click" ToolTip="返回回收站"
-                        Visibility="{Binding IsInUnit, Converter={StaticResource BoolToVis}}">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
-                                <Grid>
-                                    <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
-                                            Opacity="0" CornerRadius="20"/>
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="StateLayer" Property="Opacity" Value="0.16"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <m3:M3Icon Kind="arrow-left" Width="16" Height="16"/>
-                </Button>
-                <views:BreadcrumbBar x:Name="TrashCrumbs">
-                    <views:BreadcrumbBar.Breadcrumbs>
-                        <x:Array Type="views:BreadcrumbSegment">
-                            <views:BreadcrumbSegment Name="回收站" IsLast="True"/>
-                        </x:Array>
-                    </views:BreadcrumbBar.Breadcrumbs>
-                </views:BreadcrumbBar>
+                <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
+                        CornerRadius="17" Padding="2" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource NavIconButton}" Tag="后退 (Backspace)"
+                                Command="{Binding GoBackCommand}">
+                            <m3:M3Icon Kind="arrow-left" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                        <Button Style="{StaticResource NavIconButton}" Tag="前进 (Alt+→)"
+                                Command="{Binding GoForwardCommand}">
+                            <m3:M3Icon Kind="arrow-right" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                        <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Alt+↑)"
+                                Command="{Binding GoUpCommand}">
+                            <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                    </StackPanel>
+                </Border>
+                <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦） -->
+                <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
+                                     Breadcrumbs="{Binding Breadcrumbs}"
+                                     IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"
+                                     PathEditText="{Binding PathEditText, Mode=TwoWay}"
+                                     PathCandidates="{Binding PathCandidates}"
+                                     SelectedCandidateIndex="{Binding SelectedCandidateIndex, Mode=TwoWay}"
+                                     HasPathCandidates="{Binding HasPathCandidates}"
+                                     IsPathInvalid="{Binding IsPathInvalid}"
+                                     CrumbClickCommand="{Binding CrumbClickCommand}"
+                                     ConfirmPathCommand="{Binding ConfirmPathCommand}"
+                                     CancelPathCommand="{Binding CancelPathEditCommand}"
+                                     CompletePathCommand="{Binding CompletePathCommand}"
+                                     EditRequested="Breadcrumb_EditRequested"
+                                     CrumbDragOver="Breadcrumb_CrumbDragOver"
+                                     CrumbDragLeave="Breadcrumb_CrumbDragLeave"
+                                     CrumbDrop="Breadcrumb_CrumbDrop"
+                                     CandidateMoveRequested="Breadcrumb_CandidateMoveRequested"
+                                     EditFocusLost="Breadcrumb_EditFocusLost"
+                                     EditPopupClosed="Breadcrumb_EditPopupClosed"
+                                     CandidateChosen="Breadcrumb_CandidateChosen"/>
             </DockPanel>
         </Border>
 
-        <!-- ===== 内容区：左侧被删文件夹树（纯展示） / 中央平铺表 / 右侧只读详情栏 ===== -->
+        <!-- ===== 内容区：左栏导航树 / 中栏列表卡 / 右栏只读详情栏 =====
+             ⚠️ 本层不得挂"点空白清选中"（外层处理器会吞子区域点击，见 WARNINGS 30）：
+             清选中归各区域自己（树面板自管、列表卡自管）。 -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="210"/>
@@ -75,40 +129,294 @@
                 <ColumnDefinition Width="286"/>
             </Grid.ColumnDefinitions>
 
-            <views:FolderTreePanel Grid.Column="0" HeaderText="导航"
-                                   ItemsSource="{Binding TreeNodes}"/>
+            <!-- 左栏：回收站导航树（虚根「回收站」+ 单元 + 链接叶子；节点不可改名的只读树） -->
+            <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
+                                   HeaderText="导航"
+                                   NodeMenu="{StaticResource TrashNodeMenu}"
+                                   ItemsSource="{Binding Tree}"
+                                   NodeSelected="FolderTreePanel_NodeSelected"
+                                   TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
+                                   NodeDragOver="FolderTreePanel_NodeDragOver"
+                                   NodeDragLeave="FolderTreePanel_NodeDragLeave"
+                                   NodeDrop="FolderTreePanel_NodeDrop"
+                                   NodeDragStartRequested="FolderTreePanel_NodeDragStartRequested"/>
 
-            <Border Grid.Column="1" x:Name="TrashArea" Background="{DynamicResource SurfaceContainerHigh}"
-                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
-                <views:SortableDataTable x:Name="TrashTable" HeaderBandMargin="0"
-                                         ItemsSource="{Binding Entries}"/>
+            <!-- 中栏：列表卡（自管空白点击与空白落点；行模板在下方共享表里） -->
+            <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
+                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
+                    PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
+                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp"
+                    AllowDrop="True" DragOver="ListCard_DragOver" DragLeave="ListCard_DragLeave" Drop="ListCard_Drop">
+                <Grid>
+                    <Grid.ContextMenu>
+                        <ContextMenu>
+                            <ContextMenu.Resources>
+                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                            </ContextMenu.Resources>
+                            <!-- 回收站列表空白菜单：只保留"选择/刷新"类（无新建/粘贴——只读语义） -->
+                            <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
+                            <MenuItem Header="刷新" Command="{Binding RefreshCommand}"/>
+                        </ContextMenu>
+                    </Grid.ContextMenu>
+
+                    <views:SortableDataTable x:Name="TrashTable" Grid.Row="0"
+                                             HeaderBandMargin="0" ItemsSource="{Binding Rows}">
+                        <views:SortableDataTable.ItemTemplate>
+                            <DataTemplate>
+                                <!-- 外层 Border：事件/右键菜单/列宽对齐；内层 RowSkin：共享行皮肤（与浏览页同款） -->
+                                <Border x:Name="RowBorder" Tag="TrashRow" Cursor="Hand"
+                                        MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                        PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
+                                        PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"
+                                        MouseMove="RowBorder_MouseMove"
+                                        MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
+                                        ContextMenuOpening="RowBorder_ContextMenuOpening"
+                                        AllowDrop="True" DragOver="RowBorder_DragOver" DragLeave="RowBorder_DragLeave" Drop="RowBorder_Drop">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <ContextMenu.Resources>
+                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                                            </ContextMenu.Resources>
+                                            <MenuItem Header="打开" Command="{Binding Host.OpenRowCommand}" CommandParameter="{Binding}"/>
+                                            <MenuItem Header="复制链接" Command="{Binding Host.CopyLinkAddressCommand}" CommandParameter="{Binding}">
+                                                <MenuItem.Style>
+                                                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </MenuItem.Style>
+                                            </MenuItem>
+                                            <MenuItem Header="永久删除" Command="{Binding Host.PurgeSelectionCommand}"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <Border.InputBindings>
+                                        <MouseBinding Gesture="LeftDoubleClick"
+                                                      Command="{Binding DataContext.OpenRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                      CommandParameter="{Binding}"/>
+                                    </Border.InputBindings>
+                                    <!-- 内层 RowSkin：与浏览页同一套（LpRowCard 基样式 + 选中/落点触发器） -->
+                                    <Border Padding="16,7">
+                                        <Border.Style>
+                                            <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                                        <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid x:Name="RowColumns">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[3], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 名称（图标 + 文本 + 单元计数药丸） -->
+                                            <Grid Grid.Column="0" VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid Grid.Column="0" Width="20" Height="20" VerticalAlignment="Center">
+                                                    <!-- 单元图标（灰化，回收站语义） -->
+                                                    <m3:M3Icon Kind="folder" Width="20" Height="20"
+                                                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
+                                                               VerticalAlignment="Center">
+                                                        <m3:M3Icon.Style>
+                                                            <Style TargetType="m3:M3Icon">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </m3:M3Icon.Style>
+                                                    </m3:M3Icon>
+                                                    <!-- 书签 favicon -->
+                                                    <Image Source="{Binding Favicon}" Width="16" Height="16"
+                                                           VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality">
+                                                        <Image.Style>
+                                                            <Style TargetType="Image">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Favicon}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Image.Style>
+                                                    </Image>
+                                                    <!-- 书签默认图标（favicon 为空时；灰化） -->
+                                                    <m3:M3Icon Kind="link-variant" Width="16" Height="16"
+                                                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
+                                                               VerticalAlignment="Center">
+                                                        <m3:M3Icon.Style>
+                                                            <Style TargetType="m3:M3Icon">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsFolder}" Value="False"/>
+                                                                            <Condition Binding="{Binding Favicon}" Value="{x:Null}"/>
+                                                                        </MultiDataTrigger.Conditions>
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </MultiDataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </m3:M3Icon.Style>
+                                                    </m3:M3Icon>
+                                                </Grid>
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding Name}">
+                                                    <TextBlock.MaxWidth>
+                                                        <MultiBinding Converter="{StaticResource NameCellTextWidth}">
+                                                            <Binding Path="ColumnWidths[0]" RelativeSource="{RelativeSource AncestorType=views:SortableDataTable}"/>
+                                                            <Binding Path="ColumnWidths" RelativeSource="{RelativeSource AncestorType=views:SortableDataTable}"/>
+                                                            <Binding Path="ActualWidth" ElementName="RowColumns"/>
+                                                        </MultiBinding>
+                                                    </TextBlock.MaxWidth>
+                                                </TextBlock>
+                                                <!-- 单元计数药丸（子树链接数；链接行不显示） -->
+                                                <Border Grid.Column="2" Padding="7,0" MinHeight="16" Margin="8,0,0,0">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border" BasedOn="{StaticResource CountPill}">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- 类型 -->
+                                            <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}" Text="{Binding TypeText}"/>
+                                            <!-- 原位置 -->
+                                            <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
+                                                       Text="{Binding OriginText}" ToolTip="{Binding OriginText}"/>
+                                            <!-- 删除时间 -->
+                                            <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
+                                                       Text="{Binding DeletedText}" ToolTip="{Binding DeletedText}"/>
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                            </DataTemplate>
+                        </views:SortableDataTable.ItemTemplate>
+                    </views:SortableDataTable>
+
+                    <!-- 空状态（独立宿主：绝不与 ItemsSource 混用 Items） -->
+                    <Grid Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Grid.Style>
+                            <Style TargetType="Grid">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Rows.Count}" Value="0"/>
+                                            <Condition Binding="{Binding IsNavigating}" Value="False"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Grid.Style>
+                        <StackPanel>
+                            <Border Width="96" Height="96" CornerRadius="32"
+                                    Background="{DynamicResource SecondaryContainer}"
+                                    HorizontalAlignment="Center">
+                                <m3:M3Icon Kind="delete-outline" Width="40" Height="40"
+                                           Foreground="{DynamicResource OnSecondaryContainer}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock Text="回收站是空的" FontSize="17" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource OnSurface}"
+                                       HorizontalAlignment="Center" Margin="0,18,0,0"/>
+                            <TextBlock Text="删除的书签和文件夹会出现在这里，并保留删除时的位置"
+                                       FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
+                                       HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 加载遮罩：只在导航加载（切页进入 / F5）出现；事件驱动的后台刷新静默 -->
+                    <Border Grid.Row="0" Background="#80FFFFFF">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsNavigating}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <m3:CircularProgress IsIndeterminate="True"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Border>
 
-            <!-- 右侧详情栏（只读）：TintPanel 叠层面板，与浏览/搜索详情栏同款 DetailSidebar 控件 -->
+            <!-- 右栏：只读详情栏（DetailSidebar；构造时由 Shell 注入只读数据模型） -->
             <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
                     CornerRadius="24" Margin="0,0,8,8">
                 <views:DetailSidebar x:Name="TrashSidebar"/>
             </Border>
         </Grid>
 
-        <!-- ===== 状态栏：直角通栏 ===== -->
-        <Border Grid.Row="2" Background="{DynamicResource TintPanel}" Height="32">
-            <Grid Margin="12,0">
-                <TextBlock Text="{Binding StatusText}" FontSize="11.5"
-                           Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"/>
-                <TextBlock Text="回收站内容不占用书签计数；选中条目可在右侧查看详情（只读），双击书签打开详情页，双击文件夹进入单元" FontSize="11.5" Opacity="0.55"
-                           HorizontalAlignment="Right" VerticalAlignment="Center"
-                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+        <!-- ===== 状态栏：左右贴边通栏（状态文案 + 选中药丸 + 右侧提示） ===== -->
+        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource TintPanel}" Padding="16,0">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <Border CornerRadius="9" Background="{DynamicResource PrimaryContainer}"
+                            Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelection}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource OnPrimaryContainer}"/>
+                    </Border>
+                </StackPanel>
+                <TextBlock Text="回收站内容不占用书签计数；双击书签打开详情（只读），双击文件夹进入单元；站内可拖动搬移，不提供还原"
+                           FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Opacity="0.6"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
         </Border>
 
-        <!-- ===== 只读详情页（回收站书签）：整页覆盖（RowSpan=3），返回钮/Esc 关闭；无任何编辑入口 ===== -->
+        <!-- ===== 只读详情页（回收站书签）：整页覆盖，无任何编辑入口 ===== -->
         <Grid x:Name="LinkDetailOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed"
               Background="{DynamicResource SurfaceContainerLow}">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid Width="760" HorizontalAlignment="Center" Margin="36,84,36,28">
                     <StackPanel>
-                        <!-- hero 卡：favicon/图标 + 名称 + 类型字幕 -->
                         <Border Background="{DynamicResource TintCard}" CornerRadius="20" Padding="20,18">
                             <StackPanel>
                                 <TextBlock Text="回收站 · 书签（只读）" FontSize="11.5" FontWeight="SemiBold"
@@ -134,7 +442,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 网址卡（Consolas + 复制） -->
                         <Border Background="{DynamicResource TintCard}" CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -156,7 +463,6 @@
                             </Grid>
                         </Border>
 
-                        <!-- 信息卡：原位置 / 删除时间 / ID（只读行） -->
                         <Border Background="{DynamicResource TintCard}" CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
                             <StackPanel>
                                 <TextBlock Text="信息" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,0,10"/>
@@ -206,7 +512,7 @@
                 </Grid>
             </ScrollViewer>
 
-            <!-- 浮动返回钮（z 序顶层；LinkEditorPage 同款 40px 圆钮） -->
+            <!-- 浮动返回钮（z 序顶层；与详情页同款 40px 圆钮） -->
             <Button Width="40" Height="40" Cursor="Hand" HorizontalAlignment="Left" VerticalAlignment="Top"
                     Margin="20,16,0,0" Click="DetailBack_Click" ToolTip="返回回收站" Focusable="False">
                 <Button.Template>

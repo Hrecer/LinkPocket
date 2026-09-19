@@ -40,6 +40,20 @@ namespace LinkPocket.Views
         public FolderTreePanel()
         {
             InitializeComponent();
+            // 缺省节点菜单 = 本控件内置的浏览页菜单（重命名/删除，绑节点的 Host.*）；
+            // 消费方可在 XAML 里设 NodeMenu 换掉（回收站用「打开/永久删除」）。
+            NodeMenu ??= FindResource("TreeContextMenu") as ContextMenu;
+        }
+
+        public static readonly DependencyProperty NodeMenuProperty = DependencyProperty.Register(
+            nameof(NodeMenu), typeof(ContextMenu), typeof(FolderTreePanel),
+            new PropertyMetadata(null));
+
+        /// <summary>节点右键菜单（控件级插槽；null 时构造期回落到内置浏览页菜单）。</summary>
+        public ContextMenu? NodeMenu
+        {
+            get => (ContextMenu?)GetValue(NodeMenuProperty);
+            set => SetValue(NodeMenuProperty, value);
         }
 
         public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(

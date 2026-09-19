@@ -58,7 +58,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
                 ? "全部书签"
                 : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"));
         SearchView.DataContext = _searchVm;
-        TrashView.DataContext = vm.RecycleBinViewModel;
+        TrashView.DataContext = vm.TrashViewModel;
         SmartListsView.DataContext = vm.SmartListViewModel;
         // 工具页：引擎客户端/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
         // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。

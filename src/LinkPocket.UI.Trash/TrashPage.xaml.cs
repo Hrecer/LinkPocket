@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using LinkPocket.Contracts;
+using LinkPocket.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -15,9 +19,10 @@ using Material3.Wpf;
 namespace LinkPocket.Views
 {
     /// <summary>
-    /// 回收站页（v2 层级化）：树（纯展示）+ 面包屑（纯展示）+ 共享数据表平铺。
-    /// 表格为 SortableDataTable 默认工厂模式（搜索页同款）：名称/类型/原位置/删除时间，表头可排序。
-    /// 本期无还原；「永久删除」= 单条书签 or 整个被删文件夹单元（含子树）。
+    /// 回收站页（与浏览页同构的"回收站浏览器"）：导航行（导航键 + 面包屑地址栏 + 永久删除）
+    /// + 左栏导航树（含链接叶子）+ 中栏共享数据表（模板行 + 同一套行皮肤）+ 右栏只读详情栏。
+    /// 交互机械与浏览页同源（唯一选中集合 / 覆盖式落点 / 拖拽浮层 / 输入子系统），语义只读：
+    /// 无还原、无撤销/重做、无编辑、无剪贴板；站内搬移只经拖拽（trash.move）。
     /// </summary>
     public partial class TrashPage : UserControl
     {
@@ -25,148 +30,726 @@ namespace LinkPocket.Views
         {
             InitializeComponent();
             Focusable = true;
-            // S2：页面切换靠 Visibility（不移除视觉树），Loaded 只触发一次 → 用 IsVisibleChanged 保证每次切回都聚焦
-            IsVisibleChanged += (_, e) =>
+
+            DataContextChanged += (_, _) =>
             {
-                if (e.NewValue is true)
+                if (ViewModel == null) return;
+                if (ReferenceEquals(_wiredVm, ViewModel)) return;
+
+                if (_wiredVm != null)
                 {
-                    Keyboard.Focus(this);
-                    EnsureSidebarSubscription();
-                    RefreshCrumbs();
+                    _wiredVm.PaneActivated -= OnPaneActivated;
+                    _wiredVm.RefreshCompleted -= OnRefreshCompleted;
+                    _wiredVm.ContextMenuRequested -= OnContextMenuRequested;
+                    _wiredVm.FocusRowRequested -= OnFocusRowRequested;
+                    _wiredVm.ShowLinkDetailRequested -= OnShowLinkDetailRequested;
+                }
+                _wiredVm = ViewModel;
+
+                ViewModel.PaneActivated += OnPaneActivated;
+                ViewModel.RefreshCompleted += OnRefreshCompleted;
+                ViewModel.ContextMenuRequested += OnContextMenuRequested;
+                ViewModel.FocusRowRequested += OnFocusRowRequested;
+                ViewModel.ShowLinkDetailRequested += OnShowLinkDetailRequested;
+                WireTrashTable();
+
+                _shortcutHost?.Detach();
+                _shortcutHost = new ShortcutHost(TrashShortcuts.CreateRegistry(ViewModel), () => ActiveScope);
+                _shortcutHost.Attach(this);
+            };
+
+            // 切到本页（全局导航切页）→ 键盘焦点收进本页（快捷键按焦点路由）
+            IsVisibleChanged += (_, _) =>
+            {
+                if (IsVisible)
+                {
+                    FocusPage();
+                    UpdateSidebar();
                 }
             };
-            // S8：切页隐藏时解绑（页面实例可能被重建；VM 常驻，不解绑 = 页面泄漏被 VM 引用）
-            Unloaded += (_, _) => UnsubscribeSidebar();
-            SetupTrashTable();
 
             TrashSidebar.DataContext = _sidebar;
             TrashTable.RowClick += (_, item) =>
             {
-                if (Vm is RecycleBinViewModel vm && item is TrashEntryDto entry)
-                    vm.SelectedEntry = entry;
+                if (ViewModel is { } vm && item is TrashRowViewModel row)
+                {
+                    vm.SetSelection(new[] { row.Id });   // 单击 = 单选（与浏览页非修饰键口径一致）
+                    vm.SetContextRow(row);
+                }
             };
-            // 双击：书签 = 只读详情页；文件夹单元 = 打开目录（EnterUnitCommand，失败提示在 VM）
             TrashTable.RowDoubleClick += (_, item) =>
             {
-                if (item is not TrashEntryDto entry) return;
-                if (entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder) Vm?.EnterUnitCommand.Execute(entry);
-                else ShowLinkDetail(entry);
+                if (item is TrashRowViewModel row) ViewModel?.OpenRowCommand.Execute(row);
             };
-            // S3：点表格空白区清除选中（VM 注释承诺"点空白清除"，表格控件自身不做此交互）
-            TrashArea.MouseLeftButtonUp += TrashArea_MouseLeftButtonUp;
         }
 
-        private void TrashArea_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        /// <summary>Shell 端口：切到回收站页时装载（导航加载口径——亮遮罩 + 行入场动画，并同步只读详情栏）。</summary>
+        public async Task RefreshAsync()
         {
-            if (Vm is not { } vm) return;
-            if (IsRowHit(e)) return;   // 点中行内部（行自身已处理选中）不清
-            vm.SelectedEntry = null;
-            TrashTable.ClearSelection();
+            if (ViewModel is { } vm) await vm.LoadAsync(navigating: true);
+            UpdateSidebar();
         }
 
-        /// <summary>命中判定：鼠标位置是否落在表格的行容器（ContentPresenter）树内。</summary>
-        private bool IsRowHit(MouseButtonEventArgs e)
+        private TrashViewModel? _wiredVm;
+        private ShortcutHost? _shortcutHost;
+
+        private TrashViewModel? ViewModel => DataContext as TrashViewModel;
+
+        private ShortcutScope ActiveScope => ViewModel?.ActivePane == TrashPane.Tree
+            ? ShortcutScope.TrashTree
+            : ShortcutScope.TrashMain;
+
+        // ================= 焦点不变式（与浏览页同口径） =================
+
+        private void FocusPage()
         {
-            var list = TrashTable.RowsList;
-            var hit = list.InputHitTest(e.GetPosition(list)) as DependencyObject;
-            while (hit != null)
+            if (IsLoaded && IsVisible) Keyboard.Focus(this);
+        }
+
+        /// <summary>页面可见且应用在前台时，键盘焦点必须在页内（刷新重建会把焦点交给窗口 → 快捷键静默失效）。</summary>
+        private void EnsurePageFocus()
+        {
+            if (!IsLoaded || !IsVisible) return;
+            if (Window.GetWindow(this)?.IsActive != true) return;
+            if (IsFocusWithinPage()) return;
+            if (ShortcutHost.IsTextInputFocused()) return;   // 地址栏编辑中绝不抢
+            Keyboard.Focus(this);
+        }
+
+        private bool IsFocusWithinPage()
+        {
+            var d = Keyboard.FocusedElement as DependencyObject;
+            while (d != null)
             {
-                if (hit is ContentPresenter) return true;
-                hit = VisualTreeHelper.GetParent(hit);
+                if (ReferenceEquals(d, this)) return true;
+                d = VisualTreeHelper.GetParent(d);
             }
             return false;
         }
 
-        /// <summary>模块化：DataContext = RecycleBinViewModel（Shell 装配注入），本视图不认识 MainViewModel。</summary>
-        private RecycleBinViewModel? Vm => DataContext as RecycleBinViewModel;
+        private void OnPaneActivated(object? sender, TrashPane pane) => FocusPage();
 
-        // ===== 右侧只读详情栏：跟随 SelectedEntry（VM INPC 驱动，含 purge/清空后的清空态） =====
-        private readonly TrashSidebarModel _sidebar = new();
-        private RecycleBinViewModel? _sidebarSubscribedVm;
-
-        private void EnsureSidebarSubscription()
+        /// <summary>刷新链结束：导航加载才播行入场动画；并守住"焦点在页内"不变式。</summary>
+        private void OnRefreshCompleted(object? sender, bool wasNavigation)
         {
-            var vm = Vm;
-            if (vm == null || _sidebarSubscribedVm == vm) return;
-            vm.PropertyChanged += Vm_PropertyChanged;
-            _sidebarSubscribedVm = vm;
-            UpdateSidebar();
-        }
-
-        /// <summary>S8：解绑侧栏订阅（页面实例回收时防止 VM 常驻引用本页面）。</summary>
-        private void UnsubscribeSidebar()
-        {
-            if (_sidebarSubscribedVm == null) return;
-            _sidebarSubscribedVm.PropertyChanged -= Vm_PropertyChanged;
-            _sidebarSubscribedVm = null;
-        }
-
-        private void Vm_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(RecycleBinViewModel.SelectedEntry))
-                UpdateSidebar();
-            else if (e.PropertyName == nameof(RecycleBinViewModel.IsInUnit) ||
-                     e.PropertyName == nameof(RecycleBinViewModel.CurrentUnitName))
-                RefreshCrumbs();
-        }
-
-        private void UpdateSidebar()
-        {
-            var entry = Vm?.SelectedEntry;
-            if (entry == null) _sidebar.Clear();
-            else _sidebar.Show(entry);
-        }
-
-        // ===== 打开目录：进入被删文件夹单元（动作命令在 RecycleBinViewModel，面包屑由 INPC 驱动） =====
-
-        private void UnitBack_Click(object sender, RoutedEventArgs e)
-        {
-            Vm?.BackCommand.Execute(null);
-        }
-
-        /// <summary>面包屑随浏览层级切换：根 = [回收站]；单元内 = [回收站, 单元名]。</summary>
-        private void RefreshCrumbs()
-        {
-            var vm = Vm;
-            if (vm == null) return;
-            TrashCrumbs.Breadcrumbs = vm.IsInUnit
-                ? new BreadcrumbSegment[]
-                {
-                    new() { Name = "回收站" },
-                    new() { Name = vm.CurrentUnitName, IsLast = true }
-                }
-                : new BreadcrumbSegment[]
-                {
-                    new() { Name = "回收站", IsLast = true }
-                };
-        }
-
-        // ===== 只读详情页（回收站书签）：整页覆盖，无任何编辑入口 =====
-
-        private TrashEntryDto? _detailEntry;
-
-        private void ShowLinkDetail(TrashEntryDto entry)
-        {
-            _detailEntry = entry;   // S4：记录展示中的条目，刷新时校验是否仍存在
-
-            DetailName.Text = EntryName(entry);
-            DetailUrl.Text = entry.Url ?? string.Empty;
-            DetailOrigin.Text = string.IsNullOrWhiteSpace(entry.OriginPath) ? "全部书签" : entry.OriginPath;
-            DetailDeletedAt.Text = entry.DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-            DetailId.Text = entry.Id;
-
-            // favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径）
-            var faviconUrl = entry.FaviconUrl;
-            var favicon = FaviconService.LoadFromCache(faviconUrl);
-            if (favicon == null && !string.IsNullOrWhiteSpace(faviconUrl))
+            if (wasNavigation) QueueRowEntrance();
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
+                EnsurePageFocus();
+                UpdateSidebar();
+                // 详情页展示的条目若已被永久删除 → 关闭覆盖层，不留残留旧数据
+                if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailRow != null && ViewModel is { } vm)
+                {
+                    if (!vm.AllLinks.Any(l => l.Id == _detailRow.Id) && !vm.Tree.Any(n => n.Id == _detailRow.Id))
+                        CloseLinkDetail();
+                }
+            }));
+        }
+
+        // ================= 主栏：表装配 / 选中 / 滚动 =================
+
+        private bool _tableWired;
+
+        private void WireTrashTable()
+        {
+            if (_tableWired || ViewModel == null) return;
+            TrashTable.SortField = ViewModel.SortField;
+            TrashTable.SortAscending = ViewModel.SortAscending;
+            _tableWired = true;
+            TrashTable.Columns = new[]
+            {
+                new DataTableColumn { Field = "name", Label = "名称", Width = -1 },
+                new DataTableColumn { Field = "type", Label = "类型", Width = 90 },
+                new DataTableColumn { Field = "origin_path", Label = "原位置", Width = -2 },
+                new DataTableColumn { Field = "deleted_at", Label = "删除时间", Width = 150 },
+            };
+            TrashTable.SortChanged += (_, e) => ViewModel?.ApplySort(e.Field, e.Ascending);
+        }
+
+        private void OnFocusRowRequested(object? sender, TrashRowViewModel row) => ScrollRowIntoView(row);
+
+        private void ScrollRowIntoView(TrashRowViewModel row)
+        {
+            var list = TrashTable.RowsList;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement realized)
+                {
+                    realized.BringIntoView();
+                    return;
+                }
+
+                var scroller = FindAncestorScrollViewer(list);
+                var index = ViewModel?.Rows.IndexOf(row) ?? -1;
+                if (scroller == null || index < 0) return;
+                var rowHeight = EstimateRowHeight(list);
+                scroller.ScrollToVerticalOffset(Math.Max(0, index * rowHeight - scroller.ViewportHeight / 3));
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+                {
+                    if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement afterScroll)
+                        afterScroll.BringIntoView();
+                }));
+            }));
+        }
+
+        private static ScrollViewer? FindAncestorScrollViewer(DependencyObject child)
+        {
+            var current = VisualTreeHelper.GetParent(child);
+            while (current != null)
+            {
+                if (current is ScrollViewer sv) return sv;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
+        private static double EstimateRowHeight(ItemsControl list)
+            => list.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement first && first.ActualHeight > 1
+                ? first.ActualHeight
+                : 36;
+
+        // ================= 行错峰入场（只在导航加载时；与浏览页同口径） =================
+
+        private void QueueRowEntrance()
+        {
+            if (!SystemParameters.ClientAreaAnimation) return;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                var rows = TrashTable.RowsList;
+                var idx = 0;
+                for (var i = 0; i < rows.Items.Count && idx < 12; i++)
+                {
+                    if (rows.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
+                    {
+                        PlayRowEntrance(fe, idx);
+                        idx++;
+                    }
+                }
+            }));
+        }
+
+        private void PlayRowEntrance(FrameworkElement el, int index)
+        {
+            var tt = new TranslateTransform(0, 10);
+            el.RenderTransform = tt;
+            el.Opacity = 0;
+            var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 30);
+            var oy = new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260))
+            { EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut }, BeginTime = begin };
+            var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = begin };
+
+            EventHandler done = (_, _) =>
+            {
+                el.BeginAnimation(UIElement.OpacityProperty, null);
+                el.Opacity = 1;
+                tt.BeginAnimation(TranslateTransform.YProperty, null);
+                tt.Y = 0;
+            };
+            oo.Completed += done;
+            oy.Completed += done;
+            tt.BeginAnimation(TranslateTransform.YProperty, oy);
+            el.BeginAnimation(UIElement.OpacityProperty, oo);
+        }
+
+        // ================= 行手势（与浏览页同一套归属校验） =================
+
+        private Point _rowDragStart;
+        private TrashRowViewModel? _pressRow;
+        private ModifierKeys _pressModifiers;
+        private int _pressClickCount;
+        private bool _dragStarted;
+
+        private Point _rowRightDragStart;
+        private TrashRowViewModel? _rightPressRow;
+        private bool _rightDragGesture;
+        private ContextMenu? _rightDragMenu;
+
+        /// <summary>拖拽松手时的待执行意图（Drop 只记，不执行——执行在 OLE 循环退出之后）。</summary>
+        private (IReadOnlyList<DragItem> Items, string? TargetId)? _pendingDrop;
+
+        private bool _dragCancelledByEscape;
+
+        private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _rowDragStart = e.GetPosition(this);
+            _dragStarted = false;
+            _pressRow = null;
+            _pressModifiers = Keyboard.Modifiers;
+            _pressClickCount = e.ClickCount;
+
+            _pressRow = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
+            if (ViewModel == null || _pressRow == null) return;
+            ViewModel.ActivatePane(TrashPane.Main);
+            if (_pressModifiers == ModifierKeys.None && !ViewModel.IsSelectedId(_pressRow.Id))
+                ViewModel.SetSelection(new[] { _pressRow.Id });   // 按下即反馈（与浏览页口径一致）
+        }
+
+        private void RowBorder_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _rowRightDragStart = e.GetPosition(this);
+            _rightPressRow = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
+            _rightDragGesture = false;
+            _rightDragMenu = null;
+        }
+
+        private void RowBorder_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.RightButton == MouseButtonState.Pressed)
+            {
+                if (_rightPressRow == null) return;
+                if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowRightDragStart)) return;
+                var rightRow = _rightPressRow;
+                _rightPressRow = null;
+                StartRowDrag((DependencyObject)sender, rightRow, rightButton: true);
+                return;
+            }
+
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (_pressRow == null) return;
+            if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowDragStart)) return;
+            _dragStarted = true;
+            StartRowDrag((DependencyObject)sender, _pressRow, rightButton: false);
+        }
+
+        /// <summary>抬起 = 点击完成：与按下同一次手势才重放选择语义（双击第二击不承载选择——与浏览页同守卫）。</summary>
+        private void RowBorder_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var row = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
+            var pressed = _pressRow;
+            var mods = _pressModifiers;
+            var clicks = _pressClickCount;
+            _pressRow = null;
+
+            if (ViewModel == null || row == null) return;
+            if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
+            ViewModel.SelectRowWithModifiers(row, mods);
+            ViewModel.SetContextRow(row);
+        }
+
+        private void RowBorder_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            if (_rightDragGesture)
+            {
+                e.Handled = true;   // 右键拖拽手势期间不弹行菜单（本次手势产物是我们自己的菜单）
+                return;
+            }
+
+            if ((sender as FrameworkElement)?.DataContext is not TrashRowViewModel row || ViewModel == null) return;
+            if (!ViewModel.IsSelectedId(row.Id)) ViewModel.SetSelection(new[] { row.Id });
+            ViewModel.SetContextRow(row);
+        }
+
+        // ================= 列表卡：空白点击清选中 + 空白落点（= 当前所在单元） =================
+
+        private bool _cardPressEmpty;
+        private int _cardPressClickCount;
+
+        private void ListCard_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var hit = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender))?.VisualHit;
+            _cardPressEmpty = hit == null || !IsTrashRow(hit);
+            _cardPressClickCount = e.ClickCount;
+        }
+
+        private void ListCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            ViewModel?.ActivatePane(TrashPane.Main);
+            if (!_cardPressEmpty || _cardPressClickCount > 1) return;
+            var hitTest = VisualTreeHelper.HitTest((Visual)sender, e.GetPosition((IInputElement)sender));
+            if (hitTest?.VisualHit == null || IsTrashRow(hitTest.VisualHit)) return;
+            ViewModel?.ClearSelection();
+        }
+
+        private static bool IsTrashRow(DependencyObject element)
+        {
+            while (element != null)
+            {
+                if (element is Border border && "TrashRow".Equals(border.Tag as string)) return true;
+                if (element is Visual) element = VisualTreeHelper.GetParent(element);
+                else break;
+            }
+            return false;
+        }
+
+        // ================= 拖拽（源 = 行 + 树节点；落点 = 单元行 / 树节点 / 面包屑段 / 列表空白） =================
+
+        private DragVisualAdorner? _dragVisual;
+
+        private void ShowDragVisual(IReadOnlyList<DragItem> items)
+        {
+            _dragVisual = DragVisualAdorner.Attach(this);
+            _dragCancelledByEscape = false;
+            if (_dragVisual == null) return;
+            _dragVisual.Show(items);
+            _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+            AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
+            AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
+        }
+
+        private void HideDragVisual()
+        {
+            if (_dragVisual == null) return;
+            RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
+            RemoveHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
+            _dragVisual.Detach();
+            _dragVisual = null;
+        }
+
+        private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
+        {
+            if (_dragVisual == null || !GetCursorPos(out var screen)) return;
+            _dragVisual.UpdatePosition(PointFromScreen(new Point(screen.X, screen.Y)));
+        }
+
+        /// <summary>拖拽中记录 Esc 取消（右键拖拽收尾据此不弹菜单；左键取消则结构性无意图）。</summary>
+        private void OnQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
+        {
+            if (e.EscapePressed) _dragCancelledByEscape = true;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out ScreenPoint point);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ScreenPoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        /// <summary>写入落点（视图侧唯一出口）：VM 负责高亮投影，浮层负责提示文案——两者永远同步。</summary>
+        private void ApplyDropTarget(TrashDropTarget? target)
+        {
+            ViewModel?.SetDropTarget(target);
+            _dragVisual?.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+        }
+
+        private void ClearDropTarget()
+        {
+            ViewModel?.ClearDropTarget();
+            _dragVisual?.UpdateHint(string.Empty);
+            Breadcrumb.SetDropHighlight(null);
+        }
+
+        private void StartRowDrag(DependencyObject source, TrashRowViewModel row, bool rightButton)
+        {
+            if (ViewModel == null) return;
+            var items = ViewModel.PrepareDragFromRow(row);
+            if (items.Count == 0) return;
+            StartDrag(source, items, rightButton);
+        }
+
+        /// <summary>一次拖拽的完整生命周期（行 / 树节点共用）：浮层 → OLE 循环 → 收尾。
+        /// 回收站**只允许移动**（不接 Ctrl 复制）：允许效果只有 Move。</summary>
+        private void StartDrag(DependencyObject source, IReadOnlyList<DragItem> items, bool rightButton)
+        {
+            _rightDragGesture = rightButton;
+            _pendingDrop = null;
+            ShowDragVisual(items);
+            DragDrop.DoDragDrop(source, new DataObject(new TrashDragPayload(items)), DragDropEffects.Move);
+            HideDragVisual();
+
+            var target = ViewModel?.DropTarget;
+            var drop = _pendingDrop;
+            _pendingDrop = null;
+            ClearDropTarget();
+
+            if (rightButton)
+            {
+                if (_dragCancelledByEscape)
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
+                    return;
+                }
+                ShowRightDragDropMenu(items, target);   // 松手不搬东西：用户选了才执行
+                return;
+            }
+
+            if (drop is { } pending)
+                _ = ViewModel?.DropItemsAsync(pending.Items, pending.TargetId);
+        }
+
+        /// <summary>右键拖拽松手菜单（回收站版）：只「移动到「X」」+ 取消（无复制——站内搬移不产生副本）。</summary>
+        private void ShowRightDragDropMenu(IReadOnlyList<DragItem> items, TrashDropTarget? target)
+        {
+            if (ViewModel == null || target == null)
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
+                return;
+            }
+
+            var menu = new ContextMenu { DataContext = ViewModel };
+            menu.Resources.Add(typeof(MenuItem), (Style)FindResource("LpMenuItem"));
+
+            var move = new MenuItem { Header = $"移动到「{target.Name}」" };
+            move.Click += (_, _) => _ = ViewModel.DropItemsAsync(items, target.UnitId);
+            menu.Items.Add(move);
+
+            var cancel = new MenuItem { Header = "取消" };
+            cancel.Click += (_, _) => menu.IsOpen = false;
+            menu.Items.Add(cancel);
+
+            menu.Closed += (_, _) =>
+            {
+                ClearDropTarget();
+                _rightDragGesture = false;
+                _rightDragMenu = null;
+            };
+
+            _rightDragMenu = menu;
+            menu.PlacementTarget = this;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>右键拖拽菜单里的动作项（纯构造，探针据此直调断言内容）。</summary>
+        private List<MenuItem> BuildRightDragMenuItems(IReadOnlyList<DragItem> items, string? targetUnitId, string targetName)
+        {
+            var move = new MenuItem { Header = $"移动到「{targetName}」" };
+            move.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetUnitId);
+            return new List<MenuItem> { move };
+        }
+
+        /// <summary>拖动中的载荷（与浏览页 browser 载荷同形；类型不同即可区分来源）。</summary>
+        public record TrashDragPayload(IReadOnlyList<DragItem> Items);
+
+        /// <summary>落点候选（唯一判定）：主栏**单元行** / 树**单元节点**（链接叶子与虚根不是落点）。</summary>
+        private static bool IsDropPositionCandidate(object? dataContext)
+            => dataContext is TrashRowViewModel { IsFolder: true } or TrashNode { IsLink: false, IsRoot: false };
+
+        private void RowBorder_DragOver(object sender, DragEventArgs e)
+        {
+            try
+            {
+                var row = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
+                var ok = IsDropPositionCandidate(row);
+                ApplyDropTarget(ok ? new TrashDropTarget(row!.Id, TrashPane.Main, row.Name) : null);
+                e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+            }
+            finally
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void RowBorder_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
+
+        private void RowBorder_Drop(object sender, DragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
+                var row = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
+                if (payload != null && IsDropPositionCandidate(row))
+                    _pendingDrop = (payload.Items, row!.Id);
+            }
+            finally
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void ListCard_DragOver(object sender, DragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
+                if (payload == null || ViewModel == null) return;
+                ApplyDropTarget(new TrashDropTarget(ViewModel.CurrentUnitId, TrashPane.Main, ViewModel.CurrentUnitDisplayName));
+                e.Effects = DragDropEffects.Move;
+            }
+            finally
+            {
+                e.Handled = true;
+            }
+        }
+
+        private void ListCard_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
+
+        private void ListCard_Drop(object sender, DragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
+                if (payload != null && ViewModel != null)
+                    _pendingDrop = (payload.Items, ViewModel.CurrentUnitId);
+            }
+            finally
+            {
+                e.Handled = true;
+            }
+        }
+
+        // ================= 树（FolderTreePanel 事件转发） =================
+
+        private void FolderTreePanel_NodeSelected(object? sender, object? node)
+        {
+            if (ViewModel == null || node is not TrashNode n) return;
+            ViewModel.ActivatePane(TrashPane.Tree);
+            _ = ViewModel.SelectTreeNodeAsync(n);
+        }
+
+        private void FolderTreePanel_BackgroundClicked(object? sender, EventArgs e)
+        {
+            ViewModel?.ActivatePane(TrashPane.Tree);
+            ViewModel?.ClearSelection();
+        }
+
+        private void FolderTreePanel_NodeDragStartRequested(object? sender, TreeItemDragStartEventArgs e)
+        {
+            if (ViewModel == null || e.Node is not TrashNode node || e.Source == null) return;
+            var items = ViewModel.PrepareDragFromNode(node);
+            if (items.Count == 0) return;
+            StartDrag(e.Source, items, e.RightButton);
+        }
+
+        private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
+        {
+            try
+            {
+                var node = e.Node as TrashNode;
+                var ok = IsDropPositionCandidate(node);
+                ApplyDropTarget(ok ? new TrashDropTarget(node!.Id, TrashPane.Tree, node.Name) : null);
+                e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e) => ClearDropTarget();
+
+        private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Args.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
+                var node = e.Node as TrashNode;
+                if (payload != null && IsDropPositionCandidate(node))
+                    _pendingDrop = (payload.Items, node!.Id);
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        // ================= 面包屑（编辑态 + 第三落点区） =================
+
+        private void Breadcrumb_EditRequested(object? sender, EventArgs e)
+            => ViewModel?.EnterPathEditCommand.Execute(null);
+
+        private void Breadcrumb_EditFocusLost(object? sender, EventArgs e)
+        {
+            if (ViewModel is { IsPathEditing: true })
+                ViewModel.CancelPathEditCommand.Execute(null);
+        }
+
+        private void Breadcrumb_EditPopupClosed(object? sender, EventArgs e)
+        {
+            if (ViewModel is { IsPathEditing: true })
+                ViewModel.CancelPathEditCommand.Execute(null);
+        }
+
+        private void Breadcrumb_CandidateMoveRequested(object? sender, CandidateMoveEventArgs e)
+            => ViewModel?.MoveCandidate(e.Delta);
+
+        private void Breadcrumb_CandidateChosen(object? sender, string? name)
+        {
+            if (!string.IsNullOrEmpty(name)) ViewModel?.ChooseCandidate(name);
+        }
+
+        private void Breadcrumb_CrumbDragOver(object? sender, CrumbDragEventArgs e)
+        {
+            try
+            {
+                if (ViewModel == null) return;
+                var (id, name) = CrumbTargetOf(e.Segment);
+                var ok = id != null || e.Segment is TrashCrumbViewModel { UnitId: null };   // 根段 = 回收站根（合法落点）
+                ApplyDropTarget(ok ? new TrashDropTarget(id, TrashPane.Breadcrumb, name) : null);
+                Breadcrumb.SetDropHighlight(e.Segment);
+                e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        private void Breadcrumb_CrumbDragLeave(object? sender, CrumbDragEventArgs e) => ClearDropTarget();
+
+        private void Breadcrumb_CrumbDrop(object? sender, CrumbDragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Args.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
+                if (payload == null || ViewModel == null) return;
+                var (id, _) = CrumbTargetOf(e.Segment);
+                _pendingDrop = (payload.Items, id);
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        private static (string? Id, string Name) CrumbTargetOf(object? segment)
+            => segment is TrashCrumbViewModel c ? (c.UnitId, c.Name) : (null, string.Empty);
+
+        // ================= Shift+F10 / 菜单键：当前选中行的右键菜单 =================
+
+        private void OnContextMenuRequested(object? sender, EventArgs e)
+        {
+            var row = ViewModel?.SelectedRows.FirstOrDefault();
+            if (row == null) return;
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                if (TrashTable.RowsList.ItemContainerGenerator.ContainerFromItem(row) is not DependencyObject container) return;
+                var border = FindTaggedBorder(container);
+                if (border?.ContextMenu is not { } menu) return;
+                menu.PlacementTarget = border;
+                menu.IsOpen = true;
+            }));
+        }
+
+        private static Border? FindTaggedBorder(DependencyObject root)
+        {
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is Border b && "TrashRow".Equals(b.Tag as string)) return b;
+                if (FindTaggedBorder(child) is { } hit) return hit;
+            }
+            return null;
+        }
+
+        // ================= 只读详情页（链接） =================
+
+        private TrashRowViewModel? _detailRow;
+
+        private void OnShowLinkDetailRequested(object? sender, TrashRowViewModel row)
+        {
+            _detailRow = row;
+            DetailName.Text = row.Name;
+            DetailUrl.Text = row.Url ?? string.Empty;
+            DetailOrigin.Text = row.OriginText;
+            DetailDeletedAt.Text = row.DeletedText;
+            DetailId.Text = row.Id;
+
+            var favicon = FaviconService.LoadFromCache(row.FaviconUrl);
+            if (favicon == null && !string.IsNullOrWhiteSpace(row.FaviconUrl))
+            {
+                var faviconUrl = row.FaviconUrl;
                 _ = Task.Run(async () =>
                 {
                     try { await FaviconStore.EnsureCachedAsync(faviconUrl); } catch { }
                     return FaviconService.LoadFromCache(faviconUrl);
-                }).ContinueWith(t => System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                }).ContinueWith(t => Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    if (_detailEntry?.Id != entry.Id) return;   // 期间已切到别的条目
+                    if (_detailRow?.Id != row.Id) return;   // 期间已切到别的条目
                     var bmp = t.Result;
                     DetailFavicon.Source = bmp;
                     DetailFavicon.Visibility = bmp != null ? Visibility.Visible : Visibility.Collapsed;
@@ -183,190 +766,43 @@ namespace LinkPocket.Views
             LinkDetailOverlay.Visibility = Visibility.Visible;
         }
 
-        private void DetailBack_Click(object sender, RoutedEventArgs e)
-            => LinkDetailOverlay.Visibility = Visibility.Collapsed;
+        private void CloseLinkDetail()
+        {
+            LinkDetailOverlay.Visibility = Visibility.Collapsed;
+            _detailRow = null;
+        }
+
+        private void DetailBack_Click(object sender, RoutedEventArgs e) => CloseLinkDetail();
 
         private void DetailCopyUrl_Click(object sender, RoutedEventArgs e)
         {
-            // 读数据源而非 UI 元素（未来 URL 截断展示也不受影响）
-            try { if (!string.IsNullOrEmpty(_detailEntry?.Url)) Clipboard.SetText(_detailEntry.Url); } catch { /* 剪贴板被占用时不阻断 */ }
-        }
-
-        /// <summary>表格列定义（工厂模式：CellFactory + SortKey，表头可点击排序）。</summary>
-        private void SetupTrashTable()
-        {
-            TrashTable.Columns = new[]
+            try
             {
-                new DataTableColumn
-                {
-                    Field = "name", Label = "名称", Width = -1,
-                    SortKey = r => (IComparable)EntryName((TrashEntryDto)r),
-                    CellFactory = r => BuildNameCell((TrashEntryDto)r)
-                },
-                new DataTableColumn
-                {
-                    Field = "type", Label = "类型", Width = 90,
-                    SortKey = r => (IComparable)((TrashEntryDto)r).EntryType,
-                    CellFactory = r => TextCell(((TrashEntryDto)r).EntryType == LinkPocket.Contracts.TrashEntryType.Folder ? "文件夹" : "链接", 12.5)
-                },
-                new DataTableColumn
-                {
-                    Field = "origin_path", Label = "原位置", Width = -2,
-                    SortKey = r => ((TrashEntryDto)r).OriginPath ?? "",
-                    CellFactory = r => TextCell(((TrashEntryDto)r).OriginPath ?? "全部书签", 12.5)
-                },
-                new DataTableColumn
-                {
-                    Field = "deleted_at", Label = "删除时间", Width = 150,
-                    SortKey = r => (IComparable)((TrashEntryDto)r).DeletedAt,
-                    CellFactory = r => TextCell(
-                        ((TrashEntryDto)r).DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
-                },
-            };
-        }
-
-        private static string EntryName(TrashEntryDto e) => string.IsNullOrEmpty(e.Name) ? (e.Url ?? "") : e.Name;
-
-        /// <summary>名称列：图标（文件夹琥珀灰化 / favicon 或链接图标）+ 名称。</summary>
-        private FrameworkElement BuildNameCell(TrashEntryDto entry)
-        {
-            var panel = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Orientation = Orientation.Horizontal };
-
-            var iconGrid = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
-
-            if (entry.EntryType == LinkPocket.Contracts.TrashEntryType.Folder)
-            {
-                iconGrid.Children.Add(new M3Icon
-                {
-                    Kind = LinkPocket.Contracts.TrashEntryType.Folder, Width = 16, Height = 16,
-                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
-                    Opacity = 0.55,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                });
+                if (!string.IsNullOrEmpty(_detailRow?.Url)) Clipboard.SetText(_detailRow.Url);
             }
-            else
+            catch { /* 剪贴板被占用时不阻断 */ }
+        }
+
+        // ================= 右键侧栏 / 永久删除按钮 =================
+
+        private readonly TrashSidebarModel _sidebar = new();
+
+        private void UpdateSidebar()
+        {
+            var vm = ViewModel;
+            if (vm == null)
             {
-                var faviconBmp = FaviconService.LoadFromCache(entry.FaviconUrl);
-                var faviconImg = new Image
-                {
-                    Stretch = Stretch.Uniform,
-                    Source = faviconBmp,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                System.Windows.Media.RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
-                if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
-
-                var linkIcon = new M3Icon
-                {
-                    Kind = "link-variant", Width = 15, Height = 15,
-                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
-                    Opacity = 0.55,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                if (faviconBmp != null) linkIcon.Visibility = Visibility.Collapsed;
-
-                iconGrid.Children.Add(faviconImg);
-                iconGrid.Children.Add(linkIcon);
+                _sidebar.Clear();
+                return;
             }
 
-            var text = new TextBlock
-            {
-                Text = EntryName(entry),
-                FontSize = 13.5,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("OnSurface"),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-
-            panel.Children.Add(iconGrid);
-            panel.Children.Add(text);
-            return panel;
+            var selected = vm.SelectedRows.ToList();
+            if (selected.Count == 0) _sidebar.Clear();
+            else if (selected.Count == 1) _sidebar.Show(selected[0]);
+            else _sidebar.ShowMulti(selected.Count);
         }
 
-        private TextBlock TextCell(string text, double fontSize) => new()
-        {
-            Text = text,
-            FontSize = fontSize,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-
-        /// <summary>加载 + 渲染：VM 装载后刷新空态/引导/面包屑/侧栏（表行由 ItemsSource 绑定自动更新）。
-    /// S4：详情页展示的条目如果已经不在当前集合（被外部 purge），关闭详情页避免残留旧数据。</summary>
-    public async Task RefreshAsync()
-        {
-            if (Vm == null) return;
-            EnsureSidebarSubscription();
-            await Vm.LoadAsync();
-
-            // 详情页打开的条目若已被删除 → 关闭详情页
-            if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailEntry != null)
-            {
-                var stillThere = Vm.Entries.Any(x => x.Id == _detailEntry.Id);
-                if (!stillThere)
-                {
-                    LinkDetailOverlay.Visibility = Visibility.Collapsed;
-                    _detailEntry = null;
-                }
-            }
-
-            UpdateSidebar();
-            RefreshCrumbs();
-            RenderStates();
-        }
-
-        private void RenderStates()
-        {
-            var vm = Vm;
-            if (vm == null) return;
-            // EmptyContent 只在无行时显示；HasItems 分支永远不可见（死代码），只保留真空态
-            TrashTable.EmptyContent = BuildState("delete-outline", "回收站是空的",
-                "删除的书签和文件夹会出现在这里，并保留删除时的位置");
-        }
-
-        /// <summary>空态/引导占位（MD3E 徽章）。</summary>
-        private FrameworkElement BuildState(string iconKind, string title, string? subtitle)
-        {
-            var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 56, 0, 0) };
-            var badge = new Border
-            {
-                Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-                Background = (Brush)FindResource("SecondaryContainer"),
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            badge.Child = new M3Icon
-            {
-                Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)FindResource("OnSecondaryContainer"),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
-            };
-            sp.Children.Add(badge);
-            sp.Children.Add(new TextBlock
-            {
-                Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("OnSurface"),
-                HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
-            });
-            if (subtitle != null)
-                sp.Children.Add(new TextBlock
-                {
-                    Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
-                    Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.85,
-                    HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
-                    MaxWidth = 420, TextAlignment = TextAlignment.Center
-                });
-            return sp;
-        }
-
-        /// <summary>永久删除：确认/失败提示都在 RecycleBinViewModel.PurgeCommand（对话框端口）。</summary>
         private void TrashPurge_Click(object sender, RoutedEventArgs e)
-        {
-            Vm?.PurgeCommand.Execute(null);
-        }
+            => ViewModel?.PurgeSelectionCommand.Execute(null);
     }
 }

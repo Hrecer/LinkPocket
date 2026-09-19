@@ -256,7 +256,9 @@
                         <StackPanel Orientation="Horizontal">
                             <StackPanel.Style>
                                 <Style TargetType="StackPanel">
-                                    <Setter Property="ContextMenu" Value="{StaticResource TreeContextMenu}"/>
+                                    <!-- 节点右键菜单 = 控件级插槽（NodeMenu DP；缺省 = 本控件内置的浏览页菜单）。
+                                         回收站传自己的菜单（打开/永久删除）；链接叶子一律无菜单（IsLink 触发器置空）。 -->
+                                    <Setter Property="ContextMenu" Value="{Binding NodeMenu, ElementName=Root}"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsLink}" Value="True">
                                             <Setter Property="ContextMenu" Value="{x:Null}"/>
