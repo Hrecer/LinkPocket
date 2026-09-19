@@ -59,16 +59,12 @@ namespace LinkPocket.Views
             };
 
             // 切到本页（全局导航切页）→ 键盘焦点收进本页（快捷键按焦点路由）
+            // 右栏详情栏不在此刷新：它绑定 VM 的 Details（选中集合的投影），选中一变即自动更新。
             IsVisibleChanged += (_, _) =>
             {
-                if (IsVisible)
-                {
-                    FocusPage();
-                    UpdateSidebar();
-                }
+                if (IsVisible) FocusPage();
             };
 
-            TrashSidebar.DataContext = _sidebar;
             TrashTable.RowClick += (_, item) =>
             {
                 if (ViewModel is { } vm && item is TrashRowViewModel row)
@@ -83,11 +79,10 @@ namespace LinkPocket.Views
             };
         }
 
-        /// <summary>Shell 端口：切到回收站页时装载（导航加载口径——亮遮罩 + 行入场动画，并同步只读详情栏）。</summary>
+        /// <summary>Shell 端口：切到回收站页时装载（导航加载口径——亮遮罩 + 行入场动画）。</summary>
         public async Task RefreshAsync()
         {
             if (ViewModel is { } vm) await vm.LoadAsync(navigating: true);
-            UpdateSidebar();
         }
 
         private TrashViewModel? _wiredVm;
@@ -136,7 +131,6 @@ namespace LinkPocket.Views
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
                 EnsurePageFocus();
-                UpdateSidebar();
                 // 详情页展示的条目若已被永久删除 → 关闭覆盖层，不留残留旧数据
                 if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailRow != null && ViewModel is { } vm)
                 {
@@ -783,24 +777,8 @@ namespace LinkPocket.Views
             catch { /* 剪贴板被占用时不阻断 */ }
         }
 
-        // ================= 右键侧栏 / 永久删除按钮 =================
-
-        private readonly TrashSidebarModel _sidebar = new();
-
-        private void UpdateSidebar()
-        {
-            var vm = ViewModel;
-            if (vm == null)
-            {
-                _sidebar.Clear();
-                return;
-            }
-
-            var selected = vm.SelectedRows.ToList();
-            if (selected.Count == 0) _sidebar.Clear();
-            else if (selected.Count == 1) _sidebar.Show(selected[0]);
-            else _sidebar.ShowMulti(selected.Count);
-        }
+        // ================= 永久删除按钮 =================
+        // （右栏详情栏不在此刷新：数据源 = VM 的 Details，由 VM 在选中投影点重建）
 
         private void TrashPurge_Click(object sender, RoutedEventArgs e)
             => ViewModel?.PurgeSelectionCommand.Execute(null);

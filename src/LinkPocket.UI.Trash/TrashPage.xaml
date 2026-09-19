@@ -377,10 +377,10 @@
                 </Grid>
             </Border>
 
-            <!-- 右栏：只读详情栏（DetailSidebar；构造时由 Shell 注入只读数据模型） -->
+            <!-- 右栏：只读详情栏（DetailSidebar；数据源 = VM 的 Details —— 选中集合的投影，随选中自动刷新） -->
             <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
                     CornerRadius="24" Margin="0,0,8,8">
-                <views:DetailSidebar x:Name="TrashSidebar"/>
+                <views:DetailSidebar x:Name="TrashSidebar" DataContext="{Binding Details}"/>
             </Border>
         </Grid>
 

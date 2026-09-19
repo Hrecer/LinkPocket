@@ -430,8 +430,19 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Ctrl+点击 可增减选择" FontSize="11" Opacity="0.45" VerticalAlignment="Center"
                                    Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="删除所选"
+                        <Button Grid.Column="1" Tag="删除所选"
                                 Width="32" Height="32" Margin="6,0,0,0" Command="{Binding DeleteCommand}">
+                            <!-- 只读详情栏（回收站）不提供任何动作入口：多选的「删除所选」同样隐藏
+                                 （永久删除仍由页面工具栏 WarnPill 与右键菜单负责，见 BEHAVIOR-CONTRACT §5） -->
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource NavIconButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsReadOnly}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
                                        Foreground="{StaticResource WarnBg}"/>
                         </Button>

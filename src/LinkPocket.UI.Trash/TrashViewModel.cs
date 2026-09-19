@@ -69,6 +69,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     {
         _client = client;
         _ports = ports;
+        Details = new TrashSidebarModel();
 
         GoBackCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoForward()), () => Controller.CanGoForward);
@@ -183,6 +184,13 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// <summary>视图请求：打开只读详情页（视图提供覆盖层）。</summary>
     public event EventHandler<TrashRowViewModel>? ShowLinkDetailRequested;
 
+    /// <summary>
+    /// 右栏只读详情栏（共享 <see cref="Views.DetailSidebar"/> 的数据源）：与浏览页 <c>BrowserViewModel.Details</c>
+    /// **同构**——它是**选中集合的投影**，在唯一投影点 <see cref="ApplySelectionToView"/> 里按选中项数重建
+    /// （空占位 / 单选详情 / 多选计数），视图只做绑定，绝不另持一份状态。
+    /// </summary>
+    public TrashSidebarModel Details { get; }
+
     // ================= 选中（唯一事实来源 + 投影） =================
 
     private readonly HashSet<string> _selectedIds = new(StringComparer.Ordinal);
@@ -202,7 +210,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// <summary>当前选中行（主栏视角；顺序 = 行序）。</summary>
     public IEnumerable<TrashRowViewModel> SelectedRows => Rows.Where(r => _selectedIds.Contains(r.Id));
 
-    /// <summary>选中投影到行 + 树（唯一写入入口之后的唯一投影点）。</summary>
+    /// <summary>选中投影到行 + 树 + 右栏详情栏（唯一写入入口之后的唯一投影点）。</summary>
     private void ApplySelectionToView()
     {
         foreach (var r in Rows) r.InvalidateIsSelected();
@@ -210,7 +218,17 @@ public partial class TrashViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectionCount));
         OnPropertyChanged(nameof(SelectionInfoText));
+        ProjectDetails();
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    /// <summary>选中 → 右栏详情栏投影：空占位 / 单选详情 / 多选计数（同一投影点，视图不另设刷新入口）。</summary>
+    private void ProjectDetails()
+    {
+        var selected = SelectedRows.ToList();
+        if (selected.Count == 0) Details.Clear();
+        else if (selected.Count == 1) Details.Show(selected[0]);
+        else Details.ShowMulti(selected);
     }
 
     /// <summary>写入选中集合的**唯一入口**（覆盖式）：空集合 = 清空。</summary>

@@ -207,6 +207,54 @@ public class TrashViewModelTests
     }
 
     [Fact]
+    public async Task 详情栏_选中投影_单选多选与清空同步()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var (unitA, _, l0, _, _) = await SeedAsync(client);
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+
+            // 空选中 = 空占位（右栏 = 选中集合的投影，视图不另设刷新入口）
+            Assert.True(vm.Details.IsPlaceholder);
+
+            // 单选单元：只读 + 文件夹态 + 类型 / 原位置 / 删除时间 / ID
+            var rowA = vm.Rows.Single(r => r.Id == unitA);
+            vm.SelectRowWithModifiers(rowA, ModifierKeys.None);
+            Assert.True(vm.Details.HasSelection && vm.Details.IsSingle && vm.Details.IsFolder);
+            Assert.True(vm.Details.IsReadOnly);
+            Assert.Equal(rowA.Name, vm.Details.DisplayName);
+            Assert.Equal(unitA, vm.Details.IdText);
+            Assert.Equal(new[] { "类型", "原位置", "删除时间", "ID" }, vm.Details.Rows.Select(r => r.Label));
+
+            // 单选书签：链接态 + 网址行 + 网址卡复制命令已接（原先是死按钮）
+            var row0 = vm.Rows.Single(r => r.Id == l0);
+            vm.SelectRowWithModifiers(row0, ModifierKeys.None);
+            Assert.True(vm.Details.IsLink && !vm.Details.IsFolder);
+            Assert.Equal(row0.Url, vm.Details.UrlText);
+            Assert.Contains(vm.Details.Rows, r => r.Label == "网址");
+            Assert.NotNull(vm.Details.CopyUrlCommand);
+
+            // 多选：只报项数与类型分布（不再恒为 0）
+            vm.SetSelection(new[] { unitA, l0 });
+            Assert.True(vm.Details.IsMulti);
+            Assert.Equal(2, vm.Details.SelectedTotal);
+            Assert.Equal(1, vm.Details.SelectedFolders);
+            Assert.Equal(1, vm.Details.SelectedLinks);
+            Assert.Empty(vm.Details.Rows);
+
+            // 清空 = 回空占位
+            vm.ClearSelectionCommand.Execute(null);
+            Assert.True(vm.Details.IsPlaceholder);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 站内搬移_链接移入单元_如实计数_成环拒绝()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

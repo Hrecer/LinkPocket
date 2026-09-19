@@ -6,7 +6,8 @@ using LinkPocket.Services;
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 回收站详情栏模型（<see cref="Views.DetailSidebar"/> 的数据源）：
+/// 回收站详情栏模型（<see cref="Views.DetailSidebar"/> 的数据源；由 <see cref="TrashViewModel.Details"/> 持有，
+/// 在选中投影点按选中项数重建 —— 视图只绑定，不另持一份状态）：
 /// 只读 —— 展示 类型 / 原位置 / 删除时间 / ID（链接附网址卡与 favicon），IsReadOnly = true
 /// 隐藏「快捷操作」卡（不提供打开 / 编辑 / 删除入口；永久删除仍由页面工具栏与右键菜单负责）。
 /// 无还原功能，亦不在详情栏加入任何还原入口（用户定稿）。
@@ -34,6 +35,7 @@ public class TrashSidebarModel : DetailSidebarModel
         {
             try { System.Windows.Clipboard.SetText(UrlText); } catch { /* 剪贴板被占用时不阻断 */ }
         }, () => !string.IsNullOrEmpty(UrlText));
+        CopyUrlCommand = _copyCommand;   // 网址卡的复制按钮（与行内「复制网址」同一条命令）
 
         var rows = new List<DetailSidebarRow>
         {
@@ -82,18 +84,21 @@ public class TrashSidebarModel : DetailSidebarModel
         RaiseAll();
     }
 
-    /// <summary>多选态：只报项数（批量可用动作 = 永久删除，由工具栏/Delete 键承载）。</summary>
-    public void ShowMulti(int count)
+    /// <summary>多选态：只报项数与类型分布（批量可用动作 = 永久删除，由工具栏/Delete 键承载）。</summary>
+    public void ShowMulti(IReadOnlyList<TrashRowViewModel> rows)
     {
         HasSelection = true;
         IsMulti = true;
         IsFolder = false;
         IsReadOnly = true;
-        DisplayName = $"已选中 {count} 项";
+        DisplayName = $"已选中 {rows.Count} 项";
         IdText = string.Empty;
         UrlText = string.Empty;
         DescriptionText = string.Empty;
         Favicon = null;
+        SelectedTotal = rows.Count;
+        SelectedFolders = rows.Count(r => r.IsFolder);
+        SelectedLinks = SelectedTotal - SelectedFolders;
         SetRows(Array.Empty<DetailSidebarRow>());
         RaiseAll();
     }
