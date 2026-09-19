@@ -45,15 +45,6 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
         if (snapshot != null) db.TrashedLinks.Remove(snapshot);
     }
 
-    public async Task<bool> MoveLinkAsync(LinkId id, TrashFolderId? unit, CancellationToken ct)
-    {
-        // 跟踪实体（非 AsNoTracking）：只改归属，变更由工作单元提交
-        var snapshot = await db.TrashedLinks.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
-        if (snapshot == null) return false;
-        snapshot.TrashFolderId = unit?.Value;
-        return true;
-    }
-
     public async Task<TrashedFolder?> FindFolderAsync(TrashFolderId id, CancellationToken ct)
         => await db.TrashedFolders.AsNoTracking().FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct);
 
@@ -74,14 +65,5 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
     {
         var unit = await db.TrashedFolders.FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct);
         if (unit != null) db.TrashedFolders.Remove(unit);
-    }
-
-    public async Task<bool> MoveFolderAsync(TrashFolderId id, TrashFolderId? parent, CancellationToken ct)
-    {
-        // 跟踪实体（非 AsNoTracking）：只改层级，变更由工作单元提交
-        var unit = await db.TrashedFolders.FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct);
-        if (unit == null) return false;
-        unit.ParentTrashFolderId = parent?.Value;
-        return true;
     }
 }

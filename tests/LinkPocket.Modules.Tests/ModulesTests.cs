@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：56 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：55 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_56_Commands()
+    public void Describe_Returns_All_55_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(56, manifest.Commands.Count);
-        Assert.Equal(56, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(55, manifest.Commands.Count);
+        Assert.Equal(55, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -26,7 +26,7 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(14, engine.Describe("folders").Commands.Count);
         Assert.Equal(16, engine.Describe("links").Commands.Count);
-        Assert.Equal(10, engine.Describe("trash").Commands.Count);  // + trash.restore_unit（还原）/ trash.overview / trash.move（回收站内搬移）
+        Assert.Equal(9, engine.Describe("trash").Commands.Count);  // + trash.restore_unit（还原）/ trash.overview
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
 
         var contents = engine.Describe("folders").Commands.Single(c => c.Name == "folders.contents");
@@ -863,66 +863,6 @@ public class TrashModuleTests
             t => t.TrashFolderId == parent.FolderId);
     }
 
-    [Fact]
-    public async Task Move_Link_Into_Unit_And_Back_To_Root_Is_Not_Restore_Nor_Undo()
-    {
-        var (engine, _, _) = TestHost.Create();
-        var folder = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "单元" })).Data!;
-        await engine.ExecuteAsync<LinkDto>("links.create",
-            new { url = "https://in.example/", title = "内", list_id = folder.FolderId });
-        var loose = (await engine.ExecuteAsync<LinkDto>("links.create",
-            new { url = "https://loose.example/", title = "散" })).Data!;
-
-        await engine.ExecuteAsync<object>("links.trash", new { id = loose.LinkId });
-        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = folder.FolderId });
-        var unitId = (await engine.QueryAsync<List<TrashFolderDto>>("trash.tree", null)).Single().TrashFolderId;
-
-        // 移入单元：归属变化 + 单元子树计数 +1；主表不动（搬移 ≠ 还原）
-        // （"不入撤销栈"属编排层语义，由 App.Tests 端到端断言；本工程不挂编排层）
-        await engine.ExecuteAsync<JsonElement>("trash.move",
-            new { id = loose.LinkId, is_folder = false, target_trash_folder_id = unitId });
-        var overview = await engine.QueryAsync<TrashOverviewDto>("trash.overview", null);
-        Assert.Equal(unitId, Assert.Single(overview.Links, l => l.Id == loose.LinkId).TrashFolderId);
-        Assert.Equal(2, Assert.Single(overview.Folders, f => f.TrashFolderId == unitId).LinkCount);
-        Assert.Equal(0, (await engine.QueryAsync<LinkCountsDto>("links.stats", null)).Total);
-
-        // 移出到根（目标缺省 = 回收站根 = "单独删除"位）：trash_folder_id 回到 null
-        await engine.ExecuteAsync<JsonElement>("trash.move", new { id = loose.LinkId, is_folder = false });
-        overview = await engine.QueryAsync<TrashOverviewDto>("trash.overview", null);
-        Assert.Null(Assert.Single(overview.Links, l => l.Id == loose.LinkId).TrashFolderId);
-        Assert.Equal(1, Assert.Single(overview.Folders, f => f.TrashFolderId == unitId).LinkCount);
-
-        // 未知目标 / 未知 id → LP.STATE.001
-        var badTarget = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<JsonElement>(
-            "trash.move", new { id = loose.LinkId, is_folder = false, target_trash_folder_id = "no-such-unit" }));
-        Assert.Equal(EngineErrors.EntityNotFound, badTarget.Error.Code);
-        var badId = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<JsonElement>(
-            "trash.move", new { id = "no-such-link", is_folder = false }));
-        Assert.Equal(EngineErrors.EntityNotFound, badId.Error.Code);
-    }
-
-    [Fact]
-    public async Task Move_Unit_Rejects_Cycle_And_Allows_Reparent_To_Root()
-    {
-        var (engine, _, _) = TestHost.Create();
-        var a = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" })).Data!;
-        var b = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.FolderId })).Data!;
-        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = a.FolderId });
-
-        // 成环即拒绝：移入自己的子单元 / 移入自己（与 folders.move 同判据）
-        var intoChild = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<JsonElement>(
-            "trash.move", new { id = a.FolderId, is_folder = true, target_trash_folder_id = b.FolderId }));
-        Assert.Equal(EngineErrors.CycleDetected, intoChild.Error.Code);
-        var intoSelf = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<JsonElement>(
-            "trash.move", new { id = a.FolderId, is_folder = true, target_trash_folder_id = a.FolderId }));
-        Assert.Equal(EngineErrors.CycleDetected, intoSelf.Error.Code);
-
-        // 合法：子单元 B 移出到回收站根（A 不受影响）
-        await engine.ExecuteAsync<JsonElement>("trash.move", new { id = b.FolderId, is_folder = true });
-        var overview = await engine.QueryAsync<TrashOverviewDto>("trash.overview", null);
-        Assert.Null(Assert.Single(overview.Folders, f => f.TrashFolderId == b.FolderId).ParentTrashFolderId);
-        Assert.Contains(overview.Folders, f => f.TrashFolderId == a.FolderId);
-    }
 }
 
 public class SearchModuleTests

@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace LinkPocket.Contracts;
 
-/// <summary>EngineClient · trash / search 域（7 + 2 命令，参数与 Handler 逐一对齐）。</summary>
+/// <summary>EngineClient · trash / search 域（参数与 Handler 逐一对齐；trash.restore_unit 暂无 UI 消费者，故未列）。</summary>
 public sealed partial class EngineClient
 {
     /// <summary>回收站平铺条目（单独删除书签 + 单元根，按删除时间倒序）。查询直接返回数据本体。</summary>
@@ -22,12 +22,6 @@ public sealed partial class EngineClient
     /// <summary>回收站页快照（全量单元 + 全量书签快照，每项携归属单元 trash_folder_id；null = 根级）。</summary>
     public Task<TrashOverviewDto> TrashOverviewAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<TrashOverviewDto>("trash.overview", null, o, ct);
-
-    /// <summary>回收站内搬移（书签快照 / 单元；targetTrashFolderId 缺省 = 回收站根；不是还原、无撤销）。</summary>
-    public Task<CommandResult<JsonElement>> TrashMoveAsync(string id, bool isFolder,
-        string? targetTrashFolderId = null, CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<JsonElement>("trash.move",
-            new { id, is_folder = isFolder, target_trash_folder_id = targetTrashFolderId }, o, ct);
 
     /// <summary>还原单条链接（保留原 ID；to = origin（缺省）回删除前位置 / root 落根）。</summary>
     public Task<CommandResult<TrashRestoreResult>> TrashRestoreAsync(string id, string to = "origin",

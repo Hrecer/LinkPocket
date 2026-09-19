@@ -24,10 +24,6 @@ public interface ITrashRepository
     Task<TrashedLink> AddLinkAsync(TrashedLink snapshot, CancellationToken ct);
     Task RemoveLinkAsync(LinkId id, CancellationToken ct);
 
-    /// <summary>搬移链接快照到目标单元（<paramref name="unit"/> = null → 回收站根，即"单独删除"位）。
-    /// 只改归属（trash_folder_id），其余快照字段（原位置/时间戳等）一律不动；提交权归工作单元。返回是否命中。</summary>
-    Task<bool> MoveLinkAsync(LinkId id, TrashFolderId? unit, CancellationToken ct);
-
     // —— 文件夹单元 ——
     Task<TrashedFolder?> FindFolderAsync(TrashFolderId id, CancellationToken ct);
 
@@ -39,8 +35,4 @@ public interface ITrashRepository
 
     Task<TrashedFolder> AddFolderAsync(TrashedFolder unit, CancellationToken ct);
     Task RemoveFolderAsync(TrashFolderId id, CancellationToken ct);
-
-    /// <summary>搬移单元到目标父单元（<paramref name="parent"/> = null → 回收站根）。
-    /// 只改层级（parent_id），名称/原位置等快照字段一律不动；调用方负责成环校验。返回是否命中。</summary>
-    Task<bool> MoveFolderAsync(TrashFolderId id, TrashFolderId? parent, CancellationToken ct);
 }
