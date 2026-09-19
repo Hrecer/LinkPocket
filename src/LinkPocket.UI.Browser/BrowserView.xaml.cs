@@ -108,6 +108,48 @@ public partial class BrowserView : UserControl
     }
 
     /// <summary>
+    /// 类级处理器：**任何**右键菜单打开 → 收掉就地改名的编辑态；菜单关闭 → 落地挂起的改名提交。
+    ///
+    /// <para>为什么用类级（静态注册）而不是页面级 <c>ContextMenuOpening</c>：后者只在**鼠标右键消息**路径触发，
+    /// 覆盖不到 Shift+F10 / 菜单键（那条路径是我们自己 <c>IsOpen = true</c> 打开的）——实测探针即因此漏检；
+    /// 而 <c>Opened/Closed</c> 覆盖所有打开路径（右键、键盘、程序直设），一处监听即全。</para>
+    /// <para>关闭时才提交：提交会写库 → 事件刷新重建行 → 承载菜单的行被销毁 → 菜单被连带关掉（"菜单一闪就没了"）。</para>
+    /// </summary>
+    static BrowserView()
+    {
+        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.OpenedEvent,
+            new RoutedEventHandler(OnAnyContextMenuOpened));
+        EventManager.RegisterClassHandler(typeof(ContextMenu), ContextMenu.ClosedEvent,
+            new RoutedEventHandler(OnAnyContextMenuClosed));
+    }
+
+    private static void OnAnyContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (FindHostViewModel(sender) is not { } vm) return;
+        // 豁免改名编辑框自身的右键菜单（TextBox 自带的剪切/复制/粘贴）：在编辑框里右键不结束改名
+        if (sender is ContextMenu menu && InlineNameEditor.IsWithin(menu.PlacementTarget)) return;
+        vm.CommitActiveRename();
+    }
+
+    private static void OnAnyContextMenuClosed(object sender, RoutedEventArgs e)
+        => FindHostViewModel(sender)?.FlushDeferredCommit();
+
+    /// <summary>
+    /// 从菜单反查浏览页 VM：行菜单 DataContext = 行 VM（<c>Host</c>）；树菜单 = 节点（<c>Host</c>）；
+    /// 列表空白菜单 = 页面 VM。其它页面的菜单反查为 null → 本处理器无操作。
+    /// </summary>
+    private static BrowserViewModel? FindHostViewModel(object? sender)
+        => sender is not ContextMenu menu
+            ? null
+            : menu.DataContext switch
+            {
+                BrowserViewModel vm => vm,
+                BrowserRowViewModel row => row.Host,
+                FolderNode node => node.Host,
+                _ => null
+            };
+
+    /// <summary>
     /// Shift+F10 / 菜单键：为当前选中行弹右键菜单（Windows 口径：键盘打开与右键同一张菜单）。
     /// 菜单挂在行模板的 Border 上（ContextMenu 半离线，只能从行容器取），故先按选中行找到容器再打开。
     /// </summary>

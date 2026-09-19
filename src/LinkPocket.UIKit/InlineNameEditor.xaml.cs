@@ -34,6 +34,8 @@ namespace LinkPocket.Views
         {
             InitializeComponent();
             IsVisibleChanged += (_, _) => { if (IsVisible) FocusAndSelect(); };
+            // Loaded 兜底：行/节点在刷新中重建时，控件可能"一出生就可见"（IsVisibleChanged 不一定派发）
+            Loaded += (_, _) => FocusAndSelect();
         }
 
         /// <summary>编辑中的文本（TwoWay：输入即回写 VM 的 EditingName）。</summary>
@@ -80,9 +82,16 @@ namespace LinkPocket.Views
             EditBox.SelectAll();
         }
 
-        /// <summary>失焦 = 提交（Windows 口径；取消/提交后本控件已收起，重复调用在 VM 侧是空操作）。</summary>
+        /// <summary>
+        /// 失焦 = 提交（Windows 口径），但**只在我仍是当前编辑面时**才提交——
+        /// <paramref name="IsEditing"/> 就是宿主重命名会话的投影：会话已被结束或已切到别的实体时，
+        /// 我这一侧的 IsEditing 早已变 false，此刻迟到的失焦**必须忽略**
+        /// （曾实测：右键菜单关闭的失焦晚于"新建第二个文件夹"的会话启动，旧编辑框的失焦把**新会话**误提交掉了，
+        /// 表现为"第二个新建的文件夹不进入改名"；控件自己按投影做归属校验，不赌事件时序）。
+        /// </summary>
         private void EditBox_LostFocus(object sender, RoutedEventArgs e)
         {
+            if (!IsEditing) return;   // 迟到失焦（已不属于当前会话）→ 空操作
             if (CommitCommand?.CanExecute(null) == true) CommitCommand.Execute(null);
         }
 

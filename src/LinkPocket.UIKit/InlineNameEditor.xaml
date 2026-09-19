@@ -9,11 +9,14 @@
          ⚠️ 这里的 KeyBinding 属**控件级编辑语义**（仅编辑框获得焦点时生效，与页面级快捷键无关），
             已登记在架构红线 ShortcutRulesTests 的控件级白名单（与地址栏编辑框同款）。 -->
     <UserControl.Resources>
-        <!-- 紧凑填充式编辑框：26 高（贴合行高），圆角 6，Primary 描边表示"正在编辑" -->
+        <!-- 紧凑填充式编辑框：高度**贴合文本行高**（20，宿主可用 Height/Margin 覆盖），
+             负 margin 把外框在布局上压到文本高度以内 → **进入编辑不改变行高**（行高由行内容决定，编辑框不参与撑高）。
+             "正在编辑"靠 Primary 描边 + 填充底表达，不靠加高（Windows 资源管理器同样不加高）。 -->
         <Style x:Key="InlineEditField" TargetType="TextBox">
             <Setter Property="FontSize" Value="13.5"/>
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="Margin" Value="0,-3"/>
+            <Setter Property="Padding" Value="7,0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
@@ -24,7 +27,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="EditRoot" CornerRadius="6"
+                        <Border x:Name="EditRoot" CornerRadius="5"
                                 Background="{DynamicResource SurfaceContainerHighest}"
                                 BorderThickness="2" BorderBrush="{DynamicResource Primary}"
                                 SnapsToDevicePixels="True">

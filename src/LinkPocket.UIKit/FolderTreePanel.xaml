@@ -278,9 +278,12 @@
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding Name}"/>
                                     <!-- 就地改名编辑框（Windows 口径）：覆盖在名称之上（不透明填充底），
-                                         宽度跟随名称实测宽（至少 120）；数据驱动（IsRenaming 投影）+ 自持 Enter/Esc/失焦 -->
+                                         宽度跟随名称实测宽（至少 120）；高度按树行内容高覆盖
+                                         （树文本 13 号 → 行内容约 17，负 margin 压掉外框 → 进入编辑不改变行高）；
+                                         数据驱动（IsRenaming 投影）+ 自持 Enter/Esc/失焦 -->
                                     <local:InlineNameEditor MinWidth="120" HorizontalAlignment="Left"
                                                             Width="{Binding ActualWidth, ElementName=NodeName}"
+                                                            Height="17" Margin="0,-2"
                                                             IsEditing="{Binding IsRenaming}"
                                                             Text="{Binding Host.EditingName, Mode=TwoWay}"
                                                             CommitCommand="{Binding Host.CommitRenameCommand}"

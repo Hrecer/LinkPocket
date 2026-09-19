@@ -236,6 +236,89 @@ public class InlineRenameTests
         }
     }
 
+    /// <summary>
+    /// 切换改名目标（右键另一项改名 / 新建第二个文件夹）→ 旧会话按 Windows 口径**提交**，输入不丢；
+    /// 新会话就位（这正是"新建第二个文件夹时第一个退出改名、第二个正常进入"的 VM 侧口径）。
+    /// </summary>
+    [Fact]
+    public async Task 改名_切换目标_旧会话提交且输入不丢()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var b = (await client.FolderCreateAsync("B")).Data!;
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+
+            var rowA = vm.Rows.First(r => r.Id == a.FolderId);
+            var rowB = vm.Rows.First(r => r.Id == b.FolderId);
+
+            vm.BeginRenameRow(rowA);
+            vm.EditingName = "A 改名";        // 用户已输入内容
+            vm.BeginRenameRow(rowB);           // 直接切到另一个目标
+
+            Assert.True(vm.IsRenaming);
+            Assert.True(rowB.IsRenaming);      // 新会话就位
+            Assert.False(rowA.IsRenaming);     // 旧会话已收（投影归零）
+            Assert.Equal("B", vm.EditingName);
+
+            Assert.True(await WaitUntilAsyncAsync(
+                    async () => (await client.FolderGetAsync(a.FolderId)).Name == "A 改名",
+                    TimeSpan.FromSeconds(5)),
+                "切换目标后旧会话应被提交（用户输入不得丢失）");
+            Assert.Equal("B", (await client.FolderGetAsync(b.FolderId)).Name);   // 新会话尚未提交
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    /// <summary>
+    /// 页面级收尾（右键菜单打开 → <see cref="BrowserViewModel.CommitActiveRename"/>）：
+    /// 编辑态**立即退出**（输入保留），提交**挂起到菜单关闭**（<see cref="BrowserViewModel.FlushDeferredCommit"/>）才落库
+    /// ——推迟是为了不让提交触发的刷新把承载菜单的行销毁（菜单"一闪就没了"）。
+    /// 之后任何**迟到**的重复提交（旧编辑框的失焦等）都必须是空操作，绝不影响其它实体。
+    /// </summary>
+    [Fact]
+    public async Task 改名_页面级收尾_提交当前会话_迟到提交为空操作()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            var b = (await client.FolderCreateAsync("B")).Data!;
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+
+            var rowA = vm.Rows.First(r => r.Id == a.FolderId);
+            vm.BeginRenameRow(rowA);
+            vm.EditingName = "A 已改名";
+
+            vm.CommitActiveRename();           // 右键菜单打开时的收尾
+            Assert.False(vm.IsRenaming);       // 编辑态立即退出
+            Assert.Equal("A", (await client.FolderGetAsync(a.FolderId)).Name);   // 菜单未关闭 → 尚未落库
+
+            vm.FlushDeferredCommit();          // 菜单关闭 → 挂起的提交落地
+            Assert.True(await WaitUntilAsyncAsync(
+                    async () => (await client.FolderGetAsync(a.FolderId)).Name == "A 已改名",
+                    TimeSpan.FromSeconds(5)),
+                "菜单关闭后应落地提交（保留输入）");
+
+            // 迟到/重复提交：会话已空 → 空操作（既不报错也不改任何实体）
+            await vm.CommitRenameAsync();
+            vm.CancelRename();
+            vm.FlushDeferredCommit();
+            Assert.False(vm.IsRenaming);
+            Assert.Equal("B", (await client.FolderGetAsync(b.FolderId)).Name);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
     private static System.Collections.Generic.IEnumerable<FolderNode> Flatten(FolderNode node)
     {
         yield return node;
@@ -251,5 +334,17 @@ public class InlineRenameTests
             await Task.Delay(25);
         }
         return condition();
+    }
+
+    /// <summary>异步条件版（条件本身要 await 引擎查询时用）。</summary>
+    private static async Task<bool> WaitUntilAsyncAsync(Func<Task<bool>> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition()) return true;
+            await Task.Delay(25);
+        }
+        return await condition();
     }
 }

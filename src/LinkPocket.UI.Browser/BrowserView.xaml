@@ -185,6 +185,8 @@
                         <MenuItem Header="新建文件夹" Command="{Binding NewFolderCommand}"/>
                         <MenuItem Header="粘贴" Command="{Binding PasteCommand}"/>
                         <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
+                        <!-- 刷新（Windows 空白菜单同款）：与 F5 完全同一条命令（真刷新 = 置尾归位 + 遮罩 + 入场动画） -->
+                        <MenuItem Header="刷新" Command="{Binding RefreshCommand}"/>
                     </ContextMenu>
                 </Grid.ContextMenu>
                 <Grid.RowDefinitions>

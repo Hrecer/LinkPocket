@@ -441,6 +441,13 @@ public class BrowserViewModel : INotifyPropertyChanged
     private void BeginRename(string? id, bool isFolder, string? name, BrowserPane surface)
     {
         if (string.IsNullOrEmpty(id) || name == null) return;
+
+        // 切换改名目标 = 旧会话按 Windows 口径**提交**（不丢已输入内容；无改动等价无操作）。
+        // 顺序不可换：先捕获旧会话快照 → 收旧会话 → 起新会话 → 最后才异步提交旧快照
+        //（否则提交逻辑会读到刚上位的**新**会话）。目标相同（重复进入同一次改名）时不重复提交。
+        var previous = CaptureSession();
+        if (previous != null) EndRename();
+
         _renameId = id;
         _renameIsFolder = isFolder;
         _renameSurface = surface;
@@ -453,6 +460,9 @@ public class BrowserViewModel : INotifyPropertyChanged
         // 行若已实例化：滚入视口（编辑框由 InlineNameEditor 自己在显示后聚焦并全选）
         var row = Rows.FirstOrDefault(r => r.Id == id);
         if (row != null && surface == BrowserPane.Main) FocusRowRequested?.Invoke(this, row);
+
+        if (previous != null && !string.Equals(previous.Id, id, StringComparison.Ordinal))
+            _ = CommitSessionAsync(previous);
     }
 
     /// <summary>结束改名会话（提交与取消的**唯一收口**；会话状态一次性归零并重投影）。</summary>
@@ -471,6 +481,44 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// <summary>取消改名（Esc）：只收会话，不写数据。</summary>
     public void CancelRename() => EndRename();
 
+    /// <summary>改名会话快照（提交动作的**唯一凭据**：不读会话字段，杜绝异步途中被切换目标串味）。</summary>
+    private sealed record RenameSession(string Id, bool IsFolder, string OriginalName, string Name);
+
+    /// <summary>捕获当前会话快照；未在改名 → null。</summary>
+    private RenameSession? CaptureSession()
+        => _renameId == null
+            ? null
+            : new RenameSession(_renameId, _renameIsFolder, _renameOriginalName, EditingName ?? string.Empty);
+
+    /// <summary>
+    /// 页面级收尾动作：**收掉当前改名的编辑态**（右键菜单打开时调用）。
+    /// Windows 口径：改名进行中右键 → 改名立即退出，且**已输入的名字保留**（不丢输入）。
+    ///
+    /// <para>提交动作**推迟到菜单关闭**（<see cref="FlushDeferredCommit"/>）：改名提交会让引擎写库 →
+    /// 事件刷新（300ms 防抖）→ 重建行容器 → 承载菜单的行被销毁 → **菜单被连带关闭**（用户看到的"菜单一闪就没了"）。
+    /// 推迟只影响"名字何时落库"，不影响用户可见语义（编辑框立即收起、菜单稳定可用）。</para>
+    /// </summary>
+    public void CommitActiveRename()
+    {
+        FlushDeferredCommit();               // 上一次挂起的先落地，避免被本次覆盖而丢失
+        var session = CaptureSession();
+        if (session == null) return;
+        EndRename();                         // 编辑态立即收起（投影归零）
+        _deferredCommit = session;
+    }
+
+    /// <summary>待提交的改名快照（右键收尾时挂起，菜单关闭后落地；单元素，非状态源——会话状态已由 EndRename 收口）。</summary>
+    private RenameSession? _deferredCommit;
+
+    /// <summary>落地挂起的改名提交（菜单关闭时调用）。</summary>
+    public void FlushDeferredCommit()
+    {
+        var session = _deferredCommit;
+        if (session == null) return;
+        _deferredCommit = null;
+        _ = CommitSessionAsync(session);
+    }
+
     /// <summary>
     /// 提交改名：文件夹 → <c>folders.update{name}</c>；链接 → <c>links.update{title}</c>（重命名 = 标题）。
     /// 空名 / 未改 = 视为取消并还原（Windows 口径）。**重命名不入撤销栈**（用户 2026-09-19 定稿）。
@@ -478,24 +526,28 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public async Task CommitRenameAsync()
     {
-        var id = _renameId;
-        if (id == null) return;
-        var isFolder = _renameIsFolder;
-        var original = _renameOriginalName;
-        var name = (EditingName ?? string.Empty).Trim();
-        EndRename();
-        if (name.Length == 0 || string.Equals(name, original, StringComparison.Ordinal)) return;
+        var session = CaptureSession();
+        if (session == null) return;
+        EndRename();                       // 先收会话：此后任何失焦/重复提交都成为空操作
+        await CommitSessionAsync(session);
+    }
+
+    /// <summary>提交一个**已捕获**的会话快照（切换目标时提交旧会话也走这里，不丢用户输入）。</summary>
+    private async Task CommitSessionAsync(RenameSession session)
+    {
+        var name = (session.Name ?? string.Empty).Trim();
+        if (name.Length == 0 || string.Equals(name, session.OriginalName, StringComparison.Ordinal)) return;
 
         try
         {
-            if (isFolder)
+            if (session.IsFolder)
             {
-                var updated = await _client.FolderUpdateAsync(id, name: name);
+                var updated = await _client.FolderUpdateAsync(session.Id, name: name);
                 StatusText = $"已重命名为「{updated.Data?.Name ?? name}」";
             }
             else
             {
-                await _client.LinkUpdateAsync(id, title: name);
+                await _client.LinkUpdateAsync(session.Id, title: name);
                 StatusText = $"已重命名为「{name}」";
             }
             // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 _selectedIds，不随重建丢）
