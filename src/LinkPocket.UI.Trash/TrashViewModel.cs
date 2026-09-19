@@ -11,21 +11,12 @@ using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
 
-/// <summary>回收站落点分栏（与浏览页 BrowserPane 同构：同一单元可能两处都有呈现，高亮只落一处）。
-/// <see cref="Breadcrumb"/> = 面包屑路径段（第三落点区，与浏览页同口径）。</summary>
+/// <summary>回收站键盘语义分栏（主栏 / 左栏树——快捷键按活跃栏解析作用域）。</summary>
 public enum TrashPane
 {
     Main,
     Tree,
-    Breadcrumb,
 }
-
-/// <summary>
-/// 拖拽落点（回收站版）：<see cref="UnitId"/> = 目标单元（<c>null</c> = 回收站根——根不是实体、无 ID）；
-/// <see cref="Pane"/> = 指针真正所在的那一栏；<see cref="Name"/> = 提示文案里的名称。
-/// ⚠️ 与浏览页同口径：「没有落点」用整个对象为 <c>null</c> 表示，与「落在根上」严格区分。
-/// </summary>
-public sealed record TrashDropTarget(string? UnitId, TrashPane Pane, string Name);
 
 /// <summary>回收站面包屑段（可点击跳转；UnitId = null 表示根「回收站」）。</summary>
 public class TrashCrumbViewModel
@@ -48,12 +39,12 @@ public class TrashCrumbViewModel
 /// <list type="bullet">
 /// <item>单一快照 = <c>trash.overview</c>（全量单元 + 全量链接快照）——树 / 主栏 / 面包屑 / 地址栏全部从它投影；</item>
 /// <item>导航 = 快照内按层过滤（不逐单元取数；深层内容随子单元再打开）；历史栈 = 共享的 <see cref="NavigationHistory"/>；</item>
-/// <item>选中 = 唯一 ID 集合 + 投影（行/树同源）；落点 = 覆盖式状态 + 投影；</item>
-/// <item>写操作 = 永久删除（单条/批量，两阶段确认）与**站内搬移**（<c>trash.move</c>，见 partial Transfer 文件）；
+/// <item>选中 = 唯一 ID 集合 + 投影（行/树同源）；</item>
+/// <item>写操作 = 永久删除（单条/批量，两阶段确认，见 partial Purge 文件）；
 /// 刷新由引擎事件（300ms 防抖）驱动，写操作**不显式刷新**。</item>
 /// </list>
-/// ⚠️ 回收站**只读语义**（用户定稿 2026-09-19）：无还原、无撤销/重做、无新建/重命名/编辑、无剪贴板搬运
-/// （站内搬移只经拖拽）。
+/// ⚠️ 回收站**只读语义**（用户定稿 2026-09-19）：无撤销/重做、无新建/重命名/编辑、无剪贴板搬运；
+/// **站内不可搬移**（条目只能被打开查看或永久删除）。
 /// </summary>
 public partial class TrashViewModel : INotifyPropertyChanged
 {
@@ -115,7 +106,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public bool IsAtRoot => Controller.CurrentFolderId == null;
     public bool IsInUnit => !IsAtRoot;
 
-    /// <summary>当前单元显示名（状态栏/落点提示用；根 = 「回收站」）。</summary>
+    /// <summary>当前单元显示名（状态栏用；根 = 「回收站」）。</summary>
     public string CurrentUnitDisplayName
         => CurrentUnitId != null && _unitById.TryGetValue(CurrentUnitId, out var u) ? u.Name : RootDisplayName;
 
@@ -270,35 +261,6 @@ public partial class TrashViewModel : INotifyPropertyChanged
     }
 
     public void SelectAllRows() => SetSelection(Rows.Select(r => r.Id));
-
-    // ================= 拖拽落点（覆盖式状态 + 投影） =================
-
-    private TrashDropTarget? _dropTarget;
-
-    /// <summary>当前落点（只读投影）：拖拽收尾读它决定目标与提示文案。</summary>
-    public TrashDropTarget? DropTarget => _dropTarget;
-
-    public bool IsDropTargetRow(string id)
-        => _dropTarget is { Pane: TrashPane.Main } t && string.Equals(t.UnitId, id, StringComparison.Ordinal);
-
-    public bool IsDropTargetNode(string id)
-        => _dropTarget is { Pane: TrashPane.Tree } t && string.Equals(t.UnitId, id, StringComparison.Ordinal);
-
-    /// <summary>落点提示文案（空串 = 不显示）：回收站只允许移动（文案口径在共享 DragSupport）。</summary>
-    public string DropTargetHintText
-        => _dropTarget == null ? string.Empty : Views.DragSupport.HintText(_dropTarget.Name, TransferMode.Move);
-
-    /// <summary>写入落点（覆盖式，绝不清零也不累积——铁律 9）。</summary>
-    public void SetDropTarget(TrashDropTarget? target)
-    {
-        if (Equals(_dropTarget, target)) return;
-        _dropTarget = target;
-        foreach (var r in Rows) r.InvalidateIsDropTarget();
-        foreach (var node in AllTreeNodes()) node.InvalidateIsDropTarget();
-        OnPropertyChanged(nameof(DropTargetHintText));
-    }
-
-    public void ClearDropTarget() => SetDropTarget(null);
 
     // ================= 快照与加载 =================
 
@@ -563,7 +525,6 @@ public partial class TrashViewModel : INotifyPropertyChanged
         }
 
         ApplySelectionToView();
-        foreach (var r in Rows) r.InvalidateIsDropTarget();
         OnPropertyChanged(nameof(HasRows));
     }
 

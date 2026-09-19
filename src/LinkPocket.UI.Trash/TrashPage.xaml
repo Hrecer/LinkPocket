@@ -10,7 +10,7 @@
     <!-- 回收站页（与浏览页同构的"回收站浏览器"；用户令 2026-09-19）：
          导航行（后退/前进/返回上级 + 面包屑地址栏 + 右侧「永久删除」）+ 左栏导航树（含链接叶子）
          + 中栏共享数据表（模板行 + 同一套行皮肤/多选）+ 右栏只读详情栏 + 状态栏。
-         ⚠️ 只读语义：无还原、无撤销/重做、无新建/重命名/编辑、无剪贴板；站内搬移只经拖拽（trash.move）。
+         ⚠️ 只读语义：无撤销/重做、无新建/重命名/编辑、无剪贴板；**站内不可搬移**（条目只能被打开查看或永久删除）。
          快捷键 = TrashShortcuts（唯一事实源，按栏作用域分发）。 -->
     <UserControl.Resources>
         <!-- BoolToVis 已上收 UIKit.xaml -->
@@ -95,8 +95,10 @@
                         </Button>
                     </StackPanel>
                 </Border>
-                <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦） -->
+                <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦）；
+                     只读页：段不接拖放（CrumbDropEnabled=False） -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
+                                     CrumbDropEnabled="False"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"
                                      PathEditText="{Binding PathEditText, Mode=TwoWay}"
@@ -109,9 +111,6 @@
                                      CancelPathCommand="{Binding CancelPathEditCommand}"
                                      CompletePathCommand="{Binding CompletePathCommand}"
                                      EditRequested="Breadcrumb_EditRequested"
-                                     CrumbDragOver="Breadcrumb_CrumbDragOver"
-                                     CrumbDragLeave="Breadcrumb_CrumbDragLeave"
-                                     CrumbDrop="Breadcrumb_CrumbDrop"
                                      CandidateMoveRequested="Breadcrumb_CandidateMoveRequested"
                                      EditFocusLost="Breadcrumb_EditFocusLost"
                                      EditPopupClosed="Breadcrumb_EditPopupClosed"
@@ -132,21 +131,17 @@
             <!-- 左栏：回收站导航树（虚根「回收站」+ 单元 + 链接叶子；节点不可改名的只读树） -->
             <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
                                    HeaderText="导航"
+                                   DragEnabled="False"
                                    NodeMenu="{StaticResource TrashNodeMenu}"
                                    ItemsSource="{Binding Tree}"
                                    NodeSelected="FolderTreePanel_NodeSelected"
-                                   TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
-                                   NodeDragOver="FolderTreePanel_NodeDragOver"
-                                   NodeDragLeave="FolderTreePanel_NodeDragLeave"
-                                   NodeDrop="FolderTreePanel_NodeDrop"
-                                   NodeDragStartRequested="FolderTreePanel_NodeDragStartRequested"/>
+                                   TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"/>
 
-            <!-- 中栏：列表卡（自管空白点击与空白落点；行模板在下方共享表里） -->
+            <!-- 中栏：列表卡（自管空白点击清选中；行模板在下方共享表里） -->
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
                     PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
-                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp"
-                    AllowDrop="True" DragOver="ListCard_DragOver" DragLeave="ListCard_DragLeave" Drop="ListCard_Drop">
+                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp">
                 <Grid>
                     <Grid.ContextMenu>
                         <ContextMenu>
@@ -167,11 +162,8 @@
                                 <Border x:Name="RowBorder" Tag="TrashRow" Cursor="Hand"
                                         MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
                                         PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
-                                        PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"
-                                        MouseMove="RowBorder_MouseMove"
                                         MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
-                                        ContextMenuOpening="RowBorder_ContextMenuOpening"
-                                        AllowDrop="True" DragOver="RowBorder_DragOver" DragLeave="RowBorder_DragLeave" Drop="RowBorder_Drop">
+                                        ContextMenuOpening="RowBorder_ContextMenuOpening">
                                     <Border.ContextMenu>
                                         <ContextMenu>
                                             <ContextMenu.Resources>
@@ -198,15 +190,12 @@
                                                       Command="{Binding DataContext.OpenRowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                       CommandParameter="{Binding}"/>
                                     </Border.InputBindings>
-                                    <!-- 内层 RowSkin：与浏览页同一套（LpRowCard 基样式 + 选中/落点触发器） -->
+                                    <!-- 内层 RowSkin：与浏览页同一套（LpRowCard 基样式 + 选中触发器） -->
                                     <Border Padding="16,7">
                                         <Border.Style>
                                             <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                                                         <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -405,7 +394,7 @@
                                    Foreground="{DynamicResource OnPrimaryContainer}"/>
                     </Border>
                 </StackPanel>
-                <TextBlock Text="回收站内容不占用书签计数；双击书签打开详情（只读），双击文件夹进入单元；站内可拖动搬移，不提供还原"
+                <TextBlock Text="回收站内容不占用书签计数；双击书签打开详情（只读），双击文件夹进入单元；回收站只读，站内不可搬移"
                            FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Opacity="0.6"
                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>

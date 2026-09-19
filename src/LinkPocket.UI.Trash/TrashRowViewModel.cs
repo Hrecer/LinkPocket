@@ -8,8 +8,8 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 回收站主栏的行视图模型（与浏览页 <see cref="BrowserRowViewModel"/> 同构）：
 /// 一行 = 一个被删单元（folder 条目）或一条被删书签（link 条目）。
-/// 列 = 名称 / 类型 / 原位置 / 删除时间（回收站语义保留；行皮肤与选中/落点投影与浏览页同一套）。
-/// 选中 / 落点都是 <see cref="TrashViewModel"/> 的只读投影，行对象随重建销毁、绝不持久状态。
+/// 列 = 名称 / 类型 / 原位置 / 删除时间（回收站语义保留；行皮肤与选中投影与浏览页同一套）。
+/// 选中是 <see cref="TrashViewModel"/> 的只读投影，行对象随重建销毁、绝不持久状态。
 /// </summary>
 public class TrashRowViewModel : INotifyPropertyChanged
 {
@@ -59,11 +59,6 @@ public class TrashRowViewModel : INotifyPropertyChanged
     public bool IsSelected => Host != null && Host.IsSelectedId(Id);
 
     public void InvalidateIsSelected() => OnPropertyChanged(nameof(IsSelected));
-
-    /// <summary>拖拽悬停落点 = 宿主落点状态的纯投影。</summary>
-    public bool IsDropTarget => Host != null && Host.IsDropTargetRow(Id);
-
-    public void InvalidateIsDropTarget() => OnPropertyChanged(nameof(IsDropTarget));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

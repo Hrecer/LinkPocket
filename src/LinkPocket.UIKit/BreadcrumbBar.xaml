@@ -112,7 +112,7 @@
                                         CommandParameter="{Binding}"
                                         Background="Transparent" BorderThickness="0"
                                         FontSize="13" Cursor="Hand"
-                                        AllowDrop="True"
+                                        AllowDrop="{Binding CrumbDropEnabled, ElementName=Root}"
                                         DragOver="Crumb_DragOver" DragLeave="Crumb_DragLeave" Drop="Crumb_Drop">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">

@@ -14,7 +14,7 @@ namespace LinkPocket.App.Tests;
 /// <summary>
 /// 回收站页 VM（"回收站浏览器"，2026-09-19 用户令：最彻底复用浏览页组件）：
 /// 树含链接叶子 + 虚根「回收站」、主栏平铺（默认删除时间倒序）、面包屑 + 地址栏、唯一选中集合、
-/// **站内搬移**（trash.move，只经拖拽）、永久删除（批量）、**无撤销/无剪贴板**的键位收口。
+/// 永久删除（批量）、**无撤销/无剪贴板/站内不可搬移**的键位收口（站内搬移已整体移除）。
 /// </summary>
 public class TrashViewModelTests
 {
@@ -247,78 +247,6 @@ public class TrashViewModelTests
             // 清空 = 回空占位
             vm.ClearSelectionCommand.Execute(null);
             Assert.True(vm.Details.IsPlaceholder);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
-    }
-
-    [Fact]
-    public async Task 站内搬移_链接移入单元_如实计数_成环拒绝()
-    {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var dialogs = new RecordingDialogs();
-            var (unitA, _, l0, _, _) = await SeedAsync(client);
-            var vm = NewVm(client, dialogs);
-            await vm.LoadAsync();
-
-            // 把根级 L0 拖进单元 A（站内搬移 = trash.move）
-            var items = new[] { new DragItem(l0, false, "根级链接") };
-            await vm.DropItemsAsync(items, unitA);
-
-            var overview = await client.TrashOverviewAsync();
-            Assert.Equal(unitA, overview.Links.Single(l => l.Id == l0).TrashFolderId);
-            Assert.Contains("已移动 1 项", vm.StatusText);
-
-            // 已在目标位置 = 无操作（不报错、如实计数）
-            await vm.DropItemsAsync(items, unitA);
-            Assert.Contains("已在目标位置", vm.StatusText);
-            Assert.Empty(dialogs.Alerts);
-
-            // 成环：把单元 A 拖进它自己的子单元 B → 执行层拒绝 + 规范弹窗（只列成环项）
-            var unitB = overview.Folders.Single(f => f.Name == "B").TrashFolderId;
-            var folderItems = new[] { new DragItem(unitA, true, "A") };
-            await vm.DropItemsAsync(folderItems, unitB);
-            var alert = Assert.Single(dialogs.Alerts);
-            Assert.Equal("无法移动", alert.Title);
-            Assert.Contains("「A」", alert.Message);
-            Assert.DoesNotContain("B", alert.Message.Replace("「A」", ""));   // 只列成环项
-
-            // 引擎侧确认：A 仍在根、B 仍是 A 的子单元
-            var after = await client.TrashOverviewAsync();
-            Assert.Null(after.Folders.Single(f => f.TrashFolderId == unitA).ParentTrashFolderId);
-            Assert.Equal(unitA, after.Folders.Single(f => f.TrashFolderId == unitB).ParentTrashFolderId);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
-    }
-
-    [Fact]
-    public async Task 站内搬移_不入撤销栈_不影响主表()
-    {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var (unitA, _, l0, _, _) = await SeedAsync(client);
-            var vm = NewVm(client);
-            await vm.LoadAsync();
-
-            // 建库本身会产生撤销记录（新建/删除都可撤销）→ 以"搬移前后条数不变"为判据
-            var before = (await client.UndoListAsync()).GetProperty("entries").GetArrayLength();
-            await vm.DropItemsAsync(new[] { new DragItem(l0, false, "根级链接") }, unitA);
-            var after = (await client.UndoListAsync()).GetProperty("entries").GetArrayLength();
-
-            // 用户定稿：回收站不给撤销/重做（搬移只改归属，不入撤销栈）
-            Assert.Equal(before, after);
-
-            // 搬移 ≠ 还原：主表计数不变（0 条活动链接）
-            var stats = await client.LinkStatsAsync();
-            Assert.Equal(0, stats.Total);
         }
         finally
         {

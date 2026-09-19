@@ -13,7 +13,7 @@ namespace LinkPocket.ViewModels;
 /// <item>被删单元（id = trash_folder_id）：可展开（子单元 + 直接链接叶子）、计数药丸 = 子树链接总数；</item>
 /// <item>链接叶子（<see cref="IsLink"/>）：单元内/根级的书签快照——无 chevron、无计数药丸、无右键菜单（与浏览页链接叶子同口径）。</item>
 /// </list>
-/// 选中 / 落点都是 <see cref="TrashViewModel"/> 的**只读投影**（与浏览页同构）：节点对象随重建销毁，绝不持久状态。
+/// 选中是 <see cref="TrashViewModel"/> 的**只读投影**（与浏览页同构）：节点对象随重建销毁，绝不持久状态。
 /// </summary>
 public class TrashNode : INotifyPropertyChanged
 {
@@ -59,11 +59,6 @@ public class TrashNode : INotifyPropertyChanged
     public bool IsSelected => Host != null && Host.IsSelectedId(Id);
 
     public void InvalidateIsSelected() => OnPropertyChanged(nameof(IsSelected));
-
-    /// <summary>拖拽悬停落点 = 宿主落点状态的纯投影（覆盖式更新，绝不留残留）。</summary>
-    public bool IsDropTarget => Host != null && Host.IsDropTargetNode(Id);
-
-    public void InvalidateIsDropTarget() => OnPropertyChanged(nameof(IsDropTarget));
 
     /// <summary>回收站树**没有改名**（只读）：为面板模板的改名编辑框绑定面提供恒 false（编辑器永不出现）。</summary>
     public bool IsRenaming => false;

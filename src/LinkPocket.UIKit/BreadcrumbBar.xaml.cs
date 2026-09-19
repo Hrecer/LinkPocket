@@ -193,6 +193,17 @@ namespace LinkPocket.Views
             set => SetValue(CompletePathCommandProperty, value);
         }
 
+        public static readonly DependencyProperty CrumbDropEnabledProperty = DependencyProperty.Register(
+            nameof(CrumbDropEnabled), typeof(bool), typeof(BreadcrumbBar), new PropertyMetadata(true));
+
+        /// <summary>段落点使能（缺省 true = 浏览页现役）。false = 只读页（回收站）：段不接拖放
+        /// （XAML 把段 AllowDrop 绑到本属性；CrumbDragOver/Leave/Drop 事件保留给浏览页）。</summary>
+        public bool CrumbDropEnabled
+        {
+            get => (bool)GetValue(CrumbDropEnabledProperty);
+            set => SetValue(CrumbDropEnabledProperty, value);
+        }
+
         /// <summary>键盘上下移动候选（宿主转调 VM.MoveCandidate）。</summary>
         public event EventHandler<CandidateMoveEventArgs>? CandidateMoveRequested;
 

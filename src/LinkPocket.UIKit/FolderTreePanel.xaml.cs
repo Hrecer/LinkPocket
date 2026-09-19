@@ -56,6 +56,18 @@ namespace LinkPocket.Views
             set => SetValue(NodeMenuProperty, value);
         }
 
+        public static readonly DependencyProperty DragEnabledProperty = DependencyProperty.Register(
+            nameof(DragEnabled), typeof(bool), typeof(FolderTreePanel), new PropertyMetadata(true));
+
+        /// <summary>拖拽使能（缺省 true = 浏览页现役）。false = 只读树（回收站）：节点不接拖放
+        /// （XAML 把节点 AllowDrop 绑到本属性）、不进入节点拖拽手势（否则"按下微移后抬起"的点击
+        /// 会被内部拖拽状态吞掉——点击语义必须由宿主完整承担）。</summary>
+        public bool DragEnabled
+        {
+            get => (bool)GetValue(DragEnabledProperty);
+            set => SetValue(DragEnabledProperty, value);
+        }
+
         public static readonly DependencyProperty ItemsSourceProperty = DependencyProperty.Register(
             nameof(ItemsSource), typeof(System.Collections.IEnumerable), typeof(FolderTreePanel),
             new PropertyMetadata(null));
@@ -169,6 +181,8 @@ namespace LinkPocket.Views
         /// </summary>
         private void FolderTreeItem_MouseMove(object sender, MouseEventArgs e)
         {
+            if (!DragEnabled) return;   // 只读树（回收站）：不进入拖拽手势，点击的"按下-抬起"归属完整交给宿主
+
             // 右键拖拽（Windows 口径：右键按住拖到目标、松手由宿主弹「复制到此处 / 移动到此处」菜单）。
             // 只报"节点 + 源元素 + 右键"——菜单与载荷全在宿主侧，可复用控件不碰业务数据。
             if (e.RightButton == MouseButtonState.Pressed)

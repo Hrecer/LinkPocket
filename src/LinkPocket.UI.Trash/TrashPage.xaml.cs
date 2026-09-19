@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,8 +20,8 @@ namespace LinkPocket.Views
     /// <summary>
     /// 回收站页（与浏览页同构的"回收站浏览器"）：导航行（导航键 + 面包屑地址栏 + 永久删除）
     /// + 左栏导航树（含链接叶子）+ 中栏共享数据表（模板行 + 同一套行皮肤）+ 右栏只读详情栏。
-    /// 交互机械与浏览页同源（唯一选中集合 / 覆盖式落点 / 拖拽浮层 / 输入子系统），语义只读：
-    /// 无还原、无撤销/重做、无编辑、无剪贴板；站内搬移只经拖拽（trash.move）。
+    /// 交互机械与浏览页同源（唯一选中集合 / 输入子系统），语义只读：
+    /// 无撤销/重做、无编辑、无剪贴板；**站内不可搬移**（条目只能被打开查看或永久删除）。
     /// </summary>
     public partial class TrashPage : UserControl
     {
@@ -247,26 +246,12 @@ namespace LinkPocket.Views
 
         // ================= 行手势（与浏览页同一套归属校验） =================
 
-        private Point _rowDragStart;
         private TrashRowViewModel? _pressRow;
         private ModifierKeys _pressModifiers;
         private int _pressClickCount;
-        private bool _dragStarted;
-
-        private Point _rowRightDragStart;
-        private TrashRowViewModel? _rightPressRow;
-        private bool _rightDragGesture;
-        private ContextMenu? _rightDragMenu;
-
-        /// <summary>拖拽松手时的待执行意图（Drop 只记，不执行——执行在 OLE 循环退出之后）。</summary>
-        private (IReadOnlyList<DragItem> Items, string? TargetId)? _pendingDrop;
-
-        private bool _dragCancelledByEscape;
 
         private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _rowDragStart = e.GetPosition(this);
-            _dragStarted = false;
             _pressRow = null;
             _pressModifiers = Keyboard.Modifiers;
             _pressClickCount = e.ClickCount;
@@ -276,33 +261,6 @@ namespace LinkPocket.Views
             ViewModel.ActivatePane(TrashPane.Main);
             if (_pressModifiers == ModifierKeys.None && !ViewModel.IsSelectedId(_pressRow.Id))
                 ViewModel.SetSelection(new[] { _pressRow.Id });   // 按下即反馈（与浏览页口径一致）
-        }
-
-        private void RowBorder_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            _rowRightDragStart = e.GetPosition(this);
-            _rightPressRow = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
-            _rightDragGesture = false;
-            _rightDragMenu = null;
-        }
-
-        private void RowBorder_MouseMove(object sender, MouseEventArgs e)
-        {
-            if (e.RightButton == MouseButtonState.Pressed)
-            {
-                if (_rightPressRow == null) return;
-                if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowRightDragStart)) return;
-                var rightRow = _rightPressRow;
-                _rightPressRow = null;
-                StartRowDrag((DependencyObject)sender, rightRow, rightButton: true);
-                return;
-            }
-
-            if (e.LeftButton != MouseButtonState.Pressed) return;
-            if (_pressRow == null) return;
-            if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowDragStart)) return;
-            _dragStarted = true;
-            StartRowDrag((DependencyObject)sender, _pressRow, rightButton: false);
         }
 
         /// <summary>抬起 = 点击完成：与按下同一次手势才重放选择语义（双击第二击不承载选择——与浏览页同守卫）。</summary>
@@ -315,25 +273,19 @@ namespace LinkPocket.Views
             _pressRow = null;
 
             if (ViewModel == null || row == null) return;
-            if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
+            if (!ReferenceEquals(row, pressed) || clicks > 1) return;
             ViewModel.SelectRowWithModifiers(row, mods);
             ViewModel.SetContextRow(row);
         }
 
         private void RowBorder_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            if (_rightDragGesture)
-            {
-                e.Handled = true;   // 右键拖拽手势期间不弹行菜单（本次手势产物是我们自己的菜单）
-                return;
-            }
-
             if ((sender as FrameworkElement)?.DataContext is not TrashRowViewModel row || ViewModel == null) return;
             if (!ViewModel.IsSelectedId(row.Id)) ViewModel.SetSelection(new[] { row.Id });
             ViewModel.SetContextRow(row);
         }
 
-        // ================= 列表卡：空白点击清选中 + 空白落点（= 当前所在单元） =================
+        // ================= 列表卡：空白点击清选中 =================
 
         private bool _cardPressEmpty;
         private int _cardPressClickCount;
@@ -365,215 +317,6 @@ namespace LinkPocket.Views
             return false;
         }
 
-        // ================= 拖拽（源 = 行 + 树节点；落点 = 单元行 / 树节点 / 面包屑段 / 列表空白） =================
-
-        private DragVisualAdorner? _dragVisual;
-
-        private void ShowDragVisual(IReadOnlyList<DragItem> items)
-        {
-            _dragVisual = DragVisualAdorner.Attach(this);
-            _dragCancelledByEscape = false;
-            if (_dragVisual == null) return;
-            _dragVisual.Show(items);
-            _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
-            AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
-            AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
-        }
-
-        private void HideDragVisual()
-        {
-            if (_dragVisual == null) return;
-            RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
-            RemoveHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
-            _dragVisual.Detach();
-            _dragVisual = null;
-        }
-
-        private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
-        {
-            if (_dragVisual == null || !GetCursorPos(out var screen)) return;
-            _dragVisual.UpdatePosition(PointFromScreen(new Point(screen.X, screen.Y)));
-        }
-
-        /// <summary>拖拽中记录 Esc 取消（右键拖拽收尾据此不弹菜单；左键取消则结构性无意图）。</summary>
-        private void OnQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
-        {
-            if (e.EscapePressed) _dragCancelledByEscape = true;
-        }
-
-        [DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out ScreenPoint point);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct ScreenPoint
-        {
-            public int X;
-            public int Y;
-        }
-
-        /// <summary>写入落点（视图侧唯一出口）：VM 负责高亮投影，浮层负责提示文案——两者永远同步。</summary>
-        private void ApplyDropTarget(TrashDropTarget? target)
-        {
-            ViewModel?.SetDropTarget(target);
-            _dragVisual?.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
-        }
-
-        private void ClearDropTarget()
-        {
-            ViewModel?.ClearDropTarget();
-            _dragVisual?.UpdateHint(string.Empty);
-            Breadcrumb.SetDropHighlight(null);
-        }
-
-        private void StartRowDrag(DependencyObject source, TrashRowViewModel row, bool rightButton)
-        {
-            if (ViewModel == null) return;
-            var items = ViewModel.PrepareDragFromRow(row);
-            if (items.Count == 0) return;
-            StartDrag(source, items, rightButton);
-        }
-
-        /// <summary>一次拖拽的完整生命周期（行 / 树节点共用）：浮层 → OLE 循环 → 收尾。
-        /// 回收站**只允许移动**（不接 Ctrl 复制）：允许效果只有 Move。</summary>
-        private void StartDrag(DependencyObject source, IReadOnlyList<DragItem> items, bool rightButton)
-        {
-            _rightDragGesture = rightButton;
-            _pendingDrop = null;
-            ShowDragVisual(items);
-            DragDrop.DoDragDrop(source, new DataObject(new TrashDragPayload(items)), DragDropEffects.Move);
-            HideDragVisual();
-
-            var target = ViewModel?.DropTarget;
-            var drop = _pendingDrop;
-            _pendingDrop = null;
-            ClearDropTarget();
-
-            if (rightButton)
-            {
-                if (_dragCancelledByEscape)
-                {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
-                    return;
-                }
-                ShowRightDragDropMenu(items, target);   // 松手不搬东西：用户选了才执行
-                return;
-            }
-
-            if (drop is { } pending)
-                _ = ViewModel?.DropItemsAsync(pending.Items, pending.TargetId);
-        }
-
-        /// <summary>右键拖拽松手菜单（回收站版）：只「移动到「X」」+ 取消（无复制——站内搬移不产生副本）。</summary>
-        private void ShowRightDragDropMenu(IReadOnlyList<DragItem> items, TrashDropTarget? target)
-        {
-            if (ViewModel == null || target == null)
-            {
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
-                return;
-            }
-
-            var menu = new ContextMenu { DataContext = ViewModel };
-            menu.Resources.Add(typeof(MenuItem), (Style)FindResource("LpMenuItem"));
-
-            var move = new MenuItem { Header = $"移动到「{target.Name}」" };
-            move.Click += (_, _) => _ = ViewModel.DropItemsAsync(items, target.UnitId);
-            menu.Items.Add(move);
-
-            var cancel = new MenuItem { Header = "取消" };
-            cancel.Click += (_, _) => menu.IsOpen = false;
-            menu.Items.Add(cancel);
-
-            menu.Closed += (_, _) =>
-            {
-                ClearDropTarget();
-                _rightDragGesture = false;
-                _rightDragMenu = null;
-            };
-
-            _rightDragMenu = menu;
-            menu.PlacementTarget = this;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
-            menu.IsOpen = true;
-        }
-
-        /// <summary>右键拖拽菜单里的动作项（纯构造，探针据此直调断言内容）。</summary>
-        private List<MenuItem> BuildRightDragMenuItems(IReadOnlyList<DragItem> items, string? targetUnitId, string targetName)
-        {
-            var move = new MenuItem { Header = $"移动到「{targetName}」" };
-            move.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetUnitId);
-            return new List<MenuItem> { move };
-        }
-
-        /// <summary>拖动中的载荷（与浏览页 browser 载荷同形；类型不同即可区分来源）。</summary>
-        public record TrashDragPayload(IReadOnlyList<DragItem> Items);
-
-        /// <summary>落点候选（唯一判定）：主栏**单元行** / 树**单元节点**（链接叶子与虚根不是落点）。</summary>
-        private static bool IsDropPositionCandidate(object? dataContext)
-            => dataContext is TrashRowViewModel { IsFolder: true } or TrashNode { IsLink: false, IsRoot: false };
-
-        private void RowBorder_DragOver(object sender, DragEventArgs e)
-        {
-            try
-            {
-                var row = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
-                var ok = IsDropPositionCandidate(row);
-                ApplyDropTarget(ok ? new TrashDropTarget(row!.Id, TrashPane.Main, row.Name) : null);
-                e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-            }
-            finally
-            {
-                e.Handled = true;
-            }
-        }
-
-        private void RowBorder_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
-
-        private void RowBorder_Drop(object sender, DragEventArgs e)
-        {
-            try
-            {
-                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
-                var row = (sender as FrameworkElement)?.DataContext as TrashRowViewModel;
-                if (payload != null && IsDropPositionCandidate(row))
-                    _pendingDrop = (payload.Items, row!.Id);
-            }
-            finally
-            {
-                e.Handled = true;
-            }
-        }
-
-        private void ListCard_DragOver(object sender, DragEventArgs e)
-        {
-            try
-            {
-                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
-                if (payload == null || ViewModel == null) return;
-                ApplyDropTarget(new TrashDropTarget(ViewModel.CurrentUnitId, TrashPane.Main, ViewModel.CurrentUnitDisplayName));
-                e.Effects = DragDropEffects.Move;
-            }
-            finally
-            {
-                e.Handled = true;
-            }
-        }
-
-        private void ListCard_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
-
-        private void ListCard_Drop(object sender, DragEventArgs e)
-        {
-            try
-            {
-                var payload = e.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
-                if (payload != null && ViewModel != null)
-                    _pendingDrop = (payload.Items, ViewModel.CurrentUnitId);
-            }
-            finally
-            {
-                e.Handled = true;
-            }
-        }
-
         // ================= 树（FolderTreePanel 事件转发） =================
 
         private void FolderTreePanel_NodeSelected(object? sender, object? node)
@@ -589,47 +332,7 @@ namespace LinkPocket.Views
             ViewModel?.ClearSelection();
         }
 
-        private void FolderTreePanel_NodeDragStartRequested(object? sender, TreeItemDragStartEventArgs e)
-        {
-            if (ViewModel == null || e.Node is not TrashNode node || e.Source == null) return;
-            var items = ViewModel.PrepareDragFromNode(node);
-            if (items.Count == 0) return;
-            StartDrag(e.Source, items, e.RightButton);
-        }
-
-        private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
-        {
-            try
-            {
-                var node = e.Node as TrashNode;
-                var ok = IsDropPositionCandidate(node);
-                ApplyDropTarget(ok ? new TrashDropTarget(node!.Id, TrashPane.Tree, node.Name) : null);
-                e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-            }
-            finally
-            {
-                e.Args.Handled = true;
-            }
-        }
-
-        private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e) => ClearDropTarget();
-
-        private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
-        {
-            try
-            {
-                var payload = e.Args.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
-                var node = e.Node as TrashNode;
-                if (payload != null && IsDropPositionCandidate(node))
-                    _pendingDrop = (payload.Items, node!.Id);
-            }
-            finally
-            {
-                e.Args.Handled = true;
-            }
-        }
-
-        // ================= 面包屑（编辑态 + 第三落点区） =================
+        // ================= 面包屑（编辑态） =================
 
         private void Breadcrumb_EditRequested(object? sender, EventArgs e)
             => ViewModel?.EnterPathEditCommand.Execute(null);
@@ -653,43 +356,6 @@ namespace LinkPocket.Views
         {
             if (!string.IsNullOrEmpty(name)) ViewModel?.ChooseCandidate(name);
         }
-
-        private void Breadcrumb_CrumbDragOver(object? sender, CrumbDragEventArgs e)
-        {
-            try
-            {
-                if (ViewModel == null) return;
-                var (id, name) = CrumbTargetOf(e.Segment);
-                var ok = id != null || e.Segment is TrashCrumbViewModel { UnitId: null };   // 根段 = 回收站根（合法落点）
-                ApplyDropTarget(ok ? new TrashDropTarget(id, TrashPane.Breadcrumb, name) : null);
-                Breadcrumb.SetDropHighlight(e.Segment);
-                e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
-            }
-            finally
-            {
-                e.Args.Handled = true;
-            }
-        }
-
-        private void Breadcrumb_CrumbDragLeave(object? sender, CrumbDragEventArgs e) => ClearDropTarget();
-
-        private void Breadcrumb_CrumbDrop(object? sender, CrumbDragEventArgs e)
-        {
-            try
-            {
-                var payload = e.Args.Data.GetData(typeof(TrashDragPayload)) as TrashDragPayload;
-                if (payload == null || ViewModel == null) return;
-                var (id, _) = CrumbTargetOf(e.Segment);
-                _pendingDrop = (payload.Items, id);
-            }
-            finally
-            {
-                e.Args.Handled = true;
-            }
-        }
-
-        private static (string? Id, string Name) CrumbTargetOf(object? segment)
-            => segment is TrashCrumbViewModel c ? (c.UnitId, c.Name) : (null, string.Empty);
 
         // ================= Shift+F10 / 菜单键：当前选中行的右键菜单 =================
 

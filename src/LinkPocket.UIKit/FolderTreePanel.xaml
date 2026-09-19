@@ -143,7 +143,9 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Padding" Value="2"/>
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-            <Setter Property="AllowDrop" Value="True"/>
+            <!-- 拖放使能由宿主开关决定（DragEnabled；缺省 true = 浏览页；回收站置 false = 只读树）。
+                 用相对源向上找面板：TreeViewItem 容器由生成器创建，不依赖名字作用域。 -->
+            <Setter Property="AllowDrop" Value="{Binding DragEnabled, RelativeSource={RelativeSource AncestorType=local:FolderTreePanel}}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <!-- 自绘 TreeViewItem 模板：行级悬浮卡片（LpRowCard 共享行皮肤，与中间列表行同源，
