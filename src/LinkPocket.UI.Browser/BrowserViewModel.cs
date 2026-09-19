@@ -25,8 +25,11 @@ public enum BrowserPane
 /// <summary>
 /// 资源管理器式浏览页（P4）：一切数据经引擎查询命令（folders.contents 等）获取，
 /// 渲染由 XAML ItemsControl + DataTemplate 完成，本类不持有任何控件引用。
+///
+/// <para>传输（移动/复制）的**唯一实现**在 `BrowserViewModel.Transfer.cs`（partial）：
+/// 拖拽落点、右键拖拽菜单、剪贴板粘贴三个入口共用同一条流水线，这里不再有第二份逐项循环。</para>
 /// </summary>
-public class BrowserViewModel : INotifyPropertyChanged
+public partial class BrowserViewModel : INotifyPropertyChanged
 {
     /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
     private readonly EngineClient _client;
@@ -387,11 +390,28 @@ public class BrowserViewModel : INotifyPropertyChanged
     public bool IsDropTargetRow(string id)
         => _dropTarget is { Pane: BrowserPane.Main } t && string.Equals(t.FolderId, id, StringComparison.Ordinal);
 
-    /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」`。</summary>
+    /// <summary>
+    /// 当前拖拽落点（只读投影）：视图在拖拽收尾时读它——左键拖拽的成环判定与右键拖拽的
+    /// 「复制到此处 / 移动到此处」菜单都用<b>这一个</b>事实来源，绝不各自再做一次命中测试或修饰键判定。
+    /// </summary>
+    public BrowserDropTarget? DropTarget => _dropTarget;
+
+    /// <summary>当前落点会做什么（无落点 = 移动，仅作默认值；调用方只在有落点时用它）。</summary>
+    public TransferMode DropTargetMode => _dropTarget?.Mode ?? TransferMode.Move;
+
+    /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」` / `复制到「X」`（动作词由落点模式决定，单一来源）。</summary>
     public string DropTargetHintText
         => _dropTarget == null || string.IsNullOrEmpty(_dropTarget.Name)
             ? string.Empty
-            : $"移动到「{_dropTarget.Name}」";
+            : $"{(_dropTarget.Mode == TransferMode.Copy ? "复制到" : "移动到")}「{_dropTarget.Name}」";
+
+    /// <summary>
+    /// 修饰键 → 传输模式的**唯一实现**（默认移动；按住 Ctrl = 复制——Windows 单卷口径）。
+    /// 三处调用（DragOver 的光标与提示、QueryContinueDrag 的即时刷新、Drop 的最终动作）都走这里，
+    /// 不允许任何地方再写第二份 Ctrl 判定。
+    /// </summary>
+    public static TransferMode ResolveDropMode(bool controlPressed)
+        => controlPressed ? TransferMode.Copy : TransferMode.Move;
 
     /// <summary>
     /// 写入拖拽落点：拖拽悬停的**唯一入口**，**覆盖式**（每次 DragOver 重写当前值，既不清零也不累积）。
@@ -405,6 +425,17 @@ public class BrowserViewModel : INotifyPropertyChanged
         foreach (var r in Rows) r.InvalidateIsDropTarget();
         SyncTreeDropTarget();
         OnPropertyChanged(nameof(DropTargetHintText));
+    }
+
+    /// <summary>
+    /// 落点**不变、只换动作**（拖拽中按下/松开 Ctrl）：鼠标没动时 OLE 不会再派发 DragOver，
+    /// 但 `QueryContinueDrag` 每次修饰键变化都会触发 → 由此把模式补进落点状态，保证
+    /// **松手时执行的动作与提示条说的一致**（光标由 OLE 决定，可能滞后一次，见 WARNINGS）。
+    /// </summary>
+    public void SetDropTargetMode(TransferMode mode)
+    {
+        if (_dropTarget == null || _dropTarget.Mode == mode) return;
+        SetDropTarget(_dropTarget with { Mode = mode });
     }
 
     /// <summary>拖拽结束（松手 / Esc 取消 / 拖出可落点）统一清空落点：绝不留残留高亮。</summary>
@@ -423,8 +454,6 @@ public class BrowserViewModel : INotifyPropertyChanged
                 && string.Equals(t.FolderId, entityId, StringComparison.Ordinal);
         }
     }
-
-
 
     /// <summary>
     /// 文件夹完整路径展示（详情栏用）："全部书签 / A / B"；根返回"全部书签"。
@@ -1244,36 +1273,45 @@ public class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合 <see cref="_selectedIds"/> 投影成载荷项。
-    /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）。
-    /// 解析不到的 ID（实体已被外部删除等）不进载荷——移动逻辑按真实数据校验，绝不猜类型。
+    /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）；
+    /// <paramref name="grabbedId"/>（用户**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
+    /// （集合是无序的 HashSet，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
+    /// 解析不到的 ID（实体已被外部事件改掉等）不进载荷，但**如实提示**，绝不静默少搬几项。
     /// </summary>
-    private IReadOnlyList<DragItem> BuildDragItems()
+    private IReadOnlyList<DragItem> BuildDragItems(string? grabbedId = null)
     {
         var items = new List<DragItem>();
+        if (!string.IsNullOrEmpty(grabbedId) && ResolveDragItem(grabbedId) is { } head) items.Add(head);
         foreach (var id in _selectedIds)
         {
-            var row = Rows.FirstOrDefault(r => r.Id == id);
-            if (row != null)
-            {
-                items.Add(new DragItem(row.Id, row.IsFolder, row.Name));
-                continue;
-            }
-
-            var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
-            if (node != null) items.Add(new DragItem(id, !node.IsLink, node.Name));
+            if (string.Equals(id, grabbedId, StringComparison.Ordinal)) continue;   // 已作为首项
+            if (ResolveDragItem(id) is { } item) items.Add(item);
         }
+
+        var missing = _selectedIds.Count - items.Count;
+        if (missing > 0) StatusText = $"{missing} 项已不在当前视图，未参与本次操作";
         return items;
+    }
+
+    /// <summary>把一个实体 ID 解析成载荷项（主栏行优先，其次目录树）；解析不到 = null（绝不猜类型）。</summary>
+    private DragItem? ResolveDragItem(string id)
+    {
+        var row = Rows.FirstOrDefault(r => r.Id == id);
+        if (row != null) return new DragItem(row.Id, row.IsFolder, row.Name);
+
+        var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
+        return node != null ? new DragItem(id, !node.IsLink, node.Name) : null;
     }
 
     /// <summary>
     /// 主栏行拖拽起点：未选中 → 先单选该行（Explorer 口径：拖未选中项先选中）；已选中 → 拖动整个选中集合。
-    /// 返回本次拖动的载荷快照（视图据此调 DoDragDrop）。
+    /// 返回本次拖动的载荷快照（视图据此调 DoDragDrop），抓住的行在首位。
     /// </summary>
     public IReadOnlyList<DragItem> PrepareDragFromRow(BrowserRowViewModel? row)
     {
         if (row == null) return [];
         if (!row.IsSelected) SelectRowWithModifiers(row, ModifierKeys.None);
-        return BuildDragItems();
+        return BuildDragItems(row.Id);
     }
 
     /// <summary>
@@ -1287,46 +1325,11 @@ public class BrowserViewModel : INotifyPropertyChanged
         var id = node.IsLink ? node.Id : node.FolderId;
         if (string.IsNullOrEmpty(id)) return [];
         if (!_selectedIds.Contains(id)) SetSelection(new[] { id }, id);
-        return BuildDragItems();
+        return BuildDragItems(id);
     }
 
-    /// <summary>批量拖拽 / 移动入口（载荷 = <see cref="DragItem"/>：主栏行与树节点拖拽共用同一条路径）。
-    /// targetFolderId 为 null 表示根。非法项（目标在自身子树内、已在目标目录）逐项跳过。</summary>
-    public async Task MoveItemsAsync(IReadOnlyList<DragItem> items, string? targetFolderId)
-    {
-        var target = targetFolderId;
-        var moved = 0;
-        var renamedNotes = new List<string>();
-        // 撤销分组：一次拖拽多选 = 一个用户动作 → 合并为一条撤销记录
-        var callOptions = new LinkPocket.Contracts.CallOptions(UndoGroupId: Guid.NewGuid().ToString("N"));
-        try
-        {
-            foreach (var item in items)
-            {
-                var id = item.Id;
-                if (item.IsFolder)
-                {
-                    if (id == target || IsSelfOrDescendant(id, target)) continue;
-                    if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
-                        continue; // 已在目标目录
-                    if (await MoveFolderAsync(id, target, renamedNotes, callOptions) == OpOutcome.Done) moved++;
-                }
-                else
-                {
-                    if (await MoveLinkAsync(id, target, callOptions) == OpOutcome.Done) moved++;
-                }
-            }
-            StatusText = moved > 0 ? $"已移动 {moved} 项{FormatRenamedNotes(renamedNotes)}" : "没有需要移动的项目";
-        }
-        catch (Exception ex)
-        {
-            StatusText = "移动失败";
-            ShowError("移动失败", ex.Message);
-        }
-        // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），与删除流同口径：
-        // 显式 + 事件双重刷新 = "移动/粘贴后主栏刷两遍"的根因；写操作也不得占用 IsLoading
-        // （它是刷新的重入标志，被写操作占用期间事件刷新会被挂起）。
-    }
+    // 拖拽落点入口见 `BrowserViewModel.Transfer.cs`：`DropItemsAsync(items, target, mode)`。
+    // 拖拽与剪贴板粘贴共用同一条传输流水线（`TransferAsync`），此处不再有第二份逐项循环。
 
     /// <summary>
     /// 单项移动/复制结果（**三态**，结果文案必须如实分派）：
@@ -1466,172 +1469,49 @@ public class BrowserViewModel : INotifyPropertyChanged
         StatusText = "已取消剪切";
     }
 
-    private LinkPocket.Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<BrowserRowViewModel> source, bool isCut) => new()
+    /// <summary>
+    /// 剪贴板载荷（**存储格式** = ID 清单；传输时再投影成 <see cref="DragItem"/> 走同一条流水线）。
+    /// 项集合取 <see cref="BuildDragItems"/>——与拖拽共用"拖动集合唯一出口"，
+    /// 因此树里选中、主栏不可见的项同样可被复制/剪切（过去只认主栏行，同一件事有两套集合来源）。
+    /// </summary>
+    private LinkPocket.Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<DragItem> items, bool isCut) => new()
     {
-        FolderIds = source.Where(r => r.IsFolder).Select(r => r.Id).ToList(),
-        LinkIds = source.Where(r => !r.IsFolder).Select(r => r.Id).ToList(),
+        FolderIds = items.Where(i => i.IsFolder).Select(i => i.Id).ToList(),
+        LinkIds = items.Where(i => !i.IsFolder).Select(i => i.Id).ToList(),
         SourceFolderId = Controller.CurrentFolderId,
         IsCut = isCut
     };
 
     private void CutSelection()
     {
-        var sel = SelectedRows.ToList();
-        if (sel.Count == 0) return;
-        Clipboard.SetBrowserPayload(BuildPayload(sel, isCut: true));
-        foreach (var r in Rows) r.IsCut = false;
-        foreach (var r in sel) r.IsCut = true;
-        StatusText = $"已剪切 {sel.Count} 项（Ctrl+V 粘贴到目标文件夹）";
+        var items = BuildDragItems();
+        if (items.Count == 0) return;
+        Clipboard.SetBrowserPayload(BuildPayload(items, isCut: true));
+        ApplyCutVisual(items);
+        StatusText = $"已剪切 {items.Count} 项（Ctrl+V 粘贴到目标文件夹）";
     }
 
     private void CopySelection()
     {
-        var sel = SelectedRows.ToList();
-        if (sel.Count == 0) return;
-        Clipboard.SetBrowserPayload(BuildPayload(sel, isCut: false));
-        foreach (var r in Rows) r.IsCut = false; // 复制覆盖剪切，清除半透明视觉
-        StatusText = $"已复制 {sel.Count} 项";
+        var items = BuildDragItems();
+        if (items.Count == 0) return;
+        Clipboard.SetBrowserPayload(BuildPayload(items, isCut: false));
+        ApplyCutVisual(null);   // 复制覆盖剪切，清除半透明视觉
+        StatusText = $"已复制 {items.Count} 项";
     }
 
-    private async Task PasteAsync()
+    /// <summary>剪切半透明视觉（行侧投影；传 null = 全清）。</summary>
+    private void ApplyCutVisual(IReadOnlyList<DragItem>? items)
     {
-        var payload = Clipboard.BrowserPayload;
-        if (payload == null || payload.IsEmpty) return;
-
-        var target = Controller.CurrentFolderId;
-        if (payload.IsCut && payload.SourceFolderId == target)
-        {
-            // 剪切到源目录 = 无操作（Windows 同口径）；但必须明确提示——
-            // 含糊的"没反应"曾让用户以为"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
-            // 载荷**保留**（剪切态不消费）：导航到目标文件夹后仍可粘贴。
-            StatusText = "剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）";
-            return;
-        }
-
-        var renamedNotes = new List<string>();
-        var pasted = 0;
-        var failed = 0;
-        var blocked = new List<string>();   // 非法目标（自身 / 自己的子文件夹）→ 明确反馈，绝不静默（Explorer 同样拒绝并弹窗）
-        var pinnedIds = new List<string>();   // 本次粘贴的落点 ID（复制 = 新 ID；剪切 = 原 ID 不变）→ 置尾 + 选中 + 定位
-        // 撤销分组：一次粘贴 = 一个用户动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
-        var undoGroup = Guid.NewGuid().ToString("N");
-        var callOptions = new LinkPocket.Contracts.CallOptions(UndoGroupId: undoGroup);
-        try
-        {
-            foreach (var fid in payload.FolderIds)
-            {
-                _folderMap.TryGetValue(fid, out var info);
-                var name = string.IsNullOrEmpty(info.Name) ? "文件夹" : info.Name;
-                if (fid == target || IsSelfOrDescendant(fid, target))
-                {
-                    blocked.Add(name);   // 放进自己 / 自己的子文件夹：成环，拒绝（Explorer 口径）
-                    continue;
-                }
-                if (payload.IsCut)
-                {
-                    if (NormalizeParentId(info.ParentId) == target) continue;   // 已在目标目录 = 无操作（非错误）
-                    if (await MoveFolderAsync(fid, target, renamedNotes, callOptions) == OpOutcome.Done) { pasted++; pinnedIds.Add(fid); }
-                    else failed++;
-                }
-                else
-                {
-                    var (outcome, newId) = await CopyFolderAsync(fid, target, renamedNotes, callOptions);
-                    if (outcome == OpOutcome.Done && newId != null) { pasted++; pinnedIds.Add(newId); }
-                    else failed++;
-                }
-            }
-
-            foreach (var lid in payload.LinkIds)
-            {
-                if (payload.IsCut)
-                {
-                    var outcome = await MoveLinkAsync(lid, target, callOptions);
-                    if (outcome == OpOutcome.Done) { pasted++; pinnedIds.Add(lid); }
-                    else if (outcome == OpOutcome.Failed) failed++;   // Skipped（已在目标目录）= 无操作
-                }
-                else
-                {
-                    var (outcome, newId) = await CopyLinkAsync(lid, target, callOptions);
-                    if (outcome == OpOutcome.Done && newId != null) { pasted++; pinnedIds.Add(newId); }
-                    else failed++;
-                }
-            }
-
-            if (pasted > 0)
-            {
-                // Windows 口径：刚粘贴的项临时置尾 + 被选中 + 滚入视口。
-                // 行要等事件刷新重建后才出现（写操作不显式刷新），定位请求先待命、重建后消费（ConsumePendingFocus）。
-                MarkRecentlyPinned(pinnedIds);
-                SetSelection(pinnedIds, pinnedIds[0]);
-                _pendingFocusId = pinnedIds[0];
-            }
-
-            // 剪切载荷消费：**只有真的有项被粘贴**才遗忘（Windows 同口径）。
-            // 全部被拒/全部失败时必须保留——否则"粘贴进自己的子文件夹被拒"之后，
-            // 用户导航到合法位置就再也粘贴不了了（那才是真正的"剪切不见了"）。
-            if (payload.IsCut && pasted > 0)
-            {
-                Clipboard.SetBrowserPayload(null); // 剪切语义：粘贴完成即遗忘（复制载荷保留，可多次粘贴——Windows 同口径）
-                foreach (var r in Rows) r.IsCut = false;
-            }
-
-            // 结果**如实分派**：成功数 / 失败数 / 无操作 分开说，绝不把"部分失败"含混成"已完成"
-            var parts = new List<string>();
-            if (pasted > 0) parts.Add($"已粘贴 {pasted} 项{FormatRenamedNotes(renamedNotes)}");
-            if (failed > 0) parts.Add($"{failed} 项失败（详见日志）");
-            StatusText = parts.Count > 0 ? string.Join("，", parts) : "没有可粘贴的项目";
-
-            // 非法目标（成环）：明确弹窗说明——用户明确操作后"毫无反应"会被读成数据损坏（与"同目录粘贴"同一教训）
-            if (blocked.Count > 0) ShowError(BlockedTitle(payload.IsCut), BlockedMessage(payload.IsCut, blocked));
-        }
-        catch (Exception ex)
-        {
-            StatusText = "粘贴失败";
-            ShowError("粘贴失败", ex.Message);
-        }
-        // 刷新统一交给后端事件（与移动/删除同口径）：显式 + 事件双重刷新会让主栏刷两遍，
-        // 且写操作占用 IsLoading 会让加载遮罩在粘贴期间无谓亮起。
+        foreach (var r in Rows)
+            r.IsCut = items != null && items.Any(i => string.Equals(i.Id, r.Id, StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// 拖拽收尾的**唯一入口**（视图在 <c>DoDragDrop</c> 返回后调用，落点 ID 由视图按**松手位置**命中测试得出）：
-    /// **仅当松手落点确实是被拖项自身或其后代时**才弹窗说明（与粘贴共用同一套文案生成——反馈口径只有一处）。
-    ///
-    /// <para>⚠️ 判据必须是「松手那一刻的落点」，绝不能是「拖拽途中经过过谁」：拖拽**必然从源行/源节点出发**，
-    /// 起点自己就是"拖到它自己"，若按"途经即记账"实现，任何一次文件夹拖拽都会在**移动成功之后**误弹
-    /// "不能移到它自己或它的子文件夹里"（实测用户报障：拖 A 到同目录下的 B，弹窗了、A 也确实搬过去了）。
-    /// 途经成环目标本来就该是"禁止光标"，而不是错误——Windows 同样只在真正放下时报错。</para>
-    ///
-    /// <para><paramref name="dropTargetId"/> 为 null/空 = 松手在空白或非落点：**无操作、不弹窗**（Explorer 口径）。</para>
-    /// </summary>
-    public void ReportBlockedDropIfCycle(IReadOnlyList<DragItem> items, string? dropTargetId)
-    {
-        if (string.IsNullOrEmpty(dropTargetId)) return;
-        foreach (var item in items)
-        {
-            if (item.Id == dropTargetId || (item.IsFolder && IsSelfOrDescendant(item.Id, dropTargetId)))
-            {
-                ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, items.Select(i => i.Name).ToList()));
-                return;
-            }
-        }
-    }
+    // 粘贴入口见 `BrowserViewModel.Transfer.cs`：与拖拽共用同一条传输流水线（`TransferAsync`）。
+    // 这里只保留**剪贴板自身的语义**（载荷构造 / 剪切态视觉 / 取消 / 遗忘条件），不再有逐项循环。
 
-    /// <summary>非法粘贴目标（成环）的弹窗标题——按动作区分（剪切 = 移动 / 复制 = 复制）。</summary>
-    private static string BlockedTitle(bool isCut) => isCut ? "无法移动" : "无法复制";
-
-    /// <summary>
-    /// 非法粘贴目标的说明文案（Explorer 口径：明确说清为何不能，而不是"操作后毫无反应"）。
-    /// 成环 = 目标是自己或自己的子文件夹（文件夹不能成为自己的后代）；同目录粘贴**不在此列**（那只是无操作）。
-    /// </summary>
-    private static string BlockedMessage(bool isCut, IReadOnlyList<string> names)
-    {
-        var action = isCut ? "移动" : "复制";
-        if (names.Count == 1)
-            return $"无法将文件夹「{names[0]}」{action}到它自己或它的子文件夹里。";
-        return $"以下文件夹无法{action}到它们自己或它们的子文件夹里：\n" +
-               string.Join("、", names.Select(n => $"「{n}」"));
-    }
+    // 成环（非法目标）的弹窗文案在 `BrowserViewModel.Transfer.cs`（`BlockedTitle` / `BlockedMessage`，按 TransferMode 出词）：
+    // 拖拽与粘贴**共用同一套**（反馈口径只有一处）。
 
     /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。失败必须留痕（观测面铁律）。</summary>
     private async Task<(OpOutcome Outcome, string? NewId)> CopyFolderAsync(string folderId, string? target,

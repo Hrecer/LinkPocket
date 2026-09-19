@@ -147,6 +147,7 @@
                         <StackPanel>
                             <Border x:Name="RowCard" Padding="8,3" Cursor="Hand"
                                     PreviewMouseLeftButtonDown="FolderTreeItem_PreviewMouseLeftButtonDown"
+                                    PreviewMouseRightButtonDown="FolderTreeItem_PreviewMouseRightButtonDown"
                                     MouseMove="FolderTreeItem_MouseMove"
                                     MouseLeftButtonUp="FolderTreeItem_MouseLeftButtonUp">
                                 <Border.Style>

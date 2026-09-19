@@ -219,6 +219,7 @@
                             <Border x:Name="RowBorder" Tag="BrowserRow" Cursor="Hand"
                                     MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
                                     PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
+                                    PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"
                                     MouseMove="RowBorder_MouseMove"
                                     MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
                                     ContextMenuOpening="RowBorder_ContextMenuOpening"

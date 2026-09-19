@@ -125,7 +125,7 @@ public class TreeDragSourceTests
                 .Single(c => c.FolderId == a.FolderId).Children.Single(c => c.FolderId == sub.FolderId);
             var items = vm.PrepareDragFromNode(subNode);
 
-            await vm.MoveItemsAsync(items, b.FolderId);
+            await vm.DropItemsAsync(items, b.FolderId, TransferMode.Move);
             await vm.RefreshPreservingSelectionAsync();
 
             var bNode = vm.FolderTree[0].Children.Single(c => c.FolderId == b.FolderId);

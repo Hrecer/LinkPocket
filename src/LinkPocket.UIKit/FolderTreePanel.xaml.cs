@@ -25,6 +25,9 @@ namespace LinkPocket.Views
 
         /// <summary>承载本次拖拽的源元素（行卡片）：宿主把它交给 <c>DoDragDrop</c>。</summary>
         public DependencyObject? Source { get; init; }
+
+        /// <summary>是否为右键拖拽（Windows 口径：右键拖动松手时由宿主弹「复制到此处 / 移动到此处」菜单）。</summary>
+        public bool RightButton { get; init; }
     }
 
     /// <summary>
@@ -114,9 +117,12 @@ namespace LinkPocket.Views
         private object? _pressNode;
         private int _pressNodeClickCount;
 
-        /// <summary>行拖拽的按下起点与"本次手势已进入拖拽"标记（与主栏行同一套阈值口径）。</summary>
+        /// <summary>行拖拽的按下起点与"本次手势已进入拖拽"标记（与主栏行同一套阈值口径）。左键与右键各记一套，
+        /// 两种按钮的拖拽互不干扰（右键拖拽的抬起还要由宿主压掉右键菜单，见 BrowserView）。</summary>
         private Point _nodeDragStart;
         private bool _nodeDragStarted;
+        private object? _rightPressNode;
+        private Point _nodeRightDragStart;
 
         /// <summary>树行按下（隧道先于行主体）：记录命中的节点 + 点击计数 + 拖拽起点。
         /// 就地改名编辑框内的鼠标操作归编辑框自己 → 不记节点（后续选择/进入/拖拽一律让位）。</summary>
@@ -130,6 +136,15 @@ namespace LinkPocket.Views
             _nodeDragStarted = false;
         }
 
+        /// <summary>树行右键按下：只记拖拽起点（选中语义仍只由左键单击/宿主决定——右键不写选中）。</summary>
+        private void FolderTreeItem_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _rightPressNode = InlineNameEditor.IsWithin(e.OriginalSource as DependencyObject)
+                ? null
+                : (sender as FrameworkElement)?.DataContext;
+            _nodeRightDragStart = e.GetPosition(this);
+        }
+
         /// <summary>
         /// 行主体拖动（按下 + 移动超过系统阈值）：**请求宿主启动拖拽**。
         /// 面板只报"哪个节点、哪个源元素"——选中语义（拖未选中项先单选、拖已选中项拖整个集合）与载荷构造
@@ -138,17 +153,36 @@ namespace LinkPocket.Views
         /// </summary>
         private void FolderTreeItem_MouseMove(object sender, MouseEventArgs e)
         {
+            // 右键拖拽（Windows 口径：右键按住拖到目标、松手由宿主弹「复制到此处 / 移动到此处」菜单）。
+            // 只报"节点 + 源元素 + 右键"——菜单与载荷全在宿主侧，可复用控件不碰业务数据。
+            if (e.RightButton == MouseButtonState.Pressed)
+            {
+                if (_rightPressNode == null) return;
+                if (!BeyondDragThreshold(e.GetPosition(this), _nodeRightDragStart)) return;
+                if ((sender as FrameworkElement) is not { DataContext: { } rnode } rsource) return;
+                _rightPressNode = null;   // 本次手势只发起一次
+                NodeDragStartRequested?.Invoke(this, new TreeItemDragStartEventArgs
+                {
+                    Node = rnode,
+                    Source = rsource,
+                    RightButton = true,
+                });
+                return;
+            }
+
             if (e.LeftButton != MouseButtonState.Pressed) return;
             if (_pressNode == null || _nodeDragStarted) return;   // 按下不在行主体（改名编辑框内）→ 不进入拖拽
-            var pos = e.GetPosition(this);
-            if (Math.Abs(pos.X - _nodeDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-                Math.Abs(pos.Y - _nodeDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
-                return;
+            if (!BeyondDragThreshold(e.GetPosition(this), _nodeDragStart)) return;
 
             if ((sender as FrameworkElement) is not { DataContext: { } node } source) return;
             _nodeDragStarted = true;
             NodeDragStartRequested?.Invoke(this, new TreeItemDragStartEventArgs { Node = node, Source = source });
         }
+
+        /// <summary>移动是否超过系统拖拽阈值（**唯一实现**：左键与右键两条路径共用同一判定口径）。</summary>
+        private static bool BeyondDragThreshold(Point pos, Point start)
+            => Math.Abs(pos.X - start.X) >= SystemParameters.MinimumHorizontalDragDistance ||
+               Math.Abs(pos.Y - start.Y) >= SystemParameters.MinimumVerticalDragDistance;
 
         /// <summary>
         /// 行主体单击（chevron 由 ToggleButton 自捕获鼠标、绝不进入此路径）：

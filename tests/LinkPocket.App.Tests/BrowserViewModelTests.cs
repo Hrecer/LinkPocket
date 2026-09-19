@@ -99,7 +99,7 @@ public class BrowserViewModelTests
             await vm.LoadAsync(a.FolderId);
             Assert.Contains(vm.Rows, r => r.Id == link.LinkId);
 
-            await vm.MoveItemsAsync(new[] { new DragItem(link.LinkId, false, "M") }, b.FolderId);
+            await vm.DropItemsAsync(new[] { new DragItem(link.LinkId, false, "M") }, b.FolderId, TransferMode.Move);
 
             // 口径（与删除流一致，WARNINGS #18）：写操作**不自行刷新**——界面刷新由后端事件链
             // （MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）负责；
