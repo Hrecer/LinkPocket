@@ -159,13 +159,24 @@ internal sealed class DragVisualAdorner : Adorner
         var show = !string.IsNullOrEmpty(hintText);
         if (show) _hintText.Text = hintText;
         _hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        InvalidateArrange();
+        RefreshLayer();
     }
 
     /// <summary>更新位置（宿主给的坐标须相对被装饰元素）。</summary>
     internal void UpdatePosition(Point ownerPoint)
     {
         _offset = ownerPoint;
+        RefreshLayer();
+    }
+
+    /// <summary>
+    /// 通知装饰层重排。⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**——
+    /// 本浮层的位置来自 <see cref="GetDesiredTransform"/>（由装饰层在 Update 时应用），
+    /// 不显式 Update 的话位置会**冻在初次布局处**（探针实测：浮层一直贴在左上角不动）。
+    /// </summary>
+    private void RefreshLayer()
+    {
+        if (Parent is AdornerLayer layer) layer.Update(AdornedElement);
         InvalidateArrange();
     }
 
