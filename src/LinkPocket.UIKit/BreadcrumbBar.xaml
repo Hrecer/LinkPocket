@@ -10,13 +10,14 @@
          ⚠️ 胶囊基态值必须写在 Style.Setters（本地值优先级高于样式触发器）。 -->
 
     <UserControl.Resources>
-        <!-- 路径编辑框：M3E 圆角填充文本域（高度 32 与面包屑按钮一致，切换不变高）；
-             默认 Collapsed，IsPathEditing=True 才显示；路径无效时 2px Error 描边。 -->
+        <!-- 路径编辑框：Windows 11 口径——**胶囊自己就是输入框**（胶囊 DataTrigger 出 Primary 描边），
+             文本直接躺在胶囊里：编辑框背景透明、无边框，不内嵌第二个"白框"。高度 32 与面包屑按钮一致。 -->
         <Style x:Key="PathEditField" TargetType="TextBox">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Height" Value="32"/>
             <Setter Property="Padding" Value="14,0"/>
             <Setter Property="MinWidth" Value="120"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
             <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
@@ -27,10 +28,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="EditRoot" CornerRadius="16"
-                                Background="{DynamicResource SurfaceContainerHighest}"
-                                BorderThickness="2" BorderBrush="Transparent"
-                                SnapsToDevicePixels="True">
+                        <Border x:Name="EditRoot" CornerRadius="16" Background="Transparent"
+                                BorderThickness="0" SnapsToDevicePixels="True">
                             <ScrollViewer x:Name="PART_ContentHost"
                                           Margin="{TemplateBinding Padding}"
                                           VerticalAlignment="Center" Focusable="False"
@@ -38,10 +37,9 @@
                                           VerticalScrollBarVisibility="Hidden"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                            </Trigger>
+                            <!-- 路径无效：仅文字区出 2px Error 下划（胶囊描边仍归胶囊的 DataTrigger 管） -->
                             <DataTrigger Binding="{Binding IsPathInvalid, ElementName=Root}" Value="True">
+                                <Setter TargetName="EditRoot" Property="BorderThickness" Value="0,0,0,2"/>
                                 <Setter TargetName="EditRoot" Property="BorderBrush" Value="#E24B4A"/>
                             </DataTrigger>
                         </ControlTemplate.Triggers>
