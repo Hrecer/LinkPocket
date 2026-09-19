@@ -338,13 +338,15 @@ public class BrowserViewModel : INotifyPropertyChanged
         CommandManager.InvalidateRequerySuggested();
     }
 
-    /// <summary>把选中集合 <see cref="_selectedIds"/> 投影到主栏行 + 目录树，并刷新派生状态。
-    /// 在选中写入（<see cref="SetSelection"/>）与 Rows/Tree 重建后（RefreshAsync）调用；
-    /// 行与树都是该集合的只读投影，无任何独立选中状态。</summary>
+    /// <summary>把两个唯一事实来源（选中集合 <see cref="_selectedIds"/> + 拖拽落点 <see cref="_dropTargetId"/>）
+    /// 投影到主栏行 + 目录树，并刷新派生状态。
+    /// 在选中写入（<see cref="SetSelection"/>）、落点写入（<see cref="SetDropTarget"/>）与 Rows/Tree 重建后（RefreshAsync）调用；
+    /// 行与树都是这两个集合的只读投影，无任何独立状态。</summary>
     private void ApplySelectionToView()
     {
         SyncMainRowSelection();
         SyncTreeSelection();
+        SyncTreeDropTarget();      // 树节点重建后落点高亮同样要重放（行侧是 getter 投影，无需重放）
         NotifySelectionChanged();
     }
 
@@ -369,6 +371,56 @@ public class BrowserViewModel : INotifyPropertyChanged
             // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当用户选中了真实实体（链接叶子或文件夹）才高亮
             string? entityId = node.IsLink ? node.Id : node.FolderId;
             node.IsSelected = entityId != null && _selectedIds.Contains(entityId);
+        }
+    }
+
+    // —— 拖拽落点（悬停高亮 + 「移动到 X」提示的唯一事实来源）——
+
+    /// <summary>当前拖拽落点（**覆盖式**更新，绝不累积——铁律 9）；<c>null</c> 整个对象 = 指针不在任何可落点上。</summary>
+    private BrowserDropTarget? _dropTarget;
+
+    /// <summary>当前目录显示名（根 = 「全部书签」）：列表空白落点的提示文案用。</summary>
+    public string CurrentFolderDisplayName
+        => Breadcrumbs.Count > 0 ? Breadcrumbs[^1].Name : FolderIds.RootDisplayName;
+
+    /// <summary>主栏某行是否为当前落点（行 <c>IsDropTarget</c> 直接读这里——行是只读投影）。</summary>
+    public bool IsDropTargetRow(string id)
+        => _dropTarget is { Pane: BrowserPane.Main } t && string.Equals(t.FolderId, id, StringComparison.Ordinal);
+
+    /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」`。</summary>
+    public string DropTargetHintText
+        => _dropTarget == null || string.IsNullOrEmpty(_dropTarget.Name)
+            ? string.Empty
+            : $"移动到「{_dropTarget.Name}」";
+
+    /// <summary>
+    /// 写入拖拽落点：拖拽悬停的**唯一入口**，**覆盖式**（每次 DragOver 重写当前值，既不清零也不累积）。
+    /// 传 <c>null</c> = 指针不在任何可落点上（空白 / 非法目标 / 链接）→ 两栏高亮熄灭、提示不显示；
+    /// 非法目标（拖到自己或自己的后代）也传 null：光标已用禁止态表达，不该再高亮或提示"移动到"。
+    /// </summary>
+    public void SetDropTarget(BrowserDropTarget? target)
+    {
+        if (Equals(_dropTarget, target)) return;   // record 值相等 = 同一落点：不重复投影（DragOver 会高频触发）
+        _dropTarget = target;
+        foreach (var r in Rows) r.InvalidateIsDropTarget();
+        SyncTreeDropTarget();
+        OnPropertyChanged(nameof(DropTargetHintText));
+    }
+
+    /// <summary>拖拽结束（松手 / Esc 取消 / 拖出可落点）统一清空落点：绝不留残留高亮。</summary>
+    public void ClearDropTarget() => SetDropTarget(null);
+
+    /// <summary>目录树落点投影（节点侧是推送式，与 IsSelected 同构）：只有指针所在栏是树、
+    /// 且节点实体 ID 等于当前落点时才高亮；链接叶子与虚根永不作落点。</summary>
+    private void SyncTreeDropTarget()
+    {
+        foreach (var node in AllTreeNodes())
+        {
+            string? entityId = node.IsLink ? node.Id : node.FolderId;
+            node.IsDropTarget = _dropTarget is { Pane: BrowserPane.Tree } t
+                && !node.IsLink
+                && entityId != null
+                && string.Equals(t.FolderId, entityId, StringComparison.Ordinal);
         }
     }
 

@@ -168,6 +168,11 @@
                                                 </MultiDataTrigger.Conditions>
                                                 <Setter Property="Background" Value="Transparent"/>
                                             </MultiDataTrigger>
+                                            <!-- 拖拽悬停落点：与主栏行同一套高亮（同键同色），两栏观感一致。
+                                                 落点节点不可能是拖动集合成员（宿主已排除），故不会与"选中"同时成立。 -->
+                                            <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                            </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
@@ -207,6 +212,7 @@
                 </Setter.Value>
             </Setter>
             <EventSetter Event="DragOver" Handler="FolderTreeItem_DragOver"/>
+            <EventSetter Event="DragLeave" Handler="FolderTreeItem_DragLeave"/>
             <EventSetter Event="Drop" Handler="FolderTreeItem_Drop"/>
         </Style>
     </UserControl.Resources>

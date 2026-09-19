@@ -58,6 +58,17 @@ public class FolderNode : INotifyPropertyChanged
         set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
     }
 
+    /// <summary>
+    /// 是否为拖拽悬停落点（数据驱动，VM 落点状态的投影，与 <see cref="IsSelected"/> 同构）：
+    /// 拖拽过程中指针下的节点高亮，落点唯一事实来源在 VM（覆盖式更新），节点只被推送。
+    /// </summary>
+    private bool _isDropTarget;
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set { if (_isDropTarget == value) return; _isDropTarget = value; OnPropertyChanged(); }
+    }
+
     /// <summary>是否显示节点右键菜单（回收站树节点 = false）。ContextMenu 半离线，走 DataContext 绑定。</summary>
     public bool ShowNodeMenu => Host != null;
 

@@ -72,6 +72,9 @@ namespace LinkPocket.Views
         /// <summary>落放到节点。</summary>
         public event EventHandler<TreeItemDragEventArgs>? NodeDrop;
 
+        /// <summary>拖拽离开节点（宿主据此熄灭落点高亮——覆盖式落点状态在离开时必须清零）。</summary>
+        public event EventHandler<TreeItemDragEventArgs>? NodeDragLeave;
+
         /// <summary>请求启动节点拖拽（按下后移动超过系统阈值）：宿主构造业务载荷并调 DoDragDrop。
         /// 与 NodeDragOver/NodeDrop 同一开关口径——**订阅即启用**；回收站不订阅 = 纯展示（树节点不可拖）。</summary>
         public event EventHandler<TreeItemDragStartEventArgs>? NodeDragStartRequested;
@@ -174,6 +177,15 @@ namespace LinkPocket.Views
         {
             var args = new TreeItemDragEventArgs { Args = e, Node = (sender as TreeViewItem)?.DataContext };
             NodeDragOver?.Invoke(this, args);
+        }
+
+        private void FolderTreeItem_DragLeave(object sender, DragEventArgs e)
+        {
+            NodeDragLeave?.Invoke(this, new TreeItemDragEventArgs
+            {
+                Args = e,
+                Node = (sender as TreeViewItem)?.DataContext,
+            });
         }
 
         private void FolderTreeItem_Drop(object sender, DragEventArgs e)

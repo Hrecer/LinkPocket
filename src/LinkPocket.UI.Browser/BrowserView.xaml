@@ -173,6 +173,7 @@
                                    NodeSelected="FolderTreePanel_NodeSelected"
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
                                    NodeDragOver="FolderTreePanel_NodeDragOver"
+                                   NodeDragLeave="FolderTreePanel_NodeDragLeave"
                                    NodeDrop="FolderTreePanel_NodeDrop"
                                    NodeDragStartRequested="FolderTreePanel_NodeDragStartRequested"/>
 
@@ -184,7 +185,8 @@
             <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
                     PreviewMouseLeftButtonDown="ListCard_PreviewMouseLeftButtonDown"
-                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp">
+                    MouseLeftButtonUp="ListCard_MouseLeftButtonUp"
+                    AllowDrop="True" DragOver="ListCard_DragOver" DragLeave="ListCard_DragLeave" Drop="ListCard_Drop">
             <Grid>
                 <Grid.ContextMenu>
                     <ContextMenu>
@@ -220,7 +222,7 @@
                                     MouseMove="RowBorder_MouseMove"
                                     MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
                                     ContextMenuOpening="RowBorder_ContextMenuOpening"
-                                    AllowDrop="True" DragOver="RowBorder_DragOver" Drop="RowBorder_Drop">
+                                    AllowDrop="True" DragOver="RowBorder_DragOver" DragLeave="RowBorder_DragLeave" Drop="RowBorder_Drop">
                                 <Border.ContextMenu>
                                     <ContextMenu>
                                         <ContextMenu.Resources>
@@ -318,6 +320,12 @@
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsCut}" Value="True">
                                                     <Setter Property="Opacity" Value="0.45"/>
+                                                </DataTrigger>
+                                                <!-- 拖拽悬停落点（Windows 口径：指针下的可落点整体高亮）。
+                                                     与"选中"同键但语义不同，且二者不会同时出现在同一行——
+                                                     落点必须不在拖动集合内（IsDropValid 已排除），而拖动集合就是选中集合。 -->
+                                                <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>

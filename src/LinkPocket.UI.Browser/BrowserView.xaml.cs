@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -402,6 +403,63 @@ public partial class BrowserView : UserControl
             if (!string.IsNullOrEmpty(name)) ViewModel?.ChooseCandidate(name);
         }
 
+    // —— 拖拽浮层 + 落点提示（Windows 11 手感）——
+
+    /// <summary>本次拖拽的浮层（半透明行快照 + 「移动到 X」提示）；拖拽期间存在，结束即摘除。</summary>
+    private DragVisualAdorner? _dragVisual;
+
+    /// <summary>挂出浮层并开始跟踪指针位置（<c>GiveFeedback</c> 在拖拽期间持续触发——
+    /// 拖拽时 WPF 不再派发 MouseMove，只能这样跟手）。</summary>
+    private void ShowDragVisual(IReadOnlyList<DragItem> items)
+    {
+        _dragVisual = DragVisualAdorner.Attach(this);
+        if (_dragVisual == null) return;
+        _dragVisual.Show(items);
+        _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+        // 拖拽源在本页内 → GiveFeedback 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
+        AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
+    }
+
+    /// <summary>摘除浮层（拖拽结束 / 拖拽被取消）。</summary>
+    private void HideDragVisual()
+    {
+        if (_dragVisual == null) return;
+        RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
+        _dragVisual.Detach();
+        _dragVisual = null;
+    }
+
+    private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
+    {
+        if (_dragVisual == null || !GetCursorPos(out var screen)) return;
+        // 屏幕物理像素 → 本页坐标（PointFromScreen 已处理 DPI 缩放）
+        _dragVisual.UpdatePosition(PointFromScreen(new Point(screen.X, screen.Y)));
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out ScreenPoint point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ScreenPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    /// <summary>写入落点（视图侧唯一出口）：VM 负责高亮投影，浮层负责提示文案——两者永远同步。</summary>
+    private void ApplyDropTarget(BrowserDropTarget? target)
+    {
+        ViewModel?.SetDropTarget(target);
+        _dragVisual?.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+    }
+
+    /// <summary>清空落点（视图侧唯一出口）：离开可落点 / 拖拽结束时调用，避免残留高亮与残留提示。</summary>
+    private void ClearDropTarget()
+    {
+        ViewModel?.ClearDropTarget();
+        _dragVisual?.UpdateHint(string.Empty);
+    }
+
     // —— 行拖拽（参考 Windows 资源管理器：按下 → 移动超过阈值 → 进入拖拽）——
 
     private Point _rowDragStart;
@@ -465,12 +523,16 @@ public partial class BrowserView : UserControl
         var items = ViewModel.PrepareDragFromRow(row);
         if (items.Count == 0) return;
 
+        ShowDragVisual(items);
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move);
+        HideDragVisual();
 
-        // 拖拽结束（松手）：**按松手那一刻的落点**判定是否属于成环（拖到它自己 / 它的子文件夹）→ 弹窗说明。
+        // 拖拽结束（松手）：先熄灭落点高亮，再**按松手那一刻的落点**判定是否属于成环
+        //（拖到它自己 / 它的子文件夹）→ 弹窗说明。
         // ⚠️ 绝不能按"拖拽途中经过过谁"判定：拖拽必然从源行出发，起点自己就是"拖到它自己"，
         // 一旦按途经记账，任何文件夹拖拽都会在移动成功后误报（用户实测报障）。
+        ClearDropTarget();
         ReportCycleDropOnRelease(items);
     }
 
@@ -526,9 +588,10 @@ public partial class BrowserView : UserControl
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
 
-            // 拖拽中只表达"能不能放"（合法 = 移动光标 / 非法 = 禁止光标），不记账、不弹窗：
-            // 途经成环目标（含起点自己）是正常拖拽路径的一部分，"非法"只在**松手落点**上成立。
+            // 拖拽中只表达"能不能放"（合法 = 移动光标 + 落点高亮 + 「移动到 X」提示；非法 = 禁止光标 + 无高亮无提示），
+            // 不记账、不弹窗：途经成环目标（含起点自己）是正常拖拽路径的一部分，"非法"只在**松手落点**上成立。
             var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
+            ApplyDropTarget(ok ? new BrowserDropTarget(row!.Id, BrowserPane.Main, row.Name) : null);
             e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally
@@ -536,6 +599,10 @@ public partial class BrowserView : UserControl
             e.Handled = true;   // 无论沿途是否异常，本事件归属拖拽流程（防冒泡到其它落点）
         }
     }
+
+    /// <summary>拖拽离开行：熄灭落点高亮。落点是**覆盖式**状态（铁律 9），离开必须清零；
+    /// 随即 DragOver 会重设真正的新落点，所以行间移动只会看到高亮"跟着指针走"。</summary>
+    private void RowBorder_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
 
     private void RowBorder_Drop(object sender, DragEventArgs e)
     {
@@ -545,6 +612,47 @@ public partial class BrowserView : UserControl
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
             if (payload != null && row is { IsFolder: true } && IsDropValid(payload, row.Id))
                 _ = ViewModel?.MoveItemsAsync(payload.Items, row.Id);
+        }
+        finally
+        {
+            e.Handled = true;
+        }
+    }
+
+    // —— 列表卡空白落点（Windows 口径：拖到文件夹内容区空白 = 落在**当前所在文件夹**）——
+
+    /// <summary>
+    /// 拖到列表空白：落点 = **当前所在文件夹**（没有目标项，因此不高亮任何行，只给提示）。
+    /// 行上的 DragOver 会 <c>e.Handled = true</c>，所以指针在行上时不会走到这里（行优先、语义更具体）。
+    /// </summary>
+    private void ListCard_DragOver(object sender, DragEventArgs e)
+    {
+        try
+        {
+            var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            if (payload == null || ViewModel == null) return;
+            ApplyDropTarget(new BrowserDropTarget(
+                ViewModel.CurrentFolderId, BrowserPane.Main, ViewModel.CurrentFolderDisplayName));
+            e.Effects = DragDropEffects.Move;
+        }
+        finally
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>拖拽离开列表卡：熄灭落点提示（覆盖式状态，离开清零）。</summary>
+    private void ListCard_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
+
+    /// <summary>落在列表空白 = 移动到当前目录。已经属于该目录的项由 <see cref="BrowserViewModel.MoveItemsAsync"/>
+    /// 自动跳过（= 无操作），与 Explorer 一致：不报错、也不做多余的事。</summary>
+    private void ListCard_Drop(object sender, DragEventArgs e)
+    {
+        try
+        {
+            var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+            if (payload != null && ViewModel != null)
+                _ = ViewModel.MoveItemsAsync(payload.Items, ViewModel.CurrentFolderId);
         }
         finally
         {
@@ -566,13 +674,16 @@ public partial class BrowserView : UserControl
         var items = ViewModel.PrepareDragFromNode(node);
         if (items.Count == 0) return;
 
+        ShowDragVisual(items);
         DragDrop.DoDragDrop(e.Source, new DataObject(new BrowserDragPayload(items)), DragDropEffects.Move);
+        HideDragVisual();
 
+        ClearDropTarget();     // 先熄灭落点高亮，再按松手落点判定成环（两条拖拽路径同口径）
         ReportCycleDropOnRelease(items);
     }
 
     /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。
-    /// 与主栏同口径：只表达光标（合法 Move / 非法 None），不记账、不弹窗。</summary>
+    /// 与主栏同口径：合法 = 移动光标 + 落点高亮 + 「移动到 X」提示；非法 = 禁止光标 + 无高亮无提示。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
         try
@@ -580,6 +691,7 @@ public partial class BrowserView : UserControl
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
             var ok = node != null && !node.IsLink && IsDropValid(payload, node.FolderId);
+            ApplyDropTarget(ok ? new BrowserDropTarget(node!.FolderId, BrowserPane.Tree, node.Name) : null);
             e.Args.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
         }
         finally
@@ -587,6 +699,9 @@ public partial class BrowserView : UserControl
             e.Args.Handled = true;
         }
     }
+
+    /// <summary>拖拽离开树节点：熄灭落点高亮（覆盖式状态，离开清零；新落点由随后的 DragOver 覆盖写入）。</summary>
+    private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e) => ClearDropTarget();
 
     /// <summary>树节点落放：移入对应文件夹（根节点「全部书签」= 移到根）；链接叶子不接受落放。</summary>
     private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)

@@ -96,6 +96,15 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>重命名会话变化后由宿主调用：仅重发本行 IsRenaming 的绑定通知（值由会话投影）。</summary>
     public void InvalidateIsRenaming() => OnPropertyChanged(nameof(IsRenaming));
 
+    /// <summary>
+    /// 本行是否为**拖拽悬停落点** = 宿主落点状态的纯投影（与 <see cref="IsSelected"/> 同构）：
+    /// 拖拽过程中指针下的可落点行高亮；落点唯一事实来源在 VM（覆盖式更新），行对象随重建销毁、绝不持久本状态。
+    /// </summary>
+    public bool IsDropTarget => Host != null && Host.IsDropTargetRow(Id);
+
+    /// <summary>落点状态变化后由宿主调用：仅重发本行 IsDropTarget 的绑定通知（值由落点投影）。</summary>
+    public void InvalidateIsDropTarget() => OnPropertyChanged(nameof(IsDropTarget));
+
     private bool _isCut;
     /// <summary>剪切态视觉（Ctrl+X）：行整体半透明，由绑定驱动。</summary>
     public bool IsCut
