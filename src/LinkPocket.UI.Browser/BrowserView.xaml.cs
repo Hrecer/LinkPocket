@@ -715,7 +715,7 @@ public partial class BrowserView : UserControl
         menu.Resources.Add(typeof(MenuItem), (Style)FindResource("LpMenuItem"));
 
         foreach (var action in BuildRightDragMenuItems(items, target.FolderId, target.Name)) menu.Items.Add(action);
-        menu.Items.Add(new Separator());
+        // 用户定稿（2026-09-19）：菜单不加分隔线——三项连续排列（复制 / 移动 / 取消）。
         var cancel = new MenuItem { Header = "取消" };
         cancel.Click += (_, _) => menu.IsOpen = false;
         menu.Items.Add(cancel);
