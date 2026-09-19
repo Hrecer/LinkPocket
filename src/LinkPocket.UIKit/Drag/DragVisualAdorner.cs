@@ -166,16 +166,23 @@ public sealed class DragVisualAdorner : Adorner
         InvalidateArrange();
     }
 
-    /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。</summary>
+    /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。
+    /// **内容没变就直接返回**：拖拽悬停在同一落点上时 <c>DragOver</c> 会按鼠标移动频率反复调用，
+    /// 每次都重排装饰层（<see cref="RefreshLayer"/>）纯属白烧——拖拽掉帧的主要来源就在这条逐帧路径上。</summary>
     public void UpdateHint(string hintText)
     {
         var show = !string.IsNullOrEmpty(hintText);
+        var shown = _hint.Visibility == Visibility.Visible;
+        if (shown == show && (!show || _hintText.Text == hintText)) return;
         if (show) _hintText.Text = hintText;
         _hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         RefreshLayer();
     }
 
-    /// <summary>更新位置（宿主给的坐标须相对被装饰元素）。</summary>
+    /// <summary>更新位置（宿主给的坐标须相对被装饰元素）。
+    /// ⚠️ 位移经 <see cref="GetDesiredTransform"/> 交给装饰层——**不能改成自持 RenderTransform**：
+    /// `AdornerLayer` 排列时会把该变换直接写进浮层的 `RenderTransform`（`Adorner.AdornerTransform`
+    /// 就是它的别名），自持的变换会被当场覆盖（实测：位移写进去后落位恒为 (0,0)）。</summary>
     public void UpdatePosition(Point ownerPoint)
     {
         _offset = ownerPoint;
@@ -183,10 +190,9 @@ public sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>
-    /// 通知装饰层重排。⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**——
-    /// 本浮层的位置来自 <see cref="GetDesiredTransform"/>（由装饰层在 Update 时应用），
-    /// 不显式 Update 的话位置会**冻在初次布局处**（探针实测：浮层一直贴在左上角不动）。
-    /// </summary>
+    /// 通知装饰层重排（位移与尺寸变化都走这里；提示条内容没变时由 <see cref="UpdateHint"/> 提前返回）。
+    /// ⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**——装饰层在 <c>AdornerLayer.Update</c> 里
+    /// 清掉缓存的变换并 invalidate measure，位置/尺寸才会真的按新值落地（探针实测：不 Update 会冻在初次布局处）。</summary>
     private void RefreshLayer()
     {
         if (Parent is AdornerLayer layer) layer.Update(AdornedElement);
