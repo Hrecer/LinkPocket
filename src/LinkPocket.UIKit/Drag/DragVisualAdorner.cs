@@ -25,6 +25,16 @@ namespace LinkPocket.Views;
 /// <para>⚠️ 必须 <c>IsHitTestVisible = false</c>：否则浮层会吃掉指针下方的 DragOver/Drop，
 /// 落点判定与光标会全部失效。位置更新走宿主在 <c>GiveFeedback</c> 里读屏幕坐标（拖拽期间 WPF 不再派发 MouseMove）。</para>
 ///
+/// <para><b>逐帧开销（修 2026-09-20 用户报障"拖拽明显掉帧"）</b>：位移**不落在本装饰器自己的变换上**，
+/// 而是挂在内部内容层的 <see cref="UIElement.RenderTransform"/> 上。两条理由：
+/// ① `AdornerLayer` 每次排列都会把 <see cref="GetDesiredTransform"/> 的结果直接写进装饰器的 `RenderTransform`
+///    （`Adorner.AdornerTransform` 就是它的别名），装饰器自持的变换会被当场覆盖（实测：落位恒为 (0,0)）；
+/// ② 走 <c>AdornerLayer.Update</c> 刷新自己的变换会 invalidate **measure**，失效沿可视树一路上传到窗口根——
+///    指针每移动一次就换来一次**全窗重排 + 浮层（含两处投影模糊）整体重绘**，这才是掉帧的真身。
+/// 现在：指针位移 = 一次渲染级变换（不测量、不排列），内容层再套 <see cref="BitmapCache"/>
+/// （移动复用已光栅化的位图、不重跑模糊）；只有**内容变化**（换名称 / 换提示 / 多选项数）才经
+/// <see cref="RefreshLayer"/> 重排装饰层——拖拽期间每秒至多数次。</para>
+///
 /// <para>归属 <c>LinkPocket.UIKit</c>（2026-09-19 自 UI.Browser 上收）：浏览页与回收站
 /// 两页共用同一份浮层实现（public——页面程序集都要用；内部可见性后门是架构红线，不开）。</para>
 /// </summary>
@@ -34,98 +44,20 @@ public sealed class DragVisualAdorner : Adorner
     private const double PointerOffsetX = 12;
     private const double PointerOffsetY = 14;
 
-    /// <summary>名称列最大宽度（超出省略号；浮层不该盖住半个屏幕）。</summary>
-    private const double MaxNameWidth = 220;
+    /// <summary>浮层视觉（卡片 + 堆叠背板 + 计数徽标 + 提示条）：指针位移也挂在它身上，见类注释。</summary>
+    private readonly DragVisualContent _content;
 
-    private readonly Border _card;
-    private readonly TextBlock _name;
-    private readonly M3Icon _icon;
-    private readonly Border _stackBack2;
-    private readonly Border _stackBack1;
-    private readonly Border _badge;
-    private readonly TextBlock _badgeText;
-    private readonly Border _hint;
-    private readonly TextBlock _hintText;
-
-    private Point _offset;
+    /// <summary>指针位移的载体（内容层的本地变换）：拖拽期间每次移动只改它，不触发任何测量/排列。</summary>
+    private readonly TranslateTransform _position = new();
 
     private DragVisualAdorner(FrameworkElement owner) : base(owner)
     {
         IsHitTestVisible = false;   // 关键：浮层绝不能参与命中测试
-
-        var surface = Brush(owner, "SurfaceContainerHigh", Colors.WhiteSmoke);
-        var outline = Brush(owner, "SurfaceContainerHighest", Colors.Gainsboro);
-        var onSurface = Brush(owner, "OnSurface", Colors.Black);
-        var primary = Brush(owner, "Primary", Colors.MediumPurple);
-        var badgeBg = Brush(owner, "SecondaryContainer", Colors.LightGray);
-        var badgeFg = Brush(owner, "OnSecondaryContainer", Colors.Black);
-
-        // —— 堆叠感（多选时露出的两层"背板"）——
-        _stackBack2 = StackLayer(surface, 4);
-        _stackBack1 = StackLayer(surface, 2);
-
-        _icon = new M3Icon { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center, Foreground = primary };
-
-        _name = new TextBlock
-        {
-            Margin = new Thickness(6, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12,
-            Foreground = onSurface,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = MaxNameWidth,
-        };
-
-        _badgeText = new TextBlock
-        {
-            FontSize = 11,
-            FontWeight = FontWeights.Medium,
-            Foreground = badgeFg,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _badge = new Border
-        {
-            Background = badgeBg,
-            CornerRadius = new CornerRadius(9),
-            MinHeight = 18,
-            Padding = new Thickness(8, 0, 8, 0),
-            Margin = new Thickness(8, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = _badgeText,
-            Visibility = Visibility.Collapsed,
-        };
-
-        var content = new StackPanel { Orientation = Orientation.Horizontal };
-        content.Children.Add(_icon);
-        content.Children.Add(_name);
-        content.Children.Add(_badge);
-
-        _card = new Border
-        {
-            Background = surface,
-            BorderBrush = outline,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 5, 10, 5),
-            Opacity = 0.85,          // 半透明：与资源管理器一样能看见下面的落点
-            Child = content,
-            Effect = new DropShadowEffect { BlurRadius = 12, ShadowDepth = 2, Opacity = 0.25, Color = Colors.Black },
-        };
-
-        // —— 「移动到「X」」提示（独立小条，落在浮层下方）——
-        _hintText = new TextBlock { FontSize = 11.5, Foreground = onSurface, VerticalAlignment = VerticalAlignment.Center };
-        _hint = new Border
-        {
-            Background = surface,
-            BorderBrush = outline,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(8, 3, 8, 3),
-            Opacity = 0.95,
-            Visibility = Visibility.Collapsed,
-            Child = _hintText,
-            Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.2, Color = Colors.Black },
-        };
+        _content = new DragVisualContent(owner) { RenderTransform = _position };
+        AddVisualChild(_content);   // 注册为真正的可视子级（否则变换链/命中链认不到父子关系）
+        // 位图缓存（缓式合成）：移动时不再重新光栅化内容（投影模糊是逐帧重绘里最贵的一步）。
+        // RenderAtScale 按 DPI 取，避免高 DPI 下缓存被放大后发虚。
+        _content.CacheMode = new BitmapCache { RenderAtScale = VisualTreeHelper.GetDpi(owner).DpiScaleX };
     }
 
     /// <summary>在宿主所在的可视树上挂一个浮层（同一宿主只挂一个）。</summary>
@@ -149,50 +81,31 @@ public sealed class DragVisualAdorner : Adorner
     /// </summary>
     public void Show(IReadOnlyList<DragItem> items)
     {
-        var first = items.FirstOrDefault();
-        if (first == null) return;
-
-        var multiple = items.Count > 1;
-        // 类型图标取"抓住的那一项"（载荷首位由 VM 保证）——多选时它只是图标，不再伴随名字
-        _icon.Kind = first.IsFolder ? "folder" : "link-variant";
-        _name.Text = first.Name;
-        _name.Visibility = multiple ? Visibility.Collapsed : Visibility.Visible;
-
-        _badgeText.Text = $"{items.Count} 个项目";
-        _badge.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
-        _stackBack1.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
-        _stackBack2.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
-
-        InvalidateArrange();
+        _content.Show(items);
+        RefreshLayer();   // 内容与尺寸都变了 → 让装饰层重新量一次
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。
-    /// **内容没变就直接返回**：拖拽悬停在同一落点上时 <c>DragOver</c> 会按鼠标移动频率反复调用，
-    /// 每次都重排装饰层（<see cref="RefreshLayer"/>）纯属白烧——拖拽掉帧的主要来源就在这条逐帧路径上。</summary>
+    /// **内容没变就不重排**：拖拽悬停在同一落点上时 <c>DragOver</c> 会按鼠标移动频率反复调用，
+    /// 每次都重排装饰层纯属白烧——掉帧的主要来源就在这条逐帧路径上。</summary>
     public void UpdateHint(string hintText)
     {
-        var show = !string.IsNullOrEmpty(hintText);
-        var shown = _hint.Visibility == Visibility.Visible;
-        if (shown == show && (!show || _hintText.Text == hintText)) return;
-        if (show) _hintText.Text = hintText;
-        _hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!_content.UpdateHint(hintText)) return;
         RefreshLayer();
     }
 
-    /// <summary>更新位置（宿主给的坐标须相对被装饰元素）。
-    /// ⚠️ 位移经 <see cref="GetDesiredTransform"/> 交给装饰层——**不能改成自持 RenderTransform**：
-    /// `AdornerLayer` 排列时会把该变换直接写进浮层的 `RenderTransform`（`Adorner.AdornerTransform`
-    /// 就是它的别名），自持的变换会被当场覆盖（实测：位移写进去后落位恒为 (0,0)）。</summary>
+    /// <summary>更新位置（宿主给的坐标须相对被装饰元素）：**只改内容层的本地变换**，绝不碰装饰层——
+    /// 本方法在拖拽期间按指针移动频率（每帧）被 <c>GiveFeedback</c> 调用，见类注释的逐帧开销说明。</summary>
     public void UpdatePosition(Point ownerPoint)
     {
-        _offset = ownerPoint;
-        RefreshLayer();
+        _position.X = ownerPoint.X + PointerOffsetX;
+        _position.Y = ownerPoint.Y + PointerOffsetY;
     }
 
     /// <summary>
-    /// 通知装饰层重排（位移与尺寸变化都走这里；提示条内容没变时由 <see cref="UpdateHint"/> 提前返回）。
-    /// ⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**——装饰层在 <c>AdornerLayer.Update</c> 里
-    /// 清掉缓存的变换并 invalidate measure，位置/尺寸才会真的按新值落地（探针实测：不 Update 会冻在初次布局处）。</summary>
+    /// 内容/尺寸变化后通知装饰层重排（**只有内容变化走这里**，指针位移不走——见 <see cref="UpdatePosition"/>）。
+    /// ⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**：装饰层在 <c>AdornerLayer.Update</c> 里
+    /// 清掉缓存的变换并 invalidate measure，尺寸才会真的按新值落地（探针实测：不 Update 会冻在初次布局处）。</summary>
     private void RefreshLayer()
     {
         if (Parent is AdornerLayer layer) layer.Update(AdornedElement);
@@ -202,55 +115,201 @@ public sealed class DragVisualAdorner : Adorner
     /// <summary>从可视树摘掉浮层（拖拽结束 / 页面卸载）。</summary>
     public void Detach() => (Parent as AdornerLayer)?.Remove(this);
 
+    /// <summary>只保留装饰层给的基准变换：指针位移在内容层上（见 <see cref="UpdatePosition"/>）。</summary>
+    public override GeneralTransform GetDesiredTransform(GeneralTransform transform)
+        => base.GetDesiredTransform(transform);
+
     protected override Size MeasureOverride(Size constraint)
     {
-        _card.Measure(constraint);
-        _hint.Measure(constraint);
-        var w = Math.Max(_card.DesiredSize.Width, _hint.DesiredSize.Width) + 8;
-        var h = _card.DesiredSize.Height + _hint.DesiredSize.Height + 6;
-        return new Size(w, h);
+        _content.Measure(constraint);
+        return _content.DesiredSize;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        // 浮层左上角 = 指针 + 偏移；堆叠背板向左上各让 2/4px；提示条在浮层正下方
-        _stackBack2.Arrange(new Rect(4, 0, _card.DesiredSize.Width, _card.DesiredSize.Height));
-        _stackBack1.Arrange(new Rect(2, 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
-        _card.Arrange(new Rect(4, 4, _card.DesiredSize.Width, _card.DesiredSize.Height));
-        var hintTop = 4 + _card.DesiredSize.Height + 4;
-        _hint.Arrange(new Rect(6, hintTop, Math.Max(_hint.DesiredSize.Width, 0), _hint.DesiredSize.Height));
+        _content.Arrange(new Rect(new Point(0, 0), _content.DesiredSize));
         return finalSize;
     }
 
-    protected override Visual GetVisualChild(int index)
-        => index switch
+    protected override Visual GetVisualChild(int index) => _content;
+
+    protected override int VisualChildrenCount => 1;
+
+    /// <summary>
+    /// 浮层视觉（卡片 + 堆叠背板 + 计数徽标 + 提示条）：自带 <c>Measure</c>/<c>Arrange</c>，
+    /// 尺寸由内容量出；指针位移由宿主的本地变换施加（见 <see cref="DragVisualAdorner"/> 类注释）。
+    /// </summary>
+    private sealed class DragVisualContent : FrameworkElement
+    {
+        /// <summary>名称列最大宽度（超出省略号；浮层不该盖住半个屏幕）。</summary>
+        private const double MaxNameWidth = 220;
+
+        private readonly Border _card;
+        private readonly TextBlock _name;
+        private readonly M3Icon _icon;
+        private readonly Border _stackBack2;
+        private readonly Border _stackBack1;
+        private readonly Border _badge;
+        private readonly TextBlock _badgeText;
+        private readonly Border _hint;
+        private readonly TextBlock _hintText;
+
+        internal DragVisualContent(FrameworkElement owner)
         {
-            0 => _stackBack2,
-            1 => _stackBack1,
-            2 => _card,
-            _ => _hint,
+            var surface = Brush(owner, "SurfaceContainerHigh", Colors.WhiteSmoke);
+            var outline = Brush(owner, "SurfaceContainerHighest", Colors.Gainsboro);
+            var onSurface = Brush(owner, "OnSurface", Colors.Black);
+            var primary = Brush(owner, "Primary", Colors.MediumPurple);
+            var badgeBg = Brush(owner, "SecondaryContainer", Colors.LightGray);
+            var badgeFg = Brush(owner, "OnSecondaryContainer", Colors.Black);
+
+            // —— 堆叠感（多选时露出的两层"背板"）——
+            _stackBack2 = StackLayer(surface, 4);
+            _stackBack1 = StackLayer(surface, 2);
+
+            _icon = new M3Icon { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center, Foreground = primary };
+
+            _name = new TextBlock
+            {
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 12,
+                Foreground = onSurface,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = MaxNameWidth,
+            };
+
+            _badgeText = new TextBlock
+            {
+                FontSize = 11,
+                FontWeight = FontWeights.Medium,
+                Foreground = badgeFg,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _badge = new Border
+            {
+                Background = badgeBg,
+                CornerRadius = new CornerRadius(9),
+                MinHeight = 18,
+                Padding = new Thickness(8, 0, 8, 0),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = _badgeText,
+                Visibility = Visibility.Collapsed,
+            };
+
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            content.Children.Add(_icon);
+            content.Children.Add(_name);
+            content.Children.Add(_badge);
+
+            _card = new Border
+            {
+                Background = surface,
+                BorderBrush = outline,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10, 5, 10, 5),
+                Opacity = 0.85,          // 半透明：与资源管理器一样能看见下面的落点
+                Child = content,
+                Effect = new DropShadowEffect { BlurRadius = 12, ShadowDepth = 2, Opacity = 0.25, Color = Colors.Black },
+            };
+
+            // —— 「移动到「X」」提示（独立小条，落在浮层下方）——
+            _hintText = new TextBlock { FontSize = 11.5, Foreground = onSurface, VerticalAlignment = VerticalAlignment.Center };
+            _hint = new Border
+            {
+                Background = surface,
+                BorderBrush = outline,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 3, 8, 3),
+                Opacity = 0.95,
+                Visibility = Visibility.Collapsed,
+                Child = _hintText,
+                Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 2, Opacity = 0.2, Color = Colors.Black },
+            };
+
+            // 注册可视子级（顺序 = 自下而上；与 GetVisualChild 的下标顺序一致）
+            AddVisualChild(_stackBack2);
+            AddVisualChild(_stackBack1);
+            AddVisualChild(_card);
+            AddVisualChild(_hint);
+        }
+
+        /// <summary>设置本次拖动的内容（单项 = 图标 + 名称；多选 = 仅项数徽标 + 叠层）。</summary>
+        internal void Show(IReadOnlyList<DragItem> items)
+        {
+            var first = items.FirstOrDefault();
+            if (first == null) return;
+
+            var multiple = items.Count > 1;
+            // 类型图标取"抓住的那一项"（载荷首位由 VM 保证）——多选时它只是图标，不再伴随名字
+            _icon.Kind = first.IsFolder ? "folder" : "link-variant";
+            _name.Text = first.Name;
+            _name.Visibility = multiple ? Visibility.Collapsed : Visibility.Visible;
+
+            _badgeText.Text = $"{items.Count} 个项目";
+            _badge.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+            _stackBack1.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+            _stackBack2.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
+
+            InvalidateArrange();
+        }
+
+        /// <summary>更新「移动到 X」提示；返回是否真的变了（未变 = 宿主无需重排装饰层）。</summary>
+        internal bool UpdateHint(string hintText)
+        {
+            var show = !string.IsNullOrEmpty(hintText);
+            var shown = _hint.Visibility == Visibility.Visible;
+            if (shown == show && (!show || _hintText.Text == hintText)) return false;
+            if (show) _hintText.Text = hintText;
+            _hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            return true;
+        }
+
+        protected override Size MeasureOverride(Size constraint)
+        {
+            _card.Measure(constraint);
+            _hint.Measure(constraint);
+            var w = Math.Max(_card.DesiredSize.Width, _hint.DesiredSize.Width) + 8;
+            var h = _card.DesiredSize.Height + _hint.DesiredSize.Height + 6;
+            return new Size(w, h);
+        }
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            // 浮层左上角 = 指针 + 偏移（由宿主的本地变换施加）；堆叠背板向左上各让 2/4px；提示条在浮层正下方
+            _stackBack2.Arrange(new Rect(4, 0, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            _stackBack1.Arrange(new Rect(2, 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            _card.Arrange(new Rect(4, 4, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            var hintTop = 4 + _card.DesiredSize.Height + 4;
+            _hint.Arrange(new Rect(6, hintTop, Math.Max(_hint.DesiredSize.Width, 0), _hint.DesiredSize.Height));
+            return finalSize;
+        }
+
+        protected override Visual GetVisualChild(int index)
+            => index switch
+            {
+                0 => _stackBack2,
+                1 => _stackBack1,
+                2 => _card,
+                _ => _hint,
+            };
+
+        protected override int VisualChildrenCount => 4;
+
+        private static Border StackLayer(Brush background, double inset) => new()
+        {
+            Background = background,
+            CornerRadius = new CornerRadius(8),
+            Opacity = 0.5,
+            Margin = new Thickness(inset, inset, 0, 0),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
         };
 
-    protected override int VisualChildrenCount => 4;
-
-    public override GeneralTransform GetDesiredTransform(GeneralTransform transform)
-    {
-        var result = new GeneralTransformGroup();
-        result.Children.Add(base.GetDesiredTransform(transform));
-        result.Children.Add(new TranslateTransform(_offset.X + PointerOffsetX, _offset.Y + PointerOffsetY));
-        return result;
+        private static Brush Brush(FrameworkElement owner, string key, Color fallback)
+            => owner.TryFindResource(key) as Brush ?? new SolidColorBrush(fallback);
     }
-
-    private static Border StackLayer(Brush background, double inset) => new()
-    {
-        Background = background,
-        CornerRadius = new CornerRadius(8),
-        Opacity = 0.5,
-        Margin = new Thickness(inset, inset, 0, 0),
-        Visibility = Visibility.Collapsed,
-        IsHitTestVisible = false,
-    };
-
-    private static Brush Brush(FrameworkElement owner, string key, Color fallback)
-        => owner.TryFindResource(key) as Brush ?? new SolidColorBrush(fallback);
 }
