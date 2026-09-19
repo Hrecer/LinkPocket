@@ -97,6 +97,6 @@ internal sealed class LinkCreateHandler : ICommandHandler
             [new UndoInverseStep("links.trash",
                 JsonSerializer.SerializeToElement(new { id = link.LinkId }),
                 new UndoAction("trash.restore",
-                    JsonSerializer.SerializeToElement(new { id = link.LinkId, to_origin = true })))]);
+                    JsonSerializer.SerializeToElement(new { id = link.LinkId, to = "origin" })))]);
     }
 }

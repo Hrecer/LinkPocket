@@ -298,6 +298,7 @@ public class TrashViewModelTests
             var vm = NewVm(client);
             await vm.LoadAsync();
 
+            Assert.False(vm.RestoreSelectionCommand.CanExecute(null));   // D-a：空选中 → 禁用
             vm.SetSelection(new[] { unitA, l0 });            // 混合：单元 + 单独删除的链接
             vm.RestoreSelectionCommand.Execute(null);
 
@@ -312,6 +313,7 @@ public class TrashViewModelTests
             Assert.Empty(overview.Folders);
             Assert.Empty(overview.Links);
             Assert.False(vm.HasSelection);                    // 条目已离开回收站：选中清空
+            Assert.False(vm.RestoreSelectionCommand.CanExecute(null));   // 清空后再次禁用
             Assert.Contains("已还原 2 项到原位置", vm.StatusText);
 
             // 缺省 = 原位置（D3）：单元 A（含子夹 B 与两条链接）与 L0 都回主表（二者原位均为根）

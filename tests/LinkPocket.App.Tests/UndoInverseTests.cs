@@ -106,6 +106,26 @@ public class UndoInverseTests
     }
 
     [Fact]
+    public async Task 新建链接_在文件夹内_撤销重做后回原文件夹()
+    {
+        // 回归：重做载荷必须**显式带落点**（曾残留已废弃参数 to_origin，靠缺省值兜底才碰巧正确）
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("目标夹")).Data!;
+            var link = (await client.LinkCreateAsync("https://redo-in-folder.example", title: "F",
+                listId: folder.FolderId, autoFetchMetadata: false)).Data!;
+
+            await client.UndoAsync();
+            Assert.Contains(await client.TrashListAsync(), t => t.Id == link.LinkId);
+
+            await client.RedoAsync();
+            Assert.Equal(folder.FolderId, (await client.LinkGetAsync(link.LinkId)).ListId);   // 回原文件夹（而非落根）
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
     public async Task 复制文件夹_撤销后副本进回收站_源不受影响()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

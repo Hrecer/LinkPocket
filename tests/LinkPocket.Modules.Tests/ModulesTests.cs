@@ -723,6 +723,10 @@ public class TrashModuleTests
         Assert.Equal(3, restored.Data!.RestoredLinks);      // 2 独立 + 1 随单元
         Assert.Equal(1, restored.Data!.RestoredUnits);
         Assert.Equal(1, restored.Data!.RestoredFolders);
+        // C6：一条 ChangeSet 齐发三事件（两页各自 300ms 防抖只刷一次）
+        Assert.Contains("folders.changed", restored.Changes!.Events);
+        Assert.Contains("links.changed", restored.Changes!.Events);
+        Assert.Contains("trash.changed", restored.Changes!.Events);
         Assert.Empty(restored.Data!.FellBackToRoot);
         Assert.Empty(restored.Data!.Renamed);
         Assert.Equal(0, restored.Data!.DuplicateUrls);
@@ -861,6 +865,54 @@ public class TrashModuleTests
         Assert.Contains(tree, f => f.Name == "冒名子");
         Assert.Contains(await engine.QueryAsync<List<TrashFolderDto>>("trash.tree", null),
             t => t.TrashFolderId == parent.FolderId);
+    }
+
+    [Fact]
+    public async Task RestoreUnit_Explicit_Target_And_To_Mutual_Exclusion()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var dest = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "目标" })).Data!;
+        var doomed = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "单元" })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = doomed.FolderId });
+
+        // 「to」与「target_parent_id」互斥 → LP.VAL.002
+        var exclusive = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<object>(
+            "trash.restore_unit", new { unit_id = doomed.FolderId, to = "origin", target_parent_id = dest.FolderId }));
+        Assert.Equal(EngineErrors.TypeMismatch, exclusive.Error.Code);
+
+        // 显式落点生效（不回原位置=根，而是落进「目标」）
+        var restored = await engine.ExecuteAsync<LinkPocket.Modules.Trash.TrashRestoreUnitResult>(
+            "trash.restore_unit", new { unit_id = doomed.FolderId, target_parent_id = dest.FolderId });
+        Assert.Equal(dest.FolderId, restored.Data!.Landing);
+        Assert.False(restored.Data!.FellBackToRoot);
+
+        // 显式落点不存在 → LP.STATE.001（错就报错，不静默改落点）
+        var doomed2 = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "单元2" })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = doomed2.FolderId });
+        var missing = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<object>(
+            "trash.restore_unit", new { unit_id = doomed2.FolderId, target_parent_id = "no-such-folder" }));
+        Assert.Equal(EngineErrors.EntityNotFound, missing.Error.Code);
+    }
+
+    [Fact]
+    public async Task RestoreUnit_Step_By_Step_Parent_Then_Child_Lands_Inside()
+    {
+        // B7：先删子、后删父 → 先还原父、再还原子（原父已在主表）→ 子按 ID 落回父内
+        var (engine, _, _) = TestHost.Create();
+        var parent = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "P" })).Data!;
+        var child = (await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "A", parent_id = parent.FolderId })).Data!;
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = child.FolderId });    // 单元 A（原父 = P）
+        await engine.ExecuteAsync<object>("folders.delete", new { folder_id = parent.FolderId });   // 单元 P
+
+        await engine.ExecuteAsync<LinkPocket.Modules.Trash.TrashRestoreUnitResult>(
+            "trash.restore_unit", new { unit_id = parent.FolderId });
+        var restored = await engine.ExecuteAsync<LinkPocket.Modules.Trash.TrashRestoreUnitResult>(
+            "trash.restore_unit", new { unit_id = child.FolderId });
+
+        Assert.Equal(parent.FolderId, restored.Data!.Landing);
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Equal(parent.FolderId, tree.Single(f => f.FolderId == child.FolderId).ParentId);
     }
 
 }
