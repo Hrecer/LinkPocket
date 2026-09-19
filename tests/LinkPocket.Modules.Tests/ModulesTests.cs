@@ -782,6 +782,31 @@ public class BookmarksModuleTests
         </DL><p>
         """;
 
+    /// <summary>导入撞名（与既有文件夹同名）→ **自动编号**并如实报告数量——绝不整包失败。</summary>
+    [Fact]
+    public async Task Import_Same_Name_Folder_Is_Auto_Numbered()
+    {
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "Folder <One>" });   // 与样例文件里的文件夹同名
+
+        var htmlPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbm_{Guid.NewGuid():N}.html");
+        await File.WriteAllTextAsync(htmlPath, SampleHtml);
+
+        var imported = await engine.ExecuteAsync<JsonElement>("bookmarks.import", new { file_path = htmlPath });
+
+        Assert.Equal(1, imported.Data.GetProperty("folders_created").GetInt32());
+        Assert.Equal(1, imported.Data.GetProperty("folders_renamed").GetInt32());
+        Assert.Contains("同名已自动编号", imported.Changes!.HumanSummary);
+
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Contains(tree, f => f.Name == "Folder <One>");
+        Assert.Contains(tree, f => f.Name == "Folder <One> (2)");
+        // 层级未串位：文件里的 Inner 书签落进**编号后**的那个文件夹
+        var inner = (await engine.QueryAsync<List<LinkDto>>(
+            "links.find_by_url", new { url = "https://inner.example" })).Single();
+        Assert.Equal(tree.Single(f => f.Name == "Folder <One> (2)").FolderId, inner.ListId);
+    }
+
     [Fact]
     public async Task Inspect_Import_Export_RoundTrip()
     {
@@ -909,6 +934,42 @@ public class BookmarksModuleTests
 
 public class BackupModuleTests
 {
+    /// <summary>
+    /// 增量导入撞名 → **自动编号**而非整包失败（v4 唯一索引下的必现路径：
+    /// 备份是外部输入，增量模式与既有数据共存；不编号会让唯一索引拒绝整个导入）。
+    /// 同时如实报告编号数量（可观测：folders_renamed）。
+    /// </summary>
+    [Fact]
+    public async Task Incremental_Import_Auto_Numbers_Same_Name_Folders()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://x.example", title = "X", list_id = folder.Data!.FolderId });
+
+        var backupPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        await engine.ExecuteAsync<object>("backup.export", new { output_path = backupPath });
+
+        // 增量导入到**同一个库**：备份里的「工作」与库里的「工作」撞名
+        var ex = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = backupPath, replace = false }));
+        var token = ex.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        var imported = await engine.ExecuteAsync<JsonElement>("backup.import",
+            new { file_path = backupPath, replace = false }, new CallOptions(ConfirmToken: token));
+
+        Assert.Equal(1, imported.Data.GetProperty("folders_created").GetInt32());
+        Assert.Equal(1, imported.Data.GetProperty("folders_renamed").GetInt32());
+        Assert.Contains("同名已自动编号", imported.Changes!.HumanSummary);
+
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Contains(tree, f => f.Name == "工作");
+        Assert.Contains(tree, f => f.Name == "工作 (2)");
+        // 书签未串位：新导入的链接落在编号后的那个文件夹里（两个「工作」各 1 条）
+        var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);
+        Assert.Equal(2, stats.Total);
+        Assert.Equal(2, stats.ByFolder.Count);
+    }
+
     [Fact]
     public async Task Export_Inspect_Import_TamperReject()
     {

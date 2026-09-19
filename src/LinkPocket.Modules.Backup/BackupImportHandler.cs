@@ -94,15 +94,25 @@ internal sealed class BackupImportHandler : ICommandHandler
             .ThenBy(t => t.index)
             .ToList();
 
+        // —— 同层唯一命名（Windows 口径）——
+        // 备份是外部输入，且**增量模式**下会与既有数据共存：不编号会让 v4 唯一索引直接拒绝**整包**（导入永远失败）；
+        // 备份文件内部也可能自带同层重名（来自旧库时代）。规则与粘贴/书签导入完全一致：撞名自动编号「名 (2)」。
+        // 占用表 = 内存累积（同批内后面的项还不在库里，查库查不到）；根层先预置既有名（replace 已清空 → 自然为空）。
+        var naming = new SiblingNameTable();
+        naming.Seed(null, (await uow.Folders.ChildrenOfAsync(null, ct)).Select(f => f.Name));
+        var foldersRenamed = 0;
+
         // —— 文件夹（临时 key → 新实体 ID 映射）——
         var keyToFolderId = new Dictionary<string, string>();
         var foldersCreated = 0;
         foreach (var t in sortedFolders)
         {
             var f = t.f;
+            var resolvedName = naming.Resolve(f.Parent, f.Name);
+            if (!string.Equals(resolvedName, f.Name, StringComparison.Ordinal)) foldersRenamed++;
             var folder = new Folder
             {
-                Name = f.Name,
+                Name = resolvedName,
                 Description = f.Description,
                 ParentId = f.Parent != null && keyToFolderId.TryGetValue(f.Parent, out var parentId) ? parentId : null,
                 LinkCount = 0,
@@ -163,6 +173,7 @@ internal sealed class BackupImportHandler : ICommandHandler
             JsonSerializer.SerializeToElement(new
             {
                 folders_created = foldersCreated,
+                folders_renamed = foldersRenamed,
                 links_created = linksCreated,
                 total_items = foldersCreated + linksCreated,
                 replace,
@@ -170,6 +181,8 @@ internal sealed class BackupImportHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("database", "*")],
                 Events: events,
-                HumanSummary: $"已导入 {foldersCreated} 个文件夹、{linksCreated} 个书签" + (replace ? "（清空后导入）" : "")));
+                HumanSummary: $"已导入 {foldersCreated} 个文件夹、{linksCreated} 个书签"
+                               + (foldersRenamed > 0 ? $"（{foldersRenamed} 个同名已自动编号）" : "")
+                               + (replace ? "（清空后导入）" : "")));
     }
 }
