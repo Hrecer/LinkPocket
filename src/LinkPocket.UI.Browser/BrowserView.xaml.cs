@@ -411,6 +411,60 @@ public partial class BrowserView : UserControl
 
         // —— 面包屑地址栏（Views/BreadcrumbBar）事件转接：编辑态与候选导航仍由 BrowserViewModel 驱动 ——
 
+        /// <summary>点胶囊空白 = 进入路径编辑（Windows 11 口径；命令自带 CanExecute：编辑/改名中不重入）。</summary>
+        private void Breadcrumb_EditRequested(object? sender, EventArgs e)
+            => ViewModel?.EnterPathEditCommand.Execute(null);
+
+        /// <summary>拖拽经过面包屑段（Windows 11 口径：路径段可接收拖来的文件）。
+        /// 段都是文件夹（含「全部书签」根段 = 移到根）→ 一律是落点候选；**成环不在此判定**——
+        /// 照常高亮 + 提示，松手后由传输流水线统一拒绝弹窗（与主栏行 / 树节点完全同口径）。</summary>
+        private void Breadcrumb_CrumbDragOver(object? sender, CrumbDragEventArgs e)
+        {
+            try
+            {
+                if (ViewModel == null) return;
+                var (id, name) = CrumbTargetOf(e.Segment);
+                var mode = CurrentDropMode();
+                ApplyDropTarget(new BrowserDropTarget(id, BrowserPane.Breadcrumb, name, mode));
+                Breadcrumb.SetDropHighlight(e.Segment);
+                e.Args.Effects = EffectFor(mode);
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        /// <summary>拖拽离开面包屑段：熄灭落点高亮与提示（覆盖式状态，离开清零）。</summary>
+        private void Breadcrumb_CrumbDragLeave(object? sender, CrumbDragEventArgs e)
+            => ClearDropTarget();
+
+        /// <summary>落到面包屑段上：**只记"待执行意图"**（Drop 回调在 OLE 拖拽循环内，执行在
+        /// <c>DoDragDrop</c> 返回之后由 <see cref="StartDrag"/> 统一做——与主栏行 / 树节点同一条收尾）。</summary>
+        private void Breadcrumb_CrumbDrop(object? sender, CrumbDragEventArgs e)
+        {
+            try
+            {
+                var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
+                if (payload == null || ViewModel == null) return;
+                var (id, _) = CrumbTargetOf(e.Segment);
+                _pendingDrop = (payload.Items, id, ViewModel.DropTargetMode);
+            }
+            finally
+            {
+                e.Args.Handled = true;
+            }
+        }
+
+        /// <summary>段对象 → (文件夹 ID, 显示名)。段可能来自 VM 的 <see cref="BrowserCrumbViewModel"/>
+        /// （FolderId）或控件的 <see cref="BreadcrumbSegment"/>（Id）——控件不认识业务类型，这里归一。</summary>
+        private static (string? Id, string Name) CrumbTargetOf(object? segment) => segment switch
+        {
+            BrowserCrumbViewModel c => (c.FolderId, c.Name),
+            LinkPocket.Views.BreadcrumbSegment s => (s.Id, s.Name),
+            _ => (null, string.Empty)
+        };
+
         private void Breadcrumb_CandidateMoveRequested(object? sender, CandidateMoveEventArgs e)
         {
             if (ViewModel == null) return;
@@ -514,6 +568,7 @@ public partial class BrowserView : UserControl
     {
         ViewModel?.ClearDropTarget();
         _dragVisual?.UpdateHint(string.Empty);
+        Breadcrumb.SetDropHighlight(null);   // 面包屑段高亮一并熄灭（没拖拽经过时是安全的空操作）
     }
 
     // —— 行拖拽（参考 Windows 资源管理器：按下 → 移动超过阈值 → 进入拖拽）——

@@ -56,8 +56,11 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 胶囊外壳：40 高恒定，编辑态只做颜色/描边形变，圆角保持 20（40 的全圆） -->
-    <Border Height="40" BorderThickness="2" VerticalAlignment="Center">
+    <!-- 胶囊外壳：40 高恒定，编辑态只做颜色/描边形变，圆角保持 20（40 的全圆）。
+         点空白 = 请求进入路径编辑（Windows 11 口径：无需任何按钮；段点击被 Button 吃掉不会到这）。
+         ⚠️ 本地值优先级高于样式触发器 —— 基态值必须写在 Style.Setters。 -->
+    <Border x:Name="CapsuleShell" Height="40" BorderThickness="2" VerticalAlignment="Center"
+            MouseLeftButtonDown="CrumbHost_MouseLeftButtonDown">
         <Border.Style>
             <Style TargetType="Border">
                 <Setter Property="Padding" Value="8,4"/>
@@ -73,63 +76,103 @@
             </Style>
         </Border.Style>
         <Grid VerticalAlignment="Center">
-            <!-- 面包屑：每一级可点击，当前级高亮；编辑态时隐藏 -->
-            <ItemsControl ItemsSource="{Binding Breadcrumbs, ElementName=Root}" VerticalAlignment="Center">
-                <ItemsControl.Style>
-                    <Style TargetType="ItemsControl">
-                        <Setter Property="Visibility" Value="Visible"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ItemsControl.Style>
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <StackPanel Orientation="Horizontal"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal">
-                            <Button Command="{Binding CrumbClickCommand, ElementName=Root}"
-                                    CommandParameter="{Binding}"
-                                    Background="Transparent" BorderThickness="0"
-                                    FontSize="13" Cursor="Hand">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-                                        <Setter Property="Padding" Value="12,0"/>
-                                        <Setter Property="MinHeight" Value="32"/>
-                                        <Setter Property="Height" Value="32"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsLast}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
-                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <TextBlock Text="{Binding Name}"/>
-                            </Button>
-                            <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceMuted}" Margin="2,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsLast}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!-- 面包屑行（Windows 11 口径的溢出折叠）：空间不足时**从左折叠**进 « 按钮、
+                 当前段（最右）永远可见；窗口拉宽自动还原。« 点击列出被折叠的祖先层级。
+                 ⚠️ ItemsSource 由 code-behind 维护（_visible 投影），折叠算法见 RelayoutCrumbs。 -->
+            <DockPanel x:Name="CrumbRow" VerticalAlignment="Center" LastChildFill="True">
+                <Button x:Name="OverflowButton" DockPanel.Dock="Left" Visibility="Collapsed"
+                        Command="{Binding CrumbClickCommand, ElementName=Root}" FontSize="13"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        Padding="8,0" MinHeight="32" Height="32" Click="OverflowButton_Click">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                        </Style>
+                    </Button.Style>
+                    <TextBlock Text="«" FontSize="14"/>
+                </Button>
+                <ItemsControl x:Name="CrumbItems" VerticalAlignment="Center">
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Command="{Binding CrumbClickCommand, ElementName=Root}"
+                                        CommandParameter="{Binding}"
+                                        Background="Transparent" BorderThickness="0"
+                                        FontSize="13" Cursor="Hand"
+                                        AllowDrop="True"
+                                        DragOver="Crumb_DragOver" DragLeave="Crumb_DragLeave" Drop="Crumb_Drop">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
+                                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                                            <Setter Property="Padding" Value="12,0"/>
+                                            <Setter Property="MinHeight" Value="32"/>
+                                            <Setter Property="Height" Value="32"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <TextBlock Text="{Binding Name}"/>
+                                </Button>
+                                <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceMuted}" Margin="2,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </DockPanel>
+
+            <!-- « 折叠段清单：点 « 弹出被折叠的祖先层级，点击经 CrumbClickCommand 直达 -->
+            <Popup x:Name="OverflowPopup" PlacementTarget="{Binding ElementName=OverflowButton}"
+                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                <Border Background="{DynamicResource SurfaceContainerHigh}"
+                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                        CornerRadius="12" MaxHeight="260" MinWidth="140" Padding="0,4">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="#000000"/>
+                    </Border.Effect>
+                    <ListBox x:Name="OverflowList" Focusable="False" BorderThickness="0" Background="Transparent"
+                             ItemsSource="{Binding FoldedCrumbs, ElementName=Root}"
+                             PreviewMouseLeftButtonUp="OverflowList_PreviewMouseLeftButtonUp">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" FontSize="13" Height="28" Margin="12,0"
+                                           VerticalAlignment="Center" Cursor="Hand"
+                                           Foreground="{DynamicResource OnSurface}"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Popup>
 
             <!-- 路径编辑态：输入框 + 同级候选 Popup -->
             <TextBox x:Name="PathEditBox" Style="{StaticResource PathEditField}"

@@ -12,14 +12,16 @@ using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
 
-/// <summary>浏览页的两栏：主栏（目录内容列表）/ 左栏（文件夹树）。键盘语义按栏归属——
-/// 例如 ↑/↓ 在两栏含义不同（主栏移动行选中；左栏按树的视觉顺序移动）。</summary>
+/// <summary>浏览页的三处落点区：主栏（目录内容列表）/ 左栏（文件夹树）/ 顶部面包屑地址栏。
+/// 键盘语义按栏归属——例如 ↑/↓ 在主栏与左栏含义不同（主栏移动行选中；左栏按树的视觉顺序移动）。</summary>
 public enum BrowserPane
 {
     /// <summary>主栏（内容列表）。</summary>
     Main,
     /// <summary>左栏（文件夹树）。</summary>
-    Tree
+    Tree,
+    /// <summary>顶部面包屑地址栏（拖放落点；Windows 11 口径：路径段可接收拖来的文件）。</summary>
+    Breadcrumb
 }
 
 /// <summary>
@@ -224,8 +226,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public ICommand DeleteSelectionCommand { get; }
     public ICommand RenameSelectionCommand { get; }
     public ICommand OpenSelectionCommand { get; }
-    public ICommand TogglePathEditCommand { get; }
-    /// <summary>Alt+D：聚焦地址栏（进编辑态，由视图聚焦并全选）。</summary>
+    /// <summary>Alt+D / 点地址栏空白：聚焦地址栏（进编辑态，由视图聚焦并全选）。</summary>
     public ICommand EnterPathEditCommand { get; }
     /// <summary>F5：真刷新当前目录（主栏 + 左栏树，带加载动画）。</summary>
     public ICommand RefreshCommand { get; }
@@ -662,12 +663,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             if (_isPathEditing == value) return;
             _isPathEditing = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(PathEditIconKind));
             CommandManager.InvalidateRequerySuggested();
         }
     }
-
-    public string PathEditIconKind => IsPathEditing ? "close-circle-outline" : "pencil";
 
     private string _pathEditText = string.Empty;
     public string PathEditText
@@ -744,7 +742,6 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态
         CommitRenameCommand = new RelayCommand(() => _ = CommitRenameAsync());
         CancelRenameCommand = new RelayCommand(CancelRename);
-        TogglePathEditCommand = new RelayCommand(TogglePathEdit);
         EnterPathEditCommand = new RelayCommand(() => { if (!IsPathEditing) EnterPathEdit(); }, () => !IsPathEditing && !IsRenaming);
         // F5 = 真刷新（导航加载口径）：主栏内容 + 左栏树一起重建，亮遮罩与入场动画（Windows 口径）
         RefreshCommand = new RelayCommand(() => _ = RefreshAsync(navigating: true));
@@ -2020,12 +2017,6 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         var node = CurrentFocusedTreeNode();
         if (node == null || node.IsLink || node.IsRoot) return;
         node.IsExpanded = !node.IsExpanded;
-    }
-
-    private void TogglePathEdit()
-    {
-        if (IsPathEditing) CancelPathEdit();
-        else EnterPathEdit();
     }
 
     private void EnterPathEdit()

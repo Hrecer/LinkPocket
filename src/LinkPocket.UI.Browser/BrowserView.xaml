@@ -121,19 +121,10 @@
                     </Button>
                     </StackPanel>
                 </Border>
-                <!-- 路径编辑开关：独立圆胶囊（与左键组同语言） -->
-                <Border DockPanel.Dock="Right" Background="{DynamicResource SurfaceContainerHigh}"
-                        CornerRadius="17" Padding="2" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Button Style="{StaticResource NavIconButton}"
-                        ToolTip="编辑路径（Enter 导航，Esc 取消）" Focusable="False"
-                        Command="{Binding TogglePathEditCommand}">
-                        <m3:M3Icon Kind="{Binding PathEditIconKind}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Button>
-                </Border>
-
                 <!-- 地址栏（MD3 Expressive 胶囊）：已抽为 Views/BreadcrumbBar 可复用控件
                      （面包屑 + 路径编辑态 + 候选 Popup 内聚在控件内，宿主经事件转接 VM）。
-                     编辑态只做颜色/描边形变，高度两态恒为 40 —— 基态值都在控件 Style.Setters 里。 -->
+                     编辑态只做颜色/描边形变，高度两态恒为 40 —— 基态值都在控件 Style.Setters 里。
+                     Windows 11 口径：点胶囊空白即进入路径编辑（无编辑按钮），Enter 导航、Esc 取消。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"
@@ -146,6 +137,10 @@
                                      ConfirmPathCommand="{Binding ConfirmPathCommand}"
                                      CancelPathCommand="{Binding CancelPathEditCommand}"
                                      CompletePathCommand="{Binding CompletePathCommand}"
+                                     EditRequested="Breadcrumb_EditRequested"
+                                     CrumbDragOver="Breadcrumb_CrumbDragOver"
+                                     CrumbDragLeave="Breadcrumb_CrumbDragLeave"
+                                     CrumbDrop="Breadcrumb_CrumbDrop"
                                      CandidateMoveRequested="Breadcrumb_CandidateMoveRequested"
                                      EditFocusLost="Breadcrumb_EditFocusLost"
                                      EditPopupClosed="Breadcrumb_EditPopupClosed"
