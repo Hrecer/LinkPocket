@@ -421,9 +421,12 @@
                 </Grid>
             </Border>
 
-            <!-- 右栏：只读详情栏（DetailSidebar；数据源 = VM 的 Details —— 选中集合的投影，随选中自动刷新） -->
+            <!-- 右栏：只读详情栏（DetailSidebar；数据源 = VM 的 Details —— 选中集合的投影，随选中自动刷新）
+                 ⚠️ 右栏整体声明 IsInteractive：点它**绝不清空列表选中**（在它上面点空白 / 拖选文本都属于
+                 查看行为，不该反过来取消选中——用户令 2026-09-19）。 -->
             <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
-                    CornerRadius="24" Margin="0,0,8,8">
+                    CornerRadius="24" Margin="0,0,8,8"
+                    views:BlankClick.IsInteractive="True">
                 <views:DetailSidebar x:Name="TrashSidebar" DataContext="{Binding Details}"/>
             </Border>
         </Grid>
