@@ -61,6 +61,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         _client = client;
         _ports = ports;
         Details = new TrashSidebarModel();
+        DetailPane = new TrashDetailPaneModel();   // 只读详情覆盖层 = 共享详情页（与浏览页同一份界面）
 
         GoBackCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoForward()), () => Controller.CanGoForward);
@@ -74,6 +75,9 @@ public partial class TrashViewModel : INotifyPropertyChanged
         PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node));
         RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection && !IsDetailOverlayOpen);
         RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection && !IsDetailOverlayOpen);
+        CloseDetailOverlayCommand = new RelayCommand(CloseDetailOverlay);
+        CopyDetailUrlCommand = new RelayCommand(CopyDetailUrl);
+        CopyDetailIdCommand = new RelayCommand(CopyDetailId);
         RestoreNodeCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "origin"),
             node => node is { IsRoot: false, IsLink: false });
         RestoreNodeToRootCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "root"),
@@ -96,6 +100,13 @@ public partial class TrashViewModel : INotifyPropertyChanged
         // 删除 = PurgeSelectionCommand（永久删除，含规范确认弹窗）。
         Details.OpenCommand = OpenSelectionCommand;
         Details.DeleteCommand = PurgeSelectionCommand;
+
+        // 共享详情页（只读覆盖层）同样复用本页既有命令：
+        DetailPane.BackCommand = CloseDetailOverlayCommand;
+        DetailPane.OpenCommand = RestoreSelectionCommand;    // 主按钮 = 还原（到原位置）
+        DetailPane.DeleteCommand = PurgeSelectionCommand;    // 垃圾桶 = 永久删除
+        DetailPane.CopyUrlCommand = CopyDetailUrlCommand;
+        DetailPane.CopyIdCommand = CopyDetailIdCommand;
     }
 
     private IDialogService? Dialogs => _ports.Dialogs;
@@ -186,6 +197,9 @@ public partial class TrashViewModel : INotifyPropertyChanged
 
     /// <summary>视图请求：打开只读详情页（视图提供覆盖层）。</summary>
     public event EventHandler<TrashRowViewModel>? ShowLinkDetailRequested;
+
+    /// <summary>只读详情**覆盖层**的共享页模型（<c>Views.LinkDetailPane</c>——与浏览页详情页同一份界面）。</summary>
+    public TrashDetailPaneModel DetailPane { get; }
 
     /// <summary>
     /// 右栏只读详情栏（共享 <see cref="Views.DetailSidebar"/> 的数据源）：与浏览页 <c>BrowserViewModel.Details</c>
@@ -330,6 +344,9 @@ public partial class TrashViewModel : INotifyPropertyChanged
             RebuildRows();
             RebuildBreadcrumbs();
             RemoveMissingFromSelection(selectedIds);
+            // 详情覆盖层的条目已被还原/永久删除 → 覆盖层自动关闭（"条目消失即关"，状态在 VM、视图不持）
+            if (IsDetailOverlayOpen && (_detailLinkId == null || !_allLinks.Any(l => l.Id == _detailLinkId)))
+                CloseDetailOverlay();
             SetStatusText();
         }
         catch (Exception ex)
@@ -648,6 +665,42 @@ public partial class TrashViewModel : INotifyPropertyChanged
             return;
         }
         ShowLinkDetailRequested?.Invoke(this, row);
+    }
+
+    /// <summary>打开只读详情覆盖层（共享详情页）：选中该行（与浏览页打开详情同口径）+ 填共享面 + 置开页标志。</summary>
+    public void OpenLinkDetail(TrashRowViewModel row)
+    {
+        SetSelection(new[] { row.Id });
+        _detailLinkId = row.Id;
+        DetailPane.Show(row);
+        IsDetailOverlayOpen = true;
+    }
+
+    /// <summary>详情覆盖层当前展示的条目 ID（刷新收尾据此判断"条目消失即关"）。</summary>
+    private string? _detailLinkId;
+
+    private void CloseDetailOverlay()
+    {
+        _detailLinkId = null;
+        IsDetailOverlayOpen = false;
+    }
+
+    private void CopyDetailUrl()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(DetailPane.Url)) System.Windows.Clipboard.SetText(DetailPane.Url);
+        }
+        catch { /* 剪贴板被占用时不阻断 */ }
+    }
+
+    private void CopyDetailId()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(_detailLinkId)) System.Windows.Clipboard.SetText(_detailLinkId);
+        }
+        catch { /* 剪贴板被占用时不阻断 */ }
     }
 
     /// <summary>树节点被点击（视图转发；与浏览页 SelectTreeNodeAsync 同口径）：单元 = 选中 + 进入；链接叶子 = 主栏定位选中；虚根 = 回根。</summary>
@@ -982,4 +1035,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ICommand ConfirmPathCommand { get; }
     public ICommand CancelPathEditCommand { get; }
     public ICommand CompletePathCommand { get; }
+    public ICommand CloseDetailOverlayCommand { get; }
+    public ICommand CopyDetailUrlCommand { get; }
+    public ICommand CopyDetailIdCommand { get; }
 }

@@ -44,11 +44,13 @@
                     <ItemsControl ItemsSource="{Binding Cards}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <!-- 纵向卡片：内边距 24（8pt 网格），圆角收敛到 10，微投影增强体积感。
-                                     ⚠️ 基态视觉值必须写在 Style.Setters（本地值优先级高于触发器） -->
+                                <!-- 纵向卡片：内边距 24（8pt 网格），**药丸（胶囊）形**——圆角 = 高度一半
+                                     （内容高度变化仍保持胶囊；写死圆角会在内容变高时退化成圆角矩形），
+                                     微投影增强体积感。⚠️ 基态视觉值必须写在 Style.Setters（本地值优先级高于触发器） -->
                                 <Border Margin="0,0,0,12" Padding="24,20" Cursor="Hand"
                                         Tag="{Binding Id}" MouseLeftButtonUp="Card_Click"
-                                        CornerRadius="10" SnapsToDevicePixels="True">
+                                        CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource Self}, Converter={StaticResource HalfRadius}}"
+                                        SnapsToDevicePixels="True">
                                     <Border.Effect>
                                         <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270"
                                                           Opacity="0.07" Color="#000000"/>

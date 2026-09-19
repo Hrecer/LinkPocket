@@ -117,6 +117,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         HasSelection = rows.Count > 0;
         IsMulti = rows.Count > 1;
         IsFolder = rows.Count == 1 && rows[0].IsFolder;
+        ConfigureSidebarActionLabels(IsFolder);   // 动作面缺省文案/列宽（共享基类，按行类型）
 
         SelectedTotal = rows.Count;
         SelectedFolders = rows.Count(r => r.IsFolder);

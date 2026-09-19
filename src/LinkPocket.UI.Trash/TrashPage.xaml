@@ -90,36 +90,43 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- ===== 导航行：三枚导航键圆胶囊 + 面包屑地址栏（点空白即编辑）+ 右侧「永久删除」 ===== -->
+        <!-- ===== 导航行：三枚导航键圆胶囊 + 面包屑地址栏（点空白即编辑）+ 右侧处置按钮组 ===== -->
         <Border Grid.Row="0" Background="Transparent" Padding="12,0,12,8">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
-                <Button DockPanel.Dock="Right" Cursor="Hand" Click="TrashPurge_Click"
-                        IsEnabled="{Binding HasSelection}"
-                        Style="{StaticResource WarnPillButton}" Padding="12,5" MinHeight="32" Margin="12,0,0,0"
-                        ToolTip="永久删除选中项 (Del)（文件夹将连同内部全部内容删除，不可恢复）">
+                <!-- 处置按钮组（与浏览页命令栏同一形态：TintCard 白底大药丸容器 + 三枚**同规格**药丸——
+                     同高 32 / 同圆角 16 / 同内距，仅长度不同；顺序 = 还原 · 还原到根目录 · 永久删除） -->
+                <Border DockPanel.Dock="Right" Background="{DynamicResource TintCard}"
+                        CornerRadius="19" Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        <Button x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
+                                IsEnabled="{Binding HasSelection}"
+                                Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,0"
+                                ToolTip="还原选中项到原位置 (Ctrl+R)">
+                            <StackPanel Orientation="Horizontal">
+                                <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="还原" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
+                                IsEnabled="{Binding HasSelection}"
+                                Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
+                                ToolTip="还原选中项到根目录 (Ctrl+Shift+R)">
+                            <StackPanel Orientation="Horizontal">
+                                <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="还原到根目录" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="PurgeButton" Cursor="Hand" Click="TrashPurge_Click"
+                                IsEnabled="{Binding HasSelection}"
+                                Style="{StaticResource WarnPillButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
+                                ToolTip="永久删除选中项 (Del)（文件夹将连同内部全部内容删除，不可恢复）">
+                            <StackPanel Orientation="Horizontal">
+                                <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </Button>
-                <Button DockPanel.Dock="Right" x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
-                        IsEnabled="{Binding HasSelection}"
-                        Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,5" Margin="12,0,0,0"
-                        ToolTip="还原选中项到根目录 (Ctrl+Shift+R)">
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="还原到根目录" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button DockPanel.Dock="Right" x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
-                        IsEnabled="{Binding HasSelection}"
-                        Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,5" Margin="12,0,0,0"
-                        ToolTip="还原选中项到原位置 (Ctrl+R)">
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="还原" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
+                </Border>
                 <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
                         CornerRadius="17" Padding="2" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
@@ -444,142 +451,13 @@
             </Grid>
         </Border>
 
-        <!-- ===== 只读详情页（回收站书签）：整页覆盖，无任何编辑入口 ===== -->
-        <Grid x:Name="LinkDetailOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed"
-              Background="{DynamicResource SurfaceContainerLow}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid Width="760" HorizontalAlignment="Center" Margin="36,84,36,28">
-                    <StackPanel>
-                        <Border Background="{DynamicResource TintCard}" CornerRadius="20" Padding="20,18">
-                            <StackPanel>
-                                <TextBlock Text="回收站 · 书签（只读）" FontSize="11.5" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource Primary}" Opacity="0.9" Margin="2,0,0,10"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True">
-                                        <Grid>
-                                            <Image x:Name="DetailFavicon" Stretch="Uniform" Margin="6"
-                                                   RenderOptions.BitmapScalingMode="HighQuality"/>
-                                            <m3:M3Icon x:Name="DetailFaviconFallback" Kind="earth" Width="22" Height="22"
-                                                       Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
-                                    <TextBlock Grid.Column="1" x:Name="DetailName" FontSize="15" FontWeight="SemiBold"
-                                               TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,0"
-                                               Foreground="{DynamicResource OnSurface}"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Background="{DynamicResource TintCard}" CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="网址" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,0,6"/>
-                                    <TextBlock x:Name="DetailUrl" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                </StackPanel>
-                                <Button Grid.Column="1" Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        VerticalAlignment="Center" Margin="10,0,0,0" Click="DetailCopyUrl_Click" ToolTip="复制网址">
-                                    <StackPanel Orientation="Horizontal">
-                                        <m3:M3Icon Kind="content-copy" Width="13" Height="13" VerticalAlignment="Center"/>
-                                        <TextBlock Text="复制" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
-                        </Border>
-
-                        <Border Background="{DynamicResource TintCard}" CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
-                            <StackPanel>
-                                <TextBlock Text="信息" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}" Margin="0,0,0,10"/>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="16"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <m3:M3Icon Kind="folder-outline" Width="13" Height="13" Opacity="0.55"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="1" Text="原位置" FontSize="12" Opacity="0.6"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="2" x:Name="DetailOrigin" FontSize="12" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource OnSurface}"/>
-                                </Grid>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="16"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <m3:M3Icon Kind="history" Width="13" Height="13" Opacity="0.55"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="1" Text="删除时间" FontSize="12" Opacity="0.6"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="2" x:Name="DetailDeletedAt" FontSize="12"
-                                               Foreground="{DynamicResource OnSurface}"/>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="16"/>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <m3:M3Icon Kind="fingerprint" Width="13" Height="13" Opacity="0.55"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="1" Text="ID" FontSize="12" Opacity="0.6"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="2" x:Name="DetailId" FontSize="11" FontFamily="Consolas" Opacity="0.7"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 描述（与浏览页详情页同款卡片；空描述整卡隐藏） -->
-                        <Border x:Name="DetailDescriptionCard" Background="{DynamicResource TintCard}"
-                                CornerRadius="16" Padding="20,16" Margin="0,14,0,0" Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="描述" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                                <TextBlock x:Name="DetailDescription" FontSize="12.5" TextWrapping="Wrap"
-                                           LineHeight="19" Margin="0,6,0,0"
-                                           Foreground="{DynamicResource OnSurface}"/>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </Grid>
-            </ScrollViewer>
-
-            <!-- 浮动返回钮（z 序顶层；与详情页同款 40px 圆钮） -->
-            <Button Width="40" Height="40" Cursor="Hand" HorizontalAlignment="Left" VerticalAlignment="Top"
-                    Margin="20,16,0,0" Click="DetailBack_Click" ToolTip="返回回收站" Focusable="False">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
-                            <Grid>
-                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
-                                        Opacity="0" CornerRadius="20"/>
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.16"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
-            </Button>
+        <!-- ===== 只读详情覆盖层 = **共享详情页**（UIKit `LinkDetailPane`，与浏览页详情页同一份界面） =====
+             可见性由 VM 的 IsDetailOverlayOpen 驱动（状态在 VM、视图不持）；条目消失即关（VM 刷新收尾）。 -->
+        <Grid x:Name="LinkDetailOverlay" Grid.Row="0" Grid.RowSpan="3"
+              Background="{DynamicResource SurfaceContainerLow}"
+              Visibility="{Binding IsDetailOverlayOpen, Converter={StaticResource BoolToVis}}">
+            <views:LinkDetailPane DataContext="{Binding DetailPane}"/>
         </Grid>
+
     </Grid>
 </UserControl>

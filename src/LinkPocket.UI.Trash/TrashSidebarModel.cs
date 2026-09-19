@@ -29,6 +29,7 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowEditAction = false;
         ShowDeleteAction = true;
         DeleteActionLabel = "永久删除";
+        ConfigureSidebarActionLabels(row.IsFolder);   // 主按钮文案：单元=打开（进入）/ 链接=详情（只读覆盖层）
         DisplayName = string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name;
         IdText = row.Id;
         UrlText = row.Url ?? string.Empty;

@@ -439,6 +439,72 @@ public class TrashViewModelTests
     }
 
     [Fact]
+    public async Task 详情覆盖层_共享详情页_数据与动作面_与浏览页同源()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://overlay.example", title: "覆盖层项",
+                description: "覆盖层描述", autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
+
+            Assert.True(vm.IsDetailOverlayOpen);
+            Assert.Equal("覆盖层项", vm.DetailPane.Title);
+            Assert.Equal("https://overlay.example", vm.DetailPane.Url);
+            Assert.True(vm.DetailPane.HasDescription);
+            Assert.Equal("覆盖层描述", vm.DetailPane.Description);
+            Assert.Equal(3, vm.DetailPane.Rows.Count);                   // 原位置 / 删除时间 / ID
+            // 动作面（共享面内定制）：还原 + 永久删除；无编辑
+            Assert.Equal("还原", vm.DetailPane.OpenLabel);
+            Assert.Equal("restore", vm.DetailPane.OpenIconKind);
+            Assert.True(vm.DetailPane.ShowOpenAction);
+            Assert.False(vm.DetailPane.ShowEditAction);
+            Assert.True(vm.DetailPane.ShowDeleteAction);
+            Assert.Equal("永久删除", vm.DetailPane.DeleteActionLabel);
+            Assert.NotNull(vm.DetailPane.BackCommand);
+            // 覆盖层打开期间处置键让位；关闭后复位
+            Assert.False(vm.RestoreSelectionCommand.CanExecute(null));
+            vm.CloseDetailOverlayCommand.Execute(null);
+            Assert.False(vm.IsDetailOverlayOpen);
+            Assert.True(vm.RestoreSelectionCommand.CanExecute(null));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 详情覆盖层_条目离开回收站后自动关闭()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://overlay2.example", title: "覆盖层项2",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);
+
+            var vm = NewVm(client);
+            await vm.LoadAsync();
+            vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
+            Assert.True(vm.IsDetailOverlayOpen);
+
+            // 别处把该条目还原（引擎侧）→ VM 刷新收尾"条目消失即关"
+            await client.TrashRestoreBatchAsync(new[] { link.LinkId }, Array.Empty<string>());
+            await vm.LoadAsync();
+            Assert.False(vm.IsDetailOverlayOpen);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public void 键位表_无撤销无剪贴板无全局键()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

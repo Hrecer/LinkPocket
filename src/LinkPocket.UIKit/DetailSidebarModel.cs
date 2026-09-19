@@ -10,7 +10,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 详情栏信息卡里的一行（数据驱动，单一数据源）：
 /// 图标 + 标签 + 值，可选强调（Primary+SemiBold）/ 等宽（Consolas+截断）/ 复制按钮。
-/// 行内容由使用方（浏览器页 / 搜索页）按选中对象构建，控件只负责渲染。
+/// 行内容由使用方（浏览器页 / 搜索页 / 回收站）按选中对象构建，控件只负责渲染。
 /// </summary>
 public class DetailSidebarRow : INotifyPropertyChanged
 {
@@ -48,12 +48,11 @@ public class DetailSidebarRow : INotifyPropertyChanged
 /// <summary>
 /// 右侧详情栏的通用数据模型（与 Views/DetailSidebar 控件一一对应，解耦于任何页面）。
 /// 四种状态：空占位 / 单选链接 / 单选文件夹 / 多选。
-/// 页面特有逻辑（异步补拉、宿主命令）由子类或使用方注入：
-/// - Rows 按选中对象构建（文件夹与链接的信息行各不相同）；
-/// - Open/Rename/Delete 三个页面动作命令由使用方赋值；
-/// - CopyUrl/CopyId 交给子类实现（需要读取 UrlText/IdText）。
+/// **动作面**（能力位 + 命令槽）来自 <see cref="ActionSurfaceModel"/>：各页只声明"有哪些动作"，
+/// 界面由共享控件按能力位渲染，绝不按页复制界面或逻辑。
+/// 页面特有逻辑（异步补拉、宿主命令）由子类或使用方注入。
 /// </summary>
-public class DetailSidebarModel : INotifyPropertyChanged
+public class DetailSidebarModel : ActionSurfaceModel
 {
     // —— 状态 ——
     public bool HasSelection { get; protected set; }
@@ -64,32 +63,10 @@ public class DetailSidebarModel : INotifyPropertyChanged
     public bool IsLink => IsSingle && !IsFolder;
 
     /// <summary>
-    /// 只读模式（如回收站详情栏）：单选「快捷操作」卡整体隐藏 —— 只展示信息，不提供
-    /// 打开 / 编辑 / 删除等任何动作入口（动作仍可由宿主页面自行提供）。
+    /// 只读模式（如回收站详情栏）：语义标记——动作面**不做整卡隐藏**，而是由本页按能力位收窄
+    /// （回收站只开 打开/详情 + 永久删除）。见 <see cref="ConfigureSidebarActionLabels"/>。
     /// </summary>
     public bool IsReadOnly { get; protected set; }
-
-    /// <summary>
-    /// 单选「快捷操作」卡的动作面（**显式能力位**，默认全开 = 浏览/搜索现役口径）：
-    /// 只读页（回收站）按自己的处置面定制（只开 打开/详情 + 永久删除，关 编辑 与 打开网站），
-    /// 而不是把整卡一刀隐藏——界面与命令都复用本框架，各页只声明"有哪些动作"。
-    /// </summary>
-    public bool ShowOpenAction { get; protected set; } = true;
-    /// <summary>「打开网站」按钮（仅链接有意义；与 <see cref="IsLink"/> 合并为 <see cref="ShowOpenWebsiteButton"/>）。</summary>
-    public bool ShowOpenWebsite { get; protected set; } = true;
-    public bool ShowEditAction { get; protected set; } = true;
-    public bool ShowDeleteAction { get; protected set; } = true;
-
-    /// <summary>动作卡是否显示（任一动作可见）。</summary>
-    public bool HasActions => ShowOpenAction || ShowEditAction || ShowDeleteAction;
-    /// <summary>「打开网站」按钮最终可见性（链接 + 页面开启）。</summary>
-    public bool ShowOpenWebsiteButton => IsLink && ShowOpenWebsite;
-    /// <summary>主按钮跨列数：文件夹（单按钮占满）或未开「打开网站」时跨两列。</summary>
-    public int OpenColumnSpan => IsFolder || !ShowOpenWebsiteButton ? 2 : 1;
-    /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
-    public string DeleteActionLabel { get; protected set; } = "删除";
-    /// <summary>多选删除按钮文案与提示。</summary>
-    public string DeleteSelectionLabel { get; protected set; } = "删除所选";
 
     // —— 单选公共 ——
     public string DisplayName { get; protected set; } = "";
@@ -104,15 +81,20 @@ public class DetailSidebarModel : INotifyPropertyChanged
     public bool HasDescription => !string.IsNullOrWhiteSpace(DescriptionText);
 
     /// <summary>
-    /// 操作卡里铅笔按钮的文案：链接是「编辑」（打开整页编辑器），
-    /// 文件夹是「重命名」（文件夹本身只有名称）。
+    /// 侧栏动作面缺省配置（各页在选中态变化时调用；定制页可在其后覆写个别位）：
+    /// 文件夹 = 「打开」（进入目录）+「重命名」；链接 = 「详情」+「打开网站」+「编辑」。
     /// </summary>
-    public string EditLabel => IsFolder ? "重命名" : "编辑";
+    protected void ConfigureSidebarActionLabels(bool isFolder)
+    {
+        OpenLabel = isFolder ? "打开" : "详情";
+        OpenToolTip = isFolder ? "打开目录" : "查看详情";
+        EditLabel = isFolder ? "重命名" : "编辑";
+        ShowOpenWebsiteButton = !isFolder && ShowOpenWebsite;
+        OpenColumnSpan = isFolder || !ShowOpenWebsiteButton ? 2 : 1;
+    }
 
-    /// <summary>操作卡主按钮文案：文件夹是「打开」（进入目录），链接是「详情」（查看详情页）。</summary>
-    public string OpenLabel => IsFolder ? "打开" : "详情";
-    /// <summary>操作卡主按钮提示（短表述）。</summary>
-    public string OpenToolTip => IsFolder ? "打开目录" : "查看详情";
+    /// <summary>复制 URL（子类赋值）。</summary>
+    public ICommand? CopyUrlCommand { get; set; }
 
     // —— 信息卡：数据驱动行集合（替换整个集合 + Rows 通知，行内值可单独原位更新） ——
     public IReadOnlyList<DetailSidebarRow> Rows { get; private set; } = Array.Empty<DetailSidebarRow>();
@@ -128,29 +110,19 @@ public class DetailSidebarModel : INotifyPropertyChanged
         return null;
     }
 
-    // —— 命令：页面动作由使用方注入；复制类由子类实现 ——
-    public ICommand? OpenCommand { get; set; }
-    /// <summary>打开网站（仅单选链接；用系统默认浏览器打开并记录一次访问）。由使用方注入。</summary>
-    public ICommand? OpenWebsiteCommand { get; set; }
-    public ICommand? RenameCommand { get; set; }
-    public ICommand? DeleteCommand { get; set; }
-    public ICommand? CopyUrlCommand { get; set; }
-
     // —— 多选 ——
     public int SelectedTotal { get; protected set; }
     public int SelectedFolders { get; protected set; }
     public int SelectedLinks { get; protected set; }
 
-    /// <summary>清空选中（回到空占位态）。</summary>
+    /// <summary>清空选中（回到空占位态；动作面复位为缺省）。</summary>
     public virtual void Clear()
     {
         HasSelection = false;
         IsMulti = false;
         IsFolder = false;
         IsReadOnly = false;
-        ShowOpenAction = ShowOpenWebsite = ShowEditAction = ShowDeleteAction = true;
-        DeleteActionLabel = "删除";
-        DeleteSelectionLabel = "删除所选";
+        ResetActionSurface();
         DisplayName = "";
         IdText = "";
         UrlText = "";
@@ -170,15 +142,6 @@ public class DetailSidebarModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsFolder));
         OnPropertyChanged(nameof(IsLink));
         OnPropertyChanged(nameof(IsReadOnly));
-        OnPropertyChanged(nameof(ShowOpenAction));
-        OnPropertyChanged(nameof(ShowOpenWebsite));
-        OnPropertyChanged(nameof(ShowEditAction));
-        OnPropertyChanged(nameof(ShowDeleteAction));
-        OnPropertyChanged(nameof(HasActions));
-        OnPropertyChanged(nameof(ShowOpenWebsiteButton));
-        OnPropertyChanged(nameof(OpenColumnSpan));
-        OnPropertyChanged(nameof(DeleteActionLabel));
-        OnPropertyChanged(nameof(DeleteSelectionLabel));
         OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(IdText));
         OnPropertyChanged(nameof(Favicon));
@@ -186,15 +149,9 @@ public class DetailSidebarModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(UrlText));
         OnPropertyChanged(nameof(DescriptionText));
         OnPropertyChanged(nameof(HasDescription));
-        OnPropertyChanged(nameof(EditLabel));
-        OnPropertyChanged(nameof(OpenLabel));
-        OnPropertyChanged(nameof(OpenToolTip));
         OnPropertyChanged(nameof(SelectedTotal));
         OnPropertyChanged(nameof(SelectedFolders));
         OnPropertyChanged(nameof(SelectedLinks));
+        RaiseActionChanged();
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

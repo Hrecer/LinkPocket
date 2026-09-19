@@ -1,6 +1,5 @@
 using System;
-using System.ComponentModel;
-using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
@@ -9,10 +8,12 @@ using LinkPocket.Services;
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 浏览模块「链接详情页」视图模型（全页形态，参考链接页书签详情，风格与浏览右侧栏一致）。
+/// 浏览模块「链接详情页」视图模型：**数据与渲染全部交给共享 <see cref="LinkDetailPaneModel"/> 与
+/// <c>Views.LinkDetailPane</c>**（与回收站只读详情页同一份界面），本类只负责加载与动作
+/// （打开网站 / 编辑 / 删除 / 返回）——绝不自绘第二份详情界面（用户令 2026-09-19）。
 /// 打开时记录一次访问（与链接页 ShowDetail 一致）；「打开网站」为显式按钮。
 /// </summary>
-public class LinkDetailPageViewModel : INotifyPropertyChanged
+public class LinkDetailPageViewModel : LinkDetailPaneModel
 {
     /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
     private readonly EngineClient _client;
@@ -25,68 +26,29 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
     {
         _client = client;
         _host = host;
+
+        // 动作面（共享面内声明本页入口）：主按钮 = 打开网站；铅笔 = 编辑；垃圾桶 = 删除
+        OpenLabel = "打开";
+        OpenToolTip = "在浏览器中打开";
+        OpenIconKind = "open-in-new";
+        EditLabel = "编辑";
+        DeleteActionLabel = "删除";
+
         BackCommand = new RelayCommand(() => _ = BackAsync());
-        // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（_linkId/Url 尚空），
+        // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（Url 尚空），
         // 若按 CanExecute 禁用，按钮会先以 0.4 透明度渲染、加载完又突然恢复 → 肉眼可见的闪烁。
         // 命令内部对空 URL 有守卫，提前点击只是无操作。
         OpenWebsiteCommand = new RelayCommand(() => OpenWebsite());
         CopyUrlCommand = new RelayCommand(CopyUrl, () => !string.IsNullOrEmpty(Url));
         EditCommand = new RelayCommand(Edit, () => _linkId != null);
-        CopyIdCommand = new RelayCommand(CopyId, () => !string.IsNullOrEmpty(IdText));
         DeleteCommand = new RelayCommand(() => _ = DeleteAsync(), () => _linkId != null);
+        OpenCommand = OpenWebsiteCommand;   // 共享面主按钮 = 打开网站
+        RenameCommand = EditCommand;        // 铅笔 = 编辑
+        RaiseActionChanged();
     }
 
-    public ICommand BackCommand { get; }
-    public ICommand OpenWebsiteCommand { get; }
-    public ICommand CopyUrlCommand { get; }
+    /// <summary>编辑（按钮实例；同时挂到共享面的铅笔位）。</summary>
     public ICommand EditCommand { get; }
-    public ICommand CopyIdCommand { get; }
-    public ICommand DeleteCommand { get; }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    private void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
-        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-    // —— 绑定属性 ——
-
-    private string _title = string.Empty;
-    public string Title { get => _title; private set { if (_title != value) { _title = value; OnPropertyChanged(); } } }
-
-    private string _url = string.Empty;
-    public string Url { get => _url; private set { if (_url != value) { _url = value; OnPropertyChanged(); } } }
-
-    private string _description = string.Empty;
-    public string Description { get => _description; private set { if (_description != value) { _description = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasDescription)); } } }
-    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
-
-    private string _pathText = string.Empty;
-    public string PathText { get => _pathText; private set { if (_pathText != value) { _pathText = value; OnPropertyChanged(); } } }
-
-    private string _updatedAtText = "—";
-    public string UpdatedAtText { get => _updatedAtText; private set { if (_updatedAtText != value) { _updatedAtText = value; OnPropertyChanged(); } } }
-
-    private string _lastVisitedText = "从未";
-    public string LastVisitedText { get => _lastVisitedText; private set { if (_lastVisitedText != value) { _lastVisitedText = value; OnPropertyChanged(); } } }
-
-    private string _visitCountText = "0 次";
-    public string VisitCountText { get => _visitCountText; private set { if (_visitCountText != value) { _visitCountText = value; OnPropertyChanged(); } } }
-
-    private string _createdAtText = "—";
-    public string CreatedAtText { get => _createdAtText; private set { if (_createdAtText != value) { _createdAtText = value; OnPropertyChanged(); } } }
-
-    private string _idText = "";
-    /// <summary>链接 ID（信息卡展示 + 复制）。</summary>
-    public string IdText { get => _idText; private set { if (_idText != value) { _idText = value; OnPropertyChanged(); } } }
-
-    private System.Windows.Media.Imaging.BitmapImage? _favicon;
-    public System.Windows.Media.Imaging.BitmapImage? Favicon
-    {
-        get => _favicon;
-        private set { if (_favicon != value) { _favicon = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasFavicon)); } }
-    }
-    public bool HasFavicon => Favicon != null;
-
-    private static string Fmt(DateTime dt) => dt.Year <= 1 ? "—" : dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     /// <summary>打开详情页：加载链接数据并记录一次访问。</summary>
     public Task LoadAsync(string linkId) => LoadCoreAsync(linkId, recordVisit: true);
@@ -111,34 +73,43 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
                 if (gen != _generation) return;
             }
 
-            LinkPocket.Contracts.LinkDto? link;
+            LinkDto? link;
             try { link = await _client.LinkGetAsync(linkId); }   // 单点查询；不存在抛 EntityNotFound → 归一 null 走既有空档处理
-            catch (LinkPocket.Contracts.EngineException) { link = null; }
+            catch (EngineException) { link = null; }
             if (link == null || gen != _generation) { Close(); return; }
 
-            Title = link.Title;
-            Url = link.Url;
-            Description = link.Description ?? "";
-            PathText = _host.GetFolderPathDisplay(link.ListId);
-            UpdatedAtText = Fmt(link.UpdatedAt);
-            CreatedAtText = Fmt(link.CreatedAt);
-            LastVisitedText = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
-            VisitCountText = $"{link.VisitCount} 次";
-            IdText = link.LinkId;
             // favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径；页面渲染不因图标卡顿）
             var faviconUrl = link.FaviconUrl;
-            Favicon = string.IsNullOrEmpty(faviconUrl)
+            var favicon = string.IsNullOrEmpty(faviconUrl)
                 ? null
                 : await Task.Run(() => FaviconService.LoadFromCache(faviconUrl));
+            if (gen != _generation) return;
+
+            SetContent(link.Title, link.Url, favicon, link.Description ?? "", BuildRows(link));
         }
         catch (Exception ex)
         {
             // 加载失败反馈：不留下永远空白的详情页。闭页前可见可读
             Logger.Error("链接详情页加载失败", ex);
-            Title = "加载失败";
-            Description = "读取链接数据出错，请返回列表重试。\n" + ex.Message;
+            SetContent("加载失败", string.Empty, null,
+                "读取链接数据出错，请返回列表重试。\n" + ex.Message, Array.Empty<DetailSidebarRow>());
         }
     }
+
+    /// <summary>信息行（与浏览页详情页字段一致；ID 行附复制按钮）。</summary>
+    private IReadOnlyList<DetailSidebarRow> BuildRows(LinkDto link) => new List<DetailSidebarRow>
+    {
+        new() { IconKind = "folder-outline", Label = "位置", Value = _host.GetFolderPathDisplay(link.ListId) },
+        new() { IconKind = "refresh", Label = "最后更新", Value = Fmt(link.UpdatedAt) },
+        new() { IconKind = "history", Label = "最后查看",
+                Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
+        new() { IconKind = "chart-line", Label = "累计查看", Value = $"{link.VisitCount} 次" },
+        new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = Fmt(link.CreatedAt) },
+        new() { IconKind = "fingerprint", Label = "ID", Value = link.LinkId, IsMono = true,
+                CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = "复制 ID" },
+    };
+
+    private static string Fmt(DateTime dt) => dt.Year <= 1 ? "—" : dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
     private void OpenWebsite() => _ = OpenWebsiteAsync();
 
@@ -186,21 +157,21 @@ public class LinkDetailPageViewModel : INotifyPropertyChanged
         catch { }
     }
 
+    private void CopyIdValue(string id)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(id)) return;
+            System.Windows.Clipboard.SetText(id);
+            _host.StatusText = "已复制 ID";   // 复制反馈
+        }
+        catch { }
+    }
+
     private void Edit()
     {
         if (_linkId == null) return;
         _host.OpenEditorForEdit(_linkId); // 整页编辑器覆盖在详情页之上；保存后经 ReloadIfOpenAsync 回写
-    }
-
-    private void CopyId()
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(IdText)) return;
-            System.Windows.Clipboard.SetText(IdText);
-            _host.StatusText = "已复制 ID";   // 复制反馈
-        }
-        catch { }
     }
 
     /// <summary>删除链接（移入回收站）：与右侧栏删除行为一致，删除后关闭详情页并刷新列表。</summary>

@@ -745,7 +745,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         DeleteRowCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = DeleteRowAsync(row));
         NewFolderCommand = new RelayCommand<object?>(param => _ = NewFolderAsync(param as string),
             _ => !IsPathEditing && !IsRenaming && IsListContextActive);
-        NewLinkCommand = new RelayCommand(OpenEditorForCreate);
+        NewLinkCommand = new RelayCommand(OpenEditorForCreate,
+            () => !IsPathEditing && !IsRenaming && IsListContextActive);
         OpenDetailCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenDetailPageAsync(row));
         DetailPage = new LinkDetailPageViewModel(client, this);
         RenameNodeCommand = new RelayCommand<FolderNode?>(BeginRenameNode);

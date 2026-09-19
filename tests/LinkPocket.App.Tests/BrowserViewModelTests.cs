@@ -585,4 +585,28 @@ public class BrowserViewModelTests
             AppTestEnv.Delete(dbPath);
         }
     }
+
+    [Fact]
+    public async Task 路径编辑态_新建链接与新建文件夹一并禁用()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            Assert.True(vm.NewLinkCommand.CanExecute(null));
+
+            vm.EnterPathEditCommand.Execute(null);                 // 地址栏进入编辑态
+            Assert.True(vm.IsPathEditing);
+            Assert.False(vm.NewLinkCommand.CanExecute(null));      // 用户报障：编辑地址时「新建链接」未禁用 → 已修
+            Assert.False(vm.NewFolderCommand.CanExecute(null));
+
+            vm.CancelPathEditCommand.Execute(null);
+            Assert.True(vm.NewLinkCommand.CanExecute(null));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
 }

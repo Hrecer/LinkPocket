@@ -46,6 +46,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
         HasSelection = true;
         IsMulti = false;
         IsFolder = false;
+        ConfigureSidebarActionLabels(isFolder: false);   // 搜索结果恒为链接（共享动作面缺省配置）
         DisplayName = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
         IdText = item.LinkId;
         UrlText = item.Url;

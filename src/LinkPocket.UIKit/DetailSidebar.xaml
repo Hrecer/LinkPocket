@@ -239,55 +239,8 @@
                 </Border.Style>
                 <StackPanel>
                     <TextBlock Text="信息" Style="{StaticResource SideLabel}"/>
-                    <ItemsControl ItemsSource="{Binding Rows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <!-- 图标 / 标签 / 值 三列严格对齐（16/62/* 与旧版一致） -->
-                                <Grid Margin="0,2,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="16"/>
-                                        <ColumnDefinition Width="62"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <m3:M3Icon Kind="{Binding IconKind}" Width="13" Height="13" Opacity="0.55"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12" Opacity="0.6"
-                                               Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
-                                    <!-- ⚠️ 基态视觉值必须写在 Style.Setters：本地值优先级高于触发器 -->
-                                    <TextBlock Grid.Column="2" Text="{Binding Value}" VerticalAlignment="Top">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="FontSize" Value="12"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-                                                <Setter Property="TextWrapping" Value="Wrap"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsAccent}" Value="True">
-                                                        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
-                                                        <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsMono}" Value="True">
-                                                        <Setter Property="FontFamily" Value="Consolas"/>
-                                                        <Setter Property="FontSize" Value="11"/>
-                                                        <Setter Property="Opacity" Value="0.6"/>
-                                                        <Setter Property="TextWrapping" Value="NoWrap"/>
-                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                                                        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <Button Grid.Column="3" Style="{StaticResource NavIconButton}" Tag="{Binding CopyToolTip}"
-                                            Width="24" Height="22" Padding="3" Margin="4,0,0,0" VerticalAlignment="Center"
-                                            Command="{Binding CopyCommand}"
-                                            Visibility="{Binding HasCopy, Converter={StaticResource BoolToVis}}">
-                                        <m3:M3Icon Kind="content-copy" Width="12" Height="12"/>
-                                    </Button>
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <!-- 行模板 = UIKit 共享资源（与详情页同一份视觉，绝不复制） -->
+                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
                 </StackPanel>
             </Border>
 

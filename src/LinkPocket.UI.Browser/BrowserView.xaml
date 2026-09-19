@@ -69,7 +69,7 @@
                     </StackPanel>
                 </Button>
                 <!-- 新建链接：与新建文件夹并列，弹出 M3 链接编辑器（默认当前目录） -->
-                <Button Command="{Binding NewLinkCommand}" Cursor="Hand"
+                <Button x:Name="NewLinkButton" Command="{Binding NewLinkCommand}" Cursor="Hand"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>

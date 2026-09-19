@@ -130,12 +130,7 @@ namespace LinkPocket.Views
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
                 EnsurePageFocus();
-                // 详情页展示的条目若已被永久删除 → 关闭覆盖层，不留残留旧数据
-                if (LinkDetailOverlay.Visibility == Visibility.Visible && _detailRow != null && ViewModel is { } vm)
-                {
-                    if (!vm.AllLinks.Any(l => l.Id == _detailRow.Id) && !vm.Tree.Any(n => n.Id == _detailRow.Id))
-                        CloseLinkDetail();
-                }
+                // 覆盖层的自动关闭由 VM 刷新收尾负责（条目消失即关；状态在 VM，视图不持任何详情状态）
             }));
         }
 
@@ -386,69 +381,11 @@ namespace LinkPocket.Views
             return null;
         }
 
-        // ================= 只读详情页（链接） =================
+        // ================= 只读详情覆盖层（共享详情页 LinkDetailPane） =================
 
-        private TrashRowViewModel? _detailRow;
-
+        /// <summary>打开只读详情覆盖层：数据与动作全在 VM（共享详情页），视图不持任何状态。</summary>
         private void OnShowLinkDetailRequested(object? sender, TrashRowViewModel row)
-        {
-            _detailRow = row;
-            DetailName.Text = row.Name;
-            DetailUrl.Text = row.Url ?? string.Empty;
-            DetailOrigin.Text = row.OriginText;
-            DetailDeletedAt.Text = row.DeletedText;
-            DetailId.Text = row.Id;
-            // 描述（快照保真）：空描述整卡隐藏（与浏览页详情页同款卡片）
-            DetailDescription.Text = row.Description ?? string.Empty;
-            DetailDescriptionCard.Visibility = string.IsNullOrWhiteSpace(row.Description)
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-
-            var favicon = FaviconService.LoadFromCache(row.FaviconUrl);
-            if (favicon == null && !string.IsNullOrWhiteSpace(row.FaviconUrl))
-            {
-                var faviconUrl = row.FaviconUrl;
-                _ = Task.Run(async () =>
-                {
-                    try { await FaviconStore.EnsureCachedAsync(faviconUrl); } catch { }
-                    return FaviconService.LoadFromCache(faviconUrl);
-                }).ContinueWith(t => Application.Current?.Dispatcher.Invoke(() =>
-                {
-                    if (_detailRow?.Id != row.Id) return;   // 期间已切到别的条目
-                    var bmp = t.Result;
-                    DetailFavicon.Source = bmp;
-                    DetailFavicon.Visibility = bmp != null ? Visibility.Visible : Visibility.Collapsed;
-                    DetailFaviconFallback.Visibility = bmp == null ? Visibility.Visible : Visibility.Collapsed;
-                }), TaskContinuationOptions.OnlyOnRanToCompletion);
-            }
-            else
-            {
-                DetailFavicon.Source = favicon;
-                DetailFavicon.Visibility = favicon != null ? Visibility.Visible : Visibility.Collapsed;
-                DetailFaviconFallback.Visibility = favicon == null ? Visibility.Visible : Visibility.Collapsed;
-            }
-
-            LinkDetailOverlay.Visibility = Visibility.Visible;
-            if (ViewModel is { } detailVm) detailVm.IsDetailOverlayOpen = true;   // 覆盖层打开：处置动作让位
-        }
-
-        private void CloseLinkDetail()
-        {
-            LinkDetailOverlay.Visibility = Visibility.Collapsed;
-            _detailRow = null;
-            if (ViewModel is { } vm) vm.IsDetailOverlayOpen = false;   // 覆盖层关闭：处置动作复位
-        }
-
-        private void DetailBack_Click(object sender, RoutedEventArgs e) => CloseLinkDetail();
-
-        private void DetailCopyUrl_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (!string.IsNullOrEmpty(_detailRow?.Url)) Clipboard.SetText(_detailRow.Url);
-            }
-            catch { /* 剪贴板被占用时不阻断 */ }
-        }
+            => ViewModel?.OpenLinkDetail(row);
 
         // ================= 工具栏按钮（还原 / 还原到根目录 / 永久删除） =================
         // （右栏详情栏不在此刷新：数据源 = VM 的 Details，由 VM 在选中投影点重建）
