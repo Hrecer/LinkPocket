@@ -75,7 +75,7 @@
                 <ColumnDefinition Width="286"/>
             </Grid.ColumnDefinitions>
 
-            <views:FolderTreePanel Grid.Column="0" HeaderText="已删除的文件夹"
+            <views:FolderTreePanel Grid.Column="0" HeaderText="导航"
                                    ItemsSource="{Binding TreeNodes}"/>
 
             <Border Grid.Column="1" x:Name="TrashArea" Background="{DynamicResource SurfaceContainerHigh}"

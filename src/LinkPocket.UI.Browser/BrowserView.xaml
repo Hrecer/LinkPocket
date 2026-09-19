@@ -163,7 +163,7 @@
                  与中央列表卡同构 —— SurfaceContainerHigh 内容卡（左缘贴窗口边、底部留背景余位）；
                  拖放/右键菜单经控件事件转发（订阅即启用）。 -->
             <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
-                                   HeaderText="文件夹"
+                                   HeaderText="导航"
                                    ItemsSource="{Binding FolderTree}"
                                    NodeSelected="FolderTreePanel_NodeSelected"
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"

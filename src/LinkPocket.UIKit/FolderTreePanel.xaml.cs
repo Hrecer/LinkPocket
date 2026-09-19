@@ -48,7 +48,9 @@ namespace LinkPocket.Views
 
         public static readonly DependencyProperty HeaderTextProperty = DependencyProperty.Register(
             nameof(HeaderText), typeof(string), typeof(FolderTreePanel),
-            new PropertyMetadata("文件夹"));
+            // 标题 = 「导航」（对齐 Explorer「导航窗格」）：面板里不止文件夹，还有链接叶子，
+            // 旧标题「文件夹」名不符实（用户 2026-09-19 定名）。
+            new PropertyMetadata("导航"));
 
         /// <summary>节点集合（FolderNode / TrashFolderNode）。</summary>
         public System.Collections.IEnumerable? ItemsSource
