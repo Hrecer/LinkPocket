@@ -83,12 +83,15 @@ public class DetailSidebarModel : ActionSurfaceModel
     /// <summary>
     /// 侧栏动作面缺省配置（各页在选中态变化时调用；定制页可在其后覆写个别位）：
     /// 文件夹 = 「打开」（进入目录）+「重命名」；链接 = 「详情」+「打开网站」+「编辑」。
+    /// 铅笔槽的**取色随语义走**（与标签同一处切换，绝不各写一份）：重命名 = `AccentBtn` 深紫（与侧栏
+    /// 独立那枚「重命名」同色）/ 编辑 = 图标钮缺省 `Primary`。
     /// </summary>
     protected void ConfigureSidebarActionLabels(bool isFolder)
     {
         OpenLabel = isFolder ? "打开" : "详情";
         OpenToolTip = isFolder ? "打开目录" : "查看详情";
         EditLabel = isFolder ? "重命名" : "编辑";
+        EditActionAccent = isFolder;
         ShowOpenWebsiteButton = !isFolder && ShowOpenWebsite;
         OpenColumnSpan = isFolder || !ShowOpenWebsiteButton ? 2 : 1;
     }

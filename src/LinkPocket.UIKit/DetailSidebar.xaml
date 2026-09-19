@@ -157,12 +157,22 @@
                         Visibility="{Binding ShowRenameAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                 </Button>
-                <!-- 链接：编辑（整页编辑器）；文件夹：重命名 -->
-                <Button Style="{StaticResource NavIconButton}"
-                        Tag="{Binding EditLabel}"
+                <!-- 链接：编辑（整页编辑器）；文件夹：重命名（同一枚铅笔，取色随语义切换——
+                     重命名 = AccentBtn 深紫，与上面那枚独立「重命名」同色；编辑 = 图标钮缺省的 Primary。
+                     取色由模型的能力位 EditActionAccent 声明，界面不按行类型猜） -->
+                <Button Tag="{Binding EditLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Command="{Binding RenameCommand}"
                         Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource NavIconButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding EditActionAccent}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBtn}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                 </Button>
                 <Button Style="{StaticResource NavIconButton}" Tag="{Binding DeleteActionLabel}"

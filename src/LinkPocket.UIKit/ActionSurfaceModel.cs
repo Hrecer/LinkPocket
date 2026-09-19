@@ -42,6 +42,10 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public string OpenIconKind { get; protected set; } = "open-in-new";
     /// <summary>铅笔按钮提示（链接 = 编辑；文件夹 = 重命名；回收站不用）。</summary>
     public string EditLabel { get; protected set; } = "编辑";
+    /// <summary>铅笔槽取**强调色**（`AccentBtn` 深紫）：文件夹时该槽 = 「重命名」，取色与侧栏那枚独立
+    /// 「重命名」图标钮**同源**（同一动作在两种呈现上必须同色——曾出现文件夹那枚是主题 `Primary` 亮紫、
+    /// 与链接那枚不一致）；链接时该槽 = 「编辑」，用图标钮缺省的 `Primary`。缺省 false = `Primary`。</summary>
+    public bool EditActionAccent { get; protected set; }
     /// <summary>「重命名」图标钮提示（同款 32×32 铅笔，仅取色与「编辑」区分：重命名 = AccentBtn 深紫）。</summary>
     public string RenameActionLabel { get; protected set; } = "重命名";
     /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
@@ -97,6 +101,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(OpenToolTip));
         OnPropertyChanged(nameof(OpenIconKind));
         OnPropertyChanged(nameof(EditLabel));
+        OnPropertyChanged(nameof(EditActionAccent));
         OnPropertyChanged(nameof(RenameActionLabel));
         OnPropertyChanged(nameof(DeleteActionLabel));
         OnPropertyChanged(nameof(DeleteSelectionLabel));
@@ -129,6 +134,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OpenTone = PillTone.Primary;
         StackedActions = false;
         EditLabel = "编辑";
+        EditActionAccent = false;
         RenameActionLabel = "重命名";
         DeleteActionLabel = "删除";
         DeleteSelectionLabel = "删除所选";
