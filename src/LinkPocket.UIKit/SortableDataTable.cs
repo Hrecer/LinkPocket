@@ -88,6 +88,11 @@ public class SortableDataTable : Grid
         nameof(HeaderBandMargin), typeof(Thickness), typeof(SortableDataTable),
         new PropertyMetadata(new Thickness(8, 0, 8, 0)));
 
+    /// <summary>行选中开关（默认开）。关闭后点击行不再绘制常驻选中底色（RowClick/RowDoubleClick 照常触发）——
+    /// 供"点击行 = 导航、没有选中概念"的表格使用（去重工具：主表与明细表）。</summary>
+    public static readonly DependencyProperty SelectionEnabledProperty = DependencyProperty.Register(
+        nameof(SelectionEnabled), typeof(bool), typeof(SortableDataTable), new PropertyMetadata(true));
+
     public IEnumerable<DataTableColumn> Columns
     {
         get => (IEnumerable<DataTableColumn>)GetValue(ColumnsProperty);
@@ -132,6 +137,13 @@ public class SortableDataTable : Grid
     {
         get => (Thickness)GetValue(HeaderBandMarginProperty);
         set => SetValue(HeaderBandMarginProperty, value);
+    }
+
+    /// <summary>行选中开关（默认开）：关闭时 <see cref="SelectItem"/> 为无操作——行结构性不可选中。</summary>
+    public bool SelectionEnabled
+    {
+        get => (bool)GetValue(SelectionEnabledProperty);
+        set => SetValue(SelectionEnabledProperty, value);
     }
 
     /// <summary>列宽单一数据源：表头与每一行的 Grid 列都绑定到这里（拖拽只改这一份）。</summary>
@@ -664,10 +676,11 @@ public class SortableDataTable : Grid
         return row;
     }
 
-    /// <summary>选中某一项（更新内部绘制；不匹配的项恢复默认态。仅默认工厂模式）。</summary>
+    /// <summary>选中某一项（更新内部绘制；不匹配的项恢复默认态。仅默认工厂模式）。
+    /// <see cref="SelectionEnabled"/> 关闭时整体无操作（表无选中概念时不得画选中）。</summary>
     public void SelectItem(object item)
     {
-        if (IsTemplateMode) return;
+        if (IsTemplateMode || !SelectionEnabled) return;
         ResetRowBackground(SelectedItem);
         SelectedItem = item;
         if (_rowMap.TryGetValue(item, out var newRow))

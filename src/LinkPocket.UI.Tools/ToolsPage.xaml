@@ -229,10 +229,11 @@
                 </DockPanel>
 
                 <Grid Grid.Row="1">
-                    <!-- 表格宿主：圆角 24 卡（与回收站/智能列表同款），表头色带边距归零 -->
+                    <!-- 表格宿主：圆角 24 卡（与回收站/智能列表同款），表头色带边距归零。
+                         去重表没有选中概念：点击行 = 进入明细，关掉行选中视觉（否则返回后残留高亮）。 -->
                     <Border x:Name="PaneTableHost" Background="{DynamicResource SurfaceContainerHigh}"
                             CornerRadius="24" ClipToBounds="True">
-                        <views:SortableDataTable x:Name="PaneTable" HeaderBandMargin="0"/>
+                        <views:SortableDataTable x:Name="PaneTable" HeaderBandMargin="0" SelectionEnabled="False"/>
                     </Border>
 
                     <!-- 书签导入 / 导出（合并为一项：同一入口内切换方向） -->
@@ -544,7 +545,7 @@
 
             <Border Grid.Row="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,16,16" ClipToBounds="True">
-                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0"/>
+                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0" SelectionEnabled="False"/>
             </Border>
         </Grid>
     </Grid>
