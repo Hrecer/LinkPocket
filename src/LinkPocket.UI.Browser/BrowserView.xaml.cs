@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -44,7 +43,6 @@ public partial class BrowserView : UserControl
             // 换绑到新 VM 前，先解绑旧 VM 的订阅（否则旧 VM 的变更仍会驱动本视图，且订阅线性增长）
             if (_wiredVm != null)
             {
-                _wiredVm.PropertyChanged -= OnViewModelPropertyChanged;
                 _wiredVm.FocusRowRequested -= OnFocusRowRequested;
                 _wiredVm.PaneActivated -= OnPaneActivated;
                 _wiredVm.RefreshCompleted -= OnRefreshCompleted;
@@ -52,7 +50,6 @@ public partial class BrowserView : UserControl
             }
             _wiredVm = ViewModel;
 
-            ViewModel.PropertyChanged += OnViewModelPropertyChanged;
             ViewModel.FocusRowRequested += OnFocusRowRequested;
             ViewModel.PaneActivated += OnPaneActivated;
             ViewModel.RefreshCompleted += OnRefreshCompleted;
@@ -979,33 +976,8 @@ public partial class BrowserView : UserControl
         if (ViewModel != null) ViewModel.ClearSelection();
     }
 
-    /// <summary>VM 属性变化：仅路径编辑态需要视图介入（聚焦全选）；树选中同步已内聚在 VM 数据驱动。</summary>
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(BrowserViewModel.IsPathEditing))
-        {
-            if (ViewModel is { IsPathEditing: true })
-            {
-                // 编辑框在 BreadcrumbBar 模板内（Collapsd↔Visible 切换由控件触发器负责），找到后聚焦全选
-                var editBox = FindDescendant<TextBox>(Breadcrumb);
-                editBox?.Focus();
-                editBox?.SelectAll();
-            }
-        }
-    }
-
-    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
-    {
-        var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
-        for (var i = 0; i < count; i++)
-        {
-            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
-            if (child is T hit) return hit;
-            var sub = FindDescendant<T>(child);
-            if (sub != null) return sub;
-        }
-        return null;
-    }
+    // 进入路径编辑态时的"聚焦 + 全选"归 BreadcrumbBar 控件自身（编辑框一见可见就聚焦）：
+    // 视图不再订阅 VM 属性通知去抓编辑框——通知链里可视状态尚未落地，聚焦会静默失败（实测见 WARNINGS）。
 
     // 卡内按下的手势凭据（见 ListCard_MouseLeftButtonUp 的归属校验）。
     private bool _cardPressEmpty;

@@ -60,6 +60,22 @@ namespace LinkPocket.Views
             Loaded += (_, _) => RelayoutCrumbs();
             SizeChanged += (_, _) => RelayoutCrumbs();
             Unloaded += (_, _) => StopObservingSource();
+
+            // 进入编辑态 = 输入框就绪（**可输入**）：聚焦全选挂在"编辑框真的变可见"这个事件上，
+            // 绝不挂在宿主的属性通知上——通知链里可视状态由绑定/触发器稍后才落地，
+            // 聚焦动作会打在还没可见的编辑框上**静默失败**（实测：点一下只出现地址栏外观、要点第二下才能输入）。
+            // 与 InlineNameEditor 同一做法（谁拥有编辑框，谁负责"一显示就聚焦"）。
+            PathEditBox.IsVisibleChanged += (_, _) =>
+            {
+                if (PathEditBox.IsVisible && IsPathEditing) FocusEditBox();
+            };
+        }
+
+        /// <summary>聚焦路径编辑框并整名全选（Windows 11 口径：点地址栏空白一下即可直接输入/覆盖）。</summary>
+        private void FocusEditBox()
+        {
+            PathEditBox.Focus();
+            PathEditBox.SelectAll();
         }
 
         public static readonly DependencyProperty BreadcrumbsProperty = DependencyProperty.Register(
