@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -60,14 +60,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Architecture.Tests", "tests\LinkPocket.Architecture.Tests\LinkPocket.Architecture.Tests.csproj", "{77CC6A36-DC3F-4F8A-8125-93AF1426444A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.App.Tests", "tests\LinkPocket.App.Tests\LinkPocket.App.Tests.csproj", "{C438281D-DAFB-48D8-B0DC-FBC9FF790643}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{A31A215A-55DD-45FB-9637-C3666E35A447}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.CatalogExport", "tools\LinkPocket.CatalogExport\LinkPocket.CatalogExport.csproj", "{EE283923-BDB4-470A-8251-D46C3EC9EBD9}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Headless", "tools\LinkPocket.Headless\LinkPocket.Headless.csproj", "{7A2E879D-E4A9-461A-A4BA-FD309EE5806A}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartProbe", "tools\SmartProbe\SmartProbe.csproj", "{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -186,18 +178,6 @@ Global
 		{C438281D-DAFB-48D8-B0DC-FBC9FF790643}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C438281D-DAFB-48D8-B0DC-FBC9FF790643}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C438281D-DAFB-48D8-B0DC-FBC9FF790643}.Release|Any CPU.Build.0 = Release|Any CPU
-		{EE283923-BDB4-470A-8251-D46C3EC9EBD9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{EE283923-BDB4-470A-8251-D46C3EC9EBD9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{EE283923-BDB4-470A-8251-D46C3EC9EBD9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{EE283923-BDB4-470A-8251-D46C3EC9EBD9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7A2E879D-E4A9-461A-A4BA-FD309EE5806A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7A2E879D-E4A9-461A-A4BA-FD309EE5806A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7A2E879D-E4A9-461A-A4BA-FD309EE5806A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7A2E879D-E4A9-461A-A4BA-FD309EE5806A}.Release|Any CPU.Build.0 = Release|Any CPU
-		{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{5CCA746F-6002-4244-AD2F-1735D03279D7} = {703A951A-37A6-4805-8F7E-872769D314F7}
@@ -227,8 +207,5 @@ Global
 		{CD8699BE-97EF-4507-A77F-E24CCEA76A44} = {703A951A-37A6-4805-8F7E-872769D314F7}
 		{77CC6A36-DC3F-4F8A-8125-93AF1426444A} = {E0E15218-1483-42AF-BF9E-7360DEBEAEA7}
 		{C438281D-DAFB-48D8-B0DC-FBC9FF790643} = {E0E15218-1483-42AF-BF9E-7360DEBEAEA7}
-		{EE283923-BDB4-470A-8251-D46C3EC9EBD9} = {A31A215A-55DD-45FB-9637-C3666E35A447}
-		{7A2E879D-E4A9-461A-A4BA-FD309EE5806A} = {A31A215A-55DD-45FB-9637-C3666E35A447}
-		{6F7726AE-C9C7-46B1-B1EF-EACF7554BA86} = {A31A215A-55DD-45FB-9637-C3666E35A447}
 	EndGlobalSection
 EndGlobal

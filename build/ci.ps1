@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-  LinkPocket CI 门禁（10k 性能基准接进流水线；并有目录文档漂移门）。
+  LinkPocket CI 门禁（10k 性能基准接进流水线）。
 
 .DESCRIPTION
   单一入口，任何 CI 提供商（GitHub Actions / Jenkins / 本地预提交）都只需调用本脚本。
-  五道门，任一道不过即非零退出：
+  四道门，任一道不过即非零退出：
 
     1. 清 obj + 全量编译（0 警告 0 错误，-warnaserror 强制）
        · 清 obj 时保留 NuGet restore 资产（project.assets.json / *.nuget.g.props / *.nuget.g.targets
@@ -13,11 +13,10 @@
     2. 单元测试（Architecture / Engine / Modules / App，逐项目串行）
     3. 协议冒烟（含 §0~§11 端到端断言）
     4. 10k 性能门槛（Release 构建 + --strict-perf：按标定门槛判定，不享受 Debug 放宽）
-    5. 目录文档漂移检查（docs/catalog 必须与命令描述符逐字节一致）
 
   收尾：关闭本次门禁起的常驻编译服务器（MSBuild 节点 / VBCSCompiler），并打印分阶段耗时表。
 
-  产物：build/artifacts/{build,test,smoke,catalog}.log + perf_report.json（逐条实测值，供归档与趋势对比）
+  产物：build/artifacts/{build,test,smoke}.log + perf_report.json（逐条实测值，供归档与趋势对比）
         + timing_history.log（每次运行一行分阶段耗时，供跨运行对比）；
         临时库与暂存区落 build/artifacts/tmp/（LP_TEMP_ROOT），不污染用户配置目录。
 
@@ -164,7 +163,7 @@ if (-not $built) {
 Write-Host "[CI] 编译通过" -ForegroundColor Green
 
 # —— 2. 单元测试（逐项目串行：`dotnet test` 多项目并行跑会让测试宿主进程崩溃 0xC00000FD/0x80131506，
-#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，见 docs/TESTING.md §2 与 docs/WARNINGS.md ——）
+#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，见内部文档 文档/TESTING.md §2 与 文档/WARNINGS.md ——）
 Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
 $testProjects = @(
     "tests/LinkPocket.Architecture.Tests",
@@ -208,23 +207,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[CI] 协议冒烟与性能门槛通过" -ForegroundColor Green
 
-# —— 5. 目录文档漂移检查（Descriptor = 单一事实源，文档必须机械生成）——
-Write-Host "[CI] 目录文档漂移检查 ..." -ForegroundColor Cyan
-$swCatalog = [System.Diagnostics.Stopwatch]::StartNew()
-& $dotnet run --project (Join-Path $repoRoot "tools/LinkPocket.CatalogExport") -c $Configuration --no-build -- --check 2>&1 |
-    Tee-Object -FilePath (Join-Path $artifacts "catalog.log")
-$swCatalog.Stop()
-$timings['⑤ 目录文档漂移'] = $swCatalog.Elapsed.TotalSeconds
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[CI] docs/catalog 与命令描述符不一致（跑 build/gen-catalog.ps1 重新生成）" -ForegroundColor Red
-    Write-TimingSummary
-    exit $LASTEXITCODE
-}
-Write-Host "[CI] 目录文档与描述符一致" -ForegroundColor Green
-
 # —— 收尾：关掉本次门禁起的常驻编译服务器 ——
 # `dotnet build` 默认 nodeReuse:true，跑完会常驻约 15 分钟（24 核机器实测 23 个进程 / ~3.3GB），
-# 多代叠加会逼近本机提交上限（曾致测试宿主 0xC00000FD，见 docs/WARNINGS.md 第 26 条）。
+# 多代叠加会逼近本机提交上限（曾致测试宿主 0xC00000FD，见内部文档 文档/WARNINGS.md 第 26 条）。
 # 门禁是"跑完即净"的场景：收尾统一关掉（代价：下次编译冷启动约 +7s）。
 try {
     $null = & $dotnet build-server shutdown 2>&1
