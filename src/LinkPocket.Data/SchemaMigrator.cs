@@ -130,6 +130,7 @@ public static class SchemaMigrator
         (2, BaselineV2 + VersionRow(2)),
         (3, IndexesV3 + VersionRow(3)),
         (4, IndexesV4 + VersionRow(4)),
+        (5, AdditionsV5 + VersionRow(5)),
     ];
 
     /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
@@ -228,5 +229,30 @@ public static class SchemaMigrator
     private const string IndexesV4 =
         """
         CREATE UNIQUE INDEX idx_folders_parent_name ON folders(COALESCE(parent_id, ''), name COLLATE NOCASE);
+        """;
+
+    /// <summary>
+    /// v5 版本脚本：回收站**原位还原**的数据基础 + 被删文件夹快照保真。
+    ///
+    /// <list type="bullet">
+    /// <item><c>origin_parent_folder_id</c>：删除时该文件夹的父目录 ID——此前**完全没有记录**
+    /// （根单元的原父只活在内存撤销载荷里，进程重启即失），"还原到原位置"无从谈起。
+    /// 语义：NULL = 原在根；v5 后所有进站单元**必有记录**（正常路径不存在"原目录未知"）。
+    /// 子单元同样按原父记录（其父在回收站镜像内，原位语义同样成立）。</item>
+    /// <item><b>保真列</b>（description / sort_order / created_at / last_visited_at / visit_count）：
+    /// 此前 restore_unit 重建文件夹时不带这些字段（还原即丢元数据），同批补齐。
+    /// 时间列可空 = v5 前进站的数据（如实未知，不伪造）。</item>
+    /// <item><b>不加索引</b>：origin_parent_folder_id 只在还原时单点查一次——
+    /// 与前瞻项"不预留空索引"一致，收益不抵写代价。</item>
+    /// </list>
+    /// </summary>
+    private const string AdditionsV5 =
+        """
+        ALTER TABLE trash_folders ADD COLUMN origin_parent_folder_id TEXT NULL;
+        ALTER TABLE trash_folders ADD COLUMN description TEXT NULL;
+        ALTER TABLE trash_folders ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE trash_folders ADD COLUMN created_at TEXT NULL;
+        ALTER TABLE trash_folders ADD COLUMN last_visited_at TEXT NULL;
+        ALTER TABLE trash_folders ADD COLUMN visit_count INTEGER NOT NULL DEFAULT 0;
         """;
 }

@@ -52,6 +52,19 @@ public class SchemaMigratorTests
         return names.ToArray();
     }
 
+    /// <summary>某表的全部列名（排序数组）——表形状可比对的期望（升级库 vs 新建库）。</summary>
+    private static string[] ColumnNames(string dbPath, string table)
+    {
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT name FROM pragma_table_info('{table}') ORDER BY name";
+        using var reader = cmd.ExecuteReader();
+        var names = new List<string>();
+        while (reader.Read()) names.Add(reader.GetString(0));
+        return names.ToArray();
+    }
+
     [Fact]
     public void EnsureSchema_Creates_Baseline_And_Applies_Evolution()
     {
@@ -61,8 +74,8 @@ public class SchemaMigratorTests
         Assert.Equal(
             new[] { "audit_log", "folders", "idempotency", "links", "macros", "schema_migrations", "trash_folders", "trash_links" },
             UserTables(dbPath));
-        // 全新库跑的是完整版本链（v2 基线 + v3 索引复核 + v4 同层唯一索引），版本表落最高版本
-        Assert.Equal(4, SchemaVersion(dbPath));
+        // 全新库跑的是完整版本链（v2 基线 + v3/v4/v5 演进），版本表落最高版本
+        Assert.Equal(5, SchemaVersion(dbPath));
 
         // v2 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
         using (var conn = new SqliteConnection($"Data Source={dbPath}"))
@@ -76,7 +89,7 @@ public class SchemaMigratorTests
             Assert.Equal(11, Convert.ToInt64(Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('links')")));
         }
 
-        // v3/v4（索引复核 + 同层唯一约束）：新建库路径必须与升级路径产出同一套索引
+        // v3/v4/v5（索引复核 + 同层唯一约束 + 回收站保真列）：新建库路径必须与升级路径产出同一套索引
         Assert.Equal(
             new[]
             {
@@ -94,11 +107,21 @@ public class SchemaMigratorTests
                 "idx_trash_links_folder",
             },
             IndexNames(dbPath));
+
+        // v5（回收站原位还原 + 快照保真）：trash_folders 共 12 列，6 个新增列齐备（v5 不加索引）
+        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            conn.Open();
+            Assert.Equal(12L, Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('trash_folders')"));
+            Assert.Equal(6L, Scalar(conn,
+                "SELECT COUNT(*) FROM pragma_table_info('trash_folders') WHERE name IN " +
+                "('origin_parent_folder_id','description','sort_order','created_at','last_visited_at','visit_count')"));
+        }
     }
 
     /// <summary>
-    /// v2 → 最新版升级路径：既有库只补增量脚本，索引集合必须与新建库逐项一致
-    /// （否则"老用户"永远拿不到性能修复与同层唯一约束）。
+    /// v2 → 最新版升级路径：既有库只补增量脚本，索引集合与表形状必须与新建库逐项一致
+    /// （否则"老用户"永远拿不到性能修复、同层唯一约束与回收站保真列）。
     /// </summary>
     [Fact]
     public void EnsureSchema_Upgrades_V2_Database_To_Latest_Indexes()
@@ -106,8 +129,9 @@ public class SchemaMigratorTests
         var source = TempDbPath();
         SchemaMigrator.EnsureSchema(source);
         var expected = IndexNames(source);
+        var expectedTrashColumns = ColumnNames(source, "trash_folders");
 
-        // 造一个"升级前"的库副本（版本行 = 2、无 v3/v4 索引）：SchemaMigrator 从未见过该路径 → 走完整检查
+        // 造一个"升级前"的库副本（版本行 = 2、无 v3/v4/v5 演进）：SchemaMigrator 从未见过该路径 → 走完整检查
         using (var conn = new SqliteConnection($"Data Source={source}"))
         {
             conn.Open();
@@ -132,15 +156,28 @@ public class SchemaMigratorTests
                 drop.CommandText = $"DROP INDEX {index}";
                 drop.ExecuteNonQuery();
             }
+            // 回退 v5 列（模拟 v5 前进站的库形状）
+            foreach (var column in new[]
+                     {
+                         "origin_parent_folder_id", "description", "sort_order",
+                         "created_at", "last_visited_at", "visit_count",
+                     })
+            {
+                using var drop = conn.CreateCommand();
+                drop.CommandText = $"ALTER TABLE trash_folders DROP COLUMN {column}";
+                drop.ExecuteNonQuery();
+            }
             using var rollback = conn.CreateCommand();
-            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4)";
+            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4, 5)";
             rollback.ExecuteNonQuery();
         }
 
         SchemaMigrator.EnsureSchema(legacy);
 
-        Assert.Equal(4, SchemaVersion(legacy));
+        Assert.Equal(5, SchemaVersion(legacy));
         Assert.Equal(expected, IndexNames(legacy));
+        // 升级库与新建库的 trash_folders 列集合逐项一致（v5 ALTER 逐列补齐）
+        Assert.Equal(expectedTrashColumns, ColumnNames(legacy, "trash_folders"));
     }
 
     [Fact]
@@ -169,7 +206,7 @@ public class SchemaMigratorTests
 
         // 整库重置（删文件重建）路径：文件存在性守卫失效后自动重新建库
         SchemaMigrator.EnsureSchema(dbPath);
-        Assert.Equal(4, SchemaVersion(dbPath));
+        Assert.Equal(5, SchemaVersion(dbPath));
         Assert.Equal(8, UserTables(dbPath).Length);
     }
 
@@ -200,13 +237,27 @@ public class SchemaMigratorTests
         SchemaMigrator.EnsureSchema(dbPath);
         var factory = new LinkPocketDbContextFactory(dbPath);
 
+        var folder = new Folder { Name = "映射对齐" };
+        var created = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
         await using (var ctx = factory.CreateDbContext())
         {
-            var folder = new Folder { Name = "映射对齐" };
             ctx.Add(folder);
             ctx.Add(new Link { Url = "https://example.com/", Title = "L", ListId = folder.FolderId });
             ctx.Add(new TrashedLink { Url = "https://trash.example/", OriginListId = folder.FolderId, DeletedAt = DateTime.UtcNow });
-            ctx.Add(new TrashedFolder { Name = "单元", DeletedAt = DateTime.UtcNow });
+            ctx.Add(new TrashedFolder
+            {
+                TrashFolderId = "900000000001",
+                Name = "单元",
+                OriginFolderId = "900000000001",
+                OriginParentFolderId = folder.FolderId,
+                OriginPath = "全部书签 / 映射对齐 / 单元",
+                Description = "快照描述",
+                SortOrder = 3,
+                CreatedAt = created,
+                LastVisitedAt = created,
+                VisitCount = 7,
+                DeletedAt = DateTime.UtcNow,
+            });
             await ctx.SaveChangesAsync();
         }
 
@@ -216,7 +267,16 @@ public class SchemaMigratorTests
             Assert.Equal(1, await verify.Links.CountAsync());
             Assert.Equal(1, await verify.TrashedLinks.CountAsync());
             Assert.Equal(1, await verify.TrashedFolders.CountAsync());
-            Assert.Equal(4, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(5, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+
+            // v5 保真列经 EF 回读逐字段一致（DateTime? 往返按 Ticks 对齐，Kind 不参与比较）
+            var unit = await verify.TrashedFolders.SingleAsync();
+            Assert.Equal(folder.FolderId, unit.OriginParentFolderId);
+            Assert.Equal("快照描述", unit.Description);
+            Assert.Equal(3, unit.SortOrder);
+            Assert.Equal(created.Ticks, unit.CreatedAt!.Value.Ticks);
+            Assert.Equal(created.Ticks, unit.LastVisitedAt!.Value.Ticks);
+            Assert.Equal(7, unit.VisitCount);
         }
     }
 

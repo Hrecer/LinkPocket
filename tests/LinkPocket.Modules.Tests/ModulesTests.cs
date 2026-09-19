@@ -1272,8 +1272,8 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // 全新建库 = 完整版本链（v2 基线 + v3 索引复核 + v4 同层唯一索引），版本表落最高版本
-        Assert.Equal(4, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 完整版本链（v2 基线 + v3/v4/v5 演进），版本表落最高版本
+        Assert.Equal(5, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

@@ -94,7 +94,13 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         ParentTrashFolderId = f.ParentId != null && subtreeIdSet.Contains(f.ParentId) ? f.ParentId : null,
                         Name = f.Name,
                         OriginFolderId = f.FolderId,
+                        OriginParentFolderId = f.ParentId,   // v5：原父目录（原位还原的数据依据；NULL = 原在根）
                         OriginPath = await uow.Trees.PathDisplayAsync(new FolderId(f.FolderId), ct),
+                        Description = f.Description,
+                        SortOrder = f.SortOrder,
+                        CreatedAt = f.CreatedAt,
+                        LastVisitedAt = f.LastVisitedAt,
+                        VisitCount = f.VisitCount,
                         DeletedAt = trashedAt,
                     }, ct);
                 }
