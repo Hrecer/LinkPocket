@@ -421,8 +421,9 @@ public partial class BrowserView : UserControl
     /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
     private bool _pressWasSoleSelection;
 
-    /// <summary>拖拽数据：选中集合（拖未选中的行时为其临时单项集合）。</summary>
-    public record BrowserDragPayload(IReadOnlyList<BrowserRowViewModel> Rows);
+    /// <summary>拖拽数据：本次拖动集合（<see cref="DragItem"/> 快照，与行/树 VM 解耦——
+    /// 主栏行与树节点都能构造，放置端按 Id 通用）。</summary>
+    public record BrowserDragPayload(IReadOnlyList<DragItem> Items);
 
     /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -459,10 +460,9 @@ public partial class BrowserView : UserControl
 
         if ((sender as FrameworkElement)?.DataContext is not BrowserRowViewModel row || ViewModel == null) return;
 
-        // 拖未选中的行 → 先单选该行（Explorer 语义）；拖已选中的行 → 拖动整个选中集合
-        if (!row.IsSelected)
-            ViewModel.SelectRowWithModifiers(row, ModifierKeys.None);
-        var items = ViewModel.SelectedRows.ToList();
+        // 拖未选中的行 → 先单选该行（Explorer 语义）；拖已选中的行 → 拖动整个选中集合。
+        // 载荷构造与选中语义收敛在 VM（PrepareDragFromRow）——树节点拖拽走同一条路径，界面不各写一份。
+        var items = ViewModel.PrepareDragFromRow(row);
         if (items.Count == 0) return;
 
         DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(new BrowserDragPayload(items)),
@@ -484,7 +484,7 @@ public partial class BrowserView : UserControl
     private bool IsCycleBlocked(BrowserDragPayload? payload, string? targetFolderId)
     {
         if (payload == null || ViewModel == null) return false;
-        foreach (var item in payload.Rows)
+        foreach (var item in payload.Items)
         {
             if (item.Id == targetFolderId) return true;   // 拖到它自己
             if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId))
@@ -499,7 +499,7 @@ public partial class BrowserView : UserControl
         if (payload == null || ViewModel == null) return false;
         // 根节点「全部书签」（folderId == null）= 移到根目录，是合法目标（与 NodeDrop 注释一致）；
         // 防环只在目标是真实文件夹时才有意义（根没有「被移入自身」的概念）。
-        foreach (var item in payload.Rows)
+        foreach (var item in payload.Items)
         {
             if (item.Id == targetFolderId) return false;
             if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId)) return false;
@@ -531,7 +531,7 @@ public partial class BrowserView : UserControl
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
             if (payload != null && row is { IsFolder: true } && IsDropValid(payload, row.Id))
-                _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), row.Id);
+                _ = ViewModel?.MoveItemsAsync(payload.Items, row.Id);
         }
         finally
         {
@@ -539,7 +539,27 @@ public partial class BrowserView : UserControl
         }
     }
 
-    // —— 树节点拖放/选中（FolderTreePanel 事件转发）——
+    // —— 树节点拖拽源/拖放/选中（FolderTreePanel 事件转发）——
+
+    /// <summary>
+    /// 树节点**拖拽源**：载荷与选中语义完全复用主栏那一套（VM <see cref="BrowserViewModel.PrepareDragFromNode"/>）——
+    /// 拖未选中节点先单选该节点、拖已选中节点拖动整个选中集合（树选中同样落在唯一选中集合里）。
+    /// 「全部书签」虚根不是实体 → 载荷为空 → 不发起拖拽。拖拽结束若曾落到成环目标 → 与主栏同一套文案弹窗。
+    /// </summary>
+    private void FolderTreePanel_NodeDragStartRequested(object? sender, TreeItemDragStartEventArgs e)
+    {
+        if (ViewModel == null || e.Node is not FolderNode node || e.Source == null) return;
+        var items = ViewModel.PrepareDragFromNode(node);
+        if (items.Count == 0) return;
+
+        DragDrop.DoDragDrop(e.Source, new DataObject(new BrowserDragPayload(items)), DragDropEffects.Move);
+
+        if (_dragBlockedAsCycle)
+        {
+            _dragBlockedAsCycle = false;
+            ViewModel.ReportBlockedDrop(items);
+        }
+    }
 
     /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
@@ -566,7 +586,7 @@ public partial class BrowserView : UserControl
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
             if (payload != null && node != null && !node.IsLink && IsDropValid(payload, node.FolderId))
-                _ = ViewModel?.MoveItemsAsync(payload.Rows.Select(r => (r.Id, r.IsFolder)), node.FolderId);
+                _ = ViewModel?.MoveItemsAsync(payload.Items, node.FolderId);
         }
         finally
         {

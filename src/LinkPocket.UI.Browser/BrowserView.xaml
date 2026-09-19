@@ -173,7 +173,8 @@
                                    NodeSelected="FolderTreePanel_NodeSelected"
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
                                    NodeDragOver="FolderTreePanel_NodeDragOver"
-                                   NodeDrop="FolderTreePanel_NodeDrop"/>
+                                   NodeDrop="FolderTreePanel_NodeDrop"
+                                   NodeDragStartRequested="FolderTreePanel_NodeDragStartRequested"/>
 
             <!-- 右侧：列头 + 行列表 + 空状态 + 加载遮罩。
                  列表区卡片化（MD3E shape separation）：大圆角 24 + 四周基面沟槽，

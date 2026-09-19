@@ -216,7 +216,7 @@ public class PasteBoundaryTests
             var vm = NewVm(client, dialogs);
             await vm.LoadAsync(null);
 
-            vm.ReportBlockedDrop(new[] { vm.Rows[0] });
+            vm.ReportBlockedDrop(vm.PrepareDragFromRow(vm.Rows[0]));
 
             var (title, message) = Assert.Single(dialogs.Alerts);
             Assert.Equal("无法移动", title);              // 拖拽 = 移动语义

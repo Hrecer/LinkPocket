@@ -1190,8 +1190,57 @@ public class BrowserViewModel : INotifyPropertyChanged
         return false;
     }
 
-    /// <summary>批量拖拽 / 移动入口。targetFolderId 为 null 表示根。非法项（目标在自身子树内、已在目标目录）逐项跳过。</summary>
-    public async Task MoveItemsAsync(IEnumerable<(string Id, bool IsFolder)> items, string? targetFolderId)
+    /// <summary>
+    /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合 <see cref="_selectedIds"/> 投影成载荷项。
+    /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）。
+    /// 解析不到的 ID（实体已被外部删除等）不进载荷——移动逻辑按真实数据校验，绝不猜类型。
+    /// </summary>
+    private IReadOnlyList<DragItem> BuildDragItems()
+    {
+        var items = new List<DragItem>();
+        foreach (var id in _selectedIds)
+        {
+            var row = Rows.FirstOrDefault(r => r.Id == id);
+            if (row != null)
+            {
+                items.Add(new DragItem(row.Id, row.IsFolder, row.Name));
+                continue;
+            }
+
+            var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
+            if (node != null) items.Add(new DragItem(id, !node.IsLink, node.Name));
+        }
+        return items;
+    }
+
+    /// <summary>
+    /// 主栏行拖拽起点：未选中 → 先单选该行（Explorer 口径：拖未选中项先选中）；已选中 → 拖动整个选中集合。
+    /// 返回本次拖动的载荷快照（视图据此调 DoDragDrop）。
+    /// </summary>
+    public IReadOnlyList<DragItem> PrepareDragFromRow(BrowserRowViewModel? row)
+    {
+        if (row == null) return [];
+        if (!row.IsSelected) SelectRowWithModifiers(row, ModifierKeys.None);
+        return BuildDragItems();
+    }
+
+    /// <summary>
+    /// 树节点拖拽起点：语义与主栏**完全一致**（未选中 → 先单选该节点；已选中 → 拖动整个选中集合）。
+    /// 实体 ID：文件夹 = <c>FolderId</c>、链接叶子 = <c>Id</c>；「全部书签」虚根不是实体 → 空载荷（不可拖）。
+    /// 选中仍只经 <see cref="SetSelection"/>（唯一写入入口）落盘，不在此旁路写节点状态。
+    /// </summary>
+    public IReadOnlyList<DragItem> PrepareDragFromNode(FolderNode? node)
+    {
+        if (node == null) return [];
+        var id = node.IsLink ? node.Id : node.FolderId;
+        if (string.IsNullOrEmpty(id)) return [];
+        if (!_selectedIds.Contains(id)) SetSelection(new[] { id }, id);
+        return BuildDragItems();
+    }
+
+    /// <summary>批量拖拽 / 移动入口（载荷 = <see cref="DragItem"/>：主栏行与树节点拖拽共用同一条路径）。
+    /// targetFolderId 为 null 表示根。非法项（目标在自身子树内、已在目标目录）逐项跳过。</summary>
+    public async Task MoveItemsAsync(IReadOnlyList<DragItem> items, string? targetFolderId)
     {
         var target = targetFolderId;
         var moved = 0;
@@ -1200,9 +1249,10 @@ public class BrowserViewModel : INotifyPropertyChanged
         var callOptions = new LinkPocket.Contracts.CallOptions(UndoGroupId: Guid.NewGuid().ToString("N"));
         try
         {
-            foreach (var (id, isFolder) in items)
+            foreach (var item in items)
             {
-                if (isFolder)
+                var id = item.Id;
+                if (item.IsFolder)
                 {
                     if (id == target || IsSelfOrDescendant(id, target)) continue;
                     if (NormalizeParentId(_folderMap.TryGetValue(id, out var info) ? info.ParentId : null) == target)
@@ -1496,8 +1546,8 @@ public class BrowserViewModel : INotifyPropertyChanged
     /// 按 Windows 口径**弹窗说明**（与粘贴共用同一套文案生成——反馈口径只有一处）。
     /// 为什么在拖拽**结束后**才弹：拖拽过程中鼠标还按着，弹窗会打断手势；Windows 也是松手后报错。
     /// </summary>
-    public void ReportBlockedDrop(IReadOnlyList<BrowserRowViewModel> rows)
-        => ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, rows.Select(r => r.Name).ToList()));
+    public void ReportBlockedDrop(IReadOnlyList<DragItem> items)
+        => ShowError(BlockedTitle(isCut: true), BlockedMessage(isCut: true, items.Select(i => i.Name).ToList()));
 
     /// <summary>非法粘贴目标（成环）的弹窗标题——按动作区分（剪切 = 移动 / 复制 = 复制）。</summary>
     private static string BlockedTitle(bool isCut) => isCut ? "无法移动" : "无法复制";
