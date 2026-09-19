@@ -76,6 +76,9 @@ namespace LinkPocket.ViewModels
             // ⚠️ 数据闸纪律：本处理器不得同步回派协议命令；await 续体统一经 Dispatcher 执行
             // （与原内联定时器 Tick 的 async void 形态逐字等价，绝不 Task.Run 离开 UI 线程）。
             _ = RefreshActiveViewAsync();
+            // 路径解析树的同步（与活跃页路由无关）：搜索页「位置」列 / 智能列表位置列 / 工具页路径
+            // 都读这份快照——改名 / 移动 / 新建后，任何页面再解析都必须看到新名字。
+            _ = LoadFolderTreeAsync();
         }
 
         private async Task RefreshActiveViewAsync()
@@ -135,6 +138,8 @@ namespace LinkPocket.ViewModels
         public event EventHandler? OnNavigatedFromSearch;
         public event EventHandler? OnSearchRefreshRequested;
         public event EventHandler? OnToolsDataChanged;
+        /// <summary>进入工具页（Shell 转发到 ToolsView.OnNavigatedTo）：去重结果的入口对齐信号。</summary>
+        public event EventHandler? OnNavigatedToTools;
 
         public ObservableCollection<NavigationItem> NavigationItems
         {
@@ -191,11 +196,15 @@ namespace LinkPocket.ViewModels
                 CurrentNavId = navId;
                 SyncNavSelection(navId);
 
-                // P4 浏览页：首次进入从根目录加载；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制
+                // P4 浏览页：首次进入从根目录加载；已加载则原地重载（**入口对齐**——防抖刷新只送达
+                // "事件发生时的活跃页"，非活跃期间的变更必须在这里补：去重删除 / 书签导入 / 备份导入 /
+                // 回收站还原都会改这一页；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制）
                 if (navId == "browser")
                 {
                     if (BrowserViewModel.Rows.Count == 0)
                         _ = BrowserViewModel.LoadAsync(null);
+                    else
+                        _ = BrowserViewModel.RefreshPreservingSelectionAsync();
                 }
 
                 if (_smartListViewModel != null && _smartListViewModel.ShowResult)
@@ -208,6 +217,12 @@ namespace LinkPocket.ViewModels
                     // 切页进入 = 导航加载（亮遮罩 + 入场动画）：由页面入口装载（页面还要同步只读详情栏）
                     var navigation = _ports.Navigation;
                     if (navigation != null) await navigation.RefreshTrashPageAsync();
+                }
+
+                if (navId == "tools")
+                {
+                    // 入口对齐：去重结果（主表 / 明细）可能被其它页面的变更置于陈旧——页内按视图状态决定重跑
+                    OnNavigatedToTools?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Exception ex)

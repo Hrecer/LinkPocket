@@ -66,10 +66,9 @@
             </Setter>
         </Style>
 
-        <!-- 搜索范围筛选 chip（M3E：色彩 + 形变表达选中态）：
-             未选 = 透明（浮在分组容器 SurfaceContainerHigh 上）+ 悬停浮起；
-             选中 = SecondaryContainer 填色 + 内边距加宽 13→24（用户要求：选中看得见变宽）
-                    + 圆角形变 15→10 + SemiBold。
+        <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊，不做形变）；
+             未选 = 透明（浮在 TintCard 分组容器上）+ 悬停 SurfaceContainerHighest；
+             选中 = SecondaryContainer 填色 + 内边距加宽 13→22（用户口径：选中看得见变宽）+ SemiBold。
              ⚠️ 不放图标：LpIcons 字形表未注册「check」，M3Icon 会渲染成占位的空白（见 2026-09-16 教训）。 -->
         <Style x:Key="SearchChip" TargetType="CheckBox">
             <Setter Property="FontSize" Value="12"/>
@@ -80,7 +79,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
-                        <Border x:Name="Bd" Height="30" CornerRadius="15"
+                        <Border x:Name="Bd" Height="32" CornerRadius="16"
                                 Background="Transparent" Padding="13,0"
                                 SnapsToDevicePixels="True">
                             <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -92,8 +91,7 @@
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SecondaryContainer}"/>
-                                <Setter TargetName="Bd" Property="Padding" Value="24,0"/>
-                                <Setter TargetName="Bd" Property="CornerRadius" Value="10"/>
+                                <Setter TargetName="Bd" Property="Padding" Value="22,0"/>
                                 <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </Trigger>
@@ -183,11 +181,12 @@
                 </Border>
             </Border>
 
-            <!-- 筛选工具行（M3E）：跳转 = Filled 药丸（关键操作，色彩锚定）；
-                 「搜索范围」+ 筛选 chip 归集进同一个圆角分组容器（M3E 重拾边界与框线：分组体现视觉重心）。
-                 chip 未选透明、选中 SecondaryContainer + 形变 + 对勾，层级由色彩直接区分。 -->
-            <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
-                        Margin="0,0,0,8">
+            <!-- 筛选工具行（M3E，**左对齐** = 与搜索胶囊左缘对齐）：
+                 跳转 = Filled 药丸（关键操作，色彩锚定）；「搜索范围」+ 筛选 chip 归集进 **TintCard 近白胶囊容器**
+                 （容器规格 = 内距 3 + 圆角 19，与工具页分段 / 浏览页命令栏同一语言；caption 与 chip 用细分割线分节）。
+                 chip 32 高与跳转药丸齐平；未选透明、选中 SecondaryContainer + 加宽 + SemiBold，层级由色彩直接区分。 -->
+            <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left"
+                        Margin="12,0,12,8">
                 <Button x:Name="SearchJumpToLinkBtn" Command="{Binding JumpCommand}" IsEnabled="{Binding JumpEnabled}"
                         Style="{StaticResource SearchJumpPillButton}" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
@@ -196,12 +195,14 @@
                     </StackPanel>
                 </Button>
 
-                <!-- 筛选分组容器：与搜索胶囊同色调（SurfaceContainerHigh），全圆角 16 包 30 高 chip -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="16"
-                        Padding="5,1" Margin="12,0,0,0" VerticalAlignment="Center">
+                <!-- 搜索范围分组：TintCard 近白胶囊容器（圆角 19 = 内距 3 + chip 圆角 16，同心圆角） -->
+                <Border Background="{DynamicResource TintCard}" CornerRadius="19"
+                        Padding="3" Margin="12,0,0,0" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="搜索范围" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
-                                   VerticalAlignment="Center" Margin="9,0,3,0"/>
+                        <TextBlock Text="搜索范围" FontSize="11.5" Foreground="{DynamicResource OnSurfaceVariant}"
+                                   Opacity="0.85" VerticalAlignment="Center" Margin="12,0,7,0"/>
+                        <Border Width="1" Height="14" Background="{DynamicResource OnSurfaceVariant}"
+                                Opacity="0.25" VerticalAlignment="Center" Margin="0,0,5,0"/>
                         <CheckBox Content="路径" IsChecked="{Binding SearchPath}" Style="{StaticResource SearchChip}"/>
                         <CheckBox Content="URL" IsChecked="{Binding SearchUrl}" Style="{StaticResource SearchChip}"/>
                         <CheckBox Content="标题" IsChecked="{Binding SearchTitle}" Style="{StaticResource SearchChip}"/>

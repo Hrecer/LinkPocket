@@ -98,14 +98,23 @@ namespace LinkPocket.Views
                 if ((bool)e.NewValue) ResetIdJumpForm();
             };
 
-            // 快捷键：键位在 ShortcutCatalog（本页只有一条 —— **ID 输入框内 Enter 执行跳转**，属控件锚定：
-            // 只在 ID 输入框获得焦点时生效）。命令 = 本页跳转流程，与「跳转」按钮同一条路径。
-            var commands = new ShortcutCommandMap().Add(ShortcutAction.ToolsIdJump,
-                new RelayCommand(() => _ = JumpFromInputAsync()));
+            // 去重明细的选中出口一：点空白（BlankClick 挂在明细页区域上——行容器自带 Tag=DataRow，
+            // 点行不算空白；只有真正的页面空白才清选中。用户报障修复 2026-09-19）
+            ClearDetailSelectionCommand = new RelayCommand(() => DetailTable.ClearSelection());
+            BlankClick.SetCommand(DetailPanel, ClearDetailSelectionCommand);
+
+            // 快捷键：键位在 ShortcutCatalog（ID 输入框内 Enter 执行跳转 = 控件锚定；
+            // Esc = 取消明细选中 = 与"点空白"同一个命令）。页面只做「动作 id → 命令」映射。
+            var commands = new ShortcutCommandMap()
+                .Add(ShortcutAction.ToolsIdJump, new RelayCommand(() => _ = JumpFromInputAsync()))
+                .Add(ShortcutAction.ToolsEscape, ClearDetailSelectionCommand);
             _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Tools, commands), () => ShortcutScope.Tools);
             _shortcutHost.Attach(this);
             _shortcutHost.AttachControls(ShortcutPage.Tools, this, commands);
         }
+
+        /// <summary>清除去重明细的行选中（点空白 / Esc 的同一命令；无选中时无操作）。</summary>
+        public ICommand ClearDetailSelectionCommand { get; }
 
         private ShortcutHost? _shortcutHost;
 
@@ -131,6 +140,32 @@ namespace LinkPocket.Views
             {
                 await RunDedupAsync();
             }
+        }
+
+        /// <summary>
+        /// 进入工具页（Shell 经 MainViewModel.OnNavigatedToTools 调用）：**入口对齐**。
+        /// 防抖刷新只送达"事件发生时的活跃页"——在别的页面改完数据再切回来时，去重结果
+        /// （主表或明细）可能已经陈旧。这里按视图状态补齐：
+        /// · 列表视图 → 直接重跑查重；
+        /// · 明细视图 → 重跑后按 URL 重组当前组（组已不再重复 → 退回主表，主表即最新）。
+        /// 非去重工具 / 从未跑过查重 → 不做事。
+        /// </summary>
+        public async void OnNavigatedTo()
+        {
+            if ((ToolListbox.SelectedItem as ToolItem)?.Id != "dedup" || !VmTools.HasRunDedup) return;
+
+            var openUrl = VmTools.CurrentGroupUrl;
+            var inDetail = DetailPanel.Visibility == Visibility.Visible;
+
+            await RunDedupAsync();
+            if (!inDetail || string.IsNullOrEmpty(openUrl)) return;
+
+            var row = _groups.FirstOrDefault(g =>
+                string.Equals(g.Url, openUrl, StringComparison.OrdinalIgnoreCase));
+            if (row == null)
+                GoBackToList();      // 组已不再重复：退回即见最新主表
+            else
+                EnterDetail(row);    // 组仍在：重进明细（明细表 / 头部计数 / 勾选态一并刷新）
         }
 
         private void ToolListbox_SelectionChanged(object sender, SelectionChangedEventArgs e)

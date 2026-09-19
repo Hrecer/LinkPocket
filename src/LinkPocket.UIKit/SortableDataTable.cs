@@ -633,7 +633,10 @@ public class SortableDataTable : Grid
             Margin = new Thickness(8, 1, 8, 1),
             Padding = new Thickness(16, 9, 16, 9),
             Cursor = Cursors.Hand,
-            SnapsToDevicePixels = true
+            SnapsToDevicePixels = true,
+            // 行容器约定（BlankClick）：带字符串 Tag 的行 = "行内空白属于行"——
+            // 挂在区域上的"点空白清选中"不会把点行误判成点空白（与 BrowserRow / TrashRow 同约定）
+            Tag = "DataRow"
         };
         var style = new Style(typeof(Border));
         style.Setters.Add(new Setter(BackgroundProperty, Brushes.Transparent));

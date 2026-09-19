@@ -157,12 +157,15 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         SelectedItem = null;
     }
 
-    /// <summary>后端数据变更（UiEventHub 防抖路由）：与原实现同口径——按当前输入框文本重跑（而非上次的 LastQuery）。</summary>
+    /// <summary>后端数据变更（UiEventHub 防抖路由）：
+    /// 输入框文本 == 已执行查询（用户正在看结果）→ **静默刷新**（不闪加载态、不丢选中，与范围切换同一条路径）；
+    /// 文本已改但未执行 → 保持原口径，按当前输入框文本重跑（而非上次的 LastQuery）。</summary>
     public Task RefreshFromEventAsync()
     {
-        if (!string.IsNullOrWhiteSpace(Query.Trim()))
-            return SearchAsync();
-        return Task.CompletedTask;
+        var query = Query.Trim();
+        if (string.IsNullOrWhiteSpace(query)) return Task.CompletedTask;
+        if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync();
+        return SearchAsync();
     }
 
     // —— 查询执行 ——

@@ -72,6 +72,7 @@ public static class ShortcutAction
     public const string SearchRun = "search.run";
     public const string SmartListsBack = "smartlists.back";
     public const string ToolsIdJump = "tools.idJump";
+    public const string ToolsEscape = "tools.escape";
 }
 
 /// <summary>
@@ -206,6 +207,9 @@ public static class ShortcutCatalog
         // 输入框内按键：焦点在 ID 输入框里时按 Enter = 执行 ID 跳转
         new(ShortcutAction.ToolsIdJump, Key.Enter, ShortcutScope.Tools, "执行 ID 跳转", ControlName: "IdInput",
             ContextGate: "仅在 ID 输入框获得焦点时"),
+        // 去重明细的选中出口之一（与"点空白"同一命令；无选中时无操作）
+        new(ShortcutAction.ToolsEscape, Key.Escape, ShortcutScope.Tools, "取消明细选中",
+            ContextGate: "去重明细有选中行时"),
     };
 
     /// <summary>全部页面的键位组（**顺序即文档顺序**；每页一组，组不共享根作用域）。</summary>

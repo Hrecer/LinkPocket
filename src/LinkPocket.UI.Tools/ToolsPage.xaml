@@ -543,9 +543,12 @@
                 </DockPanel>
             </Border>
 
+            <!-- 明细对比表**保留行选中**（用户令 2026-09-19：后续功能要基于选中行）；
+                 取消出口 = 点空白（BlankClick 挂在 DetailPanel）/ Esc——修复"进过明细后选中无法退出"。
+                 行内空白不误清：工厂行容器自带 Tag=DataRow（BlankClick 行容器约定）。 -->
             <Border Grid.Row="1" Background="{DynamicResource SurfaceContainerHigh}"
                     CornerRadius="24" Margin="8,0,16,16" ClipToBounds="True">
-                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0" SelectionEnabled="False"/>
+                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0"/>
             </Border>
         </Grid>
     </Grid>

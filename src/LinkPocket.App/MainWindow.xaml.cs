@@ -68,6 +68,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         SettingsView.Configure(_host.Client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshAfterImportAsync());
         vm.OnToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
+        // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）
+        vm.OnNavigatedToTools += (_, _) => ToolsView.OnNavigatedTo();
 
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入重置 / 离开清选中 / 数据变更重跑）
         vm.OnNavigatedToSearch += (_, _) => _searchVm.ResetToEmpty();
