@@ -544,6 +544,18 @@ public partial class BrowserView : UserControl
     /// <summary>本次右键拖拽自己弹的菜单：类级 <c>Opened</c> 处理器据此**放行**（不能把自己的菜单也压掉）。</summary>
     private ContextMenu? _rightDragMenu;
 
+    /// <summary>
+    /// 本次拖拽松手时的**落点意图**（Drop 处理器只记录、**不执行**）。
+    ///
+    /// <para>为什么必须先记后执行：OLE 的 Drop 回调发生在拖拽模态循环**内部**——在那里直接执行会在
+    /// "拖拽还没结束"时就弹窗 / 写库（实测：规范弹窗弹出来了、拖拽浮层还挂在屏幕上；
+    /// 右键拖拽更糟——松开即被执行，用户还没点菜单东西就搬走了）。</para>
+    ///
+    /// <para>统一口径：Drop 只写这张"待执行单"，真正执行在 <see cref="StartDrag"/> 里
+    /// （循环退出之后、浮层摘除之后）——**左键按它执行、右键拖拽忽略它**（改由菜单选择决定）。</para>
+    /// </summary>
+    private (IReadOnlyList<DragItem> Items, string? TargetId, TransferMode Mode)? _pendingDrop;
+
     /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
     private bool _pressWasSoleSelection;
 
@@ -643,12 +655,17 @@ public partial class BrowserView : UserControl
     /// <para>允许的效果是 <c>Move | Copy</c>：只给 Move 的话 OLE 会把 DragOver 里设的 Copy **夹成 None**，
     /// 复制光标永远出不来（"按 Ctrl 拖动 = 复制"的前提）。</para>
     ///
-    /// <para>收尾按**松手那一刻**的落点状态决定：左键 → 成环才弹规范弹窗（Esc 取消不弹）；
-    /// 右键 → 在松手位置弹「复制到此处 / 移动到此处 / 取消」（Windows 口径）。</para>
+    /// <para>收尾在**拖拽循环退出之后**才做（顺序很关键）：先摘浮层、再清落点，然后
+    /// ① 左键 → 执行 Drop 记下的意图（**成环由传输流水线统一拒绝并弹规范弹窗**——与粘贴同一条路径）；
+    /// ② 右键 → 弹「复制到「X」/ 移动到「X」/ 取消」，**用户不选就不搬任何东西**（Windows 口径）。</para>
+    ///
+    /// <para>Esc 取消 = OLE 不派发 Drop → 待执行单为空 → 什么都不做（**结构性保证**：
+    /// 再也没有"途经记账"那类判据可以出错）。</para>
     /// </summary>
     private void StartDrag(DependencyObject source, IReadOnlyList<DragItem> items, bool rightButton)
     {
         _rightDragGesture = rightButton;
+        _pendingDrop = null;
         ShowDragVisual(items);
         DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move | DragDropEffects.Copy);
@@ -658,6 +675,8 @@ public partial class BrowserView : UserControl
         //（模式由 DragOver 与 QueryContinueDrag 共同维护，这里绝不第二次判定 Ctrl）。
         var target = ViewModel?.DropTarget;
         var mode = target?.Mode ?? TransferMode.Move;
+        var drop = _pendingDrop;
+        _pendingDrop = null;
         ClearDropTarget();
 
         if (rightButton)
@@ -668,12 +687,13 @@ public partial class BrowserView : UserControl
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
                 return;
             }
+            // 右键拖拽**不执行** drop（用户还没选）；执行由菜单项决定（同一条传输流水线）。
             ShowRightDragDropMenu(items, target, mode);
             return;
         }
-        // 左键：成环才弹窗；Esc 取消一律不弹（取消不是失败）。
-        ViewModel?.ReportBlockedDropIfCycle(items, HitDropTargetId(Mouse.GetPosition(this)), mode,
-            _dragCancelledByEscape);
+
+        if (drop is { } pending)
+            _ = ViewModel?.DropItemsAsync(pending.Items, pending.TargetId, pending.Mode);
     }
 
     /// <summary>
@@ -729,54 +749,31 @@ public partial class BrowserView : UserControl
         return new List<MenuItem> { copy, move };
     }
 
-    // 拖拽收尾（成环判定 + 右键菜单）统一在 `StartDrag` 内：它同时服务主栏行与树节点，
-    // 视图不再自带第二份成环判定（唯一实现是 VM 的 `ReportBlockedDropIfCycle`）。
+    // 拖拽收尾（成环弹窗 + 右键菜单 + 执行）统一在 `StartDrag` 内：它同时服务主栏行与树节点。
+    // 视图**不再**自带成环判定：成环（拖到自己/自己的子文件夹）与其它非法情形统一由传输流水线拒绝并弹窗
+    // ——与"剪切粘贴"共用同一个弹窗，用户看到的口径只有一套。
 
     /// <summary>
-    /// 命中测试：从松手位置的视觉元素上溯，找出它承载的**落点实体 ID**。
-    /// 主栏行 → 文件夹行才作落点（链接行不是落点）；树节点 → 非链接节点（「全部书签」虚根 FolderId 为 null →
-    /// 返回 null，与"不是实体"一致）。都不命中 = 空白 → null。
+    /// 落点候选判定（**唯一实现**，主栏行与树节点共用）：**主栏文件夹行 / 树非链接节点**才作落点。
+    /// 链接行与树上的链接叶子**不是**落点（拖到书签上什么都不发生，与 Explorer 一致）。
+    ///
+    /// <para>⚠️ 成环（自身 / 自身后代）**不在这里判定**——落点一视同仁地高亮 + 显示提示，
+    /// 松手之后由执行层（传输流水线）统一拒绝并弹规范弹窗；这是用户要求的统一口径
+    /// （过去"悬停禁用光标 + 无提示"与"粘贴弹窗"是两套，现统一为都弹窗）。</para>
     /// </summary>
-    private string? HitDropTargetId(Point point)
-    {
-        var hit = VisualTreeHelper.HitTest(this, point)?.VisualHit;
-        while (hit != null)
-        {
-            if (hit is FrameworkElement fe)
-            {
-                if (fe.DataContext is BrowserRowViewModel { IsFolder: true } row) return row.Id;
-                if (fe.DataContext is FolderNode { IsLink: false } node) return node.FolderId;
-            }
-            hit = VisualTreeHelper.GetParent(hit);
-        }
-        return null;
-    }
-
-    /// <summary>目标合法性：目标行/节点不在拖动集合内，且没有任何被拖文件夹包含目标（防环）。</summary>
-    private bool IsDropValid(BrowserDragPayload? payload, string? targetFolderId)
-    {
-        if (payload == null || ViewModel == null) return false;
-        // 根节点「全部书签」（folderId == null）= 移到根目录，是合法目标（与 NodeDrop 注释一致）；
-        // 防环只在目标是真实文件夹时才有意义（根没有「被移入自身」的概念）。
-        foreach (var item in payload.Items)
-        {
-            if (item.Id == targetFolderId) return false;
-            if (item.IsFolder && targetFolderId != null && ViewModel.IsSelfOrDescendant(item.Id, targetFolderId)) return false;
-        }
-        return true;
-    }
+    private static bool IsDropPositionCandidate(object? dataContext)
+        => dataContext is BrowserRowViewModel { IsFolder: true } or FolderNode { IsLink: false };
 
     private void RowBorder_DragOver(object sender, DragEventArgs e)
     {
         try
         {
-            var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
 
-            // 拖拽中只表达"能不能放"（合法 = 光标 + 落点高亮 + 「移动到/复制到 X」提示；非法 = 禁止光标 + 无高亮无提示），
-            // 不记账、不弹窗：途经成环目标（含起点自己）是正常拖拽路径的一部分，"非法"只在**松手落点**上成立。
+            // 拖拽中只表达"落在哪个文件夹"（高亮 + 「移动到/复制到 X」提示 + 对应光标），**不判成环**：
+            // 落点是不是自己/自己的后代，由执行层在**松手之后**统一拒绝并弹窗。
             // 模式（Ctrl = 复制）随修饰键走同一条落点状态：提示文案与光标永远说的是同一件事。
-            var ok = row is { IsFolder: true } && IsDropValid(payload, row.Id);
+            var ok = IsDropPositionCandidate(row);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(row!.Id, BrowserPane.Main, row.Name, mode) : null);
             e.Effects = ok ? EffectFor(mode) : DragDropEffects.None;
@@ -791,14 +788,15 @@ public partial class BrowserView : UserControl
     /// 随即 DragOver 会重设真正的新落点，所以行间移动只会看到高亮"跟着指针走"。</summary>
     private void RowBorder_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
 
+    /// <summary>落在行上：**只记意图不执行**（执行在 <see cref="StartDrag"/> 里、拖拽循环退出之后）。</summary>
     private void RowBorder_Drop(object sender, DragEventArgs e)
     {
         try
         {
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
-            if (payload != null && row is { IsFolder: true } && IsDropValid(payload, row.Id))
-                _ = ViewModel?.DropItemsAsync(payload.Items, row.Id, ViewModel.DropTargetMode);
+            if (payload != null && IsDropPositionCandidate(row))
+                _pendingDrop = (payload.Items, row!.Id, ViewModel?.DropTargetMode ?? TransferMode.Move);
         }
         finally
         {
@@ -836,6 +834,9 @@ public partial class BrowserView : UserControl
     /// 落在列表空白 = 落进**当前所在文件夹**（Windows 口径）。按住 Ctrl 时就是"在本页做一个副本"：
     /// 文件夹副本由引擎按同层唯一命名规范编号（「名 (2)」）；移动模式下已在目标目录的项由传输流水线
     /// 自动记为"已在目标位置"（无操作，非错误），与 Explorer 一致。
+    ///
+    /// <para>"把当前文件夹拖到它自己的空白上"这类成环也走同一条路：**只记意图**，
+    /// 由传输流水线在拖拽结束之后统一拒绝并弹规范弹窗（与粘贴同一个弹窗）。</para>
     /// </summary>
     private void ListCard_Drop(object sender, DragEventArgs e)
     {
@@ -843,7 +844,7 @@ public partial class BrowserView : UserControl
         {
             var payload = e.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             if (payload != null && ViewModel != null)
-                _ = ViewModel.DropItemsAsync(payload.Items, ViewModel.CurrentFolderId, ViewModel.DropTargetMode);
+                _pendingDrop = (payload.Items, ViewModel.CurrentFolderId, ViewModel.DropTargetMode);
         }
         finally
         {
@@ -867,15 +868,15 @@ public partial class BrowserView : UserControl
         StartDrag(e.Source, items, e.RightButton);
     }
 
-    /// <summary>树节点拖拽经过：命中节点是真实文件夹且不在拖动集合内（防环）才接受；链接叶子不是移动目标。
-    /// 与主栏同口径：合法 = 光标 + 落点高亮 + 「移动到/复制到 X」提示；非法 = 禁止光标 + 无高亮无提示。</summary>
+    /// <summary>树节点拖拽经过：命中节点是真实文件夹才作落点（链接叶子不是移动目标——**拖到书签上什么也不发生**）。
+    /// 与主栏同口径：合法 = 光标 + 落点高亮 + 「移动到/复制到 X」提示；**不判成环**（成环由执行层统一拒绝并弹窗）。
+    /// 「全部书签」虚根 FolderId 为 null = 根目录，是合法落点（移到/复制到根）。</summary>
     private void FolderTreePanel_NodeDragOver(object? sender, TreeItemDragEventArgs e)
     {
         try
         {
-            var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
-            var ok = node != null && !node.IsLink && IsDropValid(payload, node.FolderId);
+            var ok = IsDropPositionCandidate(node);
             var mode = CurrentDropMode();
             ApplyDropTarget(ok ? new BrowserDropTarget(node!.FolderId, BrowserPane.Tree, node.Name, mode) : null);
             e.Args.Effects = ok ? EffectFor(mode) : DragDropEffects.None;
@@ -889,7 +890,7 @@ public partial class BrowserView : UserControl
     /// <summary>拖拽离开树节点：熄灭落点高亮（覆盖式状态，离开清零；新落点由随后的 DragOver 覆盖写入）。</summary>
     private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e) => ClearDropTarget();
 
-    /// <summary>树节点落放：移入 / 复制进对应文件夹（根节点「全部书签」= 根）；链接叶子不接受落放。
+    /// <summary>落在树节点：**只记意图不执行**（执行在 <see cref="StartDrag"/> 里、拖拽循环退出之后）。
     /// 模式取自落点状态（Ctrl = 复制），与提示条说的是同一个值。</summary>
     private void FolderTreePanel_NodeDrop(object? sender, TreeItemDragEventArgs e)
     {
@@ -897,8 +898,8 @@ public partial class BrowserView : UserControl
         {
             var payload = e.Args.Data.GetData(typeof(BrowserDragPayload)) as BrowserDragPayload;
             var node = e.Node as FolderNode;
-            if (payload != null && node != null && !node.IsLink && IsDropValid(payload, node.FolderId))
-                _ = ViewModel?.DropItemsAsync(payload.Items, node.FolderId, ViewModel.DropTargetMode);
+            if (payload != null && IsDropPositionCandidate(node))
+                _pendingDrop = (payload.Items, node!.FolderId, ViewModel?.DropTargetMode ?? TransferMode.Move);
         }
         finally
         {

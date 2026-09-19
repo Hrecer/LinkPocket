@@ -155,8 +155,13 @@ public class TransferPipelineTests
     }
 
     /// <summary>Esc 取消（OLE 如实上报）：即使松手位置压在成环目标上也不弹窗——取消不是失败。</summary>
+    /// <summary>
+    /// 成环的执行层口径：**只有真的松手（产生意图）才会判定**——没有意图 = 什么都不发生。
+    /// （Esc 取消走的就是"没有意图"这条：OLE 不派发 Drop → 视图不调用流水线 → 自然不弹窗，
+    /// 结构性保证，不再有"途经记账"那类判据可以出错。）
+    /// </summary>
     [Fact]
-    public async Task Esc取消拖拽_成环目标上也不弹窗()
+    public async Task 没有落点意图_不产生任何弹窗与变更()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -166,14 +171,10 @@ public class TransferPipelineTests
             var vm = NewVm(client, dialogs);
             await vm.LoadAsync(null);
 
-            var items = vm.PrepareDragFromRow(vm.Rows.Single(r => r.Id == a.FolderId));
+            await vm.DropItemsAsync([], a.FolderId, TransferMode.Move);   // 空载荷 = 什么都没发生
 
-            vm.ReportBlockedDropIfCycle(items, a.FolderId, TransferMode.Move, cancelledByEscape: true);
             Assert.Empty(dialogs.Alerts);
-
-            // 非取消时才弹（同一落点、同一批项）
-            vm.ReportBlockedDropIfCycle(items, a.FolderId, TransferMode.Move, cancelledByEscape: false);
-            Assert.Single(dialogs.Alerts);
+            Assert.Contains(vm.Rows, r => r.Id == a.FolderId);
         }
         finally
         {
@@ -201,7 +202,7 @@ public class TransferPipelineTests
                 new(a.FolderId, true, "A"),
                 new(b.FolderId, true, "B"),
             };
-            vm.ReportBlockedDropIfCycle(items, sub.FolderId, TransferMode.Copy);
+            await vm.DropItemsAsync(items, sub.FolderId, TransferMode.Copy);
 
             var (title, message) = Assert.Single(dialogs.Alerts);
             Assert.Equal("无法复制", title);

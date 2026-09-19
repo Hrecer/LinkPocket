@@ -202,10 +202,10 @@ public class PasteBoundaryTests
     }
 
     /// <summary>
-    /// 拖拽**松手落在成环目标上**（被拖项自身 / 其后代）后，视图调用
-    /// <see cref="BrowserViewModel.ReportBlockedDropIfCycle"/> —— 与粘贴**同一套文案**、
-    /// 同一个规范弹窗（Windows 口径：拖拽成环也报错，不是"毫无反应"）。
-    /// 判据是"松手落点"而非"途经"（见 <see cref="DragCycleReportTests"/>）。
+    /// 拖拽落点**成环**（落在被拖项自身 / 其后代）→ 与粘贴**同一套文案**、同一个规范弹窗
+    /// （Windows 口径：拖拽成环也报错，不是"毫无反应"）。
+    /// 2026-09-19 起成环判定**只在执行层**（传输流水线）：拖拽与剪切粘贴不再各弹一次，
+    /// 用户看到的口径只有一套（视图侧的 `ReportBlockedDropIfCycle` 已删除）。
     /// </summary>
     [Fact]
     public async Task 拖拽_成环落点_弹窗说明与粘贴同口径()
@@ -219,7 +219,7 @@ public class PasteBoundaryTests
             await vm.LoadAsync(null);
 
             var items = vm.PrepareDragFromRow(vm.Rows[0]);
-            vm.ReportBlockedDropIfCycle(items, items[0].Id);   // 松手落在它自己身上 = 成环
+            await vm.DropItemsAsync(items, items[0].Id, TransferMode.Move);   // 落到它自己身上 = 成环
 
             var (title, message) = Assert.Single(dialogs.Alerts);
             Assert.Equal("无法移动", title);              // 拖拽 = 移动语义

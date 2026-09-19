@@ -59,38 +59,13 @@ public partial class BrowserViewModel
             TransferOrigin.Clipboard);
     }
 
-    // —— 拖拽收尾（松手）：成环弹窗的**唯一入口** ——
-
-    /// <summary>
-    /// 视图在 <c>DoDragDrop</c> 返回后调用：落点 ID 由视图按**松手位置**命中测试得出，
-    /// **仅当落点确实是被拖项自身或其后代**时才弹窗——与粘贴共用同一套文案（反馈口径只有一处）。
-    ///
-    /// <para>⚠️ 判据必须是「松手那一刻的落点」，绝不能是「拖拽途中经过过谁」：拖拽**必然从源行/源节点出发**，
-    /// 起点自己就是"拖到它自己"，若按"途经即记账"实现，任何一次文件夹拖拽都会在**移动成功之后**误弹
-    /// "不能移到它自己或它的子文件夹里"（实测用户报障：拖 A 到同目录下的 B，弹窗了、A 也确实搬过去了）。
-    /// 途经成环目标本来就该是"禁止光标"，而不是错误——Windows 同样只在真正放下时报错。</para>
-    ///
-    /// <para><paramref name="cancelledByEscape"/>：OLE 报告的"本次以 Esc 取消"。**取消不是失败**，
-    /// 一律不弹窗（否则在非法目标上按 Esc 会被读成"操作被拒绝"）。</para>
-    ///
-    /// <para><paramref name="dropTargetId"/> 为 null/空 = 松手在空白或非落点：无操作、不弹窗（Explorer 口径）。</para>
-    ///
-    /// <para>只报**真正成环的那些项**（多选里只有一项成环时，不要把整批名字都列出来）。</para>
-    /// </summary>
-    public void ReportBlockedDropIfCycle(IReadOnlyList<DragItem> items, string? dropTargetId,
-        TransferMode mode = TransferMode.Move, bool cancelledByEscape = false)
-    {
-        if (cancelledByEscape) return;
-        if (string.IsNullOrEmpty(dropTargetId)) return;
-
-        var blocked = items
-            .Where(i => i.Id == dropTargetId || (i.IsFolder && IsSelfOrDescendant(i.Id, dropTargetId)))
-            .Select(DisplayName)
-            .ToList();
-        if (blocked.Count == 0) return;
-
-        ShowError(BlockedTitle(mode), BlockedMessage(mode, blocked));
-    }
+    // 拖拽收尾（成环弹窗）**不再有视图侧入口**（2026-09-19 用户要求统一口径）：
+    // 过去视图在松手后自己判一次成环并弹窗，而粘贴路径在流水线里弹——两套口径（且视图那次是在
+    // OLE 拖拽循环里弹的窗，浮层还挂在屏幕上）。现在统一为：
+    //   「落点是不是自己/自己的子文件夹」只在**执行层**判定（本文件 `TransferAsync` 的 `blocked`），
+    //   **拖拽（左键落点 / 右键拖拽菜单）与剪切粘贴共用同一个弹窗**；
+    //   视图只负责在拖拽循环退出之后把 Drop 记下的意图交给 `DropItemsAsync`。
+    // Esc 取消 = OLE 不派发 Drop → 待执行单为空 → 什么都不会发生（结构性保证，无需判据）。
 
     // —— 唯一实现 ——
 

@@ -322,9 +322,9 @@
                                                 <DataTrigger Binding="{Binding IsCut}" Value="True">
                                                     <Setter Property="Opacity" Value="0.45"/>
                                                 </DataTrigger>
-                                                <!-- 拖拽悬停落点（Windows 口径：指针下的可落点整体高亮）。
-                                                     与"选中"同键但语义不同，且二者不会同时出现在同一行——
-                                                     落点必须不在拖动集合内（IsDropValid 已排除），而拖动集合就是选中集合。 -->
+                                                <!-- 拖拽悬停落点（Windows 口径：指针下的落点整体高亮）。
+                                                     与"选中"同键但语义不同；成环落点（拖到自己/自己的子文件夹）
+                                                     可能与选中行重合——同键同色，因此不会出现"两种底色打架"。 -->
                                                 <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
                                                     <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
                                                 </DataTrigger>

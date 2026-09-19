@@ -135,16 +135,26 @@ internal sealed class DragVisualAdorner : Adorner
         return adorner;
     }
 
-    /// <summary>设置本次拖动的内容（单拖 = 行快照；多选 = 首项快照 + 「N 个项目」徽标 + 堆叠观感）。</summary>
+    /// <summary>
+    /// 设置本次拖动的内容（Windows 口径）：
+    /// <list type="bullet">
+    /// <item>单项 = 该项的行快照（类型图标 + 名称）；</item>
+    /// <item>多选 = **只显示项数**（「N 个项目」徽标），不再显示"其中某一项"的名称——
+    /// 多选时显示哪一个名字都是误导（实测用户反馈"显示的是最后一个，而不是显示几项"）。
+    /// 计数口径 = 拖动集合里的实体数（文件夹 / 链接各算一项，**不含**文件夹里的子项），与选中统计一致。</item>
+    /// </list>
+    /// </summary>
     internal void Show(IReadOnlyList<DragItem> items)
     {
         var first = items.FirstOrDefault();
         if (first == null) return;
 
+        var multiple = items.Count > 1;
+        // 类型图标取"抓住的那一项"（载荷首位由 VM 保证）——多选时它只是图标，不再伴随名字
         _icon.Kind = first.IsFolder ? "folder" : "link-variant";
         _name.Text = first.Name;
+        _name.Visibility = multiple ? Visibility.Collapsed : Visibility.Visible;
 
-        var multiple = items.Count > 1;
         _badgeText.Text = $"{items.Count} 个项目";
         _badge.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
         _stackBack1.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
