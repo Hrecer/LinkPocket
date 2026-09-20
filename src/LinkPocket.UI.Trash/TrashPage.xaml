@@ -6,7 +6,7 @@
              xmlns:uikit="clr-namespace:LinkPocket.Views.Browser;assembly=LinkPocket.UIKit"
              Focusable="True"
              FocusVisualStyle="{x:Null}"
-             Background="{DynamicResource SurfaceContainerLow}">
+             Background="{DynamicResource App.Surface.Base}">
     <!-- 回收站页（与浏览页同构的"回收站浏览器"；用户令 2026-09-19）：
          导航行（后退/前进/返回上级 + 面包屑地址栏 + 右侧「永久删除」）+ 左栏导航树（含链接叶子）
          + 中栏共享数据表（模板行 + 同一套行皮肤/多选）+ 右栏只读详情栏 + 状态栏。
@@ -22,7 +22,7 @@
         <Style x:Key="RowCellText" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="Margin" Value="0,0,12,0"/>
         </Style>
@@ -130,7 +130,7 @@
                         </Button>
                     </StackPanel>
                 </Border>
-                <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
+                <Border DockPanel.Dock="Left" Background="{DynamicResource App.Surface.Card}"
                         CornerRadius="17" Padding="2" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <Button Style="{StaticResource NavIconButton}" Tag="后退 (Backspace)"
@@ -192,7 +192,7 @@
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"/>
 
             <!-- 中栏：列表卡（自管空白点击清选中 = 同一实现 BlankClick；命中行不算空白） -->
-            <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
+            <Border Grid.Column="1" Background="{DynamicResource App.Surface.Card}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
                     views:BlankClick.Command="{Binding ClearMainPaneSelectionCommand}">
                 <Grid>
@@ -251,7 +251,7 @@
                                             <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                        <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -275,7 +275,7 @@
                                                 <Grid Grid.Column="0" Width="20" Height="20" VerticalAlignment="Center">
                                                     <!-- 单元图标（灰化，回收站语义） -->
                                                     <m3:M3Icon Kind="folder" Width="20" Height="20"
-                                                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
+                                                               Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.55"
                                                                VerticalAlignment="Center">
                                                         <m3:M3Icon.Style>
                                                             <Style TargetType="m3:M3Icon">
@@ -307,7 +307,7 @@
                                                     </Image>
                                                     <!-- 书签默认图标（favicon 为空时；灰化） -->
                                                     <m3:M3Icon Kind="link-variant" Width="16" Height="16"
-                                                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
+                                                               Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.55"
                                                                VerticalAlignment="Center">
                                                         <m3:M3Icon.Style>
                                                             <Style TargetType="m3:M3Icon">
@@ -350,7 +350,7 @@
                                                     </Border.Style>
                                                     <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
                                                                VerticalAlignment="Center"
-                                                               Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
                                                 </Border>
                                             </Grid>
 
@@ -387,17 +387,17 @@
                         </Grid.Style>
                         <StackPanel>
                             <Border Width="96" Height="96" CornerRadius="32"
-                                    Background="{DynamicResource SecondaryContainer}"
+                                    Background="{DynamicResource App.Support.Container}"
                                     HorizontalAlignment="Center">
                                 <m3:M3Icon Kind="delete-outline" Width="40" Height="40"
-                                           Foreground="{DynamicResource OnSecondaryContainer}"
+                                           Foreground="{DynamicResource App.Text.OnContainer}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock Text="回收站是空的" FontSize="17" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource OnSurface}"
+                                       Foreground="{DynamicResource App.Text.Primary}"
                                        HorizontalAlignment="Center" Margin="0,18,0,0"/>
                             <TextBlock Text="删除的书签和文件夹会出现在这里，并保留删除时的位置"
-                                       FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
+                                       FontSize="12" Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.85"
                                        HorizontalAlignment="Center" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Grid>
@@ -423,8 +423,8 @@
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                    <Border CornerRadius="9" Background="{DynamicResource PrimaryContainer}"
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <Border CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
                             Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -437,11 +437,11 @@
                             </Style>
                         </Border.Style>
                         <TextBlock Text="{Binding SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource OnPrimaryContainer}"/>
+                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>
                 <TextBlock Text="回收站内容不占用书签计数；双击书签打开详情（只读），双击文件夹进入单元；回收站只读，站内不可搬移"
-                           FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}" Opacity="0.6"
+                           FontSize="11" Foreground="{DynamicResource App.Text.Muted}" Opacity="0.6"
                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -449,7 +449,7 @@
         <!-- ===== 只读详情覆盖层 = **共享详情页**（UIKit `LinkDetailPane`，与浏览页详情页同一份界面） =====
              可见性由 VM 的 IsDetailOverlayOpen 驱动（状态在 VM、视图不持）；条目消失即关（VM 刷新收尾）。 -->
         <Grid x:Name="LinkDetailOverlay" Grid.Row="0" Grid.RowSpan="3"
-              Background="{DynamicResource SurfaceContainerLow}"
+              Background="{DynamicResource App.Surface.Base}"
               Visibility="{Binding IsDetailOverlayOpen, Converter={StaticResource BoolToVis}}">
             <views:LinkDetailPane DataContext="{Binding DetailPane}"/>
         </Grid>

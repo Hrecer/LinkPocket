@@ -77,7 +77,7 @@
                                                         Background="{DynamicResource App.Accent.Container}"
                                                         Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock Text="默认" FontSize="10"
-                                                               Foreground="{DynamicResource App.Accent.OnContainer}"/>
+                                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
                                                 </Border>
                                             </Grid>
 

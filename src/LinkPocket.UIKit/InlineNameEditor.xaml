@@ -18,9 +18,9 @@
             <Setter Property="Margin" Value="0,-3"/>
             <Setter Property="Padding" Value="7,0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
-            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource App.Accent.Fill}"/>
             <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Visibility" Value="Collapsed"/>
@@ -28,8 +28,8 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="EditRoot" CornerRadius="5"
-                                Background="{DynamicResource SurfaceContainerHighest}"
-                                BorderThickness="2" BorderBrush="{DynamicResource Primary}"
+                                Background="{DynamicResource App.Surface.Hover}"
+                                BorderThickness="2" BorderBrush="{DynamicResource App.Accent.Fill}"
                                 SnapsToDevicePixels="True">
                             <ScrollViewer x:Name="PART_ContentHost"
                                           Margin="{TemplateBinding Padding}"

@@ -80,10 +80,10 @@ public static class ThemeService
     // ── 字体（与主题是两条独立的轴：一个主题不携带字体）──────────────────────
 
     /// <summary>当前界面字体族名（令牌链的第一段）。</summary>
-    public static string CurrentUiFont { get; private set; } = Fonts.FontLoader.DefaultUiFamily;
+    public static string CurrentUiFont { get; private set; } = Fonts.FontCatalog.DefaultUiFamily;
 
     /// <summary>当前等宽字体族名。</summary>
-    public static string CurrentMonoFont { get; private set; } = Fonts.FontLoader.DefaultMonoFamily;
+    public static string CurrentMonoFont { get; private set; } = Fonts.FontCatalog.DefaultMonoFamily;
 
     /// <summary>
     /// 应用字体（发布 <c>App.Font.Ui</c> / <c>App.Font.Mono</c> 两个令牌）。
@@ -94,8 +94,8 @@ public static class ThemeService
     /// </remarks>
     public static void ApplyFonts(string? uiFamily = null, string? monoFamily = null, ResourceDictionary? resources = null)
     {
-        CurrentUiFont = string.IsNullOrWhiteSpace(uiFamily) ? Fonts.FontLoader.DefaultUiFamily : uiFamily.Trim();
-        CurrentMonoFont = string.IsNullOrWhiteSpace(monoFamily) ? Fonts.FontLoader.DefaultMonoFamily : monoFamily.Trim();
+        CurrentUiFont = string.IsNullOrWhiteSpace(uiFamily) ? Fonts.FontCatalog.DefaultUiFamily : uiFamily.Trim();
+        CurrentMonoFont = string.IsNullOrWhiteSpace(monoFamily) ? Fonts.FontCatalog.DefaultMonoFamily : monoFamily.Trim();
 
         var target = resources ?? Application.Current?.Resources;
         if (target is not null)
@@ -184,45 +184,37 @@ public static class ThemeService
     /// <summary>偏好里的字体 → 族名（导入文件已不存在时如实报告，但**保留**偏好条目）。</summary>
     /// <remarks>
     /// <para>
-    /// ⚠️ <b>这里绝对不能调 <see cref="Fonts.FontLoader.SystemFonts"/></b>：它会触发 WPF 的
-    /// <c>Fonts.SystemFontFamilies</c> **全量枚举**，而那条路径会启动字体缓存服务等进程级副作用，
-    /// 把宿主进程吊住不退出（实测：测试全部 3s 通过后，testhost 30s 不退出，看起来像"CI 卡死"）。
+    /// <b>判据 = <see cref="Fonts.FontCatalog.All"/>（"这个字体能不能选"的唯一事实来源）</b>：
+    /// 已导入文件 + 系统已装字体。启动路径与「外观」面板的候选列表读的是同一份，
+    /// 不会出现"面板里能选、重启后判成不可用"这种两套判据的分歧。
     /// </para>
     /// <para>
-    /// 正确口径：**启动期的可用性判定只查两个"廉价且确定"的来源** ——
-    /// ① 已导入字体（只读一个目录 + 命中缓存）；② 回退链里我们已知一定存在的系统字体
-    /// （雅黑 / Segoe UI / Consolas）。用户若在偏好里存了一个"已卸载的系统字体"，
-    /// 我们会照常回退默认并如实提示 —— 与"查不到就回退"的结果一致，只是判定依据更省。
-    /// 完整的系统字体候选列表只在用户**真的打开「外观」面板**时才枚举（那是他主动要选字体）。
+    /// ⚠️ 这里会触发系统字体的**首次全量枚举**（开销与机器上装的字体数量成正比；本机实测 17ms /
+    /// 88 个族，装了几百个族的机器上是秒级）。这是**必须付**的成本：判据正确性优先于省这一步 ——
+    /// "省掉它"的写法（只认一张手写白名单）会把用户机器上真实存在的字体误判成不可用，
+    /// 而那正是"换字体没反应"这类静默失败的开端。代价由缓存兜住
+    /// （<see cref="Fonts.WpfSystemFontSource"/> 每实例只枚举一次），且本方法只在启动时走一次。
     /// </para>
     /// </remarks>
     private static (string Ui, string Mono, string? Reason) ResolveFonts(Preferences.FontPreference pref)
     {
-        var imported = Fonts.FontLoader.ImportedFonts().Select(f => f.Family).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var knownSystem = Fonts.FontLoader.FallbackChain
-            .Append(Fonts.FontLoader.DefaultUiFamily)
-            .Append(Fonts.FontLoader.DefaultMonoFamily)
+        var available = Fonts.FontCatalog.All()
+            .Select(f => f.Family)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         string? reason = null;
 
-        bool Available(string family)
-        {
-            if (string.IsNullOrWhiteSpace(family)) return false;
-            return imported.Contains(family) || knownSystem.Contains(family);
-        }
-
         var ui = pref.Ui;
         var mono = pref.Mono;
-        if (!Available(ui))
+        if (!string.IsNullOrWhiteSpace(ui) && !available.Contains(ui))
         {
             reason = $"界面字体「{ui}」已不可用（文件缺失或未安装），已回退默认字体";
-            ui = Fonts.FontLoader.DefaultUiFamily;
+            ui = Fonts.FontCatalog.DefaultUiFamily;
         }
-        if (!Available(mono))
+        if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
         {
             reason ??= $"等宽字体「{mono}」已不可用，已回退默认字体";
-            mono = Fonts.FontLoader.DefaultMonoFamily;
+            mono = Fonts.FontCatalog.DefaultMonoFamily;
         }
         return (ui, mono, reason);
     }
@@ -254,9 +246,12 @@ public static class ThemeService
     {
         _current = ThemeCatalog.Default;
         _table = null;
-        CurrentUiFont = Fonts.FontLoader.DefaultUiFamily;
-        CurrentMonoFont = Fonts.FontLoader.DefaultMonoFamily;
+        CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
+        CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
         Preferences.UiPreferenceStore.Clear();
+        // 字体来源与缓存也要复位：用例可能注入了假字体列表（FontCatalog.SystemSource），
+        // 留着会让下一个用例继续看到它 —— 同一类"测试结果取决于执行顺序"的偶发红。
+        Fonts.FontCatalog.ResetForTests();
         Changed = null;
     }
 

@@ -1,4 +1,4 @@
-<ResourceDictionary x:Class="LinkPocket.UiKit"
+﻿<ResourceDictionary x:Class="LinkPocket.UiKit"
                     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:views="clr-namespace:LinkPocket.Views"
@@ -41,8 +41,8 @@
 
     <Style TargetType="TextBox">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-        <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
     </Style>
 
     <!-- ===== 可拖选的展示型文本（全站唯一实现，Views.SelectableText）=====
@@ -54,7 +54,7 @@
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontWeight" Value="Normal"/>
         <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="0"/>
@@ -62,7 +62,7 @@
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Cursor" Value="IBeam"/>
         <Setter Property="CaretBrush" Value="Transparent"/>
-        <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource App.Accent.Fill}"/>
         <Setter Property="SelectionOpacity" Value="0.25"/>
         <Setter Property="IsInactiveSelectionHighlightEnabled" Value="True"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
@@ -73,7 +73,7 @@
 
     <Style TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
     </Style>
 
     <!-- 列宽拖拽手柄（共享样式：浏览页主栏与 SortableDataTable 共用同一份）：
@@ -94,10 +94,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Primary}"/>
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -109,7 +109,7 @@
          Direction 三态：null=未激活（无指示器）、True=升序▲、False=降序▼。 -->
     <Style TargetType="views:SortableHeaderButton">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
         <!-- ⚠️ 文字在药丸内水平+垂直居中（用户要求）；药丸两侧由使用方留对称空隙，
              分隔线（列边界）恰好落在两个药丸的正中心 -->
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -126,7 +126,7 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <ContentPresenter VerticalAlignment="Center"/>
                             <TextBlock x:Name="Indicator" FontSize="10" Margin="4,0,0,0"
-                                       Foreground="{DynamicResource Primary}" Visibility="Collapsed"
+                                       Foreground="{DynamicResource App.Accent.Text}" Visibility="Collapsed"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
@@ -135,7 +135,7 @@
                             <!-- 表头悬停底：原先写死的是**外来色板** #1F6750A4（M3 官方基线紫 12%），
                                  与我们的定稿强调色不是同一支紫 → 换令牌（跟主题走）。 -->
                             <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.State.Hover}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                         </Trigger>
                         <Trigger Property="Direction" Value="True">
                             <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
@@ -158,7 +158,7 @@
          之前状态层放在带 Padding 的 Border 里只盖住文字区，悬停会出现"只有一小块变灰"的怪相。 -->
     <Style x:Key="TonalButton" TargetType="Button">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -169,9 +169,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Grid>
-                        <Border x:Name="Bd" Background="{DynamicResource SecondaryContainer}"
+                        <Border x:Name="Bd" Background="{DynamicResource App.Support.Container}"
                                 CornerRadius="16"/>
-                        <Border x:Name="StateLayer" Background="{DynamicResource OnSecondaryContainer}"
+                        <Border x:Name="StateLayer" Background="{DynamicResource App.Support.Container}"
                                 Opacity="0" CornerRadius="16"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -199,7 +199,7 @@
          三层结构与 TonalButton 相同：底色 / 全幅状态层 / 内容（状态层必须铺满，不许只盖文字区）。 -->
     <Style x:Key="PrimaryPillButton" TargetType="Button">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.OnAccent}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -212,7 +212,7 @@
                     <Grid>
                         <Border x:Name="Bd" Background="{DynamicResource App.Accent.Fill}"
                                 CornerRadius="16"/>
-                        <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
+                        <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
                                 Opacity="0" CornerRadius="16"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -244,7 +244,7 @@
          禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不用透明度 hack）。 -->
     <Style x:Key="JumpPillButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.OnAccent}"/>
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
@@ -261,7 +261,7 @@
                     <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                         <Grid>
-                            <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
                                     Opacity="0" CornerRadius="16"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>
@@ -275,8 +275,8 @@
                             <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Muted}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -302,7 +302,7 @@
                             BorderThickness="{TemplateBinding BorderThickness}">
                         <Grid>
                             <!-- 滑动指示器：垫在项下面（先声明 = z 序在下），几何由 SideNavList 代码按选中项实测贴齐 -->
-                            <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryContainer}"
+                            <Border x:Name="PART_Indicator" Background="{DynamicResource App.Accent.Container}"
                                     CornerRadius="12" HorizontalAlignment="Left" VerticalAlignment="Top"
                                     IsHitTestVisible="False" Visibility="Collapsed">
                                 <Border.RenderTransform>
@@ -327,7 +327,7 @@
         <Setter Property="FontSize" Value="13.5"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
@@ -337,7 +337,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -364,11 +364,11 @@
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type views:SlidingNavStrip}">
                     <!-- 胶囊容器 = 分段导航的既有语言（SurfaceContainerHighest 面 + 内距 3 + 圆角 17） -->
-                    <Border Background="{DynamicResource SurfaceContainerHighest}" CornerRadius="17"
+                    <Border Background="{DynamicResource App.Surface.Hover}" CornerRadius="17"
                             Padding="3" SnapsToDevicePixels="True">
                         <Grid>
                             <!-- 滑动指示器：垫在项下面（先声明 = z 序在下），几何由组件代码按选中项实测贴齐 -->
-                            <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryContainer}"
+                            <Border x:Name="PART_Indicator" Background="{DynamicResource App.Accent.Container}"
                                     CornerRadius="14" HorizontalAlignment="Left" VerticalAlignment="Top"
                                     Width="0" IsHitTestVisible="False" Visibility="Collapsed">
                                 <Border.RenderTransform>
@@ -395,7 +395,7 @@
              KeyboardNavigation.TabNavigation/DirectionalNavigation = None），绝不靠关掉可聚焦性。见 WARNINGS 59。 -->
         <Setter Property="Focusable" Value="True"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
@@ -406,7 +406,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
                             <Setter Property="FontWeight" Value="SemiBold"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -419,8 +419,8 @@
          与右键菜单（无阴影、纯圆角色块）的视觉语言冲突 → 统一改为圆角无阴影色块。 -->
     <Style TargetType="ToolTip">
         <Setter Property="OverridesDefaultStyle" Value="True"/>
-        <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Padding" Value="10,6"/>
@@ -457,7 +457,7 @@
 
     <!-- 计数药丸（浏览页面包屑 / 文件夹树节点共用） -->
     <Style x:Key="CountPill" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+        <Setter Property="Background" Value="{DynamicResource App.Support.Container}"/>
         <Setter Property="CornerRadius" Value="9"/>
         <Setter Property="MinHeight" Value="18"/>
         <Setter Property="Padding" Value="9,0"/>
@@ -479,7 +479,7 @@
         <Setter Property="Height" Value="32"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -495,7 +495,7 @@
                             SnapsToDevicePixels="True">
                         <Grid>
                             <!-- hover / pressed 状态层：沿用 TextButton 的 Primary 叠加（8% / 12%） -->
-                            <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}"
                                     Opacity="0" CornerRadius="16" Margin="-4"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>
@@ -509,7 +509,7 @@
                             <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Muted}"/>
                             <Setter Property="Cursor" Value="Arrow"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
@@ -530,7 +530,7 @@
         <Setter Property="SnapsToDevicePixels" Value="True"/>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -540,7 +540,7 @@
         <Setter Property="Height" Value="26"/>
         <Setter Property="Padding" Value="10,0"/>
         <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -552,7 +552,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4"/>
@@ -567,7 +567,7 @@
     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
     <Style TargetType="Separator">
         <Setter Property="Margin" Value="8,3"/>
-        <Setter Property="Background" Value="{DynamicResource OutlineVariant}"/>
+        <Setter Property="Background" Value="{DynamicResource App.Line.Variant}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Separator">
@@ -586,7 +586,7 @@
         <Setter Property="Height" Value="26"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="ToolTip" Value="{Binding Tag, RelativeSource={RelativeSource Self}}"/>
@@ -597,7 +597,7 @@
                     <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="13"
                             Padding="{TemplateBinding Padding}">
                         <Grid>
-                            <Border x:Name="StateLayer" Background="{DynamicResource Primary}" Opacity="0"
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}" Opacity="0"
                                     CornerRadius="13" Margin="-4"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>
@@ -628,20 +628,20 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <m3:M3Icon Kind="{Binding IconKind}" Width="13" Height="13" Opacity="0.55"
-                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                       Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Top"/>
             <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="12" Opacity="0.6"
-                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Top"/>
+                       Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Top"/>
             <!-- 值 = 可鼠标拖选的展示型文本（唯一实现 Views.SelectableText）；
                  ⚠️ 基态视觉值必须写在 Style.Setters：本地值优先级高于触发器 -->
             <views:SelectableText Grid.Column="2" Text="{Binding Value, Mode=OneWay}" VerticalAlignment="Top">
                 <views:SelectableText.Style>
                     <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}">
                         <Setter Property="FontSize" Value="12"/>
-                        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                         <Setter Property="TextWrapping" Value="Wrap"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsAccent}" Value="True">
-                                <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding IsMono}" Value="True">
@@ -650,7 +650,7 @@
                                 <Setter Property="Opacity" Value="0.6"/>
                                 <!-- ⚠️ TextBox 没有 TextTrimming（整行不换行，靠观感与 ID 长度兜住） -->
                                 <Setter Property="TextWrapping" Value="NoWrap"/>
-                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

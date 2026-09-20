@@ -4,8 +4,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LinkPocket.Theming;
 using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Themes;
+using LinkPocket.Theming.Tokens;
 using Material3.Core;
 
 namespace LinkPocket.Views;
@@ -48,17 +50,87 @@ public partial class ColorPickerPopup : UserControl
     public ColorPickerPopup()
     {
         InitializeComponent();
+
+        // 令牌色 → Freezable 子属性（**只能在 code-behind 赋**，根因见 ApplyTokenColors）。
+        // 先赋一次：XAML 里没有这些值，不设就是"黑投影 / 空心圆点"的错样子。
+        ApplyTokenColors();
+
+        // 两个 SV 叠加层同理：不在这里建，控件在 Open() 之前是两块**空 Fill** 的矩形
+        // （面板一构造出来就摆在那里，用户看得见 —— 不能等到第一次取色才有渐变）。
+        ApplySvGradients();
+
+        // 取色盘打开期间主题可能被切换（外观面板允许实时预览）→ 重新取一次令牌值。
+        // 为什么用事件而不是资源引用：这三个属性是 Color 型（Freezable 子属性），吃不了资源引用。
+        ThemeService.Changed += OnThemeChanged;
+
         IsVisibleChanged += (_, e) =>
         {
             // 与 InlineNameEditor / BreadcrumbBar 同源：聚焦这类"作用于可视状态"的动作要挂在可见性上，
             // 不能赌属性通知与可视状态的落地时序（WARNINGS 43）。
             if (e.NewValue is true)
             {
+                // 上次打开之后可能换过主题 → 每次显示都重新对齐令牌色（覆盖式，不留旧值）
+                ApplyTokenColors();
                 HexBox.Focus();
                 HexBox.SelectAll();
             }
         };
     }
+
+    private void OnThemeChanged(object? sender, ThemeDefinition definition)
+    {
+        ApplyTokenColors();
+        // 主题变了，叠加渐变的端点色也跟着变（Fill 上挂的是普通画刷，不吃资源引用 —— 重建一次）
+        ApplySvGradients();
+    }
+
+    /// <summary>
+    /// 把三个 **Color 型令牌** 的当前值赋给对应的 Freezable 子属性。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么必须在这里赋值，而不是在 XAML 里写资源引用（根因，实测）</b>：
+    /// WPF 的 <c>Color</c> 型属性（<c>GradientStop.Color</c> / <c>DropShadowEffect.Color</c>）
+    /// **既不接受 <c>StaticResource</c> 也不接受 <c>DynamicResource</c>**：
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>StaticResource</c>：BAML 加载时把键名当字面字符串塞进 setter —— 实测
+    /// <c>XamlParseException</c>：「"#FFFFFFFF" 不是属性 "Color" 的有效值」；</item>
+    /// <item><c>DynamicResource</c>：求值出来的是**资源对象本身**（<c>SolidColorBrush</c>），
+    /// 属性系统不做 Brush→Color 转换 —— 实测同一个 <c>XamlParseException</c>，
+    /// 抛在 <c>ColorPickerPopup.xaml:36</c> 的 <c>GradientStop.Color</c> 上。</item>
+    /// </list>
+    /// <para>
+    /// 换句话说：**这不是"令牌发布早了还是晚了"的问题** —— 令牌此刻已经发布（同一文件里的
+    /// <c>Border.Background</c> 引同一个键完全正常）。真正的原因是**这两种属性介质不吃资源引用**。
+    /// 界面层唯一干净的形态 = 在加载期之后（构造函数）**直接取令牌值**赋给它们。
+    /// </para>
+    /// <para>
+    /// <b>为什么用 <see cref="FrameworkElement.FindResource(string)"/> 而不是 TryFindResource + 兜底色</b>：
+    /// 取不到令牌 = "主题尚未装配"这一真实故障，必须当场暴露（观测面纪律：禁止静默兜底）；
+    /// 兜一个写死的白色会让故障表现成"一张看起来正常、实际不受主题控制的取色盘"。
+    /// 宿主（<c>App.OnStartup</c> / 探针）都保证令牌在构建窗口之前发布。
+    /// </para>
+    /// </remarks>
+    private void ApplyTokenColors()
+    {
+        var onAccent = TokenColor(AppTokens.TextOnAccent);
+        var shadow = TokenColor(AppTokens.ShadowColor);
+
+        ShellShadow.Color = shadow;
+        KnobShadow.Color = shadow;
+        SvKnob.Stroke = new SolidColorBrush(onAccent);
+        HueKnob.Fill = new SolidColorBrush(onAccent);
+    }
+
+    /// <summary>取一个 **Color 型**令牌的当前值（取不到即抛，不兜底）。</summary>
+    private Color TokenColor(string token) => FindResource(token) switch
+    {
+        Color c => c,
+        SolidColorBrush b => b.Color,
+        _ => throw new InvalidOperationException(
+            $"令牌「{token}」未发布或不是颜色值 —— 主题尚未装配（宿主必须在构建窗口之前调用 ThemeService）"),
+    };
 
     /// <summary>当前颜色（草稿）。</summary>
     public Color Current => ColorMath.ToMedia(ColorMath.FromHsv(_hue, _saturation, _value));
@@ -142,7 +214,7 @@ public partial class ColorPickerPopup : UserControl
     private void SetHexError(bool invalid, string? message)
     {
         HexFieldShell.BorderThickness = invalid ? new Thickness(0, 0, 0, 2) : new Thickness(0);
-        HexFieldShell.BorderBrush = (Brush)FindResource("App.Line.Invalid");
+        HexFieldShell.BorderBrush = (Brush)FindResource(AppTokens.LineInvalid);
         HexErrorText.Visibility = invalid ? Visibility.Visible : Visibility.Collapsed;
         HexErrorText.Text = message ?? string.Empty;
     }
@@ -156,12 +228,17 @@ public partial class ColorPickerPopup : UserControl
 
     // ── 视觉刷新 ─────────────────────────────────────────────────────
 
+    /// <summary>两个 SV 叠加渐变（饱和 / 明度）。值来自令牌，故每次都重建（主题可能已变）。</summary>
+    private LinearGradientBrush? _saturationGradient;
+    private LinearGradientBrush? _valueGradient;
+
     private void UpdateVisuals()
     {
         var current = Current;
 
-        // SV 方块的底色 = 当前色相的纯色（白→透明 横渐变叠饱和；透明→黑 竖渐变叠明度）
+        // SV 方块：底色 = 当前色相纯色；上面叠两个渐变层（饱和 / 明度）
         SvHost.Background = new SolidColorBrush(ColorMath.ToMedia(ColorMath.FromHsv(_hue, 1, 1)));
+        ApplySvGradients();
 
         var w = Math.Max(1.0, SvHost.ActualWidth);
         var h = Math.Max(1.0, SvHost.ActualHeight);
@@ -177,8 +254,7 @@ public partial class ColorPickerPopup : UserControl
         // 对比度体检：把当前色当"强调填充"（对白字）/ 当"强调图标"（对卡面）
         var argb = Argb.FromArgb(255, current.R, current.G, current.B);
         var white = Argb.FromArgb(255, 255, 255, 255);
-        var cardColor = ResolveToken(AppTokensLocal.SurfaceCard, CardFallback);
-        var card = Argb.FromArgb(255, cardColor.R, cardColor.G, cardColor.B);
+        var card = ColorMath.FromMedia(TokenColor(AppTokens.SurfaceCard));
         var asFill = ColorMath.ContrastRatio(argb, white);
         var asIcon = ColorMath.ContrastRatio(argb, card);
 
@@ -188,29 +264,38 @@ public partial class ColorPickerPopup : UserControl
     }
 
     /// <summary>
-    /// 卡面兜底色（主题未装配时的回落）。
+    /// 构建两个叠加渐变（**在 code-behind 而不在 XAML**）。
     /// </summary>
     /// <remarks>
-    /// 值取自 Theming 的**锚定表**（"今天卡面"的唯一定义处），而不是在界面层写色值 ——
-    /// 界面层零颜色字面量是硬性护栏（<c>ThemeRulesTests</c>），兜底也不能例外。
-    /// 正常路径总能取到 <c>App.Surface.Card</c> 令牌；这个兜底只为"资源尚未发布就开面板"（预览/开窗早期）而存在。
+    /// 根因同 <see cref="ApplyTokenColors"/>：这三个值都是 <c>Color</c>，而
+    /// <c>GradientStop.Color</c> 不吃资源引用（实测 BAML 加载期抛 <c>XamlParseException</c>）。
+    /// 运行时用已取到的 <see cref="Color"/> 直接建画刷；每次都重建（令牌可能随主题变化）。
     /// </remarks>
-    private static readonly Color CardFallback = BuildCardFallback();
-
-    private static Color BuildCardFallback()
+    private void ApplySvGradients()
     {
-        var anchor = SurfaceAnchors.Find("SurfaceContainerHigh");
-        var argb = anchor?.Today ?? Argb.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
-        return ColorMath.ToMedia(argb);
-    }
+        var white = TokenColor(AppTokens.TextOnAccent);
+        var black = TokenColor(AppTokens.ShadowColor);
+        var clear = TokenColor(AppTokens.SvTransparent);
 
-    private Color ResolveToken(string token, Color fallback) =>
-        TryFindResource(token) switch
+        _saturationGradient = new LinearGradientBrush
         {
-            SolidColorBrush b => b.Color,
-            Color c => c,
-            _ => fallback,
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(1, 0),
         };
+        _saturationGradient.GradientStops.Add(new GradientStop(white, 0));
+        _saturationGradient.GradientStops.Add(new GradientStop(clear, 1));
+
+        _valueGradient = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0, 1),
+        };
+        _valueGradient.GradientStops.Add(new GradientStop(clear, 0));
+        _valueGradient.GradientStops.Add(new GradientStop(black, 1));
+
+        SaturationLayer.Fill = _saturationGradient;
+        ValueLayer.Fill = _valueGradient;
+    }
 
     // ── 按钮 ─────────────────────────────────────────────────────────
 
@@ -225,10 +310,4 @@ public partial class ColorPickerPopup : UserControl
         }
         ColorConfirmed?.Invoke(this, Current);
     }
-}
-
-/// <summary>取色盘需要的令牌键名（避免 UIKit 直接依赖 Theming 的令牌类而产生循环感）。</summary>
-internal static class AppTokensLocal
-{
-    internal const string SurfaceCard = "App.Surface.Card";
 }

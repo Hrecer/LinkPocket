@@ -16,21 +16,21 @@
             <Setter Property="Padding" Value="16,0"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="IsReadOnly" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="Bd" CornerRadius="16"
-                                Background="{DynamicResource SurfaceContainerHighest}">
+                                Background="{DynamicResource App.Surface.Hover}">
                             <Grid>
                                 <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
                                               VerticalAlignment="Center"/>
                                 <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}"
                                            Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.7"
+                                           Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.7"
                                            IsHitTestVisible="False" Visibility="Collapsed"
                                            TextTrimming="CharacterEllipsis"/>
                             </Grid>
@@ -54,26 +54,26 @@
             <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="32,24,32,24">
 
                 <!-- ===== 导出备份卡 ===== -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="24"
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource App.Surface.Panel}">
                                 <m3:M3Icon Kind="export" Width="22" Height="22"
-                                           Foreground="{DynamicResource OnSurface}"
+                                           Foreground="{DynamicResource App.Text.Primary}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                                 <TextBlock Text="导出备份" FontSize="15" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource OnSurface}"/>
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
                                 <TextBlock Text="打包为 .lpbackup 文件：完整保留书签、文件夹、描述、访问统计、重要标记与图标"
                                            FontSize="12" Margin="0,3,0,0"
-                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
                             </StackPanel>
                         </StackPanel>
 
                         <TextBlock Text="保存位置" FontSize="11.5" Margin="4,20,0,6"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -90,7 +90,7 @@
 
                         <TextBlock Text="回收站内容不会被备份；如需保留回收站书签，请先在回收站中还原。"
                                    FontSize="11.5" Margin="4,16,0,0"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
 
                         <Button x:Name="BackupExportButton" Margin="0,16,0,0" HorizontalAlignment="Left"
                                 Style="{StaticResource PrimaryPillButton}" Height="36" Padding="20,0"
@@ -104,26 +104,26 @@
                 </Border>
 
                 <!-- ===== 导入备份卡 ===== -->
-                <Border Background="{DynamicResource SurfaceContainerHigh}" CornerRadius="24"
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
                             <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource App.Surface.Panel}">
                                 <m3:M3Icon Kind="import" Width="22" Height="22"
-                                           Foreground="{DynamicResource OnSurface}"
+                                           Foreground="{DynamicResource App.Text.Primary}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                                 <TextBlock Text="导入备份" FontSize="15" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource OnSurface}"/>
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
                                 <TextBlock Text="导入时不保留任何 ID，全部重新生成；仅支持当前版本的备份文件"
                                            FontSize="12" Margin="0,3,0,0"
-                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
                             </StackPanel>
                         </StackPanel>
 
                         <TextBlock Text="备份文件" FontSize="11.5" Margin="4,20,0,6"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>

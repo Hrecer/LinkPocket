@@ -236,4 +236,108 @@ public class ThemeRulesTests
         Assert.True(offenders.Count == 0,
             "字体族只能经 App.Font.Ui / App.Font.Mono 令牌发布：\n" + string.Join("\n", offenders));
     }
+
+    /// <summary>
+    /// **颜色键的权威清单**：从 Theming 的锚定表源码里抽键名（不引产品程序集 ——
+    /// 架构测试的目标框架是 net8.0，引 <c>LinkPocket.Theming</c>（WPF）会把它拖成 windows 专属，
+    /// 而本层其余断言全是 csproj/源码文本扫描，靠的就是"零产品引用"）。
+    /// </summary>
+    /// <remarks>
+    /// 用"是不是颜色角色"作判据，而不是用"像不像一个大驼峰词"猜 —— 后者会把
+    /// <c>{StaticResource TonalButton}</c>（我们自己的样式）误判成颜色键。
+    /// 清单来源 = <c>SurfaceAnchors.Build()</c> 的行表：唯一事实来源仍在 Theming，这里只是读它。
+    /// </remarks>
+    private static HashSet<string> LibraryColorKeys()
+    {
+        var path = Path.Combine(RepoRoot, "src", "LinkPocket.Theming", "Color", "SurfaceAnchors.cs");
+        Assert.True(File.Exists(path), $"锚定表源码不存在：{path}（颜色键清单的唯一来源）");
+
+        var text = File.ReadAllText(path);
+        var start = text.IndexOf("var rows = new (string Key, uint Today)[]", StringComparison.Ordinal);
+        Assert.True(start >= 0, "找不到锚定表的 rows 声明（SurfaceAnchors 结构变了？请同步本测试）");
+        var end = text.IndexOf("};", start, StringComparison.Ordinal);
+        Assert.True(end > start, "找不到锚定表 rows 的结束位置");
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(text[start..end], @"\(""([A-Za-z0-9_]+)"",\s*0x"))
+            keys.Add(m.Groups[1].Value);
+        Assert.True(keys.Count >= 40, $"锚定表解析出的键太少（{keys.Count}）——解析器需要跟着源码结构更新");
+        return keys;
+    }
+
+    /// <summary>
+    /// 界面层引用的令牌键**不得是库角色键**（文字色/图标色/底色/描边一律走 <c>App.*</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么这条必须机器化</b>：库角色键（<c>OnSurface</c> / <c>Primary</c> / <c>SurfaceContainerHigh</c>…）
+    /// 与我们的令牌**当前同值**，引用错了在界面上**看不出来** —— 于是"哪一处该跟着哪个语义走"
+    /// 就散落在各页 XAML 里，换主题/调档位时必然漏改，而且没有任何征兆。
+    /// 实测（N2 盘点）：T5 之后界面里仍有 <b>190 处</b> 库角色键引用，其中 155 处是文字色。
+    /// </para>
+    /// <para>
+    /// <b>为什么豁免 UIKit 的样式键名</b>：<c>{StaticResource TonalButton}</c> / <c>{StaticResource LpMenuItem}</c>
+    /// 这类是**我们自己的样式资源**（不是颜色角色）—— 靠 <see cref="LibraryColorKeys"/> 的清单区分，
+    /// 不靠命名形状猜。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void 界面层_颜色令牌只能引App语义族_不得引库角色键()
+    {
+        var colorKeys = LibraryColorKeys();
+        var offenders = new List<string>();
+        var rx = new Regex(@"\{(?:Dynamic|Static)Resource\s+([A-Za-z0-9_.]+)\s*\}", RegexOptions.Compiled);
+
+        foreach (var file in SourceFiles(LiteralCheckedDirs))
+        {
+            var rel = Relative(file);
+            if (IsLiteralExempt(rel)) continue;
+            var isXaml = file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase);
+            var text = StripComments(File.ReadAllText(file), isXaml);
+            foreach (Match m in rx.Matches(text))
+            {
+                var key = m.Groups[1].Value;
+                if (!colorKeys.Contains(key)) continue;   // 样式/转换器键名，不是颜色角色
+                offenders.Add($"{rel} → {{Resource {key}}}");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "界面层只能引 App.* 语义令牌，不得直接引库颜色角色键（App.Text.* / App.Type.* / App.Accent.* / App.Surface.* / App.Line.* …）：\n"
+            + string.Join("\n", offenders));
+    }
+
+    /// <summary>
+    /// **代码侧**（code-behind 用字符串取资源）同样只许引 <c>App.*</c> —— 字符串不会跟着 XAML 一起改名。
+    /// </summary>
+    /// <remarks>
+    /// 与上一条同源：XAML 有编译期可见性，代码里的 <c>FindResource("OnSurface")</c> 没有 ——
+    /// 这类漏改历史上真的发生过（<c>PillToneToBrushConverter</c> 的旧画刷键名，
+    /// 见 <c>LegacyBrushKeyTests</c>）。故颜色角色的字符串取值单独卡一条。
+    /// </remarks>
+    [Fact]
+    public void 界面层_代码取资源只能引App语义族()
+    {
+        var colorKeys = LibraryColorKeys();
+        var offenders = new List<string>();
+        var rx = new Regex(@"\b(?:Try)?FindResource\s*\(\s*""([A-Za-z0-9_.]+)""", RegexOptions.Compiled);
+
+        foreach (var file in SourceFiles(LiteralCheckedDirs))
+        {
+            if (!file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) continue;
+            var rel = Relative(file);
+            if (IsLiteralExempt(rel)) continue;
+            var text = StripComments(File.ReadAllText(file), xaml: false);
+            foreach (Match m in rx.Matches(text))
+            {
+                var key = m.Groups[1].Value;
+                if (!colorKeys.Contains(key)) continue;
+                offenders.Add($"{rel} → FindResource(\"{key}\")");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "代码里取颜色资源也只能引 App.* 语义令牌（库角色键与令牌同值，引用错了看不出征兆）：\n"
+            + string.Join("\n", offenders));
+    }
 }

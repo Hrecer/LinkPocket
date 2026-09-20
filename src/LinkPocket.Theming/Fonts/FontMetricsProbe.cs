@@ -60,7 +60,7 @@ public static class FontMetricsProbe
             probe,
             CultureInfo.CurrentUICulture,
             System.Windows.FlowDirection.LeftToRight,
-            new System.Windows.Media.Typeface(FontLoader.BuildFontFamily(family), System.Windows.FontStyles.Normal, System.Windows.FontWeights.Normal, System.Windows.FontStretches.Normal),
+            new System.Windows.Media.Typeface(FontCatalog.BuildFontFamily(family), System.Windows.FontStyles.Normal, System.Windows.FontWeights.Normal, System.Windows.FontStretches.Normal),
             fontSize,
             System.Windows.Media.Brushes.Black,
             1.0);
@@ -75,7 +75,7 @@ public static class FontMetricsProbe
     public static Verdict Inspect(string candidateFamily, double fontSize = 12.5)
     {
         var candidate = Measure(candidateFamily, fontSize);
-        var baseline = Measure(FontLoader.BuildTokenValue(FontLoader.DefaultUiFamily), fontSize);
+        var baseline = Measure(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), fontSize);
 
         var w = candidate.Width / baseline.Width - 1.0;
         var h = candidate.Height / baseline.Height;

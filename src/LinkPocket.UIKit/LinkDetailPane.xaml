@@ -14,7 +14,7 @@
          ⚠️ 悬浮层（返回钮）必须声明在 ScrollViewer **之后**：Material3.Wpf 的 ScrollViewer 模板铺了
             不透明底色，悬浮层在它下面会被吃掉全部鼠标命中（见 UI-SPEC 已知陷阱）。 -->
 
-    <Grid Background="{DynamicResource SurfaceContainerLow}">
+    <Grid Background="{DynamicResource App.Surface.Base}">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <!-- 定宽居中列：外边距经滚动条补偿，与编辑器页左边界严格一致（切换不横移） -->
             <Grid Width="760" HorizontalAlignment="Center">
@@ -65,7 +65,7 @@
                             <!-- 标题 = 可拖选的展示型文本（标题长时同样可拖选复制局部） -->
                             <views:SelectableText Text="{Binding Title, Mode=OneWay}" FontSize="20" FontWeight="SemiBold"
                                                   VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
-                                                  Foreground="{DynamicResource OnSurface}"/>
+                                                  Foreground="{DynamicResource App.Text.Primary}"/>
                         </StackPanel>
                     </Border>
 
@@ -82,7 +82,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Row="0" Text="URL" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="复制 URL"
                                     Margin="6,0,0,0" VerticalAlignment="Top" Command="{Binding CopyUrlCommand}">
                                 <m3:M3Icon Kind="content-copy" Width="13" Height="13"/>
@@ -90,7 +90,7 @@
                             <ScrollViewer Grid.Row="1" Grid.ColumnSpan="2" HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Disabled" MaxHeight="42">
                                 <views:SelectableText Text="{Binding Url, Mode=OneWay}" FontSize="14" TextWrapping="NoWrap"
-                                                      Foreground="{DynamicResource OnSurface}" VerticalAlignment="Center"/>
+                                                      Foreground="{DynamicResource App.Text.Primary}" VerticalAlignment="Center"/>
                             </ScrollViewer>
                         </Grid>
                     </Border>
@@ -100,7 +100,7 @@
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <StackPanel>
                             <TextBlock Text="信息" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
                         </StackPanel>
                     </Border>
@@ -120,7 +120,7 @@
                         </Border.Style>
                         <StackPanel>
                             <TextBlock Text="描述" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
                                                          FontFamily="{DynamicResource App.Font.Ui}"
                                                          IsSelectionEnabled="True"
@@ -129,7 +129,7 @@
                                 <mdxaml:MarkdownScrollViewer.MarkdownStyle>
                                     <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
                                         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                                         <Style.Resources>
                                             <Style TargetType="Paragraph">
                                                 <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
@@ -159,7 +159,7 @@
                         </Border.Style>
                         <StackPanel>
                             <TextBlock Text="操作" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <Grid Margin="0,2,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -216,7 +216,7 @@
                                         Command="{Binding DeleteCommand}"
                                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                               Foreground="{DynamicResource App.Support.OnContainer}"/>
+                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
                                 </Button>
                             </Grid>
                         </StackPanel>
@@ -229,12 +229,12 @@
         <!-- 左上浮动返回钮（z 序顶层；与侧栏返回圆钮同款 40px） -->
         <Button Command="{Binding BackCommand}" ToolTip="返回"
                 Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
-                Foreground="{DynamicResource OnSurface}">
+                Foreground="{DynamicResource App.Text.Primary}">
             <Button.Template>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Bd" Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20">
                         <Grid>
-                            <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}"
                                     Opacity="0" CornerRadius="20"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>

@@ -4,14 +4,19 @@
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              Width="268"
              Focusable="True" FocusVisualStyle="{x:Null}">
-    <!-- 自研取色盘（零第三方依赖，方案 §7.3）：SV 方块（饱和/明度）+ H 竖滑条 + HEX 输入 +
+    <!-- 自研取色盘（方案 §7.3）：SV 方块（饱和/明度）+ H 竖滑条 + HEX 输入 +
          大色块预览 + 对比度体检徽标 + 取消/用这个颜色 两枚药丸。
-         色相反射与明度/饱和度由 code-behind 用 HSV↔RGB 互算（不引颜色库）。 -->
+         色相反射与明度/饱和度由 code-behind 用 HSV↔RGB 互算（不引颜色库）。
+
+         ⚠️ **值是 Color 的令牌一律不出现在本文件的标签属性上**：`Color` 型属性（`GradientStop.Color` /
+         `DropShadowEffect.Color`）不吃资源引用 —— 实测在 BAML 加载期抛
+         `XamlParseException`（"#FFFFFFFF" 不是属性 "Color" 的有效值）。这三处改由构造函数
+         直接取令牌值赋给属性（见 ColorPickerPopup.xaml.cs 的 ApplyTokenColors）；普通 Brush 型属性照常走资源。 -->
     <Border Background="{DynamicResource App.Surface.Dialog}" CornerRadius="20" Padding="16,14"
             BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22"
-                              Color="{DynamicResource App.Color.Shadow}"/>
+            <!-- Color 由 code-behind 赋令牌值（同上：Color 型属性不吃资源引用） -->
+            <DropShadowEffect x:Name="ShellShadow" BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22"/>
         </Border.Effect>
         <StackPanel>
             <!-- 预览 + SV 方块：同一块的"当前颜色"大色块 -->
@@ -22,35 +27,20 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- SV 方块：底色 = 当前色相纯色（code-behind 设）；白色→透明 横渐变（饱和）；
-                     透明→阴影色 竖渐变（明度）。两个叠加层的端点色取自**令牌**（白=OnAccent、黑=Shadow），
-                     不在界面层写字面量。 -->
+                     透明→阴影色 竖渐变（明度）。两个叠加层的 Fill 由 code-behind 赋值
+                     （要用令牌色：白 = App.Text.OnAccent、黑 = App.Color.Shadow）。 -->
                 <Border x:Name="SvHost" Grid.Column="0" CornerRadius="12" ClipToBounds="True"
-                        Cursor="Cross" Background="White"
+                        Cursor="Cross"
                         MouseLeftButtonDown="SvHost_MouseDown"
                         MouseMove="SvHost_MouseMove"
                         MouseLeftButtonUp="SvHost_MouseUp">
                     <Grid>
-                        <Rectangle>
-                            <Rectangle.Fill>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                    <GradientStop Color="{DynamicResource App.Text.OnAccent}" Offset="0"/>
-                                    <GradientStop Color="{DynamicResource App.Color.SvTransparent}" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Rectangle.Fill>
-                        </Rectangle>
-                        <Rectangle>
-                            <Rectangle.Fill>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                    <GradientStop Color="{DynamicResource App.Color.SvTransparent}" Offset="0"/>
-                                    <GradientStop Color="{DynamicResource App.Color.Shadow}" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Rectangle.Fill>
-                        </Rectangle>
-                        <Ellipse x:Name="SvKnob" Width="14" Height="14" Stroke="White" StrokeThickness="2"
+                        <Rectangle x:Name="SaturationLayer"/>
+                        <Rectangle x:Name="ValueLayer"/>
+                        <Ellipse x:Name="SvKnob" Width="14" Height="14" StrokeThickness="2"
                                  HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
                             <Ellipse.Effect>
-                                <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.6"
-                                                  Color="{DynamicResource App.Color.Shadow}"/>
+                                <DropShadowEffect x:Name="KnobShadow" BlurRadius="4" ShadowDepth="0" Opacity="0.6"/>
                             </Ellipse.Effect>
                         </Ellipse>
                     </Grid>
@@ -79,8 +69,7 @@
                                 </LinearGradientBrush>
                             </Rectangle.Fill>
                         </Rectangle>
-                        <Rectangle x:Name="HueKnob" Height="3" Fill="White" Stroke="#33000000"
-                                   VerticalAlignment="Top" IsHitTestVisible="False"/>
+                        <Rectangle x:Name="HueKnob" Height="3" VerticalAlignment="Top" IsHitTestVisible="False"/>
                     </Grid>
                 </Border>
             </Grid>

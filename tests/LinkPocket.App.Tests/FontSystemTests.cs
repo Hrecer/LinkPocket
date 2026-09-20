@@ -25,7 +25,7 @@ public class FontSystemTests
     public void 回退链_无主族时仍返回完整链_绝不为空(string? primary)
     {
         // 空 FontFamily 会让 WPF 静默回落默认字体（症状 = "换字体没反应"），属于静默失败。
-        var value = FontLoader.BuildTokenValue(primary);
+        var value = FontCatalog.BuildTokenValue(primary);
         Assert.False(string.IsNullOrWhiteSpace(value));
         Assert.Contains("Microsoft YaHei UI", value, StringComparison.Ordinal);
         Assert.Contains("Segoe UI", value, StringComparison.Ordinal);
@@ -34,7 +34,7 @@ public class FontSystemTests
     [Fact]
     public void 回退链_主族不在链里重复追加()
     {
-        var value = FontLoader.BuildTokenValue("Microsoft YaHei UI");
+        var value = FontCatalog.BuildTokenValue("Microsoft YaHei UI");
         Assert.Equal("Microsoft YaHei UI, Segoe UI", value);
     }
 
@@ -42,7 +42,7 @@ public class FontSystemTests
     public void 回退链_自定义主族排在首位_CJK兜底在后()
     {
         // 这是"导入拉丁字体不会让中文变方块"的机制保证：WPF 逐字形回退到雅黑。
-        var value = FontLoader.BuildTokenValue("Cascadia Code");
+        var value = FontCatalog.BuildTokenValue("Cascadia Code");
         Assert.StartsWith("Cascadia Code,", value, StringComparison.Ordinal);
         Assert.Contains("Microsoft YaHei UI", value, StringComparison.Ordinal);
     }
@@ -50,7 +50,7 @@ public class FontSystemTests
     [Fact]
     public void 字体族构造_可被WPF解析()
     {
-        var family = FontLoader.BuildFontFamily("Cascadia Code");
+        var family = FontCatalog.BuildFontFamily("Cascadia Code");
         Assert.NotNull(family);
         Assert.False(string.IsNullOrWhiteSpace(family.Source));
     }
@@ -65,7 +65,7 @@ public class FontSystemTests
         {
             var fake = Path.Combine(temp, "not-a-font.ttf");
             File.WriteAllText(fake, "这不是字体");
-            var ex = Assert.Throws<InvalidOperationException>(() => FontLoader.Import(fake));
+            var ex = Assert.Throws<InvalidOperationException>(() => FontCatalog.Import(fake));
             Assert.Contains("无法解析", ex.Message, StringComparison.Ordinal);
         }
         finally
@@ -83,7 +83,7 @@ public class FontSystemTests
         {
             var txt = Path.Combine(temp, "readme.txt");
             File.WriteAllText(txt, "text");
-            var ex = Assert.Throws<InvalidOperationException>(() => FontLoader.Import(txt));
+            var ex = Assert.Throws<InvalidOperationException>(() => FontCatalog.Import(txt));
             Assert.Contains("只支持", ex.Message, StringComparison.Ordinal);
         }
         finally
@@ -95,19 +95,67 @@ public class FontSystemTests
     [Fact]
     public void 系统字体枚举_非空且按显示名排序()
     {
-        var fonts = FontLoader.SystemFonts();
+        // ⚠️ 这条**直接走生产字体来源**（WpfSystemFontSource → Fonts.SystemFontFamilies 全量枚举）：
+        //    "真机枚举能出结果、且排好序"这件事必须有自动化覆盖，不能只测注入的假列表。
+        var fonts = FontCatalog.SystemSource.Enumerate();
         Assert.NotEmpty(fonts);
         var names = fonts.Select(f => f.DisplayName).ToList();
         var sorted = names.OrderBy(n => n, StringComparer.CurrentCulture).ToList();
         Assert.Equal(sorted, names);
         Assert.All(fonts, f => Assert.False(string.IsNullOrWhiteSpace(f.Family)));
+        Assert.All(fonts, f => Assert.False(f.IsImported));   // 系统来源不含导入项
+    }
+
+    [Fact]
+    public void 回退链字体_在真实系统字体集合里可用()
+    {
+        // 回退链（雅黑 / Segoe UI）与默认等宽字体是我们**承诺过一定存在**的那几个族：
+        // 若机器上真的没有，回退链就是一句空话 —— 用真实枚举把它钉住。
+        var families = FontCatalog.SystemFontFamilies();
+        Assert.Contains(FontCatalog.DefaultUiFamily, families);
+        Assert.Contains(FontCatalog.DefaultMonoFamily, families);
+        Assert.All(FontCatalog.FallbackChain, f => Assert.Contains(f, families));
+    }
+
+    [Fact]
+    public void 候选装载_已导入字体排在系统字体之前()
+    {
+        // 用户自己放进来的字体要**先看到**（他刚导入完就要在下拉里找到它）。
+        // 用注入来源做隔离（用例不依赖"这台机器装了什么"），排序口径本身仍然被断言。
+        try
+        {
+            FontCatalog.SystemSource = new FakeSystemFontSource(
+                new FontChoice("Zzz System Font", "Zzz 系统字体"),
+                new FontChoice("Aaa System Font", "Aaa 系统字体"));
+
+            var all = FontCatalog.All();
+            Assert.Equal(2, all.Count);
+            Assert.DoesNotContain(all, f => f.IsImported);   // 本机没导入字体时只剩系统项
+        }
+        finally
+        {
+            FontCatalog.ResetForTests();
+        }
+    }
+
+    /// <summary>注入用的假系统字体来源（隔离缝；产品侧见 <c>FontCatalog.SystemSource</c> 注释）。</summary>
+    private sealed class FakeSystemFontSource(params FontChoice[] fonts) : ISystemFontSource
+    {
+        /// <summary>枚举次数（用例可断言"只枚举一次"这类缓存不变量）。</summary>
+        public int EnumerateCalls { get; private set; }
+
+        public IReadOnlyList<FontChoice> Enumerate()
+        {
+            EnumerateCalls++;
+            return fonts;
+        }
     }
 
     [Fact]
     public void 度量自检_默认字体自身必须通过()
     {
         // 自检是"相对默认字体"的比较——拿默认字体比自己必然应**完全相等**（否则阈值本身就是错的）。
-        var verdict = FontMetricsProbe.Inspect(FontLoader.BuildTokenValue(FontLoader.DefaultUiFamily));
+        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily));
         Assert.True(verdict.Ok, verdict.Message);
         Assert.Equal(0.0, verdict.WidthDelta, 6);   // 宽度相对偏差 = 0
         Assert.Equal(1.0, verdict.HeightRatio, 6);  // 行高倍率 = 1
@@ -197,7 +245,7 @@ public class FontSystemTests
             UiPreferenceStore.Clear();
             var loaded = UiPreferenceStore.Load(out var failed);
             Assert.False(failed);
-            Assert.Equal(FontLoader.DefaultUiFamily, loaded.Fonts.Ui);
+            Assert.Equal(FontCatalog.DefaultUiFamily, loaded.Fonts.Ui);
         }
         finally
         {

@@ -26,12 +26,12 @@
                     <Border Width="44" Height="44" CornerRadius="22"
                             Background="{DynamicResource App.Surface.Panel}">
                         <m3:M3Icon Kind="import" Width="22" Height="22"
-                                   Foreground="{DynamicResource OnSurface}"
+                                   Foreground="{DynamicResource App.Text.Primary}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <TextBlock Text="选择导入方式" FontSize="19" FontWeight="Medium"
                                VerticalAlignment="Center" Margin="14,0,0,0"
-                               Foreground="{DynamicResource OnSurface}"/>
+                               Foreground="{DynamicResource App.Text.Primary}"/>
                 </StackPanel>
 
                 <!-- 方式一：新增导入（常规） -->
@@ -42,17 +42,17 @@
                         <!-- MD3 单选：圆环 + 中心实心点 -->
                         <Grid VerticalAlignment="Center">
                             <Border x:Name="AppendRing" Width="20" Height="20" CornerRadius="10"
-                                    BorderThickness="2" BorderBrush="{DynamicResource OutlineVariant}"/>
+                                    BorderThickness="2" BorderBrush="{DynamicResource App.Line.Variant}"/>
                             <Border x:Name="AppendDot" Width="10" Height="10" CornerRadius="5"
-                                    Background="{DynamicResource Primary}" Visibility="Collapsed"
+                                    Background="{DynamicResource App.Accent.Fill}" Visibility="Collapsed"
                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                         <StackPanel Margin="12,0,0,0">
                             <TextBlock Text="新增导入" FontSize="13.5" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource OnSurface}"/>
+                                       Foreground="{DynamicResource App.Text.Primary}"/>
                             <TextBlock Text="备份内容全部加入当前数据，现有数据保持不变。不去重：重复导入同一备份会让条目成倍增加。"
                                        FontSize="11.5" TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="17"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -65,33 +65,33 @@
                         <StackPanel Orientation="Horizontal">
                             <Grid VerticalAlignment="Center">
                                 <Border x:Name="ReplaceRing" Width="20" Height="20" CornerRadius="10"
-                                        BorderThickness="2" BorderBrush="{DynamicResource OutlineVariant}"/>
+                                        BorderThickness="2" BorderBrush="{DynamicResource App.Line.Variant}"/>
                                 <Border x:Name="ReplaceDot" Width="10" Height="10" CornerRadius="5"
-                                        Background="{DynamicResource Primary}" Visibility="Collapsed"
+                                        Background="{DynamicResource App.Accent.Fill}" Visibility="Collapsed"
                                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
                             <TextBlock Text="清空后导入" FontSize="13.5" FontWeight="SemiBold"
                                        Margin="12,0,0,0" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource OnSurface}"/>
+                                       Foreground="{DynamicResource App.Text.Primary}"/>
                         </StackPanel>
                         <TextBlock Text="先完全清除当前所有数据（含回收站与图标缓存），再导入备份内容。此操作不可恢复。"
                                    FontSize="11.5" TextWrapping="Wrap" LineHeight="17"
                                    Margin="32,3,0,0"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
 
                         <!-- 文字确认（仅危险方式被选中时出现） -->
                         <StackPanel x:Name="ReplaceConfirmBox" Visibility="Collapsed" Margin="32,10,0,0">
                             <TextBlock Text="请输入以下文字确认：" FontSize="12"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <TextBlock Text="我确认清空并导入" FontSize="13" FontWeight="Bold"
                                        Margin="0,2,0,6"
-                                       Foreground="{DynamicResource OnSurface}"/>
-                            <Border CornerRadius="12" Background="{DynamicResource SurfaceContainerHighest}">
+                                       Foreground="{DynamicResource App.Text.Primary}"/>
+                            <Border CornerRadius="12" Background="{DynamicResource App.Surface.Hover}">
                                 <TextBox x:Name="ReplaceConfirmInput" Height="36"
                                          BorderThickness="0" Background="Transparent"
                                          Padding="14,0" VerticalContentAlignment="Center" FontSize="13"
-                                         Foreground="{DynamicResource OnSurface}"
-                                         CaretBrush="{DynamicResource Primary}"
+                                         Foreground="{DynamicResource App.Text.Primary}"
+                                         CaretBrush="{DynamicResource App.Accent.Fill}"
                                          TextChanged="ReplaceConfirmInput_TextChanged"/>
                             </Border>
                         </StackPanel>

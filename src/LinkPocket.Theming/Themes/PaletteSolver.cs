@@ -236,15 +236,17 @@ public static class PaletteSolver
             [AppTokens.TextSecondary] = textSecondary,
             [AppTokens.TextMuted] = textMuted,
             [AppTokens.TextOnAccent] = white,
+            // 容器字 = 支撑族 T15。界面上这个令牌落在**两种**容器上（强调容器 / 次强调容器），
+            // 而两族的容器字本来就是同一档（T15）、对各自容器的对比度都 ≥11.7 —— 故只有一个真值
+            // （`App.*.OnContainer` 这一族已删除：它们与文字族同值，留着就是"同一语义两个键"）。
+            [AppTokens.TextOnContainer] = supportOnContainer,
 
             [AppTokens.AccentFill] = accentFill,
             [AppTokens.AccentIcon] = accentFill,
             [AppTokens.AccentText] = accentText,
             [AppTokens.AccentContainer] = accentContainer,
-            [AppTokens.AccentOnContainer] = accentOnContainer,
 
             [AppTokens.SupportContainer] = supportContainer,
-            [AppTokens.SupportOnContainer] = supportOnContainer,
             [AppTokens.SupportIcon] = supportIcon,
 
             [AppTokens.TypeFolder] = supportIcon,

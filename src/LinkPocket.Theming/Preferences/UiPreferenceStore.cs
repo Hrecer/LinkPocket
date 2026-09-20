@@ -57,10 +57,10 @@ public sealed record ThemePreference
 public sealed record FontPreference
 {
     /// <summary>界面字体族名（缺省 = 系统雅黑链）。</summary>
-    public string Ui { get; init; } = Fonts.FontLoader.DefaultUiFamily;
+    public string Ui { get; init; } = Fonts.FontCatalog.DefaultUiFamily;
 
     /// <summary>等宽字体族名（缺省 = Consolas 链）。</summary>
-    public string Mono { get; init; } = Fonts.FontLoader.DefaultMonoFamily;
+    public string Mono { get; init; } = Fonts.FontCatalog.DefaultMonoFamily;
 }
 
 /// <summary>

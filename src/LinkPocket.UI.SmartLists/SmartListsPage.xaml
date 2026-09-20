@@ -14,7 +14,7 @@
         <!-- BoolToVis 已上收 UIKit.xaml -->
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource SurfaceContainerLow}">
+    <Grid Background="{DynamicResource App.Surface.Base}">
 
         <!-- ============================================================ -->
         <!-- ===== 面板 A：入口（纵向卡片流 + 底部锚点 + 微渐变纵深） ===== -->
@@ -36,9 +36,9 @@
 
                     <!-- 页头（与卡片左缘同一条水平对齐线） -->
                     <TextBlock Text="智能列表" FontSize="24" FontWeight="SemiBold"
-                               Foreground="{DynamicResource OnSurface}" Margin="2,4,0,0"/>
+                               Foreground="{DynamicResource App.Text.Primary}" Margin="2,4,0,0"/>
                     <TextBlock Text="按访问与编辑行为自动汇集的动态集合，数据实时更新"
-                               FontSize="12.5" Foreground="{DynamicResource OnSurfaceVariant}"
+                               FontSize="12.5" Foreground="{DynamicResource App.Text.Secondary}"
                                Margin="2,5,0,20"/>
 
                     <ItemsControl ItemsSource="{Binding Cards}">
@@ -57,10 +57,10 @@
                                     </Border.Effect>
                                     <Border.Style>
                                         <Style TargetType="Border">
-                                            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                                            <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
                                             <Style.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                                                 </Trigger>
                                             </Style.Triggers>
                                         </Style>
@@ -75,24 +75,24 @@
                                         <!-- 图标徽章：56px 大容器 + 品牌紫图标 -->
                                         <Border Grid.Column="0" Width="56" Height="56" CornerRadius="16"
                                                 VerticalAlignment="Center"
-                                                Background="{DynamicResource PrimaryContainer}">
+                                                Background="{DynamicResource App.Accent.Container}">
                                             <m3:M3Icon Kind="{Binding IconKind}" Width="26" Height="26"
-                                                       Foreground="{DynamicResource Primary}"
+                                                       Foreground="{DynamicResource App.Accent.Icon}"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
 
                                         <StackPanel Grid.Column="1" Margin="16,0,8,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource OnSurface}"
+                                                       Foreground="{DynamicResource App.Text.Primary}"
                                                        TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Text="{Binding Subtitle}" FontSize="12.5" Margin="0,4,0,0"
-                                                       Foreground="{DynamicResource OnSurfaceVariant}"
+                                                       Foreground="{DynamicResource App.Text.Secondary}"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
 
                                         <m3:M3Icon Grid.Column="2" Kind="chevron-right" Width="20" Height="20"
                                                    VerticalAlignment="Center" Opacity="0.4"
-                                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -104,7 +104,7 @@
             <!-- 底部视觉锚点：低对比度署名，给空白一个"终点"（纯视觉元素，非功能模块） -->
             <TextBlock Text="LinkPocket v2.0.0" FontSize="11" HorizontalAlignment="Center"
                        VerticalAlignment="Bottom" Margin="0,0,0,14" Opacity="0.45"
-                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                       Foreground="{DynamicResource App.Text.Secondary}"/>
         </Grid>
 
         <!-- ============================================================ -->
@@ -135,12 +135,12 @@
                         <!-- 返回圆钮：与详情页顶部返回钮同款（40px 圆、TintCard 底、Primary 状态层；编辑页无返回钮，取消即返回） -->
                         <Button DockPanel.Dock="Left" Click="BackButton_Click" Focusable="False"
                                 ToolTip="返回卡片页（Esc）" Width="40" Height="40" VerticalAlignment="Center"
-                                Foreground="{DynamicResource OnSurface}">
+                                Foreground="{DynamicResource App.Text.Primary}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
                                     <Border x:Name="Bd" Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20">
                                         <Grid>
-                                            <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                            <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}"
                                                     Opacity="0" CornerRadius="20"/>
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Grid>
@@ -160,25 +160,25 @@
 
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                                     Margin="0,0,2,0">
-                            <TextBlock Text="共" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
+                            <TextBlock Text="共" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"
                                        VerticalAlignment="Center"/>
                             <TextBlock Text="{Binding ResultViewModel.TotalCount, Mode=OneWay}" FontSize="12"
-                                       Foreground="{DynamicResource OnSurfaceVariant}" Margin="3,0,3,0"
+                                       Foreground="{DynamicResource App.Text.Secondary}" Margin="3,0,3,0"
                                        VerticalAlignment="Center"/>
-                            <TextBlock Text="项" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"
+                            <TextBlock Text="项" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                             <TextBlock Text="{Binding ResultViewModel.Title}" FontSize="15" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource OnSurface}" VerticalAlignment="Center"/>
+                                       Foreground="{DynamicResource App.Text.Primary}" VerticalAlignment="Center"/>
                             <!-- 灰色提示：列表语义说明（与入口卡片副标题同一数据源） -->
                             <TextBlock Text="{Binding ResultViewModel.Subtitle}" FontSize="12.5"
-                                       Foreground="{DynamicResource OnSurfaceVariant}" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Center"
                                        Margin="12,1,0,0" TextTrimming="CharacterEllipsis"/>
                             <!-- 当前排序（默认排序可见化：列头箭头之外再给一句文字，避免"像没排序"） -->
                             <TextBlock x:Name="SortHintText" FontSize="12.5" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.75"
+                                       Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.75"
                                        Margin="10,1,12,0" TextTrimming="CharacterEllipsis"/>
 
                             <!-- 跳转（共享药丸样式 JumpPillButton）：进浏览页对应目录并选中该行（定位组件）——
@@ -200,7 +200,7 @@
                 <!-- 表格容器：与回收站页同款圆角 24 卡片，表头色带边距归零。
                      SelectionEnabled=False = 外部托管：单选中由结果 VM 的 ListSelection 承载，
                      绘制经 code-behind 投影（↑/↓/End/Esc/点空白 = 全站共享选择机械）。 -->
-                <Border Grid.Row="1" Background="{DynamicResource SurfaceContainerHigh}"
+                <Border Grid.Row="1" Background="{DynamicResource App.Surface.Card}"
                         CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
                     <views:SortableDataTable x:Name="SmartTable" HeaderBandMargin="0"
                                              SelectionEnabled="False"/>

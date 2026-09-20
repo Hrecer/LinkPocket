@@ -27,12 +27,12 @@
         <!-- 详情栏小节标签 -->
         <Style x:Key="SideLabel" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
             <Setter Property="Margin" Value="4,0,0,4"/>
         </Style>
         <!-- 类型 / 统计小药丸 -->
         <Style x:Key="SideChip" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+            <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
             <Setter Property="CornerRadius" Value="8"/>
             <Setter Property="Padding" Value="8,2"/>
             <Setter Property="Margin" Value="0,0,6,0"/>
@@ -50,7 +50,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -65,7 +65,7 @@
                                 CornerRadius="16" Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
                             <Grid>
-                                <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
+                                <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}"
                                         Opacity="0" CornerRadius="16" Margin="-4"/>
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                                   TextElement.Foreground="{TemplateBinding Foreground}"/>
@@ -79,7 +79,7 @@
                                 <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Text.Muted}"/>
                                 <Setter Property="Cursor" Value="Arrow"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -198,7 +198,7 @@
                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                     <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                               Foreground="{DynamicResource App.Support.OnContainer}"/>
+                               Foreground="{DynamicResource App.Text.OnContainer}"/>
                 </Button>
             </StackPanel>
         </DataTemplate>
@@ -227,12 +227,12 @@
                 <Border Width="72" Height="72" CornerRadius="24" HorizontalAlignment="Center"
                         Background="{DynamicResource App.Surface.TintCard}">
                     <m3:M3Icon Kind="eye-outline" Width="30" Height="30"
-                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
+                               Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.5"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
-                <TextBlock Text="选中项目查看详情" FontSize="13" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.8"
+                <TextBlock Text="选中项目查看详情" FontSize="13" Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.8"
                            HorizontalAlignment="Center" Margin="0,14,0,0"/>
-                <TextBlock Text="链接或文件夹均可" FontSize="11" Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.55"
+                <TextBlock Text="链接或文件夹均可" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.55"
                            HorizontalAlignment="Center" Margin="0,4,0,0"/>
             </StackPanel>
 
@@ -313,7 +313,7 @@
 
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding DisplayName}" FontSize="15" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
+                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -338,7 +338,7 @@
                     <!-- 网址 = 可拖选的展示型文本（唯一实现 Views.SelectableText） -->
                     <views:SelectableText Grid.Column="0" Text="{Binding UrlText, Mode=OneWay}" FontSize="12"
                                           FontFamily="{DynamicResource App.Font.Mono}" TextWrapping="Wrap" VerticalAlignment="Center"
-                                          Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                          Foreground="{DynamicResource App.Text.Secondary}"/>
                     <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="复制链接"
                             Width="26" Height="24" Padding="4" Margin="6,0,0,0" VerticalAlignment="Center"
                             Command="{Binding CopyUrlCommand}">
@@ -383,7 +383,7 @@
                     <TextBlock Text="描述" Style="{StaticResource SideLabel}"/>
                     <!-- 描述 = 可拖选的展示型文本（TextBox 无 LineHeight，行距按字体默认，比原 TextBlock 略紧） -->
                     <views:SelectableText Text="{Binding DescriptionText, Mode=OneWay}" FontSize="12.5"
-                                          TextWrapping="Wrap" Foreground="{DynamicResource OnSurface}"/>
+                                          TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
                 </StackPanel>
             </Border>
 
@@ -444,22 +444,22 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <m3:M3Icon Kind="content-duplicate" Width="26" Height="26"
-                                   Foreground="{DynamicResource Primary}" VerticalAlignment="Center"/>
+                                   Foreground="{DynamicResource App.Accent.Icon}" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding SelectedTotal}" FontSize="22" FontWeight="SemiBold"
                                    Margin="10,0,0,0" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource OnSurface}"/>
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
                         <TextBlock Text="项已选中" FontSize="14" Margin="8,0,0,0" Opacity="0.7" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Style="{StaticResource SideChip}">
-                            <TextBlock FontSize="11" Foreground="{DynamicResource OnPrimaryContainer}">
+                            <TextBlock FontSize="11" Foreground="{DynamicResource App.Text.OnContainer}">
                                 <Run Text="{Binding SelectedFolders, Mode=OneWay}"/>
                                 <Run Text=" 个文件夹"/>
                             </TextBlock>
                         </Border>
                         <Border Style="{StaticResource SideChip}">
-                            <TextBlock FontSize="11" Foreground="{DynamicResource OnPrimaryContainer}">
+                            <TextBlock FontSize="11" Foreground="{DynamicResource App.Text.OnContainer}">
                                 <Run Text="{Binding SelectedLinks, Mode=OneWay}"/>
                                 <Run Text=" 个链接"/>
                             </TextBlock>
@@ -472,14 +472,14 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Ctrl+点击 可增减选择" FontSize="11" Opacity="0.45" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Button Grid.Column="1" Style="{StaticResource NavIconButton}"
                                 Tag="{Binding DeleteSelectionLabel}"
                                 Width="32" Height="32" Margin="6,0,0,0" Command="{Binding DeleteCommand}"
                                 Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                             <!-- 与浏览页同一枚按钮/样式；文案按页定制（回收站 = 「永久删除所选」） -->
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                       Foreground="{DynamicResource App.Support.OnContainer}"/>
+                                       Foreground="{DynamicResource App.Text.OnContainer}"/>
                         </Button>
                     </Grid>
                 </StackPanel>

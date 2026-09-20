@@ -14,7 +14,7 @@
     <UserControl.Resources>
         <!-- 列表行计数药丸（与主栏行/侧栏统一的 M3E 胶囊） -->
         <Style x:Key="CountPill" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource SecondaryContainer}"/>
+            <Setter Property="Background" Value="{DynamicResource App.Support.Container}"/>
             <Setter Property="CornerRadius" Value="9"/>
             <Setter Property="MinHeight" Value="18"/>
             <Setter Property="Padding" Value="9,0"/>
@@ -27,7 +27,7 @@
             <Setter Property="Height" Value="26"/>
             <Setter Property="Padding" Value="10,0"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -39,7 +39,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4"/>
@@ -111,7 +111,7 @@
                     <ControlTemplate TargetType="ToggleButton">
                         <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="10">
                             <m3:M3Icon x:Name="Chevron" Kind="chevron-right" Width="14" Height="14"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"
+                                       Foreground="{DynamicResource App.Text.Secondary}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <m3:M3Icon.LayoutTransform>
                                     <RotateTransform Angle="0"/>
@@ -127,7 +127,7 @@
                                 </Setter>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -135,7 +135,7 @@
             </Setter>
         </Style>
         <Style x:Key="FolderTreeItemStyle" TargetType="TreeViewItem">
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
             <Setter Property="Background" Value="Transparent"/>
             <!-- 聚焦禁描边（UI-SPEC）：节点容器不带原生焦点视觉。
                  树节点按下即获键盘焦点（拖拽起点必先按中节点）——默认的黑色虚线框会在拖动期间
@@ -168,7 +168,7 @@
                                     <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
                                             </DataTrigger>
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>
@@ -180,7 +180,7 @@
                                             <!-- 拖拽悬停落点：与主栏行同一套高亮（同键同色），两栏观感一致。
                                                  落点节点不可能是拖动集合成员（宿主已排除），故不会与"选中"同时成立。 -->
                                             <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -226,7 +226,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Border Background="{DynamicResource SurfaceContainerHigh}"
+    <Border Background="{DynamicResource App.Surface.Card}"
             CornerRadius="0,24,24,0" Margin="0,0,0,8">
         <Grid>
             <Grid.RowDefinitions>
@@ -238,7 +238,7 @@
                     CornerRadius="0,24,0,0" Height="32" Padding="10,0">
                 <TextBlock Text="{Binding HeaderText, ElementName=Root}" FontSize="12" FontWeight="SemiBold"
                            VerticalAlignment="Center"
-                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
             </Border>
             <!-- 选中/进入不经容器 SelectedItemChanged（键盘/展开都走同一通道 = 耦合）：
                  行主体单击由模板层 RowCard 的 MouseLeftButtonUp 显式转发（FolderTreeItem_MouseLeftButtonUp），
@@ -277,14 +277,14 @@
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsRoot}" Value="True">
                                                     <Setter Property="Kind" Value="bookmark"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsLink}" Value="True">
                                                     <Setter Property="Kind" Value="link-variant"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsTrashed}" Value="True">
-                                                    <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
                                                     <Setter Property="Opacity" Value="0.55"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -321,7 +321,7 @@
                                     </Border.Style>
                                     <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
                                                VerticalAlignment="Center"
-                                               Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
                                 </Border>
                             </StackPanel>
                         </HierarchicalDataTemplate>

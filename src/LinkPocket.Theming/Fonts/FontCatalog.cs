@@ -1,22 +1,11 @@
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows.Media;
 using LinkPocket.Contracts;
 
 namespace LinkPocket.Theming.Fonts;
 
-/// <summary>一个可选字体族（系统已装 或 用户导入）。</summary>
-/// <param name="Family">WPF 字体族名（令牌链的第一段）。</param>
-/// <param name="DisplayName">界面上显示的名字（导入字体为"文件名 · 族名"）。</param>
-/// <param name="FilePath">导入字体的文件绝对路径；<c>null</c> = 系统已装字体。</param>
-public sealed record FontChoice(string Family, string DisplayName, string? FilePath = null)
-{
-    /// <summary>是否来自用户导入的文件（可删除）。</summary>
-    public bool IsImported => FilePath is not null;
-}
-
 /// <summary>
-/// 字体装载：系统字体枚举 + 用户文件导入 + **回退链构造**（方案 §6.2）。
+/// 字体装载：系统字体候选 + 用户文件导入 + **回退链构造**（方案 §6.2）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,63 +22,96 @@ public sealed record FontChoice(string Family, string DisplayName, string? FileP
 /// 绝不"静默跳过"或"写入一个指向坏文件的偏好"。
 /// </para>
 /// </remarks>
-public static class FontLoader
+public static class FontCatalog
 {
     /// <summary>回退链里永远保留的系统字体（CJK 兜底 + 通用兜底）。</summary>
     public static readonly IReadOnlyList<string> FallbackChain = new[] { "Microsoft YaHei UI", "Segoe UI" };
 
     private const string LogCategory = "app.theme";
 
+    private static readonly ISystemFontSource ProductionSource = new WpfSystemFontSource();
+    private static ISystemFontSource? _sourceOverride;
+
+    /// <summary>
+    /// 系统字体来源（生产 = <see cref="WpfSystemFontSource"/>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>这是测试隔离缝，不是产品开关</b>：产品的候选列表与"这个族可用吗"的判定都读它；
+    /// 测试注入一份固定列表即可让用例不依赖"本机装了什么字体"。
+    /// <b>真实枚举路径仍由自动化覆盖</b> —— <c>FontSystemTests</c> 里
+    /// <c>系统字体枚举_非空且按显示名排序</c> 直接走生产来源。
+    /// 用例改完必须调 <see cref="ResetForTests"/> 复位（否则会漏进下一个用例）。
+    /// </remarks>
+    public static ISystemFontSource SystemSource
+    {
+        get => _sourceOverride ?? ProductionSource;
+        set
+        {
+            _sourceOverride = value;
+            InvalidateSystemFamilySet();
+        }
+    }
+
     /// <summary>导入字体的存放目录（与 db/logs 同目录）。</summary>
     public static string FontDirectory => Path.Combine(AppContext.BaseDirectory, "fonts");
 
+    private static IReadOnlySet<string>? _systemFamilySet;
+    private static readonly object SystemFamilySetLock = new();
+
+    /// <summary>系统已装字体的族名集合（与 <see cref="SystemSource"/> 同一事实来源）。</summary>
+    public static IReadOnlySet<string> SystemFontFamilies()
+    {
+        var cached = _systemFamilySet;
+        if (cached is not null) return cached;
+        lock (SystemFamilySetLock)
+        {
+            return _systemFamilySet ??= SystemSource.Enumerate()
+                .Select(f => f.Family)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void InvalidateSystemFamilySet()
+    {
+        lock (SystemFamilySetLock)
+        {
+            _systemFamilySet = null;
+        }
+    }
+
     /// <summary>
-    /// 枚举系统已装字体（按显示名排序；只返回可与 WPF 解析的项）。
+    /// 系统 + 已导入的**全部**字体候选（已导入的排前面 —— 用户自己放的先看到）。
+    /// </summary>
+    /// <remarks>
+    /// <b>这是"能不能选这个字体"的唯一事实来源</b>：界面候选列表与启动期的可用性判定
+    /// （<c>ThemeService</c> 恢复偏好时）都读它，两处不会各有一套判据 ——
+    /// 曾经的"启动期只认一张手写白名单"就是第二套判据（会把用户机器上真实存在的字体判成不可用）。
+    /// </remarks>
+    public static IReadOnlyList<FontChoice> All() =>
+        ImportedFonts().Concat(SystemSource.Enumerate()).ToList();
+
+    /// <summary>
+    /// 在**后台线程**装载候选列表（首次进「外观」面板 / 展开字体下拉时调用）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>必须缓存</b>：<c>System.Windows.Media.Fonts.SystemFontFamilies</c> 是一次**全量字体枚举**
-    /// （内部走 GDI/COM 字体表），在装有大量字体的机器上是**秒级**开销。
-    /// 实测教训：不缓存时，「外观」面板每构建一次 VM 就枚举一次（16 个单测 + 探针多次进入该页），
-    /// 累计把测试与探针拖到几分钟 —— 真实用户每进一次「外观」页也会卡同样的时长。
+    /// <b>为什么必须异步 + 后台</b>：全量枚举是"与已装字体数量成正比"的开销
+    /// （缓存只解决第二次之后；第一次无论如何都要付）。把它付在 UI 线程上 =
+    /// 用户每装一批字体就多卡一次，且这类卡顿随机器变差而放大 ——
+    /// <b>不能靠"大多数机器上很快"来免责</b>。
     /// </para>
     /// <para>
-    /// 缓存在**进程生命周期内是安全的**：系统字体集合不会在应用运行期间变化；
-    /// 用户新装的字体要重启应用才可见（与绝大多数桌面应用一致，属可接受边界）。
-    /// 导入字体走另一条路（<see cref="ImportedFonts"/>，每次读目录 → 导入/删除即时可见）。
+    /// 失败**如实抛出**（不返回空列表假装"没有字体"）：调用方负责把消息播报给用户。
     /// </para>
-    /// <para>用 <see cref="Lazy{T}"/> 保证并行首次访问时只枚举一次。</para>
     /// </remarks>
-    public static IReadOnlyList<FontChoice> SystemFonts() => SystemFontsCache.Value;
+    public static Task<IReadOnlyList<FontChoice>> LoadAsync() => Task.Run(All);
 
-    private static readonly Lazy<IReadOnlyList<FontChoice>> SystemFontsCache = new(() =>
-    {
-        var list = new List<FontChoice>();
-        foreach (var family in System.Windows.Media.Fonts.SystemFontFamilies)
-        {
-            // 一个字体族有多个本地化名（如 "Microsoft YaHei UI" / "微软雅黑 UI"）——取第一个作为显示名
-            var name = family.FamilyNames.Values.FirstOrDefault() ?? family.Source;
-            list.Add(new FontChoice(family.Source, name));
-        }
-        list.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture));
-        return list;
-    }, LazyThreadSafetyMode.ExecutionAndPublication);
-
-    /// <summary>系统字体**族名**集合（"这个族可用吗"的快速判定；同样走缓存）。</summary>
-    public static IReadOnlySet<string> SystemFontFamilies() => SystemFamilySet.Value;
-
-    private static readonly Lazy<IReadOnlySet<string>> SystemFamilySet = new(
-        () => SystemFonts().Select(f => f.Family).ToHashSet(StringComparer.OrdinalIgnoreCase),
-        LazyThreadSafetyMode.ExecutionAndPublication);
-
-    /// <summary>
-    /// 枚举已导入字体（按文件名排序）。
-    /// </summary>
+    /// <summary>枚举已导入字体（按文件名排序）。</summary>
     /// <remarks>
     /// <para>
     /// <b>必须缓存，且只在导入/删除时失效</b>：每项都要把字体文件交给
     /// <c>Fonts.GetFontFamilies(Uri)</c> 解析族名 —— 那是**打开并解析字体表**的开销（几十~几百毫秒/个）。
-    /// 而本方法被「外观」面板的每次 VM 构建 / 每次进入页面调用，实测能把面板拖成秒级卡顿。
+    /// 而本方法被候选装载与启动期可用性判定反复调用。
     /// </para>
     /// <para>
     /// 失效时机 = <see cref="Import"/> / <see cref="Remove"/>（唯一会改变该目录内容的两处），
@@ -121,6 +143,21 @@ public static class FontLoader
         {
             _importedCache = null;
         }
+    }
+
+    /// <summary>
+    /// 测试收尾复位：来源覆盖与两个缓存一起回默认。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 必须连**缓存**一起清：只复位 <see cref="SystemSource"/> 而留着族名集合，
+    /// 会让下一个用例继续看到上一个用例注入的假列表 —— 表现为"测试结果取决于执行顺序"的偶发红
+    /// （同族教训见 <c>ThemeService.ResetForTests</c> 的注释）。
+    /// </remarks>
+    public static void ResetForTests()
+    {
+        _sourceOverride = null;
+        InvalidateSystemFamilySet();
+        InvalidateImportedCache();
     }
 
     private static IReadOnlyList<FontChoice> ScanImportedFonts()

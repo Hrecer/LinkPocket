@@ -95,8 +95,8 @@ public static class ThemePublisher
     public static void PublishFonts(ResourceDictionary resources, string uiFamily, string monoFamily)
     {
         ArgumentNullException.ThrowIfNull(resources);
-        resources[AppTokens.FontUi] = Fonts.FontLoader.BuildFontFamily(uiFamily);
-        resources[AppTokens.FontMono] = Fonts.FontLoader.BuildFontFamily(monoFamily);
+        resources[AppTokens.FontUi] = Fonts.FontCatalog.BuildFontFamily(uiFamily);
+        resources[AppTokens.FontMono] = Fonts.FontCatalog.BuildFontFamily(monoFamily);
     }
 
     /// <summary>

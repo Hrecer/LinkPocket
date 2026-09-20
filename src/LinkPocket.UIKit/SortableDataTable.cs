@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -654,7 +654,7 @@ public class SortableDataTable : Grid
         style.Triggers.Add(new Trigger
         {
             Property = IsMouseOverProperty, Value = true,
-            Setters = { new Setter(BackgroundProperty, (Brush)Application.Current.FindResource("SurfaceContainerHighest")) }
+            Setters = { new Setter(BackgroundProperty, (Brush)Application.Current.FindResource("App.Surface.Hover")) }
         });
         row.Style = style;
 
@@ -721,7 +721,7 @@ public class SortableDataTable : Grid
             _paintedSelection.Add(item);
             SelectedItem ??= item;
             if (_rowMap.TryGetValue(item, out var row))
-                row.Background = (Brush)Application.Current.FindResource("PrimaryContainer");
+                row.Background = (Brush)Application.Current.FindResource("App.Accent.Container");
         }
     }
 

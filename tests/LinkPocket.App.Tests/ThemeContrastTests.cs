@@ -41,10 +41,14 @@ public class ThemeContrastTests
             t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceHover)), 4.5, "弱文字对最暗内容底（旧 OnSurfaceMuted 对悬停底 = 3.29 ✗）"),
         new("Support.Icon / Surface.Card",
             t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceCard)), 3.0, "文件夹类型色（替代旧琥珀，对卡面 5.79 ✅）"),
-        new("Support.OnContainer / Support.Container",
-            t => (t.Token(AppTokens.SupportOnContainer), t.Token(AppTokens.SupportContainer)), 7.0, "次强调药丸 / **删除类药丸**（与次操作共用）"),
-        new("Accent.OnContainer / Accent.Container",
-            t => (t.Token(AppTokens.AccentOnContainer), t.Token(AppTokens.AccentContainer)), 7.0, "选中指示器 / 落点高亮"),
+        new("Text.OnContainer / Support.Container",
+            t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.SupportContainer)), 7.0, "次强调药丸 / **删除类药丸**（与次操作共用）"),
+        new("Text.OnContainer / Accent.Container",
+            t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.AccentContainer)), 7.0, "选中指示器 / 落点高亮上的字（同一个容器字令牌服务两种容器）"),
+        new("Support.Icon / Accent.Container",
+            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.AccentContainer)), 3.0, "文件夹图标落在选中底上（列表里选中行 + 类型图标是常态组合）"),
+        new("Accent.Icon / Accent.Container",
+            t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.AccentContainer)), 3.0, "强调图标落在选中底上"),
     };
 
     public static IEnumerable<object[]> ThemeIds() =>
@@ -124,9 +128,9 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.AccentContainer)));
-        Assert.Equal(0x2F1E40u, Rgb(t.Token(AppTokens.AccentOnContainer)));
+        // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
+        Assert.Equal(0x352023u, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xFDDADDu, Rgb(t.Token(AppTokens.SupportContainer)));
-        Assert.Equal(0x352023u, Rgb(t.Token(AppTokens.SupportOnContainer)));
         Assert.Equal(0x72585Au, Rgb(t.Token(AppTokens.SupportIcon)));
     }
 

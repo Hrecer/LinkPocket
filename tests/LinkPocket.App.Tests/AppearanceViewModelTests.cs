@@ -163,12 +163,12 @@ public class AppearanceViewModelTests : IDisposable
         Assert.False(vm.HasDiagnostics, vm.Diagnostics);
     }
 
-    // ── 字体逻辑（**不枚举系统字体**）───────────────────────────────
+    // ── 字体逻辑 ────────────────────────────────────────────────────
 
     [Fact]
-    public void 未枚举字体候选时_面板状态可用且不崩()
+    public void 未装载字体候选时_面板状态可用且不崩()
     {
-        // 候选为空是**合法状态**（惰性：用户没展开下拉就不该枚举系统字体）
+        // 候选为空是**合法状态**（惰性：用户没展开下拉就不该付全量枚举的钱）
         var vm = NewVm();
         Assert.Empty(vm.UiFonts);
         Assert.Empty(vm.MonoFonts);
@@ -176,21 +176,95 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
-    public void 字体候选_可被显式注入_且按族名匹配()
+    public async Task 字体候选_界面与等宽都有候选_且投影当前字体()
     {
+        // ⚠️ 这条用例**走真实系统字体枚举**（生产字体来源），断言"枚举 + 候选 + 投影"整条链路真的成立。
+        //    它曾经因为"据说会吊住测试宿主"被换成两个弱用例（只断言"能往集合里塞假项"），
+        //    等于把"枚举路径有没有坏"的覆盖让给了探针 —— 而探针只在 UI 改动时才跑。
+        //    现在枚举在后台线程（FontCatalog.LoadAsync）+ 实例内缓存，这条覆盖必须留着。
+        ThemeService.ResetForTests();
         var vm = NewVm();
-        vm.UiFonts.Add(FontOption("FakeUI"));
-        vm.UiFonts.Add(FontOption(FontLoader.DefaultUiFamily));
 
-        Assert.Contains(vm.UiFonts, f => f.Family == FontLoader.DefaultUiFamily);
-        Assert.True(vm.UiFonts.First(f => f.Family == "FakeUI").Family == "FakeUI");
+        await vm.EnsureFontsLoadedAsync();
+
+        Assert.NotEmpty(vm.UiFonts);
+        Assert.NotEmpty(vm.MonoFonts);
+        Assert.Equal(vm.UiFonts.Count, vm.MonoFonts.Count);   // 两个下拉共用同一份候选
+
+        // 投影：当前已应用字体必须在候选里被选中（否则下拉看起来"没生效"）
+        Assert.NotNull(vm.SelectedUiFont);
+        Assert.Equal(ThemeService.CurrentUiFont, vm.SelectedUiFont!.Family, ignoreCase: true);
+        Assert.NotNull(vm.SelectedMonoFont);
+        Assert.Equal(ThemeService.CurrentMonoFont, vm.SelectedMonoFont!.Family, ignoreCase: true);
+
+        // 默认字体一定在候选里（回退链承诺它存在）
+        Assert.Contains(vm.UiFonts, f => f.Family == FontCatalog.DefaultUiFamily);
     }
 
     [Fact]
-    public void 删除系统字体_明确拒绝并播报()
+    public async Task 字体候选_二次装载命中缓存_不重复枚举()
+    {
+        // 缓存是"进一次页面枚举一次"这条性能缺陷的解药，必须被钉住。
+        ThemeService.ResetForTests();
+        var source = new CountingSystemFontSource(new FontChoice("Fake UI", "Fake UI"));
+        try
+        {
+            FontCatalog.SystemSource = source;
+            var vm = NewVm();
+            await vm.EnsureFontsLoadedAsync();
+            await vm.EnsureFontsLoadedAsync();          // 幂等：不该再枚举
+            Assert.Equal(1, source.EnumerateCalls);
+            Assert.Contains(vm.UiFonts, f => f.Family == "Fake UI");
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public async Task 导入字体失败_状态行给出用户可见原因_且不写偏好()
+    {
+        // N1 要求"导入失败的用户可见反馈"：失败必须写进 Status（面板显示在状态行上），
+        // 而不是只写日志（那样用户点了「导入字体…」什么都没发生）。
+        ThemeService.ResetForTests();
+        var vm = NewVm();
+        var temp = Path.Combine(Path.GetTempPath(), "lp-font-ui-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        try
+        {
+            var fake = Path.Combine(temp, "not-a-font.ttf");
+            File.WriteAllText(fake, "这不是字体");
+
+            var ok = await vm.ImportFontAsync(fake);
+
+            Assert.False(ok);
+            Assert.Contains("导入失败", vm.Status, StringComparison.Ordinal);
+            Assert.False(File.Exists(UiPreferenceStore.FilePath), "导入失败不得写偏好");
+        }
+        finally
+        {
+            try { Directory.Delete(temp, recursive: true); } catch { /* 测试自清尽力而为 */ }
+        }
+    }
+
+    /// <summary>会数枚举次数的假来源（钉住"缓存生效、不重复枚举"）。</summary>
+    private sealed class CountingSystemFontSource(params FontChoice[] fonts) : ISystemFontSource
+    {
+        public int EnumerateCalls { get; private set; }
+
+        public IReadOnlyList<FontChoice> Enumerate()
+        {
+            EnumerateCalls++;
+            return fonts;
+        }
+    }
+
+    [Fact]
+    public async Task 删除系统字体_明确拒绝并播报()
     {
         var vm = NewVm();
-        vm.DeleteFont(FontOption("Microsoft YaHei UI"));   // 无文件路径 = 系统字体
+        await vm.DeleteFontAsync(FontOption("Microsoft YaHei UI"));   // 无文件路径 = 系统字体
         Assert.Contains("系统字体不可删除", vm.Status, StringComparison.Ordinal);
     }
 
@@ -198,7 +272,7 @@ public class AppearanceViewModelTests : IDisposable
     public void 字体自检_默认字体无告警()
     {
         var vm = NewVm();
-        Assert.Equal(string.Empty, vm.InspectFont(FontOption(FontLoader.DefaultUiFamily)));
+        Assert.Equal(string.Empty, vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily)));
     }
 
     // ── 必须碰全局的 3 个用例（应用/落盘），各自靠 Dispose 复位 ──────
@@ -245,19 +319,19 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
-    public void 恢复默认外观_主题字体选择全回默认_且清偏好()
+    public async Task 恢复默认外观_主题字体选择全回默认_且清偏好()
     {
         ThemeService.ResetForTests();
         ThemeService.ApplyById("sakura-panna", null);
         var vm = NewVm();
         Assert.Equal("sakura-panna", vm.SelectedThemeId);   // 入口对齐：显示当前已应用的主题
 
-        vm.ResetToDefault();
+        await vm.ResetToDefaultAsync();
 
         Assert.Equal("已恢复默认外观", vm.Status);
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
-        Assert.Equal(FontLoader.DefaultUiFamily, ThemeService.CurrentUiFont);
+        Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
         Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.SlotCount);
         Assert.True(vm.ThemeCards.First(c => c.IsDefault).IsSelected);
         Assert.False(File.Exists(_path), "恢复默认外观必须清掉偏好文件");
@@ -268,12 +342,12 @@ public class AppearanceViewModelTests : IDisposable
     {
         ThemeService.ResetForTests();
         var vm = NewVm();
-        vm.SelectedUiFont = FontOption(FontLoader.DefaultUiFamily);
-        vm.SelectedMonoFont = FontOption(FontLoader.DefaultMonoFamily);
+        vm.SelectedUiFont = FontOption(FontCatalog.DefaultUiFamily);
+        vm.SelectedMonoFont = FontOption(FontCatalog.DefaultMonoFamily);
         vm.ApplyFonts();
 
-        Assert.Equal(FontLoader.DefaultUiFamily, ThemeService.CurrentUiFont);
+        Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
         var prefs = UiPreferenceStore.Load(out _);
-        Assert.Equal(FontLoader.DefaultUiFamily, prefs.Fonts.Ui);
+        Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
     }
 }

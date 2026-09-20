@@ -15,10 +15,10 @@
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Padding" Value="14,0"/>
             <Setter Property="MinHeight" Value="44"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
-            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
-            <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
@@ -38,8 +38,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Surface.Base}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Root" Property="Opacity" Value="0.38"/>
@@ -68,8 +68,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Surface.Base}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -81,7 +81,7 @@
         <Style x:Key="MiniIconButton" TargetType="Button">
             <Setter Property="Width" Value="26"/>
             <Setter Property="Height" Value="26"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -92,8 +92,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource Primary}"/>
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.35"/>
@@ -126,8 +126,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource SurfaceContainerLow}"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource App.Surface.Base}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -136,7 +136,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource SurfaceContainerLow}">
+    <Grid Background="{DynamicResource App.Surface.Base}">
         <!-- ===== 沉浸式 hero 头部（与详情页同骨架）：
          无传统顶栏 —— 编辑/新建页没有独立返回按钮：取消即返回（左上返回与取消使命重复，已彻底删除），
          取消/保存收进右上浮动胶囊组；页面标题由 hero 头部卡的小字幕承担。 -->
@@ -161,7 +161,7 @@
                         CornerRadius="20" Padding="20,18">
                     <StackPanel>
                         <TextBlock Text="{Binding TitleText}" FontSize="11.5" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Primary}" Opacity="0.9" Margin="2,0,0,10"/>
+                                   Foreground="{DynamicResource App.Accent.Icon}" Opacity="0.9" Margin="2,0,0,10"/>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -187,7 +187,7 @@
                                 </Image>
                                 <!-- 无 favicon 时统一回落小地球（与右侧栏/详情页一致），不用「编辑/新建」符号 -->
                                 <m3:M3Icon Kind="earth" Width="22" Height="22"
-                                           Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
+                                           Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.5"
                                            HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <m3:M3Icon.Style>
                                         <Style TargetType="m3:M3Icon">
@@ -204,7 +204,7 @@
                         </Border>
                         <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
                             <TextBlock Text="名称" FontSize="12" Opacity="0.55" Margin="2,0,0,2"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <TextBox Style="{StaticResource HeroTitleField}"
                                      Text="{Binding LinkTitle, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
@@ -213,7 +213,7 @@
                 </Border>
 
                 <!-- 错误横幅 -->
-                <Border Background="{DynamicResource ErrorContainer}" CornerRadius="12" Padding="14,10" Margin="0,14,0,0">
+                <Border Background="{DynamicResource App.Support.Container}" CornerRadius="12" Padding="14,10" Margin="0,14,0,0">
                     <Border.Style>
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed"/>
@@ -226,9 +226,9 @@
                     </Border.Style>
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="alert-circle-outline" Width="16" Height="16" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource OnErrorContainer}"/>
+                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
                         <TextBlock Text="{Binding Error}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource OnErrorContainer}"/>
+                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </StackPanel>
                 </Border>
 
@@ -243,9 +243,9 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <m3:M3Icon Kind="link-variant" Width="13" Height="13" Opacity="0.6" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
                                 <TextBlock Text="URL" FontSize="12" Opacity="0.6" Margin="5,0,0,0"
-                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <!-- 自动解析：抓取标题/描述/图标，空缺字段自动填充 -->
@@ -281,9 +281,9 @@
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
                             <TextBlock Text="描述" FontSize="12" Opacity="0.6"
-                                       Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
                             <TextBlock Text="支持 Markdown" FontSize="11" Opacity="0.5" Margin="10,0,0,0"
-                                       VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
                         </StackPanel>
                         <TextBox Style="{StaticResource PageMultilineField}"
                                  Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>

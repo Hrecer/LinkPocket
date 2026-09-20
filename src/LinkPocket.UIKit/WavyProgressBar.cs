@@ -11,7 +11,7 @@ namespace LinkPocket.Views;
 /// 相位经 CompositionTarget.Rendering 逐帧推进；仅在可见时渲染。
 /// 用法（备份进度遮罩）：
 /// <code>
-/// &lt;views:WavyProgressBar ActiveBrush="{DynamicResource Primary}" TrackBrush="{DynamicResource OutlineVariant}"/&gt;
+/// &lt;views:WavyProgressBar ActiveBrush="{DynamicResource App.Accent.Fill}" TrackBrush="{DynamicResource App.Line.Variant}"/&gt;
 /// </code>
 /// </summary>
 public class WavyProgressBar : FrameworkElement

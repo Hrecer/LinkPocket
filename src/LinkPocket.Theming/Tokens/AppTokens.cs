@@ -1,4 +1,4 @@
-namespace LinkPocket.Theming.Tokens;
+﻿namespace LinkPocket.Theming.Tokens;
 
 /// <summary>
 /// **应用令牌键名总表**（L2 层）：界面/样式只引这些键，**禁止任何颜色字面量**。
@@ -16,7 +16,7 @@ namespace LinkPocket.Theming.Tokens;
 /// </para>
 /// <para>
 /// <b>警告色彻底退场</b>：本表**没有**任何"危险 / 警告"色的位置——破坏性动作与次操作共用同一套
-/// 呈现（<c>Support.Container</c> / <c>Support.OnContainer</c> + 普通图标钮），不可逆性完全由
+/// 呈现（<c>Support.Container</c> / <c>Text.OnContainer</c> + 普通图标钮），不可逆性完全由
 /// 「确认文案 + 二次确认」承担（方案 §5.6 / 决策 3）。同理，**全站不使用红色**：校验错误的描边
 /// 用 <see cref="LineInvalid"/>（= 文字主色）。
 /// </para>
@@ -48,7 +48,13 @@ public static class AppTokens
     /// <summary>浮层底（菜单 / Tooltip / Popup）= 库 <c>Surface</c>。</summary>
     public const string SurfaceFloating = "App.Surface.Floating";
 
-    // ── 文字族（三档，取自主题中性族 —— 不再是黑）───────────────────────────
+    // ── 文字族（取自主题中性族 / 强调族 —— 不再是黑）─────────────────────────
+    //
+    // **界面上的每一个 Foreground 都必须是这一族**（架构护栏 `ThemeRulesTests.界面层_文字色只能引 App.Text`）：
+    // 库角色键（OnSurface / Primary / …）**也能**当文字色，但那等于绕过语义层 ——
+    // 主题换档时"哪一处字该跟着谁变"就散落在各页 XAML 里，再也盘不清。
+    // 本族是**封闭集合**：新增文字色必须先进这里（连同派生式与对比度断言），再落界面。
+
     /// <summary>正文（T12，带主题色相的墨）= 库 <c>OnSurface</c>。</summary>
     public const string TextPrimary = "App.Text.Primary";
 
@@ -60,6 +66,17 @@ public static class AppTokens
 
     /// <summary>强调填充上的字（白）。</summary>
     public const string TextOnAccent = "App.Text.OnAccent";
+
+    /// <summary>
+    /// 容器（强调 / 次强调）上的字（T15）。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么强调容器与次强调容器共用一个令牌</b>：两族的容器字**本来就是同一档**（T15）——
+    /// 出厂默认主题实测 <c>#2F1E40</c>（强调）/ <c>#352023</c>（支撑），对各自容器的对比度都在 11.7 以上，
+    /// 观感都是"坐在浅色容器上的深墨"。拆成两个令牌只会让界面在每个点上随机挑一个 ——
+    /// 同一个语义（"浅色容器上的字"）只该有一个真值。
+    /// </remarks>
+    public const string TextOnContainer = "App.Text.OnContainer";
 
     // ── 强调族（主操作）──────────────────────────────────────────────────
     /// <summary>主药丸底（= <c>Primary</c>）。</summary>
@@ -74,15 +91,11 @@ public static class AppTokens
     /// <summary>强调容器（选中指示器 / 落点高亮 / 徽标）。</summary>
     public const string AccentContainer = "App.Accent.Container";
 
-    /// <summary>强调容器上的字。</summary>
-    public const string AccentOnContainer = "App.Accent.OnContainer";
 
     // ── 次强调族（支撑族：计数 / 分段 / 次要药丸 / **删除类药丸同款**）─────────
     /// <summary>次强调容器（**破坏性动作与次操作共用这一套**）。</summary>
     public const string SupportContainer = "App.Support.Container";
 
-    /// <summary>次强调容器上的字。</summary>
-    public const string SupportOnContainer = "App.Support.OnContainer";
 
     /// <summary>次强调图标取色。</summary>
     public const string SupportIcon = "App.Support.Icon";
@@ -163,9 +176,9 @@ public static class AppTokens
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
     {
         SurfaceBase, SurfaceCard, SurfaceHover, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceDialog, SurfaceFloating,
-        TextPrimary, TextSecondary, TextMuted, TextOnAccent,
-        AccentFill, AccentIcon, AccentText, AccentContainer, AccentOnContainer,
-        SupportContainer, SupportOnContainer, SupportIcon,
+        TextPrimary, TextSecondary, TextMuted, TextOnAccent, TextOnContainer,
+        AccentFill, AccentIcon, AccentText, AccentContainer,
+        SupportContainer, SupportIcon,
         TypeFolder, TypeLink,
         StateHover, StatePressed, StateTitleBarHover, StateTitleBarPressed, StateDisabledFill, StateDisabledContent,
         LineOutline, LineVariant, LineInvalid,

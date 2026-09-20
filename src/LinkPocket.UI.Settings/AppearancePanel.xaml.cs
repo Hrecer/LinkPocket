@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -7,7 +8,8 @@ using LinkPocket.ViewModels;
 using Microsoft.Win32;
 
 namespace LinkPocket.Views
-{    /// <summary>
+{
+    /// <summary>
     /// 「外观」面板（方案 §7）：主题卡 / 自选配色（4·5 色槽 + 取色盘）/ 字体。
     /// </summary>
     /// <remarks>
@@ -34,6 +36,27 @@ namespace LinkPocket.Views
 
         /// <summary>取色盘是否打开（宿主据此决定 Esc 命令的 CanExecute）。</summary>
         public bool IsPickerOpen => PickerOverlay.Visibility == Visibility.Visible;
+
+        /// <summary>
+        /// 装载字体候选（**唯一会枚举系统字体**的入口；下拉展开与探针都走它）。
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// 异步是硬要求：枚举开销与机器上装的字体数量成正比，付在 UI 线程上就是"展开下拉卡一下"，
+        /// 且随机器变差而放大（<c>FontCatalog.LoadAsync</c> 在后台线程跑）。
+        /// </para>
+        /// <para>
+        /// 装载完把"当前字体"投影到下拉上 —— 否则下拉有列表但没有选中项，看起来像没生效。
+        /// </para>
+        /// </remarks>
+        public async Task LoadFontCandidatesAsync()
+        {
+            await ViewModel.EnsureFontsLoadedAsync().ConfigureAwait(true);
+            SyncFontCombos();
+            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
+            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
+            StatusText.Text = ViewModel.Status;
+        }
 
         /// <summary>
         /// 关闭取色盘并放弃本次草稿（Esc / 点遮罩 / 取消按钮共用这一条出口）。
@@ -72,14 +95,13 @@ namespace LinkPocket.Views
             UpdateSlotButtons();
             UiFontCombo.SelectedItem = vm.SelectedUiFont;
             MonoFontCombo.SelectedItem = vm.SelectedMonoFont;
-
         }
 
         /// <summary>进入面板时的入口对齐：把当前已应用的外观投影到控件上（不重算、不重置）。</summary>
         public void Refresh()
         {
-            // ⚠️ 这里**不**装载字体候选：候选列表要枚举系统全部字体，会拉起 WPF 字体缓存服务等
-            //    进程级副作用（实测把测试宿主吊住不退）。改为**用户展开下拉时才枚举**（见 EnsureFonts）。
+            // 候选**不在这里装载**：枚举系统字体与机器上装的字体数量成正比，进页面就付是浪费；
+            // 用户真的展开下拉时才装载（见 UiFontCombo_DropDownOpened）。
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
@@ -87,16 +109,10 @@ namespace LinkPocket.Views
             StatusText.Text = ViewModel.Status;
         }
 
-        /// <summary>用户展开字体下拉时才真正枚举系统字体（唯一需要全量列表的时刻）。</summary>
-        private void UiFontCombo_DropDownOpened(object sender, EventArgs e) => EnsureFonts();
+        /// <summary>用户展开字体下拉时才真正装载候选（唯一需要全量列表的时刻）。</summary>
+        private async void UiFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
 
-        private void MonoFontCombo_DropDownOpened(object sender, EventArgs e) => EnsureFonts();
-
-        private void EnsureFonts()
-        {
-            ViewModel.EnsureFontsLoaded();
-            SyncFontCombos();
-        }
+        private async void MonoFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
 
         private void SyncFontCombos()
         {
@@ -180,9 +196,9 @@ namespace LinkPocket.Views
             DiagnosticsBox.Visibility = ViewModel.HasDiagnostics ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        private void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
+        private async void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
         {
-            ViewModel.ResetToDefault();
+            await ViewModel.ResetToDefaultAsync();
             SlotList.ItemsSource = ViewModel.Slots;
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
@@ -215,7 +231,7 @@ namespace LinkPocket.Views
             FontWarnBox.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        private void ImportFontBtn_Click(object sender, RoutedEventArgs e)
+        private async void ImportFontBtn_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFileDialog
             {
@@ -226,16 +242,18 @@ namespace LinkPocket.Views
             };
             if (dialog.ShowDialog() != true) return;
 
-            ViewModel.ImportFont(dialog.FileName);
+            // 导入失败必须让**用户**看见：VM 把原因写进 Status，这一行把它显示在状态行上。
+            // 只写日志不播报 = 用户点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
+            await ViewModel.ImportFontAsync(dialog.FileName);
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             StatusText.Text = ViewModel.Status;
         }
 
-        private void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
+        private async void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
         {
             if (ViewModel.SelectedUiFont is not { } font) return;
-            ViewModel.DeleteFont(font);
+            await ViewModel.DeleteFontAsync(font);
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             StatusText.Text = ViewModel.Status;
@@ -244,6 +262,7 @@ namespace LinkPocket.Views
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.ApplyFonts();
+            SyncFontCombos();
             StatusText.Text = ViewModel.Status;
         }
     }

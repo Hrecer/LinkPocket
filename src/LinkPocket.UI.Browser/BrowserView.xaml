@@ -12,7 +12,7 @@
              d:DesignHeight="600" d:DesignWidth="1000"
              Focusable="True"
              FocusVisualStyle="{x:Null}"
-             Background="{DynamicResource SurfaceContainerLow}">
+             Background="{DynamicResource App.Surface.Base}">
 
     <!-- 快捷键不再用 XAML InputBindings 声明：键位唯一事实源 = BrowserShortcuts（LinkPocket.Input 子系统），
          由 ShortcutHost 按"栏作用域"统一分发（点击主栏/左栏即切换活跃作用域，见 BrowserView.xaml.cs）。 -->
@@ -39,7 +39,7 @@
         <Style x:Key="RowCellText" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="Margin" Value="0,0,12,0"/>
         </Style>
@@ -58,7 +58,7 @@
         <Border Grid.Row="1" Background="Transparent"
                 Padding="12,0,12,8"
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
-            <Border HorizontalAlignment="Left" Background="{DynamicResource SurfaceContainerHigh}"
+            <Border HorizontalAlignment="Left" Background="{DynamicResource App.Surface.Card}"
                     CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
                 <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字 -->
@@ -108,7 +108,7 @@
                 Padding="12,0,12,8"
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
-                <Border DockPanel.Dock="Left" Background="{DynamicResource SurfaceContainerHigh}"
+                <Border DockPanel.Dock="Left" Background="{DynamicResource App.Surface.Card}"
                         CornerRadius="17" Padding="2" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource NavIconButton}" Tag="后退 (Alt+←)"
@@ -184,7 +184,7 @@
                  消除与两侧面板之间生硬的竖直色块边界。 -->
             <!-- 列表卡自管"点空白清选中"（与其它区域同一实现 UIKit BlankClick；命中行不算空白）。
                  详情栏/分隔线在别的列，不经过这里。 -->
-            <Border Grid.Column="1" Background="{DynamicResource SurfaceContainerHigh}"
+            <Border Grid.Column="1" Background="{DynamicResource App.Surface.Card}"
                     CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True"
                     views:BlankClick.Command="{Binding ClearMainPaneSelectionCommand}"
                     AllowDrop="True" DragOver="ListCard_DragOver" DragLeave="ListCard_DragLeave" Drop="ListCard_Drop">
@@ -318,7 +318,7 @@
                                         <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsCut}" Value="True">
                                                     <Setter Property="Opacity" Value="0.45"/>
@@ -327,7 +327,7 @@
                                                      与"选中"同键但语义不同；成环落点（拖到自己/自己的子文件夹）
                                                      可能与选中行重合——同键同色，因此不会出现"两种底色打架"。 -->
                                                 <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -385,7 +385,7 @@
                                             </Image>
                                             <!-- 书签默认图标（favicon 为空时） -->
                                             <m3:M3Icon Kind="link-variant" Width="16" Height="16"
-                                                                     Foreground="{DynamicResource OnSurfaceMuted}" VerticalAlignment="Center">
+                                                                     Foreground="{DynamicResource App.Text.Muted}" VerticalAlignment="Center">
                                                 <m3:M3Icon.Style>
                                                     <Style TargetType="m3:M3Icon">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -429,7 +429,7 @@
                                             </Border.Style>
                                             <TextBlock Text="{Binding LinkCount}" FontSize="10.5" FontWeight="Medium"
                                                        VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource OnSecondaryContainer}"/>
+                                                       Foreground="{DynamicResource App.Text.OnContainer}"/>
                                         </Border>
                                         <!-- 就地改名编辑框（Windows 口径）：覆盖在名称文本与计数药丸之上，
                                              宽度 = 名称列剩余整宽（跨 文本/药丸/余白 三列，由 * 列吸收剩余）；
@@ -482,17 +482,17 @@
                 </Grid.Style>
                 <StackPanel>
                     <Border Width="96" Height="96" CornerRadius="32"
-                            Background="{DynamicResource PrimaryContainer}"
+                            Background="{DynamicResource App.Accent.Container}"
                             HorizontalAlignment="Center">
                         <m3:M3Icon Kind="folder-open-outline" Width="40" Height="40"
-                                   Foreground="{DynamicResource OnPrimaryContainer}"
+                                   Foreground="{DynamicResource App.Text.OnContainer}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <TextBlock Text="这里还空空如也" FontSize="17" FontWeight="SemiBold"
-                               Foreground="{DynamicResource OnSurface}"
+                               Foreground="{DynamicResource App.Text.Primary}"
                                HorizontalAlignment="Center" Margin="0,18,0,0"/>
                     <TextBlock Text="新建文件夹或链接，也可以把浏览器里的网址导入进来" FontSize="12"
-                               Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.85"
+                               Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.85"
                                HorizontalAlignment="Center" Margin="0,6,0,0"/>
                 </StackPanel>
             </Grid>
@@ -527,9 +527,9 @@
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource OnSurfaceVariant}"/>
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <!-- 选中信息：PrimaryContainer 药丸强调（MD3E 关键状态用色彩点亮） -->
-                    <Border CornerRadius="9" Background="{DynamicResource PrimaryContainer}"
+                    <Border CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
                             Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -542,10 +542,10 @@
                             </Style>
                         </Border.Style>
                         <TextBlock Text="{Binding SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource OnPrimaryContainer}"/>
+                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>
-                <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource OnSurfaceMuted}"
+                <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.6"/>
             </Grid>
         </Border>

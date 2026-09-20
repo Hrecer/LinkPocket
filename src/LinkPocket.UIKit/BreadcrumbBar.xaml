@@ -19,9 +19,9 @@
             <Setter Property="MinWidth" Value="120"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-            <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
-            <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource App.Accent.Fill}"/>
             <Setter Property="Validation.ErrorTemplate" Value="{x:Null}"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Visibility" Value="Collapsed"/>
@@ -64,12 +64,12 @@
             <Style TargetType="Border">
                 <Setter Property="Padding" Value="8,4"/>
                 <Setter Property="CornerRadius" Value="20"/>
-                <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
+                <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
                 <Setter Property="BorderBrush" Value="Transparent"/>
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
-                        <Setter Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                        <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                        <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
                     </DataTrigger>
                 </Style.Triggers>
             </Style>
@@ -85,7 +85,7 @@
                         Padding="8,0" MinHeight="32" Height="32" Click="OverflowButton_Click">
                     <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
                         </Style>
                     </Button.Style>
                     <TextBlock Text="«" FontSize="14"/>
@@ -117,14 +117,14 @@
                                         DragOver="Crumb_DragOver" DragLeave="Crumb_DragLeave" Drop="Crumb_Drop">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceVariant}"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
                                             <Setter Property="Padding" Value="12,0"/>
                                             <Setter Property="MinHeight" Value="32"/>
                                             <Setter Property="Height" Value="32"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsLast}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource PrimaryContainer}"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource OnPrimaryContainer}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
                                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -132,7 +132,7 @@
                                     </Button.Style>
                                     <TextBlock Text="{Binding Name}"/>
                                 </Button>
-                                <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource OnSurfaceMuted}" Margin="2,0">
+                                <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Muted}" Margin="2,0">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Visible"/>
@@ -153,8 +153,8 @@
             <!-- « 折叠段清单：点 « 弹出被折叠的祖先层级，点击经 CrumbClickCommand 直达 -->
             <Popup x:Name="OverflowPopup" PlacementTarget="{Binding ElementName=OverflowButton}"
                    Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                <Border Background="{DynamicResource App.Surface.Card}"
+                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
                         CornerRadius="12" MaxHeight="260" MinWidth="140" Padding="0,4">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
@@ -166,7 +166,7 @@
                             <DataTemplate>
                                 <TextBlock Text="{Binding Name}" FontSize="13" Height="28" Margin="12,0"
                                            VerticalAlignment="Center" Cursor="Hand"
-                                           Foreground="{DynamicResource OnSurface}"/>
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -190,8 +190,8 @@
                    PlacementTarget="{Binding ElementName=PathEditBox}"
                    Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
                    Closed="PathCandidatesPopup_Closed">
-                <Border Background="{DynamicResource SurfaceContainerHigh}"
-                        BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
+                <Border Background="{DynamicResource App.Surface.Card}"
+                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
                         CornerRadius="12" MaxHeight="220" MinWidth="180" Padding="0,4">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
@@ -205,7 +205,7 @@
                             <DataTemplate>
                                 <TextBlock Text="{Binding}" FontSize="12" Height="26" Margin="12,0"
                                            VerticalAlignment="Center"
-                                           Foreground="{DynamicResource OnSurface}"/>
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

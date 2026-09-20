@@ -201,10 +201,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         _selectedThemeId = ThemeService.Current.Id;
         ProjectCardSelection();
 
-        // ⚠️ 这里**不**枚举字体：`Fonts.SystemFontFamilies` 的全量枚举会启动 WPF 字体缓存服务等
-        //    进程级副作用（实测会把测试宿主吊住不退出，表现为"CI 卡死"）。字体候选改为**惰性**——
-        //    只有用户真的打开字体下拉/面板要展示候选时才枚举（见 EnsureFontsLoaded）。
-        //    当前选中字体直接取 ThemeService 的状态，不依赖候选列表。
+        // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
+        // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
+        // 当前选中字体直接取 ThemeService 的状态，不依赖候选列表。
     }
 
     private bool _fontsLoaded;
@@ -214,21 +213,33 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么必须惰性到"用户展开字体下拉"这一步</b>：候选列表要枚举**系统全部字体**
-    /// （<c>Fonts.SystemFontFamilies</c>）。这条路径会拉起 WPF 字体缓存服务等进程级副作用，
-    /// 在测试宿主里会**挂住不退**（实测：`App.Tests` 里一旦触发，宿主 20s+ 不退出，
-    /// 表现为 CI 卡死；单独跑或不触发则 1.2s 正常）。真实界面里它只是"进页面时略慢"，可以接受。
+    /// <b>为什么惰性</b>：候选列表要枚举**系统全部字体**，开销与机器上装的字体数量成正比
+    /// （缓存只解决第二次之后；第一次无论如何都要付）。用户没打开字体下拉就不该付这笔钱。
     /// </para>
     /// <para>
-    /// 因此：**构造期不枚举、进页面也不枚举**，只有 ComboBox 真的要展示候选时才枚举。
-    /// 测试则完全不触发这条路径，改断言字体逻辑（回退判定、落盘、导入拒绝、度量自检）。
+    /// <b>为什么在后台线程</b>（<see cref="Fonts.FontCatalog.LoadAsync"/>）：把它付在 UI 线程上 =
+    /// 用户每装一批字体就多卡一次，且卡顿随机器变差而放大。"大多数机器上很快"不构成免责 ——
+    /// 慢就是慢，正确做法是异步 + 缓存，而不是让用户"别去触发它"。
+    /// </para>
+    /// <para>
+    /// 失败**如实播报**（不静默回退成空列表）：枚举炸了要让用户看见，而不是给他一个空下拉。
     /// </para>
     /// </remarks>
-    public void EnsureFontsLoaded()
+    public async Task EnsureFontsLoadedAsync()
     {
         if (_fontsLoaded) return;
         _fontsLoaded = true;
-        ReloadFonts();
+        try
+        {
+            await ReloadFontsAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            // 失败可重试：标志退回 false，用户再展开一次下拉就会重跑（而不是永久卡在空列表）
+            _fontsLoaded = false;
+            LpLog.Error("装载字体候选失败", ex, LogCategory);
+            Status = $"字体列表装载失败：{ex.GetBaseException().Message}";
+        }
     }
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
@@ -439,35 +450,59 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     // ── 字体 ─────────────────────────────────────────────────────────
 
-    /// <summary>重新枚举字体候选（导入/删除后调用）。</summary>
-    public void ReloadFonts()
+    /// <summary>
+    /// 重新装载字体候选（导入 / 删除 / 恢复默认后调用）—— **后台枚举 + 投影**。
+    /// </summary>
+    /// <remarks>
+    /// <b>唯一装载路径</b>：候选集合只在 <see cref="ReloadFontsAsync"/> 里被重写，
+    /// 导入/删除/恢复默认都汇到它 —— 不给自己留"顺手再拼一次列表"的第二条路
+    /// （第二份实现必然与第一份漂移，这是本仓踩过的老坑）。
+    /// </remarks>
+    public async Task ReloadFontsAsync()
     {
         var currentUi = ThemeService.CurrentUiFont;
         var currentMono = ThemeService.CurrentMonoFont;
 
+        var all = await FontCatalog.LoadAsync().ConfigureAwait(true);
+
         UiFonts.Clear();
         MonoFonts.Clear();
-        var all = FontLoader.ImportedFonts().Concat(FontLoader.SystemFonts()).ToList();
         foreach (var f in all)
         {
             UiFonts.Add(new FontOptionViewModel(f));
             MonoFonts.Add(new FontOptionViewModel(f));
         }
 
-        SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, currentUi, StringComparison.OrdinalIgnoreCase));
-        SelectedMonoFont = MonoFonts.FirstOrDefault(f => string.Equals(f.Family, currentMono, StringComparison.OrdinalIgnoreCase));
+        SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, currentUi, StringComparison.OrdinalIgnoreCase))
+                         ?? UiFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultUiFamily, StringComparison.OrdinalIgnoreCase));
+        SelectedMonoFont = MonoFonts.FirstOrDefault(f => string.Equals(f.Family, currentMono, StringComparison.OrdinalIgnoreCase))
+                           ?? MonoFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>导入一个字体文件（失败明确报错、不写偏好）。</summary>
-    public bool ImportFont(string path)
+    /// <summary>同步重载（仅测试与"已经不持有 UI 上下文"的收尾路径用；界面一律走异步版）。</summary>
+    /// <remarks>
+    /// 存在的理由是**可测性**：单元测试要断言投影结果，而 <c>async void</c> 式的入口无法 await。
+    /// 它不构成第二套实现 —— 装载本身仍然只有 <see cref="FontCatalog.LoadAsync"/> 一条路。
+    /// </remarks>
+    public void ReloadFonts() => ReloadFontsAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// 导入一个字体文件（失败明确报错给用户 + 留痕 + **不写偏好**）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 失败**必须让用户在界面上看见**：这里把 <see cref="Status"/> 写成"导入失败：…"，
+    /// 面板把它显示在状态行上（N1 要求"导入失败的用户可见反馈"）。
+    /// 只写日志不播报 = 用户点了"导入字体…"什么都没发生 —— 那是本仓禁止的静默失败。
+    /// </remarks>
+    public async Task<bool> ImportFontAsync(string path)
     {
         try
         {
-            var choice = FontLoader.Import(path);
-            ReloadFonts();
+            var choice = FontCatalog.Import(path);
+            await ReloadFontsAsync().ConfigureAwait(true);
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))
                              ?? SelectedUiFont;
-            Status = $"已导入字体「{choice.Family}」";
+            Status = $"已导入字体「{choice.Family}」（点「应用字体」生效）";
             return true;
         }
         catch (Exception ex)
@@ -479,7 +514,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>删除一个已导入字体（系统字体不可删）。</summary>
-    public void DeleteFont(FontOptionViewModel option)
+    public async Task DeleteFontAsync(FontOptionViewModel option)
     {
         ArgumentNullException.ThrowIfNull(option);
         if (!option.CanDelete)
@@ -489,8 +524,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         try
         {
-            FontLoader.Remove(option.Choice);
-            ReloadFonts();
+            FontCatalog.Remove(option.Choice);
+            await ReloadFontsAsync().ConfigureAwait(true);
             Status = $"已删除导入字体「{option.Family}」";
         }
         catch (Exception ex)
@@ -503,8 +538,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>应用当前选中的界面/等宽字体（含持久化）。</summary>
     public void ApplyFonts()
     {
-        var ui = SelectedUiFont?.Family ?? FontLoader.DefaultUiFamily;
-        var mono = SelectedMonoFont?.Family ?? FontLoader.DefaultMonoFamily;
+        var ui = SelectedUiFont?.Family ?? FontCatalog.DefaultUiFamily;
+        var mono = SelectedMonoFont?.Family ?? FontCatalog.DefaultMonoFamily;
 
         try
         {
@@ -520,7 +555,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>恢复默认外观（主题 + 字体一起回默认，并清掉偏好文件）。</summary>
-    public void ResetToDefault()
+    public async Task ResetToDefaultAsync()
     {
         try
         {
@@ -531,7 +566,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             _draft.Clear();
             _draft.AddRange(ThemeCatalog.Default.Palette.Select(ToMedia));
             RebuildSlots();
-            ReloadFonts();
+            if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
             HasDiagnostics = false;
             Status = "已恢复默认外观";
@@ -546,7 +581,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>字体度量自检（提示用；不阻止应用）。</summary>
     public string InspectFont(FontOptionViewModel option)
     {
-        var verdict = FontMetricsProbe.Inspect(FontLoader.BuildTokenValue(option.Family));
+        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(option.Family));
         return verdict.Ok ? string.Empty : verdict.Message;
     }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -320,7 +320,7 @@ namespace LinkPocket.Views
             {
                 Kind = "earth",
                 Width = 16, Height = 16,
-                Foreground = (Brush)FindResource("OnSurfaceMuted"),
+                Foreground = (Brush)FindResource("App.Text.Muted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
@@ -354,13 +354,13 @@ namespace LinkPocket.Views
             {
                 Text = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url,
                 FontSize = 14, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("App.Text.Primary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
             textStack.Children.Add(new TextBlock
             {
                 Text = item.Url, FontSize = 11.5,
-                Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
             });
 
@@ -375,7 +375,7 @@ namespace LinkPocket.Views
             {
                 Text = text,
                 FontSize = fontSize,
-                Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -412,7 +412,7 @@ namespace LinkPocket.Views
             badge.Child = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("App.Text.Primary"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -421,14 +421,14 @@ namespace LinkPocket.Views
             sp.Children.Add(new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("App.Text.Primary"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             });
             if (!string.IsNullOrEmpty(subtitle))
                 sp.Children.Add(new TextBlock
                 {
                     Text = subtitle, FontSize = 12,
-                    Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                    Foreground = (Brush)FindResource("App.Text.Secondary"),
                     Opacity = 0.7,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
                 });

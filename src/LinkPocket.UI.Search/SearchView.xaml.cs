@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -214,7 +214,7 @@ public partial class SearchView : UserControl
         {
             Kind = "earth",
             Width = 16, Height = 16,
-            Foreground = (Brush)FindResource("OnSurfaceMuted"),
+            Foreground = (Brush)FindResource("App.Text.Muted"),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center
         };
@@ -249,19 +249,19 @@ public partial class SearchView : UserControl
         var titleBlock = new TextBlock
         {
             FontSize = 14, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("OnSurface"),
+            Foreground = (Brush)FindResource("App.Text.Primary"),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
-        AddHighlightedRuns(titleBlock, displayTitle, _vm?.LastQuery ?? "", (Brush)FindResource("OnSurface"));
+        AddHighlightedRuns(titleBlock, displayTitle, _vm?.LastQuery ?? "", (Brush)FindResource("App.Text.Primary"));
         textStack.Children.Add(titleBlock);
 
         var urlBlock = new TextBlock
         {
             FontSize = 11.5,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            Foreground = (Brush)FindResource("App.Text.Secondary"),
             TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
         };
-        AddHighlightedRuns(urlBlock, item.Url, _vm?.LastQuery ?? "", (Brush)FindResource("OnSurfaceVariant"));
+        AddHighlightedRuns(urlBlock, item.Url, _vm?.LastQuery ?? "", (Brush)FindResource("App.Text.Secondary"));
         textStack.Children.Add(urlBlock);
 
         panel.Children.Add(iconGrid);
@@ -275,7 +275,7 @@ public partial class SearchView : UserControl
         {
             Text = text,
             FontSize = fontSize,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            Foreground = (Brush)FindResource("App.Text.Secondary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -301,14 +301,14 @@ public partial class SearchView : UserControl
         sp.Children.Add(new TextBlock
         {
             Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("OnSurface"),
+            Foreground = (Brush)FindResource("App.Text.Primary"),
             HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
         });
         if (subtitle != null)
             sp.Children.Add(new TextBlock
             {
                 Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("OnSurfaceVariant"), Opacity = 0.85,
+                Foreground = (Brush)FindResource("App.Text.Secondary"), Opacity = 0.85,
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
                 MaxWidth = 420, TextAlignment = TextAlignment.Center
             });
@@ -318,7 +318,7 @@ public partial class SearchView : UserControl
     /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
     private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
     {
-        var accent = (Brush)FindResource("Primary");
+        var accent = (Brush)FindResource("App.Accent.Fill");
         tb.Inlines.Clear();
         if (string.IsNullOrEmpty(query))
         {

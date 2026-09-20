@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -471,7 +471,7 @@ namespace LinkPocket.Views
                         Text = ((DedupGroupRow)r).Url,
                         FontSize = 12,
                         FontFamily = (FontFamily)Application.Current.FindResource(Theming.Tokens.AppTokens.FontMono),
-                        Foreground = (Brush)FindResource("OnSurface"),
+                        Foreground = (Brush)FindResource("App.Text.Primary"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis
                     }
@@ -482,7 +482,7 @@ namespace LinkPocket.Views
                     SortKey = r => (IComparable)((DedupGroupRow)r).Count,
                     CellFactory = r => new Border
                     {
-                        Background = (Brush)FindResource("PrimaryContainer"),
+                        Background = (Brush)FindResource("App.Accent.Container"),
                         CornerRadius = new CornerRadius(8),
                         Padding = new Thickness(8, 2, 8, 2),
                         HorizontalAlignment = HorizontalAlignment.Left,
@@ -490,7 +490,7 @@ namespace LinkPocket.Views
                         {
                             Text = $"×{((DedupGroupRow)r).Count}",
                             FontSize = 12, FontWeight = FontWeights.SemiBold,
-                            Foreground = (Brush)FindResource("OnPrimaryContainer")
+                            Foreground = (Brush)FindResource("App.Text.OnContainer")
                         }
                     }
                 },
@@ -502,7 +502,7 @@ namespace LinkPocket.Views
                     {
                         Text = ((DedupGroupRow)r).LocationsSummary,
                         FontSize = 12.5,
-                        Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                        Foreground = (Brush)FindResource("App.Text.Secondary"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis
                     }
@@ -599,7 +599,7 @@ namespace LinkPocket.Views
                     {
                         Text = VmTools.ResolvePath((LinkDto)r),
                         FontSize = 12.5,
-                        Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                        Foreground = (Brush)FindResource("App.Text.Secondary"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis
                     }
@@ -694,7 +694,7 @@ namespace LinkPocket.Views
             {
                 Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
                 BorderThickness = new Thickness(1.6),
-                BorderBrush = (Brush)FindResource("OnSurfaceVariant"),
+                BorderBrush = (Brush)FindResource("App.Text.Secondary"),
                 Background = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -702,7 +702,7 @@ namespace LinkPocket.Views
             var fill = new Border
             {
                 Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
-                Background = (Brush)FindResource("Primary"),
+                Background = (Brush)FindResource("App.Accent.Fill"),
                 Visibility = checkedNow ? Visibility.Visible : Visibility.Collapsed,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -767,7 +767,7 @@ namespace LinkPocket.Views
             var earthIcon = new M3Icon
             {
                 Kind = "earth", Width = 16, Height = 16,
-                Foreground = (Brush)FindResource("OnSurfaceMuted"),
+                Foreground = (Brush)FindResource("App.Text.Muted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
@@ -802,14 +802,14 @@ namespace LinkPocket.Views
             {
                 Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
                 FontSize = 13.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("OnSurface"),
+                Foreground = (Brush)FindResource("App.Text.Primary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
             textStack.Children.Add(new TextBlock
             {
                 Text = link.Url,
                 FontSize = 11.5, Margin = new Thickness(0, 3, 0, 0),
-                Foreground = (Brush)FindResource("OnSurfaceVariant"),
+                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
             });
 
@@ -822,7 +822,7 @@ namespace LinkPocket.Views
         {
             Text = text,
             FontSize = 12.5,
-            Foreground = (Brush)FindResource("OnSurfaceVariant"),
+            Foreground = (Brush)FindResource("App.Text.Secondary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -1038,7 +1038,7 @@ namespace LinkPocket.Views
             // 结果条的深色内容（保证在奶油黄 / PrimaryContainer 上都可读）。
             // 原先这一支写死了 Color.FromRgb(0x1C,0x1B,0x1F)（= 当时 OnSurface 的值）→ 换令牌，跟主题走。
             // T3 起异常态改走次强调容器（警告色退场）；届时这里的分支合并为单一取色。
-            var foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer");
+            var foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer");
 
             icon.Visibility = state == ChipState.Success ? Visibility.Collapsed : Visibility.Visible;
             check.Visibility = state == ChipState.Success ? Visibility.Visible : Visibility.Collapsed;
@@ -1276,7 +1276,7 @@ namespace LinkPocket.Views
             badge.Child = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer"),
+                Foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -1286,7 +1286,7 @@ namespace LinkPocket.Views
             panel.Children.Add(new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer"),
+                Foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             });
             if (!string.IsNullOrEmpty(subtitle))
@@ -1294,7 +1294,7 @@ namespace LinkPocket.Views
                 panel.Children.Add(new TextBlock
                 {
                     Text = subtitle, FontSize = 12,
-                    Foreground = (Brush)Application.Current.FindResource("OnSurfaceVariant"),
+                    Foreground = (Brush)Application.Current.FindResource("App.Text.Secondary"),
                     Opacity = 0.7, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
                     MaxWidth = 420,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)

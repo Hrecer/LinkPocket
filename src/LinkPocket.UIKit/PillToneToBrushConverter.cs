@@ -8,10 +8,10 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 药丸色调 → 图标/文字强调色（唯一映射点）：同一套色调既驱动药丸样式（<see cref="PillToneToStyleConverter"/>），
 /// 也驱动同一动作以**图标钮**呈现时的颜色（右栏动作面）——色调是单一事实源，外观不跟着页面复制。
-/// 图标色按"工具栏同色"取：**还原 / 还原到根目录 = 定稿紫**（与工具栏「还原」主按钮同一填充色，用户定稿），
-/// 破坏性动作 = 兼容层的奶油黄（T3 起改走次强调容器，与次操作共用呈现）。
-/// ⚠️ 不取主题 `Primary`：它是亮紫（#6750A4），在 TintCard 上比定稿紫更刺眼，与工具栏按钮不同色
-/// （用户报障"最左边那枚是亮紫色"）。也不取 `SecondaryContainer`：那是极浅的填充色，做描边在 TintCard 上几乎不可见。
+/// 图标色按"工具栏同色"取：**还原 / 还原到根目录 / 跳转 = 强调填充档**（与工具栏主按钮同一填充色，用户定稿）；
+/// 破坏性动作 = 容器字档（T3 起与次操作共用同一套呈现，不红不黄）。
+/// ⚠️ 不取主题 `Primary` 亮紫（#6750A4）：在 TintCard 上比定稿紫更刺眼、与工具栏按钮不同色
+/// （用户报障"最左边那枚是亮紫色"）。也不取 `SecondaryContainer`：那是极浅的填充色，做描边几乎不可见。
 /// </summary>
 /// <remarks>
 /// ⚠️ 这里的键名必须与 <c>LinkPocket.Theming.Tokens.AppTokens</c> 一致：T2 把旧画刷键
@@ -25,7 +25,7 @@ public sealed class PillToneToBrushConverter : IValueConverter
     {
         var key = value switch
         {
-            PillTone.Warn => Theming.Tokens.AppTokens.SupportOnContainer,
+            PillTone.Warn => Theming.Tokens.AppTokens.TextOnContainer,
             _ => Theming.Tokens.AppTokens.AccentFill,
         };
         return Application.Current?.TryFindResource(key);
