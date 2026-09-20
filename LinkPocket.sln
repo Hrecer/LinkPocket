@@ -67,6 +67,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Diagnostics", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Diagnostics.Tests", "tests\LinkPocket.Diagnostics.Tests\LinkPocket.Diagnostics.Tests.csproj", "{B9E4A89A-97AC-4A16-A19A-4F3AA8CD989E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LinkPocket.Theming", "src\LinkPocket.Theming\LinkPocket.Theming.csproj", "{EE7EE365-A02C-4225-88AD-BF2E37556BFB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -196,6 +198,10 @@ Global
 		{B9E4A89A-97AC-4A16-A19A-4F3AA8CD989E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B9E4A89A-97AC-4A16-A19A-4F3AA8CD989E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B9E4A89A-97AC-4A16-A19A-4F3AA8CD989E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EE7EE365-A02C-4225-88AD-BF2E37556BFB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EE7EE365-A02C-4225-88AD-BF2E37556BFB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EE7EE365-A02C-4225-88AD-BF2E37556BFB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EE7EE365-A02C-4225-88AD-BF2E37556BFB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{5CCA746F-6002-4244-AD2F-1735D03279D7} = {703A951A-37A6-4805-8F7E-872769D314F7}
@@ -228,5 +234,6 @@ Global
 		{C438281D-DAFB-48D8-B0DC-FBC9FF790643} = {E0E15218-1483-42AF-BF9E-7360DEBEAEA7}
 		{6EBA54CC-DB56-4C6F-8658-CFBA5D4555CE} = {703A951A-37A6-4805-8F7E-872769D314F7}
 		{B9E4A89A-97AC-4A16-A19A-4F3AA8CD989E} = {E0E15218-1483-42AF-BF9E-7360DEBEAEA7}
+		{EE7EE365-A02C-4225-88AD-BF2E37556BFB} = {703A951A-37A6-4805-8F7E-872769D314F7}
 	EndGlobalSection
 EndGlobal

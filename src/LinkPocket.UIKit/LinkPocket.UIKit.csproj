@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Theming\LinkPocket.Theming.csproj" />
   </ItemGroup>
 
   <ItemGroup>

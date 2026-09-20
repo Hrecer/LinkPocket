@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Theming：主题与字体系统的底层基础设施（颜色科学 / 派生 / 主题目录 / 字体装载 / 偏好持久化 / 单点发布）。
+       定位 = 与 UIKit 平级的"底层设施"，不是控件层：
+         · 依赖面只有 Contracts（日志门面 LpLog）+ Material3.Wpf（颜色引擎 Hct/TonalPalette/ColorScheme + WPF 桥 Argb.ToMedia）；
+         · 禁引 UIKit / UI.* / Engine / Data / Modules.*（架构测试 DependencyRulesTests 逐条卡住）；
+         · 颜色计算（Hct / TonalPalette / ColorScheme）只允许出现在本程序集（架构测试卡住）。
+       需要 UseWPF：发布产物就是 WPF 资源字典里的 SolidColorBrush（且 Material3.Core 的 Argb→Color 桥在 WPF 包里）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.Theming</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>

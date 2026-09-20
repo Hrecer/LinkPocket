@@ -45,6 +45,7 @@ public class DependencyRulesTests
     private const string Data = "LinkPocket.Data";
     private const string Kernel = "LinkPocket.Kernel";
     private const string Composition = "LinkPocket.Composition";
+    private const string Theming = "LinkPocket.Theming";
     private static readonly string[] UiPages =
     {
         "LinkPocket.UI.Browser", "LinkPocket.UI.Search", "LinkPocket.UI.Trash",
@@ -69,10 +70,28 @@ public class DependencyRulesTests
     public static IEnumerable<object[]> UiPageProjects() => UiPages.Select(p => new object[] { p });
 
     [Fact]
-    public void UIKit_只依赖Contracts()
+    public void UIKit_只依赖Contracts与Theming()
     {
+        // Theming = 主题/字体底层设施（颜色科学 / 派生 / 主题目录 / 字体 / 偏好 / 单点发布）。
+        // 它不是控件层，与 UIKit 平级；UIKit 的共享样式只引令牌键 → 需要它。
         var refs = ProjectReferences("src/LinkPocket.UIKit/LinkPocket.UIKit.csproj");
+        Assert.Equal(new[] { Contracts, Theming }.OrderBy(n => n), refs);
+    }
+
+    [Fact]
+    public void Theming_只依赖Contracts()
+    {
+        // Theming 是**底层设施**：只许引 Contracts（日志门面 LpLog）。
+        // 禁引 UIKit / UI.* / Engine / Data / Kernel / Modules.*（颜色科学不许反过来依赖控件或引擎）。
+        var refs = ProjectReferences("src/LinkPocket.Theming/LinkPocket.Theming.csproj");
         Assert.Equal(new[] { Contracts }.OrderBy(n => n), refs);
+    }
+
+    [Fact]
+    public void Theming_禁止引用控件与引擎实现()
+    {
+        var refs = ProjectReferences("src/LinkPocket.Theming/LinkPocket.Theming.csproj");
+        Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r) || r == UIKit || r == Shell || UiPages.Contains(r));
     }
 
     [Theory]
