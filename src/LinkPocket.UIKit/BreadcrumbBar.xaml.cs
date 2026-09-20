@@ -272,8 +272,11 @@ namespace LinkPocket.Views
                     var btn = FindVisualChild<Button>(cp);
                     if (btn != null)
                     {
-                        btn.Background = (System.Windows.Media.Brush)TryResource("PrimaryContainer");
-                        btn.Foreground = (System.Windows.Media.Brush)TryResource("OnPrimaryContainer");
+                        // 落点高亮走**资源引用**：一次性取画刷赋值会把当前主题固化成本地值，
+                        // 换主题后仍然亮着旧主题的色（与表头底色同一根因）。
+                        // 熄灭仍走 ClearValue —— 资源引用也是本地值，整条摘掉即回落到样式触发器。
+                        btn.SetResourceReference(Control.BackgroundProperty, "PrimaryContainer");
+                        btn.SetResourceReference(Control.ForegroundProperty, "OnPrimaryContainer");
                         _dropHighlighted = btn;
                     }
                 }
@@ -282,10 +285,6 @@ namespace LinkPocket.Views
         }
 
         private FrameworkElement? _dropHighlighted;
-
-        private static System.Windows.Media.Brush TryResource(string key)
-            => Application.Current?.TryFindResource(key) as System.Windows.Media.Brush
-               ?? System.Windows.Media.Brushes.Transparent;
 
         private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
         {

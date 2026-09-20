@@ -88,26 +88,48 @@ public class ThemeContrastTests
     }
 
     [Fact]
-    public void 出厂默认主题_表面族与全部锚定键逐字节等于今天()
+    public void 出厂默认主题_表面族随配色最浅色旋转_层感逐键恒定()
     {
+        // 方案 A（用户令 2026-09-20）：出厂默认**不再钉中性色相**——表面族色相 = 配色里最浅的 #F2EEF5（H287.7），
+        // 于是旋转角 = 287.7 − 298.7 = −11°（≡ 349°）。旧判据"表面族逐字节等于改造前"随之作废（代价已确认接受）。
         var table = PaletteSolver.Solve(ThemeCatalog.Default);
+        var lightest = ThemeCatalog.Default.Palette.OrderByDescending(c => ColorMath.Measure(c).T).First();
+        Assert.Equal(
+            ColorMath.NormalizeHue(ColorMath.Measure(lightest).H - ThemeDefinition.ReferenceNeutralHue),
+            table.SurfaceRotation, 3);
 
-        // 表面族（层感的来源）必须逐字节不变 —— 这是"默认主题保留目前的背景色"的硬判据
-        foreach (var key in SurfaceAnchors.SurfaceStackKeys)
+        // 层感恒定 = 逐键只转色相（明度保持、彩度只可能因色域被收窄，绝不被放大）：
+        // 贴色域边界的色（如 InversePrimary，C≈40）旋转后彩度被钳，色相会跟着偏 1–3° —— 这是色彩空间的性质，
+        // 不是派生公式的自由度（"只钳上限、绝不放大"）；色域内的色严格按旋转角走。
+        foreach (var anchor in SurfaceAnchors.All.Where(a => a.Rotates && !IsSemanticOverride(a.Key)))
         {
-            var anchor = SurfaceAnchors.Find(key)!.Value;
-            Assert.Equal(anchor.Today.ToInt(), table.Key(key).ToInt());
+            var before = ColorMath.Measure(anchor.Today);
+            var after = ColorMath.Measure(table.Key(anchor.Key));
+            Assert.Equal((anchor.Today.ToInt() >> 24) & 0xFF, (table.Key(anchor.Key).ToInt() >> 24) & 0xFF);
+
+            // 近无彩（C→0）或纯白 / 近白（T→100）：HCT 的色相**不可观测**（怎么转都还是那个色，
+            // 例如 OnTertiary = #FFFFFF，实测 C 2.9 / T 100）→ 只断言"没被改坏"
+            if (before.C < 1.0 || before.T >= 99.5)
+            {
+                Assert.True(after.T >= 99.0, $"{anchor.Key} 不该被压暗：T {before.T:F1} → {after.T:F1}");
+                continue;
+            }
+
+            Assert.True(Math.Abs(before.T - after.T) <= 1.5, $"{anchor.Key} 明度漂了：{before.T:F1} → {after.T:F1}");
+            Assert.True(after.C <= before.C + 0.5, $"{anchor.Key} 彩度被放大了：{before.C:F1} → {after.C:F1}");
+
+            // 色相：按旋转角走。容差 5° 不是"差不多就行"，而是 HCT↔sRGB **8 位往返**的量化下界：
+            // 低彩度（C≈4 的表面族）与贴色域边界的色（InversePrimary C≈40）旋转后 RGB 几乎不变，
+            // 反解出来的色相会偏 1–3°（实测 Surface 偏 2.5°/OnTertiary 是纯白，色相不可观测）。
+            // 真正的回归（旋转没生效 = 差 11°）仍然会被抓住。
+            var expectedHue = ColorMath.NormalizeHue(before.H + table.SurfaceRotation);
+            Assert.True(ColorMath.HueDistance(expectedHue, after.H) <= 5.0,
+                $"{anchor.Key} 没按旋转角走：期望 H{expectedHue:F1}，实际 H{after.H:F1}（彩度 {before.C:F1} → {after.C:F1}）");
         }
 
-        // 旋转角必须恰为 0（默认主题钉住中性色相 → 其余旋转键也逐字节不变）
-        Assert.Equal(0.0, table.SurfaceRotation, 6);
-
-        // 全部**旋转**键逐字节等于锚点（语义覆写键不在其中，见 ThemeSemanticOverrideTests）
-        foreach (var anchor in SurfaceAnchors.All.Where(a => a.Rotates))
-        {
-            if (IsSemanticOverride(anchor.Key)) continue;
+        // 不旋转键（零消费语义族 / 无彩常量）保持库基线
+        foreach (var anchor in SurfaceAnchors.All.Where(a => !a.Rotates))
             Assert.Equal(anchor.Today.ToInt(), table.Key(anchor.Key).ToInt());
-        }
     }
 
     /// <summary>
@@ -121,49 +143,91 @@ public class ThemeContrastTests
             or "Outline" or "OutlineVariant";
 
     [Fact]
-    public void 出厂默认主题_文字三档与强调族等于方案定稿值_且已发布到界面()
+    public void 出厂默认主题_令牌等于配色直配的实测值_且已发布到界面()
     {
-        // T3：定稿值**就是发布值**（过渡期兼容层已删除），故校验 ThemeService 实际发布的表。
-        var t = ThemeService.DerivedTable;
-        Assert.Equal(0x201F22u, Rgb(t.Token(AppTokens.TextPrimary)));
-        Assert.Equal(0x48464Au, Rgb(t.Token(AppTokens.TextSecondary)));
-        Assert.Equal(0x605D62u, Rgb(t.Token(AppTokens.TextMuted)));
-        Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));
+        // 定稿口径不变：发布值 = 最终语义值；本轮（方案 A）值随派生模型更新——
+        // 强调 / 支撑 / 强调容器 / 描边 / 表面**全部来自那 5 个身份色**，不再有 ±60° 发明出来的色相。
+        // ⚠️ 这里按**主题定义**求解，不读 `ThemeService.DerivedTable`：后者读的是"当前生效主题"，
+        // 而 ThemeService 是进程级共享状态、别的测试类会并行改它（WARNINGS 68 同源）。
+        // "发布值 = 求解值"是结构性保证（发布只此一处 `ThemePublisher`），另有探针在真实窗口里断言发布结果。
+        var t = PaletteSolver.Solve(ThemeCatalog.Default);
+        Assert.Equal(0x201F23u, Rgb(t.Token(AppTokens.TextPrimary)));
+        Assert.Equal(0x47464Au, Rgb(t.Token(AppTokens.TextSecondary)));
+        Assert.Equal(0x5F5E62u, Rgb(t.Token(AppTokens.TextMuted)));
+        Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.AccentContainer)));
+        Assert.Equal(0xEEDDF7u, Rgb(t.Token(AppTokens.AccentContainer)));  // ← 色1 #3F3448（彩度第三）
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
-        Assert.Equal(0x1C2732u, Rgb(t.Token(AppTokens.TextOnContainer)));
-        // 支撑族 = 强调色相 −60°（+60° 落在暖色回避带内）→ H250.6 蓝紫，不再是旧的肤色粉 #FDDADD / 棕 #72585A
-        Assert.Equal(0xD9E3F3u, Rgb(t.Token(AppTokens.SupportContainer)));
-        Assert.Equal(0x555F6Cu, Rgb(t.Token(AppTokens.SupportIcon)));
-        Assert.Equal(0x555F6Cu, Rgb(t.Token(AppTokens.TypeFolder)));
+        Assert.Equal(0x2E203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
+        Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（彩度次高）
+        Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
+        Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
+        Assert.Equal(0xA39BA6u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 #D5C7DE（彩度第四）
+        Assert.Equal(0xE8E4EDu, Rgb(t.Token(AppTokens.SurfaceBase)));      // ← 色5 #F2EEF5（明度最高 → 表面族）
     }
 
     [Fact]
-    public void 支撑族派生_回避暖色带_派生结果永不落在带内()
+    public void 配色角色分配_彩度降序占槽_明度最高者管表面()
     {
-        // 规则：单色系配色的支撑族 = 强调色相 ±60°，**绝不落进暖色带 0°–105°**
-        // （红 / 橙 / 黄 / 肤色：黄是本仓已废弃的语义色；肤粉会让紫色系主题读成"粉棕"——
-        //  用户报障原文"默认的紫罗兰是紫色的，那些偏黄的、偏肤色的是哪来的"）。
-        Assert.Equal(250.6, PaletteSolver.DeriveSupportHue(310.6), 1);   // 紫罗兰 → 蓝紫（−60°）
-        Assert.Equal(120.6, PaletteSolver.DeriveSupportHue(60.6), 1);    // 焦糖 +60° 本就不在带内 → 保持 +60°
+        // 方案 A（用户令 2026-09-20）：不再分族、不再发明色相——配色成员按彩度降序占槽，
+        // 明度最高的成员决定表面族与文字墨。这条把"哪个颜色管哪一块"钉死。
+        var def = ThemeCatalog.Default;
+        var families = PaletteSolver.SolveFamilies(def);
+        var measured = def.Palette
+            .Select(c => ColorMath.Measure(c))
+            .ToList();
+        var byChroma = measured.OrderByDescending(m => m.C).ThenBy(m => m.T).ToList();
+        var lightest = measured.OrderByDescending(m => m.T).First();
 
-        // 几何事实：两个候选相差 120° > 回避带宽 105° → 至多一个在带内，"取另一个"永远有解
-        for (var hue = 0.0; hue < 360.0; hue += 0.5)
+        Assert.Equal(byChroma[0].H, families.AccentHue, 1);
+        Assert.Equal(Math.Min(byChroma[0].C, 36.0), families.AccentChroma, 1);
+        Assert.Equal(byChroma[1].H, families.SupportHue, 1);
+        Assert.Equal(byChroma[2].H, families.ContainerHue, 1);
+        Assert.Equal(byChroma[3].H, families.NeutralVariantHue, 1);
+        Assert.Equal(lightest.H, families.NeutralHue, 1);
+        Assert.False(families.SupportIsDerived, "5 色配色不该走派生的支撑槽");
+    }
+
+    [Fact]
+    public void 配色成员_每一个都有出口_去掉任一个都会改变界面()
+    {
+        // 用户令（2026-09-20）"我们给出的 4/5 个颜色要全部用上"的机器化判据 = **逐槽 leave-one-out**：
+        // 去掉任一个身份色，至少有一个语义令牌变值。
+        // （旧模型实测：默认主题 5 色里 3 个去掉后 0 个令牌变化 —— 见 文档/WARNINGS.md 77。）
+        var baseline = PaletteSolver.Solve(ThemeCatalog.Default);
+        for (var slot = 0; slot < ThemeCatalog.Default.Palette.Count; slot++)
         {
-            var derived = PaletteSolver.DeriveSupportHue(hue);
-            Assert.False(PaletteSolver.InWarmZone(derived),
-                $"强调 H{hue:F1} → 派生支撑族 H{derived:F1} 落在暖色带内");
+            var palette = ThemeCatalog.Default.Palette.Where((_, i) => i != slot).ToArray();
+            var mutated = PaletteSolver.Solve(new ThemeDefinition
+            {
+                Id = "probe",
+                Name = "probe",
+                Source = ThemeSource.UserDefined,
+                Palette = palette,
+            });
+            var changed = AppTokens.AllColorTokens.Count(t => baseline.Token(t) != mutated.Token(t));
+            Assert.True(changed > 0, $"去掉第 {slot + 1} 个身份色后界面毫无变化 —— 这个颜色没有出口");
         }
+    }
 
-        // 全部**派生**支撑族的主题都不得落带；预设自带第二族的按配色原样保留（那是用户给的颜色，不是派生的）
-        foreach (var theme in ThemeCatalog.All)
+    [Fact]
+    public void 界面色相_全部来自配色本身()
+    {
+        // "不再延续发明色相的思路"：4/5 色配色的强调 / 支撑 / 容器 / 描边 / 表面色相必须是配色成员的色相之一（±1°）。
+        foreach (var def in new[] { ThemeCatalog.Default }.Concat(ThemeCatalog.Presets.Where(p => p.Palette.Count >= 4)))
         {
-            var families = PaletteSolver.SolveFamilies(theme);
-            if (!families.SupportIsDerived) continue;
-            Assert.False(PaletteSolver.InWarmZone(families.SupportHue),
-                $"{theme.Name} 派生支撑族 H{families.SupportHue:F1} 落在暖色带内");
+            var hues = def.Palette.Select(c => ColorMath.Measure(c).H).ToList();
+            var f = PaletteSolver.SolveFamilies(def);
+            foreach (var (label, hue) in new[]
+                     {
+                         ("强调", f.AccentHue), ("支撑", f.SupportHue), ("强调容器", f.ContainerHue),
+                         ("描边", f.NeutralVariantHue), ("表面", f.NeutralHue),
+                     })
+            {
+                Assert.True(hues.Any(h => ColorMath.HueDistance(h, hue) <= 1.0),
+                    $"{def.Name} 的{label}色相 H{hue:F1} 不在配色里（配色色相：{string.Join(" / ", hues.Select(h => h.ToString("F1")))}）");
+            }
         }
     }
 

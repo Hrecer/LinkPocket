@@ -45,8 +45,9 @@ public partial class ConfirmDialog : Window
         dlg.MessageText.Text = message;
         dlg.ConfirmLabel.Text = confirmText;
         dlg.IconGlyph.Kind = iconKind;
-        if (Application.Current.TryFindResource(chipBrushKey) is System.Windows.Media.Brush chip)
-            dlg.ChipBorder.Background = chip;
+        // 底色走**资源引用**：一次性取画刷赋值会在换主题后停在旧主题（表头同根因）；
+        // 取不到键也不静默兜一个 Transparent（那会把"主题未装配"伪装成"正常但不着色"）。
+        dlg.ChipBorder.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, chipBrushKey);
 
         var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
                     ?? Application.Current?.MainWindow;

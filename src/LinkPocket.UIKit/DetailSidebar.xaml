@@ -281,13 +281,19 @@
                                     </Image.Style>
                                 </Image>
                                 <m3:M3Icon Kind="earth" Width="22" Height="22"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5">
+                                           HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <m3:M3Icon.Style>
                                         <Style TargetType="m3:M3Icon">
                                             <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Setter Property="Opacity" Value="0.5"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding HasFavicon}" Value="False">
                                                     <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <!-- 被删快照（回收站右栏）：与文件夹大图标同口径灰化 -->
+                                                <DataTrigger Binding="{Binding UseTrashedIconTone}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+                                                    <Setter Property="Opacity" Value="0.55"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
@@ -295,15 +301,23 @@
                                 </m3:M3Icon>
                             </Grid>
                         </Border>
-                        <!-- 文件夹大图标 -->
-                        <m3:M3Icon Kind="folder" Width="40" Height="40" Foreground="{DynamicResource App.Type.Folder}"
+                        <!-- 文件夹大图标（⚠️ 基态取色必须写在 Style.Setters：本地值优先级高于触发器，
+                             写在元素上会让"被删快照灰化"永远不生效） -->
+                        <m3:M3Icon Kind="folder" Width="40" Height="40"
                                    HorizontalAlignment="Center" VerticalAlignment="Center">
                             <m3:M3Icon.Style>
                                 <Style TargetType="m3:M3Icon">
                                     <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource App.Type.Folder}"/>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding IsFolder}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <!-- 被删快照（回收站右栏）：与主栏行 / 左栏树的 IsTrashed 同一套灰化呈现
+                                             （用户报障"回收站主栏与左栏都灰了，右栏没灰"） -->
+                                        <DataTrigger Binding="{Binding UseTrashedIconTone}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+                                            <Setter Property="Opacity" Value="0.55"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>

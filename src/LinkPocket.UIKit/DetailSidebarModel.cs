@@ -68,6 +68,16 @@ public class DetailSidebarModel : ActionSurfaceModel
     /// </summary>
     public bool IsReadOnly { get; protected set; }
 
+    /// <summary>
+    /// **被删快照**语义（回收站详情栏打开）：条目身份图标灰化（`Text.Secondary` + `Opacity 0.55`），
+    /// 与主栏行、左栏树的 `IsTrashed` 同一套呈现——回收站里的东西都是被删的，右栏不该是唯一一处"彩色的"。
+    /// </summary>
+    /// <remarks>
+    /// 为什么是独立能力位而不是复用 <see cref="IsReadOnly"/>：只读页不止回收站（搜索页 / 智能列表 /
+    /// 查重明细都是只读），但它们的条目**没有被删**，图标不该灰。判据必须落在"这条数据的语义"上。
+    /// </remarks>
+    public bool UseTrashedIconTone { get; protected set; }
+
     // —— 单选公共 ——
     public string DisplayName { get; protected set; } = "";
     public string IdText { get; protected set; } = "";
@@ -125,6 +135,7 @@ public class DetailSidebarModel : ActionSurfaceModel
         IsMulti = false;
         IsFolder = false;
         IsReadOnly = false;
+        UseTrashedIconTone = false;
         ResetActionSurface();
         DisplayName = "";
         IdText = "";
@@ -145,6 +156,7 @@ public class DetailSidebarModel : ActionSurfaceModel
         OnPropertyChanged(nameof(IsFolder));
         OnPropertyChanged(nameof(IsLink));
         OnPropertyChanged(nameof(IsReadOnly));
+        OnPropertyChanged(nameof(UseTrashedIconTone));
         OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(IdText));
         OnPropertyChanged(nameof(Favicon));

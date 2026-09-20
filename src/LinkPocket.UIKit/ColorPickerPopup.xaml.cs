@@ -214,7 +214,9 @@ public partial class ColorPickerPopup : UserControl
     private void SetHexError(bool invalid, string? message)
     {
         HexFieldShell.BorderThickness = invalid ? new Thickness(0, 0, 0, 2) : new Thickness(0);
-        HexFieldShell.BorderBrush = (Brush)FindResource(AppTokens.LineInvalid);
+        // 校验描边走**资源引用**（本文件里唯一一处 Brush 型取值；其余是 Color 型 Freezable 子属性，
+        // 吃不了资源引用，见 ApplyTokenColors）：一次性取画刷赋值会在换主题后停在旧主题。
+        HexFieldShell.SetResourceReference(Border.BorderBrushProperty, AppTokens.LineInvalid);
         HexErrorText.Visibility = invalid ? Visibility.Visible : Visibility.Collapsed;
         HexErrorText.Text = message ?? string.Empty;
     }

@@ -4,17 +4,16 @@ using Material3.Core;
 namespace LinkPocket.Theming.Themes;
 
 /// <summary>
-/// **主题目录**：出厂默认 1 套 + 内置预设 10 套（方案附录 A 的实测派生表，共 11 套可选）。
+/// **主题目录**：出厂默认 1 套 + 内置预设 10 套（共 11 套可选）。
 /// </summary>
 /// <remarks>
 /// <para>
 /// 身份色 = 一个主题的"颜色本身"（「外观」面板的主题卡与再编辑都展示它们）。界面里出现的
-/// 是这些原色的**色调板档位**（例如定稿紫 <c>#A18EB0</c> T61.7 → 填充档 <c>#6A567C</c> T40）。
+/// 是这些原色的**色调板档位**（例如定稿紫 <c>#A18EB0</c> T61.7 → 容器档 <c>#F0DBFF</c> 一类）。
 /// </para>
 /// <para>
-/// <b>出厂默认钉住中性色相</b>（<see cref="ThemeDefinition.ReferenceNeutralHue"/>）→ 表面旋转角恰为 0
-/// → 全部 53 个键逐字节等于今天，满足"默认主题保留目前的背景色"。其它主题为 <c>null</c>，按配色里的
-/// 中性池派生（实测：抹茶 203.5° / 焦糖 61.2° / 樱花 357.8° …，与附录 A 一致）。
+/// <b>角色分配见 <see cref="PaletteSolver.SolveFamilies"/></b>：彩度降序占槽（强调 / 支撑 / 强调容器 / 描边），
+/// **明度最高的成员决定表面族与文字墨**——**界面上的色相全部来自用户给的颜色**，不再有 ±60° 发明色相。
 /// </para>
 /// </remarks>
 public static class ThemeCatalog
@@ -22,7 +21,14 @@ public static class ThemeCatalog
     /// <summary>出厂默认主题的 id。</summary>
     public const string DefaultId = "factory-default";
 
-    /// <summary>出厂默认主题（保留紫色身份，按新规则重建）。</summary>
+    /// <summary>
+    /// 出厂默认主题（保留紫色身份，5 个色全部占槽）。
+    /// </summary>
+    /// <remarks>
+    /// <b>不再钉中性色相</b>（用户令 2026-09-20："我们给出的 4/5 个颜色是最高优先级"）：表面族色相 =
+    /// 配色里最浅的 <c>#F2EEF5</c>（H287.7）→ 背景相对改造前偏紫 11°。代价已确认接受
+    /// （旧判据"出厂默认表面族逐字节等于改造前"随之作废，见 `ThemeContrastTests.出厂默认主题_表面族随配色最浅色`）。
+    /// </remarks>
     public static ThemeDefinition Default { get; } = new()
     {
         Id = DefaultId,
@@ -30,21 +36,20 @@ public static class ThemeCatalog
         Source = ThemeSource.FactoryDefault,
         Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xD5C7DE, 0xF2EEF5),
         ChromaCap = ChromaCap.Standard,
-        NeutralHueOverride = ThemeDefinition.ReferenceNeutralHue,
     };
 
     /// <summary>内置预设（10 套；顺序 = 方案附录 A 的顺序）。</summary>
     /// <remarks>
     /// <para>
-    /// <b>每套的身份色是 2–3 个，不是方案正文所说的 4/5 个</b>——这是标定收敛的**结果**，不是漏做：
-    /// 每套只放「强调族色 + 支撑族色」两个彩色成员，中性色相由
-    /// <see cref="ThemeDefinition.NeutralHueOverride"/> 钉住（= 附录 A 表面底的色相）。
+    /// <b>每套的身份色是 2–3 个**（出厂默认为 5 个），这是标定收敛的**结果**：每套只放「强调族色 + 支撑族色」两个彩色成员，
+    /// 缺位的槽（强调容器 / 描边）走 <see cref="PaletteSolver.SolveFamilies"/> 的**回退**（= 强调色相）。
+    /// 表面族色相由 <see cref="ThemeDefinition.NeutralHueOverride"/> 钉住（= 各自标定过的表面底色相），
     /// 于是每套的派生结果与附录 A **逐项对齐**（强调族 H ≤1.8°、支撑族 H ≤1.3°、表面底 RGB ≤2/255）。
     /// </para>
     /// <para>
-    /// <b>为什么钉住中性色相是必要的</b>：若按 4/5 色把低彩度浅色也放进配色，它会同时决定中性池色相，
-    /// 使表面族随身份色漂移（实测表面底偏 1–3/255 且层感跟着挪）。钉住它之后自由度从 3 降到 2，标定才收敛。
-    /// 出厂默认**同理**（钉 298.7°）——这是**同一条规则**，不是特例。
+    /// <b>为什么预设钉住中性色相</b>：预设只有 1–2 个颜色，若让"最浅成员"决定背景，背景就会跟着那个彩色漂走
+    /// （实测表面底偏 1–3/255 且层感跟着挪）。钉住它之后自由度从 3 降到 2，标定才收敛。
+    /// **出厂默认不钉**（它有 5 个颜色，最浅的一个本来就是"背景色"），两者是同一套规则的两种输入，不是特例分支。
     /// </para>
     /// <para>
     /// ⚠️ 因此预设**不满足** <see cref="ThemeValidator"/> 的"4 或 5 色"规则（那是给**用户自选配色**定的门槛，

@@ -156,12 +156,12 @@ public sealed class DragVisualAdorner : Adorner
 
         internal DragVisualContent(FrameworkElement owner)
         {
-            var surface = Brush(owner, "SurfaceContainerHigh", Colors.WhiteSmoke);
-            var outline = Brush(owner, "SurfaceContainerHighest", Colors.Gainsboro);
-            var onSurface = Brush(owner, "OnSurface", Colors.Black);
-            var primary = Brush(owner, "Primary", Colors.MediumPurple);
-            var badgeBg = Brush(owner, "SecondaryContainer", Colors.LightGray);
-            var badgeFg = Brush(owner, "OnSecondaryContainer", Colors.Black);
+            var surface = Brush(owner, "SurfaceContainerHigh");
+            var outline = Brush(owner, "SurfaceContainerHighest");
+            var onSurface = Brush(owner, "OnSurface");
+            var primary = Brush(owner, "Primary");
+            var badgeBg = Brush(owner, "SecondaryContainer");
+            var badgeFg = Brush(owner, "OnSecondaryContainer");
 
             // —— 堆叠感（多选时露出的两层"背板"）——
             _stackBack2 = StackLayer(surface, 4);
@@ -309,7 +309,20 @@ public sealed class DragVisualAdorner : Adorner
             IsHitTestVisible = false,
         };
 
-        private static Brush Brush(FrameworkElement owner, string key, Color fallback)
-            => owner.TryFindResource(key) as Brush ?? new SolidColorBrush(fallback);
+        /// <summary>
+        /// 从宿主（被拖拽元素）身上解析一个主题画刷。
+        /// </summary>
+        /// <remarks>
+        /// <b>为什么取不到就抛、不兜一个写死的颜色</b>：浮层是**每次拖拽重建**的，兜底色会把
+        /// "主题令牌未装配"这一真实故障伪装成"一张看起来正常、其实不受主题控制的浮层"——
+        /// 观测面纪律禁止静默兜底（与 <c>ColorPickerPopup.TokenColor</c> 同一口径）。
+        /// <b>为什么不用 <c>SetResourceReference</c></b>：浮层的三个子级是经 <c>AddVisualChild</c>
+        /// 挂进来的裸视觉子级（不参与逻辑树），资源引用在这里解析不到宿主那一侧的资源字典，
+        /// 只会静默变成"空画刷"；显式向宿主取才是可靠路径。
+        /// </remarks>
+        private static Brush Brush(FrameworkElement owner, string key)
+            => owner.TryFindResource(key) as Brush
+               ?? throw new InvalidOperationException(
+                   $"拖拽浮层取不到资源「{key}」—— 主题尚未装配或键名失效（禁止兜底色掩盖故障）");
     }
 }

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -320,10 +321,11 @@ namespace LinkPocket.Views
             {
                 Kind = "earth",
                 Width = 16, Height = 16,
-                Foreground = (Brush)FindResource("App.Text.Muted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
+            // 颜色走**资源引用**：一次性 FindResource 取画刷赋值会固化，换主题后停在旧主题
+            earthIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Muted");
             if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
             iconGrid.Children.Add(faviconImg);
             iconGrid.Children.Add(earthIcon);
@@ -350,19 +352,21 @@ namespace LinkPocket.Views
             }
 
             var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            textStack.Children.Add(new TextBlock
+            var titleText = new TextBlock
             {
                 Text = !string.IsNullOrEmpty(item.Title) ? item.Title : item.Url,
                 FontSize = 14, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("App.Text.Primary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
-            });
-            textStack.Children.Add(new TextBlock
+            };
+            titleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+            textStack.Children.Add(titleText);
+            var urlText = new TextBlock
             {
                 Text = item.Url, FontSize = 11.5,
-                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
-            });
+            };
+            urlText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+            textStack.Children.Add(urlText);
 
             panel.Children.Add(iconGrid);
             panel.Children.Add(textStack);
@@ -371,14 +375,17 @@ namespace LinkPocket.Views
 
         /// <summary>普通文本单元格（表格化信息列统一规格，与搜索页一致）。</summary>
         private TextBlock TextCell(string text, double fontSize)
-            => new()
+        {
+            var cell = new TextBlock
             {
                 Text = text,
                 FontSize = fontSize,
-                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+            return cell;
+        }
 
         /// <summary>位置解析：与搜索页「位置」列同一口径（VM 注入的组合根解析器；根链接 = 全部书签）。</summary>
         private string ResolveFolderName(string? listId)
@@ -394,7 +401,8 @@ namespace LinkPocket.Views
         // ============================================================
 
         /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。
-        /// 实例方法 + FindResource：不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null，#13）。</summary>
+        /// 颜色一律经 <c>element.SetResourceReference</c> 挂**资源引用**：既不固化（换主题跟随），
+        /// 也不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null，#13）。</summary>
         private FrameworkElement BuildSmartState(string iconKind, string title, string? subtitle)
         {
             var sp = new StackPanel
@@ -406,32 +414,37 @@ namespace LinkPocket.Views
             var badge = new Border
             {
                 Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-                Background = (Brush)FindResource(Theming.Tokens.AppTokens.SurfacePanel),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-            badge.Child = new M3Icon
+            badge.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfacePanel);
+            var badgeIcon = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)FindResource("App.Text.Primary"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            badgeIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+            badge.Child = badgeIcon;
             sp.Children.Add(badge);
-            sp.Children.Add(new TextBlock
+            var titleText = new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("App.Text.Primary"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
-            });
+            };
+            titleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+            sp.Children.Add(titleText);
             if (!string.IsNullOrEmpty(subtitle))
-                sp.Children.Add(new TextBlock
+            {
+                var subtitleText = new TextBlock
                 {
                     Text = subtitle, FontSize = 12,
-                    Foreground = (Brush)FindResource("App.Text.Secondary"),
                     Opacity = 0.7,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
-                });
+                };
+                subtitleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+                sp.Children.Add(subtitleText);
+            }
             return sp;
         }
     }

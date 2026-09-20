@@ -340,4 +340,94 @@ public class ThemeRulesTests
             "代码里取颜色资源也只能引 App.* 语义令牌（库角色键与令牌同值，引用错了看不出征兆）：\n"
             + string.Join("\n", offenders));
     }
+
+    /// <summary>
+    /// **画刷不得"取出即固化"**：code-behind 里 <c>(Brush)FindResource("…")</c> 取画刷再赋给元素属性，
+    /// 值在那一刻被写死成本地值 —— 换主题（= 资源字典替换画刷实例）之后再也**不跟随**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么这条必须机器化</b>：这一族错法没有任何编译期征兆，视觉上只在"换主题之后"才显形。
+    /// 用户报障原文："我切换到其他主题，这一栏的颜色异常从未被解决过" —— 像素取样证明表头
+    /// 停在出厂默认紫（<c>App.Surface.Panel</c> 的旧主题值），而顶栏 / 卡面已经跟随。
+    /// 正确形态 = <c>element.SetResourceReference(dp, key)</c>（XAML 侧 = <c>{DynamicResource}</c>）。
+    /// </para>
+    /// <para>
+    /// <b>判据</b>：扫 <c>src/</c>（排除令牌与颜色计算的唯一归属地 <c>LinkPocket.Theming</c>）的
+    /// <c>*.cs</c>，按 <c>;</c> 切成语句，**同一条语句**里同时出现 <c>(Brush)</c> 强制转换与
+    /// <c>FindResource(</c> / <c>TryFindResource(</c> 即判违规。按语句而不是按行切，跨行写法也拦得住。
+    /// </para>
+    /// <para>
+    /// <b>已知覆盖边界</b>（如实写明，不假装全覆盖）：只认 <c>(Brush)</c> 显式转换这一种形状；
+    /// 把取画刷藏进私有帮手（<c>BrushOf(key)</c> / <c>TryResource(key)</c>）再在别处赋值的**间接形态**
+    /// 不在判据内 —— 这类站点已按同一根因改掉，真要再收口得靠"帮手必须返回资源键"这类更强的约定。
+    /// <c>DragVisualAdorner</c> 的 <c>owner.TryFindResource(key) as Brush ?? throw</c> 是**失败暴露**形态
+    /// （取不到即抛，不静默兜底色），不是固化赋值，故不被本判据命中。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void 界面层_代码取画刷必须走资源引用_禁一次性赋值()
+    {
+        var castRx = new Regex(@"\(\s*(?:System\.Windows\.Media\.)?Brush\s*\)", RegexOptions.Compiled);
+        var lookupRx = new Regex(@"\b(?:Try)?FindResource\s*\(", RegexOptions.Compiled);
+        var offenders = new List<string>();
+
+        var srcDir = Path.Combine(RepoRoot, "src");
+        var themingDir = Path.Combine("src", "LinkPocket.Theming");
+        foreach (var file in Directory.EnumerateFiles(srcDir, "*.cs", SearchOption.AllDirectories))
+        {
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") ||
+                file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+                continue;
+            var rel = Relative(file);
+            if (rel.StartsWith(themingDir, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var text = StripCommentsKeepingLines(File.ReadAllText(file));
+            var start = 0;
+            while (start < text.Length)
+            {
+                var end = text.IndexOf(';', start);
+                if (end < 0) end = text.Length;
+                var statement = text[start..end];
+                var cast = castRx.Match(statement);
+                if (cast.Success && lookupRx.IsMatch(statement))
+                {
+                    // 行号取**强制转换那一处**（语句可能跨行：按语句起点报会指到无关的行）
+                    var from = Math.Max(0, cast.Index - 40);
+                    var excerpt = Regex.Replace(statement.Substring(from).Trim(), @"\s+", " ");
+                    if (excerpt.Length > 120) excerpt = excerpt[..120] + "…";
+                    if (from > 0) excerpt = "…" + excerpt;
+                    offenders.Add($"{rel}:{LineOf(text, start + cast.Index)} → {excerpt}"
+                                  + "（一次性取画刷赋值会在换主题后固化旧主题色，改用 element.SetResourceReference(dp, key)）");
+                }
+                start = end + 1;
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "界面层 code-behind 不得用 (Brush)FindResource(...) 取画刷后直接赋值"
+            + "（换主题 = 资源字典替换画刷实例，固化值不会跟随；改用 element.SetResourceReference(dp, key)）：\n"
+            + string.Join("\n", offenders));
+    }
+
+    /// <summary>
+    /// 同 <see cref="StripComments"/>，但**保留换行**（本测试要报"文件:行"，块注释吃掉换行会让行号漂移）。
+    /// </summary>
+    private static string StripCommentsKeepingLines(string text)
+    {
+        var noBlock = Regex.Replace(text, @"/\*.*?\*/",
+            m => new string(m.Value.Select(c => c == '\n' ? '\n' : ' ').ToArray()),
+            RegexOptions.Singleline);
+        return Regex.Replace(noBlock, @"//[^\r\n]*", " ");
+    }
+
+    /// <summary>偏移量 → 1 基行号。</summary>
+    private static int LineOf(string text, int offset)
+    {
+        var line = 1;
+        var limit = Math.Min(offset, text.Length);
+        for (var i = 0; i < limit; i++)
+            if (text[i] == '\n') line++;
+        return line;
+    }
 }

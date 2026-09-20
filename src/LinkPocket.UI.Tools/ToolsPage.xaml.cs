@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -466,45 +467,60 @@ namespace LinkPocket.Views
                 {
                     Field = "url", Label = "重复地址", Width = -3,
                     SortKey = r => (IComparable)((DedupGroupRow)r).Url,
-                    CellFactory = r => new TextBlock
+                    CellFactory = r =>
                     {
-                        Text = ((DedupGroupRow)r).Url,
-                        FontSize = 12,
-                        FontFamily = (FontFamily)Application.Current.FindResource(Theming.Tokens.AppTokens.FontMono),
-                        Foreground = (Brush)FindResource("App.Text.Primary"),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis
+                        var cell = new TextBlock
+                        {
+                            Text = ((DedupGroupRow)r).Url,
+                            FontSize = 12,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        };
+                        // 字体/文字色一律走**资源引用**：一次性取值（FindResource 后赋值）会在
+                        // 换主题或换字体后停在旧值上 —— 与表头底色同一根因。
+                        cell.SetResourceReference(TextElement.FontFamilyProperty, Theming.Tokens.AppTokens.FontMono);
+                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+                        return cell;
                     }
                 },
                 new DataTableColumn
                 {
                     Field = "count", Label = "重复数", Width = 90,
                     SortKey = r => (IComparable)((DedupGroupRow)r).Count,
-                    CellFactory = r => new Border
+                    CellFactory = r =>
                     {
-                        Background = (Brush)FindResource("App.Accent.Container"),
-                        CornerRadius = new CornerRadius(8),
-                        Padding = new Thickness(8, 2, 8, 2),
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Child = new TextBlock
+                        var countText = new TextBlock
                         {
                             Text = $"×{((DedupGroupRow)r).Count}",
-                            FontSize = 12, FontWeight = FontWeights.SemiBold,
-                            Foreground = (Brush)FindResource("App.Text.OnContainer")
-                        }
+                            FontSize = 12, FontWeight = FontWeights.SemiBold
+                        };
+                        countText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.OnContainer");
+                        var chip = new Border
+                        {
+                            CornerRadius = new CornerRadius(8),
+                            Padding = new Thickness(8, 2, 8, 2),
+                            HorizontalAlignment = HorizontalAlignment.Left,
+                            Child = countText
+                        };
+                        chip.SetResourceReference(Border.BackgroundProperty, "App.Accent.Container");
+                        return chip;
                     }
                 },
                 new DataTableColumn
                 {
                     Field = "locations", Label = "所在位置", Width = -2,
                     SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary,
-                    CellFactory = r => new TextBlock
+                    CellFactory = r =>
                     {
-                        Text = ((DedupGroupRow)r).LocationsSummary,
-                        FontSize = 12.5,
-                        Foreground = (Brush)FindResource("App.Text.Secondary"),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis
+                        var cell = new TextBlock
+                        {
+                            Text = ((DedupGroupRow)r).LocationsSummary,
+                            FontSize = 12.5,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        };
+                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+                        return cell;
                     }
                 },
             };
@@ -595,13 +611,17 @@ namespace LinkPocket.Views
                     // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
                     Field = "path", Label = "位置", Width = -3,
                     SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r),
-                    CellFactory = r => new TextBlock
+                    CellFactory = r =>
                     {
-                        Text = VmTools.ResolvePath((LinkDto)r),
-                        FontSize = 12.5,
-                        Foreground = (Brush)FindResource("App.Text.Secondary"),
-                        VerticalAlignment = VerticalAlignment.Center,
-                        TextTrimming = TextTrimming.CharacterEllipsis
+                        var cell = new TextBlock
+                        {
+                            Text = VmTools.ResolvePath((LinkDto)r),
+                            FontSize = 12.5,
+                            VerticalAlignment = VerticalAlignment.Center,
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        };
+                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+                        return cell;
                     }
                 },
                 new DataTableColumn
@@ -694,15 +714,14 @@ namespace LinkPocket.Views
             {
                 Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
                 BorderThickness = new Thickness(1.6),
-                BorderBrush = (Brush)FindResource("App.Text.Secondary"),
                 Background = Brushes.Transparent,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            outline.SetResourceReference(Border.BorderBrushProperty, "App.Text.Secondary");
             var fill = new Border
             {
                 Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
-                Background = (Brush)FindResource("App.Accent.Fill"),
                 Visibility = checkedNow ? Visibility.Visible : Visibility.Collapsed,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -718,6 +737,7 @@ namespace LinkPocket.Views
                     VerticalAlignment = VerticalAlignment.Center
                 }
             };
+            fill.SetResourceReference(Border.BackgroundProperty, "App.Accent.Fill");
 
             var host = new Grid { Width = 22, Height = 22 };
             host.Children.Add(outline);
@@ -767,10 +787,10 @@ namespace LinkPocket.Views
             var earthIcon = new M3Icon
             {
                 Kind = "earth", Width = 16, Height = 16,
-                Foreground = (Brush)FindResource("App.Text.Muted"),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
+            earthIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Muted");
             if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
             iconGrid.Children.Add(faviconImg);
             iconGrid.Children.Add(earthIcon);
@@ -798,34 +818,40 @@ namespace LinkPocket.Views
             }
 
             var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            textStack.Children.Add(new TextBlock
+            var nameText = new TextBlock
             {
                 Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
                 FontSize = 13.5, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)FindResource("App.Text.Primary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
-            });
-            textStack.Children.Add(new TextBlock
+            };
+            nameText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+            textStack.Children.Add(nameText);
+            var urlText = new TextBlock
             {
                 Text = link.Url,
                 FontSize = 11.5, Margin = new Thickness(0, 3, 0, 0),
-                Foreground = (Brush)FindResource("App.Text.Secondary"),
                 TextTrimming = TextTrimming.CharacterEllipsis
-            });
+            };
+            urlText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+            textStack.Children.Add(urlText);
 
             panel.Children.Add(iconGrid);
             panel.Children.Add(textStack);
             return panel;
         }
 
-        private TextBlock TextCell(string text) => new()
+        private TextBlock TextCell(string text)
         {
-            Text = text,
-            FontSize = 12.5,
-            Foreground = (Brush)FindResource("App.Text.Secondary"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
+            var cell = new TextBlock
+            {
+                Text = text,
+                FontSize = 12.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+            return cell;
+        }
 
         private void UpdateDeleteState()
         {
@@ -1033,18 +1059,19 @@ namespace LinkPocket.Views
             string message, ChipState state)
         {
             var warn = state == ChipState.Warn;
-            chip.Background = (Brush)Application.Current.FindResource("App.Support.Container");
+            chip.SetResourceReference(Border.BackgroundProperty, "App.Support.Container");
 
             // 结果条的深色内容（保证在奶油黄 / PrimaryContainer 上都可读）。
             // 原先这一支写死了 Color.FromRgb(0x1C,0x1B,0x1F)（= 当时 OnSurface 的值）→ 换令牌，跟主题走。
             // T3 起异常态改走次强调容器（警告色退场）；届时这里的分支合并为单一取色。
-            var foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer");
+            // ⚠️ 三个元素共用同一个资源键 → 逐个挂**资源引用**（一次性取画刷赋值会固化旧主题色）。
+            const string foregroundKey = "App.Text.OnContainer";
 
             icon.Visibility = state == ChipState.Success ? Visibility.Collapsed : Visibility.Visible;
             check.Visibility = state == ChipState.Success ? Visibility.Visible : Visibility.Collapsed;
-            icon.Foreground = foreground;
-            check.Stroke = foreground;
-            text.Foreground = foreground;
+            icon.SetResourceReference(TextElement.ForegroundProperty, foregroundKey);
+            check.SetResourceReference(Shape.StrokeProperty, foregroundKey);
+            text.SetResourceReference(TextElement.ForegroundProperty, foregroundKey);
             text.Text = message;
             chip.Visibility = Visibility.Visible;
         }
@@ -1270,35 +1297,38 @@ namespace LinkPocket.Views
             var badge = new Border
             {
                 Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-                Background = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.SurfacePanel),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-            badge.Child = new M3Icon
+            badge.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfacePanel);
+            var badgeIcon = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            badgeIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.OnContainer");
+            badge.Child = badgeIcon;
             panel.Children.Add(badge);
 
-            panel.Children.Add(new TextBlock
+            var titleText = new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("App.Text.OnContainer"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
-            });
+            };
+            titleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.OnContainer");
+            panel.Children.Add(titleText);
             if (!string.IsNullOrEmpty(subtitle))
             {
-                panel.Children.Add(new TextBlock
+                var subtitleText = new TextBlock
                 {
                     Text = subtitle, FontSize = 12,
-                    Foreground = (Brush)Application.Current.FindResource("App.Text.Secondary"),
                     Opacity = 0.7, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
                     MaxWidth = 420,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
-                });
+                };
+                subtitleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+                panel.Children.Add(subtitleText);
             }
             return panel;
         }

@@ -4,66 +4,55 @@ using Material3.Core;
 
 namespace LinkPocket.Theming.Themes;
 
-/// <summary>主题的**分族结果**（§5.3 第 2–5 步的产物）：三个族各自的色相与彩度。</summary>
-/// <param name="AccentHue">强调族色相（填充 / 图标 / 强调文字 / 强调容器共用）。</param>
-/// <param name="AccentChroma">强调族彩度（已按彩度上限档钳制）。</param>
-/// <param name="AccentTone">强调族最暗成员的明度（仅诊断用）。</param>
-/// <param name="SupportHue">支撑族色相（次强调容器 / 计数药丸 / 删除类药丸 / 文件夹类型色）。</param>
-/// <param name="SupportChroma">支撑族彩度（已钳制）。</param>
-/// <param name="SupportIsDerived">true = 没有第二个族，支撑族由强调色相 ±60° 派生。</param>
-/// <param name="NeutralHue">中性色相：决定表面旋转角与文字三档的染色方向。</param>
-/// <param name="NeutralVariantHue">中性**变体**色相：决定描边（主/弱）的染色方向。</param>
+/// <summary>主题的**角色分配结果**（配色成员 → 固定角色槽）：各槽的色相与彩度。</summary>
+/// <param name="AccentHue">强调槽色相（主药丸填充 / 类型图标 / 强调文字）。</param>
+/// <param name="AccentChroma">强调槽彩度（已按彩度上限档钳制）。</param>
+/// <param name="SupportHue">支撑槽色相（次强调容器 / 计数药丸 / 删除类药丸 / 文件夹类型色）。</param>
+/// <param name="SupportChroma">支撑槽彩度（已钳制）。</param>
+/// <param name="SupportIsDerived">true = 配色里没有第二个成员，支撑槽由强调色相派生（同色相、彩度减半）。</param>
+/// <param name="ContainerHue">强调容器槽色相（选中指示器 / 落点高亮 / 徽标底）。</param>
+/// <param name="ContainerChroma">强调容器槽彩度。</param>
+/// <param name="NeutralHue">表面族色相（= 配色里**最浅**的成员）：决定表面旋转角与文字三档的染色方向。</param>
+/// <param name="NeutralVariantHue">描边槽色相：决定 `Line.Outline` / `Line.Variant` 的染色方向。</param>
 public sealed record ThemeFamilies(
     double AccentHue,
     double AccentChroma,
-    double AccentTone,
     double SupportHue,
     double SupportChroma,
     bool SupportIsDerived,
+    double ContainerHue,
+    double ContainerChroma,
     double NeutralHue,
     double NeutralVariantHue);
 
 /// <summary>
-/// 派生管线的**纯函数核心**（方案 §5.3 的七步）：<c>ThemeDefinition → ThemeFamilies</c>。
+/// 派生管线的**纯函数核心**：<c>ThemeDefinition → ThemeFamilies</c>（配色成员 → 角色槽）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>输入是多个颜色而不是一个种子</b>，所以先**分族**（色相 30° 内聚族）再定角色：
-/// 强调族（最暗者优先）→ 支撑族（第二族，或 +60° 派生且**回避暖色带 0°–105°**）→ 中性族（低彩度成员，或取强调族色相）。
+/// <b>用户令（2026-09-20）："我们给出的 4/5 个颜色是最高优先级"</b>——旧模型按色相聚族、单族时用 ±60°
+/// 旋转**发明**一个支撑色相，且只取「色相圆均值 + 最大彩度」，于是配色成员的明度被整体丢弃
+/// （实测默认主题 5 色里 3 个对界面零影响）、造出来的色相又落进肤色带/冷色带
+/// （用户报障"偏黄偏肤色""怎么又变偏蓝了"）。见 `文档/WARNINGS.md` 76/77。
 /// </para>
 /// <para>
-/// <b>自研纪律</b>：只借鉴 Material You 的**颜色科学原理**（HCT 空间、色调板档位、大面积低彩度、
-/// 状态层叠层），不套用它的标准档位表与 <c>SchemeVariant</c>。彩度**只钳上限、绝不放大**
-/// （尊重用户配色的彩度性格，见方案 §4.6）。
+/// 现行规则 = **彩度降序占槽**（并列取更暗者先）+ **明度最高者管表面**：
+/// ① 强调族 ← 彩度最高的成员；② 支撑族 ← 次高；③ 强调容器 ← 第三；④ 描边 ← 第四；
+/// ⑤ 表面族与文字墨 ← **明度最高**的成员（含低彩度色）。
+/// 每个槽只沿**自己那份色相与彩度**做明度档位化（档位表在 <see cref="ToneScale"/>；HCT 的档位→对比度
+/// 与色相无关，所以"随便选 4/5 个颜色都可读"这条性质不受影响）。**界面上的色相全部来自用户给的颜色**。
 /// </para>
 /// <para>
-/// <b>为什么中性色相要能钉住</b>：出厂默认的 5 个身份色里最浅的一个（<c>#F2EEF5</c>，C5.4）本身
-/// 就是低彩度成员，会进中性池 → 派生出的中性色相是 287.7°，比今天背景的 298.7° 偏 −11°，
-/// 表面族会跟着漂。定稿要求"背景逐字节不变"，所以在**数据层**（而不是代码分支里）允许主题钉住中性色相。
+/// <b>缺位回退</b>（配色只有 1–3 个颜色时走这条，内置预设即如此）：支撑缺 → 强调同色相、彩度 ×0.5
+/// （M3 secondary "一半厚度"的惯例）；强调容器缺 → 强调色相；描边缺 → 强调色相。
+/// </para>
+/// <para>
+/// <b><see cref="ThemeDefinition.NeutralHueOverride"/></b> 只对**表面族色相**生效（内置预设用它钉住
+/// 各自标定过的背景色相）；它不参与任何槽位的选取。
 /// </para>
 /// </remarks>
 public static class PaletteSolver
 {
-    /// <summary>彩度低于此值的颜色进中性池（不参与分族）。</summary>
-    public const double NeutralPoolChromaThreshold = 6.0;
-
-    /// <summary>同族判据：与族色的色相差在此值以内。</summary>
-    public const double FamilyHueTolerance = 30.0;
-
-    /// <summary>
-    /// 暖色回避带的**起点**（0°）：红 → 橙 → 黄整段，支撑族派生都不落在这里。
-    /// </summary>
-    /// <remarks>
-    /// 起点为什么是 0° 而不是 45°（原「黄区」）：<b>肤色/肉粉也在这一段</b>。
-    /// 紫罗兰（强调 H310.6）按 +60° 派生会落到 H10.6 —— 实测即 `#FDDADD`（皮肤粉）/ `#72585A`（棕），
-    /// 用户报障「紫罗兰主题里混着偏黄偏肤色的东西」。回避带扩到 105° 后，紫罗兰改走 −60° → H250.6（蓝紫），
-    /// 与强调色同属冷色家族；单色预设里只有紫色系会受影响（焦糖/青提/青梨的 +60° 都不在带内）。
-    /// </remarks>
-    public const double WarmZoneStart = 0.0;
-
-    /// <summary>暖色回避带的**终点**（105°）：黄在浅底上辨识度最差，且黄是本仓已废弃的语义色（去红去黄）。</summary>
-    public const double WarmZoneEnd = 105.0;
-
     /// <summary>彩度上限档 → (强调上限, 支撑上限)（自研「只钳上限」；单色档两族同钳）。</summary>
     public static (double Accent, double Support) ChromaCaps(ChromaCap cap) => cap switch
     {
@@ -72,7 +61,7 @@ public static class PaletteSolver
         _ => (36.0, 24.0),
     };
 
-    /// <summary>派生出主题的三族（纯函数、无副作用、可单测）。</summary>
+    /// <summary>把配色成员分配到固定角色槽（纯函数、无副作用、可单测）。</summary>
     public static ThemeFamilies SolveFamilies(ThemeDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -82,97 +71,46 @@ public static class PaletteSolver
             .Select(c => (Color: c, Hct: ColorMath.Measure(c)))
             .ToList();
 
-        // 第 2 步：分族（彩度 ≥6 按色相 30° 内贪心聚族；<6 进中性池）
-        var chromatics = measured
-            .Where(m => m.Hct.C >= NeutralPoolChromaThreshold)
+        // ①–④ 占槽顺序：彩度降序（并列取更暗者先）——"配色里最鲜艳的那个就是主色"
+        var byChroma = measured
             .OrderByDescending(m => m.Hct.C)
-            .ToList();
-        var neutralPool = measured
-            .Where(m => m.Hct.C < NeutralPoolChromaThreshold)
+            .ThenBy(m => m.Hct.T)
             .ToList();
 
-        var families = ClusterFamilies(chromatics);
+        // ⑤ 表面族来源：明度最高者——"配色里最浅的那个决定背景"
+        var surface = measured.OrderByDescending(m => m.Hct.T).First();
 
-        // 第 3 步：强调族 = 族内最暗者优先（并列则彩度高者）——"用户放的最深那个色就是主色"
-        ThemeFamily? accent = null;
-        foreach (var f in families)
-        {
-            if (accent is null
-                || f.MinTone < accent.MinTone
-                || (Math.Abs(f.MinTone - accent.MinTone) < 0.5 && f.Chroma > accent.Chroma))
-                accent = f;
-        }
+        var accent = Slot(byChroma, 0);
+        var support = Slot(byChroma, 1);
+        var container = Slot(byChroma, 2);
+        var outline = Slot(byChroma, 3);
 
-        // 第 4 步：支撑族 = 剩余族中同样规则取一个；没有第二个族时 ±60° 派生（回避暖色带 0°–105°）
-        ThemeFamily? support = null;
-        foreach (var f in families)
-        {
-            if (ReferenceEquals(f, accent)) continue;
-            if (support is null
-                || f.MinTone < support.MinTone
-                || (Math.Abs(f.MinTone - support.MinTone) < 0.5 && f.Chroma > support.Chroma))
-                support = f;
-        }
+        var accentHue = accent?.Hct.H ?? surface.Hct.H;
+        var accentChroma = Math.Min(accent?.Hct.C ?? 0.0, caps.Accent);
 
-        var accentHue = accent?.Hue ?? FallbackHue(measured);
-        var accentChroma = Math.Min(accent?.Chroma ?? 0.0, caps.Accent);
-        var accentTone = accent?.MinTone ?? 40.0;
-
-        double supportHue, supportChroma;
         var supportDerived = support is null;
-        if (support is null)
-        {
-            supportHue = DeriveSupportHue(accentHue);
-            // M3 secondary 惯例：没有第二族时，次强调是主色的**一半厚度**
-            supportChroma = Math.Min(accentChroma * 0.5, caps.Support);
-        }
-        else
-        {
-            supportHue = support.Hue;
-            supportChroma = Math.Min(support.Chroma, caps.Support);
-        }
+        var supportHue = support?.Hct.H ?? accentHue;
+        var supportChroma = support is null
+            ? Math.Min(accentChroma * 0.5, caps.Support)            // 只有一个颜色：次强调 = 主色的"一半厚度"
+            : Math.Min(support.Value.Hct.C, caps.Support);
 
-        // 中性色相优先级：主题钉值 > 中性池圆均值 > 强调族色相。
-        // 中性**变体**色相不取钉值——描边不是"表面"，实测（附录 A 默认主题）描边走中性池的 287.7°，
-        // 而表面走钉住的 298.7°：两者刻意分开，混用会让描边偏紫（实测差 #A19CA6 vs #9F9CA7）。
-        var poolHue = neutralPool.Count > 0
-            ? ColorMath.CircularMeanHue(neutralPool.Select(m => (m.Hct.H, m.Hct.C)).ToList())
-            : accentHue;
-        var neutralHue = definition.NeutralHueOverride ?? poolHue;
+        var containerHue = container?.Hct.H ?? accentHue;
+        var containerChroma = Math.Min(container?.Hct.C ?? accentChroma, caps.Accent);
+
+        var outlineHue = outline?.Hct.H ?? accentHue;
 
         return new ThemeFamilies(
-            ColorMath.NormalizeHue(accentHue), accentChroma, accentTone,
+            ColorMath.NormalizeHue(accentHue), accentChroma,
             ColorMath.NormalizeHue(supportHue), supportChroma, supportDerived,
-            ColorMath.NormalizeHue(neutralHue), ColorMath.NormalizeHue(poolHue));
+            ColorMath.NormalizeHue(containerHue), containerChroma,
+            ColorMath.NormalizeHue(definition.NeutralHueOverride ?? surface.Hct.H),
+            ColorMath.NormalizeHue(outlineHue));
     }
 
-    /// <summary>
-    /// 支撑族派生色相：强调色相 +60°；落在**暖色回避带**（0°–105°：红 / 橙 / 黄 / 肤色）时改用 −60°。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 两个候选相差 120°，而回避带宽 105° &lt; 120° → **至多只有一个落在带内**，
-    /// 所以"取另一个"永远有解（不是启发式，是几何事实；<c>支撑族派生_永远给出带外色相</c> 卡住这条）。
-    /// </para>
-    /// <para>
-    /// 为什么必须回避而不是"就近取"：派生色会大面积出现在界面上（次药丸 / 计数药丸 / 文件夹图标 /
-    /// 容器字），一旦落进暖带，紫色系主题就会读成"粉棕 + 肤色"，与主题卡展示的身份色完全对不上
-    /// （用户报障原文："默认的紫罗兰是紫色的，那些偏黄的、偏肤色的是哪来的"）。
-    /// </para>
-    /// </remarks>
-    public static double DeriveSupportHue(double accentHue)
-    {
-        var plus = ColorMath.NormalizeHue(accentHue + 60.0);
-        var minus = ColorMath.NormalizeHue(accentHue - 60.0);
-        return InWarmZone(plus) ? minus : plus;
-    }
-
-    /// <summary>色相是否落在暖色回避带内（闭区间 <see cref="WarmZoneStart"/>–<see cref="WarmZoneEnd"/>）。</summary>
-    public static bool InWarmZone(double hue)
-    {
-        var h = ColorMath.NormalizeHue(hue);
-        return h >= WarmZoneStart && h <= WarmZoneEnd;
-    }
+    /// <summary>按彩度序取第 <paramref name="index"/> 个成员（越界 = 该槽缺位 → 调用方走回退）。</summary>
+    private static (Argb Color, ColorMath.Hct3 Hct)? Slot(
+        IReadOnlyList<(Argb Color, ColorMath.Hct3 Hct)> byChroma, int index) =>
+        index < byChroma.Count ? byChroma[index] : null;
 
     /// <summary>中性族彩度（大面积必须"安静"；方案 §4.5）。</summary>
     public const double NeutralChroma = 4.0;
@@ -212,8 +150,9 @@ public static class PaletteSolver
 
         var accentFill = At(families.AccentHue, families.AccentChroma, ToneScale.AccentFill);
         var accentText = At(families.AccentHue, families.AccentChroma, ToneScale.AccentText);
-        var accentContainer = At(families.AccentHue, families.AccentChroma, ToneScale.AccentContainer);
-        var accentOnContainer = At(families.AccentHue, families.AccentChroma, ToneScale.AccentOnContainer);
+        // 强调容器走**它自己的槽**（配色里第三个成员）——"每个颜色都有出口"是用户令（2026-09-20）
+        var accentContainer = At(families.ContainerHue, families.ContainerChroma, ToneScale.AccentContainer);
+        var accentOnContainer = At(families.ContainerHue, families.ContainerChroma, ToneScale.AccentOnContainer);
 
         var supportContainer = At(families.SupportHue, families.SupportChroma, ToneScale.SupportContainer);
         var supportOnContainer = At(families.SupportHue, families.SupportChroma, ToneScale.SupportOnContainer);
@@ -334,74 +273,5 @@ public static class PaletteSolver
         var c = ColorMath.Unpack(anchor.Today);
         var hct = ColorMath.Measure(anchor.Today);
         return ColorMath.FromAlphaHct(c.A, ColorMath.RotateHue(hct.H, rotation), hct.C, hct.T);
-    }
-
-    /// <summary>无法选出强调族时的兜底色相（= 今天背景色相；正常配色不会走到，只保证纯函数总有值）。</summary>
-    private static double FallbackHue(IReadOnlyList<(Argb Color, ColorMath.Hct3 Hct)> measured) =>
-        measured.Count > 0 ? measured[0].Hct.H : ThemeDefinition.ReferenceNeutralHue;
-
-    /// <summary>
-    /// 按彩度降序贪心聚族：与族色相在 <see cref="FamilyHueTolerance"/> 内即并入。
-    /// </summary>
-    /// <remarks>
-    /// <b>单链聚族 + 跨度闸</b>：只用"与族色相距离"判定时，A≈30°、B≈60° 的两个色会经"平均色相 45°"
-    /// 被接成一条链（A、B 各自都在 30° 内，但彼此差 30°），把两个本不相干的群并成一个、
-    /// 并使色相均值滑到中间。故并入后还要复核**成员两两跨度**（≤ 2×容差），超了就另起一族——
-    /// 判据落在"这一族到底包含什么"，而不是"能不能接上"。
-    /// </remarks>
-    private static List<ThemeFamily> ClusterFamilies(
-        IReadOnlyList<(Argb Color, ColorMath.Hct3 Hct)> orderedByChromaDesc)
-    {
-        var families = new List<ThemeFamily>();
-        foreach (var (_, hct) in orderedByChromaDesc)
-        {
-            var target = families.FirstOrDefault(f =>
-                ColorMath.HueDistance(f.Hue, hct.H) <= FamilyHueTolerance && f.CanAccept(hct.H));
-            if (target is null)
-                families.Add(new ThemeFamily(hct.H, hct.C, hct.T));
-            else
-                target.Add(hct.H, hct.C, hct.T);
-        }
-        return families;
-    }
-
-    /// <summary>一族允许的最大成员跨度（度）：两倍容差。</summary>
-    private const double FamilyMaxSpread = FamilyHueTolerance * 2.0;
-
-    /// <summary>一个色族：色相 = 彩度加权圆均值、彩度 = 成员最大彩度、最暗明度 = 成员最小 tone。</summary>
-    private sealed class ThemeFamily
-    {
-        private readonly List<(double Hue, double Weight)> _members = new();
-
-        public ThemeFamily(double hue, double chroma, double tone)
-        {
-            Hue = ColorMath.NormalizeHue(hue);
-            Chroma = chroma;
-            MinTone = tone;
-            _members.Add((hue, chroma));
-        }
-
-        public double Hue { get; private set; }
-
-        public double Chroma { get; private set; }
-
-        public double MinTone { get; private set; }
-
-        /// <summary>跨度闸：并入 <paramref name="hue"/> 后，成员两两色相差仍须 ≤ <see cref="FamilyMaxSpread"/>。</summary>
-        public bool CanAccept(double hue)
-        {
-            foreach (var (memberHue, _) in _members)
-                if (ColorMath.HueDistance(memberHue, hue) > FamilyMaxSpread)
-                    return false;
-            return true;
-        }
-
-        public void Add(double hue, double chroma, double tone)
-        {
-            _members.Add((hue, chroma));
-            Hue = ColorMath.CircularMeanHue(_members);
-            Chroma = Math.Max(Chroma, chroma);
-            MinTone = Math.Min(MinTone, tone);
-        }
     }
 }

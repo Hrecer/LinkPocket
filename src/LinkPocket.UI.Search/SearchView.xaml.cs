@@ -214,10 +214,11 @@ public partial class SearchView : UserControl
         {
             Kind = "earth",
             Width = 16, Height = 16,
-            Foreground = (Brush)FindResource("App.Text.Muted"),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center
         };
+        // 颜色一律走**资源引用**：一次性 FindResource 取画刷赋值 = 换主题后停在旧主题（表头同根因）
+        earthIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Muted");
         if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
         iconGrid.Children.Add(faviconImg);
         iconGrid.Children.Add(earthIcon);
@@ -249,19 +250,19 @@ public partial class SearchView : UserControl
         var titleBlock = new TextBlock
         {
             FontSize = 14, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("App.Text.Primary"),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
-        AddHighlightedRuns(titleBlock, displayTitle, _vm?.LastQuery ?? "", (Brush)FindResource("App.Text.Primary"));
+        titleBlock.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+        AddHighlightedRuns(titleBlock, displayTitle, _vm?.LastQuery ?? "", "App.Text.Primary");
         textStack.Children.Add(titleBlock);
 
         var urlBlock = new TextBlock
         {
             FontSize = 11.5,
-            Foreground = (Brush)FindResource("App.Text.Secondary"),
             TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 3, 0, 0)
         };
-        AddHighlightedRuns(urlBlock, item.Url, _vm?.LastQuery ?? "", (Brush)FindResource("App.Text.Secondary"));
+        urlBlock.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+        AddHighlightedRuns(urlBlock, item.Url, _vm?.LastQuery ?? "", "App.Text.Secondary");
         textStack.Children.Add(urlBlock);
 
         panel.Children.Add(iconGrid);
@@ -271,14 +272,17 @@ public partial class SearchView : UserControl
 
     /// <summary>普通文本单元格（表格化信息列统一规格）。</summary>
     private TextBlock TextCell(string text, double fontSize)
-        => new()
+    {
+        var tb = new TextBlock
         {
             Text = text,
             FontSize = fontSize,
-            Foreground = (Brush)FindResource("App.Text.Secondary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
+        tb.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+        return tb;
+    }
 
     /// <summary>MD3E 空状态视图：大圆角色块徽章 + 引导性文案（替代生硬的系统提示）。</summary>
     private FrameworkElement BuildSearchState(string iconKind, string title, string? subtitle,
@@ -288,41 +292,47 @@ public partial class SearchView : UserControl
         var badge = new Border
         {
             Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-            Background = (Brush)FindResource(containerBrush),
             HorizontalAlignment = HorizontalAlignment.Center
         };
-        badge.Child = new M3Icon
+        badge.SetResourceReference(Border.BackgroundProperty, containerBrush);
+        var badgeIcon = new M3Icon
         {
             Kind = iconKind, Width = 40, Height = 40,
-            Foreground = (Brush)FindResource(onContainerBrush),
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
         };
+        badgeIcon.SetResourceReference(TextElement.ForegroundProperty, onContainerBrush);
+        badge.Child = badgeIcon;
         sp.Children.Add(badge);
-        sp.Children.Add(new TextBlock
+        var stateTitle = new TextBlock
         {
             Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("App.Text.Primary"),
             HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
-        });
+        };
+        stateTitle.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
+        sp.Children.Add(stateTitle);
         if (subtitle != null)
-            sp.Children.Add(new TextBlock
+        {
+            var stateSubtitle = new TextBlock
             {
                 Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
-                Foreground = (Brush)FindResource("App.Text.Secondary"), Opacity = 0.85,
+                Opacity = 0.85,
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
                 MaxWidth = 420, TextAlignment = TextAlignment.Center
-            });
+            };
+            stateSubtitle.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
+            sp.Children.Add(stateSubtitle);
+        }
         return sp;
     }
 
-    /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。</summary>
-    private void AddHighlightedRuns(TextBlock tb, string text, string query, Brush normal)
+    /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。
+    /// 画刷一律经**资源引用**（<paramref name="normalKey"/> = 资源键）：一次性取画刷赋值会在换主题后停在旧主题。</summary>
+    private void AddHighlightedRuns(TextBlock tb, string text, string query, string normalKey)
     {
-        var accent = (Brush)FindResource("App.Accent.Fill");
         tb.Inlines.Clear();
         if (string.IsNullOrEmpty(query))
         {
-            tb.Inlines.Add(new Run(text) { Foreground = normal });
+            tb.Inlines.Add(ColoredRun(text, normalKey));
             return;
         }
         var lower = text.ToLowerInvariant();
@@ -334,18 +344,24 @@ public partial class SearchView : UserControl
             if (hit < 0)
             {
                 if (pos < text.Length)
-                    tb.Inlines.Add(new Run(text[pos..]) { Foreground = normal });
+                    tb.Inlines.Add(ColoredRun(text[pos..], normalKey));
                 break;
             }
             if (hit > pos)
-                tb.Inlines.Add(new Run(text[pos..hit]) { Foreground = normal });
-            tb.Inlines.Add(new Run(text.Substring(hit, q.Length))
-            {
-                Foreground = accent,
-                FontWeight = FontWeights.Bold
-            });
+                tb.Inlines.Add(ColoredRun(text[pos..hit], normalKey));
+            var accent = ColoredRun(text.Substring(hit, q.Length), "App.Accent.Fill");
+            accent.FontWeight = FontWeights.Bold;
+            tb.Inlines.Add(accent);
             pos = hit + q.Length;
         }
+    }
+
+    /// <summary>按资源键着色的 Run（Foreground 走 TextElement 附加属性 → 换主题自动跟随）。</summary>
+    private static Run ColoredRun(string text, string key)
+    {
+        var run = new Run(text);
+        run.SetResourceReference(TextElement.ForegroundProperty, key);
+        return run;
     }
 
     private static BitmapImage? TryLoadFavicon(string? faviconUrl)

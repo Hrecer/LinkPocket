@@ -193,7 +193,6 @@ public class SortableDataTable : Grid
 
         _headerBand = new Border
         {
-            Background = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.SurfacePanel),
             CornerRadius = new CornerRadius(24, 24, 0, 0),
             // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（BrowserView.xaml 中同样 Height=32、文字垂直居中）：
             // 两条紫色色带等高，底边严格对齐（侧栏曾靠 Padding+行高撑出 31.x 导致底边差一点）。
@@ -203,6 +202,10 @@ public class SortableDataTable : Grid
             Height = 32,
             Padding = new Thickness(16, 0, 16, 0)
         };
+        // ⚠️ 表头底色必须是**资源引用**，不能 FindResource 取画刷后赋值（用户报障 2026：换主题后
+        // 这一栏永远停在旧主题的紫。「切主题 = 资源字典换画刷实例」的地方，一次性取到的画刷会被
+        // 固化成本地值，之后再也不跟随）。SetResourceReference 挂的是资源引用表达式 → 换主题即跟随。
+        _headerBand.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfacePanel);
         _headerBand.SetBinding(MarginProperty, new Binding(nameof(HeaderBandMargin)) { Source = this });
         _headerGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
         _headerBand.Child = _headerGrid;
@@ -654,7 +657,9 @@ public class SortableDataTable : Grid
         style.Triggers.Add(new Trigger
         {
             Property = IsMouseOverProperty, Value = true,
-            Setters = { new Setter(BackgroundProperty, (Brush)Application.Current.FindResource("App.Surface.Hover")) }
+            // 悬停底色同样走**资源引用**（Setter 里的 DynamicResource）：一次性取的画刷会被固化，
+            // 换主题后悬停色仍停在旧主题。
+            Setters = { new Setter(BackgroundProperty, new DynamicResourceExtension("App.Surface.Hover")) }
         });
         row.Style = style;
 
@@ -721,7 +726,7 @@ public class SortableDataTable : Grid
             _paintedSelection.Add(item);
             SelectedItem ??= item;
             if (_rowMap.TryGetValue(item, out var row))
-                row.Background = (Brush)Application.Current.FindResource("App.Accent.Container");
+                row.SetResourceReference(Border.BackgroundProperty, "App.Accent.Container");
         }
     }
 
@@ -739,6 +744,9 @@ public class SortableDataTable : Grid
     /// 复位某行的选中底色：用 ClearValue 而不是赋 Transparent —— 本地值会压过样式触发器，
     /// 赋过 Transparent 之后该行的悬停高亮就永久失效了。
     /// </summary>
+    /// <remarks>选中底色现在由 <c>SetResourceReference</c> 挂上（资源引用同样算本地值），
+    /// <c>ClearValue</c> 一样能整条摘掉并回落到样式触发器 —— 与旧的"赋值 + ClearValue"行为一致
+    /// （实测：<c>Border.BackgroundProperty</c> 与这里的 <c>BackgroundProperty</c> 是同一个 DP 实例）。</remarks>
     private void ResetRowBackground(object? item)
     {
         if (item == null) return;

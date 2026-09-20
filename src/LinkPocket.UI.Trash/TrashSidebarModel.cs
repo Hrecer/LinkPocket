@@ -25,6 +25,7 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = false;
         IsFolder = row.IsFolder;
         IsReadOnly = true;
+        UseTrashedIconTone = true;   // 被删快照：右栏大图标与主栏/左栏同口径灰化（用户报障"右栏没灰化"）
         // 动作面：详情/打开 + 打开网站 + 还原/还原到根目录/永久删除（无编辑/重命名）
         ShowOpenAction = true;
         ShowOpenWebsite = true;                       // 「打开」药丸（打开网站；即使是废弃条目也能打开）
@@ -109,6 +110,7 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = true;
         IsFolder = false;
         IsReadOnly = true;
+        UseTrashedIconTone = true;   // 与单选同口径：回收站右栏一律灰化
         // 多选：只提供永久删除（与浏览页同款按钮/样式，文案按页定制）
         ShowOpenAction = false;
         ShowOpenWebsite = false;

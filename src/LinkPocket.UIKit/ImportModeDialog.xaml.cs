@@ -1,6 +1,6 @@
 using System.Linq;
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Controls;
 
 namespace LinkPocket.Views;
 
@@ -81,19 +81,19 @@ public partial class ImportModeDialog : Window
 
         // 选中态：常规 = PrimaryContainer 卡 + Primary 单选；「清空后导入」= 次强调容器卡
         // （与次操作共用同一套呈现 —— 破坏性动作不设专门警示色，不可逆性由确认文案承担）
-        AppendCard.Background = BrushOf(_replace ? "SurfaceContainerHighest" : "PrimaryContainer");
-        AppendRing.BorderBrush = BrushOf(_replace ? "OutlineVariant" : "Primary");
+        // ⚠️ 画刷一律走**资源引用**：一次性取画刷赋值会把当前主题固化成本地值（换主题后停在旧主题，
+        // 与表头底色同一根因）；取不到键也不再静默兜一个透明画刷（那会伪装成"正常但不着色"）。
+        AppendCard.SetResourceReference(Border.BackgroundProperty, _replace ? "SurfaceContainerHighest" : "PrimaryContainer");
+        AppendRing.SetResourceReference(Border.BorderBrushProperty, _replace ? "OutlineVariant" : "Primary");
         AppendDot.Visibility = _replace ? Visibility.Collapsed : Visibility.Visible;
 
-        ReplaceCard.Background = BrushOf(_replace ? Theming.Tokens.AppTokens.SupportContainer : "SurfaceContainerHighest");
-        ReplaceRing.BorderBrush = BrushOf(_replace ? "Primary" : "OutlineVariant");
+        ReplaceCard.SetResourceReference(Border.BackgroundProperty,
+            _replace ? Theming.Tokens.AppTokens.SupportContainer : "SurfaceContainerHighest");
+        ReplaceRing.SetResourceReference(Border.BorderBrushProperty, _replace ? "Primary" : "OutlineVariant");
         ReplaceDot.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
 
         ReplaceConfirmBox.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
         ConfirmBtn.Style = (Style)FindResource(_replace ? "TonalButton" : "PrimaryPillButton");
         ConfirmBtn.IsEnabled = confirmOk;
     }
-
-    private static Brush BrushOf(string key)
-        => Application.Current.TryFindResource(key) is Brush b ? b : Brushes.Transparent;
 }
