@@ -157,7 +157,7 @@ namespace LinkPocket.Views
                 LpLog.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
                 ExportProgressText.Text = "失败";
-                ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.LegacyWarnBackground);
+                ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.SupportContainer);
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
             }

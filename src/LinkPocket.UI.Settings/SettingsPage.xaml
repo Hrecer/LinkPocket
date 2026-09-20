@@ -78,7 +78,7 @@
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="24" Height="24" CornerRadius="12"
-                                            Background="{DynamicResource App.Legacy.WarnBackground}">
+                                            Background="{DynamicResource App.Support.Container}">
                                         <m3:M3Icon Kind="delete-outline" Width="13" Height="13"
                                                    Foreground="{DynamicResource OnSurface}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -93,7 +93,7 @@
                             </StackPanel>
                             <Button Grid.Column="1" x:Name="ClearAllDataButton"
                                     Content="清空数据" VerticalAlignment="Center"
-                                    Style="{StaticResource WarnPillButton}" Height="36" Padding="20,0"
+                                    Style="{StaticResource TonalButton}" Height="36" Padding="20,0"
                                     Cursor="Hand" Click="ClearAllDataButton_Click"/>
                         </Grid>
                     </Border>
@@ -136,7 +136,7 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <Border Width="44" Height="44" CornerRadius="22"
-                                Background="{DynamicResource App.Legacy.WarnBackground}">
+                                Background="{DynamicResource App.Support.Container}">
                             <m3:M3Icon Kind="delete-outline" Width="22" Height="22"
                                        Foreground="{DynamicResource OnSurface}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -182,7 +182,7 @@
                                 Height="32" MinWidth="96" Padding="20,6" Margin="0,0,10,0"
                                 Cursor="Hand" Click="CancelConfirmButton_Click" FontSize="13"/>
                         <Button Grid.Column="2" x:Name="ExecuteClearButton"
-                                Content="确认清空" Style="{StaticResource WarnPillButton}"
+                                Content="确认清空" Style="{StaticResource TonalButton}"
                                 Height="32" MinWidth="96" Padding="20,6" IsEnabled="False"
                                 Cursor="Hand" Click="ExecuteClearButton_Click" FontSize="13"/>
                     </Grid>

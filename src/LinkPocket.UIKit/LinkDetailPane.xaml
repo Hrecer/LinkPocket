@@ -216,7 +216,7 @@
                                         Command="{Binding DeleteCommand}"
                                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                               Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
+                                               Foreground="{DynamicResource App.Support.OnContainer}"/>
                                 </Button>
                             </Grid>
                         </StackPanel>

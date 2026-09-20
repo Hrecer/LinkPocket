@@ -32,22 +32,16 @@ public static class ThemeService
     /// <summary>当前主题定义。</summary>
     public static ThemeDefinition Current => _current;
 
-    /// <summary>当前**实际发布**的令牌表（含 T2 兼容覆盖）；未 Apply 也可读，便于单测与预览。</summary>
-    public static TokenTable Table => _table ??= ApplyCurrentTable();
+    /// <summary>当前**实际发布**的令牌表（= <see cref="DerivedTable"/> 的缓存）；未 Apply 也可读，便于单测与预览。</summary>
+    public static TokenTable Table => _table ??= PaletteSolver.Solve(_current);
 
     /// <summary>
-    /// **最终语义**令牌表（不含兼容覆盖）：T3 起它就是发布值，也是对比度/定稿值的验收入口。
+    /// **最终语义**令牌表：对比度矩阵 / 定稿值核对的验收入口（与 <see cref="Table"/> 同源）。
     /// </summary>
     public static TokenTable DerivedTable => PaletteSolver.Solve(_current);
 
-    private static TokenTable ApplyCurrentTable()
-    {
-        var derived = PaletteSolver.Solve(_current);
-        return ThemeCompatibility.Overlay(derived, PaletteSolver.RawAnchored(_current));
-    }
-
     /// <summary>
-    /// 应用一个主题定义：求解 → **T2 兼容覆盖** → 发布 → 记留痕 → 抛 <see cref="Changed"/>。
+    /// 应用一个主题定义：求解 → 发布 → 记留痕 → 抛 <see cref="Changed"/>。
     /// </summary>
     /// <param name="definition">主题定义。</param>
     /// <param name="resources">目标资源字典（缺省 = <c>Application.Current.Resources</c>）。</param>
@@ -56,9 +50,7 @@ public static class ThemeService
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        var derived = PaletteSolver.Solve(definition);
-        // T2 过渡期：把语义令牌覆盖成"今天值"，使本阶段视觉零变化（T3 删除该层即一次性切换视觉）。
-        var table = ThemeCompatibility.Overlay(derived, PaletteSolver.RawAnchored(definition));
+        var table = PaletteSolver.Solve(definition);
 
         _current = definition;
         _table = table;

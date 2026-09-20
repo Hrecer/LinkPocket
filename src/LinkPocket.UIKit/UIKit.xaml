@@ -26,49 +26,6 @@
          历史上这里是 6 个写死的 SolidColorBrush（#FAF8FD / #F5F1FB / #E4DCF3 / #EAE4ED / #A18EB0 / #F5E9B8），
          换主题纹丝不动 —— 那是"半主题化"的根因，已清零。 -->
 
-    <!-- WarnPillButton：删除/警告类药丸按钮 —— 启用 = 奶油黄底 + 深色内容。
-         禁用 = 同底色降透明度（0.4，与 TonalButton 同手法）得到变浅/变灰的黄色变体，
-         不引入任何手写的替代灰色。三层结构同 TonalButton。 -->
-    <Style x:Key="WarnPillButton" TargetType="Button">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
-        <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
-        <Setter Property="Cursor" Value="Hand"/>
-        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-        <Setter Property="HorizontalContentAlignment" Value="Center"/>
-        <Setter Property="VerticalContentAlignment" Value="Center"/>
-        <!-- 药丸样式不含 Height/Padding 默认值 → 调用方把垂直 Padding 写成 0 就会压扁。
-             MinHeight 兜底：无论谁怎么写 Padding，药丸都不会矮于 32（项目统一药丸高度）。 -->
-        <Setter Property="MinHeight" Value="32"/>
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="Button">
-                    <Grid>
-                        <Border x:Name="Bd" Background="{DynamicResource App.Legacy.WarnBackground}"
-                                CornerRadius="16"/>
-                        <Border x:Name="StateLayer" Background="{DynamicResource OnSurface}"
-                                Opacity="0" CornerRadius="16"/>
-                        <ContentPresenter Margin="{TemplateBinding Padding}"
-                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
-                    </Grid>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
-                        </Trigger>
-                        <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.14"/>
-                        </Trigger>
-                        <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
     <Style TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
         <Setter Property="FontWeight" Value="Normal"/>

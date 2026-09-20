@@ -158,12 +158,19 @@ public class ThemeRulesTests
             "界面层不得出现颜色字面量（一律走 App.* 令牌）：\n" + string.Join("\n", offenders));
     }
 
-    [Fact(Skip = "T3 落地前暂缓：警告色体系仍存在于现役代码，本断言是**目标态**护栏（T2/T3 完成后去掉 Skip）。" +
-                 "保留在本文件里是为了让「目标态」与「实现」在同一处可见，不让护栏被遗忘。")]
+    [Fact]
     public void 全仓_零警告色残留()
     {
-        // 方案决策 3（破坏性动作不设专门视觉）+ 决策 4（彻底去红）：这些键名与色值必须彻底消失。
-        var banned = new[] { "WarnBg", "WarnPillButton", "PillTone.Warn", "#FFB300", "#E24B4A", "#EDDFA6" };
+        // 方案决策 3（破坏性动作不设专门视觉）+ 决策 4（彻底去红）：这些**代码符号与色值**必须彻底消失。
+        // 破坏性动作改走 <c>TonalButton</c> / <c>App.Support.*</c>（与次操作共用同一套呈现）。
+        //
+        // 范围口径（两条，都写清理由，不许静默放宽）：
+        // ① **只扫代码，不扫注释**：本仓的注释习惯是把决策依据连同原值一起写下来
+        //    （例如"原先写死奶油黄 #F5E9B8 / WarnBg"），这些是**有价值的历史记录**，不是活的引用；
+        //    为过闸而删掉它们等于销毁决策依据。
+        // ② **不列 `PillTone.Warn`**：它是**语义色调名**（"这是破坏性动作"），T3 后仍然存在且被需要
+        //    （映射到 TonalButton）；被淘汰的是它的**外观**（WarnPillButton），不是这个名字。
+        var banned = new[] { "WarnBg", "WarnPillButton", "#FFB300", "#E24B4A", "#EDDFA6" };
         var offenders = new List<string>();
 
         foreach (var dir in new[] { "src", "tests" })
@@ -178,7 +185,11 @@ public class ThemeRulesTests
                 var ext = Path.GetExtension(file);
                 if (ext is not (".cs" or ".xaml")) continue;
 
-                var text = File.ReadAllText(file);
+                // 护栏文件自身必须写出禁词才能禁止它们，跳过（否则必然命中自己的清单）。
+                var name = Path.GetFileName(file);
+                if (name is "ThemeRulesTests.cs" or "LegacyBrushKeyTests.cs") continue;
+
+                var text = StripComments(File.ReadAllText(file), ext == ".xaml");
                 foreach (var b in banned)
                     if (text.Contains(b, StringComparison.Ordinal))
                         offenders.Add($"{Relative(file)} → {b}");

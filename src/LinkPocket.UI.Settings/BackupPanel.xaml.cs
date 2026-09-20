@@ -278,7 +278,7 @@ namespace LinkPocket.Views
             // 波浪全程保持紫色（用户定稿）；失败 = WarnBg 奶油黄警示（项目铁律禁红色）
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null && !success)
-                bar.ActiveBrush = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.LegacyWarnBackground);
+                bar.ActiveBrush = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.SupportContainer);
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)

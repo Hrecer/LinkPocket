@@ -29,7 +29,7 @@
                 <!-- 头部：图标 chip（删除/警告 = WarnBg 奶油黄；信息/成功 = TintPanel 中性紫面板）+ 标题 -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal">
                     <Border x:Name="ChipBorder" Width="44" Height="44" CornerRadius="22"
-                            Background="{DynamicResource App.Legacy.WarnBackground}">
+                            Background="{DynamicResource App.Support.Container}">
                         <m3:M3Icon x:Name="IconGlyph" Kind="delete-outline" Width="22" Height="22"
                                    Foreground="{DynamicResource OnSurface}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>

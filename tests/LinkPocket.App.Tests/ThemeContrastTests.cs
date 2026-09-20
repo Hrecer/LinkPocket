@@ -1,3 +1,5 @@
+using System.IO;
+using LinkPocket.Theming;
 using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Themes;
 using LinkPocket.Theming.Tokens;
@@ -38,7 +40,7 @@ public class ThemeContrastTests
         new("Text.Muted / Surface.Hover",
             t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceHover)), 4.5, "弱文字对最暗内容底（旧 OnSurfaceMuted 对悬停底 = 3.29 ✗）"),
         new("Support.Icon / Surface.Card",
-            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceCard)), 3.0, "文件夹类型色（旧琥珀 #FFB300 = 1.61 ✗）"),
+            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceCard)), 3.0, "文件夹类型色（替代旧琥珀，对卡面 5.79 ✅）"),
         new("Support.OnContainer / Support.Container",
             t => (t.Token(AppTokens.SupportOnContainer), t.Token(AppTokens.SupportContainer)), 7.0, "次强调药丸 / **删除类药丸**（与次操作共用）"),
         new("Accent.OnContainer / Accent.Container",
@@ -111,10 +113,10 @@ public class ThemeContrastTests
             or "Outline" or "OutlineVariant";
 
     [Fact]
-    public void 出厂默认主题_文字三档与强调族等于方案定稿值()
+    public void 出厂默认主题_文字三档与强调族等于方案定稿值_且已发布到界面()
     {
-        // 这是**派生结果**的定稿核对（T3 才把界面切到这些值；T2 界面走过渡期兼容令牌）。
-        var t = PaletteSolver.Solve(ThemeCatalog.Default);
+        // T3：定稿值**就是发布值**（过渡期兼容层已删除），故校验 ThemeService 实际发布的表。
+        var t = ThemeService.DerivedTable;
         Assert.Equal(0x201F22u, Rgb(t.Token(AppTokens.TextPrimary)));
         Assert.Equal(0x48464Au, Rgb(t.Token(AppTokens.TextSecondary)));
         Assert.Equal(0x605D62u, Rgb(t.Token(AppTokens.TextMuted)));
@@ -129,38 +131,25 @@ public class ThemeContrastTests
     }
 
     [Fact]
-    public void 过渡期兼容令牌_等于今天的老画刷值()
+    public void 过渡期兼容层_已删除()
     {
-        // T2 的硬判据：老键搬家后必须**逐字节等于今天**，视觉零变化。
-        // T3 起本用例连同这一族令牌一并删除（它们代表的是方案有意淘汰的取值）。
-        var t = PaletteSolver.Solve(ThemeCatalog.Default);
-        Assert.Equal(0xA18EB0u, Rgb(t.Token(AppTokens.LegacyAccentButton)));       // 旧 AccentBtn
-        Assert.Equal(0xF5E9B8u, Rgb(t.Token(AppTokens.LegacyWarnBackground)));     // 旧 WarnBg
-        Assert.Equal(0x1C1B1Eu, Rgb(t.Token(AppTokens.LegacyTextPrimary)));        // 旧 OnSurface（库派生值）
-        Assert.Equal(0xE24B4Au, Rgb(t.Token(AppTokens.LegacyInvalidLine)));        // 旧去红前的描边
+        // T2 的兼容层（Tokens/ThemeCompatibility.cs）是临时脚手架：T3 必须整文件删除。
+        // 它存在就意味着"发布的不是最终语义"——本断言防止它被遗忘或被重新引入。
+        var path = Path.Combine(RepoRootOfTests(), "src", "LinkPocket.Theming", "Tokens", "ThemeCompatibility.cs");
+        Assert.False(File.Exists(path), "T2 过渡期兼容层必须已删除（T3 起发布值 = 最终语义值）");
+
+        // 令牌键名里也不得再出现 Legacy 一族
+        foreach (var token in AppTokens.AllColorTokens)
+            Assert.DoesNotContain(".Legacy.", token, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void 过渡期兼容令牌_全主题恒定不随主题漂移()
+    /// <summary>从测试二进制位置回溯到含解决方案的仓库根。</summary>
+    private static string RepoRootOfTests()
     {
-        // 兼容族是"锚点值"，不属于任何主题语义 → 换主题时也不许变（否则 T2 的"零变化"就有例外）。
-        foreach (var theme in ThemeCatalog.All)
-        {
-            var t = PaletteSolver.Solve(theme);
-            Assert.Equal(0xA18EB0u, Rgb(t.Token(AppTokens.LegacyAccentButton)));
-            Assert.Equal(0xF5E9B8u, Rgb(t.Token(AppTokens.LegacyWarnBackground)));
-            Assert.Equal(0xE24B4Au, Rgb(t.Token(AppTokens.LegacyInvalidLine)));
-        }
-    }
-
-    [Fact]
-    public void 过渡期兼容令牌_数目受控且必须在T3清零()
-    {
-        // 这一族是"临时脚手架"，必须显式受控：数量变了就要有人来解释（防止它悄悄长大或被遗忘）。
-        Assert.Equal(4, AppTokens.TransitionalTokens.Count);
-        Assert.Equal(
-            new[] { "App.Legacy.AccentButton", "App.Legacy.WarnBackground", "App.Legacy.TextPrimary", "App.Legacy.InvalidLine" },
-            AppTokens.TransitionalTokens.ToArray());
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "LinkPocket.sln")))
+            dir = dir.Parent!;
+        return dir!.FullName;
     }
 
     [Fact]

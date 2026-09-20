@@ -483,13 +483,13 @@
 
                             <!-- 提示：统一走 WarnBg 芯片（项目删除/警告色规范，禁用红色） -->
                             <Border x:Name="JumpHintChip" Visibility="Collapsed" HorizontalAlignment="Left"
-                                    Background="{DynamicResource App.Legacy.WarnBackground}" CornerRadius="10"
+                                    Background="{DynamicResource App.Support.Container}" CornerRadius="10"
                                     Padding="12,6" Margin="0,12,0,0">
                                 <StackPanel Orientation="Horizontal">
                                     <m3:M3Icon Kind="alert-circle-outline" Width="14" Height="14"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource App.Legacy.TextPrimary}"/>
+                                               VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
                                     <TextBlock x:Name="JumpHintText" FontSize="12.5" Margin="7,0,0,0"
-                                               VerticalAlignment="Center" Foreground="{DynamicResource App.Legacy.TextPrimary}"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"
                                                TextWrapping="Wrap" MaxWidth="560"/>
                                 </StackPanel>
                             </Border>
@@ -533,7 +533,7 @@
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="SelectionInfoText" FontSize="12" VerticalAlignment="Center"
                                    Margin="0,0,10,0" Foreground="{DynamicResource OnSurfaceVariant}"/>
-                        <Button x:Name="DeleteSelectedBtn" Style="{StaticResource WarnPillButton}"
+                        <Button x:Name="DeleteSelectedBtn" Style="{StaticResource TonalButton}"
                                 Padding="12,6" IsEnabled="False" Click="DeleteSelected_Click"
                                 ToolTip="把勾选的重复项移入回收站（至少保留一条）">
                             <StackPanel Orientation="Horizontal">

@@ -90,7 +90,7 @@
                 <!-- 删除：删除选中项（文件夹/链接一律移入回收站，Windows 语义），未选中时禁用。
                      删除/警告提醒色 = 奶油黄 WarnBg（规范：不用红色） -->
                 <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand"
-                        Style="{StaticResource WarnPillButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
+                        Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="删除选中项 (Del)">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="delete-outline" Width="16" Height="16" VerticalAlignment="Center"/>

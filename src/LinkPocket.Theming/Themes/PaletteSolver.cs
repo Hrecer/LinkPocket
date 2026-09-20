@@ -282,12 +282,6 @@ public static class PaletteSolver
             anchored["SurfaceContainerLow"], anchored["SurfaceContainerLow"], ToneScale.BusyOverlayOpacity);
         tokens[AppTokens.OverlayShadow] = ColorMath.Overlay(black, black, ToneScale.ShadowOpacity);
 
-        // 过渡期兼容令牌（T2 专用；T3 整族删除 —— 见 AppTokens 里的说明）
-        tokens[AppTokens.LegacyAccentButton] = LegacyAccentButtonValue;
-        tokens[AppTokens.LegacyWarnBackground] = LegacyWarnBackgroundValue;
-        tokens[AppTokens.LegacyTextPrimary] = anchoredOnSurface;
-        tokens[AppTokens.LegacyInvalidLine] = LegacyInvalidLineValue;
-
         // 颜色型令牌（值是 Color 而非 Brush；与同名 Brush 令牌**同源**，只是介质不同）
         var shadowRgb = ColorMath.Unpack(tokens[AppTokens.OverlayShadow]);
         tokens[AppTokens.ShadowColor] = ColorMath.Pack(0xFF, shadowRgb.R, shadowRgb.G, shadowRgb.B);
@@ -303,24 +297,6 @@ public static class PaletteSolver
             Families = families,
         };
     }
-
-    /// <summary>
-    /// [过渡期] 旧 <c>AccentBtn</c> 的值（定稿紫 #A18EB0）。
-    /// **它是 T3 有意淘汰的值**：新强调填充走 T40 档（白字才达标），故只有 T2 需要它。
-    /// </summary>
-    public static readonly Argb LegacyAccentButtonValue = Argb.FromArgb(0xFF, 0xA1, 0x8E, 0xB0);
-
-    /// <summary>
-    /// [过渡期] 旧 <c>WarnBg</c> 的值（奶油黄 #F5E9B8）。
-    /// **新体系没有这个语义**（决策 3：破坏性动作不设专门视觉、全站去黄），T3 删。
-    /// </summary>
-    public static readonly Argb LegacyWarnBackgroundValue = Argb.FromArgb(0xFF, 0xF5, 0xE9, 0xB8);
-
-    /// <summary>
-    /// [过渡期] 旧校验错误描边的值（红 #E24B4A）。
-    /// **T3 彻底去红**（决策 4）：改走 <see cref="AppTokens.LineInvalid"/>（= 文字主色 2px 描边）。
-    /// </summary>
-    public static readonly Argb LegacyInvalidLineValue = Argb.FromArgb(0xFF, 0xE2, 0x4B, 0x4A);
 
     /// <summary>一个锚点在该旋转角下的取值（α 取自锚点；不旋转键保持库基线）。</summary>
     private static Argb Resolve(SurfaceAnchors.Anchor anchor, double rotation)

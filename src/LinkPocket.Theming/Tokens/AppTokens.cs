@@ -156,32 +156,6 @@ public static class AppTokens
     /// <summary>等宽字体族令牌。</summary>
     public const string FontMono = "App.Font.Mono";
 
-    // ── 过渡期兼容令牌（T2 专用；T3 视觉定稿时整族删除）──────────────────────
-    //
-    // 为什么需要：T2 的目标是"同值搬家、视觉零变化"。但**动作语义已经换过一轮**——
-    // 旧 `AccentBtn`（#A18EB0 定稿紫）与新的 `App.Accent.Fill`（T40 档 #6A567C）不是同一个值，
-    // 旧 `WarnBg`（奶油黄）在新体系里**根本没有对应语义**（决策 3：破坏性动作不设专门视觉）。
-    // 若 T2 直接让老键绑到新令牌，视觉会在 T2 就变，两个阶段的责任就糊在一起、也无法回退。
-    // 故 T2 先让老键绑到**锚点值**（逐字节等于今天），T3 再一次性改绑到新语义并删掉本族。
-    //
-    // 纪律：这一族**只允许**存在于 T2；`ThemeRulesTests.过渡期兼容令牌_T3后必须清零` 卡住它。
-
-    /// <summary>[过渡期] 主操作按钮填充 = 旧 <c>AccentBtn</c>（#A18EB0）。T3 起改用 <see cref="AccentFill"/>。</summary>
-    public const string LegacyAccentButton = "App.Legacy.AccentButton";
-
-    /// <summary>[过渡期] 删除/警告底色 = 旧 <c>WarnBg</c>（奶油黄 #F5E9B8）。T3 起整族退场。</summary>
-    public const string LegacyWarnBackground = "App.Legacy.WarnBackground";
-
-    /// <summary>[过渡期] 正文色 = 旧 <c>OnSurface</c>（#1C1B1F，今天的库派生值）。T3 起改用 <see cref="TextPrimary"/>（带主题墨韵的 T12）。</summary>
-    public const string LegacyTextPrimary = "App.Legacy.TextPrimary";
-
-    /// <summary>[过渡期] 校验错误描边 = 旧红 <c>#E24B4A</c>。T3 去红后改用 <see cref="LineInvalid"/>。</summary>
-    public const string LegacyInvalidLine = "App.Legacy.InvalidLine";
-
-    /// <summary>过渡期兼容令牌（T3 必须清零）。</summary>
-    public static IReadOnlyList<string> TransitionalTokens { get; } =
-        new[] { LegacyAccentButton, LegacyWarnBackground, LegacyTextPrimary, LegacyInvalidLine };
-
     /// <summary>全部**颜色**令牌（字体令牌不含在内——它们不是 <c>SolidColorBrush</c>）。</summary>
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
     {
@@ -194,7 +168,6 @@ public static class AppTokens
         LineOutline, LineVariant, LineInvalid,
         OverlayScrim, OverlayBusy, OverlayShadow,
         ShadowColor, GradientStart, GradientEnd,
-        LegacyAccentButton, LegacyWarnBackground, LegacyTextPrimary, LegacyInvalidLine,
     };
 
     /// <summary>颜色型令牌（值是 <c>Color</c> 而非 <c>SolidColorBrush</c>；供 Effect / GradientStop 消费）。</summary>

@@ -7,7 +7,7 @@ namespace LinkPocket.Views;
 /// <summary>
 /// 导入方式选择弹窗（模态）：新增导入 / 清空后导入。
 /// 复用 ConfirmDialog 视觉语言（TintBg 圆角卡 + 药丸按钮），ShowDialog 挡住后面无法操作。
-/// 「清空后导入」为危险项：选中 = WarnBg 奶油黄卡 + 需输入「我确认清空并导入」+ 确认键切换 WarnPillButton。
+/// 「清空后导入」为不可逆项：选中 = 次强调容器卡 + 需输入「我确认清空并导入」+ 确认键切换 TonalButton。
 /// 静态 Show；owner 自动取当前激活窗口。
 /// </summary>
 public partial class ImportModeDialog : Window
@@ -79,17 +79,18 @@ public partial class ImportModeDialog : Window
     {
         var confirmOk = !_replace || ReplaceConfirmInput.Text == ReplaceConfirmText;
 
-        // 选中态：常规 = PrimaryContainer 卡 + Primary 单选；危险 = WarnBg 奶油黄卡
+        // 选中态：常规 = PrimaryContainer 卡 + Primary 单选；「清空后导入」= 次强调容器卡
+        // （与次操作共用同一套呈现 —— 破坏性动作不设专门警示色，不可逆性由确认文案承担）
         AppendCard.Background = BrushOf(_replace ? "SurfaceContainerHighest" : "PrimaryContainer");
         AppendRing.BorderBrush = BrushOf(_replace ? "OutlineVariant" : "Primary");
         AppendDot.Visibility = _replace ? Visibility.Collapsed : Visibility.Visible;
 
-        ReplaceCard.Background = BrushOf(_replace ? "WarnBg" : "SurfaceContainerHighest");
+        ReplaceCard.Background = BrushOf(_replace ? Theming.Tokens.AppTokens.SupportContainer : "SurfaceContainerHighest");
         ReplaceRing.BorderBrush = BrushOf(_replace ? "Primary" : "OutlineVariant");
         ReplaceDot.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
 
         ReplaceConfirmBox.Visibility = _replace ? Visibility.Visible : Visibility.Collapsed;
-        ConfirmBtn.Style = (Style)FindResource(_replace ? "WarnPillButton" : "PrimaryPillButton");
+        ConfirmBtn.Style = (Style)FindResource(_replace ? "TonalButton" : "PrimaryPillButton");
         ConfirmBtn.IsEnabled = confirmOk;
     }
 

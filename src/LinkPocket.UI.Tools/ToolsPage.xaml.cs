@@ -1033,12 +1033,12 @@ namespace LinkPocket.Views
             string message, ChipState state)
         {
             var warn = state == ChipState.Warn;
-            chip.Background = (Brush)Application.Current.FindResource(warn ? "App.Legacy.WarnBackground" : "PrimaryContainer");
+            chip.Background = (Brush)Application.Current.FindResource("App.Support.Container");
 
             // 结果条的深色内容（保证在奶油黄 / PrimaryContainer 上都可读）。
             // 原先这一支写死了 Color.FromRgb(0x1C,0x1B,0x1F)（= 当时 OnSurface 的值）→ 换令牌，跟主题走。
             // T3 起异常态改走次强调容器（警告色退场）；届时这里的分支合并为单一取色。
-            var foreground = (Brush)Application.Current.FindResource("OnSurface");
+            var foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer");
 
             icon.Visibility = state == ChipState.Success ? Visibility.Collapsed : Visibility.Visible;
             check.Visibility = state == ChipState.Success ? Visibility.Visible : Visibility.Collapsed;
@@ -1276,7 +1276,7 @@ namespace LinkPocket.Views
             badge.Child = new M3Icon
             {
                 Kind = iconKind, Width = 40, Height = 40,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                Foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer"),
                 Opacity = 0.35,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
@@ -1286,7 +1286,7 @@ namespace LinkPocket.Views
             panel.Children.Add(new TextBlock
             {
                 Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-                Foreground = (Brush)Application.Current.FindResource("OnSurface"),
+                Foreground = (Brush)Application.Current.FindResource("App.Support.OnContainer"),
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             });
             if (!string.IsNullOrEmpty(subtitle))

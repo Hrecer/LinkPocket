@@ -25,7 +25,7 @@ public sealed class PillToneToBrushConverter : IValueConverter
     {
         var key = value switch
         {
-            PillTone.Warn => Theming.Tokens.AppTokens.LegacyWarnBackground,
+            PillTone.Warn => Theming.Tokens.AppTokens.SupportOnContainer,
             _ => Theming.Tokens.AppTokens.AccentFill,
         };
         return Application.Current?.TryFindResource(key);

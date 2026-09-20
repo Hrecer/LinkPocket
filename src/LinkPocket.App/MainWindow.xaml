@@ -73,7 +73,9 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.Legacy.WarnBackground}"/>
+                                <!-- 关闭键原先是奶油黄悬停（全窗口最刺眼的一处黄）→ 改用与最小化/最大化
+                                     完全相同的中性状态层（决策 3：破坏性动作不设专门视觉）。 -->
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.State.TitleBar.Hover}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.State.TitleBar.Pressed}"/>

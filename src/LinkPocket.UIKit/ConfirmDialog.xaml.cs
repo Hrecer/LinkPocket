@@ -31,10 +31,11 @@ public partial class ConfirmDialog : Window
 
     /// <summary>
     /// 显示确认/提示弹窗。confirmText 确认键文案（删除类传「删除」），iconKind 须在 LpIcons 字形表内；
-    /// chipBrushKey = 图标 chip 底色资源键：删除/警告默认 WarnBg（奶油黄），信息/成功传 "TintPanel"。
+    /// chipBrushKey = 图标 chip 底色资源键：删除类默认**次强调容器**（App.Support.Container，与次操作同一套
+    /// 呈现——破坏性动作不设专门警示色），信息/成功传 "TintPanel"。
     /// </summary>
     public static bool Show(string title, string message, string confirmText = "确定",
-        string iconKind = "delete-outline", string chipBrushKey = "WarnBg")
+        string iconKind = "delete-outline", string chipBrushKey = Theming.Tokens.AppTokens.SupportContainer)
     {
         var dlg = new ConfirmDialog
         {

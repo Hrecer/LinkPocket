@@ -160,10 +160,13 @@
                     <m3:M3Icon Kind="{Binding RestoreToRootIconKind}" Width="15" Height="15"/>
                 </Button>
                 <!-- 链接：「重命名」（就地改标题，位置 = 药丸右侧 / 编辑键左侧；用户定稿 2026-09-20）。
-                     与「编辑」同一枚 32×32 铅笔，仅取色区分：重命名 = AccentBtn 深紫（工具栏主按钮 /
-                     回收站还原图标同款），编辑 = 图标钮缺省的 Primary。缺省不显示（只有浏览页侧栏的链接开它）。 -->
+                     ⚠️ T3 起**两枚铅笔同色**：新体系只有一支强调色（`App.Accent.Fill` = 库 `Primary` = #6A567C），
+                     旧的"深紫 vs 亮紫"两色区分随"两套强调色并存"缺陷（D1）一起消失。
+                     UI-SPEC 对此情形的既定口径 = 「宁可同色 + 靠字形与提示区分」→ 故这里给**提示文案**，
+                     探针也改断言"工具提示可区分"而不是"颜色不同"。 -->
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding RenameActionLabel}"
+                        ToolTip="{Binding RenameActionLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Foreground="{DynamicResource App.Accent.Fill}"
                         Command="{Binding RenameActionCommand}"
@@ -171,9 +174,10 @@
                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                 </Button>
                 <!-- 链接：编辑（整页编辑器）；文件夹：重命名（同一枚铅笔，取色随语义切换——
-                     重命名 = AccentBtn 深紫，与上面那枚独立「重命名」同色；编辑 = 图标钮缺省的 Primary。
+                     重命名 = 强调色（与上面那枚独立「重命名」同色）；编辑 = 图标钮缺省的 Primary。
                      取色由模型的能力位 EditActionAccent 声明，界面不按行类型猜） -->
                 <Button Tag="{Binding EditLabel}"
+                        ToolTip="{Binding EditLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Command="{Binding RenameCommand}"
                         Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
@@ -194,7 +198,7 @@
                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                     <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                               Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
+                               Foreground="{DynamicResource App.Support.OnContainer}"/>
                 </Button>
             </StackPanel>
         </DataTemplate>
@@ -475,7 +479,7 @@
                                 Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                             <!-- 与浏览页同一枚按钮/样式；文案按页定制（回收站 = 「永久删除所选」） -->
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                       Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
+                                       Foreground="{DynamicResource App.Support.OnContainer}"/>
                         </Button>
                     </Grid>
                 </StackPanel>

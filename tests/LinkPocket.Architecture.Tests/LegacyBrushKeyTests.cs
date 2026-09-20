@@ -24,7 +24,9 @@ public class LegacyBrushKeyTests
     /// <summary>T2 起由主题发布、不再由 UIKit.xaml 定义的旧键名。</summary>
     private static readonly string[] LegacyKeys =
     {
-        "TintSurface", "TintCard", "TintPanel", "TintBg", "AccentBtn", "WarnBg",
+        "TintSurface", "TintCard", "TintPanel", "TintBg", "AccentBtn",
+        // 旧删除/警告底色键：本条清单是它唯一的合法留存处（护栏必须写出它才能禁止它）
+        "WarnBg",
     };
 
     private static string RepoRoot

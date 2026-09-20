@@ -16,7 +16,7 @@ public sealed class PillToneToStyleConverter : IValueConverter
         var key = value switch
         {
             PillTone.Tonal => "TonalButton",
-            PillTone.Warn => "WarnPillButton",
+            PillTone.Warn => "TonalButton",   // 破坏性动作与次操作共用同一套呈现（不再有专门警示色）
             _ => "PrimaryPillButton",
         };
         return Application.Current?.TryFindResource(key);

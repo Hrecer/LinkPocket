@@ -40,7 +40,7 @@
                             <!-- 路径无效：仅文字区出 2px Error 下划（胶囊描边仍归胶囊的 DataTrigger 管） -->
                             <DataTrigger Binding="{Binding IsPathInvalid, ElementName=Root}" Value="True">
                                 <Setter TargetName="EditRoot" Property="BorderThickness" Value="0,0,0,2"/>
-                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="{DynamicResource App.Legacy.InvalidLine}"/>
+                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="{DynamicResource App.Line.Invalid}"/>
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
