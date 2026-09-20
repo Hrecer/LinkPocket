@@ -116,10 +116,9 @@ public sealed class UndoCoordinator : IUndoCoordinator
         if (LpLog.IsEnabled(LogLevel.Debug))
             LpLog.Write(LogLevel.Debug, "engine.undo", $"撤销登记：{descriptor.Name}", props: new Dictionary<string, object?>
             {
-                ["cmd"] = descriptor.Name,
+                // cmd / caller / corr 由**调用上下文**落到记录首类字段（不在 props 里再抄一份）
                 ["steps"] = steps.Count,
                 ["group"] = groupId ?? string.Empty,
-                ["caller"] = caller.ToString(),
             });
     }
 

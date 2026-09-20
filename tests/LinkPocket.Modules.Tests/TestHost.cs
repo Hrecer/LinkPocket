@@ -36,4 +36,20 @@ internal static class TestHost
         });
         return (composed.Engine, composed.Factory!, dbPath);
     }
+
+    /// <summary>带**审计落库 + 客户端门面**的宿主（correlation 贯通测试用）：补 correlation 与记调用日志
+    /// 都在 <c>EngineClient</c> 上——裸 <c>EngineCore</c> 走不到那条路径，测不到"客户端补相关"。
+    /// 其余口径同 <see cref="CreateWithAudit"/>（无幂等落库、无编排、无 wire）。</summary>
+    public static (EngineComposition Composition, string DbPath) CreateWithAuditAndClient()
+    {
+        var dbPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpmod_{Guid.NewGuid():N}.db");
+        var composed = EngineComposer.Compose(dbPath, new ComposeOptions
+        {
+            SqlAudit = true,
+            SqlIdempotency = false,
+            IncludeOrchestration = false,
+            BuildWire = false,
+        });
+        return (composed, dbPath);
+    }
 }

@@ -21,6 +21,7 @@ public static class LpLog
     private sealed record ScopeFrame((string Key, object? Value)[] Fields, ScopeFrame? Parent);
 
     private static readonly AsyncLocal<ScopeFrame?> CurrentScope = new();
+    private static readonly AsyncLocal<CallFrame?> CurrentCall = new();
     private static ILogSink? _sink;
     private static long _unconfiguredDrops;
     private static long _writeFailures;
@@ -59,10 +60,12 @@ public static class LpLog
     public static void Fatal(string message, Exception? ex = null, string category = DefaultCategory, [CallerMemberName] string member = "")
         => Record(LogLevel.Fatal, category, message, ex, null, member);
 
-    /// <summary>结构化入口（引擎 / 模块用）：显式级别 + 分类 + 附加字段（<c>at</c> 缺省填调用成员名）。</summary>
+    /// <summary>结构化入口（引擎 / 模块用）：显式级别 + 分类 + 附加字段（<c>at</c> 缺省填调用成员名）；
+    /// <paramref name="elapsedMs"/> 落到记录的**首类字段**（JSONL 顶层 <c>ms</c>），不要塞进 props。</summary>
     public static void Write(LogLevel level, string category, string message, Exception? ex = null,
-        IReadOnlyDictionary<string, object?>? props = null, [CallerMemberName] string member = "")
-        => Record(level, category, message, ex, props, member);
+        IReadOnlyDictionary<string, object?>? props = null, [CallerMemberName] string member = "",
+        long? elapsedMs = null)
+        => Record(level, category, message, ex, props, member, elapsedMs);
 
     /// <summary>开一个日志作用域：期间记录携带这些字段（内层覆盖外层；异步链自动携带）。</summary>
     public static IDisposable BeginScope(params (string Key, object? Value)[] fields)
@@ -85,6 +88,38 @@ public static class LpLog
         for (var i = stack.Count - 1; i >= 0; i--)
             foreach (var (key, value) in stack[i].Fields) merged[key] = value;
         return merged;
+    }
+
+    /// <summary>
+    /// 开一个**调用上下文**：期间记录自动带上 correlation / 命令名 / 调用方，且落在记录的
+    /// **首类字段**（<see cref="LogRecord.CorrelationId"/> / <see cref="LogRecord.Command"/> /
+    /// <see cref="LogRecord.Caller"/>）——"一条用户动作的完整链路"（UI 调用记录 + 引擎里程碑 + 观测面 +
+    /// 审计行）能被取齐的根据。
+    /// <para>与 <see cref="BeginScope"/> 的分工：scope 是**自由字段**（进 scope 字典，用哪加哪）；
+    /// 本上下文是**固定口径的三个字段**，调用链上任何记录一律自动携带——不靠"谁想起来谁手抄"，
+    /// 那种分工迟早漏（见 `文档/WARNINGS.md` 32 的教训）。</para>
+    /// </summary>
+    public static IDisposable BeginCall(string correlationId, string? command = null, string? caller = null)
+    {
+        var frame = new CallFrame(correlationId, command, caller);
+        CurrentCall.Value = frame;
+        return new CallLease(frame);
+    }
+
+    /// <summary>调用上下文（记录的首类字段来源；仅门面内部与富化使用）。</summary>
+    private sealed record CallFrame(string CorrelationId, string? Command, string? Caller);
+
+    private sealed class CallLease(CallFrame frame) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            // 仅当自己仍是栈顶才清（乱序释放不误伤已建立的内层上下文）
+            if (ReferenceEquals(CurrentCall.Value, frame)) CurrentCall.Value = null;
+        }
     }
 
     /// <summary>刷盘（缺省最多等 2s）：异常处理器 / 退出前保证记录落地；未装配 = 无操作。</summary>
@@ -132,7 +167,7 @@ public static class LpLog
     public static IReadOnlyList<string> Files => Sink is ILogFileMaintenance m ? m.Files : [];
 
     private static void Record(LogLevel level, string category, string message, Exception? ex,
-        IReadOnlyDictionary<string, object?>? props, string member)
+        IReadOnlyDictionary<string, object?>? props, string member, long? elapsedMs = null)
     {
         var sink = Sink;
         if (sink is null)
@@ -144,8 +179,14 @@ public static class LpLog
 
         if (!sink.IsEnabled(level)) return;
 
+        // 调用上下文 → **首类字段**（corr / cmd / caller）：跨源关联键（审计 / 日志 / 错误对象）由它自动成立
+        var call = CurrentCall.Value;
         var record = new LogRecord(
             DateTimeOffset.UtcNow, level, category, message, Environment.CurrentManagedThreadId,
+            CorrelationId: call?.CorrelationId,
+            Caller: call?.Caller,
+            Command: call?.Command,
+            ElapsedMs: elapsedMs,
             Error: ex is null ? null : LogError.From(ex),
             Scope: SnapshotScope(),
             Props: MergeProps(props, member));

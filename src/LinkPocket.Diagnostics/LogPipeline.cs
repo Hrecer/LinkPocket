@@ -142,12 +142,15 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, ILogQuerySource
             limit, Level, LogSource.Memory);
     }
 
-    /// <summary>过滤口径（唯一实现）：级别 + 分类。游标由来源各自处理——它只对内存源有意义（见 <see cref="Query"/>）。</summary>
+    /// <summary>过滤口径（唯一实现）：级别 + 分类 + 关联（corr 取记录首类字段，由调用上下文自动填）。
+    /// 游标由来源各自处理——它只对内存源有意义（见 <see cref="Query"/>）。</summary>
     private static bool Matches(LogRecord record, LogQuery query)
     {
         if (query.MinimumLevel is { } minimum && record.Level < minimum) return false;
         if (!string.IsNullOrEmpty(query.Category)
             && !string.Equals(record.Category, query.Category, StringComparison.Ordinal)) return false;
+        if (!string.IsNullOrEmpty(query.CorrelationId)
+            && !string.Equals(record.CorrelationId, query.CorrelationId, StringComparison.Ordinal)) return false;
         return true;
     }
 

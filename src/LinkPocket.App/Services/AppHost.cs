@@ -52,8 +52,10 @@ public sealed class AppHost
     public static AppHost CreateDefault()
     {
         // 观测面先装：启动期（含组合失败）也要有日志可查。管道 = 有界队列 + JSONL 文件 + 内存环；
+        // 选项口径（LINKPOCKET_LOG_LEVEL / LINKPOCKET_LOG_DIR）与无头宿主同一份实现，收在组合根。
         // 退出时由 App.OnExit 调 LpLog.Shutdown() 收尾（刷盘 + 卸管道）。
-        LinkPocket.Composition.EngineComposer.ConfigureLogging(BuildLoggingOptions());
+        LinkPocket.Composition.EngineComposer.ConfigureLogging(
+            LinkPocket.Composition.EngineComposer.HostLoggingOptions());
         LpLog.Info("应用启动：日志管道已装配", category: "app.lifecycle");
 
         // 组合根 = 全仓库唯一允许 new 具体实现的地方。
@@ -73,22 +75,4 @@ public sealed class AppHost
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
         return host;
     }
-
-    /// <summary>宿主日志选项（环境策略归宿主）：缺省 info + {BaseDirectory}/logs；
-    /// <c>LINKPOCKET_LOG_LEVEL</c> = trace|debug|info|warn|error|fatal；<c>LINKPOCKET_LOG_DIR</c> = 目录覆盖。</summary>
-    private static LoggingOptions BuildLoggingOptions() => new()
-    {
-        MinimumLevel = ParseLogLevel(Environment.GetEnvironmentVariable("LINKPOCKET_LOG_LEVEL")),
-        Directory = Environment.GetEnvironmentVariable("LINKPOCKET_LOG_DIR"),
-    };
-
-    private static LogLevel ParseLogLevel(string? raw) => raw?.Trim().ToLowerInvariant() switch
-    {
-        "trace" => LogLevel.Trace,
-        "debug" => LogLevel.Debug,
-        "warn" or "warning" => LogLevel.Warn,
-        "error" => LogLevel.Error,
-        "fatal" => LogLevel.Fatal,
-        _ => LogLevel.Info,   // 缺省与无法识别的值：info（不静默降级成更少信息）
-    };
 }

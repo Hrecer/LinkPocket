@@ -94,7 +94,7 @@ public sealed class EngineCore : IEngine
         CallOptions? options = null, CancellationToken ct = default)
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
-        var caller = options?.Caller ?? CallerRef.Ui;
+        var caller = CallOptions.CallerOf(options);
         var dryRun = options?.DryRun == true;
         var argsJson = EngineJson.ToJsonElement(args);   // 入参快照：审计 ArgsJson 与撤销登记共用
         var argsSnapshot = SnapshotArgs(argsJson);       // 审计副本（超长截断 + 如实标记）
@@ -107,13 +107,14 @@ public sealed class EngineCore : IEngine
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
                 $"「{command}」不是变更命令，请走 QueryAsync", correlationId: correlationId));
 
-        // 里程碑（Debug：缺省 info 级下零噪音，提级即为完整管道轨迹；与审计同 correlation 可对齐）
+        // 调用上下文：corr / cmd / caller 落到记录的**首类字段**——本命令链上的每条记录（里程碑 / 处理器 /
+        // 观测面）一律自动携带，与审计同 correlation。"一条用户动作的完整链路"由此可对齐，不靠各处手抄。
+        using var call = LpLog.BeginCall(correlationId, command, caller.ToString());
+
+        // 里程碑（Debug：缺省 info 级下零噪音，提级即为完整管道轨迹）
         if (LpLog.IsEnabled(LogLevel.Debug))
             LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令开始：{command}", props: new Dictionary<string, object?>
             {
-                ["cmd"] = command,
-                ["corr"] = correlationId,
-                ["caller"] = caller.ToString(),
                 ["dry_run"] = dryRun,
             });
 
@@ -218,13 +219,10 @@ public sealed class EngineCore : IEngine
             if (LpLog.IsEnabled(LogLevel.Debug))
                 LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令完成：{command}", props: new Dictionary<string, object?>
                 {
-                    ["cmd"] = command,
-                    ["corr"] = correlationId,
-                    ["ms"] = sw.ElapsedMilliseconds,
                     ["dry_run"] = dryRun,
                     ["touched"] = result.Changes?.Touched.Count ?? 0,
                     ["events"] = result.Changes?.Events.Count ?? 0,
-                });
+                }, elapsedMs: sw.ElapsedMilliseconds);
 
             return new CommandResult<T>(true, (T?)result.Data, result.Changes, auditRef);
         }
@@ -259,9 +257,12 @@ public sealed class EngineCore : IEngine
         CallOptions? options = null, CancellationToken ct = default)
     {
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
-        var caller = options?.Caller ?? CallerRef.Ui;
+        var caller = CallOptions.CallerOf(options);
 
         _sessions?.Enforce(caller, isMutation: false, correlationId);
+
+        // 调用上下文（corr / cmd / caller → 记录首类字段）：读链上的记录同样自动携带
+        using var call = LpLog.BeginCall(correlationId, query, caller.ToString());
 
         var handler = ResolveOrThrow(query, correlationId);
         if (!handler.Descriptor.IsQuery)
@@ -347,11 +348,10 @@ public sealed class EngineCore : IEngine
             if (LpLog.IsEnabled(LogLevel.Debug))
                 LpLog.Write(LogLevel.Debug, "engine.pipeline", $"嵌套派发完成：{command}", props: new Dictionary<string, object?>
                 {
-                    ["cmd"] = command,
-                    ["corr"] = parent.CorrelationId,
-                    ["ms"] = sw.ElapsedMilliseconds,
+                    // 首类字段（corr / cmd / caller）= 外层调用（调用上下文）；被派发的子命令另给 nested_cmd，避免歧义
+                    ["nested_cmd"] = command,
                     ["nested"] = true,
-                });
+                }, elapsedMs: sw.ElapsedMilliseconds);
 
             return result;
         }

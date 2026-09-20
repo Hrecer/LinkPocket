@@ -15,13 +15,17 @@ public enum LogSource
 /// <para><b>游标口径</b>：<see cref="Cursor"/> 是**进程内单调序号**（管道分配），因此只对
 /// <see cref="LogSource.Memory"/> 有意义——文件里的 seq 来自**另一次进程运行**，跨进程不可比，
 /// 文件源忽略游标（跨进程排序一律按时间戳）。这条边界如实写在这里，不做"看起来统一"的假统一。</para>
+/// <para><b>关联口径</b>：<see cref="CorrelationId"/> 取记录的**首类字段**（由调用上下文
+/// <c>LpLog.BeginCall</c> 自动落到每条记录上）：一次用户动作的全部日志（UI 调用记录 + 引擎里程碑 +
+/// 观测面）与 <c>audit.query { correlation_id }</c> 的审计行由此对齐到同一条时间轴。</para>
 /// </summary>
 public sealed record LogQuery(
     long Cursor = 0,
     LogLevel? MinimumLevel = null,
     string? Category = null,
     LogSource Source = LogSource.Memory,
-    int Limit = 200);
+    int Limit = 200,
+    string? CorrelationId = null);
 
 /// <summary>
 /// 日志查询结果（<c>logs.query</c> 的返回；<see cref="Items"/> 按**时间升序**——与文件写入顺序一致，

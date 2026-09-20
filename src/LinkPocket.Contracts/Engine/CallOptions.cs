@@ -35,4 +35,9 @@ public sealed record CallOptions(
     string? IdempotencyKey = null,
     string? CorrelationId = null,
     CallerRef? Caller = null,
-    string? UndoGroupId = null);
+    string? UndoGroupId = null)
+{
+    /// <summary>生效调用方的**唯一出处**（未显式指定 = <see cref="CallerRef.Ui"/>）：
+    /// 引擎管道与客户端调用记录都取它——否则"引擎按 ui 跑、日志记成 null"这种两套口径迟早漂移。</summary>
+    public static CallerRef CallerOf(CallOptions? options) => options?.Caller ?? CallerRef.Ui;
+}

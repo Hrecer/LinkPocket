@@ -52,19 +52,47 @@ public static class EngineComposer
 {
     /// <summary>
     /// 日志管道装配（观测面组合根，**由宿主显式调用**——测试/工具不调即不落盘，避免污染）：
-    /// 构建「有界队列 + JSONL 文件落点 + 内存环」并装配到 <see cref="LpLog"/>（静态门面唯一入口）。
+    /// 缺省落点 = 「JSONL 文件（按日 + 轮转 + 保留）+ 内存环」；宿主可传自定义落点
+    /// （如无头宿主用 stderr JSONL，见 <c>Diagnostics.JsonlTextWriterSink</c>——**建议仍带上内存环**，
+    /// 否则 <c>logs.query source=memory</c> 无数据）。
     /// 重复调用 = 替换管道（旧管道不自动处置，调用方若持有请自行 Dispose）。
     /// 退出前宿主必须调 <c>LpLog.Shutdown()</c>（刷盘 + 卸管道）。
     /// </summary>
-    public static LogPipeline ConfigureLogging(LoggingOptions? options = null)
+    public static LogPipeline ConfigureLogging(LoggingOptions? options = null, params ILogSink[] sinks)
     {
         options ??= new LoggingOptions();
-        var pipeline = new LogPipeline(
-            options,
-            new JsonlFileSink(options),
-            new MemoryLogSink(options.MemoryCapacity));
+        var targets = sinks is { Length: > 0 }
+            ? sinks
+            : [new JsonlFileSink(options), new MemoryLogSink(options.MemoryCapacity)];
+        var pipeline = new LogPipeline(options, targets);
         LpLog.Configure(pipeline);
         return pipeline;
+    }
+
+    /// <summary>
+    /// 宿主日志选项的**唯一实现**（环境策略归宿主，但 App 与无头宿主同一套口径 → 收在这里，
+    /// 不再各写一份）：缺省 info + <c>{BaseDirectory}/logs</c>；
+    /// <c>LINKPOCKET_LOG_LEVEL</c> = trace|debug|info|warn|error|fatal；<c>LINKPOCKET_LOG_DIR</c> = 目录覆盖。
+    /// 级别名称经契约的 <see cref="LogLevels"/> 解析（**全站唯一映射**）；不认识的写法回落 info（缺省口径）。
+    /// </summary>
+    public static LoggingOptions HostLoggingOptions() => new()
+    {
+        MinimumLevel = LogLevels.TryParse(Environment.GetEnvironmentVariable("LINKPOCKET_LOG_LEVEL"), out var level)
+            ? level
+            : LogLevel.Info,
+        Directory = Environment.GetEnvironmentVariable("LINKPOCKET_LOG_DIR"),
+    };
+
+    /// <summary>
+    /// 无头 / 服务型宿主的日志装配：**stderr JSONL + 内存环**（stdout 留给协议帧，日志绝不混入）。
+    /// 与 App 的差别只在落点——选项口径（<see cref="HostLoggingOptions"/>）与管道实现完全同一份。
+    /// </summary>
+    public static LogPipeline ConfigureHeadlessLogging(TextWriter? stderr = null, LoggingOptions? options = null)
+    {
+        options ??= HostLoggingOptions();
+        return ConfigureLogging(options,
+            new JsonlTextWriterSink(stderr ?? Console.Error),
+            new MemoryLogSink(options.MemoryCapacity));
     }
 
     /// <summary>真实库路径入口：缺省建 <see cref="LinkPocketDbContextFactory"/>（构造即启 WAL + 建 schema）。</summary>

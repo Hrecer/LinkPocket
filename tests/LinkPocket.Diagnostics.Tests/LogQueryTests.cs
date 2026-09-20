@@ -130,6 +130,25 @@ public class LogQueryTests
         public LogStats Stats => new();
     }
 
+    [Fact]
+    public void 内存源_按关联取回一次动作的全部记录()
+    {
+        var memory = new MemoryLogSink(50);
+        using var pipeline = new LogPipeline(new LoggingOptions { MinimumLevel = LogLevel.Trace }, memory);
+
+        pipeline.Write(RecWithCorrelation("a1", "corr-A"));
+        pipeline.Write(RecWithCorrelation("b1", "corr-B"));
+        pipeline.Write(RecWithCorrelation("a2", "corr-A"));
+
+        var byCorrelation = pipeline.Query(new LogQuery(CorrelationId: "corr-A"));
+        Assert.Equal(new[] { "a1", "a2" }, byCorrelation.Items.Select(r => r.Message));   // 与 audit.query 同一把钥匙
+        Assert.Empty(pipeline.Query(new LogQuery(CorrelationId: "corr-none")).Items);
+    }
+
+    private static LogRecord RecWithCorrelation(string message, string correlationId)
+        => new(DateTimeOffset.UtcNow, LogLevel.Info, "test", message, Environment.CurrentManagedThreadId,
+            CorrelationId: correlationId);
+
     private static string TempDir()
     {
         var dir = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), "log-query-tests", Guid.NewGuid().ToString("N"));

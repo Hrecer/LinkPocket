@@ -59,13 +59,15 @@ internal sealed class LogsQueryHandler : ICommandHandler
         Name: "logs.query",
         Category: "logs",
         Description: "读日志：source=memory 读内存环（缺省，零 IO，支持 cursor 增量轮询）或 " +
-                     "source=file 从最新 JSONL 日志文件向前回读（跨进程历史）；level/category 过滤，时间升序；" +
+                     "source=file 从最新 JSONL 日志文件向前回读（跨进程历史）；level/category/correlation_id 过滤，时间升序；" +
                      "未装配日志管道 → LP.STATE.005",
         Parameters:
         [
             ParamSpec.Opt<long>("cursor", "只返回序号大于它的记录（进程内游标，仅 source=memory 有效；缺省 0 = 全部）"),
             ParamSpec.Opt<string>("level", "最低级别：trace/debug/info/warn/error/fatal（大小写不敏感，越界 → LP.VAL.003）"),
-            ParamSpec.Opt<string>("category", "来源分类精确匹配（如 ui / engine.pipeline / modules.trash）"),
+            ParamSpec.Opt<string>("category", "来源分类精确匹配（如 ui / engine.call / engine.pipeline / modules.trash）"),
+            ParamSpec.Opt<string>("correlation_id",
+                "关联 ID：一次用户动作的全部日志（UI 调用记录 + 引擎里程碑 + 动作汇总）——与 audit.query 同一把钥匙"),
             ParamSpec.Opt<string>("source", "读取来源：memory（缺省，内存环）| file（日志文件）"),
             ParamSpec.Opt<int>("limit", $"返回条数上限（缺省 {DefaultLimit}，上限 {MaxLimit}）"),
         ],
@@ -94,7 +96,8 @@ internal sealed class LogsQueryHandler : ICommandHandler
             MinimumLevel: LogCommands.OptionalLevel(args, "level"),
             Category: CommandArgs.OptionalString(args, "category"),
             Source: ParseSource(CommandArgs.OptionalString(args, "source")),
-            Limit: limit));
+            Limit: limit,
+            CorrelationId: CommandArgs.OptionalString(args, "correlation_id")));
 
         return Task.FromResult(CommandResult.Ok(result));
     }

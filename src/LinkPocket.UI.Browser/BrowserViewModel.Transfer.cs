@@ -94,6 +94,11 @@ public partial class BrowserViewModel
         // 撤销分组：一次拖拽/一次粘贴 = 一个用户动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
         var callOptions = new CallOptions(UndoGroupId: Guid.NewGuid().ToString("N"));
 
+        // 一次用户动作 = 一个动作作用域：本批 N 条命令共用**同一个 correlation_id**，
+        // 于是本批审计行（audit.query）与日志（logs.query）能按它取齐——"一次拖拽 10 项 = 10 条命令"
+        // 从十条孤立记录变成一条线索。覆盖式状态，退出即复位（不残留、不跨动作串味）。
+        using var action = _client.BeginAction($"{(mode == TransferMode.Move ? "移动" : "复制")} {items.Count} 项");
+
         try
         {
             foreach (var item in items)

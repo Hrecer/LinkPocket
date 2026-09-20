@@ -155,8 +155,7 @@ public sealed class BatchEngine : IBatchEngine
                 ["batch"] = batchId,
                 ["ok"] = report.Ok,
                 ["steps"] = results.Count,
-                ["ms"] = sw.ElapsedMilliseconds,
-            });
+            }, elapsedMs: sw.ElapsedMilliseconds);
 
         return report;
     }

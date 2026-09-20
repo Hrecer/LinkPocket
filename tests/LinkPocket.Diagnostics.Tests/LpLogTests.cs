@@ -3,8 +3,10 @@ using Xunit;
 
 namespace LinkPocket.Diagnostics.Tests;
 
-/// <summary>门面语义：未装配不静默（计数）/ 装配后记录携带分类·调用成员·作用域 / 结构化入口 / Shutdown 收尾。
-/// ⚠️ 本类独占 <see cref="LpLog"/> 静态状态（xunit 类内串行）：每个用例自装自卸。</summary>
+/// <summary>门面语义：未装配不静默（计数）/ 装配后记录携带分类·调用成员·作用域·**调用上下文首类字段** /
+/// 结构化入口 / Shutdown 收尾。
+/// ⚠️ LpLog 是进程级静态 → 与同程序集内其它碰它的测试类**同入一个 xunit Collection** 串行（不靠"类内串行"想当然）。</summary>
+[Collection("日志管道")]
 public class LpLogTests
 {
     [Fact]
@@ -58,13 +60,15 @@ public class LpLogTests
         {
             LpLog.Write(LogLevel.Warn, "engine.observe", "观测面失败（已提交写仍返回成功）",
                 new InvalidOperationException("boom"),
-                new Dictionary<string, object?> { ["corr"] = "abc", ["what"] = "写审计失败" });
+                new Dictionary<string, object?> { ["corr"] = "abc", ["what"] = "写审计失败" },
+                elapsedMs: 42);
 
             pipeline.Flush(TimeSpan.FromSeconds(2));
             var record = Assert.Single(memory.Snapshot());
             Assert.Equal("engine.observe", record.Category);
             Assert.Equal(LogLevel.Warn, record.Level);
             Assert.Equal("abc", record.Props!["corr"]);
+            Assert.Equal(42, record.ElapsedMs);   // 耗时 = 首类字段（JSONL 顶层 ms），不塞进 props
             Assert.Equal("boom", record.Error!.Message);
             Assert.Contains(nameof(InvalidOperationException), record.Error!.Type);
         }
@@ -113,5 +117,36 @@ public class LpLogTests
 
         Assert.Null(LpLog.Sink);
         Assert.Equal("退出前的最后一条", Assert.Single(memory.Snapshot()).Message);
+    }
+
+    [Fact]
+    public void 调用上下文_首类字段自动落到记录且退出后复位()
+    {
+        var memory = new MemoryLogSink(100);
+        using var pipeline = new LogPipeline(new LoggingOptions { MinimumLevel = LogLevel.Debug }, memory);
+        LpLog.Configure(pipeline);
+        try
+        {
+            using (LpLog.BeginCall("corr-x", "folders.create", "ui:-"))
+            {
+                LpLog.Info("调用内");       // 调用链上的记录自动带 corr / cmd / caller
+            }
+
+            LpLog.Info("调用外");           // 上下文已退出 → 首类字段为空（绝不留常驻状态）
+
+            pipeline.Flush(TimeSpan.FromSeconds(2));
+            var records = memory.Snapshot();
+            Assert.Equal(2, records.Count);
+            Assert.Equal("corr-x", records[0].CorrelationId);
+            Assert.Equal("folders.create", records[0].Command);
+            Assert.Equal("ui:-", records[0].Caller);
+            Assert.Null(records[1].CorrelationId);
+            Assert.Null(records[1].Command);
+            Assert.Null(records[1].Caller);
+        }
+        finally
+        {
+            LpLog.Configure(null);
+        }
     }
 }

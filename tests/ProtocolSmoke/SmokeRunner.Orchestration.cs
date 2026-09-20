@@ -222,6 +222,29 @@ internal static partial class SmokeRunner
             Asserts.That(fromFile.Source == LogSource.File && fromFile.FilesRead >= 1
                          && fromFile.Items.Any(r => r.Message == "冒烟：日志读侧"),
                 "logs.query source=file 应回读刚写入的日志文件");
+
+            // —— correlation 贯通（S3）：一次动作内的多条命令共用一条相关 → 日志与审计同一把钥匙取齐 ——
+            string correlation;
+            using (var action = s.Client.BeginAction("冒烟关联动作"))
+            {
+                correlation = action.CorrelationId;
+                await s.Client.FolderCreateAsync("关联甲");
+                await s.Client.FolderCreateAsync("关联乙");
+                Asserts.That(action.Calls == 2 && action.Failures == 0,
+                    $"动作作用域应如实计数（实际 {action.Calls} 次调用 / {action.Failures} 次失败）");
+            }
+
+            var byCorrelation = await s.Client.QueryAsync<LogQueryResult>(
+                "logs.query", new { correlation_id = correlation });
+            Asserts.That(byCorrelation.Items.Count > 0
+                         && byCorrelation.Items.All(r => r.CorrelationId == correlation),
+                "logs.query 应能按 correlation_id 取回该动作的全部日志");
+            Asserts.That(byCorrelation.Items.Any(r => r.Category == EngineCallScope.LogCategory
+                                                      && r.Message.Contains("冒烟关联动作")),
+                "动作汇总记录应带同一条 correlation");
+            var auditByCorrelation = await s.Client.QueryAsync<LinkPocket.Modules.Maintenance.AuditPagedResult>(
+                "audit.query", new { correlation_id = correlation });
+            Asserts.That(auditByCorrelation.Total == 2, "审计侧应能按同一条 correlation 取回该动作的两条命令");
         }
         finally
         {
