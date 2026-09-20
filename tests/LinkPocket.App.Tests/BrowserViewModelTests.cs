@@ -166,6 +166,35 @@ public class BrowserViewModelTests
         }
     }
 
+    /// <summary>
+    /// 文件夹跳转（ID 跳转需要）：文件夹的容器 = 它的**父目录** → 进入父目录 + 选中该文件夹行。
+    /// 与链接跳转同一条原语（<see cref="BrowserViewModel.NavigateAndSelectAsync"/>），
+    /// 但落点是**文件夹行**（主栏行与树高亮都要落到它）——曾经的空白面（此前只有链接跳转有测试）。
+    /// </summary>
+    [Fact]
+    public async Task 跳转导航_文件夹目标_进入父目录并选中该文件夹行()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var parent = (await client.FolderCreateAsync("父层")).Data!;
+            var child = (await client.FolderCreateAsync("子层", parentId: parent.FolderId)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            var navigated = await vm.NavigateAndSelectAsync(parent.FolderId, child.FolderId);
+
+            Assert.True(navigated);
+            Assert.Equal(parent.FolderId, vm.CurrentFolderId);   // 文件夹的容器 = 它的父目录
+            var selected = Assert.Single(vm.SelectedRows);
+            Assert.Equal(child.FolderId, selected.Id);
+            Assert.True(selected.IsFolder);                      // 选中的是文件夹行本身（不是链接行）
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
     [Fact]
     public async Task 编辑模式打开_预填字段携带链接数据()
     {

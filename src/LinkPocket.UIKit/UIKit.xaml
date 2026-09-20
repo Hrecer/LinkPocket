@@ -282,6 +282,55 @@
         </Setter>
     </Style>
 
+    <!-- JumpPillButton：「跳转」药丸（**三页共用一份**：搜索工具行 / 智能列表结果页头 / 查重明细 URL 组）。
+         「跳转」= 进浏览页对应目录并选中该行（IContentLocator，与"外部打开"无关）→
+         图标用 folder-open-outline（原搜索页局部样式用 open-in-new = "外部打开"语义，与跳转冲突）。
+         ⚠️ 按压态只加深状态层，**绝不改变圆角/尺寸**：原局部样式在 IsPressed 里把圆角 16→10 做"形变"，
+         用户令 2026-09-20 明确要求删除该效果（"我们不需要这个改变"）。
+         禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不用透明度 hack）。 -->
+    <Style x:Key="JumpPillButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource AccentBtn}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="15,0"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <Grid>
+                            <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
+                                    Opacity="0" CornerRadius="16"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== 侧栏导航列表（可复用组件，工具页/设置页左栏共用）=====
          SideNavList = ListBox 子类，选中高亮是垫在项下的滑动指示器（PrimaryContainer 药丸），
          切换时 240ms CubicEase 滑到选中项实测几何；悬停零底色反馈（滑动方案下色块像阴影）。

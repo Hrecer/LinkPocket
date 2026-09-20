@@ -26,13 +26,17 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public bool ShowRestoreAction { get; protected set; }
     /// <summary>「还原到根目录」动作（同上；缺省不显示）。</summary>
     public bool ShowRestoreToRootAction { get; protected set; }
+    /// <summary>「跳转」动作（进目标所在目录并选中该行；经 <c>IContentLocator</c>）。
+    /// 缺省不显示——只给"单一目标"的结果页/侧栏开（搜索页单选、智能列表结果页、查重明细）；
+    /// 多选时不显示（跳转只对单个目标有意义，用户令 2026-09-20）。</summary>
+    public bool ShowJumpAction { get; protected set; }
 
     /// <summary>主药丸色调（详情页三枚等大药丸：回收站把「打开」降为浅紫，深紫留给主处置「还原」）。</summary>
     public PillTone OpenTone { get; protected set; } = PillTone.Primary;
 
     /// <summary>动作卡排布：true = **两行**（第一行药丸 / 第二行图标钮靠右）。
     /// 右栏只有 286 宽时，"两枚药丸 + 三枚 32 图标钮"挤在同一行会把药丸压到裁字
-    /// （用户定稿：回收站右栏排两行）；缺省 false = 一行（药丸填满余宽 + 图标钮靠右，浏览页/搜索页现状）。
+    /// （用户定稿：回收站右栏排两行）；缺省 false = 一行（药丸填满余宽 + 图标钮靠右）。
     /// **只是排布差异**：按钮定义只有一份（见 Views/DetailSidebar.xaml 的两个宿主共用同一对模板）。</summary>
     public bool StackedActions { get; protected set; }
 
@@ -63,6 +67,12 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public string RestoreToRootToolTip { get; protected set; } = "还原到根目录";
     public string RestoreToRootIconKind { get; protected set; } = "backup-restore";
     public PillTone RestoreToRootTone { get; protected set; } = PillTone.Tonal;
+
+    /// <summary>「跳转」文案 / 提示 / 图标（进目录 + 选中行；**与"外部打开"无关**，故图标不是 open-in-new）。</summary>
+    public string JumpLabel { get; protected set; } = "跳转";
+    public string JumpToolTip { get; protected set; } = "在原目录中定位该项";
+    public string JumpIconKind { get; protected set; } = "folder-open-outline";
+
     /// <summary>「打开网站」按钮最终可见性（侧栏：链接且页面开启）。</summary>
     public bool ShowOpenWebsiteButton { get; protected set; } = true;
     /// <summary>主按钮跨列数（未显示「打开网站」时占满两列；侧栏用）。</summary>
@@ -70,7 +80,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
 
     /// <summary>动作卡是否显示（任一动作可见）。</summary>
     public bool HasActions => ShowOpenAction || ShowEditAction || ShowRenameAction || ShowDeleteAction
-        || ShowRestoreAction || ShowRestoreToRootAction;
+        || ShowRestoreAction || ShowRestoreToRootAction || ShowJumpAction;
 
     // —— 命令槽（由各页注入；一律复用该页既有能力，绝不另写业务逻辑） ——
 
@@ -83,6 +93,8 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public ICommand? DeleteCommand { get; set; }
     public ICommand? RestoreCommand { get; set; }
     public ICommand? RestoreToRootCommand { get; set; }
+    /// <summary>「跳转」的命令（进目录 + 选中行）——各页挂 <c>IContentLocator</c> 的定位入口。</summary>
+    public ICommand? JumpCommand { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -107,6 +119,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(DeleteSelectionLabel));
         OnPropertyChanged(nameof(ShowRestoreAction));
         OnPropertyChanged(nameof(ShowRestoreToRootAction));
+        OnPropertyChanged(nameof(ShowJumpAction));
         OnPropertyChanged(nameof(OpenTone));
         OnPropertyChanged(nameof(StackedActions));
         OnPropertyChanged(nameof(RestoreLabel));
@@ -117,6 +130,9 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(RestoreToRootToolTip));
         OnPropertyChanged(nameof(RestoreToRootIconKind));
         OnPropertyChanged(nameof(RestoreToRootTone));
+        OnPropertyChanged(nameof(JumpLabel));
+        OnPropertyChanged(nameof(JumpToolTip));
+        OnPropertyChanged(nameof(JumpIconKind));
         OnPropertyChanged(nameof(ShowOpenWebsiteButton));
         OnPropertyChanged(nameof(OpenColumnSpan));
         OnPropertyChanged(nameof(HasActions));
@@ -128,6 +144,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         ShowOpenAction = ShowOpenWebsite = ShowEditAction = ShowDeleteAction = true;
         ShowRenameAction = false;
         ShowRestoreAction = ShowRestoreToRootAction = false;
+        ShowJumpAction = false;
         OpenLabel = "打开";
         OpenToolTip = "打开";
         OpenIconKind = "open-in-new";
@@ -146,6 +163,9 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         RestoreToRootToolTip = "还原到根目录";
         RestoreToRootIconKind = "backup-restore";
         RestoreToRootTone = PillTone.Tonal;
+        JumpLabel = "跳转";
+        JumpToolTip = "在原目录中定位该项";
+        JumpIconKind = "folder-open-outline";
         ShowOpenWebsiteButton = true;
         OpenColumnSpan = 1;
     }

@@ -22,6 +22,7 @@ namespace LinkPocket.ViewModels
     {
         private readonly EngineClient _api;
         private readonly Services.UiPortProvider _ports;
+        private readonly IContentLocator? _locator;
         private readonly Func<string?, string> _resolveFolderPath;
         private bool _isLoading;
         private int _openGeneration;   // 打开代次：GoBack / 重新打开时递增，使在途结果失效
@@ -35,13 +36,16 @@ namespace LinkPocket.ViewModels
 
         /// <summary>
         /// ports = UI 端口槽位（组合根持有，MainWindow 构造时登记）；结果页动作命令
-        /// 在打开列表时从槽位取用（此时端口必已登记）。路径解析器 = 「位置」列与
-        /// 详情栏共用的目录树路径解析（MainViewModel 注入，与浏览页同一份树）。
+        /// 在打开列表时从槽位取用（此时端口必已登记）。locator = 定位组件（结果页「跳转」用：
+        /// 进目录 + 选中行）。路径解析器 = 「位置」列与详情栏共用的目录树路径解析
+        /// （MainViewModel 注入，与浏览页同一份树）。
         /// </summary>
-        public SmartListViewModel(EngineClient api, Services.UiPortProvider ports, Func<string?, string> resolveFolderPath)
+        public SmartListViewModel(EngineClient api, Services.UiPortProvider ports,
+            Func<string?, string> resolveFolderPath, IContentLocator? locator = null)
         {
             _api = api;
             _ports = ports;
+            _locator = locator;
             _resolveFolderPath = resolveFolderPath;
             ResolveFolderPath = resolveFolderPath;
             GoBackCommand = new RelayCommand(GoBack, () => ResultViewModel != null);
@@ -100,7 +104,7 @@ namespace LinkPocket.ViewModels
             {
                 var def = Definition(listId);
                 var resultVm = new SmartListResultViewModel(_api, listId, def.Title,
-                    _ports.Navigation, _ports.Dialogs, _resolveFolderPath)
+                    _ports.Navigation, _ports.Dialogs, _resolveFolderPath, _locator)
                 {
                     Subtitle = def.Subtitle,
                 };

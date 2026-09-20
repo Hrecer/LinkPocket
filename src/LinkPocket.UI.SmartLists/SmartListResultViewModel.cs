@@ -27,6 +27,7 @@ namespace LinkPocket.ViewModels
         private readonly EngineClient _client;
         private readonly INavigationService? _navigation;
         private readonly IDialogService? _dialogs;
+        private readonly IContentLocator? _locator;
         private readonly Func<string?, string> _resolveFolderPath;
         private bool _isDeleting;
 
@@ -128,7 +129,8 @@ namespace LinkPocket.ViewModels
         public SearchDetailsViewModel Details { get; } = new();
 
         public SmartListResultViewModel(EngineClient client, string listId, string title,
-            INavigationService? navigation, IDialogService? dialogs, Func<string?, string> resolveFolderPath)
+            INavigationService? navigation, IDialogService? dialogs, Func<string?, string> resolveFolderPath,
+            IContentLocator? locator = null)
         {
             _client = client;
             _listId = listId;
@@ -136,12 +138,17 @@ namespace LinkPocket.ViewModels
             _navigation = navigation;
             _dialogs = dialogs;
             _resolveFolderPath = resolveFolderPath;
+            _locator = locator;
 
             Selection.Changed += OnSelectionChanged;
 
+            // 「详情」= 打开浏览页的链接详情页（Enter 同此命令）
             OpenInBrowserCommand = new RelayCommand(
                 () => { if (PrimarySelected is { } item) _navigation?.OpenLinkInBrowser(item.LinkId); },
                 () => Selection.HasAny && !IsDeleting);
+            // 「跳转」= 进浏览页对应目录并选中该行（经定位组件；与「详情」互不替代，用户令 2026-09-20）。
+            // 本页为单选中，故"有选中"即"有唯一目标"。
+            JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => Selection.HasAny && !IsDeleting);
             OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.HasAny && !IsDeleting);
             // 删除过程中（IsDeleting）禁用删除与其余行动作 —— 防重入不再只靠方法内 if（#8/9）
             DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => Selection.HasAny && !IsDeleting);
@@ -157,12 +164,15 @@ namespace LinkPocket.ViewModels
             Details.RenameCommand = OpenInBrowserCommand;
             Details.OpenWebsiteCommand = OpenWebsiteCommand;
             Details.DeleteCommand = DeleteCommand;
+            Details.JumpCommand = JumpCommand;   // 右栏「跳转」图标钮 = 同一条定位入口（绝不另写一份）
             // 只读结果页的右栏动作面收窄（用户令 2026-09-20·设计）：**不显示「编辑」与「删除」两个按钮**
             // ——结果页是只读的查看面（键位集也是只读集，无 Delete/Ctrl+A）。命令仍接好（如需恢复显示位即可用）。
             Details.HideEditAndDeleteActions();
         }
 
         public ICommand OpenInBrowserCommand { get; }
+        /// <summary>「跳转」= 进浏览页对应目录并选中该行（定位组件；与「详情」互不替代）。</summary>
+        public ICommand JumpCommand { get; }
         public ICommand OpenWebsiteCommand { get; }
         public ICommand DeleteCommand { get; }
         public ICommand MoveSelectionCommand { get; }
@@ -294,6 +304,33 @@ namespace LinkPocket.ViewModels
 
         /// <summary>一次**用户发起**的重新查询（F5）结束：视图据此播行入场动画并收回焦点。</summary>
         public event EventHandler? RefreshCompleted;
+
+        /// <summary>
+        /// **「跳转」**：进浏览页对应目录并选中该行（定位组件 <see cref="IContentLocator"/>；
+        /// **不是**打开详情页——后者是 <see cref="OpenInBrowserCommand"/>）。本页为单选中，故"有选中"即"有唯一目标"。
+        /// 失败（目标刚被移走 / 无界面宿主 / 组件不可用）一律如实提示，绝不静默。
+        /// </summary>
+        private async Task JumpAsync()
+        {
+            var item = PrimarySelected;
+            if (item == null) return;
+            if (_locator == null)
+            {
+                Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+                return;
+            }
+
+            var result = await _locator.LocateLinkAsync(item.LinkId);
+            if (result.IsSuccess) return;
+
+            _dialogs?.Alert("跳转", result.Message ?? result.Status switch
+            {
+                LocateStatus.NotFound => "未找到该链接 ID",
+                LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
+                LocateStatus.Failed => "定位失败，请稍后重试",
+                _ => "定位未完成",
+            });
+        }
 
         /// <summary>「打开网站」：默认浏览器打开并记录一次访问（与搜索页侧栏同口径）。</summary>
         private async Task OpenSelectedWebsiteAsync()

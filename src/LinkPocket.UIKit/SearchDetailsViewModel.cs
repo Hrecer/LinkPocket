@@ -11,7 +11,8 @@ namespace LinkPocket.ViewModels;
 /// 搜索页右侧详情栏数据模型：继承通用 <see cref="DetailSidebarModel"/>，
 /// 把搜索结果选中的 <see cref="LinkItem"/> 映射为详情栏数据。
 /// 搜索结果只有链接（无文件夹/多选），信息卡行固定为：位置 / 最后更新 / 最后查看 / 查看次数 / 创建时间 / ID。
-/// 页面动作（打开 / 编辑 / 删除）由 MainWindow 注入命令；favicon 异步补拉后原位刷新。
+/// 页面动作（详情 / 打开 / 跳转 / 删除）由使用方页面注入命令；favicon 异步补拉后原位刷新。
+/// 三个页面共用本模型：搜索页（完整多选）、智能列表结果页、查重明细（后两者单选中）。
 /// </summary>
 public class SearchDetailsViewModel : DetailSidebarModel
 {
@@ -20,6 +21,9 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
     /// <summary>只读结果页的动作面是否已收窄（见 <see cref="HideEditAndDeleteActions"/>）——动作面复位后仍保持。</summary>
     private bool _readOnlyActions;
+
+    /// <summary>本页右栏是否声明两行排布（见 <see cref="UseStackedActions"/>）——动作面复位后仍保持。</summary>
+    private bool _stackedActions;
 
     /// <summary>
     /// **只读结果页**（智能列表结果页 / 去重明细对比页）的动作面收窄：**不显示「编辑」（铅笔）与「删除」（垃圾桶）**。
@@ -42,11 +46,30 @@ public class SearchDetailsViewModel : DetailSidebarModel
         RaiseActionChanged();
     }
 
+    /// <summary>
+    /// 右栏排布定制 = **两行**（药丸一行 / 图标钮一行靠右）：286 宽放不下"两枚药丸 + 三枚 32 图标钮"
+    /// （搜索页单选态的「跳转 / 编辑 / 删除」正是三枚），同排会把药丸压到裁字（WARNINGS 51）。
+    /// 与浏览页侧栏 / 回收站右栏同一套 `StackedActions`（**共用同一对按钮模板**，不是第二套界面）；
+    /// 图标钮只有一枚的结果页（智能列表 / 查重明细）不开，保持一行。
+    /// 幂等：`Clear()` / `UpdateFrom()` 走动作面复位之后仍保持。
+    /// </summary>
+    public void UseStackedActions()
+    {
+        _stackedActions = true;
+        ApplyPageLayout();
+    }
+
+    private void ApplyPageLayout()
+    {
+        if (_stackedActions) StackedActions = true;
+    }
+
     /// <summary>清空选中回到空占位（动作面复位后重新应用本页的动作面定制）。</summary>
     public override void Clear()
     {
         base.Clear();
         ApplyReadOnlyActions();
+        ApplyPageLayout();
     }
 
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
@@ -78,6 +101,8 @@ public class SearchDetailsViewModel : DetailSidebarModel
         IsMulti = false;
         IsFolder = false;
         ConfigureSidebarActionLabels(isFolder: false);   // 搜索结果恒为链接（共享动作面缺省配置）
+        // 「跳转」= 进目录 + 选中该行（经使用方注入的 JumpCommand）；单一目标动作 → 只在单选态开。
+        ShowJumpAction = true;
         DisplayName = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
         IdText = item.LinkId;
         UrlText = item.Url;
@@ -94,6 +119,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
             new() { IconKind = "fingerprint", Label = "ID", Value = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
         });
 
+        ApplyPageLayout();   // 排布位在 RaiseAll 之前落地（RaiseAll 里的动作面通知才带得上它）
         RaiseAll();
         ApplyReadOnlyActions();   // 动作面复位后再应用本页定制（只读结果页不摆编辑/删除按钮）
 
@@ -141,6 +167,8 @@ public class SearchDetailsViewModel : DetailSidebarModel
         ShowOpenWebsiteButton = false;
         ShowEditAction = false;
         ShowDeleteAction = true;
+        // 多选**不提供跳转**（跳转只对单个目标有意义；顶部药丸的 CanExecute 也是"恰一项"）——用户令 2026-09-20
+        ShowJumpAction = false;
         DisplayName = $"已选中 {items.Count} 项";
         IdText = string.Empty;
         UrlText = string.Empty;
@@ -150,6 +178,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
         SelectedFolders = 0;
         SelectedLinks = items.Count;
         SetRows(Array.Empty<DetailSidebarRow>());
+        ApplyPageLayout();
         RaiseAll();
     }
 }

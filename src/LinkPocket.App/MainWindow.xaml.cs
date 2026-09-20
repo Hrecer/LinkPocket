@@ -28,7 +28,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         _host = host;
         InitializeComponent();
-        var vm = new MainViewModel(_host.Client, _host.Hub, _host.Ports, _selectionManager);
+        var vm = new MainViewModel(_host.Client, _host.Hub, _host.Ports, _selectionManager, _host.Locator);
         DataContext = vm;
         // 端口登记：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
@@ -56,7 +56,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             _host.Client, _host.Ports.Navigation!, _host.Ports.Dialogs!,
             listId => string.IsNullOrEmpty(listId)
                 ? "全部书签"
-                : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"));
+                : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"),
+            _host.Locator);   // 「跳转」= 进浏览页对应目录并选中该行（定位组件；与 ID 跳转同一套语义）
         SearchView.DataContext = _searchVm;
         TrashView.DataContext = vm.TrashViewModel;
         SmartListsView.DataContext = vm.SmartListViewModel;

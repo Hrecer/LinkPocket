@@ -40,7 +40,8 @@ namespace LinkPocket.ViewModels
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public MainViewModel(EngineClient client, Services.UiEventHub events,
-            Services.UiPortProvider ports, Managers.SelectionManager selectionManager)
+            Services.UiPortProvider ports, Managers.SelectionManager selectionManager,
+            Services.IContentLocator? locator = null)
         {
             _client = client;
             _events = events;
@@ -54,7 +55,8 @@ namespace LinkPocket.ViewModels
             _smartListViewModel = new SmartListViewModel(client, _ports,
                 listId => string.IsNullOrEmpty(listId)
                     ? "全部书签"
-                    : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"));
+                    : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"),
+                locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
             BrowserViewModel = new BrowserViewModel(client, _ports);   // 共享端口槽位：对话框/导航走 IDialogService
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));

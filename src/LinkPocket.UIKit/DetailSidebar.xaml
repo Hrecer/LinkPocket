@@ -126,10 +126,20 @@
             </Grid>
         </DataTemplate>
 
-        <!-- 图标钮组：回收站 = 还原 / 还原到根目录 / 永久删除（32×32，顺序与工具栏一致）；
-             颜色由色调位驱动（PillToneBrush：深紫 / 浅紫） -->
+        <!-- 图标钮组：顺序只有一套（按能力位显隐）= **跳转** → 还原 → 还原到根目录 → 重命名 → 编辑 → 删除。
+             取色由色调位 / 语义驱动：跳转与编辑 = 图标钮缺省 Primary，合并「深紫」= AccentBtn，永久删除 = WarnBg。 -->
         <DataTemplate x:Key="SidebarActionIcons">
             <StackPanel Orientation="Horizontal">
+                <!-- 跳转（进浏览页对应目录并选中该行；经 IContentLocator）——结果页/搜索页的单一目标动作，
+                     多选时由能力位关掉（跳转只对单个目标有意义）。语义 = "去它在哪"，故与"外部打开"区分取
+                     folder-open-outline；色调 = 图标钮缺省 Primary（与工具栏 AccentBtn 填充药丸不混同）。 -->
+                <Button Style="{StaticResource NavIconButton}"
+                        Tag="{Binding JumpToolTip}"
+                        Width="32" Height="32" Margin="0,0,0,0" VerticalAlignment="Center"
+                        Command="{Binding JumpCommand}"
+                        Visibility="{Binding ShowJumpAction, Converter={StaticResource BoolToVis}}">
+                    <m3:M3Icon Kind="{Binding JumpIconKind}" Width="15" Height="15"/>
+                </Button>
                 <Button Style="{StaticResource NavIconButton}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Tag="{Binding RestoreLabel}"

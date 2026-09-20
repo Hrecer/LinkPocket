@@ -29,21 +29,28 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private readonly EngineClient _api;
     private readonly INavigationService _navigation;
     private readonly IDialogService _dialogs;
+    private readonly IContentLocator? _locator;
     private readonly Func<string?, string> _resolveFolderPath;
 
     public SearchViewModel(EngineClient api, INavigationService navigation, IDialogService dialogs,
-        Func<string?, string> resolveFolderPath)
+        Func<string?, string> resolveFolderPath, IContentLocator? locator = null)
     {
         _api = api;
         _navigation = navigation;
         _dialogs = dialogs;
         _resolveFolderPath = resolveFolderPath;
+        _locator = locator;
 
         Selection.Changed += OnSelectionChanged;
 
         SearchCommand = new RelayCommand(() => _ = SearchAsync());
         CancelCommand = new RelayCommand(Cancel);
-        JumpCommand = new RelayCommand(
+        // **「跳转」= 进浏览页对应目录并选中该行**（经定位组件 IContentLocator，与 ID 跳转工具同一套语义）；
+        // **仅单选可用**：多选时没有"某一个目标"（用户令 2026-09-20）。绝不展开详情页。
+        JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => Selection.Count == 1);
+        // **「详情」= 打开浏览页的链接详情页**（INavigationService）——与「跳转」是两条互不替代的语义：
+        // 顶部跳转药丸 / 右栏跳转钮走前者，`Enter` / 双击 / 右栏「详情」/ 铅笔槽走后者。
+        OpenDetailCommand = new RelayCommand(
             () => { if (PrimarySelected is { } item) _navigation.OpenLinkInBrowser(item.LinkId); },
             () => Selection.HasAny);
         OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.Count == 1);
@@ -57,11 +64,16 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         // 亮加载遮罩、结束后播行入场动画；事件驱动的静默刷新走 RefreshFromEventAsync（另一条口径，不亮不播）。
         RefreshCommand = new RelayCommand(() => _ = RefreshAsync(), () => !string.IsNullOrWhiteSpace(LastQuery));
 
-        // 详情栏的页面动作命令：打开/编辑都进入浏览页的链接详情页（详情页自带完整编辑与删除入口）
-        Details.OpenCommand = JumpCommand;
-        Details.RenameCommand = JumpCommand;
+        // 详情栏的页面动作命令：「详情」/铅笔槽 = 打开浏览页的链接详情页（自带完整编辑与删除入口）；
+        // 「跳转」单独挂定位入口（进目录 + 选中行）——两条语义互不替代（用户令 2026-09-20）。
+        Details.OpenCommand = OpenDetailCommand;
+        Details.RenameCommand = OpenDetailCommand;
         Details.OpenWebsiteCommand = OpenWebsiteCommand;
         Details.DeleteCommand = DeleteSelectionCommand;
+        Details.JumpCommand = JumpCommand;
+        // 右栏 286 宽放不下「两枚药丸 + 三枚 32 图标钮（跳转 / 编辑 / 删除）」→ 两行排布
+        //（与浏览页侧栏 / 回收站右栏同一套 `StackedActions`；按钮定义仍只有一份，不是第二套详情栏）
+        Details.UseStackedActions();
     }
 
     // —— 搜索输入与范围 ——
@@ -132,7 +144,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     public bool HasSelection => SelectionCount > 0;
     private LinkItem? PrimarySelected => SelectedItems.FirstOrDefault();
 
-    public bool JumpEnabled => Selection.HasAny;
+    /// <summary>「跳转」可用性 = **恰选中一项**（多选无跳转目标；顶部药丸与右栏图标钮同源）。</summary>
+    public bool JumpEnabled => Selection.Count == 1;
 
     /// <summary>选中的**唯一投影点**：集合 → 属性通知 + 右栏（空占位 / 单选详情 / 多选计数三态）。</summary>
     private void OnSelectionChanged()
@@ -156,6 +169,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     public ICommand SearchCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand JumpCommand { get; }
+    /// <summary>「详情」/铅笔槽 = 打开浏览页的链接详情页（`Enter` / 双击同此命令）。</summary>
+    public ICommand OpenDetailCommand { get; }
     public ICommand OpenWebsiteCommand { get; }
     /// <summary>删除选中（单选=原单条文案；多选=批量计数），危险键受宿主守卫（WARNINGS 48）。</summary>
     public ICommand DeleteSelectionCommand { get; }
@@ -427,6 +442,33 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     }
 
     // —— 页面动作 ——
+
+    /// <summary>
+    /// **「跳转」**：进浏览页对应目录并选中该行（定位组件 <see cref="IContentLocator"/>，
+    /// 与「ID 跳转」工具同一条流水线；**不是**打开详情页）。结果行来自真实搜索结果，
+    /// 失败（目标刚被移走 / 无界面宿主 / 组件不可用）一律如实提示——绝不静默。
+    /// </summary>
+    private async Task JumpAsync()
+    {
+        var item = PrimarySelected;
+        if (item == null) return;
+        if (_locator == null)
+        {
+            Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+            return;
+        }
+
+        var result = await _locator.LocateLinkAsync(item.LinkId);
+        if (result.IsSuccess) return;
+
+        _dialogs.Alert("跳转", result.Message ?? result.Status switch
+        {
+            LocateStatus.NotFound => "未找到该链接 ID",
+            LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
+            LocateStatus.Failed => "定位失败，请稍后重试",
+            _ => "定位未完成",
+        });
+    }
 
     /// <summary>搜索侧栏「打开网站」：默认浏览器打开并记录一次访问（与浏览页侧栏同口径）。</summary>
     private async Task OpenSelectedWebsiteAsync()

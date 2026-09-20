@@ -553,6 +553,19 @@
                                 VerticalAlignment="Center">
                             <m3:M3Icon Kind="content-copy" Width="14" Height="14"/>
                         </Button>
+                        <!-- 跳转（共享药丸样式 JumpPillButton）：进浏览页对应目录并选中该行（定位组件）——
+                             放**当前查看的那一条 URL 旁边**（复制钮之后），不与右侧动作簇混排：
+                             右侧「已勾选 N 条 / 删除重复项」作用于**勾选集合**（批量处置），
+                             跳转作用于**明细选中行**（单个），两个作用域必须分开摆（UI-SPEC §3 位置定稿）。 -->
+                        <Button x:Name="DetailJumpBtn" Style="{StaticResource JumpPillButton}"
+                                Click="DetailJump_Click" IsEnabled="False" VerticalAlignment="Center"
+                                Margin="10,0,0,0"
+                                ToolTip="在浏览页定位到该链接（进它所在目录并选中那一行）">
+                            <StackPanel Orientation="Horizontal">
+                                <m3:M3Icon Kind="folder-open-outline" Width="15" Height="15" VerticalAlignment="Center"/>
+                                <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </DockPanel>
             </Border>

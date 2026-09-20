@@ -39,8 +39,8 @@ namespace LinkPocket.Views
         /// <summary>
         /// Shell 在构造时注入：引擎客户端、定位组件、导航端口（打开浏览页详情页）、路径解析与目录树刷新委托。
         /// 「打开详情」走 <see cref="INavigationService.OpenLinkInBrowser"/>——与搜索页 / 智能列表结果页
-        /// **同一条路径**（用户令 2026-09-20：三页的 Enter 都是"打开详情页"）；「跳转（进目录 + 选中行）」是
-        /// 预留能力，只在 ID 跳转工具里用（走 <see cref="IContentLocator"/>），两者互不替代。
+        /// **同一条路径**（用户令 2026-09-20：三页的 Enter 都是"打开详情页"）；「跳转（进目录 + 选中行）」
+        /// 走 <see cref="IContentLocator"/>（ID 跳转工具 + 明细顶部/右栏入口），两者互不替代。
         /// </summary>
         public void Configure(EngineClient api, IContentLocator? locator, INavigationService? navigation,
             Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
@@ -60,6 +60,7 @@ namespace LinkPocket.Views
             _detailSidebar.OpenCommand = OpenDetailInBrowserCommand;         // 「详情」= 打开浏览页详情页
             _detailSidebar.RenameCommand = OpenDetailInBrowserCommand;       // 铅笔槽同「详情」（搜索页同口径）
             _detailSidebar.OpenWebsiteCommand = OpenDetailWebsiteCommand;    // 「打开」= 系统默认浏览器
+            _detailSidebar.JumpCommand = JumpDetailCommand;                  // 「跳转」= 进目录 + 选中行（定位组件）
             // 只读对比页的动作面收窄（用户令 2026-09-20·设计）：不显示「编辑」与「删除」——
             // 删除入口在头部「删除重复项」（按勾选、"至少保留一条"），编辑在只读对比页无意义。
             _detailSidebar.HideEditAndDeleteActions();
@@ -133,9 +134,12 @@ namespace LinkPocket.Views
             BlankClick.SetCommand(DetailPanel, clearSelectionAndFocus);
             BlankClick.SetCommand(MainPanel, clearSelectionAndFocus);   // 主面板空白同样可点（清残余选中 + 收焦点）
             OpenDetailWebsiteCommand = new RelayCommand(OpenDetailWebsite, () => VmTools.DetailSelection.HasAny);
-            // Enter / 明细「打开」= 打开**浏览页的链接详情页**（与搜索页 JumpCommand / 智能列表
+            // Enter / 明细「打开」= 打开**浏览页的链接详情页**（与搜索页 OpenDetailCommand / 智能列表
             // OpenInBrowserCommand 同一条路径与同一个端口；用户令 2026-09-20：三页 Enter 都是"打开详情页"）
             OpenDetailInBrowserCommand = new RelayCommand(OpenDetailInBrowser, () => VmTools.DetailSelection.HasAny);
+            // 「跳转」= 进浏览页对应目录并选中该行（定位组件 IContentLocator；与「详情」互不替代，用户令 2026-09-20）
+            // —— 顶部 URL 组药丸与右栏图标钮挂的是**同一条命令（同一实例）**，绝不各写一份。
+            JumpDetailCommand = new RelayCommand(() => _ = JumpDetailAsync(), () => VmTools.DetailSelection.HasAny);
 
             // 快捷键：键位在 ShortcutCatalog（ID 输入框内 Enter 执行跳转 = 控件锚定；
             // 去重明细 = 只读集：↑/↓/End/Esc/Enter 打开详情页/F5 重查）。页面只做「动作 id → 命令」映射。
@@ -160,6 +164,9 @@ namespace LinkPocket.Views
 
         /// <summary>明细 Enter /「打开」：打开浏览页的链接详情页（与搜索页/智能列表同一条路径）。</summary>
         public ICommand OpenDetailInBrowserCommand { get; }
+
+        /// <summary>明细「跳转」（顶部 URL 组药丸 / 右栏图标钮）：进浏览页对应目录并选中该行（定位组件）。</summary>
+        public ICommand JumpDetailCommand { get; }
 
         /// <summary>明细右栏数据模型（共享 SearchDetailsViewModel：链接 → 信息行 + 复制）。</summary>
         private readonly SearchDetailsViewModel _detailSidebar = new();
@@ -236,7 +243,7 @@ namespace LinkPocket.Views
         // —— 明细选中：投影 + 只读键位（↑/↓/End/Enter/F5；核心 = 共享 ListSelection） ——
         // ============================================================
 
-        /// <summary>明细选中的**唯一投影点**：集合 → 行绘制 + 右栏（只读信息 + 打开网站）。</summary>
+        /// <summary>明细选中的**唯一投影点**：集合 → 行绘制 + 右栏（只读信息 + 打开网站 + 跳转）+ 顶部跳转药丸可用性。</summary>
         private void ApplyDetailSelectionProjection()
         {
             var sel = VmTools.DetailSelection;
@@ -244,6 +251,8 @@ namespace LinkPocket.Views
             DetailTable.ApplySelection(row == null ? Array.Empty<object>() : new object[] { row });
             _detailSidebar.UpdateFrom(row == null ? null : LinkItem.FromDto(row),
                 row == null ? "" : VmTools.ResolvePath(row));
+            // 顶部「跳转」药丸与选中行同源（无选中 = 没有跳转目标）；不在投影点之外另设刷新时机
+            DetailJumpBtn.IsEnabled = row != null && _locator != null;
             CommandManager.InvalidateRequerySuggested();
         }
 
@@ -275,9 +284,9 @@ namespace LinkPocket.Views
         }
 
         /// <summary>
-        /// 明细 Enter /「打开」：打开**浏览页的链接详情页**——与搜索页 <c>JumpCommand</c>、
+        /// 明细 Enter /「打开」：打开**浏览页的链接详情页**——与搜索页 <c>OpenDetailCommand</c>、
         /// 智能列表 <c>OpenInBrowserCommand</c> 走同一个端口、同一条路径（用户令 2026-09-20：三页 Enter 一致）。
-        /// 「跳转（进目录 + 选中行）」是**预留能力**（只在 ID 跳转工具里用，走 IContentLocator），不是本键语义。
+        /// 「跳转（进目录 + 选中行）」是另一条语义（见 <see cref="JumpDetailAsync"/>），键位不承担。
         /// </summary>
         private void OpenDetailInBrowser()
         {
@@ -290,6 +299,31 @@ namespace LinkPocket.Views
             }
             _navigation.OpenLinkInBrowser(id);
         }
+
+        /// <summary>
+        /// 明细「跳转」（顶部 URL 组药丸 / 右栏图标钮）：**进浏览页对应目录并选中该行**——
+        /// 与「详情」（上方）互不替代（用户令 2026-09-20）。统一走 <see cref="ToolsViewModel.JumpAsync"/>
+        /// （定位组件 <see cref="IContentLocator"/>，与「ID 跳转」工具同一条流水线），本页不自带定位算法。
+        /// 失败按定位结果如实提示（弹窗 = 全站统一的告警面），绝不静默。
+        /// </summary>
+        private async Task JumpDetailAsync()
+        {
+            var id = VmTools.DetailSelection.Ids.FirstOrDefault();
+            if (string.IsNullOrEmpty(id)) return;
+
+            var result = await VmTools.JumpAsync(id);
+            if (result.IsSuccess) return;
+
+            ConfirmDialog.Show("跳转", result.Message ?? result.Status switch
+            {
+                LocateStatus.NotFound => "未找到该链接 ID",
+                LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
+                LocateStatus.Failed => "定位失败，请稍后重试",
+                _ => "定位未完成",
+            }, "确定", "alert-circle-outline");
+        }
+
+        private void DetailJump_Click(object sender, RoutedEventArgs e) => _ = JumpDetailAsync();
 
         /// <summary>明细右栏「打开网站」：默认浏览器打开并记一次访问（与搜索页右栏同口径）。</summary>
         private void OpenDetailWebsite()
@@ -589,7 +623,8 @@ namespace LinkPocket.Views
                     CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
                 },
                 // 重复组明细**没有**「操作」列 / 行内跳转按钮（用户令 2026-09-19）：
-                // 对比页是"看差异"的只读视图，跳转能力保留在定位组件（IContentLocator）与 ID 跳转工具里。
+                // 对比页是"看差异"的只读视图；「跳转」（顶部 URL 组药丸 / 右栏图标钮）走定位组件 IContentLocator
+                // ——与「ID 跳转」工具同一套语义（进目录 + 选中行），本页不自带定位算法。
             };
 
             // 外部托管选中（SelectionEnabled=False）：单选中由 ToolsViewModel.DetailSelection（共享核心）承载，

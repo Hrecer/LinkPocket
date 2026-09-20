@@ -20,52 +20,10 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
 
-        <!-- 跳转按钮（M3E Filled 药丸）：搜索工具行唯一的关键动作，Primary 填色锚定注意力（色彩即层级）；
-             禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不再用透明度 hack）；
-             按压圆角形变 16→10（M3E 交互化作形变）。 -->
-        <Style x:Key="SearchJumpPillButton" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource AccentBtn}"/>
-            <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="15,0"/>
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="SnapsToDevicePixels" Value="True"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"
-                                Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
-                            <Grid>
-                                <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
-                                        Opacity="0" CornerRadius="16"/>
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
-                            </Grid>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
-                                <Setter TargetName="Bd" Property="CornerRadius" Value="10"/>
-                                <Setter TargetName="StateLayer" Property="CornerRadius" Value="10"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SurfaceContainerHighest}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource OnSurfaceMuted}"/>
-                                <Setter Property="Cursor" Value="Arrow"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- 跳转按钮的样式 = **UIKit 共享 `JumpPillButton`**（三页共用一份：搜索工具行 / 智能列表结果页头 /
+             查重明细 URL 组）。原页面局部样式 `SearchJumpPillButton` 已删除——
+             它带一条"按压圆角 16→10 形变"的触发器，用户令 2026-09-20 明确要求删除该效果；
+             同时图标由 `open-in-new`（外部打开语义）改为 `folder-open-outline`（"去它所在的目录"）。 -->
 
         <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊）。
              ⚠️ 用户令 2026-09-19：**选中 / 未选尺寸完全一致**——不再加宽、不做形变，
@@ -187,15 +145,17 @@
             </Border>
 
             <!-- 筛选工具行（M3E，**左对齐** = 与搜索胶囊左缘对齐）：
-                 跳转 = Filled 药丸（关键操作，色彩锚定）；「搜索范围」+ 筛选 chip 归集进 **TintCard 近白胶囊容器**
+                 「跳转」= 药丸（关键动作，AccentBtn 填色锚定注意力）——语义 = **进浏览页对应目录并选中该行**
+                 （定位组件 IContentLocator；不是"外部打开"）；「搜索范围」+ 筛选 chip 归集进 **TintCard 近白胶囊容器**
                  （容器规格 = 内距 3 + 圆角 19，与工具页分段 / 浏览页命令栏同一语言；caption 与 chip 用细分割线分节）。
                  chip 32 高与跳转药丸齐平；未选透明、选中 SecondaryContainer + 加宽 + SemiBold，层级由色彩直接区分。 -->
             <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left"
                         Margin="12,0,12,8">
                 <Button x:Name="SearchJumpToLinkBtn" Command="{Binding JumpCommand}" IsEnabled="{Binding JumpEnabled}"
-                        Style="{StaticResource SearchJumpPillButton}" VerticalAlignment="Center">
+                        Style="{StaticResource JumpPillButton}" VerticalAlignment="Center"
+                        ToolTip="在浏览页定位到该链接（进它所在目录并选中那一行）">
                     <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="open-in-new" Width="15" Height="15" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="folder-open-outline" Width="15" Height="15" VerticalAlignment="Center"/>
                         <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>

@@ -66,7 +66,9 @@ public partial class SearchView : UserControl
                     .Add(ShortcutAction.SearchMoveDown, _vm.MoveSelectionCommand)
                     .Add(ShortcutAction.SearchSelectLast, _vm.SelectLastCommand)
                     .Add(ShortcutAction.SearchSelectAll, _vm.SelectAllCommand)
-                    .Add(ShortcutAction.SearchOpen, _vm.JumpCommand)
+                    // Enter = 打开该链接的**浏览页详情页**（与智能列表/去重明细统一，用户令 2026-09-20）；
+                    // 「跳转」（进目录 + 选中行）是顶部药丸 / 右栏图标钮的语义，键位不承担。
+                    .Add(ShortcutAction.SearchOpen, _vm.OpenDetailCommand)
                     .Add(ShortcutAction.SearchDelete, _vm.DeleteSelectionCommand)
                     .Add(ShortcutAction.SearchRefresh, _vm.RefreshCommand)
                     .Add(ShortcutAction.SearchEscape, _vm.EscapeCommand);
@@ -138,7 +140,7 @@ public partial class SearchView : UserControl
         ResultsTable.RowDoubleClick += (_, item) =>
         {
             vm.ClickItem((LinkItem)item, ModifierKeys.None);
-            vm.JumpCommand.Execute(null);
+            vm.OpenDetailCommand.Execute(null);   // 双击 = 打开详情页（跳转只由顶部药丸 / 右栏图标钮触发）
         };
     }
 
