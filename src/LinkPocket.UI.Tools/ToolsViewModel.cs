@@ -15,6 +15,34 @@ public sealed class DedupGroupRow
     public List<LinkDto> Links { get; init; } = new();
     public int Count => Links.Count;
     public string LocationsSummary { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 两组"重复组"列表是否**渲染等价**（URL / 位置摘要 / 组内各条的关键字段逐项一致，含顺序）。
+    /// 用途：重扫后判断"要不要重设主表 ItemsSource"——工厂模式重设 = 整表重建（同步主线程），
+    /// 内容没变时纯属白烧（用户报障 2026-09-20：低性能设备切页偶发明显卡顿）。
+    /// </summary>
+    public static bool SameSequence(IReadOnlyList<DedupGroupRow>? a, IReadOnlyList<DedupGroupRow>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a == null || b == null) return false;
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+        {
+            var x = a[i];
+            var y = b[i];
+            if (x.Url != y.Url || x.LocationsSummary != y.LocationsSummary || x.Links.Count != y.Links.Count)
+                return false;
+            for (var j = 0; j < x.Links.Count; j++)
+            {
+                var p = x.Links[j];
+                var q = y.Links[j];
+                if (p.LinkId != q.LinkId || p.Title != q.Title || p.Url != q.Url || p.ListId != q.ListId
+                    || p.UpdatedAt != q.UpdatedAt || p.LastVisitedAt != q.LastVisitedAt
+                    || p.VisitCount != q.VisitCount) return false;
+            }
+        }
+        return true;
+    }
 }
 
 /// <summary>

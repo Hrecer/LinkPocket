@@ -105,6 +105,30 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>落点状态变化后由宿主调用：仅重发本行 IsDropTarget 的绑定通知（值由落点投影）。</summary>
     public void InvalidateIsDropTarget() => OnPropertyChanged(nameof(IsDropTarget));
 
+    /// <summary>
+    /// 两个行序列是否**渲染等价**（ID 序列 + 全部展示字段逐项一致，含顺序；favicon 与剪切态也纳入）。
+    /// 用途：刷新后判断"要不要换掉 Rows"——逐条 Clear/Add 会触发 N 次 CollectionChanged 并让视图整表重建，
+    /// 内容没变时纯属白烧（用户报障 2026-09-20：低性能设备切页偶发明显卡顿）。
+    /// 口径：**宁可重建不可漏更新**——字段有任何差异即视为需要重建。
+    /// </summary>
+    public static bool SameSequence(IReadOnlyList<BrowserRowViewModel>? a, IReadOnlyList<BrowserRowViewModel>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a == null || b == null) return false;
+        if (a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+        {
+            var x = a[i];
+            var y = b[i];
+            if (x.Id != y.Id || x.IsFolder != y.IsFolder || x.Name != y.Name || x.Url != y.Url
+                || x.LinkCount != y.LinkCount || x.ModifiedAt != y.ModifiedAt
+                || x.CreatedAt != y.CreatedAt || x.LastViewedAt != y.LastViewedAt
+                || x.ViewCount != y.ViewCount || x.IsCut != y.IsCut
+                || !ReferenceEquals(x.Favicon, y.Favicon)) return false;
+        }
+        return true;
+    }
+
     private bool _isCut;
     /// <summary>剪切态视觉（Ctrl+X）：行整体半透明，由绑定驱动。</summary>
     public bool IsCut

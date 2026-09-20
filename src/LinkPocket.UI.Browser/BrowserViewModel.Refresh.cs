@@ -43,6 +43,23 @@ public partial class BrowserViewModel
     }
 
     /// <summary>
+    /// 等待当前刷新链（**含"挂起补刷"**）彻底落地；无在途刷新时立即完成。
+    ///
+    /// <para>为什么需要它：树键盘导航（<c>MoveTreeSelection</c>）与部分入口是 **fire-and-forget**
+    /// （<c>_ = SelectTreeNodeAsync(...)</c>）——"选中"同步落地，但"进入目录"要等加载链收尾
+    /// （若此时已有在途加载，本次请求按 <see cref="RefreshAsync"/> 的"最后请求必被处理"语义**挂起**，
+    /// 由前一条链收尾时补刷）。因此"命令之后立刻断言已进入某目录"存在时序不确定性
+    /// （单测曾偶发失败；探针/自动化用它把时序钉死）。</para>
+    ///
+    /// <para>界面交互路径**不需要**它：界面靠事件 + 300ms 防抖驱动刷新，不依赖"何时落地"。</para>
+    /// </summary>
+    public async Task WaitForIdleAsync()
+    {
+        while (IsLoading || _refreshPending)
+            await Task.Delay(5);
+    }
+
+    /// <summary>
     /// 重新加载当前目录（事件推送订阅 / 导航显式调用；写操作不自行刷新，见 WARNINGS #18）。
     /// 选中的唯一事实来源是 <see cref="Selection"/>（行与树均为投影），故此方法本身不恢复选中——
     /// 集合并未因刷新而消失。仅当 <paramref name="clearSelection"/> 为 true（导航切换目录）时清空选中。
@@ -85,9 +102,7 @@ public partial class BrowserViewModel
             RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<LinkDto>());
             // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
-            Rows.Clear();
-            SetContextRow(null); // 行对象已重建：右键命中行引用作废（删除文案随之复位）
-
+            // ⚠️ 这里**不**先清空 Rows：行集要不要换，等目标行序算完再做等价判定（见下方"内容一致 → 不动集合"）。
             // Windows 逻辑：升序时文件夹在前，降序时文件夹在后（任何排序维度都如此）
             var folderRows = new List<BrowserRowViewModel>();
             foreach (var folder in contents.SubFolders)
@@ -137,19 +152,30 @@ public partial class BrowserViewModel
 
             // 临时置尾（Windows）：刚粘贴的项追加到列表末尾（不参与排序），直到真刷新才按排序归位。
             // 只对"属于当前目录且此刻仍在数据里"的 ID 生效——已被移走/删除的置尾项自动跳过。
+            // 目标行序（含置尾）先算好，再决定**要不要换集合**：
+            // 内容完全一致（含顺序）时保持原集合不动——逐条 Clear/Add 会触发 N 次 CollectionChanged，
+            // 视图（模板模式）随之整表重建/重排，是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
             var pinned = ActivePinnedIds();
+            var nextRows = new List<BrowserRowViewModel>(ordered.Count);
             if (pinned.Count == 0)
             {
-                foreach (var row in ordered) Rows.Add(row);
+                nextRows.AddRange(ordered);
             }
             else
             {
                 var pinnedSet = new HashSet<string>(pinned, StringComparer.Ordinal);
                 var byId = ordered.ToDictionary(r => r.Id, StringComparer.Ordinal);
                 foreach (var row in ordered)
-                    if (!pinnedSet.Contains(row.Id)) Rows.Add(row);
+                    if (!pinnedSet.Contains(row.Id)) nextRows.Add(row);
                 foreach (var id in pinned)
-                    if (byId.TryGetValue(id, out var row)) Rows.Add(row);
+                    if (byId.TryGetValue(id, out var row)) nextRows.Add(row);
+            }
+
+            if (!BrowserRowViewModel.SameSequence(Rows, nextRows))
+            {
+                Rows.Clear();
+                foreach (var row in nextRows) Rows.Add(row);
+                SetContextRow(null);   // 行对象已重建：右键命中行引用作废（删除文案随之复位）
             }
 
             // favicon 后台预取 + Dispatcher 回填：行已可见，失败只丢图标（下次事件刷新追平）
@@ -166,7 +192,12 @@ public partial class BrowserViewModel
                         {
                             var img = Services.FaviconService.LoadFromCache(dto.FaviconUrl);
                             if (img != null)
-                                System.Windows.Application.Current?.Dispatcher.Invoke(() => row.SetFavicon(img));
+                            {
+                                // ⚠️ 回填目标必须是**当前显示的行**：行集等价跳过后 Rows 保留的是旧行对象
+                                //（见上方"内容一致 → 不动集合"），只对新构建的行设置图标等于白设。
+                                var live = Rows.FirstOrDefault(r => string.Equals(r.Id, row.Id, StringComparison.Ordinal)) ?? row;
+                                System.Windows.Application.Current?.Dispatcher.Invoke(() => live.SetFavicon(img));
+                            }
                         }
                     }
                 });

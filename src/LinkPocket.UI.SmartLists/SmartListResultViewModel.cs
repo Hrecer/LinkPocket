@@ -157,6 +157,9 @@ namespace LinkPocket.ViewModels
             Details.RenameCommand = OpenInBrowserCommand;
             Details.OpenWebsiteCommand = OpenWebsiteCommand;
             Details.DeleteCommand = DeleteCommand;
+            // 只读结果页的右栏动作面收窄（用户令 2026-09-20·设计）：**不显示「编辑」与「删除」两个按钮**
+            // ——结果页是只读的查看面（键位集也是只读集，无 Delete/Ctrl+A）。命令仍接好（如需恢复显示位即可用）。
+            Details.HideEditAndDeleteActions();
         }
 
         public ICommand OpenInBrowserCommand { get; }
@@ -212,9 +215,6 @@ namespace LinkPocket.ViewModels
         public async Task LoadAsync()
         {
             IsLoading = true;
-            HasData = false;
-            Items.Clear();
-
             try
             {
                 var limit = _listId == "most_visited" ? 20 : 100;
@@ -232,12 +232,17 @@ namespace LinkPocket.ViewModels
                         "most_visited" => "暂无访问记录",
                         _ => "暂无数据"
                     };
+                    if (_items.Count > 0) Items = new ObservableCollection<LinkItem>();
+                    HasData = false;
                     return;
                 }
 
                 var items = links.Select(LinkItem.FromDto).ToList();
-                // 一次性整体替换（#6）：逐条 Add 会触发 N 次 CollectionChanged，重排行 N 次
-                Items = new ObservableCollection<LinkItem>(items);
+                // 内容未变 → **保持集合实例不动**（视图不重绑、不整表重建）：切页进入的静默刷新常是这种情况，
+                // 而整表重建（≤100 行 × 单元格，同步主线程）正是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
+                // 同时不再"先清空再填"——加载期间保留旧内容，避免闪空（与"进入保内容"口径一致）。
+                if (!LinkItem.SameSequence(_items, items))
+                    Items = new ObservableCollection<LinkItem>(items);   // 一次性整体替换（逐条 Add 会 N 次 CollectionChanged）
                 HasData = true;
             }
             finally

@@ -323,8 +323,11 @@ public class BrowserViewModelTests
             var rowBefore = vm.Rows.First();
             await vm.SelectTreeNodeAsync(root);
             Assert.Null(vm.CurrentFolderId);                    // 仍在根目录
-            Assert.NotSame(rowBefore, vm.Rows.First());          // 行已重建 = 确实重新加载（刷新）
+            // "刷新发生过"的证据 = **树确实重建**（新节点实例）；**不能**再用"行实例不同"当代理——
+            // 内容一致的刷新会**保留行集**（避免整表重建的等价跳过，见 BrowserViewModel.Refresh）。
             var rootAfterReload = Assert.Single(vm.FolderTree);
+            Assert.NotSame(root, rootAfterReload);
+            Assert.Equal(rowBefore.Id, vm.Rows.First().Id);
             Assert.False(rootAfterReload.IsSelected);            // 虚根不显示选中（重建后的新节点同样如此）
             Assert.False(vm.IsSelectedId(rootAfterReload.Id));   // 虚根无身份可选中（Id 为空，永不入集合）
 

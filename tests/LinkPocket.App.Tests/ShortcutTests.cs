@@ -231,14 +231,19 @@ public class ShortcutTests
             // 初始焦点锚 = 当前位置（根 = 虚根行）→ 第一次 ↓ 落到根下第一项 A（Windows 导航窗格口径）
             // 可见序列：虚根 → A → B（A 未展开，A1 不在可见序列里）
             vm.MoveTreeSelectionCommand.Execute("down");     // A → 选中 + 进入
+            // ⚠️ 键盘导航是 fire-and-forget（`_ = SelectTreeNodeAsync(...)`）：选中同步落地，"进入"要等加载链收尾
+            // （若已有在途加载则按"最后请求必被处理"挂起补刷）→ 断言前必须等链路落地，否则时序不确定（曾偶发红）。
+            await vm.WaitForIdleAsync();
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
             Assert.True(vm.IsSelectedId(a.FolderId));
 
             vm.MoveTreeSelectionCommand.Execute("down");     // B（A 未展开 → A1 被跳过，直接到 B）
+            await vm.WaitForIdleAsync();
             Assert.Equal(b.FolderId, vm.CurrentFolderId);
             Assert.True(vm.IsSelectedId(b.FolderId));
 
             vm.MoveTreeSelectionCommand.Execute("up");       // 回 A
+            await vm.WaitForIdleAsync();
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
 
             // 展开 A → 可见序列插入 A1；从 A 往下第一站应为 A1（而不是 B）
@@ -251,6 +256,7 @@ public class ShortcutTests
             await vm.SelectTreeNodeAsync(aNodeNow);           // 定位到 A（选中 + 进入）
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
             vm.MoveTreeSelectionCommand.Execute("down");
+            await vm.WaitForIdleAsync();
             Assert.Equal(a1.FolderId, vm.CurrentFolderId);    // 展开后才进入子级
         }
         finally

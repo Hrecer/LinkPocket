@@ -57,11 +57,16 @@ public partial class TrashViewModel
 
         SortRows(rows);
 
-        Rows.Clear();
+        // favicon 先补齐（等价比较要把图标算进去），再决定**要不要换集合**：
+        // 内容完全一致时保持原集合不动——逐条 Clear/Add 会触发 N 次 CollectionChanged，
+        // 视图随之整表重建，是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
         foreach (var r in rows)
-        {
             if (!r.IsFolder) r.Favicon = FaviconService.LoadFromCache(r.FaviconUrl);
-            Rows.Add(r);
+
+        if (!TrashRowViewModel.SameSequence(Rows, rows))
+        {
+            Rows.Clear();
+            foreach (var r in rows) Rows.Add(r);
         }
 
         ApplySelectionToView();

@@ -60,8 +60,9 @@ namespace LinkPocket.Views
             _detailSidebar.OpenCommand = OpenDetailInBrowserCommand;         // 「详情」= 打开浏览页详情页
             _detailSidebar.RenameCommand = OpenDetailInBrowserCommand;       // 铅笔槽同「详情」（搜索页同口径）
             _detailSidebar.OpenWebsiteCommand = OpenDetailWebsiteCommand;    // 「打开」= 系统默认浏览器
-            _detailSidebar.HideDeleteAction();                              // 删除入口在头部「删除重复项」（按勾选、
-                                                                            // 且"至少保留一条"）→ 右栏不摆死按钮
+            // 只读对比页的动作面收窄（用户令 2026-09-20·设计）：不显示「编辑」与「删除」——
+            // 删除入口在头部「删除重复项」（按勾选、"至少保留一条"），编辑在只读对比页无意义。
+            _detailSidebar.HideEditAndDeleteActions();
             VmTools.DetailSelection.Changed += ApplyDetailSelectionProjection;
         }
 
@@ -498,7 +499,8 @@ namespace LinkPocket.Views
 
         private async Task RunDedupCoreAsync()
         {
-            PaneTable.ItemsSource = null;
+            // ⚠️ 扫描期间**不清表**（保留旧结果，内容未变时下方直接跳过重设）：清空 + 重新填充 =
+            // 切页/重扫时的整表重建白烧 + 视觉闪空（用户报障 2026-09-20：低性能设备切页偶发卡顿）。
             PaneTable.EmptyContent = BuildState("refresh", "正在扫描重复链接…", "全库比对 URL，请稍候");
             PaneSubtitle.Text = DedupSubtitle;
 
@@ -514,6 +516,7 @@ namespace LinkPocket.Views
                 return;
             }
 
+            var previous = _groups;   // 旧结果（视图镜像）：下面据此判断"要不要重设表格"
             _groups = groups;
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "refresh";
             if (_dedupActionText != null) _dedupActionText.Text = "重新查重";
@@ -521,13 +524,15 @@ namespace LinkPocket.Views
 
             if (groups.Count == 0)
             {
+                if (previous.Count > 0) PaneTable.ItemsSource = null;   // 结果全消失 → 清表让空态可见
                 PaneTable.EmptyContent = BuildState("content-duplicate", "没有发现重复链接",
                     "所有链接的 URL 都互不相同");
                 PaneSubtitle.Text = "扫描完成：未发现重复";
                 return;
             }
 
-            PaneTable.ItemsSource = groups;
+            // 内容未变（重扫/切回常见）→ **不重设 ItemsSource**：工厂模式重设 = 整表重建（同步主线程）
+            if (!DedupGroupRow.SameSequence(previous, groups)) PaneTable.ItemsSource = groups;
             PaneTable.EmptyContent = null!;
             PaneSubtitle.Text = $"发现 {groups.Count} 组重复链接，共 {groups.Sum(g => g.Count)} 条";
         }
