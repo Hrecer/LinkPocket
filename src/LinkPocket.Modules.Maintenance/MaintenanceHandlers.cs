@@ -131,7 +131,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
         catch (Exception ex)
         {
             // 失败要暴露——不得只返回 false 后静默
-            System.Diagnostics.Trace.TraceWarning("清空图标缓存失败：{0}", ex.Message);
+            LpLog.Warn("清空图标缓存失败", ex, category: "modules.maintenance");
             return false;
         }
     }

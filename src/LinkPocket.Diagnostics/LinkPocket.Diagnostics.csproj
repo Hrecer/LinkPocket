@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 日志管道（观测面实现）：契约在 Contracts.Logging（LpLog/ILogSink/LogRecord），
+       实现只依赖 Contracts（架构测试卡住引用面）。组合根（Composition）装配，App / 宿主显式配置。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

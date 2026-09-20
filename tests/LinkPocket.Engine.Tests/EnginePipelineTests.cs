@@ -194,6 +194,26 @@ public class EnginePipelineTests
     }
 
     [Fact]
+    public async Task Failure_Path_Audit_Failure_Does_Not_Mask_Original_Error()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            // S1 缺陷修复回归：失败路径的审计写入原先裸调用——审计抛异常时会顶替原始 EngineException
+            // （错误码/栈丢失、该异常自身无审计）。现行口径：审计失败只计数 + 记日志，原异常永远优先。
+            var registry = new CommandRegistry();
+            registry.Register(new FailingHandler());
+            var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()),
+                audit: new ThrowingAuditWriter());
+
+            var ex = await Assert.ThrowsAsync<EngineException>(() => engine.ExecuteAsync<string>("test.fail"));
+            Assert.Equal(EngineErrors.EntityNotFound, ex.Error.Code);
+            Assert.Equal(1L, engine.RuntimeStats.ObservationFailures);   // 审计失败被计数暴露（不静默）
+        }
+        finally { TryDelete(path); }
+    }
+
+    [Fact]
     public async Task Query_Runs_While_Write_InFlight_WriteGateNotBlockingReads()
     {
         var (factory, path) = TestEnv.CreateDb();

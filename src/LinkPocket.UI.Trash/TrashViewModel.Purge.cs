@@ -49,7 +49,7 @@ public partial class TrashViewModel
         }
         catch (Exception ex)
         {
-            Logger.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
+            LpLog.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
             ShowError("永久删除失败", ex.Message);
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已删条目
         }
@@ -66,7 +66,7 @@ public partial class TrashViewModel
         }
         catch (Exception ex)
         {
-            Logger.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
+            LpLog.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
             ShowError("永久删除失败", ex.Message);
             await LoadAsync();
         }
@@ -77,7 +77,7 @@ public partial class TrashViewModel
     {
         if (Dialogs == null)
         {
-            Logger.Error("对话框端口未登记：永久删除确认被跳过（无 UI 环境）", null);   // 功能不可用 ≠ 静默取消
+            LpLog.Error("对话框端口未登记：永久删除确认被跳过（无 UI 环境）", null);   // 功能不可用 ≠ 静默取消
             return false;
         }
         var message = containsFolder

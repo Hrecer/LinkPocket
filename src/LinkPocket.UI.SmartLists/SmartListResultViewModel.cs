@@ -277,7 +277,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Logger.Error("智能列表重新查询失败", ex);
+                LpLog.Error("智能列表重新查询失败", ex);
             }
             finally
             {
@@ -316,7 +316,7 @@ namespace LinkPocket.ViewModels
             if (item == null) return;
             if (_locator == null)
             {
-                Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+                LpLog.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
                 return;
             }
 
@@ -374,7 +374,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Logger.Error("智能列表删除链接失败", ex);
+                LpLog.Error("智能列表删除链接失败", ex);
             }
             finally
             {

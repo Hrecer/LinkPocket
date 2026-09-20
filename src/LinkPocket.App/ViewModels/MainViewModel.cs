@@ -117,7 +117,7 @@ namespace LinkPocket.ViewModels
             catch (Exception ex)
             {
                 // 事件驱动的刷新失败不应打断 UI——记录并暴露（观测面纪律），不再纯静默
-                Logger.Error($"防抖刷新活跃页失败（{_currentNavId}）", ex);
+                LpLog.Error($"防抖刷新活跃页失败（{_currentNavId}）", ex);
             }
         }
 
@@ -234,7 +234,7 @@ namespace LinkPocket.ViewModels
             {
                 // async void 里未捕获的异常会被全局 handler 吞掉且后续代码不执行——
                 // 这里就地记录 + 暴露，不让「切页失败」静默
-                Logger.Error($"切换导航到 {navId} 失败", ex);
+                LpLog.Error($"切换导航到 {navId} 失败", ex);
             }
         }
 
@@ -318,7 +318,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Logger.Error("加载目录树失败", ex);
+                LpLog.Error("加载目录树失败", ex);
             }
         }
 

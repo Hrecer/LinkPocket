@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 日志管道单测（观测面实现）：过滤/溢出丢弃/直写旁路/落点失败计数/轮转/保留/脱敏/JSONL schema。
+       引用 Engine 仅为 TempArea.Resolve()（测试临时目录的唯一入口，见 文档/TESTING.md §6）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LinkPocket.Diagnostics\LinkPocket.Diagnostics.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Engine\LinkPocket.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

@@ -82,7 +82,7 @@ public partial class TrashViewModel
             HasError = true;
             ErrorMessage = $"加载回收站失败: {ex.Message}";
             StatusText = ErrorMessage;
-            Logger.Error("回收站加载失败", ex);   // 观测面：失败必须留痕
+            LpLog.Error("回收站加载失败", ex);   // 观测面：失败必须留痕
         }
         finally
         {

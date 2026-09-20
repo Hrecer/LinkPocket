@@ -2,7 +2,8 @@
 
   <!-- 引擎组合根共享项目（组合抽取）：App/ProbeEnv/TestHost/CatalogExport 四处装配
        收敛为 EngineComposer 一个入口。本项目的项目引用集合 = 组合根的精确依赖面，
-       由 DependencyRulesTests 逐项断言（多引一个引擎实现之外的程序集、少引一个模块都会红）。 -->
+       由 DependencyRulesTests 逐项断言（多引一个引擎实现之外的程序集、少引一个模块都会红）。
+       Diagnostics = 观测面实现（日志管道）：只被组合根引用（UI/引擎/模块经 Contracts 的 LpLog 门面写日志）。 -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
@@ -12,6 +13,7 @@
     <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
     <ProjectReference Include="..\LinkPocket.Data\LinkPocket.Data.csproj" />
     <ProjectReference Include="..\LinkPocket.Engine\LinkPocket.Engine.csproj" />
+    <ProjectReference Include="..\LinkPocket.Diagnostics\LinkPocket.Diagnostics.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Folders\LinkPocket.Modules.Folders.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Links\LinkPocket.Modules.Links.csproj" />
     <ProjectReference Include="..\LinkPocket.Modules.Trash\LinkPocket.Modules.Trash.csproj" />

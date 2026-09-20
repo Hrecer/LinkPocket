@@ -117,7 +117,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         if (host == null || row == null) return;
         if (_locator == null)
         {
-            Services.Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+            LpLog.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
             return;
         }
 
@@ -144,7 +144,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         var host = _host;
         if (host == null) return;
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UrlText) { UseShellExecute = true }); }
-        catch { Services.Logger.Error($"打开网站失败: {UrlText}", null); }   // 观测面：失败留痕而非完全静默
+        catch { LpLog.Error($"打开网站失败: {UrlText}", null); }   // 观测面：失败留痕而非完全静默
         try
         {
             await _client.LinkVisitRecordAsync(IdText);
@@ -277,7 +277,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         catch
         {
             if (gen != _generation) return;   // 切选后到达的异常不得影响新选中信息卡
-            Services.Logger.Error("详情栏链接补拉失败（保持行内基础信息）", null);   // 观测面留痕
+            LpLog.Error("详情栏链接补拉失败（保持行内基础信息）", null);   // 观测面留痕
             MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"
         }
     }

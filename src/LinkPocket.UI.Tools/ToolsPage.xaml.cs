@@ -294,7 +294,7 @@ namespace LinkPocket.Views
             if (string.IsNullOrEmpty(id)) return;
             if (_navigation == null)
             {
-                Logger.Error("打开明细详情失败：导航端口不可用", null);   // 观测面：失败留痕，绝不静默
+                LpLog.Error("打开明细详情失败：导航端口不可用", null);   // 观测面：失败留痕，绝不静默
                 return;
             }
             _navigation.OpenLinkInBrowser(id);
@@ -545,7 +545,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("链接去重扫描失败", ex);
+                LpLog.Error("链接去重扫描失败", ex);
                 PaneTable.EmptyContent = BuildState("alert-circle-outline", "读取数据失败", ex.Message);
                 return;
             }
@@ -869,7 +869,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("删除重复项失败", ex);
+                LpLog.Error("删除重复项失败", ex);
                 await FlashSelectionInfo("删除失败：" + ex.Message);
             }
         }
@@ -1112,7 +1112,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("书签预检失败", ex);
+                LpLog.Error("书签预检失败", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
                     $"预检失败：{ex.Message}", ChipState.Warn);
@@ -1149,7 +1149,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("书签导入失败", ex);
+                LpLog.Error("书签导入失败", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
                     $"导入失败：{ex.Message}", ChipState.Warn);
@@ -1220,7 +1220,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("书签导出失败", ex);
+                LpLog.Error("书签导出失败", ex);
                 ExportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
                     $"导出失败：{ex.Message}", ChipState.Warn);
@@ -1242,7 +1242,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Logger.Error("打开导出目录失败", ex);
+                LpLog.Error("打开导出目录失败", ex);
             }
         }
 

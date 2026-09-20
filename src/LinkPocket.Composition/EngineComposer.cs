@@ -1,5 +1,6 @@
 using LinkPocket.Contracts;
 using LinkPocket.Data;
+using LinkPocket.Diagnostics;
 using LinkPocket.Engine;
 using LinkPocket.Kernel;
 
@@ -49,6 +50,23 @@ public sealed class EngineComposition
 /// </summary>
 public static class EngineComposer
 {
+    /// <summary>
+    /// 日志管道装配（观测面组合根，**由宿主显式调用**——测试/工具不调即不落盘，避免污染）：
+    /// 构建「有界队列 + JSONL 文件落点 + 内存环」并装配到 <see cref="LpLog"/>（静态门面唯一入口）。
+    /// 重复调用 = 替换管道（旧管道不自动处置，调用方若持有请自行 Dispose）。
+    /// 退出前宿主必须调 <c>LpLog.Shutdown()</c>（刷盘 + 卸管道）。
+    /// </summary>
+    public static LogPipeline ConfigureLogging(LoggingOptions? options = null)
+    {
+        options ??= new LoggingOptions();
+        var pipeline = new LogPipeline(
+            options,
+            new JsonlFileSink(options),
+            new MemoryLogSink(options.MemoryCapacity));
+        LpLog.Configure(pipeline);
+        return pipeline;
+    }
+
     /// <summary>真实库路径入口：缺省建 <see cref="LinkPocketDbContextFactory"/>（构造即启 WAL + 建 schema）。</summary>
     public static EngineComposition Compose(string dbPath, ComposeOptions? options = null)
     {

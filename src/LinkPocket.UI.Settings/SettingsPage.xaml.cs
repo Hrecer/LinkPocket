@@ -78,7 +78,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                Services.Logger.Error("清空日志失败", ex);
+                LpLog.Error("清空日志失败", ex);
                 await ShowLogStatus("清空日志失败：目录不可访问或文件被占用", gen);
                 return;
             }
@@ -86,19 +86,9 @@ namespace LinkPocket.Views
             await ShowLogStatus(count > 0 ? $"已清除 {count} 个日志文件" : "无需清理", gen);
         }
 
-        /// <summary>B-5：清空日志文件逻辑唯一入口（ClearLogsButton 与「清空数据」共用）。返回删除的文件数。</summary>
-        private static int TryClearLogFiles()
-        {
-            var count = 0;
-            var logDir = System.IO.Path.Combine(AppContext.BaseDirectory, "logs");
-            if (!System.IO.Directory.Exists(logDir)) return 0;
-            foreach (var f in System.IO.Directory.GetFiles(logDir, "*.log"))
-            {
-                try { System.IO.File.Delete(f); count++; }
-                catch { }
-            }
-            return count;
-        }
+        /// <summary>B-5：清空日志文件逻辑唯一入口（ClearLogsButton 与「清空数据」共用）。返回删除的文件数。
+        /// 走日志管道的维护能力（先释放写句柄再删，否则长开句柄会让 File.Delete 静默失败）；未装配 = 0。</summary>
+        private static int TryClearLogFiles() => LpLog.ClearLogFiles();
 
         private async Task ShowLogStatus(string text, int gen)
         {
@@ -148,7 +138,7 @@ namespace LinkPocket.Views
 
             try
             {
-                Services.Logger.Info("[维护] 开始清空数据");
+                LpLog.Info("[维护] 开始清空数据");
 
                 await ReinitializeAsync();
 
@@ -160,11 +150,11 @@ namespace LinkPocket.Views
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
-                Services.Logger.Info("[维护] 数据清空完成");
+                LpLog.Info("[维护] 数据清空完成");
             }
             catch (Exception ex)
             {
-                Services.Logger.Error("[维护] 清空数据异常", ex);
+                LpLog.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
                 ExportProgressText.Text = "失败";
                 ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("WarnBg");

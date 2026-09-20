@@ -115,7 +115,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Services.Logger.Error("智能列表加载失败", ex);
+                LpLog.Error("智能列表加载失败", ex);
                 if (generation == _openGeneration) ResultViewModel = null;
             }
             finally
@@ -163,7 +163,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                Services.Logger.Error("智能列表刷新失败", ex);
+                LpLog.Error("智能列表刷新失败", ex);
             }
             finally
             {

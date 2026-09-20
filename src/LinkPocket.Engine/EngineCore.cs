@@ -208,29 +208,20 @@ public sealed class EngineCore : IEngine
         }
         catch (EngineException ex)
         {
-            _audit.Write(new AuditEntry(
-                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: false, ex.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString(),
-                ArgsJson: TruncateArgs(argsJson)));
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsJson);
             throw;
         }
         catch (OperationCanceledException)
         {
             // 取消也落审计（观测面：所有调用可追溯，取消不例外）
-            _audit.Write(new AuditEntry(
-                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: false, EngineErrors.Cancelled, null, DryRun: dryRun, IsNested: false,
-                StackTrace: null, ArgsJson: TruncateArgs(argsJson)));
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsJson);
             throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "调用已取消", correlationId: correlationId));
         }
         catch (Exception ex)
         {
             var wrapped = new EngineException(EngineErrors.Of(
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
-            _audit.Write(new AuditEntry(
-                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
-                Success: false, wrapped.Error.Code, null, DryRun: dryRun, IsNested: false, ex.StackTrace?.ToString(),
-                ArgsJson: TruncateArgs(argsJson)));
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsJson);
             throw wrapped;
         }
         finally
@@ -421,12 +412,33 @@ public sealed class EngineCore : IEngine
     }
 
     /// <summary>
+    /// 失败路径审计（观测面）：**审计失败绝不顶替原始异常**——只计数 + 记日志，原异常照常上抛。
+    /// 历史缺陷：三处 catch 里裸调 <c>_audit.Write</c>，审计抛异常时错误码/栈被顶替且该异常自身无审计。
+    /// </summary>
+    private void WriteFailureAudit(string command, string correlationId, CallerRef caller, Stopwatch sw,
+        bool dryRun, string errorCode, string? stackTrace, JsonElement argsJson)
+    {
+        try
+        {
+            _audit.Write(new AuditEntry(
+                DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
+                Success: false, errorCode, null, DryRun: dryRun, IsNested: false, stackTrace,
+                ArgsJson: TruncateArgs(argsJson)));
+        }
+        catch (Exception auditEx)
+        {
+            RegisterObservationFailure("写失败审计失败", auditEx);
+        }
+    }
+
+    /// <summary>
     /// 观测面失败登记：已提交的成功写遇到观测面（审计/事件发布）异常时调用——
-    /// 不否定业务结果（保持成功返回），仅计数暴露 + 写跟踪日志（ARCHITECTURE 不变量 #10「失败要暴露」）。
+    /// 不否定业务结果（保持成功返回），仅计数暴露 + 记日志（ARCHITECTURE 不变量 #10「失败要暴露」）。
+    /// 日志统一走 <see cref="LpLog"/> 管道（未装配管道的宿主仍有计数与一次性 Trace 提示，不静默）。
     /// </summary>
     private void RegisterObservationFailure(string what, Exception ex)
     {
         Interlocked.Increment(ref _observationFailures);
-        Trace.TraceWarning("观测面失败（已提交写仍返回成功）：{0}：{1}", what, ex.Message);
+        LpLog.Warn($"观测面失败（已提交写仍返回成功）：{what}", ex, category: "engine.observe");
     }
 }

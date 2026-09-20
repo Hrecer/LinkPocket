@@ -127,10 +127,12 @@ public class DependencyRulesTests
     public void Composition_精确引用契约内核数据引擎与九模块()
     {
         // Composition = 各界（App/冒烟/测试/工具）共用的引擎组合根共享项目：引用面精确 =
-        // {Contracts, Kernel, Data, Engine, 九模块}。不放任何 UI 项目（UI 禁引引擎实现的
+        // {Contracts, Kernel, Data, Engine, Diagnostics, 九模块}。不放任何 UI 项目（UI 禁引引擎实现的
         // 红线不随抽取松动）；少引一个模块或误引其它程序集都会让本断言红。
+        // Diagnostics = 观测面实现（日志管道），只被组合根装配、不被 UI/引擎/模块引用（它们经 Contracts 的 LpLog 门面写日志）。
         var refs = ProjectReferences("src/LinkPocket.Composition/LinkPocket.Composition.csproj");
-        var expected = new[] { Contracts, Kernel, Data, Engine }.Concat(BusinessModules).OrderBy(n => n).ToArray();
+        var expected = new[] { Contracts, Kernel, Data, Engine, "LinkPocket.Diagnostics" }
+            .Concat(BusinessModules).OrderBy(n => n).ToArray();
         Assert.Equal(expected, refs);
     }
 

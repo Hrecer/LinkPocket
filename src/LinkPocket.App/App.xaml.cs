@@ -1,6 +1,7 @@
 using System.Windows;
 using LinkPocket.Services;
 using Material3.Wpf;
+using LinkPocket.Contracts;
 
 namespace LinkPocket;
 
@@ -10,6 +11,8 @@ public partial class App : Application
     {
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+        // fire-and-forget 任务链（如页面刷新）异常无人 await → 默认静默；挂观测钩子留痕（不 SetObserved，不改运行时语义）
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         DisableWerDumps();
     }
 
@@ -47,7 +50,8 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            Logger.Error("应用启动失败", ex);
+            LpLog.Error("应用启动失败", ex);
+            LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
             MessageBox.Show($"应用启动失败：{ex.Message}", "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
@@ -60,14 +64,15 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
-        Logger.Info("应用退出，强制结束进程");
+        LpLog.Info("应用退出，强制结束进程");
         //（两阶段）：
         // ① 先把 SQLite 连接池全部断开——池化连接持有的 WAL 文件句柄会阻止 checkpoint，
         //    显式清池触发 SQLite 把 WAL 收拢回主库文件（否则强杀后日志/WAL 可能丢尾）；
-        // ② 再交 WPF 完成正常关闭序（base.OnExit），最后兜底强杀确保无残留进程。
+        // ② 再交 WPF 完成正常关闭序（base.OnExit），最后刷日志 + 兜底强杀确保无残留进程。
         try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); }
         catch { /* 清池失败不阻断退出 */ }
         base.OnExit(e);
+        LpLog.Shutdown();   // 观测面收尾：刷盘 + 卸管道（此后记录被计数丢弃，不再落盘）
         Environment.Exit(0);
     }
 
@@ -83,7 +88,8 @@ public partial class App : Application
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        Logger.Error("UI线程未处理异常", e.Exception);
+        LpLog.Error("UI线程未处理异常", e.Exception);
+        LpLog.Flush(TimeSpan.FromSeconds(2));   // 异常现场先落盘（弹窗后界面状态不可信）
         // 不静默吞——异常必须暴露给用户（多数情况界面状态已不可信），
         // 但保留「已提交写不被否定」语义：不崩溃、提示用户自行决策（重启/继续）。
         // 弹窗本身放 try/catch：异常处理路径出错时以日志为准，绝不二次弹窗死循环。
@@ -101,6 +107,16 @@ public partial class App : Application
     private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         if (e.ExceptionObject is Exception ex)
-            Logger.Error("AppDomain未处理异常", ex);
+        {
+            LpLog.Error("AppDomain未处理异常", ex);
+            LpLog.Flush(TimeSpan.FromSeconds(2));   // 进程即将终止：同步刷盘保住现场
+        }
+    }
+
+    /// <summary>未观察任务异常（fire-and-forget 链）：只留痕，不 SetObserved（不改运行时语义）。</summary>
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        LpLog.Error("未观察的任务异常（TaskScheduler）", e.Exception, category: "app.lifecycle");
+        LpLog.Flush(TimeSpan.FromSeconds(1));
     }
 }

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Managers
 {
@@ -74,7 +75,7 @@ namespace LinkPocket.Managers
             OnPropertyChanged(nameof(HasSelectedLink));
             SelectedFolderChanged?.Invoke(this, EventArgs.Empty);
 
-            Logger.Info($"[选择管理器] SelectFolder: {old} → {folderId}, 已清除书签选中和多选");
+            LpLog.Info($"[选择管理器] SelectFolder: {old} → {folderId}, 已清除书签选中和多选");
         }
 
         /// <summary>
@@ -84,7 +85,7 @@ namespace LinkPocket.Managers
         {
             _multiSelectFolderId = null;
             SelectedLinkId = linkId;
-            Logger.Info($"[选择管理器] SelectLink: {linkId}, 保留文件夹={_selectedFolderId}");
+            LpLog.Info($"[选择管理器] SelectLink: {linkId}, 保留文件夹={_selectedFolderId}");
         }
 
         /// <summary>
@@ -93,7 +94,7 @@ namespace LinkPocket.Managers
         public void ClearLinkSelection()
         {
             SelectedLinkId = null;
-            Logger.Info($"[选择管理器] ClearLinkSelection, 保留文件夹={_selectedFolderId}");
+            LpLog.Info($"[选择管理器] ClearLinkSelection, 保留文件夹={_selectedFolderId}");
         }
 
         /// <summary>
@@ -113,7 +114,7 @@ namespace LinkPocket.Managers
             SelectedLinkChanged?.Invoke(this, EventArgs.Empty);
             MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
 
-            Logger.Info($"[选择管理器] ClearAll: 全部清除");
+            LpLog.Info($"[选择管理器] ClearAll: 全部清除");
         }
 
         /// <summary>
@@ -125,7 +126,7 @@ namespace LinkPocket.Managers
 
             var linkListId = targetLink.ListId ?? string.Empty;
 
-            Logger.Info($"[选择管理器] HandleCtrlClick: target={targetLink.LinkId}, ListId={linkListId}, " +
+            LpLog.Info($"[选择管理器] HandleCtrlClick: target={targetLink.LinkId}, ListId={linkListId}, " +
                 $"selectedLinkId={_selectedLinkId ?? "null"}, prevLinkListId={previousLinkListId ?? "null"}, " +
                 $"multiSelectFolderId={_multiSelectFolderId ?? "null"}");
 
@@ -133,10 +134,10 @@ namespace LinkPocket.Managers
             {
                 if (linkListId != _multiSelectFolderId)
                 {
-                    Logger.Info($"[选择管理器] → 阻止跨目录: link({linkListId}) ≠ multiSelect({_multiSelectFolderId})");
+                    LpLog.Info($"[选择管理器] → 阻止跨目录: link({linkListId}) ≠ multiSelect({_multiSelectFolderId})");
                     return CtrlClickResult.BlockedCrossDirectory;
                 }
-                Logger.Info($"[选择管理器] → 允许(同文件夹多选)");
+                LpLog.Info($"[选择管理器] → 允许(同文件夹多选)");
                 return CtrlClickResult.Allowed;
             }
 
@@ -145,18 +146,18 @@ namespace LinkPocket.Managers
                 var prevListId = previousLinkListId ?? string.Empty;
                 if (prevListId != linkListId)
                 {
-                    Logger.Info($"[选择管理器] → 阻止跨目录提升: prev({prevListId}) ≠ cur({linkListId})");
+                    LpLog.Info($"[选择管理器] → 阻止跨目录提升: prev({prevListId}) ≠ cur({linkListId})");
                     return CtrlClickResult.BlockedCrossDirectory;
                 }
                 _multiSelectFolderId = linkListId;
                 ClearFolderForMultiSelect();
-                Logger.Info($"[选择管理器] → 提升: {_selectedLinkId} 加入多选, 作用域={linkListId}");
+                LpLog.Info($"[选择管理器] → 提升: {_selectedLinkId} 加入多选, 作用域={linkListId}");
                 return CtrlClickResult.Promoted;
             }
 
             _multiSelectFolderId = linkListId;
             ClearFolderForMultiSelect();
-            Logger.Info($"[选择管理器] → 允许(新建多选), 作用域={linkListId}");
+            LpLog.Info($"[选择管理器] → 允许(新建多选), 作用域={linkListId}");
             return CtrlClickResult.Allowed;
         }
 
@@ -172,7 +173,7 @@ namespace LinkPocket.Managers
                 OnPropertyChanged(nameof(SelectedFolderId));
                 OnPropertyChanged(nameof(HasSelectedFolder));
                 SelectedFolderChanged?.Invoke(this, EventArgs.Empty);
-                Logger.Info($"[选择管理器] ClearFolderForMultiSelect: {old} → null (进入多选模式)");
+                LpLog.Info($"[选择管理器] ClearFolderForMultiSelect: {old} → null (进入多选模式)");
             }
         }
 
@@ -183,7 +184,7 @@ namespace LinkPocket.Managers
         {
             if (!string.IsNullOrEmpty(_multiSelectFolderId))
             {
-                Logger.Info($"[选择管理器] NotifyMultiSelectEnded: {_multiSelectFolderId} → null");
+                LpLog.Info($"[选择管理器] NotifyMultiSelectEnded: {_multiSelectFolderId} → null");
                 _multiSelectFolderId = null;
                 MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -196,7 +197,7 @@ namespace LinkPocket.Managers
         {
             _multiSelectFolderId = null;
             MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
-            Logger.Info($"[选择管理器] ClearMultiSelectOnly → null");
+            LpLog.Info($"[选择管理器] ClearMultiSelectOnly → null");
         }
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

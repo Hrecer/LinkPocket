@@ -454,7 +454,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (item == null) return;
         if (_locator == null)
         {
-            Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+            LpLog.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
             return;
         }
 

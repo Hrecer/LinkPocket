@@ -168,6 +168,7 @@ Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
 $testProjects = @(
     "tests/LinkPocket.Architecture.Tests",
     "tests/LinkPocket.Engine.Tests",
+    "tests/LinkPocket.Diagnostics.Tests",
     "tests/LinkPocket.Modules.Tests",
     "tests/LinkPocket.App.Tests"
 )
