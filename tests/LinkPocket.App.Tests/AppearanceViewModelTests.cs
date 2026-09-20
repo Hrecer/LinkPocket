@@ -747,52 +747,90 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
-    public void 自动调整颜色开关_缺省关闭_切换即生效并落盘()
+    public void 自动调整颜色开关_缺省打开_切换即生效并落盘()
     {
-        // 用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……纯按照你输入的颜色尽量直接优先按照你的颜色，
-        // 除非颜色不够……尽量把你选的颜色全部应用上"，并且"不管关闭还是打开，主题卡色点都是能融合的"。
+        // 用户令 2026-09-20 **第二轮**（口径取代第一轮的"默认关闭"）：
+        // "我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关……当我们开关自动调整颜色的按钮时，
+        //  主题那个色点也会同步修改，这样就没有问题了"。
         ThemeService.ResetForTests();
         try
         {
             var vm = NewVm();
-            Assert.False(vm.AutoAdjustColors);                       // 缺省关闭 = 直配
-            Assert.Equal(PaletteMode.Exact, ThemeService.PaletteMode);
-            Assert.Contains("原样", vm.PaletteModeHint, StringComparison.Ordinal);
-
-            // 打开：当场重新应用 + 落盘（偏好里记着这个开关）
-            vm.AutoAdjustColors = true;
+            Assert.True(vm.AutoAdjustColors);                        // 缺省打开 = 自动调色
             Assert.Equal(PaletteMode.Auto, ThemeService.PaletteMode);
-            Assert.Equal(PaletteMode.Auto, ThemeService.Current.PaletteMode);
-            Assert.Contains("自动调色", vm.PaletteModeHint, StringComparison.Ordinal);
-            var prefsOn = UiPreferenceStore.Load(out var failedOn);
-            Assert.False(failedOn);
-            Assert.True(prefsOn.Theme.AutoAdjustColors, "开关必须落盘（重启后保持）");
+            Assert.Contains("已开启", vm.PaletteModeHint, StringComparison.Ordinal);
 
-            // 关回去
+            // 关掉：当场重新应用 + 落盘（偏好里记着这个开关）
             vm.AutoAdjustColors = false;
             Assert.Equal(PaletteMode.Exact, ThemeService.PaletteMode);
-            var prefsOff = UiPreferenceStore.Load(out _);
-            Assert.False(prefsOff.Theme.AutoAdjustColors);
+            Assert.Equal(PaletteMode.Exact, ThemeService.Current.PaletteMode);
+            Assert.Contains("已关闭", vm.PaletteModeHint, StringComparison.Ordinal);
+            var prefsOff = UiPreferenceStore.Load(out var failedOff);
+            Assert.False(failedOff);
+            Assert.False(prefsOff.Theme.AutoAdjustColors, "开关必须落盘（重启后保持）");
 
-            // 两种模式下，每张主题卡的"背景色成员"都与该模式实际生效的页面底同色（融合）
+            // 再打开
+            vm.AutoAdjustColors = true;
+            Assert.Equal(PaletteMode.Auto, ThemeService.PaletteMode);
+            var prefsOn = UiPreferenceStore.Load(out _);
+            Assert.True(prefsOn.Theme.AutoAdjustColors);
+
+            // 两种模式下，每张主题卡的"背景色成员"格都显示**该模式实际生效的页面底**（融合）。
+            // ⚠️ 判据 = "色点里**含**页面底颜色"，不能拿"最亮的那一枚"当代理：
+            //    表面族色点由**配色里最浅的成员**担任，而某些配色里更亮的成员（如晴王青提饮的米白 `#FDF5DA`）
+            //    属于别的角色 → 拿最亮的那枚去比会误报（实测）。
             foreach (var on in new[] { true, false })
             {
                 vm.AutoAdjustColors = on;
                 foreach (var card in vm.ThemeCards.Where(c => !c.IsCustom))
                 {
-                    var swatches = card.Swatches.ToList();
-                    var lightest = swatches.OrderByDescending(c => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B).First();
                     var baseColor = ColorMath.ToMedia(
                         PaletteSolver.Solve(card.Definition! with
                         {
                             PaletteMode = on ? PaletteMode.Auto : PaletteMode.Exact,
                         }).Token(AppTokens.SurfaceBase));
-                    Assert.True(Math.Abs(lightest.R - baseColor.R) + Math.Abs(lightest.G - baseColor.G)
-                                + Math.Abs(lightest.B - baseColor.B) <= 6,
-                        $"[auto={on}] {card.Name} 的背景色成员 #{lightest.R:X2}{lightest.G:X2}{lightest.B:X2}"
-                        + $" 与页面底 #{baseColor.R:X2}{baseColor.G:X2}{baseColor.B:X2} 不同色（该融合）");
+                    Assert.True(card.Swatches.Any(c => c == baseColor),
+                        $"[auto={on}] {card.Name} 的色点里没有该模式实际生效的页面底"
+                        + $" #{baseColor.R:X2}{baseColor.G:X2}{baseColor.B:X2}（该融合）"
+                        + $"：色点 {string.Join("/", card.Swatches.Select(c => $"{c.R:X2}{c.G:X2}{c.B:X2}"))}");
                 }
             }
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 主题卡色点_换主题与重进面板都会按当前模式重投影()
+    {
+        // 用户令 2026-09-20："当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"——
+        // 色点重投影**不能只在切开关那一条路上**：换主题（`ApplyThemeCard`）/ 重进面板（`SyncFromAppliedTheme`）
+        // 也必须按当前模式重算（否则色点会停在旧模式的口径上，与页面底不同色）。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            var card = vm.ThemeCards.First(c => !c.IsCustom);
+
+            // 人为把色点写坏 → 入口对齐必须把它重投影回"当前模式下实际生效的页面底"
+            //    （判据仍是"色点里含页面底颜色"：表面族色点由配色里最浅的成员担任，不是"最亮的那一枚"）
+            card.SetSwatches(new[] { System.Windows.Media.Colors.Red });
+            vm.SyncFromAppliedTheme();
+            var baseColor = ColorMath.ToMedia(
+                PaletteSolver.Solve(card.Definition! with { PaletteMode = ThemeService.PaletteMode })
+                    .Token(AppTokens.SurfaceBase));
+            Assert.Contains(card.Swatches, c => c == baseColor);
+
+            // 换主题这条入口同样要重投影（另一张卡）
+            var other = vm.ThemeCards.First(c => !c.IsCustom && c.Id != card.Id);
+            other.SetSwatches(new[] { System.Windows.Media.Colors.Red });
+            vm.ApplyThemeCard(other);
+            var otherBase = ColorMath.ToMedia(
+                PaletteSolver.Solve(other.Definition! with { PaletteMode = ThemeService.PaletteMode })
+                    .Token(AppTokens.SurfaceBase));
+            Assert.Contains(other.Swatches, c => c == otherBase);
         }
         finally
         {

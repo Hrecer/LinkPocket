@@ -152,10 +152,11 @@ public class ThemeContrastTests
     public void 出厂默认主题_令牌等于配色直配的实测值_且已发布到界面()
     {
         // 定稿口径（用户令 2026-09-20："我说过优先应用我们选中的这 5 个颜色的，而不是深一点浅一点"）：
-        // 界面色 = **用户给的颜色本身**优先 —— 表面族就是"背景色成员"原样（融合），
-        // 强调 / 支撑 / 描边直接取配色成员；只有"配色里确实没有这个角色可用的成员"时才按本色压/提明度。
+        // 界面色 = **用户给的颜色本身**优先 —— 强调 / 支撑 / 描边 / 正文直接取配色成员；
+        // 页面底取"背景色成员"的**本色色相与彩度**、明度夹在 87–91（层感优先，见
+        // `页面底_夹在明度档内_且卡面与选中底都看得见` 与 文档/WARNING... 对应条目）。
+        // 本用例按 **Exact**（开关关闭）口径核对逐键实测值：那是"最贴近原色"的那一支。
         // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
-        // 因此默认主题的页面底 = `#F2EEF5` **原色**（不再是旧模型按锚点旋出来的 `#E8E4ED`）。
         var t = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
         Assert.Equal(0x251C2Eu, Rgb(t.Token(AppTokens.TextPrimary)));      // ← 色1 #3F3448 本色（最深成员的"墨"）
         Assert.Equal(0x4D4357u, Rgb(t.Token(AppTokens.TextSecondary)));    // ← 同一个墨提亮到次文档（直配：不换成灰）
@@ -170,15 +171,17 @@ public class ThemeContrastTests
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
         Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
-        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.SurfaceBase)));      // ← 色5 **原样**：页面底 = 用户给的背景色（融合）
+        // ← 色5（背景色成员）的**本色色相与彩度**落到明度档 91：页面底必须有深度、卡面才浮得起来
+        Assert.Equal(0xE8E4EBu, Rgb(t.Token(AppTokens.SurfaceBase)));
+        Assert.Equal(0xF6F2F9u, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
-    public void 配色应用方式_直配是缺省_自动调色只改文字两档()
+    public void 配色应用方式_缺省是自动调色_直配只改文字两档()
     {
-        // 用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……纯按照你输入的颜色尽量直接优先按照你的颜色，
-        // 除非颜色不够……尽量把你选的颜色全部应用上"。
-        Assert.Equal(PaletteMode.Exact, new ThemeDefinition
+        // 用户令 2026-09-20 第二轮："我们默认是打开自动调整颜色的"（取代第一轮的"默认关闭"）。
+        Assert.Equal(PaletteMode.Auto, ThemeService.DefaultPaletteMode);
+        Assert.Equal(PaletteMode.Auto, new ThemeDefinition
         {
             Id = "t", Name = "t", Source = ThemeSource.UserDefined, Palette = ThemeCatalog.Default.Palette,
         }.PaletteMode);
@@ -186,10 +189,18 @@ public class ThemeContrastTests
         var exact = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
         var auto = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Auto });
 
-        // ① 两种模式的**结构色完全相同**（页面底 / 卡面 / 强调 / 容器 / 描边 / 正文 / 图标…）：
-        //    自动调色不该把用户选的颜色换掉，它只调整文字两级的中性度
-        foreach (var token in AppTokens.AllColorTokens.Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted }))
-            Assert.Equal(exact.Token(token).ToInt(), auto.Token(token).ToInt());
+        // ① 两种模式的**结构色相同**（页面底 / 卡面 / 强调 / 容器 / 描边 / 正文 / 图标…）：
+        //    自动调色不该把用户选的颜色换掉，它只调整文字两级的中性度。
+        //    ⚠️ 例外 = 悬停底（`Surface.Hover` 与绑到它的 `Surface.Panel`）：它的档位是**按"弱文字对它 ≥4.5"
+        //    反推**出来的，而弱文字本身在两种模式下取值不同（实测直配 4.47 / 自动 4.51，恰好骑在阈值两侧）
+        //    → 两种模式的悬停底可能差一档。这是**有意的**：可读性不能为了"结构色逐字节相同"让路；
+        //    该例外由下方 ③ 的实测断言与 `对比度矩阵`（两种模式逐条）共同守住。
+        var hoverTokens = new[] { AppTokens.SurfaceHover, AppTokens.SurfacePanel };
+        foreach (var token in AppTokens.AllColorTokens
+                     .Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted })
+                     .Except(hoverTokens))
+            Assert.True(exact.Token(token).ToInt() == auto.Token(token).ToInt(),
+                $"{token} 在两种模式下不同：exact={Rgb(exact.Token(token)):X6} auto={Rgb(auto.Token(token)):X6}");
 
         // ② 差异落在文字两档：直配 = 同一个墨提亮；自动 = 中性灰墨
         Assert.NotEqual(exact.Token(AppTokens.TextSecondary).ToInt(), auto.Token(AppTokens.TextSecondary).ToInt());
@@ -307,6 +318,47 @@ public class ThemeContrastTests
     }
 
     [Fact]
+    public void 页面底_夹在明度档内_且卡面与选中底都看得见()
+    {
+        // 用户报障 2026-09-20（"修改后的紫罗兰整个主题界面底色都被改，颜色发灰，虽然是融合了" +
+        // "暮色玫瑰第 5 个圆圈不融合"）经过**实测**得到的口径：页面底 = 背景色成员的**本色色相与彩度**、
+        // 明度夹在 87–91。原样采用最浅成员会让底色漂到 T94–98（默认 `#F2EEF5` T94.6、薄荷气泡水 T98.1），
+        // 层感随之塌掉：卡面提亮不动（晴王青提饮 / 薄荷气泡水的卡面对页面底实测只有 1.003 / 1.000）。
+        //
+        // 三条判据（全部按实测对比度，不靠感觉）：
+        //  ① 页面底明度落在 87–91；
+        //  ② 卡面浮得起来（对页面底 ≥1.10）；
+        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）—— 修前实测 **8/11 套与页面底同色（1.000）**。
+        const double MinCardOnBase = 1.10;
+        var failures = new List<string>();
+        foreach (var theme in ThemeCatalog.All)
+        {
+            var table = PaletteSolver.Solve(theme);
+            var baseColor = table.Token(AppTokens.SurfaceBase);
+            var card = table.Token(AppTokens.SurfaceCard);
+            var hover = table.Token(AppTokens.SurfaceHover);
+            var container = table.Token(AppTokens.AccentContainer);
+            var baseTone = ColorMath.Measure(baseColor).T;
+
+            if (baseTone < PaletteSolver.SurfaceBaseToneMin - 0.6 || baseTone > PaletteSolver.SurfaceBaseToneMax + 0.6)
+                failures.Add($"{theme.Name} 页面底明度 T{baseTone:F1} 越出 {PaletteSolver.SurfaceBaseToneMin}–{PaletteSolver.SurfaceBaseToneMax}");
+
+            var cardRatio = ColorMath.ContrastRatio(card, baseColor);
+            if (cardRatio < MinCardOnBase)
+                failures.Add($"{theme.Name} 卡面对页面底 {cardRatio:F3} < {MinCardOnBase}（卡片看不出是卡片）");
+
+            var containerOnBase = ColorMath.ContrastRatio(container, baseColor);
+            if (containerOnBase < PaletteSolver.ContainerMinContrastOnBase)
+                failures.Add($"{theme.Name} 选中底对页面底 {containerOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
+
+            var containerOnHover = ColorMath.ContrastRatio(container, hover);
+            if (containerOnHover < PaletteSolver.ContainerMinContrastOnHover)
+                failures.Add($"{theme.Name} 选中底对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+        }
+        Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
+    }
+
+    [Fact]
     public void 主题卡色点_背景色成员与页面底融合_且色点数等于设计档色数()
     {
         // 用户令 2026-09-20（两张截图 + 设计档「配色方案.txt」）：
@@ -318,9 +370,11 @@ public class ThemeContrastTests
         //     第 5–10 套是 **4 色**，而旧实现每套只收了 1–2 个身份色、再补位凑到 4（五色被压成四色）。
         //
         // 判据两条：
-        //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 结构与背景同色）；
-        //  ② 最浅身份色对**页面底**的对比度必须很小（实测 1.00–1.20：第 1–4 套 1.01/1.06/1.04/1.01，
-        //     第 5–10 套因设计档里是**高彩度浅色**（C16–19）略松，故阈值取 1.25）。
+        //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 与背景同色相）；
+        //  ② 最浅身份色与**页面底**必须"近融"：同色相（±1°）、同彩度（±1），明度差在夹档允许的范围内
+        //     （实测 1.00–1.21：第 1–4 套 1.000–1.047，默认 1.095，第 5–10 套因设计档里是**高彩度浅色**
+        //     （C16–19，T96–98）离夹档上限最远，故最松 1.204）。融合的**语义**仍是"背景色成员就是页面底的颜色"，
+        //     只是明度被夹进 87–91 以保住层感（用户令："当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"）。
         const double MaxFusionContrast = 1.25;
         var failures = new List<string>();
         var counts = new List<string>();
@@ -337,7 +391,15 @@ public class ThemeContrastTests
             if (theme.NeutralHueOverride is not null)
                 failures.Add($"{theme.Name} 钉了中性色相 H{theme.NeutralHueOverride:F1} → 表面族会与背景色成员分开");
 
-            // ② 渲染：背景色成员与页面底必须同色
+            // ② 渲染：背景色成员与页面底必须同色相（近融）。
+            //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：
+            //    压档时贴色域边界的浅色会被钳制（实测宇治抹茶 `#E8F2EF` H186.8 压到 T91 后 H184.8，差 2.4°，
+            //    派生侧已按"降彩度到能表示为止"把漂移压到最小）；
+            //    真正的回归（表面族被钉到别的色相）差的是几十度，照样抓得住。
+            var m0 = ColorMath.Measure(lightest);
+            var m1 = ColorMath.Measure(pageBase);
+            if (ColorMath.HueDistance(m0.H, m1.H) > 5.0)
+                failures.Add($"{theme.Name} 背景色成员 H{m0.H:F1} 与页面底 H{m1.H:F1} 不同色相（表面族被带离了那个成员）");
             if (ratio > MaxFusionContrast)
                 failures.Add($"{theme.Name} 背景色成员 {lightest.ToInt() & 0x00FFFFFF:X6} 对页面底"
                              + $" {pageBase.ToInt() & 0x00FFFFFF:X6} = {ratio:F2} > {MaxFusionContrast:F2}（没融合）");

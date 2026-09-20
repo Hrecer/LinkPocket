@@ -51,6 +51,30 @@ public static class ColorMath
         return Argb.FromInt((alpha << 24) | (v & 0x00FFFFFF));
     }
 
+    /// <summary>
+    /// （色相, 彩度, 明度档）三件套在 8 位 sRGB 里**是否真的能被表示出来**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用来避免"**多此一举的往返**"：把已经在档内的颜色 <c>Measure → FromAlphaHct</c> 走一遍，
+    /// 只有当这个三元组能被精确表示时才是恒等变换；贴着 sRGB 色域边界的高彩度浅色（实测宇治抹茶
+    /// `#E8F2EF` H186.8 C7.8 T94.7 压到 T91）会被色域<b>钳制</b>，反解出来的色相会漂 4° 左右。
+    /// </para>
+    /// <para>
+    /// 判据 = <c>Measure(FromAlphaHct(...))</c> 与入参逐项相等（色相容差 2°、彩度/明度容差 0.5）——
+    /// 这就是"往返恒等"的直接定义，不依赖任何近似的色域公式。容差按"超出它就是色域钳制"定：
+    /// 实测被钳制的 `#E8F2EF` C7.8 压到 T91 后色相漂 **4.4° / 彩度掉 1.4**，
+    /// 而正常往返（含近无彩浅色）的色相噪声实测 **≤1.4°**、彩度/明度噪声 ≤0.1。
+    /// </para>
+    /// </remarks>
+    public static bool IsRepresentable(double hue, double chroma, double tone)
+    {
+        var round = Measure(FromAlphaHct(0xFF, hue, chroma, tone));
+        return HueDistance(round.H, hue) <= 2.0
+               && Math.Abs(round.C - chroma) <= 0.5
+               && Math.Abs(round.T - tone) <= 0.5;
+    }
+
     /// <summary>同色相/彩度/明度，仅换 α。</summary>
     public static Argb WithAlpha(Argb c, byte alpha) =>
         Argb.FromInt((alpha << 24) | (c.ToInt() & 0x00FFFFFF));

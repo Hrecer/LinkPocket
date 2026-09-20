@@ -171,9 +171,9 @@ public static class PaletteSolver
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 一般就等于配色里最浅的那个成员（原样 → 主题卡上那枚色点与背景**同色 = 融合**）。
-    /// 只有当最浅成员**比背景档还深**（例如暮色玫瑰的 `#E6DEDC` T89）时才会被提亮到
-    /// <see cref="SurfaceBaseTone"/> —— 这是"浅色主题"的底线档，否则整页会偏暗、弱文字也会跌出对比度。
+    /// = 配色里最浅成员**本色的色相与彩度**，明度**夹在 <see cref="SurfaceBaseToneMin"/>–<see cref="SurfaceBaseToneMax"/>
+    /// 之间**（落档公式见 <see cref="SurfaceBaseOf(ThemeFamilies)"/>）。因此它一般不等于那个成员的原色 ——
+    /// 但**同色相、同彩度**，主题卡上那枚色点显示的仍是这套配色的颜色，且与页面底**同色 = 融合**。
     /// </para>
     /// <para>
     /// 主题卡上的色点用**这个值**而不是原始成员值来渲染最浅那一枚（见 <c>ThemeCardViewModel</c>）：
@@ -184,13 +184,51 @@ public static class PaletteSolver
     public static Argb SurfaceBaseColor(ThemeDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
-        var source = SolveFamilies(definition).SurfaceSource;
-        if (source is not { } s) return ColorMath.FromAlphaHct(0xFF, 0, NeutralChroma, SurfaceBaseTone);
-        // 直配模式：与 Solve 同一判据（低于底色档才提亮）—— 保证"卡面显示的就是页面底"。
-        var tone = ColorMath.Measure(s).T;
-        return tone >= SurfaceBaseTone
-            ? s
-            : ColorMath.FromAlphaHct(0xFF, ColorMath.Measure(s).H, ColorMath.Measure(s).C, SurfaceBaseTone);
+        return SurfaceBaseOf(SolveFamilies(definition));
+    }
+
+    /// <summary>
+    /// 页面底 = 配色"背景色成员"**本色**落到 <see cref="SurfaceBaseToneMin"/>–<see cref="SurfaceBaseToneMax"/> 档内。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要夹档（2026-09-20 用户报障"整个主题界面底色都被改，颜色发灰，虽然是融合了"）</b>：
+    /// 原样采用"最浅成员"会让页面底漂到很浅的档位（默认主题 `#F2EEF5` T94.6，而定稿底色是 T91.3），
+    /// 层感随之塌掉：卡面只能提亮 1–2 档、悬停底压深后**反而比页面底更浅**（实·晴王青提饮 T97.9 /
+    /// 薄荷气泡水 T98.1 的卡面与页面底对比度 = **1.003 / 1.000**，卡片根本看不出是卡片）。
+    /// 夹到 87–91 之后：页面底有深度、卡面必然浮起来、选中底也腾得出位置。
+    /// </para>
+    /// <para>
+    /// <b>不发明颜色</b>：只动明度，色相与彩度仍是那个成员本身的（用户令 2026-09-20：
+    /// "优先应用我们选中的这几个颜色，而不是深一点浅一点"）—— 界面上的色相依然全部来自配色。
+    /// </para>
+    /// </remarks>
+    private static Argb SurfaceBaseOf(ThemeFamilies families)
+    {
+        // 表面色相：预设/默认由"明度最高的成员"给出（或主题自己的钉值）
+        var source = families.SurfaceSource;
+        var hue = source is { } s ? ColorMath.Measure(s).H : families.NeutralHue;
+        // 彩度取"背景色成员"自己的彩度；缺成员时用中性档（绝不放大）
+        var chroma = source is { } s2 ? ColorMath.Measure(s2).C : NeutralChroma;
+        var tone = source is { } s3 ? ColorMath.Measure(s3).T : SurfaceBaseToneMax;
+
+        // 已经在档内 **且本色在 sRGB 里表示得出来** → 原样返回：不必要时不做 HCT 往返
+        // （贴色域边界的高彩度浅色往返会漂 4° 色相，实测宇治抹茶 #E8F2EF H186.8 → 往返后 H191.2）。
+        if (source is { } exactColor
+            && tone >= SurfaceBaseToneMin && tone <= SurfaceBaseToneMax
+            && ColorMath.IsRepresentable(hue, chroma, tone))
+            return exactColor;
+
+        var target = Math.Clamp(tone, SurfaceBaseToneMin, SurfaceBaseToneMax);
+        // 压到档位后如果三元组在 sRGB 里表示不出来（色域钳制会让色相漂），就**降彩度到能表示为止**：
+        // 只动明度与彩度上限、绝不换色相（用户令："不发明色相"）。高彩度浅色（如 `#E8F2EF` C7.8）
+        // 压到 T91 会被色域钳掉，实测色相漂 4.4°；降到 C4.7 就落回色域内、色相回到 H186.9。
+        for (var c = chroma; c >= 0; c -= 1.0)
+        {
+            if (ColorMath.IsRepresentable(hue, c, target))
+                return ColorMath.FromAlphaHct(0xFF, hue, c, target);
+        }
+        return ColorMath.FromAlphaHct(0xFF, hue, 0, target);
     }
 
     /// <summary>
@@ -229,8 +267,19 @@ public static class PaletteSolver
     public const double NeutralVariantChroma = 8.0;
 
     // ── 表面三层由**用户给的背景色成员**推出（用户令 2026-09-20："优先应用我们选中的那几个颜色"）──
-    /// <summary>页面底的最低明度档：背景色成员比它更浅就原样用（**融合优先**），更深才提亮到这个档。</summary>
-    public const double SurfaceBaseTone = 91.0;
+    /// <summary>页面底的明度档**上限**：背景色成员比它更浅就压到这个档（**层感优先**）。</summary>
+    /// <remarks>
+    /// 用户报障 2026-09-20："修改后的紫罗兰整个主题界面底色都被改，颜色发灰，虽然是融合了"——
+    /// 实测默认主题原样取 `#F2EEF5`（T94.6）比定稿底色 `#E8E4ED`（T91.3）明显更浅：卡面只能提亮 1–2 档，
+    /// 悬停底压深后甚至比页面底更浅。上限 91 = "页面底有深度、卡面浮得起来"的共同边界。
+    /// </remarks>
+    public const double SurfaceBaseToneMax = 91.0;
+
+    /// <summary>页面底的明度档**下限**：背景色成员比它更深就提到这个档（浅色主题的底线，否则整页偏暗）。</summary>
+    public const double SurfaceBaseToneMin = 87.0;
+
+    /// <summary>页面底的**标称档**（= 上限档）：文档与"新出现的页面底取哪一档"的说明都引用它。</summary>
+    public const double SurfaceBaseTone = SurfaceBaseToneMax;
 
     /// <summary>卡面相对页面底提亮的档距（要能看出"卡浮在页面上"，又不脱离那个颜色）。</summary>
     public const double SurfaceCardLift = 5.0;
@@ -299,19 +348,17 @@ public static class PaletteSolver
             => ok(source) ? source : DarkenOrLighten(source, fallbackTone);
 
         var exact = definition.PaletteMode == PaletteMode.Exact;
-        _ = exact;
 
-        // ── 表面族：**用户给的背景色成员就是页面底本身**（色点与背景同色 → 融合，用户令 2026-09-20）──
-        // 三个层（页面底 / 卡面 / 悬停底）由它按固定档距推出：底 = 原色原样；卡面提亮一档；悬停底压深一档。
-        // ⚠️ 因此表面层**带用户颜色的彩度**（浅色成员通常 C≤20，不影响可读性；对比度矩阵逐条卡住）。
-        var surfaceSource = families.SurfaceSource
-                            ?? At(families.NeutralHue, NeutralChroma, SurfaceBaseTone);
+        // ── 表面族：**用户给的背景色成员**（本色色相/彩度，明度夹在 87–91）就是页面底 ──
+        // 三个层由页面底按固定档距推出：卡面**从页面底提亮**一档；悬停底**从页面底压深**一档。
+        // ⚠️ 档距的基准必须是**页面底**而不是"成员原色的明度"：原色比底色档更浅时（晴王青提饮 T97.9、
+        //    薄荷气泡水 T98.1），按原色算出来的"卡面"会与页面底同色（实测对比度 1.003 / 1.000 = 看不出卡片）。
+        var surfaceSource = families.SurfaceSource ?? At(families.NeutralHue, NeutralChroma, SurfaceBaseToneMax);
         var surfaceSourceTone = ColorMath.Measure(surfaceSource).T;
-        var surfaceBase = surfaceSourceTone >= SurfaceBaseTone
-            ? surfaceSource
-            : LightenTo(surfaceSource, SurfaceBaseTone);
-        var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceSourceTone + SurfaceCardLift, SurfaceCardMaxTone));
-        var surfaceHover = DarkenTo(surfaceBase, Math.Max(surfaceSourceTone - SurfaceHoverDrop, SurfaceHoverMinTone));
+        var surfaceBase = SurfaceBaseOf(families);
+        var surfaceBaseTone = ColorMath.Measure(surfaceBase).T;
+        var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceBaseTone + SurfaceCardLift, SurfaceCardMaxTone));
+        var surfaceHover = DarkenTo(surfaceBase, Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone));
 
         var textPrimary = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
         var textSecondary = At(families.NeutralHue, NeutralChroma, ToneScale.TextSecondary);
@@ -337,16 +384,25 @@ public static class PaletteSolver
             textMuted = LightenTo(textPrimary, ToneScale.TextMuted);
         }
 
-        // 悬停底是**唯一一块比页面底更深的表面**（"弱文字对它"必须达标）→ 按实测对比度动态抬档，
-        // 而不是写死一个"看起来够浅"的档位：浅色成员彩度高的主题（赭石/暮色/焦糖玫瑰）写死的档位会跌破 4.5。
-        var hoverFloor = Math.Max(surfaceSourceTone - SurfaceHoverDrop, SurfaceHoverMinTone);
-        for (var tone = hoverFloor; tone <= surfaceSourceTone; tone += 1.0)
+        // 悬停底是**唯一一块比页面底更深的表面**（"弱文字对它"必须达标）→ 在"够深"的一侧里
+        // **取最深的那个还达标的档**：悬停反馈要看得出来，可读性也不能破（旧写法"从浅往深走到第一个达标"
+        // 会在高彩度浅色主题上直接走到与页面底同档 = 悬停反馈消失）。
+        // ⚠️ 判据必须**同时**包含两支弱字：中性 T12 更严（它达标时更浅的弱字也必然达标），
+        //    而当前的 `textMuted` 才是真正会落在悬停底上的那一支（直配 = 用户墨提亮、自动 = 中性灰墨，
+        //    两者的对比度实测骑在阈值两侧 4.47 / 4.51）。两支一起卡，两种模式都不会跌破 4.5。
+        var hoverInk = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
+        var hoverFloor = Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone);
+        surfaceHover = DarkenTo(surfaceBase, surfaceBaseTone);
+        for (var tone = hoverFloor; tone <= surfaceBaseTone; tone += 1.0)
         {
-            surfaceHover = DarkenTo(surfaceBase, tone);
-            if (ColorMath.ContrastRatio(textMuted, surfaceHover) >= ToneScale.MinMutedOnHover) break;
+            var candidate = DarkenTo(surfaceBase, tone);
+            if (ColorMath.ContrastRatio(hoverInk, candidate) >= ToneScale.MinMutedOnHover
+                && ColorMath.ContrastRatio(textMuted, candidate) >= ToneScale.MinMutedOnHover)
+            {
+                surfaceHover = candidate;   // 取第一个（= 最深）同时达标的档
+                break;
+            }
         }
-        if (ColorMath.ContrastRatio(textMuted, surfaceHover) < ToneScale.MinMutedOnHover)
-            surfaceHover = DarkenTo(surfaceBase, surfaceSourceTone);   // 兜底：与页面底同色（宁可弱化悬停也不牺牲可读性）
         // 描边：取配色里最接近中间调的成员 —— **够深就直接用**，比档位浅才压到档位（直配）；自动模式保持原行为。
         var outlineSource = families.OutlineSource;
         var outline = outlineSource is { } oSrc
@@ -367,6 +423,11 @@ public static class PaletteSolver
         var accentContainer = families.ContainerSource is { } containerSrc
             ? Direct(containerSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.AccentContainer)
             : LightenTo(accentFill, ToneScale.AccentContainer);
+        // 选中底 / 落点高亮 / 徽标底 = **必定看得见**（用户报障 2026-09-20："选中行与页面底同色、看不出来"）：
+        // 直接取浅成员当容器时，实测 8/11 套与页面底**完全同色**（对比度 1.000 —— 默认主题最浅的
+        // `#F2EEF5` 既是页面底又是容器来源）。故这里以"容器来源的色相 + 支撑档彩度"取一个够浅的档，
+        // 再按**实测对比度**抬到与页面底、与悬停底都分得开的档位（只动明度、不发明色相）。
+        accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover);
         // 容器字跟随**容器自己的色相**（否则浅色容器上会浮出一层别的颜色的墨）
         var accentOnContainer = At(ColorMath.Measure(accentContainer).H,
             Math.Max(ColorMath.Measure(accentContainer).C, NeutralChroma), ToneScale.AccentOnContainer);
@@ -489,6 +550,50 @@ public static class PaletteSolver
             Families = families,
         };
     }
+
+    /// <summary>
+    /// 把"选中底 / 落点高亮 / 徽标底"抬到**与页面底、悬浮底都分得开**的明度档（只动明度，不发明色相）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么需要这一步（用户报障 2026-09-20："选中行与页面底同色、看不出来"）</b>：容器来源是
+    /// "浅的低彩度成员"，而**页面底也是那个成员**（明度最高的那个）——实测 8/11 套里
+    /// <c>App.Accent.Container</c> 与 <c>App.Surface.Base</c> 的对比度正好是 **1.000**（同一个色值），
+    /// 主栏选中行、树选中行、徽标底全部看不见。
+    /// </para>
+    /// <para>
+    /// 判据落在"看得见"这件事实上：沿**浅色方向**逐档找第一个同时满足
+    /// 「对页面底 ≥ <see cref="ContainerMinContrastOnBase"/>」与「对悬停底 ≥ <see cref="ContainerMinContrastOnHover"/>」
+    /// 的档位（浅色主题的选中底只能往更浅处走，往深处走会撞上悬停底/正文墨）。
+    /// 彩度按支撑档钳制（大面积容器必须安静），色相仍是配色成员自己的。
+    /// </para>
+    /// </remarks>
+    private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover)
+    {
+        // 已经够开就直接用（预设里"浅且安静"的成员本来就够）+ 不许比页面底更深（选中底不能压过页面底）
+        if (ColorMath.ContrastRatio(container, surfaceBase) >= ContainerMinContrastOnBase
+            && ColorMath.ContrastRatio(container, surfaceHover) >= ContainerMinContrastOnHover
+            && ColorMath.Measure(container).T >= ColorMath.Measure(surfaceBase).T)
+            return container;
+
+        var m = ColorMath.Measure(container);
+        var chroma = Math.Min(m.C, Math.Min(24.0, NeutralVariantChroma * 2));
+        for (var tone = Math.Max(m.T, ColorMath.Measure(surfaceBase).T); tone <= 99.0; tone += 1.0)
+        {
+            var candidate = ColorMath.FromAlphaHct(0xFF, m.H, chroma, tone);
+            if (ColorMath.ContrastRatio(candidate, surfaceBase) >= ContainerMinContrastOnBase
+                && ColorMath.ContrastRatio(candidate, surfaceHover) >= ContainerMinContrastOnHover)
+                return candidate;
+        }
+        // 兜底：白色（对任何浅色底都是最大对比；只在"浅色成员彩度极高"的极端配色下走到）
+        return ColorMath.FromAlphaHct(0xFF, m.H, chroma, 98.0);
+    }
+
+    /// <summary>选中底对页面底的最低对比度（低于它 = 选中行看不出来）。</summary>
+    public const double ContainerMinContrastOnBase = 1.08;
+
+    /// <summary>选中底对悬停底的最低对比度（悬停中选中也要分得开）。</summary>
+    public const double ContainerMinContrastOnHover = 1.06;
 
     /// <summary>一个锚点在该旋转角下的取值（α 取自锚点；不旋转键保持库基线）。</summary>
     private static Argb Resolve(SurfaceAnchors.Anchor anchor, double rotation)

@@ -49,13 +49,14 @@ public sealed record ThemePreference
     public double? NeutralHue { get; init; }
 
     /// <summary>
-    /// 「自动调整颜色」开关（用户令 2026-09-20：**缺省关闭** = 尽量原样用用户给的颜色）。
+    /// 「自动调整颜色」开关（用户令 2026-09-20 第二轮：**缺省打开** = 按明度档位表自动重排）。
     /// </summary>
     /// <remarks>
-    /// 缺省 <c>false</c> 与 <see cref="PaletteMode.Exact"/> 一致；写成布尔是为了让偏好文件对用户可读
-    /// （"这个开关是关的"），语义映射收敛在本文件与 <c>ThemeService</c> 两处。
+    /// 缺省 <c>true</c> 与 <see cref="PaletteMode.Auto"/> 一致（唯一事实源 =
+    /// <c>ThemeService.DefaultPaletteMode</c>）；写成布尔是为了让偏好文件对用户可读
+    /// （"这个开关是开的"），语义映射收敛在 <c>ThemeService</c> 一处。
     /// </remarks>
-    public bool AutoAdjustColors { get; init; }
+    public bool AutoAdjustColors { get; init; } = ThemeService.DefaultPaletteMode == PaletteMode.Auto;
 
     /// <summary>是否使用用户自选配色。</summary>
     [JsonIgnore]

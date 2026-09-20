@@ -34,15 +34,24 @@ public static class ThemeService
 
     /// <summary>
     /// **配色应用方式**（外观面板的「自动调整颜色」开关）：
-    /// <see cref="PaletteMode.Exact"/>（缺省，开关关闭）= 尽量原样用用户给的颜色；
-    /// <see cref="PaletteMode.Auto"/>（开关打开）= 按明度档位表自动排色。
+    /// <see cref="PaletteMode.Auto"/>（缺省，开关**打开**）= 按明度档位表自动重排 ⇒ 层感与可读性有保证；
+    /// <see cref="PaletteMode.Exact"/>（开关关闭）= 尽量原样用用户给的颜色。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-20："单独做一个开关按钮，默认关闭……尽量把你选的颜色全部应用上"。
+    /// 用户令 2026-09-20 第二轮："我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关……
+    /// 当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改，这样就没有问题了"。
     /// 它**影响每一个令牌**，所以随偏好落盘、并在 <see cref="Apply"/> 时统一写进主题定义
     /// （调用方不必各自传一遍，避免"有的入口忘了带"）。
     /// </remarks>
-    public static PaletteMode PaletteMode { get; private set; } = PaletteMode.Exact;
+    public static PaletteMode PaletteMode { get; private set; } = DefaultPaletteMode;
+
+    /// <summary>
+    /// 「自动调整颜色」的**出厂缺省值 = 打开**（唯一事实源：主题定义缺省 / 偏好缺省 / 服务初值都取它）。
+    /// </summary>
+    /// <remarks>
+    /// 用户令 2026-09-20："我们默认是打开自动调整颜色的"（第一轮"默认关闭"的口径被这条取代）。
+    /// </remarks>
+    public const PaletteMode DefaultPaletteMode = PaletteMode.Auto;
 
     /// <summary>设置配色应用方式并**立即重新应用当前主题**（界面当场跟随）。</summary>
     public static TokenTable SetPaletteMode(PaletteMode mode, ResourceDictionary? resources = null)
@@ -339,7 +348,7 @@ public static class ThemeService
     {
         _current = ThemeCatalog.Default;
         _table = null;
-        PaletteMode = PaletteMode.Exact;   // 开关回缺省（关闭 = 直配）—— 否则会漏进下一个用例
+        PaletteMode = DefaultPaletteMode;   // 开关回缺省（打开 = 自动调色）—— 否则会漏进下一个用例
         CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
         CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
         if (clearPreferences) Preferences.UiPreferenceStore.Clear();
