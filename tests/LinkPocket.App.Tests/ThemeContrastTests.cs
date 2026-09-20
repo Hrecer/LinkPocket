@@ -49,6 +49,10 @@ public class ThemeContrastTests
             t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.AccentContainer)), 3.0, "文件夹图标落在选中底上（列表里选中行 + 类型图标是常态组合）"),
         new("Accent.Icon / Accent.Container",
             t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.AccentContainer)), 3.0, "强调图标落在选中底上"),
+        new("Text.Muted / Surface.Card",
+            t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceCard)), 4.5, "弱文字对卡面（提示 / 占位 / 主题卡摘要）"),
+        new("Line.Invalid / Surface.Card",
+            t => (t.Token(AppTokens.LineInvalid), t.Token(AppTokens.SurfaceCard)), 4.5, "校验错误描边（= 文字主色，2px）"),
     };
 
     public static IEnumerable<object[]> ThemeIds() =>

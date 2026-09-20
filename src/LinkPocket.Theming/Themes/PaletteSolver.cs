@@ -310,22 +310,6 @@ public static class PaletteSolver
         return ColorMath.FromAlphaHct(c.A, ColorMath.RotateHue(hct.H, rotation), hct.C, hct.T);
     }
 
-    /// <summary>
-    /// **未覆写**的锚定键值（键 → 按主题旋转后的"今天值"）。
-    /// </summary>
-    /// <remarks>
-    /// 供 T2 过渡期兼容层把库键也按住（T2 视觉零变化要求连库角色键都不变）。
-    /// T3 删除兼容层后，本方法只余"文档/诊断"用途，可一并移除。
-    /// </remarks>
-    public static IReadOnlyDictionary<string, Argb> RawAnchored(ThemeDefinition definition)
-    {
-        var rot = definition.SurfaceRotation(SolveFamilies(definition).NeutralHue);
-        var map = new Dictionary<string, Argb>(StringComparer.Ordinal);
-        foreach (var anchor in SurfaceAnchors.All)
-            map[anchor.Key] = Resolve(anchor, rot);
-        return map;
-    }
-
     /// <summary>无法选出强调族时的兜底色相（= 今天背景色相；正常配色不会走到，只保证纯函数总有值）。</summary>
     private static double FallbackHue(IReadOnlyList<(Argb Color, ColorMath.Hct3 Hct)> measured) =>
         measured.Count > 0 ? measured[0].Hct.H : ThemeDefinition.ReferenceNeutralHue;

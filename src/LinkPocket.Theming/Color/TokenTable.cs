@@ -2,17 +2,6 @@ using Material3.Core;
 
 namespace LinkPocket.Theming.Color;
 
-/// <summary>
-/// **色相锚定族**：共用同一色相与彩度的若干键。用于让"同一支主色"在多个键上自动一致
-/// （强调填充与强调图标必然同色——同一件事同一色）。
-/// </summary>
-/// <param name="Token">应用令牌名（<see cref="Tokens.AppTokens"/> 里的常量）。</param>
-/// <param name="Hue">族色相（度）。</param>
-/// <param name="Chroma">族彩度（已按彩度上限档钳制）。</param>
-/// <param name="Tone">该键的明度档。</param>
-/// <param name="Alpha">该键的 α（HCT 不含 α，必须显式携带）。</param>
-public readonly record struct HueAnchor(string Token, double Hue, double Chroma, double Tone, byte Alpha = 0xFF);
-
 /// <summary>一个主题派生出的**完整令牌表**：唯一产物，发布、预览、测试断言都只认它。</summary>
 /// <remarks>
 /// 两条来源不同的通道：

@@ -155,11 +155,6 @@ public static class ColorMath
         return Pack(255, Mix(b.R, l.R), Mix(b.G, l.G), Mix(b.B, l.B));
     }
 
-    /// <summary>
-    /// 明度（Tone）分档插值：在实测锚点的 T 之上按主题整体明度偏移平移，并夹在 [0,100]。
-    /// </summary>
-    public static double ShiftTone(double tone, double delta) => Math.Clamp(tone + delta, 0.0, 100.0);
-
     // ── HSV 互算（**用户操作面**专用，与派生链路的 HCT 分工）──────────────────
     //
     // 为什么另有一组 HSV：取色盘需要"二维直觉"——左右 = 饱和度、上下 = 明度。HSV 的 S/V 恰好

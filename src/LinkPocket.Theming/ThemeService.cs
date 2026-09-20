@@ -251,8 +251,8 @@ public static class ThemeService
     /// <para>
     /// 存在的理由 = 可测性（"导入 → 应用 → 重启保持"这条链路必须能自动化验证），
     /// 与 <see cref="ResetForTests"/> 同属**测试收尾/夹具**一类公开成员 ——
-    /// 不放进 <c>internal</c> 是因为本仓的红线是"<c>InternalsVisibleTo</c> 零残留"（架构测试卡住），
-    /// 不允许为了一个测试开口子。
+    /// 不放进 <c>internal</c> 是因为本仓的红线是"程序集内部可见性零残留"（架构测试
+    /// <c>LayerRulesTests</c> 卡住），不允许为了一个测试给程序集开后门。
     /// </para>
     /// <para>
     /// 必须是**独立**方法：<see cref="ResetForTests"/> 会连偏好文件一起清，
