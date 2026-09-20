@@ -78,6 +78,20 @@ public static class CommandArgs
         throw new EngineException(RequiredError(name));
     }
 
+    /// <summary>可选 64 位整数参数（游标 / 时间戳这类）；缺省返回 <paramref name="defaultValue"/>，
+    /// 显式传入非数值 → LP.VAL.002（类型错不得静默吃默认值）。</summary>
+    public static long OptionalLong(JsonElement args, string name, long defaultValue = 0)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(name, out var value))
+            return defaultValue;
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => defaultValue,
+            JsonValueKind.Number when value.TryGetInt64(out var number) => number,
+            _ => throw TypeError(name, "integer", value.ValueKind),
+        };
+    }
+
     /// <summary>必填布尔参数；缺失或非布尔即抛 REQUIRED_PARAM。</summary>
     public static bool RequireBool(JsonElement args, string name)
     {

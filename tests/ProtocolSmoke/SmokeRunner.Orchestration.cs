@@ -193,7 +193,43 @@ internal static partial class SmokeRunner
         Asserts.That(idemRows == 1, "幂等结果应已落 idempotency 表");
         await db.DisposeAsync();
 
-        Console.WriteLine("[OK] §10 编排层：批(事务回滚/continue/dry_run/status/ref 模板) + 宏 + 撤销重做 + Staging + 诊断 + 审计/幂等落表");
+        // —— §10.11 logs.query / logs.level（S2b 日志读侧）：未装配如实报错 → 装配后能查到 ——
+        var unwired = await AssertEngineErrorAsync(() => s.Client.QueryAsync<JsonElement>("logs.query"));
+        Asserts.That(unwired.Error.Code == "LP.STATE.005",
+            $"未装配日志管道时 logs.query 应报 LP.STATE.005，实际 {unwired.Error.Code}");
+        var unwiredLevel = await AssertEngineErrorAsync(() => s.Client.ExecuteAsync<JsonElement>(
+            "logs.level", new { level = "debug" }));
+        Asserts.That(unwiredLevel.Error.Code == "LP.STATE.005",
+            $"未装配日志管道时 logs.level 应报 LP.STATE.005，实际 {unwiredLevel.Error.Code}");
+
+        var logsDir = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_logs_{Guid.NewGuid():N}");
+        LinkPocket.Composition.EngineComposer.ConfigureLogging(
+            new LoggingOptions { Directory = logsDir, MinimumLevel = LogLevel.Info });
+        try
+        {
+            LpLog.Info("冒烟：日志读侧", "smoke");
+            var queried = await s.Client.QueryAsync<LogQueryResult>("logs.query", new { category = "smoke" });
+            Asserts.That(queried.Items.Any(r => r.Message == "冒烟：日志读侧"), "logs.query 内存源应读到刚写的记录");
+            Asserts.That(queried.MinimumLevel == LogLevel.Info && queried.Source == LogSource.Memory,
+                "logs.query 应回显当前最低级别与读取来源");
+
+            var leveled = await s.Client.ExecuteAsync<LinkPocket.Modules.Maintenance.LogsLevelResult>(
+                "logs.level", new { level = "debug" });
+            Asserts.That(leveled.Ok && leveled.Data!.Level == "debug" && leveled.Data!.Previous == "info",
+                "logs.level 应回报切换前后的级别");
+
+            var fromFile = await s.Client.QueryAsync<LogQueryResult>("logs.query", new { source = "file" });
+            Asserts.That(fromFile.Source == LogSource.File && fromFile.FilesRead >= 1
+                         && fromFile.Items.Any(r => r.Message == "冒烟：日志读侧"),
+                "logs.query source=file 应回读刚写入的日志文件");
+        }
+        finally
+        {
+            LpLog.Shutdown();
+            try { Directory.Delete(logsDir, recursive: true); } catch { /* 冒烟清理尽力而为 */ }
+        }
+
+        Console.WriteLine("[OK] §10 编排层：批(事务回滚/continue/dry_run/status/ref 模板) + 宏 + 撤销重做 + Staging + 诊断 + 审计/幂等落表 + 日志读侧");
     }
 
     private static async Task<long> ScalarAsync(Microsoft.Data.Sqlite.SqliteConnection db, string sql)

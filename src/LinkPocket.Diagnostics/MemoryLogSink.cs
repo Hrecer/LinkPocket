@@ -5,8 +5,9 @@ namespace LinkPocket.Diagnostics;
 /// <summary>
 /// 内存日志环（进程内最近 N 条）：服务 <c>logs.query</c> 的"不读文件即可查最近日志"水位，
 /// 也是测试的注入点（断言记录内容）。环形满即淘汰最旧（计入 <see cref="LogStats.Dropped"/>）；线程安全。
+/// 同时实现读侧能力位 <see cref="ILogRingSource"/>（管道据此服务 <c>logs.query source=memory</c>）。
 /// </summary>
-public sealed class MemoryLogSink : ILogSink
+public sealed class MemoryLogSink : ILogSink, ILogRingSource
 {
     private readonly object _lock = new();
     private readonly Queue<LogRecord> _ring;

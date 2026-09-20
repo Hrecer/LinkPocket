@@ -10,8 +10,9 @@ namespace LinkPocket.Diagnostics;
 /// 旧 <c>linkpocket-yyyy-MM-dd.log</c> 属历史格式——清空日志时一并清理，不再写入。
 /// 轮转与保留在"开新文件"时执行；error / fatal 立即 flush（崩溃现场取证）；UTF-8 无 BOM。
 /// 观测面铁律：删除失败 / 写入失败**计数暴露**（Failed + LastError），不静默吞。
+/// 另实现读侧能力位 <see cref="ILogFileReader"/>（管道据此服务 <c>logs.query source=file</c>）。
 /// </summary>
-public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, IDisposable
+public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReader, IDisposable
 {
     private const string Prefix = "linkpocket-";
     private const int DateLength = 10;
@@ -129,6 +130,70 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, IDisposable
             }
             return count;
         }
+    }
+
+    /// <summary>
+    /// 回读尾部（<see cref="ILogFileReader"/>）：从**最新的 .jsonl 文件向前**回读，最多 <paramref name="maxRecords"/>
+    /// 条已解析记录，返回按**时间升序**（= 文件写入顺序）。无法解析的行被**跳过并计数**（Skipped，绝不静默）；
+    /// <c>MoreAvailable</c> = 是否还有更早的行未回读（因达到上限而停）。
+    /// 只回读 <c>.jsonl</c>——遗留 <c>.log</c> 是旧文本格式（"清空日志"会一并清理，但本方法不解析）。
+    /// 读取以 <see cref="FileShare.ReadWrite"/> 打开：与写侧的长开句柄（Write + FileShare.ReadWrite）兼容，
+    /// 否则读会直接 IOException（见 `文档/WARNINGS.md` 65）。
+    /// </summary>
+    public LogFileTail ReadTail(int maxRecords)
+    {
+        if (maxRecords <= 0) return new LogFileTail([], 0, 0, false);
+
+        var files = ExistingFiles()
+            .Where(f => f.Kind == FileKind.Jsonl)
+            .OrderByDescending(f => f.Name, StringComparer.Ordinal)   // 名称升序 = 时间升序 → 倒序 = 最新在前
+            .ToList();
+
+        var newestFirst = new List<LogRecord>();
+        var skipped = 0;
+        var filesRead = 0;
+        var more = false;
+
+        foreach (var file in files)
+        {
+            var lines = ReadSharedLines(file.Path);
+            filesRead++;
+
+            for (var i = lines.Count - 1; i >= 0; i--)
+            {
+                if (newestFirst.Count >= maxRecords)
+                {
+                    more = true;   // 还有更早的行没读
+                    break;
+                }
+
+                if (LogJsonl.TryParse(lines[i], out var record)) newestFirst.Add(record!);
+                else skipped++;
+            }
+
+            if (newestFirst.Count >= maxRecords) { more = true; break; }
+        }
+
+        newestFirst.Reverse();   // → 时间升序
+        return new LogFileTail(newestFirst, filesRead, skipped, more);
+    }
+
+    /// <summary>整文件读行（<see cref="FileShare.ReadWrite"/>：写句柄仍开着也能读）；读取失败**计数暴露**并返回已读部分。</summary>
+    private List<string> ReadSharedLines(string path)
+    {
+        var lines = new List<string>();
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            while (reader.ReadLine() is { } line) lines.Add(line);
+        }
+        catch (Exception ex)
+        {
+            RecordFailure(ex);   // 读侧失败同样要暴露（不静默吞、不自愈）
+        }
+
+        return lines;
     }
 
     public void Dispose()

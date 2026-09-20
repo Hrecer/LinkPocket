@@ -4,17 +4,26 @@
 
 ## 职责边界
 
-- **做**：读取 schema 版本、打包诊断信息、整库重置。
+- **做**：读取 schema 版本、打包诊断信息、**审计读侧与保留**、**日志读侧与运行期调级**、整库重置。
 - **不做**：真正建库/升级——那是 `LinkPocket.Data.SchemaMigrator` 的职责（本模块只读版本号）。
   也不做保留策略调度（数据保留/归档属调度器，尚未落地）。
+  日志的**写入与落点**也不在这里（唯一入口是契约层 `LpLog` 门面 → `LinkPocket.Diagnostics.LogPipeline`）——
+  本模块只经 `LpLog.QuerySource` 读，未装配时如实报 `LP.STATE.005`。
 
-## 对外命令（3）
+## 对外命令（7）
 
 | 命令 | 类型 | 要点 |
 |---|---|---|
 | `maintenance.schema_version` | 查询 | 当前 schema 版本（`schema_migrations` 的 MAX(version)） |
-| `diagnostics.collect` | 查询 | 应用版本 / schema 版本 / 各表计数 / **运行时可观测读数**（脱敏） |
+| `diagnostics.collect` | 查询 | 应用版本 / schema 版本 / 各表计数 / **运行时可观测读数** / 日志与审计读数（脱敏） |
+| `audit.query` | 查询 | **调用史读侧**：按命令/调用方/会话/correlation/批/时间过滤，新→旧分页；`include_payloads` 才带 args/changes/stack |
+| `audit.prune` | 变更（破坏性） | 清理保留期之外的审计行（缺省 90 天，两阶段确认；`dry_run` 预演将删行数） |
+| `logs.query` | 查询 | **日志读侧**：`source=memory`（缺省，内存环，支持 `cursor` 增量轮询）/ `source=file`（从最新 JSONL 文件向前回读）；level/category 过滤、时间升序；未装配 → `LP.STATE.005` |
+| `logs.level` | 变更 | **运行期调级**（进程内生效，不落库、不重启）；未装配 → `LP.STATE.005` |
 | `maintenance.reinit` | 变更 | 整库重置：单事务清空全部数据 + 尽力清除图标缓存；**破坏性两阶段确认** |
+
+> 口径差别（别混）：`audit.query` 读**库里的调用史**（结构化、可 SQL 过滤、免内存）；`logs.query` 读**过程记录**
+> （内存环 + JSONL 文件，含 UI 与观测面噪音，**不落库**）——两者靠 `correlation_id` 对齐到同一条用户动作。
 
 ## 关于 `diagnostics.collect` 的 runtime 段
 

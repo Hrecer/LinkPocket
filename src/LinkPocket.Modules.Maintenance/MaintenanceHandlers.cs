@@ -81,7 +81,8 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
             logging = new
             {
                 wired = LpLog.Sink is not null,
-                level = logStats?.Level?.ToString().ToLowerInvariant(),
+                // 级别名称经唯一映射（LogLevels.Name）——与 JSONL 写码 / logs.query 回显同一张表
+                level = logStats?.Level is { } currentLevel ? LogLevels.Name(currentLevel) : null,
                 directory = logStats?.Directory,
                 files = logFiles.Count,
                 files_bytes = logFilesBytes,

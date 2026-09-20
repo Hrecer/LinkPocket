@@ -15,7 +15,7 @@ namespace LinkPocket.Diagnostics;
 /// - <see cref="Flush"/> 等待队列排空后再刷落点（异常处理器 / 退出前使用）。
 /// 观测面铁律：丢弃与失败**全部计数**、不静默、不自愈。
 /// </summary>
-public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
+public sealed class LogPipeline : ILogSink, ILogFileMaintenance, ILogQuerySource, IDisposable
 {
     private readonly LoggingOptions _options;
     private readonly ILogSink[] _sinks;
@@ -31,6 +31,7 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
     private long _direct;
     private long _pending;
     private string? _lastError;
+    private int _level;          // 运行期最低级别（logs.level 可改；初值 = 装配时的 options.MinimumLevel）
     private int _disposed;
 
     public LogPipeline(LoggingOptions options, params ILogSink[] sinks)
@@ -39,6 +40,7 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
         if (sinks is null || sinks.Length == 0)
             throw new ArgumentException("至少需要一个日志落点", nameof(sinks));
         _sinks = sinks;
+        _level = (int)options.MinimumLevel;
         _queue = Channel.CreateBounded<LogRecord>(new BoundedChannelOptions(Math.Max(1, options.QueueCapacity))
         {
             SingleReader = true,
@@ -48,10 +50,17 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
         _pump = Task.Run(PumpAsync);
     }
 
-    /// <summary>管道选项（只读快照；装配后不可变）。</summary>
+    /// <summary>装配快照（只读）。⚠️ **运行期级别不在这里**：装配后改的是 <see cref="Level"/>，
+    /// 本属性只记录装配那一刻的口径（避免"读 Options 拿到过期级别"的误判）。</summary>
     public LoggingOptions Options => _options;
 
-    public bool IsEnabled(LogLevel level) => level >= _options.MinimumLevel;
+    /// <summary>当前生效的最低记录级别（运行期可经 <see cref="SetLevel"/> 切换；越界无意义——枚举即阈值）。</summary>
+    public LogLevel Level => (LogLevel)Volatile.Read(ref _level);
+
+    /// <summary>切换最低记录级别（进程内生效，不落库、不重启）；返回切换前的级别（调用方据此如实回报）。</summary>
+    public LogLevel SetLevel(LogLevel level) => (LogLevel)Interlocked.Exchange(ref _level, (int)level);
+
+    public bool IsEnabled(LogLevel level) => level >= Level;
 
     public void Write(LogRecord record)
     {
@@ -82,9 +91,7 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
     /// <summary>等队列排空（最多 <paramref name="timeout"/>）后逐落点刷盘。</summary>
     public void Flush(TimeSpan timeout)
     {
-        var watch = Stopwatch.StartNew();
-        while (Interlocked.Read(ref _pending) > 0 && watch.Elapsed < timeout)
-            Thread.Sleep(1);
+        WaitForPump(timeout);
 
         foreach (var sink in _sinks)
         {
@@ -97,6 +104,59 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
                 RecordFailure(sink, ex);
             }
         }
+    }
+
+    /// <summary>
+    /// 日志查询（<c>logs.query</c> 的**唯一实现**）：先等后台泵把已入队记录交给落点（否则"刚写的日志查不到"
+    /// 会被读成丢数据），再按来源取——memory = 内存环（游标 / 级别 / 分类过滤）；file = 从最新 JSONL 文件
+    /// 向前回读（**先刷盘**，否则文件内容落后于刚写的行）。
+    /// <para><b>两源不合并</b>：seq 是进程内单调量，文件里的 seq 来自**另一次进程运行**，跨进程不可比——
+    /// 与其做"看起来统一"的模糊合并（去重与排序口径只能靠猜），不如让调用方显式选来源。</para>
+    /// </summary>
+    public LogQueryResult Query(LogQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var limit = Math.Max(1, query.Limit);
+
+        if (query.Source == LogSource.File)
+        {
+            Flush(TimeSpan.FromMilliseconds(500));   // 文件源：排空 + 刷盘，读到的是真的落了盘的内容
+            var reader = _sinks.OfType<ILogFileReader>().FirstOrDefault();
+            if (reader is null)
+                return new LogQueryResult([], null, limit, Level, LogSource.File);
+
+            var tail = reader.ReadTail(limit);
+            var matched = tail.Items.Where(r => Matches(r, query)).Take(limit).ToArray();
+            return new LogQueryResult(matched, null, limit, Level, LogSource.File,
+                FilesRead: tail.FilesRead, SkippedLines: tail.Skipped, MoreAvailable: tail.MoreAvailable);
+        }
+
+        WaitForPump(TimeSpan.FromMilliseconds(500));   // 内存源：只等泵交付，不做 fsync
+        var ring = _sinks.OfType<ILogRingSource>().FirstOrDefault();
+        if (ring is null)
+            return new LogQueryResult([], query.Cursor, limit, Level, LogSource.Memory);
+
+        var snapshot = ring.Snapshot(query.Cursor, 0);
+        var items = snapshot.Where(r => Matches(r, query)).Take(limit).ToArray();
+        return new LogQueryResult(items, snapshot.Count == 0 ? query.Cursor : snapshot[^1].Sequence,
+            limit, Level, LogSource.Memory);
+    }
+
+    /// <summary>过滤口径（唯一实现）：级别 + 分类。游标由来源各自处理——它只对内存源有意义（见 <see cref="Query"/>）。</summary>
+    private static bool Matches(LogRecord record, LogQuery query)
+    {
+        if (query.MinimumLevel is { } minimum && record.Level < minimum) return false;
+        if (!string.IsNullOrEmpty(query.Category)
+            && !string.Equals(record.Category, query.Category, StringComparison.Ordinal)) return false;
+        return true;
+    }
+
+    /// <summary>等后台泵把已入队记录交付落点（最多 <paramref name="timeout"/>；不刷落点自身缓冲）。</summary>
+    private void WaitForPump(TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        while (Interlocked.Read(ref _pending) > 0 && watch.Elapsed < timeout)
+            Thread.Sleep(1);
     }
 
     /// <summary>管道计数 + 下游落点读数的聚合快照（目录 / LastError 取首个非空）。</summary>
@@ -113,7 +173,7 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, IDisposable
                 Failed: Interlocked.Read(ref _failed),
                 DirectWrites: Interlocked.Read(ref _direct),
                 QueueDepth: _queue.Reader.Count,
-                Level: _options.MinimumLevel,
+                Level: Level,
                 Directory: downstream.Select(s => s.Directory).FirstOrDefault(d => d is not null),
                 LastError: _lastError ?? downstream.Select(s => s.LastError).FirstOrDefault(e => e is not null));
         }

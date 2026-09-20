@@ -120,6 +120,11 @@ public static class LpLog
     /// <summary>管道计数快照（未装配 = null，不填假值）。</summary>
     public static LogStats? Stats => Sink?.Stats;
 
+    /// <summary>日志**读侧**入口（管道实现 <see cref="ILogQuerySource"/> 时非空；未装配 = null）。
+    /// 调用方（<c>logs.query</c> / <c>logs.level</c>）必须据此**如实报错**（<c>LP.STATE.005</c>），
+    /// 不得返回空列表假装"没有日志"——未装配与"没有记录"是两件事。</summary>
+    public static ILogQuerySource? QuerySource => Sink as ILogQuerySource;
+
     /// <summary>清空日志文件（经落点的维护能力；落点无该能力 = 0）。设置页「清空日志」唯一入口。</summary>
     public static int ClearLogFiles() => Sink is ILogFileMaintenance m ? m.ClearFiles() : 0;
 

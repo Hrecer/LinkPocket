@@ -5,7 +5,7 @@ using LinkPocket.Engine;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>测试支撑：临时文件库（真实 WAL 语义）+ 九模块全量注册（组合由共享 Composition 收敛）。
-/// 裸引擎口径：无审计落库、无幂等落库、无编排层（本工程断言 Describe==58 条业务命令）、无 wire。</summary>
+/// 裸引擎口径：无审计落库、无幂等落库、无编排层（本工程断言 Describe==60 条业务命令）、无 wire。</summary>
 internal static class TestHost
 {
     public static (EngineCore Engine, LinkPocketDbContextFactory Factory, string DbPath) Create()

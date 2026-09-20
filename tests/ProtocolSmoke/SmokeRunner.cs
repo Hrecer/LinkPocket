@@ -31,12 +31,12 @@ internal static partial class SmokeRunner
         }
     }
 
-    // —— §0 目录自描述：74 命令（58 模块 + 16 编排）、分类、能力标志 ——
+    // —— §0 目录自描述：76 命令（60 模块 + 16 编排）、分类、能力标志 ——
     private static Task SectionCatalog(SmokeState s)
     {
         var manifest = s.Client.Describe();
-        Asserts.That(manifest.Commands.Count == 74, $"目录应有 74 条命令，实际 {manifest.Commands.Count}");
-        Asserts.That(manifest.Commands.Select(c => c.Name).Distinct().Count() == 74, "命令名不得重复");
+        Asserts.That(manifest.Commands.Count == 76, $"目录应有 76 条命令，实际 {manifest.Commands.Count}");
+        Asserts.That(manifest.Commands.Select(c => c.Name).Distinct().Count() == 76, "命令名不得重复");
         Asserts.That(manifest.Commands.All(c => System.Text.RegularExpressions.Regex.IsMatch(c.Name, @"^[a-z_]+\.[a-z_]+$")),
             "命令名必须是 域.动作 形态");
 
@@ -44,8 +44,8 @@ internal static partial class SmokeRunner
         Asserts.That(Count("folders") == 14 && Count("links") == 16 && Count("trash") == 9
             && Count("search") == 2 && Count("bookmarks") == 3 && Count("backup") == 3
             && Count("dedup") == 3 && Count("favicon") == 2 && Count("maintenance") == 3
-            && Count("locate") == 1 && Count("audit") == 2,
-            "十个域的命令数与目录总表不一致");
+            && Count("locate") == 1 && Count("audit") == 2 && Count("logs") == 2,
+            "业务域的命令数与目录总表不一致");
         Asserts.That(Count("macro") == 5 && Count("undo") == 5 && Count("staging") == 6,
             "编排域命令数不正确（macro 5 / undo 5 / staging 6）");
 
@@ -54,10 +54,10 @@ internal static partial class SmokeRunner
             $"破坏性命令应为 purge/purge_batch/reinit/import/audit.prune，实际 {string.Join(", ", destructive)}");
 
         var queries = manifest.Commands.Where(c => c.IsQuery).ToList();
-        Asserts.That(queries.All(c => !c.IsMutation) && manifest.Commands.Count(c => c.IsMutation) == 74 - queries.Count,
+        Asserts.That(queries.All(c => !c.IsMutation) && manifest.Commands.Count(c => c.IsMutation) == 76 - queries.Count,
             "Query/Mutation 互斥且每条命令必有其一");
 
-        Console.WriteLine("[OK] §0 目录自描述：74 命令（58 模块 + 16 编排）/ 十四域 / 破坏性标志");
+        Console.WriteLine("[OK] §0 目录自描述：76 命令（60 模块 + 16 编排）/ 十五域 / 破坏性标志");
         return Task.CompletedTask;
     }
 
@@ -68,7 +68,7 @@ internal static partial class SmokeRunner
         var describe = await s.Wire.HandleAsync("""{"jsonrpc":"2.0","id":1,"method":"engine.describe","params":{}}""");
         var doc = JsonDocument.Parse(describe);
         Asserts.That(doc.RootElement.TryGetProperty("result", out var result), "describe 应返回 result");
-        Asserts.That(result.GetProperty("commands").GetArrayLength() == 74, "describe 应含 74 条命令");
+        Asserts.That(result.GetProperty("commands").GetArrayLength() == 76, "describe 应含 76 条命令");
         Asserts.That(doc.RootElement.GetProperty("id").GetInt32() == 1, "响应应回显请求 id");
 
         // engine.query（直接命令名同效）

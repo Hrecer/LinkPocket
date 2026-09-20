@@ -3,7 +3,7 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Maintenance;
 
-/// <summary>维护模块入口：schema 版本 / 诊断收集 / 审计读侧与保留 / 整库重置（两阶段确认）。</summary>
+/// <summary>维护模块入口：schema 版本 / 诊断收集 / 审计读侧与保留 / **日志读侧与运行期调级** / 整库重置（两阶段确认）。</summary>
 public static class MaintenanceModule
 {
     /// <param name="runtimeStats">
@@ -17,6 +17,10 @@ public static class MaintenanceModule
         new DiagnosticsCollectHandler(runtimeStats),
         new AuditQueryHandler(),
         new AuditPruneHandler(),
+        // 日志读侧（S2b）：读侧入口由 LpLog 门面给出（日志不在库里，无需组合根接线）；
+        // 未装配日志管道时两个命令一律报 LP.STATE.005，绝不返回空结果假装"没有日志"
+        new LogsQueryHandler(),
+        new LogsLevelHandler(),
         new MaintenanceReinitHandler(),
     ];
 }

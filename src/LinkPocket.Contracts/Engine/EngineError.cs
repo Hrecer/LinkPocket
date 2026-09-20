@@ -37,6 +37,9 @@ public static class EngineErrors
     public const string RootNotEntity = "LP.STATE.002";
     public const string CycleDetected = "LP.STATE.003";
     public const string BatchAborted = "LP.STATE.004";
+    /// <summary>日志管道未装配（宿主未调 <c>EngineComposer.ConfigureLogging</c>）：<c>logs.*</c> 如实报错，
+    /// 绝不返回空结果假装"没有日志"（观测面纪律）。</summary>
+    public const string LogUnavailable = "LP.STATE.005";
     public const string ReadonlySession = "LP.SEC.001";
     public const string PathOutsideSandbox = "LP.SEC.002";
     public const string ConfirmRequired = "LP.SEC.003";

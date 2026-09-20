@@ -9,8 +9,10 @@ namespace LinkPocket.Modules.Tests;
 /// <summary>
 /// diagnostics.collect 的 **logging 段**（S2）：观测面读数必须"如实"——未装配管道时 wired=false 且计数为 null
 /// （不填假值），装配后读数来自 LpLog 的实时计数（单一数据源）。
-/// ⚠️ LpLog 是进程级静态：本类独占它（xunit 类内串行），每个用例自装自卸。
+/// ⚠️ LpLog 是进程级静态：本类与 <see cref="LogCommandTests"/> 同属一个 xunit Collection（同集合内串行），
+/// 每个用例自装自卸——否则两类的"装配 / 未装配"起点会互相插入。
 /// </summary>
+[Collection("日志管道")]
 public class DiagnosticsLoggingSectionTests
 {
     [Fact]
