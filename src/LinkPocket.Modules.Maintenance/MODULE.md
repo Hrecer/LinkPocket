@@ -6,7 +6,8 @@
 
 - **做**：读取 schema 版本、打包诊断信息、**审计读侧与保留**、**日志读侧与运行期调级**、整库重置。
 - **不做**：真正建库/升级——那是 `LinkPocket.Data.SchemaMigrator` 的职责（本模块只读版本号）。
-  也不做保留策略调度（数据保留/归档属调度器，尚未落地）。
+  也不做**保留策略的调度**（没有定时器：`audit.prune` 是"需要时执行的那一次"，由调用方/宿主决定何时调；
+  日志文件的留存由落点自己在开/换文件时重算，见 `文档/ARCHITECTURE.md` §10-8）。
   日志的**写入与落点**也不在这里（唯一入口是契约层 `LpLog` 门面 → `LinkPocket.Diagnostics.LogPipeline`）——
   本模块只经 `LpLog.QuerySource` 读，未装配时如实报 `LP.STATE.005`。
 
@@ -40,7 +41,8 @@
 整库重置时引擎**同步清空查询缓存与撤销/重做栈**
 （`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，
 留着只会让 `undo.undo` 报 EntityNotFound）。dryRun 下不执行 favicon 清理（文件系统不可回滚，
-必须保持零副作用）。`audit_log` 的清理/归档策略尚未落地（`audit.prune` 待实现），长期使用需关注审计表增长。
+必须保持零副作用）。`audit_log` 的保留 = **`audit.prune`**（缺省 90 天，破坏性两阶段确认；**无调度器定时执行**，
+需要时由调用方触发），长期使用需关注审计表增长。
 
 ## 测试
 
