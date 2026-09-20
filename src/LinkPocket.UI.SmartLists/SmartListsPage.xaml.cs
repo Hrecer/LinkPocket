@@ -406,7 +406,7 @@ namespace LinkPocket.Views
             var badge = new Border
             {
                 Width = 96, Height = 96, CornerRadius = new CornerRadius(32),
-                Background = (Brush)FindResource("TintPanel"),
+                Background = (Brush)FindResource(Theming.Tokens.AppTokens.SurfacePanel),
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             badge.Child = new M3Icon

@@ -19,7 +19,7 @@
 
         <!-- 详情栏卡片：M3 圆角容器（Expressive 大圆角 20），TintCard 浮起在 TintPanel 面板上 -->
         <Style x:Key="SideCard" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource TintCard}"/>
+            <Setter Property="Background" Value="{DynamicResource App.Surface.TintCard}"/>
             <Setter Property="CornerRadius" Value="20"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
@@ -138,7 +138,7 @@
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding JumpToolTip}"
                         Width="32" Height="32" Margin="0,0,0,0" VerticalAlignment="Center"
-                        Foreground="{StaticResource AccentBtn}"
+                        Foreground="{DynamicResource App.Accent.Fill}"
                         Command="{Binding JumpCommand}"
                         Visibility="{Binding ShowJumpAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="{Binding JumpIconKind}" Width="15" Height="15"/>
@@ -165,7 +165,7 @@
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding RenameActionLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
-                        Foreground="{StaticResource AccentBtn}"
+                        Foreground="{DynamicResource App.Accent.Fill}"
                         Command="{Binding RenameActionCommand}"
                         Visibility="{Binding ShowRenameAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
@@ -181,7 +181,7 @@
                         <Style TargetType="Button" BasedOn="{StaticResource NavIconButton}">
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding EditActionAccent}" Value="True">
-                                    <Setter Property="Foreground" Value="{StaticResource AccentBtn}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource App.Accent.Fill}"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
@@ -194,7 +194,7 @@
                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                     <!-- 删除/警告提醒色规范：图标本身 = WarnBg 奶油黄，无底圈，与编辑按钮同构 -->
                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                               Foreground="{StaticResource WarnBg}"/>
+                               Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
                 </Button>
             </StackPanel>
         </DataTemplate>
@@ -221,7 +221,7 @@
                     </Style>
                 </StackPanel.Style>
                 <Border Width="72" Height="72" CornerRadius="24" HorizontalAlignment="Center"
-                        Background="{DynamicResource TintCard}">
+                        Background="{DynamicResource App.Surface.TintCard}">
                     <m3:M3Icon Kind="eye-outline" Width="30" Height="30"
                                Foreground="{DynamicResource OnSurfaceVariant}" Opacity="0.5"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -292,7 +292,7 @@
                             </Grid>
                         </Border>
                         <!-- 文件夹大图标 -->
-                        <m3:M3Icon Kind="folder" Width="40" Height="40" Foreground="#FFB300"
+                        <m3:M3Icon Kind="folder" Width="40" Height="40" Foreground="{DynamicResource App.Type.Folder}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center">
                             <m3:M3Icon.Style>
                                 <Style TargetType="m3:M3Icon">
@@ -475,7 +475,7 @@
                                 Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                             <!-- 与浏览页同一枚按钮/样式；文案按页定制（回收站 = 「永久删除所选」） -->
                             <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                       Foreground="{StaticResource WarnBg}"/>
+                                       Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
                         </Button>
                     </Grid>
                 </StackPanel>

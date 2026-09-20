@@ -21,7 +21,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </UserControl.Resources>
 
-    <Border Background="#80FFFFFF"
+    <Border Background="{DynamicResource App.Overlay.Busy}"
             Visibility="{Binding IsBusy, RelativeSource={RelativeSource AncestorType=UserControl},
                                  Converter={StaticResource BoolToVis}}">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">

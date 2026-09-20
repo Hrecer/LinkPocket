@@ -95,11 +95,17 @@ public static class AppTokens
     public const string TypeLink = "App.Type.Link";
 
     // ── 状态层（叠层，而不是另找一个颜色）────────────────────────────────
-    /// <summary>控件悬停叠层（OnSurface @8%；底色 tone ≤40 时叠白）。</summary>
+    /// <summary>控件悬停叠层（OnSurface @8%；底色 tone ≤40 时叠白）。**已合成好的实色**，可直接当背景。</summary>
     public const string StateHover = "App.State.Hover";
 
-    /// <summary>控件按压叠层（OnSurface @12%）。</summary>
+    /// <summary>控件按压叠层（OnSurface @12%）。已合成好的实色。</summary>
     public const string StatePressed = "App.State.Pressed";
+
+    /// <summary>标题栏/无底按钮的悬停底（中性墨 10% 实色）。</summary>
+    public const string StateTitleBarHover = "App.State.TitleBar.Hover";
+
+    /// <summary>标题栏/无底按钮的按压底（中性墨 20% 实色）。</summary>
+    public const string StateTitleBarPressed = "App.State.TitleBar.Pressed";
 
     /// <summary>禁用态填充（OnSurface @12%，取代 <c>Opacity=0.4</c> 的"灰法"）。</summary>
     public const string StateDisabledFill = "App.State.Disabled.Fill";
@@ -118,14 +124,30 @@ public static class AppTokens
     public const string LineInvalid = "App.Line.Invalid";
 
     // ── 遮罩 / 阴影 ──────────────────────────────────────────────────────
-    /// <summary>弹窗遮罩（中性族 T20 @55%，替 <c>#AA000000</c>）。</summary>
+    /// <summary>弹窗遮罩（中性族 T20 @55%，替 <c>#AA000000</c>）。已合成实色，可直接当背景。</summary>
     public const string OverlayScrim = "App.Overlay.Scrim";
 
-    /// <summary>忙碌遮罩（页面底 @60%，替 <c>#80FFFFFF</c>）。</summary>
+    /// <summary>忙碌遮罩（页面底 @60%，替 <c>#80FFFFFF</c>）。已合成实色。</summary>
     public const string OverlayBusy = "App.Overlay.Busy";
 
-    /// <summary>阴影（中性族 T0 @32%，替 <c>#000000</c> 字面量）。</summary>
+    /// <summary>阴影（中性族 T0 @32%，替 <c>#000000</c> 字面量）。已合成实色。</summary>
     public const string OverlayShadow = "App.Overlay.Shadow";
+
+    // ── 颜色型令牌（值是 Color 而不是 Brush；供 DropShadowEffect / GradientStop 直接消费）──
+    //
+    // 为什么单独一族：WPF 的 `DropShadowEffect.Color` 与 `GradientStop.Color` 吃的是 **Color**，
+    // 不是 Brush。若把 SolidColorBrush 塞给它们会立刻抛；而 WPF 也不会自动做 Brush→Color 转换
+    // （只有 Brush→Brush、Color→Color 能跨资源引用）。故这两类**必须**用纯 Color 资源。
+    // 它们与同名 Brush 令牌**共用一个事实源**（同一个 Argb），只是介质不同。
+
+    /// <summary>阴影色（Color 形态）= <see cref="OverlayShadow"/> 的同源值。</summary>
+    public const string ShadowColor = "App.Color.Shadow";
+
+    /// <summary>入口卡面板的背景渐变起点（完全透明，Color 形态）。</summary>
+    public const string GradientStart = "App.Color.Gradient.Start";
+
+    /// <summary>入口卡面板的背景渐变终点（强调色 6% 淡染，Color 形态）。</summary>
+    public const string GradientEnd = "App.Color.Gradient.End";
 
     // ── 字体（不是颜色，但同属令牌层；值在 UiTheme 里发布）──────────────────
     /// <summary>界面字体族令牌。</summary>
@@ -133,6 +155,32 @@ public static class AppTokens
 
     /// <summary>等宽字体族令牌。</summary>
     public const string FontMono = "App.Font.Mono";
+
+    // ── 过渡期兼容令牌（T2 专用；T3 视觉定稿时整族删除）──────────────────────
+    //
+    // 为什么需要：T2 的目标是"同值搬家、视觉零变化"。但**动作语义已经换过一轮**——
+    // 旧 `AccentBtn`（#A18EB0 定稿紫）与新的 `App.Accent.Fill`（T40 档 #6A567C）不是同一个值，
+    // 旧 `WarnBg`（奶油黄）在新体系里**根本没有对应语义**（决策 3：破坏性动作不设专门视觉）。
+    // 若 T2 直接让老键绑到新令牌，视觉会在 T2 就变，两个阶段的责任就糊在一起、也无法回退。
+    // 故 T2 先让老键绑到**锚点值**（逐字节等于今天），T3 再一次性改绑到新语义并删掉本族。
+    //
+    // 纪律：这一族**只允许**存在于 T2；`ThemeRulesTests.过渡期兼容令牌_T3后必须清零` 卡住它。
+
+    /// <summary>[过渡期] 主操作按钮填充 = 旧 <c>AccentBtn</c>（#A18EB0）。T3 起改用 <see cref="AccentFill"/>。</summary>
+    public const string LegacyAccentButton = "App.Legacy.AccentButton";
+
+    /// <summary>[过渡期] 删除/警告底色 = 旧 <c>WarnBg</c>（奶油黄 #F5E9B8）。T3 起整族退场。</summary>
+    public const string LegacyWarnBackground = "App.Legacy.WarnBackground";
+
+    /// <summary>[过渡期] 正文色 = 旧 <c>OnSurface</c>（#1C1B1F，今天的库派生值）。T3 起改用 <see cref="TextPrimary"/>（带主题墨韵的 T12）。</summary>
+    public const string LegacyTextPrimary = "App.Legacy.TextPrimary";
+
+    /// <summary>[过渡期] 校验错误描边 = 旧红 <c>#E24B4A</c>。T3 去红后改用 <see cref="LineInvalid"/>。</summary>
+    public const string LegacyInvalidLine = "App.Legacy.InvalidLine";
+
+    /// <summary>过渡期兼容令牌（T3 必须清零）。</summary>
+    public static IReadOnlyList<string> TransitionalTokens { get; } =
+        new[] { LegacyAccentButton, LegacyWarnBackground, LegacyTextPrimary, LegacyInvalidLine };
 
     /// <summary>全部**颜色**令牌（字体令牌不含在内——它们不是 <c>SolidColorBrush</c>）。</summary>
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
@@ -142,10 +190,16 @@ public static class AppTokens
         AccentFill, AccentIcon, AccentText, AccentContainer, AccentOnContainer,
         SupportContainer, SupportOnContainer, SupportIcon,
         TypeFolder, TypeLink,
-        StateHover, StatePressed, StateDisabledFill, StateDisabledContent,
+        StateHover, StatePressed, StateTitleBarHover, StateTitleBarPressed, StateDisabledFill, StateDisabledContent,
         LineOutline, LineVariant, LineInvalid,
         OverlayScrim, OverlayBusy, OverlayShadow,
+        ShadowColor, GradientStart, GradientEnd,
+        LegacyAccentButton, LegacyWarnBackground, LegacyTextPrimary, LegacyInvalidLine,
     };
+
+    /// <summary>颜色型令牌（值是 <c>Color</c> 而非 <c>SolidColorBrush</c>；供 Effect / GradientStop 消费）。</summary>
+    public static IReadOnlyList<string> AllColorValueTokens { get; } =
+        new[] { ShadowColor, GradientStart, GradientEnd };
 
     /// <summary>全部字体令牌。</summary>
     public static IReadOnlyList<string> AllFontTokens { get; } = new[] { FontUi, FontMono };

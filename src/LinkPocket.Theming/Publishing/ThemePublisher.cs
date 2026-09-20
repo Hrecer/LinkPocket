@@ -56,8 +56,18 @@ public static class ThemePublisher
         foreach (var (key, value) in table.Anchored)
             resources[key] = Brush(value);
         foreach (var (token, value) in table.Tokens)
-            resources[token] = Brush(value);
+            resources[token] = IsColorValueToken(token) ? value.ToMedia() : Brush(value);
     }
+
+    /// <summary>
+    /// 该令牌发布为 <c>Color</c> 还是 <c>SolidColorBrush</c>。
+    /// </summary>
+    /// <remarks>
+    /// <c>DropShadowEffect.Color</c> 与 <c>GradientStop.Color</c> 吃的是 **Color**，
+    /// 塞 Brush 给它们会立刻抛（WPF 不做 Brush→Color 转换）。故这一族必须按 Color 发布。
+    /// </remarks>
+    private static bool IsColorValueToken(string token) =>
+        AppTokens.AllColorValueTokens.Contains(token, StringComparer.Ordinal);
 
     /// <summary>把一个值写成已冻结的画刷（唯一转换点）。</summary>
     public static SolidColorBrush Brush(Argb value)

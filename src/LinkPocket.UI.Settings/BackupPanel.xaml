@@ -40,7 +40,7 @@
                                 <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource TintPanel}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -58,7 +58,7 @@
                         Padding="22,20">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource TintPanel}">
+                            <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource App.Surface.Panel}">
                                 <m3:M3Icon Kind="export" Width="22" Height="22"
                                            Foreground="{DynamicResource OnSurface}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -108,7 +108,7 @@
                         Padding="22,20" Margin="0,16,0,0">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource TintPanel}">
+                            <Border Width="46" Height="46" CornerRadius="16" Background="{DynamicResource App.Surface.Panel}">
                                 <m3:M3Icon Kind="import" Width="22" Height="22"
                                            Foreground="{DynamicResource OnSurface}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>

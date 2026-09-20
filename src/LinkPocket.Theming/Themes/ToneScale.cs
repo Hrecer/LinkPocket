@@ -61,6 +61,15 @@ public static class ToneScale
     /// <summary>禁用态：内容（OnSurface @38%）。</summary>
     public const double DisabledContentOpacity = 0.38;
 
+    /// <summary>标题栏/无底按钮悬停底（中性墨 10%）。</summary>
+    public const double TitleBarHoverOpacity = 0.10;
+
+    /// <summary>标题栏/无底按钮按压底（中性墨 20%）。</summary>
+    public const double TitleBarPressedOpacity = 0.20;
+
+    /// <summary>入口卡面板背景渐变终点的强调色浓淡（6% 淡染）。</summary>
+    public const int CardPanelGradientAlpha = 0x0F;
+
     /// <summary>遮罩（弹窗背后）：中性族 T20 @55%。</summary>
     public const double ScrimTone = 20.0;
 

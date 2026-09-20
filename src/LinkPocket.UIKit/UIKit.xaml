@@ -20,20 +20,11 @@
 
     <FontFamily x:Key="AppFont">Microsoft YaHei UI, 微软雅黑, SimSun, 宋体, Arial</FontFamily>
 
-    <!-- 紫色调层（MD3E 色彩即层级的本地化实现）：比中性 Surface 角色带 Primary 染色的分层画刷。
-         TintSurface = 内容区（近白带紫）· TintCard = 卡片（比所在面板浅半档）
-         · TintPanel = 侧区面板（比基面深一档的紫色叠层）。 -->
-    <SolidColorBrush x:Key="TintSurface" Color="#FAF8FD"/>
-    <SolidColorBrush x:Key="TintCard" Color="#F5F1FB"/>
-    <SolidColorBrush x:Key="TintPanel" Color="#E4DCF3"/>
-    <!-- 用户定稿（2026-09-16）：弹窗背景 = 禁用态删除按钮的浅紫（#EAE4ED 上屏 ≈ 屏显 #EDE2F4） -->
-    <SolidColorBrush x:Key="TintBg" Color="#EAE4ED"/>
-    <!-- 用户定稿（2026-09-16）：主操作按钮填色 = #A18EB0（替代亮紫 Primary，按钮专用；
-         文字/图标等强调色仍走 Primary，不受影响） -->
-    <SolidColorBrush x:Key="AccentBtn" Color="#A18EB0"/>
-    <!-- 用户定稿（2026-09-16 规范）：删除/警告提醒色 = 奶油黄 #F5E9B8，禁用红色。
-         所有删除按钮、危险/警告提示统一用 WarnBg（填充/高亮），内容用深色保证可读 -->
-    <SolidColorBrush x:Key="WarnBg" Color="#F5E9B8"/>
+    <!-- 紫色调层（MD3E 色彩即层级的本地化实现）：比中性 Surface 角色带 Accent 染色的分层画刷。
+         **值不在这里定义** —— 主题拥有全站每一个颜色键：值由 LinkPocket.Theming 派生，
+         经 ThemeService 在 App.OnStartup 里发布（键名 = `App.Surface.*` / `App.Accent.Fill` 等）。
+         历史上这里是 6 个写死的 SolidColorBrush（#FAF8FD / #F5F1FB / #E4DCF3 / #EAE4ED / #A18EB0 / #F5E9B8），
+         换主题纹丝不动 —— 那是"半主题化"的根因，已清零。 -->
 
     <!-- WarnPillButton：删除/警告类药丸按钮 —— 启用 = 奶油黄底 + 深色内容。
          禁用 = 同底色降透明度（0.4，与 TonalButton 同手法）得到变浅/变灰的黄色变体，
@@ -52,7 +43,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Grid>
-                        <Border x:Name="Bd" Background="{StaticResource WarnBg}"
+                        <Border x:Name="Bd" Background="{DynamicResource App.Legacy.WarnBackground}"
                                 CornerRadius="16"/>
                         <Border x:Name="StateLayer" Background="{DynamicResource OnSurface}"
                                 Opacity="0" CornerRadius="16"/>
@@ -181,7 +172,9 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Pill" Property="Background" Value="#1F6750A4"/>
+                            <!-- 表头悬停底：原先写死的是**外来色板** #1F6750A4（M3 官方基线紫 12%），
+                                 与我们的定稿强调色不是同一支紫 → 换令牌（跟主题走）。 -->
+                            <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.State.Hover}"/>
                             <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
                         </Trigger>
                         <Trigger Property="Direction" Value="True">
@@ -257,7 +250,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Grid>
-                        <Border x:Name="Bd" Background="{StaticResource AccentBtn}"
+                        <Border x:Name="Bd" Background="{DynamicResource App.Accent.Fill}"
                                 CornerRadius="16"/>
                         <Border x:Name="StateLayer" Background="{DynamicResource OnPrimary}"
                                 Opacity="0" CornerRadius="16"/>
@@ -290,7 +283,7 @@
          用户令 2026-09-20 明确要求删除该效果（"我们不需要这个改变"）。
          禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不用透明度 hack）。 -->
     <Style x:Key="JumpPillButton" TargetType="Button">
-        <Setter Property="Background" Value="{StaticResource AccentBtn}"/>
+        <Setter Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
         <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
         <Setter Property="FontSize" Value="12.5"/>

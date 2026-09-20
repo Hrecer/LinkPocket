@@ -234,7 +234,7 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <!-- 标题带固定 32px（与数据表头带等高，底边严格对齐） -->
-            <Border Grid.Row="0" Background="{DynamicResource TintPanel}"
+            <Border Grid.Row="0" Background="{DynamicResource App.Surface.Panel}"
                     CornerRadius="0,24,0,0" Height="32" Padding="10,0">
                 <TextBlock Text="{Binding HeaderText, ElementName=Root}" FontSize="12" FontWeight="SemiBold"
                            VerticalAlignment="Center"
@@ -273,7 +273,7 @@
                                     <m3:M3Icon.Style>
                                         <Style TargetType="m3:M3Icon">
                                             <Setter Property="Kind" Value="folder"/>
-                                            <Setter Property="Foreground" Value="#FFB300"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource App.Type.Folder}"/>
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsRoot}" Value="True">
                                                     <Setter Property="Kind" Value="bookmark"/>

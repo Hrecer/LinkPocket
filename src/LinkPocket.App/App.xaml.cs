@@ -1,6 +1,6 @@
 using System.Windows;
 using LinkPocket.Services;
-using Material3.Wpf;
+using LinkPocket.Theming;
 using LinkPocket.Contracts;
 
 namespace LinkPocket;
@@ -18,24 +18,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 主题装配：**唯一入口** ThemeService（求解 → 库基线 → 全量权威表 → 留痕 → 事件）。
         // 必须在 InitializeComponent（App.xaml 资源合并）之后调用，
         // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
-        M3Theme.Apply(
-            Material3.Core.MaterialTheme.FromSeed(Material3.Core.Argb.FromArgb(0x67, 0x50, 0xA4)),
-            isDark: false,
-            Resources);
+        //
+        // 历史（为什么要收成一处）：原先这里是「M3Theme.Apply(FromSeed(#6750A4)) + 手打 3 个表面补丁」，
+        // 而探针又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且我们的画刷写死在 UIKit.xaml，
+        // 换种子只改库角色、我们的画刷纹丝不动（换主题只会"半主题化"）。
+        // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
+        ThemeService.ApplyDefault(Resources);
         LpIcons.RegisterAll();
-        // 用户定稿（2026-09-16）：全局界面基面 = 禁用态删除按钮的浅紫。
-        // 设定值按显示器校色偏移反推（#EAE4ED 上屏 ≈ 按钮的屏显 #EDE2F4）。
-        // 必须在 M3Theme.Apply 之后覆盖（Apply 会写入整套生成调色板，晚于此处会被冲掉）。
-        Resources["SurfaceContainerLow"] = new System.Windows.Media.SolidColorBrush(
-            System.Windows.Media.Color.FromRgb(0xEA, 0xE4, 0xED));
-        // 用户定稿（2026-09-16 第二轮）：卡面/胶囊底去灰 —— 原生成色偏暖灰（屏显 #EEE6EC），
-        // 在浅紫基面上显"灰蒙蒙"。卡面改近白浅紫（浮起），悬停/胶囊底改明确的深一档紫灰（反馈清晰）。
-        Resources["SurfaceContainerHigh"] = new System.Windows.Media.SolidColorBrush(
-            System.Windows.Media.Color.FromRgb(0xF6, 0xF1, 0xF8));
-        Resources["SurfaceContainerHighest"] = new System.Windows.Media.SolidColorBrush(
-            System.Windows.Media.Color.FromRgb(0xE3, 0xD9, 0xEB));
         base.OnStartup(e);
 
         // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。

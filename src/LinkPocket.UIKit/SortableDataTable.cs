@@ -193,7 +193,7 @@ public class SortableDataTable : Grid
 
         _headerBand = new Border
         {
-            Background = (Brush)Application.Current.FindResource("TintPanel"),
+            Background = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.SurfacePanel),
             CornerRadius = new CornerRadius(24, 24, 0, 0),
             // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（BrowserView.xaml 中同样 Height=32、文字垂直居中）：
             // 两条紫色色带等高，底边严格对齐（侧栏曾靠 Padding+行高撑出 31.x 导致底边差一点）。

@@ -3,6 +3,7 @@ using LinkPocket.Contracts;
 using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Publishing;
 using LinkPocket.Theming.Themes;
+using LinkPocket.Theming.Tokens;
 
 namespace LinkPocket.Theming;
 
@@ -31,20 +32,34 @@ public static class ThemeService
     /// <summary>当前主题定义。</summary>
     public static ThemeDefinition Current => _current;
 
-    /// <summary>当前令牌表（首次访问时按当前主题求解；未 Apply 也可读，便于单测与预览）。</summary>
-    public static TokenTable Table => _table ??= PaletteSolver.Solve(_current);
+    /// <summary>当前**实际发布**的令牌表（含 T2 兼容覆盖）；未 Apply 也可读，便于单测与预览。</summary>
+    public static TokenTable Table => _table ??= ApplyCurrentTable();
 
     /// <summary>
-    /// 应用一个主题定义：求解 → 发布 → 记留痕 → 抛 <see cref="Changed"/>。
+    /// **最终语义**令牌表（不含兼容覆盖）：T3 起它就是发布值，也是对比度/定稿值的验收入口。
+    /// </summary>
+    public static TokenTable DerivedTable => PaletteSolver.Solve(_current);
+
+    private static TokenTable ApplyCurrentTable()
+    {
+        var derived = PaletteSolver.Solve(_current);
+        return ThemeCompatibility.Overlay(derived, PaletteSolver.RawAnchored(_current));
+    }
+
+    /// <summary>
+    /// 应用一个主题定义：求解 → **T2 兼容覆盖** → 发布 → 记留痕 → 抛 <see cref="Changed"/>。
     /// </summary>
     /// <param name="definition">主题定义。</param>
     /// <param name="resources">目标资源字典（缺省 = <c>Application.Current.Resources</c>）。</param>
-    /// <returns>本次派生出的令牌表（调用方若要立即读新值，用返回值而不是 <see cref="Table"/>）。</returns>
+    /// <returns>本次实际发布的令牌表（调用方若要立即读新值，用返回值而不是 <see cref="Table"/>）。</returns>
     public static TokenTable Apply(ThemeDefinition definition, ResourceDictionary? resources = null)
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        var table = PaletteSolver.Solve(definition);
+        var derived = PaletteSolver.Solve(definition);
+        // T2 过渡期：把语义令牌覆盖成"今天值"，使本阶段视觉零变化（T3 删除该层即一次性切换视觉）。
+        var table = ThemeCompatibility.Overlay(derived, PaletteSolver.RawAnchored(definition));
+
         _current = definition;
         _table = table;
 

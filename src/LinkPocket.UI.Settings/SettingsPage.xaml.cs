@@ -133,7 +133,7 @@ namespace LinkPocket.Views
             ExportStatusText.Text = "正在清空数据...";
             ExportProgressBar.Value = 0;
             // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带到本轮（铁律色语义）
-            ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("AccentBtn");
+            ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.AccentFill);
             ExportProgressText.Text = "清除中...";
 
             try
@@ -157,7 +157,7 @@ namespace LinkPocket.Views
                 LpLog.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
                 ExportProgressText.Text = "失败";
-                ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource("WarnBg");
+                ExportProgressBar.ActiveBrush = (System.Windows.Media.Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.LegacyWarnBackground);
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;
             }

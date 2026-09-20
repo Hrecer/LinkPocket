@@ -27,7 +27,7 @@
                 <StackPanel>
 
                     <!-- hero 头部卡：favicon + 标题 -->
-                    <Border Background="{DynamicResource TintCard}" CornerRadius="20" Padding="20,18">
+                    <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20" Padding="20,18">
                         <StackPanel Orientation="Horizontal">
                             <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True"
                                     VerticalAlignment="Center">
@@ -70,7 +70,7 @@
                     </Border>
 
                     <!-- URL 卡：只读文本（可横向滚动）+ 复制 -->
-                    <Border Background="{DynamicResource TintCard}"
+                    <Border Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <Grid>
                             <Grid.RowDefinitions>
@@ -96,7 +96,7 @@
                     </Border>
 
                     <!-- 信息卡：Rows 数据驱动（模板 = UIKit 共享 InfoRowTemplate，与侧栏同一视觉） -->
-                    <Border Background="{DynamicResource TintCard}"
+                    <Border Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <StackPanel>
                             <TextBlock Text="信息" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
@@ -106,7 +106,7 @@
                     </Border>
 
                     <!-- 描述卡（Markdown 渲染；空描述整卡隐藏） -->
-                    <Border x:Name="DescriptionCard" Background="{DynamicResource TintCard}"
+                    <Border x:Name="DescriptionCard" Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -145,7 +145,7 @@
                     </Border>
 
                     <!-- 操作卡（能力位驱动：主按钮 + 编辑/重命名 + 删除；各页只声明"有哪些动作"） -->
-                    <Border x:Name="ActionCard" Background="{DynamicResource TintCard}"
+                    <Border x:Name="ActionCard" Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -216,7 +216,7 @@
                                         Command="{Binding DeleteCommand}"
                                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                                     <m3:M3Icon Kind="delete-outline" Width="15" Height="15"
-                                               Foreground="{StaticResource WarnBg}"/>
+                                               Foreground="{DynamicResource App.Legacy.WarnBackground}"/>
                                 </Button>
                             </Grid>
                         </StackPanel>
@@ -232,7 +232,7 @@
                 Foreground="{DynamicResource OnSurface}">
             <Button.Template>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bd" Background="{DynamicResource TintCard}" CornerRadius="20">
+                    <Border x:Name="Bd" Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20">
                         <Grid>
                             <Border x:Name="StateLayer" Background="{DynamicResource Primary}"
                                     Opacity="0" CornerRadius="20"/>

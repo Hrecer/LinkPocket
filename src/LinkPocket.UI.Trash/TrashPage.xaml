@@ -98,7 +98,7 @@
             <DockPanel VerticalAlignment="Center" LastChildFill="True">
                 <!-- 处置按钮组（与浏览页命令栏同一形态：TintCard 白底大药丸容器 + 三枚**同规格**药丸——
                      同高 32 / 同圆角 16 / 同内距，仅长度不同；顺序 = 还原 · 还原到根目录 · 永久删除） -->
-                <Border DockPanel.Dock="Right" Background="{DynamicResource TintCard}"
+                <Border DockPanel.Dock="Right" Background="{DynamicResource App.Surface.TintCard}"
                         CornerRadius="19" Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <Button x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
@@ -411,7 +411,7 @@
             <!-- 右栏：只读详情栏（DetailSidebar；数据源 = VM 的 Details —— 选中集合的投影，随选中自动刷新）
                  ⚠️ 右栏整体声明 IsInteractive：点它**绝不清空列表选中**（在它上面点空白 / 拖选文本都属于
                  查看行为，不该反过来取消选中——用户令 2026-09-19）。 -->
-            <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
+            <Border Grid.Column="2" Background="{DynamicResource App.Surface.Panel}"
                     CornerRadius="24" Margin="0,0,8,8"
                     views:BlankClick.IsInteractive="True">
                 <views:DetailSidebar x:Name="TrashSidebar" DataContext="{Binding Details}"/>
@@ -419,7 +419,7 @@
         </Grid>
 
         <!-- ===== 状态栏：左右贴边通栏（状态文案 + 选中药丸 + 右侧提示） ===== -->
-        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource TintPanel}" Padding="16,0"
+        <Border Grid.Row="2" MinHeight="36" Background="{DynamicResource App.Surface.Panel}" Padding="16,0"
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">

@@ -132,7 +132,7 @@
                         </Grid>
 
                         <!-- Focusable=False：点击不抢走搜索框键盘焦点，避免聚焦胶囊态闪烁。
-                             库 FilledButton 模板可能硬编码 Primary 底色 → 统一换 PrimaryPillButton（AccentBtn #A18EB0） -->
+                             库 FilledButton 模板可能硬编码 Primary 底色 → 统一换 PrimaryPillButton（App.Accent.Fill） -->
                         <Button Grid.Column="3" Content="搜索" Padding="20,9" FontSize="13" FontWeight="SemiBold"
                                 Style="{StaticResource PrimaryPillButton}"
                                 Command="{Binding SearchCommand}" Focusable="False"
@@ -161,7 +161,7 @@
                 </Button>
 
                 <!-- 搜索范围分组：TintCard 近白胶囊容器（圆角 19 = 内距 3 + chip 圆角 16，同心圆角） -->
-                <Border Background="{DynamicResource TintCard}" CornerRadius="19"
+                <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19"
                         Padding="3" Margin="12,0,0,0" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="搜索范围" FontSize="11.5" Foreground="{DynamicResource OnSurfaceVariant}"
@@ -193,7 +193,7 @@
                       Background="Transparent" Cursor="SizeWE"/>
 
         <!-- ===== 右侧详情栏：复用 DetailSidebar 控件，大小与浏览页右侧栏一致 ===== -->
-        <Border Grid.Column="2" Background="{DynamicResource TintPanel}"
+        <Border Grid.Column="2" Background="{DynamicResource App.Surface.Panel}"
                 CornerRadius="24,0,0,24" Margin="0,0,0,8">
             <views:DetailSidebar x:Name="Sidebar" DataContext="{Binding Details}"/>
         </Border>

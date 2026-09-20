@@ -239,7 +239,7 @@ namespace LinkPocket.Views
             if (bar != null)
             {
                 // 每次开始都重置为深紫 + 进度归零（不吃上次完成态 1/1 满格与失败态颜色）
-                bar.ActiveBrush = (Brush)Application.Current.FindResource("AccentBtn");
+                bar.ActiveBrush = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.AccentFill);
                 bar.Value = 0;
                 bar.Maximum = 100;
             }
@@ -278,7 +278,7 @@ namespace LinkPocket.Views
             // 波浪全程保持紫色（用户定稿）；失败 = WarnBg 奶油黄警示（项目铁律禁红色）
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null && !success)
-                bar.ActiveBrush = (Brush)Application.Current.FindResource("WarnBg");
+                bar.ActiveBrush = (Brush)Application.Current.FindResource(Theming.Tokens.AppTokens.LegacyWarnBackground);
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)

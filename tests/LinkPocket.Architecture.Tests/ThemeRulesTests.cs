@@ -59,8 +59,23 @@ public class ThemeRulesTests
     private static bool IsLiteralExempt(string relativePath)
     {
         var normalized = relativePath.Replace('\\', '/');
-        return normalized.EndsWith("FaviconService.cs", StringComparison.Ordinal)   // 占位徽标用 Symbol 字体绘制（非界面文本）
+        return normalized.EndsWith("FaviconService.cs", StringComparison.Ordinal)   // 占位徽标用 GDI 画 ⬡（非界面颜色语义）
             || normalized.EndsWith("SmartProbe/Program.cs", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 去掉注释后再扫（否则大量"文档里提到的色值"会被误判成字面量）。
+    /// </summary>
+    /// <remarks>
+    /// 本仓的注释习惯是**把决策依据连同原值一起写下来**（例如"原先写死 #1F6750A4"），
+    /// 这些不是活的色值。注释里的死值恰恰是有价值的历史记录，不该为了过闸而删掉。
+    /// </remarks>
+    private static string StripComments(string text, bool xaml)
+    {
+        if (xaml)
+            return Regex.Replace(text, @"<!--.*?-->", " ", RegexOptions.Singleline);
+        var noBlock = Regex.Replace(text, @"/\*.*?\*/", " ", RegexOptions.Singleline);
+        return Regex.Replace(noBlock, @"//[^\r\n]*", " ");
     }
 
     private static IEnumerable<string> SourceFiles(params string[] dirs)
@@ -114,24 +129,26 @@ public class ThemeRulesTests
             "颜色计算（Hct/TonalPalette/ColorScheme）只允许出现在 LinkPocket.Theming：\n" + string.Join("\n", offenders));
     }
 
-    [Fact(Skip = "T2 落地前暂缓：28 处 XAML 字面量 + 8 处代码内建色尚未清零，本断言是**目标态**护栏（T2 完成后去掉 Skip）。")]
+    [Fact]
     public void 界面层_零颜色字面量()
     {
         var offenders = new List<string>();
         var patterns = new (string Name, Regex Rx)[]
         {
-            ("#RRGGBB(AA)", new Regex(@"""#[0-9A-Fa-f]{6,8}""", RegexOptions.Compiled)),
-            ("XAML 颜色字面量", new Regex(@"=""#[0-9A-Fa-f]{3,8}""", RegexOptions.Compiled)),
+            ("XAML/CS 十六进制色值", new Regex(@"#[0-9A-Fa-f]{6,8}\b", RegexOptions.Compiled)),
             ("Color.FromRgb", new Regex(@"\bColor\.FromRgb\b", RegexOptions.Compiled)),
             ("Color.FromArgb", new Regex(@"\bColor\.FromArgb\b", RegexOptions.Compiled)),
-            ("Brushes.*", new Regex(@"\bBrushes\.[A-Za-z]", RegexOptions.Compiled)),
+            // Brushes.Transparent / Brushes.White 是"无彩 + 描边色"的绘图原语（命中面、矢量勾），
+            // 不承载主题语义，故只禁**有彩色语义**的具名画刷。
+            ("Brushes 具名色", new Regex(@"\bBrushes\.(?!Transparent\b|White\b)[A-Za-z]", RegexOptions.Compiled)),
         };
 
         foreach (var file in SourceFiles(LiteralCheckedDirs))
         {
             var rel = Relative(file);
             if (IsLiteralExempt(rel)) continue;
-            var text = File.ReadAllText(file);
+            var isXaml = file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase);
+            var text = StripComments(File.ReadAllText(file), isXaml);
             foreach (var (name, rx) in patterns)
                 foreach (Match m in rx.Matches(text))
                     offenders.Add($"{rel} → {name}: {m.Value}");

@@ -200,6 +200,9 @@ public static class PaletteSolver
 
         var white = Argb.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
 
+        // 过渡期需要"今天的 OnSurface"（覆写前的锚定值）——必须在下面覆写**之前**取。
+        var anchoredOnSurface = anchored["OnSurface"];
+
         // 覆写：语义族是唯一真值（文字带主题墨韵；默认主题 rot=0 时 = 锚点，逐字节相等）
         anchored["OnSurface"] = textPrimary;
         anchored["OnSurfaceVariant"] = textSecondary;
@@ -266,12 +269,31 @@ public static class PaletteSolver
         tokens[AppTokens.StateDisabledContent] = ColorMath.Overlay(
             anchored["SurfaceContainerHigh"], textPrimary, ToneScale.DisabledContentOpacity);
 
+        // 标题栏/无底按钮的中性墨状态层（历史值即"中性黑 10% / 20% 叠在任意底上"）
+        tokens[AppTokens.StateTitleBarHover] = ColorMath.Overlay(
+            anchored["SurfaceContainerHigh"], textPrimary, ToneScale.TitleBarHoverOpacity);
+        tokens[AppTokens.StateTitleBarPressed] = ColorMath.Overlay(
+            anchored["SurfaceContainerHigh"], textPrimary, ToneScale.TitleBarPressedOpacity);
+
         // 遮罩 / 阴影：按"常量 + α"口径（方案 §5.4 例外 ②，Scrim/Shadow 无彩度、不参与旋转）
         var black = Argb.FromInt(unchecked((int)0xFF000000));
         tokens[AppTokens.OverlayScrim] = ColorMath.Overlay(anchored["SurfaceContainerLow"], black, ToneScale.ScrimOpacity);
         tokens[AppTokens.OverlayBusy] = ColorMath.Overlay(
             anchored["SurfaceContainerLow"], anchored["SurfaceContainerLow"], ToneScale.BusyOverlayOpacity);
         tokens[AppTokens.OverlayShadow] = ColorMath.Overlay(black, black, ToneScale.ShadowOpacity);
+
+        // 过渡期兼容令牌（T2 专用；T3 整族删除 —— 见 AppTokens 里的说明）
+        tokens[AppTokens.LegacyAccentButton] = LegacyAccentButtonValue;
+        tokens[AppTokens.LegacyWarnBackground] = LegacyWarnBackgroundValue;
+        tokens[AppTokens.LegacyTextPrimary] = anchoredOnSurface;
+        tokens[AppTokens.LegacyInvalidLine] = LegacyInvalidLineValue;
+
+        // 颜色型令牌（值是 Color 而非 Brush；与同名 Brush 令牌**同源**，只是介质不同）
+        var shadowRgb = ColorMath.Unpack(tokens[AppTokens.OverlayShadow]);
+        tokens[AppTokens.ShadowColor] = ColorMath.Pack(0xFF, shadowRgb.R, shadowRgb.G, shadowRgb.B);
+        tokens[AppTokens.GradientStart] = ColorMath.WithAlpha(tokens[AppTokens.SurfaceBase], 0x00);
+        var accentRgb = ColorMath.Unpack(accentFill);
+        tokens[AppTokens.GradientEnd] = ColorMath.Pack(ToneScale.CardPanelGradientAlpha, accentRgb.R, accentRgb.G, accentRgb.B);
 
         return new TokenTable
         {
@@ -282,6 +304,24 @@ public static class PaletteSolver
         };
     }
 
+    /// <summary>
+    /// [过渡期] 旧 <c>AccentBtn</c> 的值（定稿紫 #A18EB0）。
+    /// **它是 T3 有意淘汰的值**：新强调填充走 T40 档（白字才达标），故只有 T2 需要它。
+    /// </summary>
+    public static readonly Argb LegacyAccentButtonValue = Argb.FromArgb(0xFF, 0xA1, 0x8E, 0xB0);
+
+    /// <summary>
+    /// [过渡期] 旧 <c>WarnBg</c> 的值（奶油黄 #F5E9B8）。
+    /// **新体系没有这个语义**（决策 3：破坏性动作不设专门视觉、全站去黄），T3 删。
+    /// </summary>
+    public static readonly Argb LegacyWarnBackgroundValue = Argb.FromArgb(0xFF, 0xF5, 0xE9, 0xB8);
+
+    /// <summary>
+    /// [过渡期] 旧校验错误描边的值（红 #E24B4A）。
+    /// **T3 彻底去红**（决策 4）：改走 <see cref="AppTokens.LineInvalid"/>（= 文字主色 2px 描边）。
+    /// </summary>
+    public static readonly Argb LegacyInvalidLineValue = Argb.FromArgb(0xFF, 0xE2, 0x4B, 0x4A);
+
     /// <summary>一个锚点在该旋转角下的取值（α 取自锚点；不旋转键保持库基线）。</summary>
     private static Argb Resolve(SurfaceAnchors.Anchor anchor, double rotation)
     {
@@ -289,6 +329,22 @@ public static class PaletteSolver
         var c = ColorMath.Unpack(anchor.Today);
         var hct = ColorMath.Measure(anchor.Today);
         return ColorMath.FromAlphaHct(c.A, ColorMath.RotateHue(hct.H, rotation), hct.C, hct.T);
+    }
+
+    /// <summary>
+    /// **未覆写**的锚定键值（键 → 按主题旋转后的"今天值"）。
+    /// </summary>
+    /// <remarks>
+    /// 供 T2 过渡期兼容层把库键也按住（T2 视觉零变化要求连库角色键都不变）。
+    /// T3 删除兼容层后，本方法只余"文档/诊断"用途，可一并移除。
+    /// </remarks>
+    public static IReadOnlyDictionary<string, Argb> RawAnchored(ThemeDefinition definition)
+    {
+        var rot = definition.SurfaceRotation(SolveFamilies(definition).NeutralHue);
+        var map = new Dictionary<string, Argb>(StringComparer.Ordinal);
+        foreach (var anchor in SurfaceAnchors.All)
+            map[anchor.Key] = Resolve(anchor, rot);
+        return map;
     }
 
     /// <summary>无法选出强调族时的兜底色相（= 今天背景色相；正常配色不会走到，只保证纯函数总有值）。</summary>

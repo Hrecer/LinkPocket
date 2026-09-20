@@ -40,7 +40,7 @@
                             <!-- 路径无效：仅文字区出 2px Error 下划（胶囊描边仍归胶囊的 DataTrigger 管） -->
                             <DataTrigger Binding="{Binding IsPathInvalid, ElementName=Root}" Value="True">
                                 <Setter TargetName="EditRoot" Property="BorderThickness" Value="0,0,0,2"/>
-                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="#E24B4A"/>
+                                <Setter TargetName="EditRoot" Property="BorderBrush" Value="{DynamicResource App.Legacy.InvalidLine}"/>
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -157,7 +157,7 @@
                         BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
                         CornerRadius="12" MaxHeight="260" MinWidth="140" Padding="0,4">
                     <Border.Effect>
-                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="#000000"/>
+                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
                     </Border.Effect>
                     <ListBox x:Name="OverflowList" Focusable="False" BorderThickness="0" Background="Transparent"
                              ItemsSource="{Binding FoldedCrumbs, ElementName=Root}"
@@ -194,7 +194,7 @@
                         BorderBrush="{DynamicResource OutlineVariant}" BorderThickness="1"
                         CornerRadius="12" MaxHeight="220" MinWidth="180" Padding="0,4">
                     <Border.Effect>
-                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="#000000"/>
+                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
                     </Border.Effect>
                     <ListBox x:Name="PathCandidatesList" Focusable="False"
                              ItemsSource="{Binding PathCandidates, ElementName=Root}"

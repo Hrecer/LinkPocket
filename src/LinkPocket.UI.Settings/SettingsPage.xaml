@@ -78,7 +78,7 @@
                             <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal">
                                     <Border Width="24" Height="24" CornerRadius="12"
-                                            Background="{StaticResource WarnBg}">
+                                            Background="{DynamicResource App.Legacy.WarnBackground}">
                                         <m3:M3Icon Kind="delete-outline" Width="13" Height="13"
                                                    Foreground="{DynamicResource OnSurface}"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -106,9 +106,9 @@
 
         <!-- 导出进度遮罩层 -->
         <Border Grid.ColumnSpan="2" x:Name="ExportOverlay" Visibility="Collapsed"
-                Background="#AA000000" Panel.ZIndex="100">
+                Background="{DynamicResource App.Overlay.Scrim}" Panel.ZIndex="100">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource TintBg}" CornerRadius="24"
+                    Background="{DynamicResource App.Surface.Dialog}" CornerRadius="24"
                     Padding="32,24" Width="380">
                 <StackPanel>
                     <TextBlock x:Name="ExportStatusText" Text="正在导出..."
@@ -118,7 +118,7 @@
                     <!-- MD3E 波浪进度条（已走 = 起伏波浪线，剩余 = 直线轨道，进度点 = 竖向滑标）；深紫 = AccentBtn 定稿色 -->
                     <views:WavyProgressBar x:Name="ExportProgressBar" Height="22"
                                            Minimum="0" Maximum="100" Value="0"
-                                           ActiveBrush="{DynamicResource AccentBtn}"
+                                           ActiveBrush="{DynamicResource App.Accent.Fill}"
                                            TrackBrush="{DynamicResource OutlineVariant}"/>
                     <TextBlock x:Name="ExportProgressText" Text="0 / 0"
                                FontSize="12" HorizontalAlignment="Center"
@@ -129,14 +129,14 @@
 
         <!-- 清空确认遮罩层（与 ConfirmDialog 同语言：WarnBg 图标 chip + 药丸按钮，禁红色） -->
         <Border Grid.ColumnSpan="2" x:Name="ConfirmOverlay" Visibility="Collapsed"
-                Background="#AA000000" Panel.ZIndex="200">
+                Background="{DynamicResource App.Overlay.Scrim}" Panel.ZIndex="200">
             <Border VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Background="{DynamicResource TintBg}" CornerRadius="24"
+                    Background="{DynamicResource App.Surface.Dialog}" CornerRadius="24"
                     Padding="28,24" Width="420">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <Border Width="44" Height="44" CornerRadius="22"
-                                Background="{StaticResource WarnBg}">
+                                Background="{DynamicResource App.Legacy.WarnBackground}">
                             <m3:M3Icon Kind="delete-outline" Width="22" Height="22"
                                        Foreground="{DynamicResource OnSurface}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>

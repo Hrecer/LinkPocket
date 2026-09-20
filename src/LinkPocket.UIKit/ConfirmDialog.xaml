@@ -13,10 +13,10 @@
 
     <!-- 外层留白承载投影 -->
     <Grid Margin="24">
-        <Border CornerRadius="24" Background="{DynamicResource TintBg}">
+        <Border CornerRadius="24" Background="{DynamicResource App.Surface.Dialog}">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="28" ShadowDepth="3" Direction="270"
-                                  Opacity="0.28" Color="#000000"/>
+                                  Opacity="0.28" Color="{DynamicResource App.Color.Shadow}"/>
             </Border.Effect>
 
             <Grid Margin="28,24">
@@ -29,7 +29,7 @@
                 <!-- 头部：图标 chip（删除/警告 = WarnBg 奶油黄；信息/成功 = TintPanel 中性紫面板）+ 标题 -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal">
                     <Border x:Name="ChipBorder" Width="44" Height="44" CornerRadius="22"
-                            Background="{StaticResource WarnBg}">
+                            Background="{DynamicResource App.Legacy.WarnBackground}">
                         <m3:M3Icon x:Name="IconGlyph" Kind="delete-outline" Width="22" Height="22"
                                    Foreground="{DynamicResource OnSurface}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>

@@ -53,10 +53,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#1A000000"/>
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.State.TitleBar.Hover}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#33000000"/>
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.State.TitleBar.Pressed}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -73,10 +73,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="{StaticResource WarnBg}"/>
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.Legacy.WarnBackground}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#EDDFA6"/>
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource App.State.TitleBar.Pressed}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -92,7 +92,7 @@
         <Border x:Name="WindowShell" Margin="18" CornerRadius="22"
                 Background="{DynamicResource SurfaceContainerLow}">
             <Border.Effect>
-                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32" Color="#000000"/>
+                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32" Color="{DynamicResource App.Color.Shadow}"/>
             </Border.Effect>
             <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>

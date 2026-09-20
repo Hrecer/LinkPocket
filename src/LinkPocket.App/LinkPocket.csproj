@@ -15,6 +15,7 @@
     <ProjectReference Include="..\LinkPocket.Composition\LinkPocket.Composition.csproj" />
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
     <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+    <ProjectReference Include="..\LinkPocket.Theming\LinkPocket.Theming.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Browser\LinkPocket.UI.Browser.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Search\LinkPocket.UI.Search.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Trash\LinkPocket.UI.Trash.csproj" />
