@@ -9,3 +9,7 @@ favicons/
 build/artifacts/
 perf_report.json
 .scratch/
+
+# 测试运行期产物（挂起转储 / Sequence / trx）—— 调试用，不进版本控制
+tests/**/TestResults/
+*.dmp
