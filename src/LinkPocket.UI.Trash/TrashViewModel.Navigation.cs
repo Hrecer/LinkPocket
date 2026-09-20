@@ -35,7 +35,7 @@ public partial class TrashViewModel
         RebuildRows();
         RebuildBreadcrumbs();
         SetStatusText();
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
         RefreshCompleted?.Invoke(this, true);
         return Task.CompletedTask;
     }

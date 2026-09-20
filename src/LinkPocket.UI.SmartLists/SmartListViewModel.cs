@@ -67,7 +67,7 @@ namespace LinkPocket.ViewModels
         public SmartListResultViewModel? ResultViewModel
         {
             get => _resultViewModel;
-            set { _resultViewModel = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResult)); CommandManager.InvalidateRequerySuggested(); }
+            set { _resultViewModel = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResult)); CommandRefresh.Request(); }
         }
 
         public bool ShowResult => _resultViewModel != null;

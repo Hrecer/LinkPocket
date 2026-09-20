@@ -64,7 +64,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 _clearFavicon = false;
                 // CanExecute 只依赖「空/非空」布尔；无错误时 ClearError 不触发通知 →
                 // 空↔非空翻转必须显式重评估命令（否则按钮可用态不刷新）
-                if (prevEmpty != nextEmpty) CommandManager.InvalidateRequerySuggested();
+                if (prevEmpty != nextEmpty) CommandRefresh.Request();
             }
         }
     }
@@ -87,14 +87,14 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public bool IsLoading
     {
         get => _isLoading;
-        set { if (_isLoading != value) { _isLoading = value; OnPropertyChanged(); CommandManager.InvalidateRequerySuggested(); } }
+        set { if (_isLoading != value) { _isLoading = value; OnPropertyChanged(); CommandRefresh.Request(); } }
     }
 
     private string? _error;
     public string? Error
     {
         get => _error;
-        set { if (_error != value) { _error = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); CommandManager.InvalidateRequerySuggested(); } }
+        set { if (_error != value) { _error = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); CommandRefresh.Request(); } }
     }
     public bool HasError => !string.IsNullOrEmpty(Error);
     private void ClearError() { if (HasError) Error = null; }
@@ -123,7 +123,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasFavicon));
                 OnPropertyChanged(nameof(CanClearFavicon));   // 图标有无驱动清除按钮可用性
-                CommandManager.InvalidateRequerySuggested();
+                CommandRefresh.Request();
             }
         }
     }
@@ -134,7 +134,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public bool IsFetching
     {
         get => _isFetching;
-        set { if (_isFetching != value) { _isFetching = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanClearFavicon)); CommandManager.InvalidateRequerySuggested(); } }
+        set { if (_isFetching != value) { _isFetching = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanClearFavicon)); CommandRefresh.Request(); } }
     }
 
     /// <summary>是否可清除图标：仅编辑模式、当前确实有图标（原链接带图标或已解析出图标）且不在加载/解析中

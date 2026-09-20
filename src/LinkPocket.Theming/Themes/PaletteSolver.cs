@@ -112,6 +112,35 @@ public static class PaletteSolver
         IReadOnlyList<(Argb Color, ColorMath.Hct3 Hct)> byChroma, int index) =>
         index < byChroma.Count ? byChroma[index] : null;
 
+    /// <summary>
+    /// 主题的**可编辑色槽**（4 或 5 个）：身份色已够时原样返回；不足（内置预设只有 1–3 个）时
+    /// 用**该主题自己的档位**补足 —— 同色相 + 同彩度的明度档，补的是主题色本身，不是编造的装饰色。
+    /// </summary>
+    /// <remarks>
+    /// <b>唯一实现</b>：外观面板的色槽（可微调）与主题卡的色点（展示）都走它 ——
+    /// 两处各写一份补位规则，迟早会漂移成"卡片显示 4 个点、色槽却有 3 格"。
+    /// </remarks>
+    public static IReadOnlyList<Argb> EditableSlots(ThemeDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var list = definition.Palette.ToList();
+        if (list.Count >= ThemeDefinition.AllowedPaletteSizes[0])
+            return list.Count <= 5 ? list : list.Take(5).ToList();
+
+        var families = SolveFamilies(definition);
+        foreach (var tone in new[]
+                 {
+                     ToneScale.AccentContainer, ToneScale.AccentFill, ToneScale.AccentText,
+                     ToneScale.AccentOnContainer, 70.0,
+                 })
+        {
+            if (list.Count >= 4) break;
+            var candidate = ColorMath.FromAlphaHct(0xFF, families.AccentHue, families.AccentChroma, tone);
+            if (list.All(c => c != candidate)) list.Add(candidate);
+        }
+        return list;
+    }
+
     /// <summary>中性族彩度（大面积必须"安静"；方案 §4.5）。</summary>
     public const double NeutralChroma = 4.0;
 

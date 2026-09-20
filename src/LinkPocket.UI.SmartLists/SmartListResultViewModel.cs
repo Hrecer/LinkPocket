@@ -40,7 +40,7 @@ namespace LinkPocket.ViewModels
                 if (_isDeleting == value) return;
                 _isDeleting = value;
                 OnPropertyChanged();
-                System.Windows.Input.CommandManager.InvalidateRequerySuggested();   // CanExecute 依赖（RelayCommand 走 WPF 查询）
+                CommandRefresh.Request();   // 立即重估（选中变化 → 命令可用性同步更新）
             }
         }
 
@@ -192,7 +192,7 @@ namespace LinkPocket.ViewModels
             OnPropertyChanged(nameof(HasSelection));
             var item = PrimarySelected;
             Details.UpdateFrom(item, item == null ? "" : _resolveFolderPath(item.ListId));
-            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
         }
 
         // —— ↑/↓ / End（与浏览页主栏同一套共享语义；顺序由视图注入） ——

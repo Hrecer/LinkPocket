@@ -88,7 +88,7 @@ public partial class TrashViewModel
         {
             IsLoading = false;
             if (navigating) IsNavigating = false;
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
             RefreshCompleted?.Invoke(this, wasNavigation);
             if (_loadPending)
             {

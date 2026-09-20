@@ -26,12 +26,27 @@
                            FontSize="13" Margin="4,0,0,20" TextWrapping="Wrap"
                            Foreground="{DynamicResource App.Text.Secondary}"/>
 
+                <!-- ===== 全局操作（面板级，不属于任何一张卡）=====
+                     用户令 2026-09-20："这个应用这套外观、恢复这套外观，不能在自选配色这里，这些是全局操作"。
+                     它们作用于**整套外观**（配色 + 字体），所以放在两张卡之外；又因为改完颜色就要立刻点，
+                     所以放在面板顶部（常驻可见，不必滚过字体卡）。 -->
+                <StackPanel Orientation="Horizontal" Margin="4,0,0,18">
+                    <Button x:Name="ApplyDraftBtn" Content="应用这套外观"
+                            Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                            Cursor="Hand" Click="ApplyDraftBtn_Click"
+                            ToolTip="把下面色槽里的配色应用为整套外观（字体请用「应用字体」）"/>
+                    <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
+                            Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
+                            Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"
+                            ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
+                </StackPanel>
+
                 <!-- ===== 卡 1：主题（出厂默认 + 内置预设）===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
                     <StackPanel>
                         <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="单击即应用。每套主题由一组颜色派生全套界面色（背景、文字、按钮、图标）"
+                        <TextBlock Text="单击即应用。每套主题由一组颜色派生全套界面色（背景、文字、按钮、图标）；想微调就在下面的色槽里改这套主题的颜色"
                                    FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <!-- 互斥投影：正在用自选配色时明说"预设都没选中"（用户报障"两块都亮着、分不清谁在生效"） -->
@@ -178,16 +193,19 @@
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                 </Border>
                             </Grid>
-                            <TextBlock Text="选 4 或 5 个颜色即可生成一套主题；系统自动派生并保证可读性"
-                                       FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <TextBlock FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource App.Text.Secondary}">
+                                <Run Text="下面这些是当前主题「"/>
+                                <Run Text="{Binding AppliedThemeName, Mode=OneWay}"/>
+                                <Run Text="」的颜色：点任意一格就能用取色盘微调（4 或 5 个颜色即可生成一套主题，系统自动派生并保证可读性）；改完点页面顶部（面板级操作行）的「应用这套外观」，它就变成你的自选配色。"/>
+                            </TextBlock>
 
                             <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
                                  （SlidingNavStrip = ListBox + PART_Indicator，几何贴齐与滑动动画全在组件内）。
                                  原先手写两枚 Button 靠换 Style 表达"选中"——用户报障"根本分不清在选哪个"：
                                  填充色的差别不是选择语义，滑动指示器才是本仓既有的选择语言。
                                  选中索引双向绑到 VM 的 SlotCountIndex（唯一事实来源 = 草稿槽数）。 -->
-                            <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <views:SlidingNavStrip x:Name="SlotCountStrip"
                                                        Style="{StaticResource SlidingNavStripStyle}"
                                                        ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
@@ -197,8 +215,9 @@
                                 </views:SlidingNavStrip>
                             </StackPanel>
 
-                            <!-- 色槽 -->
-                            <ItemsControl x:Name="SlotList" Margin="0,14,0,0">
+                            <!-- 色槽：**居中**排列（用户令 2026-09-20："自选配色这里根本没有居中"）。
+                                 每格 = 一个可编辑槽位（点一下开取色盘），所以标「颜色 N」而不是只报色值。 -->
+                            <ItemsControl x:Name="SlotList" Margin="0,14,0,0" HorizontalAlignment="Center">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
                                         <WrapPanel Orientation="Horizontal"/>
@@ -206,7 +225,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="0,0,14,12">
+                                        <StackPanel Margin="0,0,14,12" HorizontalAlignment="Center">
                                             <Button Cursor="Hand" FocusVisualStyle="{x:Null}"
                                                     Click="Slot_Click" Tag="{Binding}"
                                                     ToolTip="{Binding Hex}">
@@ -227,7 +246,11 @@
                                                     </ControlTemplate>
                                                 </Button.Template>
                                             </Button>
-                                            <TextBlock Text="{Binding Hex}" FontSize="10.5" Margin="0,6,0,0"
+                                            <!-- 标记 = "这是第几个槽位"（原来是裸色值，看起来像示例图而不是可编辑控件） -->
+                                            <TextBlock Text="{Binding Label}" FontSize="10.5" Margin="0,6,0,0"
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                                            <TextBlock Text="{Binding Hex}" FontSize="10" Margin="0,1,0,0"
                                                        HorizontalAlignment="Center"
                                                        Foreground="{DynamicResource App.Text.Muted}"/>
                                         </StackPanel>
@@ -244,15 +267,7 @@
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
                             </Border>
 
-                            <!-- 应用（草稿） -->
-                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                                <Button x:Name="ApplyDraftBtn" Content="应用这套配色"
-                                        Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                                        Cursor="Hand" Click="ApplyDraftBtn_Click"/>
-                                <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
-                                        Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
-                                        Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"/>
-                            </StackPanel>
+                            <!-- 应用/恢复**不属于这张卡**（用户令 2026-09-20：它们是全局操作，见页面底部的操作行） -->
                         </StackPanel>
                     </Border>
                 </Border>
@@ -337,6 +352,8 @@
                                 Click="ApplyFontsBtn_Click"/>
                     </StackPanel>
                 </Border>
+
+                <!-- ===== 全局操作已上移到面板顶部（用户令：它们是全局操作，不属于任何一张卡） ===== -->
 
                 <!-- 结果播报（状态栏口径；绑 VM.Status —— 视图不择时刷新） -->
                 <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="12" Margin="4,14,0,0"

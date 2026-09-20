@@ -45,7 +45,7 @@ public partial class TrashViewModel
         OnPropertyChanged(nameof(SelectionCount));
         OnPropertyChanged(nameof(SelectionInfoText));
         ProjectDetails();
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
     }
 
     /// <summary>选中 → 右栏详情栏投影：空占位 / 单选详情 / 多选计数（同一投影点，视图不另设刷新入口）。</summary>

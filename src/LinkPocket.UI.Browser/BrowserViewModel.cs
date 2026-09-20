@@ -151,7 +151,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             _isDetailPageOpen = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsListContextActive));
-            CommandManager.InvalidateRequerySuggested();   // 列表动作让位/复位（危险键门）
+            CommandRefresh.Request();   // 列表动作让位/复位（危险键门）
         }
     }
 
@@ -199,7 +199,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             _isEditorPageOpen = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsListContextActive));
-            CommandManager.InvalidateRequerySuggested();   // 列表动作让位/复位（危险键门）
+            CommandRefresh.Request();   // 列表动作让位/复位（危险键门）
         }
     }
 
@@ -361,7 +361,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SelectionInfoText));
         OnPropertyChanged(nameof(DeleteMenuHeader));
         Details.UpdateFrom(SelectedRows.ToList(), this);
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
     }
 
     // —— 拖拽落点（悬停高亮 + 「移动到 X」提示的唯一事实来源）——
@@ -498,7 +498,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         ApplyRenameToView();
         OnPropertyChanged(nameof(EditingName));   // 文本由控制器直写，属性通知在这里补
         OnPropertyChanged(nameof(IsRenaming));
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
 
         // 行若已实例化：滚入视口（编辑框由 InlineNameEditor 自己在显示后聚焦并全选）
         var row = Rows.FirstOrDefault(r => r.Id == id);
@@ -515,7 +515,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         ApplyRenameToView();
         OnPropertyChanged(nameof(EditingName));   // 文本已清空（控制器直写），属性通知在这里补
         OnPropertyChanged(nameof(IsRenaming));
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
     }
 
     /// <summary>取消改名（Esc）：只收会话，不写数据。</summary>
@@ -637,7 +637,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasPathCandidates));
         OnPropertyChanged(nameof(SelectedCandidateIndex));
         OnPropertyChanged(nameof(IsPathEditing));   // 最后发：控件据此聚焦+全选，此时文本已就位
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
     }
 
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
@@ -718,7 +718,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         CompletePathCommand = new RelayCommand(CompletePath);
 
         // 剪贴板载荷变化（含被其他页面/操作清空）→ 刷新粘贴命令可用性
-        Clipboard.ClipboardChanged += (_, _) => CommandManager.InvalidateRequerySuggested();
+        Clipboard.ClipboardChanged += (_, _) => CommandRefresh.Request();
 
         // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（主栏行 + 树 + 派生状态）
         Selection.Changed += ApplySelectionToView;

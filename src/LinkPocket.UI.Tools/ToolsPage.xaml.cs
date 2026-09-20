@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -254,7 +254,7 @@ namespace LinkPocket.Views
                 row == null ? "" : VmTools.ResolvePath(row));
             // 顶部「跳转」药丸与选中行同源（无选中 = 没有跳转目标）；不在投影点之外另设刷新时机
             DetailJumpBtn.IsEnabled = row != null && _locator != null;
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
         }
 
         /// <summary>命令参数的方向字面量（↑ = -1 / ↓ = +1）。</summary>

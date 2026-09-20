@@ -88,7 +88,7 @@ public partial class BrowserViewModel
             _canRedo = await HasEntriesAsync(await _client.UndoListRedoAsync());
             OnPropertyChanged(nameof(CanUndo));
             OnPropertyChanged(nameof(CanRedo));
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
         }
         catch { /* 查询失败不阻断；CanExecute 保守禁用 */ }
     }

@@ -83,6 +83,38 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
     }
 
+    [Fact]
+    public void 色槽_载入当前主题的颜色_预设也能进仪表盘微调()
+    {
+        // 用户令 2026-09-20："仪表盘是仪表盘、自选是自选、选择区域是选择区域；
+        // 你默认的颜色也可以移到仪表盘里微调"——色槽任何时候都显示**当前生效主题**的颜色
+        // （预设只有 1–2 个身份色 → 用该主题自己的档位补足到 4，仍满足"4 或 5 色"门槛）。
+        // 反例（已修）：非自选模式下拿"出厂默认那 5 色"兜底 → 看着像一张与当前主题无关的示例图。
+        ThemeService.ResetForTests();
+        try
+        {
+            ThemeService.ApplyById("uji-matcha", null);
+            var vm = NewVm();
+
+            Assert.Equal("宇治抹茶", vm.AppliedThemeName);
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+
+            var palette = ThemeCatalog.Find("uji-matcha")!.Palette;
+            static string HexOf(Material3.Core.Argb c) => $"#{c.ToInt() & 0x00FFFFFF:X6}";
+            Assert.Equal(HexOf(palette[0]), vm.Slots[0].Hex);
+            Assert.Equal(HexOf(palette[1]), vm.Slots[1].Hex);
+
+            // 与出厂默认的示例色不同（旧行为就是拿它兜底）
+            var defaultHex = HexOf(ThemeCatalog.Default.Palette[0]);
+            Assert.NotEqual(defaultHex, vm.Slots[0].Hex);
+            Assert.False(vm.IsCustomActive, "载入不等于应用：当前生效的仍是那个预设");
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
     // ── 互斥归属（主题 ↔ 自选配色 二选一）─────────────────────────────
     // 用户报障："自选配色和主题不是应该二选一吗？怎么居然不用二选一"——
     // 根因是面板里根本没有"归属"这个状态，自选区的高亮是按**色槽数量**推的。

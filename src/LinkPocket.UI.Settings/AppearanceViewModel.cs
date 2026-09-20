@@ -24,10 +24,9 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         var table = PaletteSolver.Solve(definition);
 
         // 色点用**身份色**（"主题就是这些颜色"——方案 §4.2：主题卡展示用户原色，界面用其档位）。
-        // ⚠️ 预设的身份色只有 1–2 个（标定收敛的结果，见 ThemeCatalog.Presets 注释）→ 直接展示会
-        // 稀疏得像"缺了几个色"。故不足 4 个时**用该主题自身的调色板补足**（同族明度档，
-        // 色相/彩度仍是这套主题自己的）——补的是"主题色本身"，不是编造的装饰色。
-        Swatches = new ObservableCollection<Color>(BuildSwatches(definition, table));
+        // 补位规则（预设只有 1–3 个身份色）= Theming 的唯一实现 `PaletteSolver.EditableSlots`，
+        // 与外观面板的色槽同一份（否则"卡片 4 个点、色槽 3 格"迟早漂移）。
+        Swatches = new ObservableCollection<Color>(BuildSwatches(definition));
 
         // 派生示意条：强调填充 / 页面底 / 正文 —— 一眼看出"这套主题长什么样"
         Accent = ToMedia(table.Token(AppTokens.AccentFill));
@@ -39,30 +38,11 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     }
 
     /// <summary>
-    /// 主题卡的身份色圆点：原身份色优先，不足 4 个时用该主题的**色调板档位**补足。
+    /// 主题卡的身份色圆点：**唯一实现**在 Theming（`PaletteSolver.EditableSlots`）——
+    /// 与外观面板的色槽共用同一套补位规则（预设身份色只有 1–3 个，直接展示会稀疏得像"缺了几个色"）。
     /// </summary>
-    /// <remarks>
-    /// 补足只沿"该主题强调族"的明度轴取档（同色相/同彩度）——用户看到的仍是"这套主题的颜色"，
-    /// 而已有身份色永远排在前面（原色优先，派生只补位）。
-    /// </remarks>
-    private IEnumerable<Color> BuildSwatches(ThemeDefinition definition, TokenTable table)
-    {
-        const int TargetCount = 4;
-
-        var list = definition.Palette.Select(ToMedia).ToList();
-        if (list.Count >= TargetCount) return list;
-
-        var f = table.Families;
-        // 与方案 §4.5 的档位表同源（容器 90 / 填充 40 / 强调文字 30 / 深 15），取未重复的档
-        foreach (var tone in new[] { 90.0, 40.0, 30.0, 15.0, 70.0 })
-        {
-            if (list.Count >= TargetCount) break;
-            var argb = ColorMath.FromAlphaHct(0xFF, f.AccentHue, f.AccentChroma, tone);
-            var candidate = ToMedia(argb);
-            if (list.All(c => c != candidate)) list.Add(candidate);
-        }
-        return list;
-    }
+    private IEnumerable<Color> BuildSwatches(ThemeDefinition definition) =>
+        PaletteSolver.EditableSlots(definition).Select(ToMedia);
 
     /// <summary>Argb → WPF Color（唯一转换点在 Theming；界面层零颜色字面量）。</summary>
     private static Color ToMedia(Argb c) => ColorMath.ToMedia(c);
@@ -226,17 +206,26 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
         if (!_draftDirty)
         {
-            var seed = _customActive ? current.Palette : ThemeCatalog.Default.Palette;
+            // 色槽 = **当前主题的颜色**（用户令 2026-09-20："仪表盘是仪表盘、自选是自选、选择区域是选择区域；
+            // 你默认的颜色也可以移到仪表盘里微调"）。预设只有 1–3 个身份色 → 用该主题自己的档位补足到 4
+            // （唯一实现 = `PaletteSolver.EditableSlots`）。
+            // ⚠️ 之前在非自选模式下拿"出厂默认那 5 色"兜底 → 看着像一张与当前主题无关的示例图
+            // （用户报障"自选配色里面不得有示例"）。
             _draft.Clear();
-            _draft.AddRange(seed.Select(ToMedia));
+            _draft.AddRange(PaletteSolver.EditableSlots(current).Select(ToMedia));
             RebuildSlots();
         }
 
         _selectedThemeId = current.Id;
+        AppliedThemeName = current.Name;
         Raise(nameof(SelectedThemeId));
+        Raise(nameof(AppliedThemeName));
         ProjectCardSelection();
         RaiseCustomState();
     }
+
+    /// <summary>当前生效主题的显示名（色槽区的说明文案："下面这些是「X」主题的颜色"）。</summary>
+    public string AppliedThemeName { get; private set; } = ThemeCatalog.Default.Name;
 
     // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
     // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。

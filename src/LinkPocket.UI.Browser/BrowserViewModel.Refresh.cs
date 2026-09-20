@@ -235,7 +235,7 @@ public partial class BrowserViewModel
         finally
         {
             IsLoading = false;
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
             // 撤销/重做可用性轻量同步（Ctrl+Z/Y 的 CanExecute 要准）：每次刷新链收尾取一次 undo 栈态。
             // 只读查询、不产生事件 → 不会引发刷新循环；失败静默保持保守禁用（见 RefreshUndoStateAsync）。
             _ = RefreshUndoStateAsync();

@@ -243,7 +243,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
             if (_isDetailOverlayOpen == value) return;
             _isDetailOverlayOpen = value;
             OnPropertyChanged();
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
         }
     }
 
@@ -256,7 +256,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
             if (_isPathEditing == value) return;
             _isPathEditing = value;
             OnPropertyChanged();
-            CommandManager.InvalidateRequerySuggested();
+            CommandRefresh.Request();
         }
     }
 

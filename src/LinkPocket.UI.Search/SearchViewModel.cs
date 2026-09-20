@@ -158,7 +158,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (sel.Count == 0) Details.UpdateFrom(null, "");
         else if (sel.Count == 1) Details.UpdateFrom(sel[0], _resolveFolderPath(sel[0].ListId));
         else Details.ShowMulti(sel);
-        CommandManager.InvalidateRequerySuggested();
+        CommandRefresh.Request();
     }
 
     /// <summary>搜索页右侧详情栏（与浏览页同一 DetailSidebar 控件数据契约）。</summary>
