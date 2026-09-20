@@ -125,7 +125,16 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
+                                                        <!-- ⚠️ **每个色点都必须带描边**（用户报障 2026-09-20："那个作为背景色的颜色，
+                                                             圆形会与背景色融为一体"）：主题卡底色是 `App.Surface.Hover`，而配色的
+                                                             最浅那个成员天生就是"背景色"一档 —— 实测对比度低到 **1.03–1.16**
+                                                             （默认紫罗兰的 `#F2EEF5` 对卡面 `#F5F1F8` 只有 **1.03**，
+                                                              实测像素：选中卡上第一枚 `#3F3448` 与底色 `#EEDDF7` 同为 1.01），
+                                                             不描边就等于"少了一个色"（用户看到的"5 色变 4 色"就是这个）。
+                                                             描边取 `App.Line.Outline`，对最深/最浅的色点都 ≥1.3，两端都看得见轮廓。 -->
                                                         <Ellipse Width="16" Height="16" Margin="0,0,5,0"
+                                                                 StrokeThickness="1"
+                                                                 Stroke="{DynamicResource App.Line.Outline}"
                                                                  Fill="{Binding Converter={StaticResource ColorToBrush}}"/>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
@@ -211,12 +220,12 @@
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                 </Border>
                             </Grid>
+                            <!-- 整句由 VM 给（`DraftIntro`）：**不再把一句话拆成"Run 字面量 + 绑定 Run + 字面量"**
+                                 三段 —— 那样"这句里写的是哪套外观"就散在两处，运行期没有任何一处能被守住
+                                 （用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，一直都没有更改过"）。 -->
                             <TextBlock FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource App.Text.Secondary}">
-                                <Run Text="这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色，凑够 4 或 5 个颜色后点顶部「应用这套外观」生效；想从现成主题改起，点下面的按钮把「"/>
-                                <Run Text="{Binding AppliedThemeName, Mode=OneWay}"/>
-                                <Run Text="」的颜色复制进来当起点。"/>
-                            </TextBlock>
+                                       Text="{Binding DraftIntro, Mode=OneWay}"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
 
                             <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
                                  （SlidingNavStrip = ListBox + PART_Indicator，几何贴齐与滑动动画全在组件内）。

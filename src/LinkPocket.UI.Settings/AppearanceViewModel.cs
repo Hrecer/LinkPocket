@@ -298,7 +298,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         _customCard = ThemeCardViewModel.CreateCustomCard();
         ThemeCards.Add(_customCard);
 
-        // 默认草稿 = 4 个空槽（先把 Slots 建出来，界面才不会是"有 4 格数据却没有槽"）
+        // 先把 Slots 建出来（界面才不会是"有数据却没有槽"）；**槽数随后由 SyncFromAppliedTheme
+        // 对齐到当前生效外观的实际颜色数**（5 色主题 = 5 格，见该方法的注释）。
         RebuildSlots();
 
         // 入口对齐：面板显示"当前**已应用**的外观"——主题卡高亮 + 互斥归属 + 色槽草稿
@@ -318,8 +319,16 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <item>当前生效 = **预设主题** → 色槽**保持用户自己的草稿不动**（内存里那份；从来没有过 = 空）。
     /// 旧行为是把当前主题的颜色倒进色槽 —— 用户报障的根因："默认的颜色是绝对不能改的"，
     /// 而"倒进来"看起来就像预设可以被就地改；想从某套主题改起请走 <see cref="StartFromCurrentTheme"/>（复制）；</item>
-    /// <item>有**未应用改动**（<c>_draftDirty</c>）时一律不重播种（入口刷新不许冲掉用户正在编辑的东西）。</item>
+    /// <item>有**未应用改动**（<c>_draftDirty</c>）时**颜色**不重播种（入口刷新不许冲掉用户正在编辑的东西），
+    /// 但**槽数一律跟着当前主题走**——见下条。</item>
     /// </list>
+    /// <para>
+    /// <b>槽数必须等于当前主题的颜色数（用户报障 2026-09-20："我们很多默认主题不是五色的吗？
+    /// 为什么到了这里变成四色"）</b>：调色台的色槽是"这套外观能被微调的 N 个颜色"，草稿槽数恒为 4
+    /// 会让 5 色主题（出厂默认）在面板上显示成 4 色 —— 与主题卡上的 5 个色点自相矛盾。
+    /// 故每次都把草稿槽数对齐到 <see cref="PaletteSolver.EditableSlots"/> 的实际个数（4 或 5），
+    /// **只调槽数、不碰颜色**（缩掉的槽若是用户已填的颜色会一并消失，这一点由下方注释明说）。
+    /// </para>
     /// </remarks>
     public void SyncFromAppliedTheme()
     {
@@ -334,21 +343,84 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
 
         _selectedThemeId = current.Id;
-        AppliedThemeName = current.Name;
         Raise(nameof(SelectedThemeId));
-        Raise(nameof(AppliedThemeName));
-        Raise(nameof(StartFromCurrentThemeLabel));
+
+        // 名字 / 按钮文案 / 整句说明 / 槽数 = 同一个投影点（`ProjectAppliedTheme`），这里不再各写一遍
+        ProjectAppliedTheme();
+
         ProjectCardSelection();
         RaiseCustomState();
     }
 
-    /// <summary>当前生效主题的显示名（调色台的说明文案与「起点」按钮文案都用它）。</summary>
+    /// <summary>
+    /// 把草稿槽数对齐到目标值（4/5），**只动槽数、不动颜色、不改"未应用"标记**。
+    /// </summary>
+    /// <remarks>
+    /// "未应用标记"（<c>_draftDirty</c>）表达的是**用户改过没应用**：槽数跟着当前主题走是**投影**，
+    /// 不是用户的编辑，所以这里不标脏、也不清脏（用户之前那份未应用改动依然如实显示为"编辑中"）。
+    /// </remarks>
+    private void SyncDraftSlotCount(int target)
+    {
+        target = Math.Clamp(target, MinSlots, MaxSlots);
+        if (target == _draft.Count) return;
+
+        while (_draft.Count > target) RemoveSlotCore();
+        while (_draft.Count < target) AddSlotCore();
+        RebuildSlots();
+    }
+
+    /// <summary>
+    /// **主题一变就刷新的那一族投影**：名字 / 按钮文案 / 整句说明 / 色槽格数。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么必须存在（用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，一直都没有更改过"）</b>：
+    /// 这套投影原先**只有 <see cref="SyncFromAppliedTheme"/> 里有**，而它只在"进面板"（`Refresh`）时被调用
+    /// —— 点主题卡走 <see cref="ApplyThemeCard"/>、点起点走 <see cref="StartFromCurrentTheme"/>，
+    /// 两条路都不经过它，于是换主题之后按钮文案与说明句照旧写着**上一套**外观的名字
+    /// （用户看到的"从来没变过"就是这个；VM 单测同样卡住过它）。
+    /// </para>
+    /// <para>
+    /// 现在它是**唯一投影点**：任何"当前生效外观变了"的地方都调它一次，三处文案与槽数一起跟上。
+    /// 它**不碰颜色**（草稿是用户的，换主题不许冲掉）也不碰"未应用"标记，因此可以随便调。
+    /// </para>
+    /// </remarks>
+    private void ProjectAppliedTheme()
+    {
+        var current = ThemeService.Current;
+        AppliedThemeName = current.Name;
+        SyncDraftSlotCount(PaletteSolver.EditableSlots(current).Count);
+        Raise(nameof(AppliedThemeName));
+        Raise(nameof(StartFromCurrentThemeLabel));
+        Raise(nameof(DraftIntro));
+    }
+
+    /// <summary>当前生效外观的显示名（调色台的说明文案与「起点」按钮文案都用它）。</summary>
     public string AppliedThemeName { get; private set; } = ThemeCatalog.Default.Name;
 
     /// <summary>
-    /// 「以当前主题为起点」按钮的文案（带上主题名，用户一眼知道复制的是哪一套）。
+    /// 「以当前外观为起点」按钮的文案（带上名字，用户一眼知道复制的是哪一套）。
     /// </summary>
     public string StartFromCurrentThemeLabel => $"以「{AppliedThemeName}」为起点";
+
+    /// <summary>
+    /// 调色台卡片的整句说明文案 = **整句 + 当前外观名 + 尾句**（一个字符串属性）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么整句都在 VM 里（用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，
+    /// 一直都没有更改过"）</b>：这句话原先在 XAML 里拆成 `<c>Run</c> 字面量 + <c>Run Text="{Binding …}"</c> +
+    /// <c>Run</c> 字面量</b> 三段 —— 断句与绑定分散在两处，运行期是否跟着主题走无法在 VM 层被观测
+    /// （VM 单测测不到、探针也只断言按钮不看这句）。
+    /// 现行口径：**这类"含变量的整句"由 VM 出一个字符串属性**，视图只摆一个 <c>TextBlock</c>，
+    /// 于是"这句里写的是哪套外观"与按钮文案同源（同一个 <see cref="AppliedThemeName"/>）、
+    /// 变更通知也只有一个出口（<see cref="SyncFromAppliedTheme"/>）。
+    /// </para>
+    /// </remarks>
+    public string DraftIntro =>
+        "这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色；想从现成外观改起，"
+        + $"点下面的按钮把「{AppliedThemeName}」的颜色复制进来 —— 复制会立即应用为自选配色"
+        + "（「自选颜色」卡随即高亮），之后点色槽微调即可。";
 
     // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
     // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
@@ -578,6 +650,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ThemeService.Apply(definition);
             SetCustomActive(false);   // 互斥：用预设 = 自选区让出"当前使用"
             SelectedThemeId = card.Id;
+            // ⚠️ 换主题之后**必须**刷新"当前外观"那一族投影（名字 / 起点按钮文案 / 说明句 / 槽数）：
+            //    这一步原先漏了，用户看到的正是"换了主题，下面还写着以「默认（紫罗兰）」为起点"。
+            ProjectAppliedTheme();
             ThemeService.SaveCurrentPreferences();
             Status = $"已应用主题「{card.Name}」";
             Diagnostics = string.Empty;
@@ -592,7 +667,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// 「以当前主题为起点」：把**当前生效主题**的可编辑色槽**复制**进调色台（预设定义绝不被改写）。
+    /// 「以当前外观为起点」：把**当前生效外观**的可编辑色槽**复制**进调色台并**立即应用**为自选配色。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -606,20 +681,31 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 不靠"记得别写回去"。
     /// </para>
     /// <para>
-    /// 复制后标记为**编辑中（未应用）**：还没生效，用户改完点「应用这套外观」才算数。
+    /// <b>点一下就该生效（用户报障 2026-09-20："当我们选择以什么为起点的时候，应该立即切换到自选颜色这一栏，
+    /// 也就是主题应该立即更改"）</b>：旧行为只把颜色倒进草稿、把归属留在预设上，于是用户按了按钮却看到
+    /// "什么都没发生"（主题卡还是预设那张、界面一点没变），还得再点一次「应用这套外观」。
+    /// 现行 = 复制完**当场**走 <see cref="ApplyDraft"/> 的同一条应用路径：归属切到自选、
+    /// 第 12 张「自选颜色」卡亮起、界面立刻换成这份配色（它是当前主题的拷贝，视觉上与刚才一致，
+    /// 但从此每一格都可微调）。**不另写第二套应用逻辑**——合法性门槛、播报与落盘全在 <see cref="ApplyDraft"/>。
     /// </para>
     /// </remarks>
     public void StartFromCurrentTheme()
     {
-        var current = ThemeService.Current;
-        var slots = PaletteSolver.EditableSlots(current);
+        var source = ThemeService.Current;
+        var slots = PaletteSolver.EditableSlots(source);
 
         _draft.Clear();
         _draft.AddRange(slots.Select(c => (Color?)ToMedia(c)));
-        MarkDraftDirty();
+        MarkDraftDirty();                 // 先标脏：ApplyDraft 的门槛/诊断按"草稿"口径走，成功后才清
         RebuildSlots();
-        RefreshDraftDiagnostics();
-        Status = $"已把「{current.Name}」的 {slots.Count} 个颜色复制到调色台（点「应用这套外观」才生效）";
+
+        ApplyDraft();                     // 唯一应用入口（空槽门槛 + 校验 + 归属切换 + 落盘）
+        if (IsCustomActive)
+        {
+            // 成功才改播报：失败时 ApplyDraft 已经把原因写在状态行上，这里不许覆盖（禁止把失败说成成功）
+            // ⚠️ 判据用 **IsCustomActive**（公开投影），不是 `_customActive` 字段——"生效了没"本来就该问投影。
+            Status = $"已把「{source.Name}」的 {slots.Count} 个颜色复制进调色台并应用为自选配色（点色槽即可微调）";
+        }
     }
 
     /// <summary>把当前槽位当作自选配色应用。</summary>
@@ -656,6 +742,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             SetCustomActive(true);    // 互斥：用自选配色 = 预设卡让出"当前使用"（自选颜色卡亮起）
             ClearDraftDirty();        // 草稿 = 当前值，不再有"未应用改动"
             SelectedThemeId = definition.Id;
+            ProjectAppliedTheme();    // 名字 / 按钮文案 / 说明句 / 槽数一起跟上（换主题的公共出口）
             ThemeService.SaveCurrentPreferences();
             Status = $"已应用自选配色（{definition.Palette.Count} 色）";
         }

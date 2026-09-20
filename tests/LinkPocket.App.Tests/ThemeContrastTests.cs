@@ -232,6 +232,47 @@ public class ThemeContrastTests
     }
 
     [Fact]
+    public void 主题卡色点_每一个都能看见_轮廓对卡面与色点都可辨()
+    {
+        // 用户报障 2026-09-20："当我们选择其他主题时，那个作为背景色的颜色，圆形会与背景色融为一体，
+        // 但是默认紫罗兰的就不会" —— 实测根因：主题卡底色 = `App.Surface.Hover`，而配色的**最浅成员
+        // 天生就是"背景色"那一档**，与卡面对比度低到 **1.03–1.16**（出厂默认的 `#F2EEF5` 对卡面
+        // `#F5F1F8` 只有 1.03；赭石玫瑰补位的 `#FFDCC3` 对 `#F4D7C4` 只有 1.06）→
+        // 不描边就等于"少了一个色"，用户看到的是"5 色变 4 色"。
+        //
+        // 判据按**实际渲染**建模（不能拿纯描边色去比）：1px 的 `Ellipse.Stroke` 画成 0.5px 内圈 + 0.5px 外圈，
+        // 外圈那半会与卡面抗锯齿混合 —— "看得见的轮廓" ≈ 描边色按 α≈0.7 叠在卡面底色上。要求这个轮廓色：
+        // ① 与**卡面**可辨（浅色色点糊在卡面上时全靠它勾出形状）；② 与**色点自身**可辨（深色色点上也要有轮廓）。
+        // 阈值 1.25：能抓住"完全没描边"（比值 1.00）与"描边取错色（浅勾浅）"，又给 1px 抗锯齿留了余量。
+        const double MinRingContrast = 1.25;
+        var failures = new List<string>();
+        foreach (var theme in ThemeCatalog.All)
+        {
+            var table = PaletteSolver.Solve(theme);
+            var hover = table.Token(AppTokens.SurfaceHover);
+            var stroke = table.Token(AppTokens.LineOutline);
+            var ring = ColorMath.Overlay(hover, stroke, 0.7);
+            var slots = PaletteSolver.EditableSlots(theme);
+
+            foreach (var (color, i) in slots.Select((c, i) => (c, i)))
+            {
+                var vsCard = ColorMath.ContrastRatio(ring, hover);
+                var vsDot = ColorMath.ContrastRatio(ring, color);
+                if (Math.Max(vsCard, vsDot) < MinRingContrast)
+                    failures.Add($"{theme.Name} · 第 {i + 1} 个色点 #{color.ToInt() & 0x00FFFFFF:X6}"
+                                 + $" 轮廓对卡面 {vsCard:F2} / 对色点 {vsDot:F2}（都 < {MinRingContrast:F2}）");
+            }
+
+            // 兜底：描边色必须**深于最浅的色点** —— 否则就是"用浅色勾浅色"，等于没勾
+            var strokeTone = ColorMath.Measure(stroke).T;
+            var lightestTone = slots.Max(c => ColorMath.Measure(c).T);
+            if (strokeTone >= lightestTone)
+                failures.Add($"{theme.Name} · 描边 T{strokeTone:F1} 不深于最浅色点 T{lightestTone:F1}");
+        }
+        Assert.True(failures.Count == 0, "主题卡色点不可辨（会看起来「少了一个色」）：\n" + string.Join("\n", failures));
+    }
+
+    [Fact]
     public void 过渡期兼容层_已删除()
     {
         // T2 的兼容层（Tokens/ThemeCompatibility.cs）是临时脚手架：T3 必须整文件删除。
