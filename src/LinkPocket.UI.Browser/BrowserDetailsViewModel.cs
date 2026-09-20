@@ -17,6 +17,9 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
     private readonly EngineClient _client;
 
+    /// <summary>定位组件（「跳转」用：进它所在目录 + 选中该行）——与结果页 / ID 跳转同一条流水线。</summary>
+    private readonly Services.IContentLocator? _locator;
+
     private BrowserViewModel? _host;
 
     /// <summary>选中代次：异步补拉返回时校验，避免旧结果覆盖新选中。</summary>
@@ -48,9 +51,10 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         () => _host != null && IsSingle && !IsFolder);
     private RelayCommand? _showDetailCommand;
 
-    public BrowserDetailsViewModel(EngineClient client)
+    public BrowserDetailsViewModel(EngineClient client, Services.IContentLocator? locator = null)
     {
         _client = client;
+        _locator = locator;
         // 页面动作命令：复用 Host 的既有能力，避免第二套业务逻辑
         OpenCommand = new RelayCommand(
             () =>
@@ -93,6 +97,40 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 catch { }
             },
             () => IsLink && !string.IsNullOrEmpty(UrlText));
+        // 「跳转」= 把选中项带到眼前（经定位组件：进它所在目录 + 选中该行；**已在同目录时就是"选中并滚入视口"**）。
+        // 浏览页顶部**不加**跳转（本页就是定位的落点），但同一目录里条目多、选中的那一行在视口外时同样需要它。
+        // 只对**单一目标**开（多选没有"某一项"可定位——与结果页同一口径，用户令 2026-09-20）。
+        JumpCommand = new RelayCommand(
+            () => _ = JumpToSelectionAsync(),
+            () => IsSingle && _locator != null);
+    }
+
+    /// <summary>
+    /// 「跳转」：进选中项所在目录 + 选中该行（定位组件 <see cref="Services.IContentLocator"/>，
+    /// 与「ID 跳转」/ 结果页跳转同一条流水线，类型（链接 / 文件夹）由引擎 `locate.resolve` 判别）。
+    /// 失败按本页口径走状态栏（本页的操作结果一律状态栏播报），并写日志——绝不静默。
+    /// </summary>
+    private async Task JumpToSelectionAsync()
+    {
+        var host = _host;
+        var row = host?.SelectedRows.FirstOrDefault();
+        if (host == null || row == null) return;
+        if (_locator == null)
+        {
+            Services.Logger.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+            return;
+        }
+
+        var result = await _locator.LocateAsync(row.Id);
+        if (result.IsSuccess) return;
+
+        host.StatusText = result.Message ?? result.Status switch
+        {
+            Services.LocateStatus.NotFound => "未找到该项 ID",
+            Services.LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
+            Services.LocateStatus.Failed => "定位失败，请稍后重试",
+            _ => "定位未完成",
+        };
     }
 
     /// <summary>
@@ -135,6 +173,8 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         StackedActions = rows.Count > 0;   // 有选中时动作卡才出现；本页一律两行排布
         ShowRenameAction = IsLink;
         RenameActionCommand = host.RenameSelectionCommand;   // 同一实例：复用本页就地改名命令，不写第二套
+        // 「跳转」只对**单一目标**开（多选没有"某一项"可定位；与结果页同一口径，用户令 2026-09-20）
+        ShowJumpAction = rows.Count == 1;
 
         SelectedTotal = rows.Count;
         SelectedFolders = rows.Count(r => r.IsFolder);

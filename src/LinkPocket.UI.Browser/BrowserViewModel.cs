@@ -643,11 +643,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>文件夹 ID → 父 ID 映射（含名称），用于面包屑与"返回上级"。</summary>
     private Dictionary<string, (string? ParentId, string Name)> _folderMap = new();
 
-    public BrowserViewModel(EngineClient client, Services.UiPortProvider? ports = null)
+    public BrowserViewModel(EngineClient client, Services.UiPortProvider? ports = null,
+        Services.IContentLocator? locator = null)
     {
         _client = client;
         _ports = ports;
-        Details = new BrowserDetailsViewModel(client);
+        Details = new BrowserDetailsViewModel(client, locator);
         // 剪贴板语义（**控制器**）：载荷构造 / 剪切态视觉 / 取消都在控制器内；
         // VM 只注入"拖动集合唯一出口 + 行半透明投影 + 状态文案"三个回调。
         _clipboardCtl = new BrowserClipboardController(

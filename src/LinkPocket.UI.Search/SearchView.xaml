@@ -23,7 +23,7 @@
         <!-- 跳转按钮的样式 = **UIKit 共享 `JumpPillButton`**（三页共用一份：搜索工具行 / 智能列表结果页头 /
              查重明细 URL 组）。原页面局部样式 `SearchJumpPillButton` 已删除——
              它带一条"按压圆角 16→10 形变"的触发器，用户令 2026-09-20 明确要求删除该效果；
-             同时图标由 `open-in-new`（外部打开语义）改为 `folder-open-outline`（"去它所在的目录"）。 -->
+             同时图标由 `open-in-new`（外部打开语义）改为 `map-marker`（地图图钉 = "它在哪"，用户 2026-09-20 定稿）。 -->
 
         <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊）。
              ⚠️ 用户令 2026-09-19：**选中 / 未选尺寸完全一致**——不再加宽、不做形变，
@@ -153,9 +153,9 @@
                         Margin="12,0,12,8">
                 <Button x:Name="SearchJumpToLinkBtn" Command="{Binding JumpCommand}" IsEnabled="{Binding JumpEnabled}"
                         Style="{StaticResource JumpPillButton}" VerticalAlignment="Center"
-                        ToolTip="在浏览页定位到该链接（进它所在目录并选中那一行）">
+                        ToolTip="跳转">
                     <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="folder-open-outline" Width="15" Height="15" VerticalAlignment="Center"/>
+                        <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
                         <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>

@@ -284,7 +284,8 @@
 
     <!-- JumpPillButton：「跳转」药丸（**三页共用一份**：搜索工具行 / 智能列表结果页头 / 查重明细 URL 组）。
          「跳转」= 进浏览页对应目录并选中该行（IContentLocator，与"外部打开"无关）→
-         图标用 folder-open-outline（原搜索页局部样式用 open-in-new = "外部打开"语义，与跳转冲突）。
+         图标用 map-marker（地图图钉 = "它在哪"；早先试过 open-in-new = "外部打开"语义、
+         folder-open-outline = 观感差，用户 2026-09-20 定稿地图图钉）。
          ⚠️ 按压态只加深状态层，**绝不改变圆角/尺寸**：原局部样式在 IsPressed 里把圆角 16→10 做"形变"，
          用户令 2026-09-20 明确要求删除该效果（"我们不需要这个改变"）。
          禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不用透明度 hack）。 -->

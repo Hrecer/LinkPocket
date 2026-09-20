@@ -68,10 +68,11 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public string RestoreToRootIconKind { get; protected set; } = "backup-restore";
     public PillTone RestoreToRootTone { get; protected set; } = PillTone.Tonal;
 
-    /// <summary>「跳转」文案 / 提示 / 图标（进目录 + 选中行；**与"外部打开"无关**，故图标不是 open-in-new）。</summary>
+    /// <summary>「跳转」文案 / 提示 / 图标（进目录 + 选中行；**与"外部打开"无关**，故图标不是 open-in-new）。
+    /// 提示文案就是「跳转」（用户令 2026-09-20：不要长句子）；图标 = 地图图钉 `map-marker`（"在哪儿"一眼可读）。</summary>
     public string JumpLabel { get; protected set; } = "跳转";
-    public string JumpToolTip { get; protected set; } = "在原目录中定位该项";
-    public string JumpIconKind { get; protected set; } = "folder-open-outline";
+    public string JumpToolTip { get; protected set; } = "跳转";
+    public string JumpIconKind { get; protected set; } = "map-marker";
 
     /// <summary>「打开网站」按钮最终可见性（侧栏：链接且页面开启）。</summary>
     public bool ShowOpenWebsiteButton { get; protected set; } = true;
@@ -164,8 +165,8 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         RestoreToRootIconKind = "backup-restore";
         RestoreToRootTone = PillTone.Tonal;
         JumpLabel = "跳转";
-        JumpToolTip = "在原目录中定位该项";
-        JumpIconKind = "folder-open-outline";
+        JumpToolTip = "跳转";
+        JumpIconKind = "map-marker";
         ShowOpenWebsiteButton = true;
         OpenColumnSpan = 1;
     }

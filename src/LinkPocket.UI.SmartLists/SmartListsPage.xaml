@@ -187,9 +187,9 @@
                             <Button x:Name="ResultJumpBtn" Style="{StaticResource JumpPillButton}"
                                     Command="{Binding ResultViewModel.JumpCommand}"
                                     VerticalAlignment="Center" Margin="2,0,0,0"
-                                    ToolTip="在浏览页定位到该链接（进它所在目录并选中那一行）">
+                                    ToolTip="跳转">
                                 <StackPanel Orientation="Horizontal">
-                                    <m3:M3Icon Kind="folder-open-outline" Width="15" Height="15" VerticalAlignment="Center"/>
+                                    <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
                                     <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>

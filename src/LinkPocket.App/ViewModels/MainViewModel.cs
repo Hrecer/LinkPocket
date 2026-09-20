@@ -57,7 +57,7 @@ namespace LinkPocket.ViewModels
                     ? "全部书签"
                     : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"),
                 locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
-            BrowserViewModel = new BrowserViewModel(client, _ports);   // 共享端口槽位：对话框/导航走 IDialogService
+            BrowserViewModel = new BrowserViewModel(client, _ports, locator);   // 共享端口槽位：对话框/导航走 IDialogService；locator = 侧栏「跳转」
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
 
