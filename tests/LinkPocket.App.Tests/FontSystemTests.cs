@@ -1,4 +1,5 @@
 using System.IO;
+using LinkPocket.Theming;
 using LinkPocket.Theming.Fonts;
 using LinkPocket.Theming.Preferences;
 using LinkPocket.Theming.Themes;
@@ -53,6 +54,77 @@ public class FontSystemTests
         var family = FontCatalog.BuildFontFamily("Cascadia Code");
         Assert.NotNull(family);
         Assert.False(string.IsNullOrWhiteSpace(family.Source));
+    }
+
+    [Fact]
+    public void 导入到应用再到重启_外观从偏好恢复()
+    {
+        // N1 的端到端判据：**导入 → 应用 → 重启保持**。
+        // "重启"在这里 = 丢掉进程内的主题/字体状态，只留偏好文件，再走 App.OnStartup 的那条恢复入口
+        // （ThemeService.ApplyFromPreferences）—— 不是重新读一遍内存状态，那样测不出持久化。
+        var source = PickRealFontFile();
+        Assert.NotNull(source);   // 系统字体目录里必然有可导入的字体文件（见下方 PickRealFontFile）
+        var path = UiPreferenceStore.FilePath;
+        var backup = File.Exists(path) ? File.ReadAllText(path) : null;
+        var temp = Path.Combine(Path.GetTempPath(), "lp-font-src-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+        FontChoice? imported = null;
+        try
+        {
+            // ① 真实导入（走 FontCatalog.Import：解析族名 → 复制到 {BaseDirectory}/fonts/）。
+            // ⚠️ 先改成**唯一文件名**再导：直接用 arial.ttf 会让用例在同一目录里反复覆盖，
+            //    而 Windows 对"正被 WPF 打开的字体文件"不给覆写（实测 "无法在使用用户映射区域打开的文件上执行"）。
+            var staged = Path.Combine(temp, "lp-import-probe-" + Guid.NewGuid().ToString("N")[..8] + Path.GetExtension(source!));
+            File.Copy(source!, staged);
+            imported = FontCatalog.Import(staged);
+            Assert.True(imported.IsImported);
+            Assert.Contains(FontCatalog.ImportedFonts(), f => f.Family == imported.Family);
+
+            // ② 应用「导入字体 + 内置预设主题」并落盘
+            ThemeService.ResetForTests();
+            ThemeService.ApplyById("uji-matcha");
+            ThemeService.ApplyFonts(imported.Family, FontCatalog.DefaultMonoFamily);
+            ThemeService.SaveCurrentPreferences();
+
+            // ③ 重启：只清进程内状态（**偏好文件保留** —— 这正是 ResetInMemoryForRestartTests 的用途），
+            //    再走 App.OnStartup 的那条恢复入口
+            ThemeService.ResetInMemoryForRestartTests();
+            var (fellBack, reason) = ThemeService.ApplyFromPreferences();
+
+            Assert.False(fellBack, $"不该回退（reason={reason}）");
+            Assert.Equal("uji-matcha", ThemeService.Current.Id);
+            Assert.Equal(imported.Family, ThemeService.CurrentUiFont);
+            Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
+        }
+        finally
+        {
+            // ⚠️ **不删导入的字体文件**：WPF 的字体缓存把 `Fonts.GetFontFamilies(uri)` 解析过的文件
+            //    用内存映射持有到进程退出（实测：删除抛 UnauthorizedAccessException
+            //    "Access to the path … is denied"）。这是平台行为，不是产品缺陷 ——
+            //    真实用户"导入 → 应用 →（不重启就）删除"时同样会遇到，届时 FontCatalog.Remove 会抛
+            //    并把原因写进状态行（观测面纪律：暴露而不是静默失败）。
+            //    用例留下的是一份无害的字体副本（名字带随机后缀），下一次运行用的是新名字，不会互相干扰。
+            FontCatalog.ResetForTests();
+            if (backup is null) UiPreferenceStore.Clear();
+            else File.WriteAllText(path, backup);
+            try { Directory.Delete(temp, recursive: true); } catch { /* 测试自清尽力而为 */ }
+        }
+    }
+
+    /// <summary>
+    /// 从系统字体目录里挑一个真实的 <c>.ttf/.otf/.ttc</c> 供导入用例使用。
+    /// </summary>
+    /// <remarks>
+    /// 不用"测试自造一个字体文件"：手写字体二进制没有意义，而"非字体文件被拒绝"已由别的用例覆盖。
+    /// 这里要的是**真实字体文件**走通"解析族名 → 复制 → 重启后仍可用"整条链路。
+    /// </remarks>
+    private static string? PickRealFontFile()
+    {
+        var dir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+        if (!Directory.Exists(dir)) dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+        if (!Directory.Exists(dir)) return null;
+        return Directory.EnumerateFiles(dir)
+            .FirstOrDefault(f => Path.GetExtension(f).ToLowerInvariant() is ".ttf" or ".otf" or ".ttc");
     }
 
     [Fact]
@@ -120,8 +192,9 @@ public class FontSystemTests
     [Fact]
     public void 候选装载_已导入字体排在系统字体之前()
     {
-        // 用户自己放进来的字体要**先看到**（他刚导入完就要在下拉里找到它）。
-        // 用注入来源做隔离（用例不依赖"这台机器装了什么"），排序口径本身仍然被断言。
+        // 用户自己放进来的字体要**先看到**（他刚导入完就要在下拉里找到它）——排序口径被断言。
+        // 本机可能已经有导入字体（用户/上一轮用例留下的），故这里把系统来源换成假列表做隔离，
+        // 断言的是**分组顺序**（导入在前、系统在后），不是"总条数等于几"。
         try
         {
             FontCatalog.SystemSource = new FakeSystemFontSource(
@@ -129,8 +202,13 @@ public class FontSystemTests
                 new FontChoice("Aaa System Font", "Aaa 系统字体"));
 
             var all = FontCatalog.All();
-            Assert.Equal(2, all.Count);
-            Assert.DoesNotContain(all, f => f.IsImported);   // 本机没导入字体时只剩系统项
+            var importedCount = FontCatalog.ImportedFonts().Count;
+
+            Assert.Equal(importedCount + 2, all.Count);
+            // 前 importedCount 项 = 导入字体；其后 = 系统字体（分组顺序）
+            Assert.All(all.Take(importedCount), f => Assert.True(f.IsImported));
+            Assert.All(all.Skip(importedCount), f => Assert.False(f.IsImported));
+            Assert.Contains(all, f => f.Family == "Aaa System Font");
         }
         finally
         {

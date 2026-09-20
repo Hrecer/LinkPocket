@@ -242,13 +242,34 @@ public static class ThemeService
     /// 若不清文件，上一个用例（或用例外的真实运行）落下的主题会漏进下一个用例 ——
     /// 表现为"测试结果取决于执行顺序"的偶发红（同族教训见 WARNINGS 63 的时序敏感项）。
     /// </remarks>
-    public static void ResetForTests()
+    public static void ResetForTests() => ResetCore(clearPreferences: true);
+
+    /// <summary>
+    /// **模拟进程重启**：清进程内的主题/字体状态与事件订阅，但**保留偏好文件**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 存在的理由 = 可测性（"导入 → 应用 → 重启保持"这条链路必须能自动化验证），
+    /// 与 <see cref="ResetForTests"/> 同属**测试收尾/夹具**一类公开成员 ——
+    /// 不放进 <c>internal</c> 是因为本仓的红线是"<c>InternalsVisibleTo</c> 零残留"（架构测试卡住），
+    /// 不允许为了一个测试开口子。
+    /// </para>
+    /// <para>
+    /// 必须是**独立**方法：<see cref="ResetForTests"/> 会连偏好文件一起清，
+    /// 用它模拟重启会让 <see cref="ApplyFromPreferences"/> 什么都读不到 ——
+    /// 那条用例就退化成"断言默认值"，测试看着绿、其实没覆盖（典型的假绿）。
+    /// 生产路径的重启是真正的进程重启，不经过这里。
+    /// </para>
+    /// </remarks>
+    public static void ResetInMemoryForRestartTests() => ResetCore(clearPreferences: false);
+
+    private static void ResetCore(bool clearPreferences)
     {
         _current = ThemeCatalog.Default;
         _table = null;
         CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
         CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
-        Preferences.UiPreferenceStore.Clear();
+        if (clearPreferences) Preferences.UiPreferenceStore.Clear();
         // 字体来源与缓存也要复位：用例可能注入了假字体列表（FontCatalog.SystemSource），
         // 留着会让下一个用例继续看到它 —— 同一类"测试结果取决于执行顺序"的偶发红。
         Fonts.FontCatalog.ResetForTests();
