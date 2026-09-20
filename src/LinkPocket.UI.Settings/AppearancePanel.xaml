@@ -30,7 +30,7 @@
                      用户令 2026-09-20："这个应用这套外观、恢复这套外观，不能在自选配色这里，这些是全局操作"。
                      它们作用于**整套外观**（配色 + 字体），所以放在两张卡之外；又因为改完颜色就要立刻点，
                      所以放在面板顶部（常驻可见，不必滚过字体卡）。 -->
-                <StackPanel Orientation="Horizontal" Margin="4,0,0,18">
+                <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
                     <Button x:Name="ApplyDraftBtn" Content="应用这套外观"
                             Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
                             Cursor="Hand" Click="ApplyDraftBtn_Click"
@@ -39,6 +39,19 @@
                             Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
                             Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"
                             ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
+                </StackPanel>
+
+                <!-- 「自动调整颜色」开关（用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……
+                     纯按照你输入的颜色尽量直接优先按照你的颜色，除非颜色不够"）。
+                     放在全局操作行下方：它作用于**整套配色**，切换即当场重排并落盘。 -->
+                <StackPanel Orientation="Horizontal" Margin="4,0,0,18">
+                    <CheckBox x:Name="AutoAdjustColorsBox" VerticalAlignment="Center"
+                              Content="自动调整颜色"
+                              IsChecked="{Binding AutoAdjustColors, Mode=TwoWay}"
+                              ToolTip="关闭（缺省）= 尽量原样使用你选的颜色；打开 = 按明度档位自动排色"/>
+                    <TextBlock Text="{Binding PaletteModeHint}" FontSize="11.5" Margin="10,0,0,0"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.Text.Muted}"/>
                 </StackPanel>
 
                 <!-- ===== 卡 1：主题（出厂默认 + 内置预设 + 最后一张「自选颜色」）===== -->

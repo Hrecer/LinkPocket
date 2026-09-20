@@ -59,18 +59,24 @@ public class ThemeContrastTests
         ThemeCatalog.All.Select(t => new object[] { t.Id });
 
     [Fact]
-    public void 对比度矩阵_11套主题全部达标()
+    public void 对比度矩阵_11套主题_两种配色方式全部达标()
     {
+        // 配色应用方式（用户令 2026-09-20 的「自动调整颜色」开关）**两种都要可读**：
+        // 直配（缺省，尽量原样用用户颜色）与自动调色（按档位重排）走不同的取色分支，
+        // 任一支跌破阈值都要在这里红 —— 只测一种模式等于把另一半放空。
         var failures = new List<string>();
-        foreach (var theme in ThemeCatalog.All)
+        foreach (var mode in new[] { PaletteMode.Exact, PaletteMode.Auto })
         {
-            var table = PaletteSolver.Solve(theme);
-            foreach (var pair in Matrix)
+            foreach (var theme in ThemeCatalog.All)
             {
-                var (fg, bg) = pair.Pick(table);
-                var ratio = ColorMath.ContrastRatio(fg, bg);
-                if (ratio < pair.Min)
-                    failures.Add($"{theme.Name} · {pair.Label} = {ratio:F2} < {pair.Min:F1}（{pair.Why}）");
+                var table = PaletteSolver.Solve(theme with { PaletteMode = mode });
+                foreach (var pair in Matrix)
+                {
+                    var (fg, bg) = pair.Pick(table);
+                    var ratio = ColorMath.ContrastRatio(fg, bg);
+                    if (ratio < pair.Min)
+                        failures.Add($"[{mode}] {theme.Name} · {pair.Label} = {ratio:F2} < {pair.Min:F1}（{pair.Why}）");
+                }
             }
         }
         Assert.True(failures.Count == 0, "对比度未达标：\n" + string.Join("\n", failures));
@@ -150,8 +156,10 @@ public class ThemeContrastTests
         // 强调 / 支撑 / 描边直接取配色成员；只有"配色里确实没有这个角色可用的成员"时才按本色压/提明度。
         // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
         // 因此默认主题的页面底 = `#F2EEF5` **原色**（不再是旧模型按锚点旋出来的 `#E8E4ED`）。
-        var t = PaletteSolver.Solve(ThemeCatalog.Default);
+        var t = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
         Assert.Equal(0x251C2Eu, Rgb(t.Token(AppTokens.TextPrimary)));      // ← 色1 #3F3448 本色（最深成员的"墨"）
+        Assert.Equal(0x4D4357u, Rgb(t.Token(AppTokens.TextSecondary)));    // ← 同一个墨提亮到次文档（直配：不换成灰）
+        Assert.Equal(0x655A6Fu, Rgb(t.Token(AppTokens.TextMuted)));        // ← 同上，弱文档
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
@@ -161,8 +169,43 @@ public class ThemeContrastTests
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
-        Assert.Equal(0xD5C7DEu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色（最接近描边档）
+        Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
         Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.SurfaceBase)));      // ← 色5 **原样**：页面底 = 用户给的背景色（融合）
+    }
+
+    [Fact]
+    public void 配色应用方式_直配是缺省_自动调色只改文字两档()
+    {
+        // 用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……纯按照你输入的颜色尽量直接优先按照你的颜色，
+        // 除非颜色不够……尽量把你选的颜色全部应用上"。
+        Assert.Equal(PaletteMode.Exact, new ThemeDefinition
+        {
+            Id = "t", Name = "t", Source = ThemeSource.UserDefined, Palette = ThemeCatalog.Default.Palette,
+        }.PaletteMode);
+
+        var exact = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
+        var auto = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Auto });
+
+        // ① 两种模式的**结构色完全相同**（页面底 / 卡面 / 强调 / 容器 / 描边 / 正文 / 图标…）：
+        //    自动调色不该把用户选的颜色换掉，它只调整文字两级的中性度
+        foreach (var token in AppTokens.AllColorTokens.Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted }))
+            Assert.Equal(exact.Token(token).ToInt(), auto.Token(token).ToInt());
+
+        // ② 差异落在文字两档：直配 = 同一个墨提亮；自动 = 中性灰墨
+        Assert.NotEqual(exact.Token(AppTokens.TextSecondary).ToInt(), auto.Token(AppTokens.TextSecondary).ToInt());
+        Assert.Equal(0x47464Au, Rgb(auto.Token(AppTokens.TextSecondary)));
+        Assert.Equal(0x5F5E62u, Rgb(auto.Token(AppTokens.TextMuted)));
+
+        // ③ 融合在**两种模式下都成立**（用户令："不管关闭还是打开，主题卡色点都是能融合的"）
+        foreach (var mode in new[] { PaletteMode.Exact, PaletteMode.Auto })
+        {
+            var table = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = mode });
+            var baseColor = table.Token(AppTokens.SurfaceBase);
+            var surface = PaletteSolver.SurfaceBaseColor(ThemeCatalog.Default with { PaletteMode = mode });
+            Assert.Equal(baseColor.ToInt(), surface.ToInt());   // 卡面取材 = 实际页面底
+            Assert.True(ColorMath.ContrastRatio(surface, baseColor) <= 1.01,
+                $"[{mode}] 背景色成员与页面底必须同色（融合）");
+        }
     }
 
     [Fact]

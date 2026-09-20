@@ -2,9 +2,11 @@ using System.IO;
 using System.Linq;
 using System.Windows.Media;
 using LinkPocket.Theming;
+using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Fonts;
 using LinkPocket.Theming.Preferences;
 using LinkPocket.Theming.Themes;
+using LinkPocket.Theming.Tokens;
 using LinkPocket.ViewModels;
 using Xunit;
 
@@ -742,6 +744,60 @@ public class AppearanceViewModelTests : IDisposable
         var vm = NewVm();
         await vm.DeleteFontAsync(FontOption("Microsoft YaHei UI"));   // 无文件路径 = 系统字体
         Assert.Contains("系统字体不可删除", vm.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 自动调整颜色开关_缺省关闭_切换即生效并落盘()
+    {
+        // 用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……纯按照你输入的颜色尽量直接优先按照你的颜色，
+        // 除非颜色不够……尽量把你选的颜色全部应用上"，并且"不管关闭还是打开，主题卡色点都是能融合的"。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            Assert.False(vm.AutoAdjustColors);                       // 缺省关闭 = 直配
+            Assert.Equal(PaletteMode.Exact, ThemeService.PaletteMode);
+            Assert.Contains("原样", vm.PaletteModeHint, StringComparison.Ordinal);
+
+            // 打开：当场重新应用 + 落盘（偏好里记着这个开关）
+            vm.AutoAdjustColors = true;
+            Assert.Equal(PaletteMode.Auto, ThemeService.PaletteMode);
+            Assert.Equal(PaletteMode.Auto, ThemeService.Current.PaletteMode);
+            Assert.Contains("自动调色", vm.PaletteModeHint, StringComparison.Ordinal);
+            var prefsOn = UiPreferenceStore.Load(out var failedOn);
+            Assert.False(failedOn);
+            Assert.True(prefsOn.Theme.AutoAdjustColors, "开关必须落盘（重启后保持）");
+
+            // 关回去
+            vm.AutoAdjustColors = false;
+            Assert.Equal(PaletteMode.Exact, ThemeService.PaletteMode);
+            var prefsOff = UiPreferenceStore.Load(out _);
+            Assert.False(prefsOff.Theme.AutoAdjustColors);
+
+            // 两种模式下，每张主题卡的"背景色成员"都与该模式实际生效的页面底同色（融合）
+            foreach (var on in new[] { true, false })
+            {
+                vm.AutoAdjustColors = on;
+                foreach (var card in vm.ThemeCards.Where(c => !c.IsCustom))
+                {
+                    var swatches = card.Swatches.ToList();
+                    var lightest = swatches.OrderByDescending(c => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B).First();
+                    var baseColor = ColorMath.ToMedia(
+                        PaletteSolver.Solve(card.Definition! with
+                        {
+                            PaletteMode = on ? PaletteMode.Auto : PaletteMode.Exact,
+                        }).Token(AppTokens.SurfaceBase));
+                    Assert.True(Math.Abs(lightest.R - baseColor.R) + Math.Abs(lightest.G - baseColor.G)
+                                + Math.Abs(lightest.B - baseColor.B) <= 6,
+                        $"[auto={on}] {card.Name} 的背景色成员 #{lightest.R:X2}{lightest.G:X2}{lightest.B:X2}"
+                        + $" 与页面底 #{baseColor.R:X2}{baseColor.G:X2}{baseColor.B:X2} 不同色（该融合）");
+                }
+            }
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
     }
 
     [Fact]

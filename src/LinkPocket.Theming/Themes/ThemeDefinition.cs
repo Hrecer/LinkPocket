@@ -31,6 +31,25 @@ public enum ChromaCap
 }
 
 /// <summary>
+/// 配色应用方式（用户令 2026-09-20："单独做一个开关按钮，默认关闭……尽量把你选的颜色全部应用上"）。
+/// </summary>
+public enum PaletteMode
+{
+    /// <summary>
+    /// **直配（开关关闭，缺省）**：尽量**原样**用用户给的每一个颜色 ——
+    /// 页面底 / 卡面 / 悬停底 / 强调 / 支撑 / 描边 / 正文全部取自配色成员本身，
+    /// **只在该角色确实缺位**（配色里没有够深的颜色撑白字、没有够浅的当容器…）时才按**本色**压/提明度。
+    /// </summary>
+    Exact = 0,
+
+    /// <summary>
+    /// **自动调色（开关打开）**：按明度档位表把配色重排成一套协调的界面色
+    /// （强调填充 T40 / 强调文字 T30 / 容器 T90 / 描边 T65 / 悬停底按可读性反推…）。
+    /// </summary>
+    Auto = 1,
+}
+
+/// <summary>
 /// 一个主题的定义 = **4 或 5 个颜色**（用户自选 / 预设 / HEX 输入）+ 彩度上限档
 /// + 可选的中性色相钉值。
 /// </summary>
@@ -69,6 +88,15 @@ public sealed record ThemeDefinition
 
     /// <summary>中性色相钉值（<c>null</c> = 按中性池派生；出厂默认 = <see cref="ReferenceNeutralHue"/>）。</summary>
     public double? NeutralHueOverride { get; init; }
+
+    /// <summary>
+    /// 配色应用方式（缺省 <see cref="PaletteMode.Exact"/> = 尽量原样用用户给的颜色）。
+    /// </summary>
+    /// <remarks>
+    /// 由外观面板的「自动调整颜色」开关决定（<c>ThemeService.Apply</c> 统一写入），
+    /// **影响每一个令牌的取值**，因此也算主题定义的一部分（会随偏好落盘）。
+    /// </remarks>
+    public PaletteMode PaletteMode { get; init; } = PaletteMode.Exact;
 
     /// <summary>方案允许的身份色数量（UI 只开放这两档）。</summary>
     public static readonly IReadOnlyList<int> AllowedPaletteSizes = new[] { 4, 5 };

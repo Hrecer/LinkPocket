@@ -186,6 +186,7 @@ public static class PaletteSolver
         ArgumentNullException.ThrowIfNull(definition);
         var source = SolveFamilies(definition).SurfaceSource;
         if (source is not { } s) return ColorMath.FromAlphaHct(0xFF, 0, NeutralChroma, SurfaceBaseTone);
+        // 直配模式：与 Solve 同一判据（低于底色档才提亮）—— 保证"卡面显示的就是页面底"。
         var tone = ColorMath.Measure(s).T;
         return tone >= SurfaceBaseTone
             ? s
@@ -288,6 +289,18 @@ public static class PaletteSolver
         Argb DarkenOrLighten(Argb source, double tone)
             => At(ColorMath.Measure(source).H, ColorMath.Measure(source).C, tone);
 
+        /// <summary>
+        /// 直配取色：**够用就原样返回，不够才按本色补一档**（<see cref="PaletteMode.Exact"/> 的核心）。
+        /// </summary>
+        /// <param name="source">角色来源（配色成员的**原色**）。</param>
+        /// <param name="ok">"这个原色直接当该角色用，够不够用"的判据。</param>
+        /// <param name="fallbackTone">不够用时压/提到哪个档（<b>保持原色的色相与彩度</b>）。</param>
+        Argb Direct(Argb source, Func<Argb, bool> ok, double fallbackTone)
+            => ok(source) ? source : DarkenOrLighten(source, fallbackTone);
+
+        var exact = definition.PaletteMode == PaletteMode.Exact;
+        _ = exact;
+
         // ── 表面族：**用户给的背景色成员就是页面底本身**（色点与背景同色 → 融合，用户令 2026-09-20）──
         // 三个层（页面底 / 卡面 / 悬停底）由它按固定档距推出：底 = 原色原样；卡面提亮一档；悬停底压深一档。
         // ⚠️ 因此表面层**带用户颜色的彩度**（浅色成员通常 C≤20，不影响可读性；对比度矩阵逐条卡住）。
@@ -316,6 +329,14 @@ public static class PaletteSolver
         if (ColorMath.ContrastRatio(DarkenOrLighten(darkestSource.Color, darkestTone), surfaceBase) >= TextPrimaryMinContrast)
             textPrimary = DarkenOrLighten(darkestSource.Color, darkestTone);
 
+        // 直配模式下另两档文字也取自**同一个最深成员**（只是提亮到各自档位）：
+        // 不这么做的话，正文是用户的紫色、次要文字却是我们生成的灰墨（= 又混进了"不是你的颜色"）。
+        if (exact)
+        {
+            textSecondary = LightenTo(textPrimary, ToneScale.TextSecondary);
+            textMuted = LightenTo(textPrimary, ToneScale.TextMuted);
+        }
+
         // 悬停底是**唯一一块比页面底更深的表面**（"弱文字对它"必须达标）→ 按实测对比度动态抬档，
         // 而不是写死一个"看起来够浅"的档位：浅色成员彩度高的主题（赭石/暮色/焦糖玫瑰）写死的档位会跌破 4.5。
         var hoverFloor = Math.Max(surfaceSourceTone - SurfaceHoverDrop, SurfaceHoverMinTone);
@@ -326,34 +347,37 @@ public static class PaletteSolver
         }
         if (ColorMath.ContrastRatio(textMuted, surfaceHover) < ToneScale.MinMutedOnHover)
             surfaceHover = DarkenTo(surfaceBase, surfaceSourceTone);   // 兜底：与页面底同色（宁可弱化悬停也不牺牲可读性）
-        var outline = families.OutlineSource is { } outlineSrc
-            ? (ColorMath.Measure(outlineSrc).T > ToneScale.LineOutline
-                ? outlineSrc
-                : DarkenTo(outlineSrc, ToneScale.LineOutline))
+        // 描边：取配色里最接近中间调的成员 —— **够深就直接用**，比档位浅才压到档位（直配）；自动模式保持原行为。
+        var outlineSource = families.OutlineSource;
+        var outline = outlineSource is { } oSrc
+            ? Direct(oSrc, c => ColorMath.Measure(c).T <= ToneScale.LineOutline, ToneScale.LineOutline)
             : At(families.NeutralVariantHue, NeutralVariantChroma, ToneScale.LineOutline);
-        var outlineVariant = families.OutlineSource is { } outlineSrc2
-            ? LightenTo(outlineSrc2, Math.Max(ColorMath.Measure(outlineSrc2).T, ToneScale.LineVariant))
+        var outlineVariant = outlineSource is { } oSrc2
+            ? (exact
+                ? Direct(oSrc2, c => ColorMath.Measure(c).T >= ToneScale.LineVariant, ToneScale.LineVariant)
+                : LightenTo(oSrc2, Math.Max(ColorMath.Measure(oSrc2).T, ToneScale.LineVariant)))
             : At(families.NeutralVariantHue, NeutralVariantChroma, ToneScale.LineVariant);
 
         // ── 强调族：**优先用配色原色**（深到能撑白字就直接用；太浅才按本色压到填充档）──
-        var accentFill = families.AccentSource is { } accentSrc && ColorMath.Measure(accentSrc).T <= ToneScale.AccentFill
-            ? accentSrc
-            : families.AccentSource is { } accentSrc2
-                ? DarkenTo(accentSrc2, ToneScale.AccentFill)
-                : At(families.AccentHue, families.AccentChroma, ToneScale.AccentFill);
+        var accentSource = families.AccentSource;
+        var accentFill = accentSource is { } aSrc
+            ? Direct(aSrc, c => ColorMath.Measure(c).T <= ToneScale.AccentFill, ToneScale.AccentFill)
+            : At(families.AccentHue, families.AccentChroma, ToneScale.AccentFill);
         var accentText = DarkenTo(accentFill, ToneScale.AccentText);
         var accentContainer = families.ContainerSource is { } containerSrc
-            ? containerSrc
+            ? Direct(containerSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.AccentContainer)
             : LightenTo(accentFill, ToneScale.AccentContainer);
         // 容器字跟随**容器自己的色相**（否则浅色容器上会浮出一层别的颜色的墨）
         var accentOnContainer = At(ColorMath.Measure(accentContainer).H,
             Math.Max(ColorMath.Measure(accentContainer).C, NeutralChroma), ToneScale.AccentOnContainer);
 
         var supportIconSource = families.SupportSource ?? accentFill;
+        // 支撑容器：够浅就直接用（直配）/ 否则提亮到容器档；再不行才用强调色提亮兜底。
         var supportContainer = families.SupportSource is { } supportSrc
-            ? LightenTo(supportSrc, Math.Max(ColorMath.Measure(supportSrc).T, ToneScale.SupportContainer))
+            ? Direct(supportSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.SupportContainer)
             : LightenTo(accentFill, ToneScale.SupportContainer);
         var supportOnContainer = DarkenTo(supportContainer, ToneScale.SupportOnContainer);
+        // 支撑图标：够深就直接用，浅了压到填充档（与强调图标同一口径）。
         var supportIcon = ColorMath.Measure(supportIconSource).T <= ToneScale.AccentFill
             ? supportIconSource
             : DarkenTo(supportIconSource, ToneScale.AccentFill);

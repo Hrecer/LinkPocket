@@ -48,6 +48,15 @@ public sealed record ThemePreference
     /// <summary>用户自选时钉住的中性色相（可空 = 按配色派生）。</summary>
     public double? NeutralHue { get; init; }
 
+    /// <summary>
+    /// 「自动调整颜色」开关（用户令 2026-09-20：**缺省关闭** = 尽量原样用用户给的颜色）。
+    /// </summary>
+    /// <remarks>
+    /// 缺省 <c>false</c> 与 <see cref="PaletteMode.Exact"/> 一致；写成布尔是为了让偏好文件对用户可读
+    /// （"这个开关是关的"），语义映射收敛在本文件与 <c>ThemeService</c> 两处。
+    /// </remarks>
+    public bool AutoAdjustColors { get; init; }
+
     /// <summary>是否使用用户自选配色。</summary>
     [JsonIgnore]
     public bool IsCustom => Colors is { Count: > 0 };

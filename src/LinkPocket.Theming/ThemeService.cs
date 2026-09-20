@@ -32,6 +32,27 @@ public static class ThemeService
     /// <summary>当前主题定义。</summary>
     public static ThemeDefinition Current => _current;
 
+    /// <summary>
+    /// **配色应用方式**（外观面板的「自动调整颜色」开关）：
+    /// <see cref="PaletteMode.Exact"/>（缺省，开关关闭）= 尽量原样用用户给的颜色；
+    /// <see cref="PaletteMode.Auto"/>（开关打开）= 按明度档位表自动排色。
+    /// </summary>
+    /// <remarks>
+    /// 用户令 2026-09-20："单独做一个开关按钮，默认关闭……尽量把你选的颜色全部应用上"。
+    /// 它**影响每一个令牌**，所以随偏好落盘、并在 <see cref="Apply"/> 时统一写进主题定义
+    /// （调用方不必各自传一遍，避免"有的入口忘了带"）。
+    /// </remarks>
+    public static PaletteMode PaletteMode { get; private set; } = PaletteMode.Exact;
+
+    /// <summary>设置配色应用方式并**立即重新应用当前主题**（界面当场跟随）。</summary>
+    public static TokenTable SetPaletteMode(PaletteMode mode, ResourceDictionary? resources = null)
+    {
+        PaletteMode = mode;
+        var applied = Apply(_current with { PaletteMode = mode }, resources);
+        SaveCurrentPreferences();
+        return applied;
+    }
+
     /// <summary>当前**实际发布**的令牌表（= <see cref="DerivedTable"/> 的缓存）；未 Apply 也可读，便于单测与预览。</summary>
     public static TokenTable Table => _table ??= PaletteSolver.Solve(_current);
 
@@ -50,6 +71,8 @@ public static class ThemeService
     {
         ArgumentNullException.ThrowIfNull(definition);
 
+        // 配色应用方式由服务统一写入（调用方不必各自记得带 → 不存在"某个入口忘了传"的漂移）
+        definition = definition with { PaletteMode = PaletteMode };
         var table = PaletteSolver.Solve(definition);
 
         _current = definition;
@@ -158,6 +181,9 @@ public static class ThemeService
         var prefs = Preferences.UiPreferenceStore.Load(out var loadFailed);
         string? reason = loadFailed ? "界面偏好文件无法读取（已回退默认外观）" : null;
 
+        // 「自动调整颜色」开关先于主题应用生效（Apply 会把它写进定义）
+        PaletteMode = prefs.Theme.AutoAdjustColors ? PaletteMode.Auto : PaletteMode.Exact;
+
         var definition = ResolveDefinition(prefs.Theme);
         Apply(definition, resources);
 
@@ -180,6 +206,7 @@ public static class ThemeService
                     ? _current.Palette.Select(ToHex).ToArray()
                     : null,
                 NeutralHue = _current.Source == Themes.ThemeSource.UserDefined ? _current.NeutralHueOverride : null,
+                AutoAdjustColors = PaletteMode == PaletteMode.Auto,
             },
             Fonts = new Preferences.FontPreference { Ui = CurrentUiFont, Mono = CurrentMonoFont },
         });
@@ -312,6 +339,7 @@ public static class ThemeService
     {
         _current = ThemeCatalog.Default;
         _table = null;
+        PaletteMode = PaletteMode.Exact;   // 开关回缺省（关闭 = 直配）—— 否则会漏进下一个用例
         CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
         CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
         if (clearPreferences) Preferences.UiPreferenceStore.Clear();

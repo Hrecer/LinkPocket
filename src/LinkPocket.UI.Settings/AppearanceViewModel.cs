@@ -105,6 +105,17 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsEmpty)));
     }
 
+    /// <summary>按**当前配色应用方式**重建色点（切换「自动调整颜色」开关后调用）。</summary>
+    /// <remarks>
+    /// 两种模式下"背景色成员"的取值可能不同（深色背景会被提亮到浅色底线），所以卡面必须重投影 ——
+    /// 否则那个圆点会与它自己的底不同色（用户令：不管开关开着还是关着，色点都要能融合）。
+    /// </remarks>
+    public void RefreshSwatches()
+    {
+        if (Definition is not { } def) return;   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
+        SetSwatches(BuildSwatches(def));
+    }
+
     /// <summary>
     /// 主题卡的身份色圆点：**唯一实现**在 Theming（`PaletteSolver.EditableSlots`）——
     /// 与外观面板的色槽共用同一套补位规则（预设身份色只有 1–3 个，直接展示会稀疏得像"缺了几个色"）。
@@ -373,6 +384,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         // 名字 / 按钮文案 / 整句说明 / 槽数 = 同一个投影点（`ProjectAppliedTheme`），这里不再各写一遍
         ProjectAppliedTheme();
 
+        // 「自动调整颜色」开关也要跟着**已应用**的状态走（它是全局偏好，可能被别处改过 / 从偏好恢复）
+        Raise(nameof(AutoAdjustColors));
+        Raise(nameof(PaletteModeHint));
+
         ProjectCardSelection();
         RaiseCustomState();
     }
@@ -546,6 +561,56 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public string FontSourceHint => _fontSource == FontSourceKind.System
         ? "系统已装字体：只读（属于系统，本应用不修改、也删不掉）"
         : "自定义字体：导入的字体文件存在本应用目录里，可随时删除（不会动系统字体）";
+
+    // ── 「自动调整颜色」开关（用户令 2026-09-20）────────────────────────
+    // 用户原话："单独做一个开关按钮，默认关闭，就是这个按钮大概的表述就是关闭那种自动调整颜色的功能，
+    // 纯按照你输入的颜色尽量直接优先按照你的颜色，除非颜色不够……尽量把你选的颜色全部应用上"。
+
+    /// <summary>
+    /// 「自动调整颜色」：<c>false</c>（缺省）= **直配**（尽量原样用你给的颜色，只在颜色不够时按本色补）；
+    /// <c>true</c> = 按明度档位表自动排色。
+    /// </summary>
+    /// <remarks>
+    /// 开关一变就**当场重新应用当前外观**（<see cref="ThemeService.SetPaletteMode"/> 内含落盘），
+    /// 并把主题卡色点一起重投影 —— 两种模式下"背景色成员"的取值可能不同（深色背景会被提亮到浅色底线），
+    /// 卡面必须显示**该模式下实际生效的底色**，否则那个圆点又会与背景不同色（用户令：开关两种状态都要能融合）。
+    /// </remarks>
+    public bool AutoAdjustColors
+    {
+        get => ThemeService.PaletteMode == PaletteMode.Auto;
+        set
+        {
+            var target = value ? PaletteMode.Auto : PaletteMode.Exact;
+            if (ThemeService.PaletteMode == target) return;
+
+            try
+            {
+                ThemeService.SetPaletteMode(target);
+                Status = value
+                    ? "已开启「自动调整颜色」：按明度档位自动排色（界面会跟着变）"
+                    : "已关闭「自动调整颜色」：尽量原样使用你选的颜色";
+                RepojectAllThemeCards();
+            }
+            catch (Exception ex)
+            {
+                LpLog.Error($"切换配色应用方式失败（auto={value}）", ex, LogCategory);
+                Status = $"切换失败：{ex.Message}";
+            }
+            Raise(nameof(AutoAdjustColors));
+            Raise(nameof(PaletteModeHint));
+        }
+    }
+
+    /// <summary>开关的说明文案（两种模式各自说清"界面会怎么变"）。</summary>
+    public string PaletteModeHint => AutoAdjustColors
+        ? "自动调色：按明度档位重排你的配色（强调 / 容器 / 描边各自落到协调的深浅）"
+        : "直配：原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）";
+
+    /// <summary>把所有主题卡的色点按**当前模式**重投影（切换开关 / 重新应用主题后调用）。</summary>
+    private void RepojectAllThemeCards()
+    {
+        foreach (var card in ThemeCards) card.RefreshSwatches();
+    }
 
     /// <summary>当前选中的主题 id。</summary>
     public string SelectedThemeId
