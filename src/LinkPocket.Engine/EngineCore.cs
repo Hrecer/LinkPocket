@@ -97,6 +97,7 @@ public sealed class EngineCore : IEngine
         var caller = options?.Caller ?? CallerRef.Ui;
         var dryRun = options?.DryRun == true;
         var argsJson = EngineJson.ToJsonElement(args);   // 入参快照：审计 ArgsJson 与撤销登记共用
+        var argsSnapshot = SnapshotArgs(argsJson);       // 审计副本（超长截断 + 如实标记）
 
         // 能力门：会话存在性 + 只读拒绝写 + 限流（未登记会话零约束，兼容宿主自有调用）
         _sessions?.Enforce(caller, isMutation: true, correlationId);
@@ -105,6 +106,16 @@ public sealed class EngineCore : IEngine
         if (!handler.Descriptor.IsMutation)
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
                 $"「{command}」不是变更命令，请走 QueryAsync", correlationId: correlationId));
+
+        // 里程碑（Debug：缺省 info 级下零噪音，提级即为完整管道轨迹；与审计同 correlation 可对齐）
+        if (LpLog.IsEnabled(LogLevel.Debug))
+            LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令开始：{command}", props: new Dictionary<string, object?>
+            {
+                ["cmd"] = command,
+                ["corr"] = correlationId,
+                ["caller"] = caller.ToString(),
+                ["dry_run"] = dryRun,
+            });
 
         // 幂等查重（在写闸之前；24h 窗口内命中即返回首次结果，不重复执行）。
         // 干跑跳过查重：干跑语义 = 「无论如何执行一遍（执行但不提交）」，命中历史缓存会把它变成 no-op。
@@ -196,7 +207,7 @@ public sealed class EngineCore : IEngine
                 auditRef = _audit.Write(new AuditEntry(
                     DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
                     Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
-                    ArgsJson: TruncateArgs(argsJson)));
+                    ArgsJson: argsSnapshot.Json, ArgsTruncated: argsSnapshot.Truncated));
             }
             catch (Exception auditEx)
             {
@@ -204,24 +215,38 @@ public sealed class EngineCore : IEngine
                 auditRef = null;
             }
 
+            if (LpLog.IsEnabled(LogLevel.Debug))
+                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令完成：{command}", props: new Dictionary<string, object?>
+                {
+                    ["cmd"] = command,
+                    ["corr"] = correlationId,
+                    ["ms"] = sw.ElapsedMilliseconds,
+                    ["dry_run"] = dryRun,
+                    ["touched"] = result.Changes?.Touched.Count ?? 0,
+                    ["events"] = result.Changes?.Events.Count ?? 0,
+                });
+
             return new CommandResult<T>(true, (T?)result.Data, result.Changes, auditRef);
         }
         catch (EngineException ex)
         {
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsJson);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
+            LpLog.Warn($"命令失败：{command}（{ex.Error.Code}）", ex, category: "engine.pipeline");
             throw;
         }
         catch (OperationCanceledException)
         {
             // 取消也落审计（观测面：所有调用可追溯，取消不例外）
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsJson);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsSnapshot);
+            LpLog.Warn($"命令取消：{command}", category: "engine.pipeline");
             throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "调用已取消", correlationId: correlationId));
         }
         catch (Exception ex)
         {
             var wrapped = new EngineException(EngineErrors.Of(
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsJson);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
+            LpLog.Error($"命令内部错误：{command}", ex, category: "engine.pipeline");
             throw wrapped;
         }
         finally
@@ -304,11 +329,29 @@ public sealed class EngineCore : IEngine
             // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
             parent.CollectNestedChange(result.Changes);
 
-            // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）
-            _audit.Write(new AuditEntry(
-                DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
-                sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
-                DryRun: parent.DryRun, IsNested: true, StackTrace: null));
+            // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）。
+            // 观测面纪律：嵌套子审计失败**不否定父命令**（只计数 + 记日志；顶上还有父审计条目兜底）。
+            try
+            {
+                _audit.Write(new AuditEntry(
+                    DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
+                    sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
+                    DryRun: parent.DryRun, IsNested: true, StackTrace: null));
+            }
+            catch (Exception auditEx)
+            {
+                RegisterObservationFailure("写嵌套审计失败", auditEx);
+            }
+
+            // 里程碑（Debug）：嵌套派发轨迹——与父命令同 correlation，可还原"一条用户动作"的完整链路
+            if (LpLog.IsEnabled(LogLevel.Debug))
+                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"嵌套派发完成：{command}", props: new Dictionary<string, object?>
+                {
+                    ["cmd"] = command,
+                    ["corr"] = parent.CorrelationId,
+                    ["ms"] = sw.ElapsedMilliseconds,
+                    ["nested"] = true,
+                });
 
             return result;
         }
@@ -401,14 +444,14 @@ public sealed class EngineCore : IEngine
         return new(true, data, result.Changes, result.AuditRef);   // 非泛型 CommandResult 只承载成功结果（失败走异常）
     }
 
-    /// <summary>入参快照截断（审计 ArgsJson 列；空对象不记，超长截 4000 字符）。</summary>
-    private static string? TruncateArgs(JsonElement argsJson)
+    /// <summary>入参快照（审计 ArgsJson 列）：空对象不记；超长截 4000 字符并**如实标记截断**（v6 args_truncated）。</summary>
+    private static (string? Json, bool Truncated) SnapshotArgs(JsonElement argsJson)
     {
         if (argsJson.ValueKind != JsonValueKind.Object || argsJson.EnumerateObject().MoveNext() == false)
-            return null;
+            return (null, false);
         const int max = 4000;
         var raw = argsJson.GetRawText();
-        return raw.Length <= max ? raw : raw[..max];
+        return raw.Length <= max ? (raw, false) : (raw[..max], true);
     }
 
     /// <summary>
@@ -416,14 +459,14 @@ public sealed class EngineCore : IEngine
     /// 历史缺陷：三处 catch 里裸调 <c>_audit.Write</c>，审计抛异常时错误码/栈被顶替且该异常自身无审计。
     /// </summary>
     private void WriteFailureAudit(string command, string correlationId, CallerRef caller, Stopwatch sw,
-        bool dryRun, string errorCode, string? stackTrace, JsonElement argsJson)
+        bool dryRun, string errorCode, string? stackTrace, (string? Json, bool Truncated) argsSnapshot)
     {
         try
         {
             _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
                 Success: false, errorCode, null, DryRun: dryRun, IsNested: false, stackTrace,
-                ArgsJson: TruncateArgs(argsJson)));
+                ArgsJson: argsSnapshot.Json, ArgsTruncated: argsSnapshot.Truncated));
         }
         catch (Exception auditEx)
         {
@@ -435,8 +478,9 @@ public sealed class EngineCore : IEngine
     /// 观测面失败登记：已提交的成功写遇到观测面（审计/事件发布）异常时调用——
     /// 不否定业务结果（保持成功返回），仅计数暴露 + 记日志（ARCHITECTURE 不变量 #10「失败要暴露」）。
     /// 日志统一走 <see cref="LpLog"/> 管道（未装配管道的宿主仍有计数与一次性 Trace 提示，不静默）。
+    /// internal：同程序集编排层（BatchEngine 的父审计）复用同一计数口径。
     /// </summary>
-    private void RegisterObservationFailure(string what, Exception ex)
+    internal void RegisterObservationFailure(string what, Exception ex)
     {
         Interlocked.Increment(ref _observationFailures);
         LpLog.Warn($"观测面失败（已提交写仍返回成功）：{what}", ex, category: "engine.observe");

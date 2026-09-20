@@ -21,6 +21,28 @@ public class OrchestrationTests
         return (engine, factory, path);
     }
 
+    /// <summary>批父审计失败不得否定已完成的批（观测面纪律：报告照常返回 + 观测失败计数）。</summary>
+    [Fact]
+    public async Task Batch_Run_Parent_Audit_Failure_Does_Not_Reject_Report()
+    {
+        var (factory, path) = TestEnv.CreateDb();
+        try
+        {
+            var engine = TestEnv.CreateEngineWith(factory, withOrchestration: false,
+                sessions: null, audit: new ThrowingAuditWriter());
+            var batch = new BatchEngine(engine);
+            var report = await batch.RunAsync(new BatchScript("审计失败批",
+            [
+                new BatchStep("a", "test.add_folder", JsonSerializer.SerializeToElement(new { name = "甲" })),
+            ]));
+
+            Assert.True(report.Ok);
+            // 两次观测面失败都被计数（步的嵌套审计 + 批的父审计），但都不否定批结果
+            Assert.Equal(2L, engine.RuntimeStats.ObservationFailures);
+        }
+        finally { Cleanup(path); }
+    }
+
     // ===== 批：事务语义 =====
 
     [Fact]

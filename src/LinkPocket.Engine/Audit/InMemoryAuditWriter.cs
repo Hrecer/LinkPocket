@@ -5,7 +5,8 @@ namespace LinkPocket.Engine;
 
 /// <summary>
 /// 审计条目（写流"全程携带 correlationId 与幂等键"；落 audit_log 表）。
-/// ArgsJson = 入参快照（超长截断）；BatchId = 批父条目关联列；两列均可空、缺省不传。
+/// ArgsJson = 入参快照（超长截断，ArgsTruncated 如实标记）；BatchId = 批父条目关联列；均可空、缺省不传。
+/// StackTrace = 失败路径的原始堆栈（v6 起落 <c>stack_trace</c> 列——此前采集了却无处落盘）。
 /// </summary>
 public sealed record AuditEntry(
     DateTimeOffset At,
@@ -20,7 +21,8 @@ public sealed record AuditEntry(
     bool IsNested,
     string? StackTrace,
     string? ArgsJson = null,
-    string? BatchId = null);
+    string? BatchId = null,
+    bool ArgsTruncated = false);
 
 /// <summary>审计写入器契约（进程内环形 + 落 audit_log 表）。</summary>
 public interface IAuditWriter

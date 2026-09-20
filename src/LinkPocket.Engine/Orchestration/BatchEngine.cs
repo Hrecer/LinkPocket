@@ -79,6 +79,16 @@ public sealed class BatchEngine : IBatchEngine
 
         TrackStatus(batchId, new BatchStatus(batchId, script.Name, "running", 0, script.Steps.Count));
 
+        // 里程碑（Debug）：批开始——批是"一条用户动作"的容器，与各步嵌套审计同 correlation
+        if (LpLog.IsEnabled(LogLevel.Debug))
+            LpLog.Write(LogLevel.Debug, "engine.batch", $"批开始：{script.Name}", props: new Dictionary<string, object?>
+            {
+                ["batch"] = batchId,
+                ["steps"] = script.Steps.Count,
+                ["scope"] = script.Scope.ToString(),
+                ["dry_run"] = dryRun,
+            });
+
         List<BatchStepResult> results;
         var touched = new List<EntityRef>();
         var events = new List<string>();
@@ -108,6 +118,7 @@ public sealed class BatchEngine : IBatchEngine
         {
             // 事务批中途异常：工作单元未提交已回滚
             TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
+            LpLog.Warn($"批中止：{script.Name}（{ex.Error.Code}）", ex, category: "engine.batch");
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.BatchAborted,
                 $"批「{script.Name}」执行失败（{ex.Error.Code}）：事务批已整体回滚",
@@ -124,11 +135,28 @@ public sealed class BatchEngine : IBatchEngine
         TrackStatus(batchId, new BatchStatus(batchId, script.Name, report.Ok ? "completed" : "failed",
             results.Count, script.Steps.Count));
 
-        // 父级审计条目（batch_id 列关联；每步已有 IsNested 子记录）
-        _engine.Audit.Write(new AuditEntry(
-            DateTimeOffset.Now, "batch.run", correlationId, caller, sw.ElapsedMilliseconds,
-            Success: report.Ok, ErrorCode: report.Ok ? null : EngineErrors.BatchAborted,
-            Changes: report.Changes, DryRun: dryRun, IsNested: false, StackTrace: null, BatchId: batchId));
+        // 父级审计条目（batch_id 列关联；每步已有 IsNested 子记录）。
+        // 观测面纪律：父审计失败**不否定已完成的事实**（报告照常返回，失败计数 + 记日志）。
+        try
+        {
+            _engine.Audit.Write(new AuditEntry(
+                DateTimeOffset.Now, "batch.run", correlationId, caller, sw.ElapsedMilliseconds,
+                Success: report.Ok, ErrorCode: report.Ok ? null : EngineErrors.BatchAborted,
+                Changes: report.Changes, DryRun: dryRun, IsNested: false, StackTrace: null, BatchId: batchId));
+        }
+        catch (Exception auditEx)
+        {
+            _engine.RegisterObservationFailure("写批父审计失败", auditEx);
+        }
+
+        if (LpLog.IsEnabled(LogLevel.Debug))
+            LpLog.Write(LogLevel.Debug, "engine.batch", $"批结束：{script.Name}", props: new Dictionary<string, object?>
+            {
+                ["batch"] = batchId,
+                ["ok"] = report.Ok,
+                ["steps"] = results.Count,
+                ["ms"] = sw.ElapsedMilliseconds,
+            });
 
         return report;
     }

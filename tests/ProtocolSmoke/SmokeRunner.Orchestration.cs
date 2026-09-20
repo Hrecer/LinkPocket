@@ -156,18 +156,32 @@ internal static partial class SmokeRunner
         File.Delete(htmlPath);
         File.Delete(linksJsonPath);
 
-        // —— §10.9 diagnostics.collect（Maintenance 模块）：schema 版本 + 表计数（脱敏） ——
-        // 版本 = 完整版本链的最高版本（v2 基线 + v3/v4/v5 演进）；运行时可观测读数在 §11 校验
+        // —— §10.9 diagnostics.collect（Maintenance 模块）：schema 版本 + 表计数（脱敏）——
+        // 版本 = 完整版本链的最高版本（v2 基线 + v3/v4/v5/v6 演进）；运行时可观测读数在 §11 校验
         var diag = await s.Client.CollectDiagnosticsAsync();
-        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 5, "诊断应报 schema v5（v2 基线 + v3/v4/v5 演进）");
+        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 6, "诊断应报 schema v6（v2 基线 + v3..v6 演进）");
         Asserts.That(diag.TryGetProperty("counts", out _), "诊断应含各表计数");
+        // logging 段：冒烟宿主未装配日志管道 → 如实 wired=false（不填假值）；审计段给行数与最旧时刻
+        Asserts.That(diag.GetProperty("logging").GetProperty("wired").GetBoolean() == false,
+            "冒烟宿主未装配日志管道，logging.wired 应如实为 false");
+        Asserts.That(diag.GetProperty("audit").GetProperty("rows").GetInt64() > 0, "审计段应报已有审计行数");
 
-        // —— §10.10 audit_log / idempotency 落表直查 ——
+        // —— §10.10 audit_log / idempotency 落表直查 + audit.query / audit.prune 读侧 ——
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         await using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={s.DbPath}");
         await db.OpenAsync();
         var auditCount = await ScalarAsync(db, "SELECT COUNT(*) FROM audit_log");
         Asserts.That(auditCount > 0, $"audit_log 表应有落库条目（实际 {auditCount}）");
+
+        // audit.query：倒序分页 + 只取顶层（嵌套子记录不得混进分页语义）——经引擎读侧（DTO 公开，进程内直取）
+        var auditQuery = await s.Client.QueryAsync<LinkPocket.Modules.Maintenance.AuditPagedResult>(
+            "audit.query", new { per_page = 5, is_nested = false });
+        Asserts.That(auditQuery.Total > 0, "audit.query 应能读到审计行");
+        Asserts.That(auditQuery.Items.Count <= 5, "per_page 应生效");
+        var pruned = await s.Client.ExecuteAsync<LinkPocket.Modules.Maintenance.AuditPruneResult>(
+            "audit.prune", new { keep_days = 90 }, new CallOptions(DryRun: true));
+        Asserts.That(pruned.Ok && pruned.Data!.KeepDays == 90,
+            "audit.prune（dry_run）应回报保留天数且零副作用（dry_run 不消耗确认）");
 
         var first = (await s.Client.FolderCreateAsync("幂等目录", o: new CallOptions(IdempotencyKey: "smoke-idem-1"))).Data
             ?? throw new Exception("folders.create 未返回 FolderDto");

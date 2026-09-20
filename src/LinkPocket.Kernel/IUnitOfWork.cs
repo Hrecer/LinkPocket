@@ -24,6 +24,9 @@ public interface IUnitOfWork : IAsyncDisposable
     IFolderRepository Folders { get; }
     ITrashRepository Trash { get; }
 
+    /// <summary>审计存储（读侧 + 保留策略；写入由引擎管道的 IAuditWriter 承担）。</summary>
+    IAuditRepository Audit { get; }
+
     /// <summary>树领域服务（父链遍历/递归计数/环检测/路径显示——唯一出处）。</summary>
     ITreeService Trees { get; }
 

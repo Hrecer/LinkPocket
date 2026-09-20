@@ -21,15 +21,15 @@ internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
 }
 
 /// <summary>
-/// diagnostics.collect（Query）：脱敏诊断信息打包（版本 / schema / 各表计数 / 运行时可观测读数）。
-/// runtime 段由组合根接线提供（查询缓存与事件存储读数）；未接线则为 null（不填假值）。
+/// diagnostics.collect（Query）：脱敏诊断信息打包（版本 / schema / 各表计数 / 运行时可观测读数 /
+/// **日志与审计读数**）。runtime 段由组合根接线提供（查询缓存与事件存储读数）；未接线则为 null（不填假值）。
 /// </summary>
 internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtimeStats) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "diagnostics.collect",
         Category: "maintenance",
-        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 缓存与事件存储读数（脱敏）",
+        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 缓存与事件存储读数 / 日志与审计读数（脱敏）",
         Parameters: [],
         Caps: CommandCaps.Query);
 
@@ -37,6 +37,16 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
     {
         var ct = ctx.Ct;
         var runtime = runtimeStats?.Invoke();
+
+        // 日志读数（观测面）：直接读 LpLog 的对外计数（单一数据源，不另存一份统计）
+        var logStats = LpLog.Stats;
+        var logFiles = LpLog.Files;
+        var logFilesBytes = 0L;
+        foreach (var path in logFiles)
+            logFilesBytes += new FileInfo(path).Length;
+
+        var auditRows = await ctx.Uow.Audit.CountAsync(ct);
+        var auditOldest = await ctx.Uow.Audit.OldestAtAsync(ct);
 
         var diagnostics = new
         {
@@ -66,6 +76,32 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
                 cache_hit_rate = Math.Round(runtime.CacheHitRate, 4),
                 event_store_head = runtime.EventStoreHead,
                 observation_failures = runtime.ObservationFailures,
+            },
+            // 日志管道读数：未接线时 wired=false 且各计数为 null（如实暴露，绝不填假值）
+            logging = new
+            {
+                wired = LpLog.Sink is not null,
+                level = logStats?.Level?.ToString().ToLowerInvariant(),
+                directory = logStats?.Directory,
+                files = logFiles.Count,
+                files_bytes = logFilesBytes,
+                accepted = logStats?.Accepted,
+                filtered = logStats?.Filtered,
+                dropped = logStats?.Dropped,
+                written = logStats?.Written,
+                failed = logStats?.Failed,
+                direct_writes = logStats?.DirectWrites,
+                queue_depth = logStats?.QueueDepth,
+                last_error = logStats?.LastError,
+                // 门面兜底计数：管道未装配期间的丢弃 + 落点违反"不抛"约定被兜住的次数
+                unconfigured_drops = LpLog.UnconfiguredDrops,
+                facade_write_failures = LpLog.WriteFailures,
+            },
+            // 审计保留读数：行数 + 最旧时刻（"该清理了没"的唯一判据读数）
+            audit = new
+            {
+                rows = auditRows,
+                oldest_at = auditOldest,
             },
         };
         return CommandResult.Ok(JsonSerializer.SerializeToElement(diagnostics));

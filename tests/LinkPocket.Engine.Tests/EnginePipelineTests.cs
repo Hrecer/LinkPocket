@@ -386,12 +386,6 @@ public class EnginePipelineTests
         finally { TryDelete(path); }
     }
 
-    /// <summary>注入式失败审计写入器：Write 必抛（用于验证审计失败不否定已提交写、且失败被暴露）。</summary>
-    private sealed class ThrowingAuditWriter : IAuditWriter
-    {
-        public string Write(AuditEntry entry) => throw new InvalidOperationException("审计写入失败（注入）");
-    }
-
     private static void TryDelete(string path)
     {
         try

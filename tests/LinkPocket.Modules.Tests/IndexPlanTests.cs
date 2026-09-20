@@ -71,6 +71,12 @@ public class IndexPlanTests
     [InlineData("SELECT trash_folder_id, COUNT(*) FROM trash_links WHERE trash_folder_id IS NOT NULL GROUP BY trash_folder_id", "idx_trash_links_folder")]
     // 回收站单元全量排序（trash.tree；v3 补齐 EF 模型已声明、基线 DDL 漏建的索引）
     [InlineData("SELECT id FROM trash_folders ORDER BY deleted_at DESC", "idx_trash_folders_deleted")]
+    // 审计时间范围 + 倒序分页（audit.query 的主查询形态；v6 随 audit.query/audit.prune 一起落地）
+    [InlineData("SELECT id FROM audit_log WHERE at >= '2026-09-01T00:00:00.0000000+08:00' AND at < '2026-09-21T00:00:00.0000000+08:00' ORDER BY at DESC LIMIT 50", "idx_audit_at")]
+    // 审计保留（audit.prune 的 DELETE WHERE at < ?）
+    [InlineData("DELETE FROM audit_log WHERE at < '2026-06-01T00:00:00.0000000+08:00'", "idx_audit_at")]
+    // 一次调用（含嵌套子记录）按 correlation 取齐（AI 自省 / 排障的主查询形态）
+    [InlineData("SELECT id FROM audit_log WHERE correlation_id = 'corr-1'", "idx_audit_correlation")]
     public void Hot_Paths_Use_Index(string sql, string expectedIndex)
         => WithFreshDb(dbPath => Assert.Contains(expectedIndex, Plan(dbPath, sql)));
 

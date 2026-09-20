@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：56 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：58 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_56_Commands()
+    public void Describe_Returns_All_58_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(56, manifest.Commands.Count);
-        Assert.Equal(56, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(58, manifest.Commands.Count);
+        Assert.Equal(58, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -28,6 +28,8 @@ public class CatalogTests
         Assert.Equal(16, engine.Describe("links").Commands.Count);
         Assert.Equal(9, engine.Describe("trash").Commands.Count);  // + trash.restore_unit（还原）/ trash.overview
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
+        Assert.Single(engine.Describe("locate").Commands);
+        Assert.Equal(2, engine.Describe("audit").Commands.Count);  // audit.query / audit.prune
 
         var contents = engine.Describe("folders").Commands.Single(c => c.Name == "folders.contents");
         Assert.True(contents.IsQuery);
@@ -1421,8 +1423,8 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // 全新建库 = 完整版本链（v2 基线 + v3/v4/v5 演进），版本表落最高版本
-        Assert.Equal(5, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 完整版本链（v2 基线 + v3..v6 演进），版本表落最高版本
+        Assert.Equal(6, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

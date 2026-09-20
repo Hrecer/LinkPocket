@@ -9,7 +9,7 @@ namespace LinkPocket.Composition;
 /// <summary>
 /// 引擎装配选项（四处宿主的差异点收敛）：审计/幂等是否落库、wire、编排层、暂存区根。
 /// 历史形态：AppHost/ProbeEnv = 全量（审计/幂等落库 + 编排 + wire）；TestHost = 裸引擎
-/// （无审计落库、无编排、无 wire，其单测断言 Describe==52 条业务命令）；CatalogExport = 只出目录。
+/// （无审计落库、无编排、无 wire，其单测断言 Describe==58 条业务命令）；CatalogExport = 只出目录。
 /// </summary>
 public sealed class ComposeOptions
 {
@@ -23,7 +23,7 @@ public sealed class ComposeOptions
     public bool BuildWire { get; init; } = true;
 
     /// <summary>是否注册编排层（macro/undo/staging 15 条命令 + 批引擎/撤销协调器挂引擎）。
-    /// 模块单测宿主关闭该选项：它只管 52 条业务命令，编排语义归 Engine.Tests。</summary>
+    /// 模块单测宿主关闭该选项：它只管 58 条业务命令，编排语义归 Engine.Tests。</summary>
     public bool IncludeOrchestration { get; init; } = true;
 
     /// <summary>暂存区根（staging.transform 文件准备区）；null = 由库路径推导 linkpocket_staging_*。</summary>

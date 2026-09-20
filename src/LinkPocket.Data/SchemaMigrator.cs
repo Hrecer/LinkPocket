@@ -131,6 +131,7 @@ public static class SchemaMigrator
         (3, IndexesV3 + VersionRow(3)),
         (4, IndexesV4 + VersionRow(4)),
         (5, AdditionsV5 + VersionRow(5)),
+        (6, AdditionsV6 + VersionRow(6)),
     ];
 
     /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
@@ -202,8 +203,9 @@ public static class SchemaMigrator
     /// <c>links(visit_count)</c>（most_visited 结果已进查询缓存，10k 全表排序仍在毫秒级）、
     /// <c>links(is_important)</c>（低选择性，EF 模型里那条声明属历史遗留，已在模型中删除）、
     /// <c>(trash_folder_id, deleted_at)</c> 复合索引（回收站单表量级小，且与既有 idx_trash_links_folder
-    /// 高度重叠 = 白付写代价）、<c>audit_log(at)</c> / <c>idempotency(at)</c>
-    /// （对应当前尚不存在的 <c>audit.prune</c> 保留策略，随该命令一并落地而非预留空索引）。</para>
+    /// 高度重叠 = 白付写代价）、<c>idempotency(at)</c>（当前无对应保留/归档命令）。
+    /// ⚠️ <c>audit_log(at)</c> 曾在 v3 刻意不加（"随 audit.prune 一起落地"）——**v6 已兑现**：
+    /// 索引随 <c>audit.query</c> / <c>audit.prune</c> 一并落地。</para>
     /// </summary>
     private const string IndexesV3 =
         """
@@ -254,5 +256,33 @@ public static class SchemaMigrator
         ALTER TABLE trash_folders ADD COLUMN created_at TEXT NULL;
         ALTER TABLE trash_folders ADD COLUMN last_visited_at TEXT NULL;
         ALTER TABLE trash_folders ADD COLUMN visit_count INTEGER NOT NULL DEFAULT 0;
+        """;
+
+    /// <summary>
+    /// v6 版本脚本：**审计可读化**（S2，2026-09-20）——补列 + 两个实测定位的索引。
+    ///
+    /// <list type="bullet">
+    /// <item><c>dry_run</c> / <c>is_nested</c>：审计条目在内存里一直带这两个字段
+    /// （<c>AuditEntry</c>），但落表时被丢弃 → 持久审计分不清"预演"与"嵌套子记录"（如 dedup.apply 的逐条子删）。
+    /// 补列后 <c>audit.query</c> 可按它们过滤，也能让 AI 消费者正确解读审计链。</item>
+    /// <item><c>stack_trace</c>：失败路径一直采集堆栈（<c>AuditEntry.StackTrace</c>）却无处落盘——
+    /// 排障要的原始现场只在文件名日志里（且旧 Logger 是多行文本块）。</item>
+    /// <item><c>args_truncated</c>：入参快照超 4000 字符被截断，此前**静默**——消费方无法知道
+    /// "这段 args 是不是完整的"。补列如实标记。</item>
+    /// <item>索引 <c>idx_audit_at</c>：<c>audit.query</c> 的时间范围 + 倒序分页，以及 <c>audit.prune</c> 的
+    /// <c>DELETE WHERE at &lt; ?</c>。此前 <c>audit_log</c> **无任何索引**（v3 注释里明确写了
+    /// "随 audit.prune 一起落地，不预留空索引"——本版本兑现）。</item>
+    /// <item>索引 <c>idx_audit_correlation</c>：一次调用（含全部嵌套子记录）按 correlation_id 取齐，
+    /// 是"把一条用户动作的整条链路一次读出来"的键（AI 自省与排障的主查询形态）。</item>
+    /// </list>
+    /// </summary>
+    private const string AdditionsV6 =
+        """
+        ALTER TABLE audit_log ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE audit_log ADD COLUMN is_nested INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE audit_log ADD COLUMN stack_trace TEXT NULL;
+        ALTER TABLE audit_log ADD COLUMN args_truncated INTEGER NOT NULL DEFAULT 0;
+        CREATE INDEX idx_audit_at ON audit_log(at);
+        CREATE INDEX idx_audit_correlation ON audit_log(correlation_id);
         """;
 }

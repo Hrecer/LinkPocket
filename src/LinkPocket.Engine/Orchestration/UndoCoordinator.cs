@@ -111,6 +111,16 @@ public sealed class UndoCoordinator : IUndoCoordinator
 
             while (_undo.Count > Capacity) _undo.TryPop(out _);
         }
+
+        // 里程碑（Debug）：撤销栈变化——「这次用户动作留下了什么可回退的东西」
+        if (LpLog.IsEnabled(LogLevel.Debug))
+            LpLog.Write(LogLevel.Debug, "engine.undo", $"撤销登记：{descriptor.Name}", props: new Dictionary<string, object?>
+            {
+                ["cmd"] = descriptor.Name,
+                ["steps"] = steps.Count,
+                ["group"] = groupId ?? string.Empty,
+                ["caller"] = caller.ToString(),
+            });
     }
 
     /// <summary>构造本次调用的可撤销步骤（处理器回填优先；否则退回描述符 + 原参数）。</summary>

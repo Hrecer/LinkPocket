@@ -3,7 +3,7 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Maintenance;
 
-/// <summary>维护模块入口：schema 版本 / 诊断收集 / 整库重置（两阶段确认）。</summary>
+/// <summary>维护模块入口：schema 版本 / 诊断收集 / 审计读侧与保留 / 整库重置（两阶段确认）。</summary>
 public static class MaintenanceModule
 {
     /// <param name="runtimeStats">
@@ -15,6 +15,8 @@ public static class MaintenanceModule
     [
         new MaintenanceSchemaVersionHandler(),
         new DiagnosticsCollectHandler(runtimeStats),
+        new AuditQueryHandler(),
+        new AuditPruneHandler(),
         new MaintenanceReinitHandler(),
     ];
 }

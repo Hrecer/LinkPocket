@@ -18,10 +18,15 @@ internal static class TestEnv
     }
 
     public static EngineCore CreateEngine(LinkPocketDbContextFactory factory, params ICommandHandler[] extra)
-        => CreateEngine(factory, withOrchestration: false, sessions: null, extra);
+        => CreateEngineWith(factory, withOrchestration: false, sessions: null, audit: null, extra);
 
     public static EngineCore CreateEngine(LinkPocketDbContextFactory factory, bool withOrchestration,
         ISessionManager? sessions = null, params ICommandHandler[] extra)
+        => CreateEngineWith(factory, withOrchestration, sessions, audit: null, extra);
+
+    /// <summary>带审计写入器注入的工厂（观测面测试专用：注入"必抛"审计验证"不否定已提交事实"）。</summary>
+    public static EngineCore CreateEngineWith(LinkPocketDbContextFactory factory, bool withOrchestration,
+        ISessionManager? sessions, IAuditWriter? audit, params ICommandHandler[] extra)
     {
         var registry = new CommandRegistry();
         var builtins = new List<ICommandHandler>
@@ -40,7 +45,8 @@ internal static class TestEnv
         registry.RegisterAll(builtins.Where(h => !extraNames.Contains(h.Descriptor.Name)));
         registry.RegisterAll(extra);
 
-        var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()), sessions: sessions);
+        var engine = new EngineCore(registry, () => new EfUnitOfWork(factory.CreateDbContext()),
+            audit: audit, sessions: sessions);
         if (withOrchestration)
         {
             // 编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致）
@@ -48,6 +54,12 @@ internal static class TestEnv
         }
         return engine;
     }
+}
+
+/// <summary>注入式失败审计写入器：Write 必抛（验证"观测面失败不否定已提交事实"与失败路径守卫）。</summary>
+internal sealed class ThrowingAuditWriter : IAuditWriter
+{
+    public string Write(AuditEntry entry) => throw new InvalidOperationException("审计写入失败（注入）");
 }
 
 /// <summary>查询：统计文件夹数。</summary>

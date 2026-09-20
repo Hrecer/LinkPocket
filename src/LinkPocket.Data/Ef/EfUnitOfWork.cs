@@ -16,6 +16,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
     private EfLinkRepository? _links;
     private EfFolderRepository? _folders;
     private EfTrashRepository? _trash;
+    private EfAuditRepository? _audit;
     private EfTreeService? _trees;
     private FolderNamingService? _naming;
 
@@ -24,6 +25,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public ILinkRepository Links => _links ??= new EfLinkRepository(_db);
     public IFolderRepository Folders => _folders ??= new EfFolderRepository(_db);
     public ITrashRepository Trash => _trash ??= new EfTrashRepository(_db);
+    public IAuditRepository Audit => _audit ??= new EfAuditRepository(_db);
     public ITreeService Trees => _trees ??= new EfTreeService(_db);
 
     /// <summary>命名服务（唯一实现，Kernel 提供）：绑本工作单元，本事务内的未提交变更对它可见。</summary>
