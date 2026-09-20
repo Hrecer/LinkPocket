@@ -53,7 +53,9 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
         SelectLastCommand = new RelayCommand(SelectLast);
         EscapeCommand = new RelayCommand(Escape);
-        RefreshCommand = new RelayCommand(() => _ = RefreshFromEventAsync());
+        // F5 = 真刷新（**导航加载口径**）：重跑当前已执行查询并保留选中（只剔除已消失的项），
+        // 亮加载遮罩、结束后播行入场动画；事件驱动的静默刷新走 RefreshFromEventAsync（另一条口径，不亮不播）。
+        RefreshCommand = new RelayCommand(() => _ = RefreshAsync(), () => !string.IsNullOrWhiteSpace(LastQuery));
 
         // 详情栏的页面动作命令：打开/编辑都进入浏览页的链接详情页（详情页自带完整编辑与删除入口）
         Details.OpenCommand = JumpCommand;
@@ -194,6 +196,42 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(query)) return Task.CompletedTask;
         if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync();
         return SearchAsync();
+    }
+
+    private bool _isNavigating;
+
+    /// <summary>
+    /// 用户发起的刷新在途（界面**加载遮罩的唯一来源**）：本页只有 F5 为 true；
+    /// 进入页面的入口对齐刷新、事件驱动的静默刷新一律 false（不亮遮罩、不播动画）——见 BEHAVIOR-CONTRACT §1.5。
+    /// </summary>
+    public bool IsNavigating
+    {
+        get => _isNavigating;
+        private set { if (_isNavigating == value) return; _isNavigating = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>一次**用户发起**的刷新（F5）结束：视图据此播行入场动画并收回焦点。</summary>
+    public event EventHandler? RefreshCompleted;
+
+    /// <summary>
+    /// F5 真刷新：重跑**当前已执行的查询**（<see cref="LastQuery"/>）并保留选中——
+    /// 只剔除已不在新结果里的 ID（用户令 2026-09-20："除非刷新之后那一项没了，才应该取消选中"）。
+    /// 按"导航加载口径"亮遮罩 + 播入场动画，与浏览页 F5 同源；
+    /// 输入框里已改但未执行的文本不参与（那是"回车/搜索按钮"的语义，避免按 F5 变成静默换查询）。
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        if (string.IsNullOrWhiteSpace(LastQuery)) return;
+        IsNavigating = true;
+        try
+        {
+            await RefreshResultsAsync();
+        }
+        finally
+        {
+            IsNavigating = false;
+            RefreshCompleted?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     // —— 查询执行 ——

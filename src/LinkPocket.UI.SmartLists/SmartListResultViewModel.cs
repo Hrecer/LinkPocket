@@ -148,7 +148,8 @@ namespace LinkPocket.ViewModels
             // 只读页的键位延伸（↑/↓/End/F5；不引入任何会改数据的键）
             MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
             SelectLastCommand = new RelayCommand(SelectLast);
-            RefreshCommand = new RelayCommand(() => _ = ReloadAsync());
+            // F5 = 重新查询（**导航加载口径**）：亮加载遮罩、结束后播行入场动画 + 保留选中
+            RefreshCommand = new RelayCommand(() => _ = ReloadAsync(navigating: true));
             // 点空白清选中（BlankClick 挂在结果区；与 Esc 分层共用同一"出口"语义）
             ClearSelectionCommand = new RelayCommand(() => Selection.Clear());
 
@@ -245,10 +246,16 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        /// <summary>F5 重新查询：重拉当前列表并通知视图重绑（与删除后重载同一条出口）。</summary>
-        private async Task ReloadAsync()
+        /// <summary>
+        /// 重新查询：重拉当前列表并通知视图重绑（与删除后重载同一条出口）。
+        /// <paramref name="navigating"/> = **用户发起**（F5）：亮加载遮罩、结束后播行入场动画；
+        /// 删除后的重载、跨页事件刷新等一律 false（静默）——与浏览页的导航加载口径一致。
+        /// 选中保留由视图重绑时统一处理（只剔除已不在结果里的 ID）。
+        /// </summary>
+        private async Task ReloadAsync(bool navigating = false)
         {
             if (IsLoading) return;
+            if (navigating) IsNavigating = true;
             try
             {
                 await LoadAsync();
@@ -257,8 +264,31 @@ namespace LinkPocket.ViewModels
             {
                 Logger.Error("智能列表重新查询失败", ex);
             }
+            finally
+            {
+                if (navigating)
+                {
+                    IsNavigating = false;
+                    RefreshCompleted?.Invoke(this, EventArgs.Empty);
+                }
+            }
             Reloaded?.Invoke(this, EventArgs.Empty);
         }
+
+        private bool _isNavigating;
+
+        /// <summary>
+        /// 用户发起的重新查询在途（界面**加载遮罩的唯一来源**）：本页只有 F5 为 true；
+        /// 删除后的重载、入口对齐刷新一律 false（不亮遮罩、不播动画）——见 BEHAVIOR-CONTRACT §1.5。
+        /// </summary>
+        public bool IsNavigating
+        {
+            get => _isNavigating;
+            private set { if (_isNavigating == value) return; _isNavigating = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>一次**用户发起**的重新查询（F5）结束：视图据此播行入场动画并收回焦点。</summary>
+        public event EventHandler? RefreshCompleted;
 
         /// <summary>「打开网站」：默认浏览器打开并记录一次访问（与搜索页侧栏同口径）。</summary>
         private async Task OpenSelectedWebsiteAsync()

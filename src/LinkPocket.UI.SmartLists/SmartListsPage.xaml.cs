@@ -58,6 +58,14 @@ namespace LinkPocket.Views
             // 若装配时已处于结果页（切页往返/热重载），恢复正确状态
             ApplyShowResult(slVm.ShowResult);
 
+            // 点空白 = 清选中 + 焦点收回页内（BlankClick 唯一实现；命令端在视图收口——
+            // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径，用户令 2026-09-20）
+            BlankClick.SetCommand(ResultContentArea, new RelayCommand(() =>
+            {
+                ResultVm?.ClearSelectionCommand.Execute(null);
+                PageFocus.Restore(this);
+            }));
+
             // 快捷键：键位在 ShortcutCatalog（结果页 = 只读集：↑/↓/End/Esc 分层/Enter 打开/F5 查询）；
             // 本文件不出现任何键位声明，只做「动作 id → 命令」接线（命令体委托给当前结果 VM）。
             _shortcutHost?.Detach();
@@ -199,25 +207,29 @@ namespace LinkPocket.Views
         private SmartListResultViewModel? ResultVm
             => (DataContext as SmartListViewModel)?.ResultViewModel;
 
-        /// <summary>把当前结果集绑到表格：重设默认排序（按列表语义）+ ItemsSource + 空态 + 清选中。</summary>
+        /// <summary>把当前结果集绑到表格：重设默认排序（按列表语义）+ ItemsSource + 空态 + 恢复选中。</summary>
         private void RebindResultTable()
         {
             if (ResultVm is not { } resultVm) return;
             _cellGen++;   // 表格代次自增：重绑后到达的 favicon 补拉结果一律作废（行已重建）
 
-            // 删除重载 → 重绑（排序复位 + 行集替换 + 清表格选中）；换列表时旧订阅先解绑
-            if (!ReferenceEquals(_boundResult, resultVm))
+            // 换列表 = 清选中（旧选中已无意义）；**同一列表重绑**（F5 重查 / 删除后重载）= 保留选中，
+            // 只剔除已不在结果里的 ID —— 用户令 2026-09-20："除非刷新之后那一项没了，才应该取消选中"。
+            var switchedList = !ReferenceEquals(_boundResult, resultVm);
+            if (switchedList)
             {
                 if (_boundResult != null)
                 {
                     _boundResult.Reloaded -= OnResultReloaded;
                     _boundResult.FocusRowRequested -= OnResultFocusRowRequested;
                     _boundResult.Selection.Changed -= OnResultSelectionChanged;
+                    _boundResult.RefreshCompleted -= OnResultRefreshCompleted;
                 }
                 _boundResult = resultVm;
                 resultVm.Reloaded += OnResultReloaded;
                 resultVm.FocusRowRequested += OnResultFocusRowRequested;
                 resultVm.Selection.Changed += OnResultSelectionChanged;
+                resultVm.RefreshCompleted += OnResultRefreshCompleted;
             }
             // 视觉顺序注入（↑/↓、Ctrl+A 语义据此计算；单一来源 = 共享表格当前排序）
             resultVm.OrderProvider = () => SmartTable.OrderedItems().OfType<LinkItem>().Select(i => i.LinkId).ToList();
@@ -230,12 +242,20 @@ namespace LinkPocket.Views
             SmartTable.ItemsSource = null;
             SmartTable.ItemsSource = resultVm.Items;
 
-            resultVm.ClearSelection();
+            if (switchedList) resultVm.ClearSelection();   // 换列表：旧选中已无意义
+            else resultVm.Selection.RemoveMissing(id => resultVm.Items.Any(i => i.LinkId == id));   // 重绑：保留仍在结果里的
             OnResultSelectionChanged();   // 行重建后重新投影选中（外部托管：绘制随 ItemsSource 重建清零）
             SmartSidebar.DataContext = resultVm.Details;
         }
 
         private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();
+
+        /// <summary>用户发起的重查（F5）结束：播行入场动画（UIKit 唯一实现）+ 焦点收回页内。</summary>
+        private void OnResultRefreshCompleted(object? sender, EventArgs e)
+        {
+            RowEntrance.Play(SmartTable.RowsList);
+            PageFocus.Restore(this);
+        }
 
         /// <summary>选中投影（**外部托管**）：把结果 VM 的选中集合画到表上——覆盖式更新，绝不累积。</summary>
         private void OnResultSelectionChanged()

@@ -212,14 +212,20 @@ public class SortableDataTable : Grid
         _rowsList = new ItemsControl
         {
             ItemsPanel = BuildRowsPanel(),
-            Padding = new Thickness(0, 4, 0, 0)
+            Padding = new Thickness(0, 4, 0, 0),
+            // 「聚焦禁描边」是硬性口径，且**逐类容器都要核对**（WARNINGS 43）：表格内部的
+            // ScrollViewer / ItemsControl / ContentControl 来自框架默认模板，FocusVisualStyle 非空
+            // ——一旦它们（经 Tab 或代码 Focus）拿到键盘焦点就会画出**原生焦点虚线框**
+            //（用户报障 2026-09-20：去重明细页 F5 后出现黑虚线）。逐类置空，本控件内部不再有可疑元素。
+            FocusVisualStyle = null
         };
         _emptyHost = new ContentControl
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
             IsHitTestVisible = false, // 空态不拦截鼠标（右键空白区菜单仍可用）
-            Visibility = Visibility.Collapsed
+            Visibility = Visibility.Collapsed,
+            FocusVisualStyle = null
         };
         // 虚拟化前提：行列表必须是 ScrollViewer 的直接内容（隔一层容器会让视口约束传不进
         // VirtualizingStackPanel，退化为全量实例化）；空态改为覆盖层，不再与行列表同容器。
@@ -228,7 +234,8 @@ public class SortableDataTable : Grid
             Content = _rowsList,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            CanContentScroll = true
+            CanContentScroll = true,
+            FocusVisualStyle = null
         };
         _rowsScroller = scroller;
         VirtualizingPanel.SetIsVirtualizing(_rowsList, true);

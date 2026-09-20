@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
-             Background="{DynamicResource SurfaceContainerLow}">
+             Background="{DynamicResource SurfaceContainerLow}"
+             Focusable="True" FocusVisualStyle="{x:Null}">
 
     <!-- ===== 搜索页：视图只负责装配与渲染，逻辑在 SearchViewModel ===== -->
 
@@ -111,8 +112,11 @@
 
         <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表。
              点空白清选中（BlankClick 唯一实现，用户令 2026-09-19）：命中搜索框/chip/行等可交互元素
-             不算空白；右栏（选中集合的投影）在范围之外、绝不反向取消选中。 -->
-        <Grid Grid.Column="0" views:BlankClick.Command="{Binding ClearSelectionCommand}">
+             不算空白；右栏（选中集合的投影）在范围之外、绝不反向取消选中。
+             ⚠️ 必须补 Background="Transparent"：否则本层没有子元素覆盖的"边角空白"根本不产生命中，
+             BlankClick 收不到点击 → 用户报障"点边边角角的空白不能取消选中/焦点"（用户令 2026-09-20）。
+             命令在 code-behind 挂（"清选中 + 焦点收回页内"两件事一起做，与浏览页 ClearPageSelection 同口径）。 -->
+        <Grid x:Name="ContentArea" Grid.Column="0" Background="Transparent">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -218,6 +222,10 @@
                  绘制经 ApplySelectionPaint 投影（多选 Ctrl/Shift 由 code-behind 按修饰键路由）。 -->
             <views:SortableDataTable x:Name="ResultsTable" Grid.Row="2" Margin="12,0,12,8"
                                      SelectionEnabled="False"/>
+
+            <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的刷新时亮；
+                 事件驱动的静默刷新不亮。放在表格之后 = z 序在上。 -->
+            <views:ListBusyOverlay Grid.Row="2" Margin="12,0,12,8" IsBusy="{Binding IsNavigating}"/>
         </Grid>
 
         <!-- 详情栏可拖拽分隔线（与浏览页同款交互） -->

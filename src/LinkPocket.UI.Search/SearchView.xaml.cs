@@ -32,13 +32,26 @@ public partial class SearchView : UserControl
         DataContextChanged += (_, _) =>
         {
             if (ReferenceEquals(_vm, DataContext)) return;
-            if (_vm != null) _vm.PropertyChanged -= OnVmPropertyChanged;
+            if (_vm != null)
+            {
+                _vm.PropertyChanged -= OnVmPropertyChanged;
+                _vm.RefreshCompleted -= OnRefreshCompleted;
+            }
             _vm = DataContext as SearchViewModel;
             if (_vm != null)
             {
                 _vm.PropertyChanged += OnVmPropertyChanged;
                 _vm.ResetRequested += (_, _) => SearchBox.Focus();
                 _vm.FocusRowRequested += (_, item) => ResultsTable.ScrollItemIntoView(item);
+                // 点空白 = 清选中 + 焦点收回页内（BlankClick 唯一实现；命令端在视图收口——
+                // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径，用户令 2026-09-20）
+                BlankClick.SetCommand(ContentArea, new RelayCommand(() =>
+                {
+                    _vm.ClearSelectionCommand.Execute(null);
+                    PageFocus.Restore(this);
+                }));
+                // F5 真刷新结束：播行入场动画（唯一实现 = UIKit RowEntrance）+ 守住"焦点在页内"不变式
+                _vm.RefreshCompleted += OnRefreshCompleted;
                 SetupTable(_vm);
                 // 迟挂的 DataContext：把 VM 当前的空态/结果同步到表上
                 ApplyEmptyState();
@@ -130,6 +143,13 @@ public partial class SearchView : UserControl
     }
 
     // —— VM 状态 → 视图渲染 ——
+
+    /// <summary>用户发起的刷新（F5）结束：播行入场动画（UIKit 唯一实现）并把焦点收回页内。</summary>
+    private void OnRefreshCompleted(object? sender, EventArgs e)
+    {
+        RowEntrance.Play(ResultsTable.RowsList);
+        PageFocus.Restore(this);
+    }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

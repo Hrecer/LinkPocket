@@ -259,7 +259,9 @@ public static class ShortcutCatalog
             CommandParameter: "down", ContextGate: "去重明细打开时"),
         new(ShortcutAction.ToolsDetailSelectLast, Key.End, ShortcutScope.Tools, "选中明细末项",
             ContextGate: "去重明细打开时"),
-        new(ShortcutAction.ToolsDetailOpen, Key.Enter, ShortcutScope.Tools, "打开所选网站",
+        // 三页（搜索 / 智能列表 / 去重明细）的 Enter 语义统一 = **打开浏览页的链接详情页**
+        //（外部打开网站是右栏那枚「打开网站」按钮，键位不承担；跳转仅作预留能力）
+        new(ShortcutAction.ToolsDetailOpen, Key.Enter, ShortcutScope.Tools, "打开选中项（进浏览页详情）",
             ContextGate: "去重明细有选中行时"),
         new(ShortcutAction.ToolsDetailRefresh, Key.F5, ShortcutScope.Tools, "重新查重",
             ContextGate: "去重明细打开时"),

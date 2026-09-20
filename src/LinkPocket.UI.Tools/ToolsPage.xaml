@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             Focusable="True" FocusVisualStyle="{x:Null}"
              Loaded="ToolsPage_Loaded">
     <!-- 工具页（v2 完全重写）：与搜索/回收站/智能列表同构的 MD3E 语言。
          结构 = 双面板：主面板（左栏工具列表 + 右主区表格/表单）/ 重复组明细面板（整页）。
@@ -186,7 +187,9 @@
         <!-- ============================================================ -->
         <!-- ===== 面板 A：主面板（左栏工具列表 + 右主区） ===== -->
         <!-- ============================================================ -->
-        <Grid x:Name="MainPanel">
+        <!-- Background="Transparent"：给"边角空白"一个可命中的面——否则 BlankClick 收不到点击
+             （用户令 2026-09-20：点空白要能清选中/清焦点；命令在 code-behind 挂）。 -->
+        <Grid x:Name="MainPanel" Background="Transparent">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200"/>
                 <ColumnDefinition Width="*"/>
@@ -239,7 +242,7 @@
                     <!-- 书签导入 / 导出（合并为一项：同一入口内切换方向） -->
                     <ScrollViewer x:Name="PaneBookmarkHost" Visibility="Collapsed"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  Padding="2,2,2,0">
+                                  Padding="2,2,2,0" FocusVisualStyle="{x:Null}">
                         <StackPanel MaxWidth="820" HorizontalAlignment="Left">
 
                             <!-- 方向切换：分段控件（容器 = TintCard 白底大药丸，CornerRadius 19 = 3 内距 + 16 段圆角，
@@ -461,7 +464,7 @@
                     <!-- 表单宿主（ID 跳转）：同一位置切换，保持页面骨架统一 -->
                     <ScrollViewer x:Name="PaneFormHost" Visibility="Collapsed"
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  Padding="2,2,2,0">
+                                  Padding="2,2,2,0" FocusVisualStyle="{x:Null}">
                         <StackPanel MaxWidth="640" HorizontalAlignment="Left">
                             <TextBlock Text="输入要定位的 ID" FontSize="11.5" Margin="4,0,0,6"
                                        Foreground="{DynamicResource OnSurfaceVariant}"/>
@@ -503,7 +506,9 @@
         <!-- ============================================================ -->
         <!-- ===== 面板 B：重复组明细（整页） ===== -->
         <!-- ============================================================ -->
-        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True">
+        <!-- FocusVisualStyle={x:Null}：面板本身可聚焦（快捷键按焦点路由），但**绝不画原生焦点虚线框**
+             ——F5 重进明细时曾因此出现一条原生黑虚线（用户报障 2026-09-20；焦点收进页面根也是同一修法）。 -->
+        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}">
             <Grid.ColumnDefinitions>
                 <!-- 明细表 | 可拖拽分隔 | 右栏（选中行的只读投影；与搜索/智能列表同规格 286） -->
                 <ColumnDefinition Width="*"/>
@@ -557,11 +562,20 @@
                 <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0" SelectionEnabled="False"/>
             </Border>
 
+            <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的重查时亮；
+                 IsBusy 由 code-behind 驱动（本页 DataContext 不是 ToolsViewModel，绑定写不通）。 -->
+            <views:ListBusyOverlay x:Name="DetailBusyOverlay" Grid.Row="1" Grid.Column="0"
+                                   Margin="8,0,16,16"/>
+
             <!-- 右栏：选中行的只读投影（共享 DetailSidebar；信息 + 打开网站，与搜索页右栏同一数据契约） -->
             <GridSplitter Grid.RowSpan="2" Grid.Column="1" Width="4" HorizontalAlignment="Center"
-                          VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+                          VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"
+                          FocusVisualStyle="{x:Null}"/>
+            <!-- ⚠️ 右栏整体声明 IsInteractive：DetailPanel 挂了"点空白清选中"，右栏是**选中集合的投影**
+                 （查看面）——点它/拖选文本绝不得反向取消明细选中（与浏览页/回收站同口径）。 -->
             <Border Grid.RowSpan="2" Grid.Column="2" Background="{DynamicResource TintPanel}"
-                    CornerRadius="24,0,0,24" Margin="0,0,16,16">
+                    CornerRadius="24,0,0,24" Margin="0,0,16,16"
+                    views:BlankClick.IsInteractive="True">
                 <views:DetailSidebar x:Name="DetailSidebar"/>
             </Border>
         </Grid>

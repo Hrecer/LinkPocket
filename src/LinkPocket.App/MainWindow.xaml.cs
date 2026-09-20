@@ -62,7 +62,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         SmartListsView.DataContext = vm.SmartListViewModel;
         // 工具页：引擎客户端/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
         // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。
-        ToolsView.Configure(_host.Client, _host.Locator,
+        // navigation = 本窗口（INavigationService 端口）：工具页明细 Enter「打开详情」与搜索页/智能列表
+        // 走同一条路径（用户令 2026-09-20：三页 Enter 都是打开详情页；跳转能力只作预留）。
+        // locator 仍是 ID 跳转工具用的"进目录 + 选中行"组件，两者并存、互不替代。
+        ToolsView.Configure(_host.Client, _host.Locator, this,
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
         SettingsView.Configure(_host.Client, vm.ReinitializeDatabaseAsync,

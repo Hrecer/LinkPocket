@@ -187,7 +187,12 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <!-- ⚠️ 聚焦禁描边（硬性口径，逐类容器核对 —— 文档/WARNINGS 43）：框架默认模板给
+         ScrollViewer / ItemsControl / ContentControl 都带非空 FocusVisualStyle，一旦它们通过 Tab 或
+         代码 Focus 拿到键盘焦点就会画出**原生焦点虚线框**（用户报障 2026-09-20：去重明细页 F5 后黑虚线）。
+         本控件内部的这几类容器一律显式置空（共享控件，一处修全部页面受益）。 -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  FocusVisualStyle="{x:Null}">
         <StackPanel Margin="12,12,12,16">
 
             <!-- 空态占位（MD3E）：圆角色块徽章 + 引导文案 -->
@@ -340,7 +345,8 @@
                 <StackPanel>
                     <TextBlock Text="信息" Style="{StaticResource SideLabel}"/>
                     <!-- 行模板 = UIKit 共享资源（与详情页同一份视觉，绝不复制） -->
-                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
+                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"
+                                  FocusVisualStyle="{x:Null}"/>
                 </StackPanel>
             </Border>
 
@@ -388,18 +394,19 @@
                     <!-- 排布一（缺省：浏览页 / 搜索页）= 一行：药丸填满余宽，图标钮靠右 -->
                     <DockPanel Margin="0,2,0,0"
                                Visibility="{Binding StackedActions, Converter={StaticResource InvBoolToVis}}">
-                        <ContentControl DockPanel.Dock="Right" Content="{Binding}"
+                        <ContentControl DockPanel.Dock="Right" Content="{Binding}" FocusVisualStyle="{x:Null}"
                                         ContentTemplate="{StaticResource SidebarActionIcons}"/>
-                        <ContentControl Content="{Binding}"
+                        <ContentControl Content="{Binding}" FocusVisualStyle="{x:Null}"
                                         ContentTemplate="{StaticResource SidebarActionPills}"/>
                     </DockPanel>
                     <!-- 排布二（回收站右栏）= 两行：药丸一行、图标钮一行靠右 ——
                          286 宽放不下"两枚药丸 + 三枚 32 图标钮"（同排会把药丸压到裁字，用户定稿两行） -->
                     <StackPanel Margin="0,2,0,0"
                                 Visibility="{Binding StackedActions, Converter={StaticResource BoolToVis}}">
-                        <ContentControl Content="{Binding}"
+                        <ContentControl Content="{Binding}" FocusVisualStyle="{x:Null}"
                                         ContentTemplate="{StaticResource SidebarActionPills}"/>
                         <ContentControl Content="{Binding}" HorizontalAlignment="Right" Margin="0,8,0,0"
+                                        FocusVisualStyle="{x:Null}"
                                         ContentTemplate="{StaticResource SidebarActionIcons}"/>
                     </StackPanel>
                 </StackPanel>

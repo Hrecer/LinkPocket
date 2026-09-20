@@ -120,8 +120,11 @@
 
             <!-- 左侧：工具行 + 表格。
                  点空白清选中（BlankClick 唯一实现，与浏览/搜索同口径）：命中行/按钮/文本不算空白；
-                 右栏（选中集合的投影）在范围之外、绝不反向取消选中。 -->
-            <Grid Grid.Column="0" views:BlankClick.Command="{Binding ResultViewModel.ClearSelectionCommand}">
+                 右栏（选中集合的投影）在范围之外、绝不反向取消选中。
+                 ⚠️ 必须补 Background="Transparent"：否则没有子元素覆盖的"边角空白"根本不产生命中 →
+                 用户报障"点边边角角的空白不能取消选中/焦点"（用户令 2026-09-20）。
+                 命令在 code-behind 挂（"清选中 + 焦点收回页内"，与浏览页 ClearPageSelection 同口径）。 -->
+            <Grid x:Name="ResultContentArea" Grid.Column="0" Background="Transparent">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -189,6 +192,11 @@
                     <views:SortableDataTable x:Name="SmartTable" HeaderBandMargin="0"
                                              SelectionEnabled="False"/>
                 </Border>
+
+                <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的重查时亮；
+                     放在表格之后 = z 序在上。 -->
+                <views:ListBusyOverlay Grid.Row="1" Margin="8,0,8,8"
+                                       IsBusy="{Binding ResultViewModel.IsNavigating}"/>
             </Grid>
 
             <!-- 详情栏可拖拽分隔线（与浏览页/搜索页同款交互） -->
