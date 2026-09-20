@@ -4,6 +4,17 @@
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              xmlns:local="clr-namespace:LinkPocket.Views">
+    <!-- 「4 色 / 5 色」分段的段项样式：**复用** UIKit 共享的滑动指示器语言
+         （SlidingNavStripItemStyle 的模板与选中语义），只把段高对齐本面板的 32 药丸口径。
+         这不是第二套分段实现——模板、指示器几何、滑动动画全在共享组件里。 -->
+    <UserControl.Resources>
+        <Style x:Key="AppearanceSegmentItem" TargetType="ListBoxItem"
+               BasedOn="{StaticResource SlidingNavStripItemStyle}">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="64"/>
+        </Style>
+    </UserControl.Resources>
+
     <!-- 「外观」面板（方案 §7.1）：三张卡 = 主题 / 自选配色 / 字体。
          沿用「存储管理」的卡语言（MaxWidth 760 / 圆角 24 / 卡距 16 / 标题 15 SemiBold / 说明 12）。 -->
     <Grid>
@@ -21,8 +32,16 @@
                         <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
                         <TextBlock Text="单击即应用。每套主题由一组颜色派生全套界面色（背景、文字、按钮、图标）"
-                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                   FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <!-- 互斥投影：正在用自选配色时明说"预设都没选中"（用户报障"两块都亮着、分不清谁在生效"） -->
+                        <Border CornerRadius="8" Padding="8,4" Margin="0,0,0,12"
+                                Background="{DynamicResource App.Surface.Hover}"
+                                Visibility="{Binding IsCustomActive, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="当前使用：自选配色 —— 预设主题均未选中"
+                                       FontSize="11.5" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                        </Border>
 
                         <ItemsControl x:Name="ThemeCardList">
                             <ItemsControl.ItemsPanel>
@@ -119,82 +138,123 @@
                 <!-- ===== 卡 2：自选配色 ===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
-                    <StackPanel>
-                        <TextBlock Text="自选配色" FontSize="15" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="选 4 或 5 个颜色即可生成一套主题；系统自动派生并保证可读性"
-                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource App.Text.Secondary}"/>
-
-                        <!-- 4 色 / 5 色 分段 -->
-                        <StackPanel Orientation="Horizontal">
-                            <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19" Padding="3">
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="FourColorBtn" Content="4 色" Height="32" MinWidth="64"
-                                            Style="{StaticResource TonalButton}" Cursor="Hand"
-                                            Click="FourColorBtn_Click"/>
-                                    <Button x:Name="FiveColorBtn" Content="5 色" Height="32" MinWidth="64"
-                                            Margin="4,0,0,0" Style="{StaticResource TonalButton}" Cursor="Hand"
-                                            Click="FiveColorBtn_Click"/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <!-- 色槽 -->
-                        <ItemsControl x:Name="SlotList" Margin="0,14,0,0">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,0,14,12">
-                                        <Button Cursor="Hand" FocusVisualStyle="{x:Null}"
-                                                Click="Slot_Click" Tag="{Binding}"
-                                                ToolTip="{Binding Hex}">
-                                            <Button.Template>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border x:Name="Ring" Width="40" Height="40" CornerRadius="20"
-                                                            BorderThickness="2"
-                                                            BorderBrush="{DynamicResource App.Line.Variant}">
-                                                        <Border x:Name="Fill" CornerRadius="18" Margin="3"
-                                                                Background="{Binding Color, Converter={StaticResource ColorToBrush}}"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="Ring" Property="BorderBrush"
-                                                                    Value="{DynamicResource App.Accent.Fill}"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Button.Template>
-                                        </Button>
-                                        <TextBlock Text="{Binding Hex}" FontSize="10.5" Margin="0,6,0,0"
-                                                   HorizontalAlignment="Center"
-                                                   Foreground="{DynamicResource App.Text.Muted}"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <!-- 派生诊断 -->
-                        <Border x:Name="DiagnosticsBox" Visibility="Collapsed" CornerRadius="12"
-                                Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,2,0,0">
-                            <TextBlock x:Name="DiagnosticsText" FontSize="12" TextWrapping="Wrap"
+                    <!-- 自选配色区 = 与主题卡**同一个选择组**的另一半（二选一）：
+                         边框三态 = 当前使用（Accent.Fill）/ 编辑中未应用（Line.Outline）/ 未选中（Line.Variant），
+                         全部由 VM 的 IsCustomActive / IsDraftEditing 投影——视图不持"选了哪边"的状态。 -->
+                    <Border x:Name="CustomShell" CornerRadius="18" BorderThickness="2" Padding="14,12"
+                            Background="{DynamicResource App.Surface.Tint}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{DynamicResource App.Line.Variant}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDraftEditing}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource App.Line.Outline}"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsCustomActive}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="自选配色" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                <!-- 徽标 = 「当前使用」/「编辑中（未应用）」二选一（两个布尔互斥，故可同格叠放） -->
+                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
+                                        Background="{DynamicResource App.Accent.Container}"
+                                        Visibility="{Binding IsCustomActive, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="当前使用" FontSize="10"
+                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                </Border>
+                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
+                                        Background="{DynamicResource App.Surface.Hover}"
+                                        Visibility="{Binding IsDraftEditing, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="编辑中（未应用）" FontSize="10"
+                                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                                </Border>
+                            </Grid>
+                            <TextBlock Text="选 4 或 5 个颜色即可生成一套主题；系统自动派生并保证可读性"
+                                       FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </Border>
 
-                        <!-- 应用（草稿） -->
-                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <Button x:Name="ApplyDraftBtn" Content="应用这套配色"
-                                    Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                                    Cursor="Hand" Click="ApplyDraftBtn_Click"/>
-                            <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
-                                    Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
-                                    Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"/>
+                            <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
+                                 （SlidingNavStrip = ListBox + PART_Indicator，几何贴齐与滑动动画全在组件内）。
+                                 原先手写两枚 Button 靠换 Style 表达"选中"——用户报障"根本分不清在选哪个"：
+                                 填充色的差别不是选择语义，滑动指示器才是本仓既有的选择语言。
+                                 选中索引双向绑到 VM 的 SlotCountIndex（唯一事实来源 = 草稿槽数）。 -->
+                            <StackPanel Orientation="Horizontal">
+                                <views:SlidingNavStrip x:Name="SlotCountStrip"
+                                                       Style="{StaticResource SlidingNavStripStyle}"
+                                                       ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
+                                                       SelectedIndex="{Binding SlotCountIndex, Mode=TwoWay}">
+                                    <ListBoxItem Content="4 色"/>
+                                    <ListBoxItem Content="5 色"/>
+                                </views:SlidingNavStrip>
+                            </StackPanel>
+
+                            <!-- 色槽 -->
+                            <ItemsControl x:Name="SlotList" Margin="0,14,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,14,12">
+                                            <Button Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                                    Click="Slot_Click" Tag="{Binding}"
+                                                    ToolTip="{Binding Hex}">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border x:Name="Ring" Width="40" Height="40" CornerRadius="20"
+                                                                BorderThickness="2"
+                                                                BorderBrush="{DynamicResource App.Line.Variant}">
+                                                            <Border x:Name="Fill" CornerRadius="18" Margin="3"
+                                                                    Background="{Binding Color, Converter={StaticResource ColorToBrush}}"/>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Ring" Property="BorderBrush"
+                                                                        Value="{DynamicResource App.Accent.Fill}"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <TextBlock Text="{Binding Hex}" FontSize="10.5" Margin="0,6,0,0"
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{DynamicResource App.Text.Muted}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 派生诊断（绑 VM 的唯一投影：诊断文案与"有没有诊断"都由 VM 给，视图不再择时刷新） -->
+                            <Border x:Name="DiagnosticsBox" CornerRadius="12"
+                                    Visibility="{Binding HasDiagnostics, Converter={StaticResource BoolToVis}}"
+                                    Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,2,0,0">
+                                <TextBlock x:Name="DiagnosticsText" FontSize="12" TextWrapping="Wrap"
+                                           Text="{Binding Diagnostics}"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </Border>
+
+                            <!-- 应用（草稿） -->
+                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                <Button x:Name="ApplyDraftBtn" Content="应用这套配色"
+                                        Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                                        Cursor="Hand" Click="ApplyDraftBtn_Click"/>
+                                <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
+                                        Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
+                                        Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
+                    </Border>
                 </Border>
 
                 <!-- ===== 卡 3：字体 ===== -->
@@ -278,8 +338,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 结果播报（状态栏口径） -->
-                <TextBlock x:Name="StatusText" FontSize="12" Margin="4,14,0,0" TextWrapping="Wrap"
+                <!-- 结果播报（状态栏口径；绑 VM.Status —— 视图不择时刷新） -->
+                <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="12" Margin="4,14,0,0"
+                           TextWrapping="Wrap"
                            Foreground="{DynamicResource App.Text.Secondary}"/>
             </StackPanel>
         </ScrollViewer>

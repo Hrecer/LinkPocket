@@ -55,7 +55,6 @@ namespace LinkPocket.Views
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
-            StatusText.Text = ViewModel.Status;
         }
 
         /// <summary>
@@ -92,7 +91,6 @@ namespace LinkPocket.Views
             }
 
             SyncFontCombos();
-            UpdateSlotButtons();
             UiFontCombo.SelectedItem = vm.SelectedUiFont;
             MonoFontCombo.SelectedItem = vm.SelectedMonoFont;
         }
@@ -100,13 +98,13 @@ namespace LinkPocket.Views
         /// <summary>进入面板时的入口对齐：把当前已应用的外观投影到控件上（不重算、不重置）。</summary>
         public void Refresh()
         {
+            // 互斥归属 + 主题卡 + 色槽草稿一起对齐（草稿有未应用改动时不会被冲掉，见 VM 的 SyncFromAppliedTheme）
+            ViewModel.SyncFromAppliedTheme();
             // 候选**不在这里装载**：枚举系统字体与机器上装的字体数量成正比，进页面就付是浪费；
             // 用户真的展开下拉时才装载（见 UiFontCombo_DropDownOpened）。
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
-            UpdateSlotButtons();
-            StatusText.Text = ViewModel.Status;
         }
 
         /// <summary>用户展开字体下拉时才真正装载候选（唯一需要全量列表的时刻）。</summary>
@@ -129,9 +127,6 @@ namespace LinkPocket.Views
         {
             if (sender is not Button { Tag: ThemeCardViewModel card }) return;
             ViewModel.ApplyThemeCard(card);
-            StatusText.Text = ViewModel.Status;
-            DiagnosticsBox.Visibility = ViewModel.HasDiagnostics ? Visibility.Visible : Visibility.Collapsed;
-            DiagnosticsText.Text = ViewModel.Diagnostics;
         }
 
         // ── 色槽 + 取色盘 ────────────────────────────────────────────────
@@ -148,64 +143,24 @@ namespace LinkPocket.Views
         private void Picker_ColorConfirmed(object? sender, Color color)
         {
             if (_editingSlot >= 0)
-            {
                 ViewModel.SetSlotColor(_editingSlot, color);
-                DiagnosticsText.Text = ViewModel.Diagnostics;
-                DiagnosticsBox.Visibility = ViewModel.HasDiagnostics ? Visibility.Visible : Visibility.Collapsed;
-            }
             ClosePicker();
         }
 
         private void Picker_Cancelled(object? sender, EventArgs e) => ClosePicker();
+
         // ── 4/5 色 ───────────────────────────────────────────────────────
+        // 段控件的选中索引经 XAML 双向绑到 VM 的 SlotCountIndex（→ SetSlotCount）——
+        // 视图侧不再有"按槽数换按钮样式"的第二份状态（那是用户报障"分不清在选哪个"的根因）。
 
-        private void FourColorBtn_Click(object sender, RoutedEventArgs e)
-        {
-            while (ViewModel.CanRemoveSlot) ViewModel.RemoveSlot();
-            AfterSlotCountChange();
-        }
-
-        private void FiveColorBtn_Click(object sender, RoutedEventArgs e)
-        {
-            while (ViewModel.CanAddSlot) ViewModel.AddSlot();
-            AfterSlotCountChange();
-        }
-
-        private void AfterSlotCountChange()
-        {
-            SlotList.ItemsSource = ViewModel.Slots;
-            UpdateSlotButtons();
-            DiagnosticsText.Text = ViewModel.Diagnostics;
-            DiagnosticsBox.Visibility = ViewModel.HasDiagnostics ? Visibility.Visible : Visibility.Collapsed;
-            StatusText.Text = ViewModel.Status;
-        }
-
-        /// <summary>分段按钮的选中态投影（从 VM 的 SlotCount 推，不另存状态）。</summary>
-        private void UpdateSlotButtons()
-        {
-            var five = ViewModel.SlotCount >= AppearanceViewModel.MaxSlots;
-            FourColorBtn.Style = (Style)FindResource(five ? "TonalButton" : "PrimaryPillButton");
-            FiveColorBtn.Style = (Style)FindResource(five ? "PrimaryPillButton" : "TonalButton");
-        }
-
-        private void ApplyDraftBtn_Click(object sender, RoutedEventArgs e)
-        {
-            ViewModel.ApplyDraft();
-            StatusText.Text = ViewModel.Status;
-            DiagnosticsText.Text = ViewModel.Diagnostics;
-            DiagnosticsBox.Visibility = ViewModel.HasDiagnostics ? Visibility.Visible : Visibility.Collapsed;
-        }
+        private void ApplyDraftBtn_Click(object sender, RoutedEventArgs e) => ViewModel.ApplyDraft();
 
         private async void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
         {
             await ViewModel.ResetToDefaultAsync();
-            SlotList.ItemsSource = ViewModel.Slots;
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
             MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
-            UpdateSlotButtons();
-            StatusText.Text = ViewModel.Status;
-            DiagnosticsBox.Visibility = Visibility.Collapsed;
         }
 
         // ── 字体 ─────────────────────────────────────────────────────────
@@ -242,12 +197,11 @@ namespace LinkPocket.Views
             };
             if (dialog.ShowDialog() != true) return;
 
-            // 导入失败必须让**用户**看见：VM 把原因写进 Status，这一行把它显示在状态行上。
+            // 导入失败必须让**用户**看见：VM 把原因写进 Status，状态行（绑定 Status）会显示出来。
             // 只写日志不播报 = 用户点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
             await ViewModel.ImportFontAsync(dialog.FileName);
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            StatusText.Text = ViewModel.Status;
         }
 
         private async void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
@@ -256,14 +210,12 @@ namespace LinkPocket.Views
             await ViewModel.DeleteFontAsync(font);
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            StatusText.Text = ViewModel.Status;
         }
 
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.ApplyFonts();
             SyncFontCombos();
-            StatusText.Text = ViewModel.Status;
         }
     }
 }

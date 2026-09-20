@@ -133,9 +133,38 @@ public class ThemeContrastTests
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
-        Assert.Equal(0x352023u, Rgb(t.Token(AppTokens.TextOnContainer)));
-        Assert.Equal(0xFDDADDu, Rgb(t.Token(AppTokens.SupportContainer)));
-        Assert.Equal(0x72585Au, Rgb(t.Token(AppTokens.SupportIcon)));
+        Assert.Equal(0x1C2732u, Rgb(t.Token(AppTokens.TextOnContainer)));
+        // 支撑族 = 强调色相 −60°（+60° 落在暖色回避带内）→ H250.6 蓝紫，不再是旧的肤色粉 #FDDADD / 棕 #72585A
+        Assert.Equal(0xD9E3F3u, Rgb(t.Token(AppTokens.SupportContainer)));
+        Assert.Equal(0x555F6Cu, Rgb(t.Token(AppTokens.SupportIcon)));
+        Assert.Equal(0x555F6Cu, Rgb(t.Token(AppTokens.TypeFolder)));
+    }
+
+    [Fact]
+    public void 支撑族派生_回避暖色带_派生结果永不落在带内()
+    {
+        // 规则：单色系配色的支撑族 = 强调色相 ±60°，**绝不落进暖色带 0°–105°**
+        // （红 / 橙 / 黄 / 肤色：黄是本仓已废弃的语义色；肤粉会让紫色系主题读成"粉棕"——
+        //  用户报障原文"默认的紫罗兰是紫色的，那些偏黄的、偏肤色的是哪来的"）。
+        Assert.Equal(250.6, PaletteSolver.DeriveSupportHue(310.6), 1);   // 紫罗兰 → 蓝紫（−60°）
+        Assert.Equal(120.6, PaletteSolver.DeriveSupportHue(60.6), 1);    // 焦糖 +60° 本就不在带内 → 保持 +60°
+
+        // 几何事实：两个候选相差 120° > 回避带宽 105° → 至多一个在带内，"取另一个"永远有解
+        for (var hue = 0.0; hue < 360.0; hue += 0.5)
+        {
+            var derived = PaletteSolver.DeriveSupportHue(hue);
+            Assert.False(PaletteSolver.InWarmZone(derived),
+                $"强调 H{hue:F1} → 派生支撑族 H{derived:F1} 落在暖色带内");
+        }
+
+        // 全部**派生**支撑族的主题都不得落带；预设自带第二族的按配色原样保留（那是用户给的颜色，不是派生的）
+        foreach (var theme in ThemeCatalog.All)
+        {
+            var families = PaletteSolver.SolveFamilies(theme);
+            if (!families.SupportIsDerived) continue;
+            Assert.False(PaletteSolver.InWarmZone(families.SupportHue),
+                $"{theme.Name} 派生支撑族 H{families.SupportHue:F1} 落在暖色带内");
+        }
     }
 
     [Fact]

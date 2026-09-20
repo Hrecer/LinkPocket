@@ -187,25 +187,60 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     private string _status = string.Empty;
     private bool _hasDiagnostics;
 
+    /// <summary>
+    /// 当前生效外观的**归属**：true = 自选配色，false = 某个预设主题。
+    /// </summary>
+    /// <remarks>
+    /// <b>互斥的唯一事实来源</b>：主题卡与自选区的高亮都由它 + <see cref="SelectedThemeId"/> 投影出来，
+    /// 视图不持状态、不"点了哪边记哪边"（架构不变量 12）。用户报障"主题与自选配色没有二选一、
+    /// 两个都亮着"的根因就是原先根本没有这个字段——自选区的"高亮"是按色槽数量推的。
+    /// </remarks>
+    private bool _customActive;
+
+    /// <summary>草稿是否有**未应用**的改动（决定自选区显示「编辑中（未应用）」）。</summary>
+    private bool _draftDirty;
+
     public AppearanceViewModel()
     {
         ThemeCards = new ObservableCollection<ThemeCardViewModel>(
             ThemeCatalog.All.Select(t => new ThemeCardViewModel(t)));
 
-        // 默认草稿 = 出厂默认的身份色（用户从"当前这套"开始改，而不是从空白开始）
-        _draft.AddRange(ThemeCatalog.Default.Palette.Select(ToMedia));
-        RebuildSlots();
-
-        // 入口对齐：面板显示"当前**已应用**的主题"，而不是永远显示出厂默认
-        // （用户上次选的预设要在他回到这一页时仍然高亮——否则选中态就是错的）
-        _selectedThemeId = ThemeService.Current.Id;
-        ProjectCardSelection();
-
-        // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
-        // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
-        // 当前选中字体直接取 ThemeService 的状态，不依赖候选列表。
+        // 入口对齐：面板显示"当前**已应用**的外观"——主题卡高亮 + 互斥归属 + 色槽草稿
+        // （用户上次选的主题/配色要在他回到这一页时仍然是对的，否则选中态就是错的）
+        SyncFromAppliedTheme();
     }
 
+    /// <summary>
+    /// **唯一投影点**：把"当前已应用的外观"投影到面板（互斥归属 + 主题卡选中态 + 色槽草稿）。
+    /// </summary>
+    /// <remarks>
+    /// 两条硬性口径：
+    /// ① 草稿 = **当前正在用的配色**（自选配色时就是它本身）；不是永远取出厂默认那 5 色——
+    ///    否则正在用自选配色时重进面板，色槽显示的是别人的颜色（实测缺陷）；
+    /// ② 草稿有**未应用改动**时不重新播种（入口刷新不许冲掉用户正在编辑的东西）。
+    /// </remarks>
+    public void SyncFromAppliedTheme()
+    {
+        var current = ThemeService.Current;
+        _customActive = current.Source == ThemeSource.UserDefined;
+
+        if (!_draftDirty)
+        {
+            var seed = _customActive ? current.Palette : ThemeCatalog.Default.Palette;
+            _draft.Clear();
+            _draft.AddRange(seed.Select(ToMedia));
+            RebuildSlots();
+        }
+
+        _selectedThemeId = current.Id;
+        Raise(nameof(SelectedThemeId));
+        ProjectCardSelection();
+        RaiseCustomState();
+    }
+
+    // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
+    // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
+    // 当前选中字体直接取 ThemeService 的状态，不依赖候选列表。
     private bool _fontsLoaded;
 
     /// <summary>
@@ -325,6 +360,73 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>是否可以再加一个色槽。</summary>
     public bool CanAddSlot => _draft.Count < MaxSlots;
 
+    // ── 互斥归属（主题 ↔ 自选配色 二选一）─────────────────────────────
+
+    /// <summary>当前生效外观是否来自**自选配色**（false = 来自某个预设主题）。</summary>
+    /// <remarks>
+    /// 与主题卡的 <c>IsSelected</c> 构成"二选一"的完整投影：<c>IsCustomActive</c> 为 true 时
+    /// 所有卡片都不高亮；为 false 时恰好有一张高亮。视图只绑这两个布尔，不自己判断"选了哪边"。
+    /// </remarks>
+    public bool IsCustomActive => _customActive;
+
+    /// <summary>草稿有未应用的改动（显示「编辑中（未应用）」；已在用自选配色时不显示——它就是当前值）。</summary>
+    public bool IsDraftEditing => _draftDirty && !_customActive;
+
+    /// <summary>
+    /// 「4 色 / 5 色」分段控件的选中索引（0 = 4 色，1 = 5 色）——滑动指示器组件的绑定入口。
+    /// </summary>
+    /// <remarks>
+    /// 值始终由 <see cref="SlotCount"/> 推出（唯一事实来源是草稿本身），写入走 <see cref="SetSlotCount"/>；
+    /// 视图侧不另存"选了几色"，段控件只反映草稿的真实槽数。
+    /// </remarks>
+    public int SlotCountIndex
+    {
+        get => _draft.Count - MinSlots;
+        set => SetSlotCount(value + MinSlots);
+    }
+
+    /// <summary>把草稿槽数设为 4 或 5（越界一律钳到合法档——UI 只开放这两档）。</summary>
+    public void SetSlotCount(int count)
+    {
+        var target = Math.Clamp(count, MinSlots, MaxSlots);
+        if (target == _draft.Count) return;
+
+        while (_draft.Count > target) RemoveSlotCore();
+        while (_draft.Count < target) AddSlotCore();
+
+        MarkDraftDirty();
+        RebuildSlots();
+        RefreshDraftDiagnostics();
+    }
+
+    /// <summary>互斥归属相关的属性一起通知（三处必须同步，漏一个就是"界面不跟着变"）。</summary>
+    private void RaiseCustomState()
+    {
+        Raise(nameof(IsCustomActive));
+        Raise(nameof(IsDraftEditing));
+    }
+
+    private void SetCustomActive(bool value)
+    {
+        if (_customActive == value) return;
+        _customActive = value;
+        RaiseCustomState();
+    }
+
+    private void MarkDraftDirty()
+    {
+        if (_draftDirty) return;
+        _draftDirty = true;
+        Raise(nameof(IsDraftEditing));
+    }
+
+    private void ClearDraftDirty()
+    {
+        if (!_draftDirty) return;
+        _draftDirty = false;
+        Raise(nameof(IsDraftEditing));
+    }
+
     // ── 主题 ─────────────────────────────────────────────────────────
 
     /// <summary>应用一张预设/默认主题卡（单击即应用，含持久化）。</summary>
@@ -334,6 +436,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             ThemeService.Apply(card.Definition);
+            SetCustomActive(false);   // 互斥：用预设 = 自选区让出"当前使用"
             SelectedThemeId = card.Id;
             ThemeService.SaveCurrentPreferences();
             Status = $"已应用主题「{card.Name}」";
@@ -363,6 +466,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             ThemeService.Apply(definition);
+            SetCustomActive(true);    // 互斥：用自选配色 = 所有主题卡让出"当前使用"
+            ClearDraftDirty();        // 草稿 = 当前值，不再有"未应用改动"
             SelectedThemeId = definition.Id;
             ThemeService.SaveCurrentPreferences();
             Status = $"已应用自选配色（{definition.Palette.Count} 色）";
@@ -412,6 +517,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     {
         if (index < 0 || index >= _draft.Count) return;
         _draft[index] = color;
+        MarkDraftDirty();
         RebuildSlots();
         RefreshDraftDiagnostics();
     }
@@ -420,11 +526,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public void AddSlot()
     {
         if (!CanAddSlot) return;
-        // 新槽取当前草稿的"派生建议色"：色相 +40°、略提明度（与已有色同族但可辨），不做空白槽
-        var seed = _draft.Count > 0 ? _draft[^1] : Colors.Gray;
-        var seedArgb = ToArgb(seed);
-        ColorMath.ToHsv(seedArgb, out var h, out var s, out var v);
-        _draft.Add(ToMedia(ColorMath.FromHsv(h + 40, Math.Min(1, s * 0.9), Math.Min(1, v + 0.12))));
+        AddSlotCore();
+        MarkDraftDirty();
         RebuildSlots();
         RefreshDraftDiagnostics();
     }
@@ -433,10 +536,23 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public void RemoveSlot()
     {
         if (!CanRemoveSlot) return;
-        _draft.RemoveAt(_draft.Count - 1);
+        RemoveSlotCore();
+        MarkDraftDirty();
         RebuildSlots();
         RefreshDraftDiagnostics();
     }
+
+    /// <summary>纯槽位操作（不重建视图、不标脏）：<see cref="SetSlotCount"/> 反复调用它凑到目标档。</summary>
+    private void AddSlotCore()
+    {
+        // 新槽取当前草稿的"派生建议色"：色相 +40°、略提明度（与已有色同族但可辨），不做空白槽
+        var seed = _draft.Count > 0 ? _draft[^1] : Colors.Gray;
+        var seedArgb = ToArgb(seed);
+        ColorMath.ToHsv(seedArgb, out var h, out var s, out var v);
+        _draft.Add(ToMedia(ColorMath.FromHsv(h + 40, Math.Min(1, s * 0.9), Math.Min(1, v + 0.12))));
+    }
+
+    private void RemoveSlotCore() => _draft.RemoveAt(_draft.Count - 1);
 
     private void RebuildSlots()
     {
@@ -444,6 +560,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         for (var i = 0; i < _draft.Count; i++)
             Slots.Add(new ColorSlotViewModel(i, _draft[i]));
         Raise(nameof(SlotCount));
+        Raise(nameof(SlotCountIndex));
         Raise(nameof(CanAddSlot));
         Raise(nameof(CanRemoveSlot));
     }
@@ -562,10 +679,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             LinkPocket.Theming.Preferences.UiPreferenceStore.Clear();
             ThemeService.ApplyDefault();
             ThemeService.ApplyFonts();
-            SelectedThemeId = ThemeCatalog.DefaultId;
-            _draft.Clear();
-            _draft.AddRange(ThemeCatalog.Default.Palette.Select(ToMedia));
-            RebuildSlots();
+            ClearDraftDirty();                // 默认外观 = 全新起点，没有"未应用改动"
+            SyncFromAppliedTheme();           // 互斥归属 + 主题卡 + 草稿一起回默认（唯一投影点）
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
             HasDiagnostics = false;

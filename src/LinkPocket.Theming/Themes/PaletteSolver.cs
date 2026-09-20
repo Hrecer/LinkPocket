@@ -29,7 +29,7 @@ public sealed record ThemeFamilies(
 /// <remarks>
 /// <para>
 /// <b>输入是多个颜色而不是一个种子</b>，所以先**分族**（色相 30° 内聚族）再定角色：
-/// 强调族（最暗者优先）→ 支撑族（第二族，或 +60° 派生且回避黄区）→ 中性族（低彩度成员，或取强调族色相）。
+/// 强调族（最暗者优先）→ 支撑族（第二族，或 +60° 派生且**回避暖色带 0°–105°**）→ 中性族（低彩度成员，或取强调族色相）。
 /// </para>
 /// <para>
 /// <b>自研纪律</b>：只借鉴 Material You 的**颜色科学原理**（HCT 空间、色调板档位、大面积低彩度、
@@ -50,11 +50,19 @@ public static class PaletteSolver
     /// <summary>同族判据：与族色的色相差在此值以内。</summary>
     public const double FamilyHueTolerance = 30.0;
 
-    /// <summary>黄区（45°–105°）：支撑族派生落在这里时改用 −60°（回避已废弃的黄色语义，黄在浅底上辨识度也最差）。</summary>
-    public const double YellowZoneStart = 45.0;
+    /// <summary>
+    /// 暖色回避带的**起点**（0°）：红 → 橙 → 黄整段，支撑族派生都不落在这里。
+    /// </summary>
+    /// <remarks>
+    /// 起点为什么是 0° 而不是 45°（原「黄区」）：<b>肤色/肉粉也在这一段</b>。
+    /// 紫罗兰（强调 H310.6）按 +60° 派生会落到 H10.6 —— 实测即 `#FDDADD`（皮肤粉）/ `#72585A`（棕），
+    /// 用户报障「紫罗兰主题里混着偏黄偏肤色的东西」。回避带扩到 105° 后，紫罗兰改走 −60° → H250.6（蓝紫），
+    /// 与强调色同属冷色家族；单色预设里只有紫色系会受影响（焦糖/青提/青梨的 +60° 都不在带内）。
+    /// </remarks>
+    public const double WarmZoneStart = 0.0;
 
-    /// <summary>黄区上界。</summary>
-    public const double YellowZoneEnd = 105.0;
+    /// <summary>暖色回避带的**终点**（105°）：黄在浅底上辨识度最差，且黄是本仓已废弃的语义色（去红去黄）。</summary>
+    public const double WarmZoneEnd = 105.0;
 
     /// <summary>彩度上限档 → (强调上限, 支撑上限)（自研「只钳上限」；单色档两族同钳）。</summary>
     public static (double Accent, double Support) ChromaCaps(ChromaCap cap) => cap switch
@@ -95,7 +103,7 @@ public static class PaletteSolver
                 accent = f;
         }
 
-        // 第 4 步：支撑族 = 剩余族中同样规则取一个；没有第二个族时 +60° 派生（黄区改 −60°）
+        // 第 4 步：支撑族 = 剩余族中同样规则取一个；没有第二个族时 ±60° 派生（回避暖色带 0°–105°）
         ThemeFamily? support = null;
         foreach (var f in families)
         {
@@ -139,13 +147,31 @@ public static class PaletteSolver
     }
 
     /// <summary>
-    /// 支撑族派生色相：强调色相 +60°；落在黄区（45°–105°）时改用 −60°。
+    /// 支撑族派生色相：强调色相 +60°；落在**暖色回避带**（0°–105°：红 / 橙 / 黄 / 肤色）时改用 −60°。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 两个候选相差 120°，而回避带宽 105° &lt; 120° → **至多只有一个落在带内**，
+    /// 所以"取另一个"永远有解（不是启发式，是几何事实；<c>支撑族派生_永远给出带外色相</c> 卡住这条）。
+    /// </para>
+    /// <para>
+    /// 为什么必须回避而不是"就近取"：派生色会大面积出现在界面上（次药丸 / 计数药丸 / 文件夹图标 /
+    /// 容器字），一旦落进暖带，紫色系主题就会读成"粉棕 + 肤色"，与主题卡展示的身份色完全对不上
+    /// （用户报障原文："默认的紫罗兰是紫色的，那些偏黄的、偏肤色的是哪来的"）。
+    /// </para>
+    /// </remarks>
     public static double DeriveSupportHue(double accentHue)
     {
         var plus = ColorMath.NormalizeHue(accentHue + 60.0);
-        var inYellow = plus >= YellowZoneStart && plus <= YellowZoneEnd;
-        return inYellow ? ColorMath.NormalizeHue(accentHue - 60.0) : plus;
+        var minus = ColorMath.NormalizeHue(accentHue - 60.0);
+        return InWarmZone(plus) ? minus : plus;
+    }
+
+    /// <summary>色相是否落在暖色回避带内（闭区间 <see cref="WarmZoneStart"/>–<see cref="WarmZoneEnd"/>）。</summary>
+    public static bool InWarmZone(double hue)
+    {
+        var h = ColorMath.NormalizeHue(hue);
+        return h >= WarmZoneStart && h <= WarmZoneEnd;
     }
 
     /// <summary>中性族彩度（大面积必须"安静"；方案 §4.5）。</summary>

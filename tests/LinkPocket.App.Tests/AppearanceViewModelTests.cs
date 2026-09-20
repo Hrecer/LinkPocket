@@ -83,6 +83,84 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
     }
 
+    // ── 互斥归属（主题 ↔ 自选配色 二选一）─────────────────────────────
+    // 用户报障："自选配色和主题不是应该二选一吗？怎么居然不用二选一"——
+    // 根因是面板里根本没有"归属"这个状态，自选区的高亮是按**色槽数量**推的。
+
+    [Fact]
+    public void 互斥归属_预设与自选配色恰有一侧是当前使用()
+    {
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            Assert.False(vm.IsCustomActive, "出厂默认 = 预设主题");
+            Assert.True(vm.ThemeCards[0].IsSelected);
+
+            var matcha = vm.ThemeCards.First(c => c.Id == "uji-matcha");
+            vm.ApplyThemeCard(matcha);
+            Assert.False(vm.IsCustomActive);
+            Assert.Single(vm.ThemeCards, c => c.IsSelected);
+
+            vm.ApplyDraft();
+            Assert.True(vm.IsCustomActive, "应用自选配色后归属必须切到自选");
+            Assert.DoesNotContain(vm.ThemeCards, c => c.IsSelected);   // 卡片全灭 = 自选生效
+            Assert.False(vm.IsDraftEditing, "已应用 = 没有未应用改动");
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 草稿_当前用自选配色时_重进面板显示的是它本身()
+    {
+        // 真缺陷回归：草稿原先**永远**取出厂默认那 5 色 → 正在用自选配色时重进面板，
+        // 色槽显示的是别人的颜色（面板与实际不符）。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            var target = Color.FromRgb(0x20, 0x60, 0x40);
+            vm.SetSlotColor(1, target);
+            vm.ApplyDraft();
+            Assert.True(vm.IsCustomActive);
+
+            var reopened = NewVm();
+            Assert.True(reopened.IsCustomActive, "重进面板必须仍认得出当前是自选配色");
+            Assert.Equal(vm.SlotCount, reopened.SlotCount);
+            Assert.Equal(target, reopened.Slots[1].Color);
+            Assert.DoesNotContain(reopened.ThemeCards, c => c.IsSelected);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 草稿_入口对齐不覆盖未应用改动()
+    {
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.SlotCount);
+
+            var edited = Color.FromRgb(0x11, 0x22, 0x33);
+            vm.SetSlotColor(0, edited);
+            Assert.True(vm.IsDraftEditing, "改过草稿但没应用 = 编辑中（未应用）");
+
+            vm.SyncFromAppliedTheme();   // 模拟"切走再切回外观页"
+            Assert.Equal(edited, vm.Slots[0].Color);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
     // ── 色槽（纯 VM 逻辑，不碰全局）─────────────────────────────────
 
     [Fact]
@@ -110,6 +188,36 @@ public class AppearanceViewModelTests : IDisposable
         while (vm.CanRemoveSlot) vm.RemoveSlot();
         vm.RemoveSlot();
         Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+    }
+
+    [Fact]
+    public void 槽数分段_索引与草稿槽数双向一致_越界一律钳制()
+    {
+        // 「4 色 / 5 色」现在是共享滑动指示器分段控件，选中索引直接绑 SlotCountIndex
+        // （唯一事实来源 = 草稿槽数；视图不再按槽数换按钮样式）。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            vm.SlotCountIndex = 0;
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+            Assert.Equal(0, vm.SlotCountIndex);
+            Assert.True(vm.IsDraftEditing, "改槽数 = 草稿有未应用改动");
+
+            vm.SlotCountIndex = 1;
+            Assert.Equal(AppearanceViewModel.MaxSlots, vm.SlotCount);
+            Assert.Equal(1, vm.SlotCountIndex);
+
+            vm.SlotCountIndex = 7;    // 越界 → 钳到 5
+            Assert.Equal(AppearanceViewModel.MaxSlots, vm.SlotCount);
+
+            vm.SlotCountIndex = -3;   // 越界 → 钳到 4
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
     }
 
     [Fact]
