@@ -388,6 +388,11 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         Raise(nameof(AutoAdjustColors));
         Raise(nameof(PaletteModeHint));
 
+        // 主题卡色点 = **当前模式**下该主题实际生效的页面底（用户令 2026-09-20 第二轮：
+        // "当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"）——所以每次入口对齐都重投影一次，
+        // 不能只在切开关那一条路上重投影（否则换主题 / 重进面板后的色点可能停在旧模式的口径上）。
+        RepojectAllThemeCards();
+
         ProjectCardSelection();
         RaiseCustomState();
     }
@@ -567,12 +572,13 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     // 纯按照你输入的颜色尽量直接优先按照你的颜色，除非颜色不够……尽量把你选的颜色全部应用上"。
 
     /// <summary>
-    /// 「自动调整颜色」：<c>false</c>（缺省）= **直配**（尽量原样用你给的颜色，只在颜色不够时按本色补）；
-    /// <c>true</c> = 按明度档位表自动排色。
+    /// 「自动调整颜色」：<c>true</c>（**出厂缺省**）= 按明度档位表自动重排（层感与可读性有保证）；
+    /// <c>false</c> = **直配**（尽量原样用你给的颜色，只在颜色不够时按本色补）。
     /// </summary>
     /// <remarks>
+    /// 用户令 2026-09-20 第二轮："我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关"。
     /// 开关一变就**当场重新应用当前外观**（<see cref="ThemeService.SetPaletteMode"/> 内含落盘），
-    /// 并把主题卡色点一起重投影 —— 两种模式下"背景色成员"的取值可能不同（深色背景会被提亮到浅色底线），
+    /// 并把主题卡色点一起重投影 —— 两种模式下"背景色成员"的取值可能不同，
     /// 卡面必须显示**该模式下实际生效的底色**，否则那个圆点又会与背景不同色（用户令：开关两种状态都要能融合）。
     /// </remarks>
     public bool AutoAdjustColors
@@ -603,8 +609,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>开关的说明文案（两种模式各自说清"界面会怎么变"）。</summary>
     public string PaletteModeHint => AutoAdjustColors
-        ? "自动调色：按明度档位重排你的配色（强调 / 容器 / 描边各自落到协调的深浅）"
-        : "直配：原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）";
+        ? "已开启（缺省）：按明度档位自动重排你的配色，层感与可读性有保证"
+        : "已关闭：尽量原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）";
 
     /// <summary>把所有主题卡的色点按**当前模式**重投影（切换开关 / 重新应用主题后调用）。</summary>
     private void RepojectAllThemeCards()
@@ -790,6 +796,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // ⚠️ 换主题之后**必须**刷新"当前外观"那一族投影（名字 / 起点按钮文案 / 说明句 / 槽数）：
             //    这一步原先漏了，用户看到的正是"换了主题，下面还写着以「默认（紫罗兰）」为起点"。
             ProjectAppliedTheme();
+            // 色点也要按**当前配色应用方式**重投影（用户令 2026-09-20："当我们开关自动调整颜色的按钮时，
+            // 主题那个色点也会同步修改"）——换主题同样属于"当前外观变了"，色点不能停在旧模式的口径上。
+            RepojectAllThemeCards();
             ThemeService.SaveCurrentPreferences();
             Status = $"已应用主题「{card.Name}」";
             Diagnostics = string.Empty;
@@ -943,6 +952,23 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     {
         if (index < 0 || index >= _draft.Count) return;
         _draft[index] = color;
+        MarkDraftDirty();
+        RebuildSlots();
+        RefreshDraftDiagnostics();
+    }
+
+    /// <summary>
+    /// 把一个色槽清回**空槽**（用户令 2026-09-20：取色盘的「清除」= 把该槽设回空槽，**不是设成黑色**）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="SetSlotColor"/> **同一条草稿路径**（标脏 → 重建投影 → 刷新诊断），
+    /// 不给自己留第二条改草稿的路。空槽是真实语义（虚线空心环 + 「未选」），
+    /// 清空后会自然反映到"还差 N 个颜色"的门槛与第 12 张「自选颜色」卡的色点上。
+    /// </remarks>
+    public void ClearSlot(int index)
+    {
+        if (index < 0 || index >= _draft.Count) return;
+        _draft[index] = null;
         MarkDraftDirty();
         RebuildSlots();
         RefreshDraftDiagnostics();

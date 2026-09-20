@@ -549,6 +549,73 @@
         </Setter>
     </Style>
 
+    <!-- ===== 滑动开关（M3E 开关；全站隐式样式）=====
+         用户令 2026-09-20 第二轮："不要弄勾选……要真正的开关（ToggleSwitch），做成 Material 3 Expressive 那种"。
+         · 轨道 52×32、圆角 16（纯胶囊）；滑块 24 圆形；
+         · 开 = 轨道 `App.Accent.Fill`，滑块 `App.Surface.Card`；
+           关 = 轨道 `App.Surface.Hover` + 1px `App.Line.Outline` 描边，滑块 `App.Surface.Card`；
+         · 状态层 = 整颗开关上的 8% / 12% 叠层（与 TonalButton / PrimaryPillButton 同一套语言），
+           **不是**"换一个颜色"，故不引入任何新色值；
+         · 全部走 `App.*` 令牌、零颜色字面量（`ThemeRulesTests.界面层_零颜色字面量` 卡住）；
+         · 焦点不描边，只靠滑块位移表达状态（与全站"聚焦禁描边"一致）。
+         用 `ToggleButton` 承载（`IsChecked` 双向绑定），模板里没有 `ContentPresenter` —— 开关自身不带文字，
+         文案由调用方在旁边摆 `TextBlock`（本仓所有开关都是"标题 + 说明"两行）。 -->
+    <Style TargetType="ToggleButton">
+        <Setter Property="Width" Value="52"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Grid>
+                        <!-- 轨道 -->
+                        <Border x:Name="Track" CornerRadius="16"
+                                Background="{DynamicResource App.Surface.Hover}"
+                                BorderBrush="{DynamicResource App.Line.Outline}"
+                                BorderThickness="1"/>
+                        <!-- 状态层（覆盖式：悬停 8% / 按压 12%，交互期间始终是"当下这一刻"的值） -->
+                        <Border x:Name="StateLayer" CornerRadius="16"
+                                Background="{DynamicResource App.Text.Primary}" Opacity="0"/>
+                        <Grid>
+                            <!-- 滑块：关 → 贴左（左内距 = 4）；开 → 贴右（左内距 = 轨道宽 − 滑块 24 − 内距 4）。
+                                 `IsChecked=False` 触发器在主模板里（见下方 Trigger），这里只摆元素。 -->
+                            <Border x:Name="Thumb" Width="24" Height="24" CornerRadius="12"
+                                    HorizontalAlignment="Left" VerticalAlignment="Center"
+                                    Background="{DynamicResource App.Surface.Card}"/>
+                        </Grid>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
+                            <Setter TargetName="Track" Property="BorderThickness" Value="0"/>
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                            <Setter TargetName="Thumb" Property="Margin" Value="0,0,4,0"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="False">
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Left"/>
+                            <Setter TargetName="Thumb" Property="Margin" Value="4,0,0,0"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource App.State.Disabled.Fill}"/>
+                            <Setter TargetName="Track" Property="BorderThickness" Value="0"/>
+                            <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource App.State.Disabled.Content}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== 多页共用的转换器与控件样式（自各页资源去重上收） ===== -->
 
     <!-- 布尔可见性转换（浏览页/详情栏/编辑页/智能列表/回收站共用同一键名） -->

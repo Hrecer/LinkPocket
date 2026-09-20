@@ -85,8 +85,9 @@ namespace LinkPocket.Views
                 UiFontCombo.ItemsSource = vm.UiFonts;
                 MonoFontCombo.ItemsSource = vm.MonoFonts;
 
-                // 取色盘的两条出口（确认 / 取消）在这里接线一次（控件自身不认识本面板）
+                // 取色盘的三条出口（确认 / 清除 / 取消）在这里接线一次（控件自身不认识本面板）
                 Picker.ColorConfirmed += Picker_ColorConfirmed;
+                Picker.Cleared += Picker_Cleared;
                 Picker.Cancelled += Picker_Cancelled;
             }
 
@@ -146,6 +147,14 @@ namespace LinkPocket.Views
         {
             if (_editingSlot >= 0)
                 ViewModel.SetSlotColor(_editingSlot, color);
+            ClosePicker();
+        }
+
+        /// <summary>取色盘的「清除」= 把该槽清回**空槽**（不是设成黑色），并关闭取色盘。</summary>
+        private void Picker_Cleared(object? sender, EventArgs e)
+        {
+            if (_editingSlot >= 0)
+                ViewModel.ClearSlot(_editingSlot);
             ClosePicker();
         }
 

@@ -41,18 +41,40 @@
                             ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
                 </StackPanel>
 
-                <!-- 「自动调整颜色」开关（用户令 2026-09-20："单独做一个开关按钮，**默认关闭**……
-                     纯按照你输入的颜色尽量直接优先按照你的颜色，除非颜色不够"）。
-                     放在全局操作行下方：它作用于**整套配色**，切换即当场重排并落盘。 -->
-                <StackPanel Orientation="Horizontal" Margin="4,0,0,18">
-                    <CheckBox x:Name="AutoAdjustColorsBox" VerticalAlignment="Center"
-                              Content="自动调整颜色"
-                              IsChecked="{Binding AutoAdjustColors, Mode=TwoWay}"
-                              ToolTip="关闭（缺省）= 尽量原样使用你选的颜色；打开 = 按明度档位自动排色"/>
-                    <TextBlock Text="{Binding PaletteModeHint}" FontSize="11.5" Margin="10,0,0,0"
-                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource App.Text.Muted}"/>
-                </StackPanel>
+                <!-- 「自动调整颜色」开关**独立成一张卡**（用户令 2026-09-20 第二轮：
+                     "不要弄勾选……要真正的开关（ToggleSwitch），做成 Material 3 Expressive 那种，
+                      独立成一张卡"）。
+                     开关本体 = UIKit 的 `ToggleButton` 隐式样式（轨道 52×32 胶囊 + 24 圆形滑块，
+                     开 = 强调填充 / 关 = 悬停底 + 描边，全部走 App.* 令牌）。
+                     它作用于**整套配色**，切换即当场重排并落盘；主题卡色点随之重投影（VM 的 RepojectAllThemeCards）。 -->
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
+                        Padding="22,20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="颜色应用方式" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="决定同一个配色怎么落到界面上；切换即刻生效并记住，重启后保持"
+                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ToggleButton Grid.Column="0" x:Name="AutoAdjustColorsSwitch"
+                                          VerticalAlignment="Top" Margin="0,2,0,0"
+                                          IsChecked="{Binding AutoAdjustColors, Mode=TwoWay}"
+                                          ToolTip="打开 = 按明度档位自动重排你的配色；关闭 = 尽量原样使用你选的颜色"/>
+                            <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                                <TextBlock Text="自动调整颜色" FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                <TextBlock Text="{Binding PaletteModeHint}" FontSize="12" Margin="0,4,0,0"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
                 <!-- ===== 卡 1：主题（出厂默认 + 内置预设 + 最后一张「自选颜色」）===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
