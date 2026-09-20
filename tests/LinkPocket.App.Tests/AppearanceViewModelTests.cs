@@ -646,10 +646,16 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 未装载字体候选时_面板状态可用且不崩()
     {
-        // 候选为空是**合法状态**（惰性：用户没展开下拉就不该付全量枚举的钱）
+        // 候选是**惰性**的（用户没展开下拉就不该付全量枚举的钱），但下拉框里**必须看得见当前字体**：
+        // 池为空时用当前族名补两个占位项（用户报障 2026-09-20 第二轮："我选系统字体，
+        // 此时根本就拉取不到任何字体" —— 那时两个框是空白的，读成"拉不到"，其实只是"还没去拉"）。
         var vm = NewVm();
-        Assert.Empty(vm.UiFonts);
-        Assert.Empty(vm.MonoFonts);
+        Assert.Equal(2, vm.UiFonts.Count);   // 当前（雅黑）+ 等宽的当前（Consolas）占位 —— 两者都补进池，保证各自框里看得见
+        Assert.All(vm.UiFonts, f => Assert.False(f.CanDelete));   // 占位项 = 系统字体口径（不可删）
+        Assert.Contains(vm.UiFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultUiFamily);
+        Assert.Contains(vm.MonoFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultMonoFamily);
+        Assert.NotNull(vm.SelectedUiFont);                        // 投影已就位（不是 null）
+        Assert.NotNull(vm.SelectedMonoFont);
         Assert.Equal(12, vm.ThemeCards.Count);
     }
 
@@ -909,7 +915,9 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal("uji-matcha", vm.SelectedThemeId);
         Assert.True(matcha.IsSelected);
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
-        Assert.Contains("宇治抹茶", vm.Status, StringComparison.Ordinal);
+        // 状态行不播报"已应用主题「X」"（用户令 2026-09-20 第二轮："删掉这个提示"）；
+        // 当前生效的是哪套由选中投影（上面三条）表达。
+        Assert.Equal(string.Empty, vm.Status);
         Assert.Equal("uji-matcha", ThemeService.Current.Id);
 
         var prefs = UiPreferenceStore.Load(out var failed);
@@ -932,7 +940,9 @@ public class AppearanceViewModelTests : IDisposable
         vm.ApplyDraft();
 
         Assert.Equal("user-custom", vm.SelectedThemeId);
-        Assert.Contains("已应用自选配色", vm.Status, StringComparison.Ordinal);
+        // 状态行**不播报成功**（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）：
+        // 当前生效的是哪套外观由主题卡高亮 + 「当前使用」徽标表达，不再写一行文字。
+        Assert.Equal(string.Empty, vm.Status);
 
         var prefs = UiPreferenceStore.Load(out var failed);
         Assert.False(failed);
@@ -950,7 +960,8 @@ public class AppearanceViewModelTests : IDisposable
 
         await vm.ResetToDefaultAsync();
 
-        Assert.Equal("已恢复默认外观", vm.Status);
+        // 状态行不播报成功（用户令：删掉提示）；"回到默认"由选中卡 + 调色台空态表达
+        Assert.Equal(string.Empty, vm.Status);
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);

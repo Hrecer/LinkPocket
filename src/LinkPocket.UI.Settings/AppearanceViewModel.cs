@@ -338,6 +338,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         // 对齐到当前生效外观的实际颜色数**（5 色主题 = 5 格，见该方法的注释）。
         RebuildSlots();
 
+        // 字体下拉的**当前值**也要在构造期就投影出来（用户报障 2026-09-20 第二轮："我选系统字体，
+        // 此时根本就拉取不到任何字体"——两个框当时是空白的）：候选是惰性的（展开下拉才装载），
+        // 但"现在用的是什么字体"不依赖候选列表 —— ProjectCurrentFonts 在池为空时用当前族名补占位项。
+        ProjectFontPools();
+        ProjectCurrentFonts(ThemeService.CurrentUiFont, ThemeService.CurrentMonoFont);
+
         // 入口对齐：面板显示"当前**已应用**的外观"——主题卡高亮 + 互斥归属 + 色槽草稿
         // （用户上次选的主题/配色要在他回到这一页时仍然是对的，否则选中态就是错的）
         SyncFromAppliedTheme();
@@ -592,10 +598,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             try
             {
                 ThemeService.SetPaletteMode(target);
-                Status = value
-                    ? "已开启「自动调整颜色」：按明度档位自动排色（界面会跟着变）"
-                    : "已关闭「自动调整颜色」：尽量原样使用你选的颜色";
                 RepojectAllThemeCards();
+                // 状态行不播报成功（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）——
+                // 开关自身的开/关位置 + 卡片里的说明句已经说清了；失败照报（catch 里那条）。
+                Status = string.Empty;
             }
             catch (Exception ex)
             {
@@ -653,18 +659,43 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
                 : !_customActive && string.Equals(card.Id, _selectedThemeId, StringComparison.Ordinal);
     }
 
-    /// <summary>选中的界面字体。</summary>
+    /// <summary>
+    /// 选中的界面字体。**忽略 null 写入**（见下）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要忽略 null（用户报障 2026-09-20 第二轮："我选系统字体，此时根本就拉取不到任何字体"）</b>：
+    /// 两个下拉的 <c>SelectedItem</c> 是**双向绑定**到这里的，而 `ItemsSource` 在候选装载时被整体替换 ——
+    /// 替换的那一刻 WPF 会把 <c>SelectedItem</c> 变成 null 并**回写**给本属性，
+    /// 于是"当前字体"被自己的空候选擦掉，两个框显示成**空白**（用户读成"拉取不到字体"）。
+    /// </para>
+    /// <para>
+    /// 处置：**候选为空导致的清除不是用户的选择**，一律忽略；"当前该用哪个字体"只由
+    /// <c>ProjectCurrentFonts</c>（唯一的投影点）负责，它在没有候选时用当前族名补一个占位项，
+    /// 装载完成后换成真候选。要真正清空选择请直接写字段（本类型内部不需要这种操作）。
+    /// </para>
+    /// </remarks>
     public FontOptionViewModel? SelectedUiFont
     {
         get => _selectedUiFont;
-        set { _selectedUiFont = value; Raise(nameof(SelectedUiFont)); }
+        set
+        {
+            if (value is null) return;
+            _selectedUiFont = value;
+            Raise(nameof(SelectedUiFont));
+        }
     }
 
-    /// <summary>选中的等宽字体。</summary>
+    /// <summary>选中的等宽字体（null 写入同样忽略，理由见 <see cref="SelectedUiFont"/>）。</summary>
     public FontOptionViewModel? SelectedMonoFont
     {
         get => _selectedMonoFont;
-        set { _selectedMonoFont = value; Raise(nameof(SelectedMonoFont)); }
+        set
+        {
+            if (value is null) return;
+            _selectedMonoFont = value;
+            Raise(nameof(SelectedMonoFont));
+        }
     }
 
     /// <summary>派生诊断文案（无诊断时为空）。</summary>
@@ -800,7 +831,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // 主题那个色点也会同步修改"）——换主题同样属于"当前外观变了"，色点不能停在旧模式的口径上。
             RepojectAllThemeCards();
             ThemeService.SaveCurrentPreferences();
-            Status = $"已应用主题「{card.Name}」";
+            // 状态行不播报"已应用主题「X」"（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）：
+            // 当前生效的是哪套外观由**主题卡高亮 + 「当前使用」徽标**表达，再写一行文字是重复信息。
+            // 失败仍然照报（下面 catch 里那两条），因为那是用户必须看见的。
             Diagnostics = string.Empty;
             HasDiagnostics = false;
         }
@@ -846,12 +879,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         RebuildSlots();
 
         ApplyDraft();                     // 唯一应用入口（空槽门槛 + 校验 + 归属切换 + 落盘）
-        if (IsCustomActive)
-        {
-            // 成功才改播报：失败时 ApplyDraft 已经把原因写在状态行上，这里不许覆盖（禁止把失败说成成功）
-            // ⚠️ 判据用 **IsCustomActive**（公开投影），不是 `_customActive` 字段——"生效了没"本来就该问投影。
-            Status = $"已把「{source.Name}」的 {slots.Count} 个颜色复制进调色台并应用为自选配色（点色槽即可微调）";
-        }
+        // 成功不播报（用户令：删掉状态行提示）；失败时 ApplyDraft 已把原因写在状态行上，这里不许覆盖
+        // ⚠️ 判据用 **IsCustomActive**（公开投影），不是 `_customActive` 字段——"生效了没"本来就该问投影。
     }
 
     /// <summary>把当前槽位当作自选配色应用。</summary>
@@ -889,8 +918,11 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ClearDraftDirty();        // 草稿 = 当前值，不再有"未应用改动"
             SelectedThemeId = definition.Id;
             ProjectAppliedTheme();    // 名字 / 按钮文案 / 说明句 / 槽数一起跟上（换主题的公共出口）
+            RepojectAllThemeCards();  // 色点按当前模式重投影（与 ApplyThemeCard 同一口径）
             ThemeService.SaveCurrentPreferences();
-            Status = $"已应用自选配色（{definition.Palette.Count} 色）";
+            // 状态行同样不播报成功（用户令："下面根本就不需要这个提示"）——只报失败
+            Diagnostics = string.Empty;
+            HasDiagnostics = false;
         }
         catch (Exception ex)
         {
@@ -1102,15 +1134,66 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
     }
 
-    /// <summary>把"当前已应用字体"投影到选中项（找不到同名就落到默认字体）。</summary>
+    /// <summary>
+    /// 把"当前已应用字体"投影到选中项（找不到同名就落到默认字体）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>候选还没装载时也要显示当前字体（用户报障 2026-09-20 第二轮："我选系统字体，此时根本就拉取不到
+    /// 任何字体"）</b>：字体候选是**惰性**的（进页面不枚举系统字体，用户真的展开下拉才装载），
+    /// 而两个下拉的 `SelectedItem` 原先只在"候选里找得到同名项"时才被赋值 —— 于是装载之前两个框**空白**，
+    /// 用户读成"拉不到任何字体"（它其实只是"还没去拉"）。
+    /// </para>
+    /// <para>
+    /// 判据修正：**当前生效的字体必须始终显示在框里**，无论候选是否已装载。
+    /// 候选里没有同名项（尚未装载 / 字体已卸载但偏好还留着）就用当前族名造一个**占位项**补上，
+    /// 装载完成后 <see cref="ReloadFontsAsync"/> 会再投影一次，占位项自然被真候选替换。
+    /// 注意占位项的 <see cref="FontOptionViewModel.Choice"/> 带 <c>FilePath = null</c>（= 系统字体），
+    /// 因此它**不可删** —— 与"系统字体只读"同一条口径。
+    /// </para>
+    /// </remarks>
     private void ProjectCurrentFonts(string currentUi, string currentMono)
     {
-        SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, currentUi, StringComparison.OrdinalIgnoreCase))
-                         ?? UiFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultUiFamily, StringComparison.OrdinalIgnoreCase))
-                         ?? UiFonts.FirstOrDefault();
-        SelectedMonoFont = MonoFonts.FirstOrDefault(f => string.Equals(f.Family, currentMono, StringComparison.OrdinalIgnoreCase))
-                           ?? MonoFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase))
-                           ?? MonoFonts.FirstOrDefault();
+        // 候选还没装载（池为空）时先补一个**占位项**：下拉框里必须始终看得见"现在用的是什么字体"，
+        // 否则用户看到两个空白框，读成"拉取不到任何字体"（用户报障 2026-09-20 第二轮）。
+        // ⚠️ 占位项要真的进集合：combo 的 `SelectedItem` 指向一个**不在 Items 里**的对象时
+        //    WPF 会把它显示成空（实测组合框 `SelectedItem` 是占位项、界面却是空白）。
+        EnsureActivePlaceholder(currentUi);
+        EnsureActivePlaceholder(currentMono);
+
+        SelectedUiFont = PickOrPlaceholder(UiFonts, currentUi, FontCatalog.DefaultUiFamily);
+        SelectedMonoFont = PickOrPlaceholder(MonoFonts, currentMono, FontCatalog.DefaultMonoFamily);
+
+        static FontOptionViewModel? PickOrPlaceholder(
+            ObservableCollection<FontOptionViewModel> pool, string current, string fallbackFamily)
+        {
+            var family = string.IsNullOrWhiteSpace(current) ? fallbackFamily : current;
+            return pool.FirstOrDefault(f => string.Equals(f.Family, family, StringComparison.OrdinalIgnoreCase))
+                   ?? pool.FirstOrDefault(f => string.Equals(f.Family, fallbackFamily, StringComparison.OrdinalIgnoreCase))
+                   ?? pool.FirstOrDefault();
+        }
+
+        // 把当前生效的字体补进**当前来源**那份池（候选装载后同名项已存在 → 不重复添加；装载后不再被调用）
+        void EnsureActivePlaceholder(string family)
+        {
+            if (string.IsNullOrWhiteSpace(family)) return;
+            var target = FontSource == FontSourceKind.System ? SystemUiFonts : CustomUiFonts;
+            var targetMono = FontSource == FontSourceKind.System ? SystemMonoFonts : CustomMonoFonts;
+            if (target.All(f => !string.Equals(f.Family, family, StringComparison.OrdinalIgnoreCase)))
+            {
+                target.Add(new FontOptionViewModel(new FontChoice(family, family)));
+                targetMono.Add(new FontOptionViewModel(new FontChoice(family, family)));
+            }
+            ReplaceAll(UiFonts, target);
+            ReplaceAll(MonoFonts, targetMono);
+
+            static void ReplaceAll(ObservableCollection<FontOptionViewModel> to,
+                ObservableCollection<FontOptionViewModel> from)
+            {
+                to.Clear();
+                foreach (var f in from) to.Add(f);
+            }
+        }
     }
 
     /// <summary>同步重载（仅测试与"已经不持有 UI 上下文"的收尾路径用；界面一律走异步版）。</summary>
@@ -1143,7 +1226,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             await ReloadFontsAsync().ConfigureAwait(true);
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))
                              ?? SelectedUiFont;
-            Status = $"已导入字体「{choice.Family}」（文件在本应用目录，点「应用字体」生效）";
+            // 导入成功不播报（用户令：删掉状态行提示）——「自定义字体」侧的下拉出现该项就是结果；失败照报
+            Status = string.Empty;
             return true;
         }
         catch (Exception ex)
@@ -1174,8 +1258,11 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             var deleted = FontCatalog.Remove(option.Choice);
             var fellBack = ThemeService.ResetFontIfDeleted(option.Family);
             await ReloadFontsAsync().ConfigureAwait(true);
-            Status = (deleted ? $"已删除导入字体「{option.Family}」" : $"「{option.Family}」的文件已不存在（已刷新列表）")
-                     + (fellBack is null ? "" : "；它正是当前生效的字体，已回退默认字体");
+            // 成功不播报（用户令：删掉状态行提示）；但"删的正是当前生效字体 → 已回退默认"是**用户必须知道**的
+            // 一件事实（他不是只删了一个候选，而是界面字体变了），故这一类照报。
+            Status = fellBack is null
+                ? string.Empty
+                : $"「{option.Family}」正是当前生效的字体，已回退默认字体（文件{(deleted ? "已删除" : "本就不存在")}）";
         }
         catch (Exception ex)
         {
@@ -1198,7 +1285,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             ThemeService.ApplyFonts(ui, mono);
             ThemeService.SaveCurrentPreferences();
-            Status = $"已应用字体：界面「{ui}」/ 等宽「{mono}」";
+            // 成功不播报（用户令：删掉状态行提示）——界面本身已经换成新字体，那就是结果；失败照报
+            Status = string.Empty;
         }
         catch (Exception ex)
         {
@@ -1221,7 +1309,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
             HasDiagnostics = false;
-            Status = "已恢复默认外观";
+            // 成功不播报（用户令：删掉状态行提示）——界面回到默认就是结果；失败照报（catch 里那条）
+            Status = string.Empty;
         }
         catch (Exception ex)
         {

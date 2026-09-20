@@ -212,17 +212,31 @@ public static class PaletteSolver
         var chroma = source is { } s2 ? ColorMath.Measure(s2).C : NeutralChroma;
         var tone = source is { } s3 ? ColorMath.Measure(s3).T : SurfaceBaseToneMax;
 
-        // 已经在档内 **且本色在 sRGB 里表示得出来** → 原样返回：不必要时不做 HCT 往返
-        // （贴色域边界的高彩度浅色往返会漂 4° 色相，实测宇治抹茶 #E8F2EF H186.8 → 往返后 H191.2）。
+        // ① 本色在档内 **且本色在 sRGB 里表示得出来** → 原样返回：这就是"融合"（色点与页面底同一色值），
+        //    也避免无谓的 HCT 往返（贴色域边界的高彩度浅色往返会漂 4° 色相，实测宇治抹茶 `#E8F2EF`）。
         if (source is { } exactColor
             && tone >= SurfaceBaseToneMin && tone <= SurfaceBaseToneMax
             && ColorMath.IsRepresentable(hue, chroma, tone))
             return exactColor;
 
+        // ② 本色更浅（超上限）：压到"与卡面刚好还能融合"的档（见 SurfaceBaseToneMax 的注释）。
+        if (source is { } lighter)
+        {
+            _ = lighter;
+            for (var t = SurfaceBaseToneMax; t >= SurfaceBaseToneMin; t -= 1.0)
+            {
+                if (!ColorMath.IsRepresentable(hue, chroma, t)) continue;
+                var candidate = ColorMath.FromAlphaHct(0xFF, hue, chroma, t);
+                var cardAt = ColorMath.FromAlphaHct(0xFF, hue, chroma,
+                    Math.Min(t + SurfaceCardLift, SurfaceCardMaxTone));
+                if (ColorMath.ContrastRatio(candidate, cardAt) <= SurfaceFusionMaxContrast)
+                    return candidate;
+            }
+            return ColorMath.FromAlphaHct(0xFF, hue, chroma, SurfaceBaseToneMax);
+        }
+
+        // ③ 本色更深（低于下限，例如暮色玫瑰 T89）→ 提到下限档
         var target = Math.Clamp(tone, SurfaceBaseToneMin, SurfaceBaseToneMax);
-        // 压到档位后如果三元组在 sRGB 里表示不出来（色域钳制会让色相漂），就**降彩度到能表示为止**：
-        // 只动明度与彩度上限、绝不换色相（用户令："不发明色相"）。高彩度浅色（如 `#E8F2EF` C7.8）
-        // 压到 T91 会被色域钳掉，实测色相漂 4.4°；降到 C4.7 就落回色域内、色相回到 H186.9。
         for (var c = chroma; c >= 0; c -= 1.0)
         {
             if (ColorMath.IsRepresentable(hue, c, target))
@@ -267,13 +281,24 @@ public static class PaletteSolver
     public const double NeutralVariantChroma = 8.0;
 
     // ── 表面三层由**用户给的背景色成员**推出（用户令 2026-09-20："优先应用我们选中的那几个颜色"）──
-    /// <summary>页面底的明度档**上限**：背景色成员比它更浅就压到这个档（**层感优先**）。</summary>
+    /// <summary>
+    /// 页面底的明度档**上限**：背景色成员比它更浅就压到这个档。
+    /// </summary>
     /// <remarks>
-    /// 用户报障 2026-09-20："修改后的紫罗兰整个主题界面底色都被改，颜色发灰，虽然是融合了"——
-    /// 实测默认主题原样取 `#F2EEF5`（T94.6）比定稿底色 `#E8E4ED`（T91.3）明显更浅：卡面只能提亮 1–2 档，
-    /// 悬停底压深后甚至比页面底更浅。上限 91 = "页面底有深度、卡面浮得起来"的共同边界。
+    /// <para>
+    /// 用户报障 2026-09-20 第二轮："更新之后大量颜色出现了发灰问题……并且许多颜色都无法融合"。
+    /// 实测原因是**两件事互相挤**：页面底越深，越没有空间让"卡面 = 页面底提亮一档"浮起来 ——
+    /// 底色压到 T87–91 时，10/11 套的卡面与页面底对比只有 **1.000–1.03**（卡片看不出是卡片），
+    /// 而且"背景色成员"与页面底的色差也随之变大（色点看起来没融合）。
+    /// </para>
+    /// <para>
+    /// 现行 = **融合优先、深度兜底**：本色落在 87–94 就**原样用**（色点与页面底同色 = 融合，
+    /// 默认紫罗兰的 `#F2EEF5` T94.6 因此原样保留）；只有比 94 更浅的（晴王青提饮 T97.9 / 薄荷气泡水 T98.1 /
+    /// 青梨冻冻 T98.6 / 蓝莓优格杯 T96.8 / 樱花奶冻卷 T96.1）才压到 94 —— 那是"给卡面留出提亮空间"的底线，
+    /// 否则整页是一块看不出层级的白。
+    /// </para>
     /// </remarks>
-    public const double SurfaceBaseToneMax = 91.0;
+    public const double SurfaceBaseToneMax = 95.0;
 
     /// <summary>页面底的明度档**下限**：背景色成员比它更深就提到这个档（浅色主题的底线，否则整页偏暗）。</summary>
     public const double SurfaceBaseToneMin = 87.0;
@@ -594,6 +619,15 @@ public static class PaletteSolver
 
     /// <summary>选中底对悬停底的最低对比度（悬停中选中也要分得开）。</summary>
     public const double ContainerMinContrastOnHover = 1.06;
+
+    /// <summary>
+    /// "背景色成员的色点看起来与页面底融合"的**对比度上限**：超过它就该把页面底往本色方向压一档。
+    /// </summary>
+    /// <remarks>
+    /// 判据落在渲染事实上：那个色点画在**卡面**上，而卡面由页面底提亮而来 ——
+    /// 本色与卡面的对比度超过 1.08 时，用户看到的就是"这个圆没融合"（用户报障 2026-09-20 第二轮）。
+    /// </remarks>
+    public const double SurfaceFusionMaxContrast = 1.08;
 
     /// <summary>一个锚点在该旋转角下的取值（α 取自锚点；不旋转键保持库基线）。</summary>
     private static Argb Resolve(SurfaceAnchors.Anchor anchor, double rotation)

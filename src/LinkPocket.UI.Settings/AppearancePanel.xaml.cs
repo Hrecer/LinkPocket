@@ -53,8 +53,10 @@ namespace LinkPocket.Views
         {
             await ViewModel.EnsureFontsLoadedAsync().ConfigureAwait(true);
             SyncFontCombos();
-            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
+            // 选中项**不在这里手工赋值**：两个下拉的 SelectedItem 已双向绑定 VM
+            // （`SelectedUiFont` / `SelectedMonoFont`），装载完成时 VM 会重新投影。
+            // ⚠️ 手工赋值会把"候选装载之前显示当前字体"那条投影覆盖成 null
+            //    （用户报障"选系统字体拉取不到任何字体"，其实框里此前是空白）—— 别再写回来。
         }
 
         /// <summary>
@@ -92,8 +94,7 @@ namespace LinkPocket.Views
             }
 
             SyncFontCombos();
-            UiFontCombo.SelectedItem = vm.SelectedUiFont;
-            MonoFontCombo.SelectedItem = vm.SelectedMonoFont;
+            // 选中项由 XAML 的双向绑定投影，不手工赋值（见 LoadFontCandidatesAsync 的注释）
         }
 
         /// <summary>进入面板时的入口对齐：把当前已应用的外观投影到控件上（不重算、不重置）。</summary>
@@ -103,9 +104,8 @@ namespace LinkPocket.Views
             ViewModel.SyncFromAppliedTheme();
             // 候选**不在这里装载**：枚举系统字体与机器上装的字体数量成正比，进页面就付是浪费；
             // 用户真的展开下拉时才装载（见 UiFontCombo_DropDownOpened）。
+            // 但**当前字体必须立刻看得见**：VM 在没有候选时用当前族名补一个占位项（ProjectCurrentFonts）。
             SyncFontCombos();
-            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
         }
 
         /// <summary>用户展开字体下拉时才真正装载候选（唯一需要全量列表的时刻）。</summary>
@@ -173,8 +173,6 @@ namespace LinkPocket.Views
         {
             await ViewModel.ResetToDefaultAsync();
             SyncFontCombos();
-            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
         }
 
         // ── 字体 ─────────────────────────────────────────────────────────
@@ -215,7 +213,6 @@ namespace LinkPocket.Views
             // 只写日志不播报 = 用户点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
             await ViewModel.ImportFontAsync(dialog.FileName);
             SyncFontCombos();
-            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
         }
 
         private async void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
@@ -225,8 +222,6 @@ namespace LinkPocket.Views
             if (ViewModel.SelectedUiFont is not { } font) return;
             await ViewModel.DeleteFontAsync(font);
             SyncFontCombos();
-            UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
-            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
         }
 
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)

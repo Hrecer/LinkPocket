@@ -153,8 +153,8 @@ public class ThemeContrastTests
     {
         // 定稿口径（用户令 2026-09-20："我说过优先应用我们选中的这 5 个颜色的，而不是深一点浅一点"）：
         // 界面色 = **用户给的颜色本身**优先 —— 强调 / 支撑 / 描边 / 正文直接取配色成员；
-        // 页面底取"背景色成员"的**本色色相与彩度**、明度夹在 87–91（层感优先，见
-        // `页面底_夹在明度档内_且卡面与选中底都看得见` 与 文档/WARNING... 对应条目）。
+        // 页面底取"背景色成员"**本色**（明度落在 87–95 档内即原样采用 → 色点与页面底同色 = 融合；
+        // 更浅的才压到 95，见 `页面底_夹在明度档内_且卡面与选中底都看得见`）。
         // 本用例按 **Exact**（开关关闭）口径核对逐键实测值：那是"最贴近原色"的那一支。
         // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
         var t = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
@@ -164,16 +164,17 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.AccentContainer)));  // ← 浅中性色 = 色5（选中底 / 徽标底）
+        // 选中底 = 抬到"对页面底 ≥1.08"的档（修前它与页面底**完全同色**=1.000，选中行看不见）
+        Assert.Equal(0xFBF7FEu, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
         Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
-        // ← 色5（背景色成员）的**本色色相与彩度**落到明度档 91：页面底必须有深度、卡面才浮得起来
-        Assert.Equal(0xE8E4EBu, Rgb(t.Token(AppTokens.SurfaceBase)));
-        Assert.Equal(0xF6F2F9u, Rgb(t.Token(AppTokens.SurfaceCard)));
+        // ← 色5（背景色成员）：本色明度落在 87–95 档内 → **原样采用**（页面底就是用户给的那个背景色 = 融合）
+        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.SurfaceBase)));
+        Assert.Equal(0xFCF8FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
@@ -320,16 +321,18 @@ public class ThemeContrastTests
     [Fact]
     public void 页面底_夹在明度档内_且卡面与选中底都看得见()
     {
-        // 用户报障 2026-09-20（"修改后的紫罗兰整个主题界面底色都被改，颜色发灰，虽然是融合了" +
-        // "暮色玫瑰第 5 个圆圈不融合"）经过**实测**得到的口径：页面底 = 背景色成员的**本色色相与彩度**、
-        // 明度夹在 87–91。原样采用最浅成员会让底色漂到 T94–98（默认 `#F2EEF5` T94.6、薄荷气泡水 T98.1），
-        // 层感随之塌掉：卡面提亮不动（晴王青提饮 / 薄荷气泡水的卡面对页面底实测只有 1.003 / 1.000）。
+        // 用户报障 2026-09-20 两轮合起来的口径：
+        //  ① "整个主题界面底色都被改，颜色发灰，虽然是融合了" → 页面底不能一味压深（层感会塌）；
+        //  ② "更新之后大量颜色出现了发灰问题……并且许多颜色都无法融合" → 页面底要**尽量就是**
+        //     配色里那个背景色成员（色点与它同色 = 融合），只有"比上限还浅、再浅就没法让卡面浮起来"时才压。
         //
-        // 三条判据（全部按实测对比度，不靠感觉）：
-        //  ① 页面底明度落在 87–91；
-        //  ② 卡面浮得起来（对页面底 ≥1.10）；
-        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）—— 修前实测 **8/11 套与页面底同色（1.000）**。
-        const double MinCardOnBase = 1.10;
+        // 现行 = 融合优先、深度兜底（`SurfaceBaseOf`）：本色落在 87–95 原样用；更浅的压到 95。
+        // 四条判据（全部按实测对比度，不靠感觉）：
+        //  ① 页面底明度落在 87–95；
+        //  ② 卡面浮得起来（对页面底 ≥1.06）；
+        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）—— 修前实测 **8/11 套与页面底同色（1.000）**；
+        //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
+        const double MinCardOnBase = 1.06;
         var failures = new List<string>();
         foreach (var theme in ThemeCatalog.All)
         {
@@ -369,13 +372,12 @@ public class ThemeContrastTests
         //  ② "我说的五色主题显示成四色，这是我们之前的方案" —— 设计档第 1–4 套是 **5 色**、
         //     第 5–10 套是 **4 色**，而旧实现每套只收了 1–2 个身份色、再补位凑到 4（五色被压成四色）。
         //
-        // 判据两条：
+        // 判据：
         //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 与背景同色相）；
-        //  ② 最浅身份色与**页面底**必须"近融"：同色相（±1°）、同彩度（±1），明度差在夹档允许的范围内
-        //     （实测 1.00–1.21：第 1–4 套 1.000–1.047，默认 1.095，第 5–10 套因设计档里是**高彩度浅色**
-        //     （C16–19，T96–98）离夹档上限最远，故最松 1.204）。融合的**语义**仍是"背景色成员就是页面底的颜色"，
-        //     只是明度被夹进 87–91 以保住层感（用户令："当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"）。
-        const double MaxFusionContrast = 1.25;
+        //  ② 最浅身份色与**页面底**必须"融合或近融"：同色相（±5° = 8 位往返量化下界）、
+        //     对比度 ≤1.15（实测：7/11 套**完全同色 1.000**——本色落在 87–95 档内原样采用；
+        //     晴王青提饮 / 薄荷气泡水 / 青梨冻冻 / 蓝莓优格杯 四套的浅色比上限还浅，压到 95 后 1.045–1.082）
+        const double MaxFusionContrast = 1.15;
         var failures = new List<string>();
         var counts = new List<string>();
         foreach (var theme in ThemeCatalog.All)

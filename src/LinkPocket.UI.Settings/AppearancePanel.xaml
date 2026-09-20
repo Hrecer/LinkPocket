@@ -391,6 +391,7 @@
                             </Grid.ColumnDefinitions>
                             <ComboBox x:Name="UiFontCombo" Grid.Column="0" Height="34"
                                       DisplayMemberPath="Display"
+                                      SelectedItem="{Binding SelectedUiFont, Mode=TwoWay}"
                                       DropDownOpened="UiFontCombo_DropDownOpened"
                                       SelectionChanged="UiFontCombo_SelectionChanged"/>
                             <!-- 导入 / 删除**只在「自定义字体」这一侧出现**：
@@ -411,6 +412,7 @@
                         <TextBlock Text="等宽字体（ID / 网址）" FontSize="12" Margin="2,14,0,6"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <ComboBox x:Name="MonoFontCombo" Height="34" DisplayMemberPath="Display"
+                                  SelectedItem="{Binding SelectedMonoFont, Mode=TwoWay}"
                                   DropDownOpened="MonoFontCombo_DropDownOpened"
                                   SelectionChanged="MonoFontCombo_SelectionChanged"/>
 
@@ -459,7 +461,10 @@
 
                 <!-- ===== 全局操作已上移到面板顶部（用户令：它们是全局操作，不属于任何一张卡） ===== -->
 
-                <!-- 结果播报（状态栏口径；绑 VM.Status —— 视图不择时刷新） -->
+                <!-- 结果播报（状态栏口径；绑 VM.Status —— 视图不择时刷新）。
+                     **只在失败 / 用户必须知道的事实时才有字**（用户令 2026-09-20 第二轮：
+                     "下面根本就不需要这个提示，删掉"）——成功路径不再写"已应用主题「X」"这类重复信息，
+                     当前生效的外观由主题卡高亮 + 「当前使用」徽标表达。 -->
                 <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="12" Margin="4,14,0,0"
                            TextWrapping="Wrap"
                            Foreground="{DynamicResource App.Text.Secondary}"/>
