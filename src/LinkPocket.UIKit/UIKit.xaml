@@ -499,12 +499,19 @@
         <Setter Property="Focusable" Value="True"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+        <!-- 内容**水平居中**（用户报障 2026-09-20："药丸里面的文字相对小药丸仍然没有居中"）：
+             项被 MinWidth 撑宽后（外观面板的「4 色/5 色」段 MinWidth=64），
+             ContentPresenter 只有 VerticalAlignment 会被拉伸到整宽 → 文字贴左，
+             看起来就是"没居中"。顶部导航药丸的项是内容自适应宽度（StackPanel 排布），
+             故这条对本条导航的几何**零影响**（指示器贴齐读的是项容器实际几何）。 -->
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="Bd" CornerRadius="14" Background="Transparent"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                         <ContentPresenter VerticalAlignment="Center"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>

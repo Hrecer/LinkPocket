@@ -43,7 +43,13 @@ public class AppearanceViewModelTests : IDisposable
 
     public void Dispose()
     {
-        // 复位到"用例开始前"的状态（文件原样还回去；不存在就删掉）
+        // 收尾 = **进程内复位 + 偏好文件还原**，顺序不能反（用户令 2026-09-20："任何测试/探针跑完，
+        // 进程内主题状态回到出厂默认、偏好文件回到跑前原样"）：
+        //   ① `ThemeService.ResetForTests()` 会连偏好文件一起清 —— 它负责"进程内回默认"；
+        //   ② 只有在这个**之后**才能把备份写回去，否则刚还回去的"跑前状态"立刻被 ① 清掉。
+        ThemeService.ResetForTests();
+
+        // ② 复位到"用例开始前"的文件状态（原样还回去；不存在就保持不存在）
         if (_backup is null) UiPreferenceStore.Clear();
         else File.WriteAllText(_path, _backup);
     }
@@ -56,13 +62,25 @@ public class AppearanceViewModelTests : IDisposable
     // ── 主题卡 ───────────────────────────────────────────────────────
 
     [Fact]
-    public void 主题卡_11张_出厂默认排第一且带默认能力位()
+    public void 主题卡_12张_出厂默认排第一_最后一张是自选颜色卡()
     {
         var vm = NewVm();
-        Assert.Equal(11, vm.ThemeCards.Count);
+        Assert.Equal(12, vm.ThemeCards.Count);          // 11 套目录主题 + 第 12 张「自选颜色」
         Assert.True(vm.ThemeCards[0].IsDefault, "出厂默认必须排第一");
         Assert.Equal(ThemeCatalog.DefaultId, vm.ThemeCards[0].Id);
         Assert.Single(vm.ThemeCards, c => c.IsDefault);
+
+        // 最后一张 = 「自选颜色」卡：**不是目录里的主题**（ThemeCatalog 仍是 11 套）
+        var last = vm.ThemeCards[^1];
+        Assert.True(last.IsCustom, "最后一张必须是自选颜色卡（IsCustom）");
+        Assert.Equal("user-custom", last.Id);
+        Assert.Equal("自选颜色", last.Name);
+        Assert.Null(last.Definition);                    // 没有目录定义：点它 = 应用调色台的草稿
+        Assert.Equal(11, ThemeCatalog.All.Count);        // 目录本身没有多出一套"自选颜色"
+
+        // 默认**全空**：没有任何自选配色 → 卡面走空态占位，不显示任何颜色
+        Assert.Empty(last.Swatches);
+        Assert.True(last.IsEmpty, "自选颜色卡默认必须是空态（卡面画 4 个空心占位圆）");
     }
 
     [Fact]
@@ -71,8 +89,16 @@ public class AppearanceViewModelTests : IDisposable
         // 预设身份色只有 1–2 个，主题卡会用该主题自己的色调板补足到 4 个
         // （"主题就是这些颜色"，不足 4 个时面板会显得像"缺了几个色"）
         var vm = NewVm();
-        Assert.All(vm.ThemeCards, c => Assert.True(c.Swatches.Count >= 4, $"{c.Name} 身份色圆点不足：{c.Swatches.Count}"));
-        Assert.All(vm.ThemeCards, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name} 缺派生摘要"));
+        var presets = vm.ThemeCards.Where(c => !c.IsCustom).ToList();
+        Assert.Equal(11, presets.Count);
+        Assert.All(presets, c => Assert.True(c.Swatches.Count >= 4, $"{c.Name} 身份色圆点不足：{c.Swatches.Count}"));
+        Assert.All(presets, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name} 缺派生摘要"));
+        Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name} 不该是空态"));
+
+        // 自选颜色卡反过来：没有配色时**一个色点都不显示**（占位态），也没有派生示意条
+        var custom = vm.ThemeCards[^1];
+        Assert.Empty(custom.Swatches);
+        Assert.False(custom.ShowDerivedStrip);
     }
 
     [Fact]
@@ -81,15 +107,16 @@ public class AppearanceViewModelTests : IDisposable
         var vm = NewVm();
         Assert.True(vm.ThemeCards[0].IsSelected);
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
+        Assert.False(vm.ThemeCards[^1].IsSelected, "自选颜色卡默认不该亮着");
     }
 
     [Fact]
-    public void 色槽_载入当前主题的颜色_预设也能进仪表盘微调()
+    public void 色槽_预设只读_不再把当前主题自动载入色槽()
     {
-        // 用户令 2026-09-20："仪表盘是仪表盘、自选是自选、选择区域是选择区域；
-        // 你默认的颜色也可以移到仪表盘里微调"——色槽任何时候都显示**当前生效主题**的颜色
-        // （预设只有 1–2 个身份色 → 用该主题自己的档位补足到 4，仍满足"4 或 5 色"门槛）。
-        // 反例（已修）：非自选模式下拿"出厂默认那 5 色"兜底 → 看着像一张与当前主题无关的示例图。
+        // 用户令 2026-09-20："默认的颜色是绝对不能改的，但是我们可以多出一个按钮，
+        // 我们可以把默认的某个主题作为我们自选色的方案"。
+        // 旧行为（已废）= 进面板就把当前主题的颜色倒进色槽 —— 看起来像"预设可以被就地改"，
+        // 而且与"自选是另一份配色"完全对不上。新语义：预设只读，色槽保持用户自己的草稿（从没有过 = 空）。
         ThemeService.ResetForTests();
         try
         {
@@ -98,16 +125,183 @@ public class AppearanceViewModelTests : IDisposable
 
             Assert.Equal("宇治抹茶", vm.AppliedThemeName);
             Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+            Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "预设生效时色槽不该被自动填色"));
+            Assert.All(vm.Slots, s => Assert.Equal(string.Empty, s.Hex));
+            Assert.False(vm.IsCustomActive, "没载入更没应用：当前生效的仍是那个预设");
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
 
-            var palette = ThemeCatalog.Find("uji-matcha")!.Palette;
-            static string HexOf(Material3.Core.Argb c) => $"#{c.ToInt() & 0x00FFFFFF:X6}";
-            Assert.Equal(HexOf(palette[0]), vm.Slots[0].Hex);
-            Assert.Equal(HexOf(palette[1]), vm.Slots[1].Hex);
+    [Fact]
+    public void 起点_以当前主题为起点_把颜色复制进色槽_且预设定义逐项未变()
+    {
+        // 「以当前主题为起点」= **复制**（不是引用、不是就地改）：这是"默认主题不可改"的硬判据 ——
+        // 复制完再怎么编辑，ThemeCatalog 里那套预设的 Palette 必须逐项不变。
+        ThemeService.ResetForTests();
+        try
+        {
+            ThemeService.ApplyById("uji-matcha", null);
+            var matcha = ThemeCatalog.Find("uji-matcha")!;
+            var before = matcha.Palette.ToList();
 
-            // 与出厂默认的示例色不同（旧行为就是拿它兜底）
-            var defaultHex = HexOf(ThemeCatalog.Default.Palette[0]);
-            Assert.NotEqual(defaultHex, vm.Slots[0].Hex);
-            Assert.False(vm.IsCustomActive, "载入不等于应用：当前生效的仍是那个预设");
+            var vm = NewVm();
+            Assert.Equal("以「宇治抹茶」为起点", vm.StartFromCurrentThemeLabel);
+
+            vm.StartFromCurrentTheme();
+
+            var expected = PaletteSolver.EditableSlots(matcha);
+            Assert.Equal(expected.Count, vm.SlotCount);
+            Assert.Equal(expected.Count, vm.Slots.Count);
+            for (var i = 0; i < expected.Count; i++)
+            {
+                var v = expected[i].ToInt();
+                var hex = $"#{(v >> 16) & 0xFF:X2}{(v >> 8) & 0xFF:X2}{v & 0xFF:X2}";
+                Assert.Equal(hex, vm.Slots[i].Hex);
+                Assert.True(vm.Slots[i].HasColor);
+            }
+
+            Assert.True(vm.IsDraftEditing, "复制进来的只是草稿：必须显示「编辑中（未应用）」");
+            Assert.False(vm.IsCustomActive, "起点不应用 —— 当前生效的仍是那个预设");
+
+            // 硬判据：预设定义逐项未变（复制而非引用）
+            Assert.Equal(before, matcha.Palette);
+            Assert.Equal(before, ThemeCatalog.Find("uji-matcha")!.Palette);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 起点_切预设卡不清空草稿()
+    {
+        // 调色台是用户自己的草稿：切主题（预设只读、单击即应用）**不许**把它冲掉。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            var first = Color.FromRgb(0x11, 0x22, 0x33);
+            var second = Color.FromRgb(0x44, 0x55, 0x66);
+            vm.SetSlotColor(0, first);
+            vm.SetSlotColor(1, second);
+
+            vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Id == "uji-matcha"));
+
+            Assert.Equal(first, vm.Slots[0].Color);
+            Assert.Equal(second, vm.Slots[1].Color);
+            Assert.Equal(2, vm.Slots.Count(s => s.HasColor));
+            Assert.True(vm.IsDraftEditing, "草稿还是「未应用」的那份");
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 自选颜色卡_有配色时显示色点_空槽时显示未选()
+    {
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            var custom = vm.ThemeCards[^1];
+            Assert.True(custom.IsEmpty);
+
+            vm.SetSlotColor(0, Color.FromRgb(0x11, 0x22, 0x33));
+
+            Assert.False(custom.IsEmpty);
+            Assert.Single(custom.Swatches);                     // 卡面只显示**已选**的颜色
+            Assert.Equal(Color.FromRgb(0x11, 0x22, 0x33), custom.Swatches[0]);
+            Assert.Equal("未选", vm.Slots[1].ValueText);         // 空槽不显示假色值
+            Assert.Equal(string.Empty, vm.Slots[1].Hex);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 应用门槛_空槽时拒绝应用并说明还差几个()
+    {
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            Assert.All(vm.Slots, s => Assert.True(s.IsEmpty));
+
+            vm.ApplyDraft();
+
+            Assert.False(vm.IsCustomActive, "空槽必须被拒绝：不应用");
+            Assert.False(vm.ThemeCards[^1].IsSelected, "被拒绝时自选颜色卡不许高亮");
+            Assert.Contains("4 个颜色没选", vm.Status, StringComparison.Ordinal);
+            Assert.False(File.Exists(_path), "被拒绝不得写偏好");
+
+            // 只补 3 个也不行（门槛 = 每一格都有颜色）
+            for (var i = 0; i < 3; i++) vm.SetSlotColor(i, Color.FromRgb((byte)(0x40 + i), 0x50, 0x60));
+            vm.ApplyDraft();
+            Assert.False(vm.IsCustomActive);
+            Assert.Contains("还有 1 个颜色没选", vm.Status, StringComparison.Ordinal);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 空槽态_诊断是中性提示而不是红色错误()
+    {
+        // 空槽 = "还没选完"，**不是**"配色不合法"（用户令 2026-09-20 的空态语义）。
+        // 反例（已修）：空态下诊断框显示「✗ 主题需要 4 或 5 个颜色（当前 0 个）」—— 一进面板就报错，像是用户做错了什么。
+        var vm = NewVm();
+        vm.SetSlotCount(4);
+        vm.RefreshDraftDiagnostics();
+
+        Assert.True(vm.HasDiagnostics);
+        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+        Assert.Contains("还差", vm.Diagnostics, StringComparison.Ordinal);
+
+        // 走「应用」入口也是同一口径（状态行说明 + 中性提示，不摆红色错误）
+        vm.ApplyDraft();
+        Assert.Contains("没选", vm.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 自选颜色卡_点它等于应用自选配色()
+    {
+        // 第 12 张卡的应用路径与「应用这套外观」**同一入口**（ApplyDraft）：合法才生效、才落盘。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            var custom = vm.ThemeCards[^1];
+
+            vm.ApplyThemeCard(custom);              // 草稿全空 → 拒绝
+            Assert.False(vm.IsCustomActive);
+            Assert.Contains("没选", vm.Status, StringComparison.Ordinal);
+
+            foreach (var (slot, hex) in ThemeCatalog.Default.Palette.Select((c, i) => (i, c)))
+            {
+                var v = hex.ToInt();
+                vm.SetSlotColor(slot, Color.FromRgb((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF)));
+            }
+            vm.ApplyThemeCard(custom);              // 合法 → 应用
+
+            Assert.True(vm.IsCustomActive);
+            Assert.True(custom.IsSelected, "自选配色生效 = 只有自选颜色卡高亮");
+            Assert.DoesNotContain(vm.ThemeCards.Where(c => !c.IsCustom), c => c.IsSelected);
+            Assert.Equal("user-custom", vm.SelectedThemeId);
+
+            var prefs = UiPreferenceStore.Load(out var failed);
+            Assert.False(failed);
+            Assert.True(prefs.Theme.IsCustom, "点自选颜色卡也必须落盘为自选配色");
         }
         finally
         {
@@ -133,10 +327,16 @@ public class AppearanceViewModelTests : IDisposable
             vm.ApplyThemeCard(matcha);
             Assert.False(vm.IsCustomActive);
             Assert.Single(vm.ThemeCards, c => c.IsSelected);
+            Assert.False(vm.ThemeCards[^1].IsSelected, "预设生效时自选颜色卡不许亮");
 
+            vm.StartFromCurrentTheme();   // 草稿先要有颜色（空槽会被应用门槛拒绝）
             vm.ApplyDraft();
+
             Assert.True(vm.IsCustomActive, "应用自选配色后归属必须切到自选");
-            Assert.DoesNotContain(vm.ThemeCards, c => c.IsSelected);   // 卡片全灭 = 自选生效
+            // 严格二选一：自选生效时**只有第 12 张「自选颜色」卡**高亮，11 张预设卡全灭
+            Assert.True(vm.ThemeCards[^1].IsSelected);
+            Assert.Single(vm.ThemeCards, c => c.IsSelected);
+            Assert.DoesNotContain(vm.ThemeCards.Where(c => !c.IsCustom), c => c.IsSelected);
             Assert.False(vm.IsDraftEditing, "已应用 = 没有未应用改动");
         }
         finally
@@ -154,6 +354,7 @@ public class AppearanceViewModelTests : IDisposable
         try
         {
             var vm = NewVm();
+            vm.StartFromCurrentTheme();              // 起点 = 出厂默认那 5 色（合法）
             var target = Color.FromRgb(0x20, 0x60, 0x40);
             vm.SetSlotColor(1, target);
             vm.ApplyDraft();
@@ -163,7 +364,8 @@ public class AppearanceViewModelTests : IDisposable
             Assert.True(reopened.IsCustomActive, "重进面板必须仍认得出当前是自选配色");
             Assert.Equal(vm.SlotCount, reopened.SlotCount);
             Assert.Equal(target, reopened.Slots[1].Color);
-            Assert.DoesNotContain(reopened.ThemeCards, c => c.IsSelected);
+            Assert.True(reopened.ThemeCards[^1].IsSelected, "自选配色生效 = 自选颜色卡高亮");
+            Assert.DoesNotContain(reopened.ThemeCards.Where(c => !c.IsCustom), c => c.IsSelected);
         }
         finally
         {
@@ -178,7 +380,9 @@ public class AppearanceViewModelTests : IDisposable
         try
         {
             var vm = NewVm();
-            Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.SlotCount);
+            // 默认草稿 = 4 个**空槽**（预设只读：不再把当前主题的颜色倒进来）
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+            Assert.All(vm.Slots, s => Assert.True(s.IsEmpty));
 
             var edited = Color.FromRgb(0x11, 0x22, 0x33);
             vm.SetSlotColor(0, edited);
@@ -186,6 +390,7 @@ public class AppearanceViewModelTests : IDisposable
 
             vm.SyncFromAppliedTheme();   // 模拟"切走再切回外观页"
             Assert.Equal(edited, vm.Slots[0].Color);
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
         }
         finally
         {
@@ -196,21 +401,23 @@ public class AppearanceViewModelTests : IDisposable
     // ── 色槽（纯 VM 逻辑，不碰全局）─────────────────────────────────
 
     [Fact]
-    public void 色槽_默认等于出厂默认身份色数_上下限为4与5()
+    public void 色槽_默认4个空槽_上下限为4与5()
     {
         var vm = NewVm();
-        Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.SlotCount);
+        Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
         Assert.InRange(vm.SlotCount, AppearanceViewModel.MinSlots, AppearanceViewModel.MaxSlots);
-        Assert.False(vm.CanAddSlot);
-        Assert.True(vm.CanRemoveSlot);
-
-        vm.RemoveSlot();
-        Assert.Equal(4, vm.SlotCount);
+        Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "默认必须是空槽（不显示任何颜色）"));
         Assert.True(vm.CanAddSlot);
         Assert.False(vm.CanRemoveSlot);
 
         vm.AddSlot();
         Assert.Equal(5, vm.SlotCount);
+        Assert.True(vm.Slots[^1].IsEmpty, "新增的槽也是空的（绝不编造一个没人选过的颜色）");
+        Assert.False(vm.CanAddSlot);
+        Assert.True(vm.CanRemoveSlot);
+
+        vm.RemoveSlot();
+        Assert.Equal(4, vm.SlotCount);
     }
 
     [Fact]
@@ -231,14 +438,16 @@ public class AppearanceViewModelTests : IDisposable
         try
         {
             var vm = NewVm();
-            vm.SlotCountIndex = 0;
-            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
-            Assert.Equal(0, vm.SlotCountIndex);
-            Assert.True(vm.IsDraftEditing, "改槽数 = 草稿有未应用改动");
+            Assert.Equal(0, vm.SlotCountIndex);       // 默认 4 槽 → 索引 0
 
             vm.SlotCountIndex = 1;
             Assert.Equal(AppearanceViewModel.MaxSlots, vm.SlotCount);
             Assert.Equal(1, vm.SlotCountIndex);
+            Assert.True(vm.IsDraftEditing, "改槽数 = 草稿有未应用改动");
+
+            vm.SlotCountIndex = 0;
+            Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+            Assert.Equal(0, vm.SlotCountIndex);
 
             vm.SlotCountIndex = 7;    // 越界 → 钳到 5
             Assert.Equal(AppearanceViewModel.MaxSlots, vm.SlotCount);
@@ -291,8 +500,10 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 诊断_合法配色无诊断()
     {
-        // 用出厂默认的身份色（保证合法）→ 应无任何诊断
+        // 用出厂默认的身份色（保证合法）→ 应无任何诊断。默认草稿只有 4 格，
+        // 而出厂默认是 5 个身份色 → 先把槽数切到 5（与"这套配色整体合法"的前提一致）。
         var vm = NewVm();
+        vm.SlotCountIndex = 1;
         var palette = ThemeCatalog.Default.Palette;
         for (var i = 0; i < vm.SlotCount && i < palette.Count; i++)
         {
@@ -312,7 +523,7 @@ public class AppearanceViewModelTests : IDisposable
         var vm = NewVm();
         Assert.Empty(vm.UiFonts);
         Assert.Empty(vm.MonoFonts);
-        Assert.Equal(11, vm.ThemeCards.Count);
+        Assert.Equal(12, vm.ThemeCards.Count);
     }
 
     [Fact]
@@ -415,7 +626,9 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal(string.Empty, vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily)));
     }
 
-    // ── 必须碰全局的 3 个用例（应用/落盘），各自靠 Dispose 复位 ──────
+    // ── 必须碰全局的用例（应用/落盘）─────────────────────────────────
+    // ⚠️ 它们各自靠**类级 Dispose**（ResetForTests → 再写回偏好备份）复位到"跑前原样"；
+    //    类内还有 try/finally ResetForTests 的用例是"中途就要回默认"的那几条，两套并存不冲突。
 
     [Fact]
     public void 应用主题卡_选中投影切到该卡且只有一张选中()
@@ -441,6 +654,7 @@ public class AppearanceViewModelTests : IDisposable
     {
         ThemeService.ResetForTests();
         var vm = NewVm();
+        vm.SlotCountIndex = 1;                 // 5 槽（出厂默认有 5 个身份色）
         var palette = ThemeCatalog.Default.Palette;
         for (var i = 0; i < vm.SlotCount && i < palette.Count; i++)
         {
@@ -472,7 +686,11 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
-        Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.SlotCount);
+        // 调色台回**空态**：自选配色已随偏好一起清掉，留着 4/5 个色点会名不副实
+        Assert.Equal(AppearanceViewModel.MinSlots, vm.SlotCount);
+        Assert.All(vm.Slots, s => Assert.True(s.IsEmpty));
+        Assert.True(vm.ThemeCards[^1].IsEmpty, "恢复默认后自选颜色卡必须回到空态");
+        Assert.Empty(vm.ThemeCards[^1].Swatches);
         Assert.True(vm.ThemeCards.First(c => c.IsDefault).IsSelected);
         Assert.False(File.Exists(_path), "恢复默认外观必须清掉偏好文件");
     }

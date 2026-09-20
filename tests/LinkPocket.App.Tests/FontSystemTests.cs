@@ -17,8 +17,48 @@ namespace LinkPocket.App.Tests;
 /// 用完自清（CONVENTIONS §5）。
 /// </remarks>
 [Collection(UiPreferencesCollection.Name)]
-public class FontSystemTests
+public class FontSystemTests : IDisposable
 {
+    private readonly string _path = UiPreferenceStore.FilePath;
+    private readonly string? _backup;
+
+    public FontSystemTests() => _backup = File.Exists(_path) ? File.ReadAllText(_path) : null;
+
+    /// <summary>
+    /// 收尾 = **进程内回出厂默认 + 偏好文件回跑前原样**（用户令 2026-09-20）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 顺序不可颠倒：<see cref="ThemeService.ResetForTests"/> 会连偏好文件一起清，
+    /// 备份必须在它**之后**写回 —— 反了就等于把"跑前状态"清掉（跑前状态丢失）。
+    /// 本类里碰 <c>ThemeService</c> / <c>FontCatalog</c>（都是进程级静态）的用例因此不会漏进下一个用例。
+    /// </remarks>
+    public void Dispose()
+    {
+        ThemeService.ResetForTests();
+        if (_backup is null) UiPreferenceStore.Clear();
+        else File.WriteAllText(_path, _backup);
+    }
+
+    /// <summary>
+    /// **碰不到别的安装**的机器化判据：偏好文件永远只落在**本进程自己的安装目录**里。
+    /// </summary>
+    /// <remarks>
+    /// 用户令 2026-09-20："任何测试或探针跑完，进程内主题状态回到出厂默认、偏好文件回到跑前原样，
+    /// 并且**碰不到别的安装**"。这条把最后半句变成可执行断言：<c>UiPreferenceStore.FilePath</c>
+    /// 必须由 <see cref="AppContext.BaseDirectory"/> 拼出（= 当前这份安装/构建输出的目录）——
+    /// 一旦有人把它改成"用户目录 / 固定绝对路径 / 上一级目录"，测试与探针就会去改别人（或真实用户）的那份。
+    /// </remarks>
+    [Fact]
+    public void 偏好文件_永远只写自己这一份安装的目录_不可能改到别的安装()
+    {
+        var installDir = Path.GetFullPath(AppContext.BaseDirectory);
+        var filePath = Path.GetFullPath(UiPreferenceStore.FilePath);
+
+        Assert.True(filePath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase),
+            $"偏好文件必须落在本进程的安装目录里：file={filePath} install={installDir}");
+        Assert.Equal("ui-preferences.json", Path.GetFileName(filePath));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

@@ -41,19 +41,19 @@
                             ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
                 </StackPanel>
 
-                <!-- ===== 卡 1：主题（出厂默认 + 内置预设）===== -->
+                <!-- ===== 卡 1：主题（出厂默认 + 内置预设 + 最后一张「自选颜色」）===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
                     <StackPanel>
                         <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="单击即应用。每套主题由一组颜色派生全套界面色（背景、文字、按钮、图标）；想微调就在下面的色槽里改这套主题的颜色"
+                        <TextBlock Text="单击即应用，主题本身只读（预设不会被改掉）。最后一张「自选颜色」= 用下面调色台里的配色；想从某套现成主题改起，就用调色台里的「以…为起点」把它的颜色复制过去"
                                    FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <!-- 互斥投影：正在用自选配色时明说"预设都没选中"（用户报障"两块都亮着、分不清谁在生效"） -->
                         <Border CornerRadius="8" Padding="8,4" Margin="0,0,0,12"
                                 Background="{DynamicResource App.Surface.Hover}"
                                 Visibility="{Binding IsCustomActive, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="当前使用：自选配色 —— 预设主题均未选中"
+                            <TextBlock Text="当前使用：自选配色（高亮的是最后一张「自选颜色」卡）—— 预设主题均未选中"
                                        FontSize="11.5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Border>
@@ -115,7 +115,8 @@
                                                 </Border>
                                             </Grid>
 
-                                            <!-- 身份色圆点＝"主题就是这些颜色" -->
+                                            <!-- 身份色圆点＝"主题就是这些颜色"；第 12 张「自选颜色」卡的圆点
+                                                 = 调色台草稿里**已选**的颜色（没选 → 空，走下面的占位态） -->
                                             <ItemsControl ItemsSource="{Binding Swatches}" Margin="0,8,0,0">
                                                 <ItemsControl.ItemsPanel>
                                                     <ItemsPanelTemplate>
@@ -130,8 +131,25 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
 
-                                            <!-- 派生示意条：强调填充 / 页面底 / 正文 -->
-                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <!-- 「自选颜色」的空态 = 4 个**空心占位圆**（用户令 2026-09-20：
+                                                 "上面最后面的位置有一个自选颜色，并且里面全都是空的"）：
+                                                 只画描边、不填任何颜色 —— 空就是空，不拿假色冒充"已选"。 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                                                <Ellipse Width="16" Height="16" Margin="0,0,5,0" StrokeThickness="1.5"
+                                                         Stroke="{DynamicResource App.Line.Variant}"/>
+                                                <Ellipse Width="16" Height="16" Margin="0,0,5,0" StrokeThickness="1.5"
+                                                         Stroke="{DynamicResource App.Line.Variant}"/>
+                                                <Ellipse Width="16" Height="16" Margin="0,0,5,0" StrokeThickness="1.5"
+                                                         Stroke="{DynamicResource App.Line.Variant}"/>
+                                                <Ellipse Width="16" Height="16" StrokeThickness="1.5"
+                                                         Stroke="{DynamicResource App.Line.Variant}"/>
+                                            </StackPanel>
+
+                                            <!-- 派生示意条：强调填充 / 页面底 / 正文（只对预设卡 ——
+                                                 自选颜色卡的颜色由调色台决定，不在这里假装派生） -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
+                                                        Visibility="{Binding ShowDerivedStrip, Converter={StaticResource BoolToVis}}">
                                                 <Border Width="26" Height="8" CornerRadius="4"
                                                         Background="{Binding Accent, Converter={StaticResource ColorToBrush}}"/>
                                                 <Border Width="26" Height="8" CornerRadius="4" Margin="4,0,0,0"
@@ -150,10 +168,10 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== 卡 2：自选配色 ===== -->
+                <!-- ===== 卡 2：调色台（= 用户说的"仪表盘"；只编辑你自己的配色，上面的主题只读）===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
-                    <!-- 自选配色区 = 与主题卡**同一个选择组**的另一半（二选一）：
+                    <!-- 调色台 = 与主题卡**同一个选择组**的另一半（二选一）：
                          边框三态 = 当前使用（Accent.Fill）/ 编辑中未应用（Line.Outline）/ 未选中（Line.Variant），
                          全部由 VM 的 IsCustomActive / IsDraftEditing 投影——视图不持"选了哪边"的状态。 -->
                     <Border x:Name="CustomShell" CornerRadius="18" BorderThickness="2" Padding="14,12"
@@ -177,7 +195,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="自选配色" FontSize="15" FontWeight="SemiBold"
+                                <TextBlock Grid.Column="0" Text="调色台" FontSize="15" FontWeight="SemiBold"
                                            Foreground="{DynamicResource App.Text.Primary}"/>
                                 <!-- 徽标 = 「当前使用」/「编辑中（未应用）」二选一（两个布尔互斥，故可同格叠放） -->
                                 <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
@@ -195,9 +213,9 @@
                             </Grid>
                             <TextBlock FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}">
-                                <Run Text="下面这些是当前主题「"/>
+                                <Run Text="这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色，凑够 4 或 5 个颜色后点顶部「应用这套外观」生效；想从现成主题改起，点下面的按钮把「"/>
                                 <Run Text="{Binding AppliedThemeName, Mode=OneWay}"/>
-                                <Run Text="」的颜色：点任意一格就能用取色盘微调（4 或 5 个颜色即可生成一套主题，系统自动派生并保证可读性）；改完点页面顶部（面板级操作行）的「应用这套外观」，它就变成你的自选配色。"/>
+                                <Run Text="」的颜色复制进来当起点。"/>
                             </TextBlock>
 
                             <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
@@ -215,8 +233,20 @@
                                 </views:SlidingNavStrip>
                             </StackPanel>
 
+                            <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（用户令 2026-09-20：
+                                 "默认的颜色是绝对不能改的，但是我们可以把默认的某个主题作为我们自选色的方案"）。
+                                 文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。 -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                <Button x:Name="StartFromThemeBtn"
+                                        Content="{Binding StartFromCurrentThemeLabel}"
+                                        Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                        Cursor="Hand" Click="StartFromThemeBtn_Click"
+                                        ToolTip="把当前主题的颜色复制到色槽当起点；主题本身不会被改动"/>
+                            </StackPanel>
+
                             <!-- 色槽：**居中**排列（用户令 2026-09-20："自选配色这里根本没有居中"）。
-                                 每格 = 一个可编辑槽位（点一下开取色盘），所以标「颜色 N」而不是只报色值。 -->
+                                 每格 = 一个可编辑槽位（点一下开取色盘）：有颜色 = 实心色圆 + 描边；
+                                 空槽 = 虚线空心环 + 中心「+」（用户令 2026-09-20："里面全都是空的"）。 -->
                             <ItemsControl x:Name="SlotList" Margin="0,14,0,0" HorizontalAlignment="Center">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -228,20 +258,37 @@
                                         <StackPanel Margin="0,0,14,12" HorizontalAlignment="Center">
                                             <Button Cursor="Hand" FocusVisualStyle="{x:Null}"
                                                     Click="Slot_Click" Tag="{Binding}"
-                                                    ToolTip="{Binding Hex}">
+                                                    ToolTip="{Binding ValueText}">
                                                 <Button.Template>
                                                     <ControlTemplate TargetType="Button">
+                                                        <!-- Background="Transparent"：空槽只有描边/虚线时也要**能接住点击**
+                                                             （无背景的 Border 不参与命中测试） -->
                                                         <Border x:Name="Ring" Width="40" Height="40" CornerRadius="20"
-                                                                BorderThickness="2"
+                                                                BorderThickness="2" Background="Transparent"
                                                                 BorderBrush="{DynamicResource App.Line.Variant}">
-                                                            <Border x:Name="Fill" CornerRadius="18" Margin="3"
-                                                                    Background="{Binding Color, Converter={StaticResource ColorToBrush}}"/>
+                                                            <Grid>
+                                                                <Border x:Name="Fill" CornerRadius="18" Margin="3"
+                                                                        Background="{Binding Color, Converter={StaticResource ColorToBrush}}"/>
+                                                                <Ellipse x:Name="EmptyRing" Margin="4" Visibility="Collapsed"
+                                                                         StrokeThickness="1.5" StrokeDashArray="2 2"
+                                                                         Stroke="{DynamicResource App.Line.Variant}"/>
+                                                                <TextBlock x:Name="EmptyPlus" Text="+" FontSize="16"
+                                                                           Visibility="Collapsed"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                                                            </Grid>
                                                         </Border>
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
                                                                 <Setter TargetName="Ring" Property="BorderBrush"
                                                                         Value="{DynamicResource App.Accent.Fill}"/>
                                                             </Trigger>
+                                                            <!-- 空槽（能力位来自 VM，不在视图里推"颜色是不是默认值"） -->
+                                                            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                                                                <Setter TargetName="Fill" Property="Visibility" Value="Collapsed"/>
+                                                                <Setter TargetName="EmptyRing" Property="Visibility" Value="Visible"/>
+                                                                <Setter TargetName="EmptyPlus" Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>
                                                 </Button.Template>
@@ -250,7 +297,8 @@
                                             <TextBlock Text="{Binding Label}" FontSize="10.5" Margin="0,6,0,0"
                                                        HorizontalAlignment="Center"
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                                            <TextBlock Text="{Binding Hex}" FontSize="10" Margin="0,1,0,0"
+                                            <!-- 数值文案：空槽显示「未选」，**不显示 #000000 这类假值** -->
+                                            <TextBlock Text="{Binding ValueText}" FontSize="10" Margin="0,1,0,0"
                                                        HorizontalAlignment="Center"
                                                        Foreground="{DynamicResource App.Text.Muted}"/>
                                         </StackPanel>

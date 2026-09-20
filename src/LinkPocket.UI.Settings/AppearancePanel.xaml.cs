@@ -135,7 +135,9 @@ namespace LinkPocket.Views
         {
             if (sender is not Button { Tag: ColorSlotViewModel slot }) return;
             _editingSlot = slot.Index;
-            Picker.Open(slot.Color);
+            // 空槽也要有初值：取色盘的 HSV 三个分量总得有个起点 —— 用当前主题的强调色
+            // （令牌派生，不是写死的字面量，也不是"黑色"这类会骗人的假值）。
+            Picker.Open(slot.Color ?? ViewModel.PickerSeedColor);
             PickerOverlay.Visibility = Visibility.Visible;
             Picker.Focus();
         }
@@ -152,6 +154,9 @@ namespace LinkPocket.Views
         // ── 4/5 色 ───────────────────────────────────────────────────────
         // 段控件的选中索引经 XAML 双向绑到 VM 的 SlotCountIndex（→ SetSlotCount）——
         // 视图侧不再有"按槽数换按钮样式"的第二份状态（那是用户报障"分不清在选哪个"的根因）。
+
+        /// <summary>「以当前主题为起点」：把当前主题的颜色**复制**进色槽（预设定义只读，不被改写）。</summary>
+        private void StartFromThemeBtn_Click(object sender, RoutedEventArgs e) => ViewModel.StartFromCurrentTheme();
 
         private void ApplyDraftBtn_Click(object sender, RoutedEventArgs e) => ViewModel.ApplyDraft();
 

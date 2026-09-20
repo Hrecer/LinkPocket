@@ -13,20 +13,44 @@ using Material3.Core;
 
 namespace LinkPocket.ViewModels;
 
-/// <summary>一张主题卡（「外观」面板的预设网格项）。</summary>
+/// <summary>一张主题卡（「外观」面板的主题网格项：11 张预设卡 + 第 12 张「自选颜色」卡）。</summary>
+/// <remarks>
+/// <para>
+/// <b>第 12 张不是主题目录里的主题</b>（用户令 2026-09-20）：<see cref="ThemeCatalog.All"/> 仍然是
+/// 11 套预设，第 12 张是 <see cref="CreateCustomCard"/> 追加的**自选颜色卡**（<c>Id = "user-custom"</c>）——
+/// 它没有目录定义（<see cref="Definition"/> 为 <c>null</c>），点它 = 应用调色台里的自选配色。
+/// </para>
+/// <para>
+/// <b>预设只读</b>：预设卡的色点是**展示**用的身份色拷贝；调色台里的编辑永远只动草稿，
+/// 绝不写回 <see cref="Definition"/>.Palette（用户令："默认的颜色是绝对不能改的"）。
+/// </para>
+/// </remarks>
 public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyChanged
 {
+    /// <summary>「自选颜色」卡的 id（与 <c>BuildDraftDefinition</c> 的自选配色 id 同一个）。</summary>
+    public const string CustomCardId = "user-custom";
+
+    /// <summary>「自选颜色」卡的显示名。</summary>
+    public const string CustomCardName = "自选颜色";
+
     private bool _isSelected;
+    private bool _isEmpty;
 
     public ThemeCardViewModel(ThemeDefinition definition)
     {
+        ArgumentNullException.ThrowIfNull(definition);
         Definition = definition;
+        _name = definition.Name;
+        _id = definition.Id;
+        IsCustom = false;
+
         var table = PaletteSolver.Solve(definition);
 
         // 色点用**身份色**（"主题就是这些颜色"——方案 §4.2：主题卡展示用户原色，界面用其档位）。
         // 补位规则（预设只有 1–3 个身份色）= Theming 的唯一实现 `PaletteSolver.EditableSlots`，
         // 与外观面板的色槽同一份（否则"卡片 4 个点、色槽 3 格"迟早漂移）。
         Swatches = new ObservableCollection<Color>(BuildSwatches(definition));
+        _isEmpty = Swatches.Count == 0;
 
         // 派生示意条：强调填充 / 页面底 / 正文 —— 一眼看出"这套主题长什么样"
         Accent = ToMedia(table.Token(AppTokens.AccentFill));
@@ -35,6 +59,50 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
         var f = table.Families;
         Summary = $"主色 H{f.AccentHue:F0} · 支撑 H{f.SupportHue:F0}";
+    }
+
+    /// <summary>
+    /// 第 12 张卡「自选颜色」：**不是** <see cref="ThemeCatalog"/> 里的主题，没有目录定义。
+    /// </summary>
+    /// <remarks>
+    /// <b>默认全空</b>（用户令 2026-09-20："上面最后面的位置有一个自选颜色，并且里面全都是空的"）：
+    /// 没有任何自选配色时 <see cref="Swatches"/> 为空、<see cref="IsEmpty"/> 为真，
+    /// 卡面因此画 4 个**空心占位圆**（不显示任何颜色）。
+    /// </remarks>
+    private ThemeCardViewModel()
+    {
+        Definition = null;
+        IsCustom = true;
+        _name = CustomCardName;
+        _id = CustomCardId;
+        Swatches = new ObservableCollection<Color>();
+        _isEmpty = true;
+        Accent = default;
+        Base = default;
+        Text = default;
+        Summary = string.Empty;
+    }
+
+    /// <summary>建第 12 张「自选颜色」卡（唯一入口；它在主题网格里排最后一张）。</summary>
+    public static ThemeCardViewModel CreateCustomCard() => new();
+
+    /// <summary>
+    /// 把「自选颜色」卡的色点刷成草稿里**已选**的那些颜色（空 = 卡面走占位态）。
+    /// </summary>
+    /// <remarks>
+    /// 数量 = 用户当前选的槽数（4 或 5）；正在编辑到一半时按实际已选数量显示 ——
+    /// 卡面是草稿的投影，不假装"已经是一套完整配色"。
+    /// </remarks>
+    public void SetSwatches(IEnumerable<Color> colors)
+    {
+        ArgumentNullException.ThrowIfNull(colors);
+        Swatches.Clear();
+        foreach (var c in colors) Swatches.Add(c);
+
+        var empty = Swatches.Count == 0;
+        if (_isEmpty == empty) return;
+        _isEmpty = empty;
+        PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsEmpty)));
     }
 
     /// <summary>
@@ -49,14 +117,28 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
-    public ThemeDefinition Definition { get; }
+    /// <summary>目录里的主题定义；**「自选颜色」卡为 <c>null</c>**（它不是目录里的主题）。</summary>
+    public ThemeDefinition? Definition { get; }
 
-    public string Name => Definition.Name;
+    private readonly string _name;
 
-    public string Id => Definition.Id;
+    private readonly string _id;
+
+    public string Name => _name;
+
+    public string Id => _id;
+
+    /// <summary>是否是第 12 张「自选颜色」卡（点它 = 应用调色台里的自选配色）。</summary>
+    public bool IsCustom { get; }
+
+    /// <summary>卡面是否是**空态**（自选颜色卡还没有任何颜色 → 画 4 个空心占位圆）。</summary>
+    public bool IsEmpty => _isEmpty;
+
+    /// <summary>是否显示"派生示意条"（只对预设卡：自选颜色卡的颜色由调色台决定，不在这里假装派生）。</summary>
+    public bool ShowDerivedStrip => !IsCustom;
 
     /// <summary>是否出厂默认（带「默认」徽标，且永远排第一）。</summary>
-    public bool IsDefault => Definition.Source == ThemeSource.FactoryDefault;
+    public bool IsDefault => Definition?.Source == ThemeSource.FactoryDefault;
 
     /// <summary>
     /// 是否是**当前已应用**的主题（选中态的**唯一事实来源**）。
@@ -93,10 +175,15 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
 }
 
-/// <summary>一个色槽（4/5 色自选配色）。</summary>
+/// <summary>一个色槽（4/5 色自选配色）。**可以为空**（还没选颜色）。</summary>
+/// <remarks>
+/// 空槽不是"黑色"也不是"透明"这类会骗人的值：<see cref="Color"/> 为 <c>null</c>、
+/// <see cref="Hex"/> 为空串，界面据此画虚线空心环 + 「+」（用户令 2026-09-20：
+/// "上面最后面的位置有一个自选颜色，并且里面全都是空的"）。
+/// </remarks>
 public sealed class ColorSlotViewModel
 {
-    public ColorSlotViewModel(int index, Color color)
+    public ColorSlotViewModel(int index, Color? color)
     {
         Index = index;
         Color = color;
@@ -104,13 +191,23 @@ public sealed class ColorSlotViewModel
 
     public int Index { get; }
 
-    public Color Color { get; }
+    /// <summary>槽里的颜色；<c>null</c> = **空槽**（还没选）。</summary>
+    public Color? Color { get; }
+
+    /// <summary>是否为空槽（界面画虚线空心环 + 「+」）。</summary>
+    public bool IsEmpty => Color is null;
+
+    /// <summary>是否有颜色（应用门槛按它数"还差几个"）。</summary>
+    public bool HasColor => Color is not null;
 
     /// <summary>槽位序号文案（1 起）。</summary>
     public string Label => $"颜色 {Index + 1}";
 
-    /// <summary>HEX 文案。</summary>
-    public string Hex => $"#{Color.R:X2}{Color.G:X2}{Color.B:X2}";
+    /// <summary>HEX 文案（空槽 = 空串：**绝不**拿 <c>#000000</c> 这类假值冒充"已选"）。</summary>
+    public string Hex => Color is { } c ? $"#{c.R:X2}{c.G:X2}{c.B:X2}" : string.Empty;
+
+    /// <summary>槽位数值文案（空槽 = 「未选」）。</summary>
+    public string ValueText => IsEmpty ? "未选" : Hex;
 }
 
 /// <summary>一个字体选项（界面字体 / 等宽字体下拉项）。</summary>
@@ -159,7 +256,18 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     private const string LogCategory = "app.theme";
 
-    private readonly List<Color> _draft = new();
+    /// <summary>
+    /// 调色台草稿：<c>null</c> = **空槽**（用户还没选这个颜色）。
+    /// </summary>
+    /// <remarks>
+    /// 默认 = <see cref="MinSlots"/> 个**空槽**（用户令 2026-09-20："自选颜色里面全都是空的"）——
+    /// 旧行为是开局倒进"当前主题的颜色"，于是预设主题看起来可被直接改（其实只是复制），
+    /// 而且和"预设只读、自选是另一份"这件事完全对不上。
+    /// </remarks>
+    private readonly List<Color?> _draft = new() { null, null, null, null };
+
+    private readonly ThemeCardViewModel _customCard;
+
     private string _selectedThemeId = ThemeCatalog.DefaultId;
     private FontOptionViewModel? _selectedUiFont;
     private FontOptionViewModel? _selectedMonoFont;
@@ -185,6 +293,14 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ThemeCards = new ObservableCollection<ThemeCardViewModel>(
             ThemeCatalog.All.Select(t => new ThemeCardViewModel(t)));
 
+        // 第 12 张 = 「自选颜色」卡（**不是** ThemeCatalog 里的主题：目录仍是 11 套）。
+        // 用户令 2026-09-20："上面最后面的位置有一个自选颜色" —— 它排在主题网格最后一张。
+        _customCard = ThemeCardViewModel.CreateCustomCard();
+        ThemeCards.Add(_customCard);
+
+        // 默认草稿 = 4 个空槽（先把 Slots 建出来，界面才不会是"有 4 格数据却没有槽"）
+        RebuildSlots();
+
         // 入口对齐：面板显示"当前**已应用**的外观"——主题卡高亮 + 互斥归属 + 色槽草稿
         // （用户上次选的主题/配色要在他回到这一页时仍然是对的，否则选中态就是错的）
         SyncFromAppliedTheme();
@@ -194,25 +310,26 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// **唯一投影点**：把"当前已应用的外观"投影到面板（互斥归属 + 主题卡选中态 + 色槽草稿）。
     /// </summary>
     /// <remarks>
-    /// 两条硬性口径：
-    /// ① 草稿 = **当前正在用的配色**（自选配色时就是它本身）；不是永远取出厂默认那 5 色——
-    ///    否则正在用自选配色时重进面板，色槽显示的是别人的颜色（实测缺陷）；
-    /// ② 草稿有**未应用改动**时不重新播种（入口刷新不许冲掉用户正在编辑的东西）。
+    /// <para>
+    /// <b>种子规则（用户令 2026-09-20：预设/默认主题只读）</b>：
+    /// </para>
+    /// <list type="number">
+    /// <item>当前生效 = **自选配色** → 色槽 = 该配色本身（重进面板要看到他正在用的那份）；</item>
+    /// <item>当前生效 = **预设主题** → 色槽**保持用户自己的草稿不动**（内存里那份；从来没有过 = 空）。
+    /// 旧行为是把当前主题的颜色倒进色槽 —— 用户报障的根因："默认的颜色是绝对不能改的"，
+    /// 而"倒进来"看起来就像预设可以被就地改；想从某套主题改起请走 <see cref="StartFromCurrentTheme"/>（复制）；</item>
+    /// <item>有**未应用改动**（<c>_draftDirty</c>）时一律不重播种（入口刷新不许冲掉用户正在编辑的东西）。</item>
+    /// </list>
     /// </remarks>
     public void SyncFromAppliedTheme()
     {
         var current = ThemeService.Current;
-        _customActive = current.Source == ThemeSource.UserDefined;
+        SetCustomActive(current.Source == ThemeSource.UserDefined);
 
-        if (!_draftDirty)
+        if (!_draftDirty && _customActive)
         {
-            // 色槽 = **当前主题的颜色**（用户令 2026-09-20："仪表盘是仪表盘、自选是自选、选择区域是选择区域；
-            // 你默认的颜色也可以移到仪表盘里微调"）。预设只有 1–3 个身份色 → 用该主题自己的档位补足到 4
-            // （唯一实现 = `PaletteSolver.EditableSlots`）。
-            // ⚠️ 之前在非自选模式下拿"出厂默认那 5 色"兜底 → 看着像一张与当前主题无关的示例图
-            // （用户报障"自选配色里面不得有示例"）。
             _draft.Clear();
-            _draft.AddRange(PaletteSolver.EditableSlots(current).Select(ToMedia));
+            _draft.AddRange(PaletteSolver.EditableSlots(current).Select(c => (Color?)ToMedia(c)));
             RebuildSlots();
         }
 
@@ -220,12 +337,18 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         AppliedThemeName = current.Name;
         Raise(nameof(SelectedThemeId));
         Raise(nameof(AppliedThemeName));
+        Raise(nameof(StartFromCurrentThemeLabel));
         ProjectCardSelection();
         RaiseCustomState();
     }
 
-    /// <summary>当前生效主题的显示名（色槽区的说明文案："下面这些是「X」主题的颜色"）。</summary>
+    /// <summary>当前生效主题的显示名（调色台的说明文案与「起点」按钮文案都用它）。</summary>
     public string AppliedThemeName { get; private set; } = ThemeCatalog.Default.Name;
+
+    /// <summary>
+    /// 「以当前主题为起点」按钮的文案（带上主题名，用户一眼知道复制的是哪一套）。
+    /// </summary>
+    public string StartFromCurrentThemeLabel => $"以「{AppliedThemeName}」为起点";
 
     // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
     // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
@@ -268,7 +391,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>主题卡（出厂默认排第一）。</summary>
+    /// <summary>主题卡（出厂默认排第一；**最后一张 = 自选颜色卡**）。</summary>
     public ObservableCollection<ThemeCardViewModel> ThemeCards { get; }
 
     /// <summary>自选配色的色槽。</summary>
@@ -296,13 +419,23 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 把"当前已应用的主题"投影到卡片选中态（**唯一投影点**）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 卡片的高亮完全由本方法按 <see cref="SelectedThemeId"/> 覆盖式写入——视图不持状态，
     /// 也不存在"点了哪张"的第二份记忆（架构不变量 12）。
+    /// </para>
+    /// <para>
+    /// <b>严格二选一（用户报障"两块都亮着、分不清谁在生效"）</b>：自选配色生效时**只有**
+    /// 第 12 张「自选颜色」卡高亮、11 张预设卡全部不高亮；预设生效时只有那一张高亮、
+    /// 自选颜色卡不高亮。两个方向都由 <see cref="IsCustomActive"/> 唯一定夺，
+    /// 不靠 <c>SelectedThemeId</c> 恰好等于某个 id（那是第二份事实源）。
+    /// </para>
     /// </remarks>
     private void ProjectCardSelection()
     {
         foreach (var card in ThemeCards)
-            card.IsSelected = string.Equals(card.Id, _selectedThemeId, StringComparison.Ordinal);
+            card.IsSelected = card.IsCustom
+                ? _customActive
+                : !_customActive && string.Equals(card.Id, _selectedThemeId, StringComparison.Ordinal);
     }
 
     /// <summary>选中的界面字体。</summary>
@@ -353,8 +486,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>当前生效外观是否来自**自选配色**（false = 来自某个预设主题）。</summary>
     /// <remarks>
-    /// 与主题卡的 <c>IsSelected</c> 构成"二选一"的完整投影：<c>IsCustomActive</c> 为 true 时
-    /// 所有卡片都不高亮；为 false 时恰好有一张高亮。视图只绑这两个布尔，不自己判断"选了哪边"。
+    /// 与主题卡的 <c>IsSelected</c> 构成"二选一"的完整投影：自选配色生效时**只有第 12 张
+    /// 「自选颜色」卡**高亮（11 张预设卡全灭）；预设生效时恰好有一张预设卡高亮、自选颜色卡不亮。
+    /// 视图只绑这两个布尔，不自己判断"选了哪边"。
     /// </remarks>
     public bool IsCustomActive => _customActive;
 
@@ -400,6 +534,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         if (_customActive == value) return;
         _customActive = value;
         RaiseCustomState();
+        // 归属变了 → 卡片高亮跟着重投影（自选颜色卡的高亮由 IsCustomActive 唯一决定）
+        ProjectCardSelection();
     }
 
     private void MarkDraftDirty()
@@ -418,13 +554,28 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     // ── 主题 ─────────────────────────────────────────────────────────
 
-    /// <summary>应用一张预设/默认主题卡（单击即应用，含持久化）。</summary>
+    /// <summary>
+    /// 点一张主题卡：预设卡 = 单击即应用（含持久化）；第 12 张「自选颜色」卡 = 应用调色台里的配色。
+    /// </summary>
+    /// <remarks>
+    /// 「自选颜色」卡**没有目录定义**（<see cref="ThemeCardViewModel.Definition"/> 为 <c>null</c>），
+    /// 它的应用走同一个入口 <see cref="ApplyDraft"/>（合法性门槛、播报、"应用后归属切到自选"都在那里）——
+    /// 不给它另起一套应用逻辑（第二套必然与第一套漂移）。
+    /// </remarks>
     public void ApplyThemeCard(ThemeCardViewModel card)
     {
         ArgumentNullException.ThrowIfNull(card);
+
+        var definition = card.Definition;
+        if (definition is null)
+        {
+            ApplyDraft();
+            return;
+        }
+
         try
         {
-            ThemeService.Apply(card.Definition);
+            ThemeService.Apply(definition);
             SetCustomActive(false);   // 互斥：用预设 = 自选区让出"当前使用"
             SelectedThemeId = card.Id;
             ThemeService.SaveCurrentPreferences();
@@ -440,9 +591,56 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
     }
 
+    /// <summary>
+    /// 「以当前主题为起点」：把**当前生效主题**的可编辑色槽**复制**进调色台（预设定义绝不被改写）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用户令 2026-09-20："默认的颜色是绝对不能改的，但是我们可以多出一个按钮，
+    /// 我们可以把默认的某个主题作为我们自选色的方案"。
+    /// </para>
+    /// <para>
+    /// <b>复制而不是引用</b>：色槽拿到的是 <see cref="PaletteSolver.EditableSlots"/> 的**值拷贝**
+    /// （<c>Argb</c> 是不可变值类型），随后所有编辑都只落在草稿里；预设的
+    /// <see cref="ThemeDefinition.Palette"/> 从此与面板无关 —— 这是"默认主题不可改"的结构性保证，
+    /// 不靠"记得别写回去"。
+    /// </para>
+    /// <para>
+    /// 复制后标记为**编辑中（未应用）**：还没生效，用户改完点「应用这套外观」才算数。
+    /// </para>
+    /// </remarks>
+    public void StartFromCurrentTheme()
+    {
+        var current = ThemeService.Current;
+        var slots = PaletteSolver.EditableSlots(current);
+
+        _draft.Clear();
+        _draft.AddRange(slots.Select(c => (Color?)ToMedia(c)));
+        MarkDraftDirty();
+        RebuildSlots();
+        RefreshDraftDiagnostics();
+        Status = $"已把「{current.Name}」的 {slots.Count} 个颜色复制到调色台（点「应用这套外观」才生效）";
+    }
+
     /// <summary>把当前槽位当作自选配色应用。</summary>
+    /// <remarks>
+    /// <b>应用门槛（用户令 2026-09-20）</b>：槽里有空位（不足 4 个颜色）→ **拒绝应用**，
+    /// 并在状态行说清"还差几个"；主题校验（4/5 色、可读性提示）照旧走
+    /// <see cref="ThemeValidator"/>。两道门槛都不弹窗 —— 理由写在状态行上。
+    /// </remarks>
     public void ApplyDraft()
     {
+        var missing = _draft.Count(c => c is null);
+        if (missing > 0)
+        {
+            Status = $"还有 {missing} 个颜色没选（点色槽用取色盘选）";
+            // 与 RefreshDraftDiagnostics 同一口径：空槽是"还没选完"，**不是**"配色不合法"，
+            // 所以这里不把 palette-size 那条红色错误摆出来。
+            Diagnostics = $"· 还差 {missing} 个颜色：点色槽用取色盘选色（选够 4 个就能点顶部的「应用这套外观」）";
+            HasDiagnostics = true;
+            return;
+        }
+
         var definition = BuildDraftDefinition();
         var issues = ThemeValidator.Validate(definition);
         ShowDiagnostics(issues);
@@ -455,7 +653,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             ThemeService.Apply(definition);
-            SetCustomActive(true);    // 互斥：用自选配色 = 所有主题卡让出"当前使用"
+            SetCustomActive(true);    // 互斥：用自选配色 = 预设卡让出"当前使用"（自选颜色卡亮起）
             ClearDraftDirty();        // 草稿 = 当前值，不再有"未应用改动"
             SelectedThemeId = definition.Id;
             ThemeService.SaveCurrentPreferences();
@@ -471,16 +669,31 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>实时校验当前草稿并把诊断写进面板（无副作用、不应用）。</summary>
     public void RefreshDraftDiagnostics()
     {
+        // ⚠️ 还没填满的草稿**不是**"配色不合法"：空槽数不足 4 时，`palette-size` 会以
+        // "✗ 主题需要 4 或 5 个颜色（当前 0 个）" 的红色错误样子出现在刚进面板的空态上 ——
+        // 那既不是用户的错、也不是错误（只是"还没选完"）。这里把它换成一句中性提示；
+        // 真正的不合法（HEX 非法等）照旧显示。
+        var empty = _draft.Count(c => c is null);
+        if (empty > 0)
+        {
+            Diagnostics = $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 4 个就能点顶部的「应用这套外观」）";
+            HasDiagnostics = true;
+            return;
+        }
+
         var issues = ThemeValidator.Validate(BuildDraftDefinition());
         ShowDiagnostics(issues);
     }
 
+    /// <summary>
+    /// 草稿 → 主题定义（自选配色）。空槽**不冒充颜色**：直接不参与（于是"色数不是 4/5"会被校验抓出来）。
+    /// </summary>
     private ThemeDefinition BuildDraftDefinition() => new()
     {
-        Id = "user-custom",
+        Id = ThemeCardViewModel.CustomCardId,
         Name = "自选配色",
         Source = ThemeSource.UserDefined,
-        Palette = _draft.Select(ToArgb).ToArray(),
+        Palette = _draft.Where(c => c is not null).Select(c => ToArgb(c!.Value)).ToArray(),
         NeutralHueOverride = null,   // 自选配色按自己的中性池派生（不钉值）
     };
 
@@ -511,6 +724,30 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         RefreshDraftDiagnostics();
     }
 
+    /// <summary>
+    /// 把草稿清成空（4 个空槽）——「恢复默认外观」用。
+    /// </summary>
+    /// <remarks>
+    /// 既然回到出厂默认，调色台里留着上一份配色就是"名不副实"：用户看到 4 个色点会以为
+    /// 自选配色还在生效（用户令：自选颜色默认是**全空**的）。
+    /// </remarks>
+    public void ClearDraft()
+    {
+        _draft.Clear();
+        _draft.AddRange(Enumerable.Repeat<Color?>(null, MinSlots));
+        ClearDraftDirty();
+        RebuildSlots();
+        Diagnostics = string.Empty;
+        HasDiagnostics = false;
+    }
+
+    /// <summary>空槽打开取色盘时的初始颜色 = 当前主题的强调填充（令牌派生，不发明色值）。</summary>
+    /// <remarks>
+    /// 取色盘需要一个初值（HSV 的三个分量总要有一个起点）；用当前主题的强调色既不是"黑色"这类
+    /// 会骗人的假值，也不是写死的字面量 —— 它就是用户此刻看到的界面主色。
+    /// </remarks>
+    public Color PickerSeedColor => ToMedia(ThemeService.Table.Token(AppTokens.AccentFill));
+
     /// <summary>加一个色槽（4 → 5）。</summary>
     public void AddSlot()
     {
@@ -534,11 +771,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>纯槽位操作（不重建视图、不标脏）：<see cref="SetSlotCount"/> 反复调用它凑到目标档。</summary>
     private void AddSlotCore()
     {
-        // 新槽取当前草稿的"派生建议色"：色相 +40°、略提明度（与已有色同族但可辨），不做空白槽
-        var seed = _draft.Count > 0 ? _draft[^1] : Colors.Gray;
-        var seedArgb = ToArgb(seed);
-        ColorMath.ToHsv(seedArgb, out var h, out var s, out var v);
-        _draft.Add(ToMedia(ColorMath.FromHsv(h + 40, Math.Min(1, s * 0.9), Math.Min(1, v + 0.12))));
+        // 新槽 = **空槽**（用户令 2026-09-20："里面全都是空的"）。
+        // ⚠️ 旧行为是拿上一个色"派生"一个建议色（色相 +40°）—— 那是**编造的颜色**：
+        //    用户看到的是一个他从未选过的色点，且它还会被算进"应用门槛"。空槽 + 「+」才是诚实的。
+        _draft.Add(null);
     }
 
     private void RemoveSlotCore() => _draft.RemoveAt(_draft.Count - 1);
@@ -548,6 +784,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         Slots.Clear();
         for (var i = 0; i < _draft.Count; i++)
             Slots.Add(new ColorSlotViewModel(i, _draft[i]));
+
+        // 第 12 张「自选颜色」卡的色点 = 草稿里已选的颜色（没有 = 卡面走空态占位）
+        _customCard.SetSwatches(_draft.Where(c => c is not null).Select(c => c!.Value));
+
         Raise(nameof(SlotCount));
         Raise(nameof(SlotCountIndex));
         Raise(nameof(CanAddSlot));
@@ -668,7 +908,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             LinkPocket.Theming.Preferences.UiPreferenceStore.Clear();
             ThemeService.ApplyDefault();
             ThemeService.ApplyFonts();
-            ClearDraftDirty();                // 默认外观 = 全新起点，没有"未应用改动"
+            ClearDraft();                     // 调色台回**空态** + 清"未应用改动"（自选配色已随偏好一起清掉，
+                                              // 留着色点会名不副实；默认外观 = 全新起点）
             SyncFromAppliedTheme();           // 互斥归属 + 主题卡 + 草稿一起回默认（唯一投影点）
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
