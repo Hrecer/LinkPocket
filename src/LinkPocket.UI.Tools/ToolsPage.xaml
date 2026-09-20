@@ -507,8 +507,11 @@
         <!-- ===== 面板 B：重复组明细（整页） ===== -->
         <!-- ============================================================ -->
         <!-- FocusVisualStyle={x:Null}：面板本身可聚焦（快捷键按焦点路由），但**绝不画原生焦点虚线框**
-             ——F5 重进明细时曾因此出现一条原生黑虚线（用户报障 2026-09-20；焦点收进页面根也是同一修法）。 -->
-        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}">
+             ——F5 重进明细时曾因此出现一条原生黑虚线（用户报障 2026-09-20；焦点收进页面根也是同一修法）。
+             Background="Transparent"：给"边角空白"（表格卡与右栏之间的缝隙、分隔条周围）一个可命中的面——
+             否则点这些缝隙收不到 BlankClick（用户报障"缝隙处点空白不能取消选中"，与 WARNINGS 61 同族）。 -->
+        <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}"
+              Background="Transparent">
             <Grid.ColumnDefinitions>
                 <!-- 明细表 | 可拖拽分隔 | 右栏（选中行的只读投影；与搜索/智能列表同规格 286） -->
                 <ColumnDefinition Width="*"/>

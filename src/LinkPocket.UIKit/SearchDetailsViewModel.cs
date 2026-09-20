@@ -18,6 +18,33 @@ public class SearchDetailsViewModel : DetailSidebarModel
     /// <summary>选中代次：异步补拉返回时校验，避免旧结果覆盖新选中。</summary>
     private int _generation;
 
+    /// <summary>「删除」动作位是否被使用方关掉（见 <see cref="HideDeleteAction"/>）——动作面复位后仍保持。</summary>
+    private bool _deleteActionHidden;
+
+    /// <summary>
+    /// 只读对比页（工具页去重明细）用：**关掉「删除」动作位**。
+    /// 该页的删除入口是头部「删除重复项」（按勾选、且"至少保留一条"），右栏不承担这个语义；
+    /// 不关掉就会出现"按钮在、命令是 null"的死按钮（用户报障 2026-09-20：明细右栏按钮全不可用）。
+    /// 幂等：`Clear()` / `UpdateFrom()` 走动作面复位之后仍保持隐藏。
+    /// </summary>
+    public void HideDeleteAction()
+    {
+        _deleteActionHidden = true;
+        ShowDeleteAction = false;
+        RaiseActionChanged();
+    }
+
+    /// <summary>清空选中回到空占位（动作面复位后重新应用本页的动作面定制）。</summary>
+    public override void Clear()
+    {
+        base.Clear();
+        if (_deleteActionHidden)
+        {
+            ShowDeleteAction = false;
+            RaiseActionChanged();
+        }
+    }
+
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
         () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } },
         () => IsLink && !string.IsNullOrEmpty(IdText));   // 与 CopyUrlCommand 对齐（单选链接且非空）
@@ -64,6 +91,11 @@ public class SearchDetailsViewModel : DetailSidebarModel
         });
 
         RaiseAll();
+        if (_deleteActionHidden)
+        {
+            ShowDeleteAction = false;   // 动作面复位后再应用本页定制（只读对比页不摆删除按钮）
+            RaiseActionChanged();
+        }
 
         // favicon 未命中缓存时异步补拉，成功且选中未变时原位刷新
         if (Favicon == null && !string.IsNullOrWhiteSpace(item.FaviconUrl))

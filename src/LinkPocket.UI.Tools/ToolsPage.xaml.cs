@@ -54,6 +54,14 @@ namespace LinkPocket.Views
             // ⚠️ 明细选中/右栏接线必须在这里（Configure 之后）——构造函数里访问 VmTools 会
             // 用 null 的 _api 提前创建 VM（懒建只建一次），之后所有引擎调用都会 NRE（实测踩中）。
             DetailSidebar.DataContext = _detailSidebar;
+            // 明细右栏动作面的命令接线：**此前整块漏了** —— 面板上「详情 / 打开 / 铅笔 / 垃圾桶」四个按钮
+            // 绑的全是 null 命令 → 集体禁用（用户报障 2026-09-20"明细右栏所有按钮都不可用"，严重）。
+            // 口径与搜索页一致：动作面命令一律复用本页既有能力，绝不另写一套。
+            _detailSidebar.OpenCommand = OpenDetailInBrowserCommand;         // 「详情」= 打开浏览页详情页
+            _detailSidebar.RenameCommand = OpenDetailInBrowserCommand;       // 铅笔槽同「详情」（搜索页同口径）
+            _detailSidebar.OpenWebsiteCommand = OpenDetailWebsiteCommand;    // 「打开」= 系统默认浏览器
+            _detailSidebar.HideDeleteAction();                              // 删除入口在头部「删除重复项」（按勾选、
+                                                                            // 且"至少保留一条"）→ 右栏不摆死按钮
             VmTools.DetailSelection.Changed += ApplyDetailSelectionProjection;
         }
 

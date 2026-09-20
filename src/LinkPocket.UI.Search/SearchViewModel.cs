@@ -92,11 +92,19 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     // —— 结果与选中 ——
 
     private IReadOnlyList<LinkItem>? _results;
-    /// <summary>结果集（null = 无行，视图据此清空 ItemsSource 只留空态）。</summary>
+    /// <summary>结果集（null = 无行，视图据此清空 ItemsSource 只留空态）。
+    /// **渲染等价则不通知**：视图收到通知会整体替换 ItemsSource → 整表行容器重建
+    ///（工厂模式 N 行 × 单元格，同步主线程）——切页进入的静默刷新常拿到内容完全相同的新结果，
+    /// 此时重建纯属白烧（用户报障 2026-09-20：低性能设备上切到搜索页偶发明显卡顿）。</summary>
     public IReadOnlyList<LinkItem>? Results
     {
         get => _results;
-        private set { _results = value; OnPropertyChanged(); }
+        private set
+        {
+            if (LinkItem.SameSequence(_results, value)) return;   // 渲染等价 → 不通知（视图不重建行）
+            _results = value;
+            OnPropertyChanged();
+        }
     }
 
     private SearchEmptyState? _emptyState;
@@ -177,9 +185,18 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// 有已执行查询时静默刷新保最新（入口对齐，与浏览页/工具页同一模式）；随后把焦点收回搜索框。</summary>
     public void OnNavigatedTo()
     {
-        _ = RefreshFromEventAsync();
+        // 「进入保内容」的**唯一入口**（用户令 2026-09-19；2026-09-20 用户报障"切到搜索页偶发明显卡顿"）：
+        // 只对**已执行的查询**做静默刷新；绝不看输入框里尚未执行的文本——那会走 SearchAsync
+        // 清空结果 + 亮"正在搜索…"加载态（每次切回都重置一遍：既闪一下、又要整表重建）。
+        // 未执行过的文本属于"回车 / 搜索按钮"的语义，不由切页触发。
+        _ = RefreshSilentlyAsync();
         ResetRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>静默刷新最新（切页进入的入口对齐）：已执行过查询才重跑；保留结果与选中、不闪加载态。
+    /// 结果内容未变时 <see cref="Results"/> 不通知 → 视图不重建行（见该属性说明）。</summary>
+    private Task RefreshSilentlyAsync()
+        => string.IsNullOrWhiteSpace(LastQuery) ? Task.CompletedTask : RefreshResultsAsync();
 
     /// <summary>离开搜索页：只清选中与详情栏（保留查询与结果，返回时原样呈现）。</summary>
     public void OnNavigatedFrom()
