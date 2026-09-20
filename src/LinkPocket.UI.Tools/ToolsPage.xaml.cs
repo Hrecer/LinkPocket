@@ -470,7 +470,7 @@ namespace LinkPocket.Views
                     {
                         Text = ((DedupGroupRow)r).Url,
                         FontSize = 12,
-                        FontFamily = new FontFamily("Consolas"),
+                        FontFamily = (FontFamily)Application.Current.FindResource(Theming.Tokens.AppTokens.FontMono),
                         Foreground = (Brush)FindResource("OnSurface"),
                         VerticalAlignment = VerticalAlignment.Center,
                         TextTrimming = TextTrimming.CharacterEllipsis

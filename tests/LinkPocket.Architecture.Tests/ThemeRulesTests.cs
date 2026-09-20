@@ -200,20 +200,22 @@ public class ThemeRulesTests
             "警告色体系已整体退场（破坏性动作与次操作共用同一套呈现、全站不使用红色）：\n" + string.Join("\n", offenders));
     }
 
-    [Fact(Skip = "T4 落地前暂缓：等宽字面量与 FontFamily 直写仍在现役代码，本断言是**目标态**护栏（T4 完成后去掉 Skip）。")]
+    [Fact]
     public void 字体令牌唯一_界面层禁止硬编码字体族()
     {
         // 字体必须经 App.Font.Ui / App.Font.Mono 令牌（运行时换字体的物理前提 = 资源可失效）。
+        // 界面层里出现 new FontFamily("…") 或 FontFamily="Consolas" 都意味着"这个控件不跟主题字体走"。
         var offenders = new List<string>();
-        var rx = new Regex(@"new\s+FontFamily\s*\(\s*""", RegexOptions.Compiled);
+        var rx = new Regex(@"new\s+FontFamily\s*\(\s*""|FontFamily\s*=\s*""[A-Za-z]", RegexOptions.Compiled);
 
         foreach (var file in SourceFiles(LiteralCheckedDirs))
         {
             var rel = Relative(file);
             if (IsLiteralExempt(rel)) continue;
-            var text = File.ReadAllText(file);
+            var isXaml = file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase);
+            var text = StripComments(File.ReadAllText(file), isXaml);
             if (rx.IsMatch(text))
-                offenders.Add($"{rel} → new FontFamily(\"…\")");
+                offenders.Add($"{rel} → 硬编码字体族");
         }
 
         Assert.True(offenders.Count == 0,

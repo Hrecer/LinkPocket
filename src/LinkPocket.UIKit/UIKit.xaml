@@ -18,7 +18,10 @@
     ============================================================
     -->
 
-    <FontFamily x:Key="AppFont">Microsoft YaHei UI, 微软雅黑, SimSun, 宋体, Arial</FontFamily>
+    <!-- 字体族不在这里定义 —— 与颜色键同理：值由 LinkPocket.Theming 派生、经 ThemeService 发布
+         （`App.Font.Ui` = 回退链「主族, Microsoft YaHei UI, Segoe UI」，见 FontLoader.BuildTokenValue）。
+         界面一律 `{DynamicResource App.Font.Ui}` —— **必须动态**：`StaticResource` 在解析时就固化值，
+         运行时换字体会毫无反应（换字体的物理前提，方案 §6.1）。 -->
 
     <!-- 紫色调层（MD3E 色彩即层级的本地化实现）：比中性 Surface 角色带 Accent 染色的分层画刷。
          **值不在这里定义** —— 主题拥有全站每一个颜色键：值由 LinkPocket.Theming 派生，
@@ -27,17 +30,17 @@
          换主题纹丝不动 —— 那是"半主题化"的根因，已清零。 -->
 
     <Style TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontWeight" Value="Normal"/>
     </Style>
 
     <Style TargetType="Button">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontWeight" Value="Normal"/>
     </Style>
 
     <Style TargetType="TextBox">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
         <Setter Property="CaretBrush" Value="{DynamicResource Primary}"/>
     </Style>
@@ -48,7 +51,7 @@
          用法：<views:SelectableText Text="{Binding X, Mode=OneWay}"/>；要改视觉用 BasedOn 派生样式或局部属性。
          ⚠️ 主栏 / 结果表格的行不用它（行要保持整行选中与拖拽手势，文本拖选会冲突）。 -->
     <Style x:Key="SelectableTextStyle" TargetType="{x:Type views:SelectableText}">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontWeight" Value="Normal"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
@@ -69,7 +72,7 @@
     <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}"/>
 
     <Style TargetType="ComboBox">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
     </Style>
 
@@ -154,7 +157,7 @@
          ⚠️ 状态层必须铺满整颗药丸（MD3 规范做法：底色 / 全幅状态层 / 内容 三层 Grid）——
          之前状态层放在带 Padding 的 Border 里只盖住文字区，悬停会出现"只有一小块变灰"的怪相。 -->
     <Style x:Key="TonalButton" TargetType="Button">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSecondaryContainer}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -195,7 +198,7 @@
          SecondaryContainer 底紫字）。不使用库 FilledButton：它自带 MinHeight=40，成对排放会不等高。
          三层结构与 TonalButton 相同：底色 / 全幅状态层 / 内容（状态层必须铺满，不许只盖文字区）。 -->
     <Style x:Key="PrimaryPillButton" TargetType="Button">
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -242,7 +245,7 @@
     <Style x:Key="JumpPillButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnPrimary}"/>
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Padding" Value="15,0"/>
@@ -419,7 +422,7 @@
         <Setter Property="Background" Value="{DynamicResource SurfaceContainerHigh}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnSurface}"/>
         <Setter Property="FontSize" Value="12"/>
-        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Padding" Value="10,6"/>
         <Setter Property="HasDropShadow" Value="False"/>
         <Setter Property="Template">
@@ -639,7 +642,7 @@
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </DataTrigger>
                             <DataTrigger Binding="{Binding IsMono}" Value="True">
-                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontFamily" Value="{DynamicResource App.Font.Mono}"/>
                                 <Setter Property="FontSize" Value="11"/>
                                 <Setter Property="Opacity" Value="0.6"/>
                                 <!-- ⚠️ TextBox 没有 TextTrimming（整行不换行，靠观感与 ID 长度兜住） -->

@@ -21,7 +21,7 @@
         ResizeMode="CanResize"
         AllowsTransparency="True"
         Background="Transparent"
-        TextElement.FontFamily="{StaticResource AppFont}"
+        TextElement.FontFamily="{DynamicResource App.Font.Ui}"
         TextElement.Foreground="{DynamicResource OnSurface}">
 
     <WindowChrome.WindowChrome>

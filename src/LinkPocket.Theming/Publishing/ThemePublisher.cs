@@ -78,6 +78,28 @@ public static class ThemePublisher
     }
 
     /// <summary>
+    /// 发布字体令牌（<see cref="AppTokens.FontUi"/> / <see cref="AppTokens.FontMono"/>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>字体令牌与颜色令牌同属令牌层，但介质不同</b>：值是 <see cref="System.Windows.Media.FontFamily"/>
+    /// 而不是画刷。界面对它们的引用**必须是 <c>DynamicResource</c>**——
+    /// <c>StaticResource</c> 在解析时就把值固化了，运行时换字体会**毫无反应**
+    /// （这正是"字体系统"能否成立的物理前提，方案 §6.1）。
+    /// </para>
+    /// <para>
+    /// 值是**回退链**（<c>导入族名, Microsoft YaHei UI, Segoe UI</c>）：
+    /// 用户导入的拉丁字体不会让中文变方块——WPF 逐字形回退。
+    /// </para>
+    /// </remarks>
+    public static void PublishFonts(ResourceDictionary resources, string uiFamily, string monoFamily)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        resources[AppTokens.FontUi] = Fonts.FontLoader.BuildFontFamily(uiFamily);
+        resources[AppTokens.FontMono] = Fonts.FontLoader.BuildFontFamily(monoFamily);
+    }
+
+    /// <summary>
     /// 令牌表里"会被界面消费的键"总数（库键 + 应用令牌）——供诊断读数与文档核对。
     /// </summary>
     public static int PublishedKeyCount(TokenTable table) => table.Anchored.Count + table.Tokens.Count;

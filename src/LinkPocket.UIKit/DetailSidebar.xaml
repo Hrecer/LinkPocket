@@ -337,7 +337,7 @@
                     </Grid.ColumnDefinitions>
                     <!-- 网址 = 可拖选的展示型文本（唯一实现 Views.SelectableText） -->
                     <views:SelectableText Grid.Column="0" Text="{Binding UrlText, Mode=OneWay}" FontSize="12"
-                                          FontFamily="Consolas" TextWrapping="Wrap" VerticalAlignment="Center"
+                                          FontFamily="{DynamicResource App.Font.Mono}" TextWrapping="Wrap" VerticalAlignment="Center"
                                           Foreground="{DynamicResource OnSurfaceVariant}"/>
                     <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="复制链接"
                             Width="26" Height="24" Padding="4" Margin="6,0,0,0" VerticalAlignment="Center"

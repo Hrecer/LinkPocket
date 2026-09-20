@@ -18,7 +18,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // 主题装配：**唯一入口** ThemeService（求解 → 库基线 → 全量权威表 → 留痕 → 事件）。
+        // 外观装配：**唯一入口** ThemeService（读偏好 → 求解 → 库基线 → 全量权威表 → 字体令牌 → 留痕）。
         // 必须在 InitializeComponent（App.xaml 资源合并）之后调用，
         // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
         //
@@ -26,9 +26,21 @@ public partial class App : Application
         // 而探针又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且我们的画刷写死在 UIKit.xaml，
         // 换种子只改库角色、我们的画刷纹丝不动（换主题只会"半主题化"）。
         // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
-        ThemeService.ApplyDefault(Resources);
+        var (fellBack, reason) = ThemeService.ApplyFromPreferences(Resources);
         LpIcons.RegisterAll();
         base.OnStartup(e);
+
+        // 偏好损坏 / 字体缺失 → **如实提示一次**（观测面纪律：不许静默回退默认外观）
+        if (fellBack && reason is not null)
+        {
+            LpLog.Warn($"外观回退默认：{reason}", category: ThemeService.LogCategory);
+            try
+            {
+                MessageBox.Show(reason + "\n\n可在「设置 → 外观」重新选择。", "LinkPocket",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch { /* 提示失败不阻断启动；日志已留痕 */ }
+        }
 
         // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
         // 装配失败（典型 = 旧格式库被 schema 红线拒绝 / 库文件损坏）必须对用户可见——
