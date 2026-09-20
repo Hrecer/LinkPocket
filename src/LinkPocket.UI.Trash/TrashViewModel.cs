@@ -98,6 +98,8 @@ public partial class TrashViewModel : INotifyPropertyChanged
         ClearSelectionCommand = new RelayCommand(ClearSelection);
         // Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。
         EscapeCommand = new RelayCommand(Escape);
+        // 右栏「跳转」= 把选中的那一行**滚回视口**（本页内定位）。仅单选（多选没有"某一项"可定位）。
+        JumpSelectionCommand = new RelayCommand(JumpSelectionToRow, () => Selection.Count == 1);
         // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，按区域挂载；命令里带栏归属语义）：
         // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
         ClearMainPaneSelectionCommand = new RelayCommand(() => { ActivatePane(TrashPane.Main); ClearSelection(); });
@@ -118,6 +120,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         Details.DeleteCommand = PurgeSelectionCommand;
         Details.RestoreCommand = RestoreSelectionCommand;
         Details.RestoreToRootCommand = RestoreSelectionToRootCommand;
+        Details.JumpCommand = JumpSelectionCommand;   // 右栏「跳转」= 本页内把选中行滚回视口（同一命令实例）
 
         // 共享详情页（只读覆盖层）的动作**按展示项构造**（不是"作用于选中集合"的第二套逻辑：
         // 命令槽仍复用本页既有能力，只有作用对象 = 覆盖层正在展示的那一项，见 _detailLinkId）：
@@ -421,6 +424,8 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ICommand ClearSelectionCommand { get; }
     /// <summary>Esc：覆盖层打开 → 退出覆盖层；否则取消选中（键位在 ShortcutCatalog）。</summary>
     public ICommand EscapeCommand { get; }
+    /// <summary>右栏「跳转」：把选中的那一行滚回视口（同页内定位；仅单选可用）。</summary>
+    public ICommand JumpSelectionCommand { get; }
     public ICommand MoveSelectionCommand { get; }
     public ICommand SelectLastCommand { get; }
     public ICommand MoveTreeSelectionCommand { get; }
@@ -440,4 +445,17 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// <summary>点空白清选中：列表卡（主栏获得键盘语义归属）/ 页面其它空白（保持当前栏归属）。</summary>
     public ICommand ClearMainPaneSelectionCommand { get; }
     public ICommand ClearPageSelectionCommand { get; }
+
+    /// <summary>
+    /// 右栏「跳转」：把选中的那一行**滚回视口**（同页内定位）。
+    /// 回收站条目不在主表（引擎 `locate.resolve` 查不到它），所以本页的"跳转"不是"跳去浏览页"，而是
+    /// "把视角移回那一项"——复用与浏览页 / 结果页跳转**同一个视图原语** <see cref="FocusRowRequested"/>
+    /// （视图侧落到 `ScrollItemIntoView`），不新增第二套定位实现。
+    /// 用户令 2026-09-20：一页上百项时"选中了又滑走要找别的项"要能一键回到它。
+    /// </summary>
+    private void JumpSelectionToRow()
+    {
+        if (SelectedRows.FirstOrDefault() is not { } row) return;
+        FocusRowRequested?.Invoke(this, row);
+    }
 }

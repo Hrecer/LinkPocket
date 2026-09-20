@@ -127,15 +127,18 @@
         </DataTemplate>
 
         <!-- 图标钮组：顺序只有一套（按能力位显隐）= **跳转** → 还原 → 还原到根目录 → 重命名 → 编辑 → 删除。
-             取色由色调位 / 语义驱动：跳转与编辑 = 图标钮缺省 Primary，合并「深紫」= AccentBtn，永久删除 = WarnBg。 -->
+             取色由色调位 / 语义驱动：跳转 = AccentBtn 深紫（与工具栏主按钮填充同源）、编辑 = 图标钮缺省 Primary、
+             合并「深紫」= AccentBtn，永久删除 = WarnBg。 -->
         <DataTemplate x:Key="SidebarActionIcons">
             <StackPanel Orientation="Horizontal">
-                <!-- 跳转（进浏览页对应目录并选中该行；经 IContentLocator）——结果页 / 搜索页 / 浏览页的单一目标动作，
+                <!-- 跳转（进浏览页对应目录并选中该行；经 IContentLocator）——结果页 / 搜索页 / 浏览页 / 回收站的单一目标动作，
                      多选时由能力位关掉（跳转只对单个目标有意义）。图标 = 地图图钉 `map-marker`（"在哪儿"语义）；
-                     色调 = 图标钮缺省 Primary（与工具栏 AccentBtn 填充药丸不混同）。 -->
+                     取色 = `AccentBtn` **深紫**（与工具栏主按钮填充同源；⚠️ 不要用图标钮缺省的 `Primary` 亮紫——
+                     用户报障"跳转按钮是亮紫色、太显眼"，与「重命名」那枚同色规则一致）。 -->
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding JumpToolTip}"
                         Width="32" Height="32" Margin="0,0,0,0" VerticalAlignment="Center"
+                        Foreground="{StaticResource AccentBtn}"
                         Command="{Binding JumpCommand}"
                         Visibility="{Binding ShowJumpAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="{Binding JumpIconKind}" Width="15" Height="15"/>
