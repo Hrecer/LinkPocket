@@ -18,6 +18,14 @@
                 <views:SideNavList x:Name="SettingListBox" Style="{StaticResource SideNavListStyle}"
                                    ItemContainerStyle="{StaticResource SideNavItemStyle}"
                                    SelectionChanged="SettingListBox_SelectionChanged">
+                    <!-- 顺序 = 外观 / 存储管理 / 备份与恢复；「外观」排第一（决策 6），
+                         故"默认选中第一项"的契约落点随之改为外观。 -->
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="palette-outline" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="外观" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="delete-sweep" Width="17" Height="17" VerticalAlignment="Center"/>
@@ -36,7 +44,10 @@
 
         <!-- 右侧内容区 -->
         <Grid Grid.Column="1" x:Name="ContentPanel">
-            <!-- 存储管理界面：与工具页同语言的圆角卡片（危险区 = WarnBg 奶油黄，项目铁律禁红色） -->
+            <!-- 外观（排第一）：主题卡 / 自选配色 / 字体 -->
+            <local:AppearancePanel x:Name="AppearancePanelControl" Visibility="Collapsed"/>
+
+            <!-- 存储管理界面：与工具页同语言的圆角卡片（破坏性动作与次操作同一套呈现，项目铁律禁红色） -->
             <ScrollViewer x:Name="MaintenancePanel" Visibility="Collapsed"
                           VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="32,24,32,24">

@@ -43,8 +43,26 @@ public static class FontLoader
     /// <summary>导入字体的存放目录（与 db/logs 同目录）。</summary>
     public static string FontDirectory => Path.Combine(AppContext.BaseDirectory, "fonts");
 
-    /// <summary>枚举系统已装字体（按名称排序；只返回可与 WPF 解析的项）。</summary>
-    public static IReadOnlyList<FontChoice> SystemFonts()
+    /// <summary>
+    /// 枚举系统已装字体（按显示名排序；只返回可与 WPF 解析的项）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>必须缓存</b>：<c>System.Windows.Media.Fonts.SystemFontFamilies</c> 是一次**全量字体枚举**
+    /// （内部走 GDI/COM 字体表），在装有大量字体的机器上是**秒级**开销。
+    /// 实测教训：不缓存时，「外观」面板每构建一次 VM 就枚举一次（16 个单测 + 探针多次进入该页），
+    /// 累计把测试与探针拖到几分钟 —— 真实用户每进一次「外观」页也会卡同样的时长。
+    /// </para>
+    /// <para>
+    /// 缓存在**进程生命周期内是安全的**：系统字体集合不会在应用运行期间变化；
+    /// 用户新装的字体要重启应用才可见（与绝大多数桌面应用一致，属可接受边界）。
+    /// 导入字体走另一条路（<see cref="ImportedFonts"/>，每次读目录 → 导入/删除即时可见）。
+    /// </para>
+    /// <para>用 <see cref="Lazy{T}"/> 保证并行首次访问时只枚举一次。</para>
+    /// </remarks>
+    public static IReadOnlyList<FontChoice> SystemFonts() => SystemFontsCache.Value;
+
+    private static readonly Lazy<IReadOnlyList<FontChoice>> SystemFontsCache = new(() =>
     {
         var list = new List<FontChoice>();
         foreach (var family in System.Windows.Media.Fonts.SystemFontFamilies)
@@ -55,10 +73,57 @@ public static class FontLoader
         }
         list.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture));
         return list;
+    }, LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>系统字体**族名**集合（"这个族可用吗"的快速判定；同样走缓存）。</summary>
+    public static IReadOnlySet<string> SystemFontFamilies() => SystemFamilySet.Value;
+
+    private static readonly Lazy<IReadOnlySet<string>> SystemFamilySet = new(
+        () => SystemFonts().Select(f => f.Family).ToHashSet(StringComparer.OrdinalIgnoreCase),
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>
+    /// 枚举已导入字体（按文件名排序）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>必须缓存，且只在导入/删除时失效</b>：每项都要把字体文件交给
+    /// <c>Fonts.GetFontFamilies(Uri)</c> 解析族名 —— 那是**打开并解析字体表**的开销（几十~几百毫秒/个）。
+    /// 而本方法被「外观」面板的每次 VM 构建 / 每次进入页面调用，实测能把面板拖成秒级卡顿。
+    /// </para>
+    /// <para>
+    /// 失效时机 = <see cref="Import"/> / <see cref="Remove"/>（唯一会改变该目录内容的两处），
+    /// 故"导入后立即可见、删除后立即消失"，与用户的因果直觉一致。
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<FontChoice> ImportedFonts() => ImportedCache;
+
+    /// <summary>可失效的导入字体缓存（<see cref="Lazy{T}"/> 不支持重置，故用字段 + 锁）。</summary>
+    private static IReadOnlyList<FontChoice>? _importedCache;
+    private static readonly object ImportedCacheLock = new();
+
+    private static IReadOnlyList<FontChoice> ImportedCache
+    {
+        get
+        {
+            var cached = _importedCache;
+            if (cached is not null) return cached;
+            lock (ImportedCacheLock)
+            {
+                return _importedCache ??= ScanImportedFonts();
+            }
+        }
     }
 
-    /// <summary>枚举已导入字体（按文件名排序）。</summary>
-    public static IReadOnlyList<FontChoice> ImportedFonts()
+    private static void InvalidateImportedCache()
+    {
+        lock (ImportedCacheLock)
+        {
+            _importedCache = null;
+        }
+    }
+
+    private static IReadOnlyList<FontChoice> ScanImportedFonts()
     {
         var dir = FontDirectory;
         if (!Directory.Exists(dir)) return Array.Empty<FontChoice>();
@@ -68,7 +133,10 @@ public static class FontLoader
         {
             var ext = Path.GetExtension(file).ToLowerInvariant();
             if (ext is not (".ttf" or ".otf" or ".ttc")) continue;
-            if (TryResolveFileFamily(file!, out var family))
+            // 枚举路径：解析失败**静默跳过该文件**（把它留在目录里由用户处置）。
+            // 不在这里写日志：枚举会被反复调用，坏文件会造成日志洪泛（观测面噪音）。
+            // 真正需要报错的是"用户主动导入"那条路径（见 Import），那里会明确抛。
+            if (TryResolveFileFamily(file!, out var family, logFailure: false))
                 list.Add(new FontChoice(family, $"{Path.GetFileNameWithoutExtension(file)} · {family}", file));
         }
         return list;
@@ -106,6 +174,7 @@ public static class FontLoader
             throw new InvalidOperationException($"复制字体文件失败：{ex.Message}", ex);
         }
 
+        InvalidateImportedCache();   // 导入后立即可见
         LpLog.Info($"已导入字体「{family}」→ {target}", LogCategory);
         return new FontChoice(family, $"{Path.GetFileNameWithoutExtension(target)} · {family}", target);
     }
@@ -119,6 +188,7 @@ public static class FontLoader
         if (File.Exists(choice.FilePath))
         {
             File.Delete(choice.FilePath);
+            InvalidateImportedCache();   // 删除后立即消失
             LpLog.Info($"已删除导入字体：{choice.FilePath}", LogCategory);
         }
     }
@@ -151,7 +221,7 @@ public static class FontLoader
     public const string DefaultMonoFamily = "Consolas";
 
     /// <summary>解析文件型字体的族名（失败返回 false，不抛）。</summary>
-    private static bool TryResolveFileFamily(string path, out string family)
+    private static bool TryResolveFileFamily(string path, out string family, bool logFailure = true)
     {
         family = string.Empty;
         try
@@ -164,8 +234,9 @@ public static class FontLoader
         }
         catch (Exception ex)
         {
-            // 交给调用方决定语义（导入路径 = 报错；枚举路径 = 跳过该文件）
-            LpLog.Warn($"字体文件无法解析（{path}）：{ex.Message}", category: LogCategory);
+            // 交给调用方决定语义（导入路径 = 报错并留痕；枚举路径 = 静默跳过该文件，避免日志洪泛）
+            if (logFailure)
+                LpLog.Warn($"字体文件无法解析（{path}）：{ex.Message}", category: LogCategory);
             return false;
         }
     }

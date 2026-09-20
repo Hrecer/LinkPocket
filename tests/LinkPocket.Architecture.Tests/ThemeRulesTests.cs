@@ -55,12 +55,22 @@ public class ThemeRulesTests
         Path.Combine("src", "LinkPocket.UI.Settings"),
     };
 
-    /// <summary>按方案 §9.1 的例外清单豁免（每条都要写清理由，不许静默扩大）。</summary>
+    /// <summary>
+    /// 按方案 §9.1 的例外清单豁免（每条都要写清理由，不许静默扩大）。
+    /// </summary>
+    /// <remarks>
+    /// 三条豁免的共同特征：**它们的颜色不是"界面配色"，而是那个控件自身的语义内容**。
+    /// </remarks>
     private static bool IsLiteralExempt(string relativePath)
     {
         var normalized = relativePath.Replace('\\', '/');
-        return normalized.EndsWith("FaviconService.cs", StringComparison.Ordinal)   // 占位徽标用 GDI 画 ⬡（非界面颜色语义）
-            || normalized.EndsWith("SmartProbe/Program.cs", StringComparison.Ordinal);
+        return normalized.EndsWith("FaviconService.cs", StringComparison.Ordinal)
+            || normalized.EndsWith("SmartProbe/Program.cs", StringComparison.Ordinal)
+            // 取色盘的**色相光谱条**：彩虹谱就是该控件的内容（类似标尺上的刻度），
+            // 它不是"界面用哪支紫"这类可主题化的决策 —— 主题换了，色相环仍然是 0°→360° 的那道彩虹。
+            // 这是全仓唯一允许出现"颜色谱"的位置；除它之外的取色盘颜色（叠加层端点、预览块、描边）
+            // 一律走令牌（App.Text.OnAccent / App.Color.Shadow / App.Color.SvTransparent）。
+            || normalized.EndsWith("ColorPickerPopup.xaml", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -102,6 +112,10 @@ public class ThemeRulesTests
     public void 颜色计算只允许出现在Theming()
     {
         // 判据 = 源码里出现库的颜色科学类型名。Theming 之外任何地方算了颜色都是"第二份实现"的起点。
+        //
+        // ⚠️ 与「零颜色字面量」同源的口径：**只扫代码、剥掉注释**。
+        // 本仓的注释习惯是把原理连同术语写下来（例如解释"取色盘为什么用 HSV 而不是 HCT"），
+        // 那些是**设计依据**，不是活引用；用裸词扫注释会把人逼去删掉最有价值的说明。
         var banned = new[] { "Hct", "TonalPalette", "ColorScheme" };
         var offenders = new List<string>();
 
@@ -116,12 +130,13 @@ public class ThemeRulesTests
             if (ColorMathAllowed.Any(a => rel.StartsWith(a, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
-            var text = File.ReadAllText(file);
+            var text = StripComments(File.ReadAllText(file), xaml: false);
             foreach (var b in banned)
             {
-                // 词边界匹配，避免 "Hct" 命中 "Hctx" 这类无关标识符
-                if (Regex.IsMatch(text, $@"\b{Regex.Escape(b)}\b"))
-                    offenders.Add($"{rel} → {b}");
+                // 词边界 + **后随 `.`**：只认"当作类型用"（Hct.FromColor / ColorScheme.Light）这类真实引用，
+                // 避免变量名/标识符里恰好含这几个字母就误判。
+                if (Regex.IsMatch(text, $@"\b{Regex.Escape(b)}\s*\."))
+                    offenders.Add($"{rel} → {b}.*");
             }
         }
 

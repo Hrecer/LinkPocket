@@ -36,7 +36,28 @@ namespace LinkPocket.Views
             InitializeComponent();
             IsVisibleChanged += SettingsPage_IsVisibleChanged;
             ConfirmInputBox.TextChanged += ConfirmInputBox_TextChanged;
+
+            // 快捷键宿主：键位全部来自总表（ShortcutCatalog），本页只做「动作 id → 命令」映射。
+            // 设置页此前没有任何页面级键位；唯一一条 = 外观面板取色盘的 Esc（放弃取色）——
+            // 它是"模态编辑态必须有放弃出口"的最低要求，写进总表而不是面板自持 KeyDown
+            // （架构红线 ShortcutRulesTests：键位只许在 Input 子系统声明）。
+            // 命令在**构造体内**建（字段初始化器不能引用 AppearancePanelControl 这类实例成员）。
+            EscapePickerCommand = new LinkPocket.ViewModels.RelayCommand(
+                () => AppearancePanelControl.ClosePicker(),
+                () => AppearancePanelControl.IsPickerOpen);
+
+            var commands = new LinkPocket.Input.ShortcutCommandMap()
+                .Add(LinkPocket.Input.ShortcutAction.SettingsEscape, EscapePickerCommand);
+            _shortcutHost = new LinkPocket.Input.ShortcutHost(
+                LinkPocket.Input.ShortcutCatalog.Build(LinkPocket.Input.ShortcutPage.Settings, commands),
+                () => LinkPocket.Input.ShortcutScope.Settings);
+            _shortcutHost.Attach(this);
         }
+
+        private LinkPocket.Input.ShortcutHost? _shortcutHost;
+
+        /// <summary>Esc = 关闭取色盘（取色盘没开时不可用，等于这条键不存在）。</summary>
+        private System.Windows.Input.ICommand EscapePickerCommand { get; }
 
         private void SettingsPage_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
@@ -50,18 +71,25 @@ namespace LinkPocket.Views
             }
         }
 
-        /// <summary>左栏只剩两项：0 = 存储管理，1 = 备份与恢复。</summary>
+        /// <summary>左栏三项：0 = 外观（决策 6 排第一），1 = 存储管理，2 = 备份与恢复。</summary>
         private void SettingListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            AppearancePanelControl.Visibility = Visibility.Collapsed;
             MaintenancePanel.Visibility = Visibility.Collapsed;
             BackupPanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
-                MaintenancePanel.Visibility = Visibility.Visible;
+            {
+                AppearancePanelControl.Visibility = Visibility.Visible;
+                // 入口对齐：进入时把"当前已应用的外观"投影到控件上（不重算、不重置）
+                AppearancePanelControl.Refresh();
+            }
             else if (SettingListBox.SelectedIndex == 1)
+                MaintenancePanel.Visibility = Visibility.Visible;
+            else if (SettingListBox.SelectedIndex == 2)
                 BackupPanelControl.Visibility = Visibility.Visible;
 
-            if (SettingListBox.SelectedIndex != 1)
+            if (SettingListBox.SelectedIndex != 2)
                 BackupPanelControl.ResetState();
         }
 

@@ -92,6 +92,10 @@ public static class ShortcutAction
     public const string ToolsDetailSelectLast = "tools.detailSelectLast";
     public const string ToolsDetailOpen = "tools.detailOpen";
     public const string ToolsDetailRefresh = "tools.detailRefresh";
+
+    // 设置页
+    /// <summary>外观面板：取色盘打开时 Esc = 放弃本次取色（不写回色槽）。</summary>
+    public const string SettingsEscape = "settings.escape";
 }
 
 /// <summary>
@@ -267,6 +271,22 @@ public static class ShortcutCatalog
             ContextGate: "去重明细打开时"),
     };
 
+    /// <summary>
+    /// 设置页键位组。
+    /// </summary>
+    /// <remarks>
+    /// 设置页此前**没有任何页面级键位**（<c>Array.Empty</c>）。这里只加一条，理由是：
+    /// 「外观」面板的取色盘是一个**模态编辑态**，它需要一个"放弃本次编辑"的出口；
+    /// 而 Esc = 放弃当前编辑态是全站既定语义（地址栏编辑 / 就地改名 / 各页 Esc 分层都如此），
+    /// 缺了它会逼出"面板自持 KeyDown"这种违规写法（架构红线：键位只许在总表声明）。
+    /// 作用域 = Settings 页内；未开取色盘时该命令 CanExecute=false，等于不存在。
+    /// </remarks>
+    private static readonly ShortcutSpec[] SettingsSpecs =
+    {
+        new(ShortcutAction.SettingsEscape, Key.Escape, ShortcutScope.Settings, "放弃取色（关闭取色盘）",
+            ContextGate: "取色盘打开时"),
+    };
+
     /// <summary>全部页面的键位组（**顺序即文档顺序**；每页一组，组不共享根作用域）。</summary>
     public static readonly IReadOnlyList<ShortcutPageSpec> Pages = new[]
     {
@@ -275,7 +295,7 @@ public static class ShortcutCatalog
         new ShortcutPageSpec(ShortcutPage.Search, "搜索页", ShortcutScope.Search, SearchSpecs),
         new ShortcutPageSpec(ShortcutPage.SmartLists, "智能列表页", ShortcutScope.SmartLists, SmartListsSpecs),
         new ShortcutPageSpec(ShortcutPage.Tools, "工具页", ShortcutScope.Tools, ToolsSpecs),
-        new ShortcutPageSpec(ShortcutPage.Settings, "设置页", ShortcutScope.Settings, Array.Empty<ShortcutSpec>()),
+        new ShortcutPageSpec(ShortcutPage.Settings, "设置页", ShortcutScope.Settings, SettingsSpecs),
     };
 
     public static ShortcutPageSpec For(ShortcutPage page)

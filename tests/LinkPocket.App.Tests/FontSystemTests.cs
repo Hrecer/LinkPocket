@@ -15,6 +15,7 @@ namespace LinkPocket.App.Tests;
 /// 测试只验证"回退链构造"与"坏文件拒绝"这类纯逻辑；真正的文件复制用例放在临时目录里做，
 /// 用完自清（CONVENTIONS §5）。
 /// </remarks>
+[Collection(UiPreferencesCollection.Name)]
 public class FontSystemTests
 {
     [Theory]
@@ -226,6 +227,7 @@ public class FontSystemTests
 /// <summary>
 /// 主题校验与诊断（方案 §5.3 末段）：拒绝该拒的、提示该提示的。
 /// </summary>
+/// <remarks>不碰偏好文件 → 不需要挂 <c>UiPreferencesCollection</c>（只有真正共享那个文件的类才串行）。</remarks>
 public class ThemeValidatorTests
 {
     private static ThemeDefinition Custom(params int[] rgb) => new()

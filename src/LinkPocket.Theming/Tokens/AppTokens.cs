@@ -149,6 +149,9 @@ public static class AppTokens
     /// <summary>入口卡面板的背景渐变终点（强调色 6% 淡染，Color 形态）。</summary>
     public const string GradientEnd = "App.Color.Gradient.End";
 
+    /// <summary>全透明（Color 形态）—— 取色盘 SV 方块的饱和/明度叠加层端点用。</summary>
+    public const string SvTransparent = "App.Color.SvTransparent";
+
     // ── 字体（不是颜色，但同属令牌层；值在 UiTheme 里发布）──────────────────
     /// <summary>界面字体族令牌。</summary>
     public const string FontUi = "App.Font.Ui";
@@ -172,7 +175,7 @@ public static class AppTokens
 
     /// <summary>颜色型令牌（值是 <c>Color</c> 而非 <c>SolidColorBrush</c>；供 Effect / GradientStop 消费）。</summary>
     public static IReadOnlyList<string> AllColorValueTokens { get; } =
-        new[] { ShadowColor, GradientStart, GradientEnd };
+        new[] { ShadowColor, GradientStart, GradientEnd, SvTransparent };
 
     /// <summary>全部字体令牌。</summary>
     public static IReadOnlyList<string> AllFontTokens { get; } = new[] { FontUi, FontMono };

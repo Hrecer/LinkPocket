@@ -140,17 +140,20 @@ $built = $false
 for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
     Write-Host "[CI] 全量编译（$Configuration，0 警告 0 错误）第 $attempt/$maxAttempts 次 ..." -ForegroundColor Cyan
     $swAttempt = [System.Diagnostics.Stopwatch]::StartNew()
-    & $dotnet @buildArgs 2>&1 | Tee-Object -FilePath $buildLog
+    # 直接重定向到文件（不经管道）——理由同下方单测段：native 命令走管道 + Tee-Object 会死锁。
+    & $dotnet @buildArgs *> $buildLog
+    $buildExit = $LASTEXITCODE
     $swAttempt.Stop()
     $buildAttempts += $swAttempt.Elapsed.TotalSeconds
-    if ($LASTEXITCODE -eq 0) { $built = $true; break }
+    if ($buildExit -eq 0) { $built = $true; break }
+    Get-Content -LiteralPath $buildLog -Tail 8 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "      $_" }
 
     if ($attempt -lt $maxAttempts) {
         if ($attempt -eq $maxAttempts - 1) {
-            Write-Host "[CI] 编译失败（exit=$LASTEXITCODE）：第 $($attempt + 1) 次尝试前清 obj 后重试 ..." -ForegroundColor Yellow
+            Write-Host "[CI] 编译失败（exit=$buildExit）：第 $($attempt + 1) 次尝试前清 obj 后重试 ..." -ForegroundColor Yellow
             Clear-ObjDirectories | Out-Null
         } else {
-            Write-Host "[CI] 编译失败（exit=$LASTEXITCODE）：obj 瞬时占用多为几秒自解，原样重试 ..." -ForegroundColor Yellow
+            Write-Host "[CI] 编译失败（exit=$buildExit）：obj 瞬时占用多为几秒自解，原样重试 ..." -ForegroundColor Yellow
         }
     }
 }
@@ -178,12 +181,25 @@ $swTests = [System.Diagnostics.Stopwatch]::StartNew()
 foreach ($project in $testProjects) {
     Write-Host "[CI]   -> $project" -ForegroundColor DarkGray
     $swTest = [System.Diagnostics.Stopwatch]::StartNew()
-    & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo 2>&1 |
-        Tee-Object -FilePath $testLog -Append
+    # ⚠️ 绝对不要写成 `& $dotnet test ... 2>&1 | Tee-Object -FilePath ...`：
+    #    原生命令的输出走**管道**时会先填满管道缓冲区；PowerShell 对原生命令的管道不是流式转发，
+    #    于是"子进程写满缓冲等读、父进程等子进程结束"→ **死锁式永久挂起**（实测：CI 卡几十分钟不返回，
+    #    而同一命令手敲 `dotnet test` 却正常结束）。改为**直接重定向到文件**：不经过管道，不可能死锁，
+    #    且天然保留全部输出（含 stderr）供失败时回看。
+    $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
+    & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo *> $projectLog
+    $testExit = $LASTEXITCODE
+    # 汇总进总日志（失败时才有用；文件可能为空，故容错）
+    if (Test-Path -LiteralPath $projectLog) {
+        $projectText = Get-Content -LiteralPath $projectLog -Raw
+        if ($projectText) { Add-Content -LiteralPath $testLog -Value $projectText }
+    }
+    # 只回显尾部（全量已在文件里），避免刷屏又不丢信息
+    Get-Content -LiteralPath $projectLog -Tail 4 | ForEach-Object { Write-Host "      $_" }
     $swTest.Stop()
     $testTimings[(Split-Path -Leaf $project)] = $swTest.Elapsed.TotalSeconds
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[CI] 单元测试失败（$project，exit=$LASTEXITCODE）" -ForegroundColor Red
+    if ($testExit -ne 0) {
+        Write-Host "[CI] 单元测试失败（$project，exit=$testExit）" -ForegroundColor Red
         $swTests.Stop()
         $timings['③ 单测'] = $swTests.Elapsed.TotalSeconds
         Write-TimingSummary
@@ -197,14 +213,17 @@ Write-Host "[CI] 单元测试通过" -ForegroundColor Green
 # —— 3 & 4. 协议冒烟 + 严格性能门槛 ——
 Write-Host "[CI] 协议冒烟 + 10k 性能门槛（严格）..." -ForegroundColor Cyan
 $swSmoke = [System.Diagnostics.Stopwatch]::StartNew()
-& $dotnet run --project (Join-Path $repoRoot "tests/ProtocolSmoke") -c $Configuration --no-build -- --strict-perf 2>&1 |
-    Tee-Object -FilePath (Join-Path $artifacts "smoke.log")
+# 直接重定向到文件（不经管道）——理由同单测段：native 命令走管道 + Tee-Object 会死锁。
+$smokeLog = Join-Path $artifacts "smoke.log"
+& $dotnet run --project (Join-Path $repoRoot "tests/ProtocolSmoke") -c $Configuration --no-build -- --strict-perf *> $smokeLog
+$smokeExit = $LASTEXITCODE
 $swSmoke.Stop()
 $timings['④ 冒烟 + 10k 性能'] = $swSmoke.Elapsed.TotalSeconds
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[CI] 协议冒烟/性能门槛未过（exit=$LASTEXITCODE）" -ForegroundColor Red
+Get-Content -LiteralPath $smokeLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "      $_" }
+if ($smokeExit -ne 0) {
+    Write-Host "[CI] 协议冒烟/性能门槛未过（exit=$smokeExit）" -ForegroundColor Red
     Write-TimingSummary
-    exit $LASTEXITCODE
+    exit $smokeExit
 }
 Write-Host "[CI] 协议冒烟与性能门槛通过" -ForegroundColor Green
 

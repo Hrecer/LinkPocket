@@ -1,0 +1,134 @@
+<UserControl x:Class="LinkPocket.Views.ColorPickerPopup"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             Width="268"
+             Focusable="True" FocusVisualStyle="{x:Null}">
+    <!-- 自研取色盘（零第三方依赖，方案 §7.3）：SV 方块（饱和/明度）+ H 竖滑条 + HEX 输入 +
+         大色块预览 + 对比度体检徽标 + 取消/用这个颜色 两枚药丸。
+         色相反射与明度/饱和度由 code-behind 用 HSV↔RGB 互算（不引颜色库）。 -->
+    <Border Background="{DynamicResource App.Surface.Dialog}" CornerRadius="20" Padding="16,14"
+            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22"
+                              Color="{DynamicResource App.Color.Shadow}"/>
+        </Border.Effect>
+        <StackPanel>
+            <!-- 预览 + SV 方块：同一块的"当前颜色"大色块 -->
+            <Grid Height="132">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="132"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- SV 方块：底色 = 当前色相纯色（code-behind 设）；白色→透明 横渐变（饱和）；
+                     透明→阴影色 竖渐变（明度）。两个叠加层的端点色取自**令牌**（白=OnAccent、黑=Shadow），
+                     不在界面层写字面量。 -->
+                <Border x:Name="SvHost" Grid.Column="0" CornerRadius="12" ClipToBounds="True"
+                        Cursor="Cross" Background="White"
+                        MouseLeftButtonDown="SvHost_MouseDown"
+                        MouseMove="SvHost_MouseMove"
+                        MouseLeftButtonUp="SvHost_MouseUp">
+                    <Grid>
+                        <Rectangle>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="{DynamicResource App.Text.OnAccent}" Offset="0"/>
+                                    <GradientStop Color="{DynamicResource App.Color.SvTransparent}" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                        <Rectangle>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="{DynamicResource App.Color.SvTransparent}" Offset="0"/>
+                                    <GradientStop Color="{DynamicResource App.Color.Shadow}" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                        <Ellipse x:Name="SvKnob" Width="14" Height="14" Stroke="White" StrokeThickness="2"
+                                 HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False">
+                            <Ellipse.Effect>
+                                <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.6"
+                                                  Color="{DynamicResource App.Color.Shadow}"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                    </Grid>
+                </Border>
+
+                <!-- H 竖滑条：**色相光谱本身就是控件内容**（像标尺上的刻度），不是界面配色，
+                     故这是全仓唯一允许出现"颜色谱"的位置，已在 ThemeRulesTests 白名单登记并写明理由。
+                     两端都是红色（色相环首尾相接）。 -->
+                <Border Grid.Column="1" x:Name="HueHost" Margin="12,0,0,0" Width="24"
+                        CornerRadius="12" ClipToBounds="True" Cursor="SizeNS"
+                        HorizontalAlignment="Left"
+                        MouseLeftButtonDown="HueHost_MouseDown"
+                        MouseMove="HueHost_MouseMove"
+                        MouseLeftButtonUp="HueHost_MouseUp">
+                    <Grid>
+                        <Rectangle>
+                            <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#FFFF0000" Offset="0"/>
+                                    <GradientStop Color="#FFFFFF00" Offset="0.1667"/>
+                                    <GradientStop Color="#FF00FF00" Offset="0.3333"/>
+                                    <GradientStop Color="#FF00FFFF" Offset="0.5"/>
+                                    <GradientStop Color="#FF0000FF" Offset="0.6667"/>
+                                    <GradientStop Color="#FFFF00FF" Offset="0.8333"/>
+                                    <GradientStop Color="#FFFF0000" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Rectangle.Fill>
+                        </Rectangle>
+                        <Rectangle x:Name="HueKnob" Height="3" Fill="White" Stroke="#33000000"
+                                   VerticalAlignment="Top" IsHitTestVisible="False"/>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- 大色块预览 + 对比度体检徽标 -->
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="PreviewSwatch" Grid.Column="0" Width="36" Height="36" CornerRadius="10"
+                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"/>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="ContrastOnFillText" FontSize="11.5"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <TextBlock x:Name="ContrastAsIconText" FontSize="11.5" Margin="0,2,0,0"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- HEX 输入（CardField 口径：标签 + 输入 + 校验态一体，不裸写 TextBox） -->
+            <TextBlock Text="十六进制" FontSize="11.5" Margin="2,14,0,5"
+                       Foreground="{DynamicResource App.Text.Secondary}"/>
+            <Border x:Name="HexFieldShell" CornerRadius="10"
+                    Background="{DynamicResource App.Surface.Hover}"
+                    BorderThickness="0" Padding="10,0">
+                <TextBox x:Name="HexBox" Height="34" FontSize="13"
+                         Background="Transparent" BorderThickness="0"
+                         Foreground="{DynamicResource App.Text.Primary}"
+                         VerticalContentAlignment="Center" Tag="#RRGGBB"
+                         TextChanged="HexBox_TextChanged"/>
+            </Border>
+            <TextBlock x:Name="HexErrorText" FontSize="11" Margin="2,4,0,0" Visibility="Collapsed"
+                       Foreground="{DynamicResource App.Text.Primary}" TextWrapping="Wrap"/>
+
+            <!-- 取消 = 取消草稿 / 用这个颜色 = 主药丸 -->
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="CancelBtn" Content="取消"
+                        Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                        HorizontalAlignment="Left" Cursor="Hand" Click="CancelBtn_Click"/>
+                <Button Grid.Column="1" x:Name="ConfirmBtn" Content="用这个颜色"
+                        Style="{StaticResource PrimaryPillButton}" Height="32" Padding="14,0"
+                        Cursor="Hand" Click="ConfirmBtn_Click"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

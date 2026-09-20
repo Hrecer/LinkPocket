@@ -55,6 +55,25 @@ public static class ColorMath
     public static Argb WithAlpha(Argb c, byte alpha) =>
         Argb.FromInt((alpha << 24) | (c.ToInt() & 0x00FFFFFF));
 
+    // ── WPF 媒体层适配（Argb ↔ System.Windows.Media.Color）────────────────────
+    //
+    // **唯一转换点**：界面层不允许出现 `Color.FromRgb` / `Color.FromArgb`（零颜色字面量护栏），
+    // 否则"颜色怎么从令牌变成画刷"这件事会散落在各页面里、再次长出第二份实现。
+    // 界面要用 WPF Color 时一律经这两个方法（Theming 是本仓唯一可以触碰媒体类型的地方）。
+    //
+    // 注意：不写成扩展方法 —— Material3.Wpf 已经为 Argb 提供了 ToMedia()/ToArgb()，
+    // 同名扩展会与之冲突；改名 + 显式调用最清楚。
+
+    /// <summary><see cref="Argb"/> → WPF <c>Color</c>（α 原样保留）。</summary>
+    public static System.Windows.Media.Color ToMedia(Argb c)
+    {
+        var (a, r, g, b) = Unpack(c);
+        return System.Windows.Media.Color.FromArgb(a, r, g, b);
+    }
+
+    /// <summary>WPF <c>Color</c> → <see cref="Argb"/>。</summary>
+    public static Argb FromMedia(System.Windows.Media.Color c) => Pack(c.A, c.R, c.G, c.B);
+
     /// <summary>色相旋转（结果规范到 [0,360)）。</summary>
     public static double RotateHue(double hue, double delta) => NormalizeHue(hue + delta);
 
@@ -140,4 +159,54 @@ public static class ColorMath
     /// 明度（Tone）分档插值：在实测锚点的 T 之上按主题整体明度偏移平移，并夹在 [0,100]。
     /// </summary>
     public static double ShiftTone(double tone, double delta) => Math.Clamp(tone + delta, 0.0, 100.0);
+
+    // ── HSV 互算（**用户操作面**专用，与派生链路的 HCT 分工）──────────────────
+    //
+    // 为什么另有一组 HSV：取色盘需要"二维直觉"——左右 = 饱和度、上下 = 明度。HSV 的 S/V 恰好
+    // 对应这两个手势；HCT 的 T 不是这种二维结构，做不出方块。故**取色盘用 HSV、主题派生仍走 HCT**。
+    // 放在本类里是因为它同样是"颜色数学"，不该散落在界面层（架构护栏：颜色计算只许在 Theming）。
+
+    /// <summary>HSV → ARGB（H 0–360、S/V 0–1、α 0–255）。</summary>
+    public static Argb FromHsv(double hue, double saturation, double value, byte alpha = 0xFF)
+    {
+        hue = NormalizeHue(hue);
+        saturation = Math.Clamp(saturation, 0, 1);
+        value = Math.Clamp(value, 0, 1);
+
+        var c = value * saturation;
+        var x = c * (1 - Math.Abs(hue / 60.0 % 2 - 1));
+        var m = value - c;
+
+        double r, g, b;
+        if (hue < 60) (r, g, b) = (c, x, 0);
+        else if (hue < 120) (r, g, b) = (x, c, 0);
+        else if (hue < 180) (r, g, b) = (0, c, x);
+        else if (hue < 240) (r, g, b) = (0, x, c);
+        else if (hue < 300) (r, g, b) = (x, 0, c);
+        else (r, g, b) = (c, 0, x);
+
+        static byte Q(double t) => (byte)Math.Clamp(Math.Round(t * 255), 0, 255);
+        return Pack(alpha, Q(r + m), Q(g + m), Q(b + m));
+    }
+
+    /// <summary>ARGB → HSV（S/V 0–1；灰阶时色相取 0）。</summary>
+    public static void ToHsv(Argb color, out double hue, out double saturation, out double value)
+    {
+        var ch = Unpack(color);
+        double r = ch.R / 255.0, g = ch.G / 255.0, b = ch.B / 255.0;
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        var d = max - min;
+
+        value = max;
+        saturation = max <= 0 ? 0 : d / max;
+
+        if (d <= 0) { hue = 0; return; }
+
+        if (max == r) hue = 60 * (((g - b) / d) % 6);
+        else if (max == g) hue = 60 * ((b - r) / d + 2);
+        else hue = 60 * ((r - g) / d + 4);
+
+        hue = NormalizeHue(hue);
+    }
 }

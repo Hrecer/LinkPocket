@@ -1,0 +1,294 @@
+<UserControl x:Class="LinkPocket.Views.AppearancePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             xmlns:local="clr-namespace:LinkPocket.Views">
+    <!-- 「外观」面板（方案 §7.1）：三张卡 = 主题 / 自选配色 / 字体。
+         沿用「存储管理」的卡语言（MaxWidth 760 / 圆角 24 / 卡距 16 / 标题 15 SemiBold / 说明 12）。 -->
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="32,24,32,32">
+                <TextBlock Text="外观" FontSize="20" FontWeight="SemiBold" Margin="4,0,0,4"
+                           Foreground="{DynamicResource App.Text.Primary}"/>
+                <TextBlock Text="主题与字体独立选择；主题立即生效并记住，重启后保持"
+                           FontSize="13" Margin="4,0,0,20" TextWrapping="Wrap"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                <!-- ===== 卡 1：主题（出厂默认 + 内置预设）===== -->
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
+                    <StackPanel>
+                        <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="单击即应用。每套主题由一组颜色派生全套界面色（背景、文字、按钮、图标）"
+                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                        <ItemsControl x:Name="ThemeCardList">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- 主题卡：圆角 16 + 身份色圆点 + 派生示意条 -->
+                                    <Button Width="164" Height="92" Margin="0,0,12,12"
+                                            Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                            Click="ThemeCard_Click" Tag="{Binding}"
+                                            HorizontalContentAlignment="Stretch"
+                                            VerticalContentAlignment="Stretch">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="Shell" CornerRadius="16" Padding="12,10"
+                                                        Background="{DynamicResource App.Surface.Hover}"
+                                                        BorderThickness="2" BorderBrush="Transparent">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Shell" Property="BorderBrush"
+                                                                Value="{DynamicResource App.Line.Outline}"/>
+                                                    </Trigger>
+                                                    <!-- 选中态 = 从 VM 的 IsSelected 投影（唯一事实来源；
+                                                         绝不在 code-behind 里"点了哪张记哪张"——那是第二份状态） -->
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter TargetName="Shell" Property="BorderBrush"
+                                                                Value="{DynamicResource App.Accent.Fill}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter TargetName="Shell" Property="Background"
+                                                                Value="{DynamicResource App.Accent.Container}"/>
+                                                    </DataTrigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                                                           FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                                <!-- 「默认」徽标只在出厂默认卡上出现（直接绑能力位，不走 code-behind 找元素） -->
+                                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
+                                                        Background="{DynamicResource App.Accent.Container}"
+                                                        Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="默认" FontSize="10"
+                                                               Foreground="{DynamicResource App.Accent.OnContainer}"/>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- 身份色圆点＝"主题就是这些颜色" -->
+                                            <ItemsControl ItemsSource="{Binding Swatches}" Margin="0,8,0,0">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal"/>
+                                                    </ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Ellipse Width="16" Height="16" Margin="0,0,5,0"
+                                                                 Fill="{Binding Converter={StaticResource ColorToBrush}}"/>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+
+                                            <!-- 派生示意条：强调填充 / 页面底 / 正文 -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <Border Width="26" Height="8" CornerRadius="4"
+                                                        Background="{Binding Accent, Converter={StaticResource ColorToBrush}}"/>
+                                                <Border Width="26" Height="8" CornerRadius="4" Margin="4,0,0,0"
+                                                        Background="{Binding Base, Converter={StaticResource ColorToBrush}}"/>
+                                                <Border Width="26" Height="8" CornerRadius="4" Margin="4,0,0,0"
+                                                        Background="{Binding Text, Converter={StaticResource ColorToBrush}}"/>
+                                                <TextBlock Text="{Binding Summary}" FontSize="10" Margin="8,0,0,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== 卡 2：自选配色 ===== -->
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
+                        Padding="22,20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="自选配色" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="选 4 或 5 个颜色即可生成一套主题；系统自动派生并保证可读性"
+                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                        <!-- 4 色 / 5 色 分段 -->
+                        <StackPanel Orientation="Horizontal">
+                            <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19" Padding="3">
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="FourColorBtn" Content="4 色" Height="32" MinWidth="64"
+                                            Style="{StaticResource TonalButton}" Cursor="Hand"
+                                            Click="FourColorBtn_Click"/>
+                                    <Button x:Name="FiveColorBtn" Content="5 色" Height="32" MinWidth="64"
+                                            Margin="4,0,0,0" Style="{StaticResource TonalButton}" Cursor="Hand"
+                                            Click="FiveColorBtn_Click"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- 色槽 -->
+                        <ItemsControl x:Name="SlotList" Margin="0,14,0,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,14,12">
+                                        <Button Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                                Click="Slot_Click" Tag="{Binding}"
+                                                ToolTip="{Binding Hex}">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="Ring" Width="40" Height="40" CornerRadius="20"
+                                                            BorderThickness="2"
+                                                            BorderBrush="{DynamicResource App.Line.Variant}">
+                                                        <Border x:Name="Fill" CornerRadius="18" Margin="3"
+                                                                Background="{Binding Color, Converter={StaticResource ColorToBrush}}"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="Ring" Property="BorderBrush"
+                                                                    Value="{DynamicResource App.Accent.Fill}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                        <TextBlock Text="{Binding Hex}" FontSize="10.5" Margin="0,6,0,0"
+                                                   HorizontalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.Muted}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 派生诊断 -->
+                        <Border x:Name="DiagnosticsBox" Visibility="Collapsed" CornerRadius="12"
+                                Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,2,0,0">
+                            <TextBlock x:Name="DiagnosticsText" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                        </Border>
+
+                        <!-- 应用（草稿） -->
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button x:Name="ApplyDraftBtn" Content="应用这套配色"
+                                    Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                                    Cursor="Hand" Click="ApplyDraftBtn_Click"/>
+                            <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
+                                    Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
+                                    Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== 卡 3：字体 ===== -->
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
+                        Padding="22,20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="字体" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="可选系统已装字体，或导入自己的字体文件（.ttf / .otf / .ttc）"
+                                   FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                        <!-- 界面字体 -->
+                        <TextBlock Text="界面字体" FontSize="12" Margin="2,0,0,6"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="UiFontCombo" Grid.Column="0" Height="34"
+                                      DisplayMemberPath="Display"
+                                      DropDownOpened="UiFontCombo_DropDownOpened"
+                                      SelectionChanged="UiFontCombo_SelectionChanged"/>
+                            <Button Grid.Column="1" x:Name="ImportFontBtn" Content="导入字体…"
+                                    Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                    Margin="10,0,0,0" Cursor="Hand" Click="ImportFontBtn_Click"/>
+                            <Button Grid.Column="2" x:Name="DeleteFontBtn" Content="删除"
+                                    Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                    Margin="8,0,0,0" Cursor="Hand" Click="DeleteFontBtn_Click"/>
+                        </Grid>
+
+                        <!-- 等宽字体 -->
+                        <TextBlock Text="等宽字体（ID / 网址）" FontSize="12" Margin="2,14,0,6"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <ComboBox x:Name="MonoFontCombo" Height="34" DisplayMemberPath="Display"
+                                  DropDownOpened="MonoFontCombo_DropDownOpened"
+                                  SelectionChanged="MonoFontCombo_SelectionChanged"/>
+
+                        <!-- 字号影响提示（度量自检结果） -->
+                        <Border x:Name="FontWarnBox" Visibility="Collapsed" CornerRadius="12"
+                                Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,12,0,0">
+                            <TextBlock x:Name="FontWarnText" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                        </Border>
+
+                        <!-- 实时样例（走令牌 → 与真实界面同源，不是手画的假预览） -->
+                        <TextBlock Text="样例" FontSize="12" Margin="2,16,0,6"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <Border Background="{DynamicResource App.Surface.Base}" CornerRadius="16" Padding="16,14">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="主按钮" Style="{StaticResource PrimaryPillButton}"
+                                            Height="32" Padding="14,0" IsHitTestVisible="False"/>
+                                    <Button Content="次操作" Style="{StaticResource TonalButton}"
+                                            Height="32" Padding="14,0" Margin="8,0,0,0" IsHitTestVisible="False"/>
+                                    <m3:M3Icon Kind="folder" Width="18" Height="18" Margin="10,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource App.Type.Folder}"/>
+                                    <m3:M3Icon Kind="link-variant" Width="18" Height="18" Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource App.Type.Link}"/>
+                                </StackPanel>
+                                <TextBlock Text="正文示例 LinkPocket 书签管理" FontSize="13" Margin="0,12,0,0"
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                <TextBlock Text="次要说明文字 12px" FontSize="12" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                <TextBlock Text="弱化提示文字" FontSize="11.5" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                                <TextBlock Text="BOOKMARK-ID-0123456789ABCDEF" FontSize="12" Margin="0,8,0,0"
+                                           FontFamily="{DynamicResource App.Font.Mono}"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button x:Name="ApplyFontsBtn" Content="应用字体"
+                                Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                                Margin="0,14,0,0" HorizontalAlignment="Left" Cursor="Hand"
+                                Click="ApplyFontsBtn_Click"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 结果播报（状态栏口径） -->
+                <TextBlock x:Name="StatusText" FontSize="12" Margin="4,14,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 取色盘浮层（单击色槽打开；点遮罩或 Esc 取消。
+             Esc 走**键位总表**（settings.escape → 本面板 ClosePicker），面板不自持 KeyDown） -->
+        <Grid x:Name="PickerOverlay" Visibility="Collapsed"
+              Background="{DynamicResource App.Overlay.Scrim}" Panel.ZIndex="50">
+            <views:ColorPickerPopup x:Name="Picker" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -182,18 +182,34 @@ public static class ThemeService
     }
 
     /// <summary>偏好里的字体 → 族名（导入文件已不存在时如实报告，但**保留**偏好条目）。</summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ <b>这里绝对不能调 <see cref="Fonts.FontLoader.SystemFonts"/></b>：它会触发 WPF 的
+    /// <c>Fonts.SystemFontFamilies</c> **全量枚举**，而那条路径会启动字体缓存服务等进程级副作用，
+    /// 把宿主进程吊住不退出（实测：测试全部 3s 通过后，testhost 30s 不退出，看起来像"CI 卡死"）。
+    /// </para>
+    /// <para>
+    /// 正确口径：**启动期的可用性判定只查两个"廉价且确定"的来源** ——
+    /// ① 已导入字体（只读一个目录 + 命中缓存）；② 回退链里我们已知一定存在的系统字体
+    /// （雅黑 / Segoe UI / Consolas）。用户若在偏好里存了一个"已卸载的系统字体"，
+    /// 我们会照常回退默认并如实提示 —— 与"查不到就回退"的结果一致，只是判定依据更省。
+    /// 完整的系统字体候选列表只在用户**真的打开「外观」面板**时才枚举（那是他主动要选字体）。
+    /// </para>
+    /// </remarks>
     private static (string Ui, string Mono, string? Reason) ResolveFonts(Preferences.FontPreference pref)
     {
         var imported = Fonts.FontLoader.ImportedFonts().Select(f => f.Family).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var system = default(HashSet<string>?);
+        var knownSystem = Fonts.FontLoader.FallbackChain
+            .Append(Fonts.FontLoader.DefaultUiFamily)
+            .Append(Fonts.FontLoader.DefaultMonoFamily)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         string? reason = null;
 
         bool Available(string family)
         {
             if (string.IsNullOrWhiteSpace(family)) return false;
-            if (imported.Contains(family)) return true;
-            system ??= Fonts.FontLoader.SystemFonts().Select(f => f.Family).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return system.Contains(family);
+            return imported.Contains(family) || knownSystem.Contains(family);
         }
 
         var ui = pref.Ui;
@@ -227,14 +243,20 @@ public static class ThemeService
     }
 
     /// <summary>
-    /// 测试/宿主收尾复位（把当前主题、字体与缓存表还原为出厂默认，不发布）。
+    /// 测试/宿主收尾复位（主题、字体、缓存表、事件订阅全部回默认，**并清掉偏好文件**）。
     /// </summary>
+    /// <remarks>
+    /// ⚠️ 必须连偏好文件一起清：<see cref="ApplyFromPreferences"/> 会从文件恢复外观，
+    /// 若不清文件，上一个用例（或用例外的真实运行）落下的主题会漏进下一个用例 ——
+    /// 表现为"测试结果取决于执行顺序"的偶发红（同族教训见 WARNINGS 63 的时序敏感项）。
+    /// </remarks>
     public static void ResetForTests()
     {
         _current = ThemeCatalog.Default;
         _table = null;
         CurrentUiFont = Fonts.FontLoader.DefaultUiFamily;
         CurrentMonoFont = Fonts.FontLoader.DefaultMonoFamily;
+        Preferences.UiPreferenceStore.Clear();
         Changed = null;
     }
 
