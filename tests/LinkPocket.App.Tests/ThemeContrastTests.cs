@@ -232,44 +232,54 @@ public class ThemeContrastTests
     }
 
     [Fact]
-    public void 主题卡色点_每一个都能看见_轮廓对卡面与色点都可辨()
+    public void 主题卡色点_背景色成员与页面底融合_且色点数等于设计档色数()
     {
-        // 用户报障 2026-09-20："当我们选择其他主题时，那个作为背景色的颜色，圆形会与背景色融为一体，
-        // 但是默认紫罗兰的就不会" —— 实测根因：主题卡底色 = `App.Surface.Hover`，而配色的**最浅成员
-        // 天生就是"背景色"那一档**，与卡面对比度低到 **1.03–1.16**（出厂默认的 `#F2EEF5` 对卡面
-        // `#F5F1F8` 只有 1.03；赭石玫瑰补位的 `#FFDCC3` 对 `#F4D7C4` 只有 1.06）→
-        // 不描边就等于"少了一个色"，用户看到的是"5 色变 4 色"。
+        // 用户令 2026-09-20（两张截图 + 设计档「配色方案.txt」）：
+        //  ① "背景色那个圆与背景融合，这正是我们想要的效果……为什么默认紫罗兰根本就没有进行融合？"
+        //     —— 融合 = 配色里的**背景色成员**（明度最高者）与表面族是同一个颜色；
+        //        旧实现给每个预设钉了 `NeutralHueOverride`，把表面族带离了那个成员
+        //        （默认主题实测：最浅色点 `#F2EEF5` 对页面底 `#E8E4ED` = **1.09**，看得出两块）。
+        //  ② "我说的五色主题显示成四色，这是我们之前的方案" —— 设计档第 1–4 套是 **5 色**、
+        //     第 5–10 套是 **4 色**，而旧实现每套只收了 1–2 个身份色、再补位凑到 4（五色被压成四色）。
         //
-        // 判据按**实际渲染**建模（不能拿纯描边色去比）：1px 的 `Ellipse.Stroke` 画成 0.5px 内圈 + 0.5px 外圈，
-        // 外圈那半会与卡面抗锯齿混合 —— "看得见的轮廓" ≈ 描边色按 α≈0.7 叠在卡面底色上。要求这个轮廓色：
-        // ① 与**卡面**可辨（浅色色点糊在卡面上时全靠它勾出形状）；② 与**色点自身**可辨（深色色点上也要有轮廓）。
-        // 阈值 1.25：能抓住"完全没描边"（比值 1.00）与"描边取错色（浅勾浅）"，又给 1px 抗锯齿留了余量。
-        const double MinRingContrast = 1.25;
+        // 判据两条：
+        //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 结构与背景同色）；
+        //  ② 最浅身份色对**页面底**的对比度必须很小（实测 1.00–1.20：第 1–4 套 1.01/1.06/1.04/1.01，
+        //     第 5–10 套因设计档里是**高彩度浅色**（C16–19）略松，故阈值取 1.25）。
+        const double MaxFusionContrast = 1.25;
         var failures = new List<string>();
+        var counts = new List<string>();
         foreach (var theme in ThemeCatalog.All)
         {
             var table = PaletteSolver.Solve(theme);
-            var hover = table.Token(AppTokens.SurfaceHover);
-            var stroke = table.Token(AppTokens.LineOutline);
-            var ring = ColorMath.Overlay(hover, stroke, 0.7);
+            var pageBase = table.Token(AppTokens.SurfaceBase);
             var slots = PaletteSolver.EditableSlots(theme);
+            var lightest = slots.OrderByDescending(c => ColorMath.Measure(c).T).First();
+            var ratio = ColorMath.ContrastRatio(lightest, pageBase);
+            counts.Add($"{theme.Name}={slots.Count}");
 
-            foreach (var (color, i) in slots.Select((c, i) => (c, i)))
-            {
-                var vsCard = ColorMath.ContrastRatio(ring, hover);
-                var vsDot = ColorMath.ContrastRatio(ring, color);
-                if (Math.Max(vsCard, vsDot) < MinRingContrast)
-                    failures.Add($"{theme.Name} · 第 {i + 1} 个色点 #{color.ToInt() & 0x00FFFFFF:X6}"
-                                 + $" 轮廓对卡面 {vsCard:F2} / 对色点 {vsDot:F2}（都 < {MinRingContrast:F2}）");
-            }
+            // ① 结构：一个色相都不许钉
+            if (theme.NeutralHueOverride is not null)
+                failures.Add($"{theme.Name} 钉了中性色相 H{theme.NeutralHueOverride:F1} → 表面族会与背景色成员分开");
 
-            // 兜底：描边色必须**深于最浅的色点** —— 否则就是"用浅色勾浅色"，等于没勾
-            var strokeTone = ColorMath.Measure(stroke).T;
-            var lightestTone = slots.Max(c => ColorMath.Measure(c).T);
-            if (strokeTone >= lightestTone)
-                failures.Add($"{theme.Name} · 描边 T{strokeTone:F1} 不深于最浅色点 T{lightestTone:F1}");
+            // ② 渲染：背景色成员与页面底必须同色
+            if (ratio > MaxFusionContrast)
+                failures.Add($"{theme.Name} 背景色成员 {lightest.ToInt() & 0x00FFFFFF:X6} 对页面底"
+                             + $" {pageBase.ToInt() & 0x00FFFFFF:X6} = {ratio:F2} > {MaxFusionContrast:F2}（没融合）");
+
+            // ③ 色点数 = 设计档色数（1–4 套五色 / 5–10 套四色 / 出厂默认五色）
+            if (slots.Count != theme.Palette.Count)
+                failures.Add($"{theme.Name} 色点 {slots.Count} ≠ 设计档色数 {theme.Palette.Count}");
         }
-        Assert.True(failures.Count == 0, "主题卡色点不可辨（会看起来「少了一个色」）：\n" + string.Join("\n", failures));
+
+        // 先对账"设计档色数"（比 solve 结果更硬的判据：它是目录本身的形状）
+        var shape = string.Join(" ", ThemeCatalog.Presets.Select(p => $"{p.Name}={p.Palette.Count}"));
+        Assert.True(ThemeCatalog.Default.Palette.Count == 5, $"出厂默认必须是 5 色（当前 {ThemeCatalog.Default.Palette.Count}）");
+        Assert.True(ThemeCatalog.Presets.Count(p => p.Palette.Count == 5) == 4,
+            "设计档第 1–4 套（赭石玫瑰 / 暮色玫瑰 / 藕粉灰绿 / 焦糖玫瑰）必须是 5 色：" + shape);
+        Assert.True(ThemeCatalog.Presets.Count(p => p.Palette.Count == 4) == 6,
+            "设计档第 5–10 套必须是 4 色：" + shape);
+        Assert.True(failures.Count == 0, "背景色融合 / 色数对账未通过：\n" + string.Join("\n", failures));
     }
 
     [Fact]

@@ -125,16 +125,12 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <!-- ⚠️ **每个色点都必须带描边**（用户报障 2026-09-20："那个作为背景色的颜色，
-                                                             圆形会与背景色融为一体"）：主题卡底色是 `App.Surface.Hover`，而配色的
-                                                             最浅那个成员天生就是"背景色"一档 —— 实测对比度低到 **1.03–1.16**
-                                                             （默认紫罗兰的 `#F2EEF5` 对卡面 `#F5F1F8` 只有 **1.03**，
-                                                              实测像素：选中卡上第一枚 `#3F3448` 与底色 `#EEDDF7` 同为 1.01），
-                                                             不描边就等于"少了一个色"（用户看到的"5 色变 4 色"就是这个）。
-                                                             描边取 `App.Line.Outline`，对最深/最浅的色点都 ≥1.3，两端都看得见轮廓。 -->
+                                                        <!-- ⚠️ **色点不描边**（用户令 2026-09-20）：配色里的背景色成员与它所在的那块底色
+                                                             **本来就该是同一个颜色**（融合 = 设计效果，用户原话："背景色那个圆与背景融合，
+                                                             这正是我们想要的效果"）。曾加过 1px 描边把看不见的那枚勾出来 —— 那是**误诊**：
+                                                             真正的问题不是"看不见"，而是表面族被中性色相钉值带离了背景色成员
+                                                             （见 `ThemeCatalog.Presets` 的注释）—— 已从根上修掉，描边随之删除。 -->
                                                         <Ellipse Width="16" Height="16" Margin="0,0,5,0"
-                                                                 StrokeThickness="1"
-                                                                 Stroke="{DynamicResource App.Line.Outline}"
                                                                  Fill="{Binding Converter={StaticResource ColorToBrush}}"/>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>

@@ -38,36 +38,40 @@ public static class ThemeCatalog
         ChromaCap = ChromaCap.Standard,
     };
 
-    /// <summary>内置预设（10 套；顺序 = 方案附录 A 的顺序）。</summary>
+    /// <summary>内置预设（10 套；顺序 = 设计档「配色方案」的顺序）。</summary>
     /// <remarks>
     /// <para>
-    /// <b>每套的身份色是 2–3 个**（出厂默认为 5 个），这是标定收敛的**结果**：每套只放「强调族色 + 支撑族色」两个彩色成员，
-    /// 缺位的槽（强调容器 / 描边）走 <see cref="PaletteSolver.SolveFamilies"/> 的**回退**（= 强调色相）。
-    /// 表面族色相由 <see cref="ThemeDefinition.NeutralHueOverride"/> 钉住（= 各自标定过的表面底色相），
-    /// 于是每套的派生结果与附录 A **逐项对齐**（强调族 H ≤1.8°、支撑族 H ≤1.3°、表面底 RGB ≤2/255）。
+    /// <b>每套的身份色 = 设计档给的全部颜色</b>（用户设计档「配色方案.txt」：第 1–4 套 **5 色**、
+    /// 第 5–10 套 **4 色**），**逐色原样收录**、不做任何"取两个代表色"的压缩。
     /// </para>
     /// <para>
-    /// <b>为什么预设钉住中性色相</b>：预设只有 1–2 个颜色，若让"最浅成员"决定背景，背景就会跟着那个彩色漂走
-    /// （实测表面底偏 1–3/255 且层感跟着挪）。钉住它之后自由度从 3 降到 2，标定才收敛。
-    /// **出厂默认不钉**（它有 5 个颜色，最浅的一个本来就是"背景色"），两者是同一套规则的两种输入，不是特例分支。
+    /// <b>为什么不钉中性色相</b>（用户报障 2026-09-20："背景色那个圆与背景融合……为什么默认紫罗兰根本就没有进行融合"）：
+    /// 配色里的**最浅成员就是"背景色"**——让表面族跟着它走，背景与那枚色点才是同一个颜色（融合）；
+    /// 一旦用 <see cref="ThemeDefinition.NeutralHueOverride"/> 把表面色相钉到别处，背景就会和
+    /// "背景色成员"分开（实测默认主题最浅色点 `#F2EEF5` 对页面底 `#E8E4ED` 的对比度 **1.09**、看得出两块；
+    /// 而让表面族跟随最浅成员后，第 1–4 套实测 **1.01 / 1.06 / 1.04 / 1.01** —— 就是设计稿那种融合）。
+    /// 因此**预设与出厂默认走同一条规则**（明度最高者管表面），不存在"预设钉值"这条特例分支。
     /// </para>
     /// <para>
-    /// ⚠️ 因此预设**不满足** <see cref="ThemeValidator"/> 的"4 或 5 色"规则（那是给**用户自选配色**定的门槛，
-    /// 见 §7.3 的 4/5 色槽）。两者是两条路径，不要混用校验。
+    /// ⚠️ 第 5–10 套的配色里有**高彩度浅色**（如晴王青提饮 `#EDFFDB` C19、薄荷气泡水 `#EFFFE0` C16.8）：
+    /// 它们当"背景色"时，页面底会带一点该色的彩度（融合度 1.09–1.20，比第 1–4 套略松）。
+    /// 这是**设计档原色**的直接结果（不发明色相、不擅自降彩度），对比度矩阵实测仍全绿。
     /// </para>
     /// </remarks>
     public static IReadOnlyList<ThemeDefinition> Presets { get; } = new[]
     {
-        Preset("ochre-rose", "赭石玫瑰", 52.4, 0x4E321B, 0x787164),
-        Preset("dusk-rose", "暮色玫瑰", 27.8, 0x654C52, 0x6F727B),
-        Preset("lotus-sage", "藕粉灰绿", 21.6, 0x2D3C2E, 0x93666D),
-        Preset("caramel-rose", "焦糖玫瑰", 50.8, 0x4E3218),
-        Preset("uji-matcha", "宇治抹茶", 200.5, 0x405658, 0x537A68),
-        Preset("shine-muscat", "晴王青提饮", 131.0, 0x114123),
-        Preset("blueberry-yogurt", "蓝莓优格杯", 253.5, 0x335384, 0x7F6B83),
-        Preset("mint-soda", "薄荷气泡水", 190.2, 0x005D5A, 0x5E795E),
-        Preset("sakura-panna", "樱花奶冻卷", 0.6, 0x6F4755, 0x6C746E),
-        Preset("green-pear", "青梨冻冻", 133.9, 0x455833),
+        // 1–4：设计档「5 色配色」（暗 → 浅：暗调 / 主调 / 中间调 / 浅调 / 米白背景色）
+        Preset("ochre-rose", "赭石玫瑰", 0x4A3322, 0x7E5E40, 0xC09480, 0xDCBFA8, 0xF0E6D6),
+        Preset("dusk-rose", "暮色玫瑰", 0xC2A0A2, 0xB09295, 0x907884, 0xA3A6B0, 0xE6DEDC),
+        Preset("lotus-sage", "藕粉灰绿", 0x3E4A40, 0x7A8A78, 0xC896A0, 0xE0C4C4, 0xF2E8E4),
+        Preset("caramel-rose", "焦糖玫瑰", 0x4A3424, 0x7E5C40, 0xC09478, 0xDCBEA0, 0xF0E4D2),
+        // 5–10：设计档「4 色配色」（浅色底 / 浅彩 / 近白 / 深彩）
+        Preset("uji-matcha", "宇治抹茶", 0xE8F2EF, 0xBCE8D5, 0xD5EBD5, 0x60787A),
+        Preset("shine-muscat", "晴王青提饮", 0xDBF9F2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB),
+        Preset("blueberry-yogurt", "蓝莓优格杯", 0xF2F6FF, 0xB7CBF4, 0xE2ECFF, 0x88ABF2),
+        Preset("mint-soda", "薄荷气泡水", 0xBCF1E0, 0xEFFFE0, 0xD7FADF, 0x8ED6DE),
+        Preset("sakura-panna", "樱花奶冻卷", 0xFEDFE9, 0xEEF6EE, 0xFEE6EC, 0xFFC7D6),
+        Preset("green-pear", "青梨冻冻", 0xDEEBB5, 0xF5FAED, 0xF4FEF1, 0xBAC9A7),
     };
 
     /// <summary>全部可选主题（默认 + 预设）。</summary>
@@ -87,15 +91,18 @@ public static class ThemeCatalog
     public static ThemeDefinition FindOrDefault(string? id) =>
         id is null ? Default : Find(id) ?? Default;
 
-    /// <summary>内置预设：身份色（强调族色 + 可选的支撑族色）+ 钉住的中性色相。</summary>
-    private static ThemeDefinition Preset(string id, string name, double neutralHue, params int[] rgb) => new()
+    /// <summary>内置预设：身份色 = 设计档给的全部颜色（4 或 5 个），与出厂默认同一套派生规则。</summary>
+    /// <remarks>
+    /// 这里**没有**中性色相参数：表面族一律由"明度最高的成员"决定（即配色里的背景色本身），
+    /// 这样色点与背景才是同一个颜色。见 <see cref="Presets"/> 的注释。
+    /// </remarks>
+    private static ThemeDefinition Preset(string id, string name, params int[] rgb) => new()
     {
         Id = id,
         Name = name,
         Source = ThemeSource.BuiltInPreset,
         Palette = Palette(rgb),
         ChromaCap = ChromaCap.Standard,
-        NeutralHueOverride = neutralHue,
     };
 
     private static IReadOnlyList<Argb> Palette(params int[] rgb) =>
