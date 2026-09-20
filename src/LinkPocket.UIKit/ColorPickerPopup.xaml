@@ -105,16 +105,25 @@
             <TextBlock x:Name="HexErrorText" FontSize="11" Margin="2,4,0,0" Visibility="Collapsed"
                        Foreground="{DynamicResource App.Text.Primary}" TextWrapping="Wrap"/>
 
-            <!-- 取消 = 取消草稿 / 用这个颜色 = 主药丸 -->
+            <!-- 取消 = 取消草稿 / 清除 = 把该槽设回**空槽** / 用这个颜色 = 主药丸
+                 （用户令 2026-09-20："调色盘加一个清除按钮 —— 清除 = 把该槽设回空槽，不是设成黑色"）。
+                 ⚠️ 三枚按钮的几何沿用本仓药丸口径：显式 Height=32、Padding=14,0、同一行同一底边；
+                 清除是**次操作**（与"取消"同为 TonalButton），主操作仍是右侧那枚 PrimaryPillButton。 -->
             <Grid Margin="0,14,0,0">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" x:Name="CancelBtn" Content="取消"
                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                        HorizontalAlignment="Left" Cursor="Hand" Click="CancelBtn_Click"/>
-                <Button Grid.Column="1" x:Name="ConfirmBtn" Content="用这个颜色"
+                        Cursor="Hand" Click="CancelBtn_Click"
+                        ToolTip="放弃这次取色（不改动色槽）"/>
+                <Button Grid.Column="1" x:Name="ClearBtn" Content="清除"
+                        Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                        Margin="8,0,0,0" HorizontalAlignment="Left" Cursor="Hand" Click="ClearBtn_Click"
+                        ToolTip="把这个色槽清回空槽（不是设成黑色）"/>
+                <Button Grid.Column="2" x:Name="ConfirmBtn" Content="用这个颜色"
                         Style="{StaticResource PrimaryPillButton}" Height="32" Padding="14,0"
                         Cursor="Hand" Click="ConfirmBtn_Click"/>
             </Grid>

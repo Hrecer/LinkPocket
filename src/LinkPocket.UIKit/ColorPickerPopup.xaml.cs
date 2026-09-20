@@ -44,6 +44,17 @@ public partial class ColorPickerPopup : UserControl
     /// <summary>用户确认了一个颜色。</summary>
     public event EventHandler<Color>? ColorConfirmed;
 
+    /// <summary>
+    /// 用户要把**该槽清回空槽**（不是设成黑色）。
+    /// </summary>
+    /// <remarks>
+    /// 用户令 2026-09-20："调色盘加一个「清除」按钮 —— 清除 = 把该槽设回空槽"。
+    /// 空槽在本仓是一个**真实的语义**（虚线空心环 + 「+」+「未选」，见 <c>ColorSlotViewModel</c>），
+    /// 因此清除必须是"移除颜色"而不是"换一个颜色"；由宿主（外观面板）把它落到
+    /// <c>AppearanceViewModel.ClearSlot</c>——与改色走同一条草稿路径。
+    /// </remarks>
+    public event EventHandler? Cleared;
+
     /// <summary>用户取消了本次取色（不改调用方的值）。</summary>
     public event EventHandler? Cancelled;
 
@@ -302,6 +313,9 @@ public partial class ColorPickerPopup : UserControl
     // ── 按钮 ─────────────────────────────────────────────────────────
 
     private void CancelBtn_Click(object sender, RoutedEventArgs e) => Cancelled?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>清除 = 把该槽清回**空槽**（不校验 HEX：清除与"当前 HEX 是否合法"无关）。</summary>
+    private void ClearBtn_Click(object sender, RoutedEventArgs e) => Cleared?.Invoke(this, EventArgs.Empty);
 
     private void ConfirmBtn_Click(object sender, RoutedEventArgs e)
     {
