@@ -62,7 +62,7 @@ namespace LinkPocket.Views
             // 右栏详情栏不在此刷新：它绑定 VM 的 Details（选中集合的投影），选中一变即自动更新。
             IsVisibleChanged += (_, _) =>
             {
-                if (IsVisible) FocusPage();
+                if (IsVisible) PageFocus.Take(this);
             };
 
             TrashTable.RowClick += (_, item) =>
@@ -119,43 +119,19 @@ namespace LinkPocket.Views
             .Add(ShortcutAction.TrashTreeCollapse, vm.ToggleTreeExpandCommand)
             .Add(ShortcutAction.TrashTreeExpand, vm.ToggleTreeExpandCommand);
 
-        // ================= 焦点不变式（与浏览页同口径） =================
+        // 焦点不变式与行入场动画已收口到 UIKit（**唯一实现**）：
+        // · `PageFocus.Take/Restore(this)` = 焦点收进页内（栏激活 / 页变可见 / 刷新链结束）
+        // · `RowEntrance.Play(TrashTable.RowsList)` = 导航加载才播的行错峰入场
 
-        private void FocusPage()
-        {
-            if (IsLoaded && IsVisible) Keyboard.Focus(this);
-        }
-
-        /// <summary>页面可见且应用在前台时，键盘焦点必须在页内（刷新重建会把焦点交给窗口 → 快捷键静默失效）。</summary>
-        private void EnsurePageFocus()
-        {
-            if (!IsLoaded || !IsVisible) return;
-            if (Window.GetWindow(this)?.IsActive != true) return;
-            if (IsFocusWithinPage()) return;
-            if (ShortcutHost.IsTextInputFocused()) return;   // 地址栏编辑中绝不抢
-            Keyboard.Focus(this);
-        }
-
-        private bool IsFocusWithinPage()
-        {
-            var d = Keyboard.FocusedElement as DependencyObject;
-            while (d != null)
-            {
-                if (ReferenceEquals(d, this)) return true;
-                d = VisualTreeHelper.GetParent(d);
-            }
-            return false;
-        }
-
-        private void OnPaneActivated(object? sender, TrashPane pane) => FocusPage();
+        private void OnPaneActivated(object? sender, TrashPane pane) => PageFocus.Take(this);
 
         /// <summary>刷新链结束：导航加载才播行入场动画；并守住"焦点在页内"不变式。</summary>
         private void OnRefreshCompleted(object? sender, bool wasNavigation)
         {
-            if (wasNavigation) QueueRowEntrance();
+            if (wasNavigation) RowEntrance.Play(TrashTable.RowsList);
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
             {
-                EnsurePageFocus();
+                PageFocus.Restore(this);
                 // 覆盖层的自动关闭由 VM 刷新收尾负责（条目消失即关；状态在 VM，视图不持任何详情状态）
             }));
         }
@@ -222,48 +198,7 @@ namespace LinkPocket.Views
                 ? first.ActualHeight
                 : 36;
 
-        // ================= 行错峰入场（只在导航加载时；与浏览页同口径） =================
-
-        private void QueueRowEntrance()
-        {
-            if (!SystemParameters.ClientAreaAnimation) return;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-            {
-                var rows = TrashTable.RowsList;
-                var idx = 0;
-                for (var i = 0; i < rows.Items.Count && idx < 12; i++)
-                {
-                    if (rows.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
-                    {
-                        PlayRowEntrance(fe, idx);
-                        idx++;
-                    }
-                }
-            }));
-        }
-
-        private void PlayRowEntrance(FrameworkElement el, int index)
-        {
-            var tt = new TranslateTransform(0, 10);
-            el.RenderTransform = tt;
-            el.Opacity = 0;
-            var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 30);
-            var oy = new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260))
-            { EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut }, BeginTime = begin };
-            var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = begin };
-
-            EventHandler done = (_, _) =>
-            {
-                el.BeginAnimation(UIElement.OpacityProperty, null);
-                el.Opacity = 1;
-                tt.BeginAnimation(TranslateTransform.YProperty, null);
-                tt.Y = 0;
-            };
-            oo.Completed += done;
-            oy.Completed += done;
-            tt.BeginAnimation(TranslateTransform.YProperty, oy);
-            el.BeginAnimation(UIElement.OpacityProperty, oo);
-        }
+        // 行错峰入场已收口到 UIKit `Views.RowEntrance`（唯一实现，见 OnRefreshCompleted）。
 
         // ================= 行手势（与浏览页同一套归属校验） =================
 

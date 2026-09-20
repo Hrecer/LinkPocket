@@ -100,44 +100,12 @@ public partial class BrowserView : UserControl
         // 页面被切到前台（全局导航切页）→ 键盘焦点收进本页：
         // 快捷键（ShortcutHost 挂在页面根）只在"焦点在页面内"时才被路由到——主栏行是不可聚焦 Border，
         // 点行不会自己带走焦点；不主动收焦点就会出现"快捷键时灵时不灵"（曾实测：切页后 Ctrl+C 无效）。
-        IsVisibleChanged += (_, _) => { if (IsVisible) FocusPage(); };
+        IsVisibleChanged += (_, _) => { if (IsVisible) PageFocus.Take(this); };
     }
 
-    /// <summary>把键盘焦点收进页面根（Focusable=True；无焦点视觉框，见 XAML FocusVisualStyle=null）。</summary>
-    private void FocusPage()
-    {
-        if (IsLoaded && IsVisible) Keyboard.Focus(this);
-    }
-
-    /// <summary>
-    /// **焦点不变式**：页面可见且应用在前台时，键盘焦点必须在页内。
-    /// 快捷键（ShortcutHost）挂在页面根、按焦点路由——焦点一旦掉出页面，整页快捷键静默失效。
-    /// 而刷新会重建树 / 面包屑 / 列表：被聚焦的容器（树节点 TreeViewItem、面包屑按钮）随 `Clear()`
-    /// 被移出可视树，**WPF 此时把焦点交给窗口（页外）**——于是"进入文件夹后 Ctrl+V 没反应，
-    /// 必须点一下列表空白才恢复"（用户 2026-09-19 报障，探针 ③ 实测焦点从 TreeViewItem → MainWindow）。
-    /// 修复 = 页面自己守住这条不变式（重建后把焦点收回），不再依赖"焦点碰巧在页内"。
-    /// 三条不抢：页不可见（切到别的页）/ 应用不在前台（切走了或弹窗打开）/ 正在编辑文本。
-    /// </summary>
-    private void EnsurePageFocus()
-    {
-        if (!IsLoaded || !IsVisible) return;
-        if (Window.GetWindow(this)?.IsActive != true) return;
-        if (IsFocusWithinPage()) return;
-        if (ShortcutHost.IsTextInputFocused()) return;   // 编辑中（地址栏）绝不抢
-        Keyboard.Focus(this);
-    }
-
-    /// <summary>当前键盘焦点是否落在本页（含后代）。</summary>
-    private bool IsFocusWithinPage()
-    {
-        var d = Keyboard.FocusedElement as DependencyObject;
-        while (d != null)
-        {
-            if (ReferenceEquals(d, this)) return true;
-            d = VisualTreeHelper.GetParent(d);
-        }
-        return false;
-    }
+    // 焦点不变式已收口到 UIKit `Views.PageFocus`（**唯一实现**，浏览页/回收站/搜索页/智能列表/去重明细共用）：
+    // · `PageFocus.Take(this)`    = 主动把焦点收进页根（栏激活 / 页变可见）
+    // · `PageFocus.Restore(this)` = 刷新链结束 / 点空白后守住"焦点在页内"（三条不抢：页不可见 / 应用不在前台 / 正在编辑文本）
 
     /// <summary>
     /// 类级处理器：**任何**右键菜单打开 → 收掉就地改名的编辑态；菜单关闭 → 落地挂起的改名提交。
@@ -241,7 +209,7 @@ public partial class BrowserView : UserControl
     }
 
     /// <summary>某栏被激活（点击主栏/左栏）→ 焦点归位到本页，页面级快捷键随即可用。</summary>
-    private void OnPaneActivated(object? sender, BrowserPane pane) => FocusPage();
+    private void OnPaneActivated(object? sender, BrowserPane pane) => PageFocus.Take(this);
 
     /// <summary>共享表是否已装载列定义（仅在成功装载后置位，见构造函数中的注释）。</summary>
     private bool _mainTableWired;
@@ -324,61 +292,18 @@ public partial class BrowserView : UserControl
         return 36;
     }
 
-    // —— 行错峰入场（MD3E）：**只在打开文件夹（导航加载）时**淡入 + 轻微上移，弹簧曲线 ——
-    // 触发条件由 VM 的 RefreshCompleted 明确给出（该次刷新链是不是导航加载）：
-    // 后台刷新（写操作后的 300ms 防抖、排序、跳转定位到当前目录…）一律静默——
-    // 曾按"Rows 集合有无变更"触发，导致移动/粘贴后的那次刷新也重播入场动画（用户实测报障）。
+    // 行错峰入场已收口到 UIKit `Views.RowEntrance.Play(rows)`（**唯一实现**，与回收站/搜索页/智能列表/去重明细共用）：
+    // 只在**用户发起的刷新**（导航加载：打开文件夹 / 跳转 / 返回 / F5）后播放——触发条件由 VM 的
+    // RefreshCompleted 明确给出；后台刷新（300ms 防抖、排序、跳转定位到当前目录…）一律静默
+    //（曾按"Rows 集合有无变更"触发，用户报障"移动之后那次刷新还有动画"）。
 
-    /// <summary>刷新链结束：只有导航加载才播行入场动画；并守住"焦点在页内"不变式（见 EnsurePageFocus）。</summary>
+    /// <summary>刷新链结束：只有导航加载才播行入场动画；并守住"焦点在页内"不变式。</summary>
     private void OnRefreshCompleted(object? sender, bool wasNavigation)
     {
-        if (wasNavigation) QueueRowEntrance();
+        if (wasNavigation) RowEntrance.Play(MainTable.RowsList);
         // 本轮刷新重建过树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
         // 延到布局之后执行（容器重建完成再判焦点归属），保证"进入文件夹后 Ctrl+V 立即可用"。
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(EnsurePageFocus));
-    }
-
-    private void QueueRowEntrance()
-    {
-        if (!SystemParameters.ClientAreaAnimation) return; // 辅助功能：减少动态效果
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-        {
-            var rows = MainTable.RowsList;
-            var idx = 0;
-            for (var i = 0; i < rows.Items.Count && idx < 12; i++)
-            {
-                if (rows.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
-                {
-                    PlayRowEntrance(fe, idx);
-                    idx++;
-                }
-            }
-        }));
-    }
-
-    private void PlayRowEntrance(FrameworkElement el, int index)
-    {
-        var tt = new TranslateTransform(0, 10);
-        el.RenderTransform = tt;
-        el.Opacity = 0;
-        var begin = TimeSpan.FromMilliseconds(Math.Min(index, 12) * 30);
-        var oy = new DoubleAnimation(10, 0, TimeSpan.FromMilliseconds(260))
-        { EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut }, BeginTime = begin };
-        var oo = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)) { BeginTime = begin };
-
-        // 结束后清除动画层并落终值（FillBehavior.Stop 会回退到本地值 0，行会永远透明）
-        EventHandler done = (_, _) =>
-        {
-            el.BeginAnimation(UIElement.OpacityProperty, null);
-            el.Opacity = 1;
-            tt.BeginAnimation(TranslateTransform.YProperty, null);
-            tt.Y = 0;
-        };
-        oo.Completed += done;
-        oy.Completed += done;
-
-        tt.BeginAnimation(TranslateTransform.YProperty, oy);
-        el.BeginAnimation(UIElement.OpacityProperty, oo);
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => PageFocus.Restore(this)));
     }
 
     // （列头与列宽拖拽已由共享数据表控件 SortableDataTable 内部驱动：

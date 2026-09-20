@@ -37,16 +37,11 @@ namespace LinkPocket.Views
             DataContextChanged += (_, __) => WireOnce();
             Loaded += (_, __) => WireOnce();
             // 切到本页 → 焦点收进页内（快捷键按焦点路由；焦点掉出页面则 Esc 静默失效）
-            IsVisibleChanged += (_, _) => { if (IsVisible) FocusPage(); };
+            // 焦点不变式 = UIKit `Views.PageFocus`（**唯一实现**，与浏览页/回收站/搜索页/工具页共用）
+            IsVisibleChanged += (_, _) => { if (IsVisible) PageFocus.Take(this); };
         }
 
         private ShortcutHost? _shortcutHost;
-
-        /// <summary>把键盘焦点收进页面根（Focusable=True；与浏览页/回收站同一套焦点不变式）。</summary>
-        private void FocusPage()
-        {
-            if (IsLoaded && IsVisible) Keyboard.Focus(this);
-        }
 
         /// <summary>装配订阅（DataContext 就绪后执行一次；失败不置位，下个事件重试）。</summary>
         private void WireOnce()
@@ -71,7 +66,7 @@ namespace LinkPocket.Views
                     .Add(ShortcutAction.SmartListsBack, new RelayCommand(() =>
                     {
                         slVm.EscapeOrBack();
-                        if (!slVm.ShowResult) FocusPage();
+                        if (!slVm.ShowResult) PageFocus.Take(this);
                     }))
                     .Add(ShortcutAction.SmartListsMoveUp, new RelayCommand(() => ResultVm?.MoveSelectionCommand.Execute("up")))
                     .Add(ShortcutAction.SmartListsMoveDown, new RelayCommand(() => ResultVm?.MoveSelectionCommand.Execute("down")))
@@ -132,7 +127,7 @@ namespace LinkPocket.Views
             if (DataContext is SmartListViewModel slVm)
             {
                 slVm.GoBackCommand.Execute(null);
-                FocusPage();
+                PageFocus.Take(this);
             }
         }
 

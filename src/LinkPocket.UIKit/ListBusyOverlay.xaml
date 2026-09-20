@@ -1,0 +1,31 @@
+<UserControl x:Class="LinkPocket.Views.ListBusyOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+             mc:Ignorable="d"
+             Focusable="False"
+             d:DesignHeight="200" d:DesignWidth="400">
+
+    <!-- 列表区加载遮罩（半透明白蒙层 + 环形进度）：**只在"用户发起的刷新"时显示**
+         （导航加载口径：打开文件夹 / 跳转定位 / 返回 / F5）；事件驱动的后台刷新（300ms 防抖）一律静默
+         ——那些刷新没有可见的加载语义（见 BEHAVIOR-CONTRACT §1.5）。
+
+         **唯一实现**：原先浏览页与回收站各写一份同样的 Border(#80FFFFFF)+CircularProgress，
+         现收口到本控件；搜索页 / 智能列表 / 去重明细同样复用。
+
+         用法：放在与列表同格的位置（**必须在列表之后**，保证 z 序在上），
+         IsBusy 绑宿主 VM 的"导航加载"标志：<views:ListBusyOverlay IsBusy="{Binding IsNavigating}"/> -->
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Border Background="#80FFFFFF"
+            Visibility="{Binding IsBusy, RelativeSource={RelativeSource AncestorType=UserControl},
+                                 Converter={StaticResource BoolToVis}}">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+            <m3:CircularProgress IsIndeterminate="True"/>
+        </StackPanel>
+    </Border>
+</UserControl>

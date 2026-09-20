@@ -402,22 +402,9 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 加载遮罩：只在导航加载（切页进入 / F5）出现；事件驱动的后台刷新静默 -->
-                    <Border Grid.Row="0" Background="#80FFFFFF">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsNavigating}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <m3:CircularProgress IsIndeterminate="True"/>
-                        </StackPanel>
-                    </Border>
+                    <!-- 加载遮罩：只在导航加载（切页进入 / F5）出现；事件驱动的后台刷新静默。
+                         **唯一实现** = UIKit 控件 ListBusyOverlay（与浏览页/搜索页/智能列表/去重明细共用同一份）。 -->
+                    <views:ListBusyOverlay Grid.Row="0" IsBusy="{Binding IsNavigating}"/>
                 </Grid>
             </Border>
 

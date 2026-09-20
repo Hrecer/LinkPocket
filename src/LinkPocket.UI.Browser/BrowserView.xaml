@@ -498,22 +498,10 @@
             </Grid>
 
             <!-- 加载遮罩：只在**导航加载**（用户发起：打开文件夹/跳转/返回/F5）时显示；
-                     事件驱动的后台刷新（300ms 防抖）不闪动画——那些刷新没有可见的加载语义。 -->
-            <Border Grid.Row="0" Background="#80FFFFFF">
-                <Border.Style>
-                    <Style TargetType="Border">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsNavigating}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <m3:CircularProgress IsIndeterminate="True"/>
-                </StackPanel>
-            </Border>
+                     事件驱动的后台刷新（300ms 防抖）不闪动画——那些刷新没有可见的加载语义。
+                     **唯一实现** = UIKit 控件 ListBusyOverlay（与回收站/搜索页/智能列表/去重明细共用同一份，
+                     原先每页各写一份 Border+CircularProgress）。 -->
+            <views:ListBusyOverlay Grid.Row="0" IsBusy="{Binding IsNavigating}"/>
             </Grid>
             </Border>
 
