@@ -211,10 +211,13 @@ namespace LinkPocket.Views
 
         private async void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
         {
+            // 删除目标 = **界面字体**下拉里选中的那一项（它必须来自「自定义字体」来源才可删；
+            // 系统字体在界面上根本不再显示这两个按钮）。
             if (ViewModel.SelectedUiFont is not { } font) return;
             await ViewModel.DeleteFontAsync(font);
             SyncFontCombos();
             UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
+            MonoFontCombo.SelectedItem = ViewModel.SelectedMonoFont;
         }
 
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)

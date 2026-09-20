@@ -145,26 +145,58 @@ public class ThemeContrastTests
     [Fact]
     public void 出厂默认主题_令牌等于配色直配的实测值_且已发布到界面()
     {
-        // 定稿口径不变：发布值 = 最终语义值；本轮（方案 A）值随派生模型更新——
-        // 强调 / 支撑 / 强调容器 / 描边 / 表面**全部来自那 5 个身份色**，不再有 ±60° 发明出来的色相。
-        // ⚠️ 这里按**主题定义**求解，不读 `ThemeService.DerivedTable`：后者读的是"当前生效主题"，
-        // 而 ThemeService 是进程级共享状态、别的测试类会并行改它（WARNINGS 68 同源）。
-        // "发布值 = 求解值"是结构性保证（发布只此一处 `ThemePublisher`），另有探针在真实窗口里断言发布结果。
+        // 定稿口径（用户令 2026-09-20："我说过优先应用我们选中的这 5 个颜色的，而不是深一点浅一点"）：
+        // 界面色 = **用户给的颜色本身**优先 —— 表面族就是"背景色成员"原样（融合），
+        // 强调 / 支撑 / 描边直接取配色成员；只有"配色里确实没有这个角色可用的成员"时才按本色压/提明度。
+        // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
+        // 因此默认主题的页面底 = `#F2EEF5` **原色**（不再是旧模型按锚点旋出来的 `#E8E4ED`）。
         var t = PaletteSolver.Solve(ThemeCatalog.Default);
-        Assert.Equal(0x201F23u, Rgb(t.Token(AppTokens.TextPrimary)));
-        Assert.Equal(0x47464Au, Rgb(t.Token(AppTokens.TextSecondary)));
-        Assert.Equal(0x5F5E62u, Rgb(t.Token(AppTokens.TextMuted)));
-        Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高）
+        Assert.Equal(0x251C2Eu, Rgb(t.Token(AppTokens.TextPrimary)));      // ← 色1 #3F3448 本色（最深成员的"墨"）
+        Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        Assert.Equal(0xEEDDF7u, Rgb(t.Token(AppTokens.AccentContainer)));  // ← 色1 #3F3448（彩度第三）
+        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.AccentContainer)));  // ← 浅中性色 = 色5（选中底 / 徽标底）
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
-        Assert.Equal(0x2E203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
-        Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（彩度次高）
+        Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
+        Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
-        Assert.Equal(0xA39BA6u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 #D5C7DE（彩度第四）
-        Assert.Equal(0xE8E4EDu, Rgb(t.Token(AppTokens.SurfaceBase)));      // ← 色5 #F2EEF5（明度最高 → 表面族）
+        Assert.Equal(0xD5C7DEu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色（最接近描边档）
+        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.SurfaceBase)));      // ← 色5 **原样**：页面底 = 用户给的背景色（融合）
+    }
+
+    [Fact]
+    public void 界面用的颜色_必须能在用户给的调色板里找到()
+    {
+        // 用户令 2026-09-20（两轮报障的最终口径）："优先应用我们选中的这几个颜色，而不是深一点浅一点"。
+        // 旧模型只取 (H, C) 按档位表重建，于是宇治抹茶的 4 个青绿在界面上变成灰绿 + 粉紫
+        // （`#EEDDF7` 那种配色里根本不存在的颜色，用户读成"偏粉"）。
+        //
+        // 判据：**每个界面色都必须与某个配色成员同色相**（±8°，HCT↔sRGB 8 位往返 + 低彩度下色相反解的量化波动）。
+        // 允许压暗/提亮（保可读性的必要手段），但不许换成另一个颜色。
+        const double HueTolerance = 8.0;
+        var failures = new List<string>();
+        var appTokens = new[]
+        {
+            AppTokens.SurfaceBase, AppTokens.SurfaceCard, AppTokens.SurfaceHover,
+            AppTokens.SurfaceTintCard, AppTokens.AccentFill, AppTokens.AccentText,
+            AppTokens.AccentContainer, AppTokens.SupportContainer, AppTokens.SupportIcon,
+            AppTokens.TypeFolder, AppTokens.TypeLink, AppTokens.LineOutline, AppTokens.LineVariant,
+        };
+        foreach (var theme in ThemeCatalog.All)
+        {
+            var t = PaletteSolver.Solve(theme);
+            var palette = theme.Palette.Select(c => ColorMath.Measure(c)).ToList();
+            foreach (var token in appTokens)
+            {
+                var m = ColorMath.Measure(t.Token(token));
+                if (m.C < 3.0) continue;   // 近无彩色的色相不可观测（容器字这类深墨）
+                if (!palette.Any(p => ColorMath.HueDistance(p.H, m.H) <= HueTolerance))
+                    failures.Add($"{theme.Name} · {token} = #{t.Token(token).ToInt() & 0x00FFFFFF:X6}（H{m.H:F0}）"
+                                 + $" 在配色里找不到同色相成员（配色色相：{string.Join("/", palette.Select(p => p.H.ToString("F0")))}）");
+            }
+        }
+        Assert.True(failures.Count == 0, "界面色与用户配色不同源（= 又「发明」了颜色）：\n" + string.Join("\n", failures));
     }
 
     [Fact]

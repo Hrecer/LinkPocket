@@ -105,6 +105,46 @@ public static class ThemeService
     }
 
     /// <summary>
+    /// 已删除的字体若是**当前正在用的那一支**，把它退回默认字体（并落盘）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么必须有这一步</b>（用户令 2026-09-20："检查字体这方面，有没有潜在的 bug 修掉"）：
+    /// 删掉导入字体后，偏好里仍留着那个族名，而 <see cref="CurrentUiFont"/> 也还指着它 ——
+    /// 于是 ① 重启时会走 <see cref="ApplyFromPreferences"/> 的"已不可用"分支回退并弹提示（用户莫名其妙），
+    /// ② 用户在同一次运行里再点「应用字体」，会把一个**已经不存在的族名**重新落盘，
+    /// 渲染端静默走回退链、界面却写着"已应用字体「X」"（本仓明令禁止的静默失败）。
+    /// </para>
+    /// <para>
+    /// 判据 = 族名与实际生效值比较（大小写不敏感）；命中就当场退回默认并保存。
+    /// </para>
+    /// </remarks>
+    /// <returns>被退回默认的字体族名（没命中返回 <c>null</c>）。</returns>
+    public static string? ResetFontIfDeleted(string family)
+    {
+        if (string.IsNullOrWhiteSpace(family)) return null;
+
+        var hit = false;
+        if (string.Equals(CurrentUiFont, family, StringComparison.OrdinalIgnoreCase))
+        {
+            CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
+            hit = true;
+        }
+        if (string.Equals(CurrentMonoFont, family, StringComparison.OrdinalIgnoreCase))
+        {
+            CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
+            hit = true;
+        }
+        if (!hit) return null;
+
+        var target = Application.Current?.Resources;
+        if (target is not null) ThemePublisher.PublishFonts(target, CurrentUiFont, CurrentMonoFont);
+        SaveCurrentPreferences();
+        LpLog.Info($"已删除的字体「{family}」正是当前生效的字体 → 已回退默认并落盘", LogCategory);
+        return family;
+    }
+
+    /// <summary>
     /// 从偏好文件恢复外观（主题 + 字体）。启动路径用。
     /// </summary>
     /// <param name="resources">目标资源字典。</param>
@@ -202,20 +242,25 @@ public static class ThemeService
             .Select(f => f.Family)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        string? reason = null;
+        // 两条理由**都**要如实说（旧实现用 `reason ??=` 让等宽那条被静默吞掉：
+        // 用户只看到"界面字体已不可用"，等宽那份悄悄回退 = 观测面缺陷）。
+        var reasons = new List<string>();
 
         var ui = pref.Ui;
         var mono = pref.Mono;
         if (!string.IsNullOrWhiteSpace(ui) && !available.Contains(ui))
         {
-            reason = $"界面字体「{ui}」已不可用（文件缺失或未安装），已回退默认字体";
+            reasons.Add($"界面字体「{ui}」已不可用（文件缺失或未安装），已回退默认字体");
             ui = Fonts.FontCatalog.DefaultUiFamily;
         }
         if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
         {
-            reason ??= $"等宽字体「{mono}」已不可用，已回退默认字体";
+            reasons.Add($"等宽字体「{mono}」已不可用（文件缺失或未安装），已回退默认字体");
             mono = Fonts.FontCatalog.DefaultMonoFamily;
         }
+
+        var reason = reasons.Count == 0 ? null : string.Join("；", reasons);
+        if (reason is not null) LpLog.Warn(reason, category: LogCategory);
         return (ui, mono, reason);
     }
 

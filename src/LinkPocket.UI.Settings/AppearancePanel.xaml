@@ -49,14 +49,8 @@
                         <TextBlock Text="单击即应用，主题本身只读（预设不会被改掉）。最后一张「自选颜色」= 用下面调色台里的配色；想从某套现成主题改起，就用调色台里的「以…为起点」把它的颜色复制过去"
                                    FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
-                        <!-- 互斥投影：正在用自选配色时明说"预设都没选中"（用户报障"两块都亮着、分不清谁在生效"） -->
-                        <Border CornerRadius="8" Padding="8,4" Margin="0,0,0,12"
-                                Background="{DynamicResource App.Surface.Hover}"
-                                Visibility="{Binding IsCustomActive, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="当前使用：自选配色（高亮的是最后一张「自选颜色」卡）—— 预设主题均未选中"
-                                       FontSize="11.5" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </Border>
+                        <!-- 互斥投影的说明条**已删除**（用户令 2026-09-20："删除图中的提示"）：
+                             「当前使用」由第 12 张卡的高亮 + 面板里的徽标表达，不需要再占一行文字。 -->
 
                         <ItemsControl x:Name="ThemeCardList">
                             <ItemsControl.ItemsPanel>
@@ -335,6 +329,22 @@
                                    FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
 
+                        <!-- 字体来源：**先选来源，再在来源里选字体**（用户令 2026-09-20：
+                             "将系统本身的字体和我们导入的字体区分开来……只能二选一"）。
+                             与颜色那边的 4/5 色一样复用共享滑动分段组件，不手写第二套分段。 -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,8">
+                            <views:SlidingNavStrip x:Name="FontSourceStrip"
+                                                   Style="{StaticResource SlidingNavStripStyle}"
+                                                   ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
+                                                   SelectedIndex="{Binding FontSourceIndex, Mode=TwoWay}">
+                                <ListBoxItem Content="系统字体"/>
+                                <ListBoxItem Content="自定义字体"/>
+                            </views:SlidingNavStrip>
+                        </StackPanel>
+                        <TextBlock Text="{Binding FontSourceHint}" FontSize="11.5" Margin="2,0,0,10"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Muted}"/>
+
                         <!-- 界面字体 -->
                         <TextBlock Text="界面字体" FontSize="12" Margin="2,0,0,6"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
@@ -348,12 +358,18 @@
                                       DisplayMemberPath="Display"
                                       DropDownOpened="UiFontCombo_DropDownOpened"
                                       SelectionChanged="UiFontCombo_SelectionChanged"/>
+                            <!-- 导入 / 删除**只在「自定义字体」这一侧出现**：
+                                 系统字体是只读的（属于系统，本应用不修改、也删不掉），
+                                 摆在那里只会让用户点了才发现不给删。 -->
                             <Button Grid.Column="1" x:Name="ImportFontBtn" Content="导入字体…"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                    Margin="10,0,0,0" Cursor="Hand" Click="ImportFontBtn_Click"/>
-                            <Button Grid.Column="2" x:Name="DeleteFontBtn" Content="删除"
+                                    Margin="10,0,0,0" Cursor="Hand" Click="ImportFontBtn_Click"
+                                    Visibility="{Binding IsCustomFontSource, Converter={StaticResource BoolToVis}}"/>
+                            <Button Grid.Column="2" x:Name="DeleteFontBtn" Content="删除字体"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                    Margin="8,0,0,0" Cursor="Hand" Click="DeleteFontBtn_Click"/>
+                                    Margin="8,0,0,0" Cursor="Hand" Click="DeleteFontBtn_Click"
+                                    Visibility="{Binding IsCustomFontSource, Converter={StaticResource BoolToVis}}"
+                                    ToolTip="只删除导入到本应用目录的那份副本（不会动系统字体）"/>
                         </Grid>
 
                         <!-- 等宽字体 -->

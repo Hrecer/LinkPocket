@@ -25,6 +25,16 @@ public static class ToneScale
     /// <summary>文字：弱（提示、占位）——对卡面 ≈5.8、对悬停底 ≈4.7（今天 4.04/3.29 ✗ → 修到达标）。</summary>
     public const double TextMuted = 40.0;
 
+    /// <summary>
+    /// 「弱文字对悬停底」的对比度下限（WCAG AA 小字）：**悬停档位由它反推**，不写死。
+    /// </summary>
+    /// <remarks>
+    /// 悬停底是唯一一块"比页面底更深"的表面 —— 用户配色里浅色成员彩度高的主题（赭石/暮色/焦糖玫瑰实测
+    /// 4.28–4.44）用一个写死的档距就会跌破 4.5。所以 <c>PaletteSolver</c> 会从这个下限反推悬停档位：
+    /// 宁可把悬停做得更浅（弱化悬停反馈），也不牺牲可读性。
+    /// </remarks>
+    public const double MinMutedOnHover = 4.5;
+
     /// <summary>强调填充 / 强调图标：白字 ≈6.5、对卡面 ≈5.8。</summary>
     public const double AccentFill = 40.0;
 

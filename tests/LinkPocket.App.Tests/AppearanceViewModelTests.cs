@@ -57,7 +57,8 @@ public class AppearanceViewModelTests : IDisposable
     private static AppearanceViewModel NewVm() => new();
 
     /// <summary>测试用字体选项（**不枚举系统字体**，直接构造）。</summary>
-    private static FontOptionViewModel FontOption(string family) => new(new FontChoice(family, family));
+    private static FontOptionViewModel FontOption(string family, string? filePath = null)
+        => new(new FontChoice(family, family, filePath));
 
     // ── 主题卡 ───────────────────────────────────────────────────────
 
@@ -741,6 +742,55 @@ public class AppearanceViewModelTests : IDisposable
         var vm = NewVm();
         await vm.DeleteFontAsync(FontOption("Microsoft YaHei UI"));   // 无文件路径 = 系统字体
         Assert.Contains("系统字体不可删除", vm.Status, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void 字体来源_二选一且候选按来源分开()
+    {
+        // 用户令 2026-09-20："将系统本身的字体和我们导入的字体区分开来，我们先要选择系统本身的字体，
+        // 然后还是自定义字体，然后只能二选一，然后对于自定义的字体，我们可以进行导入和删除"。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            Assert.Equal(FontSourceKind.System, vm.FontSource);      // 默认在"系统字体"这一侧
+            Assert.False(vm.IsCustomFontSource);
+
+            vm.FontSource = FontSourceKind.Custom;
+            Assert.True(vm.IsCustomFontSource);
+            Assert.Equal(1, vm.FontSourceIndex);
+            Assert.Contains("自定义", vm.FontSourceHint, StringComparison.Ordinal);
+
+            vm.FontSource = FontSourceKind.System;
+            Assert.Equal(0, vm.FontSourceIndex);
+            Assert.Contains("只读", vm.FontSourceHint, StringComparison.Ordinal);
+
+            // 能力位：导入那份可删、系统那份不可删（界面据此只在一侧显示导入/删除按钮）
+            Assert.True(FontOption("X", "C:\\tmp\\x.ttf").CanDelete);
+            Assert.False(FontOption("Microsoft YaHei UI").CanDelete);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
+    public void 删除导入字体_文件已不在也照样作废缓存()
+    {
+        // 旧实现：文件不存在时 `Remove` 直接 no-op（连缓存都不失效）→ 界面照样说"已删除"、下次进面板它还在。
+        var tmp = System.IO.Path.Combine(LinkPocket.Engine.TempArea.Resolve(), "lp-font-del-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(tmp);
+        try
+        {
+            var choice = new FontChoice("Gone Font", "Gone Font", System.IO.Path.Combine(tmp, "gone.ttf"));
+            Assert.True(new FontOptionViewModel(choice).CanDelete);
+            Assert.False(FontCatalog.Remove(choice));   // 不抛、返回 false（缓存已作废 → 界面会刷新）
+        }
+        finally
+        {
+            try { System.IO.Directory.Delete(tmp, recursive: true); } catch { /* 用例自清尽力而为 */ }
+        }
     }
 
     [Fact]

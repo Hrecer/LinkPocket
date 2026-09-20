@@ -109,8 +109,23 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// 主题卡的身份色圆点：**唯一实现**在 Theming（`PaletteSolver.EditableSlots`）——
     /// 与外观面板的色槽共用同一套补位规则（预设身份色只有 1–3 个，直接展示会稀疏得像"缺了几个色"）。
     /// </summary>
-    private IEnumerable<Color> BuildSwatches(ThemeDefinition definition) =>
-        PaletteSolver.EditableSlots(definition).Select(ToMedia);
+    /// <remarks>
+    /// <b>最浅那一枚换成"该主题实际生效的页面底色"</b>（用户令 2026-09-20："背景色那个圆与背景融合，
+    /// 这正是我们想要的效果"）：卡面要显示"这套主题长什么样"—— 若某个主题的背景色成员比浅色底线还深
+    /// （会被提亮一档），圆点跟着显示实际底色才与页面底同色；其余成员原样显示。
+    /// </remarks>
+    private IEnumerable<Color> BuildSwatches(ThemeDefinition definition)
+    {
+        var slots = PaletteSolver.EditableSlots(definition).ToList();
+        if (slots.Count == 0) return slots.Select(ToMedia);
+
+        var lightestIndex = 0;
+        for (var i = 1; i < slots.Count; i++)
+            if (ColorMath.Measure(slots[i]).T > ColorMath.Measure(slots[lightestIndex]).T) lightestIndex = i;
+
+        slots[lightestIndex] = PaletteSolver.SurfaceBaseColor(definition);
+        return slots.Select(ToMedia);
+    }
 
     /// <summary>Argb → WPF Color（唯一转换点在 Theming；界面层零颜色字面量）。</summary>
     private static Color ToMedia(Argb c) => ColorMath.ToMedia(c);
@@ -208,6 +223,16 @@ public sealed class ColorSlotViewModel
 
     /// <summary>槽位数值文案（空槽 = 「未选」）。</summary>
     public string ValueText => IsEmpty ? "未选" : Hex;
+}
+
+/// <summary>字体来源（用户令 2026-09-20：**先选来源，再在来源里选字体**）。</summary>
+public enum FontSourceKind
+{
+    /// <summary>系统已装字体（只读：不可删，也不属于本应用）。</summary>
+    System = 0,
+
+    /// <summary>用户导入本应用的字体（可导入 / 可删除）。</summary>
+    Custom = 1,
 }
 
 /// <summary>一个字体选项（界面字体 / 等宽字体下拉项）。</summary>
@@ -469,11 +494,58 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>自选配色的色槽。</summary>
     public ObservableCollection<ColorSlotViewModel> Slots { get; } = new();
 
-    /// <summary>系统 + 已导入的界面字体候选。</summary>
+    /// <summary>系统 + 已导入的界面字体候选（**当前来源**那一份）。</summary>
     public ObservableCollection<FontOptionViewModel> UiFonts { get; } = new();
 
-    /// <summary>系统 + 已导入的等宽字体候选。</summary>
+    /// <summary>系统 + 已导入的等宽字体候选（**当前来源**那一份）。</summary>
     public ObservableCollection<FontOptionViewModel> MonoFonts { get; } = new();
+
+    // ── 字体来源二选一（用户令 2026-09-20）─────────────────────────────
+    // 四个池：{界面,等宽} × {系统,自定义}。下拉只显示当前来源那份；另两份保留"当前已选字体"的来源。
+
+    private ObservableCollection<FontOptionViewModel> SystemUiFonts { get; } = new();
+    private ObservableCollection<FontOptionViewModel> SystemMonoFonts { get; } = new();
+    private ObservableCollection<FontOptionViewModel> CustomUiFonts { get; } = new();
+    private ObservableCollection<FontOptionViewModel> CustomMonoFonts { get; } = new();
+
+    private FontSourceKind _fontSource = FontSourceKind.System;
+
+    /// <summary>
+    /// 当前在用的字体来源（系统已装 / 自定义导入）—— **先选来源，再在来源里选字体**（二选一）。
+    /// </summary>
+    /// <remarks>
+    /// 投影口径：已应用字体落在哪个池里，来源就是哪个（与颜色那边的"互斥归属"同一套做法：
+    /// 归属由**事实**推出来，不是让用户另存一个可能与事实矛盾的开关）。
+    /// </remarks>
+    public FontSourceKind FontSource
+    {
+        get => _fontSource;
+        set
+        {
+            if (_fontSource == value) return;
+            _fontSource = value;
+            Raise(nameof(FontSource));
+            Raise(nameof(FontSourceIndex));
+            Raise(nameof(IsCustomFontSource));
+            ProjectFontPools();
+            ProjectCurrentFonts(ThemeService.CurrentUiFont, ThemeService.CurrentMonoFont);
+        }
+    }
+
+    /// <summary>来源分段的选中索引（0 = 系统字体，1 = 自定义字体）——共享滑动分段组件的绑定入口。</summary>
+    public int FontSourceIndex
+    {
+        get => (int)_fontSource;
+        set => FontSource = value == 0 ? FontSourceKind.System : FontSourceKind.Custom;
+    }
+
+    /// <summary>当前来源是否是"自定义（导入）"（控制导入/删除按钮与说明文案的可见性）。</summary>
+    public bool IsCustomFontSource => _fontSource == FontSourceKind.Custom;
+
+    /// <summary>当前来源的说明文案（导入/删除按钮的可用性也据此）。</summary>
+    public string FontSourceHint => _fontSource == FontSourceKind.System
+        ? "系统已装字体：只读（属于系统，本应用不修改、也删不掉）"
+        : "自定义字体：导入的字体文件存在本应用目录里，可随时删除（不会动系统字体）";
 
     /// <summary>当前选中的主题 id。</summary>
     public string SelectedThemeId
@@ -884,12 +956,19 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     // ── 字体 ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 重新装载字体候选（导入 / 删除 / 恢复默认后调用）—— **后台枚举 + 投影**。
+    /// 重新装载字体候选（导入 / 删除 / 恢复默认 / 切来源后调用）—— **后台枚举 + 投影**。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>唯一装载路径</b>：候选集合只在 <see cref="ReloadFontsAsync"/> 里被重写，
-    /// 导入/删除/恢复默认都汇到它 —— 不给自己留"顺手再拼一次列表"的第二条路
-    /// （第二份实现必然与第一份漂移，这是本仓踩过的老坑）。
+    /// 导入/删除/恢复默认/切来源都汇到它 —— 不给自己留"顺手再拼一次列表"的第二条路。
+    /// </para>
+    /// <para>
+    /// <b>按来源分池</b>（用户令 2026-09-20："将系统本身的字体和我们导入的字体区分开来，
+    /// 我们先要选择系统本身的字体，然后还是自定义字体，然后只能二选一"）：
+    /// 两个来源各自建集合，下拉只显示**当前来源**那一份 —— 用户在"系统已装"里绝不会
+    /// 误删到应用自己的东西（系统字体根本删不掉），在"自定义"里能导入/删除。
+    /// </para>
     /// </remarks>
     public async Task ReloadFontsAsync()
     {
@@ -900,16 +979,47 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
         UiFonts.Clear();
         MonoFonts.Clear();
+        SystemUiFonts.Clear();
+        SystemMonoFonts.Clear();
+        CustomUiFonts.Clear();
+        CustomMonoFonts.Clear();
         foreach (var f in all)
         {
-            UiFonts.Add(new FontOptionViewModel(f));
-            MonoFonts.Add(new FontOptionViewModel(f));
+            var option = new FontOptionViewModel(f);
+            // 系统池 / 自定义池（两个"字体用途"各存一份 VM，避免同一实例被两个下拉共用）
+            var uiPool = option.IsImported ? CustomUiFonts : SystemUiFonts;
+            var monoPool = option.IsImported ? CustomMonoFonts : SystemMonoFonts;
+            uiPool.Add(new FontOptionViewModel(f));
+            monoPool.Add(new FontOptionViewModel(f));
         }
+        ProjectFontPools();
 
+        ProjectCurrentFonts(currentUi, currentMono);
+    }
+
+    /// <summary>把"当前来源"那一份灌进两个下拉（切换来源 / 装载完成后调用）。</summary>
+    private void ProjectFontPools()
+    {
+        ReplaceAll(UiFonts, FontSource == FontSourceKind.System ? SystemUiFonts : CustomUiFonts);
+        ReplaceAll(MonoFonts, FontSource == FontSourceKind.System ? SystemMonoFonts : CustomMonoFonts);
+
+        static void ReplaceAll(ObservableCollection<FontOptionViewModel> target,
+            ObservableCollection<FontOptionViewModel> source)
+        {
+            target.Clear();
+            foreach (var f in source) target.Add(f);
+        }
+    }
+
+    /// <summary>把"当前已应用字体"投影到选中项（找不到同名就落到默认字体）。</summary>
+    private void ProjectCurrentFonts(string currentUi, string currentMono)
+    {
         SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, currentUi, StringComparison.OrdinalIgnoreCase))
-                         ?? UiFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultUiFamily, StringComparison.OrdinalIgnoreCase));
+                         ?? UiFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultUiFamily, StringComparison.OrdinalIgnoreCase))
+                         ?? UiFonts.FirstOrDefault();
         SelectedMonoFont = MonoFonts.FirstOrDefault(f => string.Equals(f.Family, currentMono, StringComparison.OrdinalIgnoreCase))
-                           ?? MonoFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase));
+                           ?? MonoFonts.FirstOrDefault(f => string.Equals(f.Family, FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase))
+                           ?? MonoFonts.FirstOrDefault();
     }
 
     /// <summary>同步重载（仅测试与"已经不持有 UI 上下文"的收尾路径用；界面一律走异步版）。</summary>
@@ -932,10 +1042,17 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             var choice = FontCatalog.Import(path);
+            // 导入的字体属于"自定义"这一侧：**切过去再选中它**（否则用户还在"系统"列表里看不到刚导入的东西）
+            _fontSource = FontSourceKind.Custom;
+            Raise(nameof(FontSource));
+            Raise(nameof(FontSourceIndex));
+            Raise(nameof(IsCustomFontSource));
+            Raise(nameof(FontSourceHint));
+
             await ReloadFontsAsync().ConfigureAwait(true);
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))
                              ?? SelectedUiFont;
-            Status = $"已导入字体「{choice.Family}」（点「应用字体」生效）";
+            Status = $"已导入字体「{choice.Family}」（文件在本应用目录，点「应用字体」生效）";
             return true;
         }
         catch (Exception ex)
@@ -946,25 +1063,37 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
     }
 
-    /// <summary>删除一个已导入字体（系统字体不可删）。</summary>
+    /// <summary>删除一个已导入字体（**只删本应用目录里那份副本**，系统字体不可删也不该删）。</summary>
+    /// <remarks>
+    /// <b>删除后的三处收尾，一个都不能少</b>（用户令 2026-09-20："有没有潜在的 bug 修掉"）：
+    /// ① 删文件（<see cref="FontCatalog.Remove"/>）；② 若删的正是**当前生效**的字体 →
+    /// <see cref="ThemeService.ResetFontIfDeleted"/> 退回默认并落盘（否则偏好里留着一个不存在的族名，
+    /// 重启弹"已不可用"、再点应用还会把死族名写回去）；③ 重载候选并刷新按钮可用性。
+    /// </remarks>
     public async Task DeleteFontAsync(FontOptionViewModel option)
     {
         ArgumentNullException.ThrowIfNull(option);
         if (!option.CanDelete)
         {
-            Status = "系统字体不可删除";
+            Status = "系统字体不可删除（它属于系统；只有「自定义」里导入的字体才能删）";
             return;
         }
         try
         {
-            FontCatalog.Remove(option.Choice);
+            var deleted = FontCatalog.Remove(option.Choice);
+            var fellBack = ThemeService.ResetFontIfDeleted(option.Family);
             await ReloadFontsAsync().ConfigureAwait(true);
-            Status = $"已删除导入字体「{option.Family}」";
+            Status = (deleted ? $"已删除导入字体「{option.Family}」" : $"「{option.Family}」的文件已不存在（已刷新列表）")
+                     + (fellBack is null ? "" : "；它正是当前生效的字体，已回退默认字体");
         }
         catch (Exception ex)
         {
+            // WPF 会把解析过的字体文件**内存映射持有到进程退出**（WARNINGS 75）——这是平台事实，
+            // 不是"路径写错了"：必须把"下一步怎么办"告诉用户，而不是原样丢一个"访问被拒绝"。
             LpLog.Error($"删除导入字体失败：{option.Family}", ex, LogCategory);
-            Status = $"删除失败：{ex.Message}";
+            Status = ex is UnauthorizedAccessException
+                ? $"删除失败：「{option.Family}」正被本进程占用（已加载的字体在退出前无法删除），重启应用后再删"
+                : $"删除失败：{ex.Message}";
         }
     }
 

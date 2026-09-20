@@ -201,12 +201,17 @@ public static class FontCatalog
 
         Directory.CreateDirectory(FontDirectory);
         var target = Path.Combine(FontDirectory, Path.GetFileName(sourcePath));
+        // ⚠️ 先写临时文件再原子改名：直接 File.Copy 到最终路径时，磁盘满 / 中断会留下**半截字体文件**——
+        //    它既不在下拉里（枚举跳过坏文件）、也删不掉（用户看不到它），只能在字体目录里烂着。
+        var temp = target + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
         try
         {
-            File.Copy(sourcePath, target, overwrite: true);
+            File.Copy(sourcePath, temp, overwrite: true);
+            File.Move(temp, target, overwrite: true);
         }
         catch (Exception ex)
         {
+            TryDeleteTemp(temp);
             LpLog.Error($"导入字体失败：{sourcePath}", ex, LogCategory);
             throw new InvalidOperationException($"复制字体文件失败：{ex.Message}", ex);
         }
@@ -216,18 +221,48 @@ public static class FontCatalog
         return new FontChoice(family, $"{Path.GetFileNameWithoutExtension(target)} · {family}", target);
     }
 
-    /// <summary>删除一个已导入字体文件（系统字体不可删）。</summary>
-    public static void Remove(FontChoice choice)
+    private static void TryDeleteTemp(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            // 清临时文件尽力而为：删不掉也不能顶替"导入失败"这个原始异常（观测面红线）
+            LpLog.Warn($"清理导入临时文件失败：{path}", ex, LogCategory);
+        }
+    }
+
+    /// <summary>
+    /// 删除一个**用户导入**的字体文件（系统字体不可删——它不在本应用目录里，永远删不到）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>事实（回答"删除字体是删系统的吗"）</b>：只删 <see cref="FontDirectory"/> 里那份**副本**，
+    /// 全仓唯一 <c>File.Delete</c> 就在本方法；没有任何路径能删到 <c>C:\Windows\Fonts</c>。
+    /// </para>
+    /// <para>
+    /// <b>文件已不在时照常作废缓存并如实返回 false</b>：旧实现在文件不存在时直接 no-op，
+    /// 而调用方照样播报"已删除"—— 用户下次进面板它却还在（缓存没失效），自相矛盾。
+    /// </para>
+    /// </remarks>
+    /// <returns>true = 真的删掉了磁盘文件；false = 文件本来就不在（缓存已作废，界面会跟着变）。</returns>
+    public static bool Remove(FontChoice choice)
     {
         ArgumentNullException.ThrowIfNull(choice);
         if (choice.FilePath is null)
             throw new InvalidOperationException("系统字体不可删除");
+
+        var deleted = false;
         if (File.Exists(choice.FilePath))
         {
-            File.Delete(choice.FilePath);
-            InvalidateImportedCache();   // 删除后立即消失
-            LpLog.Info($"已删除导入字体：{choice.FilePath}", LogCategory);
+            File.Delete(choice.FilePath);   // 删不掉照抛（由 VM 播报原因，不静默）
+            deleted = true;
         }
+        InvalidateImportedCache();          // ⚠️ 放在 if 之外：文件不在也要让界面刷新
+        LpLog.Info($"已删除导入字体：{choice.FilePath}（文件{(deleted ? "已删除" : "本就不存在")}）", LogCategory);
+        return deleted;
     }
 
     /// <summary>
