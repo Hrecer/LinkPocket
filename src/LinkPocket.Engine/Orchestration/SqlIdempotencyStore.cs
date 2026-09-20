@@ -138,4 +138,16 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
     }
+
+    /// <summary>清空内存缓存 + 落表副本（整库重置后调用；理由见基类 <see cref="IdempotencyStore.Clear"/>）。</summary>
+    public override void Clear()
+    {
+        base.Clear();
+        using var db = _dbFactory();
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM idempotency";
+        command.ExecuteNonQuery();
+    }
 }

@@ -256,6 +256,45 @@ public class OrchestrationTests
         finally { Cleanup(path); }
     }
 
+    [Fact]
+    public async Task Macro_Save_And_Delete_DryRun_Write_Nothing()
+    {
+        // 不变量 3（干跑执行但不提交、零副作用）在宏上的护栏（用户令 2026-09-20："确保数据是安全的"）。
+        // 宏走的是 `IMacroStore` 自己的连接（不在引擎事务里），所以干跑时**必须由处理器自己拦住**：
+        // 真写下去就是"干跑改了库"，而且事务批/回滚也盖不住它。
+        var (engine, _, path) = CreateEngine(withOrchestration: true);
+        try
+        {
+            var script = JsonSerializer.SerializeToElement(new BatchScript("干跑脚本",
+            [
+                new BatchStep("mf", "test.add_folder", JsonSerializer.SerializeToElement(new { name = "不该建" })),
+            ]), EngineJson.ScriptOptions);
+
+            // ① 干跑保存：不落表
+            var drySave = await engine.ExecuteAsync<JsonElement>("macro.save",
+                new { name = "干跑宏", script }, new CallOptions(DryRun: true));
+            Assert.True(drySave.Ok);
+            var listAfterDrySave = await engine.QueryAsync<JsonElement>("macro.list");
+            Assert.DoesNotContain(listAfterDrySave.GetProperty("macros").EnumerateArray(),
+                m => m.GetProperty("name").GetString() == "干跑宏");
+
+            // ② 真保存 → 干跑删除：不删
+            await engine.ExecuteAsync<JsonElement>("macro.save", new { name = "干跑宏", script });
+            var dryDelete = await engine.ExecuteAsync<JsonElement>("macro.delete",
+                new { name = "干跑宏" }, new CallOptions(DryRun: true));
+            Assert.True(dryDelete.Ok);
+            var listAfterDryDelete = await engine.QueryAsync<JsonElement>("macro.list");
+            Assert.Contains(listAfterDryDelete.GetProperty("macros").EnumerateArray(),
+                m => m.GetProperty("name").GetString() == "干跑宏");
+
+            // ③ 干跑删除不存在的宏：错误语义与真跑一致（不是"干跑就一律成功"）
+            var missing = await Assert.ThrowsAsync<EngineException>(() =>
+                engine.ExecuteAsync<JsonElement>("macro.delete", new { name = "没有这个宏" }, new CallOptions(DryRun: true)));
+            Assert.Equal(EngineErrors.EntityNotFound, missing.Error.Code);
+        }
+        finally { Cleanup(path); }
+    }
+
     // ===== 撤销 / 重做（命令面）=====
 
     [Fact]

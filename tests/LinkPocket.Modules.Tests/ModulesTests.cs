@@ -1403,17 +1403,212 @@ public class BackupRobustnessTests
         Assert.Contains("重复的文件夹 key", ex.Error.Message);
     }
 
-    private static void BuildBackup(string path, byte[] dataBytes)
+    /// <summary>
+    /// 造一个包供导入路径做负面测试。
+    /// </summary>
+    /// <param name="version">manifest 的 <c>version</c> 字段；缺省 = **本格式定稿标识**
+    /// <c>lpbackup/2.0</c>（硬编码成 "2.0" 会让用例在版本收严之后测不到自己那条规则——本轮实测踩到）。</param>
+    private static void BuildBackup(string path, byte[] dataBytes, string version = "lpbackup/2.0")
     {
         using var archive = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
         var dataEntry = archive.CreateEntry("data.json");
         using (var s = dataEntry.Open()) s.Write(dataBytes, 0, dataBytes.Length);
 
         var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataBytes)).ToLowerInvariant();
-        var manifest = $"{{\"version\":\"2.0\",\"data_sha256\":\"{sha}\",\"statistics\":{{\"total_folders\":0,\"total_links\":0}}}}";
+        var manifest = $"{{\"version\":\"{version}\",\"data_sha256\":\"{sha}\",\"statistics\":{{\"total_folders\":0,\"total_links\":0}}}}";
         var manifestEntry = archive.CreateEntry("manifest.json");
         var manifestBytes = System.Text.Encoding.UTF8.GetBytes(manifest);
         using (var s = manifestEntry.Open()) s.Write(manifestBytes, 0, manifestBytes.Length);
+    }
+
+    /// <summary>导入前先过破坏性确认门（两阶段）拿到令牌，再执行并断言抛出的错误。</summary>
+    private static async Task<EngineException> ImportExpectingFailureAsync(
+        IEngine engine, string path, bool replace = false)
+    {
+        var gate = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = path, replace }));
+        Assert.Equal(EngineErrors.ConfirmRequired, gate.Error.Code);
+        var token = gate.Error.Details!.Value.GetProperty("confirm_token").GetString();
+        return await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = path, replace },
+                new CallOptions(ConfirmToken: token)));
+    }
+
+    [Theory]
+    [InlineData("2.0")]              // 历史标识：现在必须拒绝（前缀宽松匹配是缺陷）
+    [InlineData("2")]                // 缺家族名
+    [InlineData("lpbackup/3.0")]     // 更高主版本（结构可能已变）
+    [InlineData("lpbackup/2.1")]     // 更高次版本（本实现读不了更新的包）
+    [InlineData("lpbackup/2")]       // 缺次版本 → 视作 2.0，可读
+    [InlineData("lpbackup/2.0.1")]   // 三段式非法
+    [InlineData("")]
+    public async Task Backup_Format_Version_Gate(string version)
+    {
+        var (engine, _, _) = TestHost.Create();
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var data = """{"folders":[],"links":[]}""";
+        BuildBackup(path, System.Text.Encoding.UTF8.GetBytes(data), version);
+
+        var accepted = version is "lpbackup/2" or "lpbackup/2.0";
+        if (accepted)
+        {
+            var gate = await Assert.ThrowsAsync<EngineException>(() =>
+                engine.ExecuteAsync<object>("backup.import", new { file_path = path }));
+            var token = gate.Error.Details!.Value.GetProperty("confirm_token").GetString();
+            var ok = await engine.ExecuteAsync<object>("backup.import",
+                new { file_path = path }, new CallOptions(ConfirmToken: token));
+            Assert.True(ok.Ok, $"版本「{version}」应可读");
+        }
+        else
+        {
+            var ex = await ImportExpectingFailureAsync(engine, path);
+            Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
+            Assert.Contains("不支持的备份版本", ex.Error.Message);
+        }
+    }
+
+    [Fact]
+    public async Task Import_Unknown_Parent_Key_Rejected_And_Nothing_Written()
+    {
+        // 外部输入的引用不完整 = 层级会静默被拍平（旧实现回落根级）→ 现行整包拒绝，且**一个字节都不写库**。
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "既有" });
+
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var data = """
+        {"folders":[{"key":"f1","name":"孤儿","parent":"f404","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],
+         "links":[{"folder":"f404","url":"https://x.example","title":"X","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]}
+        """;
+        BuildBackup(path, System.Text.Encoding.UTF8.GetBytes(data));
+
+        var ex = await ImportExpectingFailureAsync(engine, path);
+        Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
+        Assert.Contains("引用不完整", ex.Error.Message);
+
+        var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
+        Assert.Single(tree);                       // 只有既有那个，孤儿没被拍平落根
+        Assert.Equal("既有", tree[0].Name);
+    }
+
+    [Fact]
+    public async Task Import_Malformed_Timestamp_Rejected()
+    {
+        // 旧实现解析失败静默回落 DateTime.UtcNow（把损坏数据伪装成"刚刚创建"）→ 现行明确拒绝。
+        var (engine, _, _) = TestHost.Create();
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var data = """
+        {"folders":[{"key":"f1","name":"甲","created_at":"昨天","updated_at":"2026-01-01T00:00:00Z"}],"links":[]}
+        """;
+        BuildBackup(path, System.Text.Encoding.UTF8.GetBytes(data));
+
+        var ex = await ImportExpectingFailureAsync(engine, path);
+        Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
+        Assert.Contains("无法解析的时间戳", ex.Error.Message);
+        Assert.Empty((await engine.QueryAsync<List<FolderDto>>("folders.tree", null)));
+    }
+
+    [Fact]
+    public async Task Export_Overwrites_Existing_Backup_Atomically()
+    {
+        // 导出必须能在**目标文件已存在**时原子覆盖，且不留临时文件
+        // （旧实现先 File.Delete 再打包：打包失败 = 旧备份与新备份同时丢失）。
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+
+        await engine.ExecuteAsync<object>("backup.export", new { output_path = path });
+        var first = new FileInfo(path).Length;
+        Assert.True(first > 0);
+
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B" });
+        var second = await engine.ExecuteAsync<object>("backup.export", new { output_path = path });
+        Assert.True(second.Ok);
+
+        using var archive = System.IO.Compression.ZipFile.OpenRead(path);
+        Assert.NotNull(archive.GetEntry("data.json"));
+        Assert.NotNull(archive.GetEntry("manifest.json"));
+
+        // 临时文件（`*.tmp-*`）不许留在目录里
+        var leftovers = Directory.GetFiles(Path.GetDirectoryName(path)!, "*.tmp-*");
+        Assert.Empty(leftovers);
+    }
+
+    [Fact]
+    public async Task Import_Replace_Failure_Keeps_Original_Data_Atomic()
+    {
+        // 用户令 2026-09-20（"确保数据是安全的"）：replace=true 的"清空 + 导入"必须是**同一个事务**。
+        //
+        // ⚠️ 这条用例抓的是一个**真的会丢数据**的缺陷：引擎的非干跑路径不开外层事务，而
+        // `ClearAllDataAsync` 在没有外层事务时会**自建事务并当场提交** —— 于是"清空"已永久落库，
+        // 之后导入任何一步失败（取消 / 约束冲突 / 磁盘满）都会留下**空库**且没有回滚。
+        // 失败点用**导入中途取消**（`ct` 在书签循环里逐条检查）：包里有 2 万条书签，导入必然跑过取消点。
+        var (engine, _, _) = TestHost.Create();
+        var keep = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "原有目录" });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://keep.example", title = "原有书签", list_id = keep.Data!.FolderId });
+        // 第二个根级文件夹：起跑前根级应有 2 个 —— 这样"被清空"与"被完整还原"在断言上可区分
+        // （只数一个容易把"只剩一个"读成"没被清"）
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "原有目录二" });
+
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var sb = new System.Text.StringBuilder();
+        sb.Append("""{"folders":[{"key":"f1","name":"导入的目录","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"links":[""");
+        for (var i = 0; i < 20000; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append($$"""{"folder":"f1","url":"https://new.example/{{i}}","title":"导入书签 {{i}}","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}""");
+        }
+        sb.Append("]}");
+        BuildBackup(path, System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+
+        var gate = await Assert.ThrowsAsync<EngineException>(() =>
+            engine.ExecuteAsync<object>("backup.import", new { file_path = path, replace = true }));
+        var token = gate.Error.Details!.Value.GetProperty("confirm_token").GetString();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(120));
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            engine.ExecuteAsync<object>("backup.import",
+                new { file_path = path, replace = true }, new CallOptions(ConfirmToken: token), cts.Token));
+
+        // 硬判据：失败之后**原有数据必须原样还在**（旧实现在这里会是空库）
+        // ⚠️ 只看根级 `folders.contents`：它列出的是**根级文件夹**，链接要看子目录内容
+        //    （`folders.contents` 的 Links = 根级直连书签 —— 第一版断言把"子目录里的书签"当根级查，必假红）。
+        var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
+        Assert.Equal(2, contents.SubFolders.Count);          // 清空 + 导入都回滚了（只剩 1 个就是被清过）
+        Assert.Contains(contents.SubFolders, f => f.Name == "原有目录");
+        Assert.Contains(contents.SubFolders, f => f.Name == "原有目录二");
+        Assert.DoesNotContain(contents.SubFolders, f => f.Name == "导入的目录");
+
+        var kept = await engine.QueryAsync<FolderContentsDto>("folders.contents",
+            new { folder_id = keep.Data!.FolderId });
+        Assert.Contains(kept.Links, l => l.Title == "原有书签");   // 子目录里的那条书签也在
+    }
+
+    [Fact]
+    public async Task Import_DryRun_Does_Not_Clear_And_Does_Not_Throw()
+    {
+        // 干跑语义（引擎能力红线）：执行但不提交、零副作用。
+        // ⚠️ 这条用例抓的是"处理器自己又开了一层事务"的回归：干跑时引擎**已经**开了显式事务，
+        //    处理器再开一层会被 EF/SQLite 拒绝（"does not support nested transactions"）→ 干跑变 LP.SYS.001。
+        //    破坏性命令的干跑会跳过确认门，是最容易被走到的入口，必须有覆盖。
+        var (engine, _, _) = TestHost.Create();
+        await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "原有目录" });
+
+        var path = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpbk_{Guid.NewGuid():N}.lpbackup");
+        var data = """
+        {"folders":[{"key":"f1","name":"导入的目录","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"links":[]}
+        """;
+        BuildBackup(path, System.Text.Encoding.UTF8.GetBytes(data));
+
+        var dry = await engine.ExecuteAsync<JsonElement>("backup.import",
+            new { file_path = path, replace = true }, new CallOptions(DryRun: true));
+        Assert.True(dry.Ok);
+        Assert.Equal(1, dry.Data.GetProperty("folders_created").GetInt32());
+
+        // 零副作用：原有目录还在、导入的目录没进来
+        var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
+        Assert.Single(contents.SubFolders);
+        Assert.Equal("原有目录", contents.SubFolders[0].Name);
     }
 }
 

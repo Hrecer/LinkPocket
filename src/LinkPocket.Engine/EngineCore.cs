@@ -189,6 +189,17 @@ public sealed class EngineCore : IEngine
                 {
                     _cache.Clear();
                     Undo?.ClearAsync(CancellationToken.None).GetAwaiter().GetResult();
+                    // 幂等记录一并失效：表已清空，"上次那条成功"不再成立 ——
+                    // 留着它会让同 key 的重放在 24h 内直接返回旧成功结果、**库里什么都没发生**却没提示。
+                    try
+                    {
+                        _idempotency.Clear();
+                    }
+                    catch (Exception idemEx)
+                    {
+                        // 清理失败只计数 + 记日志，绝不否定"表已清空"这个已提交事实
+                        RegisterObservationFailure("整库重置后清空幂等记录失败", idemEx);
+                    }
                 }
 
                 if (options?.IdempotencyKey is { } idemKey)

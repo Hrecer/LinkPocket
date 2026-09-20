@@ -86,14 +86,25 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 主题卡_每张都有身份色圆点与派生示意条()
     {
-        // 预设身份色只有 1–2 个，主题卡会用该主题自己的色调板补足到 4 个
-        // （"主题就是这些颜色"，不足 4 个时面板会显得像"缺了几个色"）
+        // 色点 = 该主题**设计档给的全部颜色**（用户设计档「配色方案.txt」：第 1–4 套 5 色、第 5–10 套 4 色、
+        // 出厂默认 5 色）——不是"补位凑到 4 个"。逐张对账，少一个都算红。
         var vm = NewVm();
         var presets = vm.ThemeCards.Where(c => !c.IsCustom).ToList();
         Assert.Equal(11, presets.Count);
-        Assert.All(presets, c => Assert.True(c.Swatches.Count >= 4, $"{c.Name} 身份色圆点不足：{c.Swatches.Count}"));
+        Assert.All(presets, c =>
+        {
+            Assert.Equal(c.Definition!.Palette.Count, c.Swatches.Count);
+            Assert.InRange(c.Swatches.Count, 4, 5);
+        });
         Assert.All(presets, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name} 缺派生摘要"));
         Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name} 不该是空态"));
+
+        // 设计档第 1–4 套 = 5 色、第 5–10 套 = 4 色；加上 5 色的出厂默认
+        // → 12 张卡里 5 色 5 张、4 色 6 张（"五色主题"就是这个，不能被压成四色）
+        Assert.Equal(5, presets.Count(c => c.Swatches.Count == 5));
+        Assert.Equal(6, presets.Count(c => c.Swatches.Count == 4));
+        Assert.Equal(5, vm.ThemeCards[0].Swatches.Count);
+        Assert.Equal(ThemeCatalog.Presets.Count(p => p.Palette.Count == 5), presets.Count(c => c.Swatches.Count == 5) - 1);
 
         // 自选颜色卡反过来：没有配色时**一个色点都不显示**（占位态），也没有派生示意条
         var custom = vm.ThemeCards[^1];
@@ -124,9 +135,10 @@ public class AppearanceViewModelTests : IDisposable
             var vm = NewVm();
 
             Assert.Equal("宇治抹茶", vm.AppliedThemeName);
-            // ⚠️ 槽数**跟着当前主题走**（预设的 EditableSlots = 4）：宇治抹茶只有 2 个身份色，
-            //    补位后是 4 格 —— "槽数"是投影，"颜色"才是用户的草稿，两者互不牵连。
+            // ⚠️ 槽数**跟着当前主题走**：宇治抹茶在设计档里是 4 色 → 4 格
+            //    （"槽数"是投影，"颜色"才是用户的草稿，两者互不牵连）。
             Assert.Equal(PaletteSolver.EditableSlots(ThemeCatalog.Find("uji-matcha")!).Count, vm.SlotCount);
+            Assert.Equal(4, vm.SlotCount);
             Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "预设生效时色槽不该被自动填色"));
             Assert.All(vm.Slots, s => Assert.Equal(string.Empty, s.Hex));
             Assert.False(vm.IsCustomActive, "没载入更没应用：当前生效的仍是那个预设");

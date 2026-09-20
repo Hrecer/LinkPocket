@@ -42,6 +42,13 @@ internal sealed class MacroSaveHandler(IMacroStore macros) : ICommandHandler
         var script = CommandArgs.Raw(args, "script")
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "缺少必填参数「script」", details: JsonSerializer.SerializeToElement(new { @param = "script" })));
+
+        // 干跑：**只校验、不落表**。宏走的是 IMacroStore 自己的连接（不在引擎事务内），
+        // 真写下去就等于"干跑改了库"——违反不变量 3（干跑执行但不提交、零副作用）。
+        if (ctx.DryRun)
+            return CommandResult.Ok(JsonSerializer.SerializeToElement(name),
+                ChangeSet.Of(new EntityRef("macro", name), DomainEventNames.MacroSaved, $"（干跑）将保存宏「{name}」"));
+
         await macros.SaveAsync(name, script.GetRawText(), ctx.Ct);
         return CommandResult.Ok(JsonSerializer.SerializeToElement(name),
             ChangeSet.Of(new EntityRef("macro", name), DomainEventNames.MacroSaved, $"已保存宏「{name}」"));
@@ -86,6 +93,17 @@ internal sealed class MacroDeleteHandler(IMacroStore macros) : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var name = CommandArgs.RequireString(args, "name");
+
+        // 干跑：**只校验存在性、不删**（宏走 IMacroStore 自己的连接，不在引擎事务里；
+        // 真删下去 = 干跑改了库，违反不变量 3）。存在性照常校验，保证干跑与真跑的错误语义一致。
+        if (ctx.DryRun)
+        {
+            if (await macros.GetAsync(name, ctx.Ct) is null)
+                throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"宏「{name}」不存在"));
+            return CommandResult.Ok(JsonSerializer.SerializeToElement(name),
+                ChangeSet.Of(new EntityRef("macro", name), DomainEventNames.MacroDeleted, $"（干跑）将删除宏「{name}」"));
+        }
+
         if (!await macros.DeleteAsync(name, ctx.Ct))
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"宏「{name}」不存在"));
         return CommandResult.Ok(JsonSerializer.SerializeToElement(name),

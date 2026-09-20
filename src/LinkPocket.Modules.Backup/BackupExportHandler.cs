@@ -6,12 +6,18 @@ using LinkPocket.Kernel.Commands;
 namespace LinkPocket.Modules.Backup;
 
 /// <summary>backup.export（Mutation · FileIo）：全库导出为 .lpbackup（回收站不进备份——行为等价项）。</summary>
+/// <remarks>
+/// <b>不预删目标文件</b>（用户令 2026-09-20："确保数据是安全的"）：整包由 <see cref="BackupIO.PackAsync"/>
+/// 写到**同目录临时文件**再原子替换目标——旧的"先 File.Delete 再打包"在打包失败/取消时会让用户
+/// **同时丢掉旧备份与新备份**，是真实的数据丢失路径，已删除。
+/// </remarks>
 internal sealed class BackupExportHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "backup.export",
         Category: "backup",
-        Description: "导出备份为 .lpbackup v2（SHA-256 manifest + 临时 key 身份模型；回收站内容不会被备份）",
+        Description: $"导出备份为 {BackupIO.FileExtension}（格式版本 {BackupIO.FormatVersion}；"
+                     + "SHA-256 manifest + 临时 key 身份模型；同目录临时文件 + 原子替换；回收站内容不会被备份）",
         Parameters: [ParamSpec.Req<string>("output_path", "备份文件完整路径")],
         Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
 
@@ -25,17 +31,6 @@ internal sealed class BackupExportHandler : ICommandHandler
         if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath, $"导出目录不存在：{directory}", correlationId: ctx.CorrelationId));
-
-        // 撞已存在文件会抛 → 与既有口径一致：先删旧文件（回收站不进备份同属该流程的既定语义）
-        try
-        {
-            if (File.Exists(fullPath)) File.Delete(fullPath);
-        }
-        catch (Exception ex)
-        {
-            throw new EngineException(EngineErrors.Of(
-                EngineErrors.FileIoError, $"无法覆盖已存在的备份文件：{ex.Message}", retryable: true));
-        }
 
         var folders = await ctx.Uow.Folders.ListAllAsync(ct);
         var links = await ctx.Uow.Links.ListAsync(new LinkQuerySpec(), ct);
@@ -58,6 +53,7 @@ internal sealed class BackupExportHandler : ICommandHandler
             JsonSerializer.SerializeToElement(new
             {
                 file_path = fullPath,
+                format_version = BackupIO.FormatVersion,
                 total_folders = folders.Count,
                 total_links = links.Count,
                 file_bytes = new FileInfo(fullPath).Length,
