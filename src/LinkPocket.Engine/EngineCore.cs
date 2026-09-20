@@ -444,13 +444,16 @@ public sealed class EngineCore : IEngine
         return new(true, data, result.Changes, result.AuditRef);   // 非泛型 CommandResult 只承载成功结果（失败走异常）
     }
 
-    /// <summary>入参快照（审计 ArgsJson 列）：空对象不记；超长截 4000 字符并**如实标记截断**（v6 args_truncated）。</summary>
+    /// <summary>入参快照（审计 ArgsJson 列）：空对象不记；**先脱敏**（敏感键的字符串值 + URL 查询串掩码，
+    /// 走契约 <see cref="LogRedactor.RedactJson"/>）**再截断** 4000 字符并如实标记截断（v6 args_truncated）。
+    /// 顺序不可颠倒：掩码只会让文本变短，先截后脱敏会白截一段、还会把半个敏感值留在末尾。
+    /// 审计 args 的脱敏**无开关**——它是持久化的对外读面（<c>audit.query</c>），不给"忘记开"留口子。</summary>
     private static (string? Json, bool Truncated) SnapshotArgs(JsonElement argsJson)
     {
         if (argsJson.ValueKind != JsonValueKind.Object || argsJson.EnumerateObject().MoveNext() == false)
             return (null, false);
         const int max = 4000;
-        var raw = argsJson.GetRawText();
+        var raw = LogRedactor.RedactJson(argsJson.GetRawText());
         return raw.Length <= max ? (raw, false) : (raw[..max], true);
     }
 

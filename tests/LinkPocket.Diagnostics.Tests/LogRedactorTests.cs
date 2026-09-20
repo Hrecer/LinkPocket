@@ -1,9 +1,11 @@
+using System.Text.Json;
 using LinkPocket.Contracts;
 using Xunit;
 
 namespace LinkPocket.Diagnostics.Tests;
 
-/// <summary>脱敏：文本里的敏感键值掩码 / 非敏感不动 / 字段键名敏感即整体掩码 / 超长截断。</summary>
+/// <summary>脱敏：文本里的敏感键值掩码 / 非敏感不动 / 字段键名敏感即整体掩码 / 超长截断 /
+/// **JSON 文本（审计 args 快照）掩码且结构完好**。</summary>
 public class LogRedactorTests
 {
     private static LogRecord Rec(string message, params (string Key, object? Value)[] props)
@@ -71,5 +73,47 @@ public class LogRedactorTests
         Assert.Contains("key=***", redacted.Error!.Message);
         Assert.DoesNotContain("abc123", redacted.Error!.Message);
         Assert.Equal("at X()", redacted.Error.StackTrace);
+    }
+
+    [Fact]
+    public void JSON_敏感键的标量值被掩码_结构与其余字段不动()
+    {
+        var json = "{\"url\":\"https://x.test/p?token=secret0123&q=1\",\"password\":\"p@ssw0rd\"," +
+                   "\"session_id\":8848,\"title\":\"标题\",\"page\":2,\"ok\":true}";
+        var redacted = LogRedactor.RedactJson(json);
+
+        Assert.DoesNotContain("secret0123", redacted);
+        Assert.DoesNotContain("p@ssw0rd", redacted);
+        Assert.DoesNotContain("8848", redacted);
+        Assert.Contains("token=***", redacted);
+
+        // 脱敏不得破坏结构：audit.query 取回的行要能被消费者反序列化
+        using var doc = JsonDocument.Parse(redacted);
+        var root = doc.RootElement;
+        Assert.Equal("***", root.GetProperty("password").GetString());
+        Assert.Equal("***", root.GetProperty("session_id").GetString());   // 非字符串标量同样掩码
+        Assert.Equal("标题", root.GetProperty("title").GetString());
+        Assert.Equal(2, root.GetProperty("page").GetInt32());
+        Assert.True(root.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
+    public void JSON_容器值不整块吞掉_内部敏感键各自掩码_残缺文本不抛()
+    {
+        var json = "{\"credentials\":{\"user\":\"甲\",\"password\":\"p@ss\"},\"tags\":[\"a=1\",\"b=2\"]," +
+                   "\"note\":\"token=abc123\"}";
+        var redacted = LogRedactor.RedactJson(json);
+
+        using var doc = JsonDocument.Parse(redacted);   // 容器若被整块替换会产出半截 JSON —— 这里必须仍可解析
+        var root = doc.RootElement;
+        Assert.Equal("甲", root.GetProperty("credentials").GetProperty("user").GetString());
+        Assert.Equal("***", root.GetProperty("credentials").GetProperty("password").GetString());
+        Assert.Equal("a=1", root.GetProperty("tags")[0].GetString());   // 非敏感键值对不动
+        Assert.Equal("b=2", root.GetProperty("tags")[1].GetString());
+        Assert.Equal("token=***", root.GetProperty("note").GetString());   // 值以敏感键开头也要掩码
+
+        Assert.Equal(string.Empty, LogRedactor.RedactJson(null));
+        Assert.Equal(string.Empty, LogRedactor.RedactJson(""));
+        Assert.DoesNotContain("abc123", LogRedactor.RedactJson("{\"token\":\"abc123\", \"note\": "));   // 半截也掩码
     }
 }

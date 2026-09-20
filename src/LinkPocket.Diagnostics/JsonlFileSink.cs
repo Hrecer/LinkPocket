@@ -5,10 +5,12 @@ using LinkPocket.Contracts;
 namespace LinkPocket.Diagnostics;
 
 /// <summary>
-/// JSONL 文件落点（**唯一实现**）：按日命名 + 按大小轮转 + 保留策略 + 长开写句柄。
+/// JSONL 文件落点（**唯一实现**）：按日命名 + 按大小轮转 + **跨日自动轮转** + 保留策略 + 长开写句柄。
 /// 命名：<c>linkpocket-yyyy-MM-dd.NNN.jsonl</c>（NNN 三位，同日递增；**名称升序 = 时间升序**）；
 /// 旧 <c>linkpocket-yyyy-MM-dd.log</c> 属历史格式——清空日志时一并清理，不再写入。
-/// 轮转与保留在"开新文件"时执行；error / fatal 立即 flush（崩溃现场取证）；UTF-8 无 BOM。
+/// 轮转触发 = 单文件超过 <see cref="LoggingOptions.MaxFileBytes"/>（写入后判）**或本地日期变化**（写入前判，
+/// 长开进程跨零点必须换文件，否则"按日命名"失真、按天保留永不触发）；保留策略在**每次开/换文件时重算**，
+/// 因此进程连续运行数月也不会漂移。error / fatal 立即 flush（崩溃现场取证）；UTF-8 无 BOM。
 /// 观测面铁律：删除失败 / 写入失败**计数暴露**（Failed + LastError），不静默吞。
 /// 另实现读侧能力位 <see cref="ILogFileReader"/>（管道据此服务 <c>logs.query source=file</c>）。
 /// </summary>
@@ -20,21 +22,25 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
 
     private readonly LoggingOptions _options;
     private readonly string _directory;
+    private readonly TimeProvider _clock;
     private readonly object _lock = new();
 
     private FileStream? _stream;
     private StreamWriter? _writer;
     private string? _currentPath;
+    private DateTime _currentDay;   // 当前打开文件所属的本地日期（跨日判据；无打开文件 = default）
     private long _currentBytes;   // 自行记账：StreamWriter 有缓冲，_stream.Length 在未 flush 时不反映刚写入的行
     private DateTime _nextRetryAt = DateTime.MinValue;
     private long _written;
     private long _failed;
     private string? _lastError;
 
-    public JsonlFileSink(LoggingOptions options)
+    /// <param name="clock">本地时间来源（跨日轮转与保留期判据）。缺省系统时钟；可注入以便测试跨零点。</param>
+    public JsonlFileSink(LoggingOptions options, TimeProvider? clock = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _directory = options.Directory ?? Path.Combine(AppContext.BaseDirectory, "logs");
+        _clock = clock ?? TimeProvider.System;
     }
 
     /// <summary>日志目录（绝对路径）。</summary>
@@ -49,14 +55,14 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
         {
             if (_writer is null)
             {
-                if (DateTime.UtcNow < _nextRetryAt) return;   // 目录持续不可用：退避，不逐条重试
+                if (_clock.GetUtcNow().UtcDateTime < _nextRetryAt) return;   // 目录持续不可用：退避，不逐条重试
                 try
                 {
                     EnsureOpen();
                 }
                 catch (Exception ex)
                 {
-                    _nextRetryAt = DateTime.UtcNow + RetryBackoff;
+                    _nextRetryAt = _clock.GetUtcNow().UtcDateTime + RetryBackoff;
                     RecordFailure(ex);
                     return;
                 }
@@ -64,6 +70,10 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
 
             try
             {
+                // 跨日轮转：日期变了就换新文件——否则长开进程会把今天的日志写进昨天的文件，"按日命名"失真，
+                // 且按天保留（只在开新文件时重算）永远不触发。Roll 里会顺带重跑保留策略。
+                if (_clock.GetLocalNow().Date != _currentDay) Roll();
+
                 var line = LogJsonl.ToLine(record);
                 _writer!.WriteLine(line);
                 _currentBytes += Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length;
@@ -206,7 +216,8 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
         if (_writer is not null) return;
         System.IO.Directory.CreateDirectory(_directory);
 
-        var today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var localNow = _clock.GetLocalNow();
+        var today = localNow.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var todays = ExistingFiles()
             .Where(f => f.Kind == FileKind.Jsonl && f.Date == today)
             .OrderBy(f => f.Sequence)
@@ -230,6 +241,7 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
         _stream = new FileStream(path, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
         _writer = new StreamWriter(_stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)) { AutoFlush = false };
         _currentPath = path;
+        _currentDay = localNow.Date;
         _currentBytes = append ? new FileInfo(path).Length : 0;
 
         ApplyRetention();
@@ -249,6 +261,7 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
         _writer = null;
         _stream = null;
         _currentPath = null;
+        _currentDay = default;
         _currentBytes = 0;
         _nextRetryAt = DateTime.MinValue;
     }
@@ -259,7 +272,7 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
         var files = ExistingFiles()
             .OrderBy(f => f.Name, StringComparer.Ordinal)
             .ToList();
-        var cutoff = DateTime.Now.Date
+        var cutoff = _clock.GetLocalNow().Date
             .AddDays(-_options.RetentionDays)
             .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 

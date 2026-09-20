@@ -145,6 +145,44 @@ public class JsonlFileSinkTests
     }
 
     [Fact]
+    public void 跨日自动轮转_跨零点换新文件且按新日期重算保留()
+    {
+        var dir = TempDir();
+        try
+        {
+            var clock = new FakeClock(new DateTimeOffset(2026, 8, 31, 23, 59, 0, TimeSpan.Zero));
+            var longExpired = Path.Combine(dir, "linkpocket-2026-08-29.000.jsonl");
+            var expired = Path.Combine(dir, "linkpocket-2026-08-30.000.jsonl");
+            File.WriteAllText(longExpired, "{\"seq\":1}\n");
+            File.WriteAllText(expired, "{\"seq\":2}\n");
+
+            using var sink = new JsonlFileSink(new LoggingOptions { Directory = dir, RetentionDays = 1 }, clock);
+            sink.Write(Rec(LogLevel.Info, "跨日前最后一条"));
+            sink.Flush(TimeSpan.FromSeconds(2));
+
+            // 开文件即重算保留（半开：只有严格早于 08-30 的被清）
+            Assert.False(File.Exists(longExpired), "开文件时应按当天重算保留");
+            Assert.True(File.Exists(expired), "当天边界内的文件不得误删");
+            Assert.EndsWith("linkpocket-2026-08-31.000.jsonl", sink.Files[^1], StringComparison.Ordinal);
+
+            // 跨零点：写入必须换到今天的文件（否则按日命名失真、按天保留永不触发）
+            clock.Advance(TimeSpan.FromMinutes(2));
+            sink.Write(Rec(LogLevel.Info, "跨日后第一条"));
+            sink.Flush(TimeSpan.FromSeconds(2));
+
+            var today = Path.Combine(dir, "linkpocket-2026-09-01.000.jsonl");
+            Assert.True(File.Exists(today), "跨日必须自动轮转到新日期的文件");
+            Assert.Single(ReadLinesShared(today));
+            Assert.Single(ReadLinesShared(Path.Combine(dir, "linkpocket-2026-08-31.000.jsonl")));   // 昨天的不再被追加
+            Assert.False(File.Exists(expired), "跨日轮转应重跑保留（08-30 此时已超期）");
+        }
+        finally
+        {
+            TryDeleteDir(dir);
+        }
+    }
+
+    [Fact]
     public void 目录不可用_失败计数暴露且调用方无异常()
     {
         var root = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), "diag-tests", Guid.NewGuid().ToString("N"));
@@ -194,5 +232,18 @@ public class JsonlFileSinkTests
     private static void TryDeleteDir(string dir)
     {
         try { Directory.Delete(dir, recursive: true); } catch { /* 测试清理尽力而为 */ }
+    }
+
+    /// <summary>可推进的假时钟（跨日轮转的可测性注入点；<see cref="TimeProvider"/> 是 .NET 8 BCL 类型，
+    /// 不引 FakeTimeProvider 包）。本地时区固定 UTC，于是"本地日期"== 注入时刻的日期。</summary>
+    private sealed class FakeClock(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+
+        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan delta) => _now += delta;
     }
 }

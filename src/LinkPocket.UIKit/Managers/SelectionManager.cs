@@ -6,8 +6,17 @@ using LinkPocket.Contracts;
 
 namespace LinkPocket.Managers
 {
+    /// <summary>
+    /// 选中状态（文件夹 / 书签 / 多选）。
+    /// <para><b>日志级别口径（S4 降噪）</b>：选中是**每次点击、每次方向键**都发生的高频动作，
+    /// 记录一律走 <see cref="LogLevel.Debug"/>（分类 <c>ui.selection</c>）——缺省 info 级下不刷屏，
+    /// 排障时把级别提到 debug 即可拿到完整选择轨迹。消息内容不因降级而删减（降级 ≠ 丢信息）。</para>
+    /// </summary>
     public class SelectionManager : INotifyPropertyChanged
     {
+        /// <summary>选择轨迹的来源分类（<c>logs.query { category: "ui.selection" }</c> 可按此过滤）。</summary>
+        private const string Category = "ui.selection";
+
         private string _selectedFolderId = string.Empty;
         private string? _selectedLinkId;
         private string? _multiSelectFolderId;
@@ -75,7 +84,7 @@ namespace LinkPocket.Managers
             OnPropertyChanged(nameof(HasSelectedLink));
             SelectedFolderChanged?.Invoke(this, EventArgs.Empty);
 
-            LpLog.Info($"[选择管理器] SelectFolder: {old} → {folderId}, 已清除书签选中和多选");
+            LpLog.Debug($"[选择管理器] SelectFolder: {old} → {folderId}, 已清除书签选中和多选", Category);
         }
 
         /// <summary>
@@ -85,7 +94,7 @@ namespace LinkPocket.Managers
         {
             _multiSelectFolderId = null;
             SelectedLinkId = linkId;
-            LpLog.Info($"[选择管理器] SelectLink: {linkId}, 保留文件夹={_selectedFolderId}");
+            LpLog.Debug($"[选择管理器] SelectLink: {linkId}, 保留文件夹={_selectedFolderId}", Category);
         }
 
         /// <summary>
@@ -94,7 +103,7 @@ namespace LinkPocket.Managers
         public void ClearLinkSelection()
         {
             SelectedLinkId = null;
-            LpLog.Info($"[选择管理器] ClearLinkSelection, 保留文件夹={_selectedFolderId}");
+            LpLog.Debug($"[选择管理器] ClearLinkSelection, 保留文件夹={_selectedFolderId}", Category);
         }
 
         /// <summary>
@@ -114,7 +123,7 @@ namespace LinkPocket.Managers
             SelectedLinkChanged?.Invoke(this, EventArgs.Empty);
             MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
 
-            LpLog.Info($"[选择管理器] ClearAll: 全部清除");
+            LpLog.Debug($"[选择管理器] ClearAll: 全部清除", Category);
         }
 
         /// <summary>
@@ -126,18 +135,18 @@ namespace LinkPocket.Managers
 
             var linkListId = targetLink.ListId ?? string.Empty;
 
-            LpLog.Info($"[选择管理器] HandleCtrlClick: target={targetLink.LinkId}, ListId={linkListId}, " +
+            LpLog.Debug($"[选择管理器] HandleCtrlClick: target={targetLink.LinkId}, ListId={linkListId}, " +
                 $"selectedLinkId={_selectedLinkId ?? "null"}, prevLinkListId={previousLinkListId ?? "null"}, " +
-                $"multiSelectFolderId={_multiSelectFolderId ?? "null"}");
+                $"multiSelectFolderId={_multiSelectFolderId ?? "null"}", Category);
 
             if (_multiSelectFolderId != null)
             {
                 if (linkListId != _multiSelectFolderId)
                 {
-                    LpLog.Info($"[选择管理器] → 阻止跨目录: link({linkListId}) ≠ multiSelect({_multiSelectFolderId})");
+                    LpLog.Debug($"[选择管理器] → 阻止跨目录: link({linkListId}) ≠ multiSelect({_multiSelectFolderId})", Category);
                     return CtrlClickResult.BlockedCrossDirectory;
                 }
-                LpLog.Info($"[选择管理器] → 允许(同文件夹多选)");
+                LpLog.Debug($"[选择管理器] → 允许(同文件夹多选)", Category);
                 return CtrlClickResult.Allowed;
             }
 
@@ -146,18 +155,18 @@ namespace LinkPocket.Managers
                 var prevListId = previousLinkListId ?? string.Empty;
                 if (prevListId != linkListId)
                 {
-                    LpLog.Info($"[选择管理器] → 阻止跨目录提升: prev({prevListId}) ≠ cur({linkListId})");
+                    LpLog.Debug($"[选择管理器] → 阻止跨目录提升: prev({prevListId}) ≠ cur({linkListId})", Category);
                     return CtrlClickResult.BlockedCrossDirectory;
                 }
                 _multiSelectFolderId = linkListId;
                 ClearFolderForMultiSelect();
-                LpLog.Info($"[选择管理器] → 提升: {_selectedLinkId} 加入多选, 作用域={linkListId}");
+                LpLog.Debug($"[选择管理器] → 提升: {_selectedLinkId} 加入多选, 作用域={linkListId}", Category);
                 return CtrlClickResult.Promoted;
             }
 
             _multiSelectFolderId = linkListId;
             ClearFolderForMultiSelect();
-            LpLog.Info($"[选择管理器] → 允许(新建多选), 作用域={linkListId}");
+            LpLog.Debug($"[选择管理器] → 允许(新建多选), 作用域={linkListId}", Category);
             return CtrlClickResult.Allowed;
         }
 
@@ -173,7 +182,7 @@ namespace LinkPocket.Managers
                 OnPropertyChanged(nameof(SelectedFolderId));
                 OnPropertyChanged(nameof(HasSelectedFolder));
                 SelectedFolderChanged?.Invoke(this, EventArgs.Empty);
-                LpLog.Info($"[选择管理器] ClearFolderForMultiSelect: {old} → null (进入多选模式)");
+                LpLog.Debug($"[选择管理器] ClearFolderForMultiSelect: {old} → null (进入多选模式)", Category);
             }
         }
 
@@ -184,7 +193,7 @@ namespace LinkPocket.Managers
         {
             if (!string.IsNullOrEmpty(_multiSelectFolderId))
             {
-                LpLog.Info($"[选择管理器] NotifyMultiSelectEnded: {_multiSelectFolderId} → null");
+                LpLog.Debug($"[选择管理器] NotifyMultiSelectEnded: {_multiSelectFolderId} → null", Category);
                 _multiSelectFolderId = null;
                 MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -197,7 +206,7 @@ namespace LinkPocket.Managers
         {
             _multiSelectFolderId = null;
             MultiSelectStateChanged?.Invoke(this, EventArgs.Empty);
-            LpLog.Info($"[选择管理器] ClearMultiSelectOnly → null");
+            LpLog.Debug($"[选择管理器] ClearMultiSelectOnly → null", Category);
         }
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

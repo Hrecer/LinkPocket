@@ -180,4 +180,30 @@ public class AuditCommandTests
         Assert.Equal(0, (await QueryAsync(engine, new { correlation_id = "old-corr" })).Total);
         Assert.Equal(1, (await QueryAsync(engine, new { command = "folders.create", success = true })).Total);
     }
+
+    [Fact]
+    public async Task 入参快照_落库前即脱敏且结构完好()
+    {
+        var (engine, _, _) = TestHost.CreateWithAudit();
+        // ① 现实泄漏面：链接地址带查询串凭证  ② 值里以敏感键开头（key=value 形态）
+        await Run(engine, "links.create", new { url = "https://x.test/page?a=1&token=secret013", title = "带凭证" });
+        await Run(engine, "links.create", new { url = "https://safe.test/a", description = "password=hunter2 备注" });
+
+        var rows = await QueryAsync(engine, new { command = "links.create", include_payloads = true });
+        Assert.Equal(2, rows.Total);
+
+        var urlRow = rows.Items.Single(r => r.ArgsJson!.Contains("x.test"));
+        Assert.DoesNotContain("secret013", urlRow.ArgsJson);
+        Assert.Contains("token=***", urlRow.ArgsJson);
+        Assert.False(urlRow.ArgsTruncated);
+
+        // 脱敏不得破坏结构：读侧（AI / 脚本）仍能反序列化，非敏感字段原样
+        using var doc = JsonDocument.Parse(urlRow.ArgsJson!);
+        Assert.Equal("https://x.test/page?a=1&token=***", doc.RootElement.GetProperty("url").GetString());
+        Assert.Equal("带凭证", doc.RootElement.GetProperty("title").GetString());
+
+        var noteRow = rows.Items.Single(r => r.ArgsJson!.Contains("safe.test"));
+        Assert.DoesNotContain("hunter2", noteRow.ArgsJson);
+        Assert.Contains("password=***", noteRow.ArgsJson);
+    }
 }
