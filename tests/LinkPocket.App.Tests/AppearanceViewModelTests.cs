@@ -360,27 +360,52 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
-    public void 清空颜色_草稿回空态_自选卡回空心占位_且诊断提示还差几个()
+    public void 清空颜色_草稿回空态_回到紫罗兰_自选卡回空心占位_且诊断提示还差几个()
     {
         // 用户令 2026-09-20 第三轮：调色台加「清空颜色」（清空全部只有这一条路径；单槽「清除」在取色盘里）。
         // 清完必须**重算诊断**——空槽态要显示"还差 N 个颜色"这条中性提示，
         // 否则面板上没有任何一处告诉用户"还差几个"（清诊断 = 静默）。
-        var vm = NewVm();
-        vm.SetSlotCount(4);
-        for (var i = 0; i < vm.SlotCount; i++)
-            vm.SetSlotColor(i, Color.FromRgb((byte)(0x40 + i), 0x50, 0x60));
-        Assert.All(vm.Slots, s => Assert.False(s.IsEmpty));
-        Assert.False(vm.ThemeCards[^1].IsEmpty);
+        // 用户令 2026-09-21："清空颜色的时候应该回到紫罗兰" —— 清空**一并回出厂默认主题**
+        // （只清草稿不动已应用外观 = 界面一点没变，"清空"名不副实），并落盘。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+            vm.SetSlotCount(4);
+            for (var i = 0; i < vm.SlotCount; i++)
+                vm.SetSlotColor(i, Color.FromRgb((byte)(0x40 + i), 0x50, 0x60));
+            vm.ApplyDraft();                                   // 先让它真的生效（自选配色）
+            Assert.True(vm.IsCustomActive, "前置：自选配色已生效");
+            Assert.False(vm.ThemeCards[^1].IsEmpty);
 
-        vm.ClearDraft();
+            vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Id == "uji-matcha"));   // 再切到一套预设
+            Assert.False(vm.IsCustomActive);
 
-        Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "清空后每一格都必须是空槽"));
-        Assert.Equal(4, vm.SlotCount);
-        Assert.Empty(vm.ThemeCards[^1].Swatches);
-        Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
-        Assert.True(vm.HasDiagnostics);
-        Assert.Contains("还差 4 个颜色", vm.Diagnostics, StringComparison.Ordinal);
-        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+            vm.ClearDraft();
+
+            Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "清空后每一格都必须是空槽"));
+            Assert.Equal(5, vm.SlotCount);                     // 出厂默认是 5 色主题 → 槽数跟着它
+            Assert.False(vm.IsCustomActive, "清空必须把归属切回预设");
+            Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
+            Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.Slots.Count);
+            Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到紫罗兰
+            Assert.Equal(0xE6E3FAu, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
+            Assert.True(vm.ThemeCards.First(c => c.Id == ThemeCatalog.DefaultId).IsSelected, "主题卡高亮回到出厂默认");
+            Assert.Empty(vm.ThemeCards[^1].Swatches);
+            Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
+            Assert.True(vm.HasDiagnostics);
+            Assert.Contains("还差 5 个颜色", vm.Diagnostics, StringComparison.Ordinal);
+            Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+
+            // 回默认这件事本身要落盘（与「恢复默认外观」的分工：那个连偏好文件一起清）
+            var prefs = UiPreferenceStore.Load(out _);
+            Assert.False(prefs.Theme.IsCustom);
+            Assert.Equal(ThemeCatalog.DefaultId, prefs.Theme.Id);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
     }
 
     [Fact]

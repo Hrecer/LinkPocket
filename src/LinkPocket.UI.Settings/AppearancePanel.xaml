@@ -269,7 +269,9 @@
                             <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（用户令 2026-09-20：
                                  "默认的颜色是绝对不能改的，但是我们可以把默认的某个主题作为我们自选色的方案"）。
                                  文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。
-                                 「清空颜色」= 把整个草稿清回空槽（用户令 2026-09-20 第三轮）——
+                                 「清空颜色」= 把整个草稿清回空槽 **并回到出厂默认（紫罗兰）主题**
+                                 （用户令 2026-09-21："清空颜色的时候应该回到紫罗兰"——只清草稿不动已应用外观
+                                 会让"清空"变成界面一点没变的半截动作）——
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <Button x:Name="StartFromThemeBtn"
@@ -280,7 +282,7 @@
                                 <Button x:Name="ClearDraftBtn" Content="清空颜色"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
-                                        ToolTip="清空色槽（回到空态）；只清你正在编辑的草稿，不改动当前主题"/>
+                                        ToolTip="清空色槽并回到出厂默认（紫罗兰）外观；不改动字体与偏好文件"/>
                             </StackPanel>
 
                             <!-- 色槽：**居中**排列（用户令 2026-09-20："自选配色这里根本没有居中"）。

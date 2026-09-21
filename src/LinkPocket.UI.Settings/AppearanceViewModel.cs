@@ -898,7 +898,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             Status = $"还有 {missing} 个颜色没选（点色槽用取色盘选）";
             // 与 RefreshDraftDiagnostics 同一口径：空槽是"还没选完"，**不是**"配色不合法"，
             // 所以这里不把 palette-size 那条红色错误摆出来。
-            Diagnostics = $"· 还差 {missing} 个颜色：点色槽用取色盘选色（选够 4 个就能点上面第 12 张「自选颜色」卡应用）";
+            Diagnostics = EmptySlotsHint(missing);
             HasDiagnostics = true;
             return;
         }
@@ -942,7 +942,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         var empty = _draft.Count(c => c is null);
         if (empty > 0)
         {
-            Diagnostics = $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 4 个就能点上面第 12 张「自选颜色」卡应用）";
+            Diagnostics = EmptySlotsHint(empty);
             HasDiagnostics = true;
             return;
         }
@@ -950,6 +950,14 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         var issues = ThemeValidator.Validate(BuildDraftDefinition());
         ShowDiagnostics(issues);
     }
+
+    /// <summary>
+    /// 空槽态的中性提示（唯一实现：<see cref="RefreshDraftDiagnostics"/> 与 <see cref="ApplyDraft"/>
+    /// 的拒绝路径共用）。"选够几个"必须跟着**当前槽数**走（4 色主题 4 个、5 色主题 5 个）——
+    /// 写死"选够 4 个"在 5 色草稿上是假话。
+    /// </summary>
+    private string EmptySlotsHint(int empty) =>
+        $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 {_draft.Count} 个就能点上面第 12 张「自选颜色」卡应用）";
 
     /// <summary>
     /// 草稿 → 主题定义（自选配色）。空槽**不冒充颜色**：直接不参与（于是"色数不是 4/5"会被校验抓出来）。
@@ -1008,21 +1016,59 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// 把草稿清成空（4 个空槽）——「清空颜色」按钮与「恢复默认外观」用。
+    /// 「清空颜色」：草稿清成空槽，并**回到出厂默认（紫罗兰）外观**。
     /// </summary>
     /// <remarks>
-    /// 既然回到空态，调色台里留着上一份配色就是"名不副实"：用户看到 4 个色点会以为
-    /// 自选配色还在生效（用户令：自选颜色默认是**全空**的）。
+    /// <para>
+    /// <b>清空 = 回到紫罗兰（用户令 2026-09-21："清空颜色的时候应该回到紫罗兰"）</b>：
+    /// 旧行为只清草稿、**不动已应用的外观** —— 用户按了"清空"，界面上还是上一套配色
+    /// （什么都没变，"清空"名不副实）。现行 = 一并回出厂默认主题：
+    /// <see cref="ThemeService.ApplyDefault"/> + 落盘 + "当前外观"那一族投影（名字 / 起点按钮 /
+    /// 说明句 / 槽数 / 主题卡高亮）。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="ResetToDefaultAsync"/> 的分工：那个是**整套外观恢复出厂**（主题 + 字体 +
+    /// 清掉偏好文件）；这里只回主题、不碰字体、也不删偏好文件（回默认这件事本身要写进偏好）。
+    /// </para>
+    /// <para>
     /// 清完必须走 <see cref="RefreshDraftDiagnostics"/>（而不是把诊断一清了之）：
     /// 空槽态要如实显示"还差 N 个颜色"这条中性提示，否则面板上没有任何一处告诉用户还差几个。
+    /// </para>
     /// </remarks>
     public void ClearDraft()
+    {
+        ClearDraftCore();
+
+        try
+        {
+            ThemeService.ApplyDefault();
+            SetCustomActive(false);          // 互斥：回预设 = 自选区让出"当前使用"
+            SelectedThemeId = ThemeCatalog.DefaultId;
+            ProjectAppliedTheme();           // 名字 / 起点按钮文案 / 说明句 / 槽数一起跟上（换外观的公共出口）
+            RepojectAllThemeCards();         // 色点按当前模式重投影（与点主题卡同一口径）
+            ThemeService.SaveCurrentPreferences();
+            // 成功不播报（用户令：状态行只留失败）——主题卡高亮 + 「当前使用」徽标就是结果
+            Status = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("清空颜色后回默认主题失败", ex, LogCategory);
+            Status = $"已清空颜色，但回默认主题失败：{ex.Message}";
+        }
+
+        RefreshDraftDiagnostics();
+    }
+
+    /// <summary>
+    /// 只把草稿清成空槽（<see cref="MinSlots"/> 个空槽），**不碰已应用外观**——
+    /// 「恢复默认外观」自己会清主题/字体/偏好文件，故它用这条纯草稿路径。
+    /// </summary>
+    private void ClearDraftCore()
     {
         _draft.Clear();
         _draft.AddRange(Enumerable.Repeat<Color?>(null, MinSlots));
         ClearDraftDirty();
         RebuildSlots();
-        RefreshDraftDiagnostics();
     }
 
     /// <summary>空槽打开取色盘时的初始颜色 = 当前主题的强调填充（令牌派生，不发明色值）。</summary>
@@ -1337,8 +1383,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             LinkPocket.Theming.Preferences.UiPreferenceStore.Clear();
             ThemeService.ApplyDefault();
             ThemeService.ApplyFonts();
-            ClearDraft();                     // 调色台回**空态** + 清"未应用改动"（自选配色已随偏好一起清掉，
-                                              // 留着色点会名不副实；默认外观 = 全新起点）
+            ClearDraftCore();                 // 调色台回**空态** + 清"未应用改动"（自选配色已随偏好一起清掉，
+                                              // 留着色点会名不副实；默认外观 = 全新起点）。
+                                              // ⚠️ 走**纯草稿**路径：公有的 ClearDraft 会回默认主题并落盘，
+                                              //    在这里会把刚清掉的偏好文件又写回来（本方法的口径 = 偏好文件也要清）
             SyncFromAppliedTheme();           // 互斥归属 + 主题卡 + 草稿一起回默认（唯一投影点）
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
