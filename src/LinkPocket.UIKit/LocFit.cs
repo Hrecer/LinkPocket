@@ -308,18 +308,18 @@ public static class LocFit
         // （实测 `2026-09-20 10:50` → `09/20 10:50 AM`）。
         // 这条与"模型成员是普通属性、不发通知"是同一族问题：**失效信号不会自己传到底**，
         // 必须由拥有这条通道的那一层显式驱动一次。
-        Loc.Table.PropertyChanged += (_, e) =>
+        // 语言一变：**强制重取**所有已接入通道的元素的文案，并重算形态。
+        //
+        // 注册到 `LocaleService.AfterApply`：那一刻 Reload 已返回、LanguageChanged 已发完，
+        // 读到的必然是新语言（订阅 `LocTable.PropertyChanged` 会早一步，读到半成品状态）。
+        LocaleService.AfterApply = () =>
         {
-            if (e.PropertyName != nameof(LocTable.Version)) return;
-
-            // ⚠️ 延迟到**本次派发之后**再驱动，不要在通知里同步做：
-            // 通知是在"语言状态刚写入"的那一瞬发出的，此刻整棵可视树与绑定链还在用旧语言的值，
-            // 同步驱动会当场读到旧文本、把陈旧形态又写回去（实测：同步重取后屏幕上仍是旧语言，
-            // 而同一格随后手动再驱动一次就正常了——这正是"时机"而不是"通道"的问题）。
-            // 排到 Background 优先级：等当前这一批输入/绑定/布局消息都跑完，语言切换真正落地。
+            // 但**还要再排一次**：`AfterApply` 是在 `LocaleService.Apply` 里同步调的，
+            // 而此刻可视树/绑定链正在同一条调用栈上更新；等这一批消息跑完再驱动，
+            // 才是"语言切换真正落地"的时刻（实测同步驱动读到旧文本）。
             var dispatcher = Application.Current?.Dispatcher;
             if (dispatcher is null) { RefreshAll(); return; }
-            dispatcher.BeginInvoke(new Action(RefreshAll), DispatcherPriority.Background);
+            dispatcher.BeginInvoke(new Action(RefreshAll), DispatcherPriority.Loaded);
         };
     }
 
@@ -340,6 +340,7 @@ public static class LocFit
 
         RefreshRuns++;
         RefreshElements += elements.Count;
+        BeforeRefreshProbe?.Invoke(elements);
 
         foreach (var fe in elements)
         {
@@ -370,6 +371,12 @@ public static class LocFit
 
     /// <summary>诊断钩子：每次重取后对每个元素调用一次（探针用它看"重取当场读回了什么"）。</summary>
     public static Action<FrameworkElement>? AfterRefreshProbe { get; set; }
+
+    /// <summary>
+    /// 诊断钩子：重取**开始前**调一次，给出本次要处理的元素快照。
+    /// 用来判定"屏幕上的那个元素到底在不在本次集合里"——这是"重取跑了却没生效"的分水岭。
+    /// </summary>
+    public static Action<IReadOnlyList<FrameworkElement>>? BeforeRefreshProbe { get; set; }
 
     /// <summary>语言版本驱动重取的次数（诊断读数：它必须随切语言增长，否则钩子没接上）。</summary>
     public static int RefreshRuns { get; private set; }
