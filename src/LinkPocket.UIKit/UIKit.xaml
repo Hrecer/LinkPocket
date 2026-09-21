@@ -111,8 +111,15 @@
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
                             </Grid>
                         </Border>
-                        <!-- 打开下拉的点击面：覆盖整块（ToggleButton 是官方模板约定的交互件；本身不可聚焦） -->
+                        <!-- 打开下拉的点击面：覆盖整块（ToggleButton 是官方模板约定的交互件；本身不可聚焦）。
+                             ⚠️ 必须**显式量到整个字段**（用户报障 2026-09-21："字体下拉……点击无反应"）：
+                             隐式 `ToggleButton` 样式（本文件下方「滑动开关」那份）带 Width=52/Height=32 ——
+                             模板里生成的元素同样吃它，于是点击面只剩字段**中央 52×32**，点左侧文字/右侧
+                             chevron 都没反应（静态可验证：命中区被隐式样式的尺寸钉死）。 -->
                         <ToggleButton x:Name="ToggleButton" Focusable="False" ClickMode="Press"
+                                      Width="{TemplateBinding ActualWidth}"
+                                      Height="{TemplateBinding ActualHeight}"
+                                      HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
                             <ToggleButton.Template>
                                 <ControlTemplate TargetType="ToggleButton">
