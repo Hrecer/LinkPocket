@@ -33,16 +33,25 @@ public sealed class LocTable : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>整表一次换入（只允许 <see cref="LocaleService"/> 调，避免出现第二个生效入口）。</summary>
+    /// <remarks>
+    /// <b>换入顺序是硬约束</b>：先把 <c>Locale</c> 与 <c>_map</c> 都换成新表，再发通知。
+    /// 反过来（先发通知再换表）会让监听方在"语言已变、取词表还是旧的"半成品状态下干活——
+    /// 实测症状 = 监听方按新语言去驱动重取，当场读回的仍是旧语言文本，
+    /// 而屏幕上就一直留着上一种语言（且"手动再驱动一次"立刻正常，因为那时表已经换完了）。
+    /// </remarks>
     internal void Reload(AppLocale target)
     {
         if (Locale == target) return;
 
+        // ① 先换表（两件事都做完才算"语言换了"）
         var next = StringTables.For(target);
         _map.Clear();
         foreach (var (key, text) in next) _map[key] = text;
         _warned.Clear();
         Locale = target;
         Version++;
+
+        // ② 再通知（此刻任何监听方读到的都已经是新语言的完整状态）
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Version)));
     }
 

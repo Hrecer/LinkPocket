@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Threading;
 using LinkPocket.I18n;
 using LinkPocket.Theming.Fonts;
 
@@ -289,6 +290,107 @@ public static class LocFit
     public static void SetText(DependencyObject element, object? value) => element.SetValue(TextProperty, value);
     public static object? GetText(DependencyObject element) => element.GetValue(TextProperty);
     public static string GetChosen(DependencyObject element) => (string)element.GetValue(ChosenProperty);
+
+    // ── 语言版本 → 强制重取 ────────────────────────────────────────────────
+
+    static LocFit()
+    {
+        // 主题 / 字体一变，基准字号与度量缓存都可能失效：清掉每元素状态让它们重新学一次
+        // （字体族是度量缓存键的一部分，所以缓存本身不需要清）。
+        Theming.ThemeService.Changed += (_, _) => States.Clear();
+
+        // 语言一变：**强制重取**所有已接入通道的元素的文案绑定。
+        //
+        // 为什么非要自己驱动：实测（探针 `fitchan` 套件）——把 `{loc:FitValue X}` 挂到
+        // `LocFit.Text` 之后，那条 MultiBinding 的两路都正确（`Version@LocTable` +
+        // `X@DataContext`）、版本号也确实递增了，但 **WPF 不会因为子绑定变化而重算它**：
+        // 屏幕上一直留着上一种语言的文本，而手动 `UpdateTarget()` 立刻就能拿到当前语言
+        // （实测 `2026-09-20 10:50` → `09/20 10:50 AM`）。
+        // 这条与"模型成员是普通属性、不发通知"是同一族问题：**失效信号不会自己传到底**，
+        // 必须由拥有这条通道的那一层显式驱动一次。
+        Loc.Table.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(LocTable.Version)) return;
+
+            // ⚠️ 延迟到**本次派发之后**再驱动，不要在通知里同步做：
+            // 通知是在"语言状态刚写入"的那一瞬发出的，此刻整棵可视树与绑定链还在用旧语言的值，
+            // 同步驱动会当场读到旧文本、把陈旧形态又写回去（实测：同步重取后屏幕上仍是旧语言，
+            // 而同一格随后手动再驱动一次就正常了——这正是"时机"而不是"通道"的问题）。
+            // 排到 Background 优先级：等当前这一批输入/绑定/布局消息都跑完，语言切换真正落地。
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null) { RefreshAll(); return; }
+            dispatcher.BeginInvoke(new Action(RefreshAll), DispatcherPriority.Background);
+        };
+    }
+
+    /// <summary>
+    /// 让所有已接入通道的元素<b>重取一遍文案绑定</b>（取词表版本变化时由 <see cref="LocFit"/> 调用）。
+    /// </summary>
+    /// <remarks>
+    /// <c>BindingOperations.GetMultiBindingExpression(...)?.UpdateTarget()</c> 就是"重新读一次来源"，
+    /// 不改动绑定本身；元素被回收后自然不在枚举里（<see cref="States"/> 是弱表）。
+    /// 跨线程调用（单测可能从非 UI 线程 <c>LocaleService.Apply</c>）按 <c>CheckAccess</c> 跳过——
+    /// 跨线程碰绑定会当场抛"调用线程无法访问此对象"。
+    /// </remarks>
+    public static void RefreshAll()
+    {
+        var elements = new List<FrameworkElement>();
+        foreach (var entry in States)
+            if (entry.Key is FrameworkElement fe) elements.Add(fe);
+
+        RefreshRuns++;
+        RefreshElements += elements.Count;
+
+        foreach (var fe in elements)
+        {
+            if (!fe.Dispatcher.CheckAccess()) continue;
+            var multi = BindingOperations.GetMultiBindingExpression(fe, TextProperty);
+            if (multi is not null)
+            {
+                multi.UpdateTarget();
+                RefreshMultiHit++;
+                AfterRefreshProbe?.Invoke(fe);
+                continue;
+            }
+            RefreshMultiMiss++;
+            BindingOperations.GetBindingExpression(fe, TextProperty)?.UpdateTarget();
+        }
+
+        foreach (var fe in elements)
+        {
+            if (fe.Dispatcher.CheckAccess()) TryFit(fe);
+        }
+    }
+
+    /// <summary>重取时拿到 MultiBinding 的元素数（诊断读数）。</summary>
+    public static int RefreshMultiHit { get; private set; }
+
+    /// <summary>重取时**没**拿到 MultiBinding 的元素数（诊断读数：它大就说明绑定不在预期位置上）。</summary>
+    public static int RefreshMultiMiss { get; private set; }
+
+    /// <summary>诊断钩子：每次重取后对每个元素调用一次（探针用它看"重取当场读回了什么"）。</summary>
+    public static Action<FrameworkElement>? AfterRefreshProbe { get; set; }
+
+    /// <summary>语言版本驱动重取的次数（诊断读数：它必须随切语言增长，否则钩子没接上）。</summary>
+    public static int RefreshRuns { get; private set; }
+
+    /// <summary>历次重取触及的元素数合计（诊断读数：为 0 说明元素根本没登记进弱表）。</summary>
+    public static int RefreshElements { get; private set; }
+
+    /// <summary>弱表里当前登记的元素数（诊断读数）。</summary>
+    public static int TrackedCount
+    {
+        get
+        {
+            var count = 0;
+            foreach (var _ in States) count++;
+            return count;
+        }
+    }
+
+    /// <summary>这个元素有没有登记进弱表（诊断读数：没登记就永远不会被重取）。</summary>
+    public static bool IsTracked(DependencyObject element)
+        => element is FrameworkElement fe && States.TryGetValue(fe, out _);
 
     /// <summary>接入文案通道并立刻算一次形态（幂等；文字与 Mode 谁后到都走这里）。</summary>
     private static void Wire(FrameworkElement element)
