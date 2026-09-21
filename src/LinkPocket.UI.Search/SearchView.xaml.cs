@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
@@ -111,14 +111,14 @@ public partial class SearchView : UserControl
             {
                 Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).UpdatedAt,
-                CellFactory = r => TextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                CellFactory = r => TextCell(UiClock.Text(((LinkItem)r).UpdatedAt.ToLocalTime()), 12.5)
             },
             new DataTableColumn
             {
                 Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 114,
                 SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
                 CellFactory = r => ((LinkItem)r).LastVisitedAt is { } visited
-                    ? TextCell(visited.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                    ? TextCell(UiClock.Text(visited.ToLocalTime()), 12.5)
                     : TextCell(Loc.K("clock.never"), 12.5)
             },
             new DataTableColumn
@@ -131,7 +131,7 @@ public partial class SearchView : UserControl
             {
                 Field = "created_at", LabelKey = "ui.noun.createdAt", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).CreatedAt,
-                CellFactory = r => TextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                CellFactory = r => TextCell(UiClock.Text(((LinkItem)r).CreatedAt.ToLocalTime()), 12.5)
             },
         };
 
@@ -277,6 +277,18 @@ public partial class SearchView : UserControl
     {
         var tb = BuildCell(fontSize);
         tb.Text = text;
+        return tb;
+    }
+
+    /// <summary>
+    /// 两个长度形态的单元格（日期这类**结构化列**）：走 <c>LocFit</c> 的降级链——
+    /// 放不下时换短式（去年份），最后才截断；<b>绝不缩字号</b>（同行字号必须一致，见 UI-SPEC §3）。
+    /// </summary>
+    private static TextBlock TextCell(LinkPocket.I18n.LocText text, double fontSize)
+    {
+        var tb = BuildCell(fontSize);
+        LocFit.SetMode(tb, LocFitMode.ShrinkThenEllipsis);
+        LocFit.SetText(tb, text);
         return tb;
     }
 

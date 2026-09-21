@@ -150,7 +150,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
     }
 
     private static string FormatTime(DateTime utc)
-        => utc.Year <= 1 ? "—" : utc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        => utc.Year <= 1 ? "—" : UiClock.Format(utc.ToLocalTime());
 
     /// <summary>
     /// 多选投影（搜索页完整多选模型）：显示项数（搜索页恒为链接）；动作面收窄为「删除所选」。

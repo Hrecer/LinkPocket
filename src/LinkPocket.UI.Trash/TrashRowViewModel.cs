@@ -52,8 +52,8 @@ public class TrashRowViewModel : INotifyPropertyChanged
     public LocValue OriginText => LocValue.Projection(
         string.IsNullOrWhiteSpace(OriginPath) ? BookmarkPath.RootToken : OriginPath);
 
-    /// <summary>「删除时间」列。</summary>
-    public string DeletedText => DeletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    /// <summary>「删除时间」列（两个长度形态：列宽是冻结几何，英文日期放不下时换短式而不是截断）。</summary>
+    public LocText DeletedText => UiClock.Text(DeletedAt.ToLocalTime());
 
     /// <summary>仅链接行有值：favicon 地址（磁盘缓存取图标的数据源）。</summary>
     public string? FaviconUrl { get; init; }

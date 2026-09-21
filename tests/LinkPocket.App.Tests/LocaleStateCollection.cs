@@ -3,7 +3,7 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// **碰"当前界面语言"的测试必须串行**（xunit 默认按类并行）。
+/// **碰"当前界面语言"的测试**的集合标记（xunit 缺省按类并行）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -14,8 +14,10 @@ namespace LinkPocket.App.Tests;
 /// 三条"语言串味"假红）。
 /// </para>
 /// <para>
-/// 这正是 <c>WARNINGS 68</c> 的纪律：**共享进程级静态的测试必须显式串行**——
-/// "类内串行"不等于"全程序集串行"。凡新增"切语言 / 读当前语言"的测试类，一律挂本集合。
+/// ⚠️ <b>本集合只是标记，真正的串行由程序集级 <c>[assembly: CollectionBehavior(DisableTestParallelization = true)]</c>
+/// 保证</b>（见 <c>AssemblyInfo.cs</c>）：xunit 里没挂集合的类各自成为集合，
+/// 只给几个类挂 <c>[Collection]</c> 挡不住它们与其余类的竞争——第一版就是这么做而继续假红的。
+/// 保留本标记是为了让"这个类碰全局语言状态"这件事在代码里看得见。
 /// </para>
 /// </remarks>
 [CollectionDefinition(Name)]

@@ -613,14 +613,14 @@ namespace LinkPocket.Views
                 {
                     Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 130,
                     SortKey = r => (IComparable)((LinkDto)r).UpdatedAt,
-                    CellFactory = r => TextCell(((LinkDto)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                    CellFactory = r => TextCell(UiClock.Text(((LinkDto)r).UpdatedAt.ToLocalTime()))
                 },
                 new DataTableColumn
                 {
                     Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 130,
                     SortKey = r => (IComparable)(((LinkDto)r).LastVisitedAt ?? DateTime.MinValue),
                     CellFactory = r => ((LinkDto)r).LastVisitedAt is { } visited
-                        ? TextCell(visited.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                        ? TextCell(UiClock.Text(visited.ToLocalTime()))
                         : TextCell(Loc.K("clock.never"))
                 },
                 new DataTableColumn
@@ -830,8 +830,25 @@ namespace LinkPocket.Views
             return panel;
         }
 
-        /// <summary>数据单元格（用户数据：URL / 标题）。</summary>
-        private TextBlock TextCell(string text) => TextCell(LocValue.Of(text));
+        /// <summary>
+        /// 数据单元格（用户数据：URL / 标题 / 时间戳）。
+        /// ⚠️ 走 <see cref="LocValue.Literal"/> 而不是 <c>LocValue.Of</c>：后者把这串当**文案键**查表，
+        /// 查不到就画出 <c>⟨…⟩</c> 缺键哨兵——时间戳与 URL 不是键，那样渲染出来的日期是错的。
+        /// </summary>
+        private TextBlock TextCell(string text) => TextCell(LocValue.Literal(text));
+
+        /// <summary>
+        /// 两个长度形态的单元格（日期/计数这类结构化列：放不下时换短式，不缩字号）。
+        /// 参数用全限定名：UIKit 的代码写文字门面 <c>LinkPocket.Views.LocText</c> 与本类型同名，
+        /// 而本文件两个命名空间都 using 了。
+        /// </summary>
+        private TextBlock TextCell(LinkPocket.I18n.LocText text)
+        {
+            var cell = TextCell(text.Full);
+            LocFit.SetMode(cell, LocFitMode.ShrinkThenEllipsis);
+            LocFit.SetText(cell, text);
+            return cell;
+        }
 
         /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
         private TextBlock TextCell(LocValue text)

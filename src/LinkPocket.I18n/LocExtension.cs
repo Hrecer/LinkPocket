@@ -141,6 +141,18 @@ internal static class LocBinding
         return mb;
     }
 
+    /// <summary>
+    /// 自适应文案（<see cref="LocText"/> 来自模型）：版本触发器 + 该路径的值。
+    /// 版本那一路是**唯一的失效机制**——模型成员是普通属性、不发通知，没有它切语言就不会重读。
+    /// </summary>
+    public static MultiBinding FromFitValuePath(string? path)
+    {
+        var mb = new MultiBinding { Converter = FitValueResolver.Instance, Mode = BindingMode.OneWay };
+        mb.Bindings.Add(new Binding(nameof(LocTable.Version)) { Source = LocTable.Instance, Mode = BindingMode.OneWay });
+        if (!string.IsNullOrEmpty(path)) mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay });
+        return mb;
+    }
+
     /// <summary>一条自适应文案的两个键（<c>ShortByConvention</c> = 短式键按 <c>#short</c> 约定推）。</summary>
     public readonly record struct KeyPair(string Key, string? ShortKey)
     {
@@ -251,6 +263,31 @@ public sealed class FitKeyExtension : MarkupExtension
 }
 
 /// <summary>
+/// <c>LocText</c> 来自模型的绑定通道：<c>{loc:FitValue ModifiedText}</c>。
+/// </summary>
+/// <remarks>
+/// <b>为什么不能直接写 <c>{Binding ModifiedText}</c></b>：那样这条通道上<b>没有任何东西对语言版本敏感</b>。
+/// 模型成员（<c>LocText</c>）本身是普通属性、不发通知，取词又发生在它构造的那一刻——
+/// 于是切语言后绑定不重算，界面上留着上一种语言的日期（实测：模型侧已经是
+/// <c>09/20/2026 10:50 AM</c>，屏幕上仍画着 <c>2026-09-20 10:50</c>）。
+/// 本扩展把语言版本一起挂进 MultiBinding，让它在语言一变时重取模型成员，
+/// 与 <c>{loc:Value}</c> / <c>{loc:Loc}</c> 是同一套失效机制。
+/// </remarks>
+[MarkupExtensionReturnType(typeof(object))]
+public sealed class FitValueExtension : MarkupExtension
+{
+    public FitValueExtension() { }
+
+    public FitValueExtension(string path) => Path = path;
+
+    [ConstructorArgument("path")]
+    public string? Path { get; set; }
+
+    public override object ProvideValue(IServiceProvider serviceProvider)
+        => LocBinding.FromFitValuePath(Path).ProvideValue(serviceProvider);
+}
+
+/// <summary>
 /// 文案值解析器：<see cref="LocValue"/>（键 + 参数）→ 当前语言的文本。
 /// 与 <see cref="LocResolver"/> 同构，同样吃 <see cref="LocTable.Version"/> 作失效触发器。
 /// </summary>
@@ -304,6 +341,22 @@ public sealed class FitResolver : IMultiValueConverter
             : key + Loc.ShortSuffix;
         return LocText.Key(key!, shortKey);
     }
+
+    public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException("resolution is one-way: displayed text is not state.");
+}
+
+/// <summary>
+/// 自适应文案的"值来自模型"解析器：把该路径的 <see cref="LocText"/> 原样透出去
+/// （取词与长度形态的判断都在 <c>LocFit</c> 里）。语言版本那一路只当失效触发器用。
+/// </summary>
+public sealed class FitValueResolver : IMultiValueConverter
+{
+    public static FitValueResolver Instance { get; } = new();
+
+    /// <param name="values">[0] = 语言版本（仅作失效触发器）；[1] = 模型里的 <see cref="LocText"/>。</param>
+    public object? Convert(object[] values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => values.Length > 1 ? values[1] : null;
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException("resolution is one-way: displayed text is not state.");

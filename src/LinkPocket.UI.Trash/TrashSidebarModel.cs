@@ -90,7 +90,7 @@ public class TrashSidebarModel : DetailSidebarModel
         {
             IconKind = "history",
             LabelKey = "ui.noun.deletedAt",
-            ValueData = row.DeletedText
+            ValueData = row.DeletedText.Resolve()
         });
         rows.Add(new DetailSidebarRow
         {

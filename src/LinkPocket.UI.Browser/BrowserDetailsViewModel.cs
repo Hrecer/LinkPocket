@@ -187,7 +187,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             var row = rows[0];
         DisplayNameData = row.Name;
             IdText = row.Id;
-            ModifiedText = row.ModifiedText;
+            ModifiedText = row.ModifiedText.Resolve();
             Favicon = row.Favicon;
             UrlText = row.Url ?? "";
             DescriptionText = "";
@@ -197,12 +197,10 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 FolderBookmarkCount = row.LinkCount;
                 ViewCountText = Loc.K("count.viewsN", row.ViewCount);
                 var path = host.GetFolderPathDisplay(row.Id, includeSelf: false);
-                var updated = row.ModifiedText;
-                var lastVisitedText = row.LastViewedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "";
-        var lastVisitedCopy = row.LastViewedAt is null ? Loc.K("clock.never") : LocValue.Empty;
-                var created = row.CreatedAt.Year <= 1
-                    ? "—"
-                    : row.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                var updated = row.ModifiedText.Resolve();
+                var lastVisitedText = row.LastViewedAt is null ? "" : UiClock.Format(row.LastViewedAt.Value.ToLocalTime());
+                var lastVisitedCopy = row.LastViewedAt is null ? Loc.K("clock.never") : LocValue.Empty;
+                var created = row.CreatedAt.Year <= 1 ? "—" : UiClock.Format(row.CreatedAt.ToLocalTime());
 
                 SetRows(new List<DetailSidebarRow>
                 {
@@ -221,7 +219,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 SetRows(new List<DetailSidebarRow>
                 {
                     new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueCopy = LoadingPlaceholder },
-                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = row.ModifiedText },
+                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = row.ModifiedText.Resolve() },
                     new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = "—" },
                     new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueData = "—" },
                     new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = "—" },
@@ -265,20 +263,20 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         if (pathRow != null) pathRow.ValueData = _host.GetFolderPathDisplay(link.ListId);
             var updatedRow = FindRow("ui.noun.updatedAt");
             if (updatedRow != null)
-        updatedRow.ValueData = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        updatedRow.ValueData = link.UpdatedAt.Year <= 1 ? "—" : UiClock.Format(link.UpdatedAt.ToLocalTime());
             var visitedRow = FindRow("ui.noun.lastVisited");
             if (visitedRow != null)
             {
                 visitedRow.ValueData = link.LastVisitedAt is null
                     ? ""
-                    : link.LastVisitedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                    : UiClock.Format(link.LastVisitedAt.Value.ToLocalTime());
                 visitedRow.ValueCopy = link.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty;
             }
             var visitRow = FindRow("ui.noun.visitCount");
             if (visitRow != null) visitRow.ValueCopy = Loc.K("count.viewsN", link.VisitCount);
             var createdRow = FindRow("ui.noun.createdAt");
             if (createdRow != null)
-                createdRow.ValueData = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                createdRow.ValueData = link.CreatedAt.Year <= 1 ? "—" : UiClock.Format(link.CreatedAt.ToLocalTime());
 
             OnPropertyChanged(nameof(DescriptionText));
             OnPropertyChanged(nameof(HasDescription));

@@ -104,7 +104,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueData = _host.GetFolderPathDisplay(link.ListId) },
         new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = Fmt(link.UpdatedAt) },
         new() { IconKind = "history", LabelKey = "ui.noun.lastVisited",
-                ValueData = link.LastVisitedAt is null ? "" : link.LastVisitedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                ValueData = link.LastVisitedAt is null ? "" : UiClock.Format(link.LastVisitedAt.Value.ToLocalTime()),
                 ValueCopy = link.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty },
         new() { IconKind = "chart-line", LabelKey = "ui.noun.viewTotal", ValueCopy = Loc.K("count.viewsN", link.VisitCount) },
         new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = Fmt(link.CreatedAt) },
@@ -112,7 +112,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
                 CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = Loc.K("common.copyId") },
     };
 
-    private static string Fmt(DateTime dt) => dt.Year <= 1 ? "—" : dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    private static string Fmt(DateTime dt) => dt.Year <= 1 ? "—" : UiClock.Format(dt.ToLocalTime());
 
     private void OpenWebsite() => _ = OpenWebsiteAsync();
 

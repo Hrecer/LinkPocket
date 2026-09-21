@@ -33,10 +33,22 @@ public static class UiClock
     public static string FormatShort(DateTime local)
         => local.ToString(ShortPattern, Loc.Table.Locale.FormatOf());
 
-    private static string Pattern => Loc.Table.Locale == AppLocale.En ? EnPattern : ZhPattern;
-
-    private static string ShortPattern => Loc.Table.Locale == AppLocale.En ? EnShortPattern : ZhPattern;
+    /// <summary>
+    /// 一列日期的**两个长度形态**——表格日期列走这条（<c>LocFit</c> 按可用宽挑一个）。
+    /// </summary>
+    /// <remarks>
+    /// 存在的理由：日期列宽是冻结几何，而英文日期比中文宽约 25%（<c>09/21/2026 1:40 PM</c> vs
+    /// <c>2026-09-21 13:40</c>）。放不下时的正确处置是<b>去年份的短式</b>，
+    /// 绝不是把日期截成 <c>09/21/2026 1:4…</c>——<b>截断的日期是错的日期</b>。
+    /// 中文侧没有可缩的余地，两条形态填同一句。
+    /// </remarks>
+    public static LocText Text(DateTime local)
+        => new(LocValue.Literal(Format(local)), LocValue.Literal(FormatShort(local)));
 
     /// <summary>「从未」哨兵（没有访问时间时显示的东西，不是时间格式）。</summary>
     public static string Never => Loc.T("clock.never");
+
+    private static string Pattern => Loc.Table.Locale == AppLocale.En ? EnPattern : ZhPattern;
+
+    private static string ShortPattern => Loc.Table.Locale == AppLocale.En ? EnShortPattern : ZhPattern;
 }

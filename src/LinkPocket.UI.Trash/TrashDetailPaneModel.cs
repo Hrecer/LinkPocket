@@ -44,7 +44,7 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
             new[]
             {
                 new DetailSidebarRow { IconKind = "folder-outline", LabelKey = "ui.noun.origin", ValueCopy = row.OriginText },
-                new DetailSidebarRow { IconKind = "history", LabelKey = "ui.noun.deletedAt", ValueData = row.DeletedText },
+                new DetailSidebarRow { IconKind = "history", LabelKey = "ui.noun.deletedAt", ValueData = row.DeletedText.Resolve() },
                 new DetailSidebarRow
                 {
                     IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = row.Id, IsMono = true,

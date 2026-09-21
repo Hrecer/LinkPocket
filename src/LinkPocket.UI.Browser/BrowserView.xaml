@@ -62,8 +62,12 @@
             <Border HorizontalAlignment="Left" Background="{DynamicResource App.Surface.Card}"
                     CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
-                <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字 -->
-                <Button Command="{Binding NewFolderCommand}" Cursor="Hand"
+                <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字。
+                     ⚠️ **命令栏四枚药丸的宽度是冻结几何**（Width 逐枚钉死 = 中文基线实测值）：
+                     内容自适应宽度会让英文文案把整条命令栏撑宽（英文比中文宽 30%~150%），
+                     连带把后面的药丸一起推走——那正是约束 B「英文零尺寸漂移」要挡住的东西。
+                     文案放不下时由 LocFit 让位（短式 → 缩字号 → 截断），**几何一寸不动**。 -->
+                <Button Command="{Binding NewFolderCommand}" Cursor="Hand" Width="112"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="folder-plus" Width="16" Height="16" VerticalAlignment="Center"/>
@@ -71,7 +75,7 @@
                     </StackPanel>
                 </Button>
                 <!-- 新建链接：与新建文件夹并列，弹出 M3 链接编辑器（默认当前目录） -->
-                <Button x:Name="NewLinkButton" Command="{Binding NewLinkCommand}" Cursor="Hand"
+                <Button x:Name="NewLinkButton" Command="{Binding NewLinkCommand}" Cursor="Hand" Width="99"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>
@@ -80,7 +84,7 @@
                 </Button>
                 <!-- 重命名：与 F2 / 右键「重命名」**同一条命令**（就地编辑；文件夹改名称、链接改标题）。
                      未选中或非单选时自动禁用（CanExecute 与 F2 同源）。 -->
-                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand"
+                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand" Width="80"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="{loc:Loc btn.rename.tip}">
                     <StackPanel Orientation="Horizontal">
@@ -89,8 +93,8 @@
                     </StackPanel>
                 </Button>
                 <!-- 删除：删除选中项（文件夹/链接一律移入回收站，Windows 语义），未选中时禁用。
-                     删除/警告提醒色 = 奶油黄 WarnBg（规范：不用红色） -->
-                <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand"
+                     破坏性动作不设专门视觉（与次操作共用同一套呈现）。 -->
+                <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand" Width="80"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="{loc:Loc btn.delete.tip}">
                     <StackPanel Orientation="Horizontal">
@@ -443,21 +447,23 @@
                                                                 CancelCommand="{Binding Host.CancelRenameCommand}"/>
                                     </Grid>
 
-                                    <!-- 最后更新（文件夹 = 内容含子孙最后变动时间；查看不算变动，内核维护） -->
+                                    <!-- 最后更新（文件夹 = 内容含子孙最后变动时间；查看不算变动，内核维护）
+                                         ⚠️ 日期列是**结构化数据**：走 LocFit 但只换短式 + 截断，不缩字号
+                                         （见 UI-SPEC §3 的适用范围表）。ToolTip 由 LocFit 在真截断时补全文。 -->
                                     <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
-                                               Text="{Binding ModifiedText}" ToolTip="{Binding ModifiedText}"/>
+                                               views:LocFit.Text="{loc:FitValue ModifiedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 最后查看（文件夹 = 子孙链接被查看时沿父链刷新；从未显示「从未」） -->
                                     <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                               Text="{Binding LastViewedData, Mode=OneWay}"/>
+                                               views:LocFit.Text="{loc:FitValue LastViewedAdaptive}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 查看次数（文件夹 = 子树增量计数；链接 = 自身访问次数） -->
                                     <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
-                                               Text="{Binding ViewCountText}"/>
+                                               views:LocFit.Text="{loc:FitValue ViewCountText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 创建时间 -->
                                     <TextBlock Grid.Column="4" Style="{StaticResource RowCellText}"
-                                               Text="{Binding CreatedText}" ToolTip="{Binding CreatedText}"/>
+                                               views:LocFit.Text="{loc:FitValue CreatedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
                                 </Grid>
                                 </Border>
                             </Border>

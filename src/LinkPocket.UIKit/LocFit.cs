@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
 using LinkPocket.I18n;
@@ -306,6 +307,59 @@ public static class LocFit
         // 但"元素当前的基准字号"得让它重新学一次）。只清状态，不做任何重排——
         // 重排由取词绑定（版本失效）与下一次布局照常驱动。
         ThemeService.Changed += (_, _) => States.Clear();
+
+        // 语言一变：**强制重取**已启用本行为的元素的文案。
+        // 为什么需要这一步：`loc:LocFit.Text` 最常见的写法是 `{Binding 模型成员}`（普通绑定，
+        // 没有语言版本触发器），而那个成员是**普通属性、不发通知**——
+        // 于是切语言后绑定不重算，屏幕上留着上一种语言（实测：模型侧已是英文、屏幕上仍是中文日期）。
+        // 变体通道 `{loc:FitValue ...}` 自带版本触发器，但它把绑定产物变成 LocText，
+        // 在部分宿主上不会跟着版本重算；这里统一兜住——**绑定表达式本身是唯一事实源**，
+        // 重取后照样由 CoerceText 归一成 LocText，不存在第二份数据。
+        Loc.Table.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LocTable.Version)) RefreshAll();
+        };
+    }
+
+    /// <summary>文案通道被本行为重写的标记（重取绑定期间不回写，避免"重取 → 回写 → 再判定"）。</summary>
+    private static bool _refreshing;
+
+    /// <summary>
+    /// 让已启用本行为的元素<b>重取一遍文案绑定</b>（取词表版本变化时调用）。
+    /// </summary>
+    /// <remarks>
+    /// <c>BindingOperations.GetBindingExpression(...)?.UpdateTarget()</c> 就是"重新读一次来源"，
+    /// 不改动绑定本身；元素被回收后自然不在枚举里（<see cref="States"/> 是弱表）。
+    /// </remarks>
+    public static void RefreshAll()
+    {
+        var elements = new List<FrameworkElement>();
+        foreach (var entry in States)
+            if (entry.Key is FrameworkElement fe) elements.Add(fe);
+
+        _refreshing = true;
+        try
+        {
+            foreach (var fe in elements)
+            {
+                // 只能在持有它的 UI 线程上碰它：`LocaleService.Apply` 可能从别处调用
+                // （单测就是这样），跨线程写绑定会当场抛"调用线程无法访问此对象"。
+                if (!fe.Dispatcher.CheckAccess()) continue;
+                var expression = BindingOperations.GetBindingExpression(fe, TextProperty);
+                if (expression != null) { expression.UpdateTarget(); continue; }
+                BindingOperations.GetMultiBindingExpression(fe, TextProperty)?.UpdateTarget();
+            }
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+
+        // 重取完再判定（此刻 _refreshing 已复位，回写不会被吞掉）
+        foreach (var fe in elements)
+        {
+            if (fe.Dispatcher.CheckAccess()) TryFit(fe);
+        }
     }
 
     private static void OnModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -325,6 +379,7 @@ public static class LocFit
         element.SizeChanged += OnSizeChanged;
         element.Loaded -= OnLoaded;
         element.Loaded += OnLoaded;
+        _ = StateOf(element);   // 登记进弱表：语言一变要能找回来重取文案（见 RefreshAll）
         // ⚠️ **不在这里就自适应**：此刻元素常常还没参与布局（可用宽 0），
         // 一自适应就会把字号钉在下限上，而"基准字号"是照着这个被压过的值学的 —— 从此再也回不去。
         // 基准字号必须在**首次拿到真实可用宽**时学（见 TryFit），所以这里只挂订阅。
@@ -333,6 +388,7 @@ public static class LocFit
     private static void OnTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not FrameworkElement element) return;
+        if (_refreshing) return;   // 这次变更就是 RefreshAll 重取来的：别回写（回写会打断绑定）
         TryFit(element);
     }
 
@@ -372,12 +428,12 @@ public static class LocFit
     /// </summary>
     public static void TryFit(FrameworkElement element)
     {
+        var state = StateOf(element);   // 登记先于一切早退：语言一变要能按这张表把元素找回来重取文案
+
         var mode = GetMode(element);
         if (mode == LocFitMode.Off) return;
 
         if (GetText(element) is not LocText text || text.IsEmpty) return;
-
-        var state = StateOf(element);
 
         // 可用宽为 0 = 还没参与布局：<b>先什么都不做</b>。
         // 这里必须早退，否则会把字号压到下限、还会照着压过的值把"基准字号"学错（一次就再也回不去）。
@@ -399,7 +455,7 @@ public static class LocFit
         var allowTruncate = mode == LocFitMode.ShrinkThenEllipsis;
         var result = Evaluate(text.Resolve(), text.HasShort ? text.ResolveShort() : null, state.BaseSize, available, allowTruncate, desc);
 
-        Apply(element, state, text, result);
+        Apply(element, state, text, result, available, desc);
     }
 
     /// <summary>元素当前生效的字号（<c>FontSize</c> 是 <see cref="TextElement"/> 的继承附加属性，不在 <see cref="FrameworkElement"/> 上）。</summary>
@@ -409,7 +465,9 @@ public static class LocFit
         return value is double size ? size : double.NaN;
     }
 
-    private static void Apply(FrameworkElement element, FitState state, in LocText text, in FitResult result)
+    private static void Apply(
+        FrameworkElement element, FitState state, in LocText text, in FitResult result,
+        double available, in FontDescriptor desc)
     {
         // 文案：只有结论与上一次不同才写（表里两条 LocValue 各自取词，都活着）
         var wanted = result.UseShort ? text.ResolveShort() : text.Resolve();
@@ -432,16 +490,31 @@ public static class LocFit
         {
             state.IsTruncated = result.Truncate;
             element.SetValue(TextBlock.TextTrimmingProperty, result.Truncate ? TextTrimming.CharacterEllipsis : TextTrimming.None);
-            if (result.Truncate) ToolTipService.SetToolTip(element, text.Resolve());
-            else ToolTipService.SetToolTip(element, null);
+            ApplyToolTip(element, text, result, available, desc);
         }
-        else if (result.Truncate && ToolTipService.GetToolTip(element) is null)
+        else if (result.Truncate)
         {
             // 截断态下 ToolTip 被外部清掉（如绑定换源）：补回全文——截断必须配全文，缺一不可
-            ToolTipService.SetToolTip(element, text.Resolve());
+            ApplyToolTip(element, text, result, available, desc);
         }
 
         state.IsShort = result.UseShort;
+    }
+
+    /// <summary>
+    /// ToolTip 全文。<b>自己判"到底截没截"</b>（按最终写入的形态重算一次长度），
+    /// 而不是照抄 <see cref="FitResult.Truncate"/> —— 那个标记只说明"到下限仍放不下"，
+    /// 真正会不会画出省略号还取决于 WPF 的取整与渲染。
+    /// </summary>
+    /// <remarks>
+    /// 短式放得下时**保留全长作 ToolTip**：短式（<c>09/21 1:40 PM</c>）少的就是年份，
+    /// 悬停看不到完整值反而更糟。放不下时才算"截断"，此时全长提示是必须的。
+    /// </remarks>
+    private static void ApplyToolTip(
+        FrameworkElement element, in LocText text, in FitResult result, double available, in FontDescriptor desc)
+    {
+        var complete = Fits(text.Resolve(), result.Size, available, desc);
+        ToolTipService.SetToolTip(element, complete ? null : text.Resolve());
     }
 
     /// <summary>把结论写进元素真正承载文字的那个属性（TextBox / ContentControl / TextBlock 三选一）。</summary>
@@ -470,9 +543,20 @@ public static class LocFit
         return new FontDescriptor(family?.Source ?? string.Empty, weight, stretch, pixelsPerDip);
     }
 
-    /// <summary>本元素当前是不是"被截断"状态（诊断与用例读数）。</summary>
+    /// <summary>
+    /// 本元素当前是不是"文字被截断"（诊断与用例读数）。
+    /// 判据 = 最终画出来的那段文字<b>在最终字号下确实放不进可用宽</b>，
+    /// 不是照抄链路标记（短式放得下时链路标记仍为"截断"，但画面上并没有省略号）。
+    /// </summary>
     public static bool IsTruncated(FrameworkElement element)
-        => States.TryGetValue(element, out var state) && state.IsTruncated;
+    {
+        if (GetMode(element) == LocFitMode.Off) return false;
+        if (GetText(element) is not LocText) return false;
+        var applied = GetAppliedText(element);
+        if (string.IsNullOrEmpty(applied)) return false;
+        var available = AvailableWidth(element);
+        return available > 0 && !Fits(applied!, FontSizeOf(element), available, Describe(element));
+    }
 
     /// <summary>本元素当前用的是不是短式（诊断与用例读数）。</summary>
     public static bool IsShortForm(FrameworkElement element)

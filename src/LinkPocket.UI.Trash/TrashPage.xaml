@@ -356,13 +356,15 @@
                                             </Grid>
 
                                             <!-- 类型 -->
-                                            <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}" Text="{Binding TypeText}"/>
+                                            <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
+                                                       views:LocFit.Text="{loc:FitValue TypeText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
                                             <!-- 原位置 -->
                                             <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                                       Text="{loc:Value OriginText}"/>
-                                            <!-- 删除时间 -->
+                                                       views:LocFit.Text="{loc:Value OriginText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                            <!-- 删除时间（结构化数据：只换短式 + 截断，不缩字号；
+                                                 ToolTip 由 LocFit 在真截断时补全文） -->
                                             <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
-                                                       Text="{Binding DeletedText}" ToolTip="{Binding DeletedText}"/>
+                                                       views:LocFit.Text="{loc:FitValue DeletedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
                                         </Grid>
                                     </Border>
                                 </Border>
