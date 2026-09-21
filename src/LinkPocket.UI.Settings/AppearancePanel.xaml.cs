@@ -38,7 +38,7 @@ namespace LinkPocket.Views
         public bool IsPickerOpen => PickerOverlay.Visibility == Visibility.Visible;
 
         /// <summary>
-        /// 装载字体候选（**唯一会枚举系统字体**的入口；下拉展开与探针都走它）。
+        /// 装载字体候选（**唯一会枚举系统字体**的入口；进面板预热、下拉展开兜底与探针都走它）。
         /// </summary>
         /// <remarks>
         /// <para>
@@ -102,13 +102,17 @@ namespace LinkPocket.Views
         {
             // 互斥归属 + 主题卡 + 色槽草稿一起对齐（草稿有未应用改动时不会被冲掉，见 VM 的 SyncFromAppliedTheme）
             ViewModel.SyncFromAppliedTheme();
-            // 候选**不在这里装载**：枚举系统字体与机器上装的字体数量成正比，进页面就付是浪费；
-            // 用户真的展开下拉时才装载（见 UiFontCombo_DropDownOpened）。
-            // 但**当前字体必须立刻看得见**：VM 在没有候选时用当前族名补一个占位项（ProjectCurrentFonts）。
+            // 字体候选**后台预热**（用户报障 2026-09-20 第三轮："首次展开字体下拉拉不到任何字体 / 一闪就关"）：
+            // 候选原先只在**用户展开下拉那一刻**才装载，而装载会把候选集合整体重写一遍 ——
+            // 与"已经弹出的弹层"抢时序（首次展开看到的就是还没就位的列表）。改在进面板时后台装载，
+            // 让首次展开时列表**已就位**；下面 DropDownOpened 那两条兜底保留（装载未完成 / 失败重试时仍会触发）。
+            // 枚举在后台线程（`FontCatalog.LoadAsync`），不占 UI 线程。
+            _ = ViewModel.EnsureFontsLoadedAsync();
+            // 候选**不在装载前重投影**：当前字体由 ProjectCurrentFonts 的占位项立刻显示（见 VM）。
             SyncFontCombos();
         }
 
-        /// <summary>用户展开字体下拉时才真正装载候选（唯一需要全量列表的时刻）。</summary>
+        /// <summary>展开字体下拉时的兜底装载（候选在进面板时已**后台预热**；这里只兜"还没装载完 / 上次失败"两种情形）。</summary>
         private async void UiFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
 
         private async void MonoFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
@@ -167,7 +171,8 @@ namespace LinkPocket.Views
         /// <summary>「以当前主题为起点」：把当前主题的颜色**复制**进色槽（预设定义只读，不被改写）。</summary>
         private void StartFromThemeBtn_Click(object sender, RoutedEventArgs e) => ViewModel.StartFromCurrentTheme();
 
-        private void ApplyDraftBtn_Click(object sender, RoutedEventArgs e) => ViewModel.ApplyDraft();
+        /// <summary>「清空颜色」：把整个草稿清回空槽（唯一一条"清空全部"路径；单槽清除在取色盘里）。</summary>
+        private void ClearDraftBtn_Click(object sender, RoutedEventArgs e) => ViewModel.ClearDraft();
 
         private async void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -227,6 +232,13 @@ namespace LinkPocket.Views
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.ApplyFonts();
+            SyncFontCombos();
+        }
+
+        /// <summary>「恢复默认字体」：界面/等宽一起回默认族并落盘（不动主题与配色）。</summary>
+        private async void ResetFontsBtn_Click(object sender, RoutedEventArgs e)
+        {
+            await ViewModel.ResetFontsAsync();
             SyncFontCombos();
         }
     }

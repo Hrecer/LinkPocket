@@ -360,9 +360,34 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
+    public void 清空颜色_草稿回空态_自选卡回空心占位_且诊断提示还差几个()
+    {
+        // 用户令 2026-09-20 第三轮：调色台加「清空颜色」（清空全部只有这一条路径；单槽「清除」在取色盘里）。
+        // 清完必须**重算诊断**——空槽态要显示"还差 N 个颜色"这条中性提示，
+        // 否则面板上没有任何一处告诉用户"还差几个"（清诊断 = 静默）。
+        var vm = NewVm();
+        vm.SetSlotCount(4);
+        for (var i = 0; i < vm.SlotCount; i++)
+            vm.SetSlotColor(i, Color.FromRgb((byte)(0x40 + i), 0x50, 0x60));
+        Assert.All(vm.Slots, s => Assert.False(s.IsEmpty));
+        Assert.False(vm.ThemeCards[^1].IsEmpty);
+
+        vm.ClearDraft();
+
+        Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "清空后每一格都必须是空槽"));
+        Assert.Equal(4, vm.SlotCount);
+        Assert.Empty(vm.ThemeCards[^1].Swatches);
+        Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
+        Assert.True(vm.HasDiagnostics);
+        Assert.Contains("还差 4 个颜色", vm.Diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void 自选颜色卡_点它等于应用自选配色()
     {
-        // 第 12 张卡的应用路径与「应用这套外观」**同一入口**（ApplyDraft）：合法才生效、才落盘。
+        // 第 12 张卡的应用路径与 VM 的 `ApplyDraft` **同一入口**（合法才生效、才落盘）——
+        // 面板顶部的「应用这套外观」按钮已随 2026-09-20 第三轮删除，这张卡就是自选配色唯一的应用手势。
         ThemeService.ResetForTests();
         try
         {
@@ -987,5 +1012,35 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
         var prefs = UiPreferenceStore.Load(out _);
         Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
+    }
+
+    [Fact]
+    public async Task 恢复默认字体_回默认族并落盘_且下拉显示默认族()
+    {
+        // 用户令 2026-09-20 第三轮：字体卡加「恢复默认字体」——**不读下拉选中项**，直接把两个族回默认并落盘，
+        // 且下拉里立刻显示默认族（候选没装载时走占位项投影这条路径；**不触发系统字体枚举**）。
+        ThemeService.ResetForTests();
+        try
+        {
+            ThemeService.ApplyFonts("Segoe UI", "Consolas", null);   // 先换成一个非默认界面字体
+            var vm = NewVm();
+            Assert.Equal("Segoe UI", vm.SelectedUiFont?.Family);
+
+            await vm.ResetFontsAsync();
+
+            Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
+            Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
+            var prefs = UiPreferenceStore.Load(out var failed);
+            Assert.False(failed);
+            Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
+            Assert.Equal(FontCatalog.DefaultMonoFamily, prefs.Fonts.Mono);
+            Assert.Equal(FontCatalog.DefaultUiFamily, vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
+            Assert.Equal(FontCatalog.DefaultMonoFamily, vm.SelectedMonoFont?.Family);
+            Assert.Equal(string.Empty, vm.Status);                                  // 成功不播报（用户令）
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
     }
 }

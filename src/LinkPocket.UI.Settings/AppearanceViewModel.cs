@@ -615,7 +615,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>开关的说明文案（两种模式各自说清"界面会怎么变"）。</summary>
     public string PaletteModeHint => AutoAdjustColors
-        ? "已开启（缺省）：按明度档位自动重排你的配色，层感与可读性有保证"
+        ? "已开启（缺省）：按明度档位自动重排你的配色"
         : "已关闭：尽量原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）";
 
     /// <summary>把所有主题卡的色点按**当前模式**重投影（切换开关 / 重新应用主题后调用）。</summary>
@@ -862,7 +862,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <para>
     /// <b>点一下就该生效（用户报障 2026-09-20："当我们选择以什么为起点的时候，应该立即切换到自选颜色这一栏，
     /// 也就是主题应该立即更改"）</b>：旧行为只把颜色倒进草稿、把归属留在预设上，于是用户按了按钮却看到
-    /// "什么都没发生"（主题卡还是预设那张、界面一点没变），还得再点一次「应用这套外观」。
+    /// "什么都没发生"（主题卡还是预设那张、界面一点没变），还得再点一次那个全局的「应用」（该按钮已随
+    /// 2026-09-20 第三轮删除 —— 自选配色的唯一应用入口 = 第 12 张「自选颜色」卡）。
     /// 现行 = 复制完**当场**走 <see cref="ApplyDraft"/> 的同一条应用路径：归属切到自选、
     /// 第 12 张「自选颜色」卡亮起、界面立刻换成这份配色（它是当前主题的拷贝，视觉上与刚才一致，
     /// 但从此每一格都可微调）。**不另写第二套应用逻辑**——合法性门槛、播报与落盘全在 <see cref="ApplyDraft"/>。
@@ -897,7 +898,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             Status = $"还有 {missing} 个颜色没选（点色槽用取色盘选）";
             // 与 RefreshDraftDiagnostics 同一口径：空槽是"还没选完"，**不是**"配色不合法"，
             // 所以这里不把 palette-size 那条红色错误摆出来。
-            Diagnostics = $"· 还差 {missing} 个颜色：点色槽用取色盘选色（选够 4 个就能点顶部的「应用这套外观」）";
+            Diagnostics = $"· 还差 {missing} 个颜色：点色槽用取色盘选色（选够 4 个就能点上面第 12 张「自选颜色」卡应用）";
             HasDiagnostics = true;
             return;
         }
@@ -941,7 +942,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         var empty = _draft.Count(c => c is null);
         if (empty > 0)
         {
-            Diagnostics = $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 4 个就能点顶部的「应用这套外观」）";
+            Diagnostics = $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 4 个就能点上面第 12 张「自选颜色」卡应用）";
             HasDiagnostics = true;
             return;
         }
@@ -1007,11 +1008,13 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// 把草稿清成空（4 个空槽）——「恢复默认外观」用。
+    /// 把草稿清成空（4 个空槽）——「清空颜色」按钮与「恢复默认外观」用。
     /// </summary>
     /// <remarks>
-    /// 既然回到出厂默认，调色台里留着上一份配色就是"名不副实"：用户看到 4 个色点会以为
+    /// 既然回到空态，调色台里留着上一份配色就是"名不副实"：用户看到 4 个色点会以为
     /// 自选配色还在生效（用户令：自选颜色默认是**全空**的）。
+    /// 清完必须走 <see cref="RefreshDraftDiagnostics"/>（而不是把诊断一清了之）：
+    /// 空槽态要如实显示"还差 N 个颜色"这条中性提示，否则面板上没有任何一处告诉用户还差几个。
     /// </remarks>
     public void ClearDraft()
     {
@@ -1019,8 +1022,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         _draft.AddRange(Enumerable.Repeat<Color?>(null, MinSlots));
         ClearDraftDirty();
         RebuildSlots();
-        Diagnostics = string.Empty;
-        HasDiagnostics = false;
+        RefreshDraftDiagnostics();
     }
 
     /// <summary>空槽打开取色盘时的初始颜色 = 当前主题的强调填充（令牌派生，不发明色值）。</summary>
@@ -1292,6 +1294,38 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             LpLog.Error("应用字体后保存偏好失败", ex, LogCategory);
             Status = $"字体已应用，但偏好保存失败：{ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// 把界面/等宽字体一起**恢复默认族**（并落盘）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="ApplyFonts"/>（应用"当前选中"）是两件事：这里不读下拉的选中项，
+    /// 直接走 <see cref="ThemeService.ApplyFonts(string?, string?, System.Windows.ResourceDictionary?)"/>
+    /// 的**无参形态**（= 回退链第一段：`Microsoft YaHei UI` / `Consolas`）。
+    /// </para>
+    /// <para>
+    /// 收尾三条与"删除当前生效字体"同口径：应用 → 落盘 → 候选重载 + 当前值重投影
+    /// （候选没装载时用占位项投影，下拉里照样立刻显示默认族 —— 别赌"用户会先展开一次下拉"）。
+    /// </para>
+    /// </remarks>
+    public async Task ResetFontsAsync()
+    {
+        try
+        {
+            ThemeService.ApplyFonts();                 // 无参 = 默认族（不读下拉选中项）
+            ThemeService.SaveCurrentPreferences();
+            if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
+            else ProjectCurrentFonts(ThemeService.CurrentUiFont, ThemeService.CurrentMonoFont);
+            // 成功不播报（用户令：删掉状态行提示）——下拉里换回默认族就是结果；失败照报
+            Status = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("恢复默认字体失败", ex, LogCategory);
+            Status = $"恢复默认字体失败：{ex.Message}";
         }
     }
 

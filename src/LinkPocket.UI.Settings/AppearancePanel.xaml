@@ -15,7 +15,7 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 「外观」面板（方案 §7.1）：三张卡 = 主题 / 自选配色 / 字体。
+    <!-- 「外观」面板（方案 §7.1）：四张卡 = 颜色应用方式 / 主题 / 调色台 / 字体。
          沿用「存储管理」的卡语言（MaxWidth 760 / 圆角 24 / 卡距 16 / 标题 15 SemiBold / 说明 12）。 -->
     <Grid>
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -28,16 +28,14 @@
 
                 <!-- ===== 全局操作（面板级，不属于任何一张卡）=====
                      用户令 2026-09-20："这个应用这套外观、恢复这套外观，不能在自选配色这里，这些是全局操作"。
-                     它们作用于**整套外观**（配色 + 字体），所以放在两张卡之外；又因为改完颜色就要立刻点，
-                     所以放在面板顶部（常驻可见，不必滚过字体卡）。 -->
+                     它们作用于**整套外观**（配色 + 字体），所以放在卡片之外、面板顶部（常驻可见，不必滚过字体卡）。
+                     用户令 2026-09-20 第三轮：删掉「应用这套外观」——跨卡的"应用"与面板内"点一下即生效"
+                     的既有语言（主题卡单击即应用 / 起点复制即应用）自相矛盾；自选配色的应用入口只剩
+                     **第 12 张「自选颜色」卡**（与点主题卡同一手势），故全局行只剩这一枚。 -->
                 <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
-                    <Button x:Name="ApplyDraftBtn" Content="应用这套外观"
-                            Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                            Cursor="Hand" Click="ApplyDraftBtn_Click"
-                            ToolTip="把下面色槽里的配色应用为整套外观（字体请用「应用字体」）"/>
                     <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
                             Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
-                            Margin="10,0,0,0" Cursor="Hand" Click="ResetAppearanceBtn_Click"
+                            Cursor="Hand" Click="ResetAppearanceBtn_Click"
                             ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
                 </StackPanel>
 
@@ -77,7 +75,8 @@
                 </Border>
 
                 <!-- ===== 卡 1：主题（出厂默认 + 内置预设 + 最后一张「自选颜色」）===== -->
-                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20"
+                        Margin="0,16,0,0">
                     <StackPanel>
                         <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
@@ -269,13 +268,19 @@
 
                             <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（用户令 2026-09-20：
                                  "默认的颜色是绝对不能改的，但是我们可以把默认的某个主题作为我们自选色的方案"）。
-                                 文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。 -->
+                                 文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。
+                                 「清空颜色」= 把整个草稿清回空槽（用户令 2026-09-20 第三轮）——
+                                 **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <Button x:Name="StartFromThemeBtn"
                                         Content="{Binding StartFromCurrentThemeLabel}"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Cursor="Hand" Click="StartFromThemeBtn_Click"
                                         ToolTip="把当前主题的颜色复制到色槽当起点；主题本身不会被改动"/>
+                                <Button x:Name="ClearDraftBtn" Content="清空颜色"
+                                        Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                        Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
+                                        ToolTip="清空色槽（回到空态）；只清你正在编辑的草稿，不改动当前主题"/>
                             </StackPanel>
 
                             <!-- 色槽：**居中**排列（用户令 2026-09-20："自选配色这里根本没有居中"）。
@@ -452,10 +457,17 @@
                             </StackPanel>
                         </Border>
 
-                        <Button x:Name="ApplyFontsBtn" Content="应用字体"
-                                Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                                Margin="0,14,0,0" HorizontalAlignment="Left" Cursor="Hand"
-                                Click="ApplyFontsBtn_Click"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button x:Name="ApplyFontsBtn" Content="应用字体"
+                                    Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                                    Cursor="Hand" Click="ApplyFontsBtn_Click"/>
+                            <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面/等宽字体回默认族并落盘
+                                 （用户令 2026-09-20 第三轮）。与「恢复默认外观」的区别：这里不动主题与配色。 -->
+                            <Button x:Name="ResetFontsBtn" Content="恢复默认字体"
+                                    Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                    Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
+                                    ToolTip="界面字体与等宽字体一起回默认族（不改动主题与配色）"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
