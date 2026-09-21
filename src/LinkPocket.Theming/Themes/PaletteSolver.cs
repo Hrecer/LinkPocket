@@ -39,6 +39,25 @@ public sealed record ThemeFamilies(
 
     /// <summary>描边槽直接取自配色的原色（最接近"中间调"的那一个）。</summary>
     public Argb? OutlineSource { get; init; }
+
+    /// <summary>
+    /// **表面族彩度**（页面底 / 卡面 / 悬停底 / 选中底共用的"浅色面"彩度）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// = 配色里**浅调成员**的彩度（明度 ≥ <see cref="SurfaceLightMemberMinTone"/> 的成员中彩度最高者，
+    /// 封顶 <see cref="SurfaceChromaMax"/>），下限 = 背景色成员自己的彩度（**只增不减**）。
+    /// </para>
+    /// <para>
+    /// <b>为什么不再取"背景色成员自己的彩度"（用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"）</b>：
+    /// 默认主题的背景色成员 `#F2EEF5` 只有 C5.4（设计档语义 = "米白"），按它推出的整页大面积全是灰的
+    /// （实测量到的表头带/悬停底 C2.6、选中底 C5.4），而**改造前的界面**是
+    /// 表头带 `#E0DAEC` C11.8 / 选中底 `#EEDDF7` C16.5 —— 三轮"改档"全在动明度、从没动过彩度，
+    /// 所以用户看来看去都是"发灰"。现行 = 把彩度提升到该配色**自己的浅调成员**的量级：
+    /// 色相仍只来自配色（背景色成员），彩度也只来自配色（浅调成员），**没有发明任何颜色**。
+    /// </para>
+    /// </remarks>
+    public double SurfaceChroma { get; init; }
 }
 
 /// <summary>
@@ -146,6 +165,17 @@ public static class PaletteSolver
 
         var outlineHue = outline?.Hct.H ?? accentHue;
 
+        // 表面族彩度：取配色里"浅调成员"的彩度（明度 ≥ SurfaceLightMemberMinTone 里最鲜艳的那个），
+        // 封顶 SurfaceChromaMax、下限 = 背景色成员自己的彩度（只增不减 —— 只把"太灰"的抬上来）。
+        // 用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"（详见 ThemeFamilies.SurfaceChroma）。
+        var lightMember = measured
+            .Where(m => m.Hct.T >= SurfaceLightMemberMinTone)
+            .OrderByDescending(m => m.Hct.C)
+            .FirstOrDefault();
+        var surfaceChroma = lightMember.Color == default
+            ? surface.Hct.C
+            : Math.Max(surface.Hct.C, Math.Min(lightMember.Hct.C, SurfaceChromaMax));
+
         return new ThemeFamilies(
             ColorMath.NormalizeHue(accentHue), accentChroma,
             ColorMath.NormalizeHue(supportHue), supportChroma, supportDerived,
@@ -158,6 +188,7 @@ public static class PaletteSolver
             ContainerSource = containerSource.Color == default ? null : containerSource.Color,
             SurfaceSource = surface.Color,
             OutlineSource = outlineSource.Color == default ? null : outlineSource.Color,
+            SurfaceChroma = surfaceChroma,
         };
     }
 
@@ -208,18 +239,23 @@ public static class PaletteSolver
         // 表面色相：预设/默认由"明度最高的成员"给出（或主题自己的钉值）
         var source = families.SurfaceSource;
         var hue = source is { } s ? ColorMath.Measure(s).H : families.NeutralHue;
-        // 彩度取"背景色成员"自己的彩度；缺成员时用中性档（绝不放大）
-        var chroma = source is { } s2 ? ColorMath.Measure(s2).C : NeutralChroma;
+        // 彩度 = **表面族彩度**（配色里"浅调成员"的量级，见 ThemeFamilies.SurfaceChroma）——
+        // 不再是"背景色成员自己的彩度"：默认主题那个成员只有 C5.4，按它推出的整页都是灰的
+        // （用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"）。
+        var memberChroma = source is { } s2 ? ColorMath.Measure(s2).C : NeutralChroma;
+        var chroma = source.HasValue ? families.SurfaceChroma : NeutralChroma;
         var tone = source is { } s3 ? ColorMath.Measure(s3).T : SurfaceBaseToneMax;
 
-        // ① 本色在档内 **且本色在 sRGB 里表示得出来** → 原样返回：这就是"融合"（色点与页面底同一色值），
-        //    也避免无谓的 HCT 往返（贴色域边界的高彩度浅色往返会漂 4° 色相，实测宇治抹茶 `#E8F2EF`）。
+        // ① 本色在档内、**且族彩度就等于该成员自己的彩度**、且表示得出来 → 原样返回：
+        //    这就是"融合"（色点与页面底同一色值），也避免无谓的 HCT 往返
+        //    （贴色域边界的高彩度浅色往返会漂 4° 色相，实测宇治抹茶 `#E8F2EF`）。
         if (source is { } exactColor
             && tone >= SurfaceBaseToneMin && tone <= SurfaceBaseToneMax
+            && Math.Abs(chroma - memberChroma) < 0.05
             && ColorMath.IsRepresentable(hue, chroma, tone))
             return exactColor;
 
-        // ② 本色更浅（超上限）：只动明度压到上限档（色相与彩度仍是那个成员的）——
+        // ② 本色更浅（超上限）：只动明度压到上限档（色相仍是那个成员的、彩度是表面族彩度）——
         //    融合不靠"本色原样"：主题卡那枚色点显示的是**实际生效页面底**本身（见 BuildSwatches），
         //    所以这里压档不会破坏融合，只把整页压到 87–91 的深度档。
         if (source is { } lighter)
@@ -234,17 +270,23 @@ public static class PaletteSolver
                 if (ColorMath.ContrastRatio(candidate, cardAt) <= SurfaceFusionMaxContrast)
                     return candidate;
             }
-            return ColorMath.FromAlphaHct(0xFF, hue, chroma, SurfaceBaseToneMax);
+            return AtTone(hue, chroma, SurfaceBaseToneMax);
         }
 
         // ③ 本色更深（低于下限，例如暮色玫瑰 T89）→ 提到下限档
-        var target = Math.Clamp(tone, SurfaceBaseToneMin, SurfaceBaseToneMax);
+        return AtTone(hue, chroma, Math.Clamp(tone, SurfaceBaseToneMin, SurfaceBaseToneMax));
+    }
+
+    /// <summary>
+    /// 给定色相 / 彩度 / 明度档取色：**彩度放不下（贴色域边界）时才逐步降彩度**——
+    /// 色相永远不动（"只动明度与彩度上限、绝不换色相"，见 <see cref="ColorMath.IsRepresentable"/>）。
+    /// </summary>
+    private static Argb AtTone(double hue, double chroma, double tone)
+    {
         for (var c = chroma; c >= 0; c -= 1.0)
-        {
-            if (ColorMath.IsRepresentable(hue, c, target))
-                return ColorMath.FromAlphaHct(0xFF, hue, c, target);
-        }
-        return ColorMath.FromAlphaHct(0xFF, hue, 0, target);
+            if (ColorMath.IsRepresentable(hue, c, tone))
+                return ColorMath.FromAlphaHct(0xFF, hue, c, tone);
+        return ColorMath.FromAlphaHct(0xFF, hue, 0, tone);
     }
 
     /// <summary>
@@ -297,6 +339,8 @@ public static class PaletteSolver
     /// **现行 = 87–91 的深度 + 两个保住另两项目标的机制**：① 主题卡上那枚"背景色"色点显示的是
     /// **实际生效的页面底**（`ThemeCardViewModel.BuildSwatches` 用 <see cref="SurfaceBaseColor"/> 替换最浅成员）
     /// → 色点与页面底**逐字节同色 = 融合**（实测 11/11 套 = 1.000），"本色原样"不再是融合的判据；
+    /// （第四轮 2026-09-21 起页面底**彩度**也不再取"背景色成员本色"：改取配色"浅调成员"的量级，
+    /// 见 <see cref="ThemeFamilies.SurfaceChroma"/> —— 色相与彩度都仍来自这份配色。）
     /// ② 卡面档距取 <see cref="SurfaceCardLift"/>（6 档），让"卡面对页面底"恒 ≥1.15
     /// （实测 1.165–1.169；5 档只有 1.135–1.138，够不到门槛）。
     /// </para>
@@ -314,6 +358,18 @@ public static class PaletteSolver
 
     /// <summary>页面底的**标称档**（= 上限档）：文档与"新出现的页面底取哪一档"的说明都引用它。</summary>
     public const double SurfaceBaseTone = SurfaceBaseToneMax;
+
+    /// <summary>
+    /// 「浅调成员」的明度下限：表面族彩度取**明度 ≥ 它的成员里彩度最高者**的量级
+    /// （见 <see cref="ThemeFamilies.SurfaceChroma"/>；用户报障 2026-09-21"紫罗兰颜色发灰"）。
+    /// </summary>
+    public const double SurfaceLightMemberMinTone = 80.0;
+
+    /// <summary>
+    /// 表面族彩度上限：浅色大面积必须"安静"，不能把配色的高彩度浅色整片铺满
+    /// （16 = 既有的容器彩度上限档 <c>NeutralVariantChroma × 2</c>，见 `LiftContainerUntilVisible`）。
+    /// </summary>
+    public const double SurfaceChromaMax = 16.0;
 
     /// <summary>
     /// 卡面相对页面底提亮的档距：**必须让"卡面对页面底"≥1.15**（用户第三轮报障"卡片贴脸看不出层级"
@@ -466,9 +522,9 @@ public static class PaletteSolver
             : LightenTo(accentFill, ToneScale.AccentContainer);
         // 选中底 / 落点高亮 / 徽标底 = **必定看得见**（用户报障 2026-09-20："选中行与页面底同色、看不出来"）：
         // 直接取浅成员当容器时，实测 8/11 套与页面底**完全同色**（对比度 1.000 —— 默认主题最浅的
-        // `#F2EEF5` 既是页面底又是容器来源）。故这里以"容器来源的色相 + 支撑档彩度"取一个够浅的档，
-        // 再按**实测对比度**抬到与页面底、与悬停底都分得开的档位（只动明度、不发明色相）。
-        accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover);
+        // `#F2EEF5` 既是页面底又是容器来源）。故这里以"容器来源的色相 + 表面族彩度"取一个够浅的档，
+        // 再按**实测对比度**抬到与页面底、与悬停底都分得开的档位（只动明度与彩度、不发明色相）。
+        accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover, families.SurfaceChroma);
         // 容器字跟随**容器自己的色相**（否则浅色容器上会浮出一层别的颜色的墨）
         var accentOnContainer = At(ColorMath.Measure(accentContainer).H,
             Math.Max(ColorMath.Measure(accentContainer).C, NeutralChroma), ToneScale.AccentOnContainer);
@@ -606,19 +662,29 @@ public static class PaletteSolver
     /// 判据落在"看得见"这件事实上：沿**浅色方向**逐档找第一个同时满足
     /// 「对页面底 ≥ <see cref="ContainerMinContrastOnBase"/>」与「对悬停底 ≥ <see cref="ContainerMinContrastOnHover"/>」
     /// 的档位（浅色主题的选中底只能往更浅处走，往深处走会撞上悬停底/正文墨）。
-    /// 彩度按支撑档钳制（大面积容器必须安静），色相仍是配色成员自己的。
+    /// 彩度 = 表面族彩度（<paramref name="familyChroma"/>，**只增不减**）、上限仍是容器自己的安静档，
+    /// 色相仍是配色成员自己的。
     /// </para>
     /// </remarks>
-    private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover)
+    private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover, double familyChroma)
     {
+        var m = ColorMath.Measure(container);
+        // 彩度：**只增不减**地抬到表面族彩度（页面底 / 悬停底 / 选中底 = 同一个"浅色面"家族）——
+        // 页面底加紫之后，若选中底还停在"背景色成员本色"的彩度上（默认 C5.4），它会**比页面底更灰**
+        // （旧界面选中底 `#EEDDF7` C16.5、表头带 `#E0DAEC` C11.8）。上限仍是容器自己的安静档（16）。
+        var chroma = Math.Min(Math.Max(m.C, familyChroma), Math.Min(24.0, NeutralVariantChroma * 2));
+        if (Math.Abs(chroma - m.C) > 0.05)
+        {
+            container = ColorMath.FromAlphaHct(0xFF, m.H, chroma, m.T);
+            m = ColorMath.Measure(container);
+        }
+
         // 已经够开就直接用（预设里"浅且安静"的成员本来就够）+ 不许比页面底更深（选中底不能压过页面底）
         if (ColorMath.ContrastRatio(container, surfaceBase) >= ContainerMinContrastOnBase
             && ColorMath.ContrastRatio(container, surfaceHover) >= ContainerMinContrastOnHover
-            && ColorMath.Measure(container).T >= ColorMath.Measure(surfaceBase).T)
+            && m.T >= ColorMath.Measure(surfaceBase).T)
             return container;
 
-        var m = ColorMath.Measure(container);
-        var chroma = Math.Min(m.C, Math.Min(24.0, NeutralVariantChroma * 2));
         for (var tone = Math.Max(m.T, ColorMath.Measure(surfaceBase).T); tone <= 99.0; tone += 1.0)
         {
             var candidate = ColorMath.FromAlphaHct(0xFF, m.H, chroma, tone);

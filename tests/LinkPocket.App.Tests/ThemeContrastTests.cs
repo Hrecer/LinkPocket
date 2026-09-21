@@ -165,20 +165,23 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        // 选中底 = 抬到"对页面底 ≥1.08"的档（修前它与页面底**完全同色**=1.000，选中行看不见）；
-        // 第三轮起页面底压到 T91 之后，这个"够浅的低彩度成员本色"（#F2EEF5）本身就与页面底拉得开 → 原样采用
-        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 选中底 = "容器来源的色相 + 表面族彩度"抬到"对页面底 ≥1.08"的档
+        // （修前它与页面底**完全同色**=1.000，选中行看不见）。第四轮（用户报障 2026-09-21"紫罗兰发灰"）起
+        // 彩度与页面底同族（表面族彩度 C14.6）—— 旧的 C5.4 停在"背景色成员本色"上，会比页面底更灰。
+        Assert.Equal(0xF1EDFFu, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
         Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
-        // ← 色5（背景色成员 #F2EEF5, T94.6）：第三轮起页面底压到 **87–91 深度档** → T91 的同一色相/彩度；
+        // ← 色5（背景色成员 #F2EEF5）的**色相** + 配色"浅调成员"（色4 #D5C7DE, C15.1）的**彩度量级**：
+        //   第三轮起明度压到 **87–91 深度档**（T91）；第四轮（用户报障 2026-09-21"紫罗兰发灰"）起
+        //   彩度不再取"背景色成员本色"（只有 C5.4，整页发灰）→ 取浅调成员量级（封顶 16）→ C14.6。
         //   主题卡那枚色点显示的就是**这个值**（与页面底逐字节同色 = 融合；"本色原样"不再是判据）
-        Assert.Equal(0xE8E4EBu, Rgb(t.Token(AppTokens.SurfaceBase)));
+        Assert.Equal(0xE6E3FAu, Rgb(t.Token(AppTokens.SurfaceBase)));
         // 卡面 = 页面底提亮 6 档（T91 → T97；档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）
-        Assert.Equal(0xF9F5FCu, Rgb(t.Token(AppTokens.SurfaceCard)));
+        Assert.Equal(0xF9F5FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
@@ -383,7 +386,8 @@ public class ThemeContrastTests
         // （`ThemeCardViewModel.BuildSwatches` 用 `SurfaceBaseColor` 替换最浅成员），逐字节同色 = 1.000）：
         //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 与背景同色相）；
         //  ② 渲染出来的色点里**含页面底本身**（卡片实际画什么 = 用户看到的融合）；
-        //  ③ 页面底只许动明度：色相与成员 ≤5°（8 位往返量化下界）、彩度不得被放大（不发明颜色）。
+        //  ③ 页面底只许动明度与"彩度量级"：色相与背景色成员 ≤5°（8 位往返量化下界）、
+        //     彩度不得超过配色"浅调成员"的量级（第四轮口径，不发明配色里没有的更浓颜色）。
         var failures = new List<string>();
         var counts = new List<string>();
         foreach (var theme in ThemeCatalog.All)
@@ -404,17 +408,29 @@ public class ThemeContrastTests
                 failures.Add($"{theme.Name} 主题卡色点里没有它的页面底"
                              + $" #{pageBase.ToInt() & 0x00FFFFFF:X6}（圆点与背景不融合）");
 
-            // ③ 页面底只许动明度。
+            // ③ 页面底只许动明度与"彩度量级"。
             //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：
             //    压档时贴色域边界的浅色会被钳制（实测宇治抹茶 `#E8F2EF` H186.8 压到 T91 后 H191.2，差 4.4°，
             //    派生侧已按"降彩度到能表示为止"把漂移压到最小）；
             //    真正的回归（表面族被钉到别的色相）差的是几十度，照样抓得住。
+            //
+            //    ⚠️ 第四轮改口径（用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"）：页面底彩度
+            //    **不再以"背景色成员本色"为上限**（那个成员可能只有 C5.4 = 整页发灰），而是提到配色
+            //    **浅调成员**的量级（封顶 `SurfaceChromaMax`）—— 旧断言"不许超过成员本色 +0.5"随之作废。
+            //    判据改为**量级上限**：不许超过"配色自己的浅调成员"（超过 = 又发明了配色里没有的更浓颜色）。
             var m0 = ColorMath.Measure(lightest);
             var m1 = ColorMath.Measure(pageBase);
             if (ColorMath.HueDistance(m0.H, m1.H) > 5.0)
                 failures.Add($"{theme.Name} 背景色成员 H{m0.H:F1} 与页面底 H{m1.H:F1} 不同色相（表面族被带离了那个成员）");
-            if (m1.C > m0.C + 0.5)
-                failures.Add($"{theme.Name} 页面底彩度被放大（{m0.C:F1} → {m1.C:F1}）——只许压明度、不许加厚颜色");
+            var lightChroma = theme.Palette.Select(ColorMath.Measure)
+                .Where(x => x.T >= PaletteSolver.SurfaceLightMemberMinTone)
+                .Select(x => x.C)
+                .DefaultIfEmpty(0)
+                .Max();
+            var chromaCeiling = Math.Max(m0.C, Math.Min(lightChroma, PaletteSolver.SurfaceChromaMax)) + 0.5;
+            if (m1.C > chromaCeiling)
+                failures.Add($"{theme.Name} 页面底彩度超过配色浅调成员的量级（{m1.C:F1} > {chromaCeiling - 0.5:F1}）"
+                             + "——只许压明度与提到配色自己的量级，不许发明更浓的颜色");
 
             // ④ 色点数 = 设计档色数（1–4 套五色 / 5–10 套四色 / 出厂默认五色）
             if (slots.Count != theme.Palette.Count)
