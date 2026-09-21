@@ -26,9 +26,9 @@ public enum CommandCaps
 /// <summary>影响面摘要（破坏性命令 CONFIRM_REQUIRED 时随 Details 下发）。</summary>
 public sealed record ImpactSummary(string Text)
 {
-    public static readonly ImpactSummary Link = new("链接");
-    public static readonly ImpactSummary Folder = new("文件夹（含子树）");
-    public static readonly ImpactSummary Database = new("整库");
+    public static readonly ImpactSummary Link = new("link");
+    public static readonly ImpactSummary Folder = new("folder (with subtree)");
+    public static readonly ImpactSummary Database = new("entire database");
     public override string ToString() => Text;
 }
 

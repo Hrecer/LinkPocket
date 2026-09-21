@@ -74,8 +74,8 @@ public sealed record ThemeDefinition
     /// <summary>主题的稳定标识（预设用 kebab-case 名；用户自选为生成 id）。</summary>
     public required string Id { get; init; }
 
-    /// <summary>显示名（「外观」面板卡片标题）。</summary>
-    public required string Name { get; init; }
+    /// <summary>显示名<b>不在本层</b>：主题名是界面文本，由界面层按 <see cref="Id"/> 取词
+    /// （<c>UI.Settings/ThemeNames.cs</c>）。这里只有 kebab-case 的稳定身份。</summary>
 
     /// <summary>来源（分组与可删除性）。</summary>
     public required ThemeSource Source { get; init; }

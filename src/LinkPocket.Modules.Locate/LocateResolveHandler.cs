@@ -19,8 +19,8 @@ internal sealed class LocateResolveHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "locate.resolve",
         Category: "locate",
-        Description: "按 ID 解析目标位置（类型 / 容器目录 / 路径），供定位与跳转使用",
-        Parameters: [ParamSpec.Req<string>("id", "目标 ID（链接或文件夹）")],
+        Description: "Resolve a target location by ID (kind / container folder / path) for locate and jump",
+        Parameters: [ParamSpec.Req<string>("id", "Target ID (link or folder)")],
         Caps: CommandCaps.Query);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -61,6 +61,6 @@ internal sealed class LocateResolveHandler : ICommandHandler
         }
 
         throw new EngineException(EngineErrors.Of(
-            EngineErrors.EntityNotFound, $"ID {raw} 不存在（链接与文件夹都没有）", correlationId: ctx.CorrelationId));
+            EngineErrors.EntityNotFound, $"ID {raw} does not exist (neither a link nor a folder)", correlationId: ctx.CorrelationId));
     }
 }

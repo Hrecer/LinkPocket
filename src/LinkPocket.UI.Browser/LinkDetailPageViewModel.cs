@@ -29,11 +29,11 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         _host = host;
 
         // 动作面（共享面内声明本页入口）：主按钮 = 打开网站；铅笔 = 编辑；垃圾桶 = 删除
-        OpenLabel = Loc.T("common.open");
-        OpenToolTip = "在浏览器中打开";
+        OpenLabel = Loc.K("common.open");
+        OpenToolTip = Loc.K("detail.openInBrowser");
         OpenIconKind = "open-in-new";
-        EditLabel = "编辑";
-        DeleteActionLabel = Loc.T("common.delete");
+        EditLabel = Loc.K("common.edit");
+        DeleteActionLabel = Loc.K("common.delete");
 
         BackCommand = new RelayCommand(() => _ = BackAsync());
         // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（Url 尚空），

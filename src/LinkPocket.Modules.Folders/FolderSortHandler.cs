@@ -11,11 +11,11 @@ internal sealed class FolderSortHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.sort",
         Category: "folders",
-        Description: "重排某父目录下的文件夹顺序（item_ids 顺序即新顺序；parent_id 缺省 = 根级）",
+        Description: "Reorder folders under a parent (the order of item_ids is the new order; parent_id default = root level)",
         Parameters:
         [
-            ParamSpec.Opt<string>("parent_id", "父目录 ID；缺省 = 根级"),
-            ParamSpec.Req<IReadOnlyList<string>>("item_ids", "按新顺序排列的文件夹 ID 列表"),
+            ParamSpec.Opt<string>("parent_id", "Parent folder ID; default = root level"),
+            ParamSpec.Req<IReadOnlyList<string>>("item_ids", "Folder IDs in the new order"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -27,7 +27,7 @@ internal sealed class FolderSortHandler : ICommandHandler
 
         if (itemIds.Count != itemIds.Distinct().Count())
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, "item_ids 包含重复文件夹 ID：排序目标必须是一组唯一文件夹",
+                EngineErrors.TypeMismatch, "item_ids contains duplicate folder IDs: the reorder target must be a set of unique folders",
                 correlationId: ctx.CorrelationId));
 
         var siblings = await ctx.Uow.Folders.ChildrenOfAsync(parentId == null ? null : new FolderId(parentId), ct);
@@ -37,7 +37,7 @@ internal sealed class FolderSortHandler : ICommandHandler
             if (!validIds.Contains(itemId))
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.EntityNotFound,
-                    $"文件夹 {itemId} 不属于目标目录（parent_id={parentId ?? "根"}）",
+                    $"folder {itemId} does not belong to the target folder (parent_id={parentId ?? "根"}）",
                     correlationId: ctx.CorrelationId));
         }
 
@@ -52,6 +52,6 @@ internal sealed class FolderSortHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", parentId ?? "*"),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已重排 {itemIds.Count} 个文件夹"));
+                $"Reordered {itemIds.Count} folder(s)"));
     }
 }

@@ -176,7 +176,7 @@ public class LogCommandTests
             // 切换公告（category = logs.level）在 warn 口径下仍然可见——切换动作自己留痕
             var announcement = await engine.QueryAsync<LogQueryResult>("logs.query",
                 new { category = "logs.level" });
-            Assert.Contains(announcement.Items, r => r.Message.Contains("日志最低级别已切换"));
+            Assert.Contains(announcement.Items, r => r.Message.Contains("Minimum log level switched"));
         }
         finally
         {

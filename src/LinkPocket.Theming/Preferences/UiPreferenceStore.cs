@@ -135,13 +135,13 @@ public static class UiPreferenceStore
             var prefs = JsonSerializer.Deserialize<UiPreferences>(text, Json);
             if (prefs is null)
             {
-                LpLog.Error($"界面偏好文件内容为空，已回退默认外观：{path}", category: LogCategory);
+                LpLog.Error($"the UI preference file is empty, fell back to the default appearance: {path}", category: LogCategory);
                 failed = true;
                 return UiPreferences.Default;
             }
             if (prefs.Version != UiPreferences.CurrentVersion)
             {
-                LpLog.Error($"界面偏好文件版本不符（期望 {UiPreferences.CurrentVersion}，实际 {prefs.Version}），已回退默认外观：{path}", category: LogCategory);
+                LpLog.Error($"the UI preference file version mismatched (expected {UiPreferences.CurrentVersion}, got {prefs.Version}), fell back to the default appearance: {path}", category: LogCategory);
                 failed = true;
                 return UiPreferences.Default;
             }
@@ -149,7 +149,7 @@ public static class UiPreferenceStore
         }
         catch (Exception ex)
         {
-            LpLog.Error($"界面偏好文件损坏，已回退默认外观：{path}", ex, LogCategory);
+            LpLog.Error($"the UI preference file is corrupt, fell back to the default appearance: {path}", ex, LogCategory);
             failed = true;
             return UiPreferences.Default;
         }
@@ -173,7 +173,7 @@ public static class UiPreferenceStore
         }
         catch (Exception ex)
         {
-            LpLog.Error($"保存界面偏好失败：{path}", ex, LogCategory);
+            LpLog.Error($"failed to save UI preferences: {path}", ex, LogCategory);
             TryDelete(tmp);
             throw;
         }
@@ -195,7 +195,7 @@ public static class UiPreferenceStore
         catch (Exception ex)
         {
             // 删除失败不阻断（下次启动仍会读到旧偏好），但如实留痕
-            LpLog.Warn($"删除界面偏好文件失败：{path}（{ex.Message}）", category: LogCategory);
+            LpLog.Warn($"failed to delete the UI preference file: {path} ({ex.Message})", category: LogCategory);
         }
     }
 }

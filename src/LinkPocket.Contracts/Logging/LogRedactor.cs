@@ -21,7 +21,7 @@ public static class LogRedactor
 {
     private const string Mask = "***";
     private const int MaxFieldLength = 500;
-    private const string TruncatedMarker = "…(已截断)";
+    private const string TruncatedMarker = "...(truncated)";
 
     /// <summary>文本里的 <c>key=value</c>（前缀限 <c>? &amp; ; 空白 引号</c> 或行首；值不含引号与分隔符）。
     /// 引号入前缀是为了覆盖"值以敏感键开头"的形态（JSON 字符串值 / 日志里的引用串），

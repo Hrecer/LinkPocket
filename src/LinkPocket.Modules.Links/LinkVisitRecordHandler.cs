@@ -14,8 +14,8 @@ internal sealed class LinkVisitRecordHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.visit_record",
         Category: "links",
-        Description: "记录一次查看（链接计数 +1、最后查看刷新；所在文件夹沿父链同步刷新）",
-        Parameters: [ParamSpec.Req<string>("id", "链接 ID")],
+        Description: "Record one visit (link count +1 and last visit refreshed; the folder chain refreshes along the parents)",
+        Parameters: [ParamSpec.Req<string>("id", "Link ID")],
         Caps: CommandCaps.Mutation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -25,7 +25,7 @@ internal sealed class LinkVisitRecordHandler : ICommandHandler
 
         var link = await ctx.Uow.Links.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"链接 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
 
         link.VisitCount++;
         link.LastVisitedAt = DateTime.UtcNow;
@@ -39,6 +39,6 @@ internal sealed class LinkVisitRecordHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("link", id.Value),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已记录查看「{link.Title ?? link.Url}」"));
+                $"Visit recorded for '{link.Title ?? link.Url}'"));
     }
 }

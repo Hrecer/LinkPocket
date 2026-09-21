@@ -105,7 +105,7 @@ public sealed class EngineCore : IEngine
         var handler = ResolveOrThrow(command, correlationId);
         if (!handler.Descriptor.IsMutation)
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
-                $"「{command}」不是变更命令，请走 QueryAsync", correlationId: correlationId));
+                $"'{command}' is not a mutation command, use QueryAsync", correlationId: correlationId));
 
         // 调用上下文：corr / cmd / caller 落到记录的**首类字段**——本命令链上的每条记录（里程碑 / 处理器 /
         // 观测面）一律自动携带，与审计同 correlation。"一条用户动作的完整链路"由此可对齐，不靠各处手抄。
@@ -113,7 +113,7 @@ public sealed class EngineCore : IEngine
 
         // 里程碑（Debug：缺省 info 级下零噪音，提级即为完整管道轨迹）
         if (LpLog.IsEnabled(LogLevel.Debug))
-            LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令开始：{command}", props: new Dictionary<string, object?>
+            LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Command start: {command}", props: new Dictionary<string, object?>
             {
                 ["dry_run"] = dryRun,
             });
@@ -178,7 +178,7 @@ public sealed class EngineCore : IEngine
                 }
                 catch (Exception pubEx)
                 {
-                    RegisterObservationFailure("事件发布失败", pubEx);
+                    RegisterObservationFailure("event publish failed", pubEx);
                 }
 
                 // 整库影响面的命令（maintenance.reinit）：表已清空，全部查询缓存直接作废；
@@ -198,7 +198,7 @@ public sealed class EngineCore : IEngine
                     catch (Exception idemEx)
                     {
                         // 清理失败只计数 + 记日志，绝不否定"表已清空"这个已提交事实
-                        RegisterObservationFailure("整库重置后清空幂等记录失败", idemEx);
+                        RegisterObservationFailure("failed to clear idempotency records after full database reset", idemEx);
                     }
                 }
 
@@ -223,12 +223,12 @@ public sealed class EngineCore : IEngine
             }
             catch (Exception auditEx)
             {
-                RegisterObservationFailure("写成功审计失败", auditEx);
+                RegisterObservationFailure("success audit write failed", auditEx);
                 auditRef = null;
             }
 
             if (LpLog.IsEnabled(LogLevel.Debug))
-                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"命令完成：{command}", props: new Dictionary<string, object?>
+                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Command completed: {command}", props: new Dictionary<string, object?>
                 {
                     ["dry_run"] = dryRun,
                     ["touched"] = result.Changes?.Touched.Count ?? 0,
@@ -240,22 +240,22 @@ public sealed class EngineCore : IEngine
         catch (EngineException ex)
         {
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
-            LpLog.Warn($"命令失败：{command}（{ex.Error.Code}）", ex, category: "engine.pipeline");
+            LpLog.Warn($"Command failed: {command} ({ex.Error.Code})", ex, category: "engine.pipeline");
             throw;
         }
         catch (OperationCanceledException)
         {
             // 取消也落审计（观测面：所有调用可追溯，取消不例外）
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsSnapshot);
-            LpLog.Warn($"命令取消：{command}", category: "engine.pipeline");
-            throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "调用已取消", correlationId: correlationId));
+            LpLog.Warn($"Command cancelled: {command}", category: "engine.pipeline");
+            throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "Call cancelled", correlationId: correlationId));
         }
         catch (Exception ex)
         {
             var wrapped = new EngineException(EngineErrors.Of(
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
-            LpLog.Error($"命令内部错误：{command}", ex, category: "engine.pipeline");
+            LpLog.Error($"Command internal error: {command}", ex, category: "engine.pipeline");
             throw wrapped;
         }
         finally
@@ -278,7 +278,7 @@ public sealed class EngineCore : IEngine
         var handler = ResolveOrThrow(query, correlationId);
         if (!handler.Descriptor.IsQuery)
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed,
-                $"「{query}」不是查询命令，请走 ExecuteAsync", correlationId: correlationId));
+                $"'{query}' is not a query command, use ExecuteAsync", correlationId: correlationId));
 
         var argsJson = EngineJson.ToJsonElement(args);
         var policy = handler.Descriptor.Cache;
@@ -301,7 +301,7 @@ public sealed class EngineCore : IEngine
             }
             return (T?)cachedResult.Data
                 ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal,
-                    $"查询「{query}」返回空结果", correlationId: correlationId));
+                    $"query '{query}' returned no result", correlationId: correlationId));
         }
 
         // 读池：每查询一个短 UoW，免写闸、免审计、免撤销（WAL 下与写并发）
@@ -310,7 +310,7 @@ public sealed class EngineCore : IEngine
         var result = await handler.ExecuteAsync(ctx, argsJson);
         return (T?)result.Data
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal,
-                $"查询「{query}」返回空结果", correlationId: correlationId));
+                $"query '{query}' returned no result", correlationId: correlationId));
     }
 
     public EngineManifest Describe(string? category = null)
@@ -352,12 +352,12 @@ public sealed class EngineCore : IEngine
             }
             catch (Exception auditEx)
             {
-                RegisterObservationFailure("写嵌套审计失败", auditEx);
+                RegisterObservationFailure("nested audit write failed", auditEx);
             }
 
             // 里程碑（Debug）：嵌套派发轨迹——与父命令同 correlation，可还原"一条用户动作"的完整链路
             if (LpLog.IsEnabled(LogLevel.Debug))
-                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"嵌套派发完成：{command}", props: new Dictionary<string, object?>
+                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Nested dispatch completed: {command}", props: new Dictionary<string, object?>
                 {
                     // 首类字段（corr / cmd / caller）= 外层调用（调用上下文）；被派发的子命令另给 nested_cmd，避免歧义
                     ["nested_cmd"] = command,
@@ -421,7 +421,7 @@ public sealed class EngineCore : IEngine
     private ICommandHandler ResolveOrThrow(string command, string correlationId)
         => _registry.Resolve(command)
            ?? throw new EngineException(EngineErrors.Of(EngineErrors.UnknownCommand,
-               $"未知命令「{command}」", correlationId: correlationId));
+               $"unknown command '{command}'", correlationId: correlationId));
 
     private void EnsureConfirmed(CommandDescriptor descriptor, CallOptions? options, string correlationId)
     {
@@ -429,7 +429,7 @@ public sealed class EngineCore : IEngine
         {
             if (!_confirmTokens.ValidateAndConsume(token, descriptor.Name))
                 throw new EngineException(EngineErrors.Of(EngineErrors.ConfirmExpired,
-                    $"「{descriptor.Name}」的确认令牌无效或已过期，请重新发起",
+                    $"confirmation token for '{descriptor.Name}' is invalid or expired, start again",
                     correlationId: correlationId));
             return;
         }
@@ -442,7 +442,7 @@ public sealed class EngineCore : IEngine
             ttl_seconds = 60,
         });
         throw new EngineException(EngineErrors.Of(EngineErrors.ConfirmRequired,
-            $"「{descriptor.Name}」是破坏性命令，需要二次确认", details, correlationId: correlationId));
+            $"'{descriptor.Name}' is a destructive command and needs confirmation", details, correlationId: correlationId));
     }
 
     private static CommandResult<T> ToTyped<T>(CommandResult result)
@@ -484,7 +484,7 @@ public sealed class EngineCore : IEngine
         }
         catch (Exception auditEx)
         {
-            RegisterObservationFailure("写失败审计失败", auditEx);
+            RegisterObservationFailure("failure audit write failed", auditEx);
         }
     }
 
@@ -497,6 +497,6 @@ public sealed class EngineCore : IEngine
     internal void RegisterObservationFailure(string what, Exception ex)
     {
         Interlocked.Increment(ref _observationFailures);
-        LpLog.Warn($"观测面失败（已提交写仍返回成功）：{what}", ex, category: "engine.observe");
+        LpLog.Warn($"observation surface failed (write already committed, call still returns success): {what}", ex, category: "engine.observe");
     }
 }

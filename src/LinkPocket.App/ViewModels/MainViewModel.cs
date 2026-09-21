@@ -58,7 +58,6 @@ namespace LinkPocket.ViewModels
             _selectionManager = selectionManager;
 
             InitializeNavigationItems();
-            LocaleService.RegisterReprojector(this, ReprojectLocalizedText);
 
             TrashViewModel = new TrashViewModel(client, _ports);
             SettingsViewModel = new SettingsViewModel();
@@ -185,37 +184,13 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = NavIds.Browser, Label = Loc.T("nav.item.browser"), IconKind = "folder-open-outline" },
-                new() { Id = NavIds.Search, Label = Loc.T("nav.item.search"), IconKind = "magnify" },
-                new() { Id = NavIds.SmartLists, Label = Loc.T("nav.item.smartLists"), IconKind = "auto-fix" },
-                new() { Id = NavIds.Tools, Label = Loc.T("nav.item.tools"), IconKind = "wrench-outline" },
-                new() { Id = NavIds.Trash, Label = Loc.T("nav.item.trash"), IconKind = "delete-outline" },
-                new() { Id = NavIds.Settings, Label = Loc.T("nav.item.settings"), IconKind = "cog-outline" }
+                new() { Id = NavIds.Browser, LabelKey = "nav.item.browser", IconKind = "folder-open-outline" },
+                new() { Id = NavIds.Search, LabelKey = "nav.item.search", IconKind = "magnify" },
+                new() { Id = NavIds.SmartLists, LabelKey = "nav.item.smartLists", IconKind = "auto-fix" },
+                new() { Id = NavIds.Tools, LabelKey = "nav.item.tools", IconKind = "wrench-outline" },
+                new() { Id = NavIds.Trash, LabelKey = "nav.item.trash", IconKind = "delete-outline" },
+                new() { Id = NavIds.Settings, LabelKey = "nav.item.settings", IconKind = "cog-outline" }
             };
-        }
-
-        /// <summary>
-        /// 语言一变就重跑这一小段投影：导航标签与目录树虚根名是建对象时烤进去的字符串，
-        /// 而换语言属于"源值变了、属性名没变"——不重发通知，绑定不会自己回来读。
-        /// 键一律写成字面量（不许拼出来），否则护栏查不到"这条键在不在表里"。
-        /// </summary>
-        private void ReprojectLocalizedText()
-        {
-            foreach (var item in NavigationItems)
-            {
-                item.Label = item.Id switch
-                {
-                    NavIds.Browser => Loc.T("nav.item.browser"),
-                    NavIds.Search => Loc.T("nav.item.search"),
-                    NavIds.SmartLists => Loc.T("nav.item.smartLists"),
-                    NavIds.Tools => Loc.T("nav.item.tools"),
-                    NavIds.Trash => Loc.T("nav.item.trash"),
-                    NavIds.Settings => Loc.T("nav.item.settings"),
-                    _ => item.Label,
-                };
-            }
-            if (FolderItems.FirstOrDefault() is { IsRoot: true } root)
-                root.Name = BookmarkPath.RootToken;
         }
 
         private async void SelectNav(string navId)

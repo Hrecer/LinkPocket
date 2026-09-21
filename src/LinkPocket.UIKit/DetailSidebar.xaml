@@ -106,11 +106,11 @@
                         Style="{StaticResource PrimaryPillButton}"
                         Grid.ColumnSpan="{Binding OpenColumnSpan}"
                         Command="{Binding OpenCommand}"
-                        ToolTip="{Binding OpenToolTip}"
+                        ToolTip="{loc:Value OpenToolTip}"
                         Visibility="{Binding ShowOpenAction, Converter={StaticResource BoolToVis}}">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="eye-outline" Width="14" Height="14" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="{loc:Value OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
                 <!-- 打开：仅链接（系统默认浏览器打开并记录一次访问） -->
@@ -137,7 +137,7 @@
                      取色 = `AccentBtn` **深紫**（与工具栏主按钮填充同源；⚠️ 不要用图标钮缺省的 `Primary` 亮紫——
                      跳转与「重命名」两枚按同色规则处理）。 -->
                 <Button Style="{StaticResource NavIconButton}"
-                        Tag="{Binding JumpToolTip}"
+                        Tag="{loc:Value JumpToolTip}"
                         Width="32" Height="32" Margin="0,0,0,0" VerticalAlignment="Center"
                         Foreground="{DynamicResource App.Accent.Fill}"
                         Command="{Binding JumpCommand}"
@@ -146,7 +146,7 @@
                 </Button>
                 <Button Style="{StaticResource NavIconButton}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
-                        Tag="{Binding RestoreLabel}"
+                        Tag="{loc:Value RestoreLabel}"
                         Foreground="{Binding RestoreTone, Converter={StaticResource PillToneBrush}}"
                         Command="{Binding RestoreCommand}"
                         Visibility="{Binding ShowRestoreAction, Converter={StaticResource BoolToVis}}">
@@ -154,7 +154,7 @@
                 </Button>
                 <Button Style="{StaticResource NavIconButton}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
-                        Tag="{Binding RestoreToRootLabel}"
+                        Tag="{loc:Value RestoreToRootLabel}"
                         Foreground="{Binding RestoreToRootTone, Converter={StaticResource PillToneBrush}}"
                         Command="{Binding RestoreToRootCommand}"
                         Visibility="{Binding ShowRestoreToRootAction, Converter={StaticResource BoolToVis}}">
@@ -166,8 +166,8 @@
                      UI-SPEC 对此情形的既定口径 = 「宁可同色 + 靠字形与提示区分」→ 故这里给**提示文案**，
                      探针也改断言"工具提示可区分"而不是"颜色不同"。 -->
                 <Button Style="{StaticResource NavIconButton}"
-                        Tag="{Binding RenameActionLabel}"
-                        ToolTip="{Binding RenameActionLabel}"
+                        Tag="{loc:Value RenameActionLabel}"
+                        ToolTip="{loc:Value RenameActionLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Foreground="{DynamicResource App.Accent.Fill}"
                         Command="{Binding RenameActionCommand}"
@@ -177,8 +177,8 @@
                 <!-- 链接：编辑（整页编辑器）；文件夹：重命名（同一枚铅笔，取色随语义切换——
                      重命名 = 强调色（与上面那枚独立「重命名」同色）；编辑 = 图标钮缺省的 Primary。
                      取色由模型的能力位 EditActionAccent 声明，界面不按行类型猜） -->
-                <Button Tag="{Binding EditLabel}"
-                        ToolTip="{Binding EditLabel}"
+                <Button Tag="{loc:Value EditLabel}"
+                        ToolTip="{loc:Value EditLabel}"
                         Width="32" Height="32" Margin="6,0,0,0" VerticalAlignment="Center"
                         Command="{Binding RenameCommand}"
                         Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
@@ -193,7 +193,7 @@
                     </Button.Style>
                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                 </Button>
-                <Button Style="{StaticResource NavIconButton}" Tag="{Binding DeleteActionLabel}"
+                <Button Style="{StaticResource NavIconButton}" Tag="{loc:Value DeleteActionLabel}"
                         Width="32" Height="32" VerticalAlignment="Center"
                         Command="{Binding DeleteCommand}"
                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
@@ -460,18 +460,18 @@
                         <m3:M3Icon Kind="content-duplicate" Width="26" Height="26"
                                    Foreground="{DynamicResource App.Accent.Icon}" VerticalAlignment="Center"/>
                         <!-- 含变量的整句由模型给文本（SelectedTotalText），这里不再拼 Run + 字面量 -->
-                        <TextBlock Text="{Binding SelectedTotalText}" FontSize="18" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Value SelectedTotalText}" FontSize="18" FontWeight="SemiBold"
                                    Margin="10,0,0,0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Border Style="{StaticResource SideChip}">
                             <TextBlock FontSize="11" Foreground="{DynamicResource App.Text.OnContainer}"
-                                       Text="{Binding SelectedFoldersText}"/>
+                                       Text="{loc:Value SelectedFoldersText}"/>
                         </Border>
                         <Border Style="{StaticResource SideChip}">
                             <TextBlock FontSize="11" Foreground="{DynamicResource App.Text.OnContainer}"
-                                       Text="{Binding SelectedLinksText}"/>
+                                       Text="{loc:Value SelectedLinksText}"/>
                         </Border>
                     </StackPanel>
                     <!-- 多选态只提供「删除所选」：重命名只对单个条目有意义，多选不出现该按钮 -->
@@ -483,7 +483,7 @@
                         <TextBlock Text="{loc:Loc browser.ctrlClick.hint}" FontSize="11" Opacity="0.45" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Button Grid.Column="1" Style="{StaticResource NavIconButton}"
-                                Tag="{Binding DeleteSelectionLabel}"
+                                Tag="{loc:Value DeleteSelectionLabel}"
                                 Width="32" Height="32" Margin="6,0,0,0" Command="{Binding DeleteCommand}"
                                 Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">
                             <!-- 与浏览页同一枚按钮/样式；文案按页定制（回收站 = 「永久删除所选」） -->

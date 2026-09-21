@@ -134,7 +134,7 @@ public static class LpLog
         catch (Exception ex)
         {
             Interlocked.Increment(ref _writeFailures);
-            NotifyOnce($"日志刷盘失败（已兜底，避免回灌业务）：{ex.GetType().Name}: {ex.Message}");
+            NotifyOnce($"log flush failed (contained here so it never re-enters business paths): {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -173,7 +173,7 @@ public static class LpLog
         if (sink is null)
         {
             Interlocked.Increment(ref _unconfiguredDrops);
-            NotifyOnce("日志管道未装配（组合根未调用 LpLog.Configure）：记录被丢弃并计数");
+            NotifyOnce("log pipeline not configured (composition root never called LpLog.Configure): entries dropped and counted");
             return;
         }
 
@@ -198,7 +198,7 @@ public static class LpLog
         catch (Exception writeEx)
         {
             Interlocked.Increment(ref _writeFailures);
-            NotifyOnce($"日志落点违反「不抛」约定（已兜底）：{writeEx.GetType().Name}: {writeEx.Message}");
+            NotifyOnce($"log sink violated the never-throw contract (contained here): {writeEx.GetType().Name}: {writeEx.Message}");
         }
     }
 
@@ -218,7 +218,7 @@ public static class LpLog
     private static void NotifyOnce(string message)
     {
         if (Interlocked.Exchange(ref _notified, 1) == 0)
-            System.Diagnostics.Trace.TraceWarning("LinkPocket 日志：{0}", message);
+            System.Diagnostics.Trace.TraceWarning("LinkPocket log: {0}", message);
     }
 
     private sealed class ScopeLease(ScopeFrame frame, ScopeFrame? previous) : IDisposable

@@ -14,7 +14,7 @@ internal sealed class FolderTreeHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.tree",
         Category: "folders",
-        Description: "取全部文件夹（平铺；link_count = 递归子链接数、direct_link_count = 直接子链接数，层级由调用方组装）",
+        Description: "Get all folders (flat; link_count = recursive link count, direct_link_count = direct child link count, hierarchy assembled by the caller)",
         Parameters:
         [
             ParamSpec.Opt<string>("sort_by", "name | sort_order | created_at | updated_at | last_visited_at | visit_count"),

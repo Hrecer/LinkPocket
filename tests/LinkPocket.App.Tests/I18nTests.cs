@@ -116,7 +116,6 @@ public sealed class I18nTests : IDisposable
     [Fact]
     public void 路径显示只换根段_其余段是用户数据原样不动()
     {
-        BookmarkDisplay.RegisterRootAliases();
         LocaleService.Apply(AppLocale.ZhCn);
         Assert.Equal("全部书签 / 工作 / 前端", BookmarkDisplay.Path("@root/工作/前端"));
 
@@ -129,7 +128,6 @@ public sealed class I18nTests : IDisposable
     [Fact]
     public void 中文下复制的路径_切英文后地址栏照样解析到同一层()
     {
-        BookmarkDisplay.RegisterRootAliases();
         IReadOnlyList<PathNode> ChildrenOf(string? id) => id switch
         {
             null => new[] { new PathNode("id-work", "工作") },
@@ -154,5 +152,33 @@ public sealed class I18nTests : IDisposable
         var canonical = BookmarkPath.Build(BookmarkPath.RootToken, new[] { "A/B", "C\\D" });
         Assert.Equal(@"@root/A\/B/C\\D", canonical);
         Assert.Equal(new[] { "@root", "A/B", @"C\D" }, BookmarkPath.Split(canonical).ToArray());
+    }
+}
+
+public class RootAliasIdentityTests
+{
+    [Theory]
+    [InlineData(AppLocale.ZhCn)]
+    [InlineData(AppLocale.En)]
+    public void 根别名与界面根名一致(AppLocale locale)
+    {
+        var table = StringTables.For(locale);
+        var expected = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [BookmarkPath.RootToken] = new() { table["nav.root.bookmarks"] },
+            [BookmarkPath.TrashToken] = new() { table["nav.root.trash"] },
+        };
+        foreach (var (token, names) in expected)
+            foreach (var name in names)
+                Assert.True(BookmarkPath.RootAliasSet(token).Contains(name, StringComparer.OrdinalIgnoreCase),
+                    $"{token} 缺少 {locale.CodeOf()} 的根显示名「{name}」（契约层别名表与字符串表分叉了）");
+    }
+
+    [Fact]
+    public void 根级保留名_含两种语言的根名与token()
+    {
+        var reserved = BookmarkPath.ReservedRootNames();
+        Assert.All(new[] { "@root", "@trash", "全部书签", "Bookmarks", "回收站", "Trash" },
+            name => Assert.Contains(name, reserved, StringComparer.OrdinalIgnoreCase));
     }
 }

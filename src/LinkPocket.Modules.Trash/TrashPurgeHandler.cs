@@ -15,11 +15,11 @@ internal sealed class TrashPurgeHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.purge",
         Category: "trash",
-        Description: "永久删除回收站条目（书签快照或整单元子树；不可恢复，需两阶段确认）",
+        Description: "Permanently delete a trash entry (bookmark snapshot or whole unit subtree; unrecoverable, two-phase confirmation)",
         Parameters:
         [
-            ParamSpec.Req<string>("id", "回收站条目 ID"),
-            ParamSpec.Req<bool>("is_folder", "true = 回收站单元（整子树清除）；false = 单条书签快照"),
+            ParamSpec.Req<string>("id", "Trash entry ID"),
+            ParamSpec.Req<bool>("is_folder", "true = trash unit (whole subtree purged); false = a single bookmark snapshot"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive,
         Impact: ImpactSummary.Link);
@@ -35,7 +35,7 @@ internal sealed class TrashPurgeHandler : ICommandHandler
             var all = await ctx.Uow.Trash.ListFoldersAsync(ct);
             if (!all.Any(f => f.TrashFolderId == id))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"回收站单元 {id} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"trash unit {id} does not exist", correlationId: ctx.CorrelationId));
 
             var ids = TrashSupport.CollectSubtreeIds(all, id);
             var idSet = ids.ToHashSet(StringComparer.Ordinal);
@@ -55,13 +55,13 @@ internal sealed class TrashPurgeHandler : ICommandHandler
                 ChangeSet.Of(
                     new EntityRef("trash_unit", id),
                     LinkPocket.Contracts.DomainEventNames.TrashChanged,
-                    $"已永久删除回收站单元（含 {ids.Count} 个单元）"));
+                    $"Trash unit purged (including {ids.Count} unit(s))"));
         }
         else
         {
             _ = await ctx.Uow.Trash.FindLinkAsync(new LinkId(id), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"回收站中不存在书签 {id}", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"bookmark {id} is not in the trash", correlationId: ctx.CorrelationId));
             await ctx.Uow.Trash.RemoveLinkAsync(new LinkId(id), ct);
 
             return CommandResult.Ok(
@@ -69,7 +69,7 @@ internal sealed class TrashPurgeHandler : ICommandHandler
                 ChangeSet.Of(
                     new EntityRef("trash_link", id),
                     LinkPocket.Contracts.DomainEventNames.TrashChanged,
-                    "已永久删除回收站书签"));
+                    "Trash bookmark purged"));
         }
     }
 }

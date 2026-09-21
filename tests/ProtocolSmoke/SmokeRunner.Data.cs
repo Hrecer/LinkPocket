@@ -36,7 +36,7 @@ internal static partial class SmokeRunner
         // 面包屑（根显示名 + 层级）
         var breadcrumb = (await client.FolderBreadcrumbAsync(sub.FolderId));
         Asserts.That(breadcrumb.SequenceEqual([FolderIds.RootToken, "测试目录", "子目录"]),
-            "面包屑应为 全部书签 / 测试目录 / 子目录");
+            "面包屑首段必须是 canonical 根 token（显示名只是界面投影）");
 
         // 树 + 子目录 LinkCount（递归）与 direct_link_count（直接）两口径并存
         var tree = (await client.FolderTreeAsync());
@@ -97,8 +97,8 @@ internal static partial class SmokeRunner
         var link = (await client.LinkCreateAsync("https://trash.example/x", "回收书签", listId: folder.FolderId)).Data!;
         var trashed = (await client.LinkTrashAsync(link.LinkId)).Data!;
         Asserts.That(trashed.LinkId == link.LinkId, "回收站保留原链接 ID");
-        Asserts.That(trashed.OriginPath == "全部书签 / 回收源目录",
-            $"origin_path 快照应为「全部书签 / 回收源目录」");
+        Asserts.That(trashed.OriginPath == "@root/回收源目录",
+            $"origin_path 快照必须是语言无关的 canonical 串 @root/回收源目录（显示串只是投影），实际=「{trashed.OriginPath}」");
         Asserts.That(s.Events.Contains("trash.changed"), "移入回收站应推 trash.changed");
 
         var flat = (await client.TrashListAsync());
@@ -138,11 +138,11 @@ internal static partial class SmokeRunner
         var flatAfter = (await client.TrashListAsync());
         var folderEntry = flatAfter.FirstOrDefault(e => e.EntryType == "folder" && e.Name == "回收源目录");
         Asserts.That(folderEntry != null, "删除根单元应以 folder 条目出现在平铺列表");
-        Asserts.That(folderEntry!.OriginPath == "全部书签 / 回收源目录",
+        Asserts.That(folderEntry!.OriginPath == "@root/回收源目录",
             $"folder 条目 origin_path 应为完整路径快照，实际「{folderEntry.OriginPath}」");
 
         var unitContents = (await client.TrashUnitContentsAsync(folder.FolderId));
-        Asserts.That(unitContents.Any(e => e.EntryType == "link" && e.OriginPath == "全部书签 / 回收源目录 / 回收子目录"),
+        Asserts.That(unitContents.Any(e => e.EntryType == "link" && e.OriginPath == "@root/回收源目录/回收子目录"),
             "单元内书签快照应带完整 origin_path");
 
         // purge：无令牌 = CONFIRM_REQUIRED（token 在 Details 下发）→ 持令牌重调 → 条目消失

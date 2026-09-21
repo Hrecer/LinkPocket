@@ -109,7 +109,7 @@ internal static class NetscapeWriter
             if (!emitted.Add(folder.FolderId)) continue;   // 已输出（含环引用）→ 跳过
 
             var pad = Pad(depth);
-            var name = EscapeHtml(folder.Name ?? "未命名文件夹");
+            var name = EscapeHtml(folder.Name ?? "Untitled folder");
 
             html.Append(pad).Append("<DT><H3 ADD_DATE=\"").Append(ToUnix(folder.CreatedAt))
                 .Append("\" LAST_MODIFIED=\"").Append(ToUnix(folder.UpdatedAt))
@@ -149,7 +149,7 @@ internal static class NetscapeWriter
     {
         var pad = Pad(depth);
         var url = EscapeHtml(link.Url ?? string.Empty);
-        var title = EscapeHtml(string.IsNullOrEmpty(link.Title) ? (link.Url ?? "无标题") : link.Title);
+        var title = EscapeHtml(string.IsNullOrEmpty(link.Title) ? (link.Url ?? "Untitled") : link.Title);
 
         var sb = new StringBuilder();
         sb.Append(pad).Append("<DT><A HREF=\"").Append(url).Append('"');

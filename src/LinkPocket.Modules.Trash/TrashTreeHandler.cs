@@ -10,7 +10,7 @@ internal sealed class TrashTreeHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.tree",
         Category: "trash",
-        Description: "回收站单元树（平铺节点列表；link_count = 单元子树内的书签总数，层级由调用方组装）",
+        Description: "Trash unit tree (flat node list; link_count = bookmarks inside the unit subtree, hierarchy assembled by the caller)",
         Parameters: [],
         Caps: CommandCaps.Query,
         // 单元树 = 全量单元 + 全量子树计数（递归拼装），只读回收站两表

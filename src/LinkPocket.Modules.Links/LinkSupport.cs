@@ -15,7 +15,7 @@ internal static class LinkSupport
                 out var value))
             return value;
         throw new EngineException(EngineErrors.Of(
-            EngineErrors.TypeMismatch, $"「{context}」不是可识别的日期：{raw}"));
+            EngineErrors.TypeMismatch, $"'{context}' is not a recognised date: {raw}"));
     }
 
     /// <summary>直接子链接计数缓存回填（LinkCount 列的既有维护口径）。</summary>

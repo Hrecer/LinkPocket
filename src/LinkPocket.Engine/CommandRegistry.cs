@@ -16,9 +16,9 @@ public sealed class CommandRegistry
     {
         var name = handler.Descriptor.Name;
         if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("命令名不能为空", nameof(handler));
+            throw new ArgumentException("command name must not be empty", nameof(handler));
         if (_handlers.ContainsKey(name))
-            throw new InvalidOperationException($"命令「{name}」重复注册");
+            throw new InvalidOperationException($"command '{name}' is registered twice");
         _handlers[name] = handler;
     }
 

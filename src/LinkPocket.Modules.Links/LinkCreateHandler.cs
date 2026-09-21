@@ -17,16 +17,16 @@ internal sealed class LinkCreateHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.create",
         Category: "links",
-        Description: "新建链接（list_id 缺省 = 根级；auto_fetch_metadata 可选自动补全标题/描述/图标）",
+        Description: "Create a link (list_id default = root level; auto_fetch_metadata optionally fills title/description/favicon)",
         Parameters:
         [
-            ParamSpec.Req<string>("url", "链接地址"),
-            ParamSpec.Opt<string>("title", "标题"),
-            ParamSpec.Opt<string>("description", "描述"),
-            ParamSpec.Opt<string>("list_id", "所属目录 ID；缺省 = 根级"),
-            ParamSpec.Opt<bool>("is_important", "是否重要"),
-            ParamSpec.Opt<bool>("auto_fetch_metadata", "自动抓取页面元数据（缺省 false；失败会在结果 warnings 里上报）"),
-            ParamSpec.Opt<string>("favicon_url", "显式指定图标地址"),
+            ParamSpec.Req<string>("url", "Link URL"),
+            ParamSpec.Opt<string>("title", "Title"),
+            ParamSpec.Opt<string>("description", "Description"),
+            ParamSpec.Opt<string>("list_id", "Owning folder ID; default = root level"),
+            ParamSpec.Opt<bool>("is_important", "Whether it is important"),
+            ParamSpec.Opt<bool>("auto_fetch_metadata", "Fetch page metadata automatically (default false; failures are reported in the result warnings)"),
+            ParamSpec.Opt<string>("favicon_url", "Explicit favicon URL"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -67,7 +67,7 @@ internal sealed class LinkCreateHandler : ICommandHandler
             catch (EngineException ex)
             {
                 // 抓取失败不阻断创建；但必须上报（调用方据此决定是否重试 links.metadata_fetch）
-                warnings = [$"元数据抓取失败（{ex.Error.Code}）：{ex.Error.Message}"];
+                warnings = [$"metadata fetch failed ({ex.Error.Code}): {ex.Error.Message}"];
             }
         }
 
@@ -82,8 +82,8 @@ internal sealed class LinkCreateHandler : ICommandHandler
         // 新增链接 → 所在文件夹内容有变
         await ctx.Uow.Trees.TouchModifiedAsync(listId == null ? null : new FolderId(listId), ct);
 
-        var summary = $"已创建链接「{link.Title ?? link.Url}」"
-                      + (warnings == null ? "" : "（元数据未抓取到）");
+        var summary = $"Link '{link.Title ?? link.Url}' created"
+                      + (warnings == null ? "" : "(metadata not fetched)");
         // 撤销载荷：撤销"新建链接"（也覆盖"复制粘贴链接"）= 把刚建的链接移入回收站（软删除）。
         // **重做必须显式给出** = 从回收站还原（保留原 ID）：若按缺省重放 links.create，会生成**新 ID**，
         // 原 ID 丢失且回收站里留下旧快照（同一个用户动作变成两条数据）。

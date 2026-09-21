@@ -24,9 +24,6 @@ public static class FontMetricsProbe
     /// <summary>行高上限倍率（相对默认字体）。</summary>
     public const double HeightRatioLimit = 1.1;
 
-    /// <summary>基准串：混排中英数 + 界面里最常见的字符形态（书签标题、按钮文案、ID）。</summary>
-    public const string SampleText = "LinkPocket 书签管理 0123";
-
     /// <summary>一次度量结果。</summary>
     /// <param name="Text">被测文本。</param>
     /// <param name="Width">排版宽度（设备无关像素）。</param>
@@ -35,11 +32,18 @@ public static class FontMetricsProbe
 
     /// <summary>一次自检结论。</summary>
     /// <param name="Ok">是否在容差内。</param>
-    /// <param name="Message">给用户看的一句话（Ok 时为空）。</param>
+    /// <param name="Code">越界类别（<c>""</c> = 在容差内；<see cref="TooWide"/> / <see cref="TooTall"/>）。
+    /// <b>句子不在本层</b>：这是要上屏的话，由界面按码取词（数字随结论一起给）。
     /// <param name="Candidate">候选字体度量。</param>
     /// <param name="Baseline">基准（默认字体）度量。</param>
-    public readonly record struct Verdict(bool Ok, string Message, Measurement Candidate, Measurement Baseline)
+    public readonly record struct Verdict(bool Ok, string Code, Measurement Candidate, Measurement Baseline)
     {
+        /// <summary>宽度超出容差（方向看 <see cref="WidthDelta"/> 的正负）。</summary>
+        public const string TooWide = "too-wide";
+
+        /// <summary>行高超出上限倍率。</summary>
+        public const string TooTall = "too-tall";
+
         /// <summary>宽度相对偏差（候选/基准 − 1）。</summary>
         public double WidthDelta => Baseline.Width <= 0 ? 0 : Candidate.Width / Baseline.Width - 1.0;
 
@@ -53,9 +57,11 @@ public static class FontMetricsProbe
     /// <param name="family">字体族令牌值（含回退链）。</param>
     /// <param name="fontSize">字号（设备无关像素）。</param>
     /// <param name="text">被测文本（缺省 = <see cref="SampleText"/>）。</param>
-    public static Measurement Measure(string family, double fontSize, string? text = null)
+    /// <param name="family">字体族令牌值（含回退链）。</param>
+    /// <param name="fontSize">字号（设备无关像素）。</param>
+    /// <param name="probe">被测文本（基准串按语言由调用方给：界面取 <c>metric.sample</c>）。</param>
+    public static Measurement Measure(string family, double fontSize, string probe)
     {
-        var probe = text ?? SampleText;
         var formatted = new System.Windows.Media.FormattedText(
             probe,
             CultureInfo.CurrentUICulture,
@@ -71,25 +77,20 @@ public static class FontMetricsProbe
     /// 自检：候选字体相对默认字体的宽度/行高是否超阈值。
     /// </summary>
     /// <param name="candidateFamily">候选字体族令牌值。</param>
+    /// <param name="probe">基准串（两种语言各自一条，见 <c>metric.sample</c>）。</param>
     /// <param name="fontSize">界面主字号（实测大量使用 12 / 12.5 / 13）。</param>
-    public static Verdict Inspect(string candidateFamily, double fontSize = 12.5)
+    public static Verdict Inspect(string candidateFamily, string probe, double fontSize = 12.5)
     {
-        var candidate = Measure(candidateFamily, fontSize);
-        var baseline = Measure(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), fontSize);
+        var candidate = Measure(candidateFamily, fontSize, probe);
+        var baseline = Measure(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), fontSize, probe);
 
         var w = candidate.Width / baseline.Width - 1.0;
         var h = candidate.Height / baseline.Height;
 
         if (Math.Abs(w) > WidthTolerance)
-        {
-            var dir = w > 0 ? "偏宽" : "偏窄";
-            return new Verdict(false,
-                $"该字体在此尺寸下宽度{dir} {Math.Abs(w) * 100:F0}%（按钮与列宽为固定值，可能截断或留白）",
-                candidate, baseline);
-        }
+            return new Verdict(false, Verdict.TooWide, candidate, baseline);
         if (h > HeightRatioLimit)
-            return new Verdict(false,
-                $"该字体行高为默认的 {h:F2} 倍（行高为固定值，可能截断）", candidate, baseline);
+            return new Verdict(false, Verdict.TooTall, candidate, baseline);
 
         return new Verdict(true, string.Empty, candidate, baseline);
     }

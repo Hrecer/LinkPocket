@@ -130,7 +130,7 @@
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13"
+                                                <TextBlock Grid.Column="0" Text="{loc:Value Name}" FontSize="13"
                                                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                            Foreground="{DynamicResource App.Text.Primary}"/>
                                                 <!-- 「默认」徽标只在出厂默认卡上出现（直接绑能力位，不走 code-behind 找元素） -->
@@ -244,7 +244,7 @@
                             <!-- 整句由 VM 给（`DraftIntro`）：**不把一句话拆成"Run 字面量 + 绑定 Run + 字面量"**
                                  三段 —— 那样"这句里写的是哪套外观"就散在两处，运行期没有任何一处能被守住。 -->
                             <TextBlock FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
-                                       Text="{Binding DraftIntro, Mode=OneWay}"
+                                       Text="{loc:Value DraftIntro}"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
 
                             <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
@@ -270,7 +270,7 @@
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <Button x:Name="StartFromThemeBtn"
-                                        Content="{Binding StartFromCurrentThemeLabel}"
+                                        Content="{loc:Value StartFromCurrentThemeLabel}"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Cursor="Hand" Click="StartFromThemeBtn_Click"
                                         ToolTip="{loc:Loc appearance.draft.startFrom.tip}"/>
@@ -346,9 +346,19 @@
                             <Border x:Name="DiagnosticsBox" CornerRadius="12"
                                     Visibility="{Binding HasDiagnostics, Converter={StaticResource BoolToVis}}"
                                     Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,2,0,0">
-                                <TextBlock x:Name="DiagnosticsText" FontSize="12" TextWrapping="Wrap"
-                                           Text="{Binding Diagnostics}"
-                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                <ItemsControl x:Name="DiagnosticsList" FontSize="12"
+                                              ItemsSource="{Binding DiagnosticLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Marker}" Margin="0,0,6,0"
+                                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                                <TextBlock Text="{loc:Value Text}" MaxWidth="452" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Border>
 
                             <!-- 应用/恢复**不属于这张卡**（它们是全局操作，见面板顶部） -->
@@ -413,9 +423,10 @@
                              样例里那行等宽示例文字保留 —— 它走 `App.Font.Mono` 令牌，与真实界面同源。 -->
 
                         <!-- 字号影响提示（度量自检结果） -->
-                        <Border x:Name="FontWarnBox" Visibility="Collapsed" CornerRadius="12"
+                        <Border Visibility="{Binding HasFontInspection, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="12"
                                 Background="{DynamicResource App.Surface.Hover}" Padding="12,10" Margin="0,12,0,0">
-                            <TextBlock x:Name="FontWarnText" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="{loc:Value FontInspection}"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Border>
 

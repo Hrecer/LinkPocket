@@ -14,12 +14,12 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.restore_batch",
         Category: "trash",
-        Description: "批量从回收站还原链接与单元（混合；缺省回删除前位置；原子单事务）",
+        Description: "Restore links and units from the trash in batch (mixed; default returns to the pre-deletion location; one atomic transaction)",
         Parameters:
         [
-            ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "回收站书签快照 ID 列表"),
-            ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "回收站单元 ID 列表"),
-            ParamSpec.Opt<string>("to", "origin（缺省）= 删除前位置；root = 根级"),
+            ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "List of trash bookmark snapshot IDs"),
+            ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "List of trash unit IDs"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion location; root = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -29,7 +29,7 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
         var folderIds = CommandArgs.StringArray(args, "folder_ids");
         if (linkIds.Count == 0 && folderIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "link_ids 与 folder_ids 不能同时为空",
+                EngineErrors.RequiredParam, "link_ids and folder_ids must not both be empty",
                 JsonSerializer.SerializeToElement(new { @param = "link_ids" })));
         var to = TrashRestoreSupport.ReadLandingMode(args);
 
@@ -39,7 +39,7 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
             .Concat(outcome.Units.Select(u => new EntityRef("folder", u.UnitId)))
             .ToList();
         var fellNote = outcome.FellBackToRoot.Count > 0
-            ? $"；{outcome.FellBackToRoot.Count} 项原位置已不存在落根"
+            ? $"; {outcome.FellBackToRoot.Count} item(s) lost their original location and landed at root"
             : string.Empty;
         return CommandResult.Ok(
             new TrashRestoreBatchResult(
@@ -52,7 +52,7 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: touched,
                 Events: [DomainEventNames.FoldersChanged, DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"已还原 {outcome.Links.Count} 个链接、{outcome.Units.Count} 个单元（{outcome.RestoredFolderIds.Count} 个文件夹）{fellNote}"),
+                HumanSummary: $"Restored {outcome.Links.Count} link(s) and {outcome.Units.Count} unit(s) ({outcome.RestoredFolderIds.Count} folder(s)){fellNote}"),
             outcome.UndoSteps);
     }
 }

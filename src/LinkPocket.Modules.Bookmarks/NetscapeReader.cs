@@ -46,26 +46,26 @@ internal static class NetscapeReader
 
         if (string.IsNullOrWhiteSpace(html))
         {
-            doc.Error = "文件为空";
+            doc.Error = "the file is empty";
             return doc;
         }
 
         var hasDoctype = html.Contains("NETSCAPE-Bookmark-file", StringComparison.OrdinalIgnoreCase);
         doc.Format = hasDoctype
-            ? "Netscape 书签文件（NETSCAPE-Bookmark-file-1）"
-            : "Netscape 书签文件（无 DOCTYPE 声明）";
+            ? "Netscape bookmark file (NETSCAPE-Bookmark-file-1)"
+            : "Netscape bookmark file (no DOCTYPE declaration)";
 
         var topOpen = IndexOfOpenTag(html, "DL", 0, html.Length);
         if (topOpen < 0)
         {
-            doc.Error = "不是有效的书签文件：未找到 <DL> 列表容器";
+            doc.Error = "not a valid bookmark file: no <DL> list container found";
             return doc;
         }
 
         var topOpenEnd = FindTagEnd(html, topOpen, html.Length);
         if (topOpenEnd < 0)
         {
-            doc.Error = "文件解析失败：<DL> 标签未闭合";
+            doc.Error = "file parse failed: an unclosed <DL> tag";
             return doc;
         }
 
@@ -73,7 +73,7 @@ internal static class NetscapeReader
         if (topClose < 0)
         {
             // 容错：标签不完整（截断/手工编辑过）时按剩余全文解析，并把问题作为告警上报
-            doc.Warnings.Add("文件结构不完整（缺少匹配的 </DL>），已按容错方式解析");
+            doc.Warnings.Add("the file structure is incomplete (no matching </DL>), parsed in tolerant mode");
             topClose = html.Length;
         }
 
@@ -81,7 +81,7 @@ internal static class NetscapeReader
 
         if (doc.FolderCount == 0 && doc.LinkCount == 0)
         {
-            doc.Error = "文件中未找到书签或文件夹（缺少 <A HREF=…> 或 <H3>）";
+            doc.Error = "no bookmarks or folders found in the file (missing <A HREF=...> or <H3>)";
             return doc;
         }
 
@@ -96,7 +96,7 @@ internal static class NetscapeReader
         {
             if (!doc.DepthLimitWarned)   // 超出嵌套上限不静默丢弃：告警一次，避免对每个深层条目重复刷屏
             {
-                doc.Warnings.Add($"文件夹嵌套超过最大深度 {MaxNestingDepth}，超出部分已忽略");
+                doc.Warnings.Add($"folder nesting exceeded the maximum depth {MaxNestingDepth}, the excess was ignored");
                 doc.DepthLimitWarned = true;
             }
             return;
@@ -133,7 +133,7 @@ internal static class NetscapeReader
                 var item = new ParsedItem
                 {
                     IsFolder = true,
-                    Title = string.IsNullOrWhiteSpace(title) ? "未命名文件夹" : title.Trim(),
+                    Title = string.IsNullOrWhiteSpace(title) ? "Untitled folder" : title.Trim(),
                     ParentIndex = parentIndex,
                     Depth = depth + 1,
                     AddDate = ParseUnixSeconds(GetAttr(attrs, "ADD_DATE")),
@@ -157,7 +157,7 @@ internal static class NetscapeReader
                         pos = SkipParagraphTags(s, dlClose + "</DL>".Length, end);
                         continue;
                     }
-                    doc.Warnings.Add($"文件夹「{item.Title}」的子列表未闭合，其子树可能未被完整解析");
+                    doc.Warnings.Add($"the child list of folder '{item.Title}' was never closed, its subtree may be partially parsed");
                 }
 
                 pos = closeEnd;

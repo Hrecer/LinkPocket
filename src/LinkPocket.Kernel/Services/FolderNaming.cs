@@ -59,7 +59,7 @@ public sealed class FolderNamingService(IUnitOfWork uow) : IFolderNaming
         // （`全部书签/A` 到底指根还是指那个文件夹）。单条入口一律**拒绝**，不静默改名。
         if (parentId is null && BookmarkPath.IsReservedRootName(desired))
             throw new EngineException(EngineErrors.Of(EngineErrors.ReservedName,
-                $"「{desired}」是根目录占用的名字，请换一个（子级不受此限）"));
+                $"'{desired}' is a name reserved by a root view, pick another (child levels are unrestricted)"));
 
         var siblings = await uow.Folders.ChildrenOfAsync(
             parentId == null ? null : new FolderId(parentId), ct);

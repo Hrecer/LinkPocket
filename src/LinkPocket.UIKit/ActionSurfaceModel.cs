@@ -42,37 +42,37 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public bool StackedActions { get; protected set; }
 
     /// <summary>主按钮文案 / 提示 / 图标。</summary>
-    public string OpenLabel { get; protected set; } = Loc.T("common.open");
-    public string OpenToolTip { get; protected set; } = Loc.T("common.open");
+    public LocValue OpenLabel { get; protected set; } = Loc.K("common.open");
+    public LocValue OpenToolTip { get; protected set; } = Loc.K("common.open");
     public string OpenIconKind { get; protected set; } = "open-in-new";
     /// <summary>铅笔按钮提示（链接 = 编辑；文件夹 = 重命名；回收站不用）。</summary>
-    public string EditLabel { get; protected set; } = "编辑";
+    public LocValue EditLabel { get; protected set; } = Loc.K("common.edit");
     /// <summary>铅笔槽取**强调色**（`AccentBtn` 深紫）：文件夹时该槽 = 「重命名」，取色与侧栏那枚独立
     /// 「重命名」图标钮**同源**（同一动作在两种呈现上必须同色——曾出现文件夹那枚是主题 `Primary` 亮紫、
     /// 与链接那枚不一致）；链接时该槽 = 「编辑」，用图标钮缺省的 `Primary`。缺省 false = `Primary`。</summary>
     public bool EditActionAccent { get; protected set; }
     /// <summary>「重命名」图标钮提示（同款 32×32 铅笔，仅取色与「编辑」区分：重命名 = AccentBtn 深紫）。</summary>
-    public string RenameActionLabel { get; protected set; } = "重命名";
+    public LocValue RenameActionLabel { get; protected set; } = Loc.K("common.rename");
     /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
-    public string DeleteActionLabel { get; protected set; } = Loc.T("common.delete");
+    public LocValue DeleteActionLabel { get; protected set; } = Loc.K("common.delete");
     /// <summary>多选删除按钮文案与提示。</summary>
-    public string DeleteSelectionLabel { get; protected set; } = Loc.T("common.deleteSelected");
+    public LocValue DeleteSelectionLabel { get; protected set; } = Loc.K("common.deleteSelected");
     /// <summary>「还原」文案 / 提示 / 图标 / 色调（到删除前所在位置）。</summary>
-    public string RestoreLabel { get; protected set; } = "还原";
-    public string RestoreToolTip { get; protected set; } = "还原到删除前所在位置";
+    public LocValue RestoreLabel { get; protected set; } = Loc.K("trash.restore");
+    public LocValue RestoreToolTip { get; protected set; } = Loc.K("trash.restore.tip");
     public string RestoreIconKind { get; protected set; } = "restore";
     public PillTone RestoreTone { get; protected set; } = PillTone.Primary;
 
     /// <summary>「还原到根目录」文案 / 提示 / 图标 / 色调。</summary>
-    public string RestoreToRootLabel { get; protected set; } = "还原到根目录";
-    public string RestoreToRootToolTip { get; protected set; } = "还原到根目录";
+    public LocValue RestoreToRootLabel { get; protected set; } = Loc.K("trash.restoreToRoot");
+    public LocValue RestoreToRootToolTip { get; protected set; } = Loc.K("trash.restoreToRoot");
     public string RestoreToRootIconKind { get; protected set; } = "backup-restore";
     public PillTone RestoreToRootTone { get; protected set; } = PillTone.Tonal;
 
     /// <summary>「跳转」文案 / 提示 / 图标（进目录 + 选中行；**与"外部打开"无关**，故图标不是 open-in-new）。
     /// 提示文案就是「跳转」（不用长句子）；图标 = 地图图钉 `map-marker`（"在哪儿"一眼可读）。</summary>
-    public string JumpLabel { get; protected set; } = "跳转";
-    public string JumpToolTip { get; protected set; } = "跳转";
+    public LocValue JumpLabel { get; protected set; } = Loc.K("common.jump");
+    public LocValue JumpToolTip { get; protected set; } = Loc.K("common.jump");
     public string JumpIconKind { get; protected set; } = "map-marker";
 
     /// <summary>「打开网站」按钮最终可见性（侧栏：链接且页面开启）。</summary>
@@ -147,26 +147,26 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         ShowRenameAction = false;
         ShowRestoreAction = ShowRestoreToRootAction = false;
         ShowJumpAction = false;
-        OpenLabel = Loc.T("common.open");
-        OpenToolTip = Loc.T("common.open");
+        OpenLabel = Loc.K("common.open");
+        OpenToolTip = Loc.K("common.open");
         OpenIconKind = "open-in-new";
         OpenTone = PillTone.Primary;
         StackedActions = false;
-        EditLabel = "编辑";
+        EditLabel = Loc.K("common.edit");
         EditActionAccent = false;
-        RenameActionLabel = "重命名";
-        DeleteActionLabel = Loc.T("common.delete");
-        DeleteSelectionLabel = Loc.T("common.deleteSelected");
-        RestoreLabel = "还原";
-        RestoreToolTip = "还原到删除前所在位置";
+        RenameActionLabel = Loc.K("common.rename");
+        DeleteActionLabel = Loc.K("common.delete");
+        DeleteSelectionLabel = Loc.K("common.deleteSelected");
+        RestoreLabel = Loc.K("trash.restore");
+        RestoreToolTip = Loc.K("trash.restore.tip");
         RestoreIconKind = "restore";
         RestoreTone = PillTone.Primary;
-        RestoreToRootLabel = "还原到根目录";
-        RestoreToRootToolTip = "还原到根目录";
+        RestoreToRootLabel = Loc.K("trash.restoreToRoot");
+        RestoreToRootToolTip = Loc.K("trash.restoreToRoot");
         RestoreToRootIconKind = "backup-restore";
         RestoreToRootTone = PillTone.Tonal;
-        JumpLabel = "跳转";
-        JumpToolTip = "跳转";
+        JumpLabel = Loc.K("common.jump");
+        JumpToolTip = Loc.K("common.jump");
         JumpIconKind = "map-marker";
         ShowOpenWebsiteButton = true;
         OpenColumnSpan = 1;

@@ -10,8 +10,8 @@ internal sealed class BackupInspectHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "backup.inspect",
         Category: "backup",
-        Description: "只读检查 .lpbackup：版本 / 统计 / 完整性校验结果（导入前评估，零副作用）",
-        Parameters: [ParamSpec.Req<string>("file_path", "备份文件路径")],
+        Description: "Read-only inspection of a .lpbackup: version / statistics / integrity result (pre-import assessment, zero side effects)",
+        Parameters: [ParamSpec.Req<string>("file_path", "Backup file path")],
         Caps: CommandCaps.Query | CommandCaps.FileIo);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)

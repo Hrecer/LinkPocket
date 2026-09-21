@@ -30,13 +30,13 @@ internal sealed class LinkQueryHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.query",
         Category: "links",
-        Description: "结构化链接查询：filter（[{field,op,value}]）+ sort（[{field,dir}]）+ page（{index,size}，size=0 全量）+ fields 投影",
+        Description: "Structured link query: filter ([{field,op,value}]) + sort ([{field,dir}]) + page ({index,size}, size=0 for all) + fields projection",
         Parameters:
         [
-            ParamSpec.Opt<JsonElement>("filter", "过滤条件数组"),
-            ParamSpec.Opt<JsonElement>("sort", "排序数组"),
-            ParamSpec.Opt<JsonElement>("page", "分页 {index,size}"),
-            ParamSpec.Opt<JsonElement>("fields", "投影字段名数组"),
+            ParamSpec.Opt<JsonElement>("filter", "Filter condition array"),
+            ParamSpec.Opt<JsonElement>("sort", "Sort array"),
+            ParamSpec.Opt<JsonElement>("page", "Paging {index,size}"),
+            ParamSpec.Opt<JsonElement>("fields", "Projected field name array"),
         ],
         Caps: CommandCaps.Query);
 
@@ -78,13 +78,13 @@ internal sealed class LinkQueryHandler : ICommandHandler
 
             if (!FieldOps.TryGetValue(field, out var ops))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"未知过滤字段「{field}」", correlationId: correlationId));
+                    EngineErrors.EnumOutOfRange, $"unknown filter field '{field}'", correlationId: correlationId));
             if (!ops.Contains(op))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"字段「{field}」不支持操作符「{op}」", correlationId: correlationId));
+                    EngineErrors.EnumOutOfRange, $"field '{field}' does not support operator '{op}'", correlationId: correlationId));
             if (!seen.Add(field))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.RequiredParam, $"字段「{field}」在 filter 中重复（同一字段仅一条条件）", correlationId: correlationId));
+                    EngineErrors.RequiredParam, $"field '{field}' appears twice in filter (one condition per field)", correlationId: correlationId));
 
             var value = cond.TryGetProperty("value", out var v) ? v : (JsonElement?)null;
             filter = ApplyCondition(filter, field, op, value, correlationId);
@@ -114,7 +114,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
         var number = value is { ValueKind: JsonValueKind.Number } el && el.TryGetInt32(out var n)
             ? n
             : throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, "visit_count 条件的 value 必须是整数", correlationId: correlationId));
+                EngineErrors.TypeMismatch, "the value of a visit_count condition must be an integer", correlationId: correlationId));
         return op switch
         {
             "gte" => filter with { VisitCountMin = number },
@@ -134,7 +134,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
         => array is { ValueKind: JsonValueKind.Array } arr && arr.GetArrayLength() > index && arr[index].TryGetInt32(out var n)
             ? n
             : throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, "between 的 value 必须是 [下界, 上界] 数组", correlationId: "unknown"));
+                EngineErrors.TypeMismatch, "the value of between must be a [lower, upper] array", correlationId: "unknown"));
 
     private static LinkFilter ApplyDate(LinkFilter filter, string field, string op, JsonElement? value, string correlationId)
     {
@@ -172,7 +172,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
         => array is { ValueKind: JsonValueKind.Array } arr && arr.GetArrayLength() > index
             ? LinkSupport.ParseDate(arr[index].GetString() ?? string.Empty, $"{field}.between[{index}]")
             : throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, $"「{field} between」的 value 必须是 [起, 止] 数组", correlationId: correlationId));
+                EngineErrors.TypeMismatch, $"the value of '{field} between' must be a [from, to] array", correlationId: correlationId));
 
     private static DateTime ParseSingle(JsonElement? value, string field, string correlationId)
         => LinkSupport.ParseDate(
@@ -182,7 +182,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
         => value is { ValueKind: JsonValueKind.String } el && !string.IsNullOrEmpty(el.GetString())
             ? el.GetString()!
             : throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, $"字段「{field}」的 value 必须是非空字符串", correlationId: correlationId));
+                EngineErrors.TypeMismatch, $"the value of field '{field}' must be a non-empty string", correlationId: correlationId));
 
     // —— 排序 / 分页 / 投影 ——
 
@@ -197,14 +197,14 @@ internal sealed class LinkQueryHandler : ICommandHandler
             var field = GetString(clause, "field", correlationId);
             if (!QueryParsing.LinkSortFields.Contains(field))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"未知排序字段「{field}」", correlationId: correlationId));
+                    EngineErrors.EnumOutOfRange, $"unknown sort field '{field}'", correlationId: correlationId));
             var dirText = GetString(clause, "dir", correlationId);
             var dir = dirText switch
             {
                 "asc" => SortDir.Asc,
                 "desc" => SortDir.Desc,
                 _ => throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"排序方向只能是 asc/desc，得到「{dirText}」", correlationId: correlationId)),
+                    EngineErrors.EnumOutOfRange, $"sort direction must be asc/desc, got '{dirText}'", correlationId: correlationId)),
             };
             specs.Add(new SortSpec(field, dir));
         }
@@ -237,7 +237,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
             var name = item.GetString() ?? string.Empty;
             if (!allowed.Contains(name))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"未知投影字段「{name}」", correlationId: correlationId));
+                    EngineErrors.EnumOutOfRange, $"unknown projection field '{name}'", correlationId: correlationId));
             fields.Add(name);
         }
 
@@ -269,5 +269,5 @@ internal sealed class LinkQueryHandler : ICommandHandler
            && value.GetString() is { Length: > 0 } text
             ? text
             : throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, $"条件缺少字符串参数「{name}」", correlationId: correlationId));
+                EngineErrors.RequiredParam, $"the condition is missing the string parameter '{name}'", correlationId: correlationId));
 }

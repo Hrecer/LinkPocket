@@ -94,7 +94,7 @@ public sealed partial class EngineClient(IEngine engine)
 
         using var call = LpLog.BeginCall(correlationId, command, caller.ToString());
         LpLog.Write(level, "engine.call",
-            errorCode is null ? $"调用完成：{command}" : $"调用失败：{command}（{errorCode}）",
+            errorCode is null ? $"Call completed: {command}" : $"Call failed: {command} ({errorCode})",
             props: props, elapsedMs: elapsedMs);
     }
 

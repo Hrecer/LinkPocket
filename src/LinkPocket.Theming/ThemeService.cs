@@ -128,7 +128,7 @@ public static class ThemeService
         if (target is not null)
             ThemePublisher.PublishFonts(target, CurrentUiFont, CurrentMonoFont);
 
-        LpLog.Info($"已应用字体：界面「{CurrentUiFont}」/ 等宽「{CurrentMonoFont}」", LogCategory);
+        LpLog.Info($"Applied fonts: UI '{CurrentUiFont}' / mono '{CurrentMonoFont}'", LogCategory);
     }
 
     /// <summary>
@@ -166,7 +166,7 @@ public static class ThemeService
         var target = Application.Current?.Resources;
         if (target is not null) ThemePublisher.PublishFonts(target, CurrentUiFont, CurrentMonoFont);
         SaveCurrentPreferences();
-        LpLog.Info($"已删除的字体「{family}」正是当前生效的字体 → 已回退默认并落盘", LogCategory);
+        LpLog.Info($"The deleted font '{family}' was the active one -> fell back to the default and persisted", LogCategory);
         return family;
     }
 
@@ -182,7 +182,7 @@ public static class ThemeService
     public static (bool FellBack, string? Reason) ApplyFromPreferences(ResourceDictionary? resources = null)
     {
         var prefs = Preferences.UiPreferenceStore.Load(out var loadFailed);
-        string? reason = loadFailed ? "界面偏好文件无法读取（已回退默认外观）" : null;
+        string? reason = loadFailed ? "the UI preference file is unreadable (fell back to the default appearance)" : null;
 
         // 「自动调整颜色」开关先于主题应用生效（Apply 会把它写进定义）
         PaletteMode = prefs.Theme.AutoAdjustColors ? PaletteMode.Auto : PaletteMode.Exact;
@@ -251,7 +251,7 @@ public static class ThemeService
         {
             if (!TryParseHex(hex, out var argb))
             {
-                LpLog.Warn($"偏好里的自选配色含非法色值「{hex}」→ 回退出厂默认主题", category: LogCategory);
+                LpLog.Warn($"the custom palette in preferences contains an invalid color '{hex}' -> fell back to the factory default theme", category: LogCategory);
                 return ThemeCatalog.Default;
             }
             palette.Add(argb);
@@ -260,7 +260,6 @@ public static class ThemeService
         var candidate = new Themes.ThemeDefinition
         {
             Id = "user-custom",
-            Name = "自选配色",
             Source = Themes.ThemeSource.UserDefined,
             Palette = palette,
             NeutralHueOverride = pref.NeutralHue,
@@ -270,7 +269,7 @@ public static class ThemeService
         var blocking = issues.Where(i => i.Severity == Themes.ThemeIssueSeverity.Error).ToList();
         if (blocking.Count > 0)
         {
-            LpLog.Warn($"偏好里的自选配色不合法（{string.Join("；", blocking.Select(b => b.Message))}）→ 回退出厂默认主题", category: LogCategory);
+            LpLog.Warn($"the custom palette in preferences is invalid ({string.Join("；", blocking.Select(b => b.Message))}) -> fell back to the factory default theme", category: LogCategory);
             return ThemeCatalog.Default;
         }
         return candidate;
@@ -305,12 +304,12 @@ public static class ThemeService
         var mono = pref.Mono;
         if (!string.IsNullOrWhiteSpace(ui) && !available.Contains(ui))
         {
-            reasons.Add($"界面字体「{ui}」已不可用（文件缺失或未安装），已回退默认字体");
+            reasons.Add($"the UI font '{ui}' is unavailable (file missing or not installed), fell back to the default font");
             ui = Fonts.FontCatalog.DefaultUiFamily;
         }
         if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
         {
-            reasons.Add($"等宽字体「{mono}」已不可用（文件缺失或未安装），已回退默认字体");
+            reasons.Add($"the monospace font '{mono}' is unavailable (file missing or not installed), fell back to the default font");
             mono = Fonts.FontCatalog.DefaultMonoFamily;
         }
 

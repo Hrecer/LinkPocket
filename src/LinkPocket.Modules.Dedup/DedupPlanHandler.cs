@@ -15,12 +15,12 @@ internal sealed class DedupPlanHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "dedup.plan",
         Category: "dedup",
-        Description: "生成查重处置计划（纯干跑零副作用）：策略 + 可选 URL 过滤 + 显式保留者 → 每组 keep/trash 清单",
+        Description: "Build a duplicate handling plan (pure dry run, zero side effects): strategy + optional URL filter + explicit keepers -> per-group keep/trash lists",
         Parameters:
         [
-            ParamSpec.Opt<string>("strategy", "keep_most_visited（默认）| keep_newest | keep_explicit（未列组跳过）"),
-            ParamSpec.Opt<JsonElement>("group_urls", "只计划这些 URL 的组；缺省 = 全部重复组"),
-            ParamSpec.Opt<JsonElement>("explicit_keep", "keep_explicit 时的保留者字典 {url: link_id}"),
+            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)"),
+            ParamSpec.Opt<JsonElement>("group_urls", "Plan only groups with these URLs; default = all duplicate groups"),
+            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit {url: link_id}"),
         ],
         Caps: CommandCaps.Query);
 
@@ -37,7 +37,7 @@ internal sealed class DedupPlanHandler : ICommandHandler
         var strategy = CommandArgs.OptionalString(args, "strategy") ?? DedupStrategy.KeepMostVisited;
         if (!DedupStrategy.All.Contains(strategy))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.EnumOutOfRange, $"未知查重策略：{strategy}", correlationId: correlationId));
+                EngineErrors.EnumOutOfRange, $"unknown duplicate strategy: {strategy}", correlationId: correlationId));
 
         var urlFilter = ParseUrlFilter(args, correlationId);
 
@@ -46,13 +46,13 @@ internal sealed class DedupPlanHandler : ICommandHandler
         {
             if (CommandArgs.Raw(args, "explicit_keep") is not { ValueKind: JsonValueKind.Object } keepRaw)
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.RequiredParam, "keep_explicit 策略需要 explicit_keep（{url: link_id}）", correlationId: correlationId));
+                    EngineErrors.RequiredParam, "the keep_explicit strategy requires explicit_keep ({url: link_id})", correlationId: correlationId));
             foreach (var prop in keepRaw.EnumerateObject())
             {
                 if (prop.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
                     throw new EngineException(EngineErrors.Of(
                         EngineErrors.TypeMismatch,
-                        $"参数「explicit_keep」的「{prop.Name}」值类型不符：期望 string，实际 {prop.Value.ValueKind}",
+                        $"parameter 'explicit_keep' entry '{prop.Name}' type mismatch: expected string, got {prop.Value.ValueKind}",
                         correlationId: correlationId));
                 explicitKeep[prop.Name] = prop.Value.GetString() ?? string.Empty;
             }
@@ -71,7 +71,7 @@ internal sealed class DedupPlanHandler : ICommandHandler
                 keep = group.Links.FirstOrDefault(l => l.LinkId == explicitKeep[group.Url])
                     ?? throw new EngineException(EngineErrors.Of(
                         EngineErrors.EntityNotFound,
-                        $"URL「{group.Url}」的保留者 {explicitKeep[group.Url]} 不在该组内", correlationId: correlationId));
+                        $"the keeper {explicitKeep[group.Url]} of URL '{group.Url}' is not in that group", correlationId: correlationId));
             }
             else if (strategy == DedupStrategy.KeepNewest)
             {
@@ -103,7 +103,7 @@ internal sealed class DedupPlanHandler : ICommandHandler
         if (raw.Value.ValueKind != JsonValueKind.Array)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.TypeMismatch,
-                $"参数「group_urls」类型不符：期望 string[]，实际 {raw.Value.ValueKind}",
+                $"parameter 'group_urls' type mismatch: expected string[], got {raw.Value.ValueKind}",
                 correlationId: correlationId));
 
         var set = new HashSet<string>(StringComparer.Ordinal);
@@ -114,7 +114,7 @@ internal sealed class DedupPlanHandler : ICommandHandler
             else
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.TypeMismatch,
-                    $"参数「group_urls」元素类型不符：期望 string，实际 {item.ValueKind}",
+                    $"parameter 'group_urls' element type mismatch: expected string, got {item.ValueKind}",
                     correlationId: correlationId));
         }
 

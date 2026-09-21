@@ -71,7 +71,7 @@ public sealed class LogLevelJsonConverter : JsonConverter<LogLevel>
         if (reader.TokenType == JsonTokenType.String && LogLevels.TryParse(reader.GetString(), out var level))
             return level;
 
-        throw new JsonException($"日志级别不是合法名称：期望 {string.Join(" / ", LogLevels.Names)}");
+        throw new JsonException($"log level is not a valid name; expected one of {string.Join(" / ", LogLevels.Names)}");
     }
 
     public override void Write(Utf8JsonWriter writer, LogLevel value, JsonSerializerOptions options)

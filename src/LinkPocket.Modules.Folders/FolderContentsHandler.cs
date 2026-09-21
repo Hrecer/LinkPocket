@@ -15,14 +15,14 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.contents",
         Category: "folders",
-        Description: "取一个目录页：直接子文件夹 + 直接子链接 + 面包屑路径（folder_id 缺省 = 根「全部书签」）",
+        Description: "Get one folder page: direct child folders + direct child links + breadcrumb path (folder_id default = root)",
         Parameters:
         [
-            ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根「全部书签」（根不是实体、无 ID）"),
-            ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at（链接）/ name | sort_order | updated_at | last_visited_at | visit_count | created_at（子文件夹）"),
+            ParamSpec.Opt<string>("folder_id", "Folder ID; default = root (the root is not an entity and has no ID)"),
+            ParamSpec.Opt<string>("sort_by", "Sort field: title | updated_at | last_visited_at | visit_count | created_at (links) / name | sort_order | updated_at | last_visited_at | visit_count | created_at (child folders)"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
-            ParamSpec.Opt<int>("page", "页码（从 1 起）"),
-            ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（受引擎上限约束，触限时 truncated = true）"),
+            ParamSpec.Opt<int>("page", "Page number (1-based)"),
+            ParamSpec.Opt<int>("per_page", "Links per page; 0 = everything (bounded by the engine cap, truncated = true when capped)"),
         ],
         Caps: CommandCaps.Query,
         // 目录页 = 4 次查询（文件夹全量 + 计数两口径 + 链接），UI 每次刷新/导航都要；

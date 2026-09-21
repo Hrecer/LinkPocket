@@ -20,14 +20,14 @@ public sealed class BatchEngine : IBatchEngine
     /// <summary>批三命令的描述符（目录自描述：EngineCatalog.Manifest 追加，registry 不注册）。</summary>
     public static readonly IReadOnlyList<CommandDescriptor> Descriptors =
     [
-        new("batch.run", "batch", "按脚本顺序执行一批命令（事务批共享一个工作单元，abort 整批回滚；独立批每步各自提交）",
-            [ParamSpec.Req<JsonElement>("script", "批脚本 { name, steps: [{ ref, command, args, on_error }], scope }")],
+        new("batch.run", "batch", "Execute a batch of commands in script order (a transactional batch shares one unit of work and rolls the whole batch back on abort; a standalone batch commits each step)",
+            [ParamSpec.Req<JsonElement>("script", "Batch script { name, steps: [{ ref, command, args, on_error }], scope }")],
             CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
-        new("batch.dry_run", "batch", "预演批脚本：全步骤执行但不提交，返回每步结果与影响面，零副作用",
-            [ParamSpec.Req<JsonElement>("script", "批脚本")],
+        new("batch.dry_run", "batch", "Dry-run a batch script: every step executes without commit, returning per-step results and impact with zero side effects",
+            [ParamSpec.Req<JsonElement>("script", "Batch script")],
             CommandCaps.Query | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
-        new("batch.status", "batch", "查询批运行状态（batch_id 由 batch.run 的报告/错误详情下发）",
-            [ParamSpec.Req<string>("batch_id", "批 ID")],
+        new("batch.status", "batch", "Query batch run status (batch_id is issued by batch.run reports / error details)",
+            [ParamSpec.Req<string>("batch_id", "Batch ID")],
             CommandCaps.Query),
     ];
 
@@ -81,7 +81,7 @@ public sealed class BatchEngine : IBatchEngine
 
         // 里程碑（Debug）：批开始——批是"一条用户动作"的容器，与各步嵌套审计同 correlation
         if (LpLog.IsEnabled(LogLevel.Debug))
-            LpLog.Write(LogLevel.Debug, "engine.batch", $"批开始：{script.Name}", props: new Dictionary<string, object?>
+            LpLog.Write(LogLevel.Debug, "engine.batch", $"Batch start: {script.Name}", props: new Dictionary<string, object?>
             {
                 ["batch"] = batchId,
                 ["steps"] = script.Steps.Count,
@@ -118,10 +118,10 @@ public sealed class BatchEngine : IBatchEngine
         {
             // 事务批中途异常：工作单元未提交已回滚
             TrackStatus(batchId, new BatchStatus(batchId, script.Name, "aborted", CompletedStepsOf(batchId), script.Steps.Count));
-            LpLog.Warn($"批中止：{script.Name}（{ex.Error.Code}）", ex, category: "engine.batch");
+            LpLog.Warn($"Batch aborted: {script.Name} ({ex.Error.Code})", ex, category: "engine.batch");
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.BatchAborted,
-                $"批「{script.Name}」执行失败（{ex.Error.Code}）：事务批已整体回滚",
+                $"Batch '{script.Name}' failed ({ex.Error.Code}): the transactional batch rolled back entirely",
                 details: JsonSerializer.SerializeToElement(new { batch_id = batchId, error = ex.Error }),
                 correlationId: correlationId));
         }
@@ -146,11 +146,11 @@ public sealed class BatchEngine : IBatchEngine
         }
         catch (Exception auditEx)
         {
-            _engine.RegisterObservationFailure("写批父审计失败", auditEx);
+            _engine.RegisterObservationFailure("batch parent audit write failed", auditEx);
         }
 
         if (LpLog.IsEnabled(LogLevel.Debug))
-            LpLog.Write(LogLevel.Debug, "engine.batch", $"批结束：{script.Name}", props: new Dictionary<string, object?>
+            LpLog.Write(LogLevel.Debug, "engine.batch", $"Batch end: {script.Name}", props: new Dictionary<string, object?>
             {
                 ["batch"] = batchId,
                 ["ok"] = report.Ok,
@@ -238,8 +238,8 @@ public sealed class BatchEngine : IBatchEngine
                 if (step.OnError == ErrorPolicy.Abort)
                     throw new EngineException(EngineErrors.Of(
                         EngineErrors.BatchAborted,
-                        $"批「{script.Name}」步骤「{step.Ref}」（{step.Command}）失败：{ex.Error.Message}" +
-                        "（独立批：失败前的已执行步骤保持生效）",
+                        $"Batch '{script.Name}' step '{step.Ref}' ({step.Command}) failed: {ex.Error.Message}" +
+                        "(standalone batch: steps executed before the failure stay in effect)",
                         details: JsonSerializer.SerializeToElement(new { batch_id = batchId, step = step.Ref }),
                         correlationId: correlationId));
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: false,
@@ -285,7 +285,7 @@ public sealed class BatchEngine : IBatchEngine
                 if (step.OnError == ErrorPolicy.Abort)
                     throw new EngineException(EngineErrors.Of(
                         EngineErrors.BatchAborted,
-                        $"批「{script.Name}」步骤「{step.Ref}」（{step.Command}）失败：{ex.Error.Message}",
+                        $"Batch '{script.Name}' step '{step.Ref}' ({step.Command}) failed: {ex.Error.Message}",
                         details: JsonSerializer.SerializeToElement(new { batch_id = ctx.CorrelationId, step = step.Ref }),
                         correlationId: ctx.CorrelationId));
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: false,
@@ -316,15 +316,15 @@ public sealed class BatchEngine : IBatchEngine
     {
         if (script.Steps.Count == 0)
             throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-                "批脚本至少需要一个步骤", details: JsonSerializer.SerializeToElement(new { @param = "steps" })));
+                "a batch script needs at least one step", details: JsonSerializer.SerializeToElement(new { @param = "steps" })));
         if (script.Steps.Any(s => string.IsNullOrWhiteSpace(s.Command)))
             throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-                "批脚本每步必须指定 command", details: JsonSerializer.SerializeToElement(new { @param = "steps[].command" })));
+                "every batch step must specify command", details: JsonSerializer.SerializeToElement(new { @param = "steps[].command" })));
         var dup = script.Steps.Select(s => s.Ref).Where(r => !string.IsNullOrWhiteSpace(r))
             .GroupBy(r => r, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1);
         if (dup != null)
             throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-                $"批步骤引用名「{dup.Key}」重复", details: JsonSerializer.SerializeToElement(new { @param = "steps[].ref" })));
+                $"duplicate batch step reference name '{dup.Key}'", details: JsonSerializer.SerializeToElement(new { @param = "steps[].ref" })));
     }
 
     private static BatchReport BuildReport(string batchId, string name, List<BatchStepResult> results,
@@ -332,8 +332,8 @@ public sealed class BatchEngine : IBatchEngine
     {
         var ok = results.All(r => r.Ok);
         var summary = ok
-            ? $"批「{name}」完成：{results.Count} 步全部成功"
-            : $"批「{name}」完成（有失败）：{results.Count(r => r.Ok)}/{results.Count} 步成功";
+            ? $"Batch '{name}' finished: all {results.Count} steps succeeded"
+            : $"Batch '{name}' finished with failures: {results.Count(r => r.Ok)}/{results.Count} steps succeeded";
 
         return new BatchReport(batchId, name, ok, results,
             new ChangeSet(touched, events, summary), summary, elapsedMs, correlationId);
@@ -378,7 +378,7 @@ internal static class BatchTemplate
         {
             if (TryLookup(token, refs, out var value)) return value.Clone();
             throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch,
-                $"模板引用「{text}」找不到对应的步骤结果（引用必须在被引用步骤之后）"));
+                $"template reference '{text}' has no matching step result (a reference must come after the step it refers to)"));
         }
         return JsonSerializer.SerializeToElement(ReplaceInline(text, refs));
     }

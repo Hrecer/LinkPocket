@@ -5,9 +5,14 @@ using System.Windows.Markup;
 namespace LinkPocket.I18n;
 
 /// <summary>
-/// 取词 markup extension（XAML 侧唯一入口），两条通道：
-/// <c>{loc:Loc nav.root.bookmarks}</c> = 字面键；<c>{loc:LocKey LabelKey}</c> = 键来自绑定属性
-/// （模型里流动的是**键**，不是文本——这是"切语言不重启"能成立的前提）。
+/// 取词 markup extension（XAML 侧唯一入口），四条通道同一种形状（模型里流的是**键或文案值**，
+/// 不是文本——这是"切语言不重启"能成立的前提）：
+/// <list type="bullet">
+/// <item><c>{loc:Loc nav.root.bookmarks}</c> = 字面键</item>
+/// <item><c>{loc:LocKey LabelKey}</c> = 键来自绑定属性</item>
+/// <item><c>{loc:Value Status}</c> = <see cref="LocValue"/>（键 + 参数）来自绑定属性</item>
+/// <item><c>{loc:Segment Name}</c> = 路径段投影（根 token 换语言，用户数据原样）</item>
+/// </list>
 /// </summary>
 /// <remarks>
 /// 两者都编译成"带 <see cref="LocTable.Version"/> 的 MultiBinding"：版本只当失效触发器用，
@@ -43,7 +48,25 @@ public sealed class LocKeyExtension : MarkupExtension
     public string? Path { get; set; }
 
     public override object ProvideValue(IServiceProvider serviceProvider)
-        => LocBinding.SegmentPath(Path).ProvideValue(serviceProvider);
+        => LocBinding.FromKeyPath(Path).ProvideValue(serviceProvider);
+}
+
+/// <summary>
+/// 文案值通道：模型流 <see cref="LocValue"/>（键 + 参数），这里在渲染边界取词。
+/// 用法：<c>{loc:Value Status}</c>。
+/// </summary>
+[MarkupExtensionReturnType(typeof(object))]
+public sealed class ValueExtension : MarkupExtension
+{
+    public ValueExtension() { }
+
+    public ValueExtension(string path) => Path = path;
+
+    [ConstructorArgument("path")]
+    public string? Path { get; set; }
+
+    public override object ProvideValue(IServiceProvider serviceProvider)
+        => LocBinding.FromValuePath(Path).ProvideValue(serviceProvider);
 }
 
 internal static class LocBinding
@@ -60,6 +83,15 @@ internal static class LocBinding
     public static MultiBinding FromKeyPath(string? path)
     {
         var mb = New();
+        if (!string.IsNullOrEmpty(path)) mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay });
+        return mb;
+    }
+
+    /// <summary>绑定文案值：版本触发器 + 该路径的 <see cref="LocValue"/>。</summary>
+    public static MultiBinding FromValuePath(string? path)
+    {
+        var mb = new MultiBinding { Converter = LocValueResolver.Instance, Mode = BindingMode.OneWay };
+        mb.Bindings.Add(new Binding(nameof(LocTable.Version)) { Source = LocTable.Instance, Mode = BindingMode.OneWay });
         if (!string.IsNullOrEmpty(path)) mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay });
         return mb;
     }
@@ -101,7 +133,7 @@ public sealed class LocResolver : IMultiValueConverter
     }
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException("取词是单向的：显示文本不是状态。");
+        => throw new NotSupportedException("resolution is one-way: displayed text is not state.");
 }
 
 /// <summary>
@@ -128,6 +160,22 @@ public sealed class SegmentExtension : MarkupExtension
 }
 
 /// <summary>
+/// 文案值解析器：<see cref="LocValue"/>（键 + 参数）→ 当前语言的文本。
+/// 与 <see cref="LocResolver"/> 同构，同样吃 <see cref="LocTable.Version"/> 作失效触发器。
+/// </summary>
+public sealed class LocValueResolver : IMultiValueConverter
+{
+    public static LocValueResolver Instance { get; } = new();
+
+    /// <param name="values">[0] = 语言版本（仅作失效触发器）；[1] = 模型里的 <see cref="LocValue"/>。</param>
+    public object? Convert(object[] values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+        => values.Length > 1 && values[1] is LocValue value ? value.Resolve() : string.Empty;
+
+    public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException("resolution is one-way: displayed text is not state.");
+}
+
+/// <summary>
 /// 路径段解析器：虚根 token 与断链哨兵换成当前语言的显示名，其余段（用户自己的文件夹名）原样通过。
 /// 与 <see cref="LocResolver"/> 的区别是本表<b>不查键</b>——传进来的多半是用户数据。
 /// </summary>
@@ -139,5 +187,5 @@ public sealed class SegmentResolver : IMultiValueConverter
         => values.Length > 1 ? BookmarkDisplay.Segment(values[1] as string) : string.Empty;
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
-        => throw new NotSupportedException("投影是单向的：显示文本不是身份。");
+        => throw new NotSupportedException("projection is one-way: displayed text is not identity.");
 }

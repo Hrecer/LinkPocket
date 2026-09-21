@@ -21,9 +21,9 @@ public sealed record CachePolicy(IReadOnlyList<string> DependsOn, int TtlSeconds
     public static CachePolicy Of(int ttlSeconds, params string[] dependsOn)
     {
         if (dependsOn.Length == 0)
-            throw new ArgumentException("缓存依赖不能为空（空依赖 = 永远不失效，禁止）", nameof(dependsOn));
+            throw new ArgumentException("cache dependencies must not be empty (empty = never invalidates, forbidden)", nameof(dependsOn));
         if (ttlSeconds < 1)
-            throw new ArgumentOutOfRangeException(nameof(ttlSeconds), "TTL 至少 1 秒");
+            throw new ArgumentOutOfRangeException(nameof(ttlSeconds), "TTL must be at least 1 second");
         return new CachePolicy(dependsOn, ttlSeconds);
     }
 

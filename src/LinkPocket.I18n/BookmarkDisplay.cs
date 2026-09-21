@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using LinkPocket.Contracts;
 
@@ -37,22 +36,4 @@ public static class BookmarkDisplay
     /// <summary>canonical 路径 → 显示串。</summary>
     public static string Path(string? canonical)
         => string.Join(Separator, BookmarkPath.Split(canonical).Select(Segment));
-
-    /// <summary>
-    /// 把**各语言**（不只当前语言）的根显示名登记为根别名与根级保留名；组合根启动时调一次。
-    /// </summary>
-    /// <remarks>
-    /// 为什么登记进契约层而不是让引擎直接引 I18n：路径首段的匹配发生在 UIKit，
-    /// 根级占用名的校验发生在 Kernel，两者都不许引 I18n（依赖方向），
-    /// 而"哪些名字被根占用"又必须在那两层成立。
-    /// </remarks>
-    public static void RegisterRootAliases()
-    {
-        foreach (var locale in Enum.GetValues<AppLocale>())
-        {
-            var table = StringTables.For(locale);
-            foreach (var (token, key) in Roots)
-                if (table.TryGetValue(key, out var name)) BookmarkPath.ReserveRootAlias(token, name);
-        }
-    }
 }

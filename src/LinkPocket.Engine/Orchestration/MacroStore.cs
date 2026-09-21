@@ -23,12 +23,12 @@ public sealed class MacroStore : IMacroStore
         try
         {
             _ = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
-                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"the script of macro '{name}' is not a valid batch script"));
         }
         catch (JsonException)
         {
             // 坏 JSON 是输入问题而非内部错误：报 ProtocolMalformed，不冒泡成 LP.INTERNAL
-            throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"宏「{name}」的脚本不是合法的批脚本"));
+            throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"the script of macro '{name}' is not a valid batch script"));
         }
 
         using var db = _dbFactory();

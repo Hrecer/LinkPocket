@@ -11,11 +11,11 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.purge_batch",
         Category: "trash",
-        Description: "批量永久删除回收站条目（link_ids 单条书签快照；folder_ids 整单元子树；不可恢复）",
+        Description: "Permanently delete trash entries in batch (link_ids single snapshots; folder_ids whole unit subtrees; unrecoverable)",
         Parameters:
         [
-            ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "书签快照 ID 列表"),
-            ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "回收站单元 ID 列表"),
+            ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "List of bookmark snapshot IDs"),
+            ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "List of trash unit IDs"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive,
         Impact: ImpactSummary.Link);
@@ -26,14 +26,14 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
         var folderIds = CommandArgs.StringArray(args, "folder_ids");
         if (linkIds.Count == 0 && folderIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "link_ids / folder_ids 至少提供一个", correlationId: ctx.CorrelationId));
+                EngineErrors.RequiredParam, "at least one of link_ids / folder_ids is required", correlationId: ctx.CorrelationId));
         var ct = ctx.Ct;
 
         foreach (var id in linkIds)
         {
             _ = await ctx.Uow.Trash.FindLinkAsync(new LinkId(id), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"回收站中不存在书签 {id}", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"bookmark {id} is not in the trash", correlationId: ctx.CorrelationId));
         }
 
         var allFolders = await ctx.Uow.Trash.ListFoldersAsync(ct);
@@ -42,7 +42,7 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
         {
             if (!allFolders.Any(f => f.TrashFolderId == id))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"回收站单元 {id} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"trash unit {id} does not exist", correlationId: ctx.CorrelationId));
             subtreeCounts.Add(TrashSupport.CollectSubtreeIds(allFolders, id).Count);
         }
 
@@ -70,6 +70,6 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
                     .Concat(folderIds.Select(i => new EntityRef("trash_unit", i)))
                     .ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"已永久删除 {linkIds.Count} 个书签、{purgedFolders} 个回收站单元"));
+                HumanSummary: $"Permanently deleted {linkIds.Count} bookmark(s) and {purgedFolders} trash unit(s)"));
     }
 }

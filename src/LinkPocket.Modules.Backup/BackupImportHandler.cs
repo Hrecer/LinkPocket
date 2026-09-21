@@ -28,11 +28,11 @@ internal sealed class BackupImportHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "backup.import",
         Category: "backup",
-        Description: "从 .lpbackup 导入（replace=false 追加；replace=true 先清空全部数据再导入，两阶段确认）",
+        Description: "Import from a .lpbackup (replace=false appends; replace=true wipes all data first, two-phase confirmation)",
         Parameters:
         [
-            ParamSpec.Req<string>("file_path", "备份文件路径"),
-            ParamSpec.Opt<bool>("replace", "true = 清空后导入（完全重置）；缺省 = 追加导入"),
+            ParamSpec.Req<string>("file_path", "Backup file path"),
+            ParamSpec.Opt<bool>("replace", "true = import after a wipe (full reset); default = append import"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.FileIo | CommandCaps.LongRunning | CommandCaps.SupportsCancellation);
 
@@ -61,45 +61,45 @@ internal sealed class BackupImportHandler : ICommandHandler
         {
             if (string.IsNullOrWhiteSpace(f.Key))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.InvalidPath, "备份文件包含空的文件夹 key，无法导入", correlationId: ctx.CorrelationId));
+                    EngineErrors.InvalidPath, "the backup contains an empty folder key and cannot be imported", correlationId: ctx.CorrelationId));
             if (!folderByKey.TryAdd(f.Key, f))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.InvalidPath, $"备份文件包含重复的文件夹 key「{f.Key}」，无法导入",
+                    EngineErrors.InvalidPath, $"the backup contains a duplicate folder key '{f.Key}' and cannot be imported",
                     correlationId: ctx.CorrelationId));
         }
 
         var dangling = folders.Where(f => f.Parent != null && !folderByKey.ContainsKey(f.Parent))
-            .Select(f => $"「{f.Name}」→ 未知父级 key `{f.Parent}`")
+            .Select(f => $"'{f.Name}' -> unknown parent key `{f.Parent}`")
             .Concat(links.Where(l => l.Folder != null && !folderByKey.ContainsKey(l.Folder))
-                .Select(l => $"书签「{l.Title ?? l.Url}」→ 未知目录 key `{l.Folder}`"))
+                .Select(l => $"bookmark '{l.Title ?? l.Url}' -> unknown list key `{l.Folder}`"))
             .Take(5)
             .ToList();
         if (dangling.Count > 0)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath,
-                "备份文件的引用不完整（若有目录在导出后被拆分/篡改，请改用完整备份）：" + string.Join("；", dangling),
+                "the backup's references are incomplete (if a folder was split or tampered with after export, use a full backup):" + string.Join("；", dangling),
                 correlationId: ctx.CorrelationId));
 
         // 时间戳：**有值但解析不了 = 拒绝整包**（旧实现静默回落 DateTime.UtcNow = 把损坏数据伪装成"刚刚创建"）。
         // 字段缺失（备份格式允许省略）则显式取当下时间——这是"当时就是不知道"，不是伪造。
         var now = DateTime.UtcNow;
         var unresolvedTime = folders
-            .SelectMany(f => new[] { ("文件夹", f.Name, "created_at", f.CreatedAt), ("文件夹", f.Name, "updated_at", f.UpdatedAt) })
-            .Concat(folders.Select(f => ("文件夹", f.Name, "last_visited_at", f.LastVisitedAt ?? "")))
+            .SelectMany(f => new[] { ("Folder", f.Name, "created_at", f.CreatedAt), ("Folder", f.Name, "updated_at", f.UpdatedAt) })
+            .Concat(folders.Select(f => ("Folder", f.Name, "last_visited_at", f.LastVisitedAt ?? "")))
             .Concat(links.SelectMany(l => new[]
             {
-                ("书签", l.Title ?? l.Url, "created_at", l.CreatedAt),
-                ("书签", l.Title ?? l.Url, "updated_at", l.UpdatedAt),
-                ("书签", l.Title ?? l.Url, "last_visited_at", l.LastVisitedAt ?? ""),
+                ("Bookmark", l.Title ?? l.Url, "created_at", l.CreatedAt),
+                ("Bookmark", l.Title ?? l.Url, "updated_at", l.UpdatedAt),
+                ("Bookmark", l.Title ?? l.Url, "last_visited_at", l.LastVisitedAt ?? ""),
             }))
             .Where(t => !BackupIO.TryParseUtc(t.Item4, out _))
-            .Select(t => $"{t.Item1}「{t.Item2}」的 {t.Item3}=\"{t.Item4}\"")
+            .Select(t => $"{t.Item1} '{t.Item2}' field {t.Item3}=\"{t.Item4}\"")
             .Take(5)
             .ToList();
         if (unresolvedTime.Count > 0)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath,
-                "备份文件含无法解析的时间戳（文件已损坏或被手工改动）：" + string.Join("；", unresolvedTime),
+                "the backup contains an unparseable timestamp (the file is corrupt or hand-edited):" + string.Join("；", unresolvedTime),
                 correlationId: ctx.CorrelationId));
 
         var depthMemo = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -124,7 +124,7 @@ internal sealed class BackupImportHandler : ICommandHandler
                 // 外部输入的层级里有环 = **输入非法**（LP.VAL.004），不是引擎内部错误
                 // （零兼容红线：拿不准的入参按真实值处理并报明确错误码，别贴 LP.SYS.003 的标签）
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.InvalidPath, "备份文件的文件夹层级存在循环引用，无法导入", correlationId: ctx.CorrelationId));
+                    EngineErrors.InvalidPath, "the backup's folder hierarchy contains a cycle and cannot be imported", correlationId: ctx.CorrelationId));
 
             var baseDepth = cur == null
                 ? chain.Count
@@ -252,7 +252,7 @@ internal sealed class BackupImportHandler : ICommandHandler
                 catch (Exception rollbackEx)
                 {
                     // 回滚失败只记日志，绝不顶替原始异常（观测面红线）
-                    LpLog.Warn("备份导入失败后的回滚也失败了（请检查数据库文件）", rollbackEx, category: "modules.backup");
+                    LpLog.Warn("the rollback after a failed backup import also failed (check the database file)", rollbackEx, category: "modules.backup");
                 }
             }
             throw;
@@ -281,7 +281,7 @@ internal sealed class BackupImportHandler : ICommandHandler
                 catch (Exception favEx)
                 {
                     faviconWarnings.Add($"{faviconUrl}：{favEx.GetBaseException().Message}");
-                    LpLog.Warn($"备份导入后恢复图标失败（数据已导入）：{faviconUrl}", favEx, category: "modules.backup");
+                    LpLog.Warn($"favicon restore after backup import failed (data already imported): {faviconUrl}", favEx, category: "modules.backup");
                 }
             }
         }
@@ -303,10 +303,10 @@ internal sealed class BackupImportHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("database", "*")],
                 Events: events,
-                HumanSummary: $"已导入 {foldersCreated} 个文件夹、{linksCreated} 个书签"
-                               + (foldersRenamed > 0 ? $"（{foldersRenamed} 个同名已自动编号）" : "")
-                               + (replace ? "（清空后导入）" : "")
-                               + (faviconWarnings.Count > 0 ? $"（{faviconWarnings.Count} 个图标未恢复）" : ""),
+                HumanSummary: $"Imported {foldersCreated} folders and {linksCreated} bookmarks"
+                               + (foldersRenamed > 0 ? $"({foldersRenamed} same-named entries were auto-numbered)" : "")
+                               + (replace ? "(imported after a wipe)" : "")
+                               + (faviconWarnings.Count > 0 ? $"({faviconWarnings.Count} favicons not restored)" : ""),
                 // 图标写失败如实上抛给调用方（数据已提交，但"有东西没做完"必须让用户看见）
                 Warnings: faviconWarnings.Count > 0 ? faviconWarnings : null));
     }
@@ -317,7 +317,7 @@ internal sealed class BackupImportHandler : ICommandHandler
     /// <remarks>
     /// ⚠️ 这里**刻意不写"取不到就落根级"的回落分支**：那正是"静默拍平用户的目录树"的形状
     /// （校验已经保证不可达，但只要哪天有人放宽校验或调整排序，同一行代码立刻重新变成静默损坏）。
-    /// 拿不准就抛——这是"漏网的输入非法"，不是"这个文件夹没有父"。
+    /// 拿不准就抛——这是"漏网的输入非法"，不是"这个Folder没有父"。
     /// </remarks>
     private static string? ResolveFolderKey(
         string? key, IReadOnlyDictionary<string, string> created, string owner)
@@ -327,5 +327,5 @@ internal sealed class BackupImportHandler : ICommandHandler
                 ? id
                 : throw new EngineException(EngineErrors.Of(
                     EngineErrors.InvalidPath,
-                    $"备份文件里「{owner}」指向未知目录 key「{key}」（本该在导入前被校验拦下）"));
+                    $"'{owner}' in the backup points to unknown list key '{key}' (validation should have caught this before import)"));
 }

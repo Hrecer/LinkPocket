@@ -45,19 +45,25 @@ public class I18nRulesTests
         "LinkPocket.UI.Trash", "LinkPocket.UI.SmartLists", "LinkPocket.UI.Tools", "LinkPocket.UI.Settings",
     };
 
-    /// <summary>非界面层：只许携带键与错误码，不许携带任何中文散文。</summary>
-    private static readonly string[] EngineDirs =
+    /// <summary>
+    /// 中文文案的唯一归属地。除此之外，<c>src/**</c> 的 C# 里不许出现任何 CJK 字面量：
+    /// 引擎层带英文技术文案，UI 层带键与 <c>LocValue</c>，界面语言只在渲染边界生效。
+    /// </summary>
+    private static readonly string[] CopyHome =
     {
-        "LinkPocket.Contracts", "LinkPocket.Kernel", "LinkPocket.Engine", "LinkPocket.Data",
-        "LinkPocket.Theming", "LinkPocket.Composition", "LinkPocket.Diagnostics",
+        "src/LinkPocket.I18n/StringTables.cs",
     };
 
-    private static readonly string[] EngineModules = Directory
-        .EnumerateDirectories(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "src"))
-        .Select(Path.GetFileName)
-        .Where(n => n!.StartsWith("LinkPocket.Modules.", StringComparison.Ordinal))
-        .Cast<string>()
-        .ToArray();
+    /// <summary>
+    /// 身份数据豁免：<b>中文在这里是名字本身，不是文案</b>——路径首段要能被旧串认出、根级不许用户占用这些名字，
+    /// 两条判断都发生在不许引 I18n 的层。加一项必须写清这个理由，且必须有配套的一致性测试
+    /// （<c>RootAliasIdentityTests</c> 卡住别名表 == 字符串表的 <c>nav.root.*</c>）；
+    /// 想用它给硬编码文案开后门，请先问那条测试为什么没红。
+    /// </summary>
+    private static readonly string[] IdentityData =
+    {
+        "src/LinkPocket.Contracts/BookmarkPath.cs",
+    };
 
     private static readonly string Cjk = @"[\u4E00-\u9FFF]";
 
@@ -66,18 +72,25 @@ public class I18nRulesTests
         @"(?<attr>\b(Text|Content|Header|HeaderText|ToolTip|Tag|PlaceholderText)\s*=\s*"")(?<val>[^""<>]*" + Cjk + @"[^""<>]*)""",
         RegexOptions.Compiled);
 
-    /// <summary>C# 里"赋给界面属性的中文字面量"（含插值串与逐字串前缀）。</summary>
-    private static readonly Regex CsUiAssignment = new(
-        @"\b(Status|StatusText|ErrorMessage|Error|Label|Tip|Title|Text|Content|Header|ToolTip|Tooltip|DisplayName|DescriptionText|OpenLabel|CloseLabel|DeleteActionLabel|DeleteSelectionLabel|Hint|Message|Caption|Subtitle)\s*=\s*@?""[^""\r\n]*" + Cjk + @"[^""\r\n]*""",
-        RegexOptions.Compiled);
-
-    /// <summary>直接进界面控件的中文实参（弹窗/提示/列定义构造）。</summary>
-    private static readonly Regex CsUiCallArgument = new(
-        @"\b(MessageBox\.Show|ShowError|ShowInfo|ShowWarning|AddColumn|ConfirmAsync)\s*\([^;""{]*""[^""\r\n]*" + Cjk,
-        RegexOptions.Compiled);
-
     private static readonly Regex AnyCjkLiteral = new(
         @"""[^""\r\n]*" + Cjk + @"[^""\r\n]*""", RegexOptions.Compiled);
+
+    /// <summary>
+    /// G9：界面层把引擎文本直接当话说（<c>ex.Message</c> / <c>err.Error.Message</c> / <c>HumanSummary</c>）。
+    /// 引擎文本按定稿是英文技术文案，上屏就是混语；界面只许说键或"码 + 参数"。
+    /// </summary>
+    private static readonly Regex RendersEngineText = new(
+        @"\b(ex|e|err|error|exception)\.Message\b|\.Error\.Message\b|\bHumanSummary\b",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// G10：把取词结果**存进状态**（<c>Status = Loc.T(...)</c>、<c>string X =&gt; Loc.T(...)</c>）。
+    /// 取词时机被钉死在构造期/求值期，换语言就不跟着变——模型成员只许流 <c>Loc.K(...)</c> 的 <c>LocValue</c>。
+    /// 作实参用（弹窗显示那一刻取词）不在此列，所以只匹配赋值与表达式体。
+    /// </summary>
+    private static readonly Regex BakedText = new(
+        @"(=|=>)\s*Loc\.T\(|\bLoc\.Plural\(",
+        RegexOptions.Compiled);
 
     private static string BaselinePath => Path.Combine(RepoRoot, "tests", "LinkPocket.Architecture.Tests", "I18nBaseline.txt");
 
@@ -104,12 +117,26 @@ public class I18nRulesTests
             if (!Directory.Exists(full)) continue;
             foreach (var f in Directory.EnumerateFiles(full, "*.*", SearchOption.AllDirectories))
             {
-                if (f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") ||
-                    f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
-                yield return f;
+                if (!IsGenerated(f)) yield return f;
             }
         }
     }
+
+    /// <summary>src 下所有源文件（排除 bin/obj 与文案归属地）。</summary>
+    private static IEnumerable<string> AllSourceFiles()
+    {
+        foreach (var f in Directory.EnumerateFiles(Path.Combine(RepoRoot, "src"), "*.*", SearchOption.AllDirectories))
+        {
+            if (IsGenerated(f)) continue;
+            var rel = Relative(f);
+            if (CopyHome.Contains(rel, StringComparer.Ordinal) || IdentityData.Contains(rel, StringComparer.Ordinal)) continue;
+            yield return f;
+        }
+    }
+
+    private static bool IsGenerated(string f)
+        => f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") ||
+           f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}");
 
     private static string Strip(string text, bool xaml)
         => xaml
@@ -117,6 +144,9 @@ public class I18nRulesTests
             : Regex.Replace(Regex.Replace(text, @"/\*.*?\*/", " ", RegexOptions.Singleline), @"//[^\r\n]*", " ");
 
     private static string Relative(string full) => Path.GetRelativePath(RepoRoot, full).Replace('\\', '/');
+
+    private static IEnumerable<string> CsFiles(params string[] dirs)
+        => Files(dirs).Where(f => f.EndsWith(".cs", StringComparison.Ordinal));
 
     /// <summary>一条规则的实际命中（按文件计数 + 留几行样本给人看）。</summary>
     private sealed record RuleHit(string Rule, string Path, int Count, List<string> Samples);
@@ -168,12 +198,13 @@ public class I18nRulesTests
         lines.AddRange(Scan("xaml", Files(UiDirs),
             b => XamlTextAttr.Matches(b).Count(m => m.Groups["val"].Value.Trim().Length > 0))
             .Select(h => $"xaml|{h.Path}|{h.Count}"));
-        lines.AddRange(Scan("cs-ui", Files(UiDirs),
-            b => CsUiAssignment.Matches(b).Count + CsUiCallArgument.Matches(b).Count)
-            .Select(h => $"cs-ui|{h.Path}|{h.Count}"));
-        lines.AddRange(Scan("engine", Files(EngineDirs.Concat(EngineModules).ToArray()),
-            b => AnyCjkLiteral.Matches(StripLogCalls(b)).Count)
-            .Select(h => $"engine|{h.Path}|{h.Count}"));
+        lines.AddRange(Scan("cjk", AllSourceFiles().Where(f => f.EndsWith(".cs", StringComparison.Ordinal)),
+            b => AnyCjkLiteral.Matches(b).Count)
+            .Select(h => $"cjk|{h.Path}|{h.Count}"));
+        lines.AddRange(Scan("g9", CsFiles(UiDirs), b => RendersEngineText.Matches(StripLogStatements(b)).Count)
+            .Select(h => $"g9|{h.Path}|{h.Count}"));
+        lines.AddRange(Scan("g10", CsFiles(UiDirs), b => BakedText.Matches(b).Count)
+            .Select(h => $"g10|{h.Path}|{h.Count}"));
 
         File.WriteAllLines(BaselinePath, lines.Order(StringComparer.Ordinal), new System.Text.UTF8Encoding(false));
     }
@@ -187,33 +218,47 @@ public class I18nRulesTests
         AssertRatchet(hits, baseline, "xaml");
     }
 
+    /// <summary>
+    /// 全仓源文件零中文字面量（注释除外）。<b>只有一条规则、没有形状白名单</b>：
+    /// 早先按属性名白名单判（<c>Status=</c>/<c>Label=</c>…）会被构造函数的位置实参绕过——
+    /// <c>ShortcutCatalog</c> 的 139 条中文说明就是这么躲过"界面层已清零"的。
+    /// </summary>
     [Fact]
-    public void 界面层_C_赋值给界面属性的中文零容忍()
+    public void 全仓源文件_零中文字面量_注释除外()
     {
         var baseline = LoadBaseline();
-        var hits = Scan("cs-ui", Files(UiDirs),
-            body => CsUiAssignment.Matches(body).Count + CsUiCallArgument.Matches(body).Count);
-        AssertRatchet(hits, baseline, "cs-ui");
+        var hits = Scan("cjk", AllSourceFiles().Where(f => f.EndsWith(".cs", StringComparison.Ordinal)),
+            body => AnyCjkLiteral.Matches(body).Count);
+        AssertRatchet(hits, baseline, "cjk");
     }
 
     /// <summary>
-    /// 日志门面调用整段先抹掉再计数。
+    /// G9：界面层不得把引擎文本（<c>ex.Message</c> / <c>err.Error.Message</c> / <c>HumanSummary</c>）当话说。
     /// <para>
-    /// <b>为什么</b>：日志按定稿<b>不翻译</b>（工程观测面，双语只会让 grep 变难），
-    /// 而它与"会到界面上的中文散文"住在同一个文件、同一种字面量形状里。
-    /// 不区分就会把 116 条日志连同 146 条异常一起记成待收口，棘轮数字失去意义。
+    /// 日志门面调用整段先抹掉再计数：把异常原文写进日志是观测面的正当用法，
+    /// 这条闸只管"上屏"。与旧的 <c>StripLogCalls</c> 不同——那条是为了让中文日志过关（已随定稿 v2 作废），
+    /// 这条是因为日志本来就不在 G9 的射程里。
     /// </para>
     /// </summary>
-    private static string StripLogCalls(string body)
+    private static string StripLogStatements(string body)
         => Regex.Replace(body, @"LpLog\.\w+\s*\([^;]*\)\s*;?", " ", RegexOptions.Singleline);
 
+    /// <summary>G9：界面层不得把引擎文本当话说（日志除外，见 <see cref="StripLogStatements"/>）。</summary>
     [Fact]
-    public void 引擎与契约层_零中文散文_日志除外()
+    public void 界面层_不渲染引擎文本()
     {
         var baseline = LoadBaseline();
-        var dirs = EngineDirs.Concat(EngineModules).ToArray();
-        var hits = Scan("engine", Files(dirs), body => AnyCjkLiteral.Matches(StripLogCalls(body)).Count);
-        AssertRatchet(hits, baseline, "engine");
+        var hits = Scan("g9", CsFiles(UiDirs), body => RendersEngineText.Matches(StripLogStatements(body)).Count);
+        AssertRatchet(hits, baseline, "g9");
+    }
+
+    /// <summary>G10：取词结果不许存进状态；模型成员只许流 <c>LocValue</c>（<c>Loc.K</c>）。</summary>
+    [Fact]
+    public void 界面层_不把取词结果存进状态()
+    {
+        var baseline = LoadBaseline();
+        var hits = Scan("g10", CsFiles(UiDirs), body => BakedText.Matches(body).Count);
+        AssertRatchet(hits, baseline, "g10");
     }
 
     [Fact]
@@ -247,7 +292,7 @@ public class I18nRulesTests
         foreach (var file in Files(UiDirs).Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
         {
             var body = File.ReadAllText(file);
-            foreach (Match m in Regex.Matches(body, @"(?:\{loc:Loc\s+([a-z0-9.]+(?:#[a-z]+)?)\})|(?:Loc\.T\(\s*""([a-z0-9.]+(?:#[a-z]+)?)"")"))
+            foreach (Match m in Regex.Matches(body, @"(?:\{loc:Loc\s+([a-z0-9.]+(?:#[a-z]+)?)\})|(?:Loc\.(?:T|K|PluralK)\(\s*""([a-z0-9.]+(?:#[a-z]+)?)"")"))
             {
                 var key = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
                 if (!keys.Contains(key)) referenced.Add($"{Relative(file)} → {key}");

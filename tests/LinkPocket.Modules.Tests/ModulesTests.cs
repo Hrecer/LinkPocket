@@ -69,10 +69,6 @@ public class FoldersModuleTests
     public async Task 根级保留名被拒_子级同名放行()
     {
         // 各语言的根显示名登记进契约层（真实启动由 App 做；这里只喂保留名判据）
-        BookmarkPath.ReserveRootAlias(BookmarkPath.RootToken, "@root");
-        BookmarkPath.ReserveRootAlias(BookmarkPath.RootToken, "Bookmarks");
-        BookmarkPath.ReserveRootAlias(BookmarkPath.TrashToken, "回收站");
-        BookmarkPath.ReserveRootAlias(BookmarkPath.TrashToken, "Trash");
 
         var (engine, _, _) = TestHost.Create();
         foreach (var taken in new[] { "@root", "Bookmarks", "回收站", "Trash", "@root", "@trash" })
@@ -657,7 +653,7 @@ public class LinksModuleTests
         Assert.True(created.Ok);
         var warning = Assert.Single(created.Changes!.Warnings!);
         Assert.Contains(EngineErrors.InvalidUrl, warning);
-        Assert.Contains("元数据未抓取到", created.Changes!.HumanSummary);
+        Assert.Contains("metadata not fetched", created.Changes!.HumanSummary);
 
         // 未开启抓取 → 无 warnings
         var plain = await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://x.example", title = "X" });
@@ -1036,7 +1032,7 @@ public class BookmarksModuleTests
 
         Assert.Equal(1, imported.Data.GetProperty("folders_created").GetInt32());
         Assert.Equal(1, imported.Data.GetProperty("folders_renamed").GetInt32());
-        Assert.Contains("同名已自动编号", imported.Changes!.HumanSummary);
+        Assert.Contains("same-named entries were auto-numbered", imported.Changes!.HumanSummary);
 
         var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
         Assert.Contains(tree, f => f.Name == "Folder <One>");
@@ -1168,7 +1164,7 @@ public class BookmarksModuleTests
         var imported = await engine.ExecuteAsync<JsonElement>("bookmarks.import", new { file_path = htmlPath });
         Assert.Equal(1, imported.Data.GetProperty("links_created").GetInt32());
         Assert.NotNull(imported.Changes!.Warnings);
-        Assert.Contains(imported.Changes!.Warnings!, w => w.Contains("文件结构不完整"));
+        Assert.Contains(imported.Changes!.Warnings!, w => w.Contains("structure is incomplete"));
     }
 }
 
@@ -1199,7 +1195,7 @@ public class BackupModuleTests
 
         Assert.Equal(1, imported.Data.GetProperty("folders_created").GetInt32());
         Assert.Equal(1, imported.Data.GetProperty("folders_renamed").GetInt32());
-        Assert.Contains("同名已自动编号", imported.Changes!.HumanSummary);
+        Assert.Contains("same-named entries were auto-numbered", imported.Changes!.HumanSummary);
 
         var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
         Assert.Contains(tree, f => f.Name == "工作");
@@ -1427,7 +1423,7 @@ public class BackupRobustnessTests
             engine.ExecuteAsync<object>("backup.import",
                 new { file_path = badPath }, new CallOptions(ConfirmToken: token)));
         Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
-        Assert.Contains("重复的文件夹 key", ex.Error.Message);
+        Assert.Contains("duplicate folder key", ex.Error.Message);
     }
 
     /// <summary>
@@ -1490,14 +1486,14 @@ public class BackupRobustnessTests
         {
             var ex = await ImportExpectingFailureAsync(engine, path);
             Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
-            Assert.Contains("不支持的备份版本", ex.Error.Message);
+            Assert.Contains("unsupported backup version", ex.Error.Message);
         }
     }
 
     [Fact]
     public async Task Import_Unknown_Parent_Key_Rejected_And_Nothing_Written()
     {
-        // 外部输入的引用不完整 = 层级会静默被拍平（旧实现回落根级）→ 现行整包拒绝，且**一个字节都不写库**。
+        // 外部输入的references are incomplete = 层级会静默被拍平（旧实现回落根级）→ 现行整包拒绝，且**一个字节都不写库**。
         var (engine, _, _) = TestHost.Create();
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "既有" });
 
@@ -1510,7 +1506,7 @@ public class BackupRobustnessTests
 
         var ex = await ImportExpectingFailureAsync(engine, path);
         Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
-        Assert.Contains("引用不完整", ex.Error.Message);
+        Assert.Contains("references are incomplete", ex.Error.Message);
 
         var tree = await engine.QueryAsync<List<FolderDto>>("folders.tree", null);
         Assert.Single(tree);                       // 只有既有那个，孤儿没被拍平落根
@@ -1530,7 +1526,7 @@ public class BackupRobustnessTests
 
         var ex = await ImportExpectingFailureAsync(engine, path);
         Assert.Equal(EngineErrors.InvalidPath, ex.Error.Code);
-        Assert.Contains("无法解析的时间戳", ex.Error.Message);
+        Assert.Contains("unparseable timestamp", ex.Error.Message);
         Assert.Empty((await engine.QueryAsync<List<FolderDto>>("folders.tree", null)));
     }
 

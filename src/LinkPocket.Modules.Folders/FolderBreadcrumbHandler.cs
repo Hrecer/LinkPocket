@@ -10,8 +10,8 @@ internal sealed class FolderBreadcrumbHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.breadcrumb",
         Category: "folders",
-        Description: "取某目录的面包屑路径（名称列表，含根显示名「全部书签」）",
-        Parameters: [ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根")],
+        Description: "Get the breadcrumb path of a folder (name list, including the root display name)",
+        Parameters: [ParamSpec.Opt<string>("folder_id", "Folder ID; default = root")],
         Caps: CommandCaps.Query,
         // 每次目录导航都会取面包屑（全量文件夹一遍）；只受文件夹改名/移动影响
         Cache: CachePolicy.Of(10, DomainEventNames.FoldersChanged));

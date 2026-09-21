@@ -40,7 +40,7 @@ public sealed class EngineWire(IEngine engine)
         // JSON-RPC：空/非法请求体 → -32600；Deserialize(null) 会抛 ArgumentNullException
         // 落到通用 catch 变成 -32000，分类错误。
         if (jsonRequest is null)
-            return Error(hasId: false, default, -32600, "请求体不能为空");
+            return Error(hasId: false, default, -32600, "request body must not be empty");
         JsonElement request;
         var hasId = false;
         JsonElement idValue = default;
@@ -63,7 +63,7 @@ public sealed class EngineWire(IEngine engine)
                 || !request.TryGetProperty("method", out var methodEl)
                 || methodEl.ValueKind != JsonValueKind.String)
             {
-                return Error(hasId, idValue, -32600, "请求体不是合法的 JSON-RPC 2.0 对象");
+                return Error(hasId, idValue, -32600, "request body is not a valid JSON-RPC 2.0 object");
             }
 
             var method = methodEl.GetString()!;
@@ -73,7 +73,7 @@ public sealed class EngineWire(IEngine engine)
         }
         catch (JsonException ex)
         {
-            return Error(hasId, idValue, -32600, $"请求体 JSON 解析失败：{ex.Message}");
+            return Error(hasId, idValue, -32600, $"request body JSON parse failed: {ex.Message}");
         }
         catch (EngineException ex)
         {
@@ -82,11 +82,11 @@ public sealed class EngineWire(IEngine engine)
         }
         catch (OperationCanceledException)
         {
-            return Error(hasId, idValue, -32000, "调用已取消");
+            return Error(hasId, idValue, -32000, "Call cancelled");
         }
         catch (Exception ex)
         {
-            return Error(hasId, idValue, -32000, $"内部错误：{ex.Message}");
+            return Error(hasId, idValue, -32000, $"internal error: {ex.Message}");
         }
     }
 
@@ -125,7 +125,7 @@ public sealed class EngineWire(IEngine engine)
                 // 编排命令（wire 方法 = engine.* 三标准方法 + <编排命令>）：
                 // 批引擎自身即管道父调用，直路由 IBatchEngine，不经标准命令管道。
                 var batch = engine.Batch
-                    ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal, "批引擎未装配（OrchestrationHost）"));
+                    ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal, "batch engine not wired (OrchestrationHost)"));
                 return method switch
                 {
                     "batch.run" => await batch.RunAsync(
@@ -135,7 +135,7 @@ public sealed class EngineWire(IEngine engine)
                     "batch.dry_run" => await batch.DryRunAsync(ParseScript(RequireElement(args, "script")), ct),
                     _ => batch.GetStatus(Require(args, "batch_id"))
                         ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
-                            $"批不存在：{Require(args, "batch_id")}")),
+                            $"batch not found: {Require(args, "batch_id")}")),
                 };
             }
             default:
@@ -143,7 +143,7 @@ public sealed class EngineWire(IEngine engine)
                 // 直接命令名：params = args；按目录里的 Query/Mutation 标志路由
                 if (!_commands.TryGetValue(method, out var descriptor))
                     throw new EngineException(EngineErrors.Of(EngineErrors.UnknownCommand,
-                        $"未知命令「{method}」"));
+                        $"unknown command '{method}'"));
 
                 if (descriptor.IsQuery)
                     return ToWireData(await engine.QueryAsync<object>(method, args, null, ct));
@@ -159,7 +159,7 @@ public sealed class EngineWire(IEngine engine)
 
     private static BatchScript ParseScript(JsonElement scriptEl)
         => JsonSerializer.Deserialize<BatchScript>(scriptEl.GetRawText(), EngineJson.ScriptOptions)
-           ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, "批脚本不是合法的 BatchScript JSON"));
+           ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, "batch script is not valid BatchScript JSON"));
 
     /// <summary>必填 JSON 元素参数（复杂入参，如批脚本）；缺失即抛 REQUIRED_PARAM。</summary>
     private static JsonElement RequireElement(JsonElement args, string name)
@@ -169,7 +169,7 @@ public sealed class EngineWire(IEngine engine)
             return el;
 
         throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-            $"缺少必填参数「{name}」", details: JsonSerializer.SerializeToElement(new { param = name })));
+            $"required parameter '{name}' is missing", details: JsonSerializer.SerializeToElement(new { param = name })));
     }
 
     private static CallOptions DeserializeOptions(JsonElement el)
@@ -197,7 +197,7 @@ public sealed class EngineWire(IEngine engine)
             return el.GetString()!;
 
         throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-            $"缺少必填参数「{name}」", details: JsonSerializer.SerializeToElement(new { param = name })));
+            $"required parameter '{name}' is missing", details: JsonSerializer.SerializeToElement(new { param = name })));
     }
 
     /// <summary>错误码 → JSON-RPC 数值码（约定②）。</summary>

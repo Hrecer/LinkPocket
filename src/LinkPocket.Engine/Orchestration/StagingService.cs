@@ -34,7 +34,7 @@ public sealed class StagingService : IStagingService
     {
         if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
             throw new EngineException(EngineErrors.Of(EngineErrors.InvalidPath,
-                $"文件不存在：{sourcePath}", details: JsonSerializer.SerializeToElement(new { @param = "source_path" })));
+                $"file does not exist: {sourcePath}", details: JsonSerializer.SerializeToElement(new { @param = "source_path" })));
 
         var stagingId = Guid.NewGuid().ToString("N");
         var fileName = Path.GetFileName(sourcePath);
@@ -81,7 +81,7 @@ public sealed class StagingService : IStagingService
         bool dryRun, CancellationToken ct)
     {
         if (!_files.TryGetValue(stagingId, out var staged))
-            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"Staged 文件不存在：{stagingId}"));
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"staged file does not exist: {stagingId}"));
 
         var bytes = await File.ReadAllBytesAsync(staged.FullPath, ct);
         var applied = new List<string>();
@@ -99,7 +99,7 @@ public sealed class StagingService : IStagingService
                 // 这里显式拒绝而非假装生效（曾静默吞掉：applied 记了但内容没变）。
                 if (parsed)
                     throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch,
-                        "reencode 必须位于首个 JSON 变换算子（filter_links/rename_folder/map_field/strip_prefix/dedupe）之前"));
+                        "reencode must appear before the first JSON transform operator (filter_links/rename_folder/map_field/strip_prefix/dedupe)"));
                 var from = GetString(op.Args, "from") ?? "utf-8";
                 var source = Encoding.GetEncoding(from);
                 var text = source.GetString(bytes);
@@ -123,7 +123,7 @@ public sealed class StagingService : IStagingService
                 "strip_prefix" => ApplyStripPrefix(root, op.Args),
                 "dedupe" => ApplyDedupe(root, op.Args),
                 _ => throw new EngineException(EngineErrors.Of(EngineErrors.EnumOutOfRange,
-                    $"未知变换算子「{op.Op}」（可用：filter_links/rename_folder/map_field/strip_prefix/dedupe/reencode）",
+                    $"unknown transform operator '{op.Op}' (available: filter_links/rename_folder/map_field/strip_prefix/dedupe/reencode)",
                     details: JsonSerializer.SerializeToElement(new { op = op.Op }))),
             };
             root = result;
@@ -158,7 +158,7 @@ public sealed class StagingService : IStagingService
         if (_engineAccessor is null)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.Internal,
-                "StagingService 未装配引擎访问器，无法在管道外提交（请经 staging.commit 命令执行）"));
+                "StagingService has no engine accessor and cannot commit outside the pipeline (run it through the staging.commit command)"));
         var merged = BuildCommitArgs(stagingId, extraArgs);
         var r = await _engineAccessor().ExecuteAsync<object>(targetCommand, merged, options, ct);
         return new CommandResult(r.Data, r.Changes, r.AuditRef);
@@ -167,7 +167,7 @@ public sealed class StagingService : IStagingService
     public Task<string> ReadTextAsync(string stagingId, CancellationToken ct)
     {
         if (!_files.TryGetValue(stagingId, out var staged))
-            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"Staged 文件不存在：{stagingId}"));
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"staged file does not exist: {stagingId}"));
         return File.ReadAllTextAsync(staged.FullPath, ct);
     }
 
@@ -175,7 +175,7 @@ public sealed class StagingService : IStagingService
     internal JsonElement BuildCommitArgs(string stagingId, object? extraArgs)
     {
         if (!_files.TryGetValue(stagingId, out var staged))
-            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"Staged 文件不存在：{stagingId}"));
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"staged file does not exist: {stagingId}"));
 
         var target = new System.Text.Json.Nodes.JsonObject
         {
@@ -227,7 +227,7 @@ public sealed class StagingService : IStagingService
         => root.ValueKind == JsonValueKind.Array
             ? [.. root.EnumerateArray()]
             : throw new EngineException(EngineErrors.Of(EngineErrors.TypeMismatch,
-                "变换算子要求 staged 内容为链接对象数组 JSON（[{url,title,...}]）"));
+                "transform operators require the staged content to be a JSON array of link objects ([{url,title,...}])"));
 
     private static string? GetString(JsonElement args, string name)
         => args.ValueKind == JsonValueKind.Object
@@ -256,7 +256,7 @@ public sealed class StagingService : IStagingService
             "contains" => text.Contains(value, StringComparison.OrdinalIgnoreCase),
             "starts" => text.StartsWith(value, StringComparison.OrdinalIgnoreCase),
             _ => throw new EngineException(EngineErrors.Of(EngineErrors.EnumOutOfRange,
-                $"filter_links 的 op 仅支持 eq/contains/starts，收到「{op}」")),
+                $"filter_links supports only eq/contains/starts, got '{op}'")),
         };
     }
 
@@ -345,6 +345,6 @@ public sealed class StagingService : IStagingService
 
     private static EngineException Required(string name)
         => new(EngineErrors.Of(EngineErrors.RequiredParam,
-            $"缺少必填参数「{name}」",
+            $"required parameter '{name}' is missing",
             details: JsonSerializer.SerializeToElement(new { @param = name })));
 }

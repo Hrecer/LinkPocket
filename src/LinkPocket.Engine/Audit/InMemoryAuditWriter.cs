@@ -37,7 +37,7 @@ public sealed class CompositeAuditWriter : IAuditWriter
     private readonly IAuditWriter[] _writers;
 
     public CompositeAuditWriter(params IAuditWriter[] writers)
-        => _writers = writers.Length > 0 ? writers : throw new ArgumentException("至少需要一个审计写入器", nameof(writers));
+        => _writers = writers.Length > 0 ? writers : throw new ArgumentException("at least one audit writer is required", nameof(writers));
 
     public string Write(AuditEntry entry)
     {

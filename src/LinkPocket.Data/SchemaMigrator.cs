@@ -55,8 +55,8 @@ public static class SchemaMigrator
                 else if (HasUserTables(conn))
                 {
                     throw new InvalidOperationException(
-                        $"检测到非 v2 格式数据库「{key}」。新架构不迁移、不读取、不转换任何旧数据（零责任），" +
-                        "请自行删除或移走该文件后重试。");
+                        $"Detected a database in pre-v2 format: '{key}'. The new schema does not migrate, read or convert any legacy data (zero responsibility);" +
+                        "delete or move that file yourself and retry.");
                 }
                 else
                 {

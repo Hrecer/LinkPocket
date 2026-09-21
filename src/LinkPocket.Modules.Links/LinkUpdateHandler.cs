@@ -15,16 +15,16 @@ internal sealed class LinkUpdateHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.update",
         Category: "links",
-        Description: "编辑链接（仅显式传入的字段会被修改）",
+        Description: "Edit a link (only explicitly provided fields change)",
         Parameters:
         [
-            ParamSpec.Req<string>("id", "链接 ID"),
-            ParamSpec.Opt<string>("url", "新地址"),
-            ParamSpec.Opt<string>("title", "新标题"),
-            ParamSpec.Opt<string>("description", "新描述"),
-            ParamSpec.Opt<string>("list_id", "新目录 ID（缺省 = 不改归属；移到根级用 links.move_batch）"),
-            ParamSpec.Opt<bool>("is_important", "是否重要"),
-            ParamSpec.Opt<string>("favicon_url", "图标地址"),
+            ParamSpec.Req<string>("id", "Link ID"),
+            ParamSpec.Opt<string>("url", "New URL"),
+            ParamSpec.Opt<string>("title", "New title"),
+            ParamSpec.Opt<string>("description", "New description"),
+            ParamSpec.Opt<string>("list_id", "New folder ID (default = ownership unchanged; use links.move_batch to move to root level)"),
+            ParamSpec.Opt<bool>("is_important", "Whether it is important"),
+            ParamSpec.Opt<string>("favicon_url", "Favicon URL"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -41,7 +41,7 @@ internal sealed class LinkUpdateHandler : ICommandHandler
 
         var link = await ctx.Uow.Links.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"链接 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
         var previousListId = link.ListId;
 
         if (!string.IsNullOrEmpty(url)) link.Url = url.Trim();
@@ -76,7 +76,7 @@ internal sealed class LinkUpdateHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("link", link.LinkId),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已更新链接「{link.Title ?? link.Url}」"),
+                $"Link '{link.Title ?? link.Url}' updated"),
             undo);
     }
 }

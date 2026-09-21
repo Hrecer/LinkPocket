@@ -136,13 +136,13 @@ public static class CommandArgs
     private static EngineError RequiredError(string name)
         => EngineErrors.Of(
             EngineErrors.RequiredParam,
-            $"缺少必填参数「{name}」",
+            $"required parameter '{name}' is missing",
             JsonSerializer.SerializeToElement(new { @param = name }));
 
     /// <summary>类型不符（LP.VAL.002）：显式传入的值与参数声明类型不一致——必须报错，不得静默取默认值。</summary>
     private static EngineException TypeError(string name, string expected, JsonValueKind actual)
         => new(EngineErrors.Of(
             EngineErrors.TypeMismatch,
-            $"参数「{name}」类型不符：期望 {expected}，实际 {actual}",
+            $"parameter '{name}' type mismatch: expected {expected}, got {actual}",
             JsonSerializer.SerializeToElement(new { @param = name, expected, actual = actual.ToString() })));
 }

@@ -35,7 +35,6 @@ public partial class App : Application
 
         // 根别名登记（各语言的根显示名 → 契约层）：路径首段匹配在 UIKit、根级占用名校验在 Kernel，
         // 两者都不许引 I18n，所以由组合根把事实登记过去。
-        BookmarkDisplay.RegisterRootAliases();
 
         LpIcons.RegisterAll();
         base.OnStartup(e);

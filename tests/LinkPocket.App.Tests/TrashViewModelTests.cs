@@ -390,7 +390,7 @@ public class TrashViewModelTests
             Assert.True(vm.Details.ShowRestoreToRootAction);
             Assert.True(vm.Details.StackedActions);              // 286 宽右栏：药丸一行 + 图标钮一行
             Assert.False(vm.Details.ShowEditAction);
-            Assert.Equal("永久删除", vm.Details.DeleteActionLabel);
+            Assert.Equal("trash.menu.purge", vm.Details.DeleteActionLabel.Key);
             Assert.True(vm.Details.HasActions);
 
             // 命令 = 复用本页既有能力（不是第二套业务逻辑）
@@ -410,7 +410,7 @@ public class TrashViewModelTests
             Assert.True(vm.Details.ShowDeleteAction);
             Assert.False(vm.Details.ShowRestoreAction);
             Assert.False(vm.Details.ShowRestoreToRootAction);
-            Assert.Equal("永久删除所选", vm.Details.DeleteSelectionLabel);
+            Assert.Equal("trash.purgeSelection", vm.Details.DeleteSelectionLabel.Key);
         }
         finally
         {
@@ -469,7 +469,7 @@ public class TrashViewModelTests
             Assert.Equal("覆盖层描述", vm.DetailPane.Description);
             Assert.Equal(3, vm.DetailPane.Rows.Count);                   // 原位置 / 删除时间 / ID
             // 动作面（共享面内定制）= 三枚等大药丸：打开网站 / 还原 / 还原到根目录 + 永久删除；无编辑
-            Assert.Equal("打开", vm.DetailPane.OpenLabel);
+            Assert.Equal("common.open", vm.DetailPane.OpenLabel.Key);
             Assert.Equal("open-in-new", vm.DetailPane.OpenIconKind);
             Assert.Equal(PillTone.Tonal, vm.DetailPane.OpenTone);
             Assert.True(vm.DetailPane.ShowOpenAction);
@@ -477,7 +477,7 @@ public class TrashViewModelTests
             Assert.True(vm.DetailPane.ShowRestoreToRootAction);
             Assert.False(vm.DetailPane.ShowEditAction);
             Assert.True(vm.DetailPane.ShowDeleteAction);
-            Assert.Equal("永久删除", vm.DetailPane.DeleteActionLabel);
+            Assert.Equal("trash.menu.purge", vm.DetailPane.DeleteActionLabel.Key);
             Assert.Equal(PillTone.Primary, vm.DetailPane.RestoreTone);
             Assert.Equal(PillTone.Tonal, vm.DetailPane.RestoreToRootTone);
             Assert.NotNull(vm.DetailPane.BackCommand);

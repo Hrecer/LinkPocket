@@ -32,13 +32,13 @@ internal sealed class WindowsNamingPolicy : INamingPolicy
     public string Resolve(string desired, IEnumerable<string> siblings)
     {
         var original = (desired ?? string.Empty).Trim();
-        if (original.Length == 0) original = "未命名";
+        if (original.Length == 0) original = "Untitled";
 
         var taken = new HashSet<string>(siblings ?? Array.Empty<string>(), Comparer);
         if (!taken.Contains(original)) return original;
 
         var baseName = Regex.Replace(original, @"\s*\(\d+\)$", string.Empty);
-        if (string.IsNullOrWhiteSpace(baseName)) baseName = "未命名";
+        if (string.IsNullOrWhiteSpace(baseName)) baseName = "Untitled";
 
         for (var i = 2; i <= MaxNumberedAttempts; i++)
         {

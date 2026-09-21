@@ -16,9 +16,9 @@ internal sealed class BackupExportHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "backup.export",
         Category: "backup",
-        Description: $"导出备份为 {BackupIO.FileExtension}（格式版本 {BackupIO.FormatVersion}；"
-                     + "SHA-256 manifest + 临时 key 身份模型；同目录临时文件 + 原子替换；回收站内容不会被备份）",
-        Parameters: [ParamSpec.Req<string>("output_path", "备份文件完整路径")],
+        Description: $"Export a backup as {BackupIO.FileExtension} (format version {BackupIO.FormatVersion};"
+                     + "SHA-256 manifest + temporary key identity model; temp file in the same directory + atomic replace; trash content is not backed up)",
+        Parameters: [ParamSpec.Req<string>("output_path", "Backup file absolute path")],
         Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -30,7 +30,7 @@ internal sealed class BackupExportHandler : ICommandHandler
         var directory = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.InvalidPath, $"导出目录不存在：{directory}", correlationId: ctx.CorrelationId));
+                EngineErrors.InvalidPath, $"export directory does not exist: {directory}", correlationId: ctx.CorrelationId));
 
         var folders = await ctx.Uow.Folders.ListAllAsync(ct);
         var links = await ctx.Uow.Links.ListAsync(new LinkQuerySpec(), ct);
@@ -46,7 +46,7 @@ internal sealed class BackupExportHandler : ICommandHandler
         catch (Exception ex)
         {
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.FileIoError, $"备份文件打包失败：{ex.Message}", retryable: true));
+                EngineErrors.FileIoError, $"backup packaging failed: {ex.Message}", retryable: true));
         }
 
         return CommandResult.Ok(
@@ -61,6 +61,6 @@ internal sealed class BackupExportHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已导出备份（{folders.Count} 个文件夹、{links.Count} 个书签）"));
+                $"Backup exported ({folders.Count} folders, {links.Count} bookmarks)"));
     }
 }

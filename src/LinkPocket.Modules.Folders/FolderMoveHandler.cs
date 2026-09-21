@@ -12,11 +12,11 @@ internal sealed class FolderMoveHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.move",
         Category: "folders",
-        Description: "移动文件夹到目标父目录（target_parent_id 缺省 = 根级「全部书签」）",
+        Description: "Move a folder to a target parent (target_parent_id default = root level)",
         Parameters:
         [
-            ParamSpec.Req<string>("folder_id", "文件夹 ID"),
-            ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根级"),
+            ParamSpec.Req<string>("folder_id", "Folder ID"),
+            ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（见 undo）
 
@@ -28,21 +28,21 @@ internal sealed class FolderMoveHandler : ICommandHandler
 
         var folder = await ctx.Uow.Folders.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
         var previousParentId = folder.ParentId;
 
         if (target == id.Value)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.CycleDetected, "不能把文件夹移入它自己", correlationId: ctx.CorrelationId));
+                EngineErrors.CycleDetected, "a folder cannot be moved into itself", correlationId: ctx.CorrelationId));
 
         if (target != null)
         {
             if (await ctx.Uow.Trees.WouldCreateCycleAsync(id, new FolderId(target), ct))
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.CycleDetected, $"把「{folder.Name}」移动到 {target} 会产生循环引用", correlationId: ctx.CorrelationId));
+                    EngineErrors.CycleDetected, $"moving '{folder.Name}' to {target} would create a cycle", correlationId: ctx.CorrelationId));
             _ = await ctx.Uow.Folders.FindAsync(new FolderId(target), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"父文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"parent folder {target} does not exist", correlationId: ctx.CorrelationId));
         }
 
         // 同层唯一命名（目标层，排除自身）：撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = 命名服务 IFolderNaming）。
@@ -71,7 +71,7 @@ internal sealed class FolderMoveHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已移动文件夹「{folder.Name}」"),
+                $"Folder '{folder.Name}' moved"),
             undo);
     }
 }

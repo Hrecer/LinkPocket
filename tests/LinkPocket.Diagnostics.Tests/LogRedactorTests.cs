@@ -47,7 +47,7 @@ public class LogRedactorTests
         var record = LogRedactor.Redact(Rec("x", ("note", new string('长', 800))), 4000, maskSensitive: true);
         var note = (string)record.Props!["note"]!;
         Assert.True(note.Length <= 520, $"字段值应被截断（实际 {note.Length}）");
-        Assert.EndsWith("…(已截断)", note);
+        Assert.EndsWith("...(truncated)", note);
     }
 
     [Fact]
@@ -57,8 +57,8 @@ public class LogRedactorTests
         Assert.Contains("secret0123", kept.Message);
 
         var capped = LogRedactor.Redact(Rec(new string('长', 40)), maxMessageLength: 10, maskSensitive: false);
-        Assert.EndsWith("…(已截断)", capped.Message);
-        Assert.Equal(10 + "…(已截断)".Length, capped.Message.Length);
+        Assert.EndsWith("...(truncated)", capped.Message);
+        Assert.Equal(10 + "...(truncated)".Length, capped.Message.Length);
     }
 
     [Fact]

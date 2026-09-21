@@ -31,8 +31,6 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// <summary>「自选颜色」卡的 id（与 <c>BuildDraftDefinition</c> 的自选配色 id 同一个）。</summary>
     public const string CustomCardId = "user-custom";
 
-    /// <summary>「自选颜色」卡的显示名。</summary>
-    public const string CustomCardName = "自选颜色";
 
     private bool _isSelected;
     private bool _isEmpty;
@@ -42,7 +40,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     {
         ArgumentNullException.ThrowIfNull(definition);
         Definition = definition;
-        _name = definition.Name;
+        _name = ThemeNames.Of(definition.Id);
         _id = definition.Id;
         IsCustom = false;
 
@@ -78,7 +76,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     {
         Definition = null;
         IsCustom = true;
-        _name = CustomCardName;
+        _name = ThemeNames.Of(CustomCardId);
         _id = CustomCardId;
         Swatches = new ObservableCollection<Color>();
         _isEmpty = true;
@@ -169,11 +167,11 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// <summary>目录里的主题定义；**「自选颜色」卡为 <c>null</c>**（它不是目录里的主题）。</summary>
     public ThemeDefinition? Definition { get; }
 
-    private readonly string _name;
+    private readonly LocValue _name;
 
     private readonly string _id;
 
-    public string Name => _name;
+    public LocValue Name => _name;
 
     public string Id => _id;
 
@@ -327,7 +325,6 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     private string _selectedThemeId = ThemeCatalog.DefaultId;
     private FontOptionViewModel? _selectedUiFont;
-    private string _diagnostics = string.Empty;
     private string _status = string.Empty;
     private bool _hasDiagnostics;
 
@@ -455,7 +452,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     private void ProjectAppliedTheme()
     {
         var current = ThemeService.Current;
-        AppliedThemeName = current.Name;
+        AppliedThemeName = ThemeNames.Of(current.Id);
         SyncDraftSlotCount(PaletteSolver.EditableSlots(current).Count);
         Raise(nameof(AppliedThemeName));
         Raise(nameof(StartFromCurrentThemeLabel));
@@ -463,12 +460,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>当前生效外观的显示名（调色台的说明文案与「起点」按钮文案都用它）。</summary>
-    public string AppliedThemeName { get; private set; } = ThemeCatalog.Default.Name;
+    public LocValue AppliedThemeName { get; private set; } = ThemeNames.Of(ThemeCatalog.DefaultId);
 
     /// <summary>
     /// 「以当前外观为起点」按钮的文案（带上名字，可一眼看出复制的是哪一套）。
     /// </summary>
-    public string StartFromCurrentThemeLabel => $"以「{AppliedThemeName}」为起点";
+    public LocValue StartFromCurrentThemeLabel => Loc.K("appearance.btn.startFrom", AppliedThemeName);
 
     /// <summary>
     /// 调色台卡片的整句说明文案 = **整句 + 当前外观名 + 尾句**（一个字符串属性）。
@@ -483,10 +480,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 变更通知也只有一个出口（<see cref="SyncFromAppliedTheme"/>）。
     /// </para>
     /// </remarks>
-    public string DraftIntro =>
-        "这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色；想从现成外观改起，"
-        + $"点下面的按钮把「{AppliedThemeName}」的颜色复制进来 —— 复制会立即应用为自选配色"
-        + "（「自选颜色」卡随即高亮），之后点色槽微调即可。";
+    public LocValue DraftIntro => Loc.K("appearance.palette.draftIntro", AppliedThemeName);
 
     // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
     // 枚举开销与机器上装的字体数量成正比，不打开字体下拉就不该付这笔钱。
@@ -699,15 +693,16 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             if (value is null) return;
             _selectedUiFont = value;
             Raise(nameof(SelectedUiFont));
+            Raise(nameof(FontInspection));
+            Raise(nameof(HasFontInspection));
         }
     }
 
-    /// <summary>派生诊断文案（无诊断时为空）。</summary>
-    public string Diagnostics
-    {
-        get => _diagnostics;
-        private set { _diagnostics = value; Raise(nameof(Diagnostics)); }
-    }
+    /// <summary>派生诊断的每一行（语言无关的级别标记 + 在当前语言下取词的文案值；空 = 无诊断）。</summary>
+    public IReadOnlyList<DiagnosticLine> DiagnosticLines { get; private set; } = Array.Empty<DiagnosticLine>();
+
+    /// <summary>诊断行 = 标记（<c>✗</c> 拒绝级 / <c>·</c> 提示）+ 文案值。</summary>
+    public readonly record struct DiagnosticLine(string Marker, LocValue Text);
 
     /// <summary>是否有诊断（控制显示）。</summary>
     public bool HasDiagnostics
@@ -837,7 +832,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ThemeService.SaveCurrentPreferences();
             // 状态行不播报"已应用主题「X」"：当前生效的是哪套外观由**主题卡高亮 + 「当前使用」徽标**表达，
             // 再写一行文字是重复信息。失败仍然照报（下面 catch 里那两条），那是必须看见的。
-            Diagnostics = string.Empty;
+            DiagnosticLines = Array.Empty<DiagnosticLine>();
             HasDiagnostics = false;
         }
         catch (Exception ex)
@@ -896,7 +891,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             Status = $"还有 {missing} 个颜色没选（点色槽用取色盘选）";
             // 与 RefreshDraftDiagnostics 同一口径：空槽是"还没选完"，**不是**"配色不合法"，
             // 所以这里不把 palette-size 那条红色错误摆出来。
-            Diagnostics = EmptySlotsHint(missing);
+            DiagnosticLines = new[] { new DiagnosticLine("·", EmptySlotsHint(missing)) };
             HasDiagnostics = true;
             return;
         }
@@ -920,7 +915,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             RepojectAllThemeCards();  // 色点按当前模式重投影（与 ApplyThemeCard 同一口径）
             ThemeService.SaveCurrentPreferences();
             // 状态行同样不播报成功 —— 只报失败
-            Diagnostics = string.Empty;
+            DiagnosticLines = Array.Empty<DiagnosticLine>();
             HasDiagnostics = false;
         }
         catch (Exception ex)
@@ -940,7 +935,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         var empty = _draft.Count(c => c is null);
         if (empty > 0)
         {
-            Diagnostics = EmptySlotsHint(empty);
+            DiagnosticLines = new[] { new DiagnosticLine("·", EmptySlotsHint(empty)) };
             HasDiagnostics = true;
             return;
         }
@@ -954,8 +949,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 的拒绝路径共用）。"选够几个"必须跟着**当前槽数**走（4 色主题 4 个、5 色主题 5 个）——
     /// 写死"选够 4 个"在 5 色草稿上是假话。
     /// </summary>
-    private string EmptySlotsHint(int empty) =>
-        $"· 还差 {empty} 个颜色：点色槽用取色盘选色（选够 {_draft.Count} 个就能点上面第 12 张「自选颜色」卡应用）";
+    private LocValue EmptySlotsHint(int empty) => Loc.K("theme.issue.emptySlots", empty, _draft.Count);
 
     /// <summary>
     /// 草稿 → 主题定义（自选配色）。空槽**不冒充颜色**：直接不参与（于是"色数不是 4/5"会被校验抓出来）。
@@ -963,7 +957,6 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     private ThemeDefinition BuildDraftDefinition() => new()
     {
         Id = ThemeCardViewModel.CustomCardId,
-        Name = "自选配色",
         Source = ThemeSource.UserDefined,
         Palette = _draft.Where(c => c is not null).Select(c => ToArgb(c!.Value)).ToArray(),
         NeutralHueOverride = null,   // 自选配色按自己的中性池派生（不钉值）
@@ -973,16 +966,32 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     {
         if (issues.Count == 0)
         {
-            Diagnostics = string.Empty;
+            DiagnosticLines = Array.Empty<DiagnosticLine>();
             HasDiagnostics = false;
             return;
         }
-        // 错误在前（必须拒绝的），提示在后
-        Diagnostics = string.Join("\n", issues
+        // 错误在前（必须拒绝的），提示在后。句子由本层按**码**取词——引擎的 Message 是英文技术文案，只进日志
+        DiagnosticLines = issues
             .OrderByDescending(i => i.Severity)
-            .Select(i => (i.Severity == ThemeIssueSeverity.Error ? "✗ " : "· ") + i.Message));
+            .Select(i => new DiagnosticLine(
+                i.Severity == ThemeIssueSeverity.Error ? "✗" : "·",
+                IssueText(i)))
+            .ToArray();
         HasDiagnostics = true;
     }
+
+    /// <summary>
+    /// 主题校验码 → 界面文案。未登记的码<b>照抛</b>：校验器与界面两处必须同批改，
+    /// 悄悄把引擎原文画上屏就是混语残留（护栏 G9 禁的正是这个形状）。
+    /// </summary>
+    private static LocValue IssueText(ThemeIssue issue) => issue.Code switch
+    {
+        "palette-size" => Loc.K("theme.issue.paletteSize", issue.Args!),
+        "no-dark" => Loc.K("theme.issue.noDark"),
+        "no-light" => Loc.K("theme.issue.noLight"),
+        "near-duplicate" => Loc.K("theme.issue.nearDuplicate", issue.Args!),
+        _ => throw new NotSupportedException($"theme issue '{issue.Code}' has no display text key"),
+    };
 
     // ── 色槽 ─────────────────────────────────────────────────────────
 
@@ -1375,7 +1384,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
                                               //    在这里会把刚清掉的偏好文件又写回来（本方法的口径 = 偏好文件也要清）
             SyncFromAppliedTheme();           // 互斥归属 + 主题卡 + 草稿一起回默认（唯一投影点）
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
-            Diagnostics = string.Empty;
+            DiagnosticLines = Array.Empty<DiagnosticLine>();
             HasDiagnostics = false;
             // 成功不播报 —— 界面回到默认就是结果；失败照报（catch 里那条）
             Status = string.Empty;
@@ -1387,12 +1396,29 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
     }
 
-    /// <summary>字体度量自检（提示用；不阻止应用）。</summary>
-    public string InspectFont(FontOptionViewModel option)
+    /// <summary>
+    /// 字体度量自检的提示（在容差内 = <see cref="LocValue.Empty"/>）。只提示、不阻止应用。
+    /// 本层给的是<b>句子 + 数字</b>，不是成品文本——语言一切换它跟着重算。
+    /// </summary>
+    public LocValue InspectFont(FontOptionViewModel option)
     {
-        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(option.Family));
-        return verdict.Ok ? string.Empty : verdict.Message;
+        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(option.Family), Loc.T("metric.sample"));
+        return verdict.Code switch
+        {
+            FontMetricsProbe.Verdict.TooWide => Loc.K("appearance.font.tooWide", Math.Abs(verdict.WidthDelta) * 100),
+            FontMetricsProbe.Verdict.TooTall => Loc.K("appearance.font.tooTall", verdict.HeightRatio),
+            _ => LocValue.Empty,
+        };
     }
+
+    /// <summary>当前选中字体的度量提示（空 = 不显示）；<b>由 <see cref="SelectedUiFont"/> 投影出来</b>。</summary>
+    public LocValue FontInspection
+    {
+        get => _selectedUiFont is null ? LocValue.Empty : InspectFont(_selectedUiFont);
+    }
+
+    /// <summary>有没有度量提示（决定提示框可见性；与 <see cref="FontInspection"/> 同源）。</summary>
+    public bool HasFontInspection => !FontInspection.IsEmpty;
 
     // ── 小工具 ───────────────────────────────────────────────────────
 

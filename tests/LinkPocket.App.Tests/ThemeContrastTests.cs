@@ -76,7 +76,7 @@ public class ThemeContrastTests
                     var (fg, bg) = pair.Pick(table);
                     var ratio = ColorMath.ContrastRatio(fg, bg);
                     if (ratio < pair.Min)
-                        failures.Add($"[{mode}] {theme.Name} · {pair.Label} = {ratio:F2} < {pair.Min:F1}（{pair.Why}）");
+                        failures.Add($"[{mode}] {theme.Id} · {pair.Label} = {ratio:F2} < {pair.Min:F1}（{pair.Why}）");
                 }
             }
         }
@@ -192,7 +192,7 @@ public class ThemeContrastTests
         Assert.Equal(PaletteMode.Auto, ThemeService.DefaultPaletteMode);
         Assert.Equal(PaletteMode.Auto, new ThemeDefinition
         {
-            Id = "t", Name = "t", Source = ThemeSource.UserDefined, Palette = ThemeCatalog.Default.Palette,
+            Id = "t", Source = ThemeSource.UserDefined, Palette = ThemeCatalog.Default.Palette,
         }.PaletteMode);
 
         var exact = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
@@ -256,7 +256,7 @@ public class ThemeContrastTests
                 var m = ColorMath.Measure(t.Token(token));
                 if (m.C < 3.0) continue;   // 近无彩色的色相不可观测（容器字这类深墨）
                 if (!palette.Any(p => ColorMath.HueDistance(p.H, m.H) <= HueTolerance))
-                    failures.Add($"{theme.Name} · {token} = #{t.Token(token).ToInt() & 0x00FFFFFF:X6}（H{m.H:F0}）"
+                    failures.Add($"{theme.Id} · {token} = #{t.Token(token).ToInt() & 0x00FFFFFF:X6}（H{m.H:F0}）"
                                  + $" 在配色里找不到同色相成员（配色色相：{string.Join("/", palette.Select(p => p.H.ToString("F0")))}）");
             }
         }
@@ -298,7 +298,6 @@ public class ThemeContrastTests
             var mutated = PaletteSolver.Solve(new ThemeDefinition
             {
                 Id = "probe",
-                Name = "probe",
                 Source = ThemeSource.UserDefined,
                 Palette = palette,
             });
@@ -322,7 +321,7 @@ public class ThemeContrastTests
                      })
             {
                 Assert.True(hues.Any(h => ColorMath.HueDistance(h, hue) <= 1.0),
-                    $"{def.Name} 的{label}色相 H{hue:F1} 不在配色里（配色色相：{string.Join(" / ", hues.Select(h => h.ToString("F1")))}）");
+                    $"{def.Id} 的{label}色相 H{hue:F1} 不在配色里（配色色相：{string.Join(" / ", hues.Select(h => h.ToString("F1")))}）");
             }
         }
     }
@@ -355,19 +354,19 @@ public class ThemeContrastTests
             var baseTone = ColorMath.Measure(baseColor).T;
 
             if (baseTone < PaletteSolver.SurfaceBaseToneMin - 0.6 || baseTone > PaletteSolver.SurfaceBaseToneMax + 0.6)
-                failures.Add($"{theme.Name} 页面底明度 T{baseTone:F1} 越出 {PaletteSolver.SurfaceBaseToneMin}–{PaletteSolver.SurfaceBaseToneMax}");
+                failures.Add($"{theme.Id} 页面底明度 T{baseTone:F1} 越出 {PaletteSolver.SurfaceBaseToneMin}–{PaletteSolver.SurfaceBaseToneMax}");
 
             var cardRatio = ColorMath.ContrastRatio(card, baseColor);
             if (cardRatio < MinCardOnBase)
-                failures.Add($"{theme.Name} 卡面对页面底 {cardRatio:F3} < {MinCardOnBase}（卡片看不出是卡片）");
+                failures.Add($"{theme.Id} 卡面对页面底 {cardRatio:F3} < {MinCardOnBase}（卡片看不出是卡片）");
 
             var containerOnBase = ColorMath.ContrastRatio(container, baseColor);
             if (containerOnBase < PaletteSolver.ContainerMinContrastOnBase)
-                failures.Add($"{theme.Name} 选中底对页面底 {containerOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
+                failures.Add($"{theme.Id} 选中底对页面底 {containerOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
 
             var containerOnHover = ColorMath.ContrastRatio(container, hover);
             if (containerOnHover < PaletteSolver.ContainerMinContrastOnHover)
-                failures.Add($"{theme.Name} 选中底对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+                failures.Add($"{theme.Id} 选中底对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
         }
         Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
     }
@@ -397,16 +396,16 @@ public class ThemeContrastTests
             var pageBase = table.Token(AppTokens.SurfaceBase);
             var slots = PaletteSolver.EditableSlots(theme);
             var lightest = slots.OrderByDescending(c => ColorMath.Measure(c).T).First();
-            counts.Add($"{theme.Name}={slots.Count}");
+            counts.Add($"{theme.Id}={slots.Count}");
 
             // ① 结构：一个色相都不许钉
             if (theme.NeutralHueOverride is not null)
-                failures.Add($"{theme.Name} 钉了中性色相 H{theme.NeutralHueOverride:F1} → 表面族会与背景色成员分开");
+                failures.Add($"{theme.Id} 钉了中性色相 H{theme.NeutralHueOverride:F1} → 表面族会与背景色成员分开");
 
             // ② 显示口径的融合（真正给用户看的那条通道）：卡面渲染出来的色点里必须含页面底本身
             var card = new ThemeCardViewModel(theme);
             if (!card.Swatches.Any(c => c == ColorMath.ToMedia(pageBase)))
-                failures.Add($"{theme.Name} 主题卡色点里没有它的页面底"
+                failures.Add($"{theme.Id} 主题卡色点里没有它的页面底"
                              + $" #{pageBase.ToInt() & 0x00FFFFFF:X6}（圆点与背景不融合）");
             // ②b **卡面底色 = 当前生效主题的页面底**：未选中的卡画在当前主题的背景上；
             //     只有**这张卡的主题正在生效**时，它色点里的"背景色成员"才与卡面同色（看不见 = 融合），
@@ -414,11 +413,11 @@ public class ThemeContrastTests
             var appBase = ThemeService.Table.Token(AppTokens.SurfaceBase);
             var expectedBg = ColorMath.ToMedia(appBase);
             if (card.CardBackground != expectedBg)
-                failures.Add($"{theme.Name} 卡面底色 #{card.CardBackground.R:X2}{card.CardBackground.G:X2}{card.CardBackground.B:X2}"
+                failures.Add($"{theme.Id} 卡面底色 #{card.CardBackground.R:X2}{card.CardBackground.G:X2}{card.CardBackground.B:X2}"
                              + $" ≠ 当前生效主题的页面底 #{expectedBg.R:X2}{expectedBg.G:X2}{expectedBg.B:X2}"
                              + "（卡面必须画在'当前主题的背景'上）");
             if (theme.Id == ThemeService.Current.Id && !card.Swatches.Contains(expectedBg))
-                failures.Add($"{theme.Name} 正在生效，但它色点里没有一枚与卡面同色（融合断掉）");
+                failures.Add($"{theme.Id} 正在生效，但它色点里没有一枚与卡面同色（融合断掉）");
 
             // ③ 页面底只许动明度与"彩度量级"。
             //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：
@@ -433,7 +432,7 @@ public class ThemeContrastTests
             var m0 = ColorMath.Measure(lightest);
             var m1 = ColorMath.Measure(pageBase);
             if (ColorMath.HueDistance(m0.H, m1.H) > 5.0)
-                failures.Add($"{theme.Name} 背景色成员 H{m0.H:F1} 与页面底 H{m1.H:F1} 不同色相（表面族被带离了那个成员）");
+                failures.Add($"{theme.Id} 背景色成员 H{m0.H:F1} 与页面底 H{m1.H:F1} 不同色相（表面族被带离了那个成员）");
             var lightChroma = theme.Palette.Select(ColorMath.Measure)
                 .Where(x => x.T >= PaletteSolver.SurfaceLightMemberMinTone)
                 .Select(x => x.C)
@@ -441,16 +440,16 @@ public class ThemeContrastTests
                 .Max();
             var chromaCeiling = Math.Max(m0.C, Math.Min(lightChroma, PaletteSolver.SurfaceChromaMax)) + 0.5;
             if (m1.C > chromaCeiling)
-                failures.Add($"{theme.Name} 页面底彩度超过配色浅调成员的量级（{m1.C:F1} > {chromaCeiling - 0.5:F1}）"
+                failures.Add($"{theme.Id} 页面底彩度超过配色浅调成员的量级（{m1.C:F1} > {chromaCeiling - 0.5:F1}）"
                              + "——只许压明度与提到配色自己的量级，不许发明更浓的颜色");
 
             // ④ 色点数 = 设计档色数（1–4 套五色 / 5–10 套四色 / 出厂默认五色）
             if (slots.Count != theme.Palette.Count)
-                failures.Add($"{theme.Name} 色点 {slots.Count} ≠ 设计档色数 {theme.Palette.Count}");
+                failures.Add($"{theme.Id} 色点 {slots.Count} ≠ 设计档色数 {theme.Palette.Count}");
         }
 
         // 先对账"设计档色数"（比 solve 结果更硬的判据：它是目录本身的形状）
-        var shape = string.Join(" ", ThemeCatalog.Presets.Select(p => $"{p.Name}={p.Palette.Count}"));
+        var shape = string.Join(" ", ThemeCatalog.Presets.Select(p => $"{p.Id}={p.Palette.Count}"));
         Assert.True(ThemeCatalog.Default.Palette.Count == 5, $"出厂默认必须是 5 色（当前 {ThemeCatalog.Default.Palette.Count}）");
         Assert.True(ThemeCatalog.Presets.Count(p => p.Palette.Count == 5) == 4,
             "设计档第 1–4 套（赭石玫瑰 / 暮色玫瑰 / 藕粉灰绿 / 焦糖玫瑰）必须是 5 色：" + shape);

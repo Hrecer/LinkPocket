@@ -39,7 +39,7 @@ internal static class MetadataFetcher
     {
         if (!IsValidUrl(url))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.InvalidUrl, $"URL 不是合法的 http/https 绝对地址：{url}"));
+                EngineErrors.InvalidUrl, $"URL is not a valid absolute http/https address: {url}"));
 
         try
         {
@@ -55,7 +55,7 @@ internal static class MetadataFetcher
         {
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.NetworkError,
-                $"抓取页面元数据失败：{ex.Message}",
+                $"page metadata fetch failed: {ex.Message}",
                 retryable: true));
         }
     }

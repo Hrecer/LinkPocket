@@ -14,7 +14,7 @@ internal sealed class LinkStatsHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.stats",
         Category: "links",
-        Description: "全库统计：链接总数 / 回收站项数 / 根级书签数 / 按目录直接子链接计数",
+        Description: "Database statistics: total links / trash item count / root bookmark count / direct child link count per folder",
         Parameters: [],
         Caps: CommandCaps.Query,
         // 侧栏每次刷新都取（4 次查询：两趟回收站 + 总数 + 根级 + 分组），三类表都可能影响计数

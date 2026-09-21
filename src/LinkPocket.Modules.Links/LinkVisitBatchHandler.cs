@@ -11,8 +11,8 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.visit_batch",
         Category: "links",
-        Description: "批量记录查看（每个链接计数 +1、最后查看刷新；所在文件夹父链去重后各刷新一次）",
-        Parameters: [ParamSpec.Req<IReadOnlyList<string>>("link_ids", "链接 ID 列表")],
+        Description: "Record visits in batch (each link count +1 and last visit refreshed; the folder parent chain is refreshed once per deduplicated folder)",
+        Parameters: [ParamSpec.Req<IReadOnlyList<string>>("link_ids", "List of link IDs")],
         Caps: CommandCaps.Mutation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -20,7 +20,7 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
         var linkIds = CommandArgs.StringArray(args, "link_ids");
         if (linkIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "link_ids 不能为空", correlationId: ctx.CorrelationId));
+                EngineErrors.RequiredParam, "link_ids must not be empty", correlationId: ctx.CorrelationId));
         var ct = ctx.Ct;
 
         var touchedFolders = new HashSet<string>(StringComparer.Ordinal);
@@ -28,7 +28,7 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
         {
             var link = await ctx.Uow.Links.FindAsync(new LinkId(linkId), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"链接 {linkId} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"link {linkId} does not exist", correlationId: ctx.CorrelationId));
             link.VisitCount++;
             link.LastVisitedAt = DateTime.UtcNow;
             if (link.ListId != null) touchedFolders.Add(link.ListId);
@@ -42,6 +42,6 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: linkIds.Select(id => new EntityRef("link", id)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
-                HumanSummary: $"已记录 {linkIds.Count} 次查看"));
+                HumanSummary: $"Recorded {linkIds.Count} visit(s)"));
     }
 }

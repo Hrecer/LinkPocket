@@ -11,7 +11,7 @@ internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "maintenance.schema_version",
         Category: "maintenance",
-        Description: "取当前数据库 schema 版本",
+        Description: "Get the current database schema version",
         Parameters: [],
         Caps: CommandCaps.Query);
 
@@ -29,7 +29,7 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
     public CommandDescriptor Descriptor { get; } = new(
         Name: "diagnostics.collect",
         Category: "maintenance",
-        Description: "收集诊断信息：应用版本 / schema 版本 / 各表计数 / 缓存与事件存储读数 / 日志与审计读数（脱敏）",
+        Description: "Collect diagnostics: app version / schema version / per-table counts / cache and event store readings / log and audit readings (redacted)",
         Parameters: [],
         Caps: CommandCaps.Query);
 
@@ -125,7 +125,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "maintenance.reinit",
         Category: "maintenance",
-        Description: "整库重置：清空全部数据（链接/文件夹/回收站）并清除图标缓存；不可恢复，需两阶段确认",
+        Description: "Reset the database: wipe all data (links/folders/trash) and clear the favicon cache; unrecoverable, two-phase confirmation required",
         Parameters: [],
         // 声明支持取消（ClearAllDataAsync 全程响应 ct；中途取消 → 事务回滚，零部分状态）
         Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.SupportsCancellation,
@@ -151,7 +151,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
                 Touched: [new EntityRef("database", "*")],
                 Events: [DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged],
                 // 措辞与实现一致——audit_log/idempotency/macros/schema_migrations 有保留策略，不清
-                HumanSummary: "已清空业务数据（书签/文件夹/回收站）"));
+                HumanSummary: "Business data wiped (bookmarks/folders/trash)"));
     }
 
     private static bool TryClearFaviconCache()
@@ -168,7 +168,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
         catch (Exception ex)
         {
             // 失败要暴露——不得只返回 false 后静默
-            LpLog.Warn("清空图标缓存失败", ex, category: "modules.maintenance");
+            LpLog.Warn("failed to clear the favicon cache", ex, category: "modules.maintenance");
             return false;
         }
     }

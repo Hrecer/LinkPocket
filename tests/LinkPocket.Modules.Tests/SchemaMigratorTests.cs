@@ -241,7 +241,7 @@ public class SchemaMigratorTests
         }
 
         var ex = Assert.Throws<InvalidOperationException>(() => SchemaMigrator.EnsureSchema(dbPath));
-        Assert.Contains("不迁移", ex.Message);
+        Assert.Contains("does not migrate", ex.Message);
 
         // 旧库文件必须原样留存（零责任：不删除、不触碰）
         Assert.Equal(new[] { "lists" }, UserTables(dbPath));

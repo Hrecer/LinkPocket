@@ -102,7 +102,7 @@ public static class EngineComposer
         // 返回 null → Path.Combine 抛「参数为 null」——错误信息误导；这里显式拒绝 + 归一化
         // 绝对路径（相对路径的 cwd 漂移风险收敛）
         if (string.IsNullOrWhiteSpace(dbPath))
-            throw new ArgumentException("dbPath 不能为空", nameof(dbPath));
+            throw new ArgumentException("dbPath must not be empty", nameof(dbPath));
         dbPath = Path.GetFullPath(dbPath);
         var factory = new LinkPocketDbContextFactory(dbPath);
         options ??= new ComposeOptions();

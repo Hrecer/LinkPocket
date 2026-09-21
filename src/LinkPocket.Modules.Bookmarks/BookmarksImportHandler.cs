@@ -21,8 +21,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "bookmarks.import",
         Category: "bookmarks",
-        Description: "从 Netscape 书签文件导入全部书签与文件夹（追加到现有数据；顶层条目落根级）",
-        Parameters: [ParamSpec.Req<string>("file_path", "书签 HTML 文件路径")],
+        Description: "Import all bookmarks and folders from a Netscape bookmark file (appended to existing data; top-level entries land at root level)",
+        Parameters: [ParamSpec.Req<string>("file_path", "Bookmark HTML file path")],
         Caps: CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -32,13 +32,13 @@ internal sealed class BookmarksImportHandler : ICommandHandler
 
         if (!File.Exists(filePath))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.InvalidPath, $"文件不存在：{filePath}", correlationId: ctx.CorrelationId));
+                EngineErrors.InvalidPath, $"file does not exist: {filePath}", correlationId: ctx.CorrelationId));
 
         var doc = await NetscapeReader.ParseFileAsync(filePath, ct);
         if (!doc.IsValid)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidPath,
-                string.IsNullOrEmpty(doc.Error) ? "不是有效的书签文件" : doc.Error,
+                string.IsNullOrEmpty(doc.Error) ? "not a valid bookmark file" : doc.Error,
                 correlationId: ctx.CorrelationId));
 
         var now = DateTime.UtcNow;
@@ -63,7 +63,7 @@ internal sealed class BookmarksImportHandler : ICommandHandler
             if (item.IsFolder)
             {
                 // Truncate 签名返回 string?，但 item.Title 解析时保证非空，?? 为 nullable 流分析兜底（保留以免 CS8601）
-                var desired = NetscapeReader.Truncate(item.Title, MaxFolderNameLength) ?? "未命名文件夹";
+                var desired = NetscapeReader.Truncate(item.Title, MaxFolderNameLength) ?? "Untitled folder";
                 var name = naming.Resolve(parentFolderId, desired);
                 if (!string.Equals(name, desired, StringComparison.Ordinal)) foldersRenamed++;
 
@@ -113,9 +113,9 @@ internal sealed class BookmarksImportHandler : ICommandHandler
         // （过去 ListAllAsync 全量逐条 UpdateAsync 是 N 次 UPDATE 的写放大，且会覆盖用户已有文件夹的更新语义）。
         // 新导入的文件夹保留文件解析出的 LAST_MODIFIED（导出→导入→再导出不丢"最后更新"）。
 
-        var summary = $"已导入 {foldersToAdd.Count} 个文件夹、{linksToAdd.Count} 个书签"
-                      + (foldersRenamed > 0 ? $"（{foldersRenamed} 个同名已自动编号）" : "")
-                      + (doc.SkippedCount > 0 ? $"（跳过 {doc.SkippedCount} 个无效条目）" : "");
+        var summary = $"Imported {foldersToAdd.Count} folders and {linksToAdd.Count} bookmarks"
+                      + (foldersRenamed > 0 ? $"({foldersRenamed} same-named entries were auto-numbered)" : "")
+                      + (doc.SkippedCount > 0 ? $"({doc.SkippedCount} invalid entries skipped)" : "");
         return CommandResult.Ok(
             JsonSerializer.SerializeToElement(new
             {

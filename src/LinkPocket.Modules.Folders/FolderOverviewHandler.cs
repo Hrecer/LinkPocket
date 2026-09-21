@@ -16,14 +16,14 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.overview",
         Category: "folders",
-        Description: "浏览页主视图一致的快照：目录页(contents) + 全量文件夹树 + 根级链接数 + 全量链接（树叶子注入；参数同 folders.contents）",
+        Description: "A snapshot matching the browser main view: folder page (contents) + full folder tree + root link count + all links (injected as tree leaves; parameters as folders.contents)",
         Parameters:
         [
-            ParamSpec.Opt<string>("folder_id", "目录 ID；缺省 = 根「全部书签」（根不是实体、无 ID）"),
-            ParamSpec.Opt<string>("sort_by", "排序字段：title | updated_at | last_visited_at | visit_count | created_at（链接）/ name | sort_order | updated_at | last_visited_at | visit_count | created_at（子文件夹）"),
+            ParamSpec.Opt<string>("folder_id", "Folder ID; default = root (the root is not an entity and has no ID)"),
+            ParamSpec.Opt<string>("sort_by", "Sort field: title | updated_at | last_visited_at | visit_count | created_at (links) / name | sort_order | updated_at | last_visited_at | visit_count | created_at (child folders)"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
-            ParamSpec.Opt<int>("page", "页码（从 1 起）"),
-            ParamSpec.Opt<int>("per_page", "每页链接数；0 = 全量（受引擎上限约束，触限时 truncated = true）"),
+            ParamSpec.Opt<int>("page", "Page number (1-based)"),
+            ParamSpec.Opt<int>("per_page", "Links per page; 0 = everything (bounded by the engine cap, truncated = true when capped)"),
         ],
         Caps: CommandCaps.Query,
         // 依赖事件 = 目录页与树（folders.changed）+ 根级计数（links.changed）；两路失效与组成命令一致

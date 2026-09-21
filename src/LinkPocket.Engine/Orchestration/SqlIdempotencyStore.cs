@@ -76,7 +76,7 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
             catch (Exception cleanupEx)
             {
                 // 清理尽力而为，不影响「未命中」语义——但必须暴露（观测面纪律：失败禁止静默吞掉）
-                LpLog.Warn($"幂等过期行清理失败（key={key}）", cleanupEx, category: "engine.idempotency");
+                LpLog.Warn($"failed to purge expired idempotency rows (key={key})", cleanupEx, category: "engine.idempotency");
             }
             return false;
         }

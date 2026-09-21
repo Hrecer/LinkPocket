@@ -17,11 +17,11 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.move_batch",
         Category: "folders",
-        Description: "批量移动文件夹（原子：任一校验失败整批不动；目标目录同名自动编号「名 (2)」）",
+        Description: "Move folders in batch (atomic: any validation failure leaves the whole batch untouched; same names in the target are auto-numbered)",
         Parameters:
         [
-            ParamSpec.Req<IReadOnlyList<string>>("folder_ids", "要移动的文件夹 ID 列表"),
-            ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根级"),
+            ParamSpec.Req<IReadOnlyList<string>>("folder_ids", "List of folder IDs to move"),
+            ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（每项一步）
 
@@ -30,7 +30,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         var folderIds = CommandArgs.StringArray(args, "folder_ids");
         if (folderIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "folder_ids 不能为空", correlationId: ctx.CorrelationId));
+                EngineErrors.RequiredParam, "folder_ids must not be empty", correlationId: ctx.CorrelationId));
         var target = CommandArgs.OptionalString(args, "target_parent_id");
         var ct = ctx.Ct;
         var uow = ctx.Uow;
@@ -40,7 +40,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         if (target != null)
             _ = await uow.Folders.FindAsync(new FolderId(target), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"目标文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"target folder {target} does not exist", correlationId: ctx.CorrelationId));
 
         var allFolders = await uow.Folders.ListAllAsync(ct);
         var movedFolders = new List<Folder>();
@@ -55,7 +55,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
                 if (batchSet.Contains(cur))
                     throw new EngineException(EngineErrors.Of(
                         EngineErrors.CycleDetected,
-                        $"folder_ids 同时包含「{fid}」及其祖先「{cur}」：批次内存在父子关系，无法原子移动",
+                        $"folder_ids contains both '{fid}' and its ancestor '{cur}': a parent-child pair inside one batch cannot be moved atomically",
                         correlationId: ctx.CorrelationId));
                 cur = allFolders.FirstOrDefault(f => f.FolderId == cur)?.ParentId;
             }
@@ -65,15 +65,15 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         {
             var folder = allFolders.FirstOrDefault(f => f.FolderId == fid)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"文件夹 {fid} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"folder {fid} does not exist", correlationId: ctx.CorrelationId));
             if (target != null)
             {
                 if (target == fid)
                     throw new EngineException(EngineErrors.Of(
-                        EngineErrors.CycleDetected, $"不能把文件夹 {fid} 移入它自己", correlationId: ctx.CorrelationId));
+                        EngineErrors.CycleDetected, $"folder {fid} cannot be moved into itself", correlationId: ctx.CorrelationId));
                 if (await uow.Trees.WouldCreateCycleAsync(new FolderId(fid), new FolderId(target), ct))
                     throw new EngineException(EngineErrors.Of(
-                        EngineErrors.CycleDetected, $"把「{folder.Name}」移动到 {target} 会产生循环引用", correlationId: ctx.CorrelationId));
+                        EngineErrors.CycleDetected, $"moving '{folder.Name}' to {target} would create a cycle", correlationId: ctx.CorrelationId));
             }
 
             movedFolders.Add(folder);
@@ -119,7 +119,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             await uow.Trees.TouchModifiedAsync(parent == null ? null : new FolderId(parent), ct);
         await uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
 
-        var summary = $"已移动 {movedFolders.Count} 个文件夹" + (renamedNotes.Count > 0 ? $"（重命名：{string.Join("、", renamedNotes)}）" : "");
+        var summary = $"Moved {movedFolders.Count} folder(s)" + (renamedNotes.Count > 0 ? $"(renamed: {string.Join("、", renamedNotes)}）" : "");
 
         // 撤销载荷：**每项一步**（各文件夹的旧父可能不同）——逆向 = 各自移回原父。
         // 注意：批量路径的"同名自动编号"改名不在撤销范围内（改名本身不可撤销，见契约）。

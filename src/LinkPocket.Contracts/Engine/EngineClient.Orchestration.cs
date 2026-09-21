@@ -9,7 +9,7 @@ public sealed partial class EngineClient
     /// <summary>批引擎入口（batch.run / batch.dry_run / batch.status 直路由；未装配时抛异常）。</summary>
     private IBatchEngine Batch => Engine.Batch
         ?? throw new EngineException(EngineErrors.Of(
-            EngineErrors.Internal, "批引擎未装配（需经 OrchestrationHost.CreateHandlers 装配）"));
+            EngineErrors.Internal, "batch engine not wired (assemble it via OrchestrationHost.CreateHandlers)"));
 
     /// <summary>按脚本执行一批命令（事务批 abort 整批回滚；独立批每步各自提交）。</summary>
     public Task<BatchReport> RunBatchAsync(BatchScript script, CallOptions? options = null, CancellationToken ct = default)

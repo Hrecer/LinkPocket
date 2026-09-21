@@ -178,7 +178,7 @@ public class FontSystemTests : IDisposable
             var fake = Path.Combine(temp, "not-a-font.ttf");
             File.WriteAllText(fake, "这不是字体");
             var ex = Assert.Throws<InvalidOperationException>(() => FontCatalog.Import(fake));
-            Assert.Contains("无法解析", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("could not be parsed", ex.Message, StringComparison.Ordinal);
         }
         finally
         {
@@ -196,7 +196,7 @@ public class FontSystemTests : IDisposable
             var txt = Path.Combine(temp, "readme.txt");
             File.WriteAllText(txt, "text");
             var ex = Assert.Throws<InvalidOperationException>(() => FontCatalog.Import(txt));
-            Assert.Contains("只支持", ex.Message, StringComparison.Ordinal);
+            Assert.Contains("only .ttf / .otf / .ttc", ex.Message, StringComparison.Ordinal);
         }
         finally
         {
@@ -273,8 +273,8 @@ public class FontSystemTests : IDisposable
     public void 度量自检_默认字体自身必须通过()
     {
         // 自检是"相对默认字体"的比较——拿默认字体比自己必然应**完全相等**（否则阈值本身就是错的）。
-        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily));
-        Assert.True(verdict.Ok, verdict.Message);
+        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), "LinkPocket 书签管理 0123");
+        Assert.True(verdict.Ok, verdict.Code);
         Assert.Equal(0.0, verdict.WidthDelta, 6);   // 宽度相对偏差 = 0
         Assert.Equal(1.0, verdict.HeightRatio, 6);  // 行高倍率 = 1
     }
@@ -283,7 +283,7 @@ public class FontSystemTests : IDisposable
     public void 度量自检_极端字体族名回落默认_不抛()
     {
         // 不存在的字体族会回落到回退链；自检必须仍能给出结论，不许抛（面板要实时调它）。
-        var verdict = FontMetricsProbe.Inspect("__NoSuchFontFamily__");
+        var verdict = FontMetricsProbe.Inspect("__NoSuchFontFamily__", "LinkPocket Bookmarks 0123");
         Assert.False(string.IsNullOrWhiteSpace(verdict.Candidate.Text));
         Assert.True(verdict.Baseline.Width > 0);
     }
@@ -399,7 +399,6 @@ public class ThemeValidatorTests
     private static ThemeDefinition Custom(params int[] rgb) => new()
     {
         Id = "t",
-        Name = "t",
         Source = ThemeSource.UserDefined,
         Palette = rgb.Select(v => Argb.FromInt(unchecked((int)(0xFF000000u | (uint)v)))).ToArray(),
         NeutralHueOverride = ThemeDefinition.ReferenceNeutralHue,
@@ -439,7 +438,7 @@ public class ThemeValidatorTests
         var issues = ThemeValidator.Validate(Custom(0x202020, 0x252525, 0x2A2A2A, 0x303030));
         Assert.False(ThemeValidator.HasErrors(issues));
         var noLight = issues.First(i => i.Code == "no-light");
-        Assert.Contains("背景", noLight.Message, StringComparison.Ordinal);
+        Assert.Contains("background is derived", noLight.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -466,7 +465,7 @@ public class ThemeValidatorTests
                 .Where(i => i.Code != "palette-size")
                 .ToList();
             Assert.False(ThemeValidator.HasErrors(issues),
-                $"{theme.Name} 有阻断级问题：{string.Join("；", issues.Where(i => i.Severity == ThemeIssueSeverity.Error).Select(i => i.Message))}");
+                $"{theme.Id} 有阻断级问题：{string.Join("；", issues.Where(i => i.Severity == ThemeIssueSeverity.Error).Select(i => i.Message))}");
         }
     }
 

@@ -16,8 +16,8 @@ internal sealed class LinkTrashHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.trash",
         Category: "links",
-        Description: "把链接移入回收站（软删除，可恢复；回收站保留原 ID 与原位置快照）",
-        Parameters: [ParamSpec.Req<string>("id", "链接 ID")],
+        Description: "Move a link to the trash (soft delete, restorable; the trash keeps the original ID and original-location snapshot)",
+        Parameters: [ParamSpec.Req<string>("id", "Link ID")],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: null,   // 逆向需旧值（落点 = 删除前位置）→ 由处理器回填，见下方 undo
         Impact: ImpactSummary.Link);
@@ -29,7 +29,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
 
         var link = await ctx.Uow.Links.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"链接 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
         var originListId = link.ListId;
 
         // 快照入库 + 主表删除（同一工作单元 → 引擎单事务原子提交）
@@ -66,7 +66,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
             new LinkPocket.Contracts.ChangeSet(
                 Touched: [new LinkPocket.Contracts.EntityRef("link", id.Value)],
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"已将「{link.Title ?? link.Url}」移入回收站"),
+                HumanSummary: $"'{link.Title ?? link.Url}' moved to trash"),
             [new UndoInverseStep("trash.restore",
                 JsonSerializer.SerializeToElement(new { id = id.Value, to = "origin" }))]);
     }

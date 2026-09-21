@@ -25,23 +25,23 @@ internal sealed class AuditQueryHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "audit.query",
         Category: "audit",
-        Description: "查询审计（调用史）：按命令/调用方/会话/关联/批/时间过滤，新→旧分页；" +
-                     "include_payloads=true 时携带 args_json/changes_json/stack_trace",
+        Description: "Query the audit trail (call history): filter by command/caller/session/correlation/batch/time, newest first;" +
+                     "include_payloads=true carries args_json/changes_json/stack_trace",
         Parameters:
         [
-            ParamSpec.Opt<string>("command", "命令名（精确）"),
-            ParamSpec.Opt<string>("caller", "调用方文本（精确，形如 ui:- / agent:s1）"),
-            ParamSpec.Opt<string>("session_id", "会话 ID（精确）"),
-            ParamSpec.Opt<string>("correlation_id", "关联 ID：一次调用（含嵌套子记录）的全部审计"),
-            ParamSpec.Opt<string>("batch_id", "批 ID：批父条目与各步嵌套子记录"),
-            ParamSpec.Opt<bool>("success", "true = 只看成功；false = 只看失败"),
-            ParamSpec.Opt<bool>("is_nested", "true = 只看嵌套子记录；false = 只看顶层"),
-            ParamSpec.Opt<bool>("dry_run", "true = 只看干跑；false = 只看正式执行"),
-            ParamSpec.Opt<string>("from", "时间下界（ISO-8601，含）"),
-            ParamSpec.Opt<string>("to", "时间上界（ISO-8601，不含——半开区间）"),
-            ParamSpec.Opt<bool>("include_payloads", "是否携带 args_json / changes_json / stack_trace（缺省 false）"),
-            ParamSpec.Opt<int>("page", "页码（从 1 起，缺省 1）"),
-            ParamSpec.Opt<int>("per_page", $"每页行数（缺省 100，上限 {MaxPerPage}）"),
+            ParamSpec.Opt<string>("command", "Command name (exact)"),
+            ParamSpec.Opt<string>("caller", "Caller text (exact, e.g. ui:- / agent:s1)"),
+            ParamSpec.Opt<string>("session_id", "Session ID (exact)"),
+            ParamSpec.Opt<string>("correlation_id", "Correlation ID: every audit row of one call (including nested child records)"),
+            ParamSpec.Opt<string>("batch_id", "Batch ID: the batch parent entry and each nested step record"),
+            ParamSpec.Opt<bool>("success", "true = successes only; false = failures only"),
+            ParamSpec.Opt<bool>("is_nested", "true = nested child records only; false = top level only"),
+            ParamSpec.Opt<bool>("dry_run", "true = dry runs only; false = real executions only"),
+            ParamSpec.Opt<string>("from", "Time lower bound (ISO-8601, inclusive)"),
+            ParamSpec.Opt<string>("to", "Time upper bound (ISO-8601, exclusive half-open)"),
+            ParamSpec.Opt<bool>("include_payloads", "Whether to carry args_json / changes_json / stack_trace (default false)"),
+            ParamSpec.Opt<int>("page", "Page number (1-based, default 1)"),
+            ParamSpec.Opt<int>("per_page", $"Rows per page (default 100, cap {MaxPerPage})"),
         ],
         Caps: CommandCaps.Query);
 
@@ -66,7 +66,7 @@ internal sealed class AuditQueryHandler : ICommandHandler
         if (perPage < 1 || perPage > MaxPerPage)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.EnumOutOfRange,
-                $"参数「per_page」越界：允许 1..{MaxPerPage}，实际 {perPage}",
+                $"parameter 'per_page' out of range: allowed 1..{MaxPerPage}, got {perPage}",
                 JsonSerializer.SerializeToElement(new { @param = "per_page", min = 1, max = MaxPerPage })));
 
         var result = await ctx.Uow.Audit.QueryAsync(filter, (page - 1) * perPage, perPage, includePayloads, ctx.Ct);
@@ -84,7 +84,7 @@ internal sealed class AuditQueryHandler : ICommandHandler
 
         throw new EngineException(EngineErrors.Of(
             EngineErrors.TypeMismatch,
-            $"参数「{name}」不是合法时间（ISO-8601）：{raw}",
+            $"parameter '{name}' is not a valid timestamp (ISO-8601): {raw}",
             JsonSerializer.SerializeToElement(new { @param = name, expected = "ISO-8601" })));
     }
 }
@@ -102,10 +102,10 @@ internal sealed class AuditPruneHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "audit.prune",
         Category: "audit",
-        Description: "清理审计保留期之外的行（缺省保留最近 90 天；破坏性两阶段确认；dry_run 可预演将删行数）",
+        Description: "Purge audit rows outside the retention window (default keeps the last 90 days; destructive, two-phase confirmation; dry_run previews the row count)",
         Parameters:
         [
-            ParamSpec.Opt<int>("keep_days", $"保留最近多少天（缺省 {DefaultKeepDays}，最小 1）"),
+            ParamSpec.Opt<int>("keep_days", $"Retention in days (default {DefaultKeepDays}, minimum 1)"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.SupportsCancellation);
 
@@ -115,7 +115,7 @@ internal sealed class AuditPruneHandler : ICommandHandler
         if (keepDays < 1)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.EnumOutOfRange,
-                $"参数「keep_days」越界：至少 1，实际 {keepDays}",
+                $"parameter 'keep_days' out of range: at least 1, got {keepDays}",
                 JsonSerializer.SerializeToElement(new { @param = "keep_days", min = 1 })));
 
         var before = DateTimeOffset.Now.AddDays(-keepDays);
@@ -126,6 +126,6 @@ internal sealed class AuditPruneHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("audit", "*")],
                 Events: [],
-                HumanSummary: $"已清理 {deleted} 条 {keepDays} 天之前的审计记录"));
+                HumanSummary: $"Purged {deleted} audit record(s) older than {keepDays} day(s)"));
     }
 }

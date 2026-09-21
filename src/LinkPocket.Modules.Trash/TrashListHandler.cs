@@ -13,7 +13,7 @@ internal sealed class TrashListHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.list",
         Category: "trash",
-        Description: "回收站平铺列表：单独删除的书签 + 被删文件夹单元根（按删除时间倒序）",
+        Description: "Flat trash list: individually deleted bookmarks + deleted-folder unit roots (newest deletion first)",
         Parameters: [],
         Caps: CommandCaps.Query,
         // 平铺列表只读回收站两表（回收站页每次刷新都取）

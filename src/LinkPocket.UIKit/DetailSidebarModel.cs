@@ -100,9 +100,9 @@ public class DetailSidebarModel : ActionSurfaceModel
     /// </summary>
     protected void ConfigureSidebarActionLabels(bool isFolder)
     {
-        OpenLabel = isFolder ? "打开" : "详情";
-        OpenToolTip = isFolder ? "打开目录" : "查看详情";
-        EditLabel = isFolder ? "重命名" : "编辑";
+        OpenLabel = isFolder ? Loc.K("common.open") : Loc.K("common.details");
+        OpenToolTip = isFolder ? Loc.K("detail.openFolder") : Loc.K("detail.viewDetails");
+        EditLabel = isFolder ? Loc.K("common.rename") : Loc.K("common.edit");
         EditActionAccent = isFolder;
         ShowOpenWebsiteButton = !isFolder && ShowOpenWebsite;
         OpenColumnSpan = isFolder || !ShowOpenWebsiteButton ? 2 : 1;
@@ -129,14 +129,14 @@ public class DetailSidebarModel : ActionSurfaceModel
     // —— 多选 ——
     public int SelectedTotal { get; protected set; }
 
-    /// <summary>「已选中 N 项」整句。</summary>
-    public string SelectedTotalText => Loc.T("count.selected", SelectedTotal);
+    /// <summary>「已选中 N 项」整句（值是 <see cref="LocValue"/>：语言一变它跟着重算）。</summary>
+    public LocValue SelectedTotalText => Loc.K("count.selected", SelectedTotal);
 
-    /// <summary>「N 个文件夹」整句（含变量的句子由模型出文本，视图不拼 Run）。</summary>
-    public string SelectedFoldersText => Loc.T("count.foldersChip", SelectedFolders);
+    /// <summary>「N 个文件夹」整句（含变量的句子由模型出<b>文案值</b>，视图不拼 Run）。</summary>
+    public LocValue SelectedFoldersText => Loc.K("count.foldersChip", SelectedFolders);
 
     /// <summary>「N 个链接」整句。</summary>
-    public string SelectedLinksText => Loc.T("count.linksChip", SelectedLinks);
+    public LocValue SelectedLinksText => Loc.K("count.linksChip", SelectedLinks);
 
     public int SelectedFolders { get; protected set; }
     public int SelectedLinks { get; protected set; }

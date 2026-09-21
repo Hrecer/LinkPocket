@@ -14,12 +14,12 @@ internal sealed class LinkSmartListHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.smart_list",
         Category: "links",
-        Description: "智能列表预设：recently_added（最近添加）| recently_visited（最近查看）| recently_edited（最近编辑）| most_visited（最常访问）",
+        Description: "Smart list presets: recently_added | recently_visited | recently_edited | most_visited",
         Parameters:
         [
             ParamSpec.Req<string>("kind", "recently_added | recently_visited | recently_edited | most_visited"),
-            ParamSpec.Opt<int>("limit", "返回条数上限（缺省 50）"),
-            ParamSpec.Opt<int>("days", "时间窗天数，只对 recently_* 三类生效（缺省 7）"),
+            ParamSpec.Opt<int>("limit", "Maximum rows returned (default 50)"),
+            ParamSpec.Opt<int>("days", "Time window in days, only for the recently_* presets (default 7)"),
         ],
         Caps: CommandCaps.Query,
         // 智能列表只查 links 表且结果只受链接表变更影响（recently_* 三键都有索引，缓存省掉重复排序）
@@ -55,7 +55,7 @@ internal sealed class LinkSmartListHandler : ICommandHandler
                 break;
             default:
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EnumOutOfRange, $"未知智能列表类型：{kind}", correlationId: ctx.CorrelationId));
+                    EngineErrors.EnumOutOfRange, $"unknown smart list kind: {kind}", correlationId: ctx.CorrelationId));
         }
 
         var items = await ctx.Uow.Links.ListAsync(

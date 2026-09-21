@@ -17,7 +17,9 @@ public enum ThemeIssueSeverity
 /// <param name="Severity">级别。</param>
 /// <param name="Code">机器可读代码（供 UI 分组/测试断言）。</param>
 /// <param name="Message">给用户看的一句话。</param>
-public readonly record struct ThemeIssue(ThemeIssueSeverity Severity, string Code, string Message);
+/// <param name="Args">给界面取词用的位置参数（数字 / 名字都是<b>数据</b>，不是文案）。
+/// 界面按 <see cref="Code"/> 查键渲染，所以句子不在本层（本层的 <see cref="Message"/> 是英文技术文案，进日志与审计）。</param>
+public readonly record struct ThemeIssue(ThemeIssueSeverity Severity, string Code, string Message, object?[]? Args = null);
 
 /// <summary>
 /// 主题校验与诊断（方案 §5.3 末段）：**不拒绝能自动处置的，明确拒绝不能猜的**。
@@ -63,7 +65,8 @@ public static class ThemeValidator
         // ① 色数（拒绝级）
         if (!definition.HasValidPaletteSize)
             issues.Add(new ThemeIssue(ThemeIssueSeverity.Error, "palette-size",
-                $"主题需要 4 或 5 个颜色（当前 {definition.Palette.Count} 个）"));
+                $"a theme needs 4 or 5 colors (got {definition.Palette.Count})",
+                new object?[] { definition.Palette.Count }));
 
         if (definition.Palette.Count == 0) return issues;
 
@@ -72,12 +75,12 @@ public static class ThemeValidator
         // ② 无深色 → 提示（T40 档会自动加深出强调色）
         if (measured.All(m => m.Hct.T > DarkToneLimit))
             issues.Add(new ThemeIssue(ThemeIssueSeverity.Info, "no-dark",
-                "配色里没有深色 —— 已自动加深出强调色（界面里的主色会比你所选的颜色更深）"));
+                "the palette has no dark colour -- an accent was derived by darkening (the primary on screen will look darker than the colour you picked)"));
 
         // ③ 无浅色 → 提示（面层按锚定表生成，与配色无关；说清这一点免得用户误会背景会坏）
         if (measured.All(m => m.Hct.T < LightToneLimit))
             issues.Add(new ThemeIssue(ThemeIssueSeverity.Info, "no-light",
-                "配色里没有浅色 —— 背景色由主题色相派生（层感与默认主题一致）"));
+                "the palette has no light colour -- the background is derived from the theme hue (layering matches the default theme)"));
 
         // ④ 两色几乎一样 → 提示（不是错误：用户可能就是想微调）
         for (var i = 0; i < measured.Count; i++)
@@ -91,7 +94,8 @@ public static class ThemeValidator
                     && ColorMath.HueDistance(a.H, b.H) < NearDuplicateHueDelta)
                 {
                     issues.Add(new ThemeIssue(ThemeIssueSeverity.Info, "near-duplicate",
-                        $"第 {i + 1} 个与第 {j + 1} 个颜色几乎一样，可以去掉一个"));
+                        $"colour {i + 1} and colour {j + 1} are nearly identical, one of them can be dropped",
+                        new object?[] { i + 1, j + 1 }));
                 }
             }
         }

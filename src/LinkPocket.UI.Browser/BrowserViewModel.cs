@@ -294,7 +294,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public int SelectionCount => Rows.Count(r => Selection.Contains(r.Id));
     public bool HasSelection => SelectionCount > 0;
     public bool HasMultipleSelection => SelectionCount > 1;
-    public string SelectionInfoText => HasSelection ? $"已选中 {SelectionCount} 项" : string.Empty;
+    public LocValue SelectionInfoText => HasSelection ? Loc.K("count.selectedItems", SelectionCount) : LocValue.Empty;
 
     /// <summary>
     /// 右键命中的行（由视图在 ContextMenuOpening 时告知）。

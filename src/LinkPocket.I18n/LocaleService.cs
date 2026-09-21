@@ -48,7 +48,7 @@ public static class LocaleService
         ArgumentNullException.ThrowIfNull(reproject);
         if (!ReferenceEquals(reproject.Target, owner))
             throw new ArgumentException(
-                "重投影回调必须是宿主实例自己的方法组（闭包对象没有别的引用者，弱注册会当场失效）", nameof(reproject));
+                "the reproject callback must be a method group of the owner instance (a closure has no other reference, so the weak registration dies at once)", nameof(reproject));
 
         Reprojectors.AddOrUpdate(owner, reproject);
     }

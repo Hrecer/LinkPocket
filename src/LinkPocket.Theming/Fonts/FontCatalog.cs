@@ -187,17 +187,17 @@ public static class FontCatalog
     public static FontChoice Import(string sourcePath)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
-            throw new ArgumentException("字体文件路径为空", nameof(sourcePath));
+            throw new ArgumentException("font file path is empty", nameof(sourcePath));
         if (!File.Exists(sourcePath))
-            throw new FileNotFoundException("字体文件不存在", sourcePath);
+            throw new FileNotFoundException("font file does not exist", sourcePath);
 
         var ext = Path.GetExtension(sourcePath).ToLowerInvariant();
         if (ext is not (".ttf" or ".otf" or ".ttc"))
-            throw new InvalidOperationException($"只支持 .ttf / .otf / .ttc 字体文件（实际：{ext}）");
+            throw new InvalidOperationException($"only .ttf / .otf / .ttc font files are supported (got {ext})");
 
         // 先验证"它真是字体"再落盘：避免把坏文件留在字体目录里污染后续枚举
         if (!TryResolveFileFamily(sourcePath, out var family))
-            throw new InvalidOperationException("无法解析该文件为字体（文件可能已损坏或不是字体）");
+            throw new InvalidOperationException("the file could not be parsed as a font (it may be corrupt or not a font at all)");
 
         Directory.CreateDirectory(FontDirectory);
         var target = Path.Combine(FontDirectory, Path.GetFileName(sourcePath));
@@ -212,12 +212,12 @@ public static class FontCatalog
         catch (Exception ex)
         {
             TryDeleteTemp(temp);
-            LpLog.Error($"导入字体失败：{sourcePath}", ex, LogCategory);
-            throw new InvalidOperationException($"复制字体文件失败：{ex.Message}", ex);
+            LpLog.Error($"font import failed: {sourcePath}", ex, LogCategory);
+            throw new InvalidOperationException($"copying the font file failed: {ex.Message}", ex);
         }
 
         InvalidateImportedCache();   // 导入后立即可见
-        LpLog.Info($"已导入字体「{family}」→ {target}", LogCategory);
+        LpLog.Info($"Imported font '{family}' -> {target}", LogCategory);
         return new FontChoice(family, $"{Path.GetFileNameWithoutExtension(target)} · {family}", target);
     }
 
@@ -230,7 +230,7 @@ public static class FontCatalog
         catch (Exception ex)
         {
             // 清临时文件尽力而为：删不掉也不能顶替"导入失败"这个原始异常（观测面红线）
-            LpLog.Warn($"清理导入临时文件失败：{path}", ex, LogCategory);
+            LpLog.Warn($"cleanup of the imported temporary file failed: {path}", ex, LogCategory);
         }
     }
 
@@ -252,7 +252,7 @@ public static class FontCatalog
     {
         ArgumentNullException.ThrowIfNull(choice);
         if (choice.FilePath is null)
-            throw new InvalidOperationException("系统字体不可删除");
+            throw new InvalidOperationException("system fonts cannot be deleted");
 
         var deleted = false;
         if (File.Exists(choice.FilePath))
@@ -261,7 +261,7 @@ public static class FontCatalog
             deleted = true;
         }
         InvalidateImportedCache();          // ⚠️ 放在 if 之外：文件不在也要让界面刷新
-        LpLog.Info($"已删除导入字体：{choice.FilePath}（文件{(deleted ? "已删除" : "本就不存在")}）", LogCategory);
+        LpLog.Info($"Deleted imported font: {choice.FilePath} (file {(deleted ? "已删除" : "本就不存在")}）", LogCategory);
         return deleted;
     }
 
@@ -308,7 +308,7 @@ public static class FontCatalog
         {
             // 交给调用方决定语义（导入路径 = 报错并留痕；枚举路径 = 静默跳过该文件，避免日志洪泛）
             if (logFailure)
-                LpLog.Warn($"字体文件无法解析（{path}）：{ex.Message}", category: LogCategory);
+                LpLog.Warn($"font file could not be parsed ({path}): {ex.Message}", category: LogCategory);
             return false;
         }
     }

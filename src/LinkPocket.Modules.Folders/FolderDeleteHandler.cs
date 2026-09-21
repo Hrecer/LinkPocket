@@ -17,12 +17,12 @@ internal sealed class FolderDeleteHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.delete",
         Category: "folders",
-        Description: "删除文件夹（默认整子树移入回收站；cascade 可选 delete_all / move_to_list）",
+        Description: "Delete a folder (the whole subtree goes to trash by default; cascade may be delete_all / move_to_list)",
         Parameters:
         [
-            ParamSpec.Req<string>("folder_id", "文件夹 ID"),
-            ParamSpec.Opt<string>("cascade", "trash_links（默认）| delete_all | move_to_list"),
-            ParamSpec.Opt<string>("target_list_id", "move_to_list 模式的目标文件夹 ID"),
+            ParamSpec.Req<string>("folder_id", "Folder ID"),
+            ParamSpec.Opt<string>("cascade", "trash_links (default) | delete_all | move_to_list"),
+            ParamSpec.Opt<string>("target_list_id", "Target folder ID for move_to_list mode"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: null,   // 逆向参数需计算（且仅 trash_links 可逆）→ 由处理器回填，见下方 undo
@@ -39,7 +39,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         var allFolders = await uow.Folders.ListAllAsync(ct);
         var folder = allFolders.FirstOrDefault(f => f.FolderId == id.Value)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
 
         // 后代集合（含自身）
         var descendantIds = new List<string>();
@@ -63,14 +63,14 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             case "move_to_list":
                 if (string.IsNullOrEmpty(targetListId))
                     throw new EngineException(EngineErrors.Of(
-                        EngineErrors.RequiredParam, "move_to_list 模式需要 target_list_id", correlationId: ctx.CorrelationId));
+                        EngineErrors.RequiredParam, "move_to_list mode requires target_list_id", correlationId: ctx.CorrelationId));
                 var target = await uow.Folders.FindAsync(new FolderId(targetListId), ct)
                     ?? throw new EngineException(EngineErrors.Of(
-                        EngineErrors.EntityNotFound, $"目标文件夹 {targetListId} 不存在", correlationId: ctx.CorrelationId));
+                        EngineErrors.EntityNotFound, $"target folder {targetListId} does not exist", correlationId: ctx.CorrelationId));
                 if (descendantSet.Contains(targetListId))
                     throw new EngineException(EngineErrors.Of(
                         EngineErrors.CycleDetected,
-                        $"目标文件夹「{target.Name}」位于待删除子树内，链接转移后会被一并删除", correlationId: ctx.CorrelationId));
+                        $"target folder '{target.Name}' is inside the subtree being deleted, so moved links would be deleted with it", correlationId: ctx.CorrelationId));
 
                 foreach (var link in affectedLinks)
                 {
@@ -159,7 +159,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("folder", id.Value)],
                 Events: events,
-                HumanSummary: $"已删除文件夹「{folder.Name}」（{cascade}）"),
+                HumanSummary: $"Folder '{folder.Name}' deleted ({cascade})"),
             undo);
     }
 

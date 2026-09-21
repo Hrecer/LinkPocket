@@ -16,12 +16,12 @@ internal sealed class FolderUpdateHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.update",
         Category: "folders",
-        Description: "修改文件夹（仅名称/描述；换父请用 folders.move）",
+        Description: "Update a folder (name and description only; use folders.move to change the parent)",
         Parameters:
         [
-            ParamSpec.Req<string>("folder_id", "文件夹 ID"),
-            ParamSpec.Opt<string>("name", "新名称"),
-            ParamSpec.Opt<string>("description", "新描述"),
+            ParamSpec.Req<string>("folder_id", "Folder ID"),
+            ParamSpec.Opt<string>("name", "New name"),
+            ParamSpec.Opt<string>("description", "New description"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -34,13 +34,13 @@ internal sealed class FolderUpdateHandler : ICommandHandler
 
         var folder = await ctx.Uow.Folders.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
 
         if (name != null)
         {
             if (name.Trim().Length == 0)
                 throw new EngineException(EngineErrors.Of(
-                    EngineErrors.RequiredParam, "名称不能为空", correlationId: ctx.CorrelationId));
+                    EngineErrors.RequiredParam, "name must not be empty", correlationId: ctx.CorrelationId));
             // 同层唯一命名（排除自身）：改名撞名 → 「名 (2)」（Windows 口径，编号口径唯一出处 = 命名服务 IFolderNaming）
             folder.Name = await ctx.Uow.Naming.ResolveAsync(folder.ParentId, name, folder.FolderId, ct);
         }
@@ -55,6 +55,6 @@ internal sealed class FolderUpdateHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已更新文件夹「{folder.Name}」"));
+                $"Folder '{folder.Name}' updated"));
     }
 }

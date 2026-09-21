@@ -10,8 +10,8 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "bookmarks.inspect",
         Category: "bookmarks",
-        Description: "只读预检 Netscape 书签文件：格式识别、条目统计、告警（导入前展示 / 导出后校验共用）",
-        Parameters: [ParamSpec.Req<string>("file_path", "书签 HTML 文件路径")],
+        Description: "Read-only preflight of a Netscape bookmark file: format detection, entry statistics, warnings (shared by pre-import display and post-export validation)",
+        Parameters: [ParamSpec.Req<string>("file_path", "Bookmark HTML file path")],
         Caps: CommandCaps.Query | CommandCaps.FileIo);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -41,7 +41,7 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
 
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            inspection.Error = "未指定文件";
+            inspection.Error = "no file specified";
             return inspection;
         }
 
@@ -49,7 +49,7 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
         {
             if (!File.Exists(filePath))
             {
-                inspection.Error = "文件不存在";
+                inspection.Error = "file does not exist";
                 return inspection;
             }
 
@@ -74,7 +74,7 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
         {
             // 失败降级为读取失败（存量容错语义；失败留痕由引擎管道审计承担——模块层无日志器引用）
             inspection.IsValid = false;
-            inspection.Error = "读取文件失败：" + ex.Message;
+            inspection.Error = "file read failed:" + ex.Message;
         }
 
         return inspection;

@@ -11,7 +11,7 @@ internal sealed class DedupScanHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "dedup.scan",
         Category: "dedup",
-        Description: "扫描重复书签：按 URL 分组，返回重复数 > 1 的组（组内按创建时间升序）",
+        Description: "Scan duplicate bookmarks: grouped by URL, returning groups with more than one entry (ascending creation time within a group)",
         Parameters: [],
         Caps: CommandCaps.Query);
 

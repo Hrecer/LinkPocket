@@ -114,7 +114,7 @@ public sealed class UndoCoordinator : IUndoCoordinator
 
         // 里程碑（Debug）：撤销栈变化——「本次用户动作留下了什么可回退的东西」
         if (LpLog.IsEnabled(LogLevel.Debug))
-            LpLog.Write(LogLevel.Debug, "engine.undo", $"撤销登记：{descriptor.Name}", props: new Dictionary<string, object?>
+            LpLog.Write(LogLevel.Debug, "engine.undo", $"Undo registered: {descriptor.Name}", props: new Dictionary<string, object?>
             {
                 // cmd / caller / corr 由**调用上下文**落到记录首类字段（不在 props 里再抄一份）
                 ["steps"] = steps.Count,

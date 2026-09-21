@@ -37,7 +37,7 @@ internal static class TrashRestoreSupport
         if (to is not (ToOrigin or ToRoot))
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.EnumOutOfRange,
-                $"参数「to」取值非法：{to}（应为 {ToOrigin} | {ToRoot}）",
+                $"parameter 'to' has an invalid value: {to} (expected {ToOrigin} | {ToRoot})",
                 JsonSerializer.SerializeToElement(new { @param = "to", value = to })));
         return to;
     }
@@ -56,9 +56,9 @@ internal static class TrashRestoreSupport
         foreach (var id in linkIds)
         {
             if (await uow.Trash.FindLinkAsync(new LinkId(id), ct) == null)
-                throw NotFound($"回收站中不存在书签 {id}", ctx);
+                throw NotFound($"bookmark {id} is not in the trash", ctx);
             if (await uow.Links.FindAsync(new LinkId(id), ct) != null)
-                throw Conflict($"书签 {id} 已存在于主表（坏数据冲突），拒绝覆盖", ctx);
+                throw Conflict($"bookmark {id} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
         }
 
         var allUnits = await uow.Trash.ListFoldersAsync(ct);
@@ -66,12 +66,12 @@ internal static class TrashRestoreSupport
         foreach (var id in folderIds)
         {
             if (!unitById.ContainsKey(id))
-                throw NotFound($"回收站单元 {id} 不存在", ctx);
+                throw NotFound($"trash unit {id} does not exist", ctx);
             if (await uow.Folders.FindAsync(new FolderId(id), ct) != null)
-                throw Conflict($"文件夹 {id} 已存在于主表（坏数据冲突），拒绝覆盖", ctx);
+                throw Conflict($"folder {id} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
         }
         if (explicitParent != null && await uow.Folders.FindAsync(new FolderId(explicitParent), ct) == null)
-            throw NotFound($"目标文件夹 {explicitParent} 不存在", ctx);
+            throw NotFound($"target folder {explicitParent} does not exist", ctx);
 
         // 批内记账（EF 查询看不到未提交的新增 → "同批已还原"必须自记账）
         var restoredFolderIds = new List<string>();
@@ -121,7 +121,7 @@ internal static class TrashRestoreSupport
                     renamed.Add(new TrashRestoreRename(member.Name, name));
 
                 if (await uow.Folders.FindAsync(new FolderId(member.TrashFolderId), ct) != null)
-                    throw Conflict($"文件夹 {member.TrashFolderId} 已存在于主表（坏数据冲突），拒绝覆盖", ctx);
+                    throw Conflict($"folder {member.TrashFolderId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
 
                 _ = await uow.Folders.AddAsync(new Folder
                 {
@@ -147,7 +147,7 @@ internal static class TrashRestoreSupport
                 {
                     if (restoredLinkIds.Contains(snapshot.LinkId)) continue;   // 防御（正常不可达）
                     if (await uow.Links.FindAsync(new LinkId(snapshot.LinkId), ct) != null)
-                        throw Conflict($"书签 {snapshot.LinkId} 已存在于主表（坏数据冲突），拒绝覆盖", ctx);
+                        throw Conflict($"bookmark {snapshot.LinkId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
                     var duplicate = await DuplicatedAtAsync(uow, restoredLinks, snapshot.TrashFolderId, snapshot.Url, ct);
                     _ = await uow.Links.AddAsync(new Link
                     {
@@ -193,7 +193,7 @@ internal static class TrashRestoreSupport
         {
             if (restoredLinkIds.Contains(id)) continue;   // 随同批单元一并还原 → 去重
             var snapshot = await uow.Trash.FindLinkAsync(new LinkId(id), ct)
-                ?? throw NotFound($"回收站中不存在书签 {id}", ctx);   // 预检已保证；防御
+                ?? throw NotFound($"bookmark {id} is not in the trash", ctx);   // 预检已保证；防御
 
             var (landing, fellBack) = await ResolveLandingAsync(uow, to, snapshot.OriginListId, restoredFolderIdSet, ct);
             if (fellBack) fellBackToRoot.Add(snapshot.Title ?? snapshot.Url);

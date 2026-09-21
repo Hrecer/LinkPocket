@@ -41,7 +41,6 @@ public static class ThemeCatalog
     public static ThemeDefinition Default { get; } = new()
     {
         Id = DefaultId,
-        Name = "默认（紫罗兰）",
         Source = ThemeSource.FactoryDefault,
         Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xE0CEEC, 0xE3DDE8),
         ChromaCap = ChromaCap.Standard,
@@ -69,17 +68,17 @@ public static class ThemeCatalog
     public static IReadOnlyList<ThemeDefinition> Presets { get; } = new[]
     {
         // 1–4：设计档「5 色配色」（暗 → 浅：暗调 / 主调 / 中间调 / 浅调 / 米白背景色）
-        Preset("ochre-rose", "赭石玫瑰", 0x4A3322, 0x7E5E40, 0xC09480, 0xDCBFA8, 0xF0E6D6),
-        Preset("dusk-rose", "暮色玫瑰", 0xC2A0A2, 0xB09295, 0x907884, 0xA3A6B0, 0xE6DEDC),
-        Preset("lotus-sage", "藕粉灰绿", 0x3E4A40, 0x7A8A78, 0xC896A0, 0xE0C4C4, 0xF2E8E4),
-        Preset("caramel-rose", "焦糖玫瑰", 0x4A3424, 0x7E5C40, 0xC09478, 0xDCBEA0, 0xF0E4D2),
+        Preset("ochre-rose", 0x4A3322, 0x7E5E40, 0xC09480, 0xDCBFA8, 0xF0E6D6),
+        Preset("dusk-rose", 0xC2A0A2, 0xB09295, 0x907884, 0xA3A6B0, 0xE6DEDC),
+        Preset("lotus-sage", 0x3E4A40, 0x7A8A78, 0xC896A0, 0xE0C4C4, 0xF2E8E4),
+        Preset("caramel-rose", 0x4A3424, 0x7E5C40, 0xC09478, 0xDCBEA0, 0xF0E4D2),
         // 5–10：设计档「4 色配色」（浅色底 / 浅彩 / 近白 / 深彩）
-        Preset("uji-matcha", "宇治抹茶", 0xE8F2EF, 0xBCE8D5, 0xD5EBD5, 0x60787A),
-        Preset("shine-muscat", "晴王青提饮", 0xDBF9F2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB),
-        Preset("blueberry-yogurt", "蓝莓优格杯", 0xF2F6FF, 0xB7CBF4, 0xE2ECFF, 0x88ABF2),
-        Preset("mint-soda", "薄荷气泡水", 0xBCF1E0, 0xEFFFE0, 0xD7FADF, 0x8ED6DE),
-        Preset("sakura-panna", "樱花奶冻卷", 0xFEDFE9, 0xEEF6EE, 0xFEE6EC, 0xFFC7D6),
-        Preset("green-pear", "青梨冻冻", 0xDEEBB5, 0xF5FAED, 0xF4FEF1, 0xBAC9A7),
+        Preset("uji-matcha", 0xE8F2EF, 0xBCE8D5, 0xD5EBD5, 0x60787A),
+        Preset("shine-muscat", 0xDBF9F2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB),
+        Preset("blueberry-yogurt", 0xF2F6FF, 0xB7CBF4, 0xE2ECFF, 0x88ABF2),
+        Preset("mint-soda", 0xBCF1E0, 0xEFFFE0, 0xD7FADF, 0x8ED6DE),
+        Preset("sakura-panna", 0xFEDFE9, 0xEEF6EE, 0xFEE6EC, 0xFFC7D6),
+        Preset("green-pear", 0xDEEBB5, 0xF5FAED, 0xF4FEF1, 0xBAC9A7),
     };
 
     /// <summary>全部可选主题（默认 + 预设）。</summary>
@@ -104,10 +103,9 @@ public static class ThemeCatalog
     /// 这里**没有**中性色相参数：表面族一律由"明度最高的成员"决定（即配色里的背景色本身），
     /// 这样色点与背景才是同一个颜色。见 <see cref="Presets"/> 的注释。
     /// </remarks>
-    private static ThemeDefinition Preset(string id, string name, params int[] rgb) => new()
+    private static ThemeDefinition Preset(string id, params int[] rgb) => new()
     {
         Id = id,
-        Name = name,
         Source = ThemeSource.BuiltInPreset,
         Palette = Palette(rgb),
         ChromaCap = ChromaCap.Standard,

@@ -11,12 +11,12 @@ internal sealed class LinkRootsHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.roots",
         Category: "links",
-        Description: "取根级（未归类）书签（sort_by 缺省 created_at、sort_order 缺省 desc；上限 per_page=50）",
+        Description: "Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; capped at per_page=50)",
         Parameters:
         [
             ParamSpec.Opt<string>("sort_by", "created_at | updated_at | last_visited_at | visit_count | title"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
-            ParamSpec.Opt<int>("per_page", "上限（缺省 50）"),
+            ParamSpec.Opt<int>("per_page", "Cap (default 50)"),
         ],
         Caps: CommandCaps.Query);
 

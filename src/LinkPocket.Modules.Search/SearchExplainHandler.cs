@@ -11,14 +11,14 @@ internal sealed class SearchExplainHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "search.explain",
         Category: "search",
-        Description: "解释搜索命中：返回每个命中链接命中的字段列表（title/url/description/path）",
+        Description: "Explain search hits: return the matched fields of each hit link (title/url/description/path)",
         Parameters:
         [
-            ParamSpec.Req<string>("query", "搜索关键词"),
-            ParamSpec.Opt<bool>("search_title", "搜标题（缺省 true）"),
-            ParamSpec.Opt<bool>("search_url", "搜 URL"),
-            ParamSpec.Opt<bool>("search_description", "搜描述"),
-            ParamSpec.Opt<bool>("search_path", "搜路径（文件夹名命中 → 子树展开）"),
+            ParamSpec.Req<string>("query", "Search keyword"),
+            ParamSpec.Opt<bool>("search_title", "Search titles (default true)"),
+            ParamSpec.Opt<bool>("search_url", "Search URLs"),
+            ParamSpec.Opt<bool>("search_description", "Search descriptions"),
+            ParamSpec.Opt<bool>("search_path", "Search paths (a folder-name hit expands its subtree)"),
         ],
         Caps: CommandCaps.Query);
 

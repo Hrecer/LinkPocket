@@ -308,7 +308,7 @@ internal static class BackupIO
 
         if (!File.Exists(filePath))
         {
-            file.Errors.Add("备份文件不存在");
+            file.Errors.Add("backup file does not exist");
             return file;
         }
 
@@ -320,19 +320,19 @@ internal static class BackupIO
             var dataEntry = archive.GetEntry("data.json");
             if (manifestEntry == null || dataEntry == null)
             {
-                file.Errors.Add("无效的备份文件：缺少 manifest.json 或 data.json");
+                file.Errors.Add("invalid backup file: manifest.json or data.json is missing");
                 return file;
             }
 
             // 先看声明尺寸（zip 头里的 UncompressedLength），超限**直接拒绝、一个字节都不读**
             if (manifestEntry.Length > MaxManifestBytes)
             {
-                file.Errors.Add($"备份文件异常：manifest.json 声明 {manifestEntry.Length} 字节（上限 {MaxManifestBytes}）");
+                file.Errors.Add($"abnormal backup file: manifest.json declares {manifestEntry.Length} bytes (limit {MaxManifestBytes})");
                 return file;
             }
             if (dataEntry.Length > MaxDataJsonBytes)
             {
-                file.Errors.Add($"备份文件过大：data.json 声明 {dataEntry.Length / (1024 * 1024)}MB（上限 {MaxDataJsonBytes / (1024 * 1024)}MB）");
+                file.Errors.Add($"backup file too large: data.json declares {dataEntry.Length / (1024 * 1024)}MB (limit {MaxDataJsonBytes / (1024 * 1024)}MB)");
                 return file;
             }
 
@@ -341,14 +341,14 @@ internal static class BackupIO
                 .ToList();
             if (faviconEntries.Count > MaxFaviconEntries)
             {
-                file.Errors.Add($"备份文件异常：图标条目 {faviconEntries.Count} 个（上限 {MaxFaviconEntries}）");
+                file.Errors.Add($"abnormal backup file: {faviconEntries.Count} favicon entries (limit {MaxFaviconEntries})");
                 return file;
             }
             var oversizedFavicon = faviconEntries.FirstOrDefault(e => e.Length > MaxFaviconBytes);
             if (oversizedFavicon != null)
             {
-                file.Errors.Add($"备份文件异常：图标 {oversizedFavicon.FullName} 声明 {oversizedFavicon.Length} 字节"
-                                + $"（上限 {MaxFaviconBytes}）");
+                file.Errors.Add($"abnormal backup file: favicon {oversizedFavicon.FullName} declares {oversizedFavicon.Length} bytes"
+                                + $"(limit {MaxFaviconBytes})");
                 return file;
             }
 
@@ -385,12 +385,12 @@ internal static class BackupIO
         catch (OutOfMemoryException ex)
         {
             // 内存不足也**不是**"文件损坏"：如实说清，别让用户去反复检查一个没问题的文件
-            file.Errors.Add("读取备份文件时内存不足（文件异常庞大），请确认这是本应用导出的备份：" + ex.Message);
+            file.Errors.Add("out of memory while reading the backup file (it is abnormally large); confirm this is a backup exported by this app:" + ex.Message);
             return file;
         }
         catch (Exception ex)
         {
-            file.Errors.Add("备份文件无法读取（可能已损坏）：" + ex.Message);
+            file.Errors.Add("backup file unreadable (it may be corrupt):" + ex.Message);
             return file;
         }
 
@@ -398,7 +398,7 @@ internal static class BackupIO
         var version = file.Manifest.Version?.Trim() ?? "";
         if (!Accepts(version))
         {
-            file.Errors.Add($"不支持的备份版本：「{version}」（本应用支持 {FormatVersion}），请升级应用后再试");
+            file.Errors.Add($"unsupported backup version '{version}' (this app supports {FormatVersion}); upgrade the app and retry");
             return file;
         }
 
@@ -406,14 +406,14 @@ internal static class BackupIO
         var expected = file.Manifest.DataSha256?.Trim();
         if (string.IsNullOrEmpty(expected))
         {
-            file.Errors.Add("备份缺少完整性校验信息（data_sha256），文件可能不完整");
+            file.Errors.Add("the backup has no integrity checksum (data_sha256), the file may be incomplete");
             return file;
         }
 
         var actual = Convert.ToHexString(SHA256.HashData(file.DataBytes)).ToLowerInvariant();
         if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
         {
-            file.Errors.Add("备份完整性校验失败：文件已被修改或损坏");
+            file.Errors.Add("backup integrity check failed: the file was modified or is corrupt");
             return file;
         }
 
@@ -424,7 +424,7 @@ internal static class BackupIO
         }
         catch (Exception ex)
         {
-            file.Errors.Add("备份数据解析失败（data.json 不是合法 JSON）：" + ex.Message);
+            file.Errors.Add("backup data parse failed (data.json is not valid JSON):" + ex.Message);
         }
         return file;
     }

@@ -13,19 +13,19 @@ namespace LinkPocket.Modules.Trash;
 /// <c>to = "root"</c> 落根；<c>target_parent_id</c> = 显式落点（与 to 互斥、且必须存在——错就报错，
 /// 不静默改落点）。执行走唯一流水线 <see cref="TrashRestoreSupport"/>。</para>
 ///
-/// <para>本命令是 <c>folders.delete</c>（cascade=trash_links）的逆向，使"删文件夹"可被 Ctrl+Z 撤销。</para>
+/// <para>本命令是 <c>folders.delete</c>（cascade=trash_links）的逆向，使"删Folder"可被 Ctrl+Z 撤销。</para>
 /// </summary>
 internal sealed class TrashRestoreUnitHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.restore_unit",
         Category: "trash",
-        Description: "还原回收站单元（整棵被删文件夹子树 + 单元内书签；保留原 ID；缺省落回删除前所在父目录）",
+        Description: "Restore a trash unit (the whole deleted folder subtree + its bookmarks; original IDs kept; default returns to the pre-deletion parent)",
         Parameters:
         [
-            ParamSpec.Req<string>("unit_id", "回收站单元 ID（= 原文件夹 ID）"),
-            ParamSpec.Opt<string>("to", "origin（缺省）= 删除前所在父目录（原父已不存在时落根并如实回报）；root = 根级"),
-            ParamSpec.Opt<string>("target_parent_id", "显式落点父目录 ID（与 to 互斥且必须存在）"),
+            ParamSpec.Req<string>("unit_id", "Trash unit ID (= the original folder ID)"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion parent (falls back to root and reports it when the parent is gone); root = root level"),
+            ParamSpec.Opt<string>("target_parent_id", "Explicit destination parent folder ID (mutually exclusive with to, must exist)"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         Impact: ImpactSummary.Folder);
@@ -37,7 +37,7 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         var target = CommandArgs.OptionalString(args, "target_parent_id");
         if (toRaw != null && target != null)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.TypeMismatch, "「to」与「target_parent_id」互斥，不能同时传",
+                EngineErrors.TypeMismatch, "'to' and 'target_parent_id' are mutually exclusive and cannot both be provided",
                 JsonSerializer.SerializeToElement(new { @param = "target_parent_id" })));
         var to = toRaw == null ? TrashRestoreSupport.ToOrigin : TrashRestoreSupport.ValidateLandingMode(toRaw);
 
@@ -47,14 +47,14 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         var location = info.Landing == null
             ? FolderIds.RootToken
             : await ctx.Uow.Trees.PathCanonicalAsync(new FolderId(info.Landing), ctx.Ct);
-        var renameNote = outcome.Renamed.Count == 0 ? string.Empty : $"（自动编号 {outcome.Renamed.Count} 项）";
-        var fellNote = info.FellBackToRoot ? "（原父已不存在，回调根级）" : string.Empty;
+        var renameNote = outcome.Renamed.Count == 0 ? string.Empty : $"({outcome.Renamed.Count} item(s) auto-numbered)";
+        var fellNote = info.FellBackToRoot ? "(the original parent is gone, fell back to root level)" : string.Empty;
         return CommandResult.Ok(
             new TrashRestoreUnitResult(unitId, info.Landing, outcome.RestoredFolderIds.Count, outcome.Links.Count, info.FellBackToRoot),
             new ChangeSet(
                 Touched: [new EntityRef("folder", unitId)],
                 Events: [DomainEventNames.FoldersChanged, DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"已还原文件夹单元（{outcome.RestoredFolderIds.Count} 个文件夹 / {outcome.Links.Count} 个链接）到「{location}」{renameNote}{fellNote}"),
+                HumanSummary: $"Folder unit restored ({outcome.RestoredFolderIds.Count} folders / {outcome.Links.Count} links) to '{location}'{renameNote}{fellNote}"),
             outcome.UndoSteps);
     }
 }

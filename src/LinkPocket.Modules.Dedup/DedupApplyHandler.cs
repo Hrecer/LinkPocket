@@ -15,12 +15,12 @@ internal sealed class DedupApplyHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "dedup.apply",
         Category: "dedup",
-        Description: "执行查重处置：按策略把每组多余的重复书签移入回收站（嵌套派发 links.trash，可在干跑模式预演）",
+        Description: "Apply the duplicate handling plan: move the surplus bookmark of each group into the trash per strategy (nested links.trash dispatch, dry_run can rehearse it)",
         Parameters:
         [
-            ParamSpec.Opt<string>("strategy", "keep_most_visited（默认）| keep_newest | keep_explicit（未列组跳过）"),
-            ParamSpec.Opt<JsonElement>("group_urls", "只处置这些 URL 的组；缺省 = 全部重复组"),
-            ParamSpec.Opt<JsonElement>("explicit_keep", "keep_explicit 时的保留者字典；未列出的组不处置"),
+            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)"),
+            ParamSpec.Opt<JsonElement>("group_urls", "Handle only groups with these URLs; default = all duplicate groups"),
+            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit; unlisted groups are not handled"),
         ],
         Caps: CommandCaps.Mutation);
 
@@ -45,7 +45,7 @@ internal sealed class DedupApplyHandler : ICommandHandler
             : new ChangeSet(
                 Touched: plan.Groups.SelectMany(g => g.Trash).Select(l => new EntityRef("link", l.LinkId)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"查重完成：{plan.Groups.Count} 组，移入回收站 {trashed} 个重复书签（策略 {plan.Strategy}）");
+                HumanSummary: $"Duplicate scan done: {plan.Groups.Count} groups, {trashed} duplicate bookmarks moved to trash (strategy {plan.Strategy})");
 
         return CommandResult.Ok(
             JsonSerializer.SerializeToElement(new { strategy = plan.Strategy, groups = plan.Groups.Count, trashed }),

@@ -13,8 +13,8 @@ internal sealed class BookmarksExportHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "bookmarks.export",
         Category: "bookmarks",
-        Description: "导出全部书签为 Netscape 书签文件（file_path 为目标文件完整路径；无归属书签落根级不丢数据）",
-        Parameters: [ParamSpec.Req<string>("file_path", "导出文件完整路径")],
+        Description: "Export all bookmarks as a Netscape bookmark file (file_path is the target absolute path; unowned bookmarks land at root level so no data is lost)",
+        Parameters: [ParamSpec.Req<string>("file_path", "Export target absolute path")],
         Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -26,7 +26,7 @@ internal sealed class BookmarksExportHandler : ICommandHandler
         var directory = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.InvalidPath, $"导出目录不存在：{directory}", correlationId: ctx.CorrelationId));
+                EngineErrors.InvalidPath, $"export directory does not exist: {directory}", correlationId: ctx.CorrelationId));
 
         var folders = await ctx.Uow.Folders.ListAllAsync(ct);
         var links = await ctx.Uow.Links.ListAsync(new LinkQuerySpec(), ct);
@@ -42,7 +42,7 @@ internal sealed class BookmarksExportHandler : ICommandHandler
         catch (Exception ex)
         {
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.FileIoError, $"导出文件写入失败：{ex.Message}", retryable: true));
+                EngineErrors.FileIoError, $"export file write failed: {ex.Message}", retryable: true));
         }
 
         var bytes = new FileInfo(fullPath).Length;
@@ -59,6 +59,6 @@ internal sealed class BookmarksExportHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已导出 {stats.FoldersExported} 个文件夹、{stats.LinksExported + stats.RootLinksExported} 个书签"));
+                $"Exported {stats.FoldersExported} folders and {stats.LinksExported + stats.RootLinksExported} bookmarks"));
     }
 }

@@ -12,14 +12,14 @@ internal sealed class SearchLinksHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "search.links",
         Category: "search",
-        Description: "搜索链接（四范围：title/url/description/path；排序缺省 title 升序）",
+        Description: "Search links (four scopes: title/url/description/path; default sort title ascending)",
         Parameters:
         [
-            ParamSpec.Req<string>("query", "搜索关键词"),
-            ParamSpec.Opt<bool>("search_title", "搜标题（缺省 true）"),
-            ParamSpec.Opt<bool>("search_url", "搜 URL"),
-            ParamSpec.Opt<bool>("search_description", "搜描述"),
-            ParamSpec.Opt<bool>("search_path", "搜路径（文件夹名命中 → 子树展开）"),
+            ParamSpec.Req<string>("query", "Search keyword"),
+            ParamSpec.Opt<bool>("search_title", "Search titles (default true)"),
+            ParamSpec.Opt<bool>("search_url", "Search URLs"),
+            ParamSpec.Opt<bool>("search_description", "Search descriptions"),
+            ParamSpec.Opt<bool>("search_path", "Search paths (a folder-name hit expands its subtree)"),
             // 与 QueryParsing.LinkSortFields / EfSortEngine.LinkFields 全量对齐（7 字段）
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),

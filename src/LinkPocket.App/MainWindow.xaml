@@ -136,7 +136,7 @@
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding Label}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:LocKey LabelKey}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </DataTemplate>
                     </views:SlidingNavStrip.ItemTemplate>

@@ -13,11 +13,11 @@ internal sealed class FolderFindHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.find",
         Category: "folders",
-        Description: "按名称查找文件夹（默认精确匹配，可选包含匹配；用于按名定位目录）",
+        Description: "Find folders by name (exact match by default, optional contains match; used to locate a folder by name)",
         Parameters:
         [
-            ParamSpec.Req<string>("name", "文件夹名称"),
-            ParamSpec.Opt<bool>("contains", "true = 包含匹配；缺省 = 精确匹配（大小写不敏感）"),
+            ParamSpec.Req<string>("name", "Folder name to match"),
+            ParamSpec.Opt<bool>("contains", "true = contains match; default = exact match (case-insensitive)"),
         ],
         Caps: CommandCaps.Query);
 

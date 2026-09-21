@@ -29,10 +29,10 @@ public sealed class TokenTable
     /// <summary>取应用令牌值（缺失即抛——令牌表必须自洽，不允许静默兜底）。</summary>
     public Argb Token(string name) => Tokens.TryGetValue(name, out var v)
         ? v
-        : throw new KeyNotFoundException($"令牌表中不存在应用令牌「{name}」（令牌完整性由 ThemeContrastTests 卡住）");
+        : throw new KeyNotFoundException($"the token table has no applied token '{name}' (token integrity is enforced by ThemeContrastTests)");
 
     /// <summary>取库键值（缺失即抛）。</summary>
     public Argb Key(string name) => Anchored.TryGetValue(name, out var v)
         ? v
-        : throw new KeyNotFoundException($"令牌表中不存在库键「{name}」");
+        : throw new KeyNotFoundException($"the token table has no library key '{name}'");
 }

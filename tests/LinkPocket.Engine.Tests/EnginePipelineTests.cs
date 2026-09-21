@@ -91,7 +91,7 @@ public class EnginePipelineTests
             Assert.True(ex.Error.Details.HasValue);
             var token = ex.Error.Details!.Value.GetProperty("confirm_token").GetString();
             Assert.False(string.IsNullOrEmpty(token));
-            Assert.Equal("整库", ex.Error.Details!.Value.GetProperty("impact").GetString());
+            Assert.Equal("entire database", ex.Error.Details!.Value.GetProperty("impact").GetString());
 
             // 第二次：持令牌 → 执行成功
             var result = await engine.ExecuteAsync<string>("test.destructive",

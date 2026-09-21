@@ -11,11 +11,11 @@ internal sealed class FolderCycleCheckHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.cycle_check",
         Category: "folders",
-        Description: "检查把文件夹移动到目标父目录下是否会产生环（true = 会成环）",
+        Description: "Check whether moving a folder under the target parent would create a cycle (true = it would)",
         Parameters:
         [
-            ParamSpec.Req<string>("folder_id", "要移动的文件夹 ID"),
-            ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根（永不成环）"),
+            ParamSpec.Req<string>("folder_id", "Folder ID to move"),
+            ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root (never a cycle)"),
         ],
         Caps: CommandCaps.Query);
 

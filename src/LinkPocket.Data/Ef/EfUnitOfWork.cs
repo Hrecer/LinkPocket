@@ -69,7 +69,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
                 catch (Exception rollbackEx)
                 {
                     // 回滚失败绝不能覆盖原始异常：保留「哪一步 DELETE 失败」的根因
-                    LpLog.Warn("清空数据回滚失败", rollbackEx, category: "data.uow");
+                    LpLog.Warn("rollback after data wipe failed", rollbackEx, category: "data.uow");
                 }
             }
             throw;

@@ -7,19 +7,33 @@ namespace LinkPocket.I18n;
 /// 取词门面（C# 侧唯一入口）。XAML 侧走 <see cref="LocExtension"/>，两边读同一张 <see cref="Table"/>。
 /// </summary>
 /// <remarks>
-/// <b>瞬时文案（状态行 / Toast / 对话框）在这里解析是合规的</b>：它们只在发出那一刻存在。
-/// 但语言一切换，已显示的瞬时文案就停在旧语言里——所以 <see cref="LocaleService.LanguageChanged"/>
-/// 的订阅方必须把它们**清空**，而不是留着混语。会长期驻留的文本一律走 XAML 取词，不走本门面。
+/// <para>
+/// <b>会驻留在界面上的文本不要用本门面的 <c>T</c></b>：它把取词时机钉死在调用那一刻，
+/// 换语言后那份文本就停在旧语言里。模型成员一律 <see cref="K(string)"/> 造 <see cref="LocValue"/>，
+/// 由 XAML 的 <c>{loc:Value}</c> 在渲染边界取词（语言一变自己重算）。
+/// </para>
+/// <para>
+/// <c>T</c> 的正当用处只剩"显示完就消失"的那一类：对话框在弹出的那一刻、剪贴板写入的文本、
+/// 以及日志与错误码渲染等<em>不进绑定</em>的地方。
+/// </para>
 /// </remarks>
-public static class Loc
+public static partial class Loc
 {
     public static LocTable Table => LocTable.Instance;
 
     public static string T(string key) => Table.Get(key);
 
     /// <summary>位置参数填充（<c>{0}</c>…）。数字一律走 InvariantCulture：千分位分隔符不随语言变。</summary>
+    /// <summary>位置参数填充（<c>{0}</c>…）。数字一律走 InvariantCulture：千分位分隔符不随语言变。
+    /// 参数里的 <see cref="LocValue"/> 在这一刻一起解析——所以嵌套的句子也不会在模型里留下成品文本。</summary>
     public static string T(string key, params object?[] args)
-        => string.Format(CultureInfo.InvariantCulture, Table.Get(key), args);
+    {
+        if (args.Length == 0) return Table.Get(key);
+        var resolved = new object?[args.Length];
+        for (var i = 0; i < args.Length; i++)
+            resolved[i] = args[i] is LocValue nested ? nested.Resolve() : args[i];
+        return string.Format(CultureInfo.InvariantCulture, Table.Get(key), resolved);
+    }
 
     /// <summary>
     /// 复数。调用点<b>显式给两条完整键</b>（中文侧两条填同一句），而不是在代码里拼 <c>#one</c>——

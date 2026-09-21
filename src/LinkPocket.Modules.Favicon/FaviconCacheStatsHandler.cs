@@ -10,7 +10,7 @@ internal sealed class FaviconCacheStatsHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "favicon.cache_stats",
         Category: "favicon",
-        Description: "图标磁盘缓存统计（文件数、总字节、缓存目录）",
+        Description: "Favicon disk cache statistics (file count, total bytes, cache directory)",
         Parameters: [],
         Caps: CommandCaps.Query);
 

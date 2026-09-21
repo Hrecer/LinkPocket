@@ -11,8 +11,8 @@ internal sealed class LinkFindByUrlHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.find_by_url",
         Category: "links",
-        Description: "按 URL 精确查找全部同址链接（查重场景复用点）",
-        Parameters: [ParamSpec.Req<string>("url", "链接地址（精确匹配）")],
+        Description: "Find every link with exactly this URL (reuse point for duplicate handling)",
+        Parameters: [ParamSpec.Req<string>("url", "Link URL (exact match)")],
         Caps: CommandCaps.Query);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)

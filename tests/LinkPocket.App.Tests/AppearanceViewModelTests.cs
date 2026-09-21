@@ -76,7 +76,7 @@ public class AppearanceViewModelTests : IDisposable
         var last = vm.ThemeCards[^1];
         Assert.True(last.IsCustom, "最后一张必须是自选颜色卡（IsCustom）");
         Assert.Equal("user-custom", last.Id);
-        Assert.Equal("自选颜色", last.Name);
+        Assert.Equal("自选颜色", last.Name.Resolve());
         Assert.Null(last.Definition);                    // 没有目录定义：点它 = 应用调色台的草稿
         Assert.Equal(11, ThemeCatalog.All.Count);        // 目录本身没有多出一套"自选颜色"
 
@@ -98,8 +98,8 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(c.Definition!.Palette.Count, c.Swatches.Count);
             Assert.InRange(c.Swatches.Count, 4, 5);
         });
-        Assert.All(presets, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name} 缺派生摘要"));
-        Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name} 不该是空态"));
+        Assert.All(presets, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name.Resolve()} 缺派生摘要"));
+        Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name.Resolve()} 不该是空态"));
 
         // 设计档第 1–4 套 = 5 色、第 5–10 套 = 4 色；加上 5 色的出厂默认
         // → 12 张卡里 5 色 5 张、4 色 6 张（"五色主题"就是这个，不能被压成四色）
@@ -135,7 +135,7 @@ public class AppearanceViewModelTests : IDisposable
             ThemeService.ApplyById("uji-matcha", null);
             var vm = NewVm();
 
-            Assert.Equal("宇治抹茶", vm.AppliedThemeName);
+            Assert.Equal("宇治抹茶", vm.AppliedThemeName.Resolve());
             // ⚠️ 槽数**跟着当前主题走**：宇治抹茶在设计档里是 4 色 → 4 格
             //    （"槽数"是投影，"颜色"才是用户的草稿，两者互不牵连）。
             Assert.Equal(PaletteSolver.EditableSlots(ThemeCatalog.Find("uji-matcha")!).Count, vm.SlotCount);
@@ -194,8 +194,8 @@ public class AppearanceViewModelTests : IDisposable
             var before = matcha.Palette.ToList();
 
             var vm = NewVm();
-            Assert.Equal("以「宇治抹茶」为起点", vm.StartFromCurrentThemeLabel);
-            Assert.Contains("宇治抹茶", vm.DraftIntro, StringComparison.Ordinal);   // 整句说明也同源
+            Assert.Equal("以「宇治抹茶」为起点", vm.StartFromCurrentThemeLabel.Resolve());
+            Assert.Contains("宇治抹茶", vm.DraftIntro.Resolve(), StringComparison.Ordinal);   // 整句说明也同源
 
             vm.StartFromCurrentTheme();
 
@@ -237,17 +237,17 @@ public class AppearanceViewModelTests : IDisposable
         try
         {
             var vm = NewVm();
-            Assert.Equal("以「默认（紫罗兰）」为起点", vm.StartFromCurrentThemeLabel);
-            Assert.Contains("默认（紫罗兰）", vm.DraftIntro, StringComparison.Ordinal);
+            Assert.Equal("以「默认（紫罗兰）」为起点", vm.StartFromCurrentThemeLabel.Resolve());
+            Assert.Contains("默认（紫罗兰）", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
 
             var changes = new List<string>();
             vm.PropertyChanged += (_, e) => changes.Add(e.PropertyName ?? string.Empty);
 
             vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Id == "green-pear"));
 
-            Assert.Equal("以「青梨冻冻」为起点", vm.StartFromCurrentThemeLabel);
-            Assert.Contains("青梨冻冻", vm.DraftIntro, StringComparison.Ordinal);
-            Assert.DoesNotContain("默认（紫罗兰）", vm.DraftIntro, StringComparison.Ordinal);
+            Assert.Equal("以「青梨冻冻」为起点", vm.StartFromCurrentThemeLabel.Resolve());
+            Assert.Contains("青梨冻冻", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
+            Assert.DoesNotContain("默认（紫罗兰）", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
             Assert.Contains(nameof(AppearanceViewModel.StartFromCurrentThemeLabel), changes);
             Assert.Contains(nameof(AppearanceViewModel.DraftIntro), changes);
         }
@@ -346,13 +346,13 @@ public class AppearanceViewModelTests : IDisposable
         vm.RefreshDraftDiagnostics();
 
         Assert.True(vm.HasDiagnostics);
-        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
-        Assert.Contains("还差", vm.Diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
+        Assert.Contains("还差", vm.DiagnosticLines.Single().Text.Resolve(), StringComparison.Ordinal);
 
         // 走「应用」入口也是同一口径（状态行说明 + 中性提示，不摆红色错误）
         vm.ApplyDraft();
         Assert.Contains("没选", vm.Status, StringComparison.Ordinal);
-        Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -389,8 +389,8 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Empty(vm.ThemeCards[^1].Swatches);
             Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
             Assert.True(vm.HasDiagnostics);
-            Assert.Contains("还差 5 个颜色", vm.Diagnostics, StringComparison.Ordinal);
-            Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+            Assert.Contains("还差 5 个颜色", vm.DiagnosticLines.Single().Text.Resolve(), StringComparison.Ordinal);
+            Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
 
             // 回默认这件事本身要落盘（与「恢复默认外观」的分工：那个连偏好文件一起清）
             var prefs = UiPreferenceStore.Load(out _);
@@ -651,8 +651,9 @@ public class AppearanceViewModelTests : IDisposable
             vm.RefreshDraftDiagnostics();
 
             Assert.True(vm.HasDiagnostics);
-            Assert.Contains("没有深色", vm.Diagnostics, StringComparison.Ordinal);
-            Assert.DoesNotContain("✗", vm.Diagnostics, StringComparison.Ordinal);
+            Assert.Contains(vm.DiagnosticLines, l => l.Text.Resolve().Contains("没有深色", StringComparison.Ordinal)
+                && l.Marker == "·");   // 提示级，不是拒绝级
+            Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
         }
         finally
         {
@@ -677,7 +678,7 @@ public class AppearanceViewModelTests : IDisposable
                 vm.SetSlotColor(i, Color.FromRgb((byte)((v >> 16) & 0xFF), (byte)((v >> 8) & 0xFF), (byte)(v & 0xFF)));
             }
             vm.RefreshDraftDiagnostics();
-            Assert.False(vm.HasDiagnostics, vm.Diagnostics);
+            Assert.False(vm.HasDiagnostics, string.Join(" | ", vm.DiagnosticLines.Select(l => l.Text.Resolve())));
         }
         finally
         {
@@ -863,7 +864,7 @@ public class AppearanceViewModelTests : IDisposable
                             PaletteMode = on ? PaletteMode.Auto : PaletteMode.Exact,
                         }).Token(AppTokens.SurfaceBase));
                     Assert.True(card.Swatches.Any(c => c == baseColor),
-                        $"[auto={on}] {card.Name} 的色点里没有该模式实际生效的页面底"
+                        $"[auto={on}] {card.Name.Resolve()} 的色点里没有该模式实际生效的页面底"
                         + $" #{baseColor.R:X2}{baseColor.G:X2}{baseColor.B:X2}（该融合）"
                         + $"：色点 {string.Join("/", card.Swatches.Select(c => $"{c.R:X2}{c.G:X2}{c.B:X2}"))}");
                 }
@@ -962,7 +963,7 @@ public class AppearanceViewModelTests : IDisposable
     public void 字体自检_默认字体无告警()
     {
         var vm = NewVm();
-        Assert.Equal(string.Empty, vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily)));
+        Assert.True(vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily)).IsEmpty);
     }
 
     // ── 必须碰全局的用例（应用/落盘）─────────────────────────────────

@@ -38,7 +38,7 @@ public sealed class LogPipeline : ILogSink, ILogFileMaintenance, ILogQuerySource
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (sinks is null || sinks.Length == 0)
-            throw new ArgumentException("至少需要一个日志落点", nameof(sinks));
+            throw new ArgumentException("at least one log sink is required", nameof(sinks));
         _sinks = sinks;
         _level = (int)options.MinimumLevel;
         _queue = Channel.CreateBounded<LogRecord>(new BoundedChannelOptions(Math.Max(1, options.QueueCapacity))

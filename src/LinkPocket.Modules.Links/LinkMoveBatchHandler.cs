@@ -14,11 +14,11 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.move_batch",
         Category: "links",
-        Description: "批量移动链接到目标目录（原子单事务；target_list_id 缺省 = 根级）",
+        Description: "Move links to a target folder in batch (one atomic transaction; target_list_id default = root level)",
         Parameters:
         [
-            ParamSpec.Req<IReadOnlyList<string>>("link_ids", "链接 ID 列表"),
-            ParamSpec.Opt<string>("target_list_id", "目标目录 ID；缺省 = 根级"),
+            ParamSpec.Req<IReadOnlyList<string>>("link_ids", "List of link IDs"),
+            ParamSpec.Opt<string>("target_list_id", "Target folder ID; default = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（每项一步）
 
@@ -27,14 +27,14 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
         var linkIds = CommandArgs.StringArray(args, "link_ids");
         if (linkIds.Count == 0)
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.RequiredParam, "link_ids 不能为空", correlationId: ctx.CorrelationId));
+                EngineErrors.RequiredParam, "link_ids must not be empty", correlationId: ctx.CorrelationId));
         var target = CommandArgs.OptionalString(args, "target_list_id");
         var ct = ctx.Ct;
 
         if (target != null)
             _ = await ctx.Uow.Folders.FindAsync(new FolderId(target), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"目标文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"target folder {target} does not exist", correlationId: ctx.CorrelationId));
 
         var previousFolders = new HashSet<string>(StringComparer.Ordinal);
         var oldListIds = new Dictionary<string, string?>(StringComparer.Ordinal);   // 撤销载荷要带旧目录（变更前快照）
@@ -42,7 +42,7 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
         {
             var link = await ctx.Uow.Links.FindAsync(new LinkId(linkId), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"链接 {linkId} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"link {linkId} does not exist", correlationId: ctx.CorrelationId));
             if (link.ListId != null) previousFolders.Add(link.ListId);
             oldListIds[linkId] = link.ListId;
             link.ListId = target;
@@ -70,7 +70,7 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: linkIds.Select(id => new EntityRef("link", id)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
-                HumanSummary: $"已移动 {linkIds.Count} 个链接"),
+                HumanSummary: $"Moved {linkIds.Count} link(s)"),
             undo.Count > 0 ? undo : null);
     }
 }

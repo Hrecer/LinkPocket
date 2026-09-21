@@ -18,11 +18,11 @@ internal sealed class FolderCopyHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.copy",
         Category: "folders",
-        Description: "深层复制文件夹（含全部子文件夹与书签；返回新文件夹 ID）",
+        Description: "Deep-copy a folder (including all child folders and bookmarks; returns the new folder ID)",
         Parameters:
         [
-            ParamSpec.Req<string>("folder_id", "源文件夹 ID"),
-            ParamSpec.Opt<string>("target_parent_id", "目标父目录 ID；缺省 = 根级"),
+            ParamSpec.Req<string>("folder_id", "Source folder ID"),
+            ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -36,12 +36,12 @@ internal sealed class FolderCopyHandler : ICommandHandler
         if (target != null)
             _ = await uow.Folders.FindAsync(new FolderId(target), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"目标文件夹 {target} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"target folder {target} does not exist", correlationId: ctx.CorrelationId));
 
         var allFolders = await uow.Folders.ListAllAsync(ct);
         var source = allFolders.FirstOrDefault(f => f.FolderId == id.Value)
             ?? throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"文件夹 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
 
         var allLinks = await uow.Links.ListAsync(new LinkQuerySpec(), ct);
         var linksByFolder = allLinks
@@ -76,7 +76,7 @@ internal sealed class FolderCopyHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", newFolder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已复制文件夹「{source.Name}」"),
+                $"Folder '{source.Name}' copied"),
             [new UndoInverseStep("folders.delete",
                 JsonSerializer.SerializeToElement(new { folder_id = newFolder.FolderId, cascade = "trash_links" }),
                 new UndoAction("trash.restore_unit",

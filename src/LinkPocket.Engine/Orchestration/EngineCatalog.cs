@@ -41,7 +41,7 @@ public sealed class EngineCatalog : IEngineCatalog
             ManifestFormat.OpenApiLite => ExportOpenApiLite(category),
             ManifestFormat.MarkdownDocs => ExportMarkdown(category),
             _ => throw new EngineException(EngineErrors.Of(EngineErrors.EnumOutOfRange,
-                $"未知导出格式 {format}")),
+                $"unknown export format {format}")),
         };
 
     /// <summary>AI FunctionCalling 工具清单（OpenAI tools 兼容形态；engine.describe 的直接升级面）。</summary>
@@ -63,7 +63,7 @@ public sealed class EngineCatalog : IEngineCatalog
                 ["function"] = new Dictionary<string, object?>
                 {
                     ["name"] = d.Name,
-                    ["description"] = $"{d.Description}（类别 {d.Category}；能力 {d.Caps}）",
+                    ["description"] = $"{d.Description} (category {d.Category}; caps {d.Caps})",
                     ["parameters"] = new Dictionary<string, object?>
                     {
                         ["type"] = "object",
@@ -96,7 +96,7 @@ public sealed class EngineCatalog : IEngineCatalog
             {
                 ["title"] = "LinkPocket Engine",
                 ["version"] = typeof(EngineCatalog).Assembly.GetName().Version?.ToString() ?? "2.0",
-                ["description"] = "LinkPocket 书签管理器引擎：命令/查询/编排统一 JSON-RPC 面",
+                ["description"] = "LinkPocket bookmark manager engine: one JSON-RPC surface for commands, queries and orchestration",
             },
             ["paths"] = paths,
         };
@@ -147,19 +147,19 @@ public sealed class EngineCatalog : IEngineCatalog
     private string ExportMarkdown(string? category)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("# LinkPocket 引擎命令目录");
+        sb.AppendLine("# LinkPocket Engine Command Catalog");
         sb.AppendLine();
-        sb.AppendLine($"> 生成时间 {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}；由命令描述符机械生成，勿手改。");
+        sb.AppendLine($"> Generated at {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}; produced mechanically from command descriptors, do not edit by hand.");
         sb.AppendLine();
         foreach (var group in Manifest(category).Commands.GroupBy(d => d.Category).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
             sb.AppendLine($"## {group.Key}");
             sb.AppendLine();
-            sb.AppendLine("| 命令 | 类型 | 能力 | 参数 | 说明 |");
+            sb.AppendLine("| Command | Kind | Caps | Params | Description |");
             sb.AppendLine("|---|---|---|---|---|");
             foreach (var d in group)
             {
-                var kind = d.IsQuery ? "查询" : d.IsDestructive ? "变更（破坏性）" : "变更";
+                var kind = d.IsQuery ? "Query" : d.IsDestructive ? "Mutation (destructive)" : "Mutation";
                 var @params = d.Parameters.Count == 0
                     ? "—"
                     : string.Join("、", d.Parameters.Select(p => $"{p.Name}({p.TypeName}{(p.Required ? "" : "，可选")})"));

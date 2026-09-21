@@ -663,7 +663,7 @@ public class BrowserViewModelTests
             Assert.True(vm.Details.IsLink);
             Assert.True(vm.Details.StackedActions);          // 两行排布（药丸一行 / 图标钮一行靠右）
             Assert.True(vm.Details.ShowRenameAction);
-            Assert.Equal("重命名", vm.Details.RenameActionLabel);
+            Assert.Equal("common.rename", vm.Details.RenameActionLabel.Key);
             Assert.Same(vm.RenameSelectionCommand, vm.Details.RenameActionCommand);   // 复用同一命令实例
             Assert.True(vm.Details.RenameActionCommand!.CanExecute(null));
 
@@ -671,7 +671,7 @@ public class BrowserViewModelTests
             vm.SelectRowWithModifiers(folderRow, ModifierKeys.None);
             Assert.True(vm.Details.IsFolder);
             Assert.False(vm.Details.ShowRenameAction);       // 文件夹由铅笔承担重命名
-            Assert.Equal("重命名", vm.Details.EditLabel);
+            Assert.Equal("common.rename", vm.Details.EditLabel.Key);
 
             vm.ClearSelection();
             Assert.False(vm.Details.ShowRenameAction);       // 清空选中：动作面不复用上一次的位

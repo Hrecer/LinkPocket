@@ -56,7 +56,7 @@ internal sealed class EfSortEngine : ISortEngine
         {
             if (!fieldMap.TryGetSelector(clause.Field, out var selector))
                 throw new EngineException(
-                    EngineErrors.Of("LP.VAL.003", $"未知排序字段「{clause.Field}」"));
+                    EngineErrors.Of("LP.VAL.003", $"unknown sort field '{clause.Field}'"));
 
             // 「为空恒排最后」（行为契约 §9）：该列是 NullLastField 时前置判空子句
             // （ORDER BY (col IS NULL) ASC, col）。先前只在【首列】时前置，复合排序里

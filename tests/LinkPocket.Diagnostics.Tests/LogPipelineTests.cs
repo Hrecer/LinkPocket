@@ -112,7 +112,7 @@ public class LogPipelineTests
         var records = memory.Snapshot();
         Assert.Contains("token=***", records[0].Message);
         Assert.DoesNotContain("secret0123", records[0].Message);
-        Assert.Contains("…(已截断)", records[1].Message);
+        Assert.Contains("...(truncated)", records[1].Message);
     }
 
     [Fact]

@@ -542,7 +542,7 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <TextBlock Text="{Binding SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Value SelectionInfoText}" FontSize="11.5" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>

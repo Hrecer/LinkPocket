@@ -200,16 +200,6 @@ namespace LinkPocket.Views
         private void UiFontCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             ViewModel.SelectedUiFont = UiFontCombo.SelectedItem as FontOptionViewModel;
-            ShowFontInspection();
-        }
-
-        /// <summary>度量自检：只提示、不阻止应用（方案 §6.2）。</summary>
-        private void ShowFontInspection()
-        {
-            var ui = ViewModel.SelectedUiFont;
-            var message = ui is null ? string.Empty : ViewModel.InspectFont(ui);
-            FontWarnText.Text = message;
-            FontWarnBox.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private async void ImportFontBtn_Click(object sender, RoutedEventArgs e)

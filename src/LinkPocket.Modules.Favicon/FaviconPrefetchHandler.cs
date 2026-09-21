@@ -15,8 +15,8 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "favicon.prefetch",
         Category: "favicon",
-        Description: "把缺失图标的链接加入后台预取队列（立即返回；并发 4、去重、失败退避）",
-        Parameters: [ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "指定链接；缺省 = 全库缺图标的链接")],
+        Description: "Queue links with missing favicons for background prefetch (returns immediately; concurrency 4, deduplicated, backoff on failure)",
+        Parameters: [ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "Specific links; default = every link in the database without a favicon")],
         Caps: CommandCaps.Mutation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -32,7 +32,7 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
             {
                 var link = await ctx.Uow.Links.FindAsync(new LinkId(id), ct)
                     ?? throw new EngineException(EngineErrors.Of(
-                        EngineErrors.EntityNotFound, $"链接 {id} 不存在", correlationId: ctx.CorrelationId));
+                        EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
                 if (!string.IsNullOrWhiteSpace(link.FaviconUrl)) urls.Add(link.FaviconUrl!);
             }
 
@@ -53,6 +53,6 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("favicon_cache", "*"),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"已排队 {queued} 个待预取图标"));
+                $"Queued {queued} favicon(s) for prefetch"));
     }
 }

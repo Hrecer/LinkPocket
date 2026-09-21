@@ -175,44 +175,44 @@
                                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                             Style="{Binding OpenTone, Converter={StaticResource PillToneStyle}}"
                                             Command="{Binding OpenCommand}"
-                                            ToolTip="{Binding OpenToolTip}"
+                                            ToolTip="{loc:Value OpenToolTip}"
                                             Visibility="{Binding ShowOpenAction, Converter={StaticResource BoolToVis}}">
                                         <StackPanel Orientation="Horizontal">
                                             <m3:M3Icon Kind="{Binding OpenIconKind}" Width="14" Height="14" VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{loc:Value OpenLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
                                     <Button Height="32" Margin="3,0" VerticalAlignment="Center" Padding="12,0"
                                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                             Style="{Binding RestoreTone, Converter={StaticResource PillToneStyle}}"
                                             Command="{Binding RestoreCommand}"
-                                            ToolTip="{Binding RestoreToolTip}"
+                                            ToolTip="{loc:Value RestoreToolTip}"
                                             Visibility="{Binding ShowRestoreAction, Converter={StaticResource BoolToVis}}">
                                         <StackPanel Orientation="Horizontal">
                                             <m3:M3Icon Kind="{Binding RestoreIconKind}" Width="14" Height="14" VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding RestoreLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{loc:Value RestoreLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
                                     <Button Height="32" Margin="3,0" VerticalAlignment="Center" Padding="12,0"
                                             HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                             Style="{Binding RestoreToRootTone, Converter={StaticResource PillToneStyle}}"
                                             Command="{Binding RestoreToRootCommand}"
-                                            ToolTip="{Binding RestoreToRootToolTip}"
+                                            ToolTip="{loc:Value RestoreToRootToolTip}"
                                             Visibility="{Binding ShowRestoreToRootAction, Converter={StaticResource BoolToVis}}">
                                         <StackPanel Orientation="Horizontal">
                                             <m3:M3Icon Kind="{Binding RestoreToRootIconKind}" Width="14" Height="14" VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding RestoreToRootLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{loc:Value RestoreToRootLabel}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Button>
                                 </UniformGrid>
-                                <Button Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="{Binding EditLabel}"
+                                <Button Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="{loc:Value EditLabel}"
                                         Width="32" Height="32" Margin="9,0,0,0" VerticalAlignment="Center"
                                         Command="{Binding RenameCommand}"
                                         Visibility="{Binding ShowEditAction, Converter={StaticResource BoolToVis}}">
                                     <m3:M3Icon Kind="pencil-outline" Width="15" Height="15"/>
                                 </Button>
                                 <Button Grid.Column="2" Style="{StaticResource SideIconButton}"
-                                        Tag="{Binding DeleteActionLabel}"
+                                        Tag="{loc:Value DeleteActionLabel}"
                                         Width="32" Height="32" VerticalAlignment="Center"
                                         Command="{Binding DeleteCommand}"
                                         Visibility="{Binding ShowDeleteAction, Converter={StaticResource BoolToVis}}">

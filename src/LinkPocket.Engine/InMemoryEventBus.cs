@@ -24,7 +24,7 @@ public sealed class InMemoryEventBus : IEventBus
             catch (Exception ex)
             {
                 // 订阅方异常被隔离：记录日志，继续投递其余订阅方（观测面纪律——订阅方绝不能拖垮已提交的写）。
-                LpLog.Warn("事件订阅方异常（已隔离，不影响其余订阅方与调用方）", ex, category: "engine.events");
+                LpLog.Warn("event subscriber threw (isolated; other subscribers and the caller are unaffected)", ex, category: "engine.events");
             }
         }
         return ValueTask.CompletedTask;

@@ -33,7 +33,7 @@ public sealed class EngineCallScope : IDisposable
 
     internal EngineCallScope(string name, string correlationId, EngineCallScope? parent)
     {
-        Name = string.IsNullOrWhiteSpace(name) ? "未命名动作" : name.Trim();
+        Name = string.IsNullOrWhiteSpace(name) ? "unnamed action" : name.Trim();
         CorrelationId = correlationId;
         _parent = parent;
 
@@ -72,7 +72,7 @@ public sealed class EngineCallScope : IDisposable
         try
         {
             // 完成记录仍写在"调用上下文 + 作用域"内 → 自动带 corr（首类字段）与 action
-            LpLog.Write(LogLevel.Info, LogCategory, $"动作完成：{Name}", props: new Dictionary<string, object?>
+            LpLog.Write(LogLevel.Info, LogCategory, $"Action completed: {Name}", props: new Dictionary<string, object?>
             {
                 ["calls"] = Calls,
                 ["failures"] = Failures,

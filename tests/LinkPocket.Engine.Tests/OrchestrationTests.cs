@@ -449,7 +449,7 @@ public class OrchestrationTests
 
         var docs = catalog.Export(ManifestFormat.MarkdownDocs);
         Assert.Contains("`batch.dry_run`", docs);
-        Assert.Contains("| 命令 | 类型 | 能力 | 参数 | 说明 |", docs);
+        Assert.Contains("| Command | Kind | Caps | Params | Description |", docs);
     }
 
     // ===== Staging 纯函数管道 =====

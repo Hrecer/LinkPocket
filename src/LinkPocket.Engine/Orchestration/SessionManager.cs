@@ -61,7 +61,7 @@ public sealed class SessionManager : ISessionManager
         if (_ended.ContainsKey(id))
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound,
-                "会话已结束，无法继续调用（请重新 BeginAsync 开启新会话）",
+                "the session has ended and no longer accepts calls (call BeginAsync to start a new one)",
                 correlationId: correlationId));
         if (!_sessions.TryGetValue(id, out var state))
             return;
@@ -70,7 +70,7 @@ public sealed class SessionManager : ISessionManager
         if (isMutation && session.Kind == SessionKind.AgentReadonly)
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.ReadonlySession,
-                "只读会话拒绝写操作（请改用只读查询或升级为可写会话）",
+                "a read-only session rejects writes (use read-only queries or upgrade to a writable session)",
                 correlationId: correlationId));
 
         if (session.RateLimitPerMinute <= 0)
@@ -88,7 +88,7 @@ public sealed class SessionManager : ISessionManager
                     (TimeSpan.FromMinutes(1) - (now - state.Calls.Peek())).TotalMilliseconds);
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.RateLimited,
-                    $"会话限流：每分钟最多 {session.RateLimitPerMinute} 次调用，请稍后重试",
+                    $"session rate limited: at most {session.RateLimitPerMinute} calls per minute, retry later",
                     details: System.Text.Json.JsonSerializer.SerializeToElement(new
                     {
                         retry_after_ms = Math.Max(retryAfterMs, 1),

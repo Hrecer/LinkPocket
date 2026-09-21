@@ -14,8 +14,8 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.unit_contents",
         Category: "trash",
-        Description: "取回收站单元内容：直接子单元 + 子树内全部书签快照",
-        Parameters: [ParamSpec.Req<string>("id", "回收站单元 ID")],
+        Description: "Get trash unit contents: direct child units + all bookmark snapshots in the subtree",
+        Parameters: [ParamSpec.Req<string>("id", "Trash unit ID")],
         Caps: CommandCaps.Query,
         // 单元内容 = 单元全量 + 每子树一趟（N+1），只读回收站两表
         Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
@@ -28,7 +28,7 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
         var all = await ctx.Uow.Trash.ListFoldersAsync(ct);
         if (!all.Any(f => f.TrashFolderId == id))
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.EntityNotFound, $"回收站单元 {id} 不存在", correlationId: ctx.CorrelationId));
+                EngineErrors.EntityNotFound, $"trash unit {id} does not exist", correlationId: ctx.CorrelationId));
 
         var ids = TrashSupport.CollectSubtreeIds(all, id);
         var idSet = ids.ToHashSet(StringComparer.Ordinal);

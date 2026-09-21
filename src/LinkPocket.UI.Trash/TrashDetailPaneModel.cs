@@ -22,8 +22,8 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
     {
         // 动作面：三枚等大药丸（打开网站 / 还原 / 还原到根目录）+ 永久删除（无编辑 / 无重命名）
         ShowOpenAction = true;
-        OpenLabel = Loc.T("common.open");
-        OpenToolTip = "在浏览器中打开";
+        OpenLabel = Loc.K("common.open");
+        OpenToolTip = Loc.K("detail.openInBrowser");
         OpenIconKind = "open-in-new";
         OpenTone = PillTone.Tonal;                 // 主处置是「还原」，打开降为次要色
         ShowRestoreAction = true;
@@ -32,7 +32,7 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
         RestoreToRootTone = PillTone.Tonal;
         ShowEditAction = false;
         ShowDeleteAction = true;
-        DeleteActionLabel = Loc.T("trash.menu.purge");
+        DeleteActionLabel = Loc.K("trash.menu.purge");
 
         SetContent(
             string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name,

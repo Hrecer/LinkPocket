@@ -17,12 +17,12 @@ internal sealed class FolderCreateHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.create",
         Category: "folders",
-        Description: "新建文件夹（可指定父目录与描述；parent_id 缺省 = 根级）",
+        Description: "Create a folder (optional parent and description; parent_id default = root level)",
         Parameters:
         [
-            ParamSpec.Req<string>("name", "文件夹名"),
-            ParamSpec.Opt<string>("description", "描述"),
-            ParamSpec.Opt<string>("parent_id", "父目录 ID；缺省 = 根级"),
+            ParamSpec.Req<string>("name", "Folder name"),
+            ParamSpec.Opt<string>("description", "Description"),
+            ParamSpec.Opt<string>("parent_id", "Parent folder ID; default = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 
@@ -36,7 +36,7 @@ internal sealed class FolderCreateHandler : ICommandHandler
         if (parentId != null)
             _ = await ctx.Uow.Folders.FindAsync(new FolderId(parentId), ct)
                 ?? throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"父文件夹 {parentId} 不存在", correlationId: ctx.CorrelationId));
+                    EngineErrors.EntityNotFound, $"parent folder {parentId} does not exist", correlationId: ctx.CorrelationId));
 
         // 同层唯一命名：与父目录下已有兄弟撞名 → 「名 (2)」（编号口径唯一出处 = 命名服务 IFolderNaming）
         var resolvedName = await ctx.Uow.Naming.ResolveAsync(parentId, name, null, ct);
@@ -63,7 +63,7 @@ internal sealed class FolderCreateHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"已创建文件夹「{folder.Name}」"),
+                $"Folder '{folder.Name}' created"),
             [new UndoInverseStep("folders.delete",
                 JsonSerializer.SerializeToElement(new { folder_id = folder.FolderId, cascade = "trash_links" }),
                 new UndoAction("trash.restore_unit",

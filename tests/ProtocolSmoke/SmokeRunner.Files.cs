@@ -245,7 +245,7 @@ internal static partial class SmokeRunner
         var tamperedToken = tamperedGate.Error.Details!.Value.GetProperty("confirm_token").GetString();
         var tampered = await AssertThrowsAsync(() => fresh.BackupImportAsync(tamperedPath, o: new CallOptions(ConfirmToken: tamperedToken)));
         Asserts.That(tampered.Error.Code == EngineErrors.InvalidPath, "被篡改备份应被拒绝（LP.VAL.004）");
-        Asserts.That(tampered.Error.Message.Contains("完整性"), $"错误信息应说明完整性校验失败，实际：{tampered.Error.Message}");
+        Asserts.That(tampered.Error.Message.Contains("integrity"), $"错误信息应说明完整性校验失败（引擎侧英文技术文案），实际：{tampered.Error.Message}");
 
         Console.WriteLine("[OK] §5 备份往返：临时 key 身份 / SHA-256 篡改拒绝 / 回收站不备份 / 两阶段确认导入");
     }

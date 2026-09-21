@@ -17,7 +17,7 @@ internal sealed class TrashOverviewHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.overview",
         Category: "trash",
-        Description: "回收站页一致的快照：全量单元（子树计数 + 原位置）+ 全量书签快照（每项携归属单元）",
+        Description: "A snapshot matching the trash page: all units (subtree counts + original location) + all bookmark snapshots (each carrying its owning unit)",
         Parameters: [],
         Caps: CommandCaps.Query,
         // 结构快照 = 两表全量（单元 + 链接，与 trash.tree / trash.list 同源）

@@ -15,18 +15,18 @@ internal sealed class LinkListHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.list",
         Category: "links",
-        Description: "分页查询链接（可按目录/关键词/重要/日期过滤；sort_by 缺省 created_at、sort_order 缺省 desc）",
+        Description: "Paged link query (filter by folder / keyword / important / date; sort_by default created_at, sort_order default desc)",
         Parameters:
         [
-            ParamSpec.Opt<string>("list_id", "目录 ID；缺省 = 全部"),
-            ParamSpec.Opt<string>("search", "关键词（标题/地址/描述包含）"),
-            ParamSpec.Opt<bool>("is_important", "是否只看重要书签"),
-            ParamSpec.Opt<string>("date_from", "创建时间下界（ISO）"),
-            ParamSpec.Opt<string>("date_to", "创建时间上界（ISO）"),
+            ParamSpec.Opt<string>("list_id", "Folder ID; default = all"),
+            ParamSpec.Opt<string>("search", "Keyword (contains in title/url/description)"),
+            ParamSpec.Opt<bool>("is_important", "Only important bookmarks"),
+            ParamSpec.Opt<string>("date_from", "Creation time lower bound (ISO)"),
+            ParamSpec.Opt<string>("date_to", "Creation time upper bound (ISO)"),
             ParamSpec.Opt<string>("sort_by", "created_at | updated_at | last_visited_at | visit_count | title"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
-            ParamSpec.Opt<int>("page", "页码（从 1 起）"),
-            ParamSpec.Opt<int>("per_page", "每页数量（缺省 20）"),
+            ParamSpec.Opt<int>("page", "Page number (1-based)"),
+            ParamSpec.Opt<int>("per_page", "Page size (default 20)"),
         ],
         Caps: CommandCaps.Query);
 

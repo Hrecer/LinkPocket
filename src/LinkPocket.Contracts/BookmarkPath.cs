@@ -54,27 +54,21 @@ public static class BookmarkPath
             : PathText.Split(canonical);
 
     // ── 根别名与根级保留名 ──────────────────────────────────────────────
-    // token 天生保留；**各语言的根显示名由组合根在启动时登记**（App → ReserveRootAlias）：
-    // 引擎与 UIKit 都不能引 I18n，而"哪个段名代表哪个根""哪些名字被根占用"必须在这两层成立，
-    // 所以别名在这里落地。漏登记不会静默放行——探针 language/trash 套件的保留名与路径往返用例（P4/P6）会红。
+    // 这里是**静态身份数据**，不是运行时登记出来的：路径首段必须能被任何一种语言的旧串认出来，
+    // 根级也不许用户占用这些名字，而这两条判断都发生在引擎与 UIKit（两者都不许引 I18n）。
+    // 与 I18n 的 <c>nav.root.*</c> 文本是否一致，由 <c>I18nTests.根别名与界面根名一致</c> 卡住——
+    // 加一门语言时必须同批改这里，漏改就是编译期/测试期红，而不是"某个自建宿主忘了登记"。
     // 别名**按根分家**：浏览器路径的首段不许认「回收站」，否则 `回收站/A` 会被解析成 `@root/A`。
 
-    private static readonly Dictionary<string, HashSet<string>> RootAliases = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string[]> RootAliasTable = new(StringComparer.OrdinalIgnoreCase)
     {
-        [RootToken] = new(StringComparer.OrdinalIgnoreCase),
-        [TrashToken] = new(StringComparer.OrdinalIgnoreCase),
+        [RootToken] = new[] { "全部书签", "Bookmarks" },
+        [TrashToken] = new[] { "回收站", "Trash" },
     };
 
-    /// <summary>登记一枚根显示名（<paramref name="rootToken"/> 只能是 <see cref="RootToken"/> / <see cref="TrashToken"/>）。</summary>
-    public static void ReserveRootAlias(string rootToken, string? alias)
-    {
-        if (string.IsNullOrWhiteSpace(alias) || !RootAliases.TryGetValue(rootToken, out var set)) return;
-        set.Add(alias.Trim());
-    }
-
-    /// <summary>某根的全部占用名（token 本身 + 已登记的各语言显示名）。</summary>
+    /// <summary>某根的全部占用名（token 本身 + 各语言的根显示名）。</summary>
     public static IReadOnlyCollection<string> RootAliasSet(string rootToken)
-        => RootAliases.TryGetValue(rootToken, out var set)
+        => RootAliasTable.TryGetValue(rootToken, out var set)
             ? new[] { rootToken }.Concat(set).ToArray()
             : new[] { rootToken };
 
@@ -84,7 +78,7 @@ public static class BookmarkPath
 
     /// <summary>被**任一**根占用的名字（根级建夹/改名的判据：不许与任何根同名，跨语言一律算）。</summary>
     public static IReadOnlyCollection<string> ReservedRootNames()
-        => RootAliases.Keys.Concat(RootAliases.Values.SelectMany(s => s)).ToArray();
+        => RootAliasTable.Keys.Concat(RootAliasTable.Values.SelectMany(s => s)).ToArray();
 
     /// <summary>这个名字是否被某个根占用。</summary>
     public static bool IsReservedRootName(string? name)

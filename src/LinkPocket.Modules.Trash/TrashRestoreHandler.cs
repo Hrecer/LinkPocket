@@ -15,11 +15,11 @@ internal sealed class TrashRestoreHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "trash.restore",
         Category: "trash",
-        Description: "从回收站还原链接（缺省落回删除前所在目录；原目录已不存在时落根并如实回报）",
+        Description: "Restore a link from the trash (default returns to its pre-deletion folder; when that folder is gone it lands at root and is reported as such)",
         Parameters:
         [
-            ParamSpec.Req<string>("id", "回收站书签快照 ID（= 原 link_id）"),
-            ParamSpec.Opt<string>("to", "origin（缺省）= 删除前所在目录；root = 根级"),
+            ParamSpec.Req<string>("id", "Trash bookmark snapshot ID (= the original link_id)"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion folder; root = root level"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: "links.trash");   // 撤销 = 再移入回收站（与落点无关）；重做/落点由处理器回填，见流水线
@@ -35,13 +35,13 @@ internal sealed class TrashRestoreHandler : ICommandHandler
         var location = info.Landing == null
             ? FolderIds.RootToken
             : await ctx.Uow.Trees.PathCanonicalAsync(new FolderId(info.Landing), ctx.Ct);
-        var fellNote = info.FellBackToRoot ? "（原目录已不存在，回调根级）" : string.Empty;
+        var fellNote = info.FellBackToRoot ? "(the original folder is gone, fell back to root level)" : string.Empty;
         return CommandResult.Ok(
             new TrashRestoreResult(info.LinkId, info.Landing, info.FellBackToRoot),
             new ChangeSet(
                 Touched: [new EntityRef("link", info.LinkId)],
                 Events: [DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"已还原「{info.Title ?? info.Url}」到「{location}」{fellNote}"),
+                HumanSummary: $"Restored '{info.Title ?? info.Url}' to '{location}'{fellNote}"),
             outcome.UndoSteps);
     }
 }

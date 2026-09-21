@@ -131,7 +131,7 @@ public static class ThemePublisher
     public static void LogApplied(ThemeDefinition definition, TokenTable table)
     {
         LpLog.Info(
-            $"已应用主题「{definition.Name}」（{definition.Source}，{definition.Palette.Count} 色，旋转 {table.SurfaceRotation:F1}°，{PublishedKeyCount(table)} 键）",
+            $"Applied theme '{definition.Id}' ({definition.Source}, {definition.Palette.Count} colors, rotation {table.SurfaceRotation:F1} deg, {PublishedKeyCount(table)} keys)",
             LogCategory);
     }
 }

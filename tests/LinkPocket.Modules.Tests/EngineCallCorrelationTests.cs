@@ -80,7 +80,7 @@ public class EngineCallCorrelationTests
             Assert.True(autoCall.Ok);
 
             var calls = await client.QueryAsync<LogQueryResult>("logs.query", new { category = "engine.call" });
-            var last = calls.Items.Last(record => record.Message == "调用完成：folders.create");
+            var last = calls.Items.Last(record => record.Message == "Call completed: folders.create");
             Assert.False(string.IsNullOrEmpty(last.CorrelationId));
             Assert.NotEqual("corr-explicit", last.CorrelationId);
             Assert.Equal("folders.create", last.Command);          // 命令名 = 首类字段（不是 props）
@@ -118,7 +118,7 @@ public class EngineCallCorrelationTests
             }
 
             var logs = await client.QueryAsync<LogQueryResult>("logs.query", new { correlation_id = correlation });
-            var failed = Assert.Single(logs.Items, record => record.Message.Contains("调用失败"));
+            var failed = Assert.Single(logs.Items, record => record.Message.Contains("Call failed"));
             Assert.Equal("folders.update", failed.Command);
             Assert.Equal(EngineErrors.EntityNotFound, failed.Props!["error_code"]);
         }

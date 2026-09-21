@@ -61,7 +61,7 @@ public sealed class LocTable : INotifyPropertyChanged
     {
         if (_map.TryGetValue(key, out var text)) return text;
         if (_warned.Add(key))
-            LpLog.Warn($"缺文案键：{key}（语言={Locale.CodeOf()}）", category: LogCategory);
+            LpLog.Warn($"missing copy key: {key} (locale={Locale.CodeOf()})", category: LogCategory);
         return "⟨" + key + "⟩";
     }
 }
