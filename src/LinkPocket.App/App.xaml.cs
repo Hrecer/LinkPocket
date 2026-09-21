@@ -47,7 +47,7 @@ public partial class App : Application
         if (notices.Count > 0)
         {
             var text = string.Join("\n\n", notices);
-            LpLog.Warn($"启动期回退：{text}", category: ThemeService.LogCategory);
+            LpLog.Warn($"startup fallback: {text}", category: ThemeService.LogCategory);
             try
             {
                 MessageBox.Show(text + Loc.T("startup.fallbackNote"), "LinkPocket",
@@ -68,7 +68,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            LpLog.Error("应用启动失败", ex);
+            LpLog.Error("application startup failed", ex);
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
             MessageBox.Show(Loc.T("startup.failed", ex.Message), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
@@ -82,7 +82,7 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
-        LpLog.Info("应用退出，强制结束进程");
+        LpLog.Info("application exiting, forcing process termination");
         //（两阶段）：
         // ① 先把 SQLite 连接池全部断开——池化连接持有的 WAL 文件句柄会阻止 checkpoint，
         //    显式清池触发 SQLite 把 WAL 收拢回主库文件（否则强杀后日志/WAL 可能丢尾）；
@@ -106,7 +106,7 @@ public partial class App : Application
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        LpLog.Error("UI线程未处理异常", e.Exception);
+        LpLog.Error("UI thread unhandled exception", e.Exception);
         LpLog.Flush(TimeSpan.FromSeconds(2));   // 异常现场先落盘（弹窗后界面状态不可信）
         // 不静默吞——异常必须暴露给用户（多数情况界面状态已不可信），
         // 但保留「已提交写不被否定」语义：不崩溃、提示用户自行决策（重启/继续）。
@@ -126,7 +126,7 @@ public partial class App : Application
     {
         if (e.ExceptionObject is Exception ex)
         {
-            LpLog.Error("AppDomain未处理异常", ex);
+            LpLog.Error("AppDomain unhandled exception", ex);
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 进程即将终止：同步刷盘保住现场
         }
     }
@@ -134,7 +134,7 @@ public partial class App : Application
     /// <summary>未观察任务异常（fire-and-forget 链）：只留痕，不 SetObserved（不改运行时语义）。</summary>
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        LpLog.Error("未观察的任务异常（TaskScheduler）", e.Exception, category: "app.lifecycle");
+        LpLog.Error("unobserved task exception (TaskScheduler)", e.Exception, category: "app.lifecycle");
         LpLog.Flush(TimeSpan.FromSeconds(1));
     }
 }

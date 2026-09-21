@@ -4,6 +4,7 @@ using System.Windows.Input;
 using LinkPocket.Input;
 using LinkPocket.ViewModels;
 using LinkPocket.Views.Browser;
+using LinkPocket.I18n;
 using Xunit;
 
 namespace LinkPocket.App.Tests;
@@ -63,7 +64,7 @@ public class ShortcutTests
             {
                 Assert.False(string.IsNullOrWhiteSpace(spec.ControlName));
                 Assert.Equal(page.RootScope, spec.Scope);
-                Assert.DoesNotContain(registry.Bindings, b => b.Description == spec.Description && b.Key == spec.Key);
+                Assert.DoesNotContain(registry.Bindings, b => b.DescriptionKey == spec.DescriptionKey && b.Key == spec.Key);
             }
 
             // 每个动作 id 都能被映射解析（键位表与页面接线不一致会在真实装配时抛；此处保证 id 本身可用）
@@ -79,7 +80,7 @@ public class ShortcutTests
             foreach (var spec in page.Specs)
             {
                 Assert.False(string.IsNullOrWhiteSpace(spec.ActionId));
-                Assert.False(string.IsNullOrWhiteSpace(spec.Description));
+                Assert.False(string.IsNullOrWhiteSpace(spec.DescriptionKey));
                 Assert.StartsWith(page.Page.ToString().ToLowerInvariant().Substring(0, 4), spec.ActionId);
             }
     }
@@ -90,7 +91,7 @@ public class ShortcutTests
         var text = ShortcutCatalog.Describe();
         foreach (var page in ShortcutCatalog.Pages)
         {
-            Assert.Contains(page.Title, text);
+            Assert.Contains(Loc.T(page.TitleKey), text);   // 导出的清单跟着界面语言走，不是键名
             foreach (var spec in page.Specs)
                 Assert.Contains(ShortcutBinding.FormatGesture(spec.Key, spec.Modifiers), text);
         }
@@ -104,8 +105,8 @@ public class ShortcutTests
         var registry = new ShortcutRegistry();
         var mainCmd = new ProbeCommand();
         var treeCmd = new ProbeCommand();
-        registry.Register(new ShortcutBinding { Key = Key.Up, Scope = ShortcutScope.BrowserMain, Command = mainCmd, Description = "主栏上移" });
-        registry.Register(new ShortcutBinding { Key = Key.Up, Scope = ShortcutScope.BrowserTree, Command = treeCmd, Description = "树上移" });
+        registry.Register(new ShortcutBinding { Key = Key.Up, Scope = ShortcutScope.BrowserMain, Command = mainCmd, DescriptionKey = "主栏上移" });
+        registry.Register(new ShortcutBinding { Key = Key.Up, Scope = ShortcutScope.BrowserTree, Command = treeCmd, DescriptionKey = "树上移" });
 
         // 主栏活跃 → 命中主栏那条；左栏活跃 → 命中左栏那条（同一键，语义各自不同）
         Assert.Same(mainCmd, registry.Resolve(ShortcutScope.BrowserMain, Key.Up, ModifierKeys.None)?.Command);
@@ -113,13 +114,13 @@ public class ShortcutTests
 
         // 未在子作用域声明的键 → 由内向外回退到 Browser
         var browserCmd = new ProbeCommand();
-        registry.Register(new ShortcutBinding { Key = Key.C, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = browserCmd, Description = "复制" });
+        registry.Register(new ShortcutBinding { Key = Key.C, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = browserCmd, DescriptionKey = "复制" });
         Assert.Same(browserCmd, registry.Resolve(ShortcutScope.BrowserMain, Key.C, ModifierKeys.Control)?.Command);
         Assert.Same(browserCmd, registry.Resolve(ShortcutScope.BrowserTree, Key.C, ModifierKeys.Control)?.Command);
 
         // 全局键在任何活跃作用域都能命中（Global ⊂ Browser ⊂ 两栏）
         var globalCmd = new ProbeCommand();
-        registry.Register(new ShortcutBinding { Key = Key.E, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Global, Command = globalCmd, Description = "搜索" });
+        registry.Register(new ShortcutBinding { Key = Key.E, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Global, Command = globalCmd, DescriptionKey = "搜索" });
         foreach (var scope in new[] { ShortcutScope.BrowserMain, ShortcutScope.BrowserTree, ShortcutScope.Browser, ShortcutScope.Global })
             Assert.Same(globalCmd, registry.Resolve(scope, Key.E, ModifierKeys.Control)?.Command);
 
@@ -131,15 +132,15 @@ public class ShortcutTests
     public void 注册表_同作用域重复键_装配即抛()
     {
         var registry = new ShortcutRegistry();
-        registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = new ProbeCommand(), Description = "A" });
+        registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = new ProbeCommand(), DescriptionKey = "A" });
 
         var ex = Assert.Throws<System.InvalidOperationException>(() =>
-            registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = new ProbeCommand(), Description = "B" }));
+            registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = new ProbeCommand(), DescriptionKey = "B" }));
         Assert.Contains("快捷键冲突", ex.Message);
         Assert.Contains("Ctrl+N", ex.Message);   // 提示文案含键位（GestureText 唯一生成处）
 
         // 不同作用域同键不冲突（正是"↑/↓ 两栏各绑一条"的合法前提）
-        registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.BrowserTree, Command = new ProbeCommand(), Description = "树上新建" });
+        registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.BrowserTree, Command = new ProbeCommand(), DescriptionKey = "树上新建" });
     }
 
     [Fact]

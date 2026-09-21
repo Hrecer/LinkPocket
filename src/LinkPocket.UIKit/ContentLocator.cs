@@ -136,7 +136,7 @@ public sealed class ContentLocator : IContentLocator
         }
         catch (Exception ex)
         {
-            LpLog.Error("定位失败", ex);
+            LpLog.Error("locate failed", ex);
             return new LocateResult(LocateStatus.Failed, null, null, id, ex.Message);
         }
     }

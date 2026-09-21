@@ -91,7 +91,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         catch (Exception ex)
         {
             // 加载失败反馈：不留下永远空白的详情页。闭页前可见可读
-            LpLog.Error("链接详情页加载失败", ex);
+            LpLog.Error("link detail page load failed", ex);
             SetContent(Loc.T("status.loadFailed"), string.Empty, null,
                 "读取链接数据出错，请返回列表重试。\n" + ex.Message, Array.Empty<DetailSidebarRow>());
         }
@@ -129,7 +129,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true });
             }
-            catch (Exception ex) { LpLog.Error("打开网站失败（静默返回，页面保持）", ex); }   // 观测面：失败留痕
+            catch (Exception ex) { LpLog.Error("failed to open the site (returned quietly, page stays)", ex); }   // 观测面：失败留痕
 
             try
             {
@@ -138,7 +138,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
             }
             catch (Exception ex)
             {
-                LpLog.Error("记录访问失败", ex);
+                LpLog.Error("failed to record the visit", ex);
             }
         }
         finally
@@ -198,7 +198,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         }
         catch (Exception ex)
         {
-            LpLog.Error("链接详情页删除失败", ex);
+            LpLog.Error("link detail page deletion failed", ex);
         }
     }
 

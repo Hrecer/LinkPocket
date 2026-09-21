@@ -455,7 +455,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (item == null) return;
         if (_locator == null)
         {
-            LpLog.Error("跳转失败：定位组件不可用", null);   // 观测面：失败留痕
+            LpLog.Error("jump failed: the locator component is unavailable", null);   // 观测面：失败留痕
             return;
         }
 
@@ -466,7 +466,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         {
             LocateStatus.NotFound => "未找到该链接 ID",
             LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-            LocateStatus.Failed => "定位失败，请稍后重试",
+            LocateStatus.Failed => "locate failed，请稍后重试",
             _ => "定位未完成",
         });
     }

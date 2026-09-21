@@ -171,7 +171,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                     try
                     {
                         if (!await Services.FaviconStore.EnsureCachedAsync(favUrl))
-                            LpLog.Error($"favicon 下载失败（含降级尝试）: {favUrl}", null);
+                            LpLog.Error($"favicon download failed (including fallback): {favUrl}", null);
                         return Services.FaviconService.LoadFromCache(favUrl);
                     }
                     catch { return Services.FaviconService.LoadFromCache(favUrl); }

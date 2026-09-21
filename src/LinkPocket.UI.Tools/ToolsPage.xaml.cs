@@ -296,7 +296,7 @@ namespace LinkPocket.Views
             if (string.IsNullOrEmpty(id)) return;
             if (_navigation == null)
             {
-                LpLog.Error("打开明细详情失败：导航端口不可用", null);   // 观测面：失败留痕，绝不静默
+                LpLog.Error("failed to open detail: the navigation port is unavailable", null);   // 观测面：失败留痕，绝不静默
                 return;
             }
             _navigation.OpenLinkInBrowser(id);
@@ -320,7 +320,7 @@ namespace LinkPocket.Views
             {
                 LocateStatus.NotFound => "未找到该链接 ID",
                 LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-                LocateStatus.Failed => "定位失败，请稍后重试",
+                LocateStatus.Failed => "locate failed，请稍后重试",
                 _ => "定位未完成",
             }, "确定", "alert-circle-outline");
         }
@@ -562,7 +562,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("链接去重扫描失败", ex);
+                LpLog.Error("duplicate scan failed", ex);
                 PaneTable.EmptyContent = BuildState("alert-circle-outline", "读取数据失败", ex.Message);
                 return;
             }
@@ -896,7 +896,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("删除重复项失败", ex);
+                LpLog.Error("duplicate deletion failed", ex);
                 await FlashSelectionInfo("删除失败：" + ex.Message);
             }
         }
@@ -953,7 +953,7 @@ namespace LinkPocket.Views
                 {
                     LocateStatus.NotFound => "未找到匹配的链接或文件夹 ID",
                     LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-                    LocateStatus.Failed => "定位失败，请稍后重试",
+                    LocateStatus.Failed => "locate failed，请稍后重试",
                     _ => "定位未完成",
                 });
             }
@@ -1141,7 +1141,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("书签预检失败", ex);
+                LpLog.Error("bookmark preflight failed", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
                     $"预检失败：{ex.Message}", ChipState.Warn);
@@ -1178,7 +1178,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("书签导入失败", ex);
+                LpLog.Error("bookmark import failed", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
                     $"导入失败：{ex.Message}", ChipState.Warn);
@@ -1249,7 +1249,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("书签导出失败", ex);
+                LpLog.Error("bookmark export failed", ex);
                 ExportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
                     $"导出失败：{ex.Message}", ChipState.Warn);
@@ -1271,7 +1271,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("打开导出目录失败", ex);
+                LpLog.Error("failed to open the export directory", ex);
             }
         }
 

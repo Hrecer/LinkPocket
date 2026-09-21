@@ -516,7 +516,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             // 失败可重试：标志退回 false，再次展开下拉就会重跑（而不是永久卡在空列表）
             _fontsLoaded = false;
-            LpLog.Error("装载字体候选失败", ex, LogCategory);
+            LpLog.Error("failed to load font candidates", ex, LogCategory);
             Status = $"字体列表装载失败：{ex.GetBaseException().Message}";
         }
     }
@@ -615,7 +615,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             }
             catch (Exception ex)
             {
-                LpLog.Error($"切换配色应用方式失败（auto={value}）", ex, LogCategory);
+                LpLog.Error($"failed to switch palette application mode (auto={value})", ex, LogCategory);
                 Status = $"切换失败：{ex.Message}";
             }
             Raise(nameof(AutoAdjustColors));
@@ -838,7 +838,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         catch (Exception ex)
         {
             // 写偏好失败不静默（观测面纪律），且保持原主题（Apply 已成功但偏好没落盘 → 如实说清）
-            LpLog.Error($"应用主题「{card.Name}」后保存偏好失败", ex, LogCategory);
+            LpLog.Error($"failed to save preferences after applying theme '{card.Name}'", ex, LogCategory);
             Status = $"主题已应用，但偏好保存失败：{ex.Message}";
         }
     }
@@ -920,7 +920,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error("应用自选配色后保存偏好失败", ex, LogCategory);
+            LpLog.Error("failed to save preferences after applying the custom palette", ex, LogCategory);
             Status = $"配色已应用，但偏好保存失败：{ex.Message}";
         }
     }
@@ -1058,7 +1058,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error("清空颜色后回默认主题失败", ex, LogCategory);
+            LpLog.Error("failed to fall back to the default theme after clearing colours", ex, LogCategory);
             Status = $"已清空颜色，但回默认主题失败：{ex.Message}";
         }
 
@@ -1268,7 +1268,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error($"导入字体失败：{path}", ex, LogCategory);
+            LpLog.Error($"font import failed: {path}", ex, LogCategory);
             Status = $"导入失败：{ex.Message}";
             return false;
         }
@@ -1304,7 +1304,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             // WPF 会把解析过的字体文件**内存映射持有到进程退出**（WARNINGS 75）——这是平台事实，
             // 不是"路径写错了"：必须把"下一步怎么办"讲清楚，而不是原样丢一个"访问被拒绝"。
-            LpLog.Error($"删除导入字体失败：{option.Family}", ex, LogCategory);
+            LpLog.Error($"failed to delete imported font: {option.Family}", ex, LogCategory);
             Status = ex is UnauthorizedAccessException
                 ? $"删除失败：「{option.Family}」正被本进程占用（已加载的字体在退出前无法删除），重启应用后再删"
                 : $"删除失败：{ex.Message}";
@@ -1329,7 +1329,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error("应用字体后保存偏好失败", ex, LogCategory);
+            LpLog.Error("failed to save preferences after applying fonts", ex, LogCategory);
             Status = $"字体已应用，但偏好保存失败：{ex.Message}";
         }
     }
@@ -1365,8 +1365,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error("恢复默认字体失败", ex, LogCategory);
-            Status = $"恢复默认字体失败：{ex.Message}";
+            LpLog.Error("failed to restore the default font", ex, LogCategory);
+            Status = $"failed to restore the default font：{ex.Message}";
         }
     }
 
@@ -1391,7 +1391,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            LpLog.Error("恢复默认外观失败", ex, LogCategory);
+            LpLog.Error("failed to restore the default appearance", ex, LogCategory);
             Status = $"恢复默认失败：{ex.Message}";
         }
     }

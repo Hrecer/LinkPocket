@@ -135,7 +135,7 @@ public partial class TrashViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error("打开网站失败（静默返回，页面保持）", ex);   // 观测面：失败留痕
+            LpLog.Error("failed to open the site (returned quietly, page stays)", ex);   // 观测面：失败留痕
         }
     }
 

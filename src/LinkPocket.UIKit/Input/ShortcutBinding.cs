@@ -22,7 +22,8 @@ namespace LinkPocket.Input
         public object? CommandParameter { get; init; }
 
         /// <summary>描述文案（冲突报错与提示文案生成共用，如右键菜单里的「(Ctrl+X)」）。</summary>
-        public string Description { get; init; } = string.Empty;
+        /// <summary>动作说明的文案键（冲突信息给开发者看，显示键而不是句子）。</summary>
+        public string DescriptionKey { get; init; } = string.Empty;
 
         /// <summary>键位显示文本（如 "Ctrl+Shift+N"、"Alt+←"）——提示文案与键位清单的唯一生成处。</summary>
         public string GestureText => FormatGesture(Key, Modifiers);

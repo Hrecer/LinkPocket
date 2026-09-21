@@ -107,8 +107,8 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("清空日志失败", ex);
-                await ShowLogStatus("清空日志失败：目录不可访问或文件被占用", gen);
+                LpLog.Error("failed to clear logs", ex);
+                await ShowLogStatus("failed to clear logs：目录不可访问或文件被占用", gen);
                 return;
             }
 
@@ -168,7 +168,7 @@ namespace LinkPocket.Views
 
             try
             {
-                LpLog.Info("[维护] 开始清空数据");
+                LpLog.Info("[maintenance] starting data wipe");
 
                 await ReinitializeAsync();
 
@@ -180,11 +180,11 @@ namespace LinkPocket.Views
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
-                LpLog.Info("[维护] 数据清空完成");
+                LpLog.Info("[maintenance] data wipe finished");
             }
             catch (Exception ex)
             {
-                LpLog.Error("[维护] 清空数据异常", ex);
+                LpLog.Error("[maintenance] data wipe failed", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
                 ExportProgressText.Text = Loc.T("common.failed");
                 ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.SupportContainer);

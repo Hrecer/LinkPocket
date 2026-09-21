@@ -139,7 +139,7 @@ public partial class ColorPickerPopup : UserControl
         Color c => c,
         SolidColorBrush b => b.Color,
         _ => throw new InvalidOperationException(
-            $"令牌「{token}」未发布或不是颜色值 —— 主题尚未装配（宿主必须在构建窗口之前调用 ThemeService）"),
+            $"token '{token}' is not published or is not a colour value -- the theme is not assembled yet (the host must call ThemeService before building windows)"),
     };
 
     /// <summary>当前颜色（草稿）。</summary>

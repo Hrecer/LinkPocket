@@ -76,7 +76,7 @@ public partial class BrowserViewModel
     /// 结果如实分派、成环弹窗）。所有入口都必须经此，不允许在别处再写一遍搬运。
     ///
     /// <para>单项失败**不中断整批**（与既有口径一致）：失败项计数 + <c>LpLog.Error</c> 留痕（观测面铁律），
-    /// 状态栏如实报"N 项失败"，绝不把部分失败含混成"已完成"。</para>
+    /// 状态栏如实报「N 项失败」，绝不把部分失败含混成「已完成」。</para>
     ///
     /// <para>刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）：
     /// 显式刷新 + 事件刷新 = 主栏刷两遍；写操作也不得占用 IsLoading（它是刷新的重入标志）。</para>

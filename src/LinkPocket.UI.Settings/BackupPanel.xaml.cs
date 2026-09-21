@@ -123,7 +123,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("[备份导出] 异常", ex);
+                LpLog.Error("[backup export] failed", ex);
                 UpdateOverlay(overlay, $"导出失败: {ex.Message}", 0, 0);
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
@@ -185,7 +185,7 @@ namespace LinkPocket.Views
             }
             catch (Exception ex)
             {
-                LpLog.Error("[备份导入] 异常", ex);
+                LpLog.Error("[backup import] failed", ex);
                 UpdateOverlay(overlay, $"导入失败: {ex.Message}", 0, 0);
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
@@ -298,7 +298,7 @@ namespace LinkPocket.Views
                 return el.GetInt32();
             }
             known = false;
-            LpLog.Error($"备份导入结果缺少计数字段 {property}（引擎 backup.import 应保证返回）", null);
+            LpLog.Error($"backup import result is missing the count field {property} (engine backup.import must always return it)", null);
             return 0;
         }
     }

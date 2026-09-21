@@ -43,7 +43,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"移动文件夹「{folderId}」失败", ex);
+            LpLog.Error($"failed to move folder '{folderId}'", ex);
             return OpOutcome.Failed;
         }
     }
@@ -56,7 +56,7 @@ public partial class BrowserViewModel
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取后 FirstOrDefault）
             if (link == null)
             {
-                LpLog.Error($"移动链接「{linkId}」失败：源已不存在");
+                LpLog.Error($"failed to move link '{linkId}': the source no longer exists");
                 return OpOutcome.Failed;
             }
             if (NormalizeParentId(link.ListId) == target) return OpOutcome.Skipped;
@@ -65,7 +65,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"移动链接「{linkId}」失败", ex);
+            LpLog.Error($"failed to move link '{linkId}'", ex);
             return OpOutcome.Failed;
         }
     }
@@ -95,7 +95,7 @@ public partial class BrowserViewModel
             var newId = copy.Data?.NewFolderId;
             if (string.IsNullOrEmpty(newId))
             {
-                LpLog.Error($"复制文件夹「{name}」失败：引擎未返回新 ID");
+                LpLog.Error($"failed to copy folder '{name}': the engine returned no new ID");
                 return (OpOutcome.Failed, null);
             }
             // 副本名由引擎编号决定（folders.copy 返回最终名）；UI 只按差异生成提示
@@ -106,7 +106,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"复制文件夹「{folderId}」失败", ex);
+            LpLog.Error($"failed to copy folder '{folderId}'", ex);
             return (OpOutcome.Failed, null);
         }
     }
@@ -121,7 +121,7 @@ public partial class BrowserViewModel
             var link = await _client.LinkGetAsync(linkId);   // 单点取源（替代全量拉取）
             if (link == null)
             {
-                LpLog.Error($"复制链接「{linkId}」失败：源已不存在");
+                LpLog.Error($"failed to copy link '{linkId}': the source no longer exists");
                 return (OpOutcome.Failed, null);
             }
 
@@ -139,7 +139,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"复制链接「{linkId}」失败", ex);
+            LpLog.Error($"failed to copy link '{linkId}'", ex);
             return (OpOutcome.Failed, null);
         }
     }
@@ -257,7 +257,7 @@ public partial class BrowserViewModel
             catch (Exception ex)
             {
                 failed++;
-                LpLog.Error($"删除「{item.Name}」失败（Retry 可跳过该项）", ex);   // 观测面铁律：失败必须暴露
+                LpLog.Error($"failed to delete '{item.Name}' (Retry skips this item)", ex);   // 观测面铁律：失败必须暴露
             }
         }
 
