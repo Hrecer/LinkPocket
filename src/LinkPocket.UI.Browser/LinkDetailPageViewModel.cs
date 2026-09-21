@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -28,11 +29,11 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         _host = host;
 
         // 动作面（共享面内声明本页入口）：主按钮 = 打开网站；铅笔 = 编辑；垃圾桶 = 删除
-        OpenLabel = "打开";
+        OpenLabel = Loc.T("common.open");
         OpenToolTip = "在浏览器中打开";
         OpenIconKind = "open-in-new";
         EditLabel = "编辑";
-        DeleteActionLabel = "删除";
+        DeleteActionLabel = Loc.T("common.delete");
 
         BackCommand = new RelayCommand(() => _ = BackAsync());
         // ⚠️ 不设 CanExecute：详情页打开的瞬间数据还在异步加载（Url 尚空），
@@ -91,7 +92,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             // 加载失败反馈：不留下永远空白的详情页。闭页前可见可读
             LpLog.Error("链接详情页加载失败", ex);
-            SetContent("加载失败", string.Empty, null,
+            SetContent(Loc.T("status.loadFailed"), string.Empty, null,
                 "读取链接数据出错，请返回列表重试。\n" + ex.Message, Array.Empty<DetailSidebarRow>());
         }
     }
@@ -152,7 +153,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             if (string.IsNullOrEmpty(Url)) return;
             System.Windows.Clipboard.SetText(Url);
-            _host.StatusText = "已复制链接";   // 复制反馈
+            _host.StatusText = Loc.T("status.linkCopied");   // 复制反馈
         }
         catch { }
     }
@@ -163,7 +164,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             if (string.IsNullOrEmpty(id)) return;
             System.Windows.Clipboard.SetText(id);
-            _host.StatusText = "已复制 ID";   // 复制反馈
+            _host.StatusText = Loc.T("status.idCopied");   // 复制反馈
         }
         catch { }
     }
@@ -185,7 +186,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             if (!dlg.Confirm("删除链接", $"将链接「{Title}」移入回收站吗？")) return;
         }
-        else if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", "删除"))
+        else if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", Loc.T("common.delete")))
         {
             return;
         }

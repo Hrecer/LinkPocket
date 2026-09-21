@@ -104,8 +104,11 @@ namespace LinkPocket.ViewModels
         public int TotalCount
         {
             get => _totalCount;
-            set { _totalCount = value; OnPropertyChanged(); }
+            set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalCountText)); }
         }
+
+        /// <summary>「共 N 项」整句（含变量的句子由模型出文本，语序随语言走）。</summary>
+        public string TotalCountText => LinkPocket.I18n.Loc.T("smartlists.count.total", _totalCount);
 
         // —— 选中态与详情栏（MVVM 自页面下沉；共享 ListSelection 核心，单选中） ——
 

@@ -1,6 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.ColorPickerPopup"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              Width="268"
              Focusable="True" FocusVisualStyle="{x:Null}">
@@ -91,7 +92,7 @@
             </Grid>
 
             <!-- HEX 输入（CardField 口径：标签 + 输入 + 校验态一体，不裸写 TextBox） -->
-            <TextBlock Text="十六进制" FontSize="11.5" Margin="2,14,0,5"
+            <TextBlock Text="{loc:Loc picker.hex}" FontSize="11.5" Margin="2,14,0,5"
                        Foreground="{DynamicResource App.Text.Secondary}"/>
             <Border x:Name="HexFieldShell" CornerRadius="10"
                     Background="{DynamicResource App.Surface.Hover}"
@@ -115,15 +116,15 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" x:Name="CancelBtn" Content="取消"
+                <Button Grid.Column="0" x:Name="CancelBtn" Content="{loc:Loc common.cancel}"
                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                         Cursor="Hand" Click="CancelBtn_Click"
-                        ToolTip="放弃这次取色（不改动色槽）"/>
-                <Button Grid.Column="1" x:Name="ClearBtn" Content="清除"
+                        ToolTip="{loc:Loc appearance.picker.cancel.tip}"/>
+                <Button Grid.Column="1" x:Name="ClearBtn" Content="{loc:Loc appearance.picker.clear}"
                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                         Margin="8,0,0,0" HorizontalAlignment="Left" Cursor="Hand" Click="ClearBtn_Click"
-                        ToolTip="把这个色槽清回空槽（不是设成黑色）"/>
-                <Button Grid.Column="2" x:Name="ConfirmBtn" Content="用这个颜色"
+                        ToolTip="{loc:Loc appearance.picker.clear.tip}"/>
+                <Button Grid.Column="2" x:Name="ConfirmBtn" Content="{loc:Loc appearance.picker.use}"
                         Style="{StaticResource PrimaryPillButton}" Height="32" Padding="14,0"
                         Cursor="Hand" Click="ConfirmBtn_Click"/>
             </Grid>

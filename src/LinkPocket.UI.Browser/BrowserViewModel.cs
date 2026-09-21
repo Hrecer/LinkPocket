@@ -331,7 +331,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     {
         var dlg = _ports?.Dialogs;
         if (dlg != null) return dlg.Confirm(title, message);
-        return Views.ConfirmDialog.Show(title, message, "删除");
+        return Views.ConfirmDialog.Show(title, message, Loc.T("common.delete"));
     }
 
     /// <summary>
@@ -345,8 +345,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         {
             var row = _contextRow;
             if (row != null && !(row.IsSelected && SelectionCount > 1))
-                return row.IsFolder && row.LinkCount > 0 ? $"删除 ({row.LinkCount} 项)" : "删除";
-            return HasSelection ? $"删除 ({SelectionCount} 项)" : "删除";
+                return row.IsFolder && row.LinkCount > 0 ? $"删除 ({row.LinkCount} 项)" : Loc.T("common.delete");
+            return HasSelection ? $"删除 ({SelectionCount} 项)" : Loc.T("common.delete");
         }
     }
 
@@ -581,7 +581,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            ShowError("重命名失败", ex.Message);
+            ShowError(Loc.T("status.renameFailed"), ex.Message);
         }
     }
 

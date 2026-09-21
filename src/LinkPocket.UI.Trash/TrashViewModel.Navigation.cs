@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -24,7 +25,7 @@ public partial class TrashViewModel
     {
         if (unitId != null && !_unitById.ContainsKey(unitId))
         {
-            StatusText = "该单元已不存在";
+            StatusText = Loc.T("trash.unitGone");
             return Task.CompletedTask;
         }
 

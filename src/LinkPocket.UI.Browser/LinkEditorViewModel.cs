@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -152,7 +153,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             var meta = await _client.LinkMetadataFetchAsync(url);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
-            if (meta == null) { Error = "未能解析该网站（请检查 URL 是否可访问）"; return; }
+            if (meta == null) { Error = Loc.T("editor.resolveFailed"); return; }
 
             if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
                 LinkTitle = meta.Title.Trim();
@@ -236,11 +237,11 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     private async Task SaveAsync()
     {
         Error = null;
-        if (string.IsNullOrWhiteSpace(Url)) { Error = "URL 不能为空"; return; }
+        if (string.IsNullOrWhiteSpace(Url)) { Error = Loc.T("editor.urlRequired"); return; }
         if (!Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        { Error = "请输入有效的 URL（http/https）"; return; }
-        if (string.IsNullOrWhiteSpace(LinkTitle)) { Error = "标题不能为空"; return; }
+        { Error = Loc.T("editor.urlInvalid"); return; }
+        if (string.IsNullOrWhiteSpace(LinkTitle)) { Error = Loc.T("editor.titleRequired"); return; }
 
         try
         {

@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Services;
 
@@ -16,7 +17,9 @@ public interface IDialogService
     /// Windows 口径 = 删除类文案「将 X 移入回收站吗？」，不罗列后果。
     /// iconKind 须在 LpIcons 字形表内（默认删除口径 delete-outline）。
     /// </summary>
-    bool Confirm(string title, string message, string confirmText = "删除", string iconKind = "delete-outline");
+    /// <param name="confirmText">确认键文案；<c>null</c> = 按当前语言取「删除」。
+    /// 默认值写成 null 是因为默认参数必须是编译期常量——运行时取词不能放在签名里。</param>
+    bool Confirm(string title, string message, string? confirmText = null, string iconKind = "delete-outline");
 
     /// <summary>提示/警告弹窗（信息类，非删除色调）：失败提示等，VM 不直接依赖任何窗口类型。</summary>
     void Alert(string title, string message);

@@ -10,6 +10,7 @@ using LinkPocket.Theming.Fonts;
 using LinkPocket.Theming.Themes;
 using LinkPocket.Theming.Tokens;
 using Material3.Core;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -905,7 +906,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ShowDiagnostics(issues);
         if (ThemeValidator.HasErrors(issues))
         {
-            Status = "自选配色不合法，未应用";
+            Status = Loc.T("appearance.status.paletteInvalid");
             return;
         }
 
@@ -1276,7 +1277,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ArgumentNullException.ThrowIfNull(option);
         if (!option.CanDelete)
         {
-            Status = "系统字体不可删除（它属于系统；只有「自定义」里导入的字体才能删）";
+            Status = Loc.T("font.systemNotDeletable");
             return;
         }
         try

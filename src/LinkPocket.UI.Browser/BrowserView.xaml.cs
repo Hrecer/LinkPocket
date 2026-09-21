@@ -737,7 +737,7 @@ public partial class BrowserView : UserControl
 
         foreach (var action in BuildRightDragMenuItems(items, target.FolderId, target.Name)) menu.Items.Add(action);
         // 菜单不加分隔线——三项连续排列（复制 / 移动 / 取消）。
-        var cancel = new MenuItem { Header = "取消" };
+        var cancel = new MenuItem { Header = Loc.T("common.cancel") };
         cancel.Click += (_, _) => menu.IsOpen = false;
         menu.Items.Add(cancel);
 

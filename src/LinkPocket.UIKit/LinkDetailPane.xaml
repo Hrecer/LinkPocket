@@ -1,6 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.LinkDetailPane"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views"
              xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml">
@@ -83,7 +84,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Row="0" Text="URL" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="复制 URL"
+                            <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SideIconButton}" Tag="{loc:Loc common.copyUrl}"
                                     Margin="6,0,0,0" VerticalAlignment="Top" Command="{Binding CopyUrlCommand}">
                                 <m3:M3Icon Kind="content-copy" Width="13" Height="13"/>
                             </Button>
@@ -99,7 +100,7 @@
                     <Border Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <StackPanel>
-                            <TextBlock Text="信息" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
+                            <TextBlock Text="{loc:Loc common.info}" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                             <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
                         </StackPanel>
@@ -119,7 +120,7 @@
                             </Style>
                         </Border.Style>
                         <StackPanel>
-                            <TextBlock Text="描述" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
+                            <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                             <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
                                                          FontFamily="{DynamicResource App.Font.Ui}"
@@ -158,7 +159,7 @@
                             </Style>
                         </Border.Style>
                         <StackPanel>
-                            <TextBlock Text="操作" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
+                            <TextBlock Text="{loc:Loc ui.noun.actions}" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                             <Grid Margin="0,2,0,0">
                                 <Grid.ColumnDefinitions>
@@ -227,7 +228,7 @@
         </ScrollViewer>
 
         <!-- 左上浮动返回钮（z 序顶层；与侧栏返回圆钮同款 40px） -->
-        <Button Command="{Binding BackCommand}" ToolTip="返回"
+        <Button Command="{Binding BackCommand}" ToolTip="{loc:Loc common.back}"
                 Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,16,0,0"
                 Foreground="{DynamicResource App.Text.Primary}">
             <Button.Template>

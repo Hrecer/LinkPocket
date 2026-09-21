@@ -32,7 +32,7 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowOpenWebsite = true;                       // 「打开」药丸（打开网站；即使是废弃条目也能打开）
         ShowEditAction = false;
         ShowDeleteAction = true;
-        DeleteActionLabel = "永久删除";
+        DeleteActionLabel = Loc.T("trash.menu.purge");
         ShowRestoreAction = true;
         RestoreTone = PillTone.Primary;               // 还原 = 深紫（与工具栏主按钮同一色系）
         ShowRestoreToRootAction = true;
@@ -120,7 +120,7 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowRestoreAction = false;
         ShowRestoreToRootAction = false;
         ShowJumpAction = false;   // 多选没有"某一项"可定位（与其它页同一口径）
-        DeleteSelectionLabel = "永久删除所选";
+        DeleteSelectionLabel = Loc.T("trash.purgeSelection");
         DisplayName = Loc.T("trash.selection.count", rows.Count);
         IdText = string.Empty;
         UrlText = string.Empty;

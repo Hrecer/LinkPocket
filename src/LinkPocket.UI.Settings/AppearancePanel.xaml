@@ -1,6 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.AppearancePanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              xmlns:local="clr-namespace:LinkPocket.Views">
@@ -20,9 +21,9 @@
     <Grid>
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel MaxWidth="760" HorizontalAlignment="Left" Margin="32,24,32,32">
-                <TextBlock Text="外观" FontSize="20" FontWeight="SemiBold" Margin="4,0,0,4"
+                <TextBlock Text="{loc:Loc nav.panel.appearance}" FontSize="20" FontWeight="SemiBold" Margin="4,0,0,4"
                            Foreground="{DynamicResource App.Text.Primary}"/>
-                <TextBlock Text="主题与字体独立选择；主题立即生效并记住，重启后保持"
+                <TextBlock Text="{loc:Loc appearance.card.fontNote}"
                            FontSize="13" Margin="4,0,0,20" TextWrapping="Wrap"
                            Foreground="{DynamicResource App.Text.Secondary}"/>
 
@@ -32,10 +33,10 @@
                      的既有语言（主题卡单击即应用 / 起点复制即应用）自相矛盾；自选配色的应用入口只剩
                      **第 12 张「自选颜色」卡**（与点主题卡同一手势），故全局行只剩这一枚。 -->
                 <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
-                    <Button x:Name="ResetAppearanceBtn" Content="恢复默认外观"
+                    <Button x:Name="ResetAppearanceBtn" Content="{loc:Loc appearance.btn.resetAll}"
                             Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
                             Cursor="Hand" Click="ResetAppearanceBtn_Click"
-                            ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
+                            ToolTip="{loc:Loc appearance.btn.resetAll.tip}"/>
                 </StackPanel>
 
                 <!-- 「自动调整颜色」开关**独立成一张卡**（Material 3 Expressive 的 ToggleSwitch，不是勾选框）。
@@ -45,9 +46,9 @@
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
                     <StackPanel>
-                        <TextBlock Text="颜色应用方式" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Loc appearance.mode.title}" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="决定同一个配色怎么落到界面上；切换即刻生效并记住，重启后保持"
+                        <TextBlock Text="{loc:Loc appearance.mode.desc}"
                                    FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
 
@@ -59,9 +60,9 @@
                             <ToggleButton Grid.Column="0" x:Name="AutoAdjustColorsSwitch"
                                           VerticalAlignment="Top" Margin="0,2,0,0"
                                           IsChecked="{Binding AutoAdjustColors, Mode=TwoWay}"
-                                          ToolTip="打开 = 按明度档位自动重排你的配色；关闭 = 尽量原样使用你选的颜色"/>
+                                          ToolTip="{loc:Loc appearance.mode.hint}"/>
                             <StackPanel Grid.Column="1" Margin="16,0,0,0">
-                                <TextBlock Text="自动调整颜色" FontSize="13" FontWeight="SemiBold"
+                                <TextBlock Text="{loc:Loc appearance.mode.auto}" FontSize="13" FontWeight="SemiBold"
                                            Foreground="{DynamicResource App.Text.Primary}"/>
                                 <TextBlock Text="{Binding PaletteModeHint}" FontSize="12" Margin="0,4,0,0"
                                            TextWrapping="Wrap"
@@ -75,9 +76,9 @@
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20"
                         Margin="0,16,0,0">
                     <StackPanel>
-                        <TextBlock Text="主题" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Loc appearance.theme.title}" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="单击即应用，主题本身只读（预设不会被改掉）。最后一张「自选颜色」= 用下面调色台里的配色；想从某套现成主题改起，就用调色台里的「以…为起点」把它的颜色复制过去"
+                        <TextBlock Text="{loc:Loc appearance.theme.hint}"
                                    FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <!-- 互斥投影**不配说明条**：
@@ -136,7 +137,7 @@
                                                 <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
                                                         Background="{DynamicResource App.Accent.Container}"
                                                         Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
-                                                    <TextBlock Text="默认" FontSize="10"
+                                                    <TextBlock Text="{loc:Loc appearance.card.default}" FontSize="10"
                                                                Foreground="{DynamicResource App.Text.OnContainer}"/>
                                                 </Border>
                                             </Grid>
@@ -224,19 +225,19 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="调色台" FontSize="15" FontWeight="SemiBold"
+                                <TextBlock Grid.Column="0" Text="{loc:Loc appearance.studio.title}" FontSize="15" FontWeight="SemiBold"
                                            Foreground="{DynamicResource App.Text.Primary}"/>
                                 <!-- 徽标 = 「当前使用」/「编辑中（未应用）」二选一（两个布尔互斥，故可同格叠放） -->
                                 <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
                                         Background="{DynamicResource App.Accent.Container}"
                                         Visibility="{Binding IsCustomActive, Converter={StaticResource BoolToVis}}">
-                                    <TextBlock Text="当前使用" FontSize="10"
+                                    <TextBlock Text="{loc:Loc appearance.badge.inUse}" FontSize="10"
                                                Foreground="{DynamicResource App.Text.OnContainer}"/>
                                 </Border>
                                 <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
                                         Background="{DynamicResource App.Surface.Hover}"
                                         Visibility="{Binding IsDraftEditing, Converter={StaticResource BoolToVis}}">
-                                    <TextBlock Text="编辑中（未应用）" FontSize="10"
+                                    <TextBlock Text="{loc:Loc appearance.badge.editing}" FontSize="10"
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                 </Border>
                             </Grid>
@@ -256,8 +257,8 @@
                                                        Style="{StaticResource SlidingNavStripStyle}"
                                                        ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
                                                        SelectedIndex="{Binding SlotCountIndex, Mode=TwoWay}">
-                                    <ListBoxItem Content="4 色"/>
-                                    <ListBoxItem Content="5 色"/>
+                                    <ListBoxItem Content="{loc:Loc appearance.slots.four}"/>
+                                    <ListBoxItem Content="{loc:Loc appearance.slots.five}"/>
                                 </views:SlidingNavStrip>
                             </StackPanel>
 
@@ -272,11 +273,11 @@
                                         Content="{Binding StartFromCurrentThemeLabel}"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Cursor="Hand" Click="StartFromThemeBtn_Click"
-                                        ToolTip="把当前主题的颜色复制到色槽当起点；主题本身不会被改动"/>
-                                <Button x:Name="ClearDraftBtn" Content="清空颜色"
+                                        ToolTip="{loc:Loc appearance.draft.startFrom.tip}"/>
+                                <Button x:Name="ClearDraftBtn" Content="{loc:Loc appearance.draft.clear}"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
-                                        ToolTip="清空色槽并回到出厂默认（紫罗兰）外观；不改动字体与偏好文件"/>
+                                        ToolTip="{loc:Loc appearance.clearColors.tip}"/>
                             </StackPanel>
 
                             <!-- 色槽：**居中**排列。
@@ -359,9 +360,9 @@
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
                     <StackPanel>
-                        <TextBlock Text="字体" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Loc appearance.font.card.title}" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock Text="可选系统已装字体，或导入自己的字体文件（.ttf / .otf / .ttc）"
+                        <TextBlock Text="{loc:Loc appearance.font.hint}"
                                    FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
 
@@ -372,8 +373,8 @@
                                                    Style="{StaticResource SlidingNavStripStyle}"
                                                    ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
                                                    SelectedIndex="{Binding FontSourceIndex, Mode=TwoWay}">
-                                <ListBoxItem Content="系统字体"/>
-                                <ListBoxItem Content="自定义字体"/>
+                                <ListBoxItem Content="{loc:Loc appearance.font.source.system}"/>
+                                <ListBoxItem Content="{loc:Loc appearance.font.source.custom}"/>
                             </views:SlidingNavStrip>
                         </StackPanel>
                         <TextBlock Text="{Binding FontSourceHint}" FontSize="11.5" Margin="2,0,0,10"
@@ -381,7 +382,7 @@
                                    Foreground="{DynamicResource App.Text.Muted}"/>
 
                         <!-- 界面字体 -->
-                        <TextBlock Text="界面字体" FontSize="12" Margin="2,0,0,6"
+                        <TextBlock Text="{loc:Loc appearance.font.ui}" FontSize="12" Margin="2,0,0,6"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -397,15 +398,15 @@
                             <!-- 导入 / 删除**只在「自定义字体」这一侧出现**：
                                  系统字体是只读的（属于系统，本应用不修改、也删不掉），
                                  摆在那里只会让用户点了才发现不给删。 -->
-                            <Button Grid.Column="1" x:Name="ImportFontBtn" Content="导入字体…"
+                            <Button Grid.Column="1" x:Name="ImportFontBtn" Content="{loc:Loc appearance.font.import}"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                     Margin="10,0,0,0" Cursor="Hand" Click="ImportFontBtn_Click"
                                     Visibility="{Binding IsCustomFontSource, Converter={StaticResource BoolToVis}}"/>
-                            <Button Grid.Column="2" x:Name="DeleteFontBtn" Content="删除字体"
+                            <Button Grid.Column="2" x:Name="DeleteFontBtn" Content="{loc:Loc appearance.font.delete}"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                     Margin="8,0,0,0" Cursor="Hand" Click="DeleteFontBtn_Click"
                                     Visibility="{Binding IsCustomFontSource, Converter={StaticResource BoolToVis}}"
-                                    ToolTip="只删除导入到本应用目录的那份副本（不会动系统字体）"/>
+                                    ToolTip="{loc:Loc appearance.font.delete.tip}"/>
                         </Grid>
 
                         <!-- 不提供等宽字体入口：ID / 网址显示用的等宽字体固定为默认族（Consolas）。
@@ -419,14 +420,14 @@
                         </Border>
 
                         <!-- 实时样例（走令牌 → 与真实界面同源，不是手画的假预览） -->
-                        <TextBlock Text="样例" FontSize="12" Margin="2,16,0,6"
+                        <TextBlock Text="{loc:Loc appearance.sample.title}" FontSize="12" Margin="2,16,0,6"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Border Background="{DynamicResource App.Surface.Base}" CornerRadius="16" Padding="16,14">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Content="主按钮" Style="{StaticResource PrimaryPillButton}"
+                                    <Button Content="{loc:Loc appearance.sample.primaryButton}" Style="{StaticResource PrimaryPillButton}"
                                             Height="32" Padding="14,0" IsHitTestVisible="False"/>
-                                    <Button Content="次操作" Style="{StaticResource TonalButton}"
+                                    <Button Content="{loc:Loc appearance.sample.actions}" Style="{StaticResource TonalButton}"
                                             Height="32" Padding="14,0" Margin="8,0,0,0" IsHitTestVisible="False"/>
                                     <m3:M3Icon Kind="folder" Width="18" Height="18" Margin="10,0,0,0"
                                                VerticalAlignment="Center"
@@ -435,11 +436,11 @@
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource App.Type.Link}"/>
                                 </StackPanel>
-                                <TextBlock Text="正文示例 LinkPocket 书签管理" FontSize="13" Margin="0,12,0,0"
+                                <TextBlock Text="{loc:Loc appearance.sample.body}" FontSize="13" Margin="0,12,0,0"
                                            Foreground="{DynamicResource App.Text.Primary}"/>
-                                <TextBlock Text="次要说明文字 12px" FontSize="12" Margin="0,4,0,0"
+                                <TextBlock Text="{loc:Loc appearance.sample.secondary}" FontSize="12" Margin="0,4,0,0"
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
-                                <TextBlock Text="弱化提示文字" FontSize="11.5" Margin="0,4,0,0"
+                                <TextBlock Text="{loc:Loc appearance.sample.muted}" FontSize="11.5" Margin="0,4,0,0"
                                            Foreground="{DynamicResource App.Text.Muted}"/>
                                 <TextBlock Text="BOOKMARK-ID-0123456789ABCDEF" FontSize="12" Margin="0,8,0,0"
                                            FontFamily="{DynamicResource App.Font.Mono}"
@@ -448,15 +449,15 @@
                         </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <Button x:Name="ApplyFontsBtn" Content="应用字体"
+                            <Button x:Name="ApplyFontsBtn" Content="{loc:Loc appearance.font.apply}"
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
                                     Cursor="Hand" Click="ApplyFontsBtn_Click"/>
                             <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘。
                                  与「恢复默认外观」的区别：这里不动主题与配色。 -->
-                            <Button x:Name="ResetFontsBtn" Content="恢复默认字体"
+                            <Button x:Name="ResetFontsBtn" Content="{loc:Loc appearance.font.reset}"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                     Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
-                                    ToolTip="界面字体回默认族（等宽字体已固定为默认族，不改动主题与配色）"/>
+                                    ToolTip="{loc:Loc appearance.font.reset.tip}"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

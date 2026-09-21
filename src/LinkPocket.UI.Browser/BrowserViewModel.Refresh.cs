@@ -230,7 +230,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            StatusText = "加载失败";
+            StatusText = Loc.T("status.loadFailed");
             LpLog.Error("浏览目录刷新失败", ex);   // 失败必须留痕，不能只有一行状态文案
         }
         finally

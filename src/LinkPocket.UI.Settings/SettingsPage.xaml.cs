@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views
 {
@@ -158,12 +159,12 @@ namespace LinkPocket.Views
             ConfirmOverlay.Visibility = Visibility.Collapsed;
 
             ExportOverlay.Visibility = Visibility.Visible;
-            ExportStatusText.Text = "正在清空数据...";
+            ExportStatusText.Text = Loc.T("storage.erasing");
             ExportProgressBar.Value = 0;
             // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带进本次流程（铁律色语义）
             // ⚠️ 走**资源引用**（自定义 DP）：一次性取画刷赋值会在换主题后停在旧主题。
             ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.AccentFill);
-            ExportProgressText.Text = "清除中...";
+            ExportProgressText.Text = Loc.T("storage.clearing");
 
             try
             {
@@ -173,9 +174,9 @@ namespace LinkPocket.Views
 
                 TryClearLogFiles();   // B-5：与「清空日志」同一清理口径
 
-                ExportStatusText.Text = "数据已全部清空！";
+                ExportStatusText.Text = Loc.T("storage.erased");
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
-                ExportProgressText.Text = "完成";
+                ExportProgressText.Text = Loc.T("common.done");
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
@@ -185,7 +186,7 @@ namespace LinkPocket.Views
             {
                 LpLog.Error("[维护] 清空数据异常", ex);
                 ExportStatusText.Text = $"清空失败: {ex.Message}";
-                ExportProgressText.Text = "失败";
+                ExportProgressText.Text = Loc.T("common.failed");
                 ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.SupportContainer);
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;

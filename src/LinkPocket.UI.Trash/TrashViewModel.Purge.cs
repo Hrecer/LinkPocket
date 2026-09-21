@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -50,7 +51,7 @@ public partial class TrashViewModel
         catch (Exception ex)
         {
             LpLog.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
-            ShowError("永久删除失败", ex.Message);
+            ShowError(Loc.T("trash.purgeFailed"), ex.Message);
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已删条目
         }
     }
@@ -67,7 +68,7 @@ public partial class TrashViewModel
         catch (Exception ex)
         {
             LpLog.Error($"永久删除失败（已强制刷新回收站）：{name}", ex);
-            ShowError("永久删除失败", ex.Message);
+            ShowError(Loc.T("trash.purgeFailed"), ex.Message);
             await LoadAsync();
         }
     }
@@ -83,7 +84,7 @@ public partial class TrashViewModel
         var message = containsFolder
             ? $"确定要永久删除{Target(name, count)}吗？\n文件夹内的全部内容将一并删除，不可恢复。"
             : $"确定要永久删除{Target(name, count)}吗？\n此操作不可恢复。";
-        return Dialogs.Confirm("永久删除", message, "永久删除", "delete-forever");
+        return Dialogs.Confirm(Loc.T("trash.menu.purge"), message, Loc.T("trash.menu.purge"), "delete-forever");
     }
 
     private static string Target(string name, int count)

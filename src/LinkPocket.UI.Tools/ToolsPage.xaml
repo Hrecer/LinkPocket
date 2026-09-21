@@ -1,6 +1,7 @@
 ﻿<UserControl x:Class="LinkPocket.Views.ToolsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              Focusable="True" FocusVisualStyle="{x:Null}"
@@ -197,7 +198,7 @@
 
             <!-- 左栏：工具列表 -->
             <StackPanel Grid.Column="0">
-                <TextBlock Text="工具" FontSize="17" FontWeight="SemiBold" Margin="20,18,20,10"
+                <TextBlock Text="{loc:Loc nav.item.tools}" FontSize="17" FontWeight="SemiBold" Margin="20,18,20,10"
                            Foreground="{DynamicResource App.Text.Primary}"/>
                 <views:SideNavList x:Name="ToolListbox" Style="{StaticResource SideNavListStyle}"
                                    ItemContainerStyle="{StaticResource SideNavItemStyle}"
@@ -264,9 +265,9 @@
                                         </Border.RenderTransform>
                                     </Border>
                                     <ToggleButton x:Name="SegImport" Grid.Column="0" Style="{StaticResource SegmentToggle}"
-                                                  Content="导入书签" Click="SegImport_Click" IsChecked="True"/>
+                                                  Content="{loc:Loc tools.io.import}" Click="SegImport_Click" IsChecked="True"/>
                                     <ToggleButton x:Name="SegExport" Grid.Column="1" Style="{StaticResource SegmentToggle}"
-                                                  Content="导出书签" Click="SegExport_Click"/>
+                                                  Content="{loc:Loc tools.io.export}" Click="SegExport_Click"/>
                                 </Grid>
                             </Border>
 
@@ -283,15 +284,15 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="从浏览器导入书签" FontSize="15" FontWeight="SemiBold"
+                                            <TextBlock Text="{loc:Loc tools.import.title}" FontSize="15" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource App.Text.Primary}"/>
-                                            <TextBlock Text="读取 Chrome / Edge / Firefox 导出的 Netscape 书签文件（.html），文件夹层级完整还原"
+                                            <TextBlock Text="{loc:Loc tools.import.desc}"
                                                        FontSize="12" Margin="0,3,0,0"
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <TextBlock Text="书签文件" FontSize="11.5" Margin="4,20,0,6"
+                                    <TextBlock Text="{loc:Loc tools.io.format.bookmarks}" FontSize="11.5" Margin="4,20,0,6"
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -300,13 +301,13 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBox x:Name="ImportFileBox" Grid.Column="0"
                                                  Style="{StaticResource CardField}"
-                                                 Tag="选择 bookmarks.html 文件…"
+                                                 Tag="{loc:Loc tools.io.pickBookmark.hint}"
                                                  IsReadOnly="True"
-                                                 ToolTip="选择浏览器导出的书签 HTML 文件（bookmarks.html）"/>
+                                                 ToolTip="{loc:Loc tools.io.pickBookmark.tip}"/>
                                         <Button x:Name="ImportBrowseBtn" Grid.Column="1" Margin="10,0,0,0"
                                                 Height="44" Padding="16,0" FontSize="13"
                                                 Style="{StaticResource TonalButton}"
-                                                Click="ImportBrowse_Click" Content="选择文件"/>
+                                                Click="ImportBrowse_Click" Content="{loc:Loc tools.io.pickFile}"/>
                                     </Grid>
 
                                     <!-- 预检结果（格式识别 + 条目统计；异常态统一 WarnBg 奶油黄，禁用红色） -->
@@ -333,12 +334,12 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <m3:M3Icon Kind="import" Width="16" Height="16"
                                                            VerticalAlignment="Center"/>
-                                                <TextBlock Text="开始导入" FontSize="13" FontWeight="SemiBold"
+                                                <TextBlock Text="{loc:Loc backup.import.start}" FontSize="13" FontWeight="SemiBold"
                                                            Margin="7,0,0,0" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                         <TextBlock x:Name="ImportHintText"
-                                                   Text="导入内容追加到现有数据，顶层条目落在「全部书签」根级"
+                                                   Text="{loc:Loc backup.import.append.desc}"
                                                    FontSize="11.5" Margin="14,0,0,0" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                                     </StackPanel>
@@ -366,9 +367,9 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="导出书签到浏览器" FontSize="15" FontWeight="SemiBold"
+                                            <TextBlock Text="{loc:Loc tools.export.title}" FontSize="15" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource App.Text.Primary}"/>
-                                            <TextBlock Text="输出为标准 Netscape 书签文件，Chrome / Edge / Firefox 可直接导入该书签栏"
+                                            <TextBlock Text="{loc:Loc tools.export.desc}"
                                                        FontSize="12" Margin="0,3,0,0"
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                                         </StackPanel>
@@ -385,16 +386,16 @@
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                                         </Border>
                                         <Border Style="{StaticResource SpecChip}">
-                                            <TextBlock Text="保留文件夹层级" FontSize="11"
+                                            <TextBlock Text="{loc:Loc export.opt.keepTree}" FontSize="11"
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                                         </Border>
                                         <Border Style="{StaticResource SpecChip}">
-                                            <TextBlock Text="含创建时间 / 图标" FontSize="11"
+                                            <TextBlock Text="{loc:Loc export.opt.withMeta}" FontSize="11"
                                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                                         </Border>
                                     </StackPanel>
 
-                                    <TextBlock Text="导出到" FontSize="11.5" Margin="4,18,0,6"
+                                    <TextBlock Text="{loc:Loc backup.exportTo}" FontSize="11.5" Margin="4,18,0,6"
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -403,13 +404,13 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBox x:Name="ExportDirBox" Grid.Column="0"
                                                  Style="{StaticResource CardField}"
-                                                 Tag="选择导出目录…"
+                                                 Tag="{loc:Loc backup.pickDir.hint2}"
                                                  IsReadOnly="True"
-                                                 ToolTip="选择导出目录"/>
+                                                 ToolTip="{loc:Loc backup.pickDir}"/>
                                         <Button x:Name="ExportBrowseBtn" Grid.Column="1" Margin="10,0,0,0"
                                                 Height="44" Padding="16,0" FontSize="13"
                                                 Style="{StaticResource TonalButton}"
-                                                Click="ExportBrowse_Click" Content="浏览目录"/>
+                                                Click="ExportBrowse_Click" Content="{loc:Loc browser.browseFolder}"/>
                                     </Grid>
 
                                     <Border x:Name="ExportResultChip" Visibility="Collapsed"
@@ -429,7 +430,7 @@
                                             <Button x:Name="ExportRevealBtn" Visibility="Collapsed" Height="26"
                                                     Padding="10,0" Margin="10,0,0,0" FontSize="11.5"
                                                     Style="{StaticResource TonalButton}"
-                                                    Click="ExportReveal_Click" Content="打开所在文件夹"/>
+                                                    Click="ExportReveal_Click" Content="{loc:Loc detail.openFolder}"/>
                                         </StackPanel>
                                     </Border>
 
@@ -439,12 +440,12 @@
                                             <StackPanel Orientation="Horizontal">
                                                 <m3:M3Icon Kind="export" Width="16" Height="16"
                                                            VerticalAlignment="Center"/>
-                                                <TextBlock Text="开始导出" FontSize="13" FontWeight="SemiBold"
+                                                <TextBlock Text="{loc:Loc backup.export.start}" FontSize="13" FontWeight="SemiBold"
                                                            Margin="7,0,0,0" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                         <TextBlock x:Name="ExportHintText"
-                                                   Text="导出后会自动重新解析产物并校验条目数"
+                                                   Text="{loc:Loc backup.verify.note}"
                                                    FontSize="11.5" Margin="14,0,0,0" VerticalAlignment="Center"
                                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                                     </StackPanel>
@@ -466,7 +467,7 @@
                                   VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   Padding="2,2,2,0" FocusVisualStyle="{x:Null}">
                         <StackPanel MaxWidth="640" HorizontalAlignment="Left">
-                            <TextBlock Text="输入要定位的 ID" FontSize="11.5" Margin="4,0,0,6"
+                            <TextBlock Text="{loc:Loc jump.placeholder}" FontSize="11.5" Margin="4,0,0,6"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -478,7 +479,7 @@
                                 <Button x:Name="JumpBtn" Grid.Column="1" Margin="10,0,0,0" Padding="18,0"
                                         Height="44"
                                         Style="{StaticResource PrimaryPillButton}" Click="Jump_Click"
-                                        Content="跳转" FontSize="13" FontWeight="SemiBold"/>
+                                        Content="{loc:Loc common.jump}" FontSize="13" FontWeight="SemiBold"/>
                             </Grid>
 
                             <!-- 提示：统一走 WarnBg 芯片（项目删除/警告色规范，禁用红色） -->
@@ -496,7 +497,7 @@
 
                             <TextBlock Margin="4,16,0,0" FontSize="12" LineHeight="19"
                                        Foreground="{DynamicResource App.Text.Secondary}" TextWrapping="Wrap"
-                                       Text="支持链接 ID 与文件夹 ID，自动识别类型。&#x0a;跳转 = 进入该链接所在的目录并选中它；文件夹则进入其上级目录并选中该文件夹。"/>
+                                       Text="{loc:Loc jump.desc}"/>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
@@ -525,7 +526,7 @@
 
             <Border Grid.Row="0" Grid.Column="0" Padding="12,0,12,8">
                 <DockPanel LastChildFill="True" VerticalAlignment="Center">
-                    <Button DockPanel.Dock="Left" Click="DetailBack_Click" ToolTip="返回重复组列表（Esc）"
+                    <Button DockPanel.Dock="Left" Click="DetailBack_Click" ToolTip="{loc:Loc tools.dedup.back.tip}"
                             Style="{StaticResource RoundBackButton}">
                         <m3:M3Icon Kind="arrow-left" Width="18" Height="18"/>
                     </Button>
@@ -535,10 +536,10 @@
                                    Margin="0,0,10,0" Foreground="{DynamicResource App.Text.Secondary}"/>
                         <Button x:Name="DeleteSelectedBtn" Style="{StaticResource TonalButton}"
                                 Padding="12,6" IsEnabled="False" Click="DeleteSelected_Click"
-                                ToolTip="把勾选的重复项移入回收站（至少保留一条）">
+                                ToolTip="{loc:Loc tools.dedup.purge.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="delete-outline" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="删除重复项" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc tools.dedup.purge}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -549,7 +550,7 @@
                                    Foreground="{DynamicResource App.Text.Primary}"/>
                         <TextBlock x:Name="DetailHintText" FontSize="12.5" Margin="12,1,12,0"
                                    VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
-                        <Button Style="{StaticResource RowIconButton}" Tag="复制URL" Click="CopyUrl_Click"
+                        <Button Style="{StaticResource RowIconButton}" Tag="{loc:Loc common.copyUrl2}" Click="CopyUrl_Click"
                                 VerticalAlignment="Center">
                             <m3:M3Icon Kind="content-copy" Width="14" Height="14"/>
                         </Button>
@@ -560,10 +561,10 @@
                         <Button x:Name="DetailJumpBtn" Style="{StaticResource JumpPillButton}"
                                 Click="DetailJump_Click" IsEnabled="False" VerticalAlignment="Center"
                                 Margin="10,0,0,0"
-                                ToolTip="跳转">
+                                ToolTip="{loc:Loc common.jump}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
-                                <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc common.jump}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>

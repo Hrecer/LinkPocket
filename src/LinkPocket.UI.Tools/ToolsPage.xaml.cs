@@ -15,6 +15,7 @@ using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views
 {
@@ -401,7 +402,7 @@ namespace LinkPocket.Views
         private void BuildDedupHeaderActions()
         {
             _dedupActionIcon = new M3Icon { Kind = "content-duplicate", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
-            _dedupActionText = new TextBlock { Text = "开始查重", FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
+            _dedupActionText = new TextBlock { Text = Loc.T("tools.dedup.start"), FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
             _dedupActionBtn = new Button
             {
                 Style = (Style)Application.Current.FindResource("PrimaryPillButton"),
@@ -427,7 +428,7 @@ namespace LinkPocket.Views
                     Children =
                     {
                         new M3Icon { Kind = "close-circle-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = "清除结果", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
+                        new TextBlock { Text = Loc.T("tools.dedup.clear"), FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
                     }
                 },
                 Style = (Style)Application.Current.FindResource("TonalButton")
@@ -450,7 +451,7 @@ namespace LinkPocket.Views
             _groups = new List<DedupGroupRow>();
             GoBackToList();
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
-            if (_dedupActionText != null) _dedupActionText.Text = "开始查重";
+            if (_dedupActionText != null) _dedupActionText.Text = Loc.T("tools.dedup.start");
             if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = false;
             ShowDedupPlaceholder();
         }
@@ -569,7 +570,7 @@ namespace LinkPocket.Views
             var previous = _groups;   // 旧结果（视图镜像）：下面据此判断"要不要重设表格"
             _groups = groups;
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "refresh";
-            if (_dedupActionText != null) _dedupActionText.Text = "重新查重";
+            if (_dedupActionText != null) _dedupActionText.Text = Loc.T("tools.dedup.again");
             if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = true;
 
             if (groups.Count == 0)
@@ -577,7 +578,7 @@ namespace LinkPocket.Views
                 if (previous.Count > 0) PaneTable.ItemsSource = null;   // 结果全消失 → 清表让空态可见
                 PaneTable.EmptyContent = BuildState("content-duplicate", "没有发现重复链接",
                     "所有链接的 URL 都互不相同");
-                PaneSubtitle.Text = "扫描完成：未发现重复";
+                PaneSubtitle.Text = Loc.T("tools.dedup.none");
                 return;
             }
 
@@ -750,7 +751,7 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 FocusVisualStyle = null,
                 Style = (Style)FindResource("RowIconButton"),
-                ToolTip = "勾选后删除（每组至少保留一条）"
+                ToolTip = Loc.T("tools.dedup.deleteChecked")
             };
             button.Click += async (_, _) =>
             {
@@ -873,7 +874,7 @@ namespace LinkPocket.Views
             if (VmTools.CheckedIds.Count == 0) return;
 
             var count = VmTools.CheckedIds.Count;
-            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {count} 条链接移入回收站吗？", "删除", "delete-outline"))
+            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {count} 条链接移入回收站吗？", Loc.T("common.delete"), "delete-outline"))
                 return;
 
             try
@@ -1084,7 +1085,7 @@ namespace LinkPocket.Views
         {
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
-                Title = "选择书签 HTML 文件",
+                Title = Loc.T("tools.pickBookmarkFile"),
                 Filter = "书签文件 (*.html;*.htm)|*.html;*.htm|所有文件 (*.*)|*.*",
                 CheckFileExists = true
             };
@@ -1105,7 +1106,7 @@ namespace LinkPocket.Views
             _importInspection = null;
 
             ImportProgressRow.Visibility = Visibility.Visible;
-            ImportProgressText.Text = "正在预检文件（只读，不会写入数据）...";
+            ImportProgressText.Text = Loc.T("tools.runningPrecheck");
 
             try
             {
@@ -1155,7 +1156,7 @@ namespace LinkPocket.Views
             ImportRunBtn.IsEnabled = false;
             ImportBrowseBtn.IsEnabled = false;
             ImportProgressRow.Visibility = Visibility.Visible;
-            ImportProgressText.Text = "正在导入书签（文件夹层级与创建时间一并还原）...";
+            ImportProgressText.Text = Loc.T("tools.runningImport");
 
             try
             {
@@ -1194,7 +1195,7 @@ namespace LinkPocket.Views
 
         private void ExportBrowse_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择导出目录" };
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("tools.pickExportDir") };
             if (dialog.ShowDialog() != true) return;
 
             ExportDirBox.Text = dialog.FolderName;
@@ -1223,7 +1224,7 @@ namespace LinkPocket.Views
             ExportResultChip.Visibility = Visibility.Collapsed;
             ExportRevealBtn.Visibility = Visibility.Collapsed;
             ExportProgressRow.Visibility = Visibility.Visible;
-            ExportProgressText.Text = "正在导出书签（导出后自动校验产物）...";
+            ExportProgressText.Text = Loc.T("tools.runningExport");
 
             try
             {

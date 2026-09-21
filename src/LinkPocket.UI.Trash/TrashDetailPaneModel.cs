@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -21,7 +22,7 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
     {
         // 动作面：三枚等大药丸（打开网站 / 还原 / 还原到根目录）+ 永久删除（无编辑 / 无重命名）
         ShowOpenAction = true;
-        OpenLabel = "打开";
+        OpenLabel = Loc.T("common.open");
         OpenToolTip = "在浏览器中打开";
         OpenIconKind = "open-in-new";
         OpenTone = PillTone.Tonal;                 // 主处置是「还原」，打开降为次要色
@@ -31,7 +32,7 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
         RestoreToRootTone = PillTone.Tonal;
         ShowEditAction = false;
         ShowDeleteAction = true;
-        DeleteActionLabel = "永久删除";
+        DeleteActionLabel = Loc.T("trash.menu.purge");
 
         SetContent(
             string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name,

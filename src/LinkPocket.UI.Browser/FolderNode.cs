@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Material3.Wpf;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -96,7 +97,9 @@ public class FolderNode : INotifyPropertyChanged
     /// 右键菜单「删除」文案：与列表行一致 —— 文件夹内链接数（递归）> 0 才报数，
     /// 空文件夹只显示「删除」（不得出现"删除 (0 项)"，与 BrowserViewModel.DeleteMenuHeader 同口径）。
     /// </summary>
-    public string DeleteMenuHeader => LinkCount > 0 ? $"删除 ({LinkCount} 项)" : "删除";
+    public string DeleteMenuHeader => LinkCount > 0
+        ? Loc.T("menu.deleteWithCount", LinkCount)
+        : Loc.T("common.delete");
 
     /// <summary>环保护深度上限（坏数据成环时终止递归；合法深树极少超此值）。</summary>
     private const int MaxTreeDepth = 256;

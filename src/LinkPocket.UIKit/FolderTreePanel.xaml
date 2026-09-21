@@ -58,7 +58,7 @@
                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
             </ContextMenu.Resources>
             <!-- 根节点/回收站节点（ShowNodeMenu=false）不显示菜单项 -->
-            <MenuItem Header="重命名" Command="{Binding Host.RenameNodeCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Loc common.rename}" Command="{Binding Host.RenameNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>

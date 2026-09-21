@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -39,7 +40,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             {
                 if (string.IsNullOrEmpty(IdText)) return;
                 System.Windows.Clipboard.SetText(IdText);
-                if (_host != null) _host.StatusText = "已复制 ID";
+                if (_host != null) _host.StatusText = Loc.T("status.idCopied");
             }
             catch { }
         });
@@ -92,7 +93,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 {
                     if (string.IsNullOrEmpty(UrlText)) return;
                     System.Windows.Clipboard.SetText(UrlText);
-                    if (_host != null) _host.StatusText = "已复制链接";
+                    if (_host != null) _host.StatusText = Loc.T("status.linkCopied");
                 }
                 catch { }
             },

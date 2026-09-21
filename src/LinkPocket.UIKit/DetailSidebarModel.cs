@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using LinkPocket.I18n;
 using System.Windows.Media.Imaging;
 
 namespace LinkPocket.ViewModels;
@@ -127,6 +128,16 @@ public class DetailSidebarModel : ActionSurfaceModel
 
     // —— 多选 ——
     public int SelectedTotal { get; protected set; }
+
+    /// <summary>「已选中 N 项」整句。</summary>
+    public string SelectedTotalText => Loc.T("count.selected", SelectedTotal);
+
+    /// <summary>「N 个文件夹」整句（含变量的句子由模型出文本，视图不拼 Run）。</summary>
+    public string SelectedFoldersText => Loc.T("count.foldersChip", SelectedFolders);
+
+    /// <summary>「N 个链接」整句。</summary>
+    public string SelectedLinksText => Loc.T("count.linksChip", SelectedLinks);
+
     public int SelectedFolders { get; protected set; }
     public int SelectedLinks { get; protected set; }
 

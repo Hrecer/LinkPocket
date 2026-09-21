@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using LinkPocket.ViewModels;
 using Microsoft.Win32;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views
 {
@@ -215,7 +216,7 @@ namespace LinkPocket.Views
         {
             var dialog = new OpenFileDialog
             {
-                Title = "选择字体文件",
+                Title = Loc.T("font.pickFile"),
                 Filter = "字体文件 (*.ttf;*.otf;*.ttc)|*.ttf;*.otf;*.ttc",
                 Multiselect = false,
                 CheckFileExists = true,

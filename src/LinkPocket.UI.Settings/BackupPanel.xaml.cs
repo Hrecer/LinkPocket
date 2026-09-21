@@ -6,6 +6,7 @@ using System.Windows.Media;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using Microsoft.Win32;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views
 {
@@ -52,7 +53,7 @@ namespace LinkPocket.Views
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "选择备份导出目录"
+                Title = Loc.T("backup.pickExportDir")
             };
 
             if (dialog.ShowDialog() == true)
@@ -67,7 +68,7 @@ namespace LinkPocket.Views
         {
             var dialog = new OpenFileDialog
             {
-                Title = "选择 LinkPocket 备份文件",
+                Title = Loc.T("backup.pickFile"),
                 Filter = "LinkPocket 备份文件 (*.lpbackup)|*.lpbackup|所有文件 (*.*)|*.*",
                 CheckFileExists = true
             };
@@ -283,7 +284,7 @@ namespace LinkPocket.Views
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)
-                progressText.Text = success ? "完成" : "失败";
+                progressText.Text = success ? "完成" : Loc.T("common.failed");
         }
 
         /// <summary>从引擎命令结果 JsonElement 读整数字段。缺失/非数字 = 引擎产出违约输入，

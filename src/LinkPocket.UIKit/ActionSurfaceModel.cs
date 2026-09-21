@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -41,8 +42,8 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public bool StackedActions { get; protected set; }
 
     /// <summary>主按钮文案 / 提示 / 图标。</summary>
-    public string OpenLabel { get; protected set; } = "打开";
-    public string OpenToolTip { get; protected set; } = "打开";
+    public string OpenLabel { get; protected set; } = Loc.T("common.open");
+    public string OpenToolTip { get; protected set; } = Loc.T("common.open");
     public string OpenIconKind { get; protected set; } = "open-in-new";
     /// <summary>铅笔按钮提示（链接 = 编辑；文件夹 = 重命名；回收站不用）。</summary>
     public string EditLabel { get; protected set; } = "编辑";
@@ -53,9 +54,9 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     /// <summary>「重命名」图标钮提示（同款 32×32 铅笔，仅取色与「编辑」区分：重命名 = AccentBtn 深紫）。</summary>
     public string RenameActionLabel { get; protected set; } = "重命名";
     /// <summary>删除按钮文案与提示（回收站 = 「永久删除」，语义更强、避免误读）。</summary>
-    public string DeleteActionLabel { get; protected set; } = "删除";
+    public string DeleteActionLabel { get; protected set; } = Loc.T("common.delete");
     /// <summary>多选删除按钮文案与提示。</summary>
-    public string DeleteSelectionLabel { get; protected set; } = "删除所选";
+    public string DeleteSelectionLabel { get; protected set; } = Loc.T("common.deleteSelected");
     /// <summary>「还原」文案 / 提示 / 图标 / 色调（到删除前所在位置）。</summary>
     public string RestoreLabel { get; protected set; } = "还原";
     public string RestoreToolTip { get; protected set; } = "还原到删除前所在位置";
@@ -146,16 +147,16 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         ShowRenameAction = false;
         ShowRestoreAction = ShowRestoreToRootAction = false;
         ShowJumpAction = false;
-        OpenLabel = "打开";
-        OpenToolTip = "打开";
+        OpenLabel = Loc.T("common.open");
+        OpenToolTip = Loc.T("common.open");
         OpenIconKind = "open-in-new";
         OpenTone = PillTone.Primary;
         StackedActions = false;
         EditLabel = "编辑";
         EditActionAccent = false;
         RenameActionLabel = "重命名";
-        DeleteActionLabel = "删除";
-        DeleteSelectionLabel = "删除所选";
+        DeleteActionLabel = Loc.T("common.delete");
+        DeleteSelectionLabel = Loc.T("common.deleteSelected");
         RestoreLabel = "还原";
         RestoreToolTip = "还原到删除前所在位置";
         RestoreIconKind = "restore";

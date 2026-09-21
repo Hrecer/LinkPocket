@@ -64,8 +64,8 @@ namespace LinkPocket.ViewModels
             SettingsViewModel = new SettingsViewModel();
             SmartListViewModel = new SmartListViewModel(client, _ports,
                 listId => string.IsNullOrEmpty(listId)
-                    ? "全部书签"
-                    : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"),
+                    ? Loc.T("nav.root.bookmarks")
+                    : (FindFolderPathInNodes(FolderItems, listId) ?? Loc.T("path.unknown")),
                 locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
             BrowserViewModel = new BrowserViewModel(client, _ports, locator);   // 共享端口槽位：对话框/导航走 IDialogService；locator = 侧栏「跳转」
 
@@ -345,7 +345,8 @@ namespace LinkPocket.ViewModels
 
         private void SortFolderNodes(ObservableCollection<FolderNode> nodes)
         {
-            var sorted = nodes.OrderBy(n => n.Name, StringComparer.CurrentCulture).ToList();
+            // 根节点恒在最前，其余按名升序：根段现在是 token，混进名称排序会改变目录树次序
+            var sorted = nodes.OrderBy(n => !n.IsRoot).ThenBy(n => n.Name, StringComparer.CurrentCulture).ToList();
             nodes.Clear();
             foreach (var n in sorted)
                 nodes.Add(n);
@@ -355,7 +356,8 @@ namespace LinkPocket.ViewModels
         {
             foreach (var node in nodes)
             {
-                var currentPath = parentPath == null ? node.Name : $"{parentPath} > {node.Name}";
+                var shown = BookmarkDisplay.Segment(node.Name);   // 根段是 token，拼文案前必须投影
+                var currentPath = parentPath == null ? shown : $"{parentPath} > {shown}";
                 if (node.Id == folderId)
                     return currentPath;
                 if (node.Children != null && node.Children.Count > 0)
@@ -370,7 +372,7 @@ namespace LinkPocket.ViewModels
 
         public async Task<string> ResolveLinkPathAsync(string? listId)
         {
-            if (string.IsNullOrEmpty(listId)) return "全部书签";
+            if (string.IsNullOrEmpty(listId)) return Loc.T("nav.root.bookmarks");
             var treePath = FindFolderPathInNodes(FolderItems, listId);
             if (treePath != null) return treePath;
             try
@@ -379,7 +381,7 @@ namespace LinkPocket.ViewModels
                 var dict = allFolders.ToDictionary(f => f.FolderId);
                 // 未找到的目录必须如实标记「未知目录」，不得伪装成根
                 //（与 EfTreeService.PathDisplayAsync 修复同口径）
-                if (!dict.ContainsKey(listId)) return "未知目录";
+                if (!dict.ContainsKey(listId)) return Loc.T("path.unknown");
                 var pathParts = new List<string>();
                 var currentId = listId;
                 for (var i = 0; i < MaxFolderDepth && !string.IsNullOrEmpty(currentId); i++)
@@ -394,7 +396,7 @@ namespace LinkPocket.ViewModels
             catch (Exception ex)
             {
                 LpLog.Warn($"解析链接所属目录失败（listId={listId}）", ex);
-                return "未知目录";
+                return Loc.T("path.unknown");
             }
         }
 

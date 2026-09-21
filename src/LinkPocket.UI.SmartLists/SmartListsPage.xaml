@@ -1,6 +1,7 @@
 <UserControl x:Class="LinkPocket.Views.SmartListsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              Focusable="True">
@@ -35,9 +36,9 @@
                 <StackPanel MaxWidth="880" HorizontalAlignment="Stretch">
 
                     <!-- 页头（与卡片左缘同一条水平对齐线） -->
-                    <TextBlock Text="智能列表" FontSize="24" FontWeight="SemiBold"
+                    <TextBlock Text="{loc:Loc nav.item.smartLists}" FontSize="24" FontWeight="SemiBold"
                                Foreground="{DynamicResource App.Text.Primary}" Margin="2,4,0,0"/>
-                    <TextBlock Text="按访问与编辑行为自动汇集的动态集合，数据实时更新"
+                    <TextBlock Text="{loc:Loc smartlists.desc}"
                                FontSize="12.5" Foreground="{DynamicResource App.Text.Secondary}"
                                Margin="2,5,0,20"/>
 
@@ -134,7 +135,7 @@
                     <DockPanel VerticalAlignment="Center" LastChildFill="True">
                         <!-- 返回圆钮：与详情页顶部返回钮同款（40px 圆、TintCard 底、Primary 状态层；编辑页无返回钮，取消即返回） -->
                         <Button DockPanel.Dock="Left" Click="BackButton_Click" Focusable="False"
-                                ToolTip="返回卡片页（Esc）" Width="40" Height="40" VerticalAlignment="Center"
+                                ToolTip="{loc:Loc detail.back.tip}" Width="40" Height="40" VerticalAlignment="Center"
                                 Foreground="{DynamicResource App.Text.Primary}">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
@@ -160,12 +161,9 @@
 
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                                     Margin="0,0,2,0">
-                            <TextBlock Text="共" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"
-                                       VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ResultViewModel.TotalCount, Mode=OneWay}" FontSize="12"
-                                       Foreground="{DynamicResource App.Text.Secondary}" Margin="3,0,3,0"
-                                       VerticalAlignment="Center"/>
-                            <TextBlock Text="项" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"
+                            <!-- 含变量的整句由模型给文本：三段"字面量 + 绑定 + 字面量"在英文里语序不成立 -->
+                            <TextBlock Text="{Binding ResultViewModel.TotalCountText, Mode=OneWay}" FontSize="12"
+                                       Foreground="{DynamicResource App.Text.Secondary}"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
 
@@ -187,10 +185,10 @@
                             <Button x:Name="ResultJumpBtn" Style="{StaticResource JumpPillButton}"
                                     Command="{Binding ResultViewModel.JumpCommand}"
                                     VerticalAlignment="Center" Margin="2,0,0,0"
-                                    ToolTip="跳转">
+                                    ToolTip="{loc:Loc common.jump}">
                                 <StackPanel Orientation="Horizontal">
                                     <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
-                                    <TextBlock Text="跳转" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{loc:Loc common.jump}" Margin="6,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>

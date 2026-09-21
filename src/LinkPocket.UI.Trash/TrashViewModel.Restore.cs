@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -49,7 +50,7 @@ public partial class TrashViewModel
         catch (Exception ex)
         {
             LpLog.Error($"还原失败（链接 {linkIds.Count} / 单元 {folderIds.Count}；to={to}）", ex);
-            ShowError("还原失败", ex.Message);
+            ShowError(Loc.T("trash.restoreFailed"), ex.Message);
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已还原条目
         }
     }

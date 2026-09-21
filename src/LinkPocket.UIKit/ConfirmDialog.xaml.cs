@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Windows;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views;
 
@@ -34,7 +35,7 @@ public partial class ConfirmDialog : Window
     /// chipBrushKey = 图标 chip 底色资源键：删除类默认**次强调容器**（App.Support.Container，与次操作同一套
     /// 呈现——破坏性动作不设专门警示色），信息/成功传 "TintPanel"。
     /// </summary>
-    public static bool Show(string title, string message, string confirmText = "确定",
+    public static bool Show(string title, string message, string? confirmText = null,
         string iconKind = "delete-outline", string chipBrushKey = Theming.Tokens.AppTokens.SupportContainer)
     {
         var dlg = new ConfirmDialog
@@ -43,7 +44,7 @@ public partial class ConfirmDialog : Window
         };
         dlg.TitleText.Text = title;
         dlg.MessageText.Text = message;
-        dlg.ConfirmLabel.Text = confirmText;
+        dlg.ConfirmLabel.Text = confirmText ?? Loc.T("common.ok");
         dlg.IconGlyph.Kind = iconKind;
         // 底色走**资源引用**：一次性取画刷赋值会在换主题后停在旧主题（表头同根因）；
         // 取不到键也不静默兜一个 Transparent（那会把"主题未装配"伪装成"正常但不着色"）。

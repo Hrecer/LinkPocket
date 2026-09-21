@@ -65,7 +65,7 @@ public partial class BrowserViewModel
         }
         catch
         {
-            StatusText = "复制路径失败（剪贴板被占用）";
+            StatusText = Loc.T("status.copyPathFailed");
         }
     }
 

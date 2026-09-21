@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -47,7 +48,7 @@ public partial class BrowserViewModel
             // 剪切到源目录 = 无操作（Windows 同口径）；但必须明确提示——
             // 含糊的"没反应"会被读成"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
             // 载荷**保留**（剪切态不消费）：导航到目标文件夹后仍可粘贴。
-            StatusText = "剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）";
+            StatusText = Loc.T("status.pasteInSameFolder");
             return;
         }
 

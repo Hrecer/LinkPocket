@@ -13,6 +13,8 @@ using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
 
+using LinkPocket.I18n;
+
 namespace LinkPocket.Views
 {
     /// <summary>
@@ -389,10 +391,10 @@ namespace LinkPocket.Views
         /// <summary>位置解析：与搜索页「位置」列同一口径（VM 注入的组合根解析器；根链接 = 全部书签）。</summary>
         private string ResolveFolderName(string? listId)
         {
-            if (string.IsNullOrEmpty(listId)) return "全部书签";
+            if (string.IsNullOrEmpty(listId)) return Loc.T("nav.root.bookmarks");
             if (DataContext is SmartListViewModel slVm)
                 return slVm.ResolveFolderPath(listId);
-            return "未知目录";
+            return Loc.T("path.unknown");
         }
 
         // ============================================================

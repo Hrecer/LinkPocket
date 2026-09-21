@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -41,7 +42,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            ShowError(redo ? "重做失败" : "撤销失败", ex.Message);
+            ShowError(redo ? Loc.T("status.redoFailed") : Loc.T("status.undoFailed"), ex.Message);
         }
     }
 

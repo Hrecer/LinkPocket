@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -495,7 +496,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         var message = victims.Count == 1
             ? $"将链接「{(string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title)}」移入回收站吗？"
             : $"将选中的 {victims.Count} 条链接移入回收站吗？";
-        if (!_dialogs.Confirm("删除链接", message, "删除")) return;
+        if (!_dialogs.Confirm("删除链接", message, Loc.T("common.delete"))) return;
 
         try
         {

@@ -51,7 +51,7 @@ public partial class App : Application
             LpLog.Warn($"启动期回退：{text}", category: ThemeService.LogCategory);
             try
             {
-                MessageBox.Show(text + "\n\n可在「设置 → 外观」重新选择。", "LinkPocket",
+                MessageBox.Show(text + Loc.T("startup.fallbackNote"), "LinkPocket",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch { /* 提示失败不阻断启动；日志已留痕 */ }
@@ -71,7 +71,7 @@ public partial class App : Application
         {
             LpLog.Error("应用启动失败", ex);
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
-            MessageBox.Show($"应用启动失败：{ex.Message}", "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.T("startup.failed", ex.Message), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -178,7 +179,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            ShowError("新建文件夹失败", ex.Message);
+            ShowError(Loc.T("status.newFolderFailed"), ex.Message);
         }
     }
 
@@ -197,7 +198,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            ShowError("删除失败", ex.Message);
+            ShowError(Loc.T("status.deleteFailed"), ex.Message);
         }
     }
 
@@ -207,7 +208,7 @@ public partial class BrowserViewModel
         try
         {
             System.Windows.Clipboard.SetText(row.Url);
-            StatusText = "已复制链接";
+            StatusText = Loc.T("status.linkCopied");
         }
         catch { /* 剪贴板被占用时静默 */ }
     }
@@ -237,7 +238,7 @@ public partial class BrowserViewModel
                 ? $"将链接「{items[0].Name}」移入回收站吗？"
                 : $"将选中的 {links} 个链接移入回收站吗？";
 
-        return Task.FromResult(ConfirmDelete("删除", msg));
+        return Task.FromResult(ConfirmDelete(Loc.T("common.delete"), msg));
     }
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)

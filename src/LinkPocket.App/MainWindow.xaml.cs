@@ -7,6 +7,8 @@ using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using LinkPocket.Views;
 
+using LinkPocket.I18n;
+
 namespace LinkPocket;
 
 /// <summary>
@@ -55,8 +57,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _searchVm = new SearchViewModel(
             _host.Client, _host.Ports.Navigation!, _host.Ports.Dialogs!,
             listId => string.IsNullOrEmpty(listId)
-                ? "全部书签"
-                : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? "未知目录"),
+                ? Loc.T("nav.root.bookmarks")
+                : (MainViewModel.FindFolderPathInNodes(vm.FolderItems, listId) ?? Loc.T("path.unknown")),
             _host.Locator);   // 「跳转」= 进浏览页对应目录并选中该行（定位组件；与 ID 跳转同一套语义）
         SearchView.DataContext = _searchVm;
         TrashView.DataContext = vm.TrashViewModel;
@@ -122,10 +124,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     Task Services.INavigationService.RefreshTrashPageAsync() => TrashView is TrashPage tp ? tp.RefreshAsync() : Task.CompletedTask;
 
     bool Services.IDialogService.ConfirmDeleteFolder(string folderName)
-        => ConfirmDialog.Show("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？", "删除");
+        => ConfirmDialog.Show("删除文件夹", $"将文件夹「{folderName}」移入回收站吗？", Loc.T("common.delete"));
 
     // Windows 口径：删除类确认 = 整体移入回收站，不罗列后果；视觉统一走 ConfirmDialog 唯一入口
-    bool Services.IDialogService.Confirm(string title, string message, string confirmText, string iconKind)
+    bool Services.IDialogService.Confirm(string title, string message, string? confirmText, string iconKind)
         => ConfirmDialog.Show(title, message, confirmText, iconKind);
 
     // 提示/警告：失败提示属警告类 → 沿用 WarnBg chip（删除/警告一律奶油黄，规范不变）
