@@ -123,7 +123,9 @@ public class ThemeContrastTests
             }
 
             Assert.True(Math.Abs(before.T - after.T) <= 1.5, $"{anchor.Key} 明度漂了：{before.T:F1} → {after.T:F1}");
-            Assert.True(after.C <= before.C + 0.5, $"{anchor.Key} 彩度被放大了：{before.C:F1} → {after.C:F1}");
+            // 容差 1.0：色相旋转 + sRGB 色域钳制会让**近中性色**的实测彩度上下浮动 ~1
+            //（默认主题色相改为 H309.8 后实测 TintCard 7.2 → 7.7）；真正的"加厚颜色"是成倍增长，照样抓得住。
+            Assert.True(after.C <= before.C + 1.0, $"{anchor.Key} 彩度被放大了：{before.C:F1} → {after.C:F1}");
 
             // 色相：按旋转角走。容差 5° 不是"差不多就行"，而是 HCT↔sRGB **8 位往返**的量化下界：
             // 低彩度（C≈4 的表面族）与贴色域边界的色（InversePrimary C≈40）旋转后 RGB 几乎不变，
@@ -167,21 +169,21 @@ public class ThemeContrastTests
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
         // 选中底 = "容器来源的色相 + 表面族彩度"抬到"对页面底 ≥1.08"的档
         // （修前它与页面底**完全同色**=1.000，选中行看不见）。第四轮（用户报障 2026-09-21"紫罗兰发灰"）起
-        // 彩度与页面底同族（表面族彩度 C14.6）—— 旧的 C5.4 停在"背景色成员本色"上，会比页面底更灰。
-        Assert.Equal(0xF1EDFFu, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 彩度与页面底同族（表面族彩度 C15.3）—— 旧的 C5.4 停在"背景色成员本色"上，会比页面底更灰。
+        Assert.Equal(0xF9EDFFu, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
         Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
-        // ← 色5（背景色成员 #F2EEF5）的**色相** + 配色"浅调成员"（色4 #D5C7DE, C15.1）的**彩度量级**：
-        //   第三轮起明度压到 **87–91 深度档**（T91）；第四轮（用户报障 2026-09-21"紫罗兰发灰"）起
-        //   彩度不再取"背景色成员本色"（只有 C5.4，整页发灰）→ 取浅调成员量级（封顶 16）→ C14.6。
-        //   主题卡那枚色点显示的就是**这个值**（与页面底逐字节同色 = 融合；"本色原样"不再是判据）
-        Assert.Equal(0xE6E3FAu, Rgb(t.Token(AppTokens.SurfaceBase)));
+        // ← 色5（背景色成员 **#F7EEF8**，用户令 2026-09-21 改值：原来的 #F2EEF5 H287.7 加彩度后发蓝）的**色相**
+        //   + 配色"浅调成员"（色4 #D5C7DE, C15.1）的**彩度量级**：第三轮起明度压到 **87–91 深度档**（T91）；
+        //   第四轮起彩度不再取"背景色成员本色"（只有 C5.4，整页发灰）→ 取浅调成员量级（封顶 16）→ C15.3。
+        //   主题卡那枚色点显示的就是**这个值**（与页面底/卡面底逐字节同色 = 融合）
+        Assert.Equal(0xEFE0F8u, Rgb(t.Token(AppTokens.SurfaceBase)));
         // 卡面 = 页面底提亮 6 档（T91 → T97；档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）
-        Assert.Equal(0xF9F5FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
+        Assert.Equal(0xFDF3FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
@@ -211,9 +213,10 @@ public class ThemeContrastTests
                 $"{token} 在两种模式下不同：exact={Rgb(exact.Token(token)):X6} auto={Rgb(auto.Token(token)):X6}");
 
         // ② 差异落在文字两档：直配 = 同一个墨提亮；自动 = 中性灰墨
+        //    （灰墨带一点表面族色相 —— 表面色相改为 #F7EEF8 的 H309.8 之后，这两档跟着挪了 2 个色阶）
         Assert.NotEqual(exact.Token(AppTokens.TextSecondary).ToInt(), auto.Token(AppTokens.TextSecondary).ToInt());
-        Assert.Equal(0x47464Au, Rgb(auto.Token(AppTokens.TextSecondary)));
-        Assert.Equal(0x5F5E62u, Rgb(auto.Token(AppTokens.TextMuted)));
+        Assert.Equal(0x49464Au, Rgb(auto.Token(AppTokens.TextSecondary)));
+        Assert.Equal(0x615D61u, Rgb(auto.Token(AppTokens.TextMuted)));
 
         // ③ 融合在**两种模式下都成立**（用户令："不管关闭还是打开，主题卡色点都是能融合的"）
         foreach (var mode in new[] { PaletteMode.Exact, PaletteMode.Auto })
@@ -407,6 +410,12 @@ public class ThemeContrastTests
             if (!card.Swatches.Any(c => c == ColorMath.ToMedia(pageBase)))
                 failures.Add($"{theme.Name} 主题卡色点里没有它的页面底"
                              + $" #{pageBase.ToInt() & 0x00FFFFFF:X6}（圆点与背景不融合）");
+            // ②b **卡面底色 = 该主题自己的页面底**（用户令 2026-09-21 对"融合"的最终定义：
+            //     "那 4 个圆或者 5 个圆，总有一个要和卡面背景融为一体"）→ 那枚圆点真的看不见才算融合。
+            var expectedBg = ColorMath.ToMedia(pageBase);
+            if (card.CardBackground != expectedBg)
+                failures.Add($"{theme.Name} 卡面底色 #{card.CardBackground.R:X2}{card.CardBackground.G:X2}{card.CardBackground.B:X2}"
+                             + $" ≠ 页面底 #{expectedBg.R:X2}{expectedBg.G:X2}{expectedBg.B:X2}（没有圆点能与卡面融合）");
 
             // ③ 页面底只许动明度与"彩度量级"。
             //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：

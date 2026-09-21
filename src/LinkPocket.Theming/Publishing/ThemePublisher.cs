@@ -36,28 +36,48 @@ public static class ThemePublisher
     private static readonly Argb BaselineSeed = Argb.FromArgb(0x67, 0x50, 0xA4);
 
     /// <summary>
-    /// 发布一张令牌表：先建基线，再全量写权威表。
+    /// 发布一张令牌表：**离线**写进一份独立主题字典，然后**整体换入**目标字典的合并表。
     /// </summary>
     /// <param name="resources">目标资源字典（宿主传 <c>Application.Current.Resources</c>）。</param>
     /// <param name="table">派生出的令牌表。</param>
     /// <param name="baselineSeed">基线种子覆盖（缺省 = M3 基线紫；测试可传主题强调色以获得更和谐的库模板底）。</param>
+    /// <remarks>
+    /// <b>为什么不是逐键写进去（2026-09-21 实测改）</b>：往一棵**已被界面挂着**的字典里逐键赋值，
+    /// 每一次 <c>resources[key] = …</c> 都会触发一轮资源失效遍历；本表有 ~140 个键
+    /// （库基线 + 49 库键 + 35 应用令牌）→ 实测**单次 Apply 就要 1.5s**（点主题卡、切「自动调整颜色」
+    /// 开关、清空颜色回默认都付这个钱，探针里 7 次主题切换就吃掉 10 秒）。
+    /// 现行 = 先在**没挂树**的新字典里写完（零失效），再"挂新的 → 摘旧的"两步换入 ——
+    /// 失效只剩两次，语义完全等价（同名键仍是我们赢：合并表里**后挂的**优先，
+    /// 且 App.xaml 里没有直接键、只有合并表）。
+    /// </remarks>
     public static void Publish(ResourceDictionary resources, TokenTable table, Argb? baselineSeed = null)
     {
         ArgumentNullException.ThrowIfNull(resources);
         ArgumentNullException.ThrowIfNull(table);
 
+        var theme = new ResourceDictionary();
+
         // ① 基线：未接管的库模板键（浮动层内部等）保持与主题和谐
         M3Theme.Apply(
             MaterialTheme.FromSeed(baselineSeed ?? BaselineSeed, SchemeVariant.TonalSpot),
             isDark: false,
-            resources);
+            theme);
 
-        // ② 权威表：我们消费的**全部**键一次性写入
+        // ② 权威表：我们消费的**全部**键一次性写入（此时字典还没挂到任何树上）
         foreach (var (key, value) in table.Anchored)
-            resources[key] = Brush(value);
+            theme[key] = Brush(value);
         foreach (var (token, value) in table.Tokens)
-            resources[token] = IsColorValueToken(token) ? value.ToMedia() : Brush(value);
+            theme[token] = IsColorValueToken(token) ? value.ToMedia() : Brush(value);
+
+        // ③ 换入：先挂新的、再摘旧的（中间态始终解析得到键）
+        resources.MergedDictionaries.Add(theme);
+        if (ThemeSlots.TryGetValue(resources, out var previous))
+            resources.MergedDictionaries.Remove(previous);
+        ThemeSlots.AddOrUpdate(resources, theme);
     }
+
+    /// <summary>目标字典 → 当前挂着的那份主题字典（换主题 = 换这一份）。</summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ResourceDictionary, ResourceDictionary> ThemeSlots = new();
 
     /// <summary>
     /// 该令牌发布为 <c>Color</c> 还是 <c>SolidColorBrush</c>。

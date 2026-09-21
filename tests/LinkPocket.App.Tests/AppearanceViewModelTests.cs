@@ -389,7 +389,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
             Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.Slots.Count);
             Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到紫罗兰
-            Assert.Equal(0xE6E3FAu, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
+            Assert.Equal(0xEFE0F8u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
             Assert.True(vm.ThemeCards.First(c => c.Id == ThemeCatalog.DefaultId).IsSelected, "主题卡高亮回到出厂默认");
             Assert.Empty(vm.ThemeCards[^1].Swatches);
             Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
@@ -740,6 +740,28 @@ public class AppearanceViewModelTests : IDisposable
 
         vm.FontSource = FontSourceKind.System;                    // 切回来 = 系统候选完整
         Assert.NotEmpty(vm.UiFonts);
+    }
+
+    [Fact]
+    public void 字体来源切换_说明句跟着变_且主题卡底色就是该主题页面底()
+    {
+        // ① 说明句依赖来源 → 切换来源必须发变更通知（旧实现漏了 `FontSourceHint`，切过去那句话还写着上一种来源）。
+        var vm = NewVm();
+        var raised = new List<string>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? "");
+        vm.FontSource = FontSourceKind.Custom;
+        Assert.Contains(nameof(vm.FontSourceHint), raised);
+        Assert.Contains("自定义字体", vm.FontSourceHint, StringComparison.Ordinal);
+        vm.FontSource = FontSourceKind.System;
+        Assert.Contains("系统已装字体", vm.FontSourceHint, StringComparison.Ordinal);
+
+        // ② 「融合」= 卡面底色就是该主题自己的页面底（那枚"背景色成员"圆点画在同色底上 = 融为一体）。
+        foreach (var card in vm.ThemeCards.Where(c => !c.IsCustom))
+        {
+            var pageBase = PaletteSolver.SurfaceBaseColor(card.Definition!);
+            Assert.Equal(ColorMath.ToMedia(pageBase), card.CardBackground);
+            Assert.Contains(card.Swatches, c => c == card.CardBackground);   // 总有一枚与卡面同色
+        }
     }
 
     [Fact]

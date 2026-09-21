@@ -35,6 +35,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
     private bool _isSelected;
     private bool _isEmpty;
+    private Color _cardBackground;
 
     public ThemeCardViewModel(ThemeDefinition definition)
     {
@@ -56,6 +57,12 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         Accent = ToMedia(table.Token(AppTokens.AccentFill));
         Base = ToMedia(table.Token(AppTokens.SurfaceBase));
         Text = ToMedia(table.Token(AppTokens.TextPrimary));
+
+        // 卡面底色 = **这套主题自己的页面底**（用户令 2026-09-21 澄清的"融合"：
+        // "在每个主题的卡面上，那 4 个圆或者 5 个圆，总有一个要和卡面背景融为一体，
+        //  这意味着我们的颜色被用到了"）—— 色点里那枚"背景色成员"就是这个值（BuildSwatches），
+        // 于是它画在同色卡面上 = 真的融为一体。
+        _cardBackground = Base;
 
         var f = table.Families;
         Summary = $"主色 H{f.AccentHue:F0} · 支撑 H{f.SupportHue:F0}";
@@ -105,15 +112,35 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsEmpty)));
     }
 
-    /// <summary>按**当前配色应用方式**重建色点（切换「自动调整颜色」开关后调用）。</summary>
+    /// <summary>按**当前配色应用方式**重建色点与卡面底色（切换「自动调整颜色」开关 / 换主题 / 进面板时调用）。</summary>
     /// <remarks>
-    /// 两种模式下"背景色成员"的取值可能不同（深色背景会被提亮到浅色底线），所以卡面必须重投影 ——
-    /// 否则那个圆点会与它自己的底不同色（用户令：不管开关开着还是关着，色点都要能融合）。
+    /// <b>色点与卡面底色必须一起重投影</b>（用户令 2026-09-21："对于自动调整的，我们直接同时调整那 4 个圆
+    /// 和 5 个圆，这样也能做到某一个圆与卡面背景融为一体的效果"）：两种模式下该主题实际生效的页面底可能不同，
+    /// 只重投影其中一个 → 那枚"背景色成员"圆点就会与卡面底色分家（融合断掉）。
     /// </remarks>
     public void RefreshSwatches()
     {
         if (Definition is not { } def) return;   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
         SetSwatches(BuildSwatches(def));
+        SetCardBackground(ToMedia(PaletteSolver.SurfaceBaseColor(def)));
+    }
+
+    /// <summary>
+    /// 卡面底色 = **这套主题自己的页面底**（那枚"背景色成员"色点画在它上面 → 融为一体）。
+    /// </summary>
+    /// <remarks>
+    /// 用户令 2026-09-21（对"融合"的最终澄清）："在每个主题的卡面上，那 4 个圆或者 5 个圆，
+    /// 总有一个要和卡面背景融为一体，这意味着我们的颜色被用到了，这就是融合的意思"。
+    /// 因此卡面不再是应用当前的 `App.Surface.Hover`（那样圆点永远浮在一块**别的**颜色上），
+    /// 而是该主题的实际页面底 —— 用户一眼就能看出"这套主题长什么样"。
+    /// </remarks>
+    public Color CardBackground => _cardBackground;
+
+    private void SetCardBackground(Color color)
+    {
+        if (_cardBackground == color) return;
+        _cardBackground = color;
+        PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(CardBackground)));
     }
 
     /// <summary>
@@ -550,6 +577,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             Raise(nameof(FontSource));
             Raise(nameof(FontSourceIndex));
             Raise(nameof(IsCustomFontSource));
+            // 说明句也依赖来源（旧实现漏了这一条 → 切来源后那句还写着上一种来源的话）
+            Raise(nameof(FontSourceHint));
             ProjectFontPools();
             ProjectCurrentFonts(ThemeService.CurrentUiFont);
         }

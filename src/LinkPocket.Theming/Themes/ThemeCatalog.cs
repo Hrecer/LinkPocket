@@ -25,16 +25,24 @@ public static class ThemeCatalog
     /// 出厂默认主题（保留紫色身份，5 个色全部占槽）。
     /// </summary>
     /// <remarks>
-    /// <b>不再钉中性色相</b>（用户令 2026-09-20："我们给出的 4/5 个颜色是最高优先级"）：表面族色相 =
-    /// 配色里最浅的 <c>#F2EEF5</c>（H287.7）→ 背景相对改造前偏紫 11°。代价已确认接受
-    /// （旧判据"出厂默认表面族逐字节等于改造前"随之作废，见 `ThemeContrastTests.出厂默认主题_表面族随配色最浅色`）。
+    /// <para>
+    /// <b>表面族色相 = 配色里最浅的那个成员</b>（不钉中性色相，用户令 2026-09-20："我们给出的 4/5 个颜色
+    /// 是最高优先级"）；<b>表面族彩度 = 配色里"浅调成员"的量级</b>（见 `ThemeFamilies.SurfaceChroma`）。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>第 5 色（背景色成员）已按用户令 2026-09-21 改过</b>：原值 `#F2EEF5`（H287.7）在"彩度取浅调成员量级"
+    /// 之后**读起来发蓝**（H286.3 C14.6，用户报障"目前紫罗兰背景色发蓝……我要原来的紫罗兰的紫色"）。
+    /// 用户特许改这个默认主题选定的颜色本身 → 改为 <c>#F7EEF8</c>（**H309.8，与本套配色的强调填充
+    /// `#6E5A80` H310.8、浅调 `#D5C7DE` H309.4、改造前的选中底 `#EEDDF7` H311.5 同一个紫**）。
+    /// 推出：页面底 `#EFE0F8`、悬停底 `#E1D2E9`、卡面 `#FDF3FF` —— 就是"原来的紫罗兰的紫"。
+    /// </para>
     /// </remarks>
     public static ThemeDefinition Default { get; } = new()
     {
         Id = DefaultId,
         Name = "默认（紫罗兰）",
         Source = ThemeSource.FactoryDefault,
-        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xD5C7DE, 0xF2EEF5),
+        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xD5C7DE, 0xF7EEF8),
         ChromaCap = ChromaCap.Standard,
     };
 

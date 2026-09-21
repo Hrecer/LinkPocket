@@ -102,8 +102,12 @@
                                             VerticalContentAlignment="Stretch">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
+                                                <!-- 卡面底色 = **该主题自己的页面底**（VM 的 CardBackground）：
+                                                     色点里那枚"背景色成员"与它同色 → 真的融为一体
+                                                     （用户令 2026-09-21："总有一个要和卡面背景融为一体，
+                                                      这意味着我们的颜色被用到了，这就是融合的意思"）。 -->
                                                 <Border x:Name="Shell" CornerRadius="16" Padding="12,10"
-                                                        Background="{DynamicResource App.Surface.Hover}"
+                                                        Background="{Binding CardBackground, Converter={StaticResource ColorToBrush}}"
                                                         BorderThickness="2" BorderBrush="Transparent">
                                                     <ContentPresenter/>
                                                 </Border>
@@ -113,14 +117,17 @@
                                                                 Value="{DynamicResource App.Line.Outline}"/>
                                                     </Trigger>
                                                     <!-- 选中态 = 从 VM 的 IsSelected 投影（唯一事实来源；
-                                                         绝不在 code-behind 里"点了哪张记哪张"——那是第二份状态） -->
+                                                         绝不在 code-behind 里"点了哪张记哪张"——那是第二份状态）。
+                                                         ⚠️ **只换描边、不换底色**：换底色会把"融合"那枚圆点重新显形
+                                                         （卡底一变，与它同色的圆点就不再融合）。 -->
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                         <Setter TargetName="Shell" Property="BorderBrush"
                                                                 Value="{DynamicResource App.Accent.Fill}"/>
                                                     </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <!-- 「自选颜色」卡没有自己的主题（色点 = 草稿投影）→ 走中性卡面 -->
+                                                    <DataTrigger Binding="{Binding IsCustom}" Value="True">
                                                         <Setter TargetName="Shell" Property="Background"
-                                                                Value="{DynamicResource App.Accent.Container}"/>
+                                                                Value="{DynamicResource App.Surface.Tint}"/>
                                                     </DataTrigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>
