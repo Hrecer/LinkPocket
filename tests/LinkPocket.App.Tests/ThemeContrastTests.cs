@@ -3,6 +3,7 @@ using LinkPocket.Theming;
 using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Themes;
 using LinkPocket.Theming.Tokens;
+using LinkPocket.ViewModels;
 using Material3.Core;
 using Xunit;
 
@@ -153,8 +154,8 @@ public class ThemeContrastTests
     {
         // 定稿口径（用户令 2026-09-20："我说过优先应用我们选中的这 5 个颜色的，而不是深一点浅一点"）：
         // 界面色 = **用户给的颜色本身**优先 —— 强调 / 支撑 / 描边 / 正文直接取配色成员；
-        // 页面底取"背景色成员"**本色**（明度落在 87–95 档内即原样采用 → 色点与页面底同色 = 融合；
-        // 更浅的才压到 95，见 `页面底_夹在明度档内_且卡面与选中底都看得见`）。
+        // 页面底取"背景色成员"**本色**落到明度档 **87–91**（第三轮口径：更浅的压到 91、更深的提到 87，
+        // 见 `页面底_夹在明度档内_且卡面与选中底都看得见`）。
         // 本用例按 **Exact**（开关关闭）口径核对逐键实测值：那是"最贴近原色"的那一支。
         // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
         var t = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
@@ -164,17 +165,20 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        // 选中底 = 抬到"对页面底 ≥1.08"的档（修前它与页面底**完全同色**=1.000，选中行看不见）
-        Assert.Equal(0xFBF7FEu, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 选中底 = 抬到"对页面底 ≥1.08"的档（修前它与页面底**完全同色**=1.000，选中行看不见）；
+        // 第三轮起页面底压到 T91 之后，这个"够浅的低彩度成员本色"（#F2EEF5）本身就与页面底拉得开 → 原样采用
+        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
         Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
-        // ← 色5（背景色成员）：本色明度落在 87–95 档内 → **原样采用**（页面底就是用户给的那个背景色 = 融合）
-        Assert.Equal(0xF2EEF5u, Rgb(t.Token(AppTokens.SurfaceBase)));
-        Assert.Equal(0xFCF8FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
+        // ← 色5（背景色成员 #F2EEF5, T94.6）：第三轮起页面底压到 **87–91 深度档** → T91 的同一色相/彩度；
+        //   主题卡那枚色点显示的就是**这个值**（与页面底逐字节同色 = 融合；"本色原样"不再是判据）
+        Assert.Equal(0xE8E4EBu, Rgb(t.Token(AppTokens.SurfaceBase)));
+        // 卡面 = 页面底提亮 6 档（T91 → T97；档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）
+        Assert.Equal(0xF9F5FCu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
@@ -321,18 +325,20 @@ public class ThemeContrastTests
     [Fact]
     public void 页面底_夹在明度档内_且卡面与选中底都看得见()
     {
-        // 用户报障 2026-09-20 两轮合起来的口径：
+        // 用户报障 2026-09-20 **三轮**合起来的口径：
         //  ① "整个主题界面底色都被改，颜色发灰，虽然是融合了" → 页面底不能一味压深（层感会塌）；
-        //  ② "更新之后大量颜色出现了发灰问题……并且许多颜色都无法融合" → 页面底要**尽量就是**
-        //     配色里那个背景色成员（色点与它同色 = 融合），只有"比上限还浅、再浅就没法让卡面浮起来"时才压。
+        //  ② "更新之后大量颜色出现了发灰问题……并且许多颜色都无法融合" → 融合不能只靠"本色原样"；
+        //  ③ "灰成葬礼、卡片贴脸看不出层级" → 页面底要有深度（87–91），卡面必须明显浮起来（≥1.15）。
         //
-        // 现行 = 融合优先、深度兜底（`SurfaceBaseOf`）：本色落在 87–95 原样用；更浅的压到 95。
+        // 现行 = 深度档 87–91（`SurfaceBaseOf`：本色落在档内原样用、更浅的压到 91、更深的提到 87）
+        //        + 融合由"主题卡色点显示实际生效页面底"承担（见 `主题卡色点_…` 用例）
+        //        + 卡面档距 = 6（`SurfaceCardLift`：5 档实测只有 1.135–1.138，够不到本用例的门槛）。
         // 四条判据（全部按实测对比度，不靠感觉）：
-        //  ① 页面底明度落在 87–95；
-        //  ② 卡面浮得起来（对页面底 ≥1.06）；
-        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）—— 修前实测 **8/11 套与页面底同色（1.000）**；
+        //  ① 页面底明度落在 87–91；
+        //  ② 卡面浮得起来（对页面底 **≥1.15** —— 第三轮报障的机器化门槛，实测 1.165–1.169）；
+        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）；
         //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
-        const double MinCardOnBase = 1.06;
+        const double MinCardOnBase = 1.15;
         var failures = new List<string>();
         foreach (var theme in ThemeCatalog.All)
         {
@@ -372,12 +378,12 @@ public class ThemeContrastTests
         //  ② "我说的五色主题显示成四色，这是我们之前的方案" —— 设计档第 1–4 套是 **5 色**、
         //     第 5–10 套是 **4 色**，而旧实现每套只收了 1–2 个身份色、再补位凑到 4（五色被压成四色）。
         //
-        // 判据：
+        // 判据（**第三轮口径**：页面底压到 87–91 深度档之后，"本色原样"不再是融合的判据 ——
+        // 融合落在**显示口径**上：主题卡那枚"背景色"色点画的就是**实际生效的页面底**本身
+        // （`ThemeCardViewModel.BuildSwatches` 用 `SurfaceBaseColor` 替换最浅成员），逐字节同色 = 1.000）：
         //  ① `ThemeDefinition.NeutralHueOverride` 必须为空（表面族只由最浅成员决定 → 与背景同色相）；
-        //  ② 最浅身份色与**页面底**必须"融合或近融"：同色相（±5° = 8 位往返量化下界）、
-        //     对比度 ≤1.15（实测：7/11 套**完全同色 1.000**——本色落在 87–95 档内原样采用；
-        //     晴王青提饮 / 薄荷气泡水 / 青梨冻冻 / 蓝莓优格杯 四套的浅色比上限还浅，压到 95 后 1.045–1.082）
-        const double MaxFusionContrast = 1.15;
+        //  ② 渲染出来的色点里**含页面底本身**（卡片实际画什么 = 用户看到的融合）；
+        //  ③ 页面底只许动明度：色相与成员 ≤5°（8 位往返量化下界）、彩度不得被放大（不发明颜色）。
         var failures = new List<string>();
         var counts = new List<string>();
         foreach (var theme in ThemeCatalog.All)
@@ -386,27 +392,31 @@ public class ThemeContrastTests
             var pageBase = table.Token(AppTokens.SurfaceBase);
             var slots = PaletteSolver.EditableSlots(theme);
             var lightest = slots.OrderByDescending(c => ColorMath.Measure(c).T).First();
-            var ratio = ColorMath.ContrastRatio(lightest, pageBase);
             counts.Add($"{theme.Name}={slots.Count}");
 
             // ① 结构：一个色相都不许钉
             if (theme.NeutralHueOverride is not null)
                 failures.Add($"{theme.Name} 钉了中性色相 H{theme.NeutralHueOverride:F1} → 表面族会与背景色成员分开");
 
-            // ② 渲染：背景色成员与页面底必须同色相（近融）。
+            // ② 显示口径的融合（真正给用户看的那条通道）：卡面渲染出来的色点里必须含页面底本身
+            var card = new ThemeCardViewModel(theme);
+            if (!card.Swatches.Any(c => c == ColorMath.ToMedia(pageBase)))
+                failures.Add($"{theme.Name} 主题卡色点里没有它的页面底"
+                             + $" #{pageBase.ToInt() & 0x00FFFFFF:X6}（圆点与背景不融合）");
+
+            // ③ 页面底只许动明度。
             //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：
-            //    压档时贴色域边界的浅色会被钳制（实测宇治抹茶 `#E8F2EF` H186.8 压到 T91 后 H184.8，差 2.4°，
+            //    压档时贴色域边界的浅色会被钳制（实测宇治抹茶 `#E8F2EF` H186.8 压到 T91 后 H191.2，差 4.4°，
             //    派生侧已按"降彩度到能表示为止"把漂移压到最小）；
             //    真正的回归（表面族被钉到别的色相）差的是几十度，照样抓得住。
             var m0 = ColorMath.Measure(lightest);
             var m1 = ColorMath.Measure(pageBase);
             if (ColorMath.HueDistance(m0.H, m1.H) > 5.0)
                 failures.Add($"{theme.Name} 背景色成员 H{m0.H:F1} 与页面底 H{m1.H:F1} 不同色相（表面族被带离了那个成员）");
-            if (ratio > MaxFusionContrast)
-                failures.Add($"{theme.Name} 背景色成员 {lightest.ToInt() & 0x00FFFFFF:X6} 对页面底"
-                             + $" {pageBase.ToInt() & 0x00FFFFFF:X6} = {ratio:F2} > {MaxFusionContrast:F2}（没融合）");
+            if (m1.C > m0.C + 0.5)
+                failures.Add($"{theme.Name} 页面底彩度被放大（{m0.C:F1} → {m1.C:F1}）——只许压明度、不许加厚颜色");
 
-            // ③ 色点数 = 设计档色数（1–4 套五色 / 5–10 套四色 / 出厂默认五色）
+            // ④ 色点数 = 设计档色数（1–4 套五色 / 5–10 套四色 / 出厂默认五色）
             if (slots.Count != theme.Palette.Count)
                 failures.Add($"{theme.Name} 色点 {slots.Count} ≠ 设计档色数 {theme.Palette.Count}");
         }
