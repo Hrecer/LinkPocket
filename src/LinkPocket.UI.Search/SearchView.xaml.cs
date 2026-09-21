@@ -285,12 +285,7 @@ public partial class SearchView : UserControl
     /// 放不下时换短式（去年份），最后才截断；<b>绝不缩字号</b>（同行字号必须一致，见 UI-SPEC §3）。
     /// </summary>
     private static TextBlock TextCell(LinkPocket.I18n.LocText text, double fontSize)
-    {
-        var tb = BuildCell(fontSize);
-        LocFit.SetMode(tb, LocFitMode.ShrinkThenEllipsis);
-        LocFit.SetText(tb, text);
-        return tb;
-    }
+        => LocFitResolver.BuildCell(text, fontSize);
 
     /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
     private static TextBlock TextCell(LocValue text, double fontSize)

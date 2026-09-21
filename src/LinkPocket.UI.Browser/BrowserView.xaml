@@ -451,19 +451,19 @@
                                          ⚠️ 日期列是**结构化数据**：走 LocFit 但只换短式 + 截断，不缩字号
                                          （见 UI-SPEC §3 的适用范围表）。ToolTip 由 LocFit 在真截断时补全文。 -->
                                     <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
-                                               views:LocFit.Text="{loc:FitValue ModifiedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ModifiedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 最后查看（文件夹 = 子孙链接被查看时沿父链刷新；从未显示「从未」） -->
                                     <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                               views:LocFit.Text="{loc:FitValue LastViewedAdaptive}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue LastViewedAdaptive}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 查看次数（文件夹 = 子树增量计数；链接 = 自身访问次数） -->
                                     <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
-                                               views:LocFit.Text="{loc:FitValue ViewCountText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ViewCountText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
 
                                     <!-- 创建时间 -->
                                     <TextBlock Grid.Column="4" Style="{StaticResource RowCellText}"
-                                               views:LocFit.Text="{loc:FitValue CreatedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue CreatedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
                                 </Grid>
                                 </Border>
                             </Border>

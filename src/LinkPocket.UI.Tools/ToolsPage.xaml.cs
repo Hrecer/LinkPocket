@@ -843,12 +843,7 @@ namespace LinkPocket.Views
         /// 而本文件两个命名空间都 using 了。
         /// </summary>
         private TextBlock TextCell(LinkPocket.I18n.LocText text)
-        {
-            var cell = TextCell(text.Full);
-            LocFit.SetMode(cell, LocFitMode.ShrinkThenEllipsis);
-            LocFit.SetText(cell, text);
-            return cell;
-        }
+            => LocFitResolver.BuildCell(text);
 
         /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
         private TextBlock TextCell(LocValue text)
