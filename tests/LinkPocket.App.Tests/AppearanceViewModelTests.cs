@@ -389,7 +389,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
             Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.Slots.Count);
             Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到紫罗兰
-            Assert.Equal(0xEFE0F8u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
+            Assert.Equal(0xF0E0F9u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
             Assert.True(vm.ThemeCards.First(c => c.Id == ThemeCatalog.DefaultId).IsSelected, "主题卡高亮回到出厂默认");
             Assert.Empty(vm.ThemeCards[^1].Swatches);
             Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
@@ -755,12 +755,13 @@ public class AppearanceViewModelTests : IDisposable
         vm.FontSource = FontSourceKind.System;
         Assert.Contains("系统已装字体", vm.FontSourceHint, StringComparison.Ordinal);
 
-        // ② 「融合」= 卡面底色就是该主题自己的页面底（那枚"背景色成员"圆点画在同色底上 = 融为一体）。
+        // ② 「融合」（用户令 2026-09-21 定稿）：所有卡面都用**当前生效主题**的页面底；
+        //    只有"正在生效"的那张卡，它色点里的"背景色成员"才与卡面同色（那枚圆点看不见 = 融合）。
         foreach (var card in vm.ThemeCards.Where(c => !c.IsCustom))
         {
-            var pageBase = PaletteSolver.SurfaceBaseColor(card.Definition!);
-            Assert.Equal(ColorMath.ToMedia(pageBase), card.CardBackground);
-            Assert.Contains(card.Swatches, c => c == card.CardBackground);   // 总有一枚与卡面同色
+            Assert.Equal(ColorMath.ToMedia(PaletteSolver.SurfaceBaseColor(ThemeService.Current)), card.CardBackground);
+            if (card.Id == ThemeService.Current.Id)
+                Assert.Contains(card.Swatches, c => c == card.CardBackground);
         }
     }
 

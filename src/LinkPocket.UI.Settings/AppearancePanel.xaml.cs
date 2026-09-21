@@ -90,6 +90,17 @@ namespace LinkPocket.Views
                 Picker.ColorConfirmed += Picker_ColorConfirmed;
                 Picker.Cleared += Picker_Cleared;
                 Picker.Cancelled += Picker_Cancelled;
+
+                // 字体来源一变就重同步下拉（用户报障 2026-09-21："点到自定义字体、再回到系统字体 →
+                // 系统字体那一栏直接是空的，需要重新下拉"）：候选集与选中项在 VM 里都已就位，
+                // 但下拉控件自己可能停在"上一来源的空列表"造成的空白态 —— 这里显式重挂一次，
+                // 不等用户手动再展开。幂等：值没变时是一次空写。
+                vm.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName is nameof(AppearanceViewModel.FontSource)
+                        or nameof(AppearanceViewModel.SelectedUiFont))
+                        SyncFontCombos();
+                };
             }
 
             SyncFontCombos();
@@ -120,6 +131,10 @@ namespace LinkPocket.Views
             // 等宽字体下拉**已删除**（用户令 2026-09-21），这里只剩界面字体一个。
             if (!ReferenceEquals(UiFontCombo.ItemsSource, ViewModel.UiFonts))
                 UiFontCombo.ItemsSource = ViewModel.UiFonts;
+            // 选中项也显式跟一次：切来源时控件可能自己被清成空白（候选集因故为空的那一瞬），
+            // 而绑定认为"源值没变"不再回填 —— 这里直接写目标属性，把它拉回当前字体。
+            if (!ReferenceEquals(UiFontCombo.SelectedItem, ViewModel.SelectedUiFont))
+                UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
         }
 
         // ── 主题卡 ───────────────────────────────────────────────────────

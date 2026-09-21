@@ -176,14 +176,14 @@ public class ThemeContrastTests
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
-        Assert.Equal(0xA699AFu, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色压到描边档
+        Assert.Equal(0xA898B4u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色（#E0CEEC）压到描边档
         // ← 色5（背景色成员 **#F7EEF8**，用户令 2026-09-21 改值：原来的 #F2EEF5 H287.7 加彩度后发蓝）的**色相**
         //   + 配色"浅调成员"（色4 #D5C7DE, C15.1）的**彩度量级**：第三轮起明度压到 **87–91 深度档**（T91）；
         //   第四轮起彩度不再取"背景色成员本色"（只有 C5.4，整页发灰）→ 取浅调成员量级（封顶 16）→ C15.3。
         //   主题卡那枚色点显示的就是**这个值**（与页面底/卡面底逐字节同色 = 融合）
-        Assert.Equal(0xEFE0F8u, Rgb(t.Token(AppTokens.SurfaceBase)));
+        Assert.Equal(0xF0E0F9u, Rgb(t.Token(AppTokens.SurfaceBase)));
         // 卡面 = 页面底提亮 6 档（T91 → T97；档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）
-        Assert.Equal(0xFDF3FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
+        Assert.Equal(0xFEF4FFu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
@@ -410,12 +410,18 @@ public class ThemeContrastTests
             if (!card.Swatches.Any(c => c == ColorMath.ToMedia(pageBase)))
                 failures.Add($"{theme.Name} 主题卡色点里没有它的页面底"
                              + $" #{pageBase.ToInt() & 0x00FFFFFF:X6}（圆点与背景不融合）");
-            // ②b **卡面底色 = 该主题自己的页面底**（用户令 2026-09-21 对"融合"的最终定义：
-            //     "那 4 个圆或者 5 个圆，总有一个要和卡面背景融为一体"）→ 那枚圆点真的看不见才算融合。
-            var expectedBg = ColorMath.ToMedia(pageBase);
+            // ②b **卡面底色 = 当前生效主题的页面底**（用户令 2026-09-21 对"融合"的最终定义：
+            //     "其他主题在没被选中的时候，卡面上的背景应该是当前主题的背景；当我们选中它……
+            //      就会发现某一个圆和它现在融合了"）→ 只有当**这张卡的主题正在生效**时，
+            //     它色点里的"背景色成员"才与卡面同色（看不见 = 融合）；未选中的卡所有色点都看得见。
+            var appBase = ThemeService.Table.Token(AppTokens.SurfaceBase);
+            var expectedBg = ColorMath.ToMedia(appBase);
             if (card.CardBackground != expectedBg)
                 failures.Add($"{theme.Name} 卡面底色 #{card.CardBackground.R:X2}{card.CardBackground.G:X2}{card.CardBackground.B:X2}"
-                             + $" ≠ 页面底 #{expectedBg.R:X2}{expectedBg.G:X2}{expectedBg.B:X2}（没有圆点能与卡面融合）");
+                             + $" ≠ 当前生效主题的页面底 #{expectedBg.R:X2}{expectedBg.G:X2}{expectedBg.B:X2}"
+                             + "（卡面必须画在'当前主题的背景'上）");
+            if (theme.Id == ThemeService.Current.Id && !card.Swatches.Contains(expectedBg))
+                failures.Add($"{theme.Name} 正在生效，但它色点里没有一枚与卡面同色（融合断掉）");
 
             // ③ 页面底只许动明度与"彩度量级"。
             //    容差 5° = 本仓既有的"HCT↔sRGB 8 位往返量化下界"（同 `出厂默认主题_表面族随配色最浅色旋转`）：

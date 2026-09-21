@@ -102,10 +102,10 @@
                                             VerticalContentAlignment="Stretch">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
-                                                <!-- 卡面底色 = **该主题自己的页面底**（VM 的 CardBackground）：
-                                                     色点里那枚"背景色成员"与它同色 → 真的融为一体
-                                                     （用户令 2026-09-21："总有一个要和卡面背景融为一体，
-                                                      这意味着我们的颜色被用到了，这就是融合的意思"）。 -->
+                                                <!-- 卡面底色 = **当前生效主题的页面底**（VM 的 CardBackground，所有卡一致）：
+                                                     只有"已应用"的那张卡，它色点里的"背景色成员"才与卡面同色 → 融合
+                                                     （用户令 2026-09-21："其他主题在没被选中的时候，卡面上的背景应该是
+                                                      当前主题的背景；当我们选中它……就会发现某一个圆和它现在融合了"）。 -->
                                                 <Border x:Name="Shell" CornerRadius="16" Padding="12,10"
                                                         Background="{Binding CardBackground, Converter={StaticResource ColorToBrush}}"
                                                         BorderThickness="2" BorderBrush="Transparent">
@@ -123,11 +123,6 @@
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                                         <Setter TargetName="Shell" Property="BorderBrush"
                                                                 Value="{DynamicResource App.Accent.Fill}"/>
-                                                    </DataTrigger>
-                                                    <!-- 「自选颜色」卡没有自己的主题（色点 = 草稿投影）→ 走中性卡面 -->
-                                                    <DataTrigger Binding="{Binding IsCustom}" Value="True">
-                                                        <Setter TargetName="Shell" Property="Background"
-                                                                Value="{DynamicResource App.Surface.Tint}"/>
                                                     </DataTrigger>
                                                 </ControlTemplate.Triggers>
                                             </ControlTemplate>

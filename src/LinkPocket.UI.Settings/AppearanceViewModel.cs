@@ -58,11 +58,9 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         Base = ToMedia(table.Token(AppTokens.SurfaceBase));
         Text = ToMedia(table.Token(AppTokens.TextPrimary));
 
-        // 卡面底色 = **这套主题自己的页面底**（用户令 2026-09-21 澄清的"融合"：
-        // "在每个主题的卡面上，那 4 个圆或者 5 个圆，总有一个要和卡面背景融为一体，
-        //  这意味着我们的颜色被用到了"）—— 色点里那枚"背景色成员"就是这个值（BuildSwatches），
-        // 于是它画在同色卡面上 = 真的融为一体。
-        _cardBackground = Base;
+        // 卡面底色 = **当前生效主题的页面底**（见 RefreshSwatches 的注释：只有"已应用"的那张卡
+        // 才会与它自己的某个圆融合 —— 用户令 2026-09-21）。
+        _cardBackground = ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase));
 
         var f = table.Families;
         Summary = $"主色 H{f.AccentHue:F0} · 支撑 H{f.SupportHue:F0}";
@@ -115,24 +113,27 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// <summary>按**当前配色应用方式**重建色点与卡面底色（切换「自动调整颜色」开关 / 换主题 / 进面板时调用）。</summary>
     /// <remarks>
     /// <b>色点与卡面底色必须一起重投影</b>（用户令 2026-09-21："对于自动调整的，我们直接同时调整那 4 个圆
-    /// 和 5 个圆，这样也能做到某一个圆与卡面背景融为一体的效果"）：两种模式下该主题实际生效的页面底可能不同，
-    /// 只重投影其中一个 → 那枚"背景色成员"圆点就会与卡面底色分家（融合断掉）。
+    /// 和 5 个圆，这样也能做到某一个圆与卡面背景融为一体的效果"）：卡面底色取自**当前生效主题**的页面底，
+    /// 而它与"当前模式下"的取值绑定 —— 只重投影其中一个，融合就会断。
     /// </remarks>
     public void RefreshSwatches()
     {
-        if (Definition is not { } def) return;   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
-        SetSwatches(BuildSwatches(def));
-        SetCardBackground(ToMedia(PaletteSolver.SurfaceBaseColor(def)));
+        if (Definition is { } def)
+            SetSwatches(BuildSwatches(def));   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
+        SetCardBackground(ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase)));
     }
 
     /// <summary>
-    /// 卡面底色 = **这套主题自己的页面底**（那枚"背景色成员"色点画在它上面 → 融为一体）。
+    /// 卡面底色 = **当前生效主题的页面底**（所有卡统一用它；见下"融合"的解释）。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-21（对"融合"的最终澄清）："在每个主题的卡面上，那 4 个圆或者 5 个圆，
-    /// 总有一个要和卡面背景融为一体，这意味着我们的颜色被用到了，这就是融合的意思"。
-    /// 因此卡面不再是应用当前的 `App.Surface.Hover`（那样圆点永远浮在一块**别的**颜色上），
-    /// 而是该主题的实际页面底 —— 用户一眼就能看出"这套主题长什么样"。
+    /// 用户令 2026-09-21（对"融合"的最终澄清）："其他主题在没被选中的时候，卡面上的背景应该是**当前主题的背景**；
+    /// 当我们选中它，我们就应用了它的背景，这时候我们就会发现原本上某一个圆和它现在融合了，这就是我们神奇的点。
+    /// 我们不要一开始就直接全部用它们的背景"。
+    /// 现行 = 所有卡都用**当前生效主题**的页面底当卡面；而"已应用"的那张卡的页面底 == 当前页面底，
+    /// 于是它色点里那枚"背景色成员"（<see cref="BuildSwatches"/> 用同一个 `SurfaceBaseColor` 替换最浅成员）
+    /// 正好与卡面**逐字节同色** → 点它的瞬间能看到那个圆"化进"背景里 = 融合。
+    /// 未选中的主题则保留自己的所有色点（在**当前**底色上都看得见）——这就是"神奇的点"。
     /// </remarks>
     public Color CardBackground => _cardBackground;
 
@@ -581,6 +582,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             Raise(nameof(FontSourceHint));
             ProjectFontPools();
             ProjectCurrentFonts(ThemeService.CurrentUiFont);
+            // 目标来源的候选池是空的（本次会话还没装载成功过）→ 当场把装载踢起来；
+            // 装载完成会自动重投影（ReloadFontsAsync 收尾），用户不必"再展开一次下拉"。
+            // 用户报障 2026-09-21："点到自定义字体、再回到系统字体 → 系统字体那一栏直接是空的，需要重新下拉"。
+            if (UiFonts.Count == 0) _ = EnsureFontsLoadedAsync();
         }
     }
 

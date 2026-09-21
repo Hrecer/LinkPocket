@@ -33,8 +33,13 @@ public static class ThemeCatalog
     /// ⚠️ <b>第 5 色（背景色成员）已按用户令 2026-09-21 改过</b>：原值 `#F2EEF5`（H287.7）在"彩度取浅调成员量级"
     /// 之后**读起来发蓝**（H286.3 C14.6，用户报障"目前紫罗兰背景色发蓝……我要原来的紫罗兰的紫色"）。
     /// 用户特许改这个默认主题选定的颜色本身 → 改为 <c>#F7EEF8</c>（**H309.8，与本套配色的强调填充
-    /// `#6E5A80` H310.8、浅调 `#D5C7DE` H309.4、改造前的选中底 `#EEDDF7` H311.5 同一个紫**）。
-    /// 推出：页面底 `#EFE0F8`、悬停底 `#E1D2E9`、卡面 `#FDF3FF` —— 就是"原来的紫罗兰的紫"。
+    /// `#6E5A80` H310.8、浅调 `#E0CEEC` H310.5、改造前的选中底 `#EEDDF7` H311.5 同一个紫**）。
+    /// 推出：页面底 `#F0E0F9`、悬停底 `#E2D3EB`、卡面 `#FDF3FF` —— 就是"原来的紫罗兰的紫"。
+    /// </para>
+    /// <para>
+    /// 第 4 色（浅调成员）也按用户令 2026-09-21 改过：<c>#D5C7DE</c>（C15.1 / T82，用户嫌"有点发灰"）→
+    /// <c>#E0CEEC</c>（H310.5 C18.8 T85，同一个紫、更清爽）。彩度刻意保持在 16.6–22.4 之间 ——
+    /// 高于就抢支撑槽（#A18EB0）、低于就抢描边槽（#3F3448），只有落在这段里才"只换它自己"。
     /// </para>
     /// </remarks>
     public static ThemeDefinition Default { get; } = new()
@@ -42,7 +47,7 @@ public static class ThemeCatalog
         Id = DefaultId,
         Name = "默认（紫罗兰）",
         Source = ThemeSource.FactoryDefault,
-        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xD5C7DE, 0xF7EEF8),
+        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xE0CEEC, 0xF7EEF8),
         ChromaCap = ChromaCap.Standard,
     };
 
