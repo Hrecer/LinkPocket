@@ -75,7 +75,7 @@ namespace LinkPocket.Views
         public static readonly DependencyProperty HeaderTextProperty = DependencyProperty.Register(
             nameof(HeaderText), typeof(string), typeof(FolderTreePanel),
             // 标题 = 「导航」（对齐 Explorer「导航窗格」）：面板里不止文件夹，还有链接叶子，
-            // 旧标题「文件夹」名不符实（用户 2026-09-19 定名）。
+            // 旧标题「文件夹」名不符实（面板里不止文件夹）。
             new PropertyMetadata("导航"));
 
         /// <summary>节点集合（FolderNode / TrashFolderNode）。</summary>
@@ -209,7 +209,7 @@ namespace LinkPocket.Views
             NodeDragStartRequested?.Invoke(this, new TreeItemDragStartEventArgs { Node = node, Source = source });
         }
 
-        // 起手阈值已上收 UIKit（Views.DragSupport.BeyondThreshold，左键/右键/两页共用同一口径）。
+        // 起手阈值已统一在 UIKit（Views.DragSupport.BeyondThreshold，左键/右键/两页共用同一口径）。
 
         /// <summary>
         /// 行主体单击（chevron 由 ToggleButton 自捕获鼠标、绝不进入此路径）：

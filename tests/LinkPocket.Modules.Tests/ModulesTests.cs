@@ -1406,8 +1406,8 @@ public class BackupRobustnessTests
     /// <summary>
     /// 造一个包供导入路径做负面测试。
     /// </summary>
-    /// <param name="version">manifest 的 <c>version</c> 字段；缺省 = **本格式定稿标识**
-    /// <c>lpbackup/2.0</c>（硬编码成 "2.0" 会让用例在版本收严之后测不到自己那条规则——本轮实测踩到）。</param>
+    /// <param name="version">manifest 的 <c>version</c> 字段；缺省 = **当前格式标识**
+    /// <c>lpbackup/2.0</c>（硬编码成 "2.0" 会让用例在版本收严之后测不到自己那条规则）。</param>
     private static void BuildBackup(string path, byte[] dataBytes, string version = "lpbackup/2.0")
     {
         using var archive = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
@@ -1536,7 +1536,7 @@ public class BackupRobustnessTests
     [Fact]
     public async Task Import_Replace_Failure_Keeps_Original_Data_Atomic()
     {
-        // 用户令 2026-09-20（"确保数据是安全的"）：replace=true 的"清空 + 导入"必须是**同一个事务**。
+        // replace=true 的"清空 + 导入"必须是**同一个事务**。
         //
         // ⚠️ 这条用例抓的是一个**真的会丢数据**的缺陷：引擎的非干跑路径不开外层事务，而
         // `ClearAllDataAsync` 在没有外层事务时会**自建事务并当场提交** —— 于是"清空"已永久落库，
@@ -1572,7 +1572,7 @@ public class BackupRobustnessTests
 
         // 硬判据：失败之后**原有数据必须原样还在**（旧实现在这里会是空库）
         // ⚠️ 只看根级 `folders.contents`：它列出的是**根级文件夹**，链接要看子目录内容
-        //    （`folders.contents` 的 Links = 根级直连书签 —— 第一版断言把"子目录里的书签"当根级查，必假红）。
+        //    （`folders.contents` 的 Links = 根级直连书签，不含子目录里的书签）。
         var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
         Assert.Equal(2, contents.SubFolders.Count);          // 清空 + 导入都回滚了（只剩 1 个就是被清过）
         Assert.Contains(contents.SubFolders, f => f.Name == "原有目录");

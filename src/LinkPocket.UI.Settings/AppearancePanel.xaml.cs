@@ -56,7 +56,7 @@ namespace LinkPocket.Views
             // 选中项**不在这里手工赋值**：下拉的 SelectedItem 已双向绑定 VM（`SelectedUiFont`），
             // 装载完成时 VM 会重新投影。
             // ⚠️ 手工赋值会把"候选装载之前显示当前字体"那条投影覆盖成 null
-            //    （用户报障"选系统字体拉取不到任何字体"，其实框里此前是空白）—— 别再写回来。
+            //    （下拉框在装载前本是空白）—— 别再写回来。
         }
 
         /// <summary>
@@ -91,10 +91,9 @@ namespace LinkPocket.Views
                 Picker.Cleared += Picker_Cleared;
                 Picker.Cancelled += Picker_Cancelled;
 
-                // 字体来源一变就重同步下拉（用户报障 2026-09-21："点到自定义字体、再回到系统字体 →
-                // 系统字体那一栏直接是空的，需要重新下拉"）：候选集与选中项在 VM 里都已就位，
+                // 字体来源一变就重同步下拉：候选集与选中项在 VM 里都已就位，
                 // 但下拉控件自己可能停在"上一来源的空列表"造成的空白态 —— 这里显式重挂一次，
-                // 不等用户手动再展开。幂等：值没变时是一次空写。
+                // 不必手动再展开。幂等：值没变时是一次空写。
                 vm.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName is nameof(AppearanceViewModel.FontSource)
@@ -112,8 +111,7 @@ namespace LinkPocket.Views
         {
             // 互斥归属 + 主题卡 + 色槽草稿一起对齐（草稿有未应用改动时不会被冲掉，见 VM 的 SyncFromAppliedTheme）
             ViewModel.SyncFromAppliedTheme();
-            // 字体候选**后台预热**（用户报障 2026-09-20 第三轮："首次展开字体下拉拉不到任何字体 / 一闪就关"）：
-            // 候选原先只在**用户展开下拉那一刻**才装载，而装载会把候选集合整体重写一遍 ——
+            // 字体候选**后台预热**：候选原先只在**下拉展开那一刻**才装载，而装载会把候选集合整体重写一遍 ——
             // 与"已经弹出的弹层"抢时序（首次展开看到的就是还没就位的列表）。改在进面板时后台装载，
             // 让首次展开时列表**已就位**；下面 DropDownOpened 那两条兜底保留（装载未完成 / 失败重试时仍会触发）。
             // 枚举在后台线程（`FontCatalog.LoadAsync`），不占 UI 线程。
@@ -128,7 +126,7 @@ namespace LinkPocket.Views
         private void SyncFontCombos()
         {
             // 诊断用：确保下拉的候选集已就位（ReloadFonts 可能已换过实例）。
-            // 等宽字体下拉**已删除**（用户令 2026-09-21），这里只剩界面字体一个。
+            // 等宽字体下拉**已删除**，这里只剩界面字体一个。
             if (!ReferenceEquals(UiFontCombo.ItemsSource, ViewModel.UiFonts))
                 UiFontCombo.ItemsSource = ViewModel.UiFonts;
             // 选中项也显式跟一次：切来源时控件可能自己被清成空白（候选集因故为空的那一瞬），
@@ -177,7 +175,7 @@ namespace LinkPocket.Views
 
         // ── 4/5 色 ───────────────────────────────────────────────────────
         // 段控件的选中索引经 XAML 双向绑到 VM 的 SlotCountIndex（→ SetSlotCount）——
-        // 视图侧不再有"按槽数换按钮样式"的第二份状态（那是用户报障"分不清在选哪个"的根因）。
+        // 视图侧不再有"按槽数换按钮样式"的第二份状态（那会导致"分不清在选哪个"）。
 
         /// <summary>「以当前主题为起点」：把当前主题的颜色**复制**进色槽（预设定义只读，不被改写）。</summary>
         private void StartFromThemeBtn_Click(object sender, RoutedEventArgs e) => ViewModel.StartFromCurrentTheme();
@@ -219,8 +217,8 @@ namespace LinkPocket.Views
             };
             if (dialog.ShowDialog() != true) return;
 
-            // 导入失败必须让**用户**看见：VM 把原因写进 Status，状态行（绑定 Status）会显示出来。
-            // 只写日志不播报 = 用户点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
+            // 导入失败必须在界面上可见：VM 把原因写进 Status，状态行（绑定 Status）会显示出来。
+            // 只写日志不播报 = 点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
             await ViewModel.ImportFontAsync(dialog.FileName);
             SyncFontCombos();
         }

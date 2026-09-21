@@ -106,7 +106,7 @@
                        Foreground="{DynamicResource App.Text.Primary}" TextWrapping="Wrap"/>
 
             <!-- 取消 = 取消草稿 / 清除 = 把该槽设回**空槽** / 用这个颜色 = 主药丸
-                 （用户令 2026-09-20："调色盘加一个清除按钮 —— 清除 = 把该槽设回空槽，不是设成黑色"）。
+                 （⚠️ 清除 = 把该槽设回空槽，不是设成黑色）。
                  ⚠️ 三枚按钮的几何沿用本仓药丸口径：显式 Height=32、Padding=14,0、同一行同一底边；
                  清除是**次操作**（与"取消"同为 TonalButton），主操作仍是右侧那枚 PrimaryPillButton。 -->
             <Grid Margin="0,14,0,0">

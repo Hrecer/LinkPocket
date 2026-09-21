@@ -62,7 +62,7 @@ public partial class TrashViewModel
 
     public void ClearSelection() => Selection.Clear();
 
-    /// <summary>Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。</summary>
+    /// <summary>Esc（分层）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。</summary>
     private void Escape()
     {
         if (IsDetailOverlayOpen)

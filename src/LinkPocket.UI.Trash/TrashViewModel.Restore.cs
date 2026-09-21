@@ -54,7 +54,7 @@ public partial class TrashViewModel
         }
     }
 
-    /// <summary>结果播报（D4/D7 定稿）：计数 + 回落项前列名称 + 自动编号计数 + 同 URL 重复计数（不阻断、不合并）。</summary>
+    /// <summary>结果播报：计数 + 回落项前列名称 + 自动编号计数 + 同 URL 重复计数（不阻断、不合并）。</summary>
     private static string BuildRestoreSummary(TrashRestoreBatchResult? r, string to, int selectedCount)
     {
         if (r == null) return "已还原";

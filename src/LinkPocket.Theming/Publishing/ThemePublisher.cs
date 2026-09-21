@@ -18,7 +18,7 @@ namespace LinkPocket.Theming.Publishing;
 /// <list type="number">
 /// <item><c>M3Theme.Apply</c> 建**基线**——库模板自己消费的键需要一个和谐的底
 /// （删掉会出现库默认紫）；</item>
-/// <item>再把我们的**权威表**逐键覆盖写入（49 个库键 + 4 个应用键 + 全部 <c>App.*</c> 语义令牌）。</item>
+/// <item>再把**权威表**逐键覆盖写入（49 个库键 + 4 个应用键 + 全部 <c>App.*</c> 语义令牌）。</item>
 /// </list>
 /// </para>
 /// <para>
@@ -32,7 +32,7 @@ namespace LinkPocket.Theming.Publishing;
 /// </remarks>
 public static class ThemePublisher
 {
-    /// <summary>基线的种子（M3 官方基线紫）。仅用于给未接管的库模板键一个和谐底，不影响我们的权威表。</summary>
+    /// <summary>基线的种子（M3 官方基线紫）。仅用于给未接管的库模板键一个和谐底，不影响权威令牌表。</summary>
     private static readonly Argb BaselineSeed = Argb.FromArgb(0x67, 0x50, 0xA4);
 
     /// <summary>
@@ -42,12 +42,12 @@ public static class ThemePublisher
     /// <param name="table">派生出的令牌表。</param>
     /// <param name="baselineSeed">基线种子覆盖（缺省 = M3 基线紫；测试可传主题强调色以获得更和谐的库模板底）。</param>
     /// <remarks>
-    /// <b>为什么不是逐键写进去（2026-09-21 实测改）</b>：往一棵**已被界面挂着**的字典里逐键赋值，
+    /// <b>为什么不是逐键写进去</b>：往一棵**已被界面挂着**的字典里逐键赋值，
     /// 每一次 <c>resources[key] = …</c> 都会触发一轮资源失效遍历；本表有 ~140 个键
     /// （库基线 + 49 库键 + 35 应用令牌）→ 实测**单次 Apply 就要 1.5s**（点主题卡、切「自动调整颜色」
     /// 开关、清空颜色回默认都付这个钱，探针里 7 次主题切换就吃掉 10 秒）。
     /// 现行 = 先在**没挂树**的新字典里写完（零失效），再"挂新的 → 摘旧的"两步换入 ——
-    /// 失效只剩两次，语义完全等价（同名键仍是我们赢：合并表里**后挂的**优先，
+    /// 失效只剩两次，语义完全等价（同名键仍以权威表为准：合并表里**后挂的**优先，
     /// 且 App.xaml 里没有直接键、只有合并表）。
     /// </remarks>
     public static void Publish(ResourceDictionary resources, TokenTable table, Argb? baselineSeed = null)
@@ -63,7 +63,7 @@ public static class ThemePublisher
             isDark: false,
             theme);
 
-        // ② 权威表：我们消费的**全部**键一次性写入（此时字典还没挂到任何树上）
+        // ② 权威表：本应用消费的**全部**键一次性写入（此时字典还没挂到任何树上）
         foreach (var (key, value) in table.Anchored)
             theme[key] = Brush(value);
         foreach (var (token, value) in table.Tokens)

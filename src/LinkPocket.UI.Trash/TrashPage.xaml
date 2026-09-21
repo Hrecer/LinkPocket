@@ -7,7 +7,7 @@
              Focusable="True"
              FocusVisualStyle="{x:Null}"
              Background="{DynamicResource App.Surface.Base}">
-    <!-- 回收站页（与浏览页同构的"回收站浏览器"；用户令 2026-09-19）：
+    <!-- 回收站页（与浏览页同构的"回收站浏览器"）：
          导航行（后退/前进/返回上级 + 面包屑地址栏 + 右侧「永久删除」）+ 左栏导航树（含链接叶子）
          + 中栏共享数据表（模板行 + 同一套行皮肤/多选）+ 右栏只读详情栏 + 状态栏。
          ⚠️ 只读语义：无撤销/重做、无新建/重命名/编辑、无剪贴板；**站内不可搬移**（条目只能被打开查看或永久删除）。
@@ -410,7 +410,7 @@
 
             <!-- 右栏：只读详情栏（DetailSidebar；数据源 = VM 的 Details —— 选中集合的投影，随选中自动刷新）
                  ⚠️ 右栏整体声明 IsInteractive：点它**绝不清空列表选中**（在它上面点空白 / 拖选文本都属于
-                 查看行为，不该反过来取消选中——用户令 2026-09-19）。 -->
+                 查看行为，不该反过来取消选中）。 -->
             <Border Grid.Column="2" Background="{DynamicResource App.Surface.Panel}"
                     CornerRadius="24" Margin="0,0,8,8"
                     views:BlankClick.IsInteractive="True">

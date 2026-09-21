@@ -25,7 +25,7 @@ namespace LinkPocket.Views;
 /// <para>⚠️ 必须 <c>IsHitTestVisible = false</c>：否则浮层会吃掉指针下方的 DragOver/Drop，
 /// 落点判定与光标会全部失效。位置更新走宿主在 <c>GiveFeedback</c> 里读屏幕坐标（拖拽期间 WPF 不再派发 MouseMove）。</para>
 ///
-/// <para><b>逐帧开销（修 2026-09-20 用户报障"拖拽明显掉帧"）</b>：位移**不落在本装饰器自己的变换上**，
+/// <para><b>逐帧开销</b>：位移**不落在本装饰器自己的变换上**，
 /// 而是挂在内部内容层的 <see cref="UIElement.RenderTransform"/> 上。两条理由：
 /// ① `AdornerLayer` 每次排列都会把 <see cref="GetDesiredTransform"/> 的结果直接写进装饰器的 `RenderTransform`
 ///    （`Adorner.AdornerTransform` 就是它的别名），装饰器自持的变换会被当场覆盖（实测：落位恒为 (0,0)）；
@@ -35,7 +35,7 @@ namespace LinkPocket.Views;
 /// （移动复用已光栅化的位图、不重跑模糊）；只有**内容变化**（换名称 / 换提示 / 多选项数）才经
 /// <see cref="RefreshLayer"/> 重排装饰层——拖拽期间每秒至多数次。</para>
 ///
-/// <para>归属 <c>LinkPocket.UIKit</c>（2026-09-19 自 UI.Browser 上收）：浏览页与回收站
+/// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站
 /// 两页共用同一份浮层实现（public——页面程序集都要用；内部可见性后门是架构红线，不开）。</para>
 /// </summary>
 public sealed class DragVisualAdorner : Adorner
@@ -75,7 +75,7 @@ public sealed class DragVisualAdorner : Adorner
     /// <list type="bullet">
     /// <item>单项 = 该项的行快照（类型图标 + 名称）；</item>
     /// <item>多选 = **只显示项数**（「N 个项目」徽标），不再显示"其中某一项"的名称——
-    /// 多选时显示哪一个名字都是误导（实测用户反馈"显示的是最后一个，而不是显示几项"）。
+    /// 多选时显示哪一个名字都是误导（显示的应是项数而不是某一项的名称）。
     /// 计数口径 = 拖动集合里的实体数（文件夹 / 链接各算一项，**不含**文件夹里的子项），与选中统计一致。</item>
     /// </list>
     /// </summary>

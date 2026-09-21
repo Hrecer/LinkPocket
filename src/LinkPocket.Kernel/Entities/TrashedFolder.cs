@@ -22,7 +22,7 @@ public class TrashedFolder
     public string TrashFolderId { get; set; } = Guid.NewGuid().ToString("N")[..16];
 
     /// <summary>回收站内的父单元；NULL = 回收站根（即「删除操作」的直接对象）。
-    /// 属性名沿用旧称 ParentTrashFolderId，语义归位随模型归位阶段统一处理。</summary>
+    /// 属性名沿用旧称 ParentTrashFolderId（与域模型的命名统一另行处理）。</summary>
     [MaxLength(20)]
     [Column("parent_id")]
     public string? ParentTrashFolderId { get; set; }

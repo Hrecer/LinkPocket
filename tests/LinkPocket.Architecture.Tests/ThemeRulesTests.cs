@@ -42,7 +42,7 @@ public class ThemeRulesTests
         Path.Combine("src", "LinkPocket.Theming"),
     };
 
-    /// <summary>零字面量检查范围（界面层）。Theming 是令牌定稿表所在地，天然含色值。</summary>
+    /// <summary>零字面量检查范围（界面层）。Theming 是令牌锚定表所在地，天然含色值。</summary>
     private static readonly string[] LiteralCheckedDirs =
     {
         Path.Combine("src", "LinkPocket.UIKit"),
@@ -244,7 +244,7 @@ public class ThemeRulesTests
     /// </summary>
     /// <remarks>
     /// 用"是不是颜色角色"作判据，而不是用"像不像一个大驼峰词"猜 —— 后者会把
-    /// <c>{StaticResource TonalButton}</c>（我们自己的样式）误判成颜色键。
+    /// <c>{StaticResource TonalButton}</c>（自有样式）误判成颜色键。
     /// 清单来源 = <c>SurfaceAnchors.Build()</c> 的行表：唯一事实来源仍在 Theming，这里只是读它。
     /// </remarks>
     private static HashSet<string> LibraryColorKeys()
@@ -271,13 +271,13 @@ public class ThemeRulesTests
     /// <remarks>
     /// <para>
     /// <b>为什么这条必须机器化</b>：库角色键（<c>OnSurface</c> / <c>Primary</c> / <c>SurfaceContainerHigh</c>…）
-    /// 与我们的令牌**当前同值**，引用错了在界面上**看不出来** —— 于是"哪一处该跟着哪个语义走"
+    /// 与 <c>App.*</c> 令牌**当前同值**，引用错了在界面上**看不出来** —— 于是"哪一处该跟着哪个语义走"
     /// 就散落在各页 XAML 里，换主题/调档位时必然漏改，而且没有任何征兆。
-    /// 实测（N2 盘点）：T5 之后界面里仍有 <b>190 处</b> 库角色键引用，其中 155 处是文字色。
+    /// 实测：界面里仍有 <b>190 处</b> 库角色键引用，其中 155 处是文字色。
     /// </para>
     /// <para>
     /// <b>为什么豁免 UIKit 的样式键名</b>：<c>{StaticResource TonalButton}</c> / <c>{StaticResource LpMenuItem}</c>
-    /// 这类是**我们自己的样式资源**（不是颜色角色）—— 靠 <see cref="LibraryColorKeys"/> 的清单区分，
+    /// 这类是**自有样式资源**（不是颜色角色）—— 靠 <see cref="LibraryColorKeys"/> 的清单区分，
     /// 不靠命名形状猜。
     /// </para>
     /// </remarks>
@@ -348,7 +348,7 @@ public class ThemeRulesTests
     /// <remarks>
     /// <para>
     /// <b>为什么这条必须机器化</b>：这一族错法没有任何编译期征兆，视觉上只在"换主题之后"才显形。
-    /// 用户报障原文："我切换到其他主题，这一栏的颜色异常从未被解决过" —— 像素取样证明表头
+    /// 回归现象：切换其他主题后，这一栏的颜色始终不跟随 —— 像素取样证明表头
     /// 停在出厂默认紫（<c>App.Surface.Panel</c> 的旧主题值），而顶栏 / 卡面已经跟随。
     /// 正确形态 = <c>element.SetResourceReference(dp, key)</c>（XAML 侧 = <c>{DynamicResource}</c>）。
     /// </para>

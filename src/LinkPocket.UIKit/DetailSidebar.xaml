@@ -90,7 +90,7 @@
 
         <!-- ===== 动作卡的**按钮定义（各只有一份）**：排布由能力位 StackedActions 决定（见下方两个宿主）=====
              这样"回收站右栏排两行 / 浏览页右栏排一行"只是排布差异，按钮本身与命令仍是同一份，
-             不存在第二套详情栏（用户令 2026-09-19）。 -->
+             不存在第二套详情栏。 -->
 
         <!-- 药丸组：文件夹=「打开」跨两列占满整行；链接=「详情」+「打开」两列等宽 -->
         <DataTemplate x:Key="SidebarActionPills">
@@ -134,7 +134,7 @@
                 <!-- 跳转（进浏览页对应目录并选中该行；经 IContentLocator）——结果页 / 搜索页 / 浏览页 / 回收站的单一目标动作，
                      多选时由能力位关掉（跳转只对单个目标有意义）。图标 = 地图图钉 `map-marker`（"在哪儿"语义）；
                      取色 = `AccentBtn` **深紫**（与工具栏主按钮填充同源；⚠️ 不要用图标钮缺省的 `Primary` 亮紫——
-                     用户报障"跳转按钮是亮紫色、太显眼"，与「重命名」那枚同色规则一致）。 -->
+                     跳转与「重命名」两枚按同色规则处理）。 -->
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{Binding JumpToolTip}"
                         Width="32" Height="32" Margin="0,0,0,0" VerticalAlignment="Center"
@@ -159,9 +159,9 @@
                         Visibility="{Binding ShowRestoreToRootAction, Converter={StaticResource BoolToVis}}">
                     <m3:M3Icon Kind="{Binding RestoreToRootIconKind}" Width="15" Height="15"/>
                 </Button>
-                <!-- 链接：「重命名」（就地改标题，位置 = 药丸右侧 / 编辑键左侧；用户定稿 2026-09-20）。
-                     ⚠️ T3 起**两枚铅笔同色**：新体系只有一支强调色（`App.Accent.Fill` = 库 `Primary` = #6A567C），
-                     旧的"深紫 vs 亮紫"两色区分随"两套强调色并存"缺陷（D1）一起消失。
+                <!-- 链接：「重命名」（就地改标题，位置 = 药丸右侧 / 编辑键左侧）。
+                     ⚠️ **两枚铅笔同色**：新体系只有一支强调色（`App.Accent.Fill` = 库 `Primary` = #6A567C），
+                     不再用"深紫 vs 亮紫"两色区分。
                      UI-SPEC 对此情形的既定口径 = 「宁可同色 + 靠字形与提示区分」→ 故这里给**提示文案**，
                      探针也改断言"工具提示可区分"而不是"颜色不同"。 -->
                 <Button Style="{StaticResource NavIconButton}"
@@ -206,7 +206,7 @@
 
     <!-- ⚠️ 聚焦禁描边（硬性口径，逐类容器核对 —— 文档/WARNINGS 43）：框架默认模板给
          ScrollViewer / ItemsControl / ContentControl 都带非空 FocusVisualStyle，一旦它们通过 Tab 或
-         代码 Focus 拿到键盘焦点就会画出**原生焦点虚线框**（用户报障 2026-09-20：去重明细页 F5 后黑虚线）。
+         代码 Focus 拿到键盘焦点就会画出**原生焦点虚线框**（如去重明细页 F5 后出现的黑虚线）。
          本控件内部的这几类容器一律显式置空（共享控件，一处修全部页面受益）。 -->
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   FocusVisualStyle="{x:Null}">
@@ -313,8 +313,7 @@
                                         <DataTrigger Binding="{Binding IsFolder}" Value="True">
                                             <Setter Property="Visibility" Value="Visible"/>
                                         </DataTrigger>
-                                        <!-- 被删快照（回收站右栏）：与主栏行 / 左栏树的 IsTrashed 同一套灰化呈现
-                                             （用户报障"回收站主栏与左栏都灰了，右栏没灰"） -->
+                                        <!-- 被删快照（回收站右栏）：与主栏行 / 左栏树的 IsTrashed 同一套灰化呈现 -->
                                         <DataTrigger Binding="{Binding UseTrashedIconTone}" Value="True">
                                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
                                             <Setter Property="Opacity" Value="0.55"/>
@@ -431,7 +430,7 @@
                                         ContentTemplate="{StaticResource SidebarActionPills}"/>
                     </DockPanel>
                     <!-- 排布二（回收站右栏）= 两行：药丸一行、图标钮一行靠右 ——
-                         286 宽放不下"两枚药丸 + 三枚 32 图标钮"（同排会把药丸压到裁字，用户定稿两行） -->
+                         286 宽放不下"两枚药丸 + 三枚 32 图标钮"（同排会把药丸压到裁字，故排两行） -->
                     <StackPanel Margin="0,2,0,0"
                                 Visibility="{Binding StackedActions, Converter={StaticResource BoolToVis}}">
                         <ContentControl Content="{Binding}" FocusVisualStyle="{x:Null}"

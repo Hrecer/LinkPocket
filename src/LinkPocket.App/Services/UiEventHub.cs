@@ -18,7 +18,7 @@ namespace LinkPocket.Services;
 /// </summary>
 public sealed class UiEventHub
 {
-    /// <summary>防抖窗口（行为等价定稿：300ms）。</summary>
+    /// <summary>防抖窗口（行为等价：300ms）。</summary>
     public const int DebounceMilliseconds = 300;
 
     private DispatcherTimer? _timer;

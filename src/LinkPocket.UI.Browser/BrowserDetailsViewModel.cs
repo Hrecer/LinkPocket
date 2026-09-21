@@ -99,7 +99,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             () => IsLink && !string.IsNullOrEmpty(UrlText));
         // 「跳转」= 把选中项带到眼前（经定位组件：进它所在目录 + 选中该行；**已在同目录时就是"选中并滚入视口"**）。
         // 浏览页顶部**不加**跳转（本页就是定位的落点），但同一目录里条目多、选中的那一行在视口外时同样需要它。
-        // 只对**单一目标**开（多选没有"某一项"可定位——与结果页同一口径，用户令 2026-09-20）。
+        // 只对**单一目标**开（多选没有"某一项"可定位——与结果页同一口径）。
         JumpCommand = new RelayCommand(
             () => _ = JumpToSelectionAsync(),
             () => IsSingle && _locator != null);
@@ -173,7 +173,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         StackedActions = rows.Count > 0;   // 有选中时动作卡才出现；本页一律两行排布
         ShowRenameAction = IsLink;
         RenameActionCommand = host.RenameSelectionCommand;   // 同一实例：复用本页就地改名命令，不写第二套
-        // 「跳转」只对**单一目标**开（多选没有"某一项"可定位；与结果页同一口径，用户令 2026-09-20）
+        // 「跳转」只对**单一目标**开（多选没有"某一项"可定位；与结果页同一口径）
         ShowJumpAction = rows.Count == 1;
 
         SelectedTotal = rows.Count;

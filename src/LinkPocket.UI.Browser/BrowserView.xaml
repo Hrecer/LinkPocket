@@ -512,7 +512,7 @@
         <!-- ===== 右侧详情栏：紫色叠层面板 —— 右缘贴窗口边、左缘上下圆角朝沟槽；底部留背景余位。
              内容 = 可复用 DetailSidebar 控件（数据驱动，DataContext = Details，样式控件自包含）。
              ⚠️ 右栏整体声明 IsInteractive：点它**绝不清空列表选中**（右栏是"选中集合的投影"，
-             在它上面点空白 / 拖选文本都属于查看行为，不该反过来取消选中——用户令 2026-09-19）。 -->
+             在它上面点空白 / 拖选文本都属于查看行为，不该反过来取消选中）。 -->
         <Border Grid.Column="3" x:Name="DetailsPanel" Background="{DynamicResource App.Surface.Panel}"
                 CornerRadius="24,0,0,24" Margin="0,0,0,8"
                 views:BlankClick.IsInteractive="True">

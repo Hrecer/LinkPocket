@@ -12,7 +12,7 @@ namespace LinkPocket.ViewModels;
 /// <b>为什么需要它</b>：WPF 的 <see cref="CommandManager.InvalidateRequerySuggested"/> 把重查排在
 /// <c>DispatcherPriority.Background</c>（优先级低于输入 / 渲染 / 动画），界面稍忙就会被饿住；
 /// 而"清空选中"发生的那一次鼠标抬起事件里，WPF 自己排的重查往往**早于**清选中落地 ——
-/// 两个因素叠加的表现就是用户报障的那条：「取消选中以后，明显过了一会，浏览页的『重命名』和『删除』才变灰」。
+/// 两个因素叠加的表现就是：「取消选中以后，明显过了一会，浏览页的『重命名』和『删除』才变灰」。
 /// 判据必须落在"状态真的变了"这一刻，不能靠调度器有空再来。
 /// </para>
 /// <para>

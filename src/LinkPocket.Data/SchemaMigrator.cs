@@ -259,7 +259,7 @@ public static class SchemaMigrator
         """;
 
     /// <summary>
-    /// v6 版本脚本：**审计可读化**（S2，2026-09-20）——补列 + 两个实测定位的索引。
+    /// v6 版本脚本：**审计可读化**——补列 + 两个实测定位的索引。
     ///
     /// <list type="bullet">
     /// <item><c>dry_run</c> / <c>is_nested</c>：审计条目在内存里一直带这两个字段

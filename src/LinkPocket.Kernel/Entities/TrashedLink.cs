@@ -40,7 +40,7 @@ public class TrashedLink
     [Column("trash_folder_id")]
     public string? TrashFolderId { get; set; }
 
-    /// <summary>删除时所在文件夹（位置标记）。属性名沿用旧称 OriginListId，语义归位随模型归位阶段统一处理。</summary>
+    /// <summary>删除时所在文件夹（位置标记）。属性名沿用旧称 OriginListId（与域模型的命名统一另行处理）。</summary>
     [MaxLength(20)]
     [Column("origin_folder_id")]
     public string? OriginListId { get; set; }

@@ -27,7 +27,7 @@ namespace LinkPocket.Models
         /// <summary>
         /// 两个结果集是否**渲染等价**：ID 序列 + 全部展示字段逐项一致（含顺序）。
         /// 用途：VM 在静默刷新后判断"要不要通知视图重建表格行"——工厂模式整表重建（N 行 × 单元格）是
-        /// 同步主线程重活，内容未变时重建纯属白烧（用户报障 2026-09-20：低性能设备切到搜索页偶发卡顿）。
+        /// 同步主线程重活，内容未变时重建纯属白烧（低性能设备切到搜索页会偶发卡顿）。
         /// 只做等价判定、不做任何业务合并：字段有任何差异即视为"需要重建"。
         /// </summary>
         public static bool SameSequence(IReadOnlyList<LinkItem>? a, IReadOnlyList<LinkItem>? b)

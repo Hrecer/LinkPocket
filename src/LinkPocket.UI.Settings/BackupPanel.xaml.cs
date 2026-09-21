@@ -25,7 +25,7 @@ namespace LinkPocket.Views
         /// <summary>整库重置委托（Shell 注入 MainViewModel.ReinitializeDatabaseAsync）：清空 / 整库重建。</summary>
         public Func<Task> ReinitializeAsync { get; set; } = () => Task.CompletedTask;
 
-        /// <summary>导入成功后的 UI 刷新委托（Shell 注入 MainViewModel.RefreshAfterImportAsync）：只刷树/计数，不清数据。</summary>
+        /// <summary>导入成功后的 UI 刷新委托（Shell 注入 MainViewModel.RefreshFolderTreeAndUIAsync）：只刷树/计数，不清数据。</summary>
         public Func<Task> RefreshAfterImportAsync { get; set; } = () => Task.CompletedTask;
 
         private string _exportDirectory = string.Empty;
@@ -234,7 +234,7 @@ namespace LinkPocket.Views
         {
             overlay.Visibility = Visibility.Visible;
 
-            // 每次开始都重置为深紫（用户定稿 AccentBtn，不吃上次完成态的颜色）
+            // 每次开始都重置为深紫（AccentBtn，不吃上次完成态的颜色）
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null)
             {
@@ -276,7 +276,7 @@ namespace LinkPocket.Views
 
         private static void SetOverlayProgressColor(Border overlay, bool success)
         {
-            // 波浪全程保持紫色（用户定稿）；失败 = WarnBg 奶油黄警示（项目铁律禁红色）
+            // 波浪全程保持紫色；失败 = WarnBg 奶油黄警示（项目铁律禁红色）
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null && !success)
                 bar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.SupportContainer);

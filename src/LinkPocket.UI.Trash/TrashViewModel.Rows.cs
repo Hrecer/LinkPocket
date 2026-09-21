@@ -59,7 +59,7 @@ public partial class TrashViewModel
 
         // favicon 先补齐（等价比较要把图标算进去），再决定**要不要换集合**：
         // 内容完全一致时保持原集合不动——逐条 Clear/Add 会触发 N 次 CollectionChanged，
-        // 视图随之整表重建，是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
+        // 视图随之整表重建，是"切页偶发卡顿"的主要来源。
         foreach (var r in rows)
             if (!r.IsFolder) r.Favicon = FaviconService.LoadFromCache(r.FaviconUrl);
 
@@ -96,7 +96,7 @@ public partial class TrashViewModel
         rows.Sort((a, b) =>
         {
             // 回收站主栏 = 平铺口径（单元与链接混排，保留 Windows 回收站语义：按删除时间倒序等）；
-            // 分组只存在于左栏树（单元在前、链接在后），主栏不分组——用户定稿 2026-09-19
+            // 分组只存在于左栏树（单元在前、链接在后），主栏不分组
             var byValue = byField(a, b);
             return byValue != 0 ? byValue : string.CompareOrdinal(a.Id, b.Id);   // ID 兜底（次序确定）
         });

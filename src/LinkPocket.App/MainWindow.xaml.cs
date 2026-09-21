@@ -42,12 +42,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // ⚠️ 语义说明：注册表只承载「navId → 页面 + 依赖注入」的装配登记契约（供未来宿主复用，
         // 见 Services/ViewRegistry 文档）；页面显隐由 XAML 的 CurrentNavId 数据触发器驱动，
         // 运行期不经过注册表解析。新增页面 = 注册一条 + 注入依赖即可。
-        _regions.Register("browser", BrowserPage);
-        _regions.Register("search", SearchView);
-        _regions.Register("trash", TrashView);
-        _regions.Register("smartlists", SmartListsView);
-        _regions.Register("tools", ToolsView);
-        _regions.Register("settings", SettingsView);
+        _regions.Register(NavIds.Browser, BrowserPage);
+        _regions.Register(NavIds.Search, SearchView);
+        _regions.Register(NavIds.Trash, TrashView);
+        _regions.Register(NavIds.SmartLists, SmartListsView);
+        _regions.Register(NavIds.Tools, ToolsView);
+        _regions.Register(NavIds.Settings, SettingsView);
 
         BrowserPage.DataContext = vm.BrowserViewModel;
         // 搜索页（MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
@@ -64,21 +64,21 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 工具页：引擎客户端/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
         // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。
         // navigation = 本窗口（INavigationService 端口）：工具页明细 Enter「打开详情」与搜索页/智能列表
-        // 走同一条路径（用户令 2026-09-20：三页 Enter 都是打开详情页；跳转能力只作预留）。
+        // 走同一条路径（三页 Enter 都是打开详情页；跳转能力只作预留）。
         // locator 仍是 ID 跳转工具用的"进目录 + 选中行"组件，两者并存、互不替代。
         ToolsView.Configure(_host.Client, _host.Locator, this,
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
         SettingsView.Configure(_host.Client, vm.ReinitializeDatabaseAsync,
-            () => vm.RefreshAfterImportAsync());
-        vm.OnToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
+            () => vm.RefreshFolderTreeAndUIAsync());
+        vm.ToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
         // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）
-        vm.OnNavigatedToTools += (_, _) => ToolsView.OnNavigatedTo();
+        vm.NavigatedToTools += (_, _) => ToolsView.OnNavigatedTo();
 
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入保内容+静默刷新 / 离开清选中 / 数据变更重跑）
-        vm.OnNavigatedToSearch += (_, _) => _searchVm.OnNavigatedTo();
-        vm.OnNavigatedFromSearch += (_, _) => _searchVm.OnNavigatedFrom();
-        vm.OnSearchRefreshRequested += (_, _) => _ = _searchVm.RefreshFromEventAsync();
+        vm.NavigatedToSearch += (_, _) => _searchVm.OnNavigatedTo();
+        vm.NavigatedFromSearch += (_, _) => _searchVm.OnNavigatedFrom();
+        vm.SearchRefreshRequested += (_, _) => _ = _searchVm.RefreshFromEventAsync();
 
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
@@ -93,7 +93,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     void Services.INavigationService.OpenFolderInBrowser(string folderId)
     {
         if (string.IsNullOrEmpty(folderId) || DataContext is not MainViewModel vm) return;
-        vm.SelectNavCommand.Execute("browser");
+        vm.SelectNavCommand.Execute(NavIds.Browser);
         _ = vm.BrowserViewModel.LoadAsync(folderId);
     }
 
@@ -101,7 +101,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// 触发搜索页把焦点收进搜索框，无需本窗口再持有搜索框引用。</summary>
     void Services.INavigationService.NavigateToSearch()
     {
-        if (DataContext is MainViewModel vm) vm.SelectNavCommand.Execute("search");
+        if (DataContext is MainViewModel vm) vm.SelectNavCommand.Execute(NavIds.Search);
     }
 
     // —— IBrowserLocateHost（「跳转」= 进入目标目录并选中目标行）——
@@ -111,7 +111,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     void Services.IBrowserLocateHost.ShowBrowser()
     {
         if (DataContext is MainViewModel vm)
-            vm.SelectNavCommand.Execute("browser");
+            vm.SelectNavCommand.Execute(NavIds.Browser);
     }
 
     Task<bool> Services.IBrowserLocateHost.EnterAndSelectAsync(string? folderId, string rowId)
@@ -210,7 +210,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         if (string.IsNullOrEmpty(linkId) || DataContext is not MainViewModel vm) return;
 
-        vm.SelectNavCommand.Execute("browser");
+        vm.SelectNavCommand.Execute(NavIds.Browser);
         _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
     }
 }

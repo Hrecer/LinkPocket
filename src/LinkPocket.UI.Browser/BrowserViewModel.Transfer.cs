@@ -45,7 +45,7 @@ public partial class BrowserViewModel
         if (payload.IsCut && payload.SourceFolderId == target)
         {
             // 剪切到源目录 = 无操作（Windows 同口径）；但必须明确提示——
-            // 含糊的"没反应"曾让用户以为"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
+            // 含糊的"没反应"会被读成"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
             // 载荷**保留**（剪切态不消费）：导航到目标文件夹后仍可粘贴。
             StatusText = "剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）";
             return;
@@ -60,7 +60,7 @@ public partial class BrowserViewModel
             TransferOrigin.Clipboard);
     }
 
-    // 拖拽收尾（成环弹窗）**不再有视图侧入口**（2026-09-19 用户要求统一口径）：
+    // 拖拽收尾（成环弹窗）**不再有视图侧入口**（拖拽与粘贴统一口径）：
     // 过去视图在松手后自己判一次成环并弹窗，而粘贴路径在流水线里弹——两套口径（且视图那次是在
     // OLE 拖拽循环里弹的窗，浮层还挂在屏幕上）。现在统一为：
     //   「落点是不是自己/自己的子文件夹」只在**执行层**判定（本文件 `TransferAsync` 的 `blocked`），
@@ -91,10 +91,10 @@ public partial class BrowserViewModel
         var done = 0;
         var skipped = 0;
         var failed = 0;
-        // 撤销分组：一次拖拽/一次粘贴 = 一个用户动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
+        // 撤销分组：一次拖拽/一次粘贴 = 一个动作 → 引擎把这几步合并为**一条**撤销记录（一次 Ctrl+Z 撤销整批）
         var callOptions = new CallOptions(UndoGroupId: Guid.NewGuid().ToString("N"));
 
-        // 一次用户动作 = 一个动作作用域：本批 N 条命令共用**同一个 correlation_id**，
+        // 一次操作 = 一个动作作用域：本批 N 条命令共用**同一个 correlation_id**，
         // 于是本批审计行（audit.query）与日志（logs.query）能按它取齐——"一次拖拽 10 项 = 10 条命令"
         // 从十条孤立记录变成一条线索。覆盖式状态，退出即复位（不残留、不跨动作串味）。
         using var action = _client.BeginAction($"{(mode == TransferMode.Move ? "移动" : "复制")} {items.Count} 项");
@@ -167,7 +167,7 @@ public partial class BrowserViewModel
 
             // —— 收尾 ②：剪切载荷消费：**只有真的有项被粘贴**才遗忘（Windows 同口径）——
             // 全部被拒/全部失败时必须保留——否则"粘贴进自己的子文件夹被拒"之后，
-            // 用户导航到合法位置就再也粘贴不了了（那才是真正的"剪切不见了"）。
+            // 导航到合法位置后就再也粘贴不了了（那才是真正的"剪切不见了"）。
             if (origin == TransferOrigin.Clipboard && mode == TransferMode.Move && done > 0)
             {
                 Clipboard.SetBrowserPayload(null);
@@ -179,7 +179,7 @@ public partial class BrowserViewModel
                 ? ClipboardResultText(done, failed, renamedNotes)
                 : DropResultText(mode, done, skipped, failed, renamedNotes);
 
-            // —— 收尾 ④：成环：明确弹窗说明——用户明确操作后"毫无反应"会被读成数据损坏 ——
+            // —— 收尾 ④：成环：明确弹窗说明——显式操作后"毫无反应"会被读成数据损坏 ——
             if (blocked.Count > 0) ShowError(BlockedTitle(mode), BlockedMessage(mode, blocked));
         }
         catch (Exception ex)
@@ -244,7 +244,7 @@ public partial class BrowserViewModel
     /// <summary>
     /// 拖拽载荷构造（拖动集合的**唯一出口**）：把唯一选中集合（<see cref="Selection"/> 共享核心）投影成载荷项。
     /// 解析顺序：当前主栏行 → 目录树（树选中但不在当前视图的文件夹 / 链接叶子）；
-    /// <paramref name="grabbedId"/>（用户**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
+    /// <paramref name="grabbedId"/>（**抓住的那一项**）排在首位——浮层显示的是它、执行顺序也从它开始
     /// （集合是无序的，不定首项会让"抓住的那项"与浮层显示不符，同批同名项谁拿编号也随之漂移）。
     /// 解析不到的 ID（实体已被外部事件改掉等）不进载荷，但**如实提示**，绝不静默少搬几项。
     /// </summary>

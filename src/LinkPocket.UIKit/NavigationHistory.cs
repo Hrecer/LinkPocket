@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace LinkPocket.ViewModels;
 
 /// <summary>
-/// 资源管理器式浏览的导航状态（P4；自 Managers/NavigationController 归位，2026-09-19 自 UI.Browser 上收 UIKit）：
+/// 资源管理器式浏览的导航状态（P4）：
 /// 维护当前位置 ID 与后退 / 前进历史栈（只存 ID，null = 根——浏览页 = 「全部书签」，回收站 = 「回收站」）。
 /// 不持有任何 UI 引用；内容加载由各页 VM 完成。浏览页与回收站两页共用同一份实现（唯一一份历史栈口径）。
 /// </summary>

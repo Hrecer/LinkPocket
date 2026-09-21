@@ -37,17 +37,17 @@ public partial class BrowserViewModel
     }
 
     /// <summary>
-    /// 目录树投影：树节点高亮 = 用户在选中集合中真正选中的实体，**与当前所处目录无关**。
+    /// 目录树投影：树节点高亮 = 选中集合里真正被选中的实体，**与当前所处目录无关**。
     /// 「位于某文件夹 / 根目录」是导航位置，由面包屑表达，绝不转换为树高亮——
-    /// 进入某个文件夹不代表该文件夹"被选中"（用户 2026-09-18/19 明确：位置 ≠ 选中）。
+    /// 进入某个文件夹不代表该文件夹"被选中"（位置 ≠ 选中）。
     /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="Selection"/>（共享 ListSelection）派生：
-    /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当用户选中了该文件夹实体）。
+    /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当该文件夹实体在选中集合中）。
     /// </summary>
     private void SyncTreeSelection()
     {
         foreach (var node in AllTreeNodes())
         {
-            // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当用户选中了真实实体（链接叶子或文件夹）才高亮
+            // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当真实实体（链接叶子或文件夹）被选中才高亮
             string? entityId = node.IsLink ? node.Id : node.FolderId;
             node.IsSelected = entityId != null && Selection.Contains(entityId);
         }

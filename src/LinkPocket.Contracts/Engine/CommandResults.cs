@@ -1,7 +1,7 @@
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 命令结果 DTO 组（wire 对外形状 = 契约；自模块提升，模型归位随域归位）。
+/// 命令结果 DTO 组（wire 对外形状 = 契约）。
 /// snake_case JSON 字段名由引擎序列化约定统一生成。
 /// </summary>
 

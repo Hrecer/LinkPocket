@@ -112,7 +112,7 @@ public sealed class UndoCoordinator : IUndoCoordinator
             while (_undo.Count > Capacity) _undo.TryPop(out _);
         }
 
-        // 里程碑（Debug）：撤销栈变化——「这次用户动作留下了什么可回退的东西」
+        // 里程碑（Debug）：撤销栈变化——「本次用户动作留下了什么可回退的东西」
         if (LpLog.IsEnabled(LogLevel.Debug))
             LpLog.Write(LogLevel.Debug, "engine.undo", $"撤销登记：{descriptor.Name}", props: new Dictionary<string, object?>
             {

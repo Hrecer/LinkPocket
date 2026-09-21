@@ -13,7 +13,7 @@ namespace LinkPocket.ViewModels;
 /// 全都投影成同一种项再走同一条流水线——不再有"每种入口各写一份逐项循环"的余地。
 /// （剪贴板自己存的是 ID 清单 = 存储格式，不是第二份传输实现。）</para>
 ///
-/// <para>归属 <c>LinkPocket.UIKit</c>（2026-09-19 自 UI.Browser 上收）：浏览页与回收站
+/// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站
 /// 两页共用同一份拖拽载荷（回收站内搬移也走同一个形状），不再各持一份。</para>
 /// </summary>
 public sealed record DragItem(string Id, bool IsFolder, string Name);

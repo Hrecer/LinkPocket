@@ -46,7 +46,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         SearchCommand = new RelayCommand(() => _ = SearchAsync());
         CancelCommand = new RelayCommand(Cancel);
         // **「跳转」= 进浏览页对应目录并选中该行**（经定位组件 IContentLocator，与 ID 跳转工具同一套语义）；
-        // **仅单选可用**：多选时没有"某一个目标"（用户令 2026-09-20）。绝不展开详情页。
+        // **仅单选可用**：多选时没有"某一个目标"。绝不展开详情页。
         JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => Selection.Count == 1);
         // **「详情」= 打开浏览页的链接详情页**（INavigationService）——与「跳转」是两条互不替代的语义：
         // 顶部跳转药丸 / 右栏跳转钮走前者，`Enter` / 双击 / 右栏「详情」/ 铅笔槽走后者。
@@ -65,7 +65,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         RefreshCommand = new RelayCommand(() => _ = RefreshAsync(), () => !string.IsNullOrWhiteSpace(LastQuery));
 
         // 详情栏的页面动作命令：「详情」/铅笔槽 = 打开浏览页的链接详情页（自带完整编辑与删除入口）；
-        // 「跳转」单独挂定位入口（进目录 + 选中行）——两条语义互不替代（用户令 2026-09-20）。
+        // 「跳转」单独挂定位入口（进目录 + 选中行）——两条语义互不替代。
         Details.OpenCommand = OpenDetailCommand;
         Details.RenameCommand = OpenDetailCommand;
         Details.OpenWebsiteCommand = OpenWebsiteCommand;
@@ -107,7 +107,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// <summary>结果集（null = 无行，视图据此清空 ItemsSource 只留空态）。
     /// **渲染等价则不通知**：视图收到通知会整体替换 ItemsSource → 整表行容器重建
     ///（工厂模式 N 行 × 单元格，同步主线程）——切页进入的静默刷新常拿到内容完全相同的新结果，
-    /// 此时重建纯属白烧（用户报障 2026-09-20：低性能设备上切到搜索页偶发明显卡顿）。</summary>
+    /// 此时重建纯属白烧（低性能设备上切到搜索页偶发明显卡顿）。</summary>
     public IReadOnlyList<LinkItem>? Results
     {
         get => _results;
@@ -200,7 +200,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// 有已执行查询时静默刷新保最新（入口对齐，与浏览页/工具页同一模式）；随后把焦点收回搜索框。</summary>
     public void OnNavigatedTo()
     {
-        // 「进入保内容」的**唯一入口**（用户令 2026-09-19；2026-09-20 用户报障"切到搜索页偶发明显卡顿"）：
+        // 「进入保内容」的**唯一入口**（低性能设备上切到搜索页偶发明显卡顿，故不做重建）：
         // 只对**已执行的查询**做静默刷新；绝不看输入框里尚未执行的文本——那会走 SearchAsync
         // 清空结果 + 亮"正在搜索…"加载态（每次切回都重置一遍：既闪一下、又要整表重建）。
         // 未执行过的文本属于"回车 / 搜索按钮"的语义，不由切页触发。
@@ -247,7 +247,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// F5 真刷新：重跑**当前已执行的查询**（<see cref="LastQuery"/>）并保留选中——
-    /// 只剔除已不在新结果里的 ID（用户令 2026-09-20："除非刷新之后那一项没了，才应该取消选中"）。
+    /// 只剔除已不在新结果里的 ID（刷新后仍存在的项保留选中）。
     /// 按"导航加载口径"亮遮罩 + 播入场动画，与浏览页 F5 同源；
     /// 输入框里已改但未执行的文本不参与（那是"回车/搜索按钮"的语义，避免按 F5 变成静默换查询）。
     /// </summary>

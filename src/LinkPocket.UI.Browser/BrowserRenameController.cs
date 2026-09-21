@@ -3,7 +3,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 浏览页**就地重命名会话（控制器）**：从 BrowserViewModel 抽出的状态机——
 /// 唯一事实来源 = 「目标 ID + 是否文件夹 + 编辑面 + 原名 + 编辑文本」；
-/// 行与树上的 IsRenaming 全部是它的投影（与 IsSelected 同构），绝不各自持一份"我在编辑"的标记。
+/// 行与树上的 IsRenaming 全部是它的投影（与 IsSelected 同构），绝不各自持一份"编辑中"的标记。
 ///
 /// 提交用**会话快照**（<see cref="Capture"/>）：提交动作只读快照，杜绝异步途中被切换目标串味。
 /// **挂起提交**（右键菜单收尾：菜单关闭后才落库，否则提交刷新会销毁承载菜单的行，见 WARNINGS 35）

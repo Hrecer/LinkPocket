@@ -49,11 +49,10 @@ public sealed record ThemeFamilies(
     /// 封顶 <see cref="SurfaceChromaMax"/>），下限 = 背景色成员自己的彩度（**只增不减**）。
     /// </para>
     /// <para>
-    /// <b>为什么不再取"背景色成员自己的彩度"（用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"）</b>：
-    /// 默认主题的背景色成员 `#F2EEF5` 只有 C5.4（设计档语义 = "米白"），按它推出的整页大面积全是灰的
-    /// （实测量到的表头带/悬停底 C2.6、选中底 C5.4），而**改造前的界面**是
-    /// 表头带 `#E0DAEC` C11.8 / 选中底 `#EEDDF7` C16.5 —— 三轮"改档"全在动明度、从没动过彩度，
-    /// 所以用户看来看去都是"发灰"。现行 = 把彩度提升到该配色**自己的浅调成员**的量级：
+    /// <b>为什么不再取"背景色成员自己的彩度"</b>：低彩度的背景色成员（如 `#F2EEF5`，C5.4，
+    /// 设计档语义 = "米白"）推出的整页大面积全是灰的（实测表头带/悬停底 C2.6、选中底 C5.4；
+    /// 参考量级是表头带 `#E0DAEC` C11.8 / 选中底 `#EEDDF7` C16.5）——只调明度档位改变不了"发灰"观感。
+    /// 现行 = 把彩度提升到该配色**自己的浅调成员**的量级：
     /// 色相仍只来自配色（背景色成员），彩度也只来自配色（浅调成员），**没有发明任何颜色**。
     /// </para>
     /// </remarks>
@@ -65,10 +64,10 @@ public sealed record ThemeFamilies(
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>用户令（2026-09-20）："我们给出的 4/5 个颜色是最高优先级"</b>——旧模型按色相聚族、单族时用 ±60°
-/// 旋转**发明**一个支撑色相，且只取「色相圆均值 + 最大彩度」，于是配色成员的明度被整体丢弃
-/// （实测默认主题 5 色里 3 个对界面零影响）、造出来的色相又落进肤色带/冷色带
-/// （用户报障"偏黄偏肤色""怎么又变偏蓝了"）。见 `文档/WARNINGS.md` 76/77。
+/// <b>配色成员优先级最高</b>——旧模型按色相聚族、单族时用 ±60° 旋转**发明**一个支撑色相，
+/// 且只取「色相圆均值 + 最大彩度」，于是配色成员的明度被整体丢弃
+/// （实测默认主题 5 色里 3 个对界面零影响），造出来的色相又会落进肤色带/冷色带。
+/// 见 `文档/WARNINGS.md` 76/77。
 /// </para>
 /// <para>
 /// 现行规则 = **彩度降序占槽**（并列取更暗者先）+ **明度最高者管表面**：
@@ -99,10 +98,9 @@ public static class PaletteSolver
     /// <summary>把配色成员分配到固定角色槽（纯函数、无副作用、可单测）。</summary>
     /// <remarks>
     /// <para>
-    /// <b>调色板优先（用户令 2026-09-20）</b>：用户原话"我说过优先应用我们选中的这 5 个颜色的，
-    /// 而不是深一点浅一点" —— 交付界面的颜色**必须是用户给的那几个颜色本身**，不是"取色相 + 彩度、
+    /// <b>调色板优先</b>：交付界面的颜色**必须是配色成员的原色**，不是"取色相 + 彩度、
     /// 按档位表重新生成"的近似色。旧实现只用 (H, C) 重建，于是宇治抹茶的 4 个青绿在界面上变成了
-    /// 灰绿 + 粉紫（`#EEDDF7` 那种配色里根本不存在的颜色），用户读成"偏粉"。
+    /// 灰绿 + 粉紫（`#EEDDF7` 那种配色里根本不存在的颜色）。
     /// </para>
     /// <para>
     /// 各槽因此记录**来源原色**（<see cref="ThemeFamilies.AccentSource"/> 等），由 <see cref="Solve"/>
@@ -167,7 +165,7 @@ public static class PaletteSolver
 
         // 表面族彩度：取配色里"浅调成员"的彩度（明度 ≥ SurfaceLightMemberMinTone 里最鲜艳的那个），
         // 封顶 SurfaceChromaMax、下限 = 背景色成员自己的彩度（只增不减 —— 只把"太灰"的抬上来）。
-        // 用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"（详见 ThemeFamilies.SurfaceChroma）。
+        // 表面族彩度按上述口径提升（详见 ThemeFamilies.SurfaceChroma）。
         var lightMember = measured
             .Where(m => m.Hct.T >= SurfaceLightMemberMinTone)
             .OrderByDescending(m => m.Hct.C)
@@ -208,8 +206,8 @@ public static class PaletteSolver
     /// </para>
     /// <para>
     /// 主题卡上的色点用**这个值**而不是原始成员值来渲染最浅那一枚（见 <c>ThemeCardViewModel</c>）：
-    /// 卡面显示的必须是"这套主题实际长什么样"，否则那个圆点会与它自己的底不同色（用户令 2026-09-20：
-    /// "背景色那个圆与背景融合，这正是我们想要的效果"）。
+    /// 卡面显示的必须是"这套主题实际长什么样"，否则那个圆点会与它自己的底不同色 ——
+    /// 背景色圆点与页面底同色（融合）正是设计目标。
     /// </para>
     /// </remarks>
     public static Argb SurfaceBaseColor(ThemeDefinition definition)
@@ -223,15 +221,14 @@ public static class PaletteSolver
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么要夹档（2026-09-20 用户报障"整个主题界面底色都被改，颜色发灰，虽然是融合了"）</b>：
-    /// 原样采用"最浅成员"会让页面底漂到很浅的档位（默认主题 `#F2EEF5` T94.6，而定稿底色是 T91.3），
-    /// 层感随之塌掉：卡面只能提亮 1–2 档、悬停底压深后**反而比页面底更浅**（实·晴王青提饮 T97.9 /
-    /// 薄荷气泡水 T98.1 的卡面与页面底对比度 = **1.003 / 1.000**，卡片根本看不出是卡片）。
-    /// 夹到 87–91 之后：页面底有深度、卡面必然浮起来、选中底也腾得出位置。
+    /// <b>为什么要夹档</b>：原样采用"最浅成员"会让页面底漂到很浅的档位
+    /// （如 `#F2EEF5` T94.6，而页面底目标档是 T91.3），层感随之塌掉：卡面只能提亮 1–2 档、
+    /// 悬停底压深后**反而比页面底更浅**（实·晴王青提饮 T97.9 / 薄荷气泡水 T98.1 的卡面与页面底
+    /// 对比度 = **1.003 / 1.000**，卡片根本看不出是卡片）。夹到 87–91 之后：页面底有深度、
+    /// 卡面必然浮起来、选中底也腾得出位置。
     /// </para>
     /// <para>
-    /// <b>不发明颜色</b>：只动明度，色相与彩度仍是那个成员本身的（用户令 2026-09-20：
-    /// "优先应用我们选中的这几个颜色，而不是深一点浅一点"）—— 界面上的色相依然全部来自配色。
+    /// <b>不发明颜色</b>：只动明度，色相与彩度仍是那个成员本身的 —— 界面上的色相依然全部来自配色。
     /// </para>
     /// </remarks>
     private static Argb SurfaceBaseOf(ThemeFamilies families)
@@ -240,8 +237,7 @@ public static class PaletteSolver
         var source = families.SurfaceSource;
         var hue = source is { } s ? ColorMath.Measure(s).H : families.NeutralHue;
         // 彩度 = **表面族彩度**（配色里"浅调成员"的量级，见 ThemeFamilies.SurfaceChroma）——
-        // 不再是"背景色成员自己的彩度"：默认主题那个成员只有 C5.4，按它推出的整页都是灰的
-        // （用户报障 2026-09-21："紫罗兰颜色发灰没有得到任何解决"）。
+        // 不再是"背景色成员自己的彩度"：低彩度成员（C5.4 这种）推出的整页都是灰的。
         var memberChroma = source is { } s2 ? ColorMath.Measure(s2).C : NeutralChroma;
         var chroma = source.HasValue ? families.SurfaceChroma : NeutralChroma;
         var tone = source is { } s3 ? ColorMath.Measure(s3).T : SurfaceBaseToneMax;
@@ -261,7 +257,10 @@ public static class PaletteSolver
         if (source is { } lighter)
         {
             _ = lighter;
-            for (var t = SurfaceBaseToneMax; t >= SurfaceBaseToneMin; t -= 1.0)
+            // 起点 = **本色明度夹在档内**（本色比上限浅才压到 91；已在 87–91 里就沿用它）——
+            // 这样"背景色成员"本身的明度不会被无谓地抹平（默认主题本色 T89 就落 89）。
+            var start = Math.Clamp(tone, SurfaceBaseToneMin, SurfaceBaseToneMax);
+            for (var t = start; t >= SurfaceBaseToneMin; t -= 1.0)
             {
                 if (!ColorMath.IsRepresentable(hue, chroma, t)) continue;
                 var candidate = ColorMath.FromAlphaHct(0xFF, hue, chroma, t);
@@ -270,7 +269,7 @@ public static class PaletteSolver
                 if (ColorMath.ContrastRatio(candidate, cardAt) <= SurfaceFusionMaxContrast)
                     return candidate;
             }
-            return AtTone(hue, chroma, SurfaceBaseToneMax);
+            return AtTone(hue, chroma, start);
         }
 
         // ③ 本色更深（低于下限，例如暮色玫瑰 T89）→ 提到下限档
@@ -324,30 +323,30 @@ public static class PaletteSolver
     /// <summary>中性变体彩度（描边档）。</summary>
     public const double NeutralVariantChroma = 8.0;
 
-    // ── 表面三层由**用户给的背景色成员**推出（用户令 2026-09-20："优先应用我们选中的那几个颜色"）──
+    // ── 表面三层由**配色里的背景色成员**推出（优先应用配色成员的原色）──
     /// <summary>
     /// 页面底的明度档**上限**：背景色成员比它更浅就压到这个档（87–91 深度档的顶）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>三轮回溯（用户报障 2026-09-20）</b>：① 原样取"最浅成员"、不设上限 → 卡面提亮撞上 T98 上限、
-    /// 与页面底同色（薄荷气泡水 / 青梨冻冻实测 1.000 = 卡片看不出是卡片）；② 一律夹 87–91（上一版）
-    /// → 深度有了，但"背景色成员"与页面底永远差一档，用户读成"许多颜色都无法融合"（第二轮报障）；
-    /// ③ 87–95（`7988403`）→ 融合回来了，但用户第三轮报"**灰成葬礼、卡片贴脸看不出层级**"。
+    /// <b>档位取舍的由来</b>：① 原样取"最浅成员"、不设上限 → 卡面提亮撞上 T98 上限、与页面底同色
+    /// （薄荷气泡水 / 青梨冻冻实测 1.000 = 卡片看不出是卡片）；② 一律夹 87–91 → 深度有了，
+    /// 但"背景色成员"与页面底永远差一档，读起来"许多颜色都无法融合"；③ 87–95 → 融合回来了，
+    /// 但整页发灰、卡片贴脸看不出层级。
     /// </para>
     /// <para>
     /// **现行 = 87–91 的深度 + 两个保住另两项目标的机制**：① 主题卡上那枚"背景色"色点显示的是
     /// **实际生效的页面底**（`ThemeCardViewModel.BuildSwatches` 用 <see cref="SurfaceBaseColor"/> 替换最浅成员）
     /// → 色点与页面底**逐字节同色 = 融合**（实测 11/11 套 = 1.000），"本色原样"不再是融合的判据；
-    /// （第四轮 2026-09-21 起页面底**彩度**也不再取"背景色成员本色"：改取配色"浅调成员"的量级，
-    /// 见 <see cref="ThemeFamilies.SurfaceChroma"/> —— 色相与彩度都仍来自这份配色。）
+    /// 页面底**彩度**同样不取"背景色成员本色"，改取配色"浅调成员"的量级，
+    /// 见 <see cref="ThemeFamilies.SurfaceChroma"/> —— 色相与彩度都仍来自这份配色。
     /// ② 卡面档距取 <see cref="SurfaceCardLift"/>（6 档），让"卡面对页面底"恒 ≥1.15
     /// （实测 1.165–1.169；5 档只有 1.135–1.138，够不到门槛）。
     /// </para>
     /// <para>
     /// ⚠️ <see cref="SurfaceBaseOf"/> ② 路径里那个"对卡面 ≤ <see cref="SurfaceFusionMaxContrast"/> 就采用"的循环
     /// 在现行档距下**恒不成立**（提亮 5–6 档的对比恒 &gt;1.1）→ 循环必然走到末尾、返回上限档。
-    /// 这是**有意的 inert**（`7988403` 起的实测事实）：**别为了"让它活过来"反转判据** ——
+    /// 这是**有意的 inert**（实测事实）：**别为了"让它活过来"反转判据** ——
     /// 反转等于把卡面压回与页面底融合，正好破坏本档要保住的卡片层级。
     /// </para>
     /// </remarks>
@@ -361,7 +360,7 @@ public static class PaletteSolver
 
     /// <summary>
     /// 「浅调成员」的明度下限：表面族彩度取**明度 ≥ 它的成员里彩度最高者**的量级
-    /// （见 <see cref="ThemeFamilies.SurfaceChroma"/>；用户报障 2026-09-21"紫罗兰颜色发灰"）。
+    /// （见 <see cref="ThemeFamilies.SurfaceChroma"/>）。
     /// </summary>
     public const double SurfaceLightMemberMinTone = 80.0;
 
@@ -372,8 +371,8 @@ public static class PaletteSolver
     public const double SurfaceChromaMax = 16.0;
 
     /// <summary>
-    /// 卡面相对页面底提亮的档距：**必须让"卡面对页面底"≥1.15**（用户第三轮报障"卡片贴脸看不出层级"
-    /// 的机器化判据 = `页面底_夹在明度档内_且卡面与选中底都看得见`）。
+    /// 卡面相对页面底提亮的档距：**必须让"卡面对页面底"≥1.15**（机器化判据 =
+    /// `页面底_夹在明度档内_且卡面与选中底都看得见`）。
     /// </summary>
     /// <remarks>
     /// 实测（`.scratch/themedump`）：页面底落在 87–91 档时，提亮 5 档只有 **1.135–1.138**（够不到 1.15），
@@ -425,7 +424,7 @@ public static class PaletteSolver
         Argb At(double hue, double chroma, double tone, byte alpha = 0xFF) =>
             ColorMath.FromAlphaHct(alpha, ColorMath.NormalizeHue(hue), chroma, tone);
 
-        /// <summary>配色原色的"加深版"：保持同一个色相与彩度（= 用户那个颜色的本色），只把明度压到目标档。</summary>
+        /// <summary>配色原色的"加深版"：保持同一个色相与彩度（= 该成员的本色），只把明度压到目标档。</summary>
         Argb DarkenTo(Argb source, double tone)
             => At(ColorMath.Measure(source).H, ColorMath.Measure(source).C, tone);
         Argb LightenTo(Argb source, double tone)
@@ -446,7 +445,7 @@ public static class PaletteSolver
 
         var exact = definition.PaletteMode == PaletteMode.Exact;
 
-        // ── 表面族：**用户给的背景色成员**（本色色相/彩度，明度夹在 87–91）就是页面底 ──
+        // ── 表面族：**配色里的背景色成员**（本色色相/彩度，明度夹在 87–91）就是页面底 ──
         // 三个层由页面底按固定档距推出：卡面**从页面底提亮**一档；悬停底**从页面底压深**一档。
         // ⚠️ 档距的基准必须是**页面底**而不是"成员原色的明度"：原色比底色档更浅时（晴王青提饮 T97.9、
         //    薄荷气泡水 T98.1），按原色算出来的"卡面"会与页面底同色（实测对比度 1.003 / 1.000 = 看不出卡片）。
@@ -463,8 +462,8 @@ public static class PaletteSolver
 
         // ── 文字主色 = 配色里**最深的那个成员**（它是"墨"，本色压到正文档）──
         // 为什么不让它走 (中性色相, C4) 生成：那样"最深的身份色"会变成**零出口**的颜色
-        // （用户令 2026-09-20："我说过优先应用我们选中的这几个颜色"；护栏 = 每个身份色 leave-one-out 都得有影响）。
-        // 压到正文档是为了可读性（对比度矩阵逐条卡住），色相与彩度仍然是用户那个颜色的。
+        // （护栏 = 每个身份色 leave-one-out 都得有影响）。压到正文档是为了可读性（对比度矩阵逐条卡住），
+        // 色相与彩度仍然取自配色成员的原色。
         var darkestSource = definition.Palette
             .Select(c => (Color: c, Tone: ColorMath.Measure(c).T))
             .OrderBy(m => m.Tone)
@@ -474,7 +473,7 @@ public static class PaletteSolver
             textPrimary = DarkenOrLighten(darkestSource.Color, darkestTone);
 
         // 直配模式下另两档文字也取自**同一个最深成员**（只是提亮到各自档位）：
-        // 不这么做的话，正文是用户的紫色、次要文字却是我们生成的灰墨（= 又混进了"不是你的颜色"）。
+        // 不这么做的话，正文取自配色成员、次要文字却由中性色相生成 —— 同一族文字混进两种来源。
         if (exact)
         {
             textSecondary = LightenTo(textPrimary, ToneScale.TextSecondary);
@@ -485,7 +484,7 @@ public static class PaletteSolver
         // **取最深的那个还达标的档**：悬停反馈要看得出来，可读性也不能破（旧写法"从浅往深走到第一个达标"
         // 会在高彩度浅色主题上直接走到与页面底同档 = 悬停反馈消失）。
         // ⚠️ 判据必须**同时**包含两支弱字：中性 T12 更严（它达标时更浅的弱字也必然达标），
-        //    而当前的 `textMuted` 才是真正会落在悬停底上的那一支（直配 = 用户墨提亮、自动 = 中性灰墨，
+        //    而当前的 `textMuted` 才是真正会落在悬停底上的那一支（直配 = 配色墨提亮、自动 = 中性灰墨，
         //    两者的对比度实测骑在阈值两侧 4.47 / 4.51）。两支一起卡，两种模式都不会跌破 4.5。
         var hoverInk = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
         var hoverFloor = Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone);
@@ -520,9 +519,9 @@ public static class PaletteSolver
         var accentContainer = families.ContainerSource is { } containerSrc
             ? Direct(containerSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.AccentContainer)
             : LightenTo(accentFill, ToneScale.AccentContainer);
-        // 选中底 / 落点高亮 / 徽标底 = **必定看得见**（用户报障 2026-09-20："选中行与页面底同色、看不出来"）：
-        // 直接取浅成员当容器时，实测 8/11 套与页面底**完全同色**（对比度 1.000 —— 默认主题最浅的
-        // `#F2EEF5` 既是页面底又是容器来源）。故这里以"容器来源的色相 + 表面族彩度"取一个够浅的档，
+        // 选中底 / 落点高亮 / 徽标底 = **必定看得见**：
+        // 直接取浅成员当容器时，实测 8/11 套与页面底**完全同色**（对比度 1.000 —— 最浅成员往往既是
+        // 页面底又是容器来源）。故这里以"容器来源的色相 + 表面族彩度"取一个够浅的档，
         // 再按**实测对比度**抬到与页面底、与悬停底都分得开的档位（只动明度与彩度、不发明色相）。
         accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover, families.SurfaceChroma);
         // 容器字跟随**容器自己的色相**（否则浅色容器上会浮出一层别的颜色的墨）
@@ -567,7 +566,7 @@ public static class PaletteSolver
         anchored["SecondaryContainer"] = supportContainer;
         anchored["OnSecondaryContainer"] = supportOnContainer;
 
-        // 语义令牌：表面族绑到**用户给的背景色推导出来的三层**，其余绑到上面的唯一真值
+        // 语义令牌：表面族绑到**配色背景色成员推导出来的三层**，其余绑到上面的唯一真值
         var tokens = new Dictionary<string, Argb>(StringComparer.Ordinal)
         {
             [AppTokens.SurfaceBase] = surfaceBase,
@@ -653,10 +652,9 @@ public static class PaletteSolver
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么需要这一步（用户报障 2026-09-20："选中行与页面底同色、看不出来"）</b>：容器来源是
-    /// "浅的低彩度成员"，而**页面底也是那个成员**（明度最高的那个）——实测 8/11 套里
-    /// <c>App.Accent.Container</c> 与 <c>App.Surface.Base</c> 的对比度正好是 **1.000**（同一个色值），
-    /// 主栏选中行、树选中行、徽标底全部看不见。
+    /// <b>为什么需要这一步</b>：容器来源是"浅的低彩度成员"，而**页面底也是那个成员**（明度最高的那个）
+    /// ——实测 8/11 套里 <c>App.Accent.Container</c> 与 <c>App.Surface.Base</c> 的对比度正好是 **1.000**
+    /// （同一个色值），主栏选中行、树选中行、徽标底全部看不见。
     /// </para>
     /// <para>
     /// 判据落在"看得见"这件事实上：沿**浅色方向**逐档找第一个同时满足
@@ -671,7 +669,7 @@ public static class PaletteSolver
         var m = ColorMath.Measure(container);
         // 彩度：**只增不减**地抬到表面族彩度（页面底 / 悬停底 / 选中底 = 同一个"浅色面"家族）——
         // 页面底加紫之后，若选中底还停在"背景色成员本色"的彩度上（默认 C5.4），它会**比页面底更灰**
-        // （旧界面选中底 `#EEDDF7` C16.5、表头带 `#E0DAEC` C11.8）。上限仍是容器自己的安静档（16）。
+        // （目标量级：选中底 `#EEDDF7` C16.5、表头带 `#E0DAEC` C11.8）。上限仍是容器自己的安静档（16）。
         var chroma = Math.Min(Math.Max(m.C, familyChroma), Math.Min(24.0, NeutralVariantChroma * 2));
         if (Math.Abs(chroma - m.C) > 0.05)
         {
@@ -708,7 +706,7 @@ public static class PaletteSolver
     /// <remarks>
     /// <para>
     /// 判据落在渲染事实上：那个色点画在**卡面**上，而卡面由页面底提亮而来 ——
-    /// 本色与卡面的对比度超过 1.08 时，用户看到的就是"这个圆没融合"（用户报障 2026-09-20 第二轮）。
+    /// 本色与卡面的对比度超过 1.08 时，色点看起来就没有融进卡面。
     /// </para>
     /// <para>
     /// ⚠️ <b>现行档距下这个判据恒不成立</b>（提亮 5–6 档的对比恒 &gt;1.1）→ ② 路径的循环是有意 inert、

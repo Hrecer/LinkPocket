@@ -38,19 +38,14 @@ public static class ThemeService
     /// <see cref="PaletteMode.Exact"/>（开关关闭）= 尽量原样用用户给的颜色。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-20 第二轮："我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关……
-    /// 当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改，这样就没有问题了"。
     /// 它**影响每一个令牌**，所以随偏好落盘、并在 <see cref="Apply"/> 时统一写进主题定义
-    /// （调用方不必各自传一遍，避免"有的入口忘了带"）。
+    /// （调用方不必各自传一遍，避免"有的入口忘了带"）；开关切换时主题卡色点同步刷新。
     /// </remarks>
     public static PaletteMode PaletteMode { get; private set; } = DefaultPaletteMode;
 
     /// <summary>
     /// 「自动调整颜色」的**出厂缺省值 = 打开**（唯一事实源：主题定义缺省 / 偏好缺省 / 服务初值都取它）。
     /// </summary>
-    /// <remarks>
-    /// 用户令 2026-09-20："我们默认是打开自动调整颜色的"（第一轮"默认关闭"的口径被这条取代）。
-    /// </remarks>
     public const PaletteMode DefaultPaletteMode = PaletteMode.Auto;
 
     /// <summary>设置配色应用方式并**立即重新应用当前主题**（界面当场跟随）。</summary>
@@ -66,7 +61,7 @@ public static class ThemeService
     public static TokenTable Table => _table ??= PaletteSolver.Solve(_current);
 
     /// <summary>
-    /// **最终语义**令牌表：对比度矩阵 / 定稿值核对的验收入口（与 <see cref="Table"/> 同源）。
+    /// **最终语义**令牌表：对比度矩阵 / 关键值核对的验收入口（与 <see cref="Table"/> 同源）。
     /// </summary>
     public static TokenTable DerivedTable => PaletteSolver.Solve(_current);
 
@@ -141,10 +136,9 @@ public static class ThemeService
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么必须有这一步</b>（用户令 2026-09-20："检查字体这方面，有没有潜在的 bug 修掉"）：
-    /// 删掉导入字体后，偏好里仍留着那个族名，而 <see cref="CurrentUiFont"/> 也还指着它 ——
-    /// 于是 ① 重启时会走 <see cref="ApplyFromPreferences"/> 的"已不可用"分支回退并弹提示（用户莫名其妙），
-    /// ② 用户在同一次运行里再点「应用字体」，会把一个**已经不存在的族名**重新落盘，
+    /// <b>为什么必须有这一步</b>：删掉导入字体后，偏好里仍留着那个族名，而 <see cref="CurrentUiFont"/> 也还指着它 ——
+    /// 于是 ① 重启时会走 <see cref="ApplyFromPreferences"/> 的"已不可用"分支回退并弹提示（提示的触发时机不可解释），
+    /// ② 同一次运行里再点「应用字体」，会把一个**已经不存在的族名**重新落盘，
     /// 渲染端静默走回退链、界面却写着"已应用字体「X」"（本仓明令禁止的静默失败）。
     /// </para>
     /// <para>

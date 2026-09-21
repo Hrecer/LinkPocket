@@ -6,7 +6,7 @@
              xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml">
 
     <!-- ================= 「链接详情」共享页（UIKit） =================
-         浏览页详情页 与 回收站只读详情页 **共用同一份界面与同一份模型**（用户令 2026-09-19）：
+         浏览页详情页 与 回收站只读详情页 **共用同一份界面与同一份模型**：
          DataContext = ViewModels.LinkDetailPaneModel（或其子类）——各页只填数据（标题 / URL / 图标 /
          信息行 / 描述）并在动作面上声明自己的入口，绝不复制界面或逻辑。
          结构：hero 头部卡 → URL 卡（只读文本 + 复制）→ 信息卡（Rows + 共享 InfoRowTemplate）

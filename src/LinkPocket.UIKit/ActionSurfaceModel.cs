@@ -7,7 +7,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 动作面模型（详情栏 / 详情页**共用基类**）：把「这一屏提供哪些动作」表达为
 /// **显式能力位 + 命令槽**——界面（<c>Views.DetailSidebar</c> / <c>Views.LinkDetailPane</c>）只按能力位渲染，
-/// 各页只声明动作面；界面与业务逻辑都只有一份，绝不按页复制（用户令 2026-09-19）。
+/// 各页只声明动作面；界面与业务逻辑都只有一份，绝不按页复制。
 /// </summary>
 public class ActionSurfaceModel : INotifyPropertyChanged
 {
@@ -28,7 +28,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public bool ShowRestoreToRootAction { get; protected set; }
     /// <summary>「跳转」动作（进目标所在目录并选中该行；经 <c>IContentLocator</c>）。
     /// 缺省不显示——只给"单一目标"的结果页/侧栏开（搜索页单选、智能列表结果页、查重明细）；
-    /// 多选时不显示（跳转只对单个目标有意义，用户令 2026-09-20）。</summary>
+    /// 多选时不显示（跳转只对单个目标有意义）。</summary>
     public bool ShowJumpAction { get; protected set; }
 
     /// <summary>主药丸色调（详情页三枚等大药丸：回收站把「打开」降为浅紫，深紫留给主处置「还原」）。</summary>
@@ -36,7 +36,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
 
     /// <summary>动作卡排布：true = **两行**（第一行药丸 / 第二行图标钮靠右）。
     /// 右栏只有 286 宽时，"两枚药丸 + 三枚 32 图标钮"挤在同一行会把药丸压到裁字
-    /// （用户定稿：回收站右栏排两行）；缺省 false = 一行（药丸填满余宽 + 图标钮靠右）。
+    /// （回收站右栏排两行）；缺省 false = 一行（药丸填满余宽 + 图标钮靠右）。
     /// **只是排布差异**：按钮定义只有一份（见 Views/DetailSidebar.xaml 的两个宿主共用同一对模板）。</summary>
     public bool StackedActions { get; protected set; }
 
@@ -69,7 +69,7 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public PillTone RestoreToRootTone { get; protected set; } = PillTone.Tonal;
 
     /// <summary>「跳转」文案 / 提示 / 图标（进目录 + 选中行；**与"外部打开"无关**，故图标不是 open-in-new）。
-    /// 提示文案就是「跳转」（用户令 2026-09-20：不要长句子）；图标 = 地图图钉 `map-marker`（"在哪儿"一眼可读）。</summary>
+    /// 提示文案就是「跳转」（不用长句子）；图标 = 地图图钉 `map-marker`（"在哪儿"一眼可读）。</summary>
     public string JumpLabel { get; protected set; } = "跳转";
     public string JumpToolTip { get; protected set; } = "跳转";
     public string JumpIconKind { get; protected set; } = "map-marker";

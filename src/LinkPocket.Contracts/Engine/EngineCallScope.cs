@@ -13,7 +13,7 @@ namespace LinkPocket.Contracts;
 /// <item>计数如实（<see cref="Calls"/> / <see cref="Failures"/>）：失败的命令已由引擎按同一 correlation
 /// 记 Warn，这里只汇总，**不重复报错**；</item>
 /// <item>退出时写一条 <c>engine.action</c> 完成记录（含动作名 / 命令数 / 失败数 / 耗时），
-/// 与内部各条记录同 correlation——"这次动作发了多少命令、有没有失败"一眼可读。</item>
+/// 与内部各条记录同 correlation——"该次动作发了多少命令、有没有失败"一眼可读。</item>
 /// </list>
 /// </summary>
 public sealed class EngineCallScope : IDisposable

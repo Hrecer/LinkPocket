@@ -41,7 +41,7 @@ public sealed class EngineComposition
 }
 
 /// <summary>
-/// 引擎组合根装配器（组合抽取 · 2026-09-18）：把四处重复的「DB 工厂 → 九模块注册 → EngineCore
+/// 引擎组合根装配器：把四处重复的「DB 工厂 → 九模块注册 → EngineCore
 /// → 编排层 → EngineClient/EngineWire」收敛为单一入口。统一配方 =
 /// dbPath → LinkPocketDbContextFactory → CommandRegistry 注册九模块（Maintenance 用
 /// <c>() =&gt; engineRef!.RuntimeStats</c> 延迟闭包）→ EngineCore(UoW 工厂, audit?, idempotency?)

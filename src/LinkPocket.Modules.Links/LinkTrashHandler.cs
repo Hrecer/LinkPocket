@@ -35,7 +35,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
         // 快照入库 + 主表删除（同一工作单元 → 引擎单事务原子提交）
         var snapshot = new TrashedLink
         {
-            LinkId = link.LinkId,   // 回收站保留原 ID（2026-09-17 定稿）
+            LinkId = link.LinkId,   // 回收站保留原 ID
             Url = link.Url,
             Title = link.Title,
             Description = link.Description,

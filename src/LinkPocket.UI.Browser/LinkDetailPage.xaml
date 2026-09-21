@@ -5,7 +5,7 @@
 
     <!-- 浏览模块「链接详情页」= **共享详情页**（UIKit `LinkDetailPane`）的宿主：
          界面与模型都只有一份（浏览页详情页 / 回收站只读详情页共用同一控件与同一模型基类），
-         本页不再自绘任何卡片、不再持有第二份布局（用户令 2026-09-19）。
+         本页不再自绘任何卡片、不再持有第二份布局。
          DataContext = LinkDetailPageViewModel（继承 LinkDetailPaneModel）。 -->
 
     <views:LinkDetailPane/>

@@ -13,11 +13,11 @@ namespace LinkPocket.Modules.Backup;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>清空 + 导入 = 同一个显式事务</b>（用户令 2026-09-20："确保数据是安全的"）。
-/// ⚠️ 这条曾经是**假的**：引擎管道只在干跑时开事务（`EngineCore` 的 <c>dryRun ? uow.BeginTransaction() : null</c>），
-/// 而非干跑的导入**没有外层事务**；<c>ClearAllDataAsync</c> 在没有外层事务时会**自建事务并当场提交**
-/// ——于是"清空"与"导入"是两个独立事务：清空已落库之后若导入被取消/失败（磁盘满、进程被杀、用户点取消），
-/// 用户的旧数据**已经永久没了**，新数据又没进来，且没有任何回滚。现在由本处理器显式开事务包住两步。
+/// <b>清空 + 导入 = 同一个显式事务</b>。
+/// ⚠️ 缺这层事务就会退化成两个独立事务：引擎管道只在干跑时开事务（`EngineCore` 的
+/// <c>dryRun ? uow.BeginTransaction() : null</c>），而 <c>ClearAllDataAsync</c> 在没有外层事务时
+/// 会**自建事务并当场提交** —— 清空已落库之后若导入被取消/失败（磁盘满、进程被杀、用户点取消），
+/// 旧数据**已经永久没了**，新数据又没进来，且没有任何回滚。故由本处理器显式开事务包住两步。
 /// </para>
 /// <para>
 /// <b>校验先于写库</b>：外部输入的全部校验（重复 key / 悬空引用 / 循环引用 / 时间戳）都在开事务与清空**之前**完成。
@@ -53,7 +53,7 @@ internal sealed class BackupImportHandler : ICommandHandler
         var links = file.Data.Links ?? [];
 
         // 备份文件是外部输入：重复 key / 空 key / 未知父级一律报明确错误，绝不当成"落在根级"静默吞掉
-        // （用户令 2026-09-20："确保数据是安全的"；零兼容红线：拿不准就报错，不猜意图、不顺手修正）。
+        // （零兼容红线：拿不准就报错，不猜意图、不顺手修正）。
         // 旧实现在这里用 `TryGetValue(...) ? parentId : null`、`... ? listId : null` 静默回落根级 —— 那是
         // **静默的层级损坏**：用户的目录树会被悄悄拍平，且没有任何提示。现在整包拒绝（事务尚未开始，库里什么都没动）。
         var folderByKey = new Dictionary<string, BackupIO.BackupFolderData>(StringComparer.Ordinal);
@@ -240,7 +240,7 @@ internal sealed class BackupImportHandler : ICommandHandler
         catch
         {
             // 失败整体回滚（ClearAllDataAsync 复用本事务 → 被清空的旧数据会一起回来）。
-            // ⚠️ 回滚**必须用 CancellationToken.None**：走到这里的原因极可能就是"用户/宿主取消了这次导入"，
+            // ⚠️ 回滚**必须用 CancellationToken.None**：走到这里的原因极可能就是"用户/宿主取消了本次导入"，
             //    此时 ct 已取消 —— 把已取消的 token 传给 RollbackAsync 会让**回滚本身当场抛**，事务悬空。
             //    收尾动作（回滚 / 释放）一律不受业务取消令牌支配。
             if (tx is not null)

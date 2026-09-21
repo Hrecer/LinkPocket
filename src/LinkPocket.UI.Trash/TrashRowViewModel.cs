@@ -66,7 +66,7 @@ public class TrashRowViewModel : INotifyPropertyChanged
     /// <summary>
     /// 两个行序列是否**渲染等价**（ID 序列 + 全部展示字段逐项一致，含顺序；favicon 也纳入）。
     /// 用途：刷新后判断"要不要换掉 Rows"——逐条 Clear/Add 会触发 N 次 CollectionChanged 并让视图整表重建，
-    /// 内容没变时纯属白烧（用户报障 2026-09-20：低性能设备切页偶发明显卡顿）。
+    /// 内容没变时纯属白烧（低性能设备切页偶发明显卡顿）。
     /// 口径：**宁可重建不可漏更新**——字段有任何差异即视为需要重建。
     /// </summary>
     public static bool SameSequence(IReadOnlyList<TrashRowViewModel>? a, IReadOnlyList<TrashRowViewModel>? b)

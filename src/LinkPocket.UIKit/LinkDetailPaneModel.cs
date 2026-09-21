@@ -8,7 +8,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 「链接详情」共享页模型（<c>Views.LinkDetailPane</c> 的唯一数据源）：
 /// **浏览页详情页与回收站只读详情页共用同一份界面与同一份模型**——各页只填数据（标题 / URL / 图标 /
-/// 信息行 / 描述）并在动作面上声明自己的入口，绝不复制界面或逻辑（用户令 2026-09-19）。
+/// 信息行 / 描述）并在动作面上声明自己的入口，绝不复制界面或逻辑。
 /// 信息卡 = 数据驱动行集合（复用侧栏同一行类型 <see cref="DetailSidebarRow"/>）。
 /// </summary>
 public class LinkDetailPaneModel : ActionSurfaceModel

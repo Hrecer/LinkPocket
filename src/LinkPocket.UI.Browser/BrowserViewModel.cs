@@ -45,10 +45,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     private bool _clearSelectionOnPendingRefresh;
 
     /// <summary>补刷递归深度：最后一次补刷的 finally 里自身再次触发最多 3 层，
-    /// 超过说明数据在持续高频变动——本轮放弃"必处理"承诺，交还给 300ms 事件防抖继续追平，杜绝无限递归。</summary>
+    /// 超过说明数据在持续高频变动——此时放弃"必处理"承诺，交还给 300ms 事件防抖继续追平，杜绝无限递归。</summary>
     private int _refreshRecursionDepth;
 
-    /// <summary>补刷递归深度上限（超过后本轮不再递归补刷）。</summary>
+    /// <summary>补刷递归深度上限（超过后不再递归补刷）。</summary>
     private const int MaxRefreshRecursion = 3;
 
     public NavigationHistory Controller { get; } = new();
@@ -86,7 +86,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 导航加载（界面加载遮罩的唯一来源）：**只有用户发起的导航/刷新**才为 true——
     /// 打开文件夹、跳转定位、返回上级、后退/前进、F5；事件驱动的后台刷新一律静默（不闪动画）。
-    /// 与 <see cref="IsLoading"/> 的区别：后者是"有没有刷新在途"（内部重入守卫），前者是"这次刷新要不要给用户看"。
+    /// 与 <see cref="IsLoading"/> 的区别：后者是"有没有刷新在途"（内部重入守卫），前者是"该次刷新是否显示加载态"。
     /// </summary>
     public bool IsNavigating
     {
@@ -97,13 +97,13 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>挂起补刷是否属于导航加载（与 <see cref="_clearSelectionOnPendingRefresh"/> 同机制，逐轮继承）。</summary>
     private bool _navigatingOnPendingRefresh;
 
-    /// <summary>本轮刷新链（含挂起补刷）里是否出现过导航加载——链条结束一次性告知界面。</summary>
+    /// <summary>当前刷新链（含挂起补刷）里是否出现过导航加载——链条结束一次性告知界面。</summary>
     private bool _navigatingInChain;
 
     /// <summary>
     /// 一次刷新链（含挂起补刷）**完成**时触发；参数 = 该链是否属于"导航加载"。
     /// 界面据此决定"行入场动画"播不播：只有打开文件夹这类导航才播，后台刷新（含写操作后的防抖刷新）静默——
-    /// 绝不按"集合有没有变更"来播（曾在每次刷新都重播，用户报"移动后那次刷新还有动画"）。
+    /// 绝不按"集合有没有变更"来播（曾在每次刷新都重播，出现"移动后那次刷新还有动画"）。
     /// </summary>
     public event EventHandler<bool>? RefreshCompleted;
 
@@ -131,8 +131,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 「列表上下文」是否活跃：**详情页 / 编辑器页打开时列表动作一律让位**——
-    /// 撤销/重做/剪贴板/删除/新建/改名这些会改数据的键只在"用户确实在浏览页整理文件"时可执行
-    /// （用户令 2026-09-19：危险键绝不能在任何别的上下文里被误触而不自知）。
+    /// 撤销/重做/剪贴板/删除/新建/改名这些会改数据的键只在"确实处于浏览页整理文件"时可执行
+    /// （危险键绝不能在任何别的上下文里被误触而不自知）。
     /// </summary>
     public bool IsListContextActive => !IsDetailPageOpen && !IsEditorPageOpen;
 
@@ -449,7 +449,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     // —— 就地重命名（Windows 口径：主栏行与目录树节点都能就地改名，链接改的是标题）——
     // **唯一事实来源** = 下面的重命名会话状态（目标 ID + 是否文件夹 + 编辑面 + 编辑文本 + 原名）；
     // 行与树节点上的 IsRenaming 全部是它的投影（与 IsSelected 同构），
-    // 绝不各自持一份"我在编辑"的标记，也绝不靠"谁先谁后"的时序去拉齐（用户硬性红线）。
+    // 绝不各自持一份"编辑中"的标记，也绝不靠"谁先谁后"的时序去拉齐（架构红线）。
 
     /// <summary>改名会话状态机（**控制器**）：目标 / 编辑面 / 原名 / 编辑文本 / 挂起提交的唯一事实来源。</summary>
     private readonly BrowserRenameController _rename = new();
@@ -526,8 +526,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// Windows 口径：改名进行中右键 → 改名立即退出，且**已输入的名字保留**（不丢输入）。
     ///
     /// <para>提交动作**推迟到菜单关闭**（<see cref="FlushDeferredCommit"/>）：改名提交会让引擎写库 →
-    /// 事件刷新（300ms 防抖）→ 重建行容器 → 承载菜单的行被销毁 → **菜单被连带关闭**（用户看到的"菜单一闪就没了"）。
-    /// 推迟只影响"名字何时落库"，不影响用户可见语义（编辑框立即收起、菜单稳定可用）。</para>
+    /// 事件刷新（300ms 防抖）→ 重建行容器 → 承载菜单的行被销毁 → **菜单被连带关闭**（表现为"菜单一闪就没了"）。
+    /// 推迟只影响"名字何时落库"，不影响可见语义（编辑框立即收起、菜单稳定可用）。</para>
     /// </summary>
     public void CommitActiveRename()
     {
@@ -547,7 +547,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 提交改名：文件夹 → <c>folders.update{name}</c>；链接 → <c>links.update{title}</c>（重命名 = 标题）。
-    /// 空名 / 未改 = 视为取消并还原（Windows 口径）。**重命名不入撤销栈**（用户 2026-09-19 定稿）。
+    /// 空名 / 未改 = 视为取消并还原（Windows 口径）。**重命名不入撤销栈**。
     /// 同层撞名的自动编号由**引擎**负责（Kernel 唯一命名服务 IFolderNaming），界面只如实展示引擎返回的最终名。
     /// </summary>
     public async Task CommitRenameAsync()
@@ -771,10 +771,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     private void HandleEscape()
     {
-        // 分层（Windows 口径 + 用户令 2026-09-19 加一层）：
+        // 分层（Windows 口径，比 Explorer 多一层）：
         // ① 详情页打开 → 退出详情页（与左上返回钮**同一条路径**：还原选中 + 原地刷新）；
         // ② 有剪切态 → 取消剪切；③ 否则清空选中。
-        // ⚠️ 编辑器页打开时整条命令不分发（CanExecute 挡掉）——用户令：编辑页不加 Esc 快捷键，防误触。
+        // ⚠️ 编辑器页打开时整条命令不分发（CanExecute 挡掉）——编辑页不加 Esc 快捷键，防误触。
         if (IsDetailPageOpen && DetailPage?.BackCommand is { } back && back.CanExecute(null))
         {
             back.Execute(null);

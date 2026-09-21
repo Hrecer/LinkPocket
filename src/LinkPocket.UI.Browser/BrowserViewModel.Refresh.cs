@@ -84,7 +84,7 @@ public partial class BrowserViewModel
             _refreshPending = false;   // 弃掉挂起：交还 300ms 事件防抖继续追平（不丢数据，只是晚一拍）
             return;
         }
-        // 遮罩只在"这次加载真的开始了"且属于**用户发起的导航/刷新**时亮：被挂起/被丢弃的请求不亮，
+        // 遮罩只在"该次加载真的开始了"且属于**用户发起的导航/刷新**时亮：被挂起/被丢弃的请求不亮，
         // 挂起补刷按 _navigatingOnPendingRefresh 逐轮继承（事件驱动的后台刷新一律静默，不闪动画）。
         // 真刷新（导航加载 = 进入目录 / 点当前位置重载 / F5）同时让"刚置入项临时置尾"归位（Windows 口径）。
         if (navigating) { IsNavigating = true; _navigatingInChain = true; ClearRecentlyPinned(); }
@@ -154,7 +154,7 @@ public partial class BrowserViewModel
             // 只对"属于当前目录且此刻仍在数据里"的 ID 生效——已被移走/删除的置尾项自动跳过。
             // 目标行序（含置尾）先算好，再决定**要不要换集合**：
             // 内容完全一致（含顺序）时保持原集合不动——逐条 Clear/Add 会触发 N 次 CollectionChanged，
-            // 视图（模板模式）随之整表重建/重排，是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
+            // 视图（模板模式）随之整表重建/重排，是"切页偶发卡顿"的主要来源。
             var pinned = ActivePinnedIds();
             var nextRows = new List<BrowserRowViewModel>(ordered.Count);
             if (pinned.Count == 0)
@@ -209,7 +209,7 @@ public partial class BrowserViewModel
             // 重命名态同样是投影：刷新重建行/树后按会话状态重放（编辑框在重建出的行/节点上重新出现并自动聚焦）
             ApplyRenameToView();
 
-            // 粘贴完成后的定位：新行已在本轮重建中就位 → 滚入视口（行不在本轮数据里则留待下次刷新）
+            // 粘贴完成后的定位：新行已在重建中就位 → 滚入视口（行不在当前数据里则留待下次刷新）
             ConsumePendingFocus();
 
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
@@ -254,7 +254,7 @@ public partial class BrowserViewModel
             }
             else
             {
-                IsNavigating = false;   // 本轮（含挂起补刷链）全部结束 → 收加载遮罩
+                IsNavigating = false;   // 刷新链（含挂起补刷）全部结束 → 收加载遮罩
                 var wasNavigation = _navigatingInChain;
                 _navigatingInChain = false;
                 RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
@@ -296,7 +296,7 @@ public partial class BrowserViewModel
         return _recentlyPinned;
     }
 
-    /// <summary>消费粘贴定位请求：把目标行滚入视口（行不在本轮数据里则保持待命，下轮再试）。</summary>
+    /// <summary>消费粘贴定位请求：把目标行滚入视口（行不在当前数据里则保持待命，下次刷新再试）。</summary>
     private void ConsumePendingFocus()
     {
         if (_pendingFocusId == null) return;

@@ -25,7 +25,7 @@ public class TrashSidebarModel : DetailSidebarModel
         IsMulti = false;
         IsFolder = row.IsFolder;
         IsReadOnly = true;
-        UseTrashedIconTone = true;   // 被删快照：右栏大图标与主栏/左栏同口径灰化（用户报障"右栏没灰化"）
+        UseTrashedIconTone = true;   // 被删快照：右栏大图标与主栏/左栏同口径灰化（缺此设置则右栏图标不灰化）
         // 动作面：详情/打开 + 打开网站 + 还原/还原到根目录/永久删除（无编辑/重命名）
         ShowOpenAction = true;
         ShowOpenWebsite = true;                       // 「打开」药丸（打开网站；即使是废弃条目也能打开）
@@ -39,7 +39,7 @@ public class TrashSidebarModel : DetailSidebarModel
         StackedActions = true;                        // 两行排布：药丸一行 / 三枚图标钮一行（286 宽同排会裁字）
         // 「跳转」= **本页内定位到选中行**（把视角移回它）：回收站条目不在主表，`locate.resolve` 查不到它，
         // 所以本页的跳转就是"滚回那一行"（与浏览页跳转的落点效果一致，复用同一个视图原语）。
-        // 用户令 2026-09-20：一页上百项时"选中了又滑走"要能一键回到它。仅单选（多选无"某一项"）。
+        // 一页上百项时，选中的行滑出视口后可一键回到它。仅单选（多选无"某一项"）。
         ShowJumpAction = true;
         ConfigureSidebarActionLabels(row.IsFolder);   // 主按钮文案：单元=打开（进入）/ 链接=详情（只读覆盖层）
         DisplayName = string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name;

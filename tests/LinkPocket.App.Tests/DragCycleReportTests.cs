@@ -8,13 +8,13 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 成环（把文件夹放进它自己或它的子文件夹里）的**统一口径**（2026-09-19 用户要求）：
+/// 成环（把文件夹放进它自己或它的子文件夹里）的**统一口径**：
 /// 判定只在**执行层**（传输流水线 `TransferAsync` 的 blocked 收集）——拖拽落点、右键拖拽菜单、剪切粘贴
 /// **共用同一个规范弹窗**；拖拽**悬停不再用"禁用光标 + 无提示"**（那是另一套口径），落点照常高亮 + 提示，
 /// 松手后才明白告诉你为什么不能做。
 ///
-/// <para>历史：曾按"拖拽**途经**过谁"记账 → 拖 A 到同目录的 B 也会在移动成功后误弹窗（用户报障，
-/// `8d9d757` 修）。现在连"判据"本身都不存在：只有 Drop 事件（= 真正松手的那一下）才产生意图，
+/// <para>历史回归：曾按"拖拽**途经**过谁"记账 → 拖 A 到同目录的 B 也会在移动成功后误弹窗。
+/// 现在连"判据"本身都不存在：只有 Drop 事件（= 真正松手的那一下）才产生意图，
 /// 意图交给执行层判定——"途经误报"在结构上不可能再出现；Esc 取消 = 不产生意图 = 什么都不做。</para>
 ///
 /// <para>口径细节：只报**真正成环的那些项**（多选里只有一项成环时不要把整批名字都列出来）；
@@ -36,7 +36,7 @@ public class DragCycleReportTests
     private static BrowserViewModel NewVm(LinkPocket.Contracts.EngineClient client, RecordingDialogs dialogs)
         => new(client, new UiPortProvider { Dialogs = dialogs });
 
-    /// <summary>用户报障场景：从主栏把 A 拖到同目录下的 B（合法）→ 不得弹窗，而且要真的搬过去。</summary>
+    /// <summary>合法落点场景：从主栏把 A 拖到同目录下的 B（合法）→ 不得弹窗，而且要真的搬过去。</summary>
     [Fact]
     public async Task 拖到同目录的另一个文件夹_合法落点_不弹窗且真的移动了()
     {
@@ -135,7 +135,7 @@ public class DragCycleReportTests
     }
 
     /// <summary>
-    /// 用户实测场景（截图）：在 A 里把**A 自己**（从左栏树）拖到列表空白 → 空白 = 当前文件夹 = A 自己 → 成环。
+    /// 真实操作场景：在 A 里把**A 自己**（从左栏树）拖到列表空白 → 空白 = 当前文件夹 = A 自己 → 成环。
     /// 必须弹规范弹窗，而且**弹窗时拖拽浮层已经摘除**（视图在拖拽循环退出后才执行，不在 Drop 回调里弹）。
     /// </summary>
     [Fact]

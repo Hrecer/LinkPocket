@@ -218,7 +218,7 @@ public partial class TrashViewModel
             ? (delta > 0 ? 0 : flat.Count - 1)
             : Math.Clamp(current + delta, 0, flat.Count - 1);
         var target = flat[next];
-        _treeNavNode = target;   // 下一次移动从这次落点继续（游标独立于选中/位置）
+        _treeNavNode = target;   // 下一次移动从本次落点继续（游标独立于选中/位置）
         _ = OpenNodeAsync(target);
     }
 

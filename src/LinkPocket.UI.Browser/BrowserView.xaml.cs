@@ -111,7 +111,7 @@ public partial class BrowserView : UserControl
     /// 类级处理器：**任何**右键菜单打开 → 收掉就地改名的编辑态；菜单关闭 → 落地挂起的改名提交。
     ///
     /// <para>为什么用类级（静态注册）而不是页面级 <c>ContextMenuOpening</c>：后者只在**鼠标右键消息**路径触发，
-    /// 覆盖不到 Shift+F10 / 菜单键（那条路径是我们自己 <c>IsOpen = true</c> 打开的）——实测探针即因此漏检；
+    /// 覆盖不到 Shift+F10 / 菜单键（那条路径由本视图 <c>IsOpen = true</c> 打开）——探针即因此漏检；
     /// 而 <c>Opened/Closed</c> 覆盖所有打开路径（右键、键盘、程序直设），一处监听即全。</para>
     /// <para>关闭时才提交：提交会写库 → 事件刷新重建行 → 承载菜单的行被销毁 → 菜单被连带关掉（"菜单一闪就没了"）。</para>
     /// </summary>
@@ -126,8 +126,8 @@ public partial class BrowserView : UserControl
     private static void OnAnyContextMenuOpened(object sender, RoutedEventArgs e)
     {
         // 右键拖拽手势期间：右键抬起还会触发一次系统菜单（WM_CONTEXTMENU），必须压掉——
-        // 否则会在我们自己的「复制到此处 / 移动到此处 / 取消」菜单之外再弹一个行/树菜单。
-        // 我们自己的那张菜单是例外（它正是这次手势的产物），放行后继续走下面的通用收口。
+        // 否则会在本视图的「复制到此处 / 移动到此处 / 取消」菜单之外再弹一个行/树菜单。
+        // 本视图弹出的那张菜单是例外（它正是该手势的产物），放行后继续走下面的通用收口。
         if (FindHostView(sender) is { } host && host._rightDragGesture)
         {
             if (ReferenceEquals(sender, host._rightDragMenu)) host._rightDragMenu = null;
@@ -295,13 +295,13 @@ public partial class BrowserView : UserControl
     // 行错峰入场已收口到 UIKit `Views.RowEntrance.Play(rows)`（**唯一实现**，与回收站/搜索页/智能列表/去重明细共用）：
     // 只在**用户发起的刷新**（导航加载：打开文件夹 / 跳转 / 返回 / F5）后播放——触发条件由 VM 的
     // RefreshCompleted 明确给出；后台刷新（300ms 防抖、排序、跳转定位到当前目录…）一律静默
-    //（曾按"Rows 集合有无变更"触发，用户报障"移动之后那次刷新还有动画"）。
+    //（曾按"Rows 集合有无变更"触发，导致移动之后的刷新也播动画）。
 
     /// <summary>刷新链结束：只有导航加载才播行入场动画；并守住"焦点在页内"不变式。</summary>
     private void OnRefreshCompleted(object? sender, bool wasNavigation)
     {
         if (wasNavigation) RowEntrance.Play(MainTable.RowsList);
-        // 本轮刷新重建过树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
+        // 刷新会重建树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
         // 延到布局之后执行（容器重建完成再判焦点归属），保证"进入文件夹后 Ctrl+V 立即可用"。
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => PageFocus.Restore(this)));
     }
@@ -548,8 +548,8 @@ public partial class BrowserView : UserControl
     private BrowserRowViewModel? _rightPressRow;
 
     /// <summary>右键拖拽手势进行中：期间压掉行/树的右键菜单——右键抬起还会触发一次
-    /// <c>WM_CONTEXTMENU</c>，不压就会在我们自己的「复制到此处 / 移动到此处」菜单之外再弹一个。
-    /// 手势结束（我们的菜单关闭、或没弹出菜单时的本轮消息收尾）即复位。</summary>
+    /// <c>WM_CONTEXTMENU</c>，不压就会在本视图的「复制到此处 / 移动到此处」菜单之外再弹一个。
+    /// 手势结束（菜单关闭、或没弹出菜单时的消息处理收尾）即复位。</summary>
     private bool _rightDragGesture;
 
     /// <summary>本次右键拖拽自己弹的菜单：类级 <c>Opened</c> 处理器据此**放行**（不能把自己的菜单也压掉）。</summary>
@@ -560,7 +560,7 @@ public partial class BrowserView : UserControl
     ///
     /// <para>为什么必须先记后执行：OLE 的 Drop 回调发生在拖拽模态循环**内部**——在那里直接执行会在
     /// "拖拽还没结束"时就弹窗 / 写库（实测：规范弹窗弹出来了、拖拽浮层还挂在屏幕上；
-    /// 右键拖拽更糟——松开即被执行，用户还没点菜单东西就搬走了）。</para>
+    /// 右键拖拽更糟——松开即被执行，还没点菜单东西就搬走了）。</para>
     ///
     /// <para>统一口径：Drop 只写这张"待执行单"，真正执行在 <see cref="StartDrag"/> 里
     /// （循环退出之后、浮层摘除之后）——**左键按它执行、右键拖拽忽略它**（改由菜单选择决定）。</para>
@@ -667,7 +667,7 @@ public partial class BrowserView : UserControl
     ///
     /// <para>收尾在**拖拽循环退出之后**才做（顺序很关键）：先摘浮层、再清落点，然后
     /// ① 左键 → 执行 Drop 记下的意图（**成环由传输流水线统一拒绝并弹规范弹窗**——与粘贴同一条路径）；
-    /// ② 右键 → 弹「复制到「X」/ 移动到「X」/ 取消」，**用户不选就不搬任何东西**（Windows 口径）。</para>
+    /// ② 右键 → 弹「复制到「X」/ 移动到「X」/ 取消」，**不选就不搬任何东西**（Windows 口径）。</para>
     ///
     /// <para>Esc 取消 = OLE 不派发 Drop → 待执行单为空 → 什么都不做（**结构性保证**：
     /// 再也没有"途经记账"那类判据可以出错）。</para>
@@ -688,7 +688,7 @@ public partial class BrowserView : UserControl
             DragDropEffects.Move | DragDropEffects.Copy);
         HideDragVisual();
 
-        // 落点状态（含模式）在清空**之前**读走：它就是"松手时用户看到的那个动作"的唯一事实来源
+        // 落点状态（含模式）在清空**之前**读走：它就是"松手时呈现的那个动作"的唯一事实来源
         //（模式由 DragOver 与 QueryContinueDrag 共同维护，这里绝不第二次判定 Ctrl）。
         var target = ViewModel?.DropTarget;
         var mode = target?.Mode ?? TransferMode.Move;
@@ -707,7 +707,7 @@ public partial class BrowserView : UserControl
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
                 return;
             }
-            // 右键拖拽**不执行** drop（用户还没选）；执行由菜单项决定（同一条传输流水线）。
+            // 右键拖拽**不执行** drop（尚未选择）；执行由菜单项决定（同一条传输流水线）。
             ShowRightDragDropMenu(items, target, mode);
             return;
         }
@@ -720,13 +720,13 @@ public partial class BrowserView : UserControl
     /// 右键拖拽松手菜单（Windows 口径）：在松手位置弹出「复制到此处 / 移动到此处 / 取消」。
     /// 目标 = **松手时的落点状态**（DragOver 写的唯一事实来源，含"列表空白 = 当前目录"）；
     /// 落点为空（非法目标 / 窗口外）= 不给菜单——没有可选项，也就没有"此处"。
-    /// 菜单打开期间**保留落点高亮**（用户据此确认"此处"是哪里），菜单关闭时熄灭。
+    /// 菜单打开期间**保留落点高亮**（据此确认"此处"是哪里），菜单关闭时熄灭。
     /// </summary>
     private void ShowRightDragDropMenu(IReadOnlyList<DragItem> items, BrowserDropTarget? target, TransferMode mode)
     {
         if (ViewModel == null || target == null)
         {
-            // 没弹出自己的菜单：抑制窗口延续到本轮消息处理收尾（右键抬起可能还会再触发一次系统菜单）
+            // 没弹出自己的菜单：抑制窗口延续到消息处理收尾（右键抬起可能还会再触发一次系统菜单）
             Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _rightDragGesture = false));
             return;
         }
@@ -735,7 +735,7 @@ public partial class BrowserView : UserControl
         menu.Resources.Add(typeof(MenuItem), (Style)FindResource("LpMenuItem"));
 
         foreach (var action in BuildRightDragMenuItems(items, target.FolderId, target.Name)) menu.Items.Add(action);
-        // 用户定稿（2026-09-19）：菜单不加分隔线——三项连续排列（复制 / 移动 / 取消）。
+        // 菜单不加分隔线——三项连续排列（复制 / 移动 / 取消）。
         var cancel = new MenuItem { Header = "取消" };
         cancel.Click += (_, _) => menu.IsOpen = false;
         menu.Items.Add(cancel);
@@ -771,13 +771,13 @@ public partial class BrowserView : UserControl
 
     // 拖拽收尾（成环弹窗 + 右键菜单 + 执行）统一在 `StartDrag` 内：它同时服务主栏行与树节点。
     // 视图**不再**自带成环判定：成环（拖到自己/自己的子文件夹）与其它非法情形统一由传输流水线拒绝并弹窗
-    // ——与"剪切粘贴"共用同一个弹窗，用户看到的口径只有一套。
+    // ——与"剪切粘贴"共用同一个弹窗，对外口径只有一套。
 
     /// <summary>
     /// 落点候选判定（**唯一实现**，主栏行与树节点共用）：**主栏文件夹行 / 树非链接节点**才作落点。
     /// 链接行与树上的链接叶子**不是**落点（拖到书签上什么都不发生，与 Explorer 一致）。
     ///
-    /// <para><b>同栏里「自己拖动的那几项」不作落点</b>（用户令 2026-09-20）：把文件夹拖回它自己在**同一栏**里的
+    /// <para><b>同栏里「自己拖动的那几项」不作落点</b>：把文件夹拖回它自己在**同一栏**里的
     /// 行/节点 = 「放回原处」= 取消——不记意图、不高亮、不弹窗（原先会走到执行层判成环并弹「无法移动」）。
     /// 判据是「**动作真正落在哪**」：候选栏 = 本次拖拽的发起栏（<see cref="_dragSourcePane"/>）且候选实体 ∈
     /// 本次拖动集合（<see cref="_dragItems"/>）。**跨栏**拖到同一实体（树 → 主栏那一行 / 主栏 → 树那个节点）
@@ -785,7 +785,7 @@ public partial class BrowserView : UserControl
     /// 「全部书签」虚根的 <c>FolderId</c> 为 null（= 根目录）→ 与集合无关，照常可作落点。</para>
     ///
     /// <para>⚠️ 成环（自身后代）**不在这里判定**——真正的成环落点一视同仁地高亮 + 显示提示，
-    /// 松手之后由执行层（传输流水线）统一拒绝并弹规范弹窗；这是用户要求的统一口径
+    /// 松手之后由执行层（传输流水线）统一拒绝并弹规范弹窗；这是统一口径
     /// （过去"悬停禁用光标 + 无提示"与"粘贴弹窗"是两套，现统一为都弹窗）。</para>
     /// </summary>
     private bool IsDropPositionCandidate(object? dataContext, BrowserPane candidatePane)

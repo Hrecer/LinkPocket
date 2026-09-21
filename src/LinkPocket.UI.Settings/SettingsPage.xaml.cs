@@ -10,11 +10,11 @@ namespace LinkPocket.Views
     /// <summary>
     /// 设置页：存储管理（清日志 / 清空数据，危险区奶油黄警示）+ 备份与恢复（BackupPanel）。
     ///
-    /// 变更记录（2026-09-16）：书签「导入 / 导出」两项已合并为**工具页**的一项工具
+    /// 书签「导入 / 导出」两项已合并为**工具页**的一项工具
     /// （左栏「书签导入 / 导出」，界面见 <see cref="ToolsPage"/>）；
     /// 算法在后端 <c>Services/BookmarkImporter</c> / <c>Services/BookmarkExporter</c>，
     /// 经 <c>EngineClient</c> 暴露，设置页不再保留任何书签导入导出入口。
-    /// 变更记录（2026-09-17）：「数据维护」更名「存储管理」并卡片化；危险色统一 WarnBg 奶油黄（禁红）。
+    /// 「数据维护」已更名「存储管理」并卡片化；危险色统一 WarnBg 奶油黄（禁红）。
     /// </summary>
     public partial class SettingsPage : UserControl
     {
@@ -64,7 +64,7 @@ namespace LinkPocket.Views
             if (e.NewValue is bool isVisible && isVisible)
             {
                 // 与工具页同口径：进入设置页必须停在一个设置项上（默认第一项），
-                // 绝不允许出现「选择一个设置项」空态；已选过则保持用户上次的选择
+                // 绝不允许出现「选择一个设置项」空态；已选过则保持上次的选择
                 if (SettingListBox.SelectedIndex < 0)
                     SettingListBox.SelectedIndex = 0;
                 LogStatusText.Text = string.Empty;
@@ -160,7 +160,7 @@ namespace LinkPocket.Views
             ExportOverlay.Visibility = Visibility.Visible;
             ExportStatusText.Text = "正在清空数据...";
             ExportProgressBar.Value = 0;
-            // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带到本轮（铁律色语义）
+            // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带进本次流程（铁律色语义）
             // ⚠️ 走**资源引用**（自定义 DP）：一次性取画刷赋值会在换主题后停在旧主题。
             ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.AccentFill);
             ExportProgressText.Text = "清除中...";

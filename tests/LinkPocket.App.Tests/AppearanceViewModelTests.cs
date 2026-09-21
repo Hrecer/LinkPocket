@@ -45,8 +45,7 @@ public class AppearanceViewModelTests : IDisposable
 
     public void Dispose()
     {
-        // 收尾 = **进程内复位 + 偏好文件还原**，顺序不能反（用户令 2026-09-20："任何测试/探针跑完，
-        // 进程内主题状态回到出厂默认、偏好文件回到跑前原样"）：
+        // 收尾 = **进程内复位 + 偏好文件还原**，顺序不能反：
         //   ① `ThemeService.ResetForTests()` 会连偏好文件一起清 —— 它负责"进程内回默认"；
         //   ② 只有在这个**之后**才能把备份写回去，否则刚还回去的"跑前状态"立刻被 ① 清掉。
         ThemeService.ResetForTests();
@@ -89,7 +88,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 主题卡_每张都有身份色圆点与派生示意条()
     {
-        // 色点 = 该主题**设计档给的全部颜色**（用户设计档「配色方案.txt」：第 1–4 套 5 色、第 5–10 套 4 色、
+        // 色点 = 该主题**设计档给的全部颜色**（设计档「配色方案.txt」：第 1–4 套 5 色、第 5–10 套 4 色、
         // 出厂默认 5 色）——不是"补位凑到 4 个"。逐张对账，少一个都算红。
         var vm = NewVm();
         var presets = vm.ThemeCards.Where(c => !c.IsCustom).ToList();
@@ -127,10 +126,9 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 色槽_预设只读_不再把当前主题自动载入色槽()
     {
-        // 用户令 2026-09-20："默认的颜色是绝对不能改的，但是我们可以多出一个按钮，
-        // 我们可以把默认的某个主题作为我们自选色的方案"。
+        // 预设只读：默认主题的颜色不得就地修改；编辑路径 = 以某套主题为起点复制出自选配色草稿。
         // 旧行为（已废）= 进面板就把当前主题的颜色倒进色槽 —— 看起来像"预设可以被就地改"，
-        // 而且与"自选是另一份配色"完全对不上。新语义：预设只读，色槽保持用户自己的草稿（从没有过 = 空）。
+        // 而且与"自选是另一份配色"完全对不上。现行语义：预设只读，色槽保持用户自己的草稿（从没有过 = 空）。
         ThemeService.ResetForTests();
         try
         {
@@ -155,8 +153,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 槽数_跟着当前外观的颜色数走_五色主题就是五格()
     {
-        // 用户报障 2026-09-20："我们很多默认主题不是五色的吗？为什么到了这里变成四色"——
-        // 草稿槽数原先恒为 4（MinSlots），于是 5 色的出厂默认在调色台上被**显示成 4 色**，
+        // 回归背景：草稿槽数原先恒为 4（MinSlots），于是 5 色的出厂默认在调色台上被**显示成 4 色**，
         // 与主题卡上的 5 个色点自相矛盾。判据 = 草稿槽数 == PaletteSolver.EditableSlots(当前主题).Count。
         ThemeService.ResetForTests();
         try
@@ -187,9 +184,8 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 起点_复制当前主题的颜色_并立即应用为自选配色()
     {
-        // 用户报障 2026-09-20："当我们选择以什么为起点的时候，应该立即切换到自选颜色这一栏，
-        // 也就是主题应该立即更改"——旧行为只倒颜色、归属仍留在预设上（按了按钮界面一点没变）。
-        // 新语义 = 复制 + **立刻应用**：归属切自选、第 12 张卡亮起、界面换成这份配色。
+        // 旧行为只倒颜色、归属仍留在预设上（按了按钮界面一点没变）。
+        // 现行语义 = 复制 + **立刻应用**：归属切自选、第 12 张卡亮起、界面换成这份配色。
         ThemeService.ResetForTests();
         try
         {
@@ -234,8 +230,8 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 起点_文字标签与整句说明随当前外观更新()
     {
-        // 用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，一直都没有更改过"——
-        // 根因是这句话在 XAML 里被拆成「Run 字面量 + 绑定 Run + 字面量」，VM 侧没有任何一处能被守住。
+        // 回归背景：这句话曾恒显示"以默认（紫罗兰）为起点"，不随当前主题更新——
+        // 根因是它在 XAML 里被拆成「Run 字面量 + 绑定 Run + 字面量」，VM 侧没有任何一处能被守住。
         // 现行：整句 + 按钮文案都由 VM 出（同一个 AppliedThemeName），本用例把它们钉在"随主题更新"上。
         ThemeService.ResetForTests();
         try
@@ -343,7 +339,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 空槽态_诊断是中性提示而不是红色错误()
     {
-        // 空槽 = "还没选完"，**不是**"配色不合法"（用户令 2026-09-20 的空态语义）。
+        // 空槽 = "还没选完"，**不是**"配色不合法"（空态语义）。
         // 反例（已修）：空态下诊断框显示「✗ 主题需要 4 或 5 个颜色（当前 0 个）」—— 一进面板就报错，像是用户做错了什么。
         var vm = NewVm();
         vm.SetSlotCount(4);
@@ -362,11 +358,10 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 清空颜色_草稿回空态_回到紫罗兰_自选卡回空心占位_且诊断提示还差几个()
     {
-        // 用户令 2026-09-20 第三轮：调色台加「清空颜色」（清空全部只有这一条路径；单槽「清除」在取色盘里）。
+        // 「清空颜色」= 清空全部草稿的唯一路径（单槽「清除」在取色盘里）。
         // 清完必须**重算诊断**——空槽态要显示"还差 N 个颜色"这条中性提示，
         // 否则面板上没有任何一处告诉用户"还差几个"（清诊断 = 静默）。
-        // 用户令 2026-09-21："清空颜色的时候应该回到紫罗兰" —— 清空**一并回出厂默认主题**
-        // （只清草稿不动已应用外观 = 界面一点没变，"清空"名不副实），并落盘。
+        // 清空**一并回出厂默认主题**（只清草稿不动已应用外观 = 界面一点没变，"清空"名不副实），并落盘。
         ThemeService.ResetForTests();
         try
         {
@@ -389,7 +384,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
             Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.Slots.Count);
             Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到紫罗兰
-            Assert.Equal(0xF0E0F9u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
+            Assert.Equal(0xE4DBF5u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
             Assert.True(vm.ThemeCards.First(c => c.Id == ThemeCatalog.DefaultId).IsSelected, "主题卡高亮回到出厂默认");
             Assert.Empty(vm.ThemeCards[^1].Swatches);
             Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
@@ -412,7 +407,7 @@ public class AppearanceViewModelTests : IDisposable
     public void 自选颜色卡_点它等于应用自选配色()
     {
         // 第 12 张卡的应用路径与 VM 的 `ApplyDraft` **同一入口**（合法才生效、才落盘）——
-        // 面板顶部的「应用这套外观」按钮已随 2026-09-20 第三轮删除，这张卡就是自选配色唯一的应用手势。
+        // 面板顶部不再有「应用这套外观」按钮，这张卡就是自选配色唯一的应用手势。
         ThemeService.ResetForTests();
         try
         {
@@ -446,8 +441,7 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     // ── 互斥归属（主题 ↔ 自选配色 二选一）─────────────────────────────
-    // 用户报障："自选配色和主题不是应该二选一吗？怎么居然不用二选一"——
-    // 根因是面板里根本没有"归属"这个状态，自选区的高亮是按**色槽数量**推的。
+    // 回归背景：面板原先没有"归属"这个状态，自选区的高亮是按**色槽数量**推的 → 预设与自选会同时亮。
 
     [Fact]
     public void 互斥归属_预设与自选配色恰有一侧是当前使用()
@@ -544,7 +538,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 色槽_默认格数随当前外观_上下限为4与5()
     {
-        // 出厂默认是 5 色 → 5 格；4/5 是**上下限**，不是"默认恒为 4"（用户报障"五色主题显示成四色"）。
+        // 出厂默认是 5 色 → 5 格；4/5 是**上下限**，不是"默认恒为 4"（回归现象：五色主题曾显示成四色）。
         ThemeService.ResetForTests();
         try
         {
@@ -651,7 +645,7 @@ public class AppearanceViewModelTests : IDisposable
         {
             var vm = NewVm();
             // ⚠️ 必须填满**每一格**（格数随当前外观 = 出厂默认 5 格）：留空格时诊断走的是
-            //    "还差 N 个颜色"那条中性提示，压根到不了派生诊断（本用例曾因此红）。
+            //    "还差 N 个颜色"那条中性提示，压根到不了派生诊断。
             for (var i = 0; i < vm.SlotCount; i++)
                 vm.SetSlotColor(i, Color.FromRgb((byte)(0xE8 + i), (byte)(0xE8 + i), (byte)(0xE8 + i)));
             vm.RefreshDraftDiagnostics();
@@ -697,10 +691,8 @@ public class AppearanceViewModelTests : IDisposable
     public void 未装载字体候选时_面板状态可用且不崩()
     {
         // 候选是**惰性**的（用户没展开下拉就不该付全量枚举的钱），但下拉框里**必须看得见当前字体**：
-        // 池为空时用当前族名补一个占位项（用户报障 2026-09-20 第二轮："我选系统字体，
-        // 此时根本就拉取不到任何字体" —— 那个框是空白的，读成"拉不到"，其实只是"还没去拉"）。
-        // ⚠️ 占位项**只补属于当前来源的那一个**（用户令 2026-09-21："使用自定义字体的时候，
-        //    不应该显示系统字体，而是什么都没有"）：自定义来源没导入过就是**空列表**。
+        // 池为空时用当前族名补一个占位项（否则框是空白的，读成"拉不到"，其实只是"还没去拉"）。
+        // ⚠️ 占位项**只补属于当前来源的那一个**：自定义来源没导入过就是**空列表**，系统字体一个都不许出现。
         var vm = NewVm();
         Assert.Single(vm.UiFonts);                                // 只补"当前界面字体"这一个占位项
         Assert.All(vm.UiFonts, f => Assert.False(f.CanDelete));    // 占位项 = 系统字体口径（不可删）
@@ -716,9 +708,7 @@ public class AppearanceViewModelTests : IDisposable
     public async Task 字体候选_装载候选_且投影当前字体_自定义侧只有导入字体()
     {
         // ⚠️ 这条用例**走真实系统字体枚举**（生产字体来源），断言"枚举 + 候选 + 投影"整条链路真的成立。
-        //    它曾经因为"据说会吊住测试宿主"被换成两个弱用例（只断言"能往集合里塞假项"），
-        //    等于把"枚举路径有没有坏"的覆盖让给了探针 —— 而探针只在 UI 改动时才跑。
-        //    现在枚举在后台线程（FontCatalog.LoadAsync）+ 实例内缓存，这条覆盖必须留着。
+        //    枚举在后台线程（FontCatalog.LoadAsync）+ 实例内缓存；这条覆盖不能退化成"只往集合里塞假项"。
         ThemeService.ResetForTests();
         var vm = NewVm();
 
@@ -733,8 +723,7 @@ public class AppearanceViewModelTests : IDisposable
         // 默认字体一定在候选里（回退链承诺它存在）
         Assert.Contains(vm.UiFonts, f => f.Family == FontCatalog.DefaultUiFamily);
 
-        // 自定义来源 = **只列导入的字体**（用户令 2026-09-21："不应该显示系统字体，而是什么都没有"）：
-        // 没导入过就是空；有导入项时也一个系统字体都不许出现。
+        // 自定义来源 = **只列导入的字体**：没导入过就是空；有导入项时也一个系统字体都不许出现。
         vm.FontSource = FontSourceKind.Custom;
         Assert.All(vm.UiFonts, f => Assert.True(f.IsImported, $"「{f.Family}」不是导入字体，却出现在自定义来源里"));
 
@@ -755,7 +744,7 @@ public class AppearanceViewModelTests : IDisposable
         vm.FontSource = FontSourceKind.System;
         Assert.Contains("系统已装字体", vm.FontSourceHint, StringComparison.Ordinal);
 
-        // ② 「融合」（用户令 2026-09-21 定稿）：所有卡面都用**当前生效主题**的页面底；
+        // ② 「融合」：所有卡面都用**当前生效主题**的页面底；
         //    只有"正在生效"的那张卡，它色点里的"背景色成员"才与卡面同色（那枚圆点看不见 = 融合）。
         foreach (var card in vm.ThemeCards.Where(c => !c.IsCustom))
         {
@@ -768,7 +757,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public async Task 字体候选_二次装载命中缓存_不重复枚举()
     {
-        // 缓存是"进一次页面枚举一次"这条性能缺陷的解药，必须被钉住。
+        // 缓存针对"进一次页面枚举一次"的性能缺陷，必须被钉住。
         ThemeService.ResetForTests();
         var source = new CountingSystemFontSource(new FontChoice("Fake UI", "Fake UI"));
         try
@@ -789,7 +778,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public async Task 导入字体失败_状态行给出用户可见原因_且不写偏好()
     {
-        // N1 要求"导入失败的用户可见反馈"：失败必须写进 Status（面板显示在状态行上），
+        // 导入失败必须给出用户可见反馈：失败必须写进 Status（面板显示在状态行上），
         // 而不是只写日志（那样用户点了「导入字体…」什么都没发生）。
         ThemeService.ResetForTests();
         var vm = NewVm();
@@ -835,9 +824,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 自动调整颜色开关_缺省打开_切换即生效并落盘()
     {
-        // 用户令 2026-09-20 **第二轮**（口径取代第一轮的"默认关闭"）：
-        // "我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关……当我们开关自动调整颜色的按钮时，
-        //  主题那个色点也会同步修改，这样就没有问题了"。
+        // 自动调色（缺省打开）与直配两种模式都要可读：开关切换即重应用 + 落盘，并重投影主题卡色点。
         ThemeService.ResetForTests();
         try
         {
@@ -891,7 +878,6 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 主题卡色点_换主题与重进面板都会按当前模式重投影()
     {
-        // 用户令 2026-09-20："当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"——
         // 色点重投影**不能只在切开关那一条路上**：换主题（`ApplyThemeCard`）/ 重进面板（`SyncFromAppliedTheme`）
         // 也必须按当前模式重算（否则色点会停在旧模式的口径上，与页面底不同色）。
         ThemeService.ResetForTests();
@@ -927,8 +913,7 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 字体来源_二选一且候选按来源分开()
     {
-        // 用户令 2026-09-20："将系统本身的字体和我们导入的字体区分开来，我们先要选择系统本身的字体，
-        // 然后还是自定义字体，然后只能二选一，然后对于自定义的字体，我们可以进行导入和删除"。
+        // 字体来源二选一（系统已装 / 自定义导入），候选与能力位按来源分开。
         ThemeService.ResetForTests();
         try
         {
@@ -995,8 +980,7 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal("uji-matcha", vm.SelectedThemeId);
         Assert.True(matcha.IsSelected);
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
-        // 状态行不播报"已应用主题「X」"（用户令 2026-09-20 第二轮："删掉这个提示"）；
-        // 当前生效的是哪套由选中投影（上面三条）表达。
+        // 状态行不播报"已应用主题「X」"；当前生效的是哪套由选中投影（上面三条）表达。
         Assert.Equal(string.Empty, vm.Status);
         Assert.Equal("uji-matcha", ThemeService.Current.Id);
 
@@ -1020,8 +1004,7 @@ public class AppearanceViewModelTests : IDisposable
         vm.ApplyDraft();
 
         Assert.Equal("user-custom", vm.SelectedThemeId);
-        // 状态行**不播报成功**（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）：
-        // 当前生效的是哪套外观由主题卡高亮 + 「当前使用」徽标表达，不再写一行文字。
+        // 状态行**不播报成功**：当前生效的是哪套外观由主题卡高亮 + 「当前使用」徽标表达，不再写一行文字。
         Assert.Equal(string.Empty, vm.Status);
 
         var prefs = UiPreferenceStore.Load(out var failed);
@@ -1040,7 +1023,7 @@ public class AppearanceViewModelTests : IDisposable
 
         await vm.ResetToDefaultAsync();
 
-        // 状态行不播报成功（用户令：删掉提示）；"回到默认"由选中卡 + 调色台空态表达
+        // 状态行不播报成功；"回到默认"由选中卡 + 调色台空态表达
         Assert.Equal(string.Empty, vm.Status);
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
@@ -1066,16 +1049,16 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
         var prefs = UiPreferenceStore.Load(out _);
         Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
-        // 等宽字体**不再可改**（用户令 2026-09-21："等宽字体不应该被更改"）：面板动作不碰它
+        // 等宽字体**不可改**：面板动作不碰它
         Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
     }
 
     [Fact]
     public async Task 恢复默认字体_回默认族并落盘_且下拉显示默认族()
     {
-        // 用户令 2026-09-20 第三轮：字体卡加「恢复默认字体」——**不读下拉选中项**，直接把界面字体回默认并落盘，
+        // 「恢复默认字体」**不读下拉选中项**，直接把界面字体回默认并落盘，
         // 且下拉里立刻显示默认族（候选没装载时走占位项投影这条路径；**不触发系统字体枚举**）。
-        // 等宽字体已固定为默认族（用户令 2026-09-21 删掉了那一行），复位顺手把它也归默认。
+        // 等宽字体固定为默认族，复位顺手把它也归默认。
         ThemeService.ResetForTests();
         try
         {
@@ -1092,7 +1075,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
             Assert.Equal(FontCatalog.DefaultMonoFamily, prefs.Fonts.Mono);
             Assert.Equal(FontCatalog.DefaultUiFamily, vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
-            Assert.Equal(string.Empty, vm.Status);                                  // 成功不播报（用户令）
+            Assert.Equal(string.Empty, vm.Status);                                  // 成功不播报
         }
         finally
         {

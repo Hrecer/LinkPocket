@@ -41,14 +41,13 @@ public partial class ColorPickerPopup : UserControl
     private double _value;        // 0–1
     private bool _suppressHex;    // 防止"程序改文本 → TextChanged → 再改色"的回环
 
-    /// <summary>用户确认了一个颜色。</summary>
+    /// <summary>颜色已确认（事件载荷 = 确认的颜色）。</summary>
     public event EventHandler<Color>? ColorConfirmed;
 
     /// <summary>
     /// 用户要把**该槽清回空槽**（不是设成黑色）。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-20："调色盘加一个「清除」按钮 —— 清除 = 把该槽设回空槽"。
     /// 空槽在本仓是一个**真实的语义**（虚线空心环 + 「+」+「未选」，见 <c>ColorSlotViewModel</c>），
     /// 因此清除必须是"移除颜色"而不是"换一个颜色"；由宿主（外观面板）把它落到
     /// <c>AppearanceViewModel.ClearSlot</c>——与改色走同一条草稿路径。

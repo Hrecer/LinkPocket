@@ -12,7 +12,7 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 回收站页 VM（"回收站浏览器"，2026-09-19 用户令：最彻底复用浏览页组件）：
+/// 回收站页 VM（"回收站浏览器"，最大化复用浏览页组件）：
 /// 树含链接叶子 + 虚根「回收站」、主栏平铺（默认删除时间倒序）、面包屑 + 地址栏、唯一选中集合、
 /// 永久删除（批量）、**无撤销/无剪贴板/站内不可搬移**的键位收口（站内搬移已整体移除）。
 /// </summary>
@@ -532,7 +532,7 @@ public class TrashViewModelTests
             await vm.LoadAsync();
             vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
 
-            // 用户报障根因：详情页动作的作用对象 = 展示项 → 覆盖层打开时依然可用
+            // 详情页动作的作用对象 = 展示项 → 覆盖层打开时依然可用
             Assert.Same(vm.OpenDetailWebsiteCommand, vm.DetailPane.OpenCommand);
             Assert.Same(vm.RestoreDetailCommand, vm.DetailPane.RestoreCommand);
             Assert.Same(vm.RestoreDetailToRootCommand, vm.DetailPane.RestoreToRootCommand);
@@ -618,7 +618,7 @@ public class TrashViewModelTests
             // 键位来自全站总表（ShortcutCatalog）：本页不再自带键位表
             var registry = ShortcutCatalog.Build(ShortcutPage.Trash, StubShortcutCommands.Instance);
 
-            // 用户定稿：阉割 Ctrl+Z/Y（撤销/重做）与 Ctrl+X/C/V（剪贴板）、F2（重命名）
+            // 阉割 Ctrl+Z/Y（撤销/重做）与 Ctrl+X/C/V（剪贴板）、F2（重命名）
             Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.Z, ModifierKeys.Control));
             Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.Y, ModifierKeys.Control));
             Assert.Null(registry.Resolve(ShortcutScope.Trash, Key.X, ModifierKeys.Control));
@@ -637,7 +637,7 @@ public class TrashViewModelTests
             Assert.NotNull(registry.Resolve(ShortcutScope.TrashMain, Key.A, ModifierKeys.Control));
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.Escape, ModifierKeys.None));
 
-            // 还原键位（D1 拍板）：Ctrl+R 到原位置 / Ctrl+Shift+R 到根目录
+            // 还原键位：Ctrl+R 到原位置 / Ctrl+Shift+R 到根目录
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control));
             Assert.NotNull(registry.Resolve(ShortcutScope.Trash, Key.R, ModifierKeys.Control | ModifierKeys.Shift));
         }

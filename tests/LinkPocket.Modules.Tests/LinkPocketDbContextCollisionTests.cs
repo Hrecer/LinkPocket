@@ -6,10 +6,10 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// LinkPocketDbContext 主键碰撞兜底回归（2026-09-18）：
+/// LinkPocketDbContext 主键碰撞兜底回归：
 /// 新增 Folder/Link 的随机 ID 撞库后应换号重试而非直接抛错；换号只作用于批内新增实体，
 /// 引用修正覆盖批内新增 + 被修改实体；回收站表（trash_*）碰撞不参与换号（语义不同）。
-/// 本轮同时钉住：异步保存路径的兜底必须生效（曾是非 async 死代码，catch 永不触发）。
+/// 同时钉住：异步保存路径的兜底必须生效（曾是非 async 死代码，catch 永不触发）。
 /// </summary>
 public class LinkPocketDbContextCollisionTests
 {

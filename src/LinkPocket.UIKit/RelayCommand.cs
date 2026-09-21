@@ -10,7 +10,7 @@ namespace LinkPocket.ViewModels
     /// </summary>
     /// <remarks>
     /// ⚠️ 只靠隐式那一条会有可感知延迟：WPF 的 `InvalidateRequerySuggested()` 把重查排在
-    /// <c>DispatcherPriority.Background</c>，界面忙时被饿住（用户报障"取消选中后按钮过一会才变灰"）。
+    /// <c>DispatcherPriority.Background</c>，界面忙时被饿住（取消选中后按钮要过一会才变灰）。
     /// 因此凡"改变 CanExecute 依据"的状态写入点都要调 <see cref="CommandRefresh.Request"/>。
     /// </remarks>
     public class RelayCommand : ICommand, ICommandRefreshable

@@ -23,8 +23,8 @@ public partial class App : Application
         // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
         //
         // 历史（为什么要收成一处）：原先这里是「M3Theme.Apply(FromSeed(#6750A4)) + 手打 3 个表面补丁」，
-        // 而探针又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且我们的画刷写死在 UIKit.xaml，
-        // 换种子只改库角色、我们的画刷纹丝不动（换主题只会"半主题化"）。
+        // 而探针又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且画刷写死在 UIKit.xaml，
+        // 换种子只改库角色、画刷纹丝不动（换主题只会"半主题化"）。
         // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
         var (fellBack, reason) = ThemeService.ApplyFromPreferences(Resources);
         LpIcons.RegisterAll();

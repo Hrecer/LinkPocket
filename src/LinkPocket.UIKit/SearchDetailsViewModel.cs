@@ -27,7 +27,6 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
     /// <summary>
     /// **只读结果页**（智能列表结果页 / 去重明细对比页）的动作面收窄：**不显示「编辑」（铅笔）与「删除」（垃圾桶）**。
-    /// 用户令 2026-09-20（设计）：「智能列表和查重明细，它们的右侧栏不能有编辑和删除两个按钮」。
     /// 理由：这两页是只读的查看/对比面——智能列表不提供改写入口；去重明细的删除入口在头部
     /// 「删除重复项」（按勾选、且"至少保留一条"），右栏不承担该语义（也就不会出现"按钮在、命令是 null"的死按钮）。
     /// 幂等：`Clear()` / `UpdateFrom()` 走动作面复位之后仍保持隐藏。
@@ -167,7 +166,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
         ShowOpenWebsiteButton = false;
         ShowEditAction = false;
         ShowDeleteAction = true;
-        // 多选**不提供跳转**（跳转只对单个目标有意义；顶部药丸的 CanExecute 也是"恰一项"）——用户令 2026-09-20
+        // 多选**不提供跳转**（跳转只对单个目标有意义；顶部药丸的 CanExecute 也是"恰一项"）
         ShowJumpAction = false;
         DisplayName = $"已选中 {items.Count} 项";
         IdText = string.Empty;

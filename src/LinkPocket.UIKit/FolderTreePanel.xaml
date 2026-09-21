@@ -139,7 +139,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <!-- 聚焦禁描边（UI-SPEC）：节点容器不带原生焦点视觉。
                  树节点按下即获键盘焦点（拖拽起点必先按中节点）——默认的黑色虚线框会在拖动期间
-                 一直挂在节点上（与我们的落点高亮/浮层打架），用户实测报障"拖动时出现原生黑框"。 -->
+                 一直挂在节点上（与落点高亮/浮层打架），故显式置空。 -->
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Padding" Value="2"/>
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>

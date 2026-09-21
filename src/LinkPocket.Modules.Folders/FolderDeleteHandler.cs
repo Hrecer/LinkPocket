@@ -90,7 +90,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                 {
                     _ = await uow.Trash.AddFolderAsync(new TrashedFolder
                     {
-                        TrashFolderId = f.FolderId,   // 回收站保留原 ID（2026-09-17 定稿）
+                        TrashFolderId = f.FolderId,   // 回收站保留原 ID
                         ParentTrashFolderId = f.ParentId != null && subtreeIdSet.Contains(f.ParentId) ? f.ParentId : null,
                         Name = f.Name,
                         OriginFolderId = f.FolderId,

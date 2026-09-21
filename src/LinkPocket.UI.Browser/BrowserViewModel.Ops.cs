@@ -80,7 +80,7 @@ public partial class BrowserViewModel
     // —— 刚置入项临时置尾（Windows 资源管理器语义）——
     // 粘贴（复制/剪切）完成后，新项**临时排在列表末尾**（不参与排序、不按名称归位），并被选中、滚入视口——
     // 文件多、滚到中部的场景下也能立刻看到刚粘贴的东西（微软官方口径：避免文件多时找不到）。
-    // **只有真刷新才归位**：重新进入目录（含点当前目录的树行/虚根）、点列头排序、F5（用户发起的导航刷新）；
+    // **只有真刷新才归位**：重新进入目录（含点当前目录的树行/虚根）、点列头排序、F5（显式发起的导航刷新）；
     // 后台事件刷新（写操作后的 300ms 防抖）**绝不归位**——否则粘贴后的那次刷新就把置尾效果抹掉了。
 
     /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。失败必须留痕（观测面铁律）。</summary>
@@ -111,7 +111,7 @@ public partial class BrowserViewModel
     }
 
     /// <summary>复制书签（全量字段）。失败必须留痕（观测面铁律）。
-    /// 链接标题**不做唯一化**：链接身份 = URL，标题只是标签（用户 2026-09-19 定稿）。</summary>
+    /// 链接标题**不做唯一化**：链接身份 = URL，标题只是标签。</summary>
     private async Task<(OpOutcome Outcome, string? NewId)> CopyLinkAsync(string linkId, string? target,
         LinkPocket.Contracts.CallOptions? o = null)
     {

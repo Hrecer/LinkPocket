@@ -58,7 +58,7 @@ public static class SurfaceAnchors
     /// </summary>
     public static IReadOnlyList<Anchor> All { get; } = Build();
 
-    /// <summary>应用键（我们自定义、不进库 <c>M3Theme.Roles</c> 的四个表面键）。</summary>
+    /// <summary>应用键（本应用自定义、不进库 <c>M3Theme.Roles</c> 的四个表面键）。</summary>
     public static readonly IReadOnlyList<string> ApplicationKeys =
         new[] { "TintCard", "TintSurface", "TintPanel", "TintBg" };
 

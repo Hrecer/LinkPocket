@@ -44,7 +44,7 @@ public partial class SearchView : UserControl
                 _vm.ResetRequested += (_, _) => SearchBox.Focus();
                 _vm.FocusRowRequested += (_, item) => ResultsTable.ScrollItemIntoView(item);
                 // 点空白 = 清选中 + 焦点收回页内（BlankClick 唯一实现；命令端在视图收口——
-                // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径，用户令 2026-09-20）
+                // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径）
                 BlankClick.SetCommand(ContentArea, new RelayCommand(() =>
                 {
                     _vm.ClearSelectionCommand.Execute(null);
@@ -66,7 +66,7 @@ public partial class SearchView : UserControl
                     .Add(ShortcutAction.SearchMoveDown, _vm.MoveSelectionCommand)
                     .Add(ShortcutAction.SearchSelectLast, _vm.SelectLastCommand)
                     .Add(ShortcutAction.SearchSelectAll, _vm.SelectAllCommand)
-                    // Enter = 打开该链接的**浏览页详情页**（与智能列表/去重明细统一，用户令 2026-09-20）；
+                    // Enter = 打开该链接的**浏览页详情页**（与智能列表/去重明细统一）；
                     // 「跳转」（进目录 + 选中行）是顶部药丸 / 右栏图标钮的语义，键位不承担。
                     .Add(ShortcutAction.SearchOpen, _vm.OpenDetailCommand)
                     .Add(ShortcutAction.SearchDelete, _vm.DeleteSelectionCommand)
@@ -89,8 +89,7 @@ public partial class SearchView : UserControl
         {
             new DataTableColumn
             {
-                // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度
-                // （用户 2026-09-16 反馈"URL 被大幅压缩"）——空间来自右侧四列压到极限
+                // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度，空间来自右侧四列压到极限
                 Field = "title", Label = "名称", Width = -2,
                 SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
                     ? ((LinkItem)r).Url : ((LinkItem)r).Title),
@@ -101,7 +100,7 @@ public partial class SearchView : UserControl
                 // 位置列占 3 份剩余空间（名称 2 份）：层级路径最长、最需要宽度；
                 // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
                 // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
-                // 省下的宽度全部让给名称/位置（用户 2026-09-16 要求 URL 不再被压缩）
+                // 省下的宽度全部让给名称/位置，URL 不得被压缩
                 Field = "path", Label = "位置", Width = -3,
                 SortKey = r => (IComparable)(vm.ResolveFolderPath(((LinkItem)r).ListId)),
                 CellFactory = r => TextCell(vm.ResolveFolderPath(((LinkItem)r).ListId), 12.5)

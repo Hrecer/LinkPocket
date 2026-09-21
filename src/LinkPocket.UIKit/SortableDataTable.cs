@@ -197,12 +197,11 @@ public class SortableDataTable : Grid
             // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（BrowserView.xaml 中同样 Height=32、文字垂直居中）：
             // 两条紫色色带等高，底边严格对齐（侧栏曾靠 Padding+行高撑出 31.x 导致底边差一点）。
             // 水平内距 16 = 行容器内距，列边界逐列对齐不变；表头内容垂直居中。
-            // 注意：此类数值均由用户直接确认后写入，属"对齐类"简单调整——后续微调直接改值即可，
-            // 无需探针/截图等重验证流程（过度验证反而拖慢迭代）。
+            // 注意：此类数值属"对齐类"简单调整——后续微调直接改值即可，无需探针/截图等重验证流程。
             Height = 32,
             Padding = new Thickness(16, 0, 16, 0)
         };
-        // ⚠️ 表头底色必须是**资源引用**，不能 FindResource 取画刷后赋值（用户报障 2026：换主题后
+        // ⚠️ 表头底色必须是**资源引用**，不能 FindResource 取画刷后赋值（换主题后
         // 这一栏永远停在旧主题的紫。「切主题 = 资源字典换画刷实例」的地方，一次性取到的画刷会被
         // 固化成本地值，之后再也不跟随）。SetResourceReference 挂的是资源引用表达式 → 换主题即跟随。
         _headerBand.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfacePanel);
@@ -219,7 +218,7 @@ public class SortableDataTable : Grid
             // 「聚焦禁描边」是硬性口径，且**逐类容器都要核对**（WARNINGS 43）：表格内部的
             // ScrollViewer / ItemsControl / ContentControl 来自框架默认模板，FocusVisualStyle 非空
             // ——一旦它们（经 Tab 或代码 Focus）拿到键盘焦点就会画出**原生焦点虚线框**
-            //（用户报障 2026-09-20：去重明细页 F5 后出现黑虚线）。逐类置空，本控件内部不再有可疑元素。
+            //（去重明细页 F5 后会出现黑虚线）。逐类置空，本控件内部不再有可疑元素。
             FocusVisualStyle = null
         };
         _emptyHost = new ContentControl
@@ -323,7 +322,7 @@ public class SortableDataTable : Grid
 
             // 手柄：App.xaml 共享 ColumnResizeThumb 样式（hover/拖动紫线由样式触发器驱动）
             // ⚠️ 最右列不放拖拽手柄：最后一列右缘之外已无列可调，放了会在表头右端凭空多出
-            //     一根可拖拽竖线（用户 2026-09-16 报障：创建时间右边还有一根"滑动条"）。
+            //     一根可拖拽竖线（否则创建时间右边会多出一根"滑动条"）。
             if (i < ColumnList.Count() - 1)
             {
                 var thumb = new Thumb { Style = (Style)Application.Current.FindResource("ColumnResizeThumb"), Tag = i };
@@ -387,7 +386,7 @@ public class SortableDataTable : Grid
     /// ⚠️ 基准宽度必须取「行内容区」的列容器实宽，绝不能用表头 Grid 实宽：
     /// 表头带比行区宽（行容器另有外边距 + 内距，且行区还要减去纵向滚动条），
     /// 用表头宽度冻结会让所有列合计超出行区宽度 → 行内容被裁剪、右侧整块"向右闪一下"
-    /// （用户 2026-09-16 报障：第一次拖动列宽时右边区域会挪动一下）。
+    /// （第一次拖动列宽时，右侧区域会挪动一下）。
     /// 分配按 Star 权重比例（视觉比例保持不变），最后一个弹性列吸收取整误差，
     /// 保证冻结后合计恰好等于行区宽度。
     /// </summary>

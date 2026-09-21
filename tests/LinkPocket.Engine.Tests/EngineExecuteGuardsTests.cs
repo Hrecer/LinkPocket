@@ -8,7 +8,7 @@ using Xunit;
 namespace LinkPocket.Engine.Tests;
 
 /// <summary>
-/// ExecuteAsync 不变量补强（2026-09-18）：
+/// ExecuteAsync 不变量补强：
 /// ① 同一 IdempotencyKey 的两并发请求：写闸内二次确认保证只执行一次（曾只在闸外查一次，
 ///    并发双写会各执行一遍，幂等保证失效）；
 /// ② 取消路径也落审计（观测面「所有调用可追溯」不把取消当例外）。

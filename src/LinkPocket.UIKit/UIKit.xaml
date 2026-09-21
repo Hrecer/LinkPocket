@@ -72,8 +72,8 @@
     <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}"/>
 
     <!-- 下拉框（隐式样式，全站唯一定义）：**M3 圆角字段**外观。
-         ⚠️ 不写模板时 WPF 用系统 Aero 皮肤（直角 + 系统箭头 + 蓝色焦点框），与全站圆角/令牌语言完全不符
-         —— 用户报障"这里的 UI 居然是原生的"。模板里每个颜色都走 App.* 令牌，焦点一律不描边。 -->
+         ⚠️ 不写模板时 WPF 用系统 Aero 皮肤（直角 + 系统箭头 + 蓝色焦点框），与全站圆角/令牌语言完全不符。
+         模板里每个颜色都走 App.* 令牌，焦点一律不描边。 -->
     <Style TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
@@ -112,7 +112,7 @@
                             </Grid>
                         </Border>
                         <!-- 打开下拉的点击面：覆盖整块（ToggleButton 是官方模板约定的交互件；本身不可聚焦）。
-                             ⚠️ 必须**显式量到整个字段**（用户报障 2026-09-21："字体下拉……点击无反应"）：
+                             ⚠️ 必须**显式量到整个字段**（否则字体下拉点击无反应）：
                              隐式 `ToggleButton` 样式（本文件下方「滑动开关」那份）带 Width=52/Height=32 ——
                              模板里生成的元素同样吃它，于是点击面只剩字段**中央 52×32**，点左侧文字/右侧
                              chevron 都没反应（静态可验证：命中区被隐式样式的尺寸钉死）。 -->
@@ -220,7 +220,7 @@
     <Style TargetType="views:SortableHeaderButton">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
-        <!-- ⚠️ 文字在药丸内水平+垂直居中（用户要求）；药丸两侧由使用方留对称空隙，
+        <!-- ⚠️ 文字在药丸内水平+垂直居中；药丸两侧由使用方留对称空隙，
              分隔线（列边界）恰好落在两个药丸的正中心 -->
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
@@ -243,7 +243,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <!-- 表头悬停底：原先写死的是**外来色板** #1F6750A4（M3 官方基线紫 12%），
-                                 与我们的定稿强调色不是同一支紫 → 换令牌（跟主题走）。 -->
+                                 与强调色不是同一支紫 → 换令牌（跟主题走）。 -->
                             <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.State.Hover}"/>
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                         </Trigger>
@@ -348,9 +348,9 @@
     <!-- JumpPillButton：「跳转」药丸（**三页共用一份**：搜索工具行 / 智能列表结果页头 / 查重明细 URL 组）。
          「跳转」= 进浏览页对应目录并选中该行（IContentLocator，与"外部打开"无关）→
          图标用 map-marker（地图图钉 = "它在哪"；早先试过 open-in-new = "外部打开"语义、
-         folder-open-outline = 观感差，用户 2026-09-20 定稿地图图钉）。
+         folder-open-outline = 观感差，已定稿地图图钉）。
          ⚠️ 按压态只加深状态层，**绝不改变圆角/尺寸**：原局部样式在 IsPressed 里把圆角 16→10 做"形变"，
-         用户令 2026-09-20 明确要求删除该效果（"我们不需要这个改变"）。
+         该效果已删除。
          禁用态 = SurfaceContainerHighest + OnSurfaceMuted（MD3 规范禁用色，不用透明度 hack）。 -->
     <Style x:Key="JumpPillButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource App.Accent.Fill}"/>
@@ -506,7 +506,7 @@
         <Setter Property="Focusable" Value="True"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
-        <!-- 内容**水平居中**（用户报障 2026-09-20："药丸里面的文字相对小药丸仍然没有居中"）：
+        <!-- 内容**水平居中**：
              项被 MinWidth 撑宽后（外观面板的「4 色/5 色」段 MinWidth=64），
              ContentPresenter 只有 VerticalAlignment 会被拉伸到整宽 → 文字贴左，
              看起来就是"没居中"。顶部导航药丸的项是内容自适应宽度（StackPanel 排布），
@@ -557,7 +557,7 @@
     </Style>
 
     <!-- ===== 滑动开关（M3E 开关；全站隐式样式）=====
-         用户令 2026-09-20 第二轮："不要弄勾选……要真正的开关（ToggleSwitch），做成 Material 3 Expressive 那种"。
+         用真正的 ToggleSwitch（Material 3 Expressive），不用勾选框。
          · 轨道 52×32、圆角 16（纯胶囊）；滑块 24 圆形；
          · 开 = 轨道 `App.Accent.Fill`，滑块 `App.Surface.Card`；
            关 = 轨道 `App.Surface.Hover` + 1px `App.Line.Outline` 描边，滑块 `App.Surface.Card`；

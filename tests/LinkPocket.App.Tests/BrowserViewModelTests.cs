@@ -169,7 +169,7 @@ public class BrowserViewModelTests
     /// <summary>
     /// 文件夹跳转（ID 跳转需要）：文件夹的容器 = 它的**父目录** → 进入父目录 + 选中该文件夹行。
     /// 与链接跳转同一条原语（<see cref="BrowserViewModel.NavigateAndSelectAsync"/>），
-    /// 但落点是**文件夹行**（主栏行与树高亮都要落到它）——曾经的空白面（此前只有链接跳转有测试）。
+    /// 但落点是**文件夹行**（主栏行与树高亮都要落到它）——此前只有链接跳转有覆盖。
     /// </summary>
     [Fact]
     public async Task 跳转导航_文件夹目标_进入父目录并选中该文件夹行()
@@ -508,7 +508,7 @@ public class BrowserViewModelTests
             Assert.True(vm.Rows.Single(r => r.Id == link.LinkId).IsCut);   // 半透明视觉就位
 
             // 同目录粘贴 = 无操作 + 明确提示（载荷保留）——
-            // 静默早退曾让"剪切后粘贴没反应"看起来像数据不一致（用户 2026-09-19 报障）
+            // 静默早退曾让"剪切后粘贴没反应"看起来像数据不一致
             vm.PasteCommand.Execute(null);
             Assert.Equal("剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）", vm.StatusText);
             Assert.True(vm.Clipboard.BrowserPayload is { IsCut: true });   // 剪切态未被消费
@@ -630,7 +630,7 @@ public class BrowserViewModelTests
 
             vm.EnterPathEditCommand.Execute(null);                 // 地址栏进入编辑态
             Assert.True(vm.IsPathEditing);
-            Assert.False(vm.NewLinkCommand.CanExecute(null));      // 用户报障：编辑地址时「新建链接」未禁用 → 已修
+            Assert.False(vm.NewLinkCommand.CanExecute(null));      // 编辑地址时「新建链接」必须禁用
             Assert.False(vm.NewFolderCommand.CanExecute(null));
 
             vm.CancelPathEditCommand.Execute(null);
@@ -643,7 +643,7 @@ public class BrowserViewModelTests
     }
 
     /// <summary>
-    /// 侧栏动作面（用户定稿 2026-09-20）：链接 = 两行排布 + 独立「重命名」图标钮（就地改标题，
+    /// 侧栏动作面：链接 = 两行排布 + 独立「重命名」图标钮（就地改标题，
     /// 命令 = 本页就地改名命令**同一实例**）；文件夹不开该钮（铅笔即重命名，同一动作不摆两枚）。
     /// </summary>
     [Fact]

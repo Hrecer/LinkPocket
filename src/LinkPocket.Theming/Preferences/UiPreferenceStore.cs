@@ -49,7 +49,7 @@ public sealed record ThemePreference
     public double? NeutralHue { get; init; }
 
     /// <summary>
-    /// 「自动调整颜色」开关（用户令 2026-09-20 第二轮：**缺省打开** = 按明度档位表自动重排）。
+    /// 「自动调整颜色」开关（**缺省打开** = 按明度档位表自动重排）。
     /// </summary>
     /// <remarks>
     /// 缺省 <c>true</c> 与 <see cref="PaletteMode.Auto"/> 一致（唯一事实源 =

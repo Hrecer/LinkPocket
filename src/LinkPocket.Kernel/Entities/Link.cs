@@ -30,7 +30,7 @@ public class Link
     public string? FaviconUrl { get; set; }
 
     /// <summary>所在文件夹（v2 列名 folder_id）；NULL = 根级书签（根不是实体，无哨兵）。
-    /// 属性名沿用旧称 ListId，语义归位随模型归位阶段统一处理。</summary>
+    /// 属性名沿用旧称 ListId（与域模型的命名统一另行处理）。</summary>
     [Column("folder_id")]
     public string? ListId { get; set; }
 

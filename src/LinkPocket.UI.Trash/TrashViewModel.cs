@@ -43,7 +43,7 @@ public class TrashCrumbViewModel
 /// <item>写操作 = 永久删除（单条/批量，两阶段确认，见 partial Purge 文件）；
 /// 刷新由引擎事件（300ms 防抖）驱动，写操作**不显式刷新**。</item>
 /// </list>
-/// ⚠️ 回收站**只读语义**（用户定稿 2026-09-19）：无撤销/重做、无新建/重命名/编辑、无剪贴板搬运；
+/// ⚠️ 回收站**只读语义**：无撤销/重做、无新建/重命名/编辑、无剪贴板搬运；
 /// **站内不可搬移**（条目只能被打开查看或永久删除）。
 /// </summary>
 public partial class TrashViewModel : INotifyPropertyChanged
@@ -96,7 +96,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         CopyLinkAddressCommand = new RelayCommand<TrashRowViewModel?>(CopyLinkAddress, row => row is { IsFolder: false });
         SelectAllCommand = new RelayCommand(SelectAllRows);
         ClearSelectionCommand = new RelayCommand(ClearSelection);
-        // Esc（分层，用户令 2026-09-19）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。
+        // Esc（分层）：只读详情覆盖层打开 → 先退出覆盖层；否则清空选中。
         EscapeCommand = new RelayCommand(Escape);
         // 右栏「跳转」= 把选中的那一行**滚回视口**（本页内定位）。仅单选（多选没有"某一项"可定位）。
         JumpSelectionCommand = new RelayCommand(JumpSelectionToRow, () => Selection.Count == 1);
@@ -451,7 +451,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// 回收站条目不在主表（引擎 `locate.resolve` 查不到它），所以本页的"跳转"不是"跳去浏览页"，而是
     /// "把视角移回那一项"——复用与浏览页 / 结果页跳转**同一个视图原语** <see cref="FocusRowRequested"/>
     /// （视图侧落到 `ScrollItemIntoView`），不新增第二套定位实现。
-    /// 用户令 2026-09-20：一页上百项时"选中了又滑走要找别的项"要能一键回到它。
+    /// 一页上百项时，选中的行滑出视口后可一键回到它（仅单选；多选没有唯一目标）。
     /// </summary>
     private void JumpSelectionToRow()
     {

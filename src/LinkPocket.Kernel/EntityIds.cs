@@ -4,7 +4,7 @@ namespace LinkPocket.Data;
 /// 实体 ID 唯一生成入口（Folder / Link 的主键都是不透明 TEXT，业务代码不得按 ID 形状做判断，
 /// <see cref="LooksLikeFolderId"/> 仅供诊断/调试显示，不参与业务分支）。
 ///
-/// <para>格式定稿（2026-09-17）：</para>
+/// <para>格式约定：</para>
 /// <para>· 文件夹 = <b>固定 12 位纯数字</b>随机串（空间 10^12）；</para>
 /// <para>· 链接　 = <b>固定 16 位大小写字母+数字混合</b>随机串（空间 62^16）。</para>
 ///

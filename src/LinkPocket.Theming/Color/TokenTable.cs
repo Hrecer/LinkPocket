@@ -8,7 +8,7 @@ namespace LinkPocket.Theming.Color;
 /// <list type="bullet">
 /// <item><b>锚定键</b>（<see cref="Anchored"/>）：库的 49 个资源键（43 角色 + 6 个 <c>SurfaceElevation</c>）
 /// —— 逐键按锚定表旋转色相，保证层感恒定。</item>
-/// <item><b>应用令牌</b>（<see cref="Tokens"/>）：我们的语义令牌（<c>App.*</c>）—— 由色相锚定族派生，
+/// <item><b>应用令牌</b>（<see cref="Tokens"/>）：本应用的语义令牌（<c>App.*</c>）—— 由色相锚定族派生，
 /// 并与对应的库键**同值**（同一个语义只有一个真值）。</item>
 /// </list>
 /// </remarks>

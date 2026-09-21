@@ -16,13 +16,13 @@ namespace LinkPocket.ViewModels;
 /// <summary>一张主题卡（「外观」面板的主题网格项：11 张预设卡 + 第 12 张「自选颜色」卡）。</summary>
 /// <remarks>
 /// <para>
-/// <b>第 12 张不是主题目录里的主题</b>（用户令 2026-09-20）：<see cref="ThemeCatalog.All"/> 仍然是
+/// <b>第 12 张不是主题目录里的主题</b>：<see cref="ThemeCatalog.All"/> 仍然是
 /// 11 套预设，第 12 张是 <see cref="CreateCustomCard"/> 追加的**自选颜色卡**（<c>Id = "user-custom"</c>）——
 /// 它没有目录定义（<see cref="Definition"/> 为 <c>null</c>），点它 = 应用调色台里的自选配色。
 /// </para>
 /// <para>
 /// <b>预设只读</b>：预设卡的色点是**展示**用的身份色拷贝；调色台里的编辑永远只动草稿，
-/// 绝不写回 <see cref="Definition"/>.Palette（用户令："默认的颜色是绝对不能改的"）。
+/// 绝不写回 <see cref="Definition"/>.Palette（预设是只读的）。
 /// </para>
 /// </remarks>
 public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyChanged
@@ -47,7 +47,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
         var table = PaletteSolver.Solve(definition);
 
-        // 色点用**身份色**（"主题就是这些颜色"——方案 §4.2：主题卡展示用户原色，界面用其档位）。
+        // 色点用**身份色**（方案 §4.2：主题卡展示原始身份色，界面用其档位）。
         // 补位规则（预设只有 1–3 个身份色）= Theming 的唯一实现 `PaletteSolver.EditableSlots`，
         // 与外观面板的色槽同一份（否则"卡片 4 个点、色槽 3 格"迟早漂移）。
         Swatches = new ObservableCollection<Color>(BuildSwatches(definition));
@@ -59,7 +59,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         Text = ToMedia(table.Token(AppTokens.TextPrimary));
 
         // 卡面底色 = **当前生效主题的页面底**（见 RefreshSwatches 的注释：只有"已应用"的那张卡
-        // 才会与它自己的某个圆融合 —— 用户令 2026-09-21）。
+        // 才会与它自己的某个圆融合）。
         _cardBackground = ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase));
 
         var f = table.Families;
@@ -70,8 +70,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// 第 12 张卡「自选颜色」：**不是** <see cref="ThemeCatalog"/> 里的主题，没有目录定义。
     /// </summary>
     /// <remarks>
-    /// <b>默认全空</b>（用户令 2026-09-20："上面最后面的位置有一个自选颜色，并且里面全都是空的"）：
-    /// 没有任何自选配色时 <see cref="Swatches"/> 为空、<see cref="IsEmpty"/> 为真，
+    /// <b>默认全空</b>：没有任何自选配色时 <see cref="Swatches"/> 为空、<see cref="IsEmpty"/> 为真，
     /// 卡面因此画 4 个**空心占位圆**（不显示任何颜色）。
     /// </remarks>
     private ThemeCardViewModel()
@@ -95,7 +94,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// 把「自选颜色」卡的色点刷成草稿里**已选**的那些颜色（空 = 卡面走占位态）。
     /// </summary>
     /// <remarks>
-    /// 数量 = 用户当前选的槽数（4 或 5）；正在编辑到一半时按实际已选数量显示 ——
+    /// 数量 = 当前草稿已选的槽数（4 或 5）；编辑到一半时按实际已选数量显示 ——
     /// 卡面是草稿的投影，不假装"已经是一套完整配色"。
     /// </remarks>
     public void SetSwatches(IEnumerable<Color> colors)
@@ -112,8 +111,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 
     /// <summary>按**当前配色应用方式**重建色点与卡面底色（切换「自动调整颜色」开关 / 换主题 / 进面板时调用）。</summary>
     /// <remarks>
-    /// <b>色点与卡面底色必须一起重投影</b>（用户令 2026-09-21："对于自动调整的，我们直接同时调整那 4 个圆
-    /// 和 5 个圆，这样也能做到某一个圆与卡面背景融为一体的效果"）：卡面底色取自**当前生效主题**的页面底，
+    /// <b>色点与卡面底色必须一起重投影</b>：卡面底色取自**当前生效主题**的页面底，
     /// 而它与"当前模式下"的取值绑定 —— 只重投影其中一个，融合就会断。
     /// </remarks>
     public void RefreshSwatches()
@@ -127,13 +125,10 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// 卡面底色 = **当前生效主题的页面底**（所有卡统一用它；见下"融合"的解释）。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-21（对"融合"的最终澄清）："其他主题在没被选中的时候，卡面上的背景应该是**当前主题的背景**；
-    /// 当我们选中它，我们就应用了它的背景，这时候我们就会发现原本上某一个圆和它现在融合了，这就是我们神奇的点。
-    /// 我们不要一开始就直接全部用它们的背景"。
-    /// 现行 = 所有卡都用**当前生效主题**的页面底当卡面；而"已应用"的那张卡的页面底 == 当前页面底，
+    /// 所有卡都用**当前生效主题**的页面底当卡面；而"已应用"的那张卡的页面底 == 当前页面底，
     /// 于是它色点里那枚"背景色成员"（<see cref="BuildSwatches"/> 用同一个 `SurfaceBaseColor` 替换最浅成员）
     /// 正好与卡面**逐字节同色** → 点它的瞬间能看到那个圆"化进"背景里 = 融合。
-    /// 未选中的主题则保留自己的所有色点（在**当前**底色上都看得见）——这就是"神奇的点"。
+    /// 未选中的主题则保留自己的所有色点（在**当前**底色上都看得见），不会一开始就全部套用自己的背景。
     /// </remarks>
     public Color CardBackground => _cardBackground;
 
@@ -149,8 +144,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     /// 与外观面板的色槽共用同一套补位规则（预设身份色只有 1–3 个，直接展示会稀疏得像"缺了几个色"）。
     /// </summary>
     /// <remarks>
-    /// <b>最浅那一枚换成"该主题实际生效的页面底色"</b>（用户令 2026-09-20："背景色那个圆与背景融合，
-    /// 这正是我们想要的效果"）：卡面要显示"这套主题长什么样"—— 若某个主题的背景色成员比浅色底线还深
+    /// <b>最浅那一枚换成"该主题实际生效的页面底色"</b>：卡面要显示"这套主题长什么样"—— 若某个主题的背景色成员比浅色底线还深
     /// （会被提亮一档），圆点跟着显示实际底色才与页面底同色；其余成员原样显示。
     /// </remarks>
     private IEnumerable<Color> BuildSwatches(ThemeDefinition definition)
@@ -232,8 +226,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
 /// <summary>一个色槽（4/5 色自选配色）。**可以为空**（还没选颜色）。</summary>
 /// <remarks>
 /// 空槽不是"黑色"也不是"透明"这类会骗人的值：<see cref="Color"/> 为 <c>null</c>、
-/// <see cref="Hex"/> 为空串，界面据此画虚线空心环 + 「+」（用户令 2026-09-20：
-/// "上面最后面的位置有一个自选颜色，并且里面全都是空的"）。
+/// <see cref="Hex"/> 为空串，界面据此画虚线空心环 + 「+」。
 /// </remarks>
 public sealed class ColorSlotViewModel
 {
@@ -264,7 +257,7 @@ public sealed class ColorSlotViewModel
     public string ValueText => IsEmpty ? "未选" : Hex;
 }
 
-/// <summary>字体来源（用户令 2026-09-20：**先选来源，再在来源里选字体**）。</summary>
+/// <summary>字体来源（**先选来源，再在来源里选字体**）。</summary>
 public enum FontSourceKind
 {
     /// <summary>系统已装字体（只读：不可删，也不属于本应用）。</summary>
@@ -321,12 +314,11 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     private const string LogCategory = "app.theme";
 
     /// <summary>
-    /// 调色台草稿：<c>null</c> = **空槽**（用户还没选这个颜色）。
+    /// 调色台草稿：<c>null</c> = **空槽**（尚未选色）。
     /// </summary>
     /// <remarks>
-    /// 默认 = <see cref="MinSlots"/> 个**空槽**（用户令 2026-09-20："自选颜色里面全都是空的"）——
-    /// 旧行为是开局倒进"当前主题的颜色"，于是预设主题看起来可被直接改（其实只是复制），
-    /// 而且和"预设只读、自选是另一份"这件事完全对不上。
+    /// 默认 = <see cref="MinSlots"/> 个**空槽**：早期实现开局倒进"当前主题的颜色"，
+    /// 于是预设主题看起来可被直接改（其实只是复制），与"预设只读、自选是另一份"对不上。
     /// </remarks>
     private readonly List<Color?> _draft = new() { null, null, null, null };
 
@@ -343,8 +335,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <b>互斥的唯一事实来源</b>：主题卡与自选区的高亮都由它 + <see cref="SelectedThemeId"/> 投影出来，
-    /// 视图不持状态、不"点了哪边记哪边"（架构不变量 12）。用户报障"主题与自选配色没有二选一、
-    /// 两个都亮着"的根因就是原先根本没有这个字段——自选区的"高亮"是按色槽数量推的。
+    /// 视图不持状态、不"点了哪边记哪边"（架构不变量 12）。此前没有这个字段，自选区的"高亮"按色槽数量
+    /// 推导，曾出现"主题与自选配色同时亮着"。
     /// </remarks>
     private bool _customActive;
 
@@ -356,8 +348,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ThemeCards = new ObservableCollection<ThemeCardViewModel>(
             ThemeCatalog.All.Select(t => new ThemeCardViewModel(t)));
 
-        // 第 12 张 = 「自选颜色」卡（**不是** ThemeCatalog 里的主题：目录仍是 11 套）。
-        // 用户令 2026-09-20："上面最后面的位置有一个自选颜色" —— 它排在主题网格最后一张。
+        // 第 12 张 = 「自选颜色」卡（**不是** ThemeCatalog 里的主题：目录仍是 11 套），排在主题网格最后一张。
         _customCard = ThemeCardViewModel.CreateCustomCard();
         ThemeCards.Add(_customCard);
 
@@ -365,15 +356,14 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         // 对齐到当前生效外观的实际颜色数**（5 色主题 = 5 格，见该方法的注释）。
         RebuildSlots();
 
-        // 字体下拉的**当前值**也要在构造期就投影出来（用户报障 2026-09-20 第二轮："我选系统字体，
-        // 此时根本就拉取不到任何字体"——那个框当时是空白的）：候选是惰性的（展开下拉才装载），
+        // 字体下拉的**当前值**也要在构造期就投影出来：候选是惰性的（展开下拉才装载），
         // 但"现在用的是什么字体"不依赖候选列表 —— ProjectCurrentFonts 在池为空时用当前族名补占位项
-        // （**只补属于当前来源的那一个**，见 ProjectCurrentFonts）。
+        // （**只补属于当前来源的那一个**，见 ProjectCurrentFonts）；否则装载前下拉框是空白的。
         ProjectFontPools();
         ProjectCurrentFonts(ThemeService.CurrentUiFont);
 
         // 入口对齐：面板显示"当前**已应用**的外观"——主题卡高亮 + 互斥归属 + 色槽草稿
-        // （用户上次选的主题/配色要在他回到这一页时仍然是对的，否则选中态就是错的）
+        // （回到本页时显示的主题/配色必须与已应用状态一致，否则选中态就是错的）
         SyncFromAppliedTheme();
     }
 
@@ -382,22 +372,21 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>种子规则（用户令 2026-09-20：预设/默认主题只读）</b>：
+    /// <b>种子规则（预设/默认主题只读）</b>：
     /// </para>
     /// <list type="number">
-    /// <item>当前生效 = **自选配色** → 色槽 = 该配色本身（重进面板要看到他正在用的那份）；</item>
-    /// <item>当前生效 = **预设主题** → 色槽**保持用户自己的草稿不动**（内存里那份；从来没有过 = 空）。
-    /// 旧行为是把当前主题的颜色倒进色槽 —— 用户报障的根因："默认的颜色是绝对不能改的"，
-    /// 而"倒进来"看起来就像预设可以被就地改；想从某套主题改起请走 <see cref="StartFromCurrentTheme"/>（复制）；</item>
-    /// <item>有**未应用改动**（<c>_draftDirty</c>）时**颜色**不重播种（入口刷新不许冲掉用户正在编辑的东西），
+    /// <item>当前生效 = **自选配色** → 色槽 = 该配色本身（重进面板要看到正在用的那份）；</item>
+    /// <item>当前生效 = **预设主题** → 色槽**保持既有草稿不动**（内存里那份；从来没有过 = 空）。
+    /// 早期实现是把当前主题的颜色倒进色槽，"倒进来"看起来就像预设可以被就地改；
+    /// 想从某套主题改起请走 <see cref="StartFromCurrentTheme"/>（复制）；</item>
+    /// <item>有**未应用改动**（<c>_draftDirty</c>）时**颜色**不重播种（入口刷新不许冲掉正在编辑的内容），
     /// 但**槽数一律跟着当前主题走**——见下条。</item>
     /// </list>
     /// <para>
-    /// <b>槽数必须等于当前主题的颜色数（用户报障 2026-09-20："我们很多默认主题不是五色的吗？
-    /// 为什么到了这里变成四色"）</b>：调色台的色槽是"这套外观能被微调的 N 个颜色"，草稿槽数恒为 4
+    /// <b>槽数必须等于当前主题的颜色数</b>：调色台的色槽是"这套外观能被微调的 N 个颜色"，草稿槽数恒为 4
     /// 会让 5 色主题（出厂默认）在面板上显示成 4 色 —— 与主题卡上的 5 个色点自相矛盾。
     /// 故每次都把草稿槽数对齐到 <see cref="PaletteSolver.EditableSlots"/> 的实际个数（4 或 5），
-    /// **只调槽数、不碰颜色**（缩掉的槽若是用户已填的颜色会一并消失，这一点由下方注释明说）。
+    /// **只调槽数、不碰颜色**（缩掉的槽若已填色会一并消失，见下方注释）。
     /// </para>
     /// </remarks>
     public void SyncFromAppliedTheme()
@@ -422,8 +411,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         Raise(nameof(AutoAdjustColors));
         Raise(nameof(PaletteModeHint));
 
-        // 主题卡色点 = **当前模式**下该主题实际生效的页面底（用户令 2026-09-20 第二轮：
-        // "当我们开关自动调整颜色的按钮时，主题那个色点也会同步修改"）——所以每次入口对齐都重投影一次，
+        // 主题卡色点 = **当前模式**下该主题实际生效的页面底 —— 每次入口对齐都重投影一次，
         // 不能只在切开关那一条路上重投影（否则换主题 / 重进面板后的色点可能停在旧模式的口径上）。
         RepojectAllThemeCards();
 
@@ -435,8 +423,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 把草稿槽数对齐到目标值（4/5），**只动槽数、不动颜色、不改"未应用"标记**。
     /// </summary>
     /// <remarks>
-    /// "未应用标记"（<c>_draftDirty</c>）表达的是**用户改过没应用**：槽数跟着当前主题走是**投影**，
-    /// 不是用户的编辑，所以这里不标脏、也不清脏（用户之前那份未应用改动依然如实显示为"编辑中"）。
+    /// "未应用标记"（<c>_draftDirty</c>）表达的是**改过但没应用**：槽数跟着当前主题走是**投影**，
+    /// 不是编辑动作，所以这里不标脏、也不清脏（既有的未应用改动依然如实显示为"编辑中"）。
     /// </remarks>
     private void SyncDraftSlotCount(int target)
     {
@@ -453,15 +441,14 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么必须存在（用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，一直都没有更改过"）</b>：
-    /// 这套投影原先**只有 <see cref="SyncFromAppliedTheme"/> 里有**，而它只在"进面板"（`Refresh`）时被调用
-    /// —— 点主题卡走 <see cref="ApplyThemeCard"/>、点起点走 <see cref="StartFromCurrentTheme"/>，
-    /// 两条路都不经过它，于是换主题之后按钮文案与说明句照旧写着**上一套**外观的名字
-    /// （用户看到的"从来没变过"就是这个；VM 单测同样卡住过它）。
+    /// <b>为什么必须存在</b>：这套投影最早只写在 <see cref="SyncFromAppliedTheme"/> 里，
+    /// 而它只在"进面板"（`Refresh`）时被调用 —— 点主题卡走 <see cref="ApplyThemeCard"/>、
+    /// 点起点走 <see cref="StartFromCurrentTheme"/>，两条路都不经过它，于是换主题之后
+    /// 按钮文案与说明句照旧写着**上一套**外观的名字（VM 单测同样卡住过它）。
     /// </para>
     /// <para>
     /// 现在它是**唯一投影点**：任何"当前生效外观变了"的地方都调它一次，三处文案与槽数一起跟上。
-    /// 它**不碰颜色**（草稿是用户的，换主题不许冲掉）也不碰"未应用"标记，因此可以随便调。
+    /// 它**不碰颜色**（草稿独立于主题，换主题不许冲掉）也不碰"未应用"标记，因此可以随便调。
     /// </para>
     /// </remarks>
     private void ProjectAppliedTheme()
@@ -478,7 +465,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public string AppliedThemeName { get; private set; } = ThemeCatalog.Default.Name;
 
     /// <summary>
-    /// 「以当前外观为起点」按钮的文案（带上名字，用户一眼知道复制的是哪一套）。
+    /// 「以当前外观为起点」按钮的文案（带上名字，可一眼看出复制的是哪一套）。
     /// </summary>
     public string StartFromCurrentThemeLabel => $"以「{AppliedThemeName}」为起点";
 
@@ -487,10 +474,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么整句都在 VM 里（用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，
-    /// 一直都没有更改过"）</b>：这句话原先在 XAML 里拆成 `<c>Run</c> 字面量 + <c>Run Text="{Binding …}"</c> +
-    /// <c>Run</c> 字面量</b> 三段 —— 断句与绑定分散在两处，运行期是否跟着主题走无法在 VM 层被观测
-    /// （VM 单测测不到、探针也只断言按钮不看这句）。
+    /// <b>为什么整句都在 VM 里</b>：这句话原先在 XAML 里拆成 `<c>Run</c> 字面量 +
+    /// <c>Run Text="{Binding …}"</c> + <c>Run</c> 字面量</b> 三段 —— 断句与绑定分散在两处，
+    /// 运行期是否跟着主题走无法在 VM 层被观测（VM 单测测不到、探针也只断言按钮不看这句）。
     /// 现行口径：**这类"含变量的整句"由 VM 出一个字符串属性**，视图只摆一个 <c>TextBlock</c>，
     /// 于是"这句里写的是哪套外观"与按钮文案同源（同一个 <see cref="AppliedThemeName"/>）、
     /// 变更通知也只有一个出口（<see cref="SyncFromAppliedTheme"/>）。
@@ -502,7 +488,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         + "（「自选颜色」卡随即高亮），之后点色槽微调即可。";
 
     // 字体候选**惰性**（见 EnsureFontsLoadedAsync）：构造期不枚举系统字体 ——
-    // 枚举开销与机器上装的字体数量成正比，用户没打开字体下拉就不该付这笔钱。
+    // 枚举开销与机器上装的字体数量成正比，不打开字体下拉就不该付这笔钱。
     // 当前选中字体直接取 ThemeService 的状态，不依赖候选列表。
     private bool _fontsLoaded;
 
@@ -512,15 +498,15 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <remarks>
     /// <para>
     /// <b>为什么惰性</b>：候选列表要枚举**系统全部字体**，开销与机器上装的字体数量成正比
-    /// （缓存只解决第二次之后；第一次无论如何都要付）。用户没打开字体下拉就不该付这笔钱。
+    /// （缓存只解决第二次之后；第一次无论如何都要付）。不打开字体下拉就不该付这笔钱。
     /// </para>
     /// <para>
-    /// <b>为什么在后台线程</b>（<see cref="Fonts.FontCatalog.LoadAsync"/>）：把它付在 UI 线程上 =
-    /// 用户每装一批字体就多卡一次，且卡顿随机器变差而放大。"大多数机器上很快"不构成免责 ——
-    /// 慢就是慢，正确做法是异步 + 缓存，而不是让用户"别去触发它"。
+    /// <b>为什么在后台线程</b>（<see cref="Fonts.FontCatalog.LoadAsync"/>）：付在 UI 线程上 =
+    /// 每装一批字体就多卡一次，且卡顿随机器变差而放大。正确做法是异步 + 缓存，
+    /// 而不是要求"别去触发它"。
     /// </para>
     /// <para>
-    /// 失败**如实播报**（不静默回退成空列表）：枚举炸了要让用户看见，而不是给他一个空下拉。
+    /// 失败**如实播报**（不静默回退成空列表）：枚举失败要在界面上可见，而不是给一个空下拉。
     /// </para>
     /// </remarks>
     public async Task EnsureFontsLoadedAsync()
@@ -533,7 +519,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
         catch (Exception ex)
         {
-            // 失败可重试：标志退回 false，用户再展开一次下拉就会重跑（而不是永久卡在空列表）
+            // 失败可重试：标志退回 false，再次展开下拉就会重跑（而不是永久卡在空列表）
             _fontsLoaded = false;
             LpLog.Error("装载字体候选失败", ex, LogCategory);
             Status = $"字体列表装载失败：{ex.GetBaseException().Message}";
@@ -551,10 +537,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>界面字体候选（**当前来源**那一份）。</summary>
     public ObservableCollection<FontOptionViewModel> UiFonts { get; } = new();
 
-    // ── 字体来源二选一（用户令 2026-09-20）─────────────────────────────
+    // ── 字体来源二选一 ────────────────────────────────────────────────
     // 两个池：{系统,自定义}。下拉只显示当前来源那份；另一个保留"当前已选字体"的来源。
-    // ⚠️ 等宽字体行**已删除**（用户令 2026-09-21："等宽字体不应该被更改，直接删掉这条"）：
-    //    等宽字体（ID / 网址显示用）从此固定为默认族，面板不再提供任何入口。
+    // ⚠️ 等宽字体行**已删除**：等宽字体（ID / 网址显示用）固定为默认族，面板不再提供任何入口。
 
     private ObservableCollection<FontOptionViewModel> SystemUiFonts { get; } = new();
     private ObservableCollection<FontOptionViewModel> CustomUiFonts { get; } = new();
@@ -566,7 +551,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// 投影口径：已应用字体落在哪个池里，来源就是哪个（与颜色那边的"互斥归属"同一套做法：
-    /// 归属由**事实**推出来，不是让用户另存一个可能与事实矛盾的开关）。
+    /// 归属由**事实**推出来，不额外存一个可能与事实矛盾的开关）。
     /// </remarks>
     public FontSourceKind FontSource
     {
@@ -583,8 +568,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ProjectFontPools();
             ProjectCurrentFonts(ThemeService.CurrentUiFont);
             // 目标来源的候选池是空的（本次会话还没装载成功过）→ 当场把装载踢起来；
-            // 装载完成会自动重投影（ReloadFontsAsync 收尾），用户不必"再展开一次下拉"。
-            // 用户报障 2026-09-21："点到自定义字体、再回到系统字体 → 系统字体那一栏直接是空的，需要重新下拉"。
+            // 装载完成会自动重投影（ReloadFontsAsync 收尾），不必"再展开一次下拉"。
+            // 否则切到自定义字体再切回系统字体时，系统字体那一栏会是空的。
             if (UiFonts.Count == 0) _ = EnsureFontsLoadedAsync();
         }
     }
@@ -604,19 +589,16 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ? "系统已装字体：只读（属于系统，本应用不修改、也删不掉）"
         : "自定义字体：导入的字体文件存在本应用目录里，可随时删除（不会动系统字体）；还没导入过就是空的";
 
-    // ── 「自动调整颜色」开关（用户令 2026-09-20）────────────────────────
-    // 用户原话："单独做一个开关按钮，默认关闭，就是这个按钮大概的表述就是关闭那种自动调整颜色的功能，
-    // 纯按照你输入的颜色尽量直接优先按照你的颜色，除非颜色不够……尽量把你选的颜色全部应用上"。
+    // ── 「自动调整颜色」开关 ───────────────────────────────────────────
 
     /// <summary>
     /// 「自动调整颜色」：<c>true</c>（**出厂缺省**）= 按明度档位表自动重排（层感与可读性有保证）；
-    /// <c>false</c> = **直配**（尽量原样用你给的颜色，只在颜色不够时按本色补）。
+    /// <c>false</c> = **直配**（尽量原样使用所选颜色，只在颜色不够时按本色补）。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-20 第二轮："我们默认是打开自动调整颜色的，自动调整颜色是一个那种滑动开关"。
     /// 开关一变就**当场重新应用当前外观**（<see cref="ThemeService.SetPaletteMode"/> 内含落盘），
     /// 并把主题卡色点一起重投影 —— 两种模式下"背景色成员"的取值可能不同，
-    /// 卡面必须显示**该模式下实际生效的底色**，否则那个圆点又会与背景不同色（用户令：开关两种状态都要能融合）。
+    /// 卡面必须显示**该模式下实际生效的底色**，否则那个圆点又会与背景不同色（两种状态都要能融合）。
     /// </remarks>
     public bool AutoAdjustColors
     {
@@ -630,8 +612,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             {
                 ThemeService.SetPaletteMode(target);
                 RepojectAllThemeCards();
-                // 状态行不播报成功（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）——
-                // 开关自身的开/关位置 + 卡片里的说明句已经说清了；失败照报（catch 里那条）。
+                // 状态行不播报成功 —— 开关自身的开/关位置 + 卡片里的说明句已经说清了；失败照报（catch 里那条）。
                 Status = string.Empty;
             }
             catch (Exception ex)
@@ -676,10 +657,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 也不存在"点了哪张"的第二份记忆（架构不变量 12）。
     /// </para>
     /// <para>
-    /// <b>严格二选一（用户报障"两块都亮着、分不清谁在生效"）</b>：自选配色生效时**只有**
-    /// 第 12 张「自选颜色」卡高亮、11 张预设卡全部不高亮；预设生效时只有那一张高亮、
-    /// 自选颜色卡不高亮。两个方向都由 <see cref="IsCustomActive"/> 唯一定夺，
-    /// 不靠 <c>SelectedThemeId</c> 恰好等于某个 id（那是第二份事实源）。
+    /// <b>严格二选一</b>：自选配色生效时**只有**第 12 张「自选颜色」卡高亮、11 张预设卡全部不高亮；
+    /// 预设生效时只有那一张高亮、自选颜色卡不高亮。两个方向都由 <see cref="IsCustomActive"/> 唯一定夺，
+    /// 不靠 <c>SelectedThemeId</c> 恰好等于某个 id（那是第二份事实源）——否则会出现"两块都亮着、
+    /// 分不清谁在生效"。
     /// </para>
     /// </remarks>
     private void ProjectCardSelection()
@@ -695,13 +676,13 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>为什么要忽略 null（用户报障 2026-09-20 第二轮："我选系统字体，此时根本就拉取不到任何字体"）</b>：
-    /// 两个下拉的 <c>SelectedItem</c> 是**双向绑定**到这里的，而 `ItemsSource` 在候选装载时被整体替换 ——
-    /// 替换的那一刻 WPF 会把 <c>SelectedItem</c> 变成 null 并**回写**给本属性，
-    /// 于是"当前字体"被自己的空候选擦掉，两个框显示成**空白**（用户读成"拉取不到字体"）。
+    /// <b>为什么要忽略 null</b>：下拉的 <c>SelectedItem</c> 是**双向绑定**到这里的，
+    /// 而 `ItemsSource` 在候选装载时被整体替换 —— 替换的那一刻 WPF 会把 <c>SelectedItem</c>
+    /// 变成 null 并**回写**给本属性，于是"当前字体"被自己的空候选擦掉，下拉框显示成**空白**
+    /// （看起来像"拉取不到字体"）。
     /// </para>
     /// <para>
-    /// 处置：**候选为空导致的清除不是用户的选择**，一律忽略；"当前该用哪个字体"只由
+    /// 处置：**候选为空导致的清除不是选择动作**，一律忽略；"当前该用哪个字体"只由
     /// <c>ProjectCurrentFonts</c>（唯一的投影点）负责，它在没有候选时用当前族名补一个占位项，
     /// 装载完成后换成真候选。要真正清空选择请直接写字段（本类型内部不需要这种操作）。
     /// </para>
@@ -844,15 +825,14 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             SetCustomActive(false);   // 互斥：用预设 = 自选区让出"当前使用"
             SelectedThemeId = card.Id;
             // ⚠️ 换主题之后**必须**刷新"当前外观"那一族投影（名字 / 起点按钮文案 / 说明句 / 槽数）：
-            //    这一步原先漏了，用户看到的正是"换了主题，下面还写着以「默认（紫罗兰）」为起点"。
+            //    漏掉这一步，换了主题后按钮文案仍是上一套外观的名字。
             ProjectAppliedTheme();
-            // 色点也要按**当前配色应用方式**重投影（用户令 2026-09-20："当我们开关自动调整颜色的按钮时，
-            // 主题那个色点也会同步修改"）——换主题同样属于"当前外观变了"，色点不能停在旧模式的口径上。
+            // 色点也要按**当前配色应用方式**重投影 —— 换主题同样属于"当前外观变了"，
+            // 色点不能停在旧模式的口径上。
             RepojectAllThemeCards();
             ThemeService.SaveCurrentPreferences();
-            // 状态行不播报"已应用主题「X」"（用户令 2026-09-20 第二轮："下面根本就不需要这个提示，删掉"）：
-            // 当前生效的是哪套外观由**主题卡高亮 + 「当前使用」徽标**表达，再写一行文字是重复信息。
-            // 失败仍然照报（下面 catch 里那两条），因为那是用户必须看见的。
+            // 状态行不播报"已应用主题「X」"：当前生效的是哪套外观由**主题卡高亮 + 「当前使用」徽标**表达，
+            // 再写一行文字是重复信息。失败仍然照报（下面 catch 里那两条），那是必须看见的。
             Diagnostics = string.Empty;
             HasDiagnostics = false;
         }
@@ -869,20 +849,15 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 用户令 2026-09-20："默认的颜色是绝对不能改的，但是我们可以多出一个按钮，
-    /// 我们可以把默认的某个主题作为我们自选色的方案"。
-    /// </para>
-    /// <para>
     /// <b>复制而不是引用</b>：色槽拿到的是 <see cref="PaletteSolver.EditableSlots"/> 的**值拷贝**
     /// （<c>Argb</c> 是不可变值类型），随后所有编辑都只落在草稿里；预设的
     /// <see cref="ThemeDefinition.Palette"/> 从此与面板无关 —— 这是"默认主题不可改"的结构性保证，
     /// 不靠"记得别写回去"。
     /// </para>
     /// <para>
-    /// <b>点一下就该生效（用户报障 2026-09-20："当我们选择以什么为起点的时候，应该立即切换到自选颜色这一栏，
-    /// 也就是主题应该立即更改"）</b>：旧行为只把颜色倒进草稿、把归属留在预设上，于是用户按了按钮却看到
-    /// "什么都没发生"（主题卡还是预设那张、界面一点没变），还得再点一次那个全局的「应用」（该按钮已随
-    /// 2026-09-20 第三轮删除 —— 自选配色的唯一应用入口 = 第 12 张「自选颜色」卡）。
+    /// <b>点一下就该生效</b>：早期实现只把颜色倒进草稿、把归属留在预设上，于是按了按钮却"什么都没发生"
+    /// （主题卡还是预设那张、界面一点没变），还得再点一次全局的「应用」（该按钮已删除）——
+    /// 自选配色的唯一应用入口 = 第 12 张「自选颜色」卡。
     /// 现行 = 复制完**当场**走 <see cref="ApplyDraft"/> 的同一条应用路径：归属切到自选、
     /// 第 12 张「自选颜色」卡亮起、界面立刻换成这份配色（它是当前主题的拷贝，视觉上与刚才一致，
     /// 但从此每一格都可微调）。**不另写第二套应用逻辑**——合法性门槛、播报与落盘全在 <see cref="ApplyDraft"/>。
@@ -899,15 +874,15 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         RebuildSlots();
 
         ApplyDraft();                     // 唯一应用入口（空槽门槛 + 校验 + 归属切换 + 落盘）
-        // 成功不播报（用户令：删掉状态行提示）；失败时 ApplyDraft 已把原因写在状态行上，这里不许覆盖
+        // 成功不播报；失败时 ApplyDraft 已把原因写在状态行上，这里不许覆盖
         // ⚠️ 判据用 **IsCustomActive**（公开投影），不是 `_customActive` 字段——"生效了没"本来就该问投影。
     }
 
     /// <summary>把当前槽位当作自选配色应用。</summary>
     /// <remarks>
-    /// <b>应用门槛（用户令 2026-09-20）</b>：槽里有空位（不足 4 个颜色）→ **拒绝应用**，
-    /// 并在状态行说清"还差几个"；主题校验（4/5 色、可读性提示）照旧走
-    /// <see cref="ThemeValidator"/>。两道门槛都不弹窗 —— 理由写在状态行上。
+    /// <b>应用门槛</b>：槽里有空位（不足 4 个颜色）→ **拒绝应用**，并在状态行说清"还差几个"；
+    /// 主题校验（4/5 色、可读性提示）照旧走 <see cref="ThemeValidator"/>。
+    /// 两道门槛都不弹窗 —— 理由写在状态行上。
     /// </remarks>
     public void ApplyDraft()
     {
@@ -940,7 +915,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ProjectAppliedTheme();    // 名字 / 按钮文案 / 说明句 / 槽数一起跟上（换主题的公共出口）
             RepojectAllThemeCards();  // 色点按当前模式重投影（与 ApplyThemeCard 同一口径）
             ThemeService.SaveCurrentPreferences();
-            // 状态行同样不播报成功（用户令："下面根本就不需要这个提示"）——只报失败
+            // 状态行同样不播报成功 —— 只报失败
             Diagnostics = string.Empty;
             HasDiagnostics = false;
         }
@@ -956,7 +931,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     {
         // ⚠️ 还没填满的草稿**不是**"配色不合法"：空槽数不足 4 时，`palette-size` 会以
         // "✗ 主题需要 4 或 5 个颜色（当前 0 个）" 的红色错误样子出现在刚进面板的空态上 ——
-        // 那既不是用户的错、也不是错误（只是"还没选完"）。这里把它换成一句中性提示；
+        // 那不是错误（只是"还没选完"）。这里把它换成一句中性提示；
         // 真正的不合法（HEX 非法等）照旧显示。
         var empty = _draft.Count(c => c is null);
         if (empty > 0)
@@ -1018,7 +993,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>
-    /// 把一个色槽清回**空槽**（用户令 2026-09-20：取色盘的「清除」= 把该槽设回空槽，**不是设成黑色**）。
+    /// 把一个色槽清回**空槽**（取色盘的「清除」= 把该槽设回空槽，**不是设成黑色**）。
     /// </summary>
     /// <remarks>
     /// 与 <see cref="SetSlotColor"/> **同一条草稿路径**（标脏 → 重建投影 → 刷新诊断），
@@ -1039,9 +1014,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>清空 = 回到紫罗兰（用户令 2026-09-21："清空颜色的时候应该回到紫罗兰"）</b>：
-    /// 旧行为只清草稿、**不动已应用的外观** —— 用户按了"清空"，界面上还是上一套配色
-    /// （什么都没变，"清空"名不副实）。现行 = 一并回出厂默认主题：
+    /// <b>清空 = 回到紫罗兰</b>：早期实现只清草稿、**不动已应用的外观** ——
+    /// 按了"清空"界面上还是上一套配色（"清空"名不副实）。现行 = 一并回出厂默认主题：
     /// <see cref="ThemeService.ApplyDefault"/> + 落盘 + "当前外观"那一族投影（名字 / 起点按钮 /
     /// 说明句 / 槽数 / 主题卡高亮）。
     /// </para>
@@ -1051,7 +1025,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </para>
     /// <para>
     /// 清完必须走 <see cref="RefreshDraftDiagnostics"/>（而不是把诊断一清了之）：
-    /// 空槽态要如实显示"还差 N 个颜色"这条中性提示，否则面板上没有任何一处告诉用户还差几个。
+    /// 空槽态要如实显示"还差 N 个颜色"这条中性提示，否则面板上没有任何一处说明还差几个。
     /// </para>
     /// </remarks>
     public void ClearDraft()
@@ -1066,7 +1040,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ProjectAppliedTheme();           // 名字 / 起点按钮文案 / 说明句 / 槽数一起跟上（换外观的公共出口）
             RepojectAllThemeCards();         // 色点按当前模式重投影（与点主题卡同一口径）
             ThemeService.SaveCurrentPreferences();
-            // 成功不播报（用户令：状态行只留失败）——主题卡高亮 + 「当前使用」徽标就是结果
+            // 成功不播报 —— 主题卡高亮 + 「当前使用」徽标就是结果
             Status = string.Empty;
         }
         catch (Exception ex)
@@ -1093,7 +1067,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>空槽打开取色盘时的初始颜色 = 当前主题的强调填充（令牌派生，不发明色值）。</summary>
     /// <remarks>
     /// 取色盘需要一个初值（HSV 的三个分量总要有一个起点）；用当前主题的强调色既不是"黑色"这类
-    /// 会骗人的假值，也不是写死的字面量 —— 它就是用户此刻看到的界面主色。
+    /// 会骗人的假值，也不是写死的字面量 —— 它就是此刻界面上的主色。
     /// </remarks>
     public Color PickerSeedColor => ToMedia(ThemeService.Table.Token(AppTokens.AccentFill));
 
@@ -1120,9 +1094,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <summary>纯槽位操作（不重建视图、不标脏）：<see cref="SetSlotCount"/> 反复调用它凑到目标档。</summary>
     private void AddSlotCore()
     {
-        // 新槽 = **空槽**（用户令 2026-09-20："里面全都是空的"）。
-        // ⚠️ 旧行为是拿上一个色"派生"一个建议色（色相 +40°）—— 那是**编造的颜色**：
-        //    用户看到的是一个他从未选过的色点，且它还会被算进"应用门槛"。空槽 + 「+」才是诚实的。
+        // 新槽 = **空槽**。
+        // ⚠️ 早期实现是拿上一个色"派生"一个建议色（色相 +40°）—— 那是**编造的颜色**：
+        //    界面上会出现一个从未选过的色点，且它还会被算进"应用门槛"。空槽 + 「+」才是诚实的。
         _draft.Add(null);
     }
 
@@ -1154,10 +1128,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 导入/删除/恢复默认/切来源都汇到它 —— 不给自己留"顺手再拼一次列表"的第二条路。
     /// </para>
     /// <para>
-    /// <b>按来源分池</b>（用户令 2026-09-20："将系统本身的字体和我们导入的字体区分开来，
-    /// 我们先要选择系统本身的字体，然后还是自定义字体，然后只能二选一"）：
-    /// 两个来源各自建集合，下拉只显示**当前来源**那一份 —— 用户在"系统已装"里绝不会
-    /// 误删到应用自己的东西（系统字体根本删不掉），在"自定义"里能导入/删除。
+    /// <b>按来源分池</b>：两个来源各自建集合，下拉只显示**当前来源**那一份 ——
+    /// 在"系统已装"里绝不会误删到应用自己的东西（系统字体根本删不掉），在"自定义"里能导入/删除。
     /// </para>
     /// </remarks>
     public async Task ReloadFontsAsync()
@@ -1193,10 +1165,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>候选还没装载时也要显示当前字体（用户报障 2026-09-20 第二轮："我选系统字体，此时根本就拉取不到
-    /// 任何字体"）</b>：字体候选是**惰性**的（进页面不枚举系统字体，用户真的展开下拉才装载），
-    /// 而两个下拉的 `SelectedItem` 原先只在"候选里找得到同名项"时才被赋值 —— 于是装载之前两个框**空白**，
-    /// 用户读成"拉不到任何字体"（它其实只是"还没去拉"）。
+    /// <b>候选还没装载时也要显示当前字体</b>：字体候选是**惰性**的（进页面不枚举系统字体，
+    /// 真正展开下拉才装载），而下拉的 `SelectedItem` 原先只在"候选里找得到同名项"时才被赋值 ——
+    /// 于是装载之前下拉框**空白**（看起来像"拉不到任何字体"，其实只是"还没去拉"）。
     /// </para>
     /// <para>
     /// 判据修正：**当前生效的字体必须始终显示在框里**，无论候选是否已装载。
@@ -1206,9 +1177,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 因此它**不可删** —— 与"系统字体只读"同一条口径。
     /// </para>
     /// <para>
-    /// <b>占位项只补"属于当前来源"的那一个（用户令 2026-09-21："使用自定义字体的时候，不应该显示系统字体，
-    /// 而是什么都没有"）</b>：旧实现把当前族名无条件塞进**当前来源**的池 —— 于是切到「自定义字体」时，
-    /// 一个**系统字体**（比如 Microsoft YaHei UI）会顶着"当前字体"的名义出现在自定义列表里。
+    /// <b>占位项只补"属于当前来源"的那一个</b>：早期实现把当前族名无条件塞进**当前来源**的池 ——
+    /// 于是切到「自定义字体」时，一个**系统字体**（比如 Microsoft YaHei UI）会顶着"当前字体"
+    /// 的名义出现在自定义列表里。
     /// 现行判据：该族是不是**导入过的**（<see cref="FontCatalog.ImportedFonts"/>，读字体目录、不枚举系统字体）；
     /// 不属于本来源就**什么都不补** —— 自定义侧没导入过就是空下拉（如实，不拿系统字体冒充）。
     /// </para>
@@ -1216,7 +1187,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     private void ProjectCurrentFonts(string currentUi)
     {
         // 候选还没装载（池为空）时先补一个**占位项**：下拉框里必须始终看得见"现在用的是什么字体"，
-        // 否则用户看到一个空白框，读成"拉取不到任何字体"（用户报障 2026-09-20 第二轮）。
+        // 否则空白框会被读成"拉取不到任何字体"。
         // ⚠️ 占位项要真的进集合：combo 的 `SelectedItem` 指向一个**不在 Items 里**的对象时
         //    WPF 会把它显示成空（实测组合框 `SelectedItem` 是占位项、界面却是空白）。
         EnsureActivePlaceholder(currentUi);
@@ -1259,19 +1230,19 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public void ReloadFonts() => ReloadFontsAsync().GetAwaiter().GetResult();
 
     /// <summary>
-    /// 导入一个字体文件（失败明确报错给用户 + 留痕 + **不写偏好**）。
+    /// 导入一个字体文件（失败明确报错 + 留痕 + **不写偏好**）。
     /// </summary>
     /// <remarks>
-    /// ⚠️ 失败**必须让用户在界面上看见**：这里把 <see cref="Status"/> 写成"导入失败：…"，
+    /// ⚠️ 失败**必须在界面上可见**：这里把 <see cref="Status"/> 写成"导入失败：…"，
     /// 面板把它显示在状态行上（N1 要求"导入失败的用户可见反馈"）。
-    /// 只写日志不播报 = 用户点了"导入字体…"什么都没发生 —— 那是本仓禁止的静默失败。
+    /// 只写日志不播报 = 点了"导入字体…"什么都没发生 —— 那是本仓禁止的静默失败。
     /// </remarks>
     public async Task<bool> ImportFontAsync(string path)
     {
         try
         {
             var choice = FontCatalog.Import(path);
-            // 导入的字体属于"自定义"这一侧：**切过去再选中它**（否则用户还在"系统"列表里看不到刚导入的东西）
+            // 导入的字体属于"自定义"这一侧：**切过去再选中它**（否则"系统"列表里看不到刚导入的东西）
             _fontSource = FontSourceKind.Custom;
             Raise(nameof(FontSource));
             Raise(nameof(FontSourceIndex));
@@ -1281,7 +1252,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             await ReloadFontsAsync().ConfigureAwait(true);
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))
                              ?? SelectedUiFont;
-            // 导入成功不播报（用户令：删掉状态行提示）——「自定义字体」侧的下拉出现该项就是结果；失败照报
+            // 导入成功不播报 ——「自定义字体」侧的下拉出现该项就是结果；失败照报
             Status = string.Empty;
             return true;
         }
@@ -1295,7 +1266,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>删除一个已导入字体（**只删本应用目录里那份副本**，系统字体不可删也不该删）。</summary>
     /// <remarks>
-    /// <b>删除后的三处收尾，一个都不能少</b>（用户令 2026-09-20："有没有潜在的 bug 修掉"）：
+    /// <b>删除后的三处收尾，一个都不能少</b>：
     /// ① 删文件（<see cref="FontCatalog.Remove"/>）；② 若删的正是**当前生效**的字体 →
     /// <see cref="ThemeService.ResetFontIfDeleted"/> 退回默认并落盘（否则偏好里留着一个不存在的族名，
     /// 重启弹"已不可用"、再点应用还会把死族名写回去）；③ 重载候选并刷新按钮可用性。
@@ -1313,8 +1284,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             var deleted = FontCatalog.Remove(option.Choice);
             var fellBack = ThemeService.ResetFontIfDeleted(option.Family);
             await ReloadFontsAsync().ConfigureAwait(true);
-            // 成功不播报（用户令：删掉状态行提示）；但"删的正是当前生效字体 → 已回退默认"是**用户必须知道**的
-            // 一件事实（他不是只删了一个候选，而是界面字体变了），故这一类照报。
+            // 成功不播报；但"删的正是当前生效字体 → 已回退默认"是**必须知道**的一件事
+            // （不只是删了一个候选，而是界面字体变了），故这一类照报。
             Status = fellBack is null
                 ? string.Empty
                 : $"「{option.Family}」正是当前生效的字体，已回退默认字体（文件{(deleted ? "已删除" : "本就不存在")}）";
@@ -1322,7 +1293,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         catch (Exception ex)
         {
             // WPF 会把解析过的字体文件**内存映射持有到进程退出**（WARNINGS 75）——这是平台事实，
-            // 不是"路径写错了"：必须把"下一步怎么办"告诉用户，而不是原样丢一个"访问被拒绝"。
+            // 不是"路径写错了"：必须把"下一步怎么办"讲清楚，而不是原样丢一个"访问被拒绝"。
             LpLog.Error($"删除导入字体失败：{option.Family}", ex, LogCategory);
             Status = ex is UnauthorizedAccessException
                 ? $"删除失败：「{option.Family}」正被本进程占用（已加载的字体在退出前无法删除），重启应用后再删"
@@ -1332,8 +1303,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>应用当前选中的界面字体（含持久化）。</summary>
     /// <remarks>
-    /// 等宽字体**不再可改**（用户令 2026-09-21："等宽字体不应该被更改，直接删掉这条"）：
-    /// 面板动作不碰它，把当前值原样带过去（<c>ApplyFonts</c> 的 mono 参数收到 null 会回默认族）。
+    /// 等宽字体**不再可改**：面板动作不碰它，把当前值原样带过去
+    /// （<c>ApplyFonts</c> 的 mono 参数收到 null 会回默认族）。
     /// </remarks>
     public void ApplyFonts()
     {
@@ -1343,7 +1314,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             ThemeService.ApplyFonts(ui, ThemeService.CurrentMonoFont);
             ThemeService.SaveCurrentPreferences();
-            // 成功不播报（用户令：删掉状态行提示）——界面本身已经换成新字体，那就是结果；失败照报
+            // 成功不播报 —— 界面本身已经换成新字体，那就是结果；失败照报
             Status = string.Empty;
         }
         catch (Exception ex)
@@ -1363,12 +1334,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 的**无参形态**（= 回退链第一段：`Microsoft YaHei UI` / `Consolas`）。
     /// </para>
     /// <para>
-    /// 等宽字体已不再可改（用户令 2026-09-21）—— 无参调用顺手把它也归默认，这正是"恢复默认字体"该做的；
+    /// 等宽字体已不再可改 —— 无参调用顺手把它也归默认，这正是"恢复默认字体"该做的；
     /// 用户面语义 = 回到出厂字体。
     /// </para>
     /// <para>
     /// 收尾三条与"删除当前生效字体"同口径：应用 → 落盘 → 候选重载 + 当前值重投影
-    /// （候选没装载时用占位项投影，下拉里照样立刻显示默认族 —— 别赌"用户会先展开一次下拉"）。
+    /// （候选没装载时用占位项投影，下拉里照样立刻显示默认族 —— 不能假设"会先展开一次下拉"）。
     /// </para>
     /// </remarks>
     public async Task ResetFontsAsync()
@@ -1379,7 +1350,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ThemeService.SaveCurrentPreferences();
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             else ProjectCurrentFonts(ThemeService.CurrentUiFont);
-            // 成功不播报（用户令：删掉状态行提示）——下拉里换回默认族就是结果；失败照报
+            // 成功不播报 —— 下拉里换回默认族就是结果；失败照报
             Status = string.Empty;
         }
         catch (Exception ex)
@@ -1405,7 +1376,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             Diagnostics = string.Empty;
             HasDiagnostics = false;
-            // 成功不播报（用户令：删掉状态行提示）——界面回到默认就是结果；失败照报（catch 里那条）
+            // 成功不播报 —— 界面回到默认就是结果；失败照报（catch 里那条）
             Status = string.Empty;
         }
         catch (Exception ex)

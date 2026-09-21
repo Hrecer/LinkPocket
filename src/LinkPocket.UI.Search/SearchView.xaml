@@ -22,13 +22,13 @@
 
         <!-- 跳转按钮的样式 = **UIKit 共享 `JumpPillButton`**（三页共用一份：搜索工具行 / 智能列表结果页头 /
              查重明细 URL 组）。原页面局部样式 `SearchJumpPillButton` 已删除——
-             它带一条"按压圆角 16→10 形变"的触发器，用户令 2026-09-20 明确要求删除该效果；
-             同时图标由 `open-in-new`（外部打开语义）改为 `map-marker`（地图图钉 = "它在哪"，用户 2026-09-20 定稿）。 -->
+             它带一条"按压圆角 16→10 形变"的触发器，该效果已删除；
+             同时图标由 `open-in-new`（外部打开语义）改为 `map-marker`（地图图钉 = "它在哪"）。 -->
 
         <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊）。
-             ⚠️ 用户令 2026-09-19：**选中 / 未选尺寸完全一致**——不再加宽、不做形变，
+             ⚠️ **选中 / 未选尺寸完全一致**——不加宽、不做形变，
              只以颜色 + 字重区分（未选透明 + 悬停 SurfaceContainerHighest；选中 SecondaryContainer + SemiBold）。
-             ⚠️ 不放图标：LpIcons 字形表未注册「check」，M3Icon 会渲染成占位的空白（见 2026-09-16 教训）。 -->
+             ⚠️ 不放图标：LpIcons 字形表未注册「check」，M3Icon 会渲染成占位的空白。 -->
         <Style x:Key="SearchChip" TargetType="CheckBox">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
@@ -69,10 +69,10 @@
         </Grid.ColumnDefinitions>
 
         <!-- 左侧：搜索框 + 跳转工具栏(含筛选项) + 结果列表。
-             点空白清选中（BlankClick 唯一实现，用户令 2026-09-19）：命中搜索框/chip/行等可交互元素
+             点空白清选中（BlankClick 唯一实现）：命中搜索框/chip/行等可交互元素
              不算空白；右栏（选中集合的投影）在范围之外、绝不反向取消选中。
              ⚠️ 必须补 Background="Transparent"：否则本层没有子元素覆盖的"边角空白"根本不产生命中，
-             BlankClick 收不到点击 → 用户报障"点边边角角的空白不能取消选中/焦点"（用户令 2026-09-20）。
+             BlankClick 收不到点击，边角空白就无法取消选中 / 清焦点。
              命令在 code-behind 挂（"清选中 + 焦点收回页内"两件事一起做，与浏览页 ClearPageSelection 同口径）。 -->
         <Grid x:Name="ContentArea" Grid.Column="0" Background="Transparent">
             <Grid.RowDefinitions>

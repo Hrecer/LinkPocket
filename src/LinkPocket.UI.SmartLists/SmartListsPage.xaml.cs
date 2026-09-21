@@ -28,7 +28,7 @@ namespace LinkPocket.Views
         private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
         private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
-        private int _cellGen;      // 表格代次：重绑自增，favicon 异步补拉回来时校验行是否已废弃（#12）
+        private int _cellGen;      // 表格代次：重绑自增，favicon 异步补拉回来时校验行是否已废弃
 
         public SmartListsPage()
         {
@@ -60,7 +60,7 @@ namespace LinkPocket.Views
             ApplyShowResult(slVm.ShowResult);
 
             // 点空白 = 清选中 + 焦点收回页内（BlankClick 唯一实现；命令端在视图收口——
-            // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径，用户令 2026-09-20）
+            // "把焦点收回页内"是视图职责，与浏览页 ClearPageSelection/ActivatePane 同口径）
             BlankClick.SetCommand(ResultContentArea, new RelayCommand(() =>
             {
                 ResultVm?.ClearSelectionCommand.Execute(null);
@@ -150,8 +150,7 @@ namespace LinkPocket.Views
             {
                 new DataTableColumn
                 {
-                    // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度
-                    // （用户 2026-09-16 反馈 URL 被大幅压缩）——空间来自右侧四列压到极限
+                    // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度，空间来自右侧四列压到极限
                     Field = "title", Label = "名称", Width = -2,
                     SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
                         ? ((LinkItem)r).Url : ((LinkItem)r).Title),
@@ -162,7 +161,7 @@ namespace LinkPocket.Views
                     // 位置列占 3 份剩余空间（名称 2 份）：路径最长、最需要宽度；
                     // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
                     // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
-                    // 省下的宽度全部让给名称/位置（用户 2026-09-16 要求 URL 不再被压缩）
+                    // 省下的宽度全部让给名称/位置，URL 不得被压缩
                     Field = "path", Label = "位置", Width = -3,
                     SortKey = r => (IComparable)ResolveFolderName(((LinkItem)r).ListId),
                     CellFactory = r => TextCell(ResolveFolderName(((LinkItem)r).ListId), 12.5)
@@ -215,7 +214,7 @@ namespace LinkPocket.Views
             _cellGen++;   // 表格代次自增：重绑后到达的 favicon 补拉结果一律作废（行已重建）
 
             // 换列表 = 清选中（旧选中已无意义）；**同一列表重绑**（F5 重查 / 删除后重载）= 保留选中，
-            // 只剔除已不在结果里的 ID —— 用户令 2026-09-20："除非刷新之后那一项没了，才应该取消选中"。
+            // 只剔除已不在结果里的 ID —— 刷新后仍存在的项保留选中。
             var switchedList = !ReferenceEquals(_boundResult, resultVm);
             if (switchedList)
             {
@@ -270,7 +269,7 @@ namespace LinkPocket.Views
             => SmartTable.ScrollItemIntoView(item);
 
         /// <summary>
-        /// 默认排序 = **名称升序**（用户硬性要求：打开任何智能列表都必须有排序，且默认按名称）
+        /// 默认排序 = **名称升序**（打开任何智能列表都必须有排序，且默认按名称）
         /// —— 与搜索页同一口径。用户点表头后由控件内部排序接管，文案随之更新。
         /// </summary>
         private void ApplyDefaultSort(string listId)
@@ -300,7 +299,7 @@ namespace LinkPocket.Views
         }
 
         /// <summary>名称列：favicon + 标题 + URL 副行（favicon 未命中缓存时异步补拉、原位刷新）。
-        /// 补拉回写前校验表格代次：行可能已随重绑/换列表被回收（#12）。</summary>
+        /// 补拉回写前校验表格代次：行可能已随重绑/换列表被回收。</summary>
         private FrameworkElement BuildNameCell(LinkItem item)
         {
             var cellGen = _cellGen;   // 捕获当前代次（Rebind 已自增）
@@ -402,7 +401,7 @@ namespace LinkPocket.Views
 
         /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。
         /// 颜色一律经 <c>element.SetResourceReference</c> 挂**资源引用**：既不固化（换主题跟随），
-        /// 也不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null，#13）。</summary>
+        /// 也不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null）。</summary>
         private FrameworkElement BuildSmartState(string iconKind, string title, string? subtitle)
         {
             var sp = new StackPanel

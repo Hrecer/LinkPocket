@@ -349,7 +349,7 @@ namespace LinkPocket.Views
         private void OnSourceCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
             // ⚠️ 必须先把集合当前内容同步进 _all 再重算：VM 加载是对已绑定集合做 Clear+Add（原地变更），
-            // 不同时步这里，可见集合会永远停在绑定那一刻的空快照上（整片空白、拖放无目标——用户实测报障）。
+            // 不同时步这里，可见集合会永远停在绑定那一刻的空快照上（整片空白、拖放无目标）。
             _all = ToSegmentList(_observedSource as System.Collections.IEnumerable);
             RequestRelayout();
         }

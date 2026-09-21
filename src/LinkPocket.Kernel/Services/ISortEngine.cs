@@ -13,7 +13,7 @@ public sealed class SortFieldMap<T>
     public bool TryGetSelector(string field, out Expression<Func<T, object?>> selector)
         => _selectors.TryGetValue(field, out selector!);
 
-    /// <summary>默认排序字段（当前定稿：名称升序 + ID 兜底）。</summary>
+    /// <summary>默认排序字段（现行：名称升序 + ID 兜底）。</summary>
     public string DefaultField { get; init; } = "title";
 
     /// <summary>

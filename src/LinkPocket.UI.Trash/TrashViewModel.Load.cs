@@ -22,7 +22,7 @@ public partial class TrashViewModel
     private Dictionary<string, TrashFolderDto> _unitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<TrashEntryDto>> _linksByUnit = new(StringComparer.Ordinal);
 
-    /// <summary>排序口径（默认删除时间倒序，用户定稿）；列头点击切换。</summary>
+    /// <summary>排序口径（默认删除时间倒序）；列头点击切换。</summary>
     public string SortField { get; private set; } = "deleted_at";
     public bool SortAscending { get; private set; }
 

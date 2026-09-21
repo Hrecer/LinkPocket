@@ -10,7 +10,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 浏览模块「链接详情页」视图模型：**数据与渲染全部交给共享 <see cref="LinkDetailPaneModel"/> 与
 /// <c>Views.LinkDetailPane</c>**（与回收站只读详情页同一份界面），本类只负责加载与动作
-/// （打开网站 / 编辑 / 删除 / 返回）——绝不自绘第二份详情界面（用户令 2026-09-19）。
+/// （打开网站 / 编辑 / 删除 / 返回）——绝不自绘第二份详情界面。
 /// 打开时记录一次访问（与链接页 ShowDetail 一致）；「打开网站」为显式按钮。
 /// </summary>
 public class LinkDetailPageViewModel : LinkDetailPaneModel

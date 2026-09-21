@@ -6,7 +6,7 @@ namespace LinkPocket.ViewModels
     /// <summary>
     /// 设置页视图模型。
     ///
-    /// 变更记录（2026-09-16）：书签导入 / 导出已合并进工具页，相关状态（导出目录、导出进度遮罩）
+    /// 书签导入 / 导出已合并进工具页，相关状态（导出目录、导出进度遮罩）
     /// 一并迁移——该流程现在由 <c>Views/ToolsPage</c> 自行管理，这里只保留与设置页相关的开关。
     /// </summary>
     public class SettingsViewModel : INotifyPropertyChanged

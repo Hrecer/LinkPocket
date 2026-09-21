@@ -232,7 +232,7 @@ public class ShortcutTests
             // 可见序列：虚根 → A → B（A 未展开，A1 不在可见序列里）
             vm.MoveTreeSelectionCommand.Execute("down");     // A → 选中 + 进入
             // ⚠️ 键盘导航是 fire-and-forget（`_ = SelectTreeNodeAsync(...)`）：选中同步落地，"进入"要等加载链收尾
-            // （若已有在途加载则按"最后请求必被处理"挂起补刷）→ 断言前必须等链路落地，否则时序不确定（曾偶发红）。
+            // （若已有在途加载则按"最后请求必被处理"挂起补刷）→ 断言前必须等链路落地，否则时序不确定。
             await vm.WaitForIdleAsync();
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
             Assert.True(vm.IsSelectedId(a.FolderId));

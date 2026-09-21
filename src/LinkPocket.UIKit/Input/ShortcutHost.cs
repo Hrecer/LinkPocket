@@ -76,7 +76,7 @@ namespace LinkPocket.Input
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
         {
-            // 结构性守卫（危险键绝不跨页/跨上下文误触，用户令 2026-09-19）：
+            // 结构性守卫（危险键绝不跨页/跨上下文误触）：
             // 宿主页必须**可见**且**键盘焦点在页内**才分发——页面被切走（Collapsed）或焦点掉到
             // 窗口/其它页时，本页注册表一律不参与。这是可证伪的硬条件，不依赖任何时序假设。
             if (_host is not { IsVisible: true } || !_host.IsKeyboardFocusWithin) return;

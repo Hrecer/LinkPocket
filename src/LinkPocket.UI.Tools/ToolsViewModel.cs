@@ -19,7 +19,7 @@ public sealed class DedupGroupRow
     /// <summary>
     /// 两组"重复组"列表是否**渲染等价**（URL / 位置摘要 / 组内各条的关键字段逐项一致，含顺序）。
     /// 用途：重扫后判断"要不要重设主表 ItemsSource"——工厂模式重设 = 整表重建（同步主线程），
-    /// 内容没变时纯属白烧（用户报障 2026-09-20：低性能设备切页偶发明显卡顿）。
+    /// 内容没变时纯属白烧（低性能设备切页偶发明显卡顿）。
     /// </summary>
     public static bool SameSequence(IReadOnlyList<DedupGroupRow>? a, IReadOnlyList<DedupGroupRow>? b)
     {

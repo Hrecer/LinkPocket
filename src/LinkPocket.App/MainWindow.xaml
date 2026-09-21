@@ -123,7 +123,7 @@
                 <!-- 分段胶囊导航 = 可复用组件 SlidingNavStrip（ListBox 基座 + 组件内部的滑动指示器）——
                      几何贴齐与滑动动画由组件自持，本窗口不再有任何导航动画 code-behind（同 SideNavList 模式）。
                      ⚠️ 全局导航常驻：任何页面（含二级视图）都不得隐藏它——历史上曾绑 IsInSecondaryPage
-                     导致进智能列表/工具详情时导航消失，已彻底移除该状态（2026-09-16 用户明令）。 -->
+                     导致进智能列表/工具详情时导航消失，该状态已彻底移除。 -->
                 <views:SlidingNavStrip Grid.Column="1" x:Name="NavigationStrip"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Style="{StaticResource SlidingNavStripStyle}"

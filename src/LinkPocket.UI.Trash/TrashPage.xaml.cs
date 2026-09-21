@@ -96,7 +96,7 @@ namespace LinkPocket.Views
 
         /// <summary>
         /// 本页「动作 id → 命令」映射（**键位不在本文件**：全站键位只声明在 <see cref="ShortcutCatalog"/>）。
-        /// 阉割项（用户定稿）：无 Ctrl+Z/Y、无 Ctrl+X/C/V、无 F2/Ctrl+Shift+N、**不注册任何全局键**。
+        /// 本页不提供的键位：无 Ctrl+Z/Y、无 Ctrl+X/C/V、无 F2/Ctrl+Shift+N、**不注册任何全局键**。
         /// </summary>
         private static ShortcutCommandMap BuildShortcutCommands(TrashViewModel vm) => new ShortcutCommandMap()
             .Add(ShortcutAction.TrashGoBack, vm.GoBackCommand)

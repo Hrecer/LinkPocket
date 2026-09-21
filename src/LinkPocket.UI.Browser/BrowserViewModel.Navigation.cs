@@ -126,7 +126,7 @@ public partial class BrowserViewModel
             ? (delta > 0 ? 0 : flat.Count - 1)
             : Math.Clamp(current + delta, 0, flat.Count - 1);
         var target = flat[next];
-        _treeNavNode = target;   // 下一次移动从这次落点继续（游标独立于选中/位置）
+        _treeNavNode = target;   // 下一次移动从当前落点继续（游标独立于选中/位置）
 
         // 落点语义 = 与鼠标点击树行**完全同一条路径**（文件夹 = 选中 + 进入；链接叶子 = 定位；虚根 = 进根不选中）——
         // 键盘绝不另造一套"只移选中"的语义（那会让"点树"与"按树"行为分叉）。
@@ -135,7 +135,7 @@ public partial class BrowserViewModel
 
     /// <summary>
     /// 树节点的**可见**深度优先序列（= 屏幕上实际看到的行序）：
-    /// 未展开的节点其子级不在视觉序列里（用户 2026-09-19 定稿：没展开就没看到子文件夹，不进入子级）；
+    /// 未展开的节点其子级不在视觉序列里（没展开就看不到子文件夹，不进入子级）；
     /// 虚根恒展开（RebuildFolderTree 里置位），故顶层始终可见。
     /// ⚠️ 不能直接用 <see cref="AllTreeNodes"/>：Children 里含全部子节点（展开只是视觉态），必须按 IsExpanded 过滤。
     /// </summary>

@@ -145,7 +145,7 @@
         <!-- 分段切换（MD3 segmented）：书签工具「导入 / 导出」方向切换。
              圆角口径与浏览页命令栏药丸完全一致：高 32 + CornerRadius 16（正圆端头）。
              选中底色不画在按钮上 —— 由外层 SegGrid 里的滑动指示器承担（切换时有缓动滑动动画）。
-             悬停不做任何底色反馈（滑动指示器方案下悬停色块看着像阴影，用户明确去掉），仅保留手型指针。 -->
+             悬停不做任何底色反馈（滑动指示器方案下悬停色块看着像阴影），仅保留手型指针。 -->
         <Style x:Key="SegmentToggle" TargetType="ToggleButton">
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Height" Value="32"/>
@@ -188,7 +188,7 @@
         <!-- ===== 面板 A：主面板（左栏工具列表 + 右主区） ===== -->
         <!-- ============================================================ -->
         <!-- Background="Transparent"：给"边角空白"一个可命中的面——否则 BlankClick 收不到点击
-             （用户令 2026-09-20：点空白要能清选中/清焦点；命令在 code-behind 挂）。 -->
+             （点空白要能清选中/清焦点；命令在 code-behind 挂）。 -->
         <Grid x:Name="MainPanel" Background="Transparent">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="200"/>
@@ -507,9 +507,9 @@
         <!-- ===== 面板 B：重复组明细（整页） ===== -->
         <!-- ============================================================ -->
         <!-- FocusVisualStyle={x:Null}：面板本身可聚焦（快捷键按焦点路由），但**绝不画原生焦点虚线框**
-             ——F5 重进明细时曾因此出现一条原生黑虚线（用户报障 2026-09-20；焦点收进页面根也是同一修法）。
+             ——F5 重进明细时曾因此出现一条原生黑虚线（焦点收进页面根也是同一修法）。
              Background="Transparent"：给"边角空白"（表格卡与右栏之间的缝隙、分隔条周围）一个可命中的面——
-             否则点这些缝隙收不到 BlankClick（用户报障"缝隙处点空白不能取消选中"，与 WARNINGS 61 同族）。 -->
+             否则点这些缝隙收不到 BlankClick（与 WARNINGS 61 同族）。 -->
         <Grid x:Name="DetailPanel" Visibility="Collapsed" Focusable="True" FocusVisualStyle="{x:Null}"
               Background="Transparent">
             <Grid.ColumnDefinitions>
@@ -570,7 +570,7 @@
                 </DockPanel>
             </Border>
 
-            <!-- 明细对比表（**保留行选中**，用户令 2026-09-19）+ 取消出口 = 点空白（BlankClick 挂 DetailPanel）/ Esc；
+            <!-- 明细对比表（**保留行选中**）+ 取消出口 = 点空白（BlankClick 挂 DetailPanel）/ Esc；
                  ↑/↓/End 移动选中、Enter 打开网站、F5 重查（只读集：可读、可选、不可操作）。
                  SelectionEnabled=False = 外部托管：选中由 ToolsViewModel.DetailSelection（共享 ListSelection）承载。 -->
             <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource App.Surface.Card}"

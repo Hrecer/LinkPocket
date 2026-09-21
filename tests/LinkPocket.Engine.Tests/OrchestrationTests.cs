@@ -259,7 +259,7 @@ public class OrchestrationTests
     [Fact]
     public async Task Macro_Save_And_Delete_DryRun_Write_Nothing()
     {
-        // 不变量 3（干跑执行但不提交、零副作用）在宏上的护栏（用户令 2026-09-20："确保数据是安全的"）。
+        // 不变量 3（干跑执行但不提交、零副作用）在宏上的护栏：
         // 宏走的是 `IMacroStore` 自己的连接（不在引擎事务里），所以干跑时**必须由处理器自己拦住**：
         // 真写下去就是"干跑改了库"，而且事务批/回滚也盖不住它。
         var (engine, _, path) = CreateEngine(withOrchestration: true);

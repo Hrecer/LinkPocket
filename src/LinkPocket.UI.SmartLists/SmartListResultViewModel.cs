@@ -146,11 +146,11 @@ namespace LinkPocket.ViewModels
             OpenInBrowserCommand = new RelayCommand(
                 () => { if (PrimarySelected is { } item) _navigation?.OpenLinkInBrowser(item.LinkId); },
                 () => Selection.HasAny && !IsDeleting);
-            // 「跳转」= 进浏览页对应目录并选中该行（经定位组件；与「详情」互不替代，用户令 2026-09-20）。
+            // 「跳转」= 进浏览页对应目录并选中该行（经定位组件；与「详情」互不替代）。
             // 本页为单选中，故"有选中"即"有唯一目标"。
             JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => Selection.HasAny && !IsDeleting);
             OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.HasAny && !IsDeleting);
-            // 删除过程中（IsDeleting）禁用删除与其余行动作 —— 防重入不再只靠方法内 if（#8/9）
+            // 删除过程中（IsDeleting）禁用删除与其余行动作 —— 防重入不再只靠方法内 if
             DeleteCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => Selection.HasAny && !IsDeleting);
             // 只读页的键位延伸（↑/↓/End/F5；不引入任何会改数据的键）
             MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
@@ -165,7 +165,7 @@ namespace LinkPocket.ViewModels
             Details.OpenWebsiteCommand = OpenWebsiteCommand;
             Details.DeleteCommand = DeleteCommand;
             Details.JumpCommand = JumpCommand;   // 右栏「跳转」图标钮 = 同一条定位入口（绝不另写一份）
-            // 只读结果页的右栏动作面收窄（用户令 2026-09-20·设计）：**不显示「编辑」与「删除」两个按钮**
+            // 只读结果页的右栏动作面收窄：**不显示「编辑」与「删除」两个按钮**
             // ——结果页是只读的查看面（键位集也是只读集，无 Delete/Ctrl+A）。命令仍接好（如需恢复显示位即可用）。
             Details.HideEditAndDeleteActions();
         }
@@ -249,7 +249,7 @@ namespace LinkPocket.ViewModels
 
                 var items = links.Select(LinkItem.FromDto).ToList();
                 // 内容未变 → **保持集合实例不动**（视图不重绑、不整表重建）：切页进入的静默刷新常是这种情况，
-                // 而整表重建（≤100 行 × 单元格，同步主线程）正是"切页偶发卡顿"的主要来源（用户报障 2026-09-20）。
+                // 而整表重建（≤100 行 × 单元格，同步主线程）正是"切页偶发卡顿"的主要来源。
                 // 同时不再"先清空再填"——加载期间保留旧内容，避免闪空（与"进入保内容"口径一致）。
                 if (!LinkItem.SameSequence(_items, items))
                     Items = new ObservableCollection<LinkItem>(items);   // 一次性整体替换（逐条 Add 会 N 次 CollectionChanged）

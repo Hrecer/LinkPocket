@@ -9,7 +9,7 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 传输流水线（2026-09-19）：拖拽落点、右键拖拽菜单、剪贴板粘贴**共用同一条实现**
+/// 传输流水线：拖拽落点、右键拖拽菜单、剪贴板粘贴**共用同一条实现**
 /// （<c>BrowserViewModel.TransferAsync</c>），模式（Ctrl = 复制）是提示文案 / 光标 / 最终动作的同一个事实来源。
 ///
 /// <para>本文件锁住的语义：</para>
@@ -89,7 +89,7 @@ public class TransferPipelineTests
     }
 
     /// <summary>
-    /// Ctrl + 拖到**本页空白** = 在本页做一个副本（用户口径），文件夹按同层唯一命名规范编号成「名 (2)」，
+    /// Ctrl + 拖到**本页空白** = 在本页做一个副本，文件夹按同层唯一命名规范编号成「名 (2)」，
     /// 并且副本**被选中**（Windows：复制完选中副本，用户立刻能看到/改名）。
     /// </summary>
     [Fact]

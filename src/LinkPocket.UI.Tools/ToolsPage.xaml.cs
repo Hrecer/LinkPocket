@@ -40,7 +40,7 @@ namespace LinkPocket.Views
         /// <summary>
         /// Shell 在构造时注入：引擎客户端、定位组件、导航端口（打开浏览页详情页）、路径解析与目录树刷新委托。
         /// 「打开详情」走 <see cref="INavigationService.OpenLinkInBrowser"/>——与搜索页 / 智能列表结果页
-        /// **同一条路径**（用户令 2026-09-20：三页的 Enter 都是"打开详情页"）；「跳转（进目录 + 选中行）」
+        /// **同一条路径**（三页的 Enter 都是"打开详情页"）；「跳转（进目录 + 选中行）」
         /// 走 <see cref="IContentLocator"/>（ID 跳转工具 + 明细顶部/右栏入口），两者互不替代。
         /// </summary>
         public void Configure(EngineClient api, IContentLocator? locator, INavigationService? navigation,
@@ -53,16 +53,16 @@ namespace LinkPocket.Views
             _refreshFolderTree = refreshFolderTree;
 
             // ⚠️ 明细选中/右栏接线必须在这里（Configure 之后）——构造函数里访问 VmTools 会
-            // 用 null 的 _api 提前创建 VM（懒建只建一次），之后所有引擎调用都会 NRE（实测踩中）。
+            // 用 null 的 _api 提前创建 VM（懒建只建一次），之后所有引擎调用都会 NRE。
             DetailSidebar.DataContext = _detailSidebar;
-            // 明细右栏动作面的命令接线：**此前整块漏了** —— 面板上「详情 / 打开 / 铅笔 / 垃圾桶」四个按钮
-            // 绑的全是 null 命令 → 集体禁用（用户报障 2026-09-20"明细右栏所有按钮都不可用"，严重）。
+            // 明细右栏动作面的命令接线：面板上「详情 / 打开 / 铅笔 / 垃圾桶」四个按钮必须在此接好，
+            // 未接线时绑 null 命令 → 集体禁用。
             // 口径与搜索页一致：动作面命令一律复用本页既有能力，绝不另写一套。
             _detailSidebar.OpenCommand = OpenDetailInBrowserCommand;         // 「详情」= 打开浏览页详情页
             _detailSidebar.RenameCommand = OpenDetailInBrowserCommand;       // 铅笔槽同「详情」（搜索页同口径）
             _detailSidebar.OpenWebsiteCommand = OpenDetailWebsiteCommand;    // 「打开」= 系统默认浏览器
             _detailSidebar.JumpCommand = JumpDetailCommand;                  // 「跳转」= 进目录 + 选中行（定位组件）
-            // 只读对比页的动作面收窄（用户令 2026-09-20·设计）：不显示「编辑」与「删除」——
+            // 只读对比页的动作面收窄：不显示「编辑」与「删除」——
             // 删除入口在头部「删除重复项」（按勾选、"至少保留一条"），编辑在只读对比页无意义。
             _detailSidebar.HideEditAndDeleteActions();
             VmTools.DetailSelection.Changed += ApplyDetailSelectionProjection;
@@ -123,7 +123,7 @@ namespace LinkPocket.Views
             };
 
             // 去重明细的选中出口一：点空白（BlankClick 挂在明细页 / 主面板区域上——行容器自带 Tag=DataRow，
-            // 点行不算空白；只有真正的页面空白才清选中。用户报障修复 2026-09-19）
+            // 点行不算空白；只有真正的页面空白才清选中）
             // 命令端在视图收口 = "清选中 + 焦点收回页内"（与浏览页 ClearPageSelection/ActivatePane 同口径）。
             // 注：选中核心/右栏接线在 Configure（本页构造时引擎尚未注入，不得提前触发 VmTools 懒建）
             ClearDetailSelectionCommand = new RelayCommand(() => VmTools.DetailSelection.Clear());
@@ -136,9 +136,9 @@ namespace LinkPocket.Views
             BlankClick.SetCommand(MainPanel, clearSelectionAndFocus);   // 主面板空白同样可点（清残余选中 + 收焦点）
             OpenDetailWebsiteCommand = new RelayCommand(OpenDetailWebsite, () => VmTools.DetailSelection.HasAny);
             // Enter / 明细「打开」= 打开**浏览页的链接详情页**（与搜索页 OpenDetailCommand / 智能列表
-            // OpenInBrowserCommand 同一条路径与同一个端口；用户令 2026-09-20：三页 Enter 都是"打开详情页"）
+            // OpenInBrowserCommand 同一条路径与同一个端口；三页 Enter 都是"打开详情页"）
             OpenDetailInBrowserCommand = new RelayCommand(OpenDetailInBrowser, () => VmTools.DetailSelection.HasAny);
-            // 「跳转」= 进浏览页对应目录并选中该行（定位组件 IContentLocator；与「详情」互不替代，用户令 2026-09-20）
+            // 「跳转」= 进浏览页对应目录并选中该行（定位组件 IContentLocator；与「详情」互不替代）
             // —— 顶部 URL 组药丸与右栏图标钮挂的是**同一条命令（同一实例）**，绝不各写一份。
             JumpDetailCommand = new RelayCommand(() => _ = JumpDetailAsync(), () => VmTools.DetailSelection.HasAny);
 
@@ -230,7 +230,7 @@ namespace LinkPocket.Views
         }
 
         /// <summary>F5 重新查重（明细视图）：重扫 + 按 URL 重组当前组（与入口对齐同一条链路）。
-        /// 按**导航加载口径**亮加载遮罩，重进明细后播行入场动画（用户令 2026-09-20）。</summary>
+        /// 按**导航加载口径**亮加载遮罩，重进明细后播行入场动画。</summary>
         private async Task RefreshDetailAsync()
         {
             if (DetailPanel.Visibility != Visibility.Visible) return;
@@ -286,7 +286,7 @@ namespace LinkPocket.Views
 
         /// <summary>
         /// 明细 Enter /「打开」：打开**浏览页的链接详情页**——与搜索页 <c>OpenDetailCommand</c>、
-        /// 智能列表 <c>OpenInBrowserCommand</c> 走同一个端口、同一条路径（用户令 2026-09-20：三页 Enter 一致）。
+        /// 智能列表 <c>OpenInBrowserCommand</c> 走同一个端口、同一条路径（三页 Enter 一致）。
         /// 「跳转（进目录 + 选中行）」是另一条语义（见 <see cref="JumpDetailAsync"/>），键位不承担。
         /// </summary>
         private void OpenDetailInBrowser()
@@ -303,7 +303,7 @@ namespace LinkPocket.Views
 
         /// <summary>
         /// 明细「跳转」（顶部 URL 组药丸 / 右栏图标钮）：**进浏览页对应目录并选中该行**——
-        /// 与「详情」（上方）互不替代（用户令 2026-09-20）。统一走 <see cref="ToolsViewModel.JumpAsync"/>
+        /// 与「详情」（上方）互不替代。统一走 <see cref="ToolsViewModel.JumpAsync"/>
         /// （定位组件 <see cref="IContentLocator"/>，与「ID 跳转」工具同一条流水线），本页不自带定位算法。
         /// 失败按定位结果如实提示（弹窗 = 全站统一的告警面），绝不静默。
         /// </summary>
@@ -550,7 +550,7 @@ namespace LinkPocket.Views
         private async Task RunDedupCoreAsync()
         {
             // ⚠️ 扫描期间**不清表**（保留旧结果，内容未变时下方直接跳过重设）：清空 + 重新填充 =
-            // 切页/重扫时的整表重建白烧 + 视觉闪空（用户报障 2026-09-20：低性能设备切页偶发卡顿）。
+            // 切页/重扫时的整表重建白烧 + 视觉闪空（低性能设备切页偶发卡顿）。
             PaneTable.EmptyContent = BuildState("refresh", "正在扫描重复链接…", "全库比对 URL，请稍候");
             PaneSubtitle.Text = DedupSubtitle;
 
@@ -642,7 +642,7 @@ namespace LinkPocket.Views
                     SortKey = r => (IComparable)((LinkDto)r).VisitCount,
                     CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
                 },
-                // 重复组明细**没有**「操作」列 / 行内跳转按钮（用户令 2026-09-19）：
+                // 重复组明细**没有**「操作」列 / 行内跳转按钮：
                 // 对比页是"看差异"的只读视图；「跳转」（顶部 URL 组药丸 / 右栏图标钮）走定位组件 IContentLocator
                 // ——与「ID 跳转」工具同一套语义（进目录 + 选中行），本页不自带定位算法。
             };
@@ -657,8 +657,8 @@ namespace LinkPocket.Views
 
         /// <summary>
         /// 展开明细：组状态记录在 VM（EnterGroup），本方法只做视觉切换。
-        /// <paramref name="preserveSelection"/> = true 时**保留仍在新结果里的选中**（F5 重查 / 入口对齐重进，
-        /// 用户令 2026-09-20："除非刷新之后那一项没了，才应该取消选中"）；换组进入时为 false（清选中）。
+        /// <paramref name="preserveSelection"/> = true 时**保留仍在新结果里的选中**（F5 重查 / 入口对齐重进）；
+        /// 换组进入时为 false（清选中）。
         /// </summary>
         private void EnterDetail(DedupGroupRow row, bool preserveSelection = false)
         {
@@ -681,7 +681,7 @@ namespace LinkPocket.Views
             MainPanel.Visibility = Visibility.Collapsed;
             DetailPanel.Visibility = Visibility.Visible;
             // 焦点收回**页面根**（原先 Focus 明细面板容器：容器拿到键盘焦点后会画一条原生焦点虚线框，
-            // 用户报障"F5 后明细页出现黑虚线"2026-09-20）。焦点在页内 = 快捷键照常路由（ShortcutHost 不变式）。
+            // 表现为明细页出现黑虚线）。焦点在页内 = 快捷键照常路由（ShortcutHost 不变式）。
             PageFocus.Restore(this);
         }
 

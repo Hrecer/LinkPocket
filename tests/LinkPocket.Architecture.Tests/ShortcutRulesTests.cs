@@ -3,7 +3,7 @@ using Xunit;
 namespace LinkPocket.Architecture.Tests;
 
 /// <summary>
-/// 快捷键架构红线（2026-09-19 用户定稿）：
+/// 快捷键架构红线：
 /// **键位只声明在 <c>LinkPocket.UIKit/Input/ShortcutCatalog.cs</c>（全站唯一键位总表）**——
 /// 全仓其余位置不得出现 <c>&lt;KeyBinding&gt;</c> / <c>KeyDown</c> 处理、也不得自行构造绑定
 /// （<c>new ShortcutBinding</c> / <c>new ShortcutSpec</c>），杜绝"快捷键散落各页、
@@ -77,13 +77,13 @@ public class ShortcutRulesTests
            || text.Contains($"{handler} +=", StringComparison.Ordinal);
 
     /// <summary>
-    /// 检测规则自证：必须能抓到本轮删掉的那几处历史写法（否则红线形同虚设）；
+    /// 检测规则自证：必须能抓到历史散落写法（否则红线形同虚设）；
     /// 同时不得误伤"与快捷键无关"的键盘 API 用法（焦点/路由事件常量）。
     /// </summary>
     [Fact]
     public void 检测规则_能抓到历史散落写法且不误伤无关用法()
     {
-        // 真实历史写法（本轮删除的 5 处，逐条回放）
+        // 真实历史写法（逐条回放）
         Assert.True(HasKeyHandler("private void TrashPage_PreviewKeyDown(object sender, KeyEventArgs e)", "PreviewKeyDown"));
         Assert.True(HasKeyHandler("Focusable=\"True\"\n             PreviewKeyDown=\"TrashPage_PreviewKeyDown\">", "PreviewKeyDown"));
         Assert.True(HasKeyHandler("PreviewKeyDown += SmartListsPage_PreviewKeyDown;", "PreviewKeyDown"));

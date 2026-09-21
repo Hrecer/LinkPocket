@@ -1,10 +1,9 @@
 using System;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
@@ -13,8 +12,22 @@ using Material3.Wpf;
 
 namespace LinkPocket.ViewModels
 {
-    public class MainViewModel : INotifyPropertyChanged
+    /// <summary>导航页标识（C# 侧唯一事实来源；XAML 的数据触发器仍按字面量匹配）。</summary>
+    public static class NavIds
     {
+        public const string Browser = "browser";
+        public const string Search = "search";
+        public const string SmartLists = "smartlists";
+        public const string Tools = "tools";
+        public const string Trash = "trash";
+        public const string Settings = "settings";
+    }
+
+    public class MainViewModel : ObservableObject
+    {
+        /// <summary>路径回溯的层数上限（防御异常数据造成的环）。</summary>
+        private const int MaxFolderDepth = 20;
+
         private readonly Managers.SelectionManager _selectionManager;
 
         /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
@@ -22,7 +35,7 @@ namespace LinkPocket.ViewModels
         private readonly Services.UiEventHub _events;
         private readonly Services.UiPortProvider _ports;
 
-        private string _currentNavId = "browser";
+        private string _currentNavId = NavIds.Browser;
         /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）。</summary>
         private NavigationItem? _selectedNavItem;
         private ObservableCollection<NavigationItem> _navigationItems = new();
@@ -30,14 +43,9 @@ namespace LinkPocket.ViewModels
 
         /// <summary>资源管理器式浏览页（P4）：由 MainWindow 取用并设为 BrowserView 的 DataContext。</summary>
         public BrowserViewModel BrowserViewModel { get; }
-        private TrashViewModel? _trashViewModel;
-        private SettingsViewModel? _settingsViewModel;
-        private SmartListViewModel? _smartListViewModel;
 
         // （原 _isInSecondaryPage / IsInSecondaryPage 已整体移除：它唯一的作用是让全局导航胶囊
         //   在二级视图时 Collapsed，与「导航常驻」原则冲突。页面内的视图切换由各页面自持状态。）
-
-        public event PropertyChangedEventHandler? PropertyChanged;
 
         public MainViewModel(EngineClient client, Services.UiEventHub events,
             Services.UiPortProvider ports, Managers.SelectionManager selectionManager,
@@ -50,16 +58,16 @@ namespace LinkPocket.ViewModels
 
             InitializeNavigationItems();
 
-            _trashViewModel = new TrashViewModel(client, _ports);
-            _settingsViewModel = new SettingsViewModel();
-            _smartListViewModel = new SmartListViewModel(client, _ports,
+            TrashViewModel = new TrashViewModel(client, _ports);
+            SettingsViewModel = new SettingsViewModel();
+            SmartListViewModel = new SmartListViewModel(client, _ports,
                 listId => string.IsNullOrEmpty(listId)
                     ? "全部书签"
                     : (FindFolderPathInNodes(FolderItems, listId) ?? "未知目录"),
                 locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
             BrowserViewModel = new BrowserViewModel(client, _ports, locator);   // 共享端口槽位：对话框/导航走 IDialogService；locator = 侧栏「跳转」
 
-            SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? "browser"));
+            SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? NavIds.Browser));
 
             // 导航条（SlidingNavStrip）的选中项 = SelectedNavItem（TwoWay）；启动即指向默认首页（无副作用）
             SelectedNavItem = NavigationItems.FirstOrDefault(i => i.Id == _currentNavId);
@@ -69,7 +77,7 @@ namespace LinkPocket.ViewModels
                 new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "bookmark-outline", LinkCount = 0 }
             };
 
-            // 事件推送（定稿）：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
+            // 事件推送：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
             // 本 VM 只按当前活跃视图路由刷新（防抖在枢纽内完成）。
             _events.RefreshRequested += OnBackendRefresh;
         }
@@ -92,25 +100,24 @@ namespace LinkPocket.ViewModels
             {
                 switch (_currentNavId)
                 {
-                    case "browser":
+                    case NavIds.Browser:
                         await BrowserViewModel.RefreshPreservingSelectionAsync();
                         break;
-                    case "trash":
+                    case NavIds.Trash:
                         await RefreshTrashAsync();
                         break;
-                    case "search":
-                        OnSearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+                    case NavIds.Search:
+                        SearchRefreshRequested?.Invoke(this, EventArgs.Empty);
                         break;
                     // 事件防抖刷新补齐三页——此前只在浏览器/回收站/搜索里路由，
                     // 跨页操作（如浏览页删链接后切到智能列表/工具）会看到陈旧快照。
-                    case "smartlists":
-                        if (_smartListViewModel != null)
-                            await _smartListViewModel.RefreshCurrentAsync();
+                    case NavIds.SmartLists:
+                        await SmartListViewModel.RefreshCurrentAsync();
                         break;
-                    case "tools":
-                        OnToolsDataChanged?.Invoke(this, EventArgs.Empty);   // ToolsView.OnExternalDataChanged（页内重跑守卫）
+                    case NavIds.Tools:
+                        ToolsDataChanged?.Invoke(this, EventArgs.Empty);   // ToolsView.OnExternalDataChanged（页内重跑守卫）
                         break;
-                    case "settings":
+                    case NavIds.Settings:
                         break;   // 设置页无数据面，无需刷新
                 }
             }
@@ -131,20 +138,23 @@ namespace LinkPocket.ViewModels
                     var oldId = _currentNavId;
                     _currentNavId = value;
                     OnPropertyChanged();
-                    if (value == "search")
-                        OnNavigatedToSearch?.Invoke(this, EventArgs.Empty);
-                    if (oldId == "search")
-                        OnNavigatedFromSearch?.Invoke(this, EventArgs.Empty);
+                    if (value == NavIds.Search)
+                        NavigatedToSearch?.Invoke(this, EventArgs.Empty);
+                    if (oldId == NavIds.Search)
+                        NavigatedFromSearch?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
 
-        public event EventHandler? OnNavigatedToSearch;
-        public event EventHandler? OnNavigatedFromSearch;
-        public event EventHandler? OnSearchRefreshRequested;
-        public event EventHandler? OnToolsDataChanged;
+        public event EventHandler? NavigatedToSearch;
+        public event EventHandler? NavigatedFromSearch;
+        public event EventHandler? SearchRefreshRequested;
+        /// <summary>外部数据变更（Shell 转发给工具页做入口对齐）。</summary>
+        public event EventHandler? ToolsDataChanged;
         /// <summary>进入工具页（Shell 转发到 ToolsView.OnNavigatedTo）：去重结果的入口对齐信号。</summary>
-        public event EventHandler? OnNavigatedToTools;
+        public event EventHandler? NavigatedToTools;
+
+        private void RaiseToolsDataChanged() => ToolsDataChanged?.Invoke(this, EventArgs.Empty);
 
         public ObservableCollection<NavigationItem> NavigationItems
         {
@@ -155,29 +165,17 @@ namespace LinkPocket.ViewModels
         public ObservableCollection<FolderNode> FolderItems
         {
             get => _folderItems;
-            set { _folderItems = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasFolderItems)); }
+            set { _folderItems = value; OnPropertyChanged(); }
         }
-
-        public bool HasFolderItems => FolderItems?.Count > 0;
 
         /// <summary>回收站页视图模型（与浏览页 BrowserViewModel 同构的"回收站浏览器"）。</summary>
-        public TrashViewModel? TrashViewModel
-        {
-            get => _trashViewModel;
-            set { _trashViewModel = value; OnPropertyChanged(); }
-        }
+        public TrashViewModel TrashViewModel { get; }
 
-        public SettingsViewModel? SettingsViewModel
-        {
-            get => _settingsViewModel;
-            set { _settingsViewModel = value; OnPropertyChanged(); }
-        }
+        /// <summary>设置页视图模型。</summary>
+        public SettingsViewModel SettingsViewModel { get; }
 
-        public SmartListViewModel? SmartListViewModel
-        {
-            get => _smartListViewModel;
-            set { _smartListViewModel = value; OnPropertyChanged(); }
-        }
+        /// <summary>智能列表页视图模型。</summary>
+        public SmartListViewModel SmartListViewModel { get; }
 
         public ICommand SelectNavCommand { get; }
 
@@ -185,12 +183,12 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = "browser", Label = "浏览", IconKind = "folder-open-outline" },
-                new() { Id = "search", Label = "搜索", IconKind = "magnify" },
-                new() { Id = "smartlists", Label = "智能列表", IconKind = "auto-fix" },
-                new() { Id = "tools", Label = "工具", IconKind = "wrench-outline" },
-                new() { Id = "trash", Label = "回收站", IconKind = "delete-outline" },
-                new() { Id = "settings", Label = "设置", IconKind = "cog-outline" }
+                new() { Id = NavIds.Browser, Label = "浏览", IconKind = "folder-open-outline" },
+                new() { Id = NavIds.Search, Label = "搜索", IconKind = "magnify" },
+                new() { Id = NavIds.SmartLists, Label = "智能列表", IconKind = "auto-fix" },
+                new() { Id = NavIds.Tools, Label = "工具", IconKind = "wrench-outline" },
+                new() { Id = NavIds.Trash, Label = "回收站", IconKind = "delete-outline" },
+                new() { Id = NavIds.Settings, Label = "设置", IconKind = "cog-outline" }
             };
         }
 
@@ -204,7 +202,7 @@ namespace LinkPocket.ViewModels
                 // P4 浏览页：首次进入从根目录加载；已加载则原地重载（**入口对齐**——防抖刷新只送达
                 // "事件发生时的活跃页"，非活跃期间的变更必须在这里补：去重删除 / 书签导入 / 备份导入 /
                 // 回收站还原都会改这一页；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制）
-                if (navId == "browser")
+                if (navId == NavIds.Browser)
                 {
                     if (BrowserViewModel.Rows.Count == 0)
                         _ = BrowserViewModel.LoadAsync(null);
@@ -212,22 +210,22 @@ namespace LinkPocket.ViewModels
                         _ = BrowserViewModel.RefreshPreservingSelectionAsync();
                 }
 
-                if (_smartListViewModel != null && _smartListViewModel.ShowResult)
+                if (SmartListViewModel.ShowResult)
                 {
-                    _smartListViewModel.GoBack();
+                    SmartListViewModel.GoBack();
                 }
 
-                if (navId == "trash")
+                if (navId == NavIds.Trash)
                 {
                     // 切页进入 = 导航加载（亮遮罩 + 入场动画）：由页面入口装载（页面还要同步只读详情栏）
                     var navigation = _ports.Navigation;
                     if (navigation != null) await navigation.RefreshTrashPageAsync();
                 }
 
-                if (navId == "tools")
+                if (navId == NavIds.Tools)
                 {
                     // 入口对齐：去重结果（主表 / 明细）可能被其它页面的变更置于陈旧——页内按视图状态决定重跑
-                    OnNavigatedToTools?.Invoke(this, EventArgs.Empty);
+                    NavigatedToTools?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Exception ex)
@@ -238,7 +236,7 @@ namespace LinkPocket.ViewModels
             }
         }
 
-        /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）：用户点选变化即切换页面；
+        /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）：点选变化即切换页面；
         /// 程序内切页（SelectNavCommand / 端口）反写本属性让药丸滑过去——单一来源、闭环。</summary>
         public NavigationItem? SelectedNavItem
         {
@@ -253,21 +251,18 @@ namespace LinkPocket.ViewModels
             }
         }
 
+        /// <summary>事件驱动的回收站刷新（静默：后台刷新不亮遮罩——与浏览页同口径）。</summary>
+        /// <summary>目录树 / 计数重载 + 通知工具页入口对齐（工具页回调与备份导入后刷新共用同一条流水线）。</summary>
         public async Task RefreshFolderTreeAndUIAsync()
         {
             await LoadFolderTreeAsync();
-            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
+            RaiseToolsDataChanged();
         }
 
-        /// <summary>事件驱动的回收站刷新（静默：后台刷新不亮遮罩——与浏览页同口径）。</summary>
-        public async Task RefreshTrashAsync()
-        {
-            if (_trashViewModel != null)
-                await _trashViewModel.LoadAsync();
-        }
+        public async Task RefreshTrashAsync() => await TrashViewModel.LoadAsync();
 
         // 搜索页已迁往 SearchViewModel（MVVM）：查询执行/范围守卫在页面 VM，
-        // 本类只保留 CurrentNavId 的 search 路由事件（OnSearchRefreshRequested 等）。
+        // 本类只保留 CurrentNavId 的 search 路由事件（SearchRefreshRequested 等）。
 
         public async Task LoadFolderTreeAsync()
         {
@@ -361,7 +356,7 @@ namespace LinkPocket.ViewModels
                 if (!dict.ContainsKey(listId)) return "未知目录";
                 var pathParts = new List<string>();
                 var currentId = listId;
-                for (int i = 0; i < 20 && !string.IsNullOrEmpty(currentId); i++)
+                for (var i = 0; i < MaxFolderDepth && !string.IsNullOrEmpty(currentId); i++)
                 {
                     if (!dict.TryGetValue(currentId, out var folder)) break;
                     pathParts.Add(folder.Name ?? "未命名文件夹");
@@ -370,15 +365,11 @@ namespace LinkPocket.ViewModels
                 pathParts.Reverse();
                 return string.Join(" > ", pathParts);
             }
-            catch
+            catch (Exception ex)
             {
+                LpLog.Warn($"解析链接所属目录失败（listId={listId}）", ex);
                 return "未知目录";
             }
-        }
-
-        protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
         public async Task ReinitializeDatabaseAsync()
@@ -397,22 +388,15 @@ namespace LinkPocket.ViewModels
             await LoadFolderTreeAsync();
 
             // 库已清空：浏览页必须强制回到根并重载，
-            // 否则旧目录的行会一直挂在浏览页上，直到用户手点「全部书签」才刷新——实测踩中。
+            // 否则旧目录的行会一直挂在浏览页上，直到手动点「全部书签」才刷新——实测已复现。
             await BrowserViewModel.LoadAsync(null);
 
-            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
+            ToolsDataChanged?.Invoke(this, EventArgs.Empty);
 
             // 无论当前在哪个页（清空动作发生在设置页），选中都回到「全部书签」：
             // 旧选中若指向已删除的文件夹则是无意义状态，且会阻碍浏览器页数据刷新。
             _selectionManager.SelectFolder(string.Empty);
         }
 
-        /// <summary>备份导入成功后的刷新（只刷数据不重置）：树/计数重载，
-        /// 列表由各页事件防抖驱动，不清选不回根（区别于整库重置的 ResetUiAfterDatabaseResetAsync）。</summary>
-        public async Task RefreshAfterImportAsync()
-        {
-            await LoadFolderTreeAsync();
-            OnToolsDataChanged?.Invoke(this, EventArgs.Empty);
-        }
     }
 }

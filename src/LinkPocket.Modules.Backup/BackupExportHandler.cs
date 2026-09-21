@@ -7,7 +7,7 @@ namespace LinkPocket.Modules.Backup;
 
 /// <summary>backup.export（Mutation · FileIo）：全库导出为 .lpbackup（回收站不进备份——行为等价项）。</summary>
 /// <remarks>
-/// <b>不预删目标文件</b>（用户令 2026-09-20："确保数据是安全的"）：整包由 <see cref="BackupIO.PackAsync"/>
+/// <b>不预删目标文件</b>：整包由 <see cref="BackupIO.PackAsync"/>
 /// 写到**同目录临时文件**再原子替换目标——旧的"先 File.Delete 再打包"在打包失败/取消时会让用户
 /// **同时丢掉旧备份与新备份**，是真实的数据丢失路径，已删除。
 /// </remarks>

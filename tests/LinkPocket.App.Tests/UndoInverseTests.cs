@@ -8,8 +8,8 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 真正的撤销（2026-09-19 定稿）：内核级逆向链路金标准。
-/// 覆盖面 = **移动 / 新建 / 复制副本 / 删文件夹**；**重命名与改属性明确不可撤销**（用户定稿）。
+/// 真正的撤销：内核级逆向链路金标准。
+/// 覆盖面 = **移动 / 新建 / 复制副本 / 删文件夹**；**重命名与改属性明确不可撤销**。
 /// 每条都断言"撤销后状态真的回到操作前、重做后再次生效"（黑盒经引擎命令读写，不开 internal 后门）。
 /// </summary>
 public class UndoInverseTests
@@ -280,7 +280,7 @@ public class UndoInverseTests
             await client.LinkUpdateAsync(link.LinkId, description: "改描述");
             await client.LinkUpdateAsync(link.LinkId, isImportant: true);
 
-            // 一条都不该新增（用户 2026-09-19 定稿：重命名与改属性不属于可撤销动作）
+            // 一条都不该新增（重命名与改属性不属于可撤销动作）
             Assert.Equal(before, (await UndoEntries(client)).Count);
         }
         finally { AppTestEnv.Delete(dbPath); }

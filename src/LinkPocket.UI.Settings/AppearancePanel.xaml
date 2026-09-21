@@ -27,9 +27,8 @@
                            Foreground="{DynamicResource App.Text.Secondary}"/>
 
                 <!-- ===== 全局操作（面板级，不属于任何一张卡）=====
-                     用户令 2026-09-20："这个应用这套外观、恢复这套外观，不能在自选配色这里，这些是全局操作"。
                      它们作用于**整套外观**（配色 + 字体），所以放在卡片之外、面板顶部（常驻可见，不必滚过字体卡）。
-                     用户令 2026-09-20 第三轮：删掉「应用这套外观」——跨卡的"应用"与面板内"点一下即生效"
+                     不设「应用这套外观」：跨卡的"应用"与面板内"点一下即生效"
                      的既有语言（主题卡单击即应用 / 起点复制即应用）自相矛盾；自选配色的应用入口只剩
                      **第 12 张「自选颜色」卡**（与点主题卡同一手势），故全局行只剩这一枚。 -->
                 <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
@@ -39,9 +38,7 @@
                             ToolTip="主题与字体一起回出厂默认，并清掉偏好文件"/>
                 </StackPanel>
 
-                <!-- 「自动调整颜色」开关**独立成一张卡**（用户令 2026-09-20 第二轮：
-                     "不要弄勾选……要真正的开关（ToggleSwitch），做成 Material 3 Expressive 那种，
-                      独立成一张卡"）。
+                <!-- 「自动调整颜色」开关**独立成一张卡**（Material 3 Expressive 的 ToggleSwitch，不是勾选框）。
                      开关本体 = UIKit 的 `ToggleButton` 隐式样式（轨道 52×32 胶囊 + 24 圆形滑块，
                      开 = 强调填充 / 关 = 悬停底 + 描边，全部走 App.* 令牌）。
                      它作用于**整套配色**，切换即当场重排并落盘；主题卡色点随之重投影（VM 的 RepojectAllThemeCards）。 -->
@@ -83,7 +80,7 @@
                         <TextBlock Text="单击即应用，主题本身只读（预设不会被改掉）。最后一张「自选颜色」= 用下面调色台里的配色；想从某套现成主题改起，就用调色台里的「以…为起点」把它的颜色复制过去"
                                    FontSize="12" Margin="0,4,0,10" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
-                        <!-- 互斥投影的说明条**已删除**（用户令 2026-09-20："删除图中的提示"）：
+                        <!-- 互斥投影**不配说明条**：
                              「当前使用」由第 12 张卡的高亮 + 面板里的徽标表达，不需要再占一行文字。 -->
 
                         <ItemsControl x:Name="ThemeCardList">
@@ -103,9 +100,8 @@
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <!-- 卡面底色 = **当前生效主题的页面底**（VM 的 CardBackground，所有卡一致）：
-                                                     只有"已应用"的那张卡，它色点里的"背景色成员"才与卡面同色 → 融合
-                                                     （用户令 2026-09-21："其他主题在没被选中的时候，卡面上的背景应该是
-                                                      当前主题的背景；当我们选中它……就会发现某一个圆和它现在融合了"）。 -->
+                                                     未选中卡同样用当前主题的页面底；只有"已应用"的那张卡，
+                                                     它色点里的"背景色成员"才与卡面同色 → 融合。 -->
                                                 <Border x:Name="Shell" CornerRadius="16" Padding="12,10"
                                                         Background="{Binding CardBackground, Converter={StaticResource ColorToBrush}}"
                                                         BorderThickness="2" BorderBrush="Transparent">
@@ -155,19 +151,17 @@
                                                 </ItemsControl.ItemsPanel>
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <!-- ⚠️ **色点不描边**（用户令 2026-09-20）：配色里的背景色成员与它所在的那块底色
-                                                             **本来就该是同一个颜色**（融合 = 设计效果，用户原话："背景色那个圆与背景融合，
-                                                             这正是我们想要的效果"）。曾加过 1px 描边把看不见的那枚勾出来 —— 那是**误诊**：
+                                                        <!-- ⚠️ **色点不描边**：配色里的背景色成员与它所在的那块底色
+                                                             **本来就该是同一个颜色**（融合 = 设计效果，肉眼不可见是预期而非缺陷）。
                                                              真正的问题不是"看不见"，而是表面族被中性色相钉值带离了背景色成员
-                                                             （见 `ThemeCatalog.Presets` 的注释）—— 已从根上修掉，描边随之删除。 -->
+                                                             （见 `ThemeCatalog.Presets` 的注释）—— 该问题已从根上修掉，不靠描边补偿。 -->
                                                         <Ellipse Width="16" Height="16" Margin="0,0,5,0"
                                                                  Fill="{Binding Converter={StaticResource ColorToBrush}}"/>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
 
-                                            <!-- 「自选颜色」的空态 = 4 个**空心占位圆**（用户令 2026-09-20：
-                                                 "上面最后面的位置有一个自选颜色，并且里面全都是空的"）：
+                                            <!-- 「自选颜色」的空态 = 4 个**空心占位圆**：
                                                  只画描边、不填任何颜色 —— 空就是空，不拿假色冒充"已选"。 -->
                                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0"
                                                         Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
@@ -203,7 +197,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== 卡 2：调色台（= 用户说的"仪表盘"；只编辑你自己的配色，上面的主题只读）===== -->
+                <!-- ===== 卡 2：调色台（= "仪表盘"；只编辑自己的配色，上面的主题只读）===== -->
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
                         Padding="22,20" Margin="0,16,0,0">
                     <!-- 调色台 = 与主题卡**同一个选择组**的另一半（二选一）：
@@ -246,17 +240,16 @@
                                                Foreground="{DynamicResource App.Text.Secondary}"/>
                                 </Border>
                             </Grid>
-                            <!-- 整句由 VM 给（`DraftIntro`）：**不再把一句话拆成"Run 字面量 + 绑定 Run + 字面量"**
-                                 三段 —— 那样"这句里写的是哪套外观"就散在两处，运行期没有任何一处能被守住
-                                 （用户报障 2026-09-20："为什么这里一直显示以默认紫罗兰为起点，一直都没有更改过"）。 -->
+                            <!-- 整句由 VM 给（`DraftIntro`）：**不把一句话拆成"Run 字面量 + 绑定 Run + 字面量"**
+                                 三段 —— 那样"这句里写的是哪套外观"就散在两处，运行期没有任何一处能被守住。 -->
                             <TextBlock FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                        Text="{Binding DraftIntro, Mode=OneWay}"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
 
                             <!-- 4 色 / 5 色：**复用 UIKit 共享的滑动指示器分段控件**
                                  （SlidingNavStrip = ListBox + PART_Indicator，几何贴齐与滑动动画全在组件内）。
-                                 原先手写两枚 Button 靠换 Style 表达"选中"——用户报障"根本分不清在选哪个"：
-                                 填充色的差别不是选择语义，滑动指示器才是本仓既有的选择语言。
+                                 不手写两枚 Button 靠换 Style 表达"选中"：填充色的差别不是选择语义，
+                                 滑动指示器才是本仓既有的选择语言。
                                  选中索引双向绑到 VM 的 SlotCountIndex（唯一事实来源 = 草稿槽数）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                 <views:SlidingNavStrip x:Name="SlotCountStrip"
@@ -268,12 +261,11 @@
                                 </views:SlidingNavStrip>
                             </StackPanel>
 
-                            <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（用户令 2026-09-20：
-                                 "默认的颜色是绝对不能改的，但是我们可以把默认的某个主题作为我们自选色的方案"）。
+                            <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（预设主题本身只读，
+                                 复制品作为自选配色方案的起点）。
                                  文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。
                                  「清空颜色」= 把整个草稿清回空槽 **并回到出厂默认（紫罗兰）主题**
-                                 （用户令 2026-09-21："清空颜色的时候应该回到紫罗兰"——只清草稿不动已应用外观
-                                 会让"清空"变成界面一点没变的半截动作）——
+                                 ——只清草稿不动已应用外观会让"清空"变成界面一点没变的半截动作——
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <Button x:Name="StartFromThemeBtn"
@@ -287,9 +279,9 @@
                                         ToolTip="清空色槽并回到出厂默认（紫罗兰）外观；不改动字体与偏好文件"/>
                             </StackPanel>
 
-                            <!-- 色槽：**居中**排列（用户令 2026-09-20："自选配色这里根本没有居中"）。
+                            <!-- 色槽：**居中**排列。
                                  每格 = 一个可编辑槽位（点一下开取色盘）：有颜色 = 实心色圆 + 描边；
-                                 空槽 = 虚线空心环 + 中心「+」（用户令 2026-09-20："里面全都是空的"）。 -->
+                                 空槽 = 虚线空心环 + 中心「+」。 -->
                             <ItemsControl x:Name="SlotList" Margin="0,14,0,0" HorizontalAlignment="Center">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -358,7 +350,7 @@
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
                             </Border>
 
-                            <!-- 应用/恢复**不属于这张卡**（用户令 2026-09-20：它们是全局操作，见页面底部的操作行） -->
+                            <!-- 应用/恢复**不属于这张卡**（它们是全局操作，见面板顶部） -->
                         </StackPanel>
                     </Border>
                 </Border>
@@ -373,8 +365,7 @@
                                    FontSize="12" Margin="0,4,0,14" TextWrapping="Wrap"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
 
-                        <!-- 字体来源：**先选来源，再在来源里选字体**（用户令 2026-09-20：
-                             "将系统本身的字体和我们导入的字体区分开来……只能二选一"）。
+                        <!-- 字体来源：**先选来源，再在来源里选字体**（系统字体与导入字体二选一）。
                              与颜色那边的 4/5 色一样复用共享滑动分段组件，不手写第二套分段。 -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,8">
                             <views:SlidingNavStrip x:Name="FontSourceStrip"
@@ -417,8 +408,7 @@
                                     ToolTip="只删除导入到本应用目录的那份副本（不会动系统字体）"/>
                         </Grid>
 
-                        <!-- 等宽字体行**已删除**（用户令 2026-09-21："等宽字体不应该被更改，直接删掉这条"）：
-                             ID / 网址显示用的等宽字体从此固定为默认族（Consolas），面板不再提供任何入口。
+                        <!-- 不提供等宽字体入口：ID / 网址显示用的等宽字体固定为默认族（Consolas）。
                              样例里那行等宽示例文字保留 —— 它走 `App.Font.Mono` 令牌，与真实界面同源。 -->
 
                         <!-- 字号影响提示（度量自检结果） -->
@@ -461,8 +451,8 @@
                             <Button x:Name="ApplyFontsBtn" Content="应用字体"
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
                                     Cursor="Hand" Click="ApplyFontsBtn_Click"/>
-                            <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘
-                                 （用户令 2026-09-20 第三轮）。与「恢复默认外观」的区别：这里不动主题与配色。 -->
+                            <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘。
+                                 与「恢复默认外观」的区别：这里不动主题与配色。 -->
                             <Button x:Name="ResetFontsBtn" Content="恢复默认字体"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                     Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
@@ -471,11 +461,10 @@
                     </StackPanel>
                 </Border>
 
-                <!-- ===== 全局操作已上移到面板顶部（用户令：它们是全局操作，不属于任何一张卡） ===== -->
+                <!-- ===== 全局操作在面板顶部（它们是全局操作，不属于任何一张卡） ===== -->
 
                 <!-- 结果播报（状态栏口径；绑 VM.Status —— 视图不择时刷新）。
-                     **只在失败 / 用户必须知道的事实时才有字**（用户令 2026-09-20 第二轮：
-                     "下面根本就不需要这个提示，删掉"）——成功路径不再写"已应用主题「X」"这类重复信息，
+                     **只在失败 / 用户必须知道的事实时才有字**——成功路径不写"已应用主题「X」"这类重复信息，
                      当前生效的外观由主题卡高亮 + 「当前使用」徽标表达。 -->
                 <TextBlock x:Name="StatusText" Text="{Binding Status}" FontSize="12" Margin="4,14,0,0"
                            TextWrapping="Wrap"

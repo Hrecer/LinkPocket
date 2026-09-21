@@ -25,7 +25,7 @@ public class FontSystemTests : IDisposable
     public FontSystemTests() => _backup = File.Exists(_path) ? File.ReadAllText(_path) : null;
 
     /// <summary>
-    /// 收尾 = **进程内回出厂默认 + 偏好文件回跑前原样**（用户令 2026-09-20）。
+    /// 收尾 = **进程内回出厂默认 + 偏好文件回跑前原样**。
     /// </summary>
     /// <remarks>
     /// ⚠️ 顺序不可颠倒：<see cref="ThemeService.ResetForTests"/> 会连偏好文件一起清，
@@ -43,8 +43,8 @@ public class FontSystemTests : IDisposable
     /// **碰不到别的安装**的机器化判据：偏好文件永远只落在**本进程自己的安装目录**里。
     /// </summary>
     /// <remarks>
-    /// 用户令 2026-09-20："任何测试或探针跑完，进程内主题状态回到出厂默认、偏好文件回到跑前原样，
-    /// 并且**碰不到别的安装**"。这条把最后半句变成可执行断言：<c>UiPreferenceStore.FilePath</c>
+    /// 不变量：测试或探针跑完，进程内主题状态回到出厂默认、偏好文件回到跑前原样，
+    /// 并且**碰不到别的安装**。这条把最后半句变成可执行断言：<c>UiPreferenceStore.FilePath</c>
     /// 必须由 <see cref="AppContext.BaseDirectory"/> 拼出（= 当前这份安装/构建输出的目录）——
     /// 一旦有人把它改成"用户目录 / 固定绝对路径 / 上一级目录"，测试与探针就会去改别人（或真实用户）的那份。
     /// </remarks>
@@ -221,7 +221,7 @@ public class FontSystemTests : IDisposable
     [Fact]
     public void 回退链字体_在真实系统字体集合里可用()
     {
-        // 回退链（雅黑 / Segoe UI）与默认等宽字体是我们**承诺过一定存在**的那几个族：
+        // 回退链（雅黑 / Segoe UI）与默认等宽字体必须**一定存在**：
         // 若机器上真的没有，回退链就是一句空话 —— 用真实枚举把它钉住。
         var families = FontCatalog.SystemFontFamilies();
         Assert.Contains(FontCatalog.DefaultUiFamily, families);
@@ -233,7 +233,7 @@ public class FontSystemTests : IDisposable
     public void 候选装载_已导入字体排在系统字体之前()
     {
         // 用户自己放进来的字体要**先看到**（他刚导入完就要在下拉里找到它）——排序口径被断言。
-        // 本机可能已经有导入字体（用户/上一轮用例留下的），故这里把系统来源换成假列表做隔离，
+        // 本机可能已经有导入字体（此前用例留下的），故这里把系统来源换成假列表做隔离，
         // 断言的是**分组顺序**（导入在前、系统在后），不是"总条数等于几"。
         try
         {

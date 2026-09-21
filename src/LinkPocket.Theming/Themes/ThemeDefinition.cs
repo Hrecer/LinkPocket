@@ -31,7 +31,7 @@ public enum ChromaCap
 }
 
 /// <summary>
-/// 配色应用方式（外观面板的「自动调整颜色」开关；用户令 2026-09-20 第二轮："**默认是打开的**"）。
+/// 配色应用方式（外观面板的「自动调整颜色」开关；**缺省打开**）。
 /// </summary>
 public enum PaletteMode
 {
@@ -59,7 +59,7 @@ public enum PaletteMode
 /// （方案 §4.2）。主题卡展示 <see cref="Palette"/> 的原色，界面用其色调板档位。
 /// </para>
 /// <para>
-/// <b><see cref="NeutralHueOverride"/> 是唯一的定稿钩子</b>：它同时决定表面旋转角
+/// <b><see cref="NeutralHueOverride"/> 是唯一的色相钉值钩子</b>：它同时决定表面旋转角
 /// （= 该值 − <see cref="ReferenceNeutralHue"/>）、文字三档与描边的色相。出厂默认钉
 /// <see cref="ReferenceNeutralHue"/> → 旋转角恰为 0 → 全部键逐字节等于今天（背景保留）。
 /// 其它主题为 <c>null</c>，按配色里的中性池派生。用户若把默认主题的色槽改掉再应用，即为新主题
@@ -95,7 +95,7 @@ public sealed record ThemeDefinition
     /// <remarks>
     /// 由外观面板的「自动调整颜色」开关决定（<c>ThemeService.Apply</c> 统一写入），
     /// **影响每一个令牌的取值**，因此也算主题定义的一部分（会随偏好落盘）。
-    /// 缺省值取 <c>ThemeService.DefaultPaletteMode</c>（唯一事实源：用户令"我们默认是打开自动调整颜色的"）。
+    /// 缺省值取 <c>ThemeService.DefaultPaletteMode</c>（唯一事实源）。
     /// </remarks>
     public PaletteMode PaletteMode { get; init; } = ThemeService.DefaultPaletteMode;
 
@@ -111,7 +111,7 @@ public sealed record ThemeDefinition
     /// <remarks>
     /// 必须由**实际生效的中性色相**算出（不能只看 <see cref="NeutralHueOverride"/>）：
     /// 其它主题的中性色相是从配色中性池派生的，漏了这一步会让它们全部退回 0°（= 背景不变、只有强调色变，
-    /// 与"换主题背景也变"的定稿口径相反）。
+    /// 与"换主题背景也变"的设计口径相反）。
     /// </remarks>
     public double SurfaceRotation(double effectiveNeutralHue) =>
         Color.ColorMath.NormalizeHue(effectiveNeutralHue - ReferenceNeutralHue);
