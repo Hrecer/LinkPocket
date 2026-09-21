@@ -40,7 +40,7 @@ public partial class BrowserViewModel
             await RefreshUndoStateAsync();
             await LocateAfterUndoAsync(result.Changes);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             ShowError(redo ? Loc.T("status.redoFailed") : Loc.T("status.undoFailed"), Loc.T("err.unexpected"));
         }

@@ -182,7 +182,7 @@ public partial class BrowserViewModel
             BeginRename(newId, isFolder: true, name, BrowserPane.Main);
             // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             ShowError(Loc.T("status.newFolderFailed"), Loc.T("err.unexpected"));
         }
@@ -201,7 +201,7 @@ public partial class BrowserViewModel
             // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
             // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             ShowError(Loc.T("status.deleteFailed"), Loc.T("err.unexpected"));
         }

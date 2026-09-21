@@ -33,14 +33,16 @@ internal sealed class LocateResolveHandler : ICommandHandler
         {
             var containerPath = await ctx.Uow.Trees.PathCanonicalAsync(
                 link.ListId == null ? null : new FolderId(link.ListId), ctx.Ct);
+            // 标题可空（链接身份 = URL）：显示名与路径段一律回落到 URL，绝不写进空段
+            var name = string.IsNullOrWhiteSpace(link.Title) ? link.Url : link.Title!;
             return CommandResult.Ok(new LocateResolveDto
             {
                 Kind = "link",
                 Id = link.LinkId,
-                Name = link.Title ?? string.Empty,
+                Name = name,
                 ContainerFolderId = link.ListId,
                 ContainerPath = containerPath,
-                Path = BookmarkPath.Append(containerPath, link.Title),
+                Path = BookmarkPath.Append(containerPath, name),
             });
         }
 

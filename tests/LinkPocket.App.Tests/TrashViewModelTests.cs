@@ -25,7 +25,7 @@ public class TrashViewModelTests
 
         public bool ConfirmDeleteFolder(string folderName) => true;
 
-        public bool Confirm(string title, string message, string confirmText = "删除", string iconKind = "delete-outline")
+        public bool Confirm(string title, string message, string? confirmText = null, string iconKind = "delete-outline")
         {
             Confirms.Add((title, message));
             return true;

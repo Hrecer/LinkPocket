@@ -180,7 +180,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 });
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             Error = Loc.K("editor.err.autoParseFailed");
         }
@@ -226,7 +226,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 });
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             Error = Loc.K("editor.err.loadFailed");
         }
@@ -275,7 +275,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             // 这里不再显式 RefreshAsync：内核写操作必然推事件，显式刷新会和事件刷新叠成"外面刷新两次"。
             await _host.DetailPage.ReloadIfOpenAsync(); // 详情页若在编辑器下层，同步刷新
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             Error = Loc.K("editor.err.saveFailed");
         }

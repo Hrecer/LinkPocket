@@ -31,7 +31,7 @@ public class TransferPipelineTests
 
         public bool ConfirmDeleteFolder(string folderName) => true;
 
-        public bool Confirm(string title, string message, string confirmText = "删除", string iconKind = "delete-outline") => true;
+        public bool Confirm(string title, string message, string? confirmText = null, string iconKind = "delete-outline") => true;
 
         public void Alert(string title, string message) => Alerts.Add((title, message));
     }

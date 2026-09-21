@@ -184,7 +184,7 @@ public partial class BrowserViewModel
             // —— 收尾 ④：成环：明确弹窗说明——显式操作后"毫无反应"会被读成数据损坏 ——
             if (blocked.Count > 0) ShowError(BlockedTitle(mode).Resolve(), BlockedMessage(mode, blocked).Resolve());
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             StatusText = origin == TransferOrigin.Clipboard
                 ? Loc.K("browser.status.pasteFailed")

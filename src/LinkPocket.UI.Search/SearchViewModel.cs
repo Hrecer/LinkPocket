@@ -315,7 +315,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                     "PrimaryContainer", "OnPrimaryContainer");
             Results = results;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.failed"),
                 Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
@@ -508,7 +508,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(LastQuery))
                 await RefreshResultsAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
                 Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");

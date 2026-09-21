@@ -579,7 +579,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             }
             // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 Selection，不随重建丢）
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             ShowError(Loc.T("status.renameFailed"), Loc.T("err.unexpected"));
         }
