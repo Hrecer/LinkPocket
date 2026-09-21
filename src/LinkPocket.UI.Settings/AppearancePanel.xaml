@@ -415,13 +415,9 @@
                                     ToolTip="只删除导入到本应用目录的那份副本（不会动系统字体）"/>
                         </Grid>
 
-                        <!-- 等宽字体 -->
-                        <TextBlock Text="等宽字体（ID / 网址）" FontSize="12" Margin="2,14,0,6"
-                                   Foreground="{DynamicResource App.Text.Secondary}"/>
-                        <ComboBox x:Name="MonoFontCombo" Height="34" DisplayMemberPath="Display"
-                                  SelectedItem="{Binding SelectedMonoFont, Mode=TwoWay}"
-                                  DropDownOpened="MonoFontCombo_DropDownOpened"
-                                  SelectionChanged="MonoFontCombo_SelectionChanged"/>
+                        <!-- 等宽字体行**已删除**（用户令 2026-09-21："等宽字体不应该被更改，直接删掉这条"）：
+                             ID / 网址显示用的等宽字体从此固定为默认族（Consolas），面板不再提供任何入口。
+                             样例里那行等宽示例文字保留 —— 它走 `App.Font.Mono` 令牌，与真实界面同源。 -->
 
                         <!-- 字号影响提示（度量自检结果） -->
                         <Border x:Name="FontWarnBox" Visibility="Collapsed" CornerRadius="12"
@@ -463,12 +459,12 @@
                             <Button x:Name="ApplyFontsBtn" Content="应用字体"
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
                                     Cursor="Hand" Click="ApplyFontsBtn_Click"/>
-                            <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面/等宽字体回默认族并落盘
+                            <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘
                                  （用户令 2026-09-20 第三轮）。与「恢复默认外观」的区别：这里不动主题与配色。 -->
                             <Button x:Name="ResetFontsBtn" Content="恢复默认字体"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                     Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
-                                    ToolTip="界面字体与等宽字体一起回默认族（不改动主题与配色）"/>
+                                    ToolTip="界面字体回默认族（等宽字体已固定为默认族，不改动主题与配色）"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>

@@ -53,8 +53,8 @@ namespace LinkPocket.Views
         {
             await ViewModel.EnsureFontsLoadedAsync().ConfigureAwait(true);
             SyncFontCombos();
-            // 选中项**不在这里手工赋值**：两个下拉的 SelectedItem 已双向绑定 VM
-            // （`SelectedUiFont` / `SelectedMonoFont`），装载完成时 VM 会重新投影。
+            // 选中项**不在这里手工赋值**：下拉的 SelectedItem 已双向绑定 VM（`SelectedUiFont`），
+            // 装载完成时 VM 会重新投影。
             // ⚠️ 手工赋值会把"候选装载之前显示当前字体"那条投影覆盖成 null
             //    （用户报障"选系统字体拉取不到任何字体"，其实框里此前是空白）—— 别再写回来。
         }
@@ -85,7 +85,6 @@ namespace LinkPocket.Views
                 ThemeCardList.ItemsSource = vm.ThemeCards;
                 SlotList.ItemsSource = vm.Slots;
                 UiFontCombo.ItemsSource = vm.UiFonts;
-                MonoFontCombo.ItemsSource = vm.MonoFonts;
 
                 // 取色盘的三条出口（确认 / 清除 / 取消）在这里接线一次（控件自身不认识本面板）
                 Picker.ColorConfirmed += Picker_ColorConfirmed;
@@ -115,15 +114,12 @@ namespace LinkPocket.Views
         /// <summary>展开字体下拉时的兜底装载（候选在进面板时已**后台预热**；这里只兜"还没装载完 / 上次失败"两种情形）。</summary>
         private async void UiFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
 
-        private async void MonoFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
-
         private void SyncFontCombos()
         {
-            // 诊断用：确保两个下拉的候选集已就位（ReloadFonts 可能已换过实例）
+            // 诊断用：确保下拉的候选集已就位（ReloadFonts 可能已换过实例）。
+            // 等宽字体下拉**已删除**（用户令 2026-09-21），这里只剩界面字体一个。
             if (!ReferenceEquals(UiFontCombo.ItemsSource, ViewModel.UiFonts))
                 UiFontCombo.ItemsSource = ViewModel.UiFonts;
-            if (!ReferenceEquals(MonoFontCombo.ItemsSource, ViewModel.MonoFonts))
-                MonoFontCombo.ItemsSource = ViewModel.MonoFonts;
         }
 
         // ── 主题卡 ───────────────────────────────────────────────────────
@@ -185,12 +181,6 @@ namespace LinkPocket.Views
         private void UiFontCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             ViewModel.SelectedUiFont = UiFontCombo.SelectedItem as FontOptionViewModel;
-            ShowFontInspection();
-        }
-
-        private void MonoFontCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            ViewModel.SelectedMonoFont = MonoFontCombo.SelectedItem as FontOptionViewModel;
             ShowFontInspection();
         }
 

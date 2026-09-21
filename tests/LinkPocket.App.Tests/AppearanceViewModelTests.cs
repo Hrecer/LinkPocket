@@ -697,20 +697,23 @@ public class AppearanceViewModelTests : IDisposable
     public void 未装载字体候选时_面板状态可用且不崩()
     {
         // 候选是**惰性**的（用户没展开下拉就不该付全量枚举的钱），但下拉框里**必须看得见当前字体**：
-        // 池为空时用当前族名补两个占位项（用户报障 2026-09-20 第二轮："我选系统字体，
-        // 此时根本就拉取不到任何字体" —— 那时两个框是空白的，读成"拉不到"，其实只是"还没去拉"）。
+        // 池为空时用当前族名补一个占位项（用户报障 2026-09-20 第二轮："我选系统字体，
+        // 此时根本就拉取不到任何字体" —— 那个框是空白的，读成"拉不到"，其实只是"还没去拉"）。
+        // ⚠️ 占位项**只补属于当前来源的那一个**（用户令 2026-09-21："使用自定义字体的时候，
+        //    不应该显示系统字体，而是什么都没有"）：自定义来源没导入过就是**空列表**。
         var vm = NewVm();
-        Assert.Equal(2, vm.UiFonts.Count);   // 当前（雅黑）+ 等宽的当前（Consolas）占位 —— 两者都补进池，保证各自框里看得见
-        Assert.All(vm.UiFonts, f => Assert.False(f.CanDelete));   // 占位项 = 系统字体口径（不可删）
+        Assert.Single(vm.UiFonts);                                // 只补"当前界面字体"这一个占位项
+        Assert.All(vm.UiFonts, f => Assert.False(f.CanDelete));    // 占位项 = 系统字体口径（不可删）
         Assert.Contains(vm.UiFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultUiFamily);
-        Assert.Contains(vm.MonoFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultMonoFamily);
         Assert.NotNull(vm.SelectedUiFont);                        // 投影已就位（不是 null）
-        Assert.NotNull(vm.SelectedMonoFont);
+
+        vm.FontSource = FontSourceKind.Custom;
+        Assert.Empty(vm.UiFonts);                                 // 自定义侧：系统字体一个都不许出现
         Assert.Equal(12, vm.ThemeCards.Count);
     }
 
     [Fact]
-    public async Task 字体候选_界面与等宽都有候选_且投影当前字体()
+    public async Task 字体候选_装载候选_且投影当前字体_自定义侧只有导入字体()
     {
         // ⚠️ 这条用例**走真实系统字体枚举**（生产字体来源），断言"枚举 + 候选 + 投影"整条链路真的成立。
         //    它曾经因为"据说会吊住测试宿主"被换成两个弱用例（只断言"能往集合里塞假项"），
@@ -722,17 +725,21 @@ public class AppearanceViewModelTests : IDisposable
         await vm.EnsureFontsLoadedAsync();
 
         Assert.NotEmpty(vm.UiFonts);
-        Assert.NotEmpty(vm.MonoFonts);
-        Assert.Equal(vm.UiFonts.Count, vm.MonoFonts.Count);   // 两个下拉共用同一份候选
 
         // 投影：当前已应用字体必须在候选里被选中（否则下拉看起来"没生效"）
         Assert.NotNull(vm.SelectedUiFont);
         Assert.Equal(ThemeService.CurrentUiFont, vm.SelectedUiFont!.Family, ignoreCase: true);
-        Assert.NotNull(vm.SelectedMonoFont);
-        Assert.Equal(ThemeService.CurrentMonoFont, vm.SelectedMonoFont!.Family, ignoreCase: true);
 
         // 默认字体一定在候选里（回退链承诺它存在）
         Assert.Contains(vm.UiFonts, f => f.Family == FontCatalog.DefaultUiFamily);
+
+        // 自定义来源 = **只列导入的字体**（用户令 2026-09-21："不应该显示系统字体，而是什么都没有"）：
+        // 没导入过就是空；有导入项时也一个系统字体都不许出现。
+        vm.FontSource = FontSourceKind.Custom;
+        Assert.All(vm.UiFonts, f => Assert.True(f.IsImported, $"「{f.Family}」不是导入字体，却出现在自定义来源里"));
+
+        vm.FontSource = FontSourceKind.System;                    // 切回来 = 系统候选完整
+        Assert.NotEmpty(vm.UiFonts);
     }
 
     [Fact]
@@ -1031,19 +1038,21 @@ public class AppearanceViewModelTests : IDisposable
         ThemeService.ResetForTests();
         var vm = NewVm();
         vm.SelectedUiFont = FontOption(FontCatalog.DefaultUiFamily);
-        vm.SelectedMonoFont = FontOption(FontCatalog.DefaultMonoFamily);
         vm.ApplyFonts();
 
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
         var prefs = UiPreferenceStore.Load(out _);
         Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
+        // 等宽字体**不再可改**（用户令 2026-09-21："等宽字体不应该被更改"）：面板动作不碰它
+        Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
     }
 
     [Fact]
     public async Task 恢复默认字体_回默认族并落盘_且下拉显示默认族()
     {
-        // 用户令 2026-09-20 第三轮：字体卡加「恢复默认字体」——**不读下拉选中项**，直接把两个族回默认并落盘，
+        // 用户令 2026-09-20 第三轮：字体卡加「恢复默认字体」——**不读下拉选中项**，直接把界面字体回默认并落盘，
         // 且下拉里立刻显示默认族（候选没装载时走占位项投影这条路径；**不触发系统字体枚举**）。
+        // 等宽字体已固定为默认族（用户令 2026-09-21 删掉了那一行），复位顺手把它也归默认。
         ThemeService.ResetForTests();
         try
         {
@@ -1060,7 +1069,6 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
             Assert.Equal(FontCatalog.DefaultMonoFamily, prefs.Fonts.Mono);
             Assert.Equal(FontCatalog.DefaultUiFamily, vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
-            Assert.Equal(FontCatalog.DefaultMonoFamily, vm.SelectedMonoFont?.Family);
             Assert.Equal(string.Empty, vm.Status);                                  // 成功不播报（用户令）
         }
         finally
