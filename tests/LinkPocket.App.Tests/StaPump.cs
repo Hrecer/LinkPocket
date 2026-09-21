@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -43,5 +45,28 @@ internal static class StaPump
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         return tcs.Task;
+    }
+
+    /// <summary>
+    /// 泵消息 N 毫秒。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么不能只 <c>UpdateLayout()</c></b>：<c>FrameworkElement.LayoutUpdated</c> 由布局管理器在
+    /// <b>一次布局回合结束时经 Dispatcher 排入</b>，而直接调 <c>UpdateLayout()</c> 只跑完测量与排列、
+    /// 从不排那个通知 —— 于是"依赖布局后通知"的行为（<c>LocFit</c> 就在那条路径上）在测试里
+    /// <b>一次都不会被执行</b>，而断言会以"什么都没发生"的形式静默通过或假红。
+    /// 真实窗口有消息循环，所以这个坑只在测试里出现（见 <c>WARNINGS</c> 的"探针静默空跑"同族教训）。
+    /// </remarks>
+    public static void PumpFor(int ms)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < ms)
+        {
+            var frame = new DispatcherFrame();
+            Dispatcher.CurrentDispatcher.BeginInvoke(
+                new Action(() => frame.Continue = false), DispatcherPriority.Background);
+            Dispatcher.PushFrame(frame);
+            Thread.Sleep(5);
+        }
     }
 }

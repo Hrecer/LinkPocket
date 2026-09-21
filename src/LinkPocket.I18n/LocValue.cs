@@ -26,6 +26,16 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     public static LocValue Of(string key) => new(key, Array.Empty<object?>());
 
     /// <summary>
+    /// <b>成品文本</b>（不查表）：只给"本来就不是文案键"的东西用——例如
+    /// <c>LocFit</c> 的 <c>string</c> 入参（用户数据、外部传入的显示串）。
+    /// 文案一律走 <see cref="Of"/> / <c>Loc.K</c>：这条路径不参与"缺键显形"，误用等于绕过 G5。
+    /// </summary>
+    public static LocValue Literal(string text) => new(LiteralMarker, new object?[] { text });
+
+    /// <summary>成品文本通道的哨兵键（<c>@</c> 开头，与任何文案键都不可能撞）。</summary>
+    public const string LiteralMarker = "@literal";
+
+    /// <summary>
     /// 路径投影的保留键：参数是 <b>canonical</b> 路径（<c>@root/A</c>），渲染时经
     /// <see cref="BookmarkDisplay.Path"/> 投影成当前语言的显示串（根段换名、其余原样）。
     /// 与 XAML 的 <c>{loc:Segment}</c> 同一个概念——投影不是透传，更不是把显示串存进模型。
@@ -40,10 +50,31 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     /// <summary>路径投影值（canonical → 显示串）。</summary>
     public bool IsPath => Key == PathKey;
 
+    /// <summary>成品文本值（不查表；见 <see cref="Literal"/>）。</summary>
+    public bool IsLiteral => Key == LiteralMarker;
+
     /// <summary>在当前语言下取词——<b>只允许渲染边界调用</b>。嵌套的 <see cref="LocValue"/> 参数一起解析。</summary>
     public string Resolve() => IsEmpty ? string.Empty
         : IsPath ? BookmarkDisplay.Path(Args.Span[0] as string)
+        : IsLiteral ? Args.Span[0] as string ?? string.Empty
         : Loc.T(Key, Args.ToArray());
+
+    /// <summary>
+    /// 短式形态（<c>key#short</c>）的当前语言文本——降级链第 ③ 步用（<c>LocFit</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>无短式时回全长，绝不发警告</b>：短式是"放不下时的可选出路"，不是每条文案的义务。
+    /// 缺键的显形机制（<c>⟨key⟩</c> + Warn）留给真正的拼写错误 —— 让每条没有短式的文案都刷一条
+    /// 警告，等于把这个机制淹掉（观测面纪律：噪音会让真信号失效）。
+    /// </remarks>
+    public string ResolveShort()
+    {
+        if (IsPath || IsLiteral || string.IsNullOrEmpty(Key)) return Resolve();
+        return Loc.Short(Key, Args.ToArray());
+    }
+
+    /// <summary>这条文案在表里有没有短式变体（判据在表，不靠调用方记）。</summary>
+    public bool HasShortForm => !IsPath && !IsLiteral && !string.IsNullOrEmpty(Key) && Loc.HasShort(Key);
 }
 
 /// <summary>

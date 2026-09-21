@@ -109,6 +109,44 @@ internal static class LocBinding
         return mb;
     }
 
+    /// <summary>
+    /// 自适应文案（字面键）：版本触发器 + 键走 ConverterParameter。
+    /// 产物是<b>新的</b> <see cref="LocText"/> 实例——值变了才会被下游（LocFit）当成"文案换了"，
+    /// 因此"切语言 → 重新自适应一次"是绑定的自然结果，不需要任何宿主登记。
+    /// </summary>
+    public static MultiBinding FitLiteral(string key, string? shortKey)
+    {
+        var mb = new MultiBinding
+        {
+            Converter = FitResolver.Instance,
+            ConverterParameter = new KeyPair(key, shortKey),
+            Mode = BindingMode.OneWay,
+        };
+        mb.Bindings.Add(new Binding(nameof(LocTable.Version)) { Source = LocTable.Instance, Mode = BindingMode.OneWay });
+        return mb;
+    }
+
+    /// <summary>自适应文案（键来自绑定属性）：版本触发器 + 该路径的键值。</summary>
+    public static MultiBinding FromFitKeyPath(string? path, string? elementName = null)
+    {
+        var mb = new MultiBinding
+        {
+            Converter = FitResolver.Instance,
+            ConverterParameter = KeyPair.ShortByConvention,
+            Mode = BindingMode.OneWay,
+        };
+        mb.Bindings.Add(new Binding(nameof(LocTable.Version)) { Source = LocTable.Instance, Mode = BindingMode.OneWay });
+        if (!string.IsNullOrEmpty(path))
+            mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay, ElementName = elementName });
+        return mb;
+    }
+
+    /// <summary>一条自适应文案的两个键（<c>ShortByConvention</c> = 短式键按 <c>#short</c> 约定推）。</summary>
+    public readonly record struct KeyPair(string Key, string? ShortKey)
+    {
+        public static KeyPair ShortByConvention { get; } = new(string.Empty, null);
+    }
+
     private static MultiBinding New()
     {
         var mb = new MultiBinding { Converter = LocResolver.Instance, Mode = BindingMode.OneWay };
@@ -164,6 +202,55 @@ public sealed class SegmentExtension : MarkupExtension
 }
 
 /// <summary>
+/// 自适应文案通道（<c>loc:LocFit.Text</c> 专用）：<c>{loc:Fit some.key}</c> = 带可选短式变体的字面键。
+/// </summary>
+/// <remarks>
+/// 与 <see cref="LocExtension"/> 的差别只有一处：产物是 <see cref="LocText"/>（全长 + 短式两条通道），
+/// 而不是一个已经取好词的字符串。自适应随时要在两者之间换（取决于可用宽与字号），
+/// 一次性字符串到不了降级链的第 ③ 步（"换短式"）。
+/// <para>
+/// 短式键缺省 = <c>键 + "#short"</c>（有没有由表决定，不必逐处写）；要指向别的键就显式给 <see cref="ShortKey"/>。
+/// </para>
+/// </remarks>
+[MarkupExtensionReturnType(typeof(object))]
+public sealed class FitExtension : MarkupExtension
+{
+    public FitExtension() { }
+
+    public FitExtension(string key) => Key = key;
+
+    [ConstructorArgument("key")]
+    public string? Key { get; set; }
+
+    /// <summary>显式短式键；缺省 = <c>Key + "#short"</c>。</summary>
+    public string? ShortKey { get; set; }
+
+    public override object ProvideValue(IServiceProvider serviceProvider)
+    {
+        if (string.IsNullOrEmpty(Key)) return LocText.Empty;
+        return LocBinding.FitLiteral(Key!, ShortKey ?? Key + Loc.ShortSuffix).ProvideValue(serviceProvider);
+    }
+}
+
+/// <summary>键来自绑定属性的自适应文案通道：<c>{loc:FitKey LabelKey}</c>。</summary>
+[MarkupExtensionReturnType(typeof(object))]
+public sealed class FitKeyExtension : MarkupExtension
+{
+    public FitKeyExtension() { }
+
+    public FitKeyExtension(string path) => Path = path;
+
+    [ConstructorArgument("path")]
+    public string? Path { get; set; }
+
+    /// <summary>绑定源按名字指定（<c>{loc:FitKey HeaderKey, ElementName=Root}</c>）。</summary>
+    public string? ElementName { get; set; }
+
+    public override object ProvideValue(IServiceProvider serviceProvider)
+        => LocBinding.FromFitKeyPath(Path, ElementName).ProvideValue(serviceProvider);
+}
+
+/// <summary>
 /// 文案值解析器：<see cref="LocValue"/>（键 + 参数）→ 当前语言的文本。
 /// 与 <see cref="LocResolver"/> 同构，同样吃 <see cref="LocTable.Version"/> 作失效触发器。
 /// </summary>
@@ -192,4 +279,32 @@ public sealed class SegmentResolver : IMultiValueConverter
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException("projection is one-way: displayed text is not identity.");
+}
+
+/// <summary>
+/// 自适应文案解析器：产物是 <see cref="LocText"/>（键对，不是取好词的字符串）。
+/// 每次求值都造新实例，因此"语言版本变了 → 绑定重算 → 下游认作文案换了"这条链自然成立。
+/// </summary>
+public sealed class FitResolver : IMultiValueConverter
+{
+    public static FitResolver Instance { get; } = new();
+
+    /// <param name="values">[0] = 语言版本（仅作失效触发器）；[1]（可选）= 来自绑定属性的键。</param>
+    /// <param name="parameter"><see cref="LocBinding.KeyPair"/>：字面键 + 显式短式键；<c>ShortByConvention</c> = 键取绑定值。</param>
+    public object? Convert(object[] values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        var pair = parameter as LocBinding.KeyPair?;
+        var key = pair is { Key.Length: > 0 }
+            ? pair.Value.Key
+            : values.Length > 1 ? values[1] as string : null;
+        if (string.IsNullOrEmpty(key)) return LocText.Empty;
+
+        var shortKey = pair is { Key.Length: > 0 }
+            ? pair.Value.ShortKey
+            : key + Loc.ShortSuffix;
+        return LocText.Key(key!, shortKey);
+    }
+
+    public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
+        => throw new NotSupportedException("resolution is one-way: displayed text is not state.");
 }

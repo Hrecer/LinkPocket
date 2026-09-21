@@ -14,7 +14,9 @@ namespace LinkPocket.App.Tests;
 /// <remarks>
 /// <see cref="LocTable"/> 是进程级单例，用例结束必须复位到出厂语言——
 /// 否则语言会漏进下一个用例（与 <c>ThemeService.ResetForTests</c> 同一条纪律）。
+/// 也正因为它是进程级单例，本类必须与其它"碰语言"的类<b>串行</b>（见 <see cref="LocaleStateCollection"/>）。
 /// </remarks>
+[Collection(LocaleStateCollection.Name)]
 public sealed class I18nTests : IDisposable
 {
     public void Dispose() => LocaleService.Apply(AppLocales.Default);

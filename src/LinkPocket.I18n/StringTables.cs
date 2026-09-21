@@ -632,6 +632,9 @@ public static class StringTables
         new StringRow("trash.menu.restore", "还原", "Restore"),
         new StringRow("trash.menu.restoreToRoot", "还原到根目录", "Restore to root"),
         new StringRow("trash.menu.purge", "永久删除", "Delete permanently"),
+        // 短式变体（降级链第 ③ 步"换一句更短的话"）：中文侧没有可缩的余地，两条填同一句；
+        // 英文侧才真正短下来。有没有短式由**表里有没有这条键**决定，调用方不必逐处声明。
+        new StringRow("trash.menu.purge#short", "删除", "Delete"),
         new StringRow("count.selectedItems", "已选中 {0} 项", "{0} selected"),
         new StringRow("trash.status.count", "{0} · {1} 项", "{0} · {1} items"),
         new StringRow("trash.btn.restore.tip", "还原选中项到原位置 (Ctrl+R)", "Restore the selection to its original location (Ctrl+R)"),

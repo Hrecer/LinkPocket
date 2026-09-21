@@ -45,4 +45,20 @@ public static partial class Loc
         var key = Table.Locale != AppLocale.En || n == 1 ? oneKey : otherKey;
         return args.Length == 0 ? Table.Get(key) : string.Format(CultureInfo.InvariantCulture, Table.Get(key), args);
     }
+
+    /// <summary>短式变体键后缀（<c>count.views</c> → <c>count.views#short</c>）。</summary>
+    public const string ShortSuffix = "#short";
+
+    /// <summary>这条文案有没有短式变体（<c>key#short</c> 在表里）。</summary>
+    public static bool HasShort(string key) => Table.TryGet(key + ShortSuffix, out _);
+
+    /// <summary>
+    /// 短式变体的文本；<b>表里没有就回全长</b>（降级链的第 ③ 步是"有则换、无则跳过"，不是义务）。
+    /// </summary>
+    public static string Short(string key, params object?[] args)
+    {
+        var shortKey = key + ShortSuffix;
+        if (!Table.TryGet(shortKey, out var text)) return args.Length == 0 ? Table.Get(key) : T(key, args);
+        return args.Length == 0 ? text : string.Format(CultureInfo.InvariantCulture, text, args);
+    }
 }
