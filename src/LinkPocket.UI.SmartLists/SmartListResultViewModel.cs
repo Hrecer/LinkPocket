@@ -9,6 +9,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels
 {
@@ -28,7 +29,7 @@ namespace LinkPocket.ViewModels
         private readonly INavigationService? _navigation;
         private readonly IDialogService? _dialogs;
         private readonly IContentLocator? _locator;
-        private readonly Func<string?, string> _resolveFolderPath;
+        private readonly Func<string?, LocValue> _resolveFolderPath;
         private bool _isDeleting;
 
         /// <summary>删除进行中：命令可用性与防重入共用同一开关（删除过程中禁用再次触发）。</summary>
@@ -48,8 +49,8 @@ namespace LinkPocket.ViewModels
         private bool _isLoading;
         private bool _hasData;
         private ObservableCollection<LinkItem> _items = new();
-        private string _title = "智能列表";
-        private string _emptyMessage = "暂无数据";
+        private LocValue _title = Loc.K("smartlists.title");
+        private LocValue _emptyMessage = Loc.K("smartlists.empty");
         private int _totalCount;
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -63,18 +64,19 @@ namespace LinkPocket.ViewModels
 
         public string ListId => _listId;
 
-        public string Title
+        /// <summary>结果页标题（键；语言一变自己重算）。</summary>
+        public LocValue Title
         {
             get => _title;
-            set { _title = value; OnPropertyChanged(); }
+            set { if (!_title.Equals(value)) { _title = value; OnPropertyChanged(); } }
         }
 
-        private string _subtitle = "";
+        private LocValue _subtitle;
         /// <summary>列表语义的灰色提示（结果页标题右侧展示，与入口卡片副标题同一数据源）。</summary>
-        public string Subtitle
+        public LocValue Subtitle
         {
             get => _subtitle;
-            set { _subtitle = value; OnPropertyChanged(); }
+            set { if (!_subtitle.Equals(value)) { _subtitle = value; OnPropertyChanged(); } }
         }
 
         public bool IsLoading
@@ -95,10 +97,11 @@ namespace LinkPocket.ViewModels
             set { _items = value; OnPropertyChanged(); }
         }
 
-        public string EmptyMessage
+        /// <summary>空态文案（键 + 参数；语言一变自己重算）。</summary>
+        public LocValue EmptyMessage
         {
             get => _emptyMessage;
-            set { _emptyMessage = value; OnPropertyChanged(); }
+            set { if (!_emptyMessage.Equals(value)) { _emptyMessage = value; OnPropertyChanged(); } }
         }
 
         public int TotalCount
@@ -131,8 +134,8 @@ namespace LinkPocket.ViewModels
         /// <summary>右侧详情栏（复用搜索页同一 DetailSidebar 数据契约）。</summary>
         public SearchDetailsViewModel Details { get; } = new();
 
-        public SmartListResultViewModel(EngineClient client, string listId, string title,
-            INavigationService? navigation, IDialogService? dialogs, Func<string?, string> resolveFolderPath,
+        public SmartListResultViewModel(EngineClient client, string listId, LocValue title,
+            INavigationService? navigation, IDialogService? dialogs, Func<string?, LocValue> resolveFolderPath,
             IContentLocator? locator = null)
         {
             _client = client;
@@ -194,7 +197,7 @@ namespace LinkPocket.ViewModels
         {
             OnPropertyChanged(nameof(HasSelection));
             var item = PrimarySelected;
-            Details.UpdateFrom(item, item == null ? "" : _resolveFolderPath(item.ListId));
+            Details.UpdateFrom(item, item == null ? LocValue.Empty : _resolveFolderPath(item.ListId));
             CommandRefresh.Request();
         }
 
@@ -239,11 +242,11 @@ namespace LinkPocket.ViewModels
                 {
                     EmptyMessage = _listId switch
                     {
-                        "recently_added" => "最近 7 天没有添加新书签",
-                        "recently_visited" => "最近 7 天没有访问过书签",
-                        "recently_edited" => "最近 7 天没有修改过书签",
-                        "most_visited" => "暂无访问记录",
-                        _ => "暂无数据"
+                        "recently_added" => Loc.K("smartlists.empty.added"),
+                        "recently_visited" => Loc.K("smartlists.empty.visited"),
+                        "recently_edited" => Loc.K("smartlists.empty.edited"),
+                        "most_visited" => Loc.K("smartlists.empty.mostVisited"),
+                        _ => Loc.K("smartlists.empty")
                     };
                     if (_items.Count > 0) Items = new ObservableCollection<LinkItem>();
                     HasData = false;
@@ -326,13 +329,13 @@ namespace LinkPocket.ViewModels
             var result = await _locator.LocateLinkAsync(item.LinkId);
             if (result.IsSuccess) return;
 
-            _dialogs?.Alert("跳转", result.Message ?? result.Status switch
+            _dialogs?.Alert(Loc.T("common.jump"), (result.Message ?? result.Status switch
             {
-                LocateStatus.NotFound => "未找到该链接 ID",
-                LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-                LocateStatus.Failed => "locate failed，请稍后重试",
-                _ => "定位未完成",
-            });
+                LocateStatus.NotFound => Loc.K("locate.notFoundLink"),
+                LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
+                LocateStatus.Failed => Loc.K("locate.failedRetry"),
+                _ => Loc.K("locate.incomplete"),
+            }).Resolve());
         }
 
         /// <summary>「打开网站」：默认浏览器打开并记录一次访问（与搜索页侧栏同口径）。</summary>
@@ -363,7 +366,7 @@ namespace LinkPocket.ViewModels
             if (item == null) return;
 
             var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
-            if (_dialogs == null || !_dialogs.Confirm("删除链接", $"将链接「{name}」移入回收站吗？")) return;
+            if (_dialogs == null || !_dialogs.Confirm(Loc.T("common.title.deleteLink"), Loc.T("browser.confirm.linkToTrash", name))) return;
 
             IsDeleting = true;
             try

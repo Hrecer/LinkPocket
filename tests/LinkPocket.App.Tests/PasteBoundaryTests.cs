@@ -57,7 +57,7 @@ public class PasteBoundaryTests
             vm.PasteCommand.Execute(null);
 
             Assert.True(await WaitUntilAsync(() => dialogs.Alerts.Count > 0, TimeSpan.FromSeconds(5)),
-                $"成环粘贴应明确弹窗说明（状态：{vm.StatusText}）");
+                $"成环粘贴应明确弹窗说明（状态：{vm.StatusText.Resolve()}）");
             var (title, message) = dialogs.Alerts[0];
             Assert.Equal("无法移动", title);
             Assert.Contains("子文件夹", message);
@@ -93,7 +93,7 @@ public class PasteBoundaryTests
             vm.PasteCommand.Execute(null);
 
             Assert.True(await WaitUntilAsync(() => dialogs.Alerts.Count > 0, TimeSpan.FromSeconds(5)),
-                $"成环复制应明确弹窗说明（状态：{vm.StatusText}）");
+                $"成环复制应明确弹窗说明（状态：{vm.StatusText.Resolve()}）");
             Assert.Equal("无法复制", dialogs.Alerts[0].Title);
 
             // 未产生副本：A 下只有 B 一个子目录
@@ -132,7 +132,7 @@ public class PasteBoundaryTests
             Assert.True(await WaitUntilAsync(
                     async () => (await client.LinkGetAsync(l.LinkId)).ListId == b.FolderId,
                     TimeSpan.FromSeconds(5)),
-                $"合法项应照常粘贴进目标目录（状态：{vm.StatusText}）");
+                $"合法项应照常粘贴进目标目录（状态：{vm.StatusText.Resolve()}）");
             Assert.True(await WaitUntilAsync(() => dialogs.Alerts.Count > 0, TimeSpan.FromSeconds(5)),
                 "非法项应单独弹窗说明");
             Assert.Contains("A", dialogs.Alerts[0].Message);
@@ -162,8 +162,8 @@ public class PasteBoundaryTests
             vm.CutCommand.Execute(null);
             vm.PasteCommand.Execute(null);   // 同目录
 
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("剪切的项目已在当前文件夹中"), TimeSpan.FromSeconds(5)),
-                $"同目录粘贴应给明确提示（状态：{vm.StatusText}）");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("剪切的项目已在当前文件夹中"), TimeSpan.FromSeconds(5)),
+                $"同目录粘贴应给明确提示（状态：{vm.StatusText.Resolve()}）");
             Assert.Empty(dialogs.Alerts);    // 无操作 ≠ 错误：不弹窗
             Assert.NotNull(vm.Clipboard.BrowserPayload);
         }
@@ -188,8 +188,8 @@ public class PasteBoundaryTests
             vm.CopyCommand.Execute(null);
             vm.PasteCommand.Execute(null);   // 同目录复制 = 允许（Explorer 同口径）
 
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
-                $"同目录复制应成功（状态：{vm.StatusText}）");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
+                $"同目录复制应成功（状态：{vm.StatusText.Resolve()}）");
             Assert.Empty(dialogs.Alerts);
             var names = (await client.FolderContentsAsync(null)).SubFolders.Select(f => f.Name).ToList();
             Assert.Contains("工作", names);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -19,7 +20,7 @@ public sealed class BrowserClipboardController
     private readonly Func<IReadOnlyList<DragItem>> _buildItems;
     private readonly Func<string?> _sourceFolderId;
     private readonly Action<IReadOnlyList<DragItem>?> _applyCutVisual;
-    private readonly Action<string> _setStatus;
+    private readonly Action<LocValue> _setStatus;
 
     /// <param name="clipboard">应用级剪贴板（载荷存储）。</param>
     /// <param name="buildItems">拖动集合的唯一出口（与拖拽共用，树里选中而主栏不可见的项同样可复制/剪切）。</param>
@@ -30,7 +31,7 @@ public sealed class BrowserClipboardController
         Func<IReadOnlyList<DragItem>> buildItems,
         Func<string?> sourceFolderId,
         Action<IReadOnlyList<DragItem>?> applyCutVisual,
-        Action<string> setStatus)
+        Action<LocValue> setStatus)
     {
         _clipboard = clipboard;
         _buildItems = buildItems;
@@ -55,7 +56,7 @@ public sealed class BrowserClipboardController
         if (items.Count == 0) return;
         _clipboard.SetBrowserPayload(BuildPayload(items, isCut: true));
         _applyCutVisual(items);
-        _setStatus($"已剪切 {items.Count} 项（Ctrl+V 粘贴到目标文件夹）");
+        _setStatus(Loc.K("browser.clip.cut", items.Count));
     }
 
     public void Copy()
@@ -64,7 +65,7 @@ public sealed class BrowserClipboardController
         if (items.Count == 0) return;
         _clipboard.SetBrowserPayload(BuildPayload(items, isCut: false));
         _applyCutVisual(null);   // 复制覆盖剪切，清除半透明视觉
-        _setStatus($"已复制 {items.Count} 项");
+        _setStatus(Loc.K("browser.clip.copied", items.Count));
     }
 
     /// <summary>取消剪切：清空剪贴板载荷（复制载荷不受影响——Windows 里 Esc 只取消剪切），复位行半透明视觉。</summary>
@@ -72,7 +73,7 @@ public sealed class BrowserClipboardController
     {
         _clipboard.SetBrowserPayload(null);
         _applyCutVisual(null);
-        _setStatus("已取消剪切");
+        _setStatus(Loc.K("browser.clip.cutCancelled"));
     }
 
     private Managers.BrowserClipboardPayload BuildPayload(IReadOnlyList<DragItem> items, bool isCut) => new()

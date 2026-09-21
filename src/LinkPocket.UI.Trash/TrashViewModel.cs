@@ -9,6 +9,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.Services;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -70,9 +71,6 @@ public partial class TrashViewModel : INotifyPropertyChanged
         // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（行 + 树 + 右栏 + 命令可用性）
         Selection.Changed += ApplySelectionToView;
 
-        // 语言一变，VM 侧派生的显示文本必须重发通知：绑定只在源值变化时重读，而换语言恰恰是"源值变了、
-        // 属性名没变"。**漏了哪一条由探针 language 套件的"英文零中文残留"总闸抓住，不靠人记。**
-        LocaleService.RegisterReprojector(this, ReprojectLocalizedText);
 
         GoBackCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoForward()), () => Controller.CanGoForward);
@@ -187,18 +185,18 @@ public partial class TrashViewModel : INotifyPropertyChanged
         private set { if (_hasError != value) { _hasError = value; OnPropertyChanged(); } }
     }
 
-    private string _errorMessage = string.Empty;
-    public string ErrorMessage
+    private LocValue _errorMessage;
+    public LocValue ErrorMessage
     {
         get => _errorMessage;
-        private set { if (_errorMessage != value) { _errorMessage = value; OnPropertyChanged(); } }
+        private set { if (!_errorMessage.Equals(value)) { _errorMessage = value; OnPropertyChanged(); } }
     }
 
-    private string _statusText = string.Empty;
-    public string StatusText
+    private LocValue _statusText;
+    public LocValue StatusText
     {
         get => _statusText;
-        internal set { if (_statusText != value) { _statusText = value; OnPropertyChanged(); } }
+        internal set { if (!_statusText.Equals(value)) { _statusText = value; OnPropertyChanged(); } }
     }
 
     private TrashPane _activePane = TrashPane.Main;
@@ -339,7 +337,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
         else
         {
             IsPathInvalid = true;
-            StatusText = $"路径不存在：{invalidSegment}";
+            StatusText = Loc.K("browser.err.pathSegmentMissing", invalidSegment);
         }
     }
 
@@ -374,7 +372,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
 
     private TrashRowViewModel? _contextRow;
 
-    /// <summary>右键命中的行（永久删除文案按"这一次会删掉什么"算）。</summary>
+    /// <summary>右键命中的行（永久删除文案按Loc.T("browser.dialog.whatWillBeDeleted")算）。</summary>
     public void SetContextRow(TrashRowViewModel? row) => _contextRow = row;
 
     private void ShowContextMenuForSelection()

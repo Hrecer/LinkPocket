@@ -19,15 +19,30 @@ public class DetailSidebarRow : INotifyPropertyChanged
     /// <summary>行的**文案键**（<c>ui.noun.*</c>）；模板经 <c>{loc:LocKey}</c> 投影，切语言自动重算。</summary>
     public string LabelKey { get; init; } = "";
 
-    private string _value = "";
-    /// <summary>行值：异步补拉时原位更新（INPC 通知，无需重建整行；值未变不发多余通知）。</summary>
-    public string Value
+    private string _valueData = "";
+
+    /// <summary>行的<b>用户数据</b>值（ID / 时间 / 路径 / 描述）：永不翻译，异步补拉时原位更新。</summary>
+    public string ValueData
     {
-        get => _value;
+        get => _valueData;
         set
         {
-            if (_value == value) return;
-            _value = value;
+            if (_valueData == value) return;
+            _valueData = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private LocValue _valueCopy;
+
+    /// <summary>行的<b>文案</b>值（「从未」「读取中…」「11 个链接」）：取词发生在渲染边界。</summary>
+    public LocValue ValueCopy
+    {
+        get => _valueCopy;
+        set
+        {
+            if (_valueCopy.Equals(value)) return;
+            _valueCopy = value;
             OnPropertyChanged();
         }
     }
@@ -39,7 +54,7 @@ public class DetailSidebarRow : INotifyPropertyChanged
 
     /// <summary>非空时该行末尾显示复制按钮。</summary>
     public ICommand? CopyCommand { get; init; }
-    public string CopyToolTip { get; init; } = "复制";
+    public LocValue CopyToolTip { get; init; } = Loc.K("common.copy");
     public bool HasCopy => CopyCommand != null;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -81,7 +96,33 @@ public class DetailSidebarModel : ActionSurfaceModel
     public bool UseTrashedIconTone { get; protected set; }
 
     // —— 单选公共 ——
-    public string DisplayName { get; protected set; } = "";
+    private string _displayName = "";
+
+    /// <summary>标题的<b>用户数据</b>部分（选中项自己的名字：文件夹名 / 书签标题）。</summary>
+    public string DisplayNameData
+    {
+        get => _displayName;
+        protected set
+        {
+            if (_displayName == value) return;
+            _displayName = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private LocValue _displayNameCopy;
+
+    /// <summary>标题的<b>文案</b>部分（「已选中 3 项」这类由界面说的句子）。</summary>
+    public LocValue DisplayNameCopy
+    {
+        get => _displayNameCopy;
+        protected set
+        {
+            if (_displayNameCopy.Equals(value)) return;
+            _displayNameCopy = value;
+            OnPropertyChanged();
+        }
+    }
     public string IdText { get; protected set; } = "";
     public BitmapImage? Favicon { get; protected set; }
     public bool HasFavicon => Favicon != null;
@@ -118,7 +159,7 @@ public class DetailSidebarModel : ActionSurfaceModel
         Rows = rows;
         OnPropertyChanged(nameof(Rows));
     }
-    /// <summary>按**文案键**找行（不按显示文本：换了语言"位置"就不再是"位置"，按文本找会静默失联）。</summary>
+    /// <summary>按**文案键**找行（不按显示文本：换了语言Loc.K("ui.noun.location")就不再是"位置"，按文本找会静默失联）。</summary>
     protected DetailSidebarRow? FindRow(string labelKey)
     {
         foreach (var r in Rows)
@@ -150,7 +191,8 @@ public class DetailSidebarModel : ActionSurfaceModel
         IsReadOnly = false;
         UseTrashedIconTone = false;
         ResetActionSurface();
-        DisplayName = "";
+        DisplayNameData = "";
+        DisplayNameCopy = LocValue.Empty;
         IdText = "";
         UrlText = "";
         DescriptionText = "";
@@ -170,7 +212,8 @@ public class DetailSidebarModel : ActionSurfaceModel
         OnPropertyChanged(nameof(IsLink));
         OnPropertyChanged(nameof(IsReadOnly));
         OnPropertyChanged(nameof(UseTrashedIconTone));
-        OnPropertyChanged(nameof(DisplayName));
+        OnPropertyChanged(nameof(DisplayNameData));
+        OnPropertyChanged(nameof(DisplayNameCopy));
         OnPropertyChanged(nameof(IdText));
         OnPropertyChanged(nameof(Favicon));
         OnPropertyChanged(nameof(HasFavicon));

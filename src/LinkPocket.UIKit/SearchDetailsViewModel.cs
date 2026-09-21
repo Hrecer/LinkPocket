@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -86,7 +88,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
     /// <summary>
     /// 用选中的搜索结果行更新详情栏。pathText 由使用方解析（搜索页与表格「位置」列同一口径）。
     /// </summary>
-    public void UpdateFrom(LinkItem? item, string pathText)
+    public void UpdateFrom(LinkItem? item, LocValue pathText)
     {
         _generation++;
         var gen = _generation;
@@ -102,7 +104,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
         ConfigureSidebarActionLabels(isFolder: false);   // 搜索结果恒为链接（共享动作面缺省配置）
         // 「跳转」= 进目录 + 选中该行（经使用方注入的 JumpCommand）；单一目标动作 → 只在单选态开。
         ShowJumpAction = true;
-        DisplayName = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
+        DisplayNameData = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
         IdText = item.LinkId;
         UrlText = item.Url;
         DescriptionText = item.Description ?? "";
@@ -110,12 +112,12 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
         SetRows(new List<DetailSidebarRow>
         {
-            new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = pathText },
-            new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = FormatTime(item.UpdatedAt) },
-            new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = item.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
-            new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = $"{item.VisitCount} 次" },
-            new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = FormatTime(item.CreatedAt) },
-            new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+            new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueCopy = pathText },
+            new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = FormatTime(item.UpdatedAt) },
+            new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = item.LastVisitedAt is null ? "" : FormatTime(item.LastVisitedAt.Value), ValueCopy = item.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty },
+            new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueCopy = Loc.K("count.viewsN", item.VisitCount) },
+            new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = FormatTime(item.CreatedAt) },
+            new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId") },
         });
 
         ApplyPageLayout();   // 排布位在 RaiseAll 之前落地（RaiseAll 里的动作面通知才带得上它）
@@ -168,7 +170,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
         ShowDeleteAction = true;
         // 多选**不提供跳转**（跳转只对单个目标有意义；顶部药丸的 CanExecute 也是"恰一项"）
         ShowJumpAction = false;
-        DisplayName = $"已选中 {items.Count} 项";
+        DisplayNameCopy = Loc.K("count.selected", items.Count);
         IdText = string.Empty;
         UrlText = string.Empty;
         DescriptionText = string.Empty;

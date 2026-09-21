@@ -56,7 +56,7 @@ public sealed class AppHost
         // 退出时由 App.OnExit 调 LpLog.Shutdown() 收尾（刷盘 + 卸管道）。
         LinkPocket.Composition.EngineComposer.ConfigureLogging(
             LinkPocket.Composition.EngineComposer.HostLoggingOptions());
-        LpLog.Info("应用启动：日志管道已装配", category: "app.lifecycle");
+        LpLog.Info("application startup: log pipeline configured", category: "app.lifecycle");
 
         // 组合根 = 全仓库唯一允许 new 具体实现的地方。
         // 引擎装配（DB 工厂 → 九模块 → EngineCore → 编排层 → EngineClient/EngineWire）由
@@ -69,7 +69,7 @@ public sealed class AppHost
         // null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），
         // 若未来选项被改动导致 null，这里立即失败而不是把 null 埋进 AppHost.Wire 等运行期 NRE。
         if (composed.Wire is null)
-            throw new InvalidOperationException("默认装配必须产出 EngineWire（ComposeOptions.BuildWire 被关闭？）");
+            throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
         var host = new AppHost(composed.Client, composed.Wire);
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新

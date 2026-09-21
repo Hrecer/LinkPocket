@@ -64,9 +64,15 @@
                                 </Grid>
                             </Border>
                             <!-- 标题 = 可拖选的展示型文本（标题长时同样可拖选复制局部） -->
-                            <views:SelectableText Text="{Binding Title, Mode=OneWay}" FontSize="20" FontWeight="SemiBold"
-                                                  VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
-                                                  Foreground="{DynamicResource App.Text.Primary}"/>
+                            <Grid>
+                                <!-- 标题：用户数据（书签标题 / 文件夹名）或「无名称」兜底，两者互斥 -->
+                                <views:SelectableText Text="{Binding TitleData, Mode=OneWay}" FontSize="20" FontWeight="SemiBold"
+                                                      VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                      Foreground="{DynamicResource App.Text.Primary}"/>
+                                <views:SelectableText Text="{loc:Value TitleCopy}" FontSize="20" FontWeight="SemiBold"
+                                                      VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                      Foreground="{DynamicResource App.Text.Primary}"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
 

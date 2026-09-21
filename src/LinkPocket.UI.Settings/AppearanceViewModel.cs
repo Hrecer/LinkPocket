@@ -62,7 +62,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         _cardBackground = ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase));
 
         var f = table.Families;
-        Summary = $"主色 H{f.AccentHue:F0} · 支撑 H{f.SupportHue:F0}";
+        Summary = Loc.K("appearance.palette.dualHue", f.AccentHue.ToString("F0"), f.SupportHue.ToString("F0"));
     }
 
     /// <summary>
@@ -83,7 +83,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         Accent = default;
         Base = default;
         Text = default;
-        Summary = string.Empty;
+        Summary = LocValue.Empty;
     }
 
     /// <summary>建第 12 张「自选颜色」卡（唯一入口；它在主题网格里排最后一张）。</summary>
@@ -218,7 +218,7 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     public Color Text { get; }
 
     /// <summary>一行摘要（主色/支撑色相）。</summary>
-    public string Summary { get; }
+    public LocValue Summary { get; }
 
 }
 
@@ -247,13 +247,13 @@ public sealed class ColorSlotViewModel
     public bool HasColor => Color is not null;
 
     /// <summary>槽位序号文案（1 起）。</summary>
-    public string Label => $"颜色 {Index + 1}";
+    public LocValue Label => Loc.K("appearance.slot.n", Index + 1);
 
     /// <summary>HEX 文案（空槽 = 空串：**绝不**拿 <c>#000000</c> 这类假值冒充"已选"）。</summary>
     public string Hex => Color is { } c ? $"#{c.R:X2}{c.G:X2}{c.B:X2}" : string.Empty;
 
     /// <summary>槽位数值文案（空槽 = 「未选」）。</summary>
-    public string ValueText => IsEmpty ? "未选" : Hex;
+    public LocValue ValueText => IsEmpty ? Loc.K("common.noneSelected") : Loc.K("appearance.slot.hex", Hex);
 }
 
 /// <summary>字体来源（**先选来源，再在来源里选字体**）。</summary>
@@ -325,7 +325,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     private string _selectedThemeId = ThemeCatalog.DefaultId;
     private FontOptionViewModel? _selectedUiFont;
-    private string _status = string.Empty;
+    private LocValue _status;
     private bool _hasDiagnostics;
 
     /// <summary>
@@ -517,7 +517,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // 失败可重试：标志退回 false，再次展开下拉就会重跑（而不是永久卡在空列表）
             _fontsLoaded = false;
             LpLog.Error("failed to load font candidates", ex, LogCategory);
-            Status = $"字体列表装载失败：{ex.GetBaseException().Message}";
+            Status = Loc.K("appearance.status.fontLoadFailed");
         }
     }
 
@@ -558,7 +558,6 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // 先投影、后播报：通知的语义是"来源已经换了"，而换了就意味着候选池与当前字体都已就位。
             // 反过来（先 Raise 再投影）会让监听方在这一瞬看到"来源=系统、候选还是上一份（空）"的半成品，
             // 面板据此往下拉里塞一个不在候选里的选中项 —— ComboBox 会就此钉死成空白框。
-            ProjectFontPools();
             ProjectCurrentFonts(ThemeService.CurrentUiFont);
             Raise(nameof(FontSource));
             Raise(nameof(FontSourceIndex));
@@ -583,9 +582,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     public bool IsCustomFontSource => _fontSource == FontSourceKind.Custom;
 
     /// <summary>当前来源的说明文案（导入/删除按钮的可用性也据此）。</summary>
-    public string FontSourceHint => _fontSource == FontSourceKind.System
-        ? "系统已装字体：只读（属于系统，本应用不修改、也删不掉）"
-        : "自定义字体：导入的字体文件存在本应用目录里，可随时删除（不会动系统字体）；还没导入过就是空的";
+    public LocValue FontSourceHint => _fontSource == FontSourceKind.System
+        ? Loc.K("appearance.font.systemHint")
+            : Loc.K("appearance.font.customHint");
 
     // ── 「自动调整颜色」开关 ───────────────────────────────────────────
 
@@ -611,12 +610,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
                 ThemeService.SetPaletteMode(target);
                 RepojectAllThemeCards();
                 // 状态行不播报成功 —— 开关自身的开/关位置 + 卡片里的说明句已经说清了；失败照报（catch 里那条）。
-                Status = string.Empty;
+                Status = LocValue.Empty;
             }
             catch (Exception ex)
             {
                 LpLog.Error($"failed to switch palette application mode (auto={value})", ex, LogCategory);
-                Status = $"切换失败：{ex.Message}";
+                Status = Loc.K("appearance.status.switchFailed");
             }
             Raise(nameof(AutoAdjustColors));
             Raise(nameof(PaletteModeHint));
@@ -624,9 +623,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>开关的说明文案（两种模式各自说清"界面会怎么变"）。</summary>
-    public string PaletteModeHint => AutoAdjustColors
-        ? "已开启（缺省）：按明度档位自动重排你的配色"
-        : "已关闭：尽量原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）";
+    public LocValue PaletteModeHint => AutoAdjustColors
+        ? Loc.K("appearance.palette.autoOn")
+        : Loc.K("appearance.palette.autoOff");
 
     /// <summary>把所有主题卡的色点按**当前模式**重投影（切换开关 / 重新应用主题后调用）。</summary>
     private void RepojectAllThemeCards()
@@ -712,10 +711,10 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     }
 
     /// <summary>结果播报（状态栏口径）。</summary>
-    public string Status
+    public LocValue Status
     {
         get => _status;
-        private set { _status = value; Raise(nameof(Status)); }
+        private set { if (!_status.Equals(value)) { _status = value; Raise(nameof(Status)); } }
     }
 
     /// <summary>当前草稿槽数（用于「4 色 / 5 色」分段的显示）。</summary>
@@ -821,7 +820,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             ThemeService.Apply(definition);
-            SetCustomActive(false);   // 互斥：用预设 = 自选区让出"当前使用"
+            SetCustomActive(false);   // 互斥：用预设 = 自选区让出Loc.K("common.current")
             SelectedThemeId = card.Id;
             // ⚠️ 换主题之后**必须**刷新"当前外观"那一族投影（名字 / 起点按钮文案 / 说明句 / 槽数）：
             //    漏掉这一步，换了主题后按钮文案仍是上一套外观的名字。
@@ -839,7 +838,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             // 写偏好失败不静默（观测面纪律），且保持原主题（Apply 已成功但偏好没落盘 → 如实说清）
             LpLog.Error($"failed to save preferences after applying theme '{card.Name}'", ex, LogCategory);
-            Status = $"主题已应用，但偏好保存失败：{ex.Message}";
+            Status = Loc.K("appearance.status.themeAppliedPrefFailed");
         }
     }
 
@@ -869,7 +868,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
         _draft.Clear();
         _draft.AddRange(slots.Select(c => (Color?)ToMedia(c)));
-        MarkDraftDirty();                 // 先标脏：ApplyDraft 的门槛/诊断按"草稿"口径走，成功后才清
+        MarkDraftDirty();                 // 先标脏：ApplyDraft 的门槛/诊断按Loc.K("common.draft")口径走，成功后才清
         RebuildSlots();
 
         ApplyDraft();                     // 唯一应用入口（空槽门槛 + 校验 + 归属切换 + 落盘）
@@ -888,7 +887,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         var missing = _draft.Count(c => c is null);
         if (missing > 0)
         {
-            Status = $"还有 {missing} 个颜色没选（点色槽用取色盘选）";
+            Status = Loc.K("appearance.palette.missingSlots", missing);
             // 与 RefreshDraftDiagnostics 同一口径：空槽是"还没选完"，**不是**"配色不合法"，
             // 所以这里不把 palette-size 那条红色错误摆出来。
             DiagnosticLines = new[] { new DiagnosticLine("·", EmptySlotsHint(missing)) };
@@ -901,15 +900,15 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ShowDiagnostics(issues);
         if (ThemeValidator.HasErrors(issues))
         {
-            Status = Loc.T("appearance.status.paletteInvalid");
+            Status = Loc.K("appearance.status.paletteInvalid");
             return;
         }
 
         try
         {
             ThemeService.Apply(definition);
-            SetCustomActive(true);    // 互斥：用自选配色 = 预设卡让出"当前使用"（自选颜色卡亮起）
-            ClearDraftDirty();        // 草稿 = 当前值，不再有"未应用改动"
+            SetCustomActive(true);    // 互斥：用自选配色 = 预设卡让出Loc.K("common.current")（自选颜色卡亮起）
+            ClearDraftDirty();        // 草稿 = 当前值，不再有Loc.K("common.draftUnapplied")
             SelectedThemeId = definition.Id;
             ProjectAppliedTheme();    // 名字 / 按钮文案 / 说明句 / 槽数一起跟上（换主题的公共出口）
             RepojectAllThemeCards();  // 色点按当前模式重投影（与 ApplyThemeCard 同一口径）
@@ -921,7 +920,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         catch (Exception ex)
         {
             LpLog.Error("failed to save preferences after applying the custom palette", ex, LogCategory);
-            Status = $"配色已应用，但偏好保存失败：{ex.Message}";
+            Status = Loc.K("appearance.status.paletteAppliedPrefFailed");
         }
     }
 
@@ -1054,12 +1053,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             RepojectAllThemeCards();         // 色点按当前模式重投影（与点主题卡同一口径）
             ThemeService.SaveCurrentPreferences();
             // 成功不播报 —— 主题卡高亮 + 「当前使用」徽标就是结果
-            Status = string.Empty;
+            Status = LocValue.Empty;
         }
         catch (Exception ex)
         {
             LpLog.Error("failed to fall back to the default theme after clearing colours", ex, LogCategory);
-            Status = $"已清空颜色，但回默认主题失败：{ex.Message}";
+            Status = Loc.K("appearance.status.clearedFallbackFailed");
         }
 
         RefreshDraftDiagnostics();
@@ -1160,8 +1159,6 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             var pool = option.IsImported ? CustomUiFonts : SystemUiFonts;
             pool.Add(option);
         }
-        ProjectFontPools();
-
         ProjectCurrentFonts(currentUi);
     }
 
@@ -1202,9 +1199,17 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         // 候选还没装载（池为空）时先补一个**占位项**：下拉框里必须始终看得见"现在用的是什么字体"，
         // 否则空白框会被读成"拉取不到任何字体"。
         // ⚠️ 占位项要真的进集合：combo 的 `SelectedItem` 指向一个**不在 Items 里**的对象时
-        //    WPF 会把它显示成空（实测组合框 `SelectedItem` 是占位项、界面却是空白）。
+        //    WPF 会把它显示成**空白**（实测：SelectedItem 是占位项、SelectedIndex 却是 -1、框里没字）。
         EnsureActivePlaceholder(currentUi);
+        // 补完必须**重新镜像可见池**：占位项落在"它自己那一侧"的池里，而可见池是那一侧的副本，
+        // 不重镜像就会出现"选中项不在 Items 里"（=上面那条空洞）。
+        ProjectFontPools();
 
+        // 池被重建过（清空再补齐）：控件内部的 SelectedIndex 会停在 -1，而 SelectedItem 仍指着旧对象 ——
+        // 框里画的是空白。**同值重写不算变化**（实测：SelectedItem ∈ Items、同一实例、SelectedIndex 仍是 -1），
+        // 所以先置空再赋值：绑定才会把"池里的那一项"重新推进控件（先投影、后播报，仍由本 VM 单驱动）。
+        _selectedUiFont = null;
+        Raise(nameof(SelectedUiFont));
         SelectedUiFont = PickOrPlaceholder(UiFonts, currentUi, FontCatalog.DefaultUiFamily);
 
         static FontOptionViewModel? PickOrPlaceholder(
@@ -1263,13 +1268,13 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))
                              ?? SelectedUiFont;
             // 导入成功不播报 ——「自定义字体」侧的下拉出现该项就是结果；失败照报
-            Status = string.Empty;
+            Status = LocValue.Empty;
             return true;
         }
         catch (Exception ex)
         {
             LpLog.Error($"font import failed: {path}", ex, LogCategory);
-            Status = $"导入失败：{ex.Message}";
+            Status = Loc.K("backup.importFailed");
             return false;
         }
     }
@@ -1286,7 +1291,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         ArgumentNullException.ThrowIfNull(option);
         if (!option.CanDelete)
         {
-            Status = Loc.T("font.systemNotDeletable");
+            Status = Loc.K("font.systemNotDeletable");
             return;
         }
         try
@@ -1297,8 +1302,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // 成功不播报；但"删的正是当前生效字体 → 已回退默认"是**必须知道**的一件事
             // （不只是删了一个候选，而是界面字体变了），故这一类照报。
             Status = fellBack is null
-                ? string.Empty
-                : $"「{option.Family}」正是当前生效的字体，已回退默认字体（文件{(deleted ? "已删除" : "本就不存在")}）";
+                ? LocValue.Empty
+                : Loc.K("appearance.font.deletedActive", option.Family,
+                    deleted ? Loc.K("appearance.font.deletedFileGone") : Loc.K("appearance.font.deletedFileKept"));
         }
         catch (Exception ex)
         {
@@ -1306,8 +1312,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             // 不是"路径写错了"：必须把"下一步怎么办"讲清楚，而不是原样丢一个"访问被拒绝"。
             LpLog.Error($"failed to delete imported font: {option.Family}", ex, LogCategory);
             Status = ex is UnauthorizedAccessException
-                ? $"删除失败：「{option.Family}」正被本进程占用（已加载的字体在退出前无法删除），重启应用后再删"
-                : $"删除失败：{ex.Message}";
+                ? Loc.K("appearance.font.deleteInUse", option.Family)
+                : Loc.K("appearance.font.deleteFailed");
         }
     }
 
@@ -1325,12 +1331,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             ThemeService.ApplyFonts(ui, ThemeService.CurrentMonoFont);
             ThemeService.SaveCurrentPreferences();
             // 成功不播报 —— 界面本身已经换成新字体，那就是结果；失败照报
-            Status = string.Empty;
+            Status = LocValue.Empty;
         }
         catch (Exception ex)
         {
             LpLog.Error("failed to save preferences after applying fonts", ex, LogCategory);
-            Status = $"字体已应用，但偏好保存失败：{ex.Message}";
+            Status = Loc.K("appearance.status.fontAppliedPrefFailed");
         }
     }
 
@@ -1361,12 +1367,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             else ProjectCurrentFonts(ThemeService.CurrentUiFont);
             // 成功不播报 —— 下拉里换回默认族就是结果；失败照报
-            Status = string.Empty;
+            Status = LocValue.Empty;
         }
         catch (Exception ex)
         {
             LpLog.Error("failed to restore the default font", ex, LogCategory);
-            Status = $"failed to restore the default font：{ex.Message}";
+            Status = Loc.K("appearance.status.resetFailed");
         }
     }
 
@@ -1378,7 +1384,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             LinkPocket.Theming.Preferences.UiPreferenceStore.Clear();
             ThemeService.ApplyDefault();
             ThemeService.ApplyFonts();
-            ClearDraftCore();                 // 调色台回**空态** + 清"未应用改动"（自选配色已随偏好一起清掉，
+            ClearDraftCore();                 // 调色台回**空态** + 清Loc.K("common.draftUnapplied")（自选配色已随偏好一起清掉，
                                               // 留着色点会名不副实；默认外观 = 全新起点）。
                                               // ⚠️ 走**纯草稿**路径：公有的 ClearDraft 会回默认主题并落盘，
                                               //    在这里会把刚清掉的偏好文件又写回来（本方法的口径 = 偏好文件也要清）
@@ -1387,12 +1393,12 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
             DiagnosticLines = Array.Empty<DiagnosticLine>();
             HasDiagnostics = false;
             // 成功不播报 —— 界面回到默认就是结果；失败照报（catch 里那条）
-            Status = string.Empty;
+            Status = LocValue.Empty;
         }
         catch (Exception ex)
         {
             LpLog.Error("failed to restore the default appearance", ex, LogCategory);
-            Status = $"恢复默认失败：{ex.Message}";
+            Status = Loc.K("appearance.status.resetFailed");
         }
     }
 

@@ -9,6 +9,8 @@ using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Themes;
 using LinkPocket.Theming.Tokens;
 using Material3.Core;
+using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.Views;
 
@@ -217,18 +219,18 @@ public partial class ColorPickerPopup : UserControl
         {
             // 非法输入：文字区出 2px 描边 + 文案，**不猜不改**（零兼容口径）。
             // 注意"全站不使用红色"——校验错误描边 = 文字主色。
-            SetHexError(true, "请输入 #RRGGBB / RRGGBB / #RGB");
+            SetHexError(true, Loc.K("picker.hexHint"));
         }
     }
 
-    private void SetHexError(bool invalid, string? message)
+    private void SetHexError(bool invalid, LocValue? message)
     {
         HexFieldShell.BorderThickness = invalid ? new Thickness(0, 0, 0, 2) : new Thickness(0);
         // 校验描边走**资源引用**（本文件里唯一一处 Brush 型取值；其余是 Color 型 Freezable 子属性，
         // 吃不了资源引用，见 ApplyTokenColors）：一次性取画刷赋值会在换主题后停在旧主题。
         HexFieldShell.SetResourceReference(Border.BorderBrushProperty, AppTokens.LineInvalid);
         HexErrorText.Visibility = invalid ? Visibility.Visible : Visibility.Collapsed;
-        HexErrorText.Text = message ?? string.Empty;
+        HexErrorText.SetText(message ?? LocValue.Empty);
     }
 
     private void SyncHexText()
@@ -271,8 +273,8 @@ public partial class ColorPickerPopup : UserControl
         var asIcon = ColorMath.ContrastRatio(argb, card);
 
         var s = CultureInfo.CurrentCulture;
-        ContrastOnFillText.Text = $"当主按钮底（配白字）：{asFill.ToString("F2", s)}  {(asFill >= 4.5 ? "✓ 达标" : "✗ 需 4.5")}";
-        ContrastAsIconText.Text = $"当图标色（配卡面）：{asIcon.ToString("F2", s)}  {(asIcon >= 3.0 ? "✓ 达标" : "✗ 需 3.0")}";
+        ContrastOnFillText.SetText(Loc.K(asFill >= 4.5 ? "picker.onFillPass" : "picker.onFillFail", asFill.ToString("F2", s)));
+        ContrastAsIconText.SetText(Loc.K(asIcon >= 3.0 ? "picker.asIconPass" : "picker.asIconFail", asIcon.ToString("F2", s)));
     }
 
     /// <summary>
@@ -320,7 +322,7 @@ public partial class ColorPickerPopup : UserControl
     {
         if (!ThemeValidator.TryParseHex(HexBox.Text, out _))
         {
-            SetHexError(true, "颜色格式不正确，无法应用");
+            SetHexError(true, Loc.K("picker.hexInvalid"));
             return;
         }
         ColorConfirmed?.Invoke(this, Current);

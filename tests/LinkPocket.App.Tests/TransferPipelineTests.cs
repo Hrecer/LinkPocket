@@ -109,7 +109,7 @@ public class TransferPipelineTests
             await vm.DropItemsAsync(items, vm.CurrentFolderId, vm.DropTargetMode);
 
             // 结果如实分派（刷新会把状态栏改回目录统计，故在此处读）
-            Assert.StartsWith("已复制 1 项", vm.StatusText);
+            Assert.StartsWith("已复制 1 项", vm.StatusText.Resolve());
 
             await vm.RefreshPreservingSelectionAsync();
 
@@ -227,7 +227,7 @@ public class TransferPipelineTests
 
             await vm.DropItemsAsync(new[] { new DragItem("no-such-link", false, "X") }, null, TransferMode.Move);
 
-            Assert.Contains("1 项失败", vm.StatusText);
+            Assert.Contains("1 项失败", vm.StatusText.Resolve());
         }
         finally
         {
@@ -249,7 +249,7 @@ public class TransferPipelineTests
             var items = vm.PrepareDragFromRow(vm.Rows[0]);
             await vm.DropItemsAsync(items, vm.CurrentFolderId, TransferMode.Move);
 
-            Assert.Contains("已在目标位置", vm.StatusText);
+            Assert.Contains("已在目标位置", vm.StatusText.Resolve());
         }
         finally
         {

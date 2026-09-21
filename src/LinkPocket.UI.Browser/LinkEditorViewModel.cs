@@ -44,7 +44,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         => new(client, host, linkId, null);
 
     public bool IsEditMode => _editLinkId != null;
-    public string TitleText => IsEditMode ? "编辑链接" : "新建链接";
+    public LocValue TitleText => IsEditMode ? Loc.K("editor.title.edit") : Loc.K("editor.title.create");
     public string TitleIcon => IsEditMode ? "pencil-outline" : "link-plus";
 
     private string _url = string.Empty;
@@ -91,13 +91,15 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         set { if (_isLoading != value) { _isLoading = value; OnPropertyChanged(); CommandRefresh.Request(); } }
     }
 
-    private string? _error;
-    public string? Error
+    private LocValue? _error;
+
+    /// <summary>校验/加载失败的错误行（键 + 参数；引擎原文只进日志，不上屏）。</summary>
+    public LocValue? Error
     {
         get => _error;
-        set { if (_error != value) { _error = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); CommandRefresh.Request(); } }
+        set { if (!Equals(_error, value)) { _error = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); CommandRefresh.Request(); } }
     }
-    public bool HasError => !string.IsNullOrEmpty(Error);
+    public bool HasError => Error is { IsEmpty: false };
     private void ClearError() { if (HasError) Error = null; }
 
     public ICommand SaveCommand { get; }
@@ -153,7 +155,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             var meta = await _client.LinkMetadataFetchAsync(url);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
-            if (meta == null) { Error = Loc.T("editor.resolveFailed"); return; }
+            if (meta == null) { Error = Loc.K("editor.resolveFailed"); return; }
 
             if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
                 LinkTitle = meta.Title.Trim();
@@ -180,7 +182,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            Error = $"自动解析失败: {ex.Message}";
+            Error = Loc.K("editor.err.autoParseFailed");
         }
         finally
         {
@@ -226,7 +228,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            Error = $"加载链接数据失败: {ex.Message}";
+            Error = Loc.K("editor.err.loadFailed");
         }
         finally
         {
@@ -237,11 +239,11 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     private async Task SaveAsync()
     {
         Error = null;
-        if (string.IsNullOrWhiteSpace(Url)) { Error = Loc.T("editor.urlRequired"); return; }
+        if (string.IsNullOrWhiteSpace(Url)) { Error = Loc.K("editor.urlRequired"); return; }
         if (!Uri.TryCreate(Url.Trim(), UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        { Error = Loc.T("editor.urlInvalid"); return; }
-        if (string.IsNullOrWhiteSpace(LinkTitle)) { Error = Loc.T("editor.titleRequired"); return; }
+        { Error = Loc.K("editor.urlInvalid"); return; }
+        if (string.IsNullOrWhiteSpace(LinkTitle)) { Error = Loc.K("editor.titleRequired"); return; }
 
         try
         {
@@ -275,7 +277,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            Error = $"保存失败: {ex.Message}";
+            Error = Loc.K("editor.err.saveFailed");
         }
         finally
         {

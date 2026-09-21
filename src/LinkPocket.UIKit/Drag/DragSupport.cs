@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using LinkPocket.I18n;
 using LinkPocket.ViewModels;
 
 namespace LinkPocket.Views;
@@ -23,5 +24,5 @@ public static class DragSupport
     public static string HintText(string? targetName, TransferMode mode)
         => string.IsNullOrEmpty(targetName)
             ? string.Empty
-            : $"{(mode == TransferMode.Copy ? "复制到" : "移动到")}「{targetName}」";
+            : Loc.T(mode == TransferMode.Copy ? "browser.menu.copyTo" : "browser.menu.moveTo", targetName);
 }

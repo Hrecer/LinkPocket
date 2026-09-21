@@ -10,6 +10,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -27,18 +28,18 @@ public partial class BrowserViewModel
 
     /// <summary>移动文件夹（目标层同层唯一编号由引擎负责，见 Kernel IFolderNaming）。
     /// 单项失败不中断整批（与 MoveLink/Copy* 一致），失败必须留痕（观测面铁律）。</summary>
-    private async Task<OpOutcome> MoveFolderAsync(string folderId, string? target, List<string> renamedNotes,
+    private async Task<OpOutcome> MoveFolderAsync(string folderId, string? target, List<LocValue> renamedNotes,
         LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
-            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
+            object name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : Loc.K("ui.noun.folder");
             var moved = await _client.FolderMoveAsync(folderId, target, o);
             // 编号由引擎统一负责（单一实现）；UI 只按返回名生成提示，绝不自己再补发一条改名命令
             //（那正是"移动 + 改名两次写、且批量内各算各的"造成 6 个同名文件夹的根因）
             var resolved = moved.Data?.Name;
-            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
-                renamedNotes.Add($"「{name}」→「{resolved}」");
+            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name as string, StringComparison.Ordinal))
+                renamedNotes.Add(Loc.K("browser.renamedNote", name, resolved));
             return OpOutcome.Done;
         }
         catch (Exception ex)
@@ -73,8 +74,8 @@ public partial class BrowserViewModel
     /// <summary>把父目录 ID 归一化成可比较的值（null = 根）。</summary>
     private static string? NormalizeParentId(string? parentId) => parentId;
 
-    private static string FormatRenamedNotes(List<string> notes)
-        => notes.Count > 0 ? $"（重命名：{string.Join("、", notes)}）" : string.Empty;
+    private static LocValue FormatRenamedNotes(List<LocValue> notes)
+        => notes.Count == 0 ? LocValue.Empty : Loc.K("browser.status.renamedSuffix", Join(notes, LocValue.Empty));
 
     // —— 剪切 / 复制 / 粘贴（Ctrl+X / C / V）——
 
@@ -86,11 +87,11 @@ public partial class BrowserViewModel
 
     /// <summary>深拷贝文件夹（目标层同层唯一编号由引擎负责）。失败必须留痕（观测面铁律）。</summary>
     private async Task<(OpOutcome Outcome, string? NewId)> CopyFolderAsync(string folderId, string? target,
-        List<string> renamedNotes, LinkPocket.Contracts.CallOptions? o = null)
+        List<LocValue> renamedNotes, LinkPocket.Contracts.CallOptions? o = null)
     {
         try
         {
-            var name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : "文件夹";
+            object name = _folderMap.TryGetValue(folderId, out var info) ? info.Name : Loc.K("ui.noun.folder");
             var copy = await _client.FolderCopyAsync(folderId, target, o);
             var newId = copy.Data?.NewFolderId;
             if (string.IsNullOrEmpty(newId))
@@ -100,8 +101,8 @@ public partial class BrowserViewModel
             }
             // 副本名由引擎编号决定（folders.copy 返回最终名）；UI 只按差异生成提示
             var resolved = copy.Data?.Name;
-            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name, StringComparison.Ordinal))
-                renamedNotes.Add($"「{name}」→「{resolved}」");
+            if (!string.IsNullOrEmpty(resolved) && !string.Equals(resolved, name as string, StringComparison.Ordinal))
+                renamedNotes.Add(Loc.K("browser.renamedNote", name, resolved));
             return (OpOutcome.Done, newId);
         }
         catch (Exception ex)
@@ -145,7 +146,11 @@ public partial class BrowserViewModel
     }
 
     /// <summary>新建文件夹的默认名（Windows 口径；同层撞名由引擎自动编号「新建文件夹 (2)」）。</summary>
-    private const string DefaultFolderName = "新建文件夹";
+    /// <summary>新建文件夹的默认名：<b>建夹那一刻</b>取出成品名（落库的是用户数据，不是待翻译的键）。</summary>
+    private static string DefaultFolderName()
+    {
+        return Loc.T("common.newFolder");
+    }
 
     /// <summary>
     /// 新建文件夹（Windows 口径，**不再弹输入框**）：
@@ -161,11 +166,11 @@ public partial class BrowserViewModel
         var target = FolderIds.IsRoot(parentId) ? Controller.CurrentFolderId : parentId;
         try
         {
-            var created = await _client.FolderCreateAsync(DefaultFolderName, parentId: target);
+            var created = await _client.FolderCreateAsync(DefaultFolderName(), parentId: target);
             var newId = created.Data?.FolderId;
             if (string.IsNullOrEmpty(newId)) return;
-            var name = created.Data?.Name ?? DefaultFolderName;
-            StatusText = $"已创建文件夹「{name}」";
+            var name = created.Data?.Name ?? DefaultFolderName();
+            StatusText = Loc.K("browser.status.folderCreated", name);
 
             // 新项不在当前视图（在别的文件夹内新建）→ 无可见行可改名，只报告
             if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId)) return;
@@ -179,7 +184,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            ShowError(Loc.T("status.newFolderFailed"), ex.Message);
+            ShowError(Loc.T("status.newFolderFailed"), Loc.T("err.unexpected"));
         }
     }
 
@@ -187,18 +192,18 @@ public partial class BrowserViewModel
     {
         if (node == null || node.FolderId == null) return; // 根节点「全部书签」不是文件夹
         // Windows 口径：删除 = 移入回收站，不再提示"子文件夹一并删除"
-        if (!ConfirmDelete("删除文件夹", $"将文件夹「{node.Name}」移入回收站吗？"))
+        if (!ConfirmDelete(Loc.T("common.title.deleteFolder"), Loc.T("browser.confirm.folderToTrash", node.Name)))
             return;
         try
         {
             await _client.FolderDeleteAsync(node.FolderId, "trash_links");
-            StatusText = $"已删除文件夹「{node.Name}」";
+            StatusText = Loc.K("browser.status.folderTrashed", node.Name);
             // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
             // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
         }
         catch (Exception ex)
         {
-            ShowError(Loc.T("status.deleteFailed"), ex.Message);
+            ShowError(Loc.T("status.deleteFailed"), Loc.T("err.unexpected"));
         }
     }
 
@@ -208,7 +213,7 @@ public partial class BrowserViewModel
         try
         {
             System.Windows.Clipboard.SetText(row.Url);
-            StatusText = Loc.T("status.linkCopied");
+            StatusText = Loc.K("status.linkCopied");
         }
         catch { /* 剪贴板被占用时静默 */ }
     }
@@ -226,19 +231,19 @@ public partial class BrowserViewModel
     {
         var folders = items.Count(r => r.IsFolder);
         var links = items.Count - folders;
-        string msg;
+        LocValue msg;
         if (folders > 0 && links > 0)
-            msg = $"将选中的 {folders} 个文件夹和 {links} 个链接移入回收站吗？";
+            msg = Loc.K("browser.confirm.mixedToTrash", folders, links);
         else if (folders > 0)
             msg = folders == 1
-                ? $"将文件夹「{items[0].Name}」移入回收站吗？"
-                : $"将选中的 {folders} 个文件夹移入回收站吗？";
+                ? Loc.K("browser.confirm.folderToTrash", items[0].Name)
+                : Loc.K("browser.confirm.foldersToTrash", folders);
         else
             msg = links == 1
-                ? $"将链接「{items[0].Name}」移入回收站吗？"
-                : $"将选中的 {links} 个链接移入回收站吗？";
+                ? Loc.K("browser.confirm.linkToTrash", items[0].Name)
+                : Loc.K("browser.confirm.linksToTrash", links);
 
-        return Task.FromResult(ConfirmDelete(Loc.T("common.delete"), msg));
+        return Task.FromResult(ConfirmDelete(Loc.T("common.delete"), msg.Resolve()));
     }
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
@@ -263,10 +268,10 @@ public partial class BrowserViewModel
 
         // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
         StatusText = failed == 0
-            ? $"已删除 {deleted} 项"
+            ? Loc.K("browser.status.deletedCount", deleted)
             : deleted == 0
-                ? "删除失败（详见日志）"
-                : $"已删除 {deleted} 项，{failed} 项失败";
+                ? Loc.K("browser.status.deleteFailed")
+                : Loc.K("browser.status.deletedWithFailures", deleted, failed);
         if (deleted > 0) ClearSelection();
         // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
         // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。

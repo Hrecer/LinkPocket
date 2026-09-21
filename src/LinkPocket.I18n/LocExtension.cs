@@ -47,8 +47,11 @@ public sealed class LocKeyExtension : MarkupExtension
     [ConstructorArgument("path")]
     public string? Path { get; set; }
 
+    /// <summary>绑定源用名字指定（<c>{loc:LocKey HeaderKey, ElementName=Root}</c>）。</summary>
+    public string? ElementName { get; set; }
+
     public override object ProvideValue(IServiceProvider serviceProvider)
-        => LocBinding.FromKeyPath(Path).ProvideValue(serviceProvider);
+        => LocBinding.FromKeyPath(Path, ElementName).ProvideValue(serviceProvider);
 }
 
 /// <summary>
@@ -79,11 +82,12 @@ internal static class LocBinding
         return mb;
     }
 
-    /// <summary>绑定键：版本触发器 + 该路径的键值。</summary>
-    public static MultiBinding FromKeyPath(string? path)
+    /// <summary>绑定键：版本触发器 + 该路径的键值（<paramref name="elementName"/> 非空时按名字找源）。</summary>
+    public static MultiBinding FromKeyPath(string? path, string? elementName = null)
     {
         var mb = New();
-        if (!string.IsNullOrEmpty(path)) mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay });
+        if (!string.IsNullOrEmpty(path))
+            mb.Bindings.Add(new Binding(path) { Mode = BindingMode.OneWay, ElementName = elementName });
         return mb;
     }
 

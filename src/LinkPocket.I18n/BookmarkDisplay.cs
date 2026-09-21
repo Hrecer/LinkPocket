@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.I18n;
 

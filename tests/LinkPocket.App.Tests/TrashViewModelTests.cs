@@ -224,7 +224,7 @@ public class TrashViewModelTests
             vm.SelectRowWithModifiers(rowA, ModifierKeys.None);
             Assert.True(vm.Details.HasSelection && vm.Details.IsSingle && vm.Details.IsFolder);
             Assert.True(vm.Details.IsReadOnly);
-            Assert.Equal(rowA.Name, vm.Details.DisplayName);
+            Assert.Equal(rowA.Name, vm.Details.DisplayNameData);
             Assert.Equal(unitA, vm.Details.IdText);
             // 断言键而不是显示文本：键是语言无关的稳定标识（换英文后按文本断言会假红）
             Assert.Equal(new[] { "ui.noun.type", "ui.noun.origin", "ui.noun.deletedAt", "ui.noun.id" }, vm.Details.Rows.Select(r => r.LabelKey));
@@ -315,7 +315,7 @@ public class TrashViewModelTests
             Assert.Empty(overview.Links);
             Assert.False(vm.HasSelection);                    // 条目已离开回收站：选中清空
             Assert.False(vm.RestoreSelectionCommand.CanExecute(null));   // 清空后再次禁用
-            Assert.Contains("已还原 2 项到原位置", vm.StatusText);
+            Assert.Contains("已还原 2 项到原位置", vm.StatusText.Resolve());
 
             // 缺省 = 原位置（D3）：单元 A（含子夹 B 与两条链接）与 L0 都回主表（二者原位均为根）
             Assert.Contains(await client.FolderTreeAsync(), f => f.FolderId == unitA && f.ParentId == null);
@@ -352,7 +352,7 @@ public class TrashViewModelTests
             }
             Assert.NotNull(got);
             Assert.Null(got!.ListId);                         // 显式到根目录（而非回「原位夹」）
-            Assert.Contains("到根目录", vm.StatusText);
+            Assert.Contains("到根目录", vm.StatusText.Resolve());
         }
         finally
         {
@@ -463,7 +463,7 @@ public class TrashViewModelTests
             vm.OpenLinkDetail(vm.Rows.Single(r => r.Id == link.LinkId));
 
             Assert.True(vm.IsDetailOverlayOpen);
-            Assert.Equal("覆盖层项", vm.DetailPane.Title);
+            Assert.Equal("覆盖层项", vm.DetailPane.TitleData);
             Assert.Equal("https://overlay.example", vm.DetailPane.Url);
             Assert.True(vm.DetailPane.HasDescription);
             Assert.Equal("覆盖层描述", vm.DetailPane.Description);
@@ -552,7 +552,7 @@ public class TrashViewModelTests
             vm.ClearSelectionCommand.Execute(null);
             Assert.False(vm.HasSelection);
             Assert.True(vm.RestoreDetailCommand.CanExecute(null));
-            Assert.Contains(detailId, vm.DetailPane.Rows.Single(r => r.LabelKey == "ui.noun.id").Value);
+            Assert.Contains(detailId, vm.DetailPane.Rows.Single(r => r.LabelKey == "ui.noun.id").ValueData);
 
             // 按展示项执行「还原到根目录」→ 条目离开回收站、覆盖层自动关闭
             vm.RestoreDetailToRootCommand.Execute(null);
@@ -564,7 +564,7 @@ public class TrashViewModelTests
             }
             Assert.NotNull(got);
             Assert.Null(got!.ListId);                                  // 显式到根目录
-            Assert.Contains("到根目录", vm.StatusText);
+            Assert.Contains("到根目录", vm.StatusText.Resolve());
             await vm.LoadAsync();
             Assert.False(vm.IsDetailOverlayOpen);                       // 条目消失即关
             Assert.False(vm.RestoreDetailCommand.CanExecute(null));     // 没有展示项 → 一律禁用

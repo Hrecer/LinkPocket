@@ -1,4 +1,5 @@
 using System;
+using LinkPocket.I18n;
 
 namespace LinkPocket.I18n;
 

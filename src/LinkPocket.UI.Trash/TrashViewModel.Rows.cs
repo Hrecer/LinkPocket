@@ -90,7 +90,7 @@ public partial class TrashViewModel
         Comparison<TrashRowViewModel> byField = SortField switch
         {
             "name" => (a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture) * sign,
-            "type" => (a, b) => string.Compare(a.TypeText, b.TypeText, StringComparison.CurrentCulture) * sign,
+            "type" => (a, b) => string.Compare(a.TypeText.Resolve(), b.TypeText.Resolve(), StringComparison.CurrentCulture) * sign,
             // 按 canonical 排、不按投影排：换语言不得改变任何顺序（显示名会变，路径不会）
             "origin_path" => (a, b) => string.Compare(a.OriginPath, b.OriginPath, StringComparison.CurrentCulture) * sign,
             _ => (a, b) => a.DeletedAt.CompareTo(b.DeletedAt) * sign,
@@ -105,16 +105,11 @@ public partial class TrashViewModel
     }
 
     /// <summary>语言一变就重跑的显示投影：选中提示与状态栏计数句是建值时烤进模型的字符串。</summary>
-    private void ReprojectLocalizedText()
-    {
-        OnPropertyChanged(nameof(SelectionInfoText));
-        SetStatusText();
-    }
-
     private void SetStatusText()
     {
-        var where = IsInUnit ? CurrentUnitDisplayName : RootDisplayName;
-        StatusText = Loc.T("trash.status.count", where, Rows.Count);
+        // 位置槽可以是用户数据（单元名）或文案（回收站根名）——交给取词参数在渲染时解析
+        object where = IsInUnit ? CurrentUnitDisplayName : Loc.K("nav.root.trash");
+        StatusText = Loc.K("trash.status.count", where, Rows.Count);
         OnPropertyChanged(nameof(CurrentUnitDisplayName));
     }
 

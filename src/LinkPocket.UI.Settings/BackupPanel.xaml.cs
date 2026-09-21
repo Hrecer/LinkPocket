@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using LinkPocket.Contracts;
+using LinkPocket.UIKit;
 using LinkPocket.Services;
 using Microsoft.Win32;
 using LinkPocket.I18n;
@@ -51,9 +52,10 @@ namespace LinkPocket.Views
 
         private void BrowseBackupExportDirButton_Click(object sender, RoutedEventArgs e)
         {
+            var title = Loc.T("backup.pickExportDir");
             var dialog = new OpenFolderDialog
             {
-                Title = Loc.T("backup.pickExportDir")
+                Title = title
             };
 
             if (dialog.ShowDialog() == true)
@@ -66,10 +68,12 @@ namespace LinkPocket.Views
 
         private void BrowseBackupImportButton_Click(object sender, RoutedEventArgs e)
         {
+            var title = Loc.T("backup.pickFile");
+            var filter = Loc.T("backup.filter");
             var dialog = new OpenFileDialog
             {
-                Title = Loc.T("backup.pickFile"),
-                Filter = "LinkPocket 备份文件 (*.lpbackup)|*.lpbackup|所有文件 (*.*)|*.*",
+                Title = title,
+                Filter = filter,
                 CheckFileExists = true
             };
 
@@ -91,7 +95,7 @@ namespace LinkPocket.Views
 
             if (!System.IO.Directory.Exists(_exportDirectory))
             {
-                ConfirmDialog.Show("导出失败", $"导出目录不存在：\n{_exportDirectory}", "确定", "alert-circle-outline");
+                ConfirmDialog.Show(Loc.T("backup.exportFailed"), Loc.T("backup.exportDirMissing", _exportDirectory), Loc.T("common.ok"), "alert-circle-outline");
                 return;
             }
 
@@ -100,14 +104,14 @@ namespace LinkPocket.Views
             var overlay = FindOverlay();
             if (overlay == null) return;
 
-            ShowOverlay(overlay, "正在导出备份...", 0, 0);
+            ShowOverlay(overlay, Loc.K("backup.exporting"), 0, 0);
             BackupExportButton.IsEnabled = false;
 
             try
             {
                 await Api.BackupExportAsync(outputPath);
 
-                UpdateOverlay(overlay, "导出成功！", 1, 1);
+                UpdateOverlay(overlay, Loc.K("backup.exportDone"), 1, 1);
                 SetOverlayProgressColor(overlay, true);
 
                 await Task.Delay(100);
@@ -117,18 +121,18 @@ namespace LinkPocket.Views
                 catch { }
 
                 ConfirmDialog.Show(
-                    "导出成功",
-                    $"文件位置：\n{outputPath}\n\n此备份文件包含所有书签、文件夹和图标文件，可用于完全恢复数据。\n\n注意：回收站内容不会被备份。",
-                    "确定", "backup-restore", "TintPanel");
+                    Loc.T("backup.exportSuccessTitle"),
+                    Loc.T("backup.exportSuccessBody", outputPath),
+                    Loc.T("common.ok"), "backup-restore", "TintPanel");
             }
             catch (Exception ex)
             {
                 LpLog.Error("[backup export] failed", ex);
-                UpdateOverlay(overlay, $"导出失败: {ex.Message}", 0, 0);
+                UpdateOverlay(overlay, Loc.K("backup.exportFailed"), 0, 0);
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
                 HideOverlay(overlay);
-                ConfirmDialog.Show("导出失败", $"导出失败：{ex.Message}", "确定", "alert-circle-outline");
+                ConfirmDialog.Show(Loc.T("backup.exportFailed"), Loc.T("backup.exportFailed"), Loc.T("common.ok"), "alert-circle-outline");
             }
             finally
             {
@@ -155,12 +159,12 @@ namespace LinkPocket.Views
             var overlay = FindOverlay();
             if (overlay == null) return;
 
-            ShowOverlay(overlay, pendingReplaceImport ? "正在清空当前数据..." : "正在导入备份...", 0, 0);
+            ShowOverlay(overlay, pendingReplaceImport ? Loc.K("backup.wiping") : Loc.K("backup.importing"), 0, 0);
             BackupImportButton.IsEnabled = false;
 
             try
             {
-                UpdateOverlay(overlay, "正在导入备份...", 0, 0);
+                UpdateOverlay(overlay, Loc.K("backup.importing"), 0, 0);
                 // 引擎 backup.import：replace=true = 同一 UoW 清空（含回收站）后导入，原子；
                 // destructive 两阶段令牌经 EngineConfirm 内联（UI 确认已由 ImportModeDialog 承担）。
                 var result = await EngineConfirm.RunAsync(token => Api.BackupImportAsync(
@@ -172,25 +176,27 @@ namespace LinkPocket.Views
                 // 刷新界面数据（replace 模式引擎已同步清空；两模式都要重载树/计数，不清数据）
                 await RefreshAfterImportAsync();
 
-                UpdateOverlay(overlay, "导入成功！", 1, 1);
+                UpdateOverlay(overlay, Loc.K("backup.importDone"), 1, 1);
                 SetOverlayProgressColor(overlay, true);
                 await Task.Delay(100);
                 HideOverlay(overlay);
 
                 // B-10：计数缺失时显示「未知」，绝不静默显示 0 条（导入成功却报 0 = 最差失败模式）
                 ConfirmDialog.Show(
-                    "导入成功",
-                    $"统计信息：\n• 文件夹：{(foldersKnown ? folders.ToString() : "未知")} 个\n• 书签：{(linksKnown ? links.ToString() : "未知")} 条",
-                    "确定", "import", "TintPanel");
+                    Loc.T("backup.importSuccessTitle"),
+                    Loc.T("backup.importStats",
+                        foldersKnown ? folders.ToString() : Loc.T("common.unknownCount"),
+                        linksKnown ? links.ToString() : Loc.T("common.unknownCount")),
+                    Loc.T("common.ok"), "import", "TintPanel");
             }
             catch (Exception ex)
             {
                 LpLog.Error("[backup import] failed", ex);
-                UpdateOverlay(overlay, $"导入失败: {ex.Message}", 0, 0);
+                UpdateOverlay(overlay, Loc.K("backup.importFailed"), 0, 0);
                 SetOverlayProgressColor(overlay, false);
                 await Task.Delay(3000);
                 HideOverlay(overlay);
-                ConfirmDialog.Show("导入失败", $"导入失败：{ex.Message}", "确定", "alert-circle-outline");
+                ConfirmDialog.Show(Loc.T("backup.importFailed"), Loc.T("backup.importFailed"), Loc.T("common.ok"), "alert-circle-outline");
             }
             finally
             {
@@ -231,7 +237,7 @@ namespace LinkPocket.Views
             return null;
         }
 
-        private void ShowOverlay(Border overlay, string message, int current, int total)
+        private void ShowOverlay(Border overlay, LocValue message, int current, int total)
         {
             overlay.Visibility = Visibility.Visible;
 
@@ -254,11 +260,11 @@ namespace LinkPocket.Views
             overlay.Visibility = Visibility.Collapsed;
         }
 
-        private static void UpdateOverlay(Border overlay, string message, int current, int total)
+        private static void UpdateOverlay(Border overlay, LocValue message, int current, int total)
         {
             var statusText = FindNamedChild<TextBlock>(overlay, "ExportStatusText");
             if (statusText != null)
-                statusText.Text = message;
+                statusText.SetText(message);
 
             var bar = FindNamedChild<WavyProgressBar>(overlay, "ExportProgressBar");
             if (bar != null)
@@ -272,7 +278,7 @@ namespace LinkPocket.Views
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)
-                progressText.Text = total > 0 ? $"{current} / {total}" : "准备中...";
+                progressText.SetText(total > 0 ? Loc.K("backup.progress", current, total) : Loc.K("backup.preparing"));
         }
 
         private static void SetOverlayProgressColor(Border overlay, bool success)
@@ -284,7 +290,7 @@ namespace LinkPocket.Views
 
             var progressText = FindNamedChild<TextBlock>(overlay, "ExportProgressText");
             if (progressText != null)
-                progressText.Text = success ? "完成" : Loc.T("common.failed");
+                progressText.SetText(success ? Loc.K("backup.done") : Loc.K("common.failed"));
         }
 
         /// <summary>从引擎命令结果 JsonElement 读整数字段。缺失/非数字 = 引擎产出违约输入，

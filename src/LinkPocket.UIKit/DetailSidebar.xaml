@@ -326,7 +326,10 @@
                     </Grid>
 
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding DisplayName}" FontSize="15" FontWeight="SemiBold"
+                        <!-- 标题：选中项自己的名字（用户数据）或「已选中 N 项」（文案），两者互斥 -->
+                        <TextBlock Text="{Binding DisplayNameData}" FontSize="15" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="{loc:Value DisplayNameCopy}" FontSize="15" FontWeight="SemiBold"
                                    TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
                     </StackPanel>
                 </Grid>

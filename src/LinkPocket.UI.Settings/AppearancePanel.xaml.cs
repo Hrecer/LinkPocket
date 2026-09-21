@@ -53,11 +53,6 @@ namespace LinkPocket.Views
         public async Task LoadFontCandidatesAsync()
         {
             await ViewModel.EnsureFontsLoadedAsync().ConfigureAwait(true);
-            SyncFontCombos();
-            // 选中项**不在这里手工赋值**：下拉的 SelectedItem 已双向绑定 VM（`SelectedUiFont`），
-            // 装载完成时 VM 会重新投影。
-            // ⚠️ 手工赋值会把"候选装载之前显示当前字体"那条投影覆盖成 null
-            //    （下拉框在装载前本是空白）—— 别再写回来。
         }
 
         /// <summary>
@@ -91,20 +86,7 @@ namespace LinkPocket.Views
                 Picker.ColorConfirmed += Picker_ColorConfirmed;
                 Picker.Cleared += Picker_Cleared;
                 Picker.Cancelled += Picker_Cancelled;
-
-                // 字体来源一变就重同步下拉：候选集与选中项在 VM 里都已就位，
-                // 但下拉控件自己可能停在"上一来源的空列表"造成的空白态 —— 这里显式重挂一次，
-                // 不必手动再展开。幂等：值没变时是一次空写。
-                vm.PropertyChanged += (_, e) =>
-                {
-                    if (e.PropertyName is nameof(AppearanceViewModel.FontSource)
-                        or nameof(AppearanceViewModel.SelectedUiFont))
-                        SyncFontCombos();
-                };
             }
-
-            SyncFontCombos();
-            // 选中项由 XAML 的双向绑定投影，不手工赋值（见 LoadFontCandidatesAsync 的注释）
         }
 
         /// <summary>进入面板时的入口对齐：把当前已应用的外观投影到控件上（不重算、不重置）。</summary>
@@ -117,29 +99,10 @@ namespace LinkPocket.Views
             // 让首次展开时列表**已就位**；下面 DropDownOpened 那两条兜底保留（装载未完成 / 失败重试时仍会触发）。
             // 枚举在后台线程（`FontCatalog.LoadAsync`），不占 UI 线程。
             _ = ViewModel.EnsureFontsLoadedAsync();
-            // 候选**不在装载前重投影**：当前字体由 ProjectCurrentFonts 的占位项立刻显示（见 VM）。
-            SyncFontCombos();
         }
 
         /// <summary>展开字体下拉时的兜底装载（候选在进面板时已**后台预热**；这里只兜"还没装载完 / 上次失败"两种情形）。</summary>
         private async void UiFontCombo_DropDownOpened(object sender, EventArgs e) => await LoadFontCandidatesAsync();
-
-        private void SyncFontCombos()
-        {
-            // 诊断用：确保下拉的候选集已就位（ReloadFonts 可能已换过实例）。
-            // 等宽字体下拉**已删除**，这里只剩界面字体一个。
-            if (!ReferenceEquals(UiFontCombo.ItemsSource, ViewModel.UiFonts))
-                UiFontCombo.ItemsSource = ViewModel.UiFonts;
-
-            var current = ViewModel.SelectedUiFont;
-            // 按**下标**挂回，不按对象：候选清空再补齐的那一瞬，控件会停在"SelectedItem 这个对象还在、
-            // 下标已经没了"的状态，而 `DisplayMemberPath` 的选择框此时画的是空串 → 框空白，
-            // 且之后候选补齐也不会自愈（切字体来源后框空白就是这个态）。
-            // 条件写成"下标没对上"才自然幂等：写值会经双向绑定回到 VM 再回到这里，
-            // 以"对象不等"为条件时这条回环不会收敛（实测栈溢出）。
-            var index = current is null ? -1 : UiFontCombo.Items.IndexOf(current);
-            if (index >= 0 && UiFontCombo.SelectedIndex != index) UiFontCombo.SelectedIndex = index;
-        }
 
         // ── 主题卡 ───────────────────────────────────────────────────────
 
@@ -192,7 +155,6 @@ namespace LinkPocket.Views
         private async void ResetAppearanceBtn_Click(object sender, RoutedEventArgs e)
         {
             await ViewModel.ResetToDefaultAsync();
-            SyncFontCombos();
         }
 
         // ── 字体 ─────────────────────────────────────────────────────────
@@ -204,10 +166,12 @@ namespace LinkPocket.Views
 
         private async void ImportFontBtn_Click(object sender, RoutedEventArgs e)
         {
+            var title = Loc.T("font.pickFile");
+            var filter = Loc.T("font.filter");
             var dialog = new OpenFileDialog
             {
-                Title = Loc.T("font.pickFile"),
-                Filter = "字体文件 (*.ttf;*.otf;*.ttc)|*.ttf;*.otf;*.ttc",
+                Title = title,
+                Filter = filter,
                 Multiselect = false,
                 CheckFileExists = true,
             };
@@ -216,7 +180,6 @@ namespace LinkPocket.Views
             // 导入失败必须在界面上可见：VM 把原因写进 Status，状态行（绑定 Status）会显示出来。
             // 只写日志不播报 = 点了「导入字体…」什么都没发生（本仓禁止的静默失败）。
             await ViewModel.ImportFontAsync(dialog.FileName);
-            SyncFontCombos();
         }
 
         private async void DeleteFontBtn_Click(object sender, RoutedEventArgs e)
@@ -225,20 +188,17 @@ namespace LinkPocket.Views
             // 系统字体在界面上根本不再显示这两个按钮）。
             if (ViewModel.SelectedUiFont is not { } font) return;
             await ViewModel.DeleteFontAsync(font);
-            SyncFontCombos();
         }
 
         private void ApplyFontsBtn_Click(object sender, RoutedEventArgs e)
         {
             ViewModel.ApplyFonts();
-            SyncFontCombos();
         }
 
         /// <summary>「恢复默认字体」：界面/等宽一起回默认族并落盘（不动主题与配色）。</summary>
         private async void ResetFontsBtn_Click(object sender, RoutedEventArgs e)
         {
             await ViewModel.ResetFontsAsync();
-            SyncFontCombos();
         }
     }
 }

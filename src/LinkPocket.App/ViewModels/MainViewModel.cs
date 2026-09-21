@@ -61,11 +61,7 @@ namespace LinkPocket.ViewModels
 
             TrashViewModel = new TrashViewModel(client, _ports);
             SettingsViewModel = new SettingsViewModel();
-            SmartListViewModel = new SmartListViewModel(client, _ports,
-                listId => string.IsNullOrEmpty(listId)
-                    ? Loc.T("nav.root.bookmarks")
-                    : (FindFolderPathInNodes(FolderItems, listId) ?? Loc.T("path.unknown")),
-                locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
+            SmartListViewModel = new SmartListViewModel(client, _ports, FolderPathValue, locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
             BrowserViewModel = new BrowserViewModel(client, _ports, locator);   // 共享端口槽位：对话框/导航走 IDialogService；locator = 侧栏「跳转」
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? NavIds.Browser));
@@ -125,7 +121,7 @@ namespace LinkPocket.ViewModels
             catch (Exception ex)
             {
                 // 事件驱动的刷新失败不应打断 UI——记录并暴露（观测面纪律），不再纯静默
-                LpLog.Error($"防抖刷新活跃页失败（{_currentNavId}）", ex);
+                LpLog.Error($"debounced refresh of the active page failed ({_currentNavId})", ex);
             }
         }
 
@@ -233,7 +229,7 @@ namespace LinkPocket.ViewModels
             {
                 // async void 里未捕获的异常会被全局 handler 吞掉且后续代码不执行——
                 // 这里就地记录 + 暴露，不让「切页失败」静默
-                LpLog.Error($"切换导航到 {navId} 失败", ex);
+                LpLog.Error($"navigation switch to {navId} failed", ex);
             }
         }
 
@@ -314,7 +310,7 @@ namespace LinkPocket.ViewModels
             }
             catch (Exception ex)
             {
-                LpLog.Error("加载目录树失败", ex);
+                LpLog.Error("folder tree load failed", ex);
             }
         }
 
@@ -325,6 +321,19 @@ namespace LinkPocket.ViewModels
             nodes.Clear();
             foreach (var n in sorted)
                 nodes.Add(n);
+        }
+
+        /// <summary>
+        /// 目录的显示路径（键 + 参数）：根段是<b>文案</b>（<c>nav.root.bookmarks</c>）、用户文件夹名是<b>数据</b>，
+        /// 拼在渲染边界发生——切语言时路径里的根名自己会换，宿主不需要记得重建。
+        /// </summary>
+        public LocValue FolderPathValue(string? folderId)
+        {
+            if (string.IsNullOrEmpty(folderId)) return Loc.K("nav.root.bookmarks");
+            var treePath = FindFolderPathInNodes(FolderItems, folderId);
+            return treePath is null
+                ? Loc.K("path.unknown")
+                : Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath);
         }
 
         public static string? FindFolderPathInNodes(ObservableCollection<FolderNode> nodes, string folderId, string? parentPath = null)
@@ -345,33 +354,37 @@ namespace LinkPocket.ViewModels
             return null;
         }
 
-        public async Task<string> ResolveLinkPathAsync(string? listId)
+        /// <summary>
+        /// 目录的显示路径（键 + 参数）：根段是<b>文案</b>、用户文件夹名是<b>数据</b>，
+        /// 交给取词在渲染边界拼——于是切语言时路径里的根名自己会换。
+        /// </summary>
+        public async Task<LocValue> ResolveLinkPathAsync(string? listId)
         {
-            if (string.IsNullOrEmpty(listId)) return Loc.T("nav.root.bookmarks");
+            if (string.IsNullOrEmpty(listId)) return Loc.K("nav.root.bookmarks");
             var treePath = FindFolderPathInNodes(FolderItems, listId);
-            if (treePath != null) return treePath;
+            if (treePath != null) return Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath);
             try
             {
                 var allFolders = await _client.FolderTreeAsync();
                 var dict = allFolders.ToDictionary(f => f.FolderId);
                 // 未找到的目录必须如实标记「未知目录」，不得伪装成根
-                //（与 EfTreeService.PathDisplayAsync 修复同口径）
-                if (!dict.ContainsKey(listId)) return Loc.T("path.unknown");
+                //（与 EfTreeService.PathCanonicalAsync 同口径）
+                if (!dict.ContainsKey(listId)) return Loc.K("path.unknown");
                 var pathParts = new List<string>();
                 var currentId = listId;
                 for (var i = 0; i < MaxFolderDepth && !string.IsNullOrEmpty(currentId); i++)
                 {
                     if (!dict.TryGetValue(currentId, out var folder)) break;
-                    pathParts.Add(folder.Name ?? "未命名文件夹");
+                    pathParts.Add(folder.Name ?? Loc.T("folder.untitled"));
                     currentId = folder.ParentId ?? "";
                 }
                 pathParts.Reverse();
-                return string.Join(" > ", pathParts);
+                return Loc.K("path.joined", Loc.K("nav.root.bookmarks"), string.Join(" > ", pathParts));
             }
             catch (Exception ex)
             {
-                LpLog.Warn($"解析链接所属目录失败（listId={listId}）", ex);
-                return Loc.T("path.unknown");
+                LpLog.Warn($"failed to resolve the folder of a link (listId={listId})", ex);
+                return Loc.K("path.unknown");
             }
         }
 

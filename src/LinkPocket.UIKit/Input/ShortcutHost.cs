@@ -46,7 +46,7 @@ namespace LinkPocket.Input
             {
                 if (nameScopeOwner.FindName(controlName) is not FrameworkElement control)
                     throw new InvalidOperationException(
-                        $"快捷键控件锚点不存在：页 {page} 的键位绑定了控件「{controlName}」，但页面命名域里找不到它。");
+                        $"shortcut control anchor not found: page {page} binds keys to control '{controlName}', which the page name scope does not contain.");
                 KeyEventHandler handler = (_, e) => OnControlKeyDown(control, binding, e);
                 control.PreviewKeyDown += handler;
                 _controlHandlers.Add((control, handler));

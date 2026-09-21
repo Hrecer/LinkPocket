@@ -5,6 +5,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using LinkPocket.I18n;
+using LinkPocket.UIKit;
 using System.Windows.Media.Effects;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
@@ -249,7 +251,7 @@ public sealed class DragVisualAdorner : Adorner
             _name.Text = first.Name;
             _name.Visibility = multiple ? Visibility.Collapsed : Visibility.Visible;
 
-            _badgeText.Text = $"{items.Count} 个项目";
+            _badgeText.SetText(Loc.K("drag.itemCount", items.Count));
             _badge.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
             _stackBack1.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
             _stackBack2.Visibility = multiple ? Visibility.Visible : Visibility.Collapsed;
@@ -323,6 +325,6 @@ public sealed class DragVisualAdorner : Adorner
         private static Brush Brush(FrameworkElement owner, string key)
             => owner.TryFindResource(key) as Brush
                ?? throw new InvalidOperationException(
-                   $"拖拽浮层取不到资源「{key}」—— 主题尚未装配或键名失效（禁止兜底色掩盖故障）");
+                   $"the drag adorner cannot resolve the resource '{key}' -- the theme is not assembled or the key is stale (a fallback colour would hide the failure)");
     }
 }

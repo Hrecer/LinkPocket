@@ -36,7 +36,7 @@ public class InlineRenameTests
             Assert.False(vm.IsRenaming);                    // 会话结束
             Assert.Equal("", vm.EditingName);
             Assert.False(row.IsRenaming);                   // 投影随会话归零
-            Assert.Equal("已重命名为「新名」", vm.StatusText);
+            Assert.Equal("已重命名为「新名」", vm.StatusText.Resolve());
 
             var stored = await client.FolderGetAsync(a.FolderId);
             Assert.Equal("新名", stored.Name);
@@ -61,7 +61,7 @@ public class InlineRenameTests
             vm.EditingName = "新标题";
             await vm.CommitRenameAsync();
 
-            Assert.Equal("已重命名为「新标题」", vm.StatusText);
+            Assert.Equal("已重命名为「新标题」", vm.StatusText.Resolve());
             var stored = await client.LinkGetAsync(link.LinkId);
             Assert.Equal("新标题", stored.Title);
             Assert.Equal("https://a.example", stored.Url);   // 只动标题，地址不变
@@ -118,7 +118,7 @@ public class InlineRenameTests
             vm.EditingName = "工作";                         // 撞上同层的「工作」
             await vm.CommitRenameAsync();
 
-            Assert.Equal("已重命名为「工作 (2)」", vm.StatusText);   // 展示引擎返回的最终名
+            Assert.Equal("已重命名为「工作 (2)」", vm.StatusText.Resolve());   // 展示引擎返回的最终名
             Assert.Equal("工作 (2)", (await client.FolderGetAsync(b.FolderId)).Name);
             Assert.Equal("工作", (await client.FolderGetAsync(a.FolderId)).Name);
         }
@@ -192,8 +192,8 @@ public class InlineRenameTests
             await vm.LoadAsync(null);
 
             vm.NewFolderCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)),
-                $"新建未在超时内完成（状态：{vm.StatusText}）");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)),
+                $"新建未在超时内完成（状态：{vm.StatusText.Resolve()}）");
 
             // 写操作不显式刷新：模拟事件链刷新取新状态
             await vm.RefreshPreservingSelectionAsync();
@@ -223,7 +223,7 @@ public class InlineRenameTests
             await vm.LoadAsync(null);
 
             vm.NewFolderCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)));
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)));
             await vm.RefreshPreservingSelectionAsync();
 
             var created = Assert.Single(vm.SelectedRows);

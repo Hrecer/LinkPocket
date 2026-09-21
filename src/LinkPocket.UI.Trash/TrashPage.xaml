@@ -185,7 +185,7 @@
 
             <!-- 左栏：回收站导航树（虚根「回收站」+ 单元 + 链接叶子；节点不可改名的只读树） -->
             <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
-                                   HeaderText="{loc:Loc nav.panel.title}"
+                                   HeaderKey="nav.panel.title"
                                    DragEnabled="False"
                                    NodeMenu="{StaticResource TrashNodeMenu}"
                                    ItemsSource="{Binding Tree}"
@@ -359,7 +359,7 @@
                                             <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}" Text="{Binding TypeText}"/>
                                             <!-- 原位置 -->
                                             <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                                       Text="{Binding OriginText}" ToolTip="{Binding OriginText}"/>
+                                                       Text="{loc:Value OriginText}"/>
                                             <!-- 删除时间 -->
                                             <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
                                                        Text="{Binding DeletedText}" ToolTip="{Binding DeletedText}"/>
@@ -424,7 +424,7 @@
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <TextBlock Text="{loc:Value StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <Border CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
                             Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
                         <Border.Style>

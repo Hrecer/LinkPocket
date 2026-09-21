@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Services;
 
@@ -36,15 +37,15 @@ public readonly record struct LocateResult(
     ContentKind? Kind,
     string? ContainerFolderId,
     string? TargetId,
-    string? Message)
+    LocValue? Message)
 {
     public bool IsSuccess => Status == LocateStatus.Success;
 
-    public static LocateResult Empty() => new(LocateStatus.EmptyId, null, null, null, "请输入ID");
+    public static LocateResult Empty() => new(LocateStatus.EmptyId, null, null, null, Loc.K("locate.promptId"));
 
     public static LocateResult Missing(ContentKind? kind = null) => new(
         LocateStatus.NotFound, kind, null, null,
-        kind == ContentKind.Folder ? "未找到匹配的文件夹ID" : "未找到匹配的链接ID");
+        kind == ContentKind.Folder ? Loc.K("locate.notFoundFolderId") : Loc.K("locate.notFoundLinkId"));
 }
 
 /// <summary>
@@ -115,7 +116,7 @@ public sealed class ContentLocator : IContentLocator
 
             var host = _hostProvider();
             if (host == null)
-                return new LocateResult(LocateStatus.NoHost, kind, resolved.ContainerFolderId, resolved.Id, "界面宿主不可用");
+                return new LocateResult(LocateStatus.NoHost, kind, resolved.ContainerFolderId, resolved.Id, Loc.K("locate.hostUnavailable"));
 
             host.ShowBrowser();
 
@@ -123,7 +124,7 @@ public sealed class ContentLocator : IContentLocator
             var selected = await host.EnterAndSelectAsync(resolved.ContainerFolderId, resolved.Id);
             return selected
                 ? new LocateResult(LocateStatus.Success, kind, resolved.ContainerFolderId, resolved.Id, null)
-                : new LocateResult(LocateStatus.RowMissing, kind, resolved.ContainerFolderId, resolved.Id, "目标行未出现在所在目录");
+                : new LocateResult(LocateStatus.RowMissing, kind, resolved.ContainerFolderId, resolved.Id, Loc.K("locate.rowMissingShort"));
         }
         catch (LinkPocket.Contracts.EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
         {
@@ -131,13 +132,13 @@ public sealed class ContentLocator : IContentLocator
             {
                 ContentKind.Folder => LocateResult.Missing(ContentKind.Folder),
                 ContentKind.Link => LocateResult.Missing(ContentKind.Link),
-                _ => new LocateResult(LocateStatus.NotFound, null, null, null, "未找到匹配的 ID"),
+                _ => new LocateResult(LocateStatus.NotFound, null, null, null, Loc.K("locate.notFoundId")),
             };
         }
         catch (Exception ex)
         {
             LpLog.Error("locate failed", ex);
-            return new LocateResult(LocateStatus.Failed, null, null, id, ex.Message);
+            return new LocateResult(LocateStatus.Failed, null, null, id, Loc.K("locate.failedRetry"));
         }
     }
 

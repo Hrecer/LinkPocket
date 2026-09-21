@@ -43,7 +43,7 @@ public partial class App : Application
         var notices = new List<string>();
         if (fellBack && reason is not null) notices.Add(reason);
         if (languageFellBack)
-            notices.Add($"界面语言设置无法识别（模式「{ThemeService.LanguageMode}」），已按系统语言显示");
+            notices.Add(Loc.T("app.err.languageMode", ThemeService.LanguageMode));
         if (notices.Count > 0)
         {
             var text = string.Join("\n\n", notices);
@@ -70,7 +70,7 @@ public partial class App : Application
         {
             LpLog.Error("application startup failed", ex);
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
-            MessageBox.Show(Loc.T("startup.failed", ex.Message), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.T("startup.failed"), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }
@@ -114,9 +114,9 @@ public partial class App : Application
         try
         {
             if (Application.Current.MainWindow is { IsLoaded: true })
-                LinkPocket.Views.ConfirmDialog.Show("界面异常",
-                    $"发生未处理异常：{e.Exception.Message}\n\n应用可能处于不一致状态，建议重启。",
-                    "知道了", "alert-circle-outline");
+                LinkPocket.Views.ConfirmDialog.Show(Loc.T("app.err.uiException"),
+                    Loc.T("app.err.unhandled", e.Exception.Message),
+                    Loc.T("app.err.startupTitle"), "alert-circle-outline");
         }
         catch { }
         e.Handled = true;

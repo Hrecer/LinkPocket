@@ -23,7 +23,7 @@ namespace LinkPocket.Input
                 b.Scope == binding.Scope && b.Key == binding.Key && b.Modifiers == binding.Modifiers);
             if (conflict != null)
                 throw new InvalidOperationException(
-                    $"快捷键冲突：[{binding.Scope}] {binding.GestureText} 被重复注册" +
+                    $"shortcut conflict: [{binding.Scope}] {binding.GestureText} is registered twice" +
                     $"shortcut conflict on {binding.Key}+{binding.Modifiers} (existing: {conflict.DescriptionKey}; incoming: {binding.DescriptionKey})");
             _bindings.Add(binding);
         }

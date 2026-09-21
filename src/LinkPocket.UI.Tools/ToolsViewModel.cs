@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -14,7 +15,7 @@ public sealed class DedupGroupRow
     public string Url { get; init; } = string.Empty;
     public List<LinkDto> Links { get; init; } = new();
     public int Count => Links.Count;
-    public string LocationsSummary { get; init; } = string.Empty;
+    public LocValue LocationsSummary { get; init; }
 
     /// <summary>
     /// 两组"重复组"列表是否**渲染等价**（URL / 位置摘要 / 组内各条的关键字段逐项一致，含顺序）。
@@ -56,11 +57,11 @@ public sealed class ToolsViewModel
 {
     private readonly EngineClient _api;
     private readonly IContentLocator? _locator;
-    private readonly Func<string?, Task<string>> _resolveLinkPath;
+    private readonly Func<string?, Task<LocValue>> _resolveLinkPath;
     private readonly Func<Task> _refreshFolderTree;
 
     public ToolsViewModel(EngineClient api, IContentLocator? locator,
-        Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
+        Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree)
     {
         _api = api;
         _locator = locator;
@@ -87,7 +88,7 @@ public sealed class ToolsViewModel
     /// <summary>明细里勾选待删除的链接 ID（视图据此渲染勾选态与按钮可用性）。</summary>
     public HashSet<string> CheckedIds { get; } = new();
 
-    private Dictionary<string, string> _pathCache = new();
+    private Dictionary<string, LocValue> _pathCache = new();
 
     /// <summary>
     /// 全库扫描重复 URL 并分组。抛出异常 = 读取数据失败（视图展示错误空态）；
@@ -112,7 +113,7 @@ public sealed class ToolsViewModel
         }
 
         // 位置解析（每个链接一次；同一 URL 组内共享缓存）
-        _pathCache = new Dictionary<string, string>();
+        _pathCache = new Dictionary<string, LocValue>();
         foreach (var link in groups.SelectMany(g => g))
         {
             if (!_pathCache.ContainsKey(link.LinkId))
@@ -138,13 +139,12 @@ public sealed class ToolsViewModel
     }
 
     /// <summary>位置摘要：首条所在位置，多处时补「等 N 处」（不罗列全部，避免单元格噪音）。</summary>
-    private string BuildLocationsSummary(List<LinkDto> links)
+    private LocValue BuildLocationsSummary(List<LinkDto> links)
     {
         var paths = links
-            .Select(l => _pathCache.TryGetValue(l.LinkId, out var p) ? p : "全部书签")
-            .Distinct()
+            .Select(l => _pathCache.TryGetValue(l.LinkId, out var p) ? p : Loc.K("tools.pathRoot"))
             .ToList();
-        return paths.Count == 1 ? paths[0] : $"{paths[0]} 等 {paths.Count} 处";
+        return paths.Count == 1 ? paths[0] : Loc.K("tools.pathsHint", paths[0], paths.Count);
     }
 
     /// <summary>去重明细的行选中（**共享 ListSelection 核心**；对照页 = 只读：可读、可选、不可操作）。</summary>
@@ -185,8 +185,8 @@ public sealed class ToolsViewModel
     }
 
     /// <summary>明细表某行的「位置」列（与主表同一缓存）。</summary>
-    public string ResolvePath(LinkDto link)
-        => _pathCache.TryGetValue(link.LinkId, out var p) ? p : "全部书签";
+    public LocValue ResolvePath(LinkDto link)
+        => _pathCache.TryGetValue(link.LinkId, out var p) ? p : Loc.K("tools.pathRoot");
 
     /// <summary>
     /// 删除勾选的重复链接，随后重算当前 URL 的重复组：
@@ -232,7 +232,7 @@ public sealed class ToolsViewModel
     public async Task<LocateResult> JumpAsync(string id)
     {
         if (_locator == null)
-            return new LocateResult(LocateStatus.NoHost, null, null, id, "定位组件不可用");
+            return new LocateResult(LocateStatus.NoHost, null, null, id, Loc.K("locate.unavailable"));
         return await _locator.LocateAsync(id);
     }
 
@@ -276,7 +276,7 @@ public sealed class ToolsViewModel
     public async Task<(string OutputPath, BookmarkFileInspectionDto Info)> ExportBookmarksAsync(string directory)
     {
         var suggestedPath = System.IO.Path.Combine(directory,
-            $"LinkPocket_书签导出_{DateTime.Now:yyyyMMdd_HHmmss}.html");
+            Loc.T("tools.export.fileName", DateTime.Now.ToString("yyyyMMdd_HHmmss")));
         var result = await _api.BookmarksExportAsync(suggestedPath);
         var outputPath = ReadString(result.Data, "file_path") ?? suggestedPath;
         var info = await _api.BookmarksInspectAsync(outputPath);

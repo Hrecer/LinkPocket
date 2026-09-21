@@ -14,7 +14,7 @@ using LinkPocket.I18n;
 namespace LinkPocket.ViewModels;
 
 /// <summary>搜索页空态描述：视图据此渲染 MD3E 空态徽章（图标 + 标题 + 副文案 + 色调）。</summary>
-public sealed record SearchEmptyState(string IconKind, string Title, string? Subtitle,
+public sealed record SearchEmptyState(string IconKind, LocValue Title, LocValue? Subtitle,
     string ContainerBrush, string OnContainerBrush);
 
 /// <summary>
@@ -31,10 +31,10 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private readonly INavigationService _navigation;
     private readonly IDialogService _dialogs;
     private readonly IContentLocator? _locator;
-    private readonly Func<string?, string> _resolveFolderPath;
+    private readonly Func<string?, LocValue> _resolveFolderPath;
 
     public SearchViewModel(EngineClient api, INavigationService navigation, IDialogService dialogs,
-        Func<string?, string> resolveFolderPath, IContentLocator? locator = null)
+        Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null)
     {
         _api = api;
         _navigation = navigation;
@@ -156,7 +156,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(JumpEnabled));
         var sel = SelectedItems;
-        if (sel.Count == 0) Details.UpdateFrom(null, "");
+        if (sel.Count == 0) Details.UpdateFrom(null, LocValue.Empty);
         else if (sel.Count == 1) Details.UpdateFrom(sel[0], _resolveFolderPath(sel[0].ListId));
         else Details.ShowMulti(sel);
         CommandRefresh.Request();
@@ -193,7 +193,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     public event EventHandler? ResetRequested;
 
     /// <summary>「位置」列与详情栏共用的路径解析（组合根注入）。</summary>
-    public string ResolveFolderPath(string? listId) => _resolveFolderPath(listId);
+    public LocValue ResolveFolderPath(string? listId) => _resolveFolderPath(listId);
 
     // —— 导航生命周期（MainViewModel 的 search 路由事件转发到这里） ——
 
@@ -290,7 +290,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         // 加载态：清空数据 + 加载占位
         Selection.Clear();
-        EmptyState = new SearchEmptyState("magnify", "正在搜索…", null,
+        EmptyState = new SearchEmptyState("magnify", Loc.K("search.state.searching"), null,
             "SecondaryContainer", "OnSecondaryContainer");
         Results = null;
 
@@ -307,18 +307,18 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             var results = dtos.Select(LinkItem.FromDto).ToList();
             EmptyState = results.Count == 0
                 ? new SearchEmptyState("emoticon-sad-outline",
-                    $"没有找到与「{query}」相关的内容",
-                    "换个关键词，或用上方标签扩大搜索范围再试试",
+                    Loc.K("search.state.noResults", query),
+                    Loc.K("search.state.noResultsHint"),
                     "SecondaryContainer", "OnSecondaryContainer")
-                : new SearchEmptyState("magnify", "想找点什么？",
-                    "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
+                : new SearchEmptyState("magnify", Loc.K("search.state.prompt"),
+                    Loc.K("search.state.promptHint"),
                     "PrimaryContainer", "OnPrimaryContainer");
             Results = results;
         }
         catch (Exception ex)
         {
-            EmptyState = new SearchEmptyState("alert-outline", "搜索出了点小问题",
-                ex.Message, "SurfaceContainerHighest", "OnSurface");
+            EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.failed"),
+                Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
             Results = null;
         }
     }
@@ -462,13 +462,13 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         var result = await _locator.LocateLinkAsync(item.LinkId);
         if (result.IsSuccess) return;
 
-        _dialogs.Alert("跳转", result.Message ?? result.Status switch
+        _dialogs.Alert(Loc.T("common.jump"), (result.Message ?? result.Status switch
         {
-            LocateStatus.NotFound => "未找到该链接 ID",
-            LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-            LocateStatus.Failed => "locate failed，请稍后重试",
-            _ => "定位未完成",
-        });
+            LocateStatus.NotFound => Loc.K("locate.notFoundLink"),
+            LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
+            LocateStatus.Failed => Loc.K("locate.failedRetry"),
+            _ => Loc.K("locate.incomplete"),
+        }).Resolve());
     }
 
     /// <summary>搜索侧栏「打开网站」：默认浏览器打开并记录一次访问（与浏览页侧栏同口径）。</summary>
@@ -494,9 +494,9 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (victims.Count == 0) return;
 
         var message = victims.Count == 1
-            ? $"将链接「{(string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title)}」移入回收站吗？"
-            : $"将选中的 {victims.Count} 条链接移入回收站吗？";
-        if (!_dialogs.Confirm("删除链接", message, Loc.T("common.delete"))) return;
+            ? Loc.T("browser.confirm.linkToTrash", (string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title))
+            : Loc.T("tools.dedup.deleteConfirm", victims.Count);
+        if (!_dialogs.Confirm(Loc.T("common.title.deleteLink"), message, Loc.T("common.delete"))) return;
 
         try
         {
@@ -510,8 +510,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            EmptyState = new SearchEmptyState("alert-outline", "删除出了点小问题",
-                ex.Message, "SurfaceContainerHighest", "OnSurface");
+            EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
+                Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
         }
     }
 
@@ -519,12 +519,12 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
     private bool HasNoScope => !SearchPath && !SearchUrl && !SearchTitle && !SearchDesc;
 
-    private void ShowGuideState() => EmptyState = new SearchEmptyState("magnify", "想找点什么？",
-        "输入关键词，回车即可搜索；也可以用上方标签扩大或缩小范围",
+    private void ShowGuideState() => EmptyState = new SearchEmptyState("magnify", Loc.K("search.state.prompt"),
+        Loc.K("search.state.promptHint"),
         "PrimaryContainer", "OnPrimaryContainer");
 
-    private void ShowNoScopeState() => EmptyState = new SearchEmptyState("alert-circle-outline", "请先选择搜索范围",
-        "至少勾选 路径 / URL / 标题 / 描述 之一，再进行搜索",
+    private void ShowNoScopeState() => EmptyState = new SearchEmptyState("alert-circle-outline", Loc.K("search.err.scopeRequired"),
+        Loc.K("search.err.scopeRequiredHint"),
         "SecondaryContainer", "OnSecondaryContainer");
 
     public event PropertyChangedEventHandler? PropertyChanged;

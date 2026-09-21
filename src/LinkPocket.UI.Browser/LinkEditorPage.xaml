@@ -161,7 +161,7 @@
                 <Border Background="{DynamicResource App.Surface.TintCard}"
                         CornerRadius="20" Padding="20,18">
                     <StackPanel>
-                        <TextBlock Text="{Binding TitleText}" FontSize="11.5" FontWeight="SemiBold"
+                        <TextBlock Text="{loc:Value TitleText}" FontSize="11.5" FontWeight="SemiBold"
                                    Foreground="{DynamicResource App.Accent.Icon}" Opacity="0.9" Margin="2,0,0,10"/>
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -228,7 +228,7 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="alert-circle-outline" Width="16" Height="16" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
-                        <TextBlock Text="{Binding Error}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
+                        <TextBlock Text="{loc:Value Error}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
                                    TextWrapping="Wrap" Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </StackPanel>
                 </Border>

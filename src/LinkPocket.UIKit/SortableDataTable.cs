@@ -10,6 +10,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using LinkPocket.UIKit;
 using LinkPocket.I18n;
 
 namespace LinkPocket.Views;
@@ -192,10 +193,6 @@ public class SortableDataTable : Grid
 
     public SortableDataTable()
     {
-        // 表头文案是建控件时烤进 Content/ToolTip 的字符串 → 换语言必须重跑一次投影
-        // （弱引用注册，控件回收即失效，不需要退订）
-        LocaleService.RegisterReprojector(this, Rebuild);
-
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
@@ -281,10 +278,6 @@ public class SortableDataTable : Grid
 
     private IEnumerable<DataTableColumn> ColumnList => Columns ?? Array.Empty<DataTableColumn>();
 
-    /// <summary>列头文本 = 当前语言下的键取值（键为空即无字面）。</summary>
-    private static string HeaderText(DataTableColumn col)
-        => string.IsNullOrEmpty(col.LabelKey) ? string.Empty : Loc.T(col.LabelKey);
-
     // —— 列定义变化：重建表头 + 列宽单一数据源 ——
 
     private void Rebuild()
@@ -320,14 +313,15 @@ public class SortableDataTable : Grid
 
             var header = new SortableHeaderButton
             {
-                Content = HeaderText(col),
                 Field = col.Field,
                 Direction = col.Field == SortField ? SortAscending : null,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 // 药丸紧挨（无外距），拖拽分隔线画在两药丸的贴合线上（同上一版本观感）
-                Margin = new Thickness(0, 0, 0, 0),
-                ToolTip = Loc.T("ui.sort.tip", HeaderText(col))
+                Margin = new Thickness(0, 0, 0, 0)
             };
+            // 表头文字与提示都走取词绑定（值是 LocValue）：换语言由版本失效自己重算，不靠宿主重烤
+            header.SetContent(Loc.K(col.LabelKey));
+            header.SetTip(Loc.K("ui.sort.tip", Loc.K(col.LabelKey)));
             header.Click += OnHeaderClick;
             cell.Children.Add(header);
             _headerButtons.Add(header);

@@ -48,7 +48,7 @@ public partial class BrowserViewModel
             // 剪切到源目录 = 无操作（Windows 同口径）；但必须明确提示——
             // 含糊的"没反应"会被读成"剪切后粘贴不了 = 数据不一致"（实为同目录粘贴被静默早退）。
             // 载荷**保留**（剪切态不消费）：导航到目标文件夹后仍可粘贴。
-            StatusText = Loc.T("status.pasteInSameFolder");
+            StatusText = Loc.K("status.pasteInSameFolder");
             return;
         }
 
@@ -86,7 +86,7 @@ public partial class BrowserViewModel
     {
         if (items.Count == 0) return;
 
-        var renamedNotes = new List<string>();
+        var renamedNotes = new List<LocValue>();
         var blocked = new List<string>();   // 成环（自身 / 自己的子文件夹）→ 明确反馈，绝不静默（Explorer 同样拒绝并弹窗）
         var placed = new List<string>();    // 真正落到目标目录的实体 ID（复制 = 新 ID；移动 = 原 ID）
         var done = 0;
@@ -98,7 +98,8 @@ public partial class BrowserViewModel
         // 一次操作 = 一个动作作用域：本批 N 条命令共用**同一个 correlation_id**，
         // 于是本批审计行（audit.query）与日志（logs.query）能按它取齐——"一次拖拽 10 项 = 10 条命令"
         // 从十条孤立记录变成一条线索。覆盖式状态，退出即复位（不残留、不跨动作串味）。
-        using var action = _client.BeginAction($"{(mode == TransferMode.Move ? "移动" : "复制")} {items.Count} 项");
+        using var action = _client.BeginAction(Loc.T("drag.actionN",
+            Loc.T(mode == TransferMode.Move ? "common.move" : "common.copy"), items.Count));
 
         try
         {
@@ -181,64 +182,73 @@ public partial class BrowserViewModel
                 : DropResultText(mode, done, skipped, failed, renamedNotes);
 
             // —— 收尾 ④：成环：明确弹窗说明——显式操作后"毫无反应"会被读成数据损坏 ——
-            if (blocked.Count > 0) ShowError(BlockedTitle(mode), BlockedMessage(mode, blocked));
+            if (blocked.Count > 0) ShowError(BlockedTitle(mode).Resolve(), BlockedMessage(mode, blocked).Resolve());
         }
         catch (Exception ex)
         {
             StatusText = origin == TransferOrigin.Clipboard
-                ? "粘贴失败"
-                : mode == TransferMode.Move ? "移动失败" : "复制失败";
-            ShowError(StatusText, ex.Message);
+                ? Loc.K("browser.status.pasteFailed")
+                : mode == TransferMode.Move ? Loc.K("browser.status.moveFailed") : Loc.K("browser.status.copyFailed");
+            ShowError(StatusText.Resolve(), Loc.T("err.unexpected"));
         }
     }
 
-    /// <summary>剪贴板粘贴的结果文案（与既有口径逐字一致）。</summary>
-    private static string ClipboardResultText(int done, int failed, List<string> renamedNotes)
+    /// <summary>把若干段结果句拼成一句（嵌套的文案值在渲染边界一起取词）。</summary>
+    private static LocValue Join(List<LocValue> parts, LocValue whenEmpty)
     {
-        var parts = new List<string>();
-        if (done > 0) parts.Add($"已粘贴 {done} 项{FormatRenamedNotes(renamedNotes)}");
-        if (failed > 0) parts.Add($"{failed} 项失败（详见日志）");
-        return parts.Count > 0 ? string.Join("，", parts) : "没有可粘贴的项目";
+        if (parts.Count == 0) return whenEmpty;
+        var joined = parts[0];
+        for (var i = 1; i < parts.Count; i++) joined = Loc.K("common.pairJoin", joined, parts[i]);
+        return joined;
+    }
+
+    /// <summary>剪贴板粘贴的结果文案（与既有口径逐字一致）。</summary>
+    private static LocValue ClipboardResultText(int done, int failed, List<LocValue> renamedNotes)
+    {
+        var parts = new List<LocValue>();
+        if (done > 0) parts.Add(Loc.K("browser.status.pasted", done, FormatRenamedNotes(renamedNotes)));
+        if (failed > 0) parts.Add(Loc.K("browser.status.failedCount", failed));
+        return Join(parts, Loc.K("browser.status.nothingToPaste"));
     }
 
     /// <summary>拖拽落点的结果文案：成功 / 已在目标位置 / 失败分开说（**失败绝不静默**）。</summary>
-    private static string DropResultText(TransferMode mode, int done, int skipped, int failed, List<string> renamedNotes)
+    private static LocValue DropResultText(TransferMode mode, int done, int skipped, int failed, List<LocValue> renamedNotes)
     {
-        var action = mode == TransferMode.Move ? "移动" : "复制";
-        var parts = new List<string>();
-        if (done > 0) parts.Add($"已{action} {done} 项{FormatRenamedNotes(renamedNotes)}");
-        if (skipped > 0) parts.Add($"{skipped} 项已在目标位置");
-        if (failed > 0) parts.Add($"{failed} 项失败（详见日志）");
-        return parts.Count > 0 ? string.Join("，", parts) : $"没有需要{action}的项目";
+        var action = mode == TransferMode.Move ? Loc.K("common.move") : Loc.K("common.copy");
+        var parts = new List<LocValue>();
+        if (done > 0) parts.Add(Loc.K("browser.status.actionDone", action, done, FormatRenamedNotes(renamedNotes)));
+        if (skipped > 0) parts.Add(Loc.K("browser.status.skippedInPlace", skipped));
+        if (failed > 0) parts.Add(Loc.K("browser.status.failedCount", failed));
+        return Join(parts, Loc.K("browser.status.nothingToAction", action));
     }
 
     /// <summary>非法目标（成环）的弹窗标题——按**动作**区分（移动 / 复制）。</summary>
-    private static string BlockedTitle(TransferMode mode) => mode == TransferMode.Move ? "无法移动" : "无法复制";
+    private static LocValue BlockedTitle(TransferMode mode) => mode == TransferMode.Move ? Loc.K("browser.err.cannotMove") : Loc.K("browser.err.cannotCopy");
 
     /// <summary>
     /// 非法目标的说明文案（Explorer 口径：明确说清为何不能，而不是"操作后毫无反应"）。
     /// 成环 = 目标是自己或自己的子文件夹（文件夹不能成为自己的后代）；同目录**不在此列**（那只是无操作）。
     /// </summary>
-    private static string BlockedMessage(TransferMode mode, IReadOnlyList<string> names)
+    private static LocValue BlockedMessage(TransferMode mode, IReadOnlyList<string> names)
     {
-        var action = mode == TransferMode.Move ? "移动" : "复制";
+        var action = mode == TransferMode.Move ? Loc.K("common.move") : Loc.K("common.copy");
         if (names.Count == 1)
-            return $"无法将文件夹「{names[0]}」{action}到它自己或它的子文件夹里。";
-        return $"以下文件夹无法{action}到它们自己或它们的子文件夹里：\n" +
-               string.Join("、", names.Select(n => $"「{n}」"));
+            return Loc.K("browser.err.cannotMoveIntoSelf", names[0], action);
+        return Loc.K("browser.err.cannotMoveList", action, string.Join("、", names.Select(n => $"「{n}」")));
     }
 
-    /// <summary>提示文案里的项名（缺失时给中性名——文案绝不猜身份）。</summary>
+    /// <summary>提示文案里的项名（用户数据；缺失时给中性<b>文案值</b>——文案绝不猜身份）。</summary>
+    /// <summary>提示文案里的项名（用户数据；缺失时给中性名——拖拽浮层与弹窗都是瞬时显示，取词在发出那一刻）。</summary>
     private static string DisplayName(DragItem item)
-        => !string.IsNullOrEmpty(item.Name) ? item.Name : item.IsFolder ? "文件夹" : "链接";
+        => !string.IsNullOrEmpty(item.Name) ? item.Name : item.IsFolder ? Loc.T("ui.noun.folder") : Loc.T("ui.noun.link");
 
     /// <summary>文件夹显示名（`_folderMap` 是权威；缺失时给中性名）。</summary>
     private string FolderDisplayName(string folderId)
-        => _folderMap.TryGetValue(folderId, out var info) && !string.IsNullOrEmpty(info.Name) ? info.Name : "文件夹";
+        => _folderMap.TryGetValue(folderId, out var info) && !string.IsNullOrEmpty(info.Name) ? info.Name : Loc.T("ui.noun.folder");
 
     /// <summary>链接显示名（当前视图行优先；不可见时给中性名——只用于提示文案，不参与任何判定）。</summary>
     private string LinkDisplayName(string linkId)
-        => Rows.FirstOrDefault(r => r.Id == linkId)?.Name ?? "链接";
+        => Rows.FirstOrDefault(r => r.Id == linkId)?.Name ?? Loc.T("ui.noun.link");
 
     // —— 拖拽载荷构造（拖动集合的唯一出口；从主文件迁入）——
 
@@ -260,7 +270,7 @@ public partial class BrowserViewModel
         }
 
         var missing = Selection.Count - items.Count;
-        if (missing > 0) StatusText = $"{missing} 项已不在当前视图，未参与本次操作";
+        if (missing > 0) StatusText = Loc.K("browser.err.missingItems", missing);
         return items;
     }
 

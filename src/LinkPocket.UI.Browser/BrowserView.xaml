@@ -171,7 +171,7 @@
                  与中央列表卡同构 —— SurfaceContainerHigh 内容卡（左缘贴窗口边、底部留背景余位）；
                  拖放/右键菜单经控件事件转发（订阅即启用）。 -->
             <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
-                                   HeaderText="{loc:Loc nav.panel.title}"
+                                   HeaderKey="nav.panel.title"
                                    ItemsSource="{Binding FolderTree}"
                                    NodeSelected="FolderTreePanel_NodeSelected"
                                    TreeBackgroundClicked="FolderTreePanel_BackgroundClicked"
@@ -449,7 +449,7 @@
 
                                     <!-- 最后查看（文件夹 = 子孙链接被查看时沿父链刷新；从未显示「从未」） -->
                                     <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                               Text="{Binding LastViewedText}" ToolTip="{Binding LastViewedText}"/>
+                                               Text="{Binding LastViewedData, Mode=OneWay}"/>
 
                                     <!-- 查看次数（文件夹 = 子树增量计数；链接 = 自身访问次数） -->
                                     <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
@@ -528,7 +528,7 @@
                 views:BlankClick.Command="{Binding ClearPageSelectionCommand}">
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <TextBlock Text="{loc:Value StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <!-- 选中信息：PrimaryContainer 药丸强调（MD3E 关键状态用色彩点亮） -->
                     <Border CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
                             Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">

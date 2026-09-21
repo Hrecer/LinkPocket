@@ -1,4 +1,5 @@
 using System;
+using LinkPocket.I18n;
 
 namespace LinkPocket.I18n;
 
@@ -24,11 +25,25 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     /// <summary>没有参数的纯文本键。</summary>
     public static LocValue Of(string key) => new(key, Array.Empty<object?>());
 
+    /// <summary>
+    /// 路径投影的保留键：参数是 <b>canonical</b> 路径（<c>@root/A</c>），渲染时经
+    /// <see cref="BookmarkDisplay.Path"/> 投影成当前语言的显示串（根段换名、其余原样）。
+    /// 与 XAML 的 <c>{loc:Segment}</c> 同一个概念——投影不是透传，更不是把显示串存进模型。
+    /// </summary>
+    public const string PathKey = "@path";
+
+    /// <summary>canonical 路径 → 显示串的文案值（代码里建表格单元格 / 详情行时用）。</summary>
+    public static LocValue Projection(string? canonical) => new(PathKey, new object?[] { canonical ?? string.Empty });
+
     public bool IsEmpty => string.IsNullOrEmpty(Key);
 
-    /// <summary>在当前语言下取词——<b>只允许渲染边界调用</b>（取词绑定、对话框显示那一刻）。</summary>
+    /// <summary>路径投影值（canonical → 显示串）。</summary>
+    public bool IsPath => Key == PathKey;
+
     /// <summary>在当前语言下取词——<b>只允许渲染边界调用</b>。嵌套的 <see cref="LocValue"/> 参数一起解析。</summary>
-    public string Resolve() => IsEmpty ? string.Empty : Loc.T(Key, Args.ToArray());
+    public string Resolve() => IsEmpty ? string.Empty
+        : IsPath ? BookmarkDisplay.Path(Args.Span[0] as string)
+        : Loc.T(Key, Args.ToArray());
 }
 
 /// <summary>

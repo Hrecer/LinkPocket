@@ -42,7 +42,7 @@ public partial class BrowserViewModel
         }
         catch (Exception ex)
         {
-            ShowError(redo ? Loc.T("status.redoFailed") : Loc.T("status.undoFailed"), ex.Message);
+            ShowError(redo ? Loc.T("status.redoFailed") : Loc.T("status.undoFailed"), Loc.T("err.unexpected"));
         }
     }
 

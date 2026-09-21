@@ -5,14 +5,15 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels
 {
     public class SmartListCardItem
     {
         public string Id { get; set; } = string.Empty;
-        public string Title { get; set; } = string.Empty;
-        public string Subtitle { get; set; } = string.Empty;
+        public LocValue Title { get; set; }
+        public LocValue Subtitle { get; set; }
         /// <summary>M3 字形名（小写连字符，见 LpIcons/M3 字形表）。原默认 "StarOutline"（PascalCase）不是已注册字形。</summary>
         public string IconKind { get; set; } = "bookmark-outline";
         public string Color { get; set; } = "Primary";
@@ -23,7 +24,7 @@ namespace LinkPocket.ViewModels
         private readonly EngineClient _api;
         private readonly Services.UiPortProvider _ports;
         private readonly IContentLocator? _locator;
-        private readonly Func<string?, string> _resolveFolderPath;
+        private readonly Func<string?, LocValue> _resolveFolderPath;
         private bool _isLoading;
         private int _openGeneration;   // 打开代次：GoBack / 重新打开时递增，使在途结果失效
         private ObservableCollection<SmartListCardItem> _cards = new();
@@ -32,7 +33,7 @@ namespace LinkPocket.ViewModels
         public event PropertyChangedEventHandler? PropertyChanged;
 
         /// <summary>「位置」列与详情栏共用的路径解析（组合根注入，与浏览页同一份目录树）；视图单元格工厂也经此取值。</summary>
-        public Func<string?, string> ResolveFolderPath { get; }
+        public Func<string?, LocValue> ResolveFolderPath { get; }
 
         /// <summary>
         /// ports = UI 端口槽位（组合根持有，MainWindow 构造时登记）；结果页动作命令
@@ -41,7 +42,7 @@ namespace LinkPocket.ViewModels
         /// （MainViewModel 注入，与浏览页同一份树）。
         /// </summary>
         public SmartListViewModel(EngineClient api, Services.UiPortProvider ports,
-            Func<string?, string> resolveFolderPath, IContentLocator? locator = null)
+            Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null)
         {
             _api = api;
             _ports = ports;
@@ -73,19 +74,19 @@ namespace LinkPocket.ViewModels
         public bool ShowResult => _resultViewModel != null;
 
         /// <summary>单一数据源：四张入口卡片（副标题/结果页灰色提示共用）；Definition 反查语义。</summary>
-        private static readonly (string Id, string Title, string Subtitle, string Icon, string Color)[] CardDefs =
+        private static readonly (string Id, LocValue Title, LocValue Subtitle, string Icon, string Color)[] CardDefs =
         [
-            ("recently_added", "最近添加", "近 7 天新增的书签", "plus-circle-outline", "Success"),
-            ("recently_visited", "最近查看", "近 7 天访问过的书签", "history", "Primary"),
-            ("recently_edited", "最近编辑", "近 7 天修改过的书签", "pencil-outline", "Warning"),
-            ("most_visited", "最常查看", "访问次数前 20 的书签", "trending-up", "Tertiary"),
+            ("recently_added", Loc.K("smartlists.preset.added"), Loc.K("smartlists.preset.addedDesc"), "plus-circle-outline", "Success"),
+            ("recently_visited", Loc.K("smartlists.preset.visited"), Loc.K("smartlists.preset.visitedDesc"), "history", "Primary"),
+            ("recently_edited", Loc.K("smartlists.preset.edited"), Loc.K("smartlists.preset.editedDesc"), "pencil-outline", "Warning"),
+            ("most_visited", Loc.K("smartlists.preset.mostVisited"), Loc.K("smartlists.preset.mostVisitedDesc"), "trending-up", "Tertiary"),
         ];
 
-        private static (string Id, string Title, string Subtitle, string Icon) Definition(string id)
+        private static (string Id, LocValue Title, LocValue Subtitle, string Icon) Definition(string id)
         {
             foreach (var d in CardDefs)
                 if (d.Id == id) return (d.Id, d.Title, d.Subtitle, d.Icon);
-            return (id, "智能列表", "自动汇集的动态集合", "bookmark-outline");
+            return (id, Loc.K("smartlists.title"), Loc.K("smartlists.subtitle"), "bookmark-outline");
         }
 
         private void InitializeCards()

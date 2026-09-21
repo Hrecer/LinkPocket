@@ -43,13 +43,13 @@ public class TrashRowViewModel : INotifyPropertyChanged
     public DateTime DeletedAt { get; init; }
 
     /// <summary>「类型」列。</summary>
-    public string TypeText => Loc.T(IsFolder ? "common.type.folder" : "common.type.link");
+    public LocValue TypeText => Loc.K(IsFolder ? "common.type.folder" : "common.type.link");
 
     /// <summary>
     /// 「原位置」列 = 删除时那条 <b>canonical</b> 路径在当前语言下的投影
     /// （库里存 <c>@root/A</c>，用户看到「全部书签 / A」）；空快照回落根本身。
     /// </summary>
-    public string OriginText => BookmarkDisplay.Path(
+    public LocValue OriginText => LocValue.Projection(
         string.IsNullOrWhiteSpace(OriginPath) ? BookmarkPath.RootToken : OriginPath);
 
     /// <summary>「删除时间」列。</summary>

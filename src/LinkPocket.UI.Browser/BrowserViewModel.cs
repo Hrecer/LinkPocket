@@ -68,11 +68,11 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         private set { _currentFolderId = value; OnPropertyChanged(); }
     }
 
-    private string _statusText = "就绪";
-    public string StatusText
+    private LocValue _statusText = Loc.K("status.ready");
+    public LocValue StatusText
     {
         get => _statusText;
-        set { _statusText = value; OnPropertyChanged(); }
+        set { if (!_statusText.Equals(value)) { _statusText = value; OnPropertyChanged(); } }
     }
 
     private bool _isLoading;
@@ -339,14 +339,14 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// 单个链接 / 空文件夹 → 只显示「删除」；单个文件夹 → 显示其内链接数（删除文件夹 = 其中链接进回收站）；
     /// 右键多选中的行 → 显示选中项数。
     /// </summary>
-    public string DeleteMenuHeader
+    public LocValue DeleteMenuHeader
     {
         get
         {
             var row = _contextRow;
             if (row != null && !(row.IsSelected && SelectionCount > 1))
-                return row.IsFolder && row.LinkCount > 0 ? $"删除 ({row.LinkCount} 项)" : Loc.T("common.delete");
-            return HasSelection ? $"删除 ({SelectionCount} 项)" : Loc.T("common.delete");
+                return row.IsFolder && row.LinkCount > 0 ? Loc.K("browser.btn.deleteCount", row.LinkCount) : Loc.K("common.delete");
+            return HasSelection ? Loc.K("browser.btn.deleteCount", SelectionCount) : Loc.K("common.delete");
         }
     }
 
@@ -435,7 +435,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 文件夹完整路径展示（详情栏用）："全部书签 / A / B"；根返回"全部书签"。
+    /// 文件夹完整路径展示（详情栏用）："全部书签 / A / B"；根返回Loc.K("tools.pathRoot")。
     /// includeSelf=false 时用于「选中文件夹本身」的场景：位置只显示其祖先链，不包含自己。
     /// </summary>
     public string GetFolderPathDisplay(string? folderId, bool includeSelf = true)
@@ -570,18 +570,18 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             if (session.IsFolder)
             {
                 var updated = await _client.FolderUpdateAsync(session.Id, name: name);
-                StatusText = $"已重命名为「{updated.Data?.Name ?? name}」";
+                StatusText = Loc.K("browser.status.renamed", updated.Data?.Name ?? name);
             }
             else
             {
                 await _client.LinkUpdateAsync(session.Id, title: name);
-                StatusText = $"已重命名为「{name}」";
+                StatusText = Loc.K("browser.status.renamed", name);
             }
             // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 Selection，不随重建丢）
         }
         catch (Exception ex)
         {
-            ShowError(Loc.T("status.renameFailed"), ex.Message);
+            ShowError(Loc.T("status.renameFailed"), Loc.T("err.unexpected"));
         }
     }
 

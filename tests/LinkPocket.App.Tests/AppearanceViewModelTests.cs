@@ -98,7 +98,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(c.Definition!.Palette.Count, c.Swatches.Count);
             Assert.InRange(c.Swatches.Count, 4, 5);
         });
-        Assert.All(presets, c => Assert.False(string.IsNullOrWhiteSpace(c.Summary), $"{c.Name.Resolve()} 缺派生摘要"));
+        Assert.All(presets, c => Assert.False(c.Summary.IsEmpty, $"{c.Name.Resolve()} 缺派生摘要"));
         Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name.Resolve()} 不该是空态"));
 
         // 设计档第 1–4 套 = 5 色、第 5–10 套 = 4 色；加上 5 色的出厂默认
@@ -298,7 +298,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.False(custom.IsEmpty);
             Assert.Single(custom.Swatches);                     // 卡面只显示**已选**的颜色
             Assert.Equal(Color.FromRgb(0x11, 0x22, 0x33), custom.Swatches[0]);
-            Assert.Equal("未选", vm.Slots[1].ValueText);         // 空槽不显示假色值
+            Assert.Equal("未选", vm.Slots[1].ValueText.Resolve());         // 空槽不显示假色值
             Assert.Equal(string.Empty, vm.Slots[1].Hex);
         }
         finally
@@ -321,14 +321,14 @@ public class AppearanceViewModelTests : IDisposable
 
             Assert.False(vm.IsCustomActive, "空槽必须被拒绝：不应用");
             Assert.False(vm.ThemeCards[^1].IsSelected, "被拒绝时自选颜色卡不许高亮");
-            Assert.Contains($"{total} 个颜色没选", vm.Status, StringComparison.Ordinal);
+            Assert.Contains($"{total} 个颜色没选", vm.Status.Resolve(), StringComparison.Ordinal);
             Assert.False(File.Exists(_path), "被拒绝不得写偏好");
 
             // 只差一格也不行（门槛 = 每一格都有颜色）
             for (var i = 0; i < total - 1; i++) vm.SetSlotColor(i, Color.FromRgb((byte)(0x40 + i), 0x50, 0x60));
             vm.ApplyDraft();
             Assert.False(vm.IsCustomActive);
-            Assert.Contains("还有 1 个颜色没选", vm.Status, StringComparison.Ordinal);
+            Assert.Contains("还有 1 个颜色没选", vm.Status.Resolve(), StringComparison.Ordinal);
         }
         finally
         {
@@ -351,7 +351,7 @@ public class AppearanceViewModelTests : IDisposable
 
         // 走「应用」入口也是同一口径（状态行说明 + 中性提示，不摆红色错误）
         vm.ApplyDraft();
-        Assert.Contains("没选", vm.Status, StringComparison.Ordinal);
+        Assert.Contains("没选", vm.Status.Resolve(), StringComparison.Ordinal);
         Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
     }
 
@@ -416,7 +416,7 @@ public class AppearanceViewModelTests : IDisposable
 
             vm.ApplyThemeCard(custom);              // 草稿全空 → 拒绝
             Assert.False(vm.IsCustomActive);
-            Assert.Contains("没选", vm.Status, StringComparison.Ordinal);
+            Assert.Contains("没选", vm.Status.Resolve(), StringComparison.Ordinal);
 
             foreach (var (slot, hex) in ThemeCatalog.Default.Palette.Select((c, i) => (i, c)))
             {
@@ -741,9 +741,9 @@ public class AppearanceViewModelTests : IDisposable
         vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? "");
         vm.FontSource = FontSourceKind.Custom;
         Assert.Contains(nameof(vm.FontSourceHint), raised);
-        Assert.Contains("自定义字体", vm.FontSourceHint, StringComparison.Ordinal);
+        Assert.Contains("自定义字体", vm.FontSourceHint.Resolve(), StringComparison.Ordinal);
         vm.FontSource = FontSourceKind.System;
-        Assert.Contains("系统已装字体", vm.FontSourceHint, StringComparison.Ordinal);
+        Assert.Contains("系统已装字体", vm.FontSourceHint.Resolve(), StringComparison.Ordinal);
 
         // ② 「融合」：所有卡面都用**当前生效主题**的页面底；
         //    只有"正在生效"的那张卡，它色点里的"背景色成员"才与卡面同色（那枚圆点看不见 = 融合）。
@@ -793,7 +793,7 @@ public class AppearanceViewModelTests : IDisposable
             var ok = await vm.ImportFontAsync(fake);
 
             Assert.False(ok);
-            Assert.Contains("导入失败", vm.Status, StringComparison.Ordinal);
+            Assert.Contains("导入失败", vm.Status.Resolve(), StringComparison.Ordinal);
             Assert.False(File.Exists(UiPreferenceStore.FilePath), "导入失败不得写偏好");
         }
         finally
@@ -819,7 +819,7 @@ public class AppearanceViewModelTests : IDisposable
     {
         var vm = NewVm();
         await vm.DeleteFontAsync(FontOption("Microsoft YaHei UI"));   // 无文件路径 = 系统字体
-        Assert.Contains("系统字体不可删除", vm.Status, StringComparison.Ordinal);
+        Assert.Contains("系统字体不可删除", vm.Status.Resolve(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -832,13 +832,13 @@ public class AppearanceViewModelTests : IDisposable
             var vm = NewVm();
             Assert.True(vm.AutoAdjustColors);                        // 缺省打开 = 自动调色
             Assert.Equal(PaletteMode.Auto, ThemeService.PaletteMode);
-            Assert.Contains("已开启", vm.PaletteModeHint, StringComparison.Ordinal);
+            Assert.Contains("已开启", vm.PaletteModeHint.Resolve(), StringComparison.Ordinal);
 
             // 关掉：当场重新应用 + 落盘（偏好里记着这个开关）
             vm.AutoAdjustColors = false;
             Assert.Equal(PaletteMode.Exact, ThemeService.PaletteMode);
             Assert.Equal(PaletteMode.Exact, ThemeService.Current.PaletteMode);
-            Assert.Contains("已关闭", vm.PaletteModeHint, StringComparison.Ordinal);
+            Assert.Contains("已关闭", vm.PaletteModeHint.Resolve(), StringComparison.Ordinal);
             var prefsOff = UiPreferenceStore.Load(out var failedOff);
             Assert.False(failedOff);
             Assert.False(prefsOff.Theme.AutoAdjustColors, "开关必须落盘（重启后保持）");
@@ -925,11 +925,11 @@ public class AppearanceViewModelTests : IDisposable
             vm.FontSource = FontSourceKind.Custom;
             Assert.True(vm.IsCustomFontSource);
             Assert.Equal(1, vm.FontSourceIndex);
-            Assert.Contains("自定义", vm.FontSourceHint, StringComparison.Ordinal);
+            Assert.Contains("自定义", vm.FontSourceHint.Resolve(), StringComparison.Ordinal);
 
             vm.FontSource = FontSourceKind.System;
             Assert.Equal(0, vm.FontSourceIndex);
-            Assert.Contains("只读", vm.FontSourceHint, StringComparison.Ordinal);
+            Assert.Contains("只读", vm.FontSourceHint.Resolve(), StringComparison.Ordinal);
 
             // 能力位：导入那份可删、系统那份不可删（界面据此只在一侧显示导入/删除按钮）
             Assert.True(FontOption("X", "C:\\tmp\\x.ttf").CanDelete);
@@ -982,7 +982,7 @@ public class AppearanceViewModelTests : IDisposable
         Assert.True(matcha.IsSelected);
         Assert.Single(vm.ThemeCards, c => c.IsSelected);
         // 状态行不播报"已应用主题「X」"；当前生效的是哪套由选中投影（上面三条）表达。
-        Assert.Equal(string.Empty, vm.Status);
+        Assert.True(vm.Status.Resolve().Length == 0);
         Assert.Equal("uji-matcha", ThemeService.Current.Id);
 
         var prefs = UiPreferenceStore.Load(out var failed);
@@ -1006,7 +1006,7 @@ public class AppearanceViewModelTests : IDisposable
 
         Assert.Equal("user-custom", vm.SelectedThemeId);
         // 状态行**不播报成功**：当前生效的是哪套外观由主题卡高亮 + 「当前使用」徽标表达，不再写一行文字。
-        Assert.Equal(string.Empty, vm.Status);
+        Assert.True(vm.Status.Resolve().Length == 0);
 
         var prefs = UiPreferenceStore.Load(out var failed);
         Assert.False(failed);
@@ -1025,7 +1025,7 @@ public class AppearanceViewModelTests : IDisposable
         await vm.ResetToDefaultAsync();
 
         // 状态行不播报成功；"回到默认"由选中卡 + 调色台空态表达
-        Assert.Equal(string.Empty, vm.Status);
+        Assert.True(vm.Status.Resolve().Length == 0);
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
         Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
@@ -1076,7 +1076,7 @@ public class AppearanceViewModelTests : IDisposable
             Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
             Assert.Equal(FontCatalog.DefaultMonoFamily, prefs.Fonts.Mono);
             Assert.Equal(FontCatalog.DefaultUiFamily, vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
-            Assert.Equal(string.Empty, vm.Status);                                  // 成功不播报
+            Assert.True(vm.Status.Resolve().Length == 0);                                  // 成功不播报
         }
         finally
         {

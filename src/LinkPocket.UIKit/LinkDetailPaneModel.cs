@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -13,7 +14,11 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public class LinkDetailPaneModel : ActionSurfaceModel
 {
-    public string Title { get; protected set; } = string.Empty;
+    /// <summary>标题<b>用户数据</b>（书签标题 / 文件夹名）。</summary>
+    public string TitleData { get; protected set; } = "";
+
+    /// <summary>标题<b>文案</b>（数据缺失时的中性兜底，如「无名称」）。</summary>
+    public LocValue TitleCopy { get; protected set; }
     public string Url { get; protected set; } = string.Empty;
     public BitmapImage? Favicon { get; protected set; }
     public bool HasFavicon => Favicon != null;
@@ -32,15 +37,17 @@ public class LinkDetailPaneModel : ActionSurfaceModel
     public ICommand? CopyUrlCommand { get; set; }
 
     /// <summary>填充一屏数据（各页写自己的投影；界面只做绑定）。</summary>
-    protected void SetContent(string title, string url, BitmapImage? favicon, string description,
+    protected void SetContent(string titleData, LocValue titleCopy, string url, BitmapImage? favicon, string description,
         IReadOnlyList<DetailSidebarRow> rows)
     {
-        Title = title ?? string.Empty;
+        TitleData = titleData ?? "";
+        TitleCopy = titleCopy;
         Url = url ?? string.Empty;
         Favicon = favicon;
         Description = description ?? string.Empty;
         Rows = rows ?? Array.Empty<DetailSidebarRow>();
-        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(TitleData));
+        OnPropertyChanged(nameof(TitleCopy));
         OnPropertyChanged(nameof(Url));
         OnPropertyChanged(nameof(Favicon));
         OnPropertyChanged(nameof(HasFavicon));

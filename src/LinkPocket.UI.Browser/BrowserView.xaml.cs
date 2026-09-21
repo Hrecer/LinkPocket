@@ -190,7 +190,7 @@ public partial class BrowserView : UserControl
             if (MainTable.RowsList.ItemContainerGenerator.ContainerFromItem(row) is not DependencyObject container) return;
             var border = FindTaggedBorder(container);
             if (border?.ContextMenu is not { } menu) return;
-            ViewModel.SetContextRow(row);          // 删除文案按"这一次会删掉什么"算
+            ViewModel.SetContextRow(row);          // 删除文案按Loc.T("browser.dialog.whatWillBeDeleted")算
             menu.PlacementTarget = border;
             menu.IsOpen = true;
         }));
@@ -762,10 +762,12 @@ public partial class BrowserView : UserControl
     private List<MenuItem> BuildRightDragMenuItems(IReadOnlyList<DragItem> items, string? targetId, string targetName)
     {
         var shown = BookmarkDisplay.Segment(targetName);   // 虚根落点是 token，拼文案前投影
-        var copy = new MenuItem { Header = $"复制到「{shown}」" };
+        var copyLabel = Loc.T("browser.menu.copyTo", shown);
+        var copy = new MenuItem { Header = copyLabel };
         copy.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetId, TransferMode.Copy);
 
-        var move = new MenuItem { Header = $"移动到「{shown}」" };
+        var moveLabel = Loc.T("browser.menu.moveTo", shown);
+        var move = new MenuItem { Header = moveLabel };
         move.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetId, TransferMode.Move);
 
         return new List<MenuItem> { copy, move };

@@ -1,6 +1,7 @@
 using System.Windows.Input;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -35,18 +36,19 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
         DeleteActionLabel = Loc.K("trash.menu.purge");
 
         SetContent(
-            string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name,
+            row.Name ?? "",
+            string.IsNullOrEmpty(row.Name) ? Loc.K("trash.unnamed") : LocValue.Empty,
             row.Url ?? string.Empty,
             row.IsFolder ? null : FaviconService.LoadFromCache(row.FaviconUrl),
             row.Description ?? string.Empty,
             new[]
             {
-                new DetailSidebarRow { IconKind = "folder-outline", LabelKey = "ui.noun.origin", Value = row.OriginText },
-                new DetailSidebarRow { IconKind = "history", LabelKey = "ui.noun.deletedAt", Value = row.DeletedText },
+                new DetailSidebarRow { IconKind = "folder-outline", LabelKey = "ui.noun.origin", ValueCopy = row.OriginText },
+                new DetailSidebarRow { IconKind = "history", LabelKey = "ui.noun.deletedAt", ValueData = row.DeletedText },
                 new DetailSidebarRow
                 {
-                    IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true,
-                    CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID"
+                    IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = row.Id, IsMono = true,
+                    CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId")
                 },
             });
     }

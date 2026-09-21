@@ -37,7 +37,7 @@ internal sealed class FolderSortHandler : ICommandHandler
             if (!validIds.Contains(itemId))
                 throw new EngineException(EngineErrors.Of(
                     EngineErrors.EntityNotFound,
-                    $"folder {itemId} does not belong to the target folder (parent_id={parentId ?? "根"}）",
+                    $"folder {itemId} does not belong to the target folder (parent_id={parentId ?? "root"})",
                     correlationId: ctx.CorrelationId));
         }
 

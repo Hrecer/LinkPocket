@@ -162,7 +162,7 @@ public sealed class EngineCatalog : IEngineCatalog
                 var kind = d.IsQuery ? "Query" : d.IsDestructive ? "Mutation (destructive)" : "Mutation";
                 var @params = d.Parameters.Count == 0
                     ? "—"
-                    : string.Join("、", d.Parameters.Select(p => $"{p.Name}({p.TypeName}{(p.Required ? "" : "，可选")})"));
+                    : string.Join("、", d.Parameters.Select(p => $"{p.Name}({p.TypeName}{(p.Required ? "" : ", optional")})"));
                 sb.AppendLine($"| `{d.Name}` | {kind} | {d.Caps} | {@params} | {d.Description} |");
             }
             sb.AppendLine();

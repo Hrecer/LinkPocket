@@ -18,7 +18,7 @@ public partial class TrashViewModel
     private async Task PurgeNodeAsync(TrashNode? node)
     {
         if (node == null || node.IsRoot || node.IsLink) return;
-        await PurgeIdsAsync(new[] { node.Id }, isFolder: true, name: node.Name);
+        await PurgeIdsAsync(new[] { node.Id }, isFolder: true, node.Name, LocValue.Empty);
     }
 
     /// <summary>只读详情覆盖层的「永久删除」：作用对象 = **覆盖层正在展示的那一份书签快照**
@@ -27,7 +27,7 @@ public partial class TrashViewModel
     {
         var id = _detailLinkId;
         if (id == null) return;
-        await PurgeIdsAsync(new[] { id }, isFolder: false, name: DetailPane.Title);
+        await PurgeIdsAsync(new[] { id }, isFolder: false, DetailPane.TitleData, DetailPane.TitleCopy);
     }
 
     /// <summary>Delete 键 / 工具栏「永久删除」：删除当前选中项（可多选，批量命令 purge_batch）。</summary>
@@ -36,7 +36,7 @@ public partial class TrashViewModel
         var rows = SelectedRows.ToList();
         if (rows.Count == 0) return;
 
-        var name = rows.Count == 1 ? rows[0].Name : $"这 {rows.Count} 项";
+        var name = rows.Count == 1 ? Loc.K("trash.thisOne", rows[0].Name) : Loc.K("trash.thisMany", rows.Count);
         var folderIds = rows.Where(r => r.IsFolder).Select(r => r.Id).ToList();
         var linkIds = rows.Where(r => !r.IsFolder).Select(r => r.Id).ToList();
 
@@ -50,15 +50,17 @@ public partial class TrashViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"permanent delete failed (trash force-refreshed): {name}", ex);
-            ShowError(Loc.T("trash.purgeFailed"), ex.Message);
+            LpLog.Error($"permanent delete failed (trash force-refreshed)", ex);
+            ShowError(Loc.T("trash.purgeFailed"), Loc.T("err.unexpected"));
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已删条目
         }
     }
 
-    private async Task PurgeIdsAsync(IReadOnlyList<string> ids, bool isFolder, string name)
+    /// <param name="nameData">条目的用户数据名（标题 / 单元名）。</param>
+    /// <param name="nameCopy">条目的文案名（数据缺失时的兜底，如「无名称」）；空 = 用数据名。</param>
+    private async Task PurgeIdsAsync(IReadOnlyList<string> ids, bool isFolder, string nameData, LocValue nameCopy)
     {
-        if (!ConfirmPurge(name, 1, isFolder)) return;
+        if (!ConfirmPurge(nameCopy.IsEmpty ? Loc.K("trash.thisOne", nameData) : nameCopy, 1, isFolder)) return;
         try
         {
             await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(ids[0], isFolder,
@@ -67,28 +69,28 @@ public partial class TrashViewModel
         }
         catch (Exception ex)
         {
-            LpLog.Error($"permanent delete failed (trash force-refreshed): {name}", ex);
-            ShowError(Loc.T("trash.purgeFailed"), ex.Message);
+            LpLog.Error("permanent delete failed (trash force-refreshed)", ex);
+            ShowError(Loc.T("trash.purgeFailed"), Loc.T("err.unexpected"));
             await LoadAsync();
         }
     }
 
     /// <summary>删除确认（规范弹窗；文案与既有回收站口径一致：明说不可恢复）。</summary>
-    private bool ConfirmPurge(string name, int count, bool containsFolder)
+    private bool ConfirmPurge(LocValue name, int count, bool containsFolder)
     {
         if (Dialogs == null)
         {
             LpLog.Error("dialog port not registered: the permanent-delete confirmation was skipped (no UI environment)", null);   // 功能不可用 ≠ 静默取消
             return false;
         }
+        // 单选时把名字括起来；多选时 name 已是「这 N 项」整句——两种情况都在渲染边界拼
+        var target = count == 1 ? Loc.K("trash.oneName", name) : name;
+        var title = Loc.T("trash.menu.purge");
         var message = containsFolder
-            ? $"确定要永久删除{Target(name, count)}吗？\n文件夹内的全部内容将一并删除，不可恢复。"
-            : $"确定要永久删除{Target(name, count)}吗？\n此操作不可恢复。";
-        return Dialogs.Confirm(Loc.T("trash.menu.purge"), message, Loc.T("trash.menu.purge"), "delete-forever");
+            ? Loc.T("trash.purge.confirmFolders", target.Resolve())
+            : Loc.T("trash.purge.confirmPlain", target.Resolve());
+        return Dialogs.Confirm(title, message, title, "delete-forever");
     }
-
-    private static string Target(string name, int count)
-        => count == 1 ? $"「{name}」" : name;   // 多选时 name 已是「这 N 项」
 
     private void ShowError(string title, string message)
         => Dialogs?.Alert(title, message);

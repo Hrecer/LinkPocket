@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -45,7 +46,7 @@ public partial class TrashViewModel
 
         IsLoading = true;
         HasError = false;
-        ErrorMessage = string.Empty;
+        ErrorMessage = LocValue.Empty;
         if (navigating) IsNavigating = true;
         var wasNavigation = navigating;
         var selectedIds = Selection.Ids.ToList();     // 刷新保留选中（按 ID 重新投影；已删 ID 自动消失）
@@ -80,7 +81,7 @@ public partial class TrashViewModel
         catch (Exception ex)
         {
             HasError = true;
-            ErrorMessage = $"加载回收站失败: {ex.Message}";
+            ErrorMessage = Loc.K("trash.loadFailed");
             StatusText = ErrorMessage;
             LpLog.Error("trash load failed", ex);   // 观测面：失败必须留痕
         }

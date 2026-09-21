@@ -5,6 +5,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -86,28 +87,29 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
                 : await Task.Run(() => FaviconService.LoadFromCache(faviconUrl));
             if (gen != _generation) return;
 
-            SetContent(link.Title, link.Url, favicon, link.Description ?? "", BuildRows(link));
+            SetContent(link.Title ?? "", LocValue.Empty, link.Url, favicon, link.Description ?? "", BuildRows(link));
         }
         catch (Exception ex)
         {
             // 加载失败反馈：不留下永远空白的详情页。闭页前可见可读
             LpLog.Error("link detail page load failed", ex);
-            SetContent(Loc.T("status.loadFailed"), string.Empty, null,
-                "读取链接数据出错，请返回列表重试。\n" + ex.Message, Array.Empty<DetailSidebarRow>());
+            SetContent("", Loc.K("link.loadFailedTitle"), string.Empty, null,
+                Loc.T("detailpage.err.load"), Array.Empty<DetailSidebarRow>());
         }
     }
 
     /// <summary>信息行（与浏览页详情页字段一致；ID 行附复制按钮）。</summary>
     private IReadOnlyList<DetailSidebarRow> BuildRows(LinkDto link) => new List<DetailSidebarRow>
     {
-        new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = _host.GetFolderPathDisplay(link.ListId) },
-        new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = Fmt(link.UpdatedAt) },
+        new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueData = _host.GetFolderPathDisplay(link.ListId) },
+        new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = Fmt(link.UpdatedAt) },
         new() { IconKind = "history", LabelKey = "ui.noun.lastVisited",
-                Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
-        new() { IconKind = "chart-line", LabelKey = "ui.noun.viewTotal", Value = $"{link.VisitCount} 次" },
-        new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = Fmt(link.CreatedAt) },
-        new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = link.LinkId, IsMono = true,
-                CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = "复制 ID" },
+                ValueData = link.LastVisitedAt is null ? "" : link.LastVisitedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                ValueCopy = link.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty },
+        new() { IconKind = "chart-line", LabelKey = "ui.noun.viewTotal", ValueCopy = Loc.K("count.viewsN", link.VisitCount) },
+        new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = Fmt(link.CreatedAt) },
+        new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = link.LinkId, IsMono = true,
+                CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = Loc.K("common.copyId") },
     };
 
     private static string Fmt(DateTime dt) => dt.Year <= 1 ? "—" : dt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -153,7 +155,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             if (string.IsNullOrEmpty(Url)) return;
             System.Windows.Clipboard.SetText(Url);
-            _host.StatusText = Loc.T("status.linkCopied");   // 复制反馈
+            _host.StatusText = Loc.K("status.linkCopied");   // 复制反馈
         }
         catch { }
     }
@@ -164,7 +166,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         {
             if (string.IsNullOrEmpty(id)) return;
             System.Windows.Clipboard.SetText(id);
-            _host.StatusText = Loc.T("status.idCopied");   // 复制反馈
+            _host.StatusText = Loc.K("status.idCopied");   // 复制反馈
         }
         catch { }
     }
@@ -181,12 +183,13 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         if (_linkId == null) return;
         // 删除确认唯一入口（行为契约 §1.3）：详情页删除与浏览页共用 ConfirmDialog 文案；
         // 优先走宿主对话框端口，无端口退化 ConfirmDialog 直用
+        var linkName = string.IsNullOrEmpty(TitleData) ? TitleCopy.Resolve() : TitleData;
         var dlg = _host.Dialogs;
         if (dlg != null)
         {
-            if (!dlg.Confirm("删除链接", $"将链接「{Title}」移入回收站吗？")) return;
+            if (!dlg.Confirm(Loc.T("common.title.deleteLink"), Loc.T("browser.confirm.linkToTrash", linkName))) return;
         }
-        else if (!Views.ConfirmDialog.Show("删除链接", $"将链接「{Title}」移入回收站吗？", Loc.T("common.delete")))
+        else if (!Views.ConfirmDialog.Show(Loc.T("common.title.deleteLink"), Loc.T("browser.confirm.linkToTrash", linkName), Loc.T("common.delete")))
         {
             return;
         }

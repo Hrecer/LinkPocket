@@ -50,25 +50,29 @@ public partial class TrashViewModel
         catch (Exception ex)
         {
             LpLog.Error($"restore failed (links {linkIds.Count} / units {folderIds.Count}; to={to})", ex);
-            ShowError(Loc.T("trash.restoreFailed"), ex.Message);
+            ShowError(Loc.T("trash.restoreFailed"), Loc.T("err.unexpected"));
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已还原条目
         }
     }
 
     /// <summary>结果播报：计数 + 回落项前列名称 + 自动编号计数 + 同 URL 重复计数（不阻断、不合并）。</summary>
-    private static string BuildRestoreSummary(TrashRestoreBatchResult? r, string to, int selectedCount)
+    private static LocValue BuildRestoreSummary(TrashRestoreBatchResult? r, string to, int selectedCount)
     {
-        if (r == null) return "已还原";
-        var head = $"已还原 {selectedCount} 项{(to == "root" ? "到根目录" : "到原位置")}";
-        var notes = new List<string>();
+        if (r == null) return Loc.K("trash.restoreDone");
+        var head = Loc.K("trash.restoredCount", selectedCount,
+            Loc.K(to == "root" ? "trash.restoreToRoot" : "trash.restoreToOrigin"));
+        var notes = new List<LocValue>();
         if (r.FellBackToRoot.Count > 0)
         {
             var preview = string.Join("、", r.FellBackToRoot.Take(3).Select(n => $"「{n}」"));
-            var tail = r.FellBackToRoot.Count > 3 ? " 等" : string.Empty;
-            notes.Add($"{r.FellBackToRoot.Count} 项原位置已不存在落根（{preview}{tail}）");
+            var tail = r.FellBackToRoot.Count > 3 ? Loc.K("trash.restoreEtc") : LocValue.Empty;
+            notes.Add(Loc.K("trash.restoreFellBack", r.FellBackToRoot.Count, preview, tail));
         }
-        if (r.Renamed.Count > 0) notes.Add($"{r.Renamed.Count} 项自动编号");
-        if (r.DuplicateUrls > 0) notes.Add($"{r.DuplicateUrls} 项与目标位置已有链接同 URL（未合并）");
-        return notes.Count == 0 ? head : $"{head}（{string.Join("；", notes)}）";
+        if (r.Renamed.Count > 0) notes.Add(Loc.K("trash.restoreRenamed", r.Renamed.Count));
+        if (r.DuplicateUrls > 0) notes.Add(Loc.K("trash.restoreDuplicate", r.DuplicateUrls));
+        if (notes.Count == 0) return head;
+        var joined = notes[0];
+        for (var i = 1; i < notes.Count; i++) joined = Loc.K("common.semiJoin", joined, notes[i]);
+        return Loc.K("common.parenthetical", head, joined);
     }
 }

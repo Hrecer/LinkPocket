@@ -136,7 +136,7 @@ public class ShortcutTests
 
         var ex = Assert.Throws<System.InvalidOperationException>(() =>
             registry.Register(new ShortcutBinding { Key = Key.N, Modifiers = ModifierKeys.Control, Scope = ShortcutScope.Browser, Command = new ProbeCommand(), DescriptionKey = "B" }));
-        Assert.Contains("快捷键冲突", ex.Message);
+        Assert.Contains("shortcut conflict", ex.Message);
         Assert.Contains("Ctrl+N", ex.Message);   // 提示文案含键位（GestureText 唯一生成处）
 
         // 不同作用域同键不冲突（正是"↑/↓ 两栏各绑一条"的合法前提）
@@ -348,7 +348,7 @@ public class ShortcutTests
             var (status, text) = RunOnSta(() =>
             {
                 vm.CopyPathCommand.Execute(null);
-                return (vm.StatusText, System.Windows.Clipboard.GetText());
+                return (vm.StatusText.Resolve(), System.Windows.Clipboard.GetText());
             });
 
             Assert.Contains("已复制路径", status, StringComparison.Ordinal);

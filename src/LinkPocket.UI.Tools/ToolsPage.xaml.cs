@@ -16,6 +16,7 @@ using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.Views
 {
@@ -35,7 +36,7 @@ namespace LinkPocket.Views
         private EngineClient _api = null!;
         private IContentLocator? _locator;
         private INavigationService? _navigation;
-        private Func<string?, Task<string>> _resolveLinkPath = _ => Task.FromResult("全部书签");
+        private Func<string?, Task<LocValue>> _resolveLinkPath = _ => Task.FromResult(Loc.K("tools.pathRoot"));
         private Func<Task> _refreshFolderTree = () => Task.CompletedTask;
 
         /// <summary>
@@ -45,7 +46,7 @@ namespace LinkPocket.Views
         /// 走 <see cref="IContentLocator"/>（ID 跳转工具 + 明细顶部/右栏入口），两者互不替代。
         /// </summary>
         public void Configure(EngineClient api, IContentLocator? locator, INavigationService? navigation,
-            Func<string?, Task<string>> resolveLinkPath, Func<Task> refreshFolderTree)
+            Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree)
         {
             _api = api;
             _locator = locator;
@@ -72,25 +73,24 @@ namespace LinkPocket.Views
         private sealed class ToolItem
         {
             public string Id { get; init; } = string.Empty;
-            public string Name { get; init; } = string.Empty;
+            public LocValue Name { get; init; }
             /// <summary>必须是 LpIcons 已注册的字形，否则渲染为空白占位。</summary>
             public string Icon { get; init; } = string.Empty;
         }
 
         private readonly List<ToolItem> _tools = new()
         {
-            new() { Id = "dedup", Name = "链接去重", Icon = "content-duplicate" },
-            new() { Id = "idjump", Name = "ID 跳转", Icon = "fingerprint" },
-            new() { Id = "bookmarks", Name = "书签导入 / 导出", Icon = "bookmark-outline" },
+            new() { Id = "dedup", Name = Loc.K("tools.tab.dedup"), Icon = "content-duplicate" },
+            new() { Id = "idjump", Name = Loc.K("tools.tab.idJump"), Icon = "fingerprint" },
+            new() { Id = "bookmarks", Name = Loc.K("tools.tab.transfer"), Icon = "bookmark-outline" },
         };
 
-        private const string DedupTitle = "链接去重";
-        private const string DedupSubtitle = "扫描完全相同的 URL，按组列出重复的链接，可逐条保留或删除。";
-        private const string IdJumpTitle = "ID 跳转";
-        private const string IdJumpSubtitle = "按 ID 定位到目标：进入它所在的目录并选中那一行。";
-        private const string BookmarkTitle = "书签导入 / 导出";
-        private const string BookmarkSubtitle =
-            "与 Chrome / Edge / Firefox 互通的标准 Netscape 书签格式（.html）：导入还原文件夹层级，导出可直接被浏览器导入。";
+        private static readonly LocValue DedupTitle = Loc.K("tools.tab.dedup");
+        private static readonly LocValue DedupSubtitle = Loc.K("tools.card.dedupDesc");
+        private static readonly LocValue IdJumpTitle = Loc.K("tools.tab.idJump");
+        private static readonly LocValue IdJumpSubtitle = Loc.K("tools.card.idJumpDesc");
+        private static readonly LocValue BookmarkTitle = Loc.K("tools.tab.transfer");
+        private static readonly LocValue BookmarkSubtitle = Loc.K("tools.card.transferDesc");
 
         // —— 工具页 ViewModel（懒建：需要 Configure 注入就绪） ——
         private ToolsViewModel? _toolsVm;
@@ -252,7 +252,7 @@ namespace LinkPocket.Views
             var row = sel.HasAny ? _detailLinks.FirstOrDefault(l => sel.Contains(l.LinkId)) : null;
             DetailTable.ApplySelection(row == null ? Array.Empty<object>() : new object[] { row });
             _detailSidebar.UpdateFrom(row == null ? null : LinkItem.FromDto(row),
-                row == null ? "" : VmTools.ResolvePath(row));
+                row == null ? LocValue.Empty : VmTools.ResolvePath(row));
             // 顶部「跳转」药丸与选中行同源（无选中 = 没有跳转目标）；不在投影点之外另设刷新时机
             DetailJumpBtn.IsEnabled = row != null && _locator != null;
             CommandRefresh.Request();
@@ -316,13 +316,13 @@ namespace LinkPocket.Views
             var result = await VmTools.JumpAsync(id);
             if (result.IsSuccess) return;
 
-            ConfirmDialog.Show("跳转", result.Message ?? result.Status switch
+            ConfirmDialog.Show(Loc.T("common.jump"), (result.Message ?? result.Status switch
             {
-                LocateStatus.NotFound => "未找到该链接 ID",
-                LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-                LocateStatus.Failed => "locate failed，请稍后重试",
-                _ => "定位未完成",
-            }, "确定", "alert-circle-outline");
+                LocateStatus.NotFound => Loc.K("locate.notFoundLink"),
+                LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
+                LocateStatus.Failed => Loc.K("locate.failedRetry"),
+                _ => Loc.K("locate.incomplete"),
+            }).Resolve(), Loc.T("common.ok"), "alert-circle-outline");
         }
 
         private void DetailJump_Click(object sender, RoutedEventArgs e) => _ = JumpDetailAsync();
@@ -373,24 +373,24 @@ namespace LinkPocket.Views
             switch (toolId)
             {
                 case "idjump":
-                    PaneTitle.Text = IdJumpTitle;
-                    PaneSubtitle.Text = IdJumpSubtitle;
+                    PaneTitle.SetText(IdJumpTitle);
+                    PaneSubtitle.SetText(IdJumpSubtitle);
                     PaneFormHost.Visibility = Visibility.Visible;
                     ResetIdJumpForm();
                     IdInput.Focus();
                     break;
 
                 case "bookmarks":
-                    PaneTitle.Text = BookmarkTitle;
-                    PaneSubtitle.Text = BookmarkSubtitle;
+                    PaneTitle.SetText(BookmarkTitle);
+                    PaneSubtitle.SetText(BookmarkSubtitle);
                     PaneBookmarkHost.Visibility = Visibility.Visible;
                     ResetBookmarkMessages();
                     SetBookmarkMode(importing: true);
                     break;
 
                 default: // dedup
-                    PaneTitle.Text = DedupTitle;
-                    PaneSubtitle.Text = DedupSubtitle;
+                    PaneTitle.SetText(DedupTitle);
+                    PaneSubtitle.SetText(DedupSubtitle);
                     PaneTableHost.Visibility = Visibility.Visible;
                     BuildDedupHeaderActions();
                     ShowDedupPlaceholder();
@@ -402,7 +402,8 @@ namespace LinkPocket.Views
         private void BuildDedupHeaderActions()
         {
             _dedupActionIcon = new M3Icon { Kind = "content-duplicate", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
-            _dedupActionText = new TextBlock { Text = Loc.T("tools.dedup.start"), FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
+            _dedupActionText = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
+            _dedupActionText.SetText(Loc.K("tools.dedup.start"));
             _dedupActionBtn = new Button
             {
                 Style = (Style)Application.Current.FindResource("PrimaryPillButton"),
@@ -416,6 +417,8 @@ namespace LinkPocket.Views
             _dedupActionBtn.Click += async (_, _) => await RunDedupAsync();
             HeaderActions.Children.Add(_dedupActionBtn);
 
+            var clearLabel = new TextBlock { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) };
+            clearLabel.SetText(Loc.K("tools.dedup.clear"));
             _dedupClearBtn = new Button
             {
                 Height = 32,   // 同上：药丸样式无高度默认值，必须显式给
@@ -428,7 +431,7 @@ namespace LinkPocket.Views
                     Children =
                     {
                         new M3Icon { Kind = "close-circle-outline", Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center },
-                        new TextBlock { Text = Loc.T("tools.dedup.clear"), FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) }
+                        clearLabel
                     }
                 },
                 Style = (Style)Application.Current.FindResource("TonalButton")
@@ -440,9 +443,9 @@ namespace LinkPocket.Views
         private void ShowDedupPlaceholder()
         {
             PaneTable.ItemsSource = null;
-            PaneTable.EmptyContent = BuildState("content-duplicate", "还没有查重结果",
-                "点击右上角「开始查重」，扫描完全相同的 URL");
-            PaneSubtitle.Text = DedupSubtitle;
+            PaneTable.EmptyContent = BuildState("content-duplicate", Loc.K("tools.dedup.emptyTitle"),
+                Loc.K("tools.dedup.emptyHint"));
+            PaneSubtitle.SetText(DedupSubtitle);
         }
 
         private void ClearDedupResults()
@@ -451,7 +454,7 @@ namespace LinkPocket.Views
             _groups = new List<DedupGroupRow>();
             GoBackToList();
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "content-duplicate";
-            if (_dedupActionText != null) _dedupActionText.Text = Loc.T("tools.dedup.start");
+            if (_dedupActionText != null) _dedupActionText.SetText(Loc.K("tools.dedup.start"));
             if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = false;
             ShowDedupPlaceholder();
         }
@@ -510,19 +513,8 @@ namespace LinkPocket.Views
                 new DataTableColumn
                 {
                     Field = "locations", LabelKey = "ui.noun.locatedIn", Width = -2,
-                    SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary,
-                    CellFactory = r =>
-                    {
-                        var cell = new TextBlock
-                        {
-                            Text = ((DedupGroupRow)r).LocationsSummary,
-                            FontSize = 12.5,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            TextTrimming = TextTrimming.CharacterEllipsis
-                        };
-                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
-                        return cell;
-                    }
+                    SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary.Resolve(),
+                    CellFactory = r => TextCell(((DedupGroupRow)r).LocationsSummary)
                 },
             };
 
@@ -552,8 +544,8 @@ namespace LinkPocket.Views
         {
             // ⚠️ 扫描期间**不清表**（保留旧结果，内容未变时下方直接跳过重设）：清空 + 重新填充 =
             // 切页/重扫时的整表重建白烧 + 视觉闪空（低性能设备切页偶发卡顿）。
-            PaneTable.EmptyContent = BuildState("refresh", "正在扫描重复链接…", "全库比对 URL，请稍候");
-            PaneSubtitle.Text = DedupSubtitle;
+            PaneTable.EmptyContent = BuildState("refresh", Loc.K("tools.dedup.scanningTitle"), Loc.K("tools.dedup.scanningHint"));
+            PaneSubtitle.SetText(DedupSubtitle);
 
             List<DedupGroupRow> groups;
             try
@@ -563,29 +555,29 @@ namespace LinkPocket.Views
             catch (Exception ex)
             {
                 LpLog.Error("duplicate scan failed", ex);
-                PaneTable.EmptyContent = BuildState("alert-circle-outline", "读取数据失败", ex.Message);
+                PaneTable.EmptyContent = BuildState("alert-circle-outline", Loc.K("tools.dedup.readFailedTitle"), Loc.K("err.unexpected"));
                 return;
             }
 
             var previous = _groups;   // 旧结果（视图镜像）：下面据此判断"要不要重设表格"
             _groups = groups;
             if (_dedupActionIcon != null) _dedupActionIcon.Kind = "refresh";
-            if (_dedupActionText != null) _dedupActionText.Text = Loc.T("tools.dedup.again");
+            if (_dedupActionText != null) _dedupActionText.SetText(Loc.K("tools.dedup.again"));
             if (_dedupClearBtn != null) _dedupClearBtn.IsEnabled = true;
 
             if (groups.Count == 0)
             {
                 if (previous.Count > 0) PaneTable.ItemsSource = null;   // 结果全消失 → 清表让空态可见
-                PaneTable.EmptyContent = BuildState("content-duplicate", "没有发现重复链接",
-                    "所有链接的 URL 都互不相同");
-                PaneSubtitle.Text = Loc.T("tools.dedup.none");
+                PaneTable.EmptyContent = BuildState("content-duplicate", Loc.K("tools.dedup.noneTitle"),
+                    Loc.K("tools.dedup.noneHint"));
+                PaneSubtitle.SetText(Loc.K("tools.dedup.none"));
                 return;
             }
 
             // 内容未变（重扫/切回常见）→ **不重设 ItemsSource**：工厂模式重设 = 整表重建（同步主线程）
             if (!DedupGroupRow.SameSequence(previous, groups)) PaneTable.ItemsSource = groups;
             PaneTable.EmptyContent = null!;
-            PaneSubtitle.Text = $"发现 {groups.Count} 组重复链接，共 {groups.Sum(g => g.Count)} 条";
+            PaneSubtitle.SetText(Loc.K("tools.dedup.foundSubtitle", groups.Count, groups.Sum(g => g.Count)));
         }
 
         // ============================================================
@@ -611,18 +603,10 @@ namespace LinkPocket.Views
                 {
                     // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
                     Field = "path", LabelKey = "ui.noun.location", Width = -3,
-                    SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r),
+                    SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r).Resolve(),
                     CellFactory = r =>
                     {
-                        var cell = new TextBlock
-                        {
-                            Text = VmTools.ResolvePath((LinkDto)r),
-                            FontSize = 12.5,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            TextTrimming = TextTrimming.CharacterEllipsis
-                        };
-                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
-                        return cell;
+                        return TextCell(VmTools.ResolvePath((LinkDto)r));
                     }
                 },
                 new DataTableColumn
@@ -635,13 +619,15 @@ namespace LinkPocket.Views
                 {
                     Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 130,
                     SortKey = r => (IComparable)(((LinkDto)r).LastVisitedAt ?? DateTime.MinValue),
-                    CellFactory = r => TextCell(((LinkDto)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未")
+                    CellFactory = r => ((LinkDto)r).LastVisitedAt is { } visited
+                        ? TextCell(visited.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
+                        : TextCell(Loc.K("clock.never"))
                 },
                 new DataTableColumn
                 {
                     Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 84,
                     SortKey = r => (IComparable)((LinkDto)r).VisitCount,
-                    CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
+                    CellFactory = r => TextCell(Loc.K("count.viewsN", ((LinkDto)r).VisitCount))
                 },
                 // 重复组明细**没有**「操作」列 / 行内跳转按钮：
                 // 对比页是"看差异"的只读视图；「跳转」（顶部 URL 组药丸 / 右栏图标钮）走定位组件 IContentLocator
@@ -669,7 +655,7 @@ namespace LinkPocket.Views
             _detailLinks = row.Links;
 
             DetailUrlText.Text = row.Url;
-            DetailHintText.Text = $"共 {row.Count} 条重复链接";
+            DetailHintText.SetText(Loc.K("tools.dedup.groupHint", row.Count));
             DetailTable.ItemsSource = null;
             DetailTable.ItemsSource = row.Links;
             DetailTable.EmptyContent = null!;
@@ -744,6 +730,7 @@ namespace LinkPocket.Views
             host.Children.Add(outline);
             host.Children.Add(fill);
 
+            var deleteTip = Loc.T("tools.dedup.deleteChecked");
             var button = new Button
             {
                 Content = host,
@@ -751,13 +738,13 @@ namespace LinkPocket.Views
                 Cursor = Cursors.Hand,
                 FocusVisualStyle = null,
                 Style = (Style)FindResource("RowIconButton"),
-                ToolTip = Loc.T("tools.dedup.deleteChecked")
+                ToolTip = deleteTip
             };
             button.Click += async (_, _) =>
             {
                 if (!VmTools.ToggleChecked(link.LinkId))
                 {
-                    await FlashSelectionInfo("至少保留一条");
+                    await FlashSelectionInfo(Loc.K("tools.dedup.keepOne"));
                     return;
                 }
 
@@ -821,10 +808,12 @@ namespace LinkPocket.Views
             var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             var nameText = new TextBlock
             {
-                Text = string.IsNullOrWhiteSpace(link.Title) ? "(无标题)" : link.Title,
                 FontSize = 13.5, FontWeight = FontWeights.SemiBold,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            // 标题是用户数据；没有标题时画「无标题」（文案值，跟语言走）
+            if (string.IsNullOrWhiteSpace(link.Title)) nameText.SetText(Loc.K("tools.untitled"));
+            else nameText.Text = link.Title;
             nameText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
             textStack.Children.Add(nameText);
             var urlText = new TextBlock
@@ -841,15 +830,19 @@ namespace LinkPocket.Views
             return panel;
         }
 
-        private TextBlock TextCell(string text)
+        /// <summary>数据单元格（用户数据：URL / 标题）。</summary>
+        private TextBlock TextCell(string text) => TextCell(LocValue.Of(text));
+
+        /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
+        private TextBlock TextCell(LocValue text)
         {
             var cell = new TextBlock
             {
-                Text = text,
                 FontSize = 12.5,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
+            cell.SetText(text);
             cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
             return cell;
         }
@@ -858,13 +851,13 @@ namespace LinkPocket.Views
         {
             var count = VmTools.CheckedIds.Count;
             DeleteSelectedBtn.IsEnabled = count > 0;
-            SelectionInfoText.Text = count > 0 ? $"已勾选 {count} 条" : string.Empty;
+            SelectionInfoText.SetText(count > 0 ? Loc.K("tools.checkedCount", count) : LocValue.Empty);
         }
 
         /// <summary>临时提示（不打断操作）：显示一句短提示后恢复勾选计数。</summary>
-        private async Task FlashSelectionInfo(string message)
+        private async Task FlashSelectionInfo(LocValue message)
         {
-            SelectionInfoText.Text = message;
+            SelectionInfoText.SetText(message);
             await Task.Delay(1600);
             if (DetailPanel.Visibility == Visibility.Visible) UpdateDeleteState();
         }
@@ -874,7 +867,7 @@ namespace LinkPocket.Views
             if (VmTools.CheckedIds.Count == 0) return;
 
             var count = VmTools.CheckedIds.Count;
-            if (!ConfirmDialog.Show("删除重复项", $"将选中的 {count} 条链接移入回收站吗？", Loc.T("common.delete"), "delete-outline"))
+            if (!ConfirmDialog.Show(Loc.T("tools.dedup.deleteTitle"), Loc.T("tools.dedup.deleteConfirm", count), Loc.T("common.delete"), "delete-outline"))
                 return;
 
             try
@@ -883,7 +876,7 @@ namespace LinkPocket.Views
                 var rest = await VmTools.DeleteCheckedAsync();
                 if (rest != null)
                 {
-                    DetailHintText.Text = $"共 {rest.Count} 条重复链接";
+                    DetailHintText.SetText(Loc.K("tools.dedup.groupHint", rest.Count));
                     DetailTable.ItemsSource = null;
                     DetailTable.ItemsSource = rest;
                     UpdateDeleteState();
@@ -897,7 +890,7 @@ namespace LinkPocket.Views
             catch (Exception ex)
             {
                 LpLog.Error("duplicate deletion failed", ex);
-                await FlashSelectionInfo("删除失败：" + ex.Message);
+                await FlashSelectionInfo(Loc.K("tools.dedup.deleteFailed"));
             }
         }
 
@@ -917,9 +910,9 @@ namespace LinkPocket.Views
             JumpHintText.Text = string.Empty;
         }
 
-        private void ShowJumpHint(string message)
+        private void ShowJumpHint(LocValue message)
         {
-            JumpHintText.Text = message;
+            JumpHintText.SetText(message);
             JumpHintChip.Visibility = Visibility.Visible;
         }
 
@@ -931,7 +924,7 @@ namespace LinkPocket.Views
             var id = IdInput.Text.Trim();
             if (string.IsNullOrEmpty(id))
             {
-                ShowJumpHint("请输入要定位的 ID");
+                ShowJumpHint(Loc.K("tools.id.prompt"));
                 return;
             }
 
@@ -951,10 +944,10 @@ namespace LinkPocket.Views
             {
                 ShowJumpHint(result.Message ?? result.Status switch
                 {
-                    LocateStatus.NotFound => "未找到匹配的链接或文件夹 ID",
-                    LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-                    LocateStatus.Failed => "locate failed，请稍后重试",
-                    _ => "定位未完成",
+                    LocateStatus.NotFound => Loc.K("locate.notFoundId"),
+                    LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
+                    LocateStatus.Failed => Loc.K("locate.failedRetry"),
+                    _ => Loc.K("locate.incomplete"),
                 });
             }
             return result;
@@ -1057,7 +1050,7 @@ namespace LinkPocket.Views
         /// 成功态用矢量勾（字形表未注册勾形图标，不引入未经渲染验证的字形）。
         /// </summary>
         private static void ShowChip(Border chip, M3Icon icon, Path check, TextBlock text,
-            string message, ChipState state)
+            LocValue message, ChipState state)
         {
             var warn = state == ChipState.Warn;
             chip.SetResourceReference(Border.BackgroundProperty, "App.Support.Container");
@@ -1073,7 +1066,7 @@ namespace LinkPocket.Views
             icon.SetResourceReference(TextElement.ForegroundProperty, foregroundKey);
             check.SetResourceReference(Shape.StrokeProperty, foregroundKey);
             text.SetResourceReference(TextElement.ForegroundProperty, foregroundKey);
-            text.Text = message;
+            text.SetText(message);
             chip.Visibility = Visibility.Visible;
         }
 
@@ -1083,10 +1076,12 @@ namespace LinkPocket.Views
 
         private void ImportBrowse_Click(object sender, RoutedEventArgs e)
         {
+            var title = Loc.T("tools.pickBookmarkFile");
+            var filter = Loc.T("tools.filter.bookmarks");
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
-                Title = Loc.T("tools.pickBookmarkFile"),
-                Filter = "书签文件 (*.html;*.htm)|*.html;*.htm|所有文件 (*.*)|*.*",
+                Title = title,
+                Filter = filter,
                 CheckFileExists = true
             };
             if (dialog.ShowDialog() != true) return;
@@ -1106,7 +1101,7 @@ namespace LinkPocket.Views
             _importInspection = null;
 
             ImportProgressRow.Visibility = Visibility.Visible;
-            ImportProgressText.Text = Loc.T("tools.runningPrecheck");
+            ImportProgressText.SetText(Loc.K("tools.runningPrecheck"));
 
             try
             {
@@ -1115,25 +1110,31 @@ namespace LinkPocket.Views
 
                 if (!info.IsValid)
                 {
+                    LpLog.Warn($"bookmark preflight rejected the file: {info.Error}");
                     ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
-                        $"无法识别为书签文件：{info.Error}", ChipState.Warn);
+                        Loc.K("tools.preflight.unreadable"), ChipState.Warn);
                     return;
                 }
 
                 _importInspection = info;
-                var parts = new List<string>
+                var parts = new List<LocValue>
                 {
-                    info.Format,
-                    $"{info.LinkCount} 个书签",
-                    $"{info.FolderCount} 个文件夹",
-                    $"最深 {info.MaxDepth} 层"
+                    Loc.K("tools.preflight.format", info.Format),
+                    Loc.K("tools.preflight.links", info.LinkCount),
+                    Loc.K("tools.preflight.folders", info.FolderCount),
+                    Loc.K("tools.preflight.depth", info.MaxDepth)
                 };
                 if (info.SkippedCount > 0)
-                    parts.Add($"跳过 {info.SkippedCount} 条占位书签（about:blank）");
+                    parts.Add(Loc.K("tools.preflight.skipped", info.SkippedCount));
                 if (info.Warnings.Count > 0)
-                    parts.Add(info.Warnings[0]);
+                {
+                    // 引擎的告警原文进日志（观测面），界面只报条数——上屏的话就是混语
+                    LpLog.Warn($"bookmark preflight warnings: {string.Join(" | ", info.Warnings)}");
+                    parts.Add(Loc.K("tools.preflight.warnings", info.Warnings.Count));
+                }
 
-                var summary = string.Join(" · ", parts);
+                var summary = parts[0];
+                for (var i = 1; i < parts.Count; i++) summary = Loc.K("common.dotJoin", summary, parts[i]);
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
                     summary,
                     info.Warnings.Count > 0 ? ChipState.Warn : ChipState.Info);
@@ -1144,7 +1145,7 @@ namespace LinkPocket.Views
                 LpLog.Error("bookmark preflight failed", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
-                    $"预检失败：{ex.Message}", ChipState.Warn);
+                    Loc.K("tools.preflight.failed"), ChipState.Warn);
             }
         }
 
@@ -1156,7 +1157,7 @@ namespace LinkPocket.Views
             ImportRunBtn.IsEnabled = false;
             ImportBrowseBtn.IsEnabled = false;
             ImportProgressRow.Visibility = Visibility.Visible;
-            ImportProgressText.Text = Loc.T("tools.runningImport");
+            ImportProgressText.SetText(Loc.K("tools.runningImport"));
 
             try
             {
@@ -1164,10 +1165,10 @@ namespace LinkPocket.Views
                 ImportProgressRow.Visibility = Visibility.Collapsed;
 
                 var detail = _importInspection is { } info
-                    ? $"{info.FolderCount} 个文件夹 + {info.LinkCount} 个书签"
-                    : $"共 {count} 条";
+                    ? Loc.K("tools.preflight.summary", info.FolderCount, info.LinkCount)
+                    : Loc.K("tools.count.total", count);
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
-                    $"导入完成：{detail} 已追加，界面已自动刷新", ChipState.Success);
+                    Loc.K("tools.import.done", detail), ChipState.Success);
 
                 // 成功即清空选择并锁定，避免二次点击造成重复导入
                 _importFilePath = string.Empty;
@@ -1181,7 +1182,7 @@ namespace LinkPocket.Views
                 LpLog.Error("bookmark import failed", ex);
                 ImportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ImportInspectChip, ImportInspectIcon, ImportInspectCheck, ImportInspectText,
-                    $"导入失败：{ex.Message}", ChipState.Warn);
+                    Loc.K("backup.importFailed"), ChipState.Warn);
                 ImportRunBtn.IsEnabled = true;
             }
             finally
@@ -1195,7 +1196,8 @@ namespace LinkPocket.Views
 
         private void ExportBrowse_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("tools.pickExportDir") };
+            var title = Loc.T("tools.pickExportDir");
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = title };
             if (dialog.ShowDialog() != true) return;
 
             ExportDirBox.Text = dialog.FolderName;
@@ -1215,7 +1217,7 @@ namespace LinkPocket.Views
             {
                 VmTools.EndBookmarkFlow();
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
-                    $"导出目录不存在：{directory}", ChipState.Warn);
+                    Loc.K("tools.export.dirMissing", directory), ChipState.Warn);
                 return;
             }
 
@@ -1224,7 +1226,7 @@ namespace LinkPocket.Views
             ExportResultChip.Visibility = Visibility.Collapsed;
             ExportRevealBtn.Visibility = Visibility.Collapsed;
             ExportProgressRow.Visibility = Visibility.Visible;
-            ExportProgressText.Text = Loc.T("tools.runningExport");
+            ExportProgressText.SetText(Loc.K("tools.runningExport"));
 
             try
             {
@@ -1234,8 +1236,9 @@ namespace LinkPocket.Views
 
                 if (!info.IsValid)
                 {
+                    LpLog.Warn($"bookmark export verification failed: {info.Error}");
                     ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
-                        $"导出文件校验未通过：{info.Error}", ChipState.Warn);
+                        Loc.K("tools.export.verifyFailed"), ChipState.Warn);
                     ExportRunBtn.IsEnabled = true;
                     return;
                 }
@@ -1243,8 +1246,9 @@ namespace LinkPocket.Views
                 ExportRevealBtn.Visibility = Visibility.Visible;
                 // 第二行只给文件名（完整路径就在上方域里，且可「打开所在文件夹」直达），避免长路径折行
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
-                    $"导出完成并已校验：{info.LinkCount} 个书签 · {info.FolderCount} 个文件夹 · {FormatBytes(info.FileBytes)}" +
-                    $"\n{System.IO.Path.GetFileName(outputPath)}", ChipState.Success);
+                    Loc.K("tools.export.doneWithFile",
+                        Loc.K("tools.export.done", info.LinkCount, info.FolderCount, FormatBytes(info.FileBytes)),
+                        System.IO.Path.GetFileName(outputPath)), ChipState.Success);
                 ExportRunBtn.IsEnabled = true;
             }
             catch (Exception ex)
@@ -1252,7 +1256,7 @@ namespace LinkPocket.Views
                 LpLog.Error("bookmark export failed", ex);
                 ExportProgressRow.Visibility = Visibility.Collapsed;
                 ShowChip(ExportResultChip, ExportResultIcon, ExportResultCheck, ExportResultText,
-                    $"导出失败：{ex.Message}", ChipState.Warn);
+                    Loc.K("backup.exportFailed"), ChipState.Warn);
                 ExportRunBtn.IsEnabled = true;
             }
             finally
@@ -1286,7 +1290,7 @@ namespace LinkPocket.Views
         // —— 空态（MD3E：大圆角徽章 + 引导文案，与其它页面同规格） ——
         // ============================================================
 
-        private static FrameworkElement BuildState(string iconKind, string title, string subtitle)
+        private static FrameworkElement BuildState(string iconKind, LocValue title, LocValue subtitle)
         {
             var panel = new StackPanel
             {
@@ -1314,20 +1318,22 @@ namespace LinkPocket.Views
 
             var titleText = new TextBlock
             {
-                Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                FontSize = 15, FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             };
+            titleText.SetText(title);
             titleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.OnContainer");
             panel.Children.Add(titleText);
-            if (!string.IsNullOrEmpty(subtitle))
+            if (subtitle is { IsEmpty: false })
             {
                 var subtitleText = new TextBlock
                 {
-                    Text = subtitle, FontSize = 12,
+                    FontSize = 12,
                     Opacity = 0.7, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
                     MaxWidth = 420,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
                 };
+                subtitleText.SetText(subtitle);
                 subtitleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
                 panel.Children.Add(subtitleText);
             }

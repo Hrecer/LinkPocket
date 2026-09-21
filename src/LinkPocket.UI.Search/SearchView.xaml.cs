@@ -13,6 +13,8 @@ using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
+using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.Views;
 
@@ -102,7 +104,7 @@ public partial class SearchView : UserControl
                 // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
                 // 省下的宽度全部让给名称/位置，URL 不得被压缩
                 Field = "path", LabelKey = "ui.noun.location", Width = -3,
-                SortKey = r => (IComparable)(vm.ResolveFolderPath(((LinkItem)r).ListId)),
+                SortKey = r => (IComparable)vm.ResolveFolderPath(((LinkItem)r).ListId).Resolve(),
                 CellFactory = r => TextCell(vm.ResolveFolderPath(((LinkItem)r).ListId), 12.5)
             },
             new DataTableColumn
@@ -115,14 +117,15 @@ public partial class SearchView : UserControl
             {
                 Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 114,
                 SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
-                CellFactory = r => TextCell(
-                    ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 12.5)
+                CellFactory = r => ((LinkItem)r).LastVisitedAt is { } visited
+                    ? TextCell(visited.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                    : TextCell(Loc.K("clock.never"), 12.5)
             },
             new DataTableColumn
             {
                 Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 72,
                 SortKey = r => (IComparable)((LinkItem)r).VisitCount,
-                CellFactory = r => TextCell($"{((LinkItem)r).VisitCount} 次", 12.5)
+                CellFactory = r => TextCell(Loc.K("count.viewsN", ((LinkItem)r).VisitCount), 12.5)
             },
             new DataTableColumn
             {
@@ -269,12 +272,27 @@ public partial class SearchView : UserControl
         return panel;
     }
 
+    /// <summary>数据单元格（时间戳 / 路径这类用户数据，永不翻译）。</summary>
+    private static TextBlock TextCell(string text, double fontSize)
+    {
+        var tb = BuildCell(fontSize);
+        tb.Text = text;
+        return tb;
+    }
+
+    /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
+    private static TextBlock TextCell(LocValue text, double fontSize)
+    {
+        var tb = BuildCell(fontSize);
+        tb.SetText(text);
+        return tb;
+    }
+
     /// <summary>普通文本单元格（表格化信息列统一规格）。</summary>
-    private TextBlock TextCell(string text, double fontSize)
+    private static TextBlock BuildCell(double fontSize)
     {
         var tb = new TextBlock
         {
-            Text = text,
             FontSize = fontSize,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -284,7 +302,7 @@ public partial class SearchView : UserControl
     }
 
     /// <summary>MD3E 空状态视图：大圆角色块徽章 + 引导性文案（替代生硬的系统提示）。</summary>
-    private FrameworkElement BuildSearchState(string iconKind, string title, string? subtitle,
+    private FrameworkElement BuildSearchState(string iconKind, LocValue title, LocValue? subtitle,
         string containerBrush, string onContainerBrush)
     {
         var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 56, 0, 0) };
@@ -304,20 +322,22 @@ public partial class SearchView : UserControl
         sp.Children.Add(badge);
         var stateTitle = new TextBlock
         {
-            Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold,
+            FontSize = 17, FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 18, 0, 0)
         };
+        stateTitle.SetText(title);
         stateTitle.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
         sp.Children.Add(stateTitle);
         if (subtitle != null)
         {
             var stateSubtitle = new TextBlock
             {
-                Text = subtitle, FontSize = 12, TextWrapping = TextWrapping.Wrap,
+                FontSize = 12, TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.85,
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
                 MaxWidth = 420, TextAlignment = TextAlignment.Center
             };
+            stateSubtitle.SetText(subtitle.Value);
             stateSubtitle.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
             sp.Children.Add(stateSubtitle);
         }

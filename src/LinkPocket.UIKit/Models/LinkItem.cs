@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Models
 {
@@ -94,8 +95,6 @@ namespace LinkPocket.Models
                 return char.ToUpper(firstChar).ToString();
             }
         }
-        public string VisitCountText => VisitCount == 0 ? "未访问" : $"{VisitCount} 次访问";
-        public string LastVisitedText => LastVisitedAt.HasValue ? LastVisitedAt.Value.ToString("yyyy-MM-dd HH:mm") : "从未";
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

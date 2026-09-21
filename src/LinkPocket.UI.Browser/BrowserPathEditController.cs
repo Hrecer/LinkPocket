@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -14,7 +15,7 @@ public sealed class BrowserPathEditController
 {
     private readonly Views.PathResolver _resolver;
     private readonly Action<string?> _navigate;
-    private readonly Action<string> _report;
+    private readonly Action<LocValue> _report;
 
     private bool _isEditing;
     private string _text = string.Empty;
@@ -25,7 +26,7 @@ public sealed class BrowserPathEditController
     /// <param name="resolver">路径解析器（唯一实现，UIKit）。</param>
     /// <param name="navigate">Enter 解析成功 → 导航到目标目录（宿主执行 LoadAsync）。</param>
     /// <param name="report">解析失败 → 状态栏提示（宿主写入 StatusText）。</param>
-    public BrowserPathEditController(Views.PathResolver resolver, Action<string?> navigate, Action<string> report)
+    public BrowserPathEditController(Views.PathResolver resolver, Action<string?> navigate, Action<LocValue> report)
     {
         _resolver = resolver;
         _navigate = navigate;
@@ -99,7 +100,7 @@ public sealed class BrowserPathEditController
         else
         {
             _isInvalid = true;
-            _report($"路径不存在：{invalidSegment}");
+            _report(Loc.K("browser.err.pathSegmentMissing", invalidSegment));
             Changed?.Invoke();
         }
     }

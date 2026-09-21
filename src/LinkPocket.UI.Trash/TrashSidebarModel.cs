@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Windows.Input;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -43,7 +44,8 @@ public class TrashSidebarModel : DetailSidebarModel
         // 一页上百项时，选中的行滑出视口后可一键回到它。仅单选（多选无"某一项"）。
         ShowJumpAction = true;
         ConfigureSidebarActionLabels(row.IsFolder);   // 主按钮文案：单元=打开（进入）/ 链接=详情（只读覆盖层）
-        DisplayName = string.IsNullOrEmpty(row.Name) ? "（无名称）" : row.Name;
+        if (string.IsNullOrEmpty(row.Name)) DisplayNameCopy = Loc.K("trash.unnamed");
+        else DisplayNameData = row.Name;
         IdText = row.Id;
         UrlText = row.Url ?? string.Empty;
         DescriptionText = row.Description ?? string.Empty;   // 描述快照（链接与单元通用）
@@ -63,14 +65,14 @@ public class TrashSidebarModel : DetailSidebarModel
             {
                 IconKind = row.IsFolder ? "folder" : "link-variant",
                 LabelKey = "ui.noun.type",
-                Value = row.IsFolder ? "文件夹单元（含子树）" : "书签",
+                ValueCopy = row.IsFolder ? Loc.K("ui.noun.folderUnit") : Loc.K("ui.noun.bookmark"),
                 IsAccent = true
             },
             new()
             {
                 IconKind = "folder-outline",
                 LabelKey = "ui.noun.origin",
-                Value = row.OriginText
+                ValueCopy = row.OriginText
             },
         };
         if (!row.IsFolder && !string.IsNullOrWhiteSpace(UrlText))
@@ -79,25 +81,25 @@ public class TrashSidebarModel : DetailSidebarModel
             {
                 IconKind = "link-variant",
                 LabelKey = "ui.noun.url",
-                Value = UrlText,
+                ValueData = UrlText,
                 CopyCommand = _copyCommand,
-                CopyToolTip = "复制网址"
+                CopyToolTip = Loc.K("common.copyUrl")
             });
         }
         rows.Add(new DetailSidebarRow
         {
             IconKind = "history",
             LabelKey = "ui.noun.deletedAt",
-            Value = row.DeletedText
+            ValueData = row.DeletedText
         });
         rows.Add(new DetailSidebarRow
         {
             IconKind = "fingerprint",
             LabelKey = "ui.noun.id",
-            Value = row.Id,
+            ValueData = row.Id,
             IsMono = true,
             CopyCommand = _copyCommand,
-            CopyToolTip = "复制 ID"
+            CopyToolTip = Loc.K("common.copyId")
         });
 
         SetRows(rows);
@@ -119,9 +121,9 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowDeleteAction = true;
         ShowRestoreAction = false;
         ShowRestoreToRootAction = false;
-        ShowJumpAction = false;   // 多选没有"某一项"可定位（与其它页同一口径）
+        ShowJumpAction = false;   // 多选没有Loc.K("trash.jumpNeedsOne")可定位（与其它页同一口径）
         DeleteSelectionLabel = Loc.K("trash.purgeSelection");
-        DisplayName = Loc.T("count.selectedItems", rows.Count);
+        DisplayNameCopy = Loc.K("count.selectedItems", rows.Count);
         IdText = string.Empty;
         UrlText = string.Empty;
         DescriptionText = string.Empty;

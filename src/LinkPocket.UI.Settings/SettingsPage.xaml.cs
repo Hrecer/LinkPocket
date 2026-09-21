@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.Views
 {
@@ -31,6 +32,9 @@ namespace LinkPocket.Views
 
         private EngineClient Api { get; set; } = null!;
         private Func<Task> ReinitializeAsync { get; set; } = null!;
+
+        /// <summary>清空数据的确认短语（文案值；与用户输入的比较发生在点按/输入那一刻，跟当前语言一致）。</summary>
+        private static readonly LocValue ClearPhrase = Loc.K("settings.maintenance.confirmPhrase");
 
         public SettingsPage()
         {
@@ -108,11 +112,11 @@ namespace LinkPocket.Views
             catch (Exception ex)
             {
                 LpLog.Error("failed to clear logs", ex);
-                await ShowLogStatus("failed to clear logs：目录不可访问或文件被占用", gen);
+                await ShowLogStatus(Loc.T("settings.log.clearFailedDetail"), gen);
                 return;
             }
 
-            await ShowLogStatus(count > 0 ? $"已清除 {count} 个日志文件" : "无需清理", gen);
+            await ShowLogStatus(count > 0 ? Loc.T("settings.log.clearedCount", count) : Loc.T("settings.log.nothingToClear"), gen);
         }
 
         /// <summary>B-5：清空日志文件逻辑唯一入口（ClearLogsButton 与「清空数据」共用）。返回删除的文件数。
@@ -143,8 +147,8 @@ namespace LinkPocket.Views
 
         private void ConfirmInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            ExecuteClearButton.IsEnabled = ConfirmInputBox.Text == "我确认清除全部数据";
-            ConfirmErrorText.Text = ExecuteClearButton.IsEnabled ? "" : "输入内容不匹配";
+            ExecuteClearButton.IsEnabled = ConfirmInputBox.Text == ClearPhrase.Resolve();
+            ConfirmErrorText.SetText(ExecuteClearButton.IsEnabled ? LocValue.Empty : Loc.K("settings.maintenance.phraseMismatch"));
         }
 
         private bool _clearInProgress;   // B-3：清空数据防重入（长操作期间连点二次触发）
@@ -152,19 +156,19 @@ namespace LinkPocket.Views
         private async void ExecuteClearButton_Click(object sender, RoutedEventArgs e)
         {
             if (_clearInProgress) return;
-            if (ConfirmInputBox.Text != "我确认清除全部数据")
+            if (ConfirmInputBox.Text != ClearPhrase.Resolve())
                 return;
 
             _clearInProgress = true;
             ConfirmOverlay.Visibility = Visibility.Collapsed;
 
             ExportOverlay.Visibility = Visibility.Visible;
-            ExportStatusText.Text = Loc.T("storage.erasing");
+            ExportStatusText.SetText(Loc.K("storage.erasing"));
             ExportProgressBar.Value = 0;
             // 颜色重置回深紫：上次失败态遗留的 WarnBg 不能带进本次流程（铁律色语义）
             // ⚠️ 走**资源引用**（自定义 DP）：一次性取画刷赋值会在换主题后停在旧主题。
             ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.AccentFill);
-            ExportProgressText.Text = Loc.T("storage.clearing");
+            ExportProgressText.SetText(Loc.K("storage.clearing"));
 
             try
             {
@@ -174,9 +178,9 @@ namespace LinkPocket.Views
 
                 TryClearLogFiles();   // B-5：与「清空日志」同一清理口径
 
-                ExportStatusText.Text = Loc.T("storage.erased");
+                ExportStatusText.SetText(Loc.K("storage.erased"));
                 ExportProgressBar.Value = ExportProgressBar.Maximum;
-                ExportProgressText.Text = Loc.T("common.done");
+                ExportProgressText.SetText(Loc.K("common.done"));
 
                 await Task.Delay(1500);
                 ExportOverlay.Visibility = Visibility.Collapsed;
@@ -185,8 +189,8 @@ namespace LinkPocket.Views
             catch (Exception ex)
             {
                 LpLog.Error("[maintenance] data wipe failed", ex);
-                ExportStatusText.Text = $"清空失败: {ex.Message}";
-                ExportProgressText.Text = Loc.T("common.failed");
+                ExportStatusText.SetText(Loc.K("settings.maintenance.wipeFailed"));
+                ExportProgressText.SetText(Loc.K("common.failed"));
                 ExportProgressBar.SetResourceReference(WavyProgressBar.ActiveBrushProperty, Theming.Tokens.AppTokens.SupportContainer);
                 await Task.Delay(5000);
                 ExportOverlay.Visibility = Visibility.Collapsed;

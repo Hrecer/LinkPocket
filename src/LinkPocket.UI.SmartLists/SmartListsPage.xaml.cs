@@ -12,6 +12,7 @@ using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using Material3.Wpf;
+using LinkPocket.UIKit;
 
 using LinkPocket.I18n;
 
@@ -165,7 +166,7 @@ namespace LinkPocket.Views
                     // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
                     // 省下的宽度全部让给名称/位置，URL 不得被压缩
                     Field = "path", LabelKey = "ui.noun.location", Width = -3,
-                    SortKey = r => (IComparable)ResolveFolderName(((LinkItem)r).ListId),
+                    SortKey = r => (IComparable)ResolveFolderName(((LinkItem)r).ListId).Resolve(),
                     CellFactory = r => TextCell(ResolveFolderName(((LinkItem)r).ListId), 12.5)
                 },
                 new DataTableColumn
@@ -178,14 +179,15 @@ namespace LinkPocket.Views
                 {
                     Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 114,
                     SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
-                    CellFactory = r => TextCell(
-                        ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 12.5)
+                    CellFactory = r => ((LinkItem)r).LastVisitedAt is { } visited
+                        ? TextCell(visited.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
+                        : TextCell(Loc.K("clock.never"), 12.5)
                 },
                 new DataTableColumn
                 {
                     Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 72,
                     SortKey = r => (IComparable)((LinkItem)r).VisitCount,
-                    CellFactory = r => TextCell($"{((LinkItem)r).VisitCount} 次", 12.5)
+                    CellFactory = r => TextCell(Loc.K("count.viewsN", ((LinkItem)r).VisitCount), 12.5)
                 },
                 new DataTableColumn
                 {
@@ -240,7 +242,7 @@ namespace LinkPocket.Views
 
             // 空态先就位（ItemsSource = null 时也不至于露出旧空态），再绑数据
             SmartTable.EmptyContent = BuildSmartState("bookmark-off-outline", resultVm.EmptyMessage,
-                "书签的变动会实时汇集到这里");
+                Loc.K("smartlists.liveHint"));
             SmartTable.ItemsSource = null;
             SmartTable.ItemsSource = resultVm.Items;
 
@@ -287,17 +289,17 @@ namespace LinkPocket.Views
         {
             var label = field switch
             {
-                "title" => "名称",
-                "path" => "位置",
-                "updated_at" => "最后更新",
-                "last_visited_at" => "最后查看",
-                "visit_count" => "查看次数",
-                "created_at" => "创建时间",
-                _ => "",
+                "title" => Loc.K("ui.noun.name"),
+                "path" => Loc.K("ui.noun.location"),
+                "updated_at" => Loc.K("ui.noun.updated"),
+                "last_visited_at" => Loc.K("ui.noun.lastVisited"),
+                "visit_count" => Loc.K("ui.noun.visitCount"),
+                "created_at" => Loc.K("ui.noun.createdAt"),
+                _ => LocValue.Empty,
             };
-            SortHintText.Text = label.Length == 0
-                ? ""
-                : $"· 按{label}{(ascending ? "升序" : "降序")}";
+            SortHintText.SetText(label.IsEmpty
+                ? LocValue.Empty
+                : Loc.K("smartlists.sortHint", label, Loc.K(ascending ? "sort.asc" : "sort.desc")));
         }
 
         /// <summary>名称列：favicon + 标题 + URL 副行（favicon 未命中缓存时异步补拉、原位刷新）。
@@ -374,12 +376,27 @@ namespace LinkPocket.Views
             return panel;
         }
 
+        /// <summary>数据单元格（时间戳这类用户数据，永不翻译）。</summary>
+        private static TextBlock TextCell(string text, double fontSize)
+        {
+            var cell = BuildCell(fontSize);
+            cell.Text = text;
+            return cell;
+        }
+
+        /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
+        private static TextBlock TextCell(LocValue text, double fontSize)
+        {
+            var cell = BuildCell(fontSize);
+            cell.SetText(text);
+            return cell;
+        }
+
         /// <summary>普通文本单元格（表格化信息列统一规格，与搜索页一致）。</summary>
-        private TextBlock TextCell(string text, double fontSize)
+        private static TextBlock BuildCell(double fontSize)
         {
             var cell = new TextBlock
             {
-                Text = text,
                 FontSize = fontSize,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis
@@ -389,12 +406,12 @@ namespace LinkPocket.Views
         }
 
         /// <summary>位置解析：与搜索页「位置」列同一口径（VM 注入的组合根解析器；根链接 = 全部书签）。</summary>
-        private string ResolveFolderName(string? listId)
+        private LocValue ResolveFolderName(string? listId)
         {
-            if (string.IsNullOrEmpty(listId)) return Loc.T("nav.root.bookmarks");
+            if (string.IsNullOrEmpty(listId)) return Loc.K("nav.root.bookmarks");
             if (DataContext is SmartListViewModel slVm)
                 return slVm.ResolveFolderPath(listId);
-            return Loc.T("path.unknown");
+            return Loc.K("path.unknown");
         }
 
         // ============================================================
@@ -404,7 +421,7 @@ namespace LinkPocket.Views
         /// <summary>MD3E 空态视图：大圆角色块徽章 + 引导性文案（与搜索页同一规格）。
         /// 颜色一律经 <c>element.SetResourceReference</c> 挂**资源引用**：既不固化（换主题跟随），
         /// 也不依赖静态 Application.Current（无头/单测环境中 Application 可能为 null）。</summary>
-        private FrameworkElement BuildSmartState(string iconKind, string title, string? subtitle)
+        private FrameworkElement BuildSmartState(string iconKind, LocValue title, LocValue? subtitle)
         {
             var sp = new StackPanel
             {
@@ -430,19 +447,21 @@ namespace LinkPocket.Views
             sp.Children.Add(badge);
             var titleText = new TextBlock
             {
-                Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
+                FontSize = 15, FontWeight = FontWeights.SemiBold,
                 HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 16, 0, 0)
             };
+            titleText.SetText(title);
             titleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
             sp.Children.Add(titleText);
-            if (!string.IsNullOrEmpty(subtitle))
+            if (subtitle is { IsEmpty: false })
             {
                 var subtitleText = new TextBlock
                 {
-                    Text = subtitle, FontSize = 12,
+                    FontSize = 12,
                     Opacity = 0.7,
                     HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0)
                 };
+                subtitleText.SetText(subtitle.Value);
                 subtitleText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
                 sp.Children.Add(subtitleText);
             }

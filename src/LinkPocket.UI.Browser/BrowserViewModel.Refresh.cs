@@ -225,12 +225,12 @@ public partial class BrowserViewModel
                 });
             }
 
-            StatusText = $"共 {contents.SubFolders.Count + contents.Links.Count} 项" +
-                         $"（{contents.SubFolders.Count} 个文件夹 / {contents.Links.Count} 个链接）";
+            StatusText = Loc.K("browser.status.totalWithBreakdown",
+                contents.SubFolders.Count + contents.Links.Count, contents.SubFolders.Count, contents.Links.Count);
         }
         catch (Exception ex)
         {
-            StatusText = Loc.T("status.loadFailed");
+            StatusText = Loc.K("status.loadFailed");
             LpLog.Error("folder view refresh failed", ex);   // 失败必须留痕，不能只有一行状态文案
         }
         finally

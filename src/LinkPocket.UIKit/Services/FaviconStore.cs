@@ -34,20 +34,20 @@ public static class FaviconStore
             using var response = await _httpClient.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                LpLog.Error($"favicon 下载失败 [{(int)response.StatusCode}]: {url}", null);
+                LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {url}", null);
                 return null;
             }
             var bytes = await response.Content.ReadAsByteArrayAsync();
             if (bytes.Length == 0)
             {
-                LpLog.Error($"favicon 下载为空: {url}", null);
+                LpLog.Error($"favicon download returned nothing: {url}", null);
                 return null;
             }
             return bytes;
         }
         catch (Exception ex)
         {
-            LpLog.Error($"favicon 下载异常: {url} - {ex.Message}", ex);
+            LpLog.Error($"favicon download threw: {url} - {ex.Message}", ex);
             return null;
         }
     }
@@ -128,7 +128,7 @@ public static class FaviconStore
         }
         catch (Exception ex)
         {
-            LpLog.Error($"favicon 缓存写入失败: {cachePath} - {ex.Message}", ex);
+            LpLog.Error($"favicon cache write failed: {cachePath} - {ex.Message}", ex);
             return false;
         }
     }

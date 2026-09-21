@@ -261,7 +261,7 @@ public static class FontCatalog
             deleted = true;
         }
         InvalidateImportedCache();          // ⚠️ 放在 if 之外：文件不在也要让界面刷新
-        LpLog.Info($"Deleted imported font: {choice.FilePath} (file {(deleted ? "已删除" : "本就不存在")}）", LogCategory);
+        LpLog.Info($"deleted imported font: {choice.FilePath} (file {(deleted ? "removed" : "never existed")})", LogCategory);
         return deleted;
     }
 

@@ -84,13 +84,17 @@ public class I18nRulesTests
         RegexOptions.Compiled);
 
     /// <summary>
-    /// G10：把取词结果**存进状态**（<c>Status = Loc.T(...)</c>、<c>string X =&gt; Loc.T(...)</c>）。
-    /// 取词时机被钉死在构造期/求值期，换语言就不跟着变——模型成员只许流 <c>Loc.K(...)</c> 的 <c>LocValue</c>。
-    /// 作实参用（弹窗显示那一刻取词）不在此列，所以只匹配赋值与表达式体。
+    /// G10：把取词结果**存进状态**——<c>字段/属性 = Loc.T(...)</c> 与表达式体成员 <c>=&gt; Loc.T(...)</c>。
+    /// 这两类的取词时机被钉死在赋值那一刻（绑定不会因为"语言变了"而重读），换语言后停在旧语言。
     /// </summary>
+    /// <remarks>
+    /// 不在此列的三种形状都**在取词那一刻就被消费**，属 §3.4 允许的瞬时用法：
+    /// 局部变量（<c>var t = Loc.T(...)</c>）、别的对象的属性（<c>dialog.Title = Loc.T(...)</c>；控件上的赋值一律走 <c>LocText</c>）、
+    /// 以及方法体里的 <c>return Loc.T(...)</c>。判据是**存不存得住**，不是"写没写 <c>Loc.T</c>"。
+    /// </remarks>
     private static readonly Regex BakedText = new(
-        @"(=|=>)\s*Loc\.T\(|\bLoc\.Plural\(",
-        RegexOptions.Compiled);
+        @"^\s*(?:this\.)?[A-Za-z_]\w*\s*=\s*Loc\.(?:T|Plural)\(|=>\s*Loc\.(?:T|Plural)\(",
+        RegexOptions.Compiled | RegexOptions.Multiline);
 
     private static string BaselinePath => Path.Combine(RepoRoot, "tests", "LinkPocket.Architecture.Tests", "I18nBaseline.txt");
 

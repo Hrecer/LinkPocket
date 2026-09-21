@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views
 {
@@ -72,11 +73,13 @@ namespace LinkPocket.Views
             nameof(ItemsSource), typeof(System.Collections.IEnumerable), typeof(FolderTreePanel),
             new PropertyMetadata(null));
 
-        public static readonly DependencyProperty HeaderTextProperty = DependencyProperty.Register(
-            nameof(HeaderText), typeof(string), typeof(FolderTreePanel),
-            // 标题 = 「导航」（对齐 Explorer「导航窗格」）：面板里不止文件夹，还有链接叶子，
-            // 旧标题「文件夹」名不符实（面板里不止文件夹）。
-            new PropertyMetadata("导航"));
+        /// <summary>
+        /// 面板标题的<b>文案键</b>（模板经 <c>{loc:LocKey}</c> 取词）：面板里不止文件夹还有链接叶子，
+        /// 标题因此叫「导航」（对齐 Explorer「导航窗格」）。存键不存文本，切语言由绑定自己重算。
+        /// </summary>
+        public static readonly DependencyProperty HeaderKeyProperty = DependencyProperty.Register(
+            nameof(HeaderKey), typeof(string), typeof(FolderTreePanel),
+            new PropertyMetadata("nav.panel.title"));
 
         /// <summary>节点集合（FolderNode / TrashFolderNode）。</summary>
         public System.Collections.IEnumerable? ItemsSource
@@ -85,10 +88,10 @@ namespace LinkPocket.Views
             set => SetValue(ItemsSourceProperty, value);
         }
 
-        public string HeaderText
+        public string HeaderKey
         {
-            get => (string)GetValue(HeaderTextProperty);
-            set => SetValue(HeaderTextProperty, value);
+            get => (string)GetValue(HeaderKeyProperty);
+            set => SetValue(HeaderKeyProperty, value);
         }
 
         /// <summary>节点选中（参数 = 节点对象；虚拟根选中也会触发，宿主自行处理）。</summary>

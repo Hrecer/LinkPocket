@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media.Imaging;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -47,13 +48,16 @@ public class BrowserRowViewModel : INotifyPropertyChanged
         ? "—"
         : ModifiedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
 
-    /// <summary>「最后查看」列。</summary>
-    public string LastViewedText => LastViewedAt.HasValue
+    /// <summary>「最后查看」列的数据（时间戳；无值时为空）。</summary>
+    public string LastViewedData => LastViewedAt.HasValue
         ? LastViewedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-        : "从未";
+        : string.Empty;
+
+    /// <summary>「最后查看」列的文案（无值时画「从未」）。</summary>
+    public LocValue LastViewedCopy => LastViewedAt.HasValue ? LocValue.Empty : Loc.K("clock.never");
 
     /// <summary>「查看次数」列。</summary>
-    public string ViewCountText => $"{ViewCount} 次";
+    public LocValue ViewCountText => Loc.K("count.viewsN", ViewCount);
 
     /// <summary>「创建时间」列。</summary>
     public string CreatedText => CreatedAt.Year <= 1

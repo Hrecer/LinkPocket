@@ -10,6 +10,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.Models;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -61,11 +62,11 @@ public partial class BrowserViewModel
         try
         {
             System.Windows.Clipboard.SetText(text);
-            StatusText = Loc.T("path.copied");
+            StatusText = Loc.K("path.copied");
         }
         catch
         {
-            StatusText = Loc.T("status.copyPathFailed");
+            StatusText = Loc.K("status.copyPathFailed");
         }
     }
 

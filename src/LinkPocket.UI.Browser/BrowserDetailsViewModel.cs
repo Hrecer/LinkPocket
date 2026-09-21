@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -28,10 +29,10 @@ public class BrowserDetailsViewModel : DetailSidebarModel
 
     // —— 浏览页特有（通用模型之外的字段） ——
     public string ModifiedText { get; private set; } = "—";
-    public string ViewCountText { get; private set; } = "0 次";
+    public LocValue ViewCountText { get; private set; } = Loc.K("count.viewsN");
 
     public int FolderBookmarkCount { get; private set; }
-    public string BookmarkCountText => $"{FolderBookmarkCount} 个链接";
+    public LocValue BookmarkCountText => Loc.K("count.viewsN", FolderBookmarkCount);
 
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
         () =>
@@ -40,7 +41,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             {
                 if (string.IsNullOrEmpty(IdText)) return;
                 System.Windows.Clipboard.SetText(IdText);
-                if (_host != null) _host.StatusText = Loc.T("status.idCopied");
+                if (_host != null) _host.StatusText = Loc.K("status.idCopied");
             }
             catch { }
         });
@@ -93,7 +94,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 {
                     if (string.IsNullOrEmpty(UrlText)) return;
                     System.Windows.Clipboard.SetText(UrlText);
-                    if (_host != null) _host.StatusText = Loc.T("status.linkCopied");
+                    if (_host != null) _host.StatusText = Loc.K("status.linkCopied");
                 }
                 catch { }
             },
@@ -125,12 +126,12 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         var result = await _locator.LocateAsync(row.Id);
         if (result.IsSuccess) return;
 
-        host.StatusText = result.Message ?? result.Status switch
+            host.StatusText = result.Message ?? result.Status switch
         {
-            Services.LocateStatus.NotFound => "未找到该项 ID",
-            Services.LocateStatus.RowMissing => "目标行未出现在所在目录（可能刚被移动或删除）",
-            Services.LocateStatus.Failed => "locate failed，请稍后重试",
-            _ => "定位未完成",
+            Services.LocateStatus.NotFound => Loc.K("locate.notFoundItem"),
+            Services.LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
+            Services.LocateStatus.Failed => Loc.K("locate.failedRetry"),
+            _ => Loc.K("locate.incomplete"),
         };
     }
 
@@ -174,7 +175,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         StackedActions = rows.Count > 0;   // 有选中时动作卡才出现；本页一律两行排布
         ShowRenameAction = IsLink;
         RenameActionCommand = host.RenameSelectionCommand;   // 同一实例：复用本页就地改名命令，不写第二套
-        // 「跳转」只对**单一目标**开（多选没有"某一项"可定位；与结果页同一口径）
+        // 「跳转」只对**单一目标**开（多选没有Loc.K("trash.jumpNeedsOne")可定位；与结果页同一口径）
         ShowJumpAction = rows.Count == 1;
 
         SelectedTotal = rows.Count;
@@ -184,7 +185,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         if (rows.Count == 1)
         {
             var row = rows[0];
-            DisplayName = row.Name;
+        DisplayNameData = row.Name;
             IdText = row.Id;
             ModifiedText = row.ModifiedText;
             Favicon = row.Favicon;
@@ -194,23 +195,24 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             if (row.IsFolder)
             {
                 FolderBookmarkCount = row.LinkCount;
-                ViewCountText = $"{row.ViewCount} 次";
+                ViewCountText = Loc.K("count.viewsN", row.ViewCount);
                 var path = host.GetFolderPathDisplay(row.Id, includeSelf: false);
                 var updated = row.ModifiedText;
-                var lastVisited = row.LastViewedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+                var lastVisitedText = row.LastViewedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+        var lastVisitedCopy = row.LastViewedAt is null ? Loc.K("clock.never") : LocValue.Empty;
                 var created = row.CreatedAt.Year <= 1
                     ? "—"
                     : row.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
                 SetRows(new List<DetailSidebarRow>
                 {
-                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = path },
-                    new() { IconKind = "link-variant", LabelKey = "ui.noun.linkCount", Value = BookmarkCountText, IsAccent = true },
-                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = updated },
-                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = lastVisited },
-                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = ViewCountText },
-                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = created },
-                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueData = path },
+                    new() { IconKind = "link-variant", LabelKey = "ui.noun.linkCount", ValueCopy = BookmarkCountText, IsAccent = true },
+                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = updated },
+                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = lastVisitedText, ValueCopy = lastVisitedCopy },
+                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueCopy = ViewCountText },
+                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = created },
+                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId") },
                 });
             }
             else
@@ -218,19 +220,20 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 // 同步先用行内已有数据渲染，再异步补拉描述/统计/路径
                 SetRows(new List<DetailSidebarRow>
                 {
-                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = LoadingPlaceholder },
-                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = row.ModifiedText },
-                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = "—" },
-                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = "—" },
-                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = "—" },
-                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueCopy = LoadingPlaceholder },
+                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = row.ModifiedText },
+                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = "—" },
+                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueData = "—" },
+                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = "—" },
+                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId") },
                 });
                 _ = LoadLinkDetailsAsync(row.Id, gen);
             }
         }
         else
         {
-            DisplayName = "";
+        DisplayNameData = "";
+        DisplayNameCopy = LocValue.Empty;
             IdText = "";
             UrlText = "";
             Favicon = null;
@@ -251,7 +254,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
 
             if (link == null || _host == null)
             {
-                MarkUnavailable();   // 源已删除/宿主缺失：占位回落，不留"读取中…"
+                MarkUnavailable();   // 源已删除/宿主缺失：占位回落，不留Loc.K("common.loading")
                 return;
             }
 
@@ -259,18 +262,23 @@ public class BrowserDetailsViewModel : DetailSidebarModel
 
             // 异步补拉结果原位写回数据行（INPC 通知，无需重建整卡）
             var pathRow = FindRow("ui.noun.location");
-            if (pathRow != null) pathRow.Value = _host.GetFolderPathDisplay(link.ListId);
+        if (pathRow != null) pathRow.ValueData = _host.GetFolderPathDisplay(link.ListId);
             var updatedRow = FindRow("ui.noun.updatedAt");
             if (updatedRow != null)
-                updatedRow.Value = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        updatedRow.ValueData = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             var visitedRow = FindRow("ui.noun.lastVisited");
             if (visitedRow != null)
-                visitedRow.Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
+            {
+                visitedRow.ValueData = link.LastVisitedAt is null
+                    ? ""
+                    : link.LastVisitedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                visitedRow.ValueCopy = link.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty;
+            }
             var visitRow = FindRow("ui.noun.visitCount");
-            if (visitRow != null) visitRow.Value = $"{link.VisitCount} 次";
+            if (visitRow != null) visitRow.ValueCopy = Loc.K("count.viewsN", link.VisitCount);
             var createdRow = FindRow("ui.noun.createdAt");
             if (createdRow != null)
-                createdRow.Value = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+                createdRow.ValueData = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
             OnPropertyChanged(nameof(DescriptionText));
             OnPropertyChanged(nameof(HasDescription));
@@ -279,19 +287,23 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         {
             if (gen != _generation) return;   // 切选后到达的异常不得影响新选中信息卡
             LpLog.Error("detail pane link re-fetch failed (row basics kept)", null);   // 观测面留痕
-            MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久"读取中…"
+            MarkUnavailable();   // 补拉失败：占位回落，绝不让详情栏永久停在「读取中…」
         }
     }
 
     /// <summary>「读取中…」占位文案（UpdateFrom 与 MarkUnavailable 共用单一数据源，防文案改动静默失效）。</summary>
-    private const string LoadingPlaceholder = "读取中…";
+    private static readonly LocValue LoadingPlaceholder = Loc.K("common.loading");
 
     /// <summary>补拉失败/源已删除的收口：把「读取中…」占位回落为中性值（其余占位本就是 —/从未）。</summary>
     private void MarkUnavailable()
     {
         var pathRow = FindRow("ui.noun.location");
-        if (pathRow != null && pathRow.Value == LoadingPlaceholder) pathRow.Value = "未获取到信息";
+        if (pathRow != null && pathRow.ValueCopy.Equals(LoadingPlaceholder)) pathRow.ValueCopy = Loc.K("details.noInfo");
         var visitedRow = FindRow("ui.noun.lastVisited");
-        if (visitedRow != null && visitedRow.Value == "—") visitedRow.Value = "从未";
+        if (visitedRow != null && visitedRow.ValueData == "—")
+        {
+            visitedRow.ValueData = "";
+            visitedRow.ValueCopy = Loc.K("clock.never");
+        }
     }
 }

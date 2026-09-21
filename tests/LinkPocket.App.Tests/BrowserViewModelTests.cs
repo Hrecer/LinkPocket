@@ -38,7 +38,7 @@ public class BrowserViewModelTests
             Assert.Equal("@root", vm.Breadcrumbs[0].Name);   // 模型存身份，显示名由模板投影
             Assert.True(vm.Breadcrumbs[0].IsLast);
 
-            Assert.Equal("共 4 项（2 个文件夹 / 2 个链接）", vm.StatusText);
+            Assert.Equal("共 4 项（2 个文件夹 / 2 个链接）", vm.StatusText.Resolve());
         }
         finally
         {
@@ -212,7 +212,7 @@ public class BrowserViewModelTests
                 () => vm.EditorPage is { Url: "https://edit.example/zh-cn/3" }, TimeSpan.FromSeconds(3));
             Assert.True(urlReady, "预填未在超时内完成（编辑页字段空白根因复现点）");
             Assert.True(vm.IsEditorPageOpen);
-            Assert.Equal("编辑链接", vm.EditorPage!.TitleText);
+            Assert.Equal("编辑链接", vm.EditorPage!.TitleText.Resolve());
             Assert.Equal("编辑目标", vm.EditorPage.LinkTitle);
             Assert.Equal("描述文本", vm.EditorPage.Description);
             Assert.True(vm.EditorPage.IsEditMode);
@@ -443,8 +443,8 @@ public class BrowserViewModelTests
             vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
             vm.CopyCommand.Execute(null);
             vm.PasteCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
-                $"粘贴未在超时内完成（状态：{vm.StatusText}）");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
+                $"粘贴未在超时内完成（状态：{vm.StatusText.Resolve()}）");
 
             // 写操作不显式刷新（WARNINGS #18）：模拟事件链的刷新取新状态
             await vm.RefreshPreservingSelectionAsync();
@@ -472,7 +472,7 @@ public class BrowserViewModelTests
             vm.SelectRowWithModifiers(vm.Rows[0], ModifierKeys.None);
             vm.CopyCommand.Execute(null);
             vm.PasteCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.StartsWith("已粘贴"), TimeSpan.FromSeconds(5)));
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已粘贴"), TimeSpan.FromSeconds(5)));
             await vm.RefreshPreservingSelectionAsync();
             // 置尾生效：新项（同标题，按 ID 分辨）在末尾
             var pasted = Assert.Single(vm.SelectedRows);
@@ -510,15 +510,15 @@ public class BrowserViewModelTests
             // 同目录粘贴 = 无操作 + 明确提示（载荷保留）——
             // 静默早退曾让"剪切后粘贴没反应"看起来像数据不一致
             vm.PasteCommand.Execute(null);
-            Assert.Equal("剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）", vm.StatusText);
+            Assert.Equal("剪切的项目已在当前文件夹中（先进入目标文件夹再粘贴）", vm.StatusText.Resolve());
             Assert.True(vm.Clipboard.BrowserPayload is { IsCut: true });   // 剪切态未被消费
 
             // 跨目录粘贴：移动 + 置尾 + 选中 + 剪切态遗忘
             await vm.LoadAsync(b.FolderId);
             vm.PasteCommand.Execute(null);
             Assert.True(await WaitUntilAsync(() => vm.Clipboard.BrowserPayload == null, TimeSpan.FromSeconds(5)),
-                $"粘贴未消费剪切载荷（状态：{vm.StatusText}）");
-            Assert.Equal("已粘贴 1 项", vm.StatusText);
+                $"粘贴未消费剪切载荷（状态：{vm.StatusText.Resolve()}）");
+            Assert.Equal("已粘贴 1 项", vm.StatusText.Resolve());
 
             await vm.RefreshPreservingSelectionAsync();
             Assert.Equal("X", Assert.Single(vm.Rows).Name);                // 已移动到 B 并置尾于列表末尾（唯一项）
@@ -556,7 +556,7 @@ public class BrowserViewModelTests
             Assert.Null(vm.Clipboard.BrowserPayload);
             Assert.False(vm.Rows[0].IsCut);
             Assert.True(vm.Rows[0].IsSelected);
-            Assert.Equal("已取消剪切", vm.StatusText);
+            Assert.Equal("已取消剪切", vm.StatusText.Resolve());
             Assert.False(vm.PasteCommand.CanExecute(null));                // 粘贴随之禁用
 
             // 第二层：无剪切态 → 清空选中
@@ -607,8 +607,8 @@ public class BrowserViewModelTests
             await client.LinkTrashAsync(gone.LinkId);
             await vm.LoadAsync(b.FolderId);
             vm.PasteCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.Contains("失败"), TimeSpan.FromSeconds(5)),
-                $"期望如实报告失败项，实际：{vm.StatusText}");
+            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().Contains("失败"), TimeSpan.FromSeconds(5)),
+                $"期望如实报告失败项，实际：{vm.StatusText.Resolve()}");
             var inB = await client.LinkListAsync(listId: b.FolderId, perPage: 0);
             Assert.Empty(inB.Links);
         }

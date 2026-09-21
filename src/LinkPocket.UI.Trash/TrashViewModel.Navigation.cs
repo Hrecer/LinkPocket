@@ -9,6 +9,7 @@ using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.UIKit;
 
 namespace LinkPocket.ViewModels;
 
@@ -25,7 +26,7 @@ public partial class TrashViewModel
     {
         if (unitId != null && !_unitById.ContainsKey(unitId))
         {
-            StatusText = Loc.T("trash.unitGone");
+            StatusText = Loc.K("trash.unitGone");
             return Task.CompletedTask;
         }
 

@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views;
 
@@ -12,7 +13,7 @@ namespace LinkPocket.Views;
 /// </summary>
 public partial class ImportModeDialog : Window
 {
-    private const string ReplaceConfirmText = "我确认清空并导入";
+    private static readonly LocValue ReplaceConfirmText = Loc.K("dialog.importMode.confirmPhrase");
 
     /// <summary>用户最终选择的导入方式：true = 清空后导入（危险），false = 新增导入。</summary>
     public bool ReplaceMode { get; private set; }
@@ -77,7 +78,7 @@ public partial class ImportModeDialog : Window
 
     private void UpdateVisuals()
     {
-        var confirmOk = !_replace || ReplaceConfirmInput.Text == ReplaceConfirmText;
+        var confirmOk = !_replace || ReplaceConfirmInput.Text == ReplaceConfirmText.Resolve();
 
         // 选中态：常规 = PrimaryContainer 卡 + Primary 单选；「清空后导入」= 次强调容器卡
         // （与次操作共用同一套呈现 —— 破坏性动作不设专门警示色，不可逆性由确认文案承担）
