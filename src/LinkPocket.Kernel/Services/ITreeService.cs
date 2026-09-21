@@ -25,8 +25,11 @@ public interface ITreeService
     /// <summary>把 id 移到 targetParent 下是否会产生环（即 targetParent 位于 id 子树内或等于 id）。</summary>
     Task<bool> WouldCreateCycleAsync(FolderId id, FolderId targetParent, CancellationToken ct);
 
-    /// <summary>路径显示：「全部书签 / A / B」；null = 根 =「全部书签」。</summary>
-    Task<string> PathDisplayAsync(FolderId? id, CancellationToken ct);
+    /// <summary>
+    /// 路径的 <b>canonical</b> 形态：<c>@root/A/B</c>（段名转义、与界面语言无关）；null = 根 = <c>@root</c>。
+    /// id 已不在库里 → <c>@unknown</c>（不伪装成根）。显示串由 UI 侧 <c>I18n.BookmarkDisplay.Path</c> 投影。
+    /// </summary>
+    Task<string> PathCanonicalAsync(FolderId? id, CancellationToken ct);
 
     /// <summary>
     /// 事件：内容变动。把 id 及其全部祖先的 UpdatedAt 置为当前时间（事件驱动增量口径的唯一写入点）。

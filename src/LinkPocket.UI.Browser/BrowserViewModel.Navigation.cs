@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
@@ -50,16 +51,17 @@ public partial class BrowserViewModel
     }
 
     /// <summary>
-    /// Ctrl+Shift+C：复制当前目录路径（面包屑文本「全部书签 / A / B」，可被 Alt+D 地址栏解析）。
+    /// Ctrl+Shift+C：复制当前目录的 <b>canonical</b> 路径（<c>@root/A/B</c>）——跨语言可粘回、可直接喂给 AI。
+    /// 地址栏显示的是它的本地化投影，两者<b>故意</b>不同：复制走的是绝对路径，不是屏幕上的字。
     /// 只写内部载荷会"复制了但别处粘不出来"，故此处走系统剪贴板（与右键「复制链接」同口径）。
     /// </summary>
     private void CopyCurrentPath()
     {
-        var text = GetFolderPathDisplay(Controller.CurrentFolderId);
+        var text = Paths.BuildCanonical(BuildBreadcrumbIds(Controller.CurrentFolderId));
         try
         {
             System.Windows.Clipboard.SetText(text);
-            StatusText = "已复制路径";
+            StatusText = Loc.T("path.copied");
         }
         catch
         {

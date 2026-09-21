@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -21,7 +22,10 @@ public sealed class BrowserDropState
 
     /// <summary>落点提示文案（空串 = 不显示）：`移动到「X」` / `复制到「X」`——
     /// 文案口径在 <see cref="Views.DragSupport.HintText"/>（唯一实现，与回收站页共用）。</summary>
-    public string HintText => Target == null ? string.Empty : Views.DragSupport.HintText(Target.Name, Target.Mode);
+    public string HintText => Target == null
+        ? string.Empty
+        // 落点名可能是虚根 token（@root）：拼进用户文案前必须投影成当前语言的根名
+        : Views.DragSupport.HintText(BookmarkDisplay.Segment(Target.Name), Target.Mode);
 
     /// <summary>状态变化（落点或模式）→ 宿主重投影行/树 + 通知提示文案属性。</summary>
     public event Action? Changed;

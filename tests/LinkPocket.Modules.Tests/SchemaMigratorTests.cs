@@ -75,7 +75,7 @@ public class SchemaMigratorTests
             new[] { "audit_log", "folders", "idempotency", "links", "macros", "schema_migrations", "trash_folders", "trash_links" },
             UserTables(dbPath));
         // 全新库跑的是完整版本链（v2 基线 + v3/v4/v5/v6 演进），版本表落最高版本
-        Assert.Equal(6, SchemaVersion(dbPath));
+        Assert.Equal(7, SchemaVersion(dbPath));
 
         // v2 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
         using (var conn = new SqliteConnection($"Data Source={dbPath}"))
@@ -184,13 +184,13 @@ public class SchemaMigratorTests
                 drop.ExecuteNonQuery();
             }
             using var rollback = conn.CreateCommand();
-            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6)";
+            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7)";
             rollback.ExecuteNonQuery();
         }
 
         SchemaMigrator.EnsureSchema(legacy);
 
-        Assert.Equal(6, SchemaVersion(legacy));
+        Assert.Equal(7, SchemaVersion(legacy));
         Assert.Equal(expected, IndexNames(legacy));
         // 升级库与新建库的 trash_folders / audit_log 列集合逐项一致（v5/v6 ALTER 逐列补齐）
         Assert.Equal(expectedTrashColumns, ColumnNames(legacy, "trash_folders"));
@@ -223,7 +223,7 @@ public class SchemaMigratorTests
 
         // 整库重置（删文件重建）路径：文件存在性守卫失效后自动重新建库
         SchemaMigrator.EnsureSchema(dbPath);
-        Assert.Equal(6, SchemaVersion(dbPath));
+        Assert.Equal(7, SchemaVersion(dbPath));
         Assert.Equal(8, UserTables(dbPath).Length);
     }
 
@@ -284,7 +284,7 @@ public class SchemaMigratorTests
             Assert.Equal(1, await verify.Links.CountAsync());
             Assert.Equal(1, await verify.TrashedLinks.CountAsync());
             Assert.Equal(1, await verify.TrashedFolders.CountAsync());
-            Assert.Equal(6, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(7, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
 
             // v5 保真列经 EF 回读逐字段一致（DateTime? 往返按 Ticks 对齐，Kind 不参与比较）
             var unit = await verify.TrashedFolders.SingleAsync();

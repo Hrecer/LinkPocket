@@ -33,6 +33,8 @@ public static class EngineErrors
     public const string EnumOutOfRange = "LP.VAL.003";
     public const string InvalidPath = "LP.VAL.004";
     public const string InvalidUrl = "LP.VAL.005";
+    /// <summary>名字被虚根占用（根级）：各语言的根显示名与路径 token 都是保留名。</summary>
+    public const string ReservedName = "LP.VAL.006";
     public const string EntityNotFound = "LP.STATE.001";
     public const string RootNotEntity = "LP.STATE.002";
     public const string CycleDetected = "LP.STATE.003";

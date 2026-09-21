@@ -68,22 +68,22 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
         return WalkExisting(targetParent.Value, parents).Contains(id.Value);
     }
 
-    public async Task<string> PathDisplayAsync(FolderId? id, CancellationToken ct)
+    public async Task<string> PathCanonicalAsync(FolderId? id, CancellationToken ct)
     {
-        if (id is null) return FolderIds.RootDisplayName;
+        if (id is null) return BookmarkPath.RootToken;
 
         var nodes = await LoadNodeIndexAsync(ct);
-        // id 指向的文件夹在库里不存在（数据不一致/已被删）时，必须如实标记「未知目录」，
-        // 不得把空路径伪装成「全部书签」——回收站的 OriginPath 会拿这个结果做快照，误导用户以为是根目录。
+        // id 指向的文件夹已不在库里（数据不一致/已被删）时如实标 @unknown：
+        // 不得把断链伪装成根——回收站的 OriginPath 拿这个结果做快照，伪装会让用户以为是根目录。
         if (!nodes.ContainsKey(id.Value.Value))
-            return "未知目录";
+            return BookmarkPath.UnknownToken;
 
         var names = WalkExisting(id.Value.Value, ToParentIndex(nodes))
             .Select(x => nodes[x].Name)
             .ToList();
 
         names.Reverse();
-        return FolderIds.RootDisplayName + (names.Count > 0 ? " / " + string.Join(" / ", names) : "");
+        return BookmarkPath.Build(BookmarkPath.RootToken, names);
     }
 
     public async Task TouchModifiedAsync(FolderId? id, CancellationToken ct)

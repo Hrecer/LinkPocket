@@ -35,7 +35,7 @@ internal static partial class SmokeRunner
 
         // 面包屑（根显示名 + 层级）
         var breadcrumb = (await client.FolderBreadcrumbAsync(sub.FolderId));
-        Asserts.That(breadcrumb.SequenceEqual([FolderIds.RootDisplayName, "测试目录", "子目录"]),
+        Asserts.That(breadcrumb.SequenceEqual([FolderIds.RootToken, "测试目录", "子目录"]),
             "面包屑应为 全部书签 / 测试目录 / 子目录");
 
         // 树 + 子目录 LinkCount（递归）与 direct_link_count（直接）两口径并存

@@ -55,14 +55,41 @@ public class FoldersModuleTests
         Assert.Contains("folders.changed", created.Changes!.Events);
 
         var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
-        Assert.Equal(FolderIds.RootDisplayName, contents.FolderName);
+        Assert.Equal(FolderIds.RootToken, contents.FolderName);
         Assert.Single(contents.SubFolders);
         Assert.Equal("工作", contents.SubFolders[0].Name);
-        Assert.Equal(new[] { FolderIds.RootDisplayName }, contents.Breadcrumb);
+        Assert.Equal(new[] { FolderIds.RootToken }, contents.Breadcrumb);
 
         var child = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "资料", parent_id = created.Data!.FolderId });
         var breadcrumb = await engine.QueryAsync<List<string>>("folders.breadcrumb", new { folder_id = child.Data!.FolderId });
-        Assert.Equal(new[] { FolderIds.RootDisplayName, "工作", "资料" }, breadcrumb);
+        Assert.Equal(new[] { FolderIds.RootToken, "工作", "资料" }, breadcrumb);
+    }
+
+    [Fact]
+    public async Task 根级保留名被拒_子级同名放行()
+    {
+        // 各语言的根显示名登记进契约层（真实启动由 App 做；这里只喂保留名判据）
+        BookmarkPath.ReserveRootAlias(BookmarkPath.RootToken, "@root");
+        BookmarkPath.ReserveRootAlias(BookmarkPath.RootToken, "Bookmarks");
+        BookmarkPath.ReserveRootAlias(BookmarkPath.TrashToken, "回收站");
+        BookmarkPath.ReserveRootAlias(BookmarkPath.TrashToken, "Trash");
+
+        var (engine, _, _) = TestHost.Create();
+        foreach (var taken in new[] { "@root", "Bookmarks", "回收站", "Trash", "@root", "@trash" })
+        {
+            var err = await Assert.ThrowsAsync<EngineException>(
+                () => engine.ExecuteAsync<FolderDto>("folders.create", new { name = taken }));
+            Assert.Equal(EngineErrors.ReservedName, err.Error.Code);
+        }
+
+        // 子级不受限：只有根级会被虚根占用名挡住
+        var parent = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+        var child = await engine.ExecuteAsync<FolderDto>(
+            "folders.create", new { name = "@root", parent_id = parent.Data!.FolderId });
+        Assert.Equal("@root", child.Data!.Name);
+
+        var contents = await engine.QueryAsync<FolderContentsDto>("folders.contents", null);
+        Assert.Single(contents.SubFolders);   // 根级一枚也没建出来
     }
 
     [Fact]
@@ -238,7 +265,7 @@ public class FoldersModuleTests
 
         var unit = await engine.QueryAsync<List<TrashEntryDto>>("trash.unit_contents", new { id = a.Data!.FolderId });
         Assert.Equal(2, unit.Count);
-        Assert.Contains(unit, e => e.EntryType == "link" && e.OriginPath == "全部书签 / A / B");
+        Assert.Contains(unit, e => e.EntryType == "link" && e.OriginPath == "@root/A/B");
     }
 
     [Fact]
@@ -446,7 +473,7 @@ public class LinksModuleTests
 
         var trashed = await engine.ExecuteAsync<LinkTrashResult>("links.trash", new { id = link.Data!.LinkId });
         Assert.Equal(link.Data!.LinkId, trashed.Data!.LinkId);
-        Assert.Equal("全部书签 / F", trashed.Data!.OriginPath);
+        Assert.Equal("@root/F", trashed.Data!.OriginPath);
         Assert.Contains("trash.changed", trashed.Changes!.Events);
 
         var restored = await engine.ExecuteAsync<TrashRestoreResult>("trash.restore", new { id = link.Data!.LinkId });
@@ -1619,8 +1646,9 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // 全新建库 = 完整版本链（v2 基线 + v3..v6 演进），版本表落最高版本
-        Assert.Equal(6, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 完整版本链（v2 基线 + v3..v7 演进），版本表落最高版本
+        // 加一条迁移脚本必须同时改这里：这是"有人偷偷加了迁移却没人核对"的绊线
+        Assert.Equal(7, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

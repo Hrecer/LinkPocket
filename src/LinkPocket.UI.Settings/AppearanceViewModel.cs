@@ -560,13 +560,16 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         {
             if (_fontSource == value) return;
             _fontSource = value;
+            // 先投影、后播报：通知的语义是"来源已经换了"，而换了就意味着候选池与当前字体都已就位。
+            // 反过来（先 Raise 再投影）会让监听方在这一瞬看到"来源=系统、候选还是上一份（空）"的半成品，
+            // 面板据此往下拉里塞一个不在候选里的选中项 —— ComboBox 会就此钉死成空白框。
+            ProjectFontPools();
+            ProjectCurrentFonts(ThemeService.CurrentUiFont);
             Raise(nameof(FontSource));
             Raise(nameof(FontSourceIndex));
             Raise(nameof(IsCustomFontSource));
             // 说明句也依赖来源（旧实现漏了这一条 → 切来源后那句还写着上一种来源的话）
             Raise(nameof(FontSourceHint));
-            ProjectFontPools();
-            ProjectCurrentFonts(ThemeService.CurrentUiFont);
             // 目标来源的候选池是空的（本次会话还没装载成功过）→ 当场把装载踢起来；
             // 装载完成会自动重投影（ReloadFontsAsync 收尾），不必"再展开一次下拉"。
             // 否则切到自定义字体再切回系统字体时，系统字体那一栏会是空的。
@@ -1242,12 +1245,9 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         try
         {
             var choice = FontCatalog.Import(path);
-            // 导入的字体属于"自定义"这一侧：**切过去再选中它**（否则"系统"列表里看不到刚导入的东西）
-            _fontSource = FontSourceKind.Custom;
-            Raise(nameof(FontSource));
-            Raise(nameof(FontSourceIndex));
-            Raise(nameof(IsCustomFontSource));
-            Raise(nameof(FontSourceHint));
+            // 导入的字体属于"自定义"这一侧：**切过去再选中它**（否则"系统"列表里看不到刚导入的东西）。
+            // 走 <see cref="FontSource"/> 属性而不是手写一遍 Raise —— 切来源只有一条流水线。
+            FontSource = FontSourceKind.Custom;
 
             await ReloadFontsAsync().ConfigureAwait(true);
             SelectedUiFont = UiFonts.FirstOrDefault(f => string.Equals(f.Family, choice.Family, StringComparison.OrdinalIgnoreCase))

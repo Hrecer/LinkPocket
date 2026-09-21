@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:local="clr-namespace:LinkPocket.Views"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              x:Name="Root">
     <!-- 可复用文件夹树面板（数据驱动，浏览页/回收站共用）：
          - ItemsSource：节点集合（FolderNode / TrashFolderNode，绑定面一致：Name/Children/LinkCount/IsRoot/IsTrashed/IsExpanded/ShowNodeMenu/Host）
@@ -292,9 +293,9 @@
                                     </m3:M3Icon.Style>
                                 </m3:M3Icon>
                                 <Grid Margin="6,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock x:Name="NodeName" Text="{Binding Name}" FontSize="13"
+                                    <TextBlock x:Name="NodeName" Text="{loc:Segment Name}" FontSize="13"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                               ToolTip="{Binding Name}"/>
+                                               ToolTip="{loc:Segment Name}"/>
                                     <!-- 就地改名编辑框（Windows 口径）：覆盖在名称之上（不透明填充底），
                                          宽度跟随名称实测宽（至少 120）；高度按树行内容高覆盖
                                          （树文本 13 号 → 行内容约 17，负 margin 压掉外框 → 进入编辑不改变行高）；

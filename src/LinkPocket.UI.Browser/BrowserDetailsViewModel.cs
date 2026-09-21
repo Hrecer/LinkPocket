@@ -203,13 +203,13 @@ public class BrowserDetailsViewModel : DetailSidebarModel
 
                 SetRows(new List<DetailSidebarRow>
                 {
-                    new() { IconKind = "folder-outline", Label = "位置", Value = path },
-                    new() { IconKind = "link-variant", Label = "链接数", Value = BookmarkCountText, IsAccent = true },
-                    new() { IconKind = "refresh", Label = "最后更新", Value = updated },
-                    new() { IconKind = "history", Label = "最后查看", Value = lastVisited },
-                    new() { IconKind = "trending-up", Label = "查看次数", Value = ViewCountText },
-                    new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = created },
-                    new() { IconKind = "fingerprint", Label = "ID", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = path },
+                    new() { IconKind = "link-variant", LabelKey = "ui.noun.linkCount", Value = BookmarkCountText, IsAccent = true },
+                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = updated },
+                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = lastVisited },
+                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = ViewCountText },
+                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = created },
+                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
                 });
             }
             else
@@ -217,12 +217,12 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 // 同步先用行内已有数据渲染，再异步补拉描述/统计/路径
                 SetRows(new List<DetailSidebarRow>
                 {
-                    new() { IconKind = "folder-outline", Label = "位置", Value = LoadingPlaceholder },
-                    new() { IconKind = "refresh", Label = "最后更新", Value = row.ModifiedText },
-                    new() { IconKind = "history", Label = "最后查看", Value = "—" },
-                    new() { IconKind = "trending-up", Label = "查看次数", Value = "—" },
-                    new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = "—" },
-                    new() { IconKind = "fingerprint", Label = "ID", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+                    new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = LoadingPlaceholder },
+                    new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = row.ModifiedText },
+                    new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = "—" },
+                    new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = "—" },
+                    new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = "—" },
+                    new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
                 });
                 _ = LoadLinkDetailsAsync(row.Id, gen);
             }
@@ -257,17 +257,17 @@ public class BrowserDetailsViewModel : DetailSidebarModel
             DescriptionText = link.Description ?? "";
 
             // 异步补拉结果原位写回数据行（INPC 通知，无需重建整卡）
-            var pathRow = FindRow("位置");
+            var pathRow = FindRow("ui.noun.location");
             if (pathRow != null) pathRow.Value = _host.GetFolderPathDisplay(link.ListId);
-            var updatedRow = FindRow("最后更新");
+            var updatedRow = FindRow("ui.noun.updatedAt");
             if (updatedRow != null)
                 updatedRow.Value = link.UpdatedAt.Year <= 1 ? "—" : link.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            var visitedRow = FindRow("最后查看");
+            var visitedRow = FindRow("ui.noun.lastVisited");
             if (visitedRow != null)
                 visitedRow.Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未";
-            var visitRow = FindRow("查看次数");
+            var visitRow = FindRow("ui.noun.visitCount");
             if (visitRow != null) visitRow.Value = $"{link.VisitCount} 次";
-            var createdRow = FindRow("创建时间");
+            var createdRow = FindRow("ui.noun.createdAt");
             if (createdRow != null)
                 createdRow.Value = link.CreatedAt.Year <= 1 ? "—" : link.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 
@@ -288,9 +288,9 @@ public class BrowserDetailsViewModel : DetailSidebarModel
     /// <summary>补拉失败/源已删除的收口：把「读取中…」占位回落为中性值（其余占位本就是 —/从未）。</summary>
     private void MarkUnavailable()
     {
-        var pathRow = FindRow("位置");
+        var pathRow = FindRow("ui.noun.location");
         if (pathRow != null && pathRow.Value == LoadingPlaceholder) pathRow.Value = "未获取到信息";
-        var visitedRow = FindRow("最后查看");
+        var visitedRow = FindRow("ui.noun.lastVisited");
         if (visitedRow != null && visitedRow.Value == "—") visitedRow.Value = "从未";
     }
 }

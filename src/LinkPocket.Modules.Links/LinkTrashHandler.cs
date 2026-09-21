@@ -42,7 +42,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
             FaviconUrl = link.FaviconUrl,
             TrashFolderId = null,   // 单独删除的书签挂在回收站根
             OriginListId = link.ListId,
-            OriginPath = await ctx.Uow.Trees.PathDisplayAsync(
+            OriginPath = await ctx.Uow.Trees.PathCanonicalAsync(
                 link.ListId == null ? null : new FolderId(link.ListId), ct),
             LastVisitedAt = link.LastVisitedAt,
             VisitCount = link.VisitCount,

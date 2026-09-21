@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
@@ -28,7 +29,7 @@ public partial class BrowserViewModel
 
         FolderTree.Clear();
 
-        var root = new FolderNode { IsRoot = true, Name = FolderIds.RootDisplayName, IconKind = "folder-open-outline", IsExpanded = true, Host = this };
+        var root = new FolderNode { IsRoot = true, Name = BookmarkPath.RootToken, IconKind = "folder-open-outline", IsExpanded = true, Host = this };
         var nodes = tree.ToDictionary(
             f => f.FolderId,
             f => new FolderNode

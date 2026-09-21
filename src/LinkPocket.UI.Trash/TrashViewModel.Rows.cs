@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
@@ -90,7 +91,8 @@ public partial class TrashViewModel
         {
             "name" => (a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture) * sign,
             "type" => (a, b) => string.Compare(a.TypeText, b.TypeText, StringComparison.CurrentCulture) * sign,
-            "origin_path" => (a, b) => string.Compare(a.OriginText, b.OriginText, StringComparison.CurrentCulture) * sign,
+            // 按 canonical 排、不按投影排：换语言不得改变任何顺序（显示名会变，路径不会）
+            "origin_path" => (a, b) => string.Compare(a.OriginPath, b.OriginPath, StringComparison.CurrentCulture) * sign,
             _ => (a, b) => a.DeletedAt.CompareTo(b.DeletedAt) * sign,
         };
         rows.Sort((a, b) =>
@@ -102,10 +104,17 @@ public partial class TrashViewModel
         });
     }
 
+    /// <summary>语言一变就重跑的显示投影：选中提示与状态栏计数句是建值时烤进模型的字符串。</summary>
+    private void ReprojectLocalizedText()
+    {
+        OnPropertyChanged(nameof(SelectionInfoText));
+        SetStatusText();
+    }
+
     private void SetStatusText()
     {
         var where = IsInUnit ? CurrentUnitDisplayName : RootDisplayName;
-        StatusText = $"{where} · {Rows.Count} 项";
+        StatusText = Loc.T("trash.status.count", where, Rows.Count);
         OnPropertyChanged(nameof(CurrentUnitDisplayName));
     }
 

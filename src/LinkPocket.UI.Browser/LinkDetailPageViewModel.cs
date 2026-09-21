@@ -99,13 +99,13 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
     /// <summary>信息行（与浏览页详情页字段一致；ID 行附复制按钮）。</summary>
     private IReadOnlyList<DetailSidebarRow> BuildRows(LinkDto link) => new List<DetailSidebarRow>
     {
-        new() { IconKind = "folder-outline", Label = "位置", Value = _host.GetFolderPathDisplay(link.ListId) },
-        new() { IconKind = "refresh", Label = "最后更新", Value = Fmt(link.UpdatedAt) },
-        new() { IconKind = "history", Label = "最后查看",
+        new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = _host.GetFolderPathDisplay(link.ListId) },
+        new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = Fmt(link.UpdatedAt) },
+        new() { IconKind = "history", LabelKey = "ui.noun.lastVisited",
                 Value = link.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
-        new() { IconKind = "chart-line", Label = "累计查看", Value = $"{link.VisitCount} 次" },
-        new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = Fmt(link.CreatedAt) },
-        new() { IconKind = "fingerprint", Label = "ID", Value = link.LinkId, IsMono = true,
+        new() { IconKind = "chart-line", LabelKey = "ui.noun.viewTotal", Value = $"{link.VisitCount} 次" },
+        new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = Fmt(link.CreatedAt) },
+        new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = link.LinkId, IsMono = true,
                 CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = "复制 ID" },
     };
 

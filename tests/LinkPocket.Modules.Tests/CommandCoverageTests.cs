@@ -71,14 +71,14 @@ public class FoldersQueryCoverageTests
         var b = (await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "B", parent_id = a.FolderId })).Data!;
 
         var crumb = await engine.QueryAsync<List<string>>("folders.breadcrumb", new { folder_id = b.FolderId });
-        Assert.Equal(new[] { FolderIds.RootDisplayName, "A", "B" }, crumb);
+        Assert.Equal(new[] { FolderIds.RootToken, "A", "B" }, crumb);
 
         var rootCrumb = await engine.QueryAsync<List<string>>("folders.breadcrumb", null);
-        Assert.Equal(new[] { FolderIds.RootDisplayName }, rootCrumb);
+        Assert.Equal(new[] { FolderIds.RootToken }, rootCrumb);
 
         // 未知目录回落根（既有口径：不抛错）
         var unknown = await engine.QueryAsync<List<string>>("folders.breadcrumb", new { folder_id = "no-such" });
-        Assert.Equal(new[] { FolderIds.RootDisplayName }, unknown);
+        Assert.Equal(new[] { FolderIds.RootToken }, unknown);
     }
 
     [Fact]
@@ -265,8 +265,8 @@ public class TrashQueryCoverageTests
         Assert.Equal(1, unitB.LinkCount);
         Assert.Equal(unitA.TrashFolderId, unitB.ParentTrashFolderId);
         // 原位置快照 = 单元**自身**删除前的完整路径（与 folders.delete 写快照的口径一致）
-        Assert.Equal("全部书签 / A", unitA.OriginPath);
-        Assert.Equal("全部书签 / A / B", unitB.OriginPath);
+        Assert.Equal("@root/A", unitA.OriginPath);
+        Assert.Equal("@root/A/B", unitB.OriginPath);
 
         // 链接：全量 + 每项携归属单元（null = 根级）——树叶子注入的唯一数据源
         Assert.Equal(3, overview.Links.Count);

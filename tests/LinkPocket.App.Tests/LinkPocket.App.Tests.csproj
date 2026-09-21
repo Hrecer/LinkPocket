@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\LinkPocket.App\LinkPocket.csproj" />
     <ProjectReference Include="..\..\src\LinkPocket.Composition\LinkPocket.Composition.csproj" />
     <ProjectReference Include="..\..\src\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.I18n\LinkPocket.I18n.csproj" />
     <ProjectReference Include="..\..\src\LinkPocket.Theming\LinkPocket.Theming.csproj" />
     <ProjectReference Include="..\..\src\LinkPocket.UI.Browser\LinkPocket.UI.Browser.csproj" />
   </ItemGroup>

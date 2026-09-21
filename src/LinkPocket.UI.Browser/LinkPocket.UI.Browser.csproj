@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.I18n\LinkPocket.I18n.csproj" />
     <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
   </ItemGroup>
 

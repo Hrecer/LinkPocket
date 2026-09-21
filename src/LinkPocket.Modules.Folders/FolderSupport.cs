@@ -54,6 +54,6 @@ internal static class FolderSupport
             currentId = f.ParentId ?? string.Empty;
         }
 
-        return new List<string> { FolderIds.RootDisplayName }.Concat(parts).ToList();
+        return new List<string> { FolderIds.RootToken }.Concat(parts).ToList();
     }
 }

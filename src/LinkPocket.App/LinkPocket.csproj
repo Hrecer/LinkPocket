@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Composition\LinkPocket.Composition.csproj" />
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.I18n\LinkPocket.I18n.csproj" />
     <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
     <ProjectReference Include="..\LinkPocket.Theming\LinkPocket.Theming.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Browser\LinkPocket.UI.Browser.csproj" />

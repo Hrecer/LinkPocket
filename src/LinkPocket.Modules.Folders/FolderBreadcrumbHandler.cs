@@ -20,12 +20,12 @@ internal sealed class FolderBreadcrumbHandler : ICommandHandler
     {
         var folderId = CommandArgs.OptionalString(args, "folder_id");
         if (FolderIds.IsRoot(folderId))
-            return CommandResult.Ok(new List<string> { FolderIds.RootDisplayName });
+            return CommandResult.Ok(new List<string> { FolderIds.RootToken });
 
         var allFolders = await ctx.Uow.Folders.ListAllAsync(ctx.Ct);
         var folder = allFolders.FirstOrDefault(f => f.FolderId == folderId);
         var breadcrumb = folder == null
-            ? new List<string> { FolderIds.RootDisplayName }
+            ? new List<string> { FolderIds.RootToken }
             : FolderSupport.BuildBreadcrumb(folder, allFolders);
         return CommandResult.Ok(breadcrumb);
     }

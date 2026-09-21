@@ -35,7 +35,7 @@ public class BrowserViewModelTests
 
             // 根目录面包屑 = 仅「全部书签」且为最后一级（可点击跳转）
             Assert.Single(vm.Breadcrumbs);
-            Assert.Equal("全部书签", vm.Breadcrumbs[0].Name);
+            Assert.Equal("@root", vm.Breadcrumbs[0].Name);   // 模型存身份，显示名由模板投影
             Assert.True(vm.Breadcrumbs[0].IsLast);
 
             Assert.Equal("共 4 项（2 个文件夹 / 2 个链接）", vm.StatusText);
@@ -63,7 +63,7 @@ public class BrowserViewModelTests
 
             await vm.LoadAsync(a.FolderId);
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
-            Assert.Equal(new[] { "全部书签", "A" }, vm.Breadcrumbs.Select(b => b.Name).ToArray());
+            Assert.Equal(new[] { "@root", "A" }, vm.Breadcrumbs.Select(b => b.Name).ToArray());   // 根段 = 身份
             Assert.True(vm.Breadcrumbs[1].IsLast);        // 当前目录高亮（最后一级）
             Assert.Equal(2, vm.Rows.Count);               // A1（文件夹）+ C（链接）
             Assert.Equal("A1", vm.Rows[0].Name);

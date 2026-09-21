@@ -10,6 +10,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views;
 
@@ -22,8 +23,11 @@ public class DataTableColumn
 {
     /// <summary>排序键标识（表头点击时回传）。</summary>
     public string Field { get; init; } = "";
-    /// <summary>表头文案。</summary>
-    public string Label { get; init; } = "";
+    /// <summary>表头**文案键**（<c>ui.noun.*</c>）；空串 = 无字面（勾选列）。
+    /// 这里存的必须是键不是文本：表头由本控件建，切语言时它重跑一次投影就够，
+    /// 而存文本就等于把语言烤进调用点。
+    /// </summary>
+    public string LabelKey { get; init; } = "";
     /// <summary>列宽；负值表示 Star（按权重占剩余空间：-1 = 1 份，-2 = 2 份…），正值 = 固定像素。</summary>
     public double Width { get; init; } = -1;
     /// <summary>排序键：把数据项映射为可比较值（null = 该列不可内部排序，由外部 VM 排序）。</summary>
@@ -188,6 +192,10 @@ public class SortableDataTable : Grid
 
     public SortableDataTable()
     {
+        // 表头文案是建控件时烤进 Content/ToolTip 的字符串 → 换语言必须重跑一次投影
+        // （弱引用注册，控件回收即失效，不需要退订）
+        LocaleService.RegisterReprojector(this, Rebuild);
+
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
@@ -273,6 +281,10 @@ public class SortableDataTable : Grid
 
     private IEnumerable<DataTableColumn> ColumnList => Columns ?? Array.Empty<DataTableColumn>();
 
+    /// <summary>列头文本 = 当前语言下的键取值（键为空即无字面）。</summary>
+    private static string HeaderText(DataTableColumn col)
+        => string.IsNullOrEmpty(col.LabelKey) ? string.Empty : Loc.T(col.LabelKey);
+
     // —— 列定义变化：重建表头 + 列宽单一数据源 ——
 
     private void Rebuild()
@@ -308,13 +320,13 @@ public class SortableDataTable : Grid
 
             var header = new SortableHeaderButton
             {
-                Content = col.Label,
+                Content = HeaderText(col),
                 Field = col.Field,
                 Direction = col.Field == SortField ? SortAscending : null,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 // 药丸紧挨（无外距），拖拽分隔线画在两药丸的贴合线上（同上一版本观感）
                 Margin = new Thickness(0, 0, 0, 0),
-                ToolTip = $"按{col.Label}排序"
+                ToolTip = Loc.T("ui.sort.tip", HeaderText(col))
             };
             header.Click += OnHeaderClick;
             cell.Children.Add(header);

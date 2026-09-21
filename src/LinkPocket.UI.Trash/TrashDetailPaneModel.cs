@@ -40,11 +40,11 @@ public class TrashDetailPaneModel : LinkDetailPaneModel
             row.Description ?? string.Empty,
             new[]
             {
-                new DetailSidebarRow { IconKind = "folder-outline", Label = "原位置", Value = row.OriginText },
-                new DetailSidebarRow { IconKind = "history", Label = "删除时间", Value = row.DeletedText },
+                new DetailSidebarRow { IconKind = "folder-outline", LabelKey = "ui.noun.origin", Value = row.OriginText },
+                new DetailSidebarRow { IconKind = "history", LabelKey = "ui.noun.deletedAt", Value = row.DeletedText },
                 new DetailSidebarRow
                 {
-                    IconKind = "fingerprint", Label = "ID", Value = row.Id, IsMono = true,
+                    IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = row.Id, IsMono = true,
                     CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID"
                 },
             });

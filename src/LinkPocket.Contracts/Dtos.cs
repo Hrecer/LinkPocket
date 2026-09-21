@@ -76,7 +76,7 @@ public class FolderDto
 public class FolderContentsDto
 {
     [JsonPropertyName("folder_id")] public string? FolderId { get; set; }
-    [JsonPropertyName("folder_name")] public string FolderName { get; set; } = FolderIds.RootDisplayName;
+    [JsonPropertyName("folder_name")] public string FolderName { get; set; } = FolderIds.RootToken;
     [JsonPropertyName("sub_folders")] public List<FolderDto> SubFolders { get; set; } = new();
     [JsonPropertyName("links")] public List<LinkDto> Links { get; set; } = new();
     [JsonPropertyName("breadcrumb")] public List<string> Breadcrumb { get; set; } = new();

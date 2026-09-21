@@ -24,8 +24,8 @@ public class LocateModuleTests
         Assert.Equal(link.LinkId, resolved.Id);
         Assert.Equal("定位目标", resolved.Name);
         Assert.Equal(b.FolderId, resolved.ContainerFolderId);            // 进这一层才能看到它
-        Assert.Equal("全部书签 / 资料 / 子层", resolved.ContainerPath);
-        Assert.Equal("全部书签 / 资料 / 子层 / 定位目标", resolved.Path);
+        Assert.Equal("@root/资料/子层", resolved.ContainerPath);
+        Assert.Equal("@root/资料/子层/定位目标", resolved.Path);
     }
 
     [Fact]
@@ -40,8 +40,8 @@ public class LocateModuleTests
         Assert.Equal("folder", resolved.Kind);
         Assert.Equal(b.FolderId, resolved.Id);
         Assert.Equal(a.FolderId, resolved.ContainerFolderId);            // 文件夹的容器 = 它的父目录
-        Assert.Equal("全部书签 / 资料", resolved.ContainerPath);
-        Assert.Equal("全部书签 / 资料 / 子层", resolved.Path);
+        Assert.Equal("@root/资料", resolved.ContainerPath);
+        Assert.Equal("@root/资料/子层", resolved.Path);
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public class LocateModuleTests
         var resolved = await engine.QueryAsync<LocateResolveDto>("locate.resolve", new { id = link.LinkId });
 
         Assert.Null(resolved.ContainerFolderId);                          // 根 = null（零哨兵）
-        Assert.Equal("全部书签", resolved.ContainerPath);
-        Assert.Equal("全部书签 / 根级链接", resolved.Path);
+        Assert.Equal("@root", resolved.ContainerPath);
+        Assert.Equal("@root/根级链接", resolved.Path);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class LocateModuleTests
 
         Assert.Equal("folder", resolved.Kind);
         Assert.Null(resolved.ContainerFolderId);
-        Assert.Equal("全部书签 / 顶层夹", resolved.Path);
+        Assert.Equal("@root/顶层夹", resolved.Path);
     }
 
     [Fact]

@@ -31,7 +31,7 @@ internal sealed class LocateResolveHandler : ICommandHandler
         var link = await ctx.Uow.Links.FindAsync(new LinkId(raw), ctx.Ct);
         if (link != null)
         {
-            var containerPath = await ctx.Uow.Trees.PathDisplayAsync(
+            var containerPath = await ctx.Uow.Trees.PathCanonicalAsync(
                 link.ListId == null ? null : new FolderId(link.ListId), ctx.Ct);
             return CommandResult.Ok(new LocateResolveDto
             {
@@ -40,14 +40,14 @@ internal sealed class LocateResolveHandler : ICommandHandler
                 Name = link.Title ?? string.Empty,
                 ContainerFolderId = link.ListId,
                 ContainerPath = containerPath,
-                Path = $"{containerPath} / {link.Title}",
+                Path = BookmarkPath.Append(containerPath, link.Title),
             });
         }
 
         var folder = await ctx.Uow.Folders.FindAsync(new FolderId(raw), ctx.Ct);
         if (folder != null)
         {
-            var containerPath = await ctx.Uow.Trees.PathDisplayAsync(
+            var containerPath = await ctx.Uow.Trees.PathCanonicalAsync(
                 folder.ParentId == null ? null : new FolderId(folder.ParentId), ctx.Ct);
             return CommandResult.Ok(new LocateResolveDto
             {
@@ -56,7 +56,7 @@ internal sealed class LocateResolveHandler : ICommandHandler
                 Name = folder.Name,
                 ContainerFolderId = folder.ParentId,
                 ContainerPath = containerPath,
-                Path = $"{containerPath} / {folder.Name}",
+                Path = BookmarkPath.Append(containerPath, folder.Name),
             });
         }
 

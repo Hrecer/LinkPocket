@@ -116,7 +116,7 @@ public class TrashViewModelTests
             Assert.DoesNotContain(vm.Rows, r => r.Id == l2);
 
             // 面包屑：回收站 / A
-            Assert.Equal(new[] { "回收站", "A" }, vm.Breadcrumbs.Select(c => c.Name).ToArray());
+            Assert.Equal(new[] { "@trash", "A" }, vm.Breadcrumbs.Select(c => c.Name).ToArray());
             Assert.True(vm.Breadcrumbs[^1].IsLast);
 
             // 返回上级 → 根
@@ -146,7 +146,7 @@ public class TrashViewModelTests
 
             vm.EnterPathEditCommand.Execute(null);
             Assert.True(vm.IsPathEditing);
-            Assert.Equal("回收站", vm.PathEditText);
+            Assert.Equal("回收站", vm.PathEditText);   // 地址栏是投影后的显示串（模型里存的是 @trash）
 
             // 逐级解析：回收站 / A / B（根段名可省略）
             vm.PathEditText = "A/B";
@@ -226,14 +226,15 @@ public class TrashViewModelTests
             Assert.True(vm.Details.IsReadOnly);
             Assert.Equal(rowA.Name, vm.Details.DisplayName);
             Assert.Equal(unitA, vm.Details.IdText);
-            Assert.Equal(new[] { "类型", "原位置", "删除时间", "ID" }, vm.Details.Rows.Select(r => r.Label));
+            // 断言键而不是显示文本：键是语言无关的稳定标识（换英文后按文本断言会假红）
+            Assert.Equal(new[] { "ui.noun.type", "ui.noun.origin", "ui.noun.deletedAt", "ui.noun.id" }, vm.Details.Rows.Select(r => r.LabelKey));
 
             // 单选书签：链接态 + 网址行 + 网址卡复制命令已接（原先是死按钮）
             var row0 = vm.Rows.Single(r => r.Id == l0);
             vm.SelectRowWithModifiers(row0, ModifierKeys.None);
             Assert.True(vm.Details.IsLink && !vm.Details.IsFolder);
             Assert.Equal(row0.Url, vm.Details.UrlText);
-            Assert.Contains(vm.Details.Rows, r => r.Label == "网址");
+            Assert.Contains(vm.Details.Rows, r => r.LabelKey == "ui.noun.url");
             Assert.NotNull(vm.Details.CopyUrlCommand);
 
             // 多选：只报项数与类型分布（不再恒为 0）
@@ -551,7 +552,7 @@ public class TrashViewModelTests
             vm.ClearSelectionCommand.Execute(null);
             Assert.False(vm.HasSelection);
             Assert.True(vm.RestoreDetailCommand.CanExecute(null));
-            Assert.Contains(detailId, vm.DetailPane.Rows.Single(r => r.Label == "ID").Value);
+            Assert.Contains(detailId, vm.DetailPane.Rows.Single(r => r.LabelKey == "ui.noun.id").Value);
 
             // 按展示项执行「还原到根目录」→ 条目离开回收站、覆盖层自动关闭
             vm.RestoreDetailToRootCommand.Execute(null);

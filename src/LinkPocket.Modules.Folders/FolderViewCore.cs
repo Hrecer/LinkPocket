@@ -45,7 +45,7 @@ internal static class FolderViewCore
 
         if (isRoot)
         {
-            dto.FolderName = FolderIds.RootDisplayName;
+            dto.FolderName = FolderIds.RootToken;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
             dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
             dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
@@ -59,7 +59,7 @@ internal static class FolderViewCore
             dto.LastPage = perPage > 0
                 ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
                 : 1;
-            dto.Breadcrumb = [FolderIds.RootDisplayName];
+            dto.Breadcrumb = [FolderIds.RootToken];
         }
         else
         {

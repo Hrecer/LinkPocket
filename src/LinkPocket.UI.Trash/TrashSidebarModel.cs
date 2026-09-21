@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows.Input;
 using LinkPocket.Services;
+using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
 
@@ -61,14 +62,14 @@ public class TrashSidebarModel : DetailSidebarModel
             new()
             {
                 IconKind = row.IsFolder ? "folder" : "link-variant",
-                Label = "类型",
+                LabelKey = "ui.noun.type",
                 Value = row.IsFolder ? "文件夹单元（含子树）" : "书签",
                 IsAccent = true
             },
             new()
             {
                 IconKind = "folder-outline",
-                Label = "原位置",
+                LabelKey = "ui.noun.origin",
                 Value = row.OriginText
             },
         };
@@ -77,7 +78,7 @@ public class TrashSidebarModel : DetailSidebarModel
             rows.Add(new DetailSidebarRow
             {
                 IconKind = "link-variant",
-                Label = "网址",
+                LabelKey = "ui.noun.url",
                 Value = UrlText,
                 CopyCommand = _copyCommand,
                 CopyToolTip = "复制网址"
@@ -86,13 +87,13 @@ public class TrashSidebarModel : DetailSidebarModel
         rows.Add(new DetailSidebarRow
         {
             IconKind = "history",
-            Label = "删除时间",
+            LabelKey = "ui.noun.deletedAt",
             Value = row.DeletedText
         });
         rows.Add(new DetailSidebarRow
         {
             IconKind = "fingerprint",
-            Label = "ID",
+            LabelKey = "ui.noun.id",
             Value = row.Id,
             IsMono = true,
             CopyCommand = _copyCommand,
@@ -120,7 +121,7 @@ public class TrashSidebarModel : DetailSidebarModel
         ShowRestoreToRootAction = false;
         ShowJumpAction = false;   // 多选没有"某一项"可定位（与其它页同一口径）
         DeleteSelectionLabel = "永久删除所选";
-        DisplayName = $"已选中 {rows.Count} 项";
+        DisplayName = Loc.T("trash.selection.count", rows.Count);
         IdText = string.Empty;
         UrlText = string.Empty;
         DescriptionText = string.Empty;

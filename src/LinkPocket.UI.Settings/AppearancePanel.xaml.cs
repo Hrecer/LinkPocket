@@ -129,10 +129,15 @@ namespace LinkPocket.Views
             // 等宽字体下拉**已删除**，这里只剩界面字体一个。
             if (!ReferenceEquals(UiFontCombo.ItemsSource, ViewModel.UiFonts))
                 UiFontCombo.ItemsSource = ViewModel.UiFonts;
-            // 选中项也显式跟一次：切来源时控件可能自己被清成空白（候选集因故为空的那一瞬），
-            // 而绑定认为"源值没变"不再回填 —— 这里直接写目标属性，把它拉回当前字体。
-            if (!ReferenceEquals(UiFontCombo.SelectedItem, ViewModel.SelectedUiFont))
-                UiFontCombo.SelectedItem = ViewModel.SelectedUiFont;
+
+            var current = ViewModel.SelectedUiFont;
+            // 按**下标**挂回，不按对象：候选清空再补齐的那一瞬，控件会停在"SelectedItem 这个对象还在、
+            // 下标已经没了"的状态，而 `DisplayMemberPath` 的选择框此时画的是空串 → 框空白，
+            // 且之后候选补齐也不会自愈（切字体来源后框空白就是这个态）。
+            // 条件写成"下标没对上"才自然幂等：写值会经双向绑定回到 VM 再回到这里，
+            // 以"对象不等"为条件时这条回环不会收敛（实测栈溢出）。
+            var index = current is null ? -1 : UiFontCombo.Items.IndexOf(current);
+            if (index >= 0 && UiFontCombo.SelectedIndex != index) UiFontCombo.SelectedIndex = index;
         }
 
         // ── 主题卡 ───────────────────────────────────────────────────────

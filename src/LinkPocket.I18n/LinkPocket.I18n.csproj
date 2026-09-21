@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- I18n：界面语言层（语言状态 / 字符串表 / 取词通道 / 日期口径）。
+       定位 = 与 Theming 平级的"底层设施"，不是控件层：
+         · 依赖面只有 Contracts（日志门面 LpLog）；
+         · 禁引 UIKit / UI.* / Engine / Data / Kernel / Modules.* / Theming（架构测试 DependencyRulesTests 逐条卡住）；
+         · 语言字段的**持久化归 Theming（UiPreferences）**、语义归本层，两边由组合根 App 搬运——
+           这样 I18n↛Theming 与 Theming↛I18n 同时成立。
+       需要 UseWPF：取词通道是 XAML markup extension + 绑定。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.I18n</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

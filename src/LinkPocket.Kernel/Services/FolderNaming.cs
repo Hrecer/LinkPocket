@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Kernel;
 
@@ -53,6 +54,13 @@ public sealed class FolderNamingService(IUnitOfWork uow) : IFolderNaming
     public async Task<string> ResolveAsync(string? parentId, string desired, string? excludeId = null,
         CancellationToken ct = default)
     {
+        // 根级保留名 = 两枚路径 token + 各语言的根显示名（组合根启动时登记进契约层）。
+        // 虚根不在库里，同层唯一索引管不到它：放任根级建一个「全部书签」，路径首段就此产生歧义
+        // （`全部书签/A` 到底指根还是指那个文件夹）。单条入口一律**拒绝**，不静默改名。
+        if (parentId is null && BookmarkPath.IsReservedRootName(desired))
+            throw new EngineException(EngineErrors.Of(EngineErrors.ReservedName,
+                $"「{desired}」是根目录占用的名字，请换一个（子级不受此限）"));
+
         var siblings = await uow.Folders.ChildrenOfAsync(
             parentId == null ? null : new FolderId(parentId), ct);
         var taken = siblings
@@ -68,6 +76,8 @@ public sealed class FolderNamingService(IUnitOfWork uow) : IFolderNaming
         var existing = await uow.Folders.ChildrenOfAsync(
             parentId == null ? null : new FolderId(parentId), ct);
         table.Seed(parentId, existing.Select(f => f.Name));
+        // 批量入口（导入/还原）不抛：保留名按"已被占用"喂给编号算法，一份导入清单不该整体中止
+        if (parentId is null) table.Seed(parentId, BookmarkPath.ReservedRootNames());
         return table;
     }
 

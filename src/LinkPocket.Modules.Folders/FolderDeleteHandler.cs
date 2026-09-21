@@ -95,7 +95,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         Name = f.Name,
                         OriginFolderId = f.FolderId,
                         OriginParentFolderId = f.ParentId,   // v5：原父目录（原位还原的数据依据；NULL = 原在根）
-                        OriginPath = await uow.Trees.PathDisplayAsync(new FolderId(f.FolderId), ct),
+                        OriginPath = await uow.Trees.PathCanonicalAsync(new FolderId(f.FolderId), ct),
                         Description = f.Description,
                         SortOrder = f.SortOrder,
                         CreatedAt = f.CreatedAt,
@@ -116,7 +116,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         FaviconUrl = link.FaviconUrl,
                         TrashFolderId = link.ListId,
                         OriginListId = link.ListId,
-                        OriginPath = await uow.Trees.PathDisplayAsync(
+                        OriginPath = await uow.Trees.PathCanonicalAsync(
                             link.ListId == null ? null : new FolderId(link.ListId), ct),
                         LastVisitedAt = link.LastVisitedAt,
                         VisitCount = link.VisitCount,

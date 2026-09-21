@@ -1,6 +1,7 @@
 using System.Windows;
 using LinkPocket.Services;
 using LinkPocket.Theming;
+using LinkPocket.I18n;
 using LinkPocket.Contracts;
 
 namespace LinkPocket;
@@ -27,16 +28,30 @@ public partial class App : Application
         // 换种子只改库角色、画刷纹丝不动（换主题只会"半主题化"）。
         // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
         var (fellBack, reason) = ThemeService.ApplyFromPreferences(Resources);
+
+        // 语言：偏好里存的只是字符串，解释与生效全在 I18n。**必须在建主窗口之前**——
+        // 首帧就得是最终语言，先画中文再跳英文等于给用户看一次闪烁。
+        LocaleService.Apply(AppLocales.Resolve(ThemeService.LanguageMode, ThemeService.LanguageOverride, out var languageFellBack));
+
+        // 根别名登记（各语言的根显示名 → 契约层）：路径首段匹配在 UIKit、根级占用名校验在 Kernel，
+        // 两者都不许引 I18n，所以由组合根把事实登记过去。
+        BookmarkDisplay.RegisterRootAliases();
+
         LpIcons.RegisterAll();
         base.OnStartup(e);
 
-        // 偏好损坏 / 字体缺失 → **如实提示一次**（观测面纪律：不许静默回退默认外观）
-        if (fellBack && reason is not null)
+        // 偏好损坏 / 字体缺失 / 语言认不出来 → **如实提示一次**（观测面纪律：不许静默回退）
+        var notices = new List<string>();
+        if (fellBack && reason is not null) notices.Add(reason);
+        if (languageFellBack)
+            notices.Add($"界面语言设置无法识别（模式「{ThemeService.LanguageMode}」），已按系统语言显示");
+        if (notices.Count > 0)
         {
-            LpLog.Warn($"外观回退默认：{reason}", category: ThemeService.LogCategory);
+            var text = string.Join("\n\n", notices);
+            LpLog.Warn($"启动期回退：{text}", category: ThemeService.LogCategory);
             try
             {
-                MessageBox.Show(reason + "\n\n可在「设置 → 外观」重新选择。", "LinkPocket",
+                MessageBox.Show(text + "\n\n可在「设置 → 外观」重新选择。", "LinkPocket",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch { /* 提示失败不阻断启动；日志已留痕 */ }

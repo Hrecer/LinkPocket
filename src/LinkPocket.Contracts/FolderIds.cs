@@ -13,8 +13,11 @@ namespace LinkPocket.Contracts;
 /// </summary>
 public static class FolderIds
 {
-    /// <summary>根目录的显示名（仅用于界面文案与目录页标题，不是数据）。</summary>
-    public const string RootDisplayName = "全部书签";
+    /// <summary>
+    /// 「全部书签」虚根在**路径里**的身份（<see cref="BookmarkPath.RootToken"/>）。
+    /// 显示名不在这里——它属界面语言，见 <c>I18n.BookmarkDisplay</c>。
+    /// </summary>
+    public const string RootToken = BookmarkPath.RootToken;
 
     /// <summary>
     /// 是否为根目录。<b>只认 <c>null</c></b>：空串、<c>"0"</c> 之类的形状都是非法 ID，不是根。

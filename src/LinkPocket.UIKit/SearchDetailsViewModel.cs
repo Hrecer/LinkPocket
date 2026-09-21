@@ -110,12 +110,12 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
         SetRows(new List<DetailSidebarRow>
         {
-            new() { IconKind = "folder-outline", Label = "位置", Value = pathText },
-            new() { IconKind = "refresh", Label = "最后更新", Value = FormatTime(item.UpdatedAt) },
-            new() { IconKind = "history", Label = "最后查看", Value = item.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
-            new() { IconKind = "trending-up", Label = "查看次数", Value = $"{item.VisitCount} 次" },
-            new() { IconKind = "plus-circle-outline", Label = "创建时间", Value = FormatTime(item.CreatedAt) },
-            new() { IconKind = "fingerprint", Label = "ID", Value = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
+            new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", Value = pathText },
+            new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", Value = FormatTime(item.UpdatedAt) },
+            new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", Value = item.LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "从未" },
+            new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", Value = $"{item.VisitCount} 次" },
+            new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", Value = FormatTime(item.CreatedAt) },
+            new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", Value = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = "复制 ID" },
         });
 
         ApplyPageLayout();   // 排布位在 RaiseAll 之前落地（RaiseAll 里的动作面通知才带得上它）

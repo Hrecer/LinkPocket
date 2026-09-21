@@ -90,7 +90,7 @@ public partial class SearchView : UserControl
             new DataTableColumn
             {
                 // 名称列占 2 份剩余空间：标题下方还有 URL，必须留出可见宽度，空间来自右侧四列压到极限
-                Field = "title", Label = "名称", Width = -2,
+                Field = "title", LabelKey = "ui.noun.name", Width = -2,
                 SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkItem)r).Title)
                     ? ((LinkItem)r).Url : ((LinkItem)r).Title),
                 CellFactory = r => BuildSearchNameCell((LinkItem)r)
@@ -101,32 +101,32 @@ public partial class SearchView : UserControl
                 // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
                 // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
                 // 省下的宽度全部让给名称/位置，URL 不得被压缩
-                Field = "path", Label = "位置", Width = -3,
+                Field = "path", LabelKey = "ui.noun.location", Width = -3,
                 SortKey = r => (IComparable)(vm.ResolveFolderPath(((LinkItem)r).ListId)),
                 CellFactory = r => TextCell(vm.ResolveFolderPath(((LinkItem)r).ListId), 12.5)
             },
             new DataTableColumn
             {
-                Field = "updated_at", Label = "最后更新", Width = 114,
+                Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).UpdatedAt,
                 CellFactory = r => TextCell(((LinkItem)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
             },
             new DataTableColumn
             {
-                Field = "last_visited_at", Label = "最后查看", Width = 114,
+                Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 114,
                 SortKey = r => (IComparable)(((LinkItem)r).LastVisitedAt ?? DateTime.MinValue),
                 CellFactory = r => TextCell(
                     ((LinkItem)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未", 12.5)
             },
             new DataTableColumn
             {
-                Field = "visit_count", Label = "查看次数", Width = 72,
+                Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 72,
                 SortKey = r => (IComparable)((LinkItem)r).VisitCount,
                 CellFactory = r => TextCell($"{((LinkItem)r).VisitCount} 次", 12.5)
             },
             new DataTableColumn
             {
-                Field = "created_at", Label = "创建时间", Width = 114,
+                Field = "created_at", LabelKey = "ui.noun.createdAt", Width = 114,
                 SortKey = r => (IComparable)((LinkItem)r).CreatedAt,
                 CellFactory = r => TextCell(((LinkItem)r).CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), 12.5)
             },

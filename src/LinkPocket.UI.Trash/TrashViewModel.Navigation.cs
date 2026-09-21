@@ -60,7 +60,7 @@ public partial class TrashViewModel
 
     private void RebuildBreadcrumbs()
     {
-        var chain = new List<TrashCrumbViewModel> { new(null, RootDisplayName) };
+        var chain = new List<TrashCrumbViewModel> { new(null, BookmarkPath.TrashToken) };
         foreach (var (id, name) in BuildPathChain()) chain.Add(new TrashCrumbViewModel(id, name));
 
         Breadcrumbs.Clear();

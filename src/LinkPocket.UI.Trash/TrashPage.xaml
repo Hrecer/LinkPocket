@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:uikit="clr-namespace:LinkPocket.Views.Browser;assembly=LinkPocket.UIKit"
              Focusable="True"
              FocusVisualStyle="{x:Null}"
@@ -32,7 +33,7 @@
             <ContextMenu.Resources>
                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
             </ContextMenu.Resources>
-            <MenuItem Header="打开" Command="{Binding Host.OpenNodeCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Loc trash.menu.open}" Command="{Binding Host.OpenNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -44,7 +45,7 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="还原" Command="{Binding Host.RestoreNodeCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Loc trash.menu.restore}" Command="{Binding Host.RestoreNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -56,7 +57,7 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="还原到根目录" Command="{Binding Host.RestoreNodeToRootCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Loc trash.menu.restoreToRoot}" Command="{Binding Host.RestoreNodeToRootCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -68,7 +69,7 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="永久删除" Command="{Binding Host.PurgeNodeCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Loc trash.menu.purge}" Command="{Binding Host.PurgeNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>
@@ -104,28 +105,28 @@
                         <Button x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
                                 IsEnabled="{Binding HasSelection}"
                                 Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,0"
-                                ToolTip="还原选中项到原位置 (Ctrl+R)">
+                                ToolTip="{loc:Loc trash.btn.restore.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="还原" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc trash.menu.restore}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
                                 IsEnabled="{Binding HasSelection}"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
-                                ToolTip="还原选中项到根目录 (Ctrl+Shift+R)">
+                                ToolTip="{loc:Loc trash.btn.restoreToRoot.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="还原到根目录" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc trash.menu.restoreToRoot}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="PurgeButton" Cursor="Hand" Click="TrashPurge_Click"
                                 IsEnabled="{Binding HasSelection}"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
-                                ToolTip="永久删除选中项 (Del)（文件夹将连同内部全部内容删除，不可恢复）">
+                                ToolTip="{loc:Loc trash.btn.purge.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="永久删除" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{loc:Loc trash.menu.purge}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -133,15 +134,15 @@
                 <Border DockPanel.Dock="Left" Background="{DynamicResource App.Surface.Card}"
                         CornerRadius="17" Padding="2" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource NavIconButton}" Tag="后退 (Backspace)"
+                        <Button Style="{StaticResource NavIconButton}" Tag="{loc:Loc nav.back.tip}"
                                 Command="{Binding GoBackCommand}">
                             <m3:M3Icon Kind="arrow-left" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
-                        <Button Style="{StaticResource NavIconButton}" Tag="前进 (Alt+→)"
+                        <Button Style="{StaticResource NavIconButton}" Tag="{loc:Loc nav.forward.tip}"
                                 Command="{Binding GoForwardCommand}">
                             <m3:M3Icon Kind="arrow-right" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
-                        <Button Style="{StaticResource NavIconButton}" Tag="返回上级 (Alt+↑)"
+                        <Button Style="{StaticResource NavIconButton}" Tag="{loc:Loc nav.up.tip}"
                                 Command="{Binding GoUpCommand}">
                             <m3:M3Icon Kind="arrow-up" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
@@ -184,7 +185,7 @@
 
             <!-- 左栏：回收站导航树（虚根「回收站」+ 单元 + 链接叶子；节点不可改名的只读树） -->
             <views:FolderTreePanel Grid.Column="0" x:Name="FolderTreePanelCtl"
-                                   HeaderText="导航"
+                                   HeaderText="{loc:Loc nav.panel.title}"
                                    DragEnabled="False"
                                    NodeMenu="{StaticResource TrashNodeMenu}"
                                    ItemsSource="{Binding Tree}"
@@ -202,8 +203,8 @@
                                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
                             </ContextMenu.Resources>
                             <!-- 回收站列表空白菜单：只保留"选择/刷新"类（无新建/粘贴——只读语义） -->
-                            <MenuItem Header="全选" Command="{Binding SelectAllCommand}"/>
-                            <MenuItem Header="刷新" Command="{Binding RefreshCommand}"/>
+                            <MenuItem Header="{loc:Loc menu.selectAll}" Command="{Binding SelectAllCommand}"/>
+                            <MenuItem Header="{loc:Loc menu.refresh}" Command="{Binding RefreshCommand}"/>
                         </ContextMenu>
                     </Grid.ContextMenu>
 
@@ -222,8 +223,8 @@
                                             <ContextMenu.Resources>
                                                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
                                             </ContextMenu.Resources>
-                                            <MenuItem Header="打开" Command="{Binding Host.OpenRowCommand}" CommandParameter="{Binding}"/>
-                                            <MenuItem Header="复制链接" Command="{Binding Host.CopyLinkAddressCommand}" CommandParameter="{Binding}">
+                                            <MenuItem Header="{loc:Loc trash.menu.open}" Command="{Binding Host.OpenRowCommand}" CommandParameter="{Binding}"/>
+                                            <MenuItem Header="{loc:Loc trash.menu.copyLink}" Command="{Binding Host.CopyLinkAddressCommand}" CommandParameter="{Binding}">
                                                 <MenuItem.Style>
                                                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                                                         <Setter Property="Visibility" Value="Visible"/>
@@ -235,9 +236,9 @@
                                                     </Style>
                                                 </MenuItem.Style>
                                             </MenuItem>
-                                            <MenuItem Header="还原" Command="{Binding Host.RestoreSelectionCommand}"/>
-                                            <MenuItem Header="还原到根目录" Command="{Binding Host.RestoreSelectionToRootCommand}"/>
-                                            <MenuItem Header="永久删除" Command="{Binding Host.PurgeSelectionCommand}"/>
+                                            <MenuItem Header="{loc:Loc trash.menu.restore}" Command="{Binding Host.RestoreSelectionCommand}"/>
+                                            <MenuItem Header="{loc:Loc trash.menu.restoreToRoot}" Command="{Binding Host.RestoreSelectionToRootCommand}"/>
+                                            <MenuItem Header="{loc:Loc trash.menu.purge}" Command="{Binding Host.PurgeSelectionCommand}"/>
                                         </ContextMenu>
                                     </Border.ContextMenu>
                                     <Border.InputBindings>
@@ -393,10 +394,10 @@
                                            Foreground="{DynamicResource App.Text.OnContainer}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock Text="回收站是空的" FontSize="17" FontWeight="SemiBold"
+                            <TextBlock Text="{loc:Loc trash.empty.title}" FontSize="17" FontWeight="SemiBold"
                                        Foreground="{DynamicResource App.Text.Primary}"
                                        HorizontalAlignment="Center" Margin="0,18,0,0"/>
-                            <TextBlock Text="删除的书签和文件夹会出现在这里，并保留删除时的位置"
+                            <TextBlock Text="{loc:Loc trash.empty.hint}"
                                        FontSize="12" Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.85"
                                        HorizontalAlignment="Center" Margin="0,6,0,0"/>
                         </StackPanel>
@@ -440,7 +441,7 @@
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>
-                <TextBlock Text="回收站内容不占用书签计数；双击书签打开详情（只读），双击文件夹进入单元；回收站只读，站内不可搬移"
+                <TextBlock Text="{loc:Loc trash.footnote}"
                            FontSize="11" Foreground="{DynamicResource App.Text.Muted}" Opacity="0.6"
                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>

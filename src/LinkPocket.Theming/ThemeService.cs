@@ -187,6 +187,10 @@ public static class ThemeService
         // 「自动调整颜色」开关先于主题应用生效（Apply 会把它写进定义）
         PaletteMode = prefs.Theme.AutoAdjustColors ? PaletteMode.Auto : PaletteMode.Exact;
 
+        // 语言偏好只是**透传**：本层负责把它存下来/交出去，"auto 是什么、语言码指向谁"由 I18n 解释。
+        // 组合根据此调 LocaleService.Apply，切换后再写回这里并落盘。
+        SetLanguagePreference(prefs.Language.Mode, prefs.Language.Override);
+
         var definition = ResolveDefinition(prefs.Theme);
         Apply(definition, resources);
 
@@ -212,7 +216,28 @@ public static class ThemeService
                 AutoAdjustColors = PaletteMode == PaletteMode.Auto,
             },
             Fonts = new Preferences.FontPreference { Ui = CurrentUiFont, Mono = CurrentMonoFont },
+            Language = new Preferences.LanguagePreference { Mode = LanguageMode, Override = LanguageOverride },
         });
+    }
+
+    // ── 语言（透传：持久化在本层，语义在 LinkPocket.I18n）───────────────────
+    // 为什么不让 I18n 自己开一个偏好文件：偏好文件只有一份、要对用户可读，而 I18n 不能引 Theming
+    // （两边互引即成环）。中间以纯字符串为通货，本层只存不解释。
+
+    /// <summary>偏好里的语言模式（<c>auto</c> / <c>fixed</c>）；出厂缺省 = 跟随系统。</summary>
+    public static string LanguageMode { get; private set; } = LocalePreference.ModeAuto;
+
+    /// <summary>固定语言时的语言码；<c>auto</c> 时为 null。</summary>
+    public static string? LanguageOverride { get; private set; }
+
+    /// <summary>
+    /// 记下用户的语言选择（**不落盘**——落盘由调用方走 <see cref="SaveCurrentPreferences"/>，
+    /// 与主题/字体同一条路，避免出现第二套写文件的路径）。
+    /// </summary>
+    public static void SetLanguagePreference(string? mode, string? @override)
+    {
+        LanguageMode = string.IsNullOrWhiteSpace(mode) ? LocalePreference.ModeAuto : mode.Trim();
+        LanguageOverride = string.IsNullOrWhiteSpace(@override) ? null : @override.Trim();
     }
 
     /// <summary>偏好里的主题 → 主题定义（自选配色按需重建；非法一律回退出厂默认）。</summary>

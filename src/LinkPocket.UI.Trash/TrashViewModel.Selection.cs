@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using LinkPocket.I18n;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 
@@ -30,8 +31,8 @@ public partial class TrashViewModel
 
     /// <summary>选中提示文案（状态栏药丸）：单选显示名称、多选显示项数。</summary>
     public string SelectionInfoText => SelectionCount == 1
-        ? (Rows.FirstOrDefault(r => Selection.Contains(r.Id))?.Name ?? "已选中 1 项")
-        : $"已选中 {SelectionCount} 项";
+        ? (Rows.FirstOrDefault(r => Selection.Contains(r.Id))?.Name ?? Loc.T("trash.selection.count", 1))
+        : Loc.T("trash.selection.count", SelectionCount);
 
     /// <summary>当前选中行（主栏视角；顺序 = 行序）。</summary>
     public IEnumerable<TrashRowViewModel> SelectedRows => Rows.Where(r => Selection.Contains(r.Id));

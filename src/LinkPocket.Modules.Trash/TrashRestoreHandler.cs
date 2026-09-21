@@ -33,8 +33,8 @@ internal sealed class TrashRestoreHandler : ICommandHandler
         var info = outcome.Links.Single();
 
         var location = info.Landing == null
-            ? FolderIds.RootDisplayName
-            : await ctx.Uow.Trees.PathDisplayAsync(new FolderId(info.Landing), ctx.Ct);
+            ? FolderIds.RootToken
+            : await ctx.Uow.Trees.PathCanonicalAsync(new FolderId(info.Landing), ctx.Ct);
         var fellNote = info.FellBackToRoot ? "（原目录已不存在，回调根级）" : string.Empty;
         return CommandResult.Ok(
             new TrashRestoreResult(info.LinkId, info.Landing, info.FellBackToRoot),

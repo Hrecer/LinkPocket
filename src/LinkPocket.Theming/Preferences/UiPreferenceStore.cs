@@ -32,6 +32,9 @@ public sealed record UiPreferences
     /// <summary>字体选择。</summary>
     public FontPreference Fonts { get; init; } = new();
 
+    /// <summary>界面语言选择。</summary>
+    public LanguagePreference Language { get; init; } = new();
+
     /// <summary>默认偏好（= 出厂默认主题 + 默认字体）。</summary>
     public static UiPreferences Default { get; } = new();
 }
@@ -71,6 +74,24 @@ public sealed record FontPreference
 
     /// <summary>等宽字体族名（缺省 = Consolas 链）。</summary>
     public string Mono { get; init; } = Fonts.FontCatalog.DefaultMonoFamily;
+}
+
+/// <summary>
+/// 语言偏好。<b>本层只存"用户怎么选"，不解释"选的是什么"</b>——
+/// <c>Mode</c>/<c>Override</c> 的语义（跟随系统、语言码 → 语言）全在 <c>LinkPocket.I18n</c>，
+/// 中间以纯字符串为通货，所以 Theming 不引 I18n、I18n 也不引 Theming（互引即成环）。
+/// </summary>
+/// <remarks>
+/// 新增字段属**兼容追加**：字段缺失 = 出厂缺省（跟随系统）。<b>不升 <see cref="UiPreferences.CurrentVersion"/></b>——
+/// 升版本会把所有老用户的偏好判成损坏、整套外观被清。
+/// </remarks>
+public sealed record LanguagePreference
+{
+    /// <summary><c>auto</c>（跟随系统）或 <c>fixed</c>；取值域见 <c>Contracts.LocalePreference</c>。</summary>
+    public string Mode { get; init; } = LocalePreference.ModeAuto;
+
+    /// <summary>固定语言时的语言码（<c>zh-CN</c> / <c>en</c>）；跟随系统时为 null。</summary>
+    public string? Override { get; init; }
 }
 
 /// <summary>

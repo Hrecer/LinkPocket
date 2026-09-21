@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Services;
 
 namespace LinkPocket.ViewModels;
@@ -53,8 +54,11 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// <summary>UI 端口槽位（对话框等；组合根持有，命令执行时惰性读取）。</summary>
     private readonly Services.UiPortProvider _ports;
 
-    /// <summary>根显示名（不是实体、无 ID——零哨兵）。</summary>
-    public const string RootDisplayName = "回收站";
+    /// <summary>
+    /// 回收站虚根的显示名。身份是 <see cref="BookmarkPath.TrashToken"/>（不落库、无 ID——零哨兵），
+    /// 显示名只是它在当前语言下的投影，**不许拿去做路径匹配**。
+    /// </summary>
+    public static string RootDisplayName => BookmarkDisplay.Segment(BookmarkPath.TrashToken);
 
     public TrashViewModel(EngineClient client, Services.UiPortProvider ports)
     {
@@ -65,6 +69,10 @@ public partial class TrashViewModel : INotifyPropertyChanged
 
         // 选中集合（共享 ListSelection 核心）变化 → 唯一的投影点（行 + 树 + 右栏 + 命令可用性）
         Selection.Changed += ApplySelectionToView;
+
+        // 语言一变，VM 侧派生的显示文本必须重发通知：绑定只在源值变化时重读，而换语言恰恰是"源值变了、
+        // 属性名没变"。**漏了哪一条由探针 language 套件的"英文零中文残留"总闸抓住，不靠人记。**
+        LocaleService.RegisterReprojector(this, ReprojectLocalizedText);
 
         GoBackCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = NavigateAsync(Controller.GoForward()), () => Controller.CanGoForward);
@@ -300,7 +308,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     /// <summary>路径解析/候选（唯一实现在 UIKit Views.PathResolver；本页只提供被删单元层级数据源）。</summary>
     private Views.PathResolver? _pathResolver;
     private Views.PathResolver Paths => _pathResolver ??= new Views.PathResolver(
-        RootDisplayName,
+        BookmarkPath.TrashToken,
         parentId => _unitList
             .Where(f => f.ParentTrashFolderId == parentId)
             .Select(f => new Views.PathNode(f.TrashFolderId, f.Name))
@@ -308,7 +316,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
 
     private void EnterPathEdit()
     {
-        PathEditText = Paths.BuildText(BuildPathChain());
+        PathEditText = BookmarkDisplay.Path(Paths.BuildCanonical(BuildPathChain()));
         IsPathInvalid = false;
         IsPathEditing = true;
     }

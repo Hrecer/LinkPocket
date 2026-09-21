@@ -334,7 +334,7 @@ public class ShortcutTests
     }
 
     [Fact]
-    public async System.Threading.Tasks.Task 复制路径_写系统剪贴板为面包屑文本()
+    public async System.Threading.Tasks.Task 复制路径_写系统剪贴板的是canonical绝对路径()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -350,8 +350,9 @@ public class ShortcutTests
                 return (vm.StatusText, System.Windows.Clipboard.GetText());
             });
 
-            Assert.Equal("已复制路径", status);
-            Assert.Equal("全部书签 / A", text);   // 面包屑文本（可被 Alt+D 地址栏解析）
+            Assert.Contains("已复制路径", status, StringComparison.Ordinal);
+            // 复制的是 canonical（跨语言可粘回、可直接喂 AI）；地址栏里显示的才是本地化投影
+            Assert.Equal("@root/A", text);
         }
         finally
         {

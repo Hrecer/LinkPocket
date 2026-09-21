@@ -465,7 +465,7 @@ namespace LinkPocket.Views
             {
                 new DataTableColumn
                 {
-                    Field = "url", Label = "重复地址", Width = -3,
+                    Field = "url", LabelKey = "ui.noun.duplicateUrl", Width = -3,
                     SortKey = r => (IComparable)((DedupGroupRow)r).Url,
                     CellFactory = r =>
                     {
@@ -485,7 +485,7 @@ namespace LinkPocket.Views
                 },
                 new DataTableColumn
                 {
-                    Field = "count", Label = "重复数", Width = 90,
+                    Field = "count", LabelKey = "ui.noun.duplicateCount", Width = 90,
                     SortKey = r => (IComparable)((DedupGroupRow)r).Count,
                     CellFactory = r =>
                     {
@@ -508,7 +508,7 @@ namespace LinkPocket.Views
                 },
                 new DataTableColumn
                 {
-                    Field = "locations", Label = "所在位置", Width = -2,
+                    Field = "locations", LabelKey = "ui.noun.locatedIn", Width = -2,
                     SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary,
                     CellFactory = r =>
                     {
@@ -597,19 +597,19 @@ namespace LinkPocket.Views
             {
                 new DataTableColumn
                 {
-                    Field = "check", Label = "", Width = 44,
+                    Field = "check", LabelKey = "", Width = 44,
                     CellFactory = BuildCheckCell
                 },
                 new DataTableColumn
                 {
-                    Field = "title", Label = "名称", Width = -1,
+                    Field = "title", LabelKey = "ui.noun.name", Width = -1,
                     SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkDto)r).Title) ? ((LinkDto)r).Url : ((LinkDto)r).Title),
                     CellFactory = r => BuildNameCell((LinkDto)r)
                 },
                 new DataTableColumn
                 {
                     // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
-                    Field = "path", Label = "位置", Width = -3,
+                    Field = "path", LabelKey = "ui.noun.location", Width = -3,
                     SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r),
                     CellFactory = r =>
                     {
@@ -626,19 +626,19 @@ namespace LinkPocket.Views
                 },
                 new DataTableColumn
                 {
-                    Field = "updated_at", Label = "最后更新", Width = 130,
+                    Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 130,
                     SortKey = r => (IComparable)((LinkDto)r).UpdatedAt,
                     CellFactory = r => TextCell(((LinkDto)r).UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))
                 },
                 new DataTableColumn
                 {
-                    Field = "last_visited_at", Label = "最后查看", Width = 130,
+                    Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 130,
                     SortKey = r => (IComparable)(((LinkDto)r).LastVisitedAt ?? DateTime.MinValue),
                     CellFactory = r => TextCell(((LinkDto)r).LastVisitedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "从未")
                 },
                 new DataTableColumn
                 {
-                    Field = "visit_count", Label = "查看次数", Width = 84,
+                    Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 84,
                     SortKey = r => (IComparable)((LinkDto)r).VisitCount,
                     CellFactory = r => TextCell($"{((LinkDto)r).VisitCount} 次")
                 },

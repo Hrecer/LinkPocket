@@ -148,10 +148,10 @@ namespace LinkPocket.Views
             _tableWired = true;
             TrashTable.Columns = new[]
             {
-                new DataTableColumn { Field = "name", Label = "名称", Width = -1 },
-                new DataTableColumn { Field = "type", Label = "类型", Width = 90 },
-                new DataTableColumn { Field = "origin_path", Label = "原位置", Width = -2 },
-                new DataTableColumn { Field = "deleted_at", Label = "删除时间", Width = 150 },
+                new DataTableColumn { Field = "name", LabelKey = "ui.noun.name", Width = -1 },
+                new DataTableColumn { Field = "type", LabelKey = "ui.noun.type", Width = 90 },
+                new DataTableColumn { Field = "origin_path", LabelKey = "ui.noun.origin", Width = -2 },
+                new DataTableColumn { Field = "deleted_at", LabelKey = "ui.noun.deletedAt", Width = 150 },
             };
             TrashTable.SortChanged += (_, e) => ViewModel?.ApplySort(e.Field, e.Ascending);
         }

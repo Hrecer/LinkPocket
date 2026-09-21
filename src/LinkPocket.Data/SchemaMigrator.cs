@@ -132,6 +132,7 @@ public static class SchemaMigrator
         (4, IndexesV4 + VersionRow(4)),
         (5, AdditionsV5 + VersionRow(5)),
         (6, AdditionsV6 + VersionRow(6)),
+        (7, CanonicalPathV7 + VersionRow(7)),
     ];
 
     /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
@@ -276,6 +277,33 @@ public static class SchemaMigrator
     /// 是"把一条用户动作的整条链路一次读出来"的键（AI 自省与排障的主查询形态）。</item>
     /// </list>
     /// </summary>
+    /// <summary>
+    /// v7：<c>origin_path</c> 快照由"当前语言的显示串"改成 <b>canonical 路径</b>
+    /// （<c>@root/A/B</c>，分隔符 <c>/</c>、段内 <c>/</c> 转义）。
+    /// <para>
+    /// 旧形态把界面语言烙进了数据库：换一次语言，快照里的「全部书签」就与新语言下的路径体系对不上。
+    /// 名字里本就含 <c>" / "</c> 的文件夹，在旧形态下**已经是歧义的**（显示串没有转义），
+    /// 这里一并归成段分隔符——迁移不会比原状更失真，而此后新写入一律无损。
+    /// </para>
+    /// </summary>
+    private const string CanonicalPathV7 =
+        """
+        UPDATE trash_folders SET origin_path = CASE
+            WHEN origin_path = '未知目录' THEN '@unknown'
+            WHEN origin_path = '全部书签' THEN '@root'
+            WHEN origin_path LIKE '全部书签 / %'
+                THEN '@root/' || replace(substr(origin_path, 8), ' / ', '/')
+            ELSE origin_path END
+         WHERE origin_path IS NOT NULL;
+        UPDATE trash_links SET origin_path = CASE
+            WHEN origin_path = '未知目录' THEN '@unknown'
+            WHEN origin_path = '全部书签' THEN '@root'
+            WHEN origin_path LIKE '全部书签 / %'
+                THEN '@root/' || replace(substr(origin_path, 8), ' / ', '/')
+            ELSE origin_path END
+         WHERE origin_path IS NOT NULL;
+        """;
+
     private const string AdditionsV6 =
         """
         ALTER TABLE audit_log ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0;

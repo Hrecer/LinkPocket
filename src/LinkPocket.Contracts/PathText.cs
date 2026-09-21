@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 
-namespace LinkPocket.Views;
+namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 地址栏路径文本（转义 / 切分）——**唯一实现**，浏览页与回收站共用。
+/// 路径段的转义 / 切分——**唯一实现**（地址栏、canonical 路径、面包屑共用）。
+/// <remarks>放在契约层是因为它有三类互不能引用的消费者：引擎/数据层用它拼 canonical 路径、
+/// UIKit 用它解析地址栏、UI 用它投影显示串。</remarks>
 /// 分隔符 `/` 与名字里的字面 `/` 冲突：名内 `/` 以 `\/` 转义（`\\` 转义 `\`），
 /// 任何名字都能在地址栏无损往返（写回时转义、解析时解码）。
 /// </summary>

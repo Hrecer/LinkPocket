@@ -15,7 +15,8 @@ namespace LinkPocket.ViewModels;
 public class DetailSidebarRow : INotifyPropertyChanged
 {
     public string IconKind { get; init; } = "";
-    public string Label { get; init; } = "";
+    /// <summary>行的**文案键**（<c>ui.noun.*</c>）；模板经 <c>{loc:LocKey}</c> 投影，切语言自动重算。</summary>
+    public string LabelKey { get; init; } = "";
 
     private string _value = "";
     /// <summary>行值：异步补拉时原位更新（INPC 通知，无需重建整行；值未变不发多余通知）。</summary>
@@ -116,10 +117,11 @@ public class DetailSidebarModel : ActionSurfaceModel
         Rows = rows;
         OnPropertyChanged(nameof(Rows));
     }
-    protected DetailSidebarRow? FindRow(string label)
+    /// <summary>按**文案键**找行（不按显示文本：换了语言"位置"就不再是"位置"，按文本找会静默失联）。</summary>
+    protected DetailSidebarRow? FindRow(string labelKey)
     {
         foreach (var r in Rows)
-            if (r.Label == label) return r;
+            if (string.Equals(r.LabelKey, labelKey, StringComparison.Ordinal)) return r;
         return null;
     }
 

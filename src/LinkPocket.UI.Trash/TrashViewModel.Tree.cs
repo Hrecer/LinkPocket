@@ -29,7 +29,7 @@ public partial class TrashViewModel
         var root = new TrashNode
         {
             IsRoot = true,
-            Name = RootDisplayName,
+            Name = BookmarkPath.TrashToken,
             Host = this,
             IsExpanded = true,   // 虚根恒展开（与浏览页同口径）
             LinkCount = rootLinks,

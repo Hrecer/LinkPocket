@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
@@ -372,7 +373,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>当前目录显示名（根 = 「全部书签」）：列表空白落点的提示文案用。</summary>
     public string CurrentFolderDisplayName
-        => Breadcrumbs.Count > 0 ? Breadcrumbs[^1].Name : FolderIds.RootDisplayName;
+        => Breadcrumbs.Count > 0 ? Breadcrumbs[^1].Name : BookmarkDisplay.Segment(BookmarkPath.RootToken);
 
     /// <summary>主栏某行是否为当前落点（行 <c>IsDropTarget</c> 直接读这里——行是只读投影）。</summary>
     public bool IsDropTargetRow(string id) => DropState.IsRowTarget(id);
@@ -439,11 +440,11 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public string GetFolderPathDisplay(string? folderId, bool includeSelf = true)
     {
-        if (FolderIds.IsRoot(folderId)) return FolderIds.RootDisplayName;
+        if (FolderIds.IsRoot(folderId)) return BookmarkDisplay.Segment(BookmarkPath.RootToken);
         var chain = BuildBreadcrumbIds(folderId).ToList();
         if (!includeSelf && chain.Count > 0) chain.RemoveAt(chain.Count - 1);
-        if (chain.Count == 0) return "全部书签";
-        return "全部书签 / " + string.Join(" / ", chain.Select(c => c.Name));
+        // 先拼 canonical 再投影：转义与分隔只有一份实现，显示层不自己拼路径
+        return BookmarkDisplay.Path(BookmarkPath.Build(BookmarkPath.RootToken, chain.Select(c => c.Name)));
     }
 
     // —— 就地重命名（Windows 口径：主栏行与目录树节点都能就地改名，链接改的是标题）——
@@ -655,7 +656,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             Clipboard, () => BuildDragItems(), () => Controller.CurrentFolderId, ApplyCutVisual, s => StatusText = s);
         // 路径编辑（**控制器**）：解析器用本页文件夹映射（与 BuildPathText 同源）；导航/提示回注本类
         _pathEdit = new BrowserPathEditController(
-            new Views.PathResolver(FolderIds.RootDisplayName,
+            new Views.PathResolver(BookmarkPath.RootToken,
                 parentId => _folderMap
                     .Where(kvp => kvp.Value.ParentId == parentId)
                     .Select(kvp => new Views.PathNode(kvp.Key, kvp.Value.Name))
@@ -806,12 +807,13 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     private void CancelPathEdit() => _pathEdit.Cancel();
 
     private string BuildPathText(string? folderId)
-        => Paths.BuildText(BuildBreadcrumbIds(folderId));   // 名字里的 / 转义为 \/，编辑往返不丢
+        // canonical 再由 BookmarkDisplay 投影：根段随语言、段内 / 转义不丢（解析时两种形态都认）
+        => BookmarkDisplay.Path(Paths.BuildCanonical(BuildBreadcrumbIds(folderId)));
 
     /// <summary>路径文本构建用的解析器（唯一实现在 UIKit Views.PathResolver；控制器内另持一份同源实例）。</summary>
     private Views.PathResolver? _pathResolver;
     private Views.PathResolver Paths => _pathResolver ??= new Views.PathResolver(
-        FolderIds.RootDisplayName,
+        BookmarkPath.RootToken,
         parentId => _folderMap
             .Where(kvp => kvp.Value.ParentId == parentId)
             .Select(kvp => new Views.PathNode(kvp.Key, kvp.Value.Name))

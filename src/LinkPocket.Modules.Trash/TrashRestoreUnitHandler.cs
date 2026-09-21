@@ -45,8 +45,8 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         var info = outcome.Units.Single();
 
         var location = info.Landing == null
-            ? FolderIds.RootDisplayName
-            : await ctx.Uow.Trees.PathDisplayAsync(new FolderId(info.Landing), ctx.Ct);
+            ? FolderIds.RootToken
+            : await ctx.Uow.Trees.PathCanonicalAsync(new FolderId(info.Landing), ctx.Ct);
         var renameNote = outcome.Renamed.Count == 0 ? string.Empty : $"（自动编号 {outcome.Renamed.Count} 项）";
         var fellNote = info.FellBackToRoot ? "（原父已不存在，回调根级）" : string.Empty;
         return CommandResult.Ok(

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Views;
 
@@ -20,24 +21,23 @@ public sealed class PathResolver
     /// <summary>候选上限（与既有口径一致）。</summary>
     public const int MaxCandidates = 8;
 
-    private readonly string _rootName;
+    private readonly string _rootToken;
     private readonly Func<string?, IReadOnlyList<PathNode>> _childrenOf;
 
-    /// <param name="rootName">根段显示名（解析时该段被跳过：它不产生 ID）。</param>
+    /// <param name="rootToken">本路径属于哪个根（<see cref="BookmarkPath.RootToken"/> / <see cref="BookmarkPath.TrashToken"/>）。</param>
     /// <param name="childrenOf">取某层（null = 根层）的直接子项；名字用显示名。</param>
-    public PathResolver(string rootName, Func<string?, IReadOnlyList<PathNode>> childrenOf)
+    public PathResolver(string rootToken, Func<string?, IReadOnlyList<PathNode>> childrenOf)
     {
-        _rootName = rootName;
+        _rootToken = rootToken;
         _childrenOf = childrenOf;
     }
 
-    /// <summary>由位置链（根之后逐级）构建地址栏文本：「根 / A / B」（段内 / 转义）。</summary>
-    public string BuildText(IEnumerable<(string Id, string Name)> chain)
-    {
-        var parts = new List<string> { _rootName };
-        parts.AddRange(chain.Select(seg => PathText.Escape(seg.Name)));
-        return string.Join("/", parts);
-    }
+    /// <summary>
+    /// 位置链 → <b>canonical</b> 路径（<c>@root/A/B</c>，段内 / 转义）。
+    /// 这是复制/粘贴/AI/日志用的形态；地址栏里给用户看的是它的投影（<c>I18n.BookmarkDisplay.Path</c>）。
+    /// </summary>
+    public string BuildCanonical(IEnumerable<(string Id, string Name)> chain)
+        => BookmarkPath.Build(_rootToken, chain.Select(seg => seg.Name));
 
     /// <summary>
     /// 逐级按名解析路径；成功输出目标 ID（根 = null）与失败段名（失败时）。
@@ -48,8 +48,8 @@ public sealed class PathResolver
         invalidSegment = null;
         foreach (var seg in PathText.Split(text))
         {
-            if (id == null && seg.Equals(_rootName, StringComparison.OrdinalIgnoreCase))
-                continue;   // 根段：只是显示名，不产生 ID
+            // 根段：token 或**任一语言的根显示名**都认（中文下复制的路径，切英文照样粘得回来）；它不产生 ID
+            if (id == null && BookmarkPath.MatchesRoot(_rootToken, seg)) continue;
             var current = id;
             var match = _childrenOf(current)
                 .Where(n => string.Equals(n.Name, seg, StringComparison.OrdinalIgnoreCase))

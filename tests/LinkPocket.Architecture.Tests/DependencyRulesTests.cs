@@ -46,6 +46,7 @@ public class DependencyRulesTests
     private const string Kernel = "LinkPocket.Kernel";
     private const string Composition = "LinkPocket.Composition";
     private const string Theming = "LinkPocket.Theming";
+    private const string I18n = "LinkPocket.I18n";
     private static readonly string[] UiPages =
     {
         "LinkPocket.UI.Browser", "LinkPocket.UI.Search", "LinkPocket.UI.Trash",
@@ -70,12 +71,12 @@ public class DependencyRulesTests
     public static IEnumerable<object[]> UiPageProjects() => UiPages.Select(p => new object[] { p });
 
     [Fact]
-    public void UIKit_只依赖Contracts与Theming()
+    public void UIKit_只依赖Contracts与Theming与I18n()
     {
         // Theming = 主题/字体底层设施（颜色科学 / 派生 / 主题目录 / 字体 / 偏好 / 单点发布）。
         // 它不是控件层，与 UIKit 平级；UIKit 的共享样式只引令牌键 → 需要它。
         var refs = ProjectReferences("src/LinkPocket.UIKit/LinkPocket.UIKit.csproj");
-        Assert.Equal(new[] { Contracts, Theming }.OrderBy(n => n), refs);
+        Assert.Equal(new[] { Contracts, Theming, I18n }.OrderBy(n => n), refs);
     }
 
     [Fact]
@@ -94,13 +95,34 @@ public class DependencyRulesTests
         Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r) || r == UIKit || r == Shell || UiPages.Contains(r));
     }
 
+    [Fact]
+    public void I18n_只依赖Contracts()
+    {
+        // I18n 与 Theming 平级：只许引 Contracts（日志门面 LpLog）。
+        // **禁引 Theming**：语言字段的持久化在 UiPreferences（Theming 拥有"存什么"）、语义在 I18n
+        // （拥有"怎么生效"），两边由组合根 App 搬运；直接互引就成了环。
+        var refs = ProjectReferences("src/LinkPocket.I18n/LinkPocket.I18n.csproj");
+        Assert.Equal(new[] { Contracts }.OrderBy(n => n), refs);
+    }
+
+    [Fact]
+    public void I18n_禁止引用控件与引擎实现()
+    {
+        var refs = ProjectReferences("src/LinkPocket.I18n/LinkPocket.I18n.csproj");
+        Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r) || r == UIKit || r == Shell || r == Theming || UiPages.Contains(r));
+    }
+
     [Theory]
     [MemberData(nameof(UiPageProjects))]
-    public void UI页面项目_只依赖UIKit与Contracts(string project)
+    public void UI页面项目_只依赖UIKit与Contracts与I18n(string project)
     {
+        // 仍然"精确"：除这三个之外引到任何程序集都算越界（引擎实现、别的页面、Shell 都不许）。
+        // I18n 可选而非必需——页面按批次收口，未收口的页面不该被强迫引用一个用不上的程序集。
         var refs = ProjectReferences($"src/{project}/{project}.csproj");
-        var allowed = new[] { UIKit, Contracts }.OrderBy(n => n);
-        Assert.Equal(allowed, refs);
+        var allowed = new[] { UIKit, Contracts, I18n };
+        Assert.Contains(UIKit, refs);
+        Assert.Contains(Contracts, refs);
+        Assert.All(refs, r => Assert.Contains(r, allowed));
     }
 
     [Theory]

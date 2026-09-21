@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.Models;
 
 namespace LinkPocket.ViewModels;
@@ -215,7 +216,7 @@ public partial class BrowserViewModel
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
             Breadcrumbs.Clear();
             var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
-            Breadcrumbs.Add(new BrowserCrumbViewModel(null, "全部书签") { IsLast = chain.Count == 0 });
+            Breadcrumbs.Add(new BrowserCrumbViewModel(null, BookmarkPath.RootToken) { IsLast = chain.Count == 0 });
             for (int i = 0; i < chain.Count; i++)
             {
                 Breadcrumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)

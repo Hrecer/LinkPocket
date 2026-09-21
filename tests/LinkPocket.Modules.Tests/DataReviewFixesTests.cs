@@ -8,7 +8,7 @@ namespace LinkPocket.Modules.Tests;
 /// <summary>
 /// Data 层审核报告修复的回归测试：
 /// LinkCountsAsync 链式树形（O(N²) → O(N) 记忆化）的递归计数等价性；
-/// PathDisplayAsync 对不存在目录如实返回「未知目录」而非伪装成根。
+/// PathCanonicalAsync 对断链如实返回 @unknown 而非伪装成根（路径一律 canonical，与界面语言无关）。
 /// </summary>
 public class DataReviewFixesTests
 {
@@ -52,10 +52,9 @@ public class DataReviewFixesTests
         try
         {
             await using var uow = new EfUnitOfWork(factory.CreateDbContext());
-            // 根仍显示「全部书签」
-            Assert.Equal("全部书签", await uow.Trees.PathDisplayAsync(null, default));
-            // 不存在的目录：如实标记，不得伪装成根
-            Assert.Equal("未知目录", await uow.Trees.PathDisplayAsync(new FolderId("999000000001"), default));
+            Assert.Equal("@root", await uow.Trees.PathCanonicalAsync(null, default));
+            // 不存在的目录：如实标 @unknown，不得伪装成根
+            Assert.Equal("@unknown", await uow.Trees.PathCanonicalAsync(new FolderId("999000000001"), default));
         }
         finally { Cleanup(dbPath); }
     }

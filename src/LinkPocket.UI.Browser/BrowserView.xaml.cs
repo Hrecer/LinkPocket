@@ -8,6 +8,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using LinkPocket.Input;
 using LinkPocket.ViewModels;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views.Browser;
 
@@ -227,11 +228,11 @@ public partial class BrowserView : UserControl
         _mainTableWired = true;
         MainTable.Columns = new[]
         {
-            new DataTableColumn { Field = "title", Label = "名称", Width = -1 },
-            new DataTableColumn { Field = "updated_at", Label = "最后更新", Width = 140 },
-            new DataTableColumn { Field = "last_visited_at", Label = "最后查看", Width = 140 },
-            new DataTableColumn { Field = "visit_count", Label = "查看次数", Width = 80 },
-            new DataTableColumn { Field = "created_at", Label = "创建时间", Width = 140 },
+            new DataTableColumn { Field = "title", LabelKey = "ui.noun.name", Width = -1 },
+            new DataTableColumn { Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 140 },
+            new DataTableColumn { Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 140 },
+            new DataTableColumn { Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 80 },
+            new DataTableColumn { Field = "created_at", LabelKey = "ui.noun.createdAt", Width = 140 },
         };
         MainTable.SortChanged += (_, e) => ViewModel.ApplySort(e.Field, e.Ascending);
     }
@@ -760,10 +761,11 @@ public partial class BrowserView : UserControl
     /// </summary>
     private List<MenuItem> BuildRightDragMenuItems(IReadOnlyList<DragItem> items, string? targetId, string targetName)
     {
-        var copy = new MenuItem { Header = $"复制到「{targetName}」" };
+        var shown = BookmarkDisplay.Segment(targetName);   // 虚根落点是 token，拼文案前投影
+        var copy = new MenuItem { Header = $"复制到「{shown}」" };
         copy.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetId, TransferMode.Copy);
 
-        var move = new MenuItem { Header = $"移动到「{targetName}」" };
+        var move = new MenuItem { Header = $"移动到「{shown}」" };
         move.Click += (_, _) => _ = ViewModel?.DropItemsAsync(items, targetId, TransferMode.Move);
 
         return new List<MenuItem> { copy, move };
