@@ -67,6 +67,9 @@ public static class StringTables
         new StringRow("nav.item.settings", "设置", "Settings"),
 
         // ── 共享名词：列头与右栏详情行用的是同一批词，一条键一处译（"最后更新"在三页里必须是同一个词）──
+        new StringRow("common.chinese", "中文", "Chinese"),
+        new StringRow("common.english", "English", "English"),
+        new StringRow("appearance.language.follow", "自动", "Auto"),
         new StringRow("ui.noun.name", "名称", "Name"),
         new StringRow("ui.noun.location", "位置", "Location"),
         new StringRow("ui.noun.locatedIn", "所在位置", "Located in"),
@@ -177,6 +180,10 @@ public static class StringTables
         new StringRow("appearance.font.source.custom", "自定义字体", "Custom fonts"),
         new StringRow("appearance.font.source.system", "系统字体", "System fonts"),
         new StringRow("appearance.font.ui", "界面字体", "Interface font"),
+        new StringRow("appearance.language.card.title", "语言", "Language"),
+        new StringRow("appearance.language.hint", "立即生效，不需要重启；选择会被记住，下次启动照旧", "Takes effect at once — no restart. The choice is remembered for the next start."),
+        new StringRow("appearance.language.pathNote", "已存的书签、文件夹与路径都不受影响", "Saved bookmarks, folders and paths are untouched."),
+        new StringRow("appearance.status.languageFailed", "语言切换失败（详情见日志），界面语言未改变", "Switching the language failed (see the log); the interface language is unchanged."),
         new StringRow("appearance.mode.auto", "自动调整颜色", "Auto-tune colors"),
         new StringRow("appearance.mode.desc", "决定同一个配色怎么落到界面上；切换即刻生效并记住，重启后保持", "Decides how one palette lands on screen. Applies at once and is remembered across restarts."),
         new StringRow("appearance.mode.hint", "打开 = 按明度档位自动重排你的配色；关闭 = 尽量原样使用你选的颜色", "On = your palette is re-tuned by lightness automatically; Off = your colors are used as close to as-is as possible."),

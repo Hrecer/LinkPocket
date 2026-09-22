@@ -248,13 +248,13 @@ public static class ThemeService
                 NeutralHue = _current.Source == Themes.ThemeSource.UserDefined ? _current.NeutralHueOverride : null,
                 AutoAdjustColors = PaletteMode == PaletteMode.Auto,
             },
-            // 字体偏好**空 = 当前语言的默认族**（决策 5）：落盘时把"就是默认族"的写法归一成空，
-            // 否则"恢复默认字体"会写下一个**具体族名**——用户之后切语言时，它就被当成
-            // "显式选过的族"（用户选择优先于语言），默认族永远不跟着语言走。
-            // 落盘仍是同一个文件、同一条路径，只是把"没选过"这个事实写成"没选过"。
+            // 字体偏好**空 = 跟随语言默认族**：落盘时把"就是语言默认族"的写法归一成空，
+            // 否则切一次语言 / 点一次「恢复默认字体」就会写下一个**具体族名**——
+            // 那在语义上成了"用户显式选过的族"（用户选择优先于语言），默认族从此不再跟着语言走。
+            // 落盘仍是同一个文件、同一条路径，只是把"跟随语言"这个事实写成"跟随语言"。
             Fonts = new Preferences.FontPreference
             {
-                Ui = UiPreferenceOrNull(CurrentUiFont),
+                Ui = FollowsLanguageDefault(CurrentUiFont) ? null : CurrentUiFont,
                 Mono = string.Equals(CurrentMonoFont, Fonts.FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase)
                     ? null
                     : CurrentMonoFont,
@@ -278,14 +278,27 @@ public static class ThemeService
     }
 
     /// <summary>
-    /// 界面字体写成偏好值时归一：**等于当前语言的默认族就是"没选过"（null）**，否则原样记下。
+    /// 这个族名是不是"语言默认族"（中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>）——
+    /// 是则偏好里落成"跟随语言"（空），否则原样记下。
     /// </summary>
     /// <remarks>
-    /// 判据用 <see cref="DefaultUiFont"/>（当前语言）而不是某个固定族名：
-    /// "恢复默认字体"在英文界面下回的是 <c>Segoe UI</c>，那也要落成"没选过"。
+    /// <para>
+    /// <b>为什么认两种语言的默认族，而不是只认当前语言那一个</b>：判据要解决的是"这一格该不该跟着语言走"。
+    /// 只认当前语言那一个，会在<b>切换语言之后</b>出现漏洞——那一刻生效的还是上一种语言的默认族，
+    /// 它不等于"当前语言的默认族"，于是被当成显式选择写进偏好，默认族从此不再跟着语言走
+    /// （实测症状：语言卡切到英文，偏好里被写上中文默认族，字体就停在雅黑）。
+    /// </para>
+    /// <para>
+    /// <b>代价（有意接受）</b>：用户在字体卡里**显式选中的恰好是某个语言默认族**时，
+    /// 与"没选过"不可区分——两者都表示"用语言默认族"。
+    /// 要表达"无论什么语言都用雅黑"，请选任何一支非默认族（或导入同族字体）。
+    /// </para>
     /// </remarks>
-    private static string? UiPreferenceOrNull(string family)
-        => string.Equals(family, DefaultUiFont, StringComparison.OrdinalIgnoreCase) ? null : family;
+    private static bool FollowsLanguageDefault(string family)
+        => string.Equals(family, Fonts.FontCatalog.ZhDefaultUiFamily, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(family, Fonts.FontCatalog.EnDefaultUiFamily, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>偏好里的主题 → 主题定义（自选配色按需重建；非法一律回退出厂默认）。</summary>
     private static Themes.ThemeDefinition ResolveDefinition(Preferences.ThemePreference pref)
     {
         if (!pref.IsCustom)
@@ -339,7 +352,7 @@ public static class ThemeService
     /// （<see cref="Fonts.WpfSystemFontSource"/> 每实例只枚举一次），且本方法只在启动时走一次。
     /// </para>
     /// </remarks>
-    private static (string Ui, string Mono, string? Reason) ResolveFonts(Preferences.FontPreference pref)
+    private static (string Ui, string? Mono, string? Reason) ResolveFonts(Preferences.FontPreference pref)
     {
         var available = Fonts.FontCatalog.All()
             .Select(f => f.Family)

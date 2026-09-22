@@ -27,6 +27,15 @@
             <Setter Property="MinWidth" Value="113"/>
             <Setter Property="Width" Value="113"/>
         </Style>
+        <!-- 语言分段（自动 / 中文 / English）：80 = 最长项 `English`（13pt SemiBold 需 ~45px）+
+             项内距 28 + 余量，取整后的实测值。三枚等宽 → 指示器滑动距离恒定，
+             段宽是**冻结几何**（切语言逐像素不变，英文放不下时由 LocFit 缩字号）。 -->
+        <Style x:Key="AppearanceLanguageSegmentItem" TargetType="ListBoxItem"
+               BasedOn="{StaticResource SlidingNavStripItemStyle}">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="80"/>
+            <Setter Property="Width" Value="80"/>
+        </Style>
     </UserControl.Resources>
 
     <!-- 「外观」面板（方案 §7.1）：四张卡 = 颜色应用方式 / 主题 / 调色台 / 字体。
@@ -522,6 +531,37 @@
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                            views:LocFit.Text="{loc:Fit appearance.font.reset}" views:LocFit.Mode="Shrink"/>
                             </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- ===== 卡 4：语言 =====
+                     三枚分段（自动 / 中文 / English），复用 UIKit 共享滑动分段组件——
+                     不造第二套分段控件（模板、指示器几何、滑动动画全在共享组件里）。
+                     单选语义 = 「选一项即刻生效」，不需要提交按钮。
+                     选项名取**短式**（`Auto` / `中文` / `English`）：段宽是冻结几何，
+                     而英文全长（`Follow system` / `Simplified Chinese`）放不进任何合理段宽。 -->
+                <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24"
+                        Padding="22,20" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{loc:Loc appearance.language.card.title}" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="{loc:Value LanguageHint}"
+                                   FontSize="12" Margin="0,4,0,2" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <TextBlock Text="{loc:Value LanguagePathNote}"
+                                   FontSize="12" Margin="0,0,0,14" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,2">
+                            <views:SlidingNavStrip x:Name="LanguageStrip"
+                                                   Style="{StaticResource SlidingNavStripStyle}"
+                                                   ItemContainerStyle="{StaticResource AppearanceLanguageSegmentItem}"
+                                                   SelectedIndex="{Binding LanguageIndex, Mode=TwoWay}">
+                                <ListBoxItem Content="{loc:Loc appearance.language.follow}"/>
+                                <ListBoxItem Content="{loc:Loc common.chinese}"/>
+                                <ListBoxItem Content="{loc:Loc common.english}"/>
+                            </views:SlidingNavStrip>
                         </StackPanel>
                     </StackPanel>
                 </Border>

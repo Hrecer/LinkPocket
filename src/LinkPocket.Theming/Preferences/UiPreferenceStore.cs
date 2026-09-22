@@ -68,13 +68,14 @@ public sealed record ThemePreference
 
 /// <summary>字体偏好：界面字体与等宽字体各一个族名（可为导入字体的族名）。</summary>
 /// <remarks>
-/// <b>空值 = "没选过"</b>：界面字体族按语言给默认（中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>，
-/// 决策 5），所以"用户没选过"必须能表达成空——写成具体族名就等于替用户做了选择，
-/// 之后切语言时默认族不会跟着走（<c>ThemeService.ResolveFonts</c> 读这个空值）。
+/// <b>空值 = "跟随语言默认族"</b>：界面字体族按界面语言给（中文 <c>Microsoft YaHei UI</c> /
+/// 英文 <c>Segoe UI</c>），所以"跟随语言"这件事必须能表达成空——写成具体族名就等于替用户做了选择，
+/// 之后切语言时默认族不会跟着走（<c>ThemeService.ResolveFonts</c> / <c>SaveCurrentPreferences</c> 读这个空值）。
+/// 代价：显式选中的恰好是某个语言默认族时与"没选过"不可区分（两者都表示"用语言默认族"）。
 /// </remarks>
 public sealed record FontPreference
 {
-    /// <summary>界面字体族名；<c>null</c> = 没选过 = 当前语言的默认族。</summary>
+    /// <summary>界面字体族名；<c>null</c> = 跟随界面语言的默认族。</summary>
     public string? Ui { get; init; }
 
     /// <summary>等宽字体族名；<c>null</c> = 默认族（<c>Consolas</c>）。</summary>
@@ -158,6 +159,21 @@ public static class UiPreferenceStore
             failed = true;
             return UiPreferences.Default;
         }
+    }
+
+    /// <summary>
+    /// 偏好里**显式选过**的界面字体族；没选过（空）/ 文件不可读时为 <c>null</c>。
+    /// </summary>
+    /// <remarks>
+    /// 给"切语言时要不要顺手把界面字体换成新语言的默认族"用：判据必须是
+    /// <b>"用户选过没有"</b>（偏好里存的是空还是族名），而不是"当前生效的族名等于哪个默认族"——
+    /// 后者会误伤"用户显式选了 Segoe UI 却在中文界面下"这种正当情形（用户选择优先于语言）。
+    /// <b>只读不写</b>，读失败按"没选过"处理（同一次调用链的其它地方会把读取失败如实暴露）。
+    /// </remarks>
+    public static string? ExplicitUiFont()
+    {
+        var prefs = Load(out var failed);
+        return failed ? null : prefs.Fonts.Ui;
     }
 
     /// <summary>保存偏好（原子替换）。失败**抛出**——写不进去必须让调用方知道。</summary>

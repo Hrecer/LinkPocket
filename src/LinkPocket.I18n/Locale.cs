@@ -60,6 +60,21 @@ public static class AppLocales
         => (LocalePreference.ModeAuto, null);
 
     /// <summary>
+    /// 这门语言在<b>当前界面语言</b>下叫什么（给语言选择器用）。
+    /// </summary>
+    /// <remarks>
+    /// <b>给的是键，不是文本</b>：语言选择器上的选项名也是文案，换语言后要跟着变成"用新语言写的名字"
+    /// （中文界面写「简体中文」，英文界面写 "Simplified Chinese"）。返回成品 <c>string</c>
+    /// 就等于把它冻结在取词那一刻——那正是本仓文本不变式禁止的形状。
+    /// 加一门语言 = 加一个枚举值 + 补一行 <c>appearance.language.*</c>（两表键对称的护栏会盯着）。
+    /// </remarks>
+    public static string KeyFor(this AppLocale locale) => locale switch
+    {
+        AppLocale.En => "common.english",
+        _ => "common.chinese",
+    };
+
+    /// <summary>
     /// 日期格式化文化。英文**必须**显式取 en-US：进程 culture 为守排序钉在 zh-CN，
     /// 不显式传则 <c>tt</c> 渲染成「下午」。
     /// </summary>

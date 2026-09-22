@@ -45,9 +45,18 @@ public static class SortCulture
     /// 程序集装载时钉住排序文化：没被钉过就钉，已经是中文家族就保持原样。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>public</c> 只因为<b>模块初始化器必须是公开可见的成员</b>（编译器强制），
     /// 它不是给调用方用的入口——排序口径请走 <see cref="NameOrder"/>。
+    /// </para>
+    /// <para>
+    /// ⚠️ <c>CA2255</c>（"模块初始化器只用于应用程序代码"）在这里<b>不适用</b>：
+    /// 契约层是每一个宿主与每一个测试进程都必然装载的那个程序集，
+    /// 排序口径必须在<b>任何排序发生之前</b>成立——而"哪个宿主先起来"恰恰是不该被依赖的东西。
+    /// 规则要挡的是"库在模块初始化器里做不可预期的重活"；这里只写两个静态字段，无 IO、无锁。
+    /// </para>
     /// </remarks>
+#pragma warning disable CA2255 // 见上面的理由：契约层的模块初始化器是"全站排序口径"的落点
     [ModuleInitializer]
     public static void Pin()
     {
@@ -55,6 +64,7 @@ public static class SortCulture
         CultureInfo.DefaultThreadCurrentCulture = Culture;
         CultureInfo.CurrentCulture = Culture;
     }
+#pragma warning restore CA2255
 
     /// <summary>
     /// 这个文化是不是"中文家族"。保留 <c>zh-TW</c> 不动是有意的：

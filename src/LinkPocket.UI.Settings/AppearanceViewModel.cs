@@ -8,6 +8,7 @@ using LinkPocket.Contracts;
 using LinkPocket.Theming;
 using LinkPocket.Theming.Color;
 using LinkPocket.Theming.Fonts;
+using LinkPocket.Theming.Preferences;
 using LinkPocket.Theming.Themes;
 using LinkPocket.Theming.Tokens;
 using Material3.Core;
@@ -1439,6 +1440,122 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
 
     /// <summary>有没有度量提示（决定提示框可见性；与 <see cref="FontInspection"/> 同源）。</summary>
     public bool HasFontInspection => !FontInspection.IsEmpty;
+
+    // ── 语言卡（跟随系统 / 简体中文 / English） ───────────────────────
+    // 三枚分段的取值域是"模式 + 语言"两件事，但对用户只是一个三选一；索引口径见 SetLanguage。
+
+    /// <summary>语言分段的选中索引：<c>0</c> = 跟随系统、<c>1</c> = 简体中文、<c>2</c> = English。</summary>
+    /// <remarks>
+    /// <b>投影（读）与写入（切）是两个方向</b>：读的是偏好里"用户选了什么"
+    /// （<see cref="ThemeService.LanguageMode"/> + <see cref="ThemeService.LanguageOverride"/>），
+    /// 写的是一次真实切换（<see cref="SetLanguage"/>）。<b>把"当前生效语言"画成选中项是错的</b>——
+    /// 跟随系统时生效的可能是英文，但用户选的是"跟随系统"，分段必须停在第一枚。
+    /// </remarks>
+    public int LanguageIndex
+    {
+        get => ProjectLanguageIndex();
+        set
+        {
+            if (value == ProjectLanguageIndex()) return;   // 同值重写不算变化（分段控件会回写）
+            SetLanguage(value);
+        }
+    }
+
+    /// <summary>语言卡的说明句（两段，随当前界面语言变）。</summary>
+    public LocValue LanguageHint => Loc.K("appearance.language.hint");
+
+    /// <summary>语言卡的次要说明（"不影响已存数据"那一段）。</summary>
+    public LocValue LanguagePathNote => Loc.K("appearance.language.pathNote");
+
+    /// <summary>分段三枚的文案键（跟随系统 / 简体中文 / English）——由 XAML 用 <c>{loc:Loc …}</c> 直接取，故不在此处暴露。</summary>
+    private static int ProjectLanguageIndex()
+    {
+        if (ThemeService.LanguageMode != LocalePreference.ModeFixed) return 0;
+        if (!AppLocales.TryParse(ThemeService.LanguageOverride, out var fixedLocale)) return 0;
+        return ToLanguageIndex(fixedLocale);
+    }
+
+    /// <summary>语言 → 分段索引（加一门语言时这一处 + <see cref="FromLanguageIndex"/> 一起改）。</summary>
+    private static int ToLanguageIndex(AppLocale locale) => locale switch
+    {
+        AppLocale.En => 2,
+        _ => 1,
+    };
+
+    /// <summary>分段索引 → 语言（<c>0</c> 是"跟随系统"，不是某门语言，故返回 false）。</summary>
+    private static bool FromLanguageIndex(int index, out AppLocale locale)
+    {
+        switch (index)
+        {
+            case 1: locale = AppLocale.ZhCn; return true;
+            case 2: locale = AppLocale.En; return true;
+            default: locale = AppLocales.Default; return false;
+        }
+    }
+
+    /// <summary>
+    /// 切换界面语言（分段的唯一写入入口）：改偏好 → 生效 → 换表 → 落盘。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>生效路径只有一条</b>：<see cref="LocaleService.Apply"/> 换表并让版本 +1，
+    /// 所有取词绑定（含 <c>{loc:FitValue}</c> 这类自适应通道）当场重算——本方法<b>不做任何"重投影"</b>。
+    /// 宿主级副作用（把语言码登记给 <c>ThemeService</c>、写回偏好）由组合根的
+    /// <c>LocaleService.LanguageChanged</c> 那一处完成。
+    /// </para>
+    /// <para>
+    /// <b>没显式选过字体时，界面字体跟着换成新语言的默认族</b>：默认族按语言给
+    /// （中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>）。判据是"偏好里存的是不是空"，
+    /// 不是"当前族等不等于某个默认族"——用户显式选过的族跨语言不变（用户选择优先于语言）。
+    /// </para>
+    /// <para>
+    /// <b>失败要暴露</b>：语言已按新值生效、但偏好没落盘（下次启动会退回旧语言）——
+    /// 这一类必须在状态行说清，不能只写日志。异常消息是引擎/运行时的英文散文，
+    /// <b>不上屏</b>（界面只按码说话），原文进日志。
+    /// </para>
+    /// </remarks>
+    public void SetLanguage(int index)
+    {
+        var (mode, overrideCode) = FromLanguageIndex(index, out var target)
+            ? target.FixedPreference()
+            : AppLocales.FollowSystemPreference();
+        var fontTouched = false;
+
+        try
+        {
+            ThemeService.SetLanguagePreference(mode, overrideCode);
+            // **先登记语言码，再换表**：登记是"默认字体族按语言给"的输入，
+            // 而换表会触发宿主的副作用（`LanguageChanged` → 写回偏好）——那一步里就要用到它。
+            // 顺序反了会出现"语言已换、默认族还是上一种语言的"（偏好里被写上旧语言的默认族）。
+            ThemeService.SetActiveLanguage(target.CodeOf());
+            // 生效（换表 + 版本 +1；宿主副作用经 `LanguageChanged` 完成：再登记一次 + 写回偏好）
+            LocaleService.Apply(target);
+
+            // 字体跟着语言走 —— 仅当用户**没显式选过**（偏好里的 Ui 为空）。
+            // 用户显式选过的族跨语言不变（用户选择优先于语言）。
+            if (UiPreferenceStore.ExplicitUiFont() is null)
+            {
+                ThemeService.ApplyFonts();          // 无参 = 当前语言的默认族（语言码已登记）
+                ThemeService.SaveCurrentPreferences();
+                fontTouched = true;
+            }
+
+            // 先投影、后播报：语言与字体都已就位，监听方读到的是完整状态
+            Raise(nameof(LanguageIndex));
+            if (fontTouched) ProjectCurrentFonts(ThemeService.CurrentUiFont);
+            Status = LocValue.Empty;                // 成功不播报：界面本身已经换成新语言，那就是结果
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error($"failed to switch the interface language (index={index})", ex, LogCategory);
+            Status = Loc.K("appearance.status.languageFailed");
+            Raise(nameof(LanguageIndex));           // 失败也要把分段投影回**事实**（偏好里的选择）
+        }
+
+        Raise(nameof(LanguageHint));
+        Raise(nameof(LanguagePathNote));
+        Raise(nameof(FontSourceHint));
+    }
 
     // ── 小工具 ───────────────────────────────────────────────────────
 
