@@ -164,9 +164,12 @@
                 </Border>
                 <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦）；
                      只读页：段不接拖放（CrumbDropEnabled=False）
-                     根段宽 = **冻结几何**，取值 = **中文基线**：「回收站」3 字 × 13pt（39px）+ 段内距 24 ⇒ 63。 -->
+                     根段宽 = **冻结几何**，取值 = **中文基线**：
+                     Width = 文字宽(中文, 基准字号) + 段内距 + 模板内部件 + 余量
+                     ——「回收站」3 字 × 13px（39px）+ 段内距 24（药丸 Padding 12×2）
+                     + 模板内部件 4（实测：段壳 60 时内容区 32）+ 余量 4 ⇒ 71（英文 `Trash` 用不到这么宽）。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
-                                     RootSegmentWidth="63"
+                                     RootSegmentWidth="71"
                                      CrumbDropEnabled="False"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"
@@ -268,7 +271,7 @@
                                             <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                        <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>

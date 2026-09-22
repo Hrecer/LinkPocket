@@ -701,8 +701,20 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         }
     }
 
-    /// <summary>派生诊断的每一行（语言无关的级别标记 + 在当前语言下取词的文案值；空 = 无诊断）。</summary>
-    public IReadOnlyList<DiagnosticLine> DiagnosticLines { get; private set; } = Array.Empty<DiagnosticLine>();
+    private IReadOnlyList<DiagnosticLine> _diagnosticLines = Array.Empty<DiagnosticLine>();
+
+    /// <summary>
+    /// 派生诊断的每一行（语言无关的级别标记 + 在当前语言下取词的文案值；空 = 无诊断）。
+    /// </summary>
+    /// <remarks>
+    /// 赋值必须经通知：诊断框的**可见性**由 <see cref="HasDiagnostics"/> 驱动，而**内容**由本属性驱动
+    /// ——只通知可见性会出现"灰底盒子出现了、里面一个字都没有"（ItemsControl 的绑定不会重读）。
+    /// </remarks>
+    public IReadOnlyList<DiagnosticLine> DiagnosticLines
+    {
+        get => _diagnosticLines;
+        private set { _diagnosticLines = value; Raise(nameof(DiagnosticLines)); }
+    }
 
     /// <summary>诊断行 = 标记（<c>✗</c> 拒绝级 / <c>·</c> 提示）+ 文案值。</summary>
     public readonly record struct DiagnosticLine(string Marker, LocValue Text);

@@ -146,10 +146,13 @@
                      （面包屑 + 路径编辑态 + 候选 Popup 内聚在控件内，宿主经事件转接 VM）。
                      编辑态只做颜色/描边形变，高度两态恒为 40 —— 基态值都在控件 Style.Setters 里。
                      Windows 11 口径：点胶囊空白即进入路径编辑（无编辑按钮），Enter 导航、Esc 取消。
-                     根段宽 = **冻结几何**，取值 = **中文基线**：「全部书签」4 字 × 13pt（52px）+ 段内距 24 ⇒ 76
-                     （英文 `Bookmarks` 放不下时缩英文字号让位）。 -->
+                     根段宽 = **冻结几何**，取值 = **中文基线**：
+                     Width = 文字宽(中文, 基准字号) + 段内距 + 模板内部件 + 余量
+                     ——「全部书签」4 字 × 13px（52px）+ 段内距 24（药丸 Padding 12×2）
+                     + 模板内部件 4（实测：段壳 60 时内容区 32）+ 余量 4（字体族可换，宁可略宽不裁字）⇒ 84。
+                     英文 `Bookmarks` 放不下时缩英文字号让位；中文放不下 = 这一段宽度定错了（探针 rendering 套件逐段量）。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
-                                     RootSegmentWidth="76"
+                                     RootSegmentWidth="84"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=OneWay}"
                                      PathEditText="{Binding PathEditText, Mode=TwoWay}"
@@ -338,7 +341,7 @@
                                         <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding IsCut}" Value="True">
                                                     <Setter Property="Opacity" Value="0.45"/>
@@ -347,7 +350,7 @@
                                                      与"选中"同键但语义不同；成环落点（拖到自己/自己的子文件夹）
                                                      可能与选中行重合——同键同色，因此不会出现"两种底色打架"。 -->
                                                 <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>

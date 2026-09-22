@@ -33,6 +33,17 @@ public static class AppTokens
     /// <summary>悬停底色（行 / 项 hover）= 库 <c>SurfaceContainerHighest</c>。</summary>
     public const string SurfaceHover = "App.Surface.Hover";
 
+    /// <summary>
+    /// **列表行 / 树行的选中底与拖拽落点高亮**（主栏、树、下拉项、搜索结果行）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AccentContainer"/> **分开的两个令牌**：两者判据锚在不同的真实承载面上——
+    /// 选中行画在**卡面**上（卡面比页面底还亮，浅色容器会被读成"没选中"），
+    /// 而指示器 / 徽标 / 分段 / chip 画在**页面底或悬停底**上（深色容器在那里读成"灰块"）。
+    /// 同一个令牌服务两种承载面 ⇒ 调一处必破另一处（见 `文档/WARNINGS.md` 118）。
+    /// </remarks>
+    public const string SurfaceSelected = "App.Surface.Selected";
+
     /// <summary>近白胶囊容器（返回圆钮 / 编辑页按钮组 / 工具页分段 / 命令栏）= 今天的 <c>TintCard</c>。</summary>
     public const string SurfaceTintCard = "App.Surface.TintCard";
 
@@ -88,7 +99,12 @@ public static class AppTokens
     /// <summary>强调文字（数字 / 链接 / 计数）。</summary>
     public const string AccentText = "App.Accent.Text";
 
-    /// <summary>强调容器（选中指示器 / 落点高亮 / 徽标）。</summary>
+    /// <summary>
+    /// 强调容器：**导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip / 空态徽章**的浅色底
+    /// （承载面是页面底或悬停底，判据 = 对页面底 ≥1.08、对悬停底 ≥1.06，见
+    /// <c>PaletteSolver.LiftContainerUntilVisible</c>）。
+    /// </summary>
+    /// <remarks>列表行 / 树行的选中底**不用它**（那类面画在卡面上，需要更深的对照）——见 <see cref="SurfaceSelected"/>。</remarks>
     public const string AccentContainer = "App.Accent.Container";
 
 
@@ -175,7 +191,7 @@ public static class AppTokens
     /// <summary>全部**颜色**令牌（字体令牌不含在内——它们不是 <c>SolidColorBrush</c>）。</summary>
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
     {
-        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceDialog, SurfaceFloating,
+        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceSelected, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceDialog, SurfaceFloating,
         TextPrimary, TextSecondary, TextMuted, TextOnAccent, TextOnContainer,
         AccentFill, AccentIcon, AccentText, AccentContainer,
         SupportContainer, SupportIcon,

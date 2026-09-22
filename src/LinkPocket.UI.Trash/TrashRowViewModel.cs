@@ -42,8 +42,14 @@ public class TrashRowViewModel : INotifyPropertyChanged
 
     public DateTime DeletedAt { get; init; }
 
-    /// <summary>「类型」列。</summary>
-    public LocValue TypeText => Loc.K(IsFolder ? "common.type.folder" : "common.type.link");
+    /// <summary>
+    /// 「类型」列（结构性单元格：走自适应通道画）。
+    /// </summary>
+    /// <remarks>
+    /// 类型必须是 <see cref="LocText"/>：它绑定到 <c>{loc:FitValue}</c>，而该通道的解析器只接受
+    /// <see cref="LocText"/>（<see cref="LocValue"/> 会让投影拿不到文案 ⇒ 整格一个字都不画）。
+    /// </remarks>
+    public LocText TypeText => LocText.Of(Loc.K(IsFolder ? "common.type.folder" : "common.type.link"));
 
     /// <summary>
     /// 「原位置」列 = 删除时那条 <b>canonical</b> 路径在当前语言下的投影

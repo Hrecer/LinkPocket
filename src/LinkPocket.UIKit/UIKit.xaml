@@ -160,7 +160,7 @@
         </Setter>
     </Style>
 
-    <!-- 下拉项：圆角 8 + 悬停/选中两种底色（选中 = Accent.Container，与列表选中同一语言） -->
+    <!-- 下拉项：圆角 8 + 悬停/选中两种底色（选中 = `App.Surface.Selected`，与列表行选中同一语言） -->
     <Style TargetType="ComboBoxItem">
         <Setter Property="Padding" Value="10,7"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -178,7 +178,7 @@
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>

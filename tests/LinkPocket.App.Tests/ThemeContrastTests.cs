@@ -45,11 +45,19 @@ public class ThemeContrastTests
         new("Text.OnContainer / Support.Container",
             t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.SupportContainer)), 7.0, "次强调药丸 / **删除类药丸**（与次操作共用）"),
         new("Text.OnContainer / Accent.Container",
-            t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.AccentContainer)), 7.0, "选中指示器 / 落点高亮上的字（同一个容器字令牌服务两种容器）"),
+            t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.AccentContainer)), 7.0, "导航 / 分段指示器 / 徽标 / chip 上的字（浅色强调容器）"),
+        new("Text.Primary / Surface.Selected",
+            t => (t.Token(AppTokens.TextPrimary), t.Token(AppTokens.SurfaceSelected)), 7.0, "选中行正文（列表行 / 树行选中的主文字）"),
+        new("Text.Secondary / Surface.Selected",
+            t => (t.Token(AppTokens.TextSecondary), t.Token(AppTokens.SurfaceSelected)), 4.5, "选中行次列文字（日期 / 计数这类在选中底上）"),
+        new("Support.Icon / Surface.Selected",
+            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceSelected)), 3.0, "文件夹图标落在选中行底上（列表里选中行 + 类型图标是常态组合）"),
+        new("Accent.Icon / Surface.Selected",
+            t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.SurfaceSelected)), 3.0, "强调图标落在选中行底上"),
         new("Support.Icon / Accent.Container",
-            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.AccentContainer)), 3.0, "文件夹图标落在选中底上（列表里选中行 + 类型图标是常态组合）"),
+            t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.AccentContainer)), 3.0, "图标落在浅色容器上（徽标 / 空态占位）"),
         new("Accent.Icon / Accent.Container",
-            t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.AccentContainer)), 3.0, "强调图标落在选中底上"),
+            t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.AccentContainer)), 3.0, "强调图标落在浅色容器上"),
         new("Text.Muted / Surface.Card",
             t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceCard)), 4.5, "弱文字对卡面（提示 / 占位 / 主题卡摘要）"),
         new("Line.Invalid / Surface.Card",
@@ -166,13 +174,14 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        // 选中底 = "容器来源的色相 + 表面族彩度"定到"**比承载它的卡面明显深**、又与页面底/悬停底分得开"的档。
-        // 演变：① 早先它与页面底**完全同色**（1.000，选中行看不见）；
-        //       ② 改成"对页面底 ≥1.08 就往浅处抬"之后，它与**卡面**的对比只有 1.001–1.074
-        //          （选中底比承载它的卡面还亮）→ 屏幕上"选中"与"未选中"几乎同色（用户当场报障）；
-        //       ③ 现行判据锚在真实承载面上：对卡面 ≥1.22（最硬）、对页面底 ≥1.04、对悬停底 ≥1.06。
-        // 彩度与页面底同族（表面族彩度），不发明色相。
-        Assert.Equal(0xC0B8D0u, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 强调容器 = 导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip 的**浅色底**
+        //（承载面是页面底与悬停底；判据 = 对页面底 ≥1.08、对悬停底 ≥1.06，实测 1.114 / 1.203）。
+        // ⚠️ 它**不**再给列表行 / 树行当选中底 —— 那类面画在卡面上，需要更深的一支（见下一条）。
+        Assert.Equal(0xEFE7FFu, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 选中底 / 落点高亮 = **列表行 / 树行 / 下拉选中项**的底：判据锚在真实承载面（**卡面**）上，
+        // 对卡面 ≥1.22（最硬）、对页面底 ≥1.08、对悬停底 ≥1.06。取值 = 允许的最深档
+        //（`ContainerToneFloor` T76，实测对卡面 1.675 / 对页面底 1.431 / 对悬停底 1.325）。
+        Assert.Equal(0xC0B8D0u, Rgb(t.Token(AppTokens.SurfaceSelected)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
@@ -245,7 +254,7 @@ public class ThemeContrastTests
         var failures = new List<string>();
         var appTokens = new[]
         {
-            AppTokens.SurfaceBase, AppTokens.SurfaceCard, AppTokens.SurfaceHover,
+            AppTokens.SurfaceBase, AppTokens.SurfaceCard, AppTokens.SurfaceHover, AppTokens.SurfaceSelected,
             AppTokens.SurfaceTintCard, AppTokens.AccentFill, AppTokens.AccentText,
             AppTokens.AccentContainer, AppTokens.SupportContainer, AppTokens.SupportIcon,
             AppTokens.TypeFolder, AppTokens.TypeLink, AppTokens.LineOutline, AppTokens.LineVariant,
@@ -343,8 +352,10 @@ public class ThemeContrastTests
         // 四条判据（全部按实测对比度，不靠感觉）：
         //  ① 页面底明度落在 87–91；
         //  ② 卡面浮得起来（对页面底 **≥1.15**，实测 1.165–1.169）；
-        //  ③ 选中底 / 落点高亮看得见 —— **对卡面 ≥1.22**（选中行画在卡面上，这条最硬；实测 1.31–1.39）
+        //  ③ 选中底 / 落点高亮看得见 —— **对卡面 ≥1.22**（列表行画在卡面上，这条最硬；实测 1.767–1.788）
         //     + 对页面底 ≥1.08 + 对悬停底 ≥1.06；
+        //     强调容器（导航 / 分段 / 徽标 / chip 的浅色底）另算：承载面是**页面底与悬停底**，
+        //     判据 = 对页面底 ≥1.08、对悬停底 ≥1.06（实测 1.085–1.215 / 1.175–1.388）。
         //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
         const double MinCardOnBase = 1.15;
         var failures = new List<string>();
@@ -355,6 +366,7 @@ public class ThemeContrastTests
             var card = table.Token(AppTokens.SurfaceCard);
             var hover = table.Token(AppTokens.SurfaceHover);
             var container = table.Token(AppTokens.AccentContainer);
+            var selected = table.Token(AppTokens.SurfaceSelected);
             var baseTone = ColorMath.Measure(baseColor).T;
 
             if (baseTone < PaletteSolver.SurfaceBaseToneMin - 0.6 || baseTone > PaletteSolver.SurfaceBaseToneMax + 0.6)
@@ -364,18 +376,28 @@ public class ThemeContrastTests
             if (cardRatio < MinCardOnBase)
                 failures.Add($"{theme.Id} 卡面对页面底 {cardRatio:F3} < {MinCardOnBase}（卡片看不出是卡片）");
 
-            var containerOnCard = ColorMath.ContrastRatio(container, card);
-            if (containerOnCard < PaletteSolver.ContainerMinContrastOnCard)
-                failures.Add($"{theme.Id} 选中底对**卡面** {containerOnCard:F3} < {PaletteSolver.ContainerMinContrastOnCard}"
+            var selectedOnCard = ColorMath.ContrastRatio(selected, card);
+            if (selectedOnCard < PaletteSolver.ContainerMinContrastOnCard)
+                failures.Add($"{theme.Id} 选中底对**卡面** {selectedOnCard:F3} < {PaletteSolver.ContainerMinContrastOnCard}"
                              + "（选中行与未选中行几乎同色——选中行画在卡面上，这条才是承载面）");
 
+            var selectedOnBase = ColorMath.ContrastRatio(selected, baseColor);
+            if (selectedOnBase < PaletteSolver.ContainerMinContrastOnBase)
+                failures.Add($"{theme.Id} 选中底对页面底 {selectedOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
+
+            var selectedOnHover = ColorMath.ContrastRatio(selected, hover);
+            if (selectedOnHover < PaletteSolver.ContainerMinContrastOnHover)
+                failures.Add($"{theme.Id} 选中底对悬停底 {selectedOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+
+            // 强调容器：画在页面底 / 悬停底上（导航指示器、分段指示器、徽标、chip）——
+            // 它必须比页面底与悬停底都看得出来，否则"指示器与底同色"（这类面没有卡面那层提亮）。
             var containerOnBase = ColorMath.ContrastRatio(container, baseColor);
             if (containerOnBase < PaletteSolver.ContainerMinContrastOnBase)
-                failures.Add($"{theme.Id} 选中底对页面底 {containerOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
+                failures.Add($"{theme.Id} 强调容器对页面底 {containerOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（指示器/徽标看不见）");
 
             var containerOnHover = ColorMath.ContrastRatio(container, hover);
             if (containerOnHover < PaletteSolver.ContainerMinContrastOnHover)
-                failures.Add($"{theme.Id} 选中底对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+                failures.Add($"{theme.Id} 强调容器对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
         }
         Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
     }

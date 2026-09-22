@@ -169,7 +169,7 @@
                                     <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                             </DataTrigger>
                                             <MultiDataTrigger>
                                                 <MultiDataTrigger.Conditions>
@@ -181,7 +181,7 @@
                                             <!-- 拖拽悬停落点：与主栏行同一套高亮（同键同色），两栏观感一致。
                                                  落点节点不可能是拖动集合成员（宿主已排除），故不会与"选中"同时成立。 -->
                                             <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
-                                                <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
+                                                <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>

@@ -336,12 +336,25 @@ namespace LinkPocket.ViewModels
                 : Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath);
         }
 
+        /// <summary>
+        /// 在目录树里找某目录的**用户段路径**（不含根段；根段由调用方用 <c>path.joined</c> 拼一次）。
+        /// </summary>
+        /// <remarks>
+        /// 根节点（<see cref="FolderNode.IsRoot"/>，`@root` / `@trash`）**不占段**：树里的根节点带着
+        /// canonical token，若把它也拼进去，调用方再前缀一次根名就会出现"全部书签 &gt; 全部书签 &gt; …"
+        /// （实测：搜索页「位置」列与右栏「位置」行都这么被拼出过双根）。
+        /// </remarks>
         public static string? FindFolderPathInNodes(ObservableCollection<FolderNode> nodes, string folderId, string? parentPath = null)
         {
             foreach (var node in nodes)
             {
-                var shown = BookmarkDisplay.Segment(node.Name);   // 根段是 token，拼文案前必须投影
-                var currentPath = parentPath == null ? shown : $"{parentPath} > {shown}";
+                // 根节点的段由调用方拼（见上面的说明）；其余节点是用户文件夹名，投影后拼进路径。
+                var currentPath = parentPath;
+                if (!node.IsRoot)
+                {
+                    var shown = BookmarkDisplay.Segment(node.Name);
+                    currentPath = parentPath == null ? shown : $"{parentPath} > {shown}";
+                }
                 if (node.Id == folderId)
                     return currentPath;
                 if (node.Children != null && node.Children.Count > 0)

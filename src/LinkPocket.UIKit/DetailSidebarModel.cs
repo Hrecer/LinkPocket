@@ -22,6 +22,11 @@ public class DetailSidebarRow : INotifyPropertyChanged
     private string _valueData = "";
 
     /// <summary>行的<b>用户数据</b>值（ID / 时间 / 路径 / 描述）：永不翻译，异步补拉时原位更新。</summary>
+    /// <remarks>
+    /// 与 <see cref="ValueCopy"/> **互斥**（模板为两者各摆一个元素，各自为空就什么都不画）：
+    /// 写入非空的用户数据即清掉文案侧。两个同时非空 = 两段文字在同一个格子里叠画，
+    /// 实测症状是"「—」压在「33 次」上，看着像一条黑色横线"（异步补拉只写了一侧、忘了清另一侧）。
+    /// </remarks>
     public string ValueData
     {
         get => _valueData;
@@ -29,6 +34,11 @@ public class DetailSidebarRow : INotifyPropertyChanged
         {
             if (_valueData == value) return;
             _valueData = value;
+            if (!string.IsNullOrEmpty(value) && !_valueCopy.IsEmpty)
+            {
+                _valueCopy = LocValue.Empty;
+                OnPropertyChanged(nameof(ValueCopy));
+            }
             OnPropertyChanged();
         }
     }
@@ -36,6 +46,7 @@ public class DetailSidebarRow : INotifyPropertyChanged
     private LocValue _valueCopy;
 
     /// <summary>行的<b>文案</b>值（「从未」「读取中…」「11 个链接」）：取词发生在渲染边界。</summary>
+    /// <remarks>与 <see cref="ValueData"/> 互斥：写入非空文案即清掉用户数据侧（理由见该属性说明）。</remarks>
     public LocValue ValueCopy
     {
         get => _valueCopy;
@@ -43,6 +54,11 @@ public class DetailSidebarRow : INotifyPropertyChanged
         {
             if (_valueCopy.Equals(value)) return;
             _valueCopy = value;
+            if (!value.IsEmpty && !string.IsNullOrEmpty(_valueData))
+            {
+                _valueData = "";
+                OnPropertyChanged(nameof(ValueData));
+            }
             OnPropertyChanged();
         }
     }

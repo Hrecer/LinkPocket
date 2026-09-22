@@ -349,13 +349,15 @@ public class SortableDataTable : Grid
                 // 药丸紧挨（无外距），拖拽分隔线画在两药丸的贴合线上（同上一版本观感）
                 Margin = new Thickness(0, 0, 0, 0)
             };
-            // 表头文字的**可用宽** = 本列宽 − 药丸内距：列宽是冻结几何，文案宽度随语言变，
+            // 表头文字的**可用宽** = 本列表头单元格实测宽 − 药丸内距：列宽是冻结几何，文案宽度随语言变，
             // 放不下时由 LocFit 缩字号（绝不是画到相邻列上被右缘裁掉——那正是没有这个数时的实测症状）。
-            // 值接列宽**单一数据源**：拖列宽 / 换语言后列宽重算都会走到这里重投影。
+            // ⚠️ 接的是**单元格的实测宽**而不是 `ColumnWidths[i]`：星号列的 `GridLength.Value` 是权重
+            //    （1 / 2），转换器会算出 0 ⇒ `MaxWidth=0` 把表头文字**夹成 0 宽**（「名称」「路径」整格没字），
+            //    而单元格实测宽在星号列冻结前后都是真像素。值一变（拖列宽 / 窗口缩放）就重投影一次。
             BindingOperations.SetBinding(header, SortableHeaderButton.TextWidthProperty,
-                new Binding($"ColumnWidths[{i}]")
+                new Binding(nameof(FrameworkElement.ActualWidth))
                 {
-                    Source = this,
+                    Source = cell,
                     Converter = ColumnTextWidthConverter.Instance,
                     Mode = BindingMode.OneWay,
                 });
@@ -778,7 +780,7 @@ public class SortableDataTable : Grid
             _paintedSelection.Add(item);
             SelectedItem ??= item;
             if (_rowMap.TryGetValue(item, out var row))
-                row.SetResourceReference(Border.BackgroundProperty, "App.Accent.Container");
+                row.SetResourceReference(Border.BackgroundProperty, "App.Surface.Selected");
         }
     }
 

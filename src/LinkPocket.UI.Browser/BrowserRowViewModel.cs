@@ -71,8 +71,14 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>「最后查看」列的文案（无值时画「从未」）。</summary>
     public LocValue LastViewedCopy => LastViewedAt.HasValue ? LocValue.Empty : Loc.K("clock.never");
 
-    /// <summary>「查看次数」列。</summary>
-    public LocValue ViewCountText => Loc.K("count.viewsN", ViewCount);
+    /// <summary>
+    /// 「查看次数」列（<b>结构性单元格</b>：走自适应通道画，与日期列同一套）。
+    /// </summary>
+    /// <remarks>
+    /// 类型必须是 <see cref="LocText"/>：它绑定到 <c>{loc:FitValue}</c>，而该通道的解析器只接受
+    /// <see cref="LocText"/>（<see cref="LocValue"/> 会让投影拿不到文案 ⇒ 整格一个字都不画）。
+    /// </remarks>
+    public LocText ViewCountText => LocText.Of(Loc.K("count.viewsN", ViewCount));
 
     /// <summary>「创建时间」列（两个长度形态，同 <see cref="ModifiedText"/>）。</summary>
     public LocText CreatedText => CreatedAt.Year <= 1 ? Dash : UiClock.Text(CreatedAt);
