@@ -113,7 +113,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                           views:LocFit.Text="{loc:Fit trash.menu.restore}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           views:LocFit.Text="{loc:Fit trash.menu.restore}" views:LocFit.Mode="Shrink"
                                            FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
@@ -124,7 +124,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                           views:LocFit.Text="{loc:Fit trash.menu.restoreToRoot}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           views:LocFit.Text="{loc:Fit trash.menu.restoreToRoot}" views:LocFit.Mode="Shrink"
                                            FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
@@ -135,7 +135,7 @@
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                           views:LocFit.Text="{loc:Fit trash.menu.purge}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           views:LocFit.Text="{loc:Fit trash.menu.purge}" views:LocFit.Mode="Shrink"
                                            FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
@@ -368,14 +368,14 @@
 
                                             <!-- 类型 -->
                                             <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
-                                                       Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue TypeText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                                       Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue TypeText}" views:LocFit.Mode="Shrink" TextTrimming="None" />
                                             <!-- 原位置 -->
                                             <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                                       Text="{loc:Value OriginText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                                       Text="{loc:Value OriginText}" views:LocFit.Mode="Shrink" TextTrimming="None"/>
                                             <!-- 删除时间（结构化数据：只换短式 + 截断，不缩字号；
                                                  ToolTip 由 LocFit 在真截断时补全文） -->
                                             <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
-                                                       Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue DeletedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                                       Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue DeletedText}" views:LocFit.Mode="Shrink" TextTrimming="None" />
                                         </Grid>
                                     </Border>
                                 </Border>

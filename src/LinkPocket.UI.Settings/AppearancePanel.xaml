@@ -49,7 +49,7 @@
                             Width="104" Cursor="Hand" Click="ResetAppearanceBtn_Click"
                             ToolTip="{loc:Loc appearance.btn.resetAll.tip}">
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit appearance.btn.resetAll}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                   views:LocFit.Text="{loc:Fit appearance.btn.resetAll}" views:LocFit.Mode="Shrink"/>
                     </Button>
                 </StackPanel>
 
@@ -154,7 +154,7 @@
                                                         Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                                views:LocFit.Text="{loc:Fit appearance.card.default}"
-                                                               views:LocFit.Mode="ShrinkThenEllipsis"
+                                                               views:LocFit.Mode="Shrink"
                                                                FontSize="10" HorizontalAlignment="Center"
                                                                Foreground="{DynamicResource App.Text.OnContainer}"/>
                                                 </Border>
@@ -293,7 +293,7 @@
                                         ToolTip="{loc:Loc appearance.draft.startFrom.tip}">
                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                views:LocFit.Text="{loc:Value StartFromCurrentThemeLabel}"
-                                               views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               views:LocFit.Mode="Shrink"/>
                                 </Button>
                                 <Button x:Name="ClearDraftBtn"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
@@ -301,7 +301,7 @@
                                         ToolTip="{loc:Loc appearance.clearColors.tip}">
                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                views:LocFit.Text="{loc:Fit appearance.draft.clear}"
-                                               views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               views:LocFit.Mode="Shrink"/>
                                 </Button>
                             </StackPanel>
 
@@ -468,13 +468,13 @@
                                             Width="94" IsHitTestVisible="False">
                                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                    views:LocFit.Text="{loc:Fit appearance.sample.primaryButton}"
-                                                   views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                                   views:LocFit.Mode="Shrink"/>
                                     </Button>
                                     <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                             Width="94" Margin="8,0,0,0" IsHitTestVisible="False">
                                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                    views:LocFit.Text="{loc:Fit appearance.sample.actions}"
-                                                   views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                                   views:LocFit.Mode="Shrink"/>
                                     </Button>
                                     <m3:M3Icon Kind="folder" Width="18" Height="18" Margin="10,0,0,0"
                                                VerticalAlignment="Center"
@@ -501,7 +501,7 @@
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
                                     Width="100" Cursor="Hand" Click="ApplyFontsBtn_Click">
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                           views:LocFit.Text="{loc:Fit appearance.font.apply}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                           views:LocFit.Text="{loc:Fit appearance.font.apply}" views:LocFit.Mode="Shrink"/>
                             </Button>
                             <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘。
                                  与「恢复默认外观」的区别：这里不动主题与配色。 -->
@@ -510,7 +510,7 @@
                                     Width="100" Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
                                     ToolTip="{loc:Loc appearance.font.reset.tip}">
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                           views:LocFit.Text="{loc:Fit appearance.font.reset}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                           views:LocFit.Text="{loc:Fit appearance.font.reset}" views:LocFit.Mode="Shrink"/>
                             </Button>
                         </StackPanel>
                     </StackPanel>

@@ -7,13 +7,14 @@ using Xunit;
 namespace LinkPocket.App.Tests;
 
 /// <summary>
-/// 自适应降级链（<see cref="LocFit.Fit"/>）：**纯算法**用例——注入假度量（宽度 = 字符数 × 字号），
+/// 自适应本体（<see cref="LocFit.Fit"/>）：**纯算法**用例——注入假度量（宽度 = 字符数 × 字号），
 /// 因此不依赖渲染线程，能在普通 xUnit 线程上跑完整条链。
 /// </summary>
 /// <remarks>
 /// <para>
-/// "几何冻结 + 字号自适应"的可执行定义就在这里：<b>能放下的最大档</b>是唯一解，
-/// 顺序固定（全长 → 短式 → 缩字号 → 截断），不许跳步。
+/// "几何冻结 + 字号自适应"的可执行定义就在这里：**能放下的最大档**是唯一解，
+/// 路径只有一条 —— **缩字号**（放不下就继续缩，无下限），**永不截断**
+/// （2026-09-22 定稿口径；曾经的"先换 `#short` 短式"与"到硬边界就 `CharacterEllipsis`"两档都已删除）。
 /// </para>
 /// <para>
 /// ⚠️ <see cref="LocFit.Metrics"/> 是<b>进程级静态</b>：每个用例跑前装上假度量、跑完必须还原
@@ -38,47 +39,41 @@ public sealed class LocFitRulesTests : IDisposable
 
     private static readonly LocFit.FontDescriptor Desc = new("Test Family", FontWeights.Normal, FontStretches.Normal, 1.0);
 
-    private static LocFit.FitResult Fit(string? full, string? shortText, double baseSize, double available)
-        => LocFit.Fit(full, shortText, baseSize, available, allowTruncate: true, Desc);
+    private static LocFit.FitResult Fit(string? full, double baseSize, double available)
+        => LocFit.Fit(full, baseSize, available, Desc);
 
     [Fact]
-    public void 放得下时按基准字号画_不换形态也不截断()
+    public void 放得下时按基准字号画()
     {
         // 5 字 × 12.5 = 62.5 ≤ 100
-        var result = Fit("恢复默认外观", null, 12.5, 100);
+        var result = Fit("恢复默认外观", 12.5, 100);
 
         Assert.Equal(12.5, result.Size);
-        Assert.False(result.UseShort);
-        Assert.False(result.Truncate);
     }
 
     [Fact]
-    public void 全长放不下而短式放得下时_换短式而不是缩字号()
+    public void 放不下时只缩字号_不换文案也不截断()
     {
-        // 全长 27 字 × 12.5 = 337.5 > 140；短式 6 字 × 12.5 = 75 ≤ 140
-        var result = Fit("Delete permanently", "Delete", 12.5, 140);
+        // 18 字 × 12.5 = 225 > 140 ⇒ 解 18×s ≤ 140 ⇒ s ≤ 7.78 ⇒ 吸附到 7.5（0.5 网格）
+        var result = Fit("Delete permanently", 12.5, 140);
 
-        Assert.Equal(12.5, result.Size);   // 字号一寸不让 —— 短式优先于缩放
-        Assert.True(result.UseShort);
-        Assert.False(result.Truncate);
+        Assert.Equal(7.5, result.Size);
     }
 
     [Fact]
-    public void 两种形态都放不下时_缩字号到能放下的最大档()
+    public void 缩字号取能放下的最大档()
     {
-        // 20 字，可用 200 ⇒ 解 20×s ≤ 200 ⇒ s ≤ 10 ⇒ 吸附到 10.0（正好落在 0.5 网格上）
-        var result = Fit(new string('m', 20), null, 12.5, 200);
+        // 20 字，可用 200 ⇒ 解 20×s ≤ 200 ⇒ s ≤ 10 ⇒ 吸附到 10.0
+        var result = Fit(new string('m', 20), 12.5, 200);
 
         Assert.Equal(10.0, result.Size);
-        Assert.False(result.UseShort);
-        Assert.False(result.Truncate);
     }
 
     [Fact]
     public void 缩字号只取零点五档_不产生非网格字号()
     {
         // 20 字，可用 190 ⇒ s ≤ 9.5 ⇒ 恰为 0.5 网格点
-        var result = Fit(new string('m', 20), null, 12.5, 190);
+        var result = Fit(new string('m', 20), 12.5, 190);
 
         Assert.Equal(9.5, result.Size);
         Assert.Equal(0, (result.Size / LocFit.Step) % 1, 6);
@@ -97,77 +92,35 @@ public sealed class LocFitRulesTests : IDisposable
             request.Text == "Rename" ? request.Size * (46.2 / 13.0) : request.Size * (39.0 / 13.0);
         LocFit.ClearCache();
 
-        var en = Fit("Rename", null, 13.0, 33.0);
-        Assert.False(en.Truncate, "缩字号必须能救下它，而不是退到截断");
+        var en = Fit("Rename", 13.0, 33.0);
         Assert.True(en.Size < 9.5, $"必须允许缩到 9.5pt 以下才放得下，实际 {en.Size}pt");
 
-        var zh = Fit("重命名", null, 13.0, 33.0);
-        Assert.False(zh.Truncate, "中文侧同样必须靠缩字号救下（旧下限连中文都没兜住）");
+        var zh = Fit("重命名", 13.0, 33.0);
         Assert.True(zh.Size < 13.0, $"中文在 base 13pt 就已溢出，必须缩小，实际 {zh.Size}pt");
     }
 
     [Fact]
-    public void 缩到退化边界仍放不下且无短式_截断()
+    public void 缩到退化边界仍放不下_停在边界档永不截断()
     {
-        // 度量与字号无关（恒 400）：任何档都放不下 ⇒ 一路缩到退化边界，只能截断。
+        // 度量与字号无关（恒 400）：任何档都放不下 ⇒ 一路缩到退化边界。
+        // **永不截断**：停在边界档，把"内容完整"交给容器去裁（宁可字小，也不许把内容切掉）。
         LocFit.Metrics = _ => 400;
         LocFit.ClearCache();
 
-        var result = Fit(new string('m', 40), null, 12.5, 200);
+        var result = Fit(new string('m', 40), 12.5, 200);
 
         Assert.Equal(LocFit.DegenerateFloor, result.Size);
-        Assert.True(result.Truncate);
-    }
-
-    [Fact]
-    public void 缩到退化边界仍放不下但有短式_先试短式再决定截断()
-    {
-        // 度量与字号无关（恒 400）：任何档、任何形态都放不下 ⇒ 到顶只能截断。
-        LocFit.Metrics = _ => 400;
-        LocFit.ClearCache();
-
-        var truncated = Fit("长句", "短", 12.5, 200);
-
-        Assert.Equal(LocFit.DegenerateFloor, truncated.Size);
-        Assert.True(truncated.UseShort);                        // 有短式就先换短式，再谈截断
-        Assert.True(truncated.Truncate);
-    }
-
-    [Fact]
-    public void 只缩不截的模式在退化边界不截断()
-    {
-        LocFit.Metrics = _ => 400;
-        LocFit.ClearCache();
-
-        var result = LocFit.Fit(new string('m', 40), null, 12.5, 200, allowTruncate: false, Desc);
-
-        Assert.Equal(LocFit.DegenerateFloor, result.Size);
-        Assert.False(result.Truncate);
     }
 
     [Fact]
     public void 空文案原样返回基准字号_零可用宽也保持基准字号()
     {
-        Assert.Equal(12.5, Fit("", null, 12.5, 100).Size);
-        Assert.Equal(12.5, Fit(null, null, 12.5, 100).Size);
+        Assert.Equal(12.5, Fit("", 12.5, 100).Size);
+        Assert.Equal(12.5, Fit(null, 12.5, 100).Size);
         // 可用宽 0/-5 = 一点位置都没有：不缩字号——宽度不因字号而变，缩了也放不下。
         // （调用方另有"宽度为 0 先不判定"的守卫，等真拿到宽度再投。）
-        Assert.Equal(12.5, Fit("恢复默认外观", null, 12.5, 0).Size);
-        Assert.Equal(12.5, Fit(new string('m', 40), null, 12.5, -5).Size);
-    }
-
-    [Fact]
-    public void 短式在下限放得下时_用短式而不截断()
-    {
-        // 短式 10px/字号、全长 100px/字号。可用宽 100：全长任何档都放不下；短式 @10 = 100 ✓
-        LocFit.Metrics = request => request.Text == "短" ? request.Size * 10 : request.Size * 100;
-        LocFit.ClearCache();
-
-        var result = Fit("长句", "短", 12.5, 100);
-
-        Assert.Equal(10.0, result.Size);       // 取"能放下的最大档"，不是一路压到下限
-        Assert.True(result.UseShort);
-        Assert.False(result.Truncate);
+        Assert.Equal(12.5, Fit("恢复默认外观", 12.5, 0).Size);
+        Assert.Equal(12.5, Fit(new string('m', 40), 12.5, -5).Size);
     }
 
     [Fact]
@@ -180,17 +133,16 @@ public sealed class LocFitRulesTests : IDisposable
         // 逐档缩：base 13pt、每字号占 3px、可用 12 ⇒ 需要 4pt 才放得下
         LocFit.Metrics = request => request.Size * 3;
         LocFit.ClearCache();
-        Assert.Equal(4.0, Fit("任意", null, 13.0, 12.0).Size);
+        Assert.Equal(4.0, Fit("任意", 13.0, 12.0).Size);
     }
-
 
     [Fact]
     public void 同一输入重复求值得到逐字段相同的结果_这是防布局回环的算法前提()
     {
         foreach (var available in new[] { 60.0, 78.0, 140.0, 200.0, 190.0 })
         {
-            var first = Fit("Delete permanently", "Delete", 12.5, available);
-            var second = Fit("Delete permanently", "Delete", 12.5, available);
+            var first = Fit("Delete permanently", 12.5, available);
+            var second = Fit("Delete permanently", 12.5, available);
             Assert.Equal(first, second);
         }
     }
@@ -201,7 +153,7 @@ public sealed class LocFitRulesTests : IDisposable
         double? previous = null;
         for (var available = 400.0; available >= 40; available -= 10)
         {
-            var size = Fit("Delete permanently", "Delete", 12.5, available).Size;
+            var size = Fit("Delete permanently", 12.5, available).Size;
             if (previous is { } last) Assert.True(size <= last + 1e-9, $"可用宽 {available} 时字号反而变大了");
             previous = size;
         }
@@ -210,7 +162,7 @@ public sealed class LocFitRulesTests : IDisposable
     [Fact]
     public void 零宽或负宽不产生异常且保持基准字号()
     {
-        Assert.Equal(12.5, Fit(new string('m', 40), null, 12.5, -5).Size);
+        Assert.Equal(12.5, Fit(new string('m', 40), 12.5, -5).Size);
     }
 
     [Fact]

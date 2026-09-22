@@ -61,7 +61,7 @@ public static class LocText
     /// 两条通道必须成对：<see cref="LocFit.TextProperty"/> 是**唯一事实来源**、
     /// <c>TextBlock.Text</c> 只画 <c>LocFit.Chosen</c>——在这里再绑一次 Text 会让同一个属性有两个写者。
     /// </remarks>
-    public static void SetFitText(this TextBlock text, string key, LocFitMode mode = LocFitMode.ShrinkThenEllipsis)
+    public static void SetFitText(this TextBlock text, string key, LocFitMode mode = LocFitMode.Shrink)
     {
         LocFit.SetMode(text, mode);
         BindingOperations.SetBinding(text, LocFit.TextProperty, I18n.LocFitBinding.For(key));

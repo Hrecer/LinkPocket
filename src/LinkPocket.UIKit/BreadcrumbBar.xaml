@@ -151,13 +151,13 @@
                                                                 Value="{Binding Path=(local:LocFit.Chosen), RelativeSource={RelativeSource Self}}"/>
                                                         <Setter Property="local:LocFit.Text" Value="{loc:Segment Name}"/>
                                                         <Setter Property="local:LocFit.Mode" Value="Shrink"/>
-                                                        <!-- ⚠️ `MaxWidth` 是**这条通道能不能工作**的前提：文字若按内容取宽，
-                                                             `LocFit` 读到的"可用宽"就是它自己需要的宽，于是永远判定"放得下"、
-                                                             字号不缩，最后由壳把文字**裁掉**（实测屏幕上是 `Bookma`）。
+                                                        <!-- ⚠️ `Width`（不是 `MaxWidth`）是**这条通道能不能工作**的前提：
+                                                             文字若按内容取宽，`LocFit` 读到的"可用宽"就是它自己需要的宽，
+                                                             于是永远判定"放得下"、字号一个都不缩，最后由壳把文字**裁掉**
+                                                             （实测屏幕上是 `Bookma`；探针读数 `[Bookmarks] 想占 97.7px、壳只有 80px`）。
                                                              56 = 浏览页 RootSegmentWidth(80) − 段内距(12+12)；
-                                                             回收站那侧 67 − 24 = 43，但它的根名是 `Trash`（13pt 下约 33px），
-                                                             本来就在 43 之内，所以这一个值两边都成立。 -->
-                                                        <Setter Property="MaxWidth" Value="56"/>
+                                                             回收站那侧 67 − 24 = 43，但其根名是 `Trash`（13pt 下约 33px），两边同一个值都成立。 -->
+                                                        <Setter Property="Width" Value="56"/>
                                                         <Setter Property="HorizontalAlignment" Value="Center"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>

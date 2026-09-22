@@ -72,7 +72,7 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="folder-plus" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit browser.newFolder}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit browser.newFolder}" views:LocFit.Mode="Shrink"
                                    FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
@@ -82,19 +82,19 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit browser.newLink}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit browser.newLink}" views:LocFit.Mode="Shrink"
                                    FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <!-- 重命名：与 F2 / 右键「重命名」**同一条命令**（就地编辑；文件夹改名称、链接改标题）。
                      未选中或非单选时自动禁用（CanExecute 与 F2 同源）。 -->
-                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand" Width="85"
+                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand" Width="90"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="{loc:Loc btn.rename.tip}">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="pencil" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit common.rename}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit common.rename}" views:LocFit.Mode="Shrink"
                                    FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
@@ -106,7 +106,7 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="delete-outline" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit common.delete}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit common.delete}" views:LocFit.Mode="Shrink"
                                    FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
@@ -460,19 +460,19 @@
                                          ⚠️ 日期列是**结构化数据**：走 LocFit 但只换短式 + 截断，不缩字号
                                          （见 UI-SPEC §3 的适用范围表）。ToolTip 由 LocFit 在真截断时补全文。 -->
                                     <TextBlock Grid.Column="1" Style="{StaticResource RowCellText}"
-                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ModifiedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ModifiedText}" views:LocFit.Mode="Shrink" TextTrimming="None" />
 
                                     <!-- 最后查看（文件夹 = 子孙链接被查看时沿父链刷新；从未显示「从未」） -->
                                     <TextBlock Grid.Column="2" Style="{StaticResource RowCellText}"
-                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue LastViewedAdaptive}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue LastViewedAdaptive}" views:LocFit.Mode="Shrink" TextTrimming="None" />
 
                                     <!-- 查看次数（文件夹 = 子树增量计数；链接 = 自身访问次数） -->
                                     <TextBlock Grid.Column="3" Style="{StaticResource RowCellText}"
-                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ViewCountText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue ViewCountText}" views:LocFit.Mode="Shrink" TextTrimming="None" />
 
                                     <!-- 创建时间 -->
                                     <TextBlock Grid.Column="4" Style="{StaticResource RowCellText}"
-                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue CreatedText}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                               Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}" views:LocFit.Text="{loc:FitValue CreatedText}" views:LocFit.Mode="Shrink" TextTrimming="None" />
                                 </Grid>
                                 </Border>
                             </Border>

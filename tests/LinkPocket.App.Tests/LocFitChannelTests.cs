@@ -116,7 +116,7 @@ public sealed class LocFitChannelTests
                              (neverCell, nameof(RowLike.NeverText)),
                          })
                 {
-                    LocFit.SetMode(cell, LocFitMode.ShrinkThenEllipsis);
+                    LocFit.SetMode(cell, LocFitMode.Shrink);
                     cell.SetBinding(LocFit.TextProperty, FitValueBinding(path));
                     cell.SetBinding(TextBlock.TextProperty, LocFitResolver.BuildChosenBinding());
                 }

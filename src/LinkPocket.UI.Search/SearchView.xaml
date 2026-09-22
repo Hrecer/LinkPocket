@@ -142,13 +142,13 @@
                                 Command="{Binding SearchCommand}" Focusable="False"
                                 VerticalAlignment="Center" Margin="4,0,4,0">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit nav.item.search}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                       views:LocFit.Text="{loc:Fit nav.item.search}" views:LocFit.Mode="Shrink"/>
                         </Button>
                         <Button Grid.Column="4" Padding="14,0" Height="32" FontSize="13" Width="72"
                                 Style="{StaticResource TextButton}" Command="{Binding CancelCommand}" Focusable="False"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit common.cancel}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                       views:LocFit.Text="{loc:Fit common.cancel}" views:LocFit.Mode="Shrink"/>
                         </Button>
                     </Grid>
                 </Border>
@@ -167,7 +167,7 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit common.jump}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit common.jump}" views:LocFit.Mode="Shrink"
                                    Margin="6,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
@@ -178,7 +178,7 @@
                     <StackPanel Orientation="Horizontal">
                         <!-- 「搜索范围」标签：宽度**冻在中文基线 68**（它是骨架标签，英文更长 ⇒ 缩字号） -->
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                   views:LocFit.Text="{loc:Fit search.scope}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   views:LocFit.Text="{loc:Fit search.scope}" views:LocFit.Mode="Shrink"
                                    FontSize="11.5" Foreground="{DynamicResource App.Text.Secondary}"
                                    Opacity="0.85" VerticalAlignment="Center" Margin="12,0,7,0" Width="68"/>
                         <Border Width="1" Height="14" Background="{DynamicResource App.Text.Secondary}"
@@ -187,18 +187,18 @@
                              英文放不下时由 LocFit 换短式（Description → Desc）再缩字号。 -->
                         <CheckBox IsChecked="{Binding SearchPath}" Style="{StaticResource SearchChip}" Width="60">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ui.noun.path}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                       views:LocFit.Text="{loc:Fit ui.noun.path}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>
                         <CheckBox IsChecked="{Binding SearchUrl}" Style="{StaticResource SearchChip}" Width="60">
                             <TextBlock Text="URL"/>
                         </CheckBox>
                         <CheckBox IsChecked="{Binding SearchTitle}" Style="{StaticResource SearchChip}" Width="60">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ui.noun.title}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                       views:LocFit.Text="{loc:Fit ui.noun.title}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>
                         <CheckBox IsChecked="{Binding SearchDesc}" Style="{StaticResource SearchChip}" Width="60">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ui.noun.description}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                       views:LocFit.Text="{loc:Fit ui.noun.description}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>
                     </StackPanel>
                 </Border>

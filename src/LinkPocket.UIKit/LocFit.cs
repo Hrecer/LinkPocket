@@ -13,21 +13,23 @@ using LinkPocket.Theming.Fonts;
 namespace LinkPocket.Views;
 
 /// <summary>自适应策略（缺省 <see cref="Off"/> = 行为与引入本机制之前逐像素相同）。</summary>
+/// <remarks>
+/// <b>只有两档</b>：`Off` 与 `Shrink`。曾经有过第三档 `ShrinkThenEllipsis`（放不下就 <c>CharacterEllipsis</c> 截断），
+/// 已按定稿口径**删除**（2026-09-22）：**任何情况下都不截断**——放不下就继续缩小字号，直到放得下。
+/// 截断的文案是错的文案（日期截成 `09/21/2026 1:4…` 就是错的日期），而"把字缩小"永远给出完整内容。
+/// </remarks>
 public enum LocFitMode
 {
     /// <summary>不参与自适应（<b>用户数据</b>用这一档：书签标题、URL、文件夹名永不参与取词、永不缩字号）。</summary>
     Off = 0,
 
-    /// <summary>只缩字号到下限，不截断（放不下就让它画出去——给"几何本来就有余量"的面用）。</summary>
+    /// <summary>唯一的自适应档：只缩字号（无下限），**永不截断**。</summary>
     Shrink = 1,
-
-    /// <summary>完整降级链：base → 换短式 → 缩字号 → 短式+下限 → <c>CharacterEllipsis</c> 截断 + ToolTip 全文。</summary>
-    ShrinkThenEllipsis = 2,
 }
 
 /// <summary>
 /// <b>几何冻结 + 字号自适应</b>的唯一实现：界面文案在**既有几何内**自己找位置，
-/// 绝不撑宽、绝不换行、绝不改 Padding（约束 B「英文零尺寸漂移」的可执行定义之一）。
+/// 绝不撑宽、绝不换行、绝不改 Padding、**绝不截断**（约束 B「英文零尺寸漂移」的可执行定义之一）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,18 +38,18 @@ public enum LocFitMode
 /// 都是冻结几何。放不下时只有两条路：改几何（禁止）或让文字自己让位（本机制）。
 /// </para>
 /// <para>
-/// <b>降级链（顺序固定，不许跳步）</b>：① base 字号 → ② 换短式文案（"换一句更短的话"优先于
-/// "把整块字缩小"：日期去年份比缩小整块更可读，也不会让相邻控件字号不齐）→ ③ 缩字号到下限
-/// → ④ 短式 + 下限 → ⑤ <c>CharacterEllipsis</c> 截断 + ToolTip 全文。
+/// <b>降级链（顺序固定）</b>：① base 字号 → ② 换短式文案（`#short`，属**文案质量**手段：
+/// 让常用短语在基准字号下就放得下，也不会让相邻控件字号不齐）→ ③ 缩字号**直到放得下**（无下限）。
+/// <b>到此为止：没有截断这一步。</b>
 /// </para>
 /// <para>
-/// <b>算法是纯函数</b>（<see cref="Fit"/>：文字 + 字体 + 可用宽 → 字号 + 形态 + 是否截断），
+/// <b>算法是纯函数</b>（<see cref="Fit"/>：文字 + 字体 + 可用宽 → 字号 + 形态），
 /// 只有 <c>FormattedText</c> 那一层碰 WPF；测试因此可以注入 <see cref="Metrics"/>
 /// 直接跑完整降级链，不依赖真实渲染。
 /// </para>
 /// <para>
 /// <b>它是纯布局机制，一个字都不写进元素的 Text</b>：文字的唯一写者是<b>绑定</b>
-/// （<c>Text="{loc:Fit …}"</c> 的转换器）。<see cref="Project"/> 只写字号与截断/ToolTip。
+/// （<c>Text="{loc:Fit …}"</c> 的转换器）。<see cref="Project"/> 只写字号。
 /// 历史教训：让本行为去写 <c>TextBlock.Text</c>，等于让一个属性有两个写者——
 /// 绑定重投的值被行为按上一次的判定盖住，切语言后模型已是新语言、屏幕上还留着旧语言
 /// （实测：模型侧 <c>09/20/2026 10:50 AM</c>、屏幕上 <c>2026-09-20 10:50</c>）。
@@ -95,76 +97,124 @@ public static class LocFit
     // ── 纯算法 ─────────────────────────────────────────────────────────────
 
     /// <summary>一次自适应的结论。</summary>
-    public readonly record struct FitResult(double Size, bool UseShort, bool Truncate);
+    public readonly record struct FitResult(double Size);
 
     /// <summary>
-    /// 降级链本体（纯函数）：在 <paramref name="available"/> 内挑最合适的字号与形态。
+    /// 自适应本体（纯函数）：在 <paramref name="available"/> 内挑**能放下的最大字号**。
     /// </summary>
-    /// <param name="full">全长文案（空 = 无文案，直接返回不动）。</param>
-    /// <param name="shortText">短式文案；<c>null</c> = 这条文案没有短式变体。</param>
+    /// <param name="full">要显示的文字（空 = 无文案，直接返回不动）。</param>
     /// <param name="baseSize">基准字号（元素本来要用的那个）。</param>
-    /// <param name="available">可用宽（元素实测宽 − 内距）。</param>
-    /// <param name="allowTruncate">连退化边界都放不下时是否允许截断；<c>false</c> = 停在边界档。</param>
+    /// <param name="available">可用宽（冻结壳里真正留给这段文字的那一格）。</param>
     /// <param name="desc">字体描述（族 / 字重 / 字宽 / DPI）。</param>
+    /// <remarks>
+    /// <b>只有一条降级路径：把字号缩小。</b>不换文案、**不截断**（口径 2026-09-22）。
+    /// 曾经的"先换短式（`#short`）再缩字号"已删除：短式会让**中文侧**也被缩成短语
+    /// （实测「恢复默认外观」在冻结宽度里被换成「恢复默认」——那是产品文案，不该由版式机制改）。
+    /// 表里的 `#short` 键保留备查，但**自动链不使用它们**。
+    /// </remarks>
     public static FitResult Fit(
         string? full,
-        string? shortText,
         double baseSize,
         double available,
-        bool allowTruncate,
         in FontDescriptor desc)
     {
-        if (string.IsNullOrEmpty(full)) return new FitResult(baseSize, UseShort: false, Truncate: false);
+        if (string.IsNullOrEmpty(full)) return new FitResult(baseSize);
 
         // 可用宽为 0 或负（还没参与布局 / 被压成 0）＝ 一点位置都没有：
         // 不缩字号（缩了也没有意义——宽度不因字号而变），保持 base 让调用方另有守卫去处理。
-        if (available <= 0) return new FitResult(baseSize, UseShort: false, Truncate: allowTruncate);
+        if (available <= 0) return new FitResult(baseSize);
 
-        var hasShort = !string.IsNullOrEmpty(shortText);
+        // ① base 放得下就是它（绝大多数中文文案与短英文文案走到这里就结束）
+        if (Fits(full, baseSize, available, desc)) return new FitResult(baseSize);
 
-        // ① 全长 @ base —— 绝大多数中文文案与短英文文案走到这里就结束
-        if (Fits(full!, baseSize, available, desc)) return new FitResult(baseSize, UseShort: false, Truncate: false);
-
-        // ② 短式 @ base —— "换一句更短的话"优先于"把字缩小"。
-        //     理由与字号无关，是产品判断：日期/计数这类结构化文本宁可去年份也不许截，
-        //     而且"换短式"不会让相邻控件的字号不齐。
-        if (hasShort && Fits(shortText!, baseSize, available, desc))
-            return new FitResult(baseSize, UseShort: true, Truncate: false);
-
-        // ③ 步进缩小，直到放得下。**取"能放下的最大档"而不是"第一个放得下的档"**：
+        // ② 步进缩小，直到放得下。**取"能放下的最大档"而不是"第一个放得下的档"**：
         //    结果是稳定解（重算必然同值），布局回环因此不成立。
-        //    只判短式即可——全长在 base 都放不下，更小的字号只会更放不下（宽度随字号单调减）。
         for (var candidate = SnapDown(baseSize - Step); candidate >= DegenerateFloor; candidate = SnapDown(candidate - Step))
         {
-            if (hasShort && Fits(shortText!, candidate, available, desc))
-                return new FitResult(candidate, UseShort: true, Truncate: false);
-            if (Fits(full!, candidate, available, desc))
-                return new FitResult(candidate, UseShort: false, Truncate: false);
+            if (Fits(full, candidate, available, desc))
+                return new FitResult(candidate);
         }
 
-        // ④ 退化边界：可用宽被压到几乎为零之类的情形。有短式就"用短式"（同宽下留得住更多信息）。
-        return new FitResult(DegenerateFloor, UseShort: hasShort, Truncate: allowTruncate);
+        // ③ 退化边界：可用宽被压到几乎为零之类的情形。停在边界档——宁可字小，也绝不截断内容。
+        return new FitResult(DegenerateFloor);
     }
 
-    /// <summary>该元素在当前字号下的可用宽（实测宽 − 内距 − 自身外边距；负值收敛到 0）。</summary>
+    /// <summary>该元素在当前字号下的可用宽（冻结宽度的**控件壳**里 = 壳内容区 − 同行其它子级；否则 = 实测宽 − 内距）。</summary>
     /// <remarks>
     /// <para>
-    /// ⚠️ <b>"用壳的内容区反推可用宽"试过，已回滚</b>（2026-09-22 实测）：把可用宽改成
-    /// "壳内容区 − 同行其它子级"后，面包屑根段（壳 80px）被算成只剩 4px，文字直接撞退化边界掉到 <b>4.0pt</b>
-    /// ——比它要修的问题更糟。原因是模板内部的具名子级（ContentPresenter / 模板 Border）也会被当"壳"或"兄弟"，
-    /// 扣减链一旦认错一层就是数量级错误。
+    /// <b>为什么不能只用"元素自己的实测宽"</b>（实测根因）：药丸里的文字在一根**水平 <c>StackPanel</c></b> 里，
+    /// 而 StackPanel 会把子级想要的宽度**照给** ⇒ <c>text.ActualWidth</c> 恒等于它自己需要的宽，
+    /// "放不放得下"变成自己跟自己比、**永远成立**。后果不是"少缩一点"，而是**根本不缩**：
+    /// 实测面包屑根段（壳 80px）的 `Bookmarks` 停在 13.0pt、`ActualWidth=73.7=需要 73.7`，
+    /// 最后由壳把文字**裁掉**（屏幕上是 `Bookma`）。
     /// </para>
     /// <para>
-    /// 现行口径（**回滚后**）：本属性只回答"元素自己这一格有多宽"，壳装不下的处置放在**几何那一侧**——
-    /// 冻结宽度按"两种语言在基准字号下都放得下"实测确定（探针的溢出判据给读数）。这样改一处只影响一个控件，
-    /// 不会像反推那样把十几种模板的差异一次性叠进来。
+    /// <b>⚠️ 只认 <see cref="Control"/> 壳</b>（按钮 / 勾选 / 输入框）：模板内部的 <c>Border</c>/<c>ContentPresenter</c>
+    /// 也常带 <c>Width</c>，认错一层就会把可用宽算到接近 0——这条试过，把面包屑压到 **4.0pt** 并已回滚一次
+    /// （见 `WARNINGS` 102）。控件壳是"有人刻意定过尺寸"的那一层，语义明确。
+    /// </para>
+    /// <para>
+    /// 找不到控件壳（内容自适应的行内文本、表格单元格）时才回落到"实测宽 − 内距"。
     /// </para>
     /// </remarks>
     public static double AvailableWidth(FrameworkElement element)
     {
-        var width = element.ActualWidth;
-        if (double.IsNaN(width) || double.IsInfinity(width) || width <= 0) return 0;
-        return Math.Max(0, width - HorizontalInsets(element));
+        var own = element.ActualWidth;
+        var ownValid = !double.IsNaN(own) && !double.IsInfinity(own) && own > 0;
+
+        var shell = FrozenControlShell(element);
+        if (shell is not null)
+        {
+            var content = shell.ActualWidth - HorizontalInsets(shell);
+            content -= InlineSiblingsWidth(element, shell);
+            content -= element.Margin.Left + element.Margin.Right;   // 自己的外边距同样占地方
+            // ⚠️ 取**两者较小**，而不是用壳的值替换：
+            //   壳可能是"大容器"（表格的滚动宿主、页面级控件都带 Width），它的内容区远大于本元素真正拿到的那一格
+            //   ——实测踩到：日期格（列宽 128、需要 135.3、字号停在 13.0 不缩）就是被整张表的宽度骗了；
+            //   而元素自己的实测宽在"行内组照给想要的宽"时又会偏大（面包屑被壳裁成 `Bookma` 那次）。
+            //   两者取小 = "它真正能用多少"，两种情况都对。
+            if (!ownValid) own = content;
+            return Math.Max(0, Math.Min(own, content));
+        }
+
+        if (!ownValid) return 0;
+        return Math.Max(0, own - HorizontalInsets(element));
+    }
+
+    /// <summary>最近的**冻结宽度的控件壳**（显式 <c>Width</c> 的 <see cref="Control"/> 祖先）。</summary>
+    private static Control? FrozenControlShell(DependencyObject element)
+    {
+        for (var node = VisualTreeHelper.GetParent(element); node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is Control { Width: > 0 } control) return control;
+        return null;
+    }
+
+    /// <summary>同一行里**其它**子级占掉的宽（只对水平 <c>StackPanel</c> 求和：Grid 的子级会重叠，不能相加）。</summary>
+    private static double InlineSiblingsWidth(DependencyObject element, Control shell)
+    {
+        for (var node = VisualTreeHelper.GetParent(element); node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, shell)) return 0;
+            if (node is not StackPanel { Orientation: Orientation.Horizontal } panel) continue;
+
+            var sum = 0.0;
+            foreach (var child in panel.Children)
+            {
+                if (child is not FrameworkElement sibling) continue;
+                if (IsSelfOrAncestorOf(sibling, element)) continue;
+                sum += sibling.ActualWidth + sibling.Margin.Left + sibling.Margin.Right;
+            }
+            return sum;
+        }
+        return 0;
+    }
+
+    /// <summary><paramref name="candidate"/> 是不是 <paramref name="element"/> 本身或其祖先。</summary>
+    private static bool IsSelfOrAncestorOf(DependencyObject candidate, DependencyObject element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (ReferenceEquals(node, candidate)) return true;
+        return false;
     }
 
     /// <summary>左右内距之和（含描边）：可用宽必须减掉它，否则文字会被内距挤出去。</summary>
@@ -246,15 +296,15 @@ public static class LocFit
 
     /// <summary>带缓存求值（键含全部输入 ⇒ 不需要失效逻辑）。</summary>
     public static FitResult Evaluate(
-        string full, string? shortText, double baseSize, double available, bool allowTruncate, in FontDescriptor desc)
+        string full, double baseSize, double available, in FontDescriptor desc)
     {
         var key = string.Create(CultureInfo.InvariantCulture,
-            $"{desc}|{baseSize:F2}|{available:F2}|{(allowTruncate ? 1 : 0)}|{shortText ?? "\u0000"}|{full}");
+            $"{desc}|{baseSize:F2}|{available:F2}|{full}");
         if (Cache.TryGetValue(key, out var cached)) return cached;
 
         if (Cache.Count >= CacheLimit) Cache.Clear();   // 有界：满了整体清，不引 LRU 的复杂度
         FitEvaluations++;
-        var result = Fit(full, shortText, baseSize, available, allowTruncate, desc);
+        var result = Fit(full, baseSize, available, desc);
         Cache[key] = result;
         return result;
     }
@@ -275,10 +325,6 @@ public static class LocFit
 
         /// <summary>本行为上一次写进去的字号（用于区分"外部改的"与"自己写的"）。</summary>
         public double WrittenSize;
-
-        /// <summary>文字生成侧上一次选了哪种形态（只读状态，供布局侧决定截断与 ToolTip）。</summary>
-        public bool UseShort;
-
         /// <summary>上一次投影时的语言代数（见 <see cref="ObserveLanguage"/>）。</summary>
         public int ObservedLangVersion = -1;
     }
@@ -389,15 +435,14 @@ public static class LocFit
 
         var baseSize = BaseSizeFor(element);
         var desc = Describe(element);
-        var result = Evaluate(text.Resolve(), text.HasShort ? text.ResolveShort() : null,
-            baseSize, available, GetMode(element) == LocFitMode.ShrinkThenEllipsis, desc);
+        var result = Evaluate(text.Resolve(), baseSize, available, desc);
 
         PlaceFontSize(element, result.Size);   // 值不变不写（回环防线）
-        RecordVariant(element, result.UseShort);
 
-        var shown = result.UseShort ? text.ResolveShort() : text.Resolve();
-        PlaceChosen(element, shown);
-        ApplyOverflow(element, shown, result.Size, available, desc);
+        // ⚠️ 到这里就结束：**不写 TextTrimming、不截断**（2026-09-22 口径）。
+        //    元素自己的 TextTrimming（行样式里给用户数据列设的省略号）不被本机制碰——
+        //    本机制只管"把字号缩到放得下"，内容的完整性由缩字号保证。
+        PlaceChosen(element, text.Resolve());
     }
 
     /// <summary>
@@ -472,19 +517,13 @@ public static class LocFit
     }
 
     /// <summary>
-    /// 文字生成的一侧（<c>{loc:Fit …}</c> 的转换器 / <see cref="Project"/>）把"这次选了什么形态"记下来。
-    /// <b>只读状态，不是写通道</b>；<see cref="IsShortForm"/> 与 <see cref="IsTruncated"/> 是它的读数。
+    /// 读数：本元素当前画出来的文字<b>在最终字号下还是放不进可用宽</b>（= 已经缩到退化边界仍放不下）。
     /// </summary>
-    public static void RecordVariant(FrameworkElement element, bool useShort)
-        => StateOf(element).UseShort = useShort;
-
-    /// <summary>本元素当前生成的形态是不是短式（读数）。</summary>
-    public static bool IsShortForm(FrameworkElement element)
-        => States.TryGetValue(element, out var state) && state.UseShort;
-
-    /// <summary>
-    /// 本元素当前是不是"文字被截断"：判据 = 最终画出来的那段文字<b>在最终字号下确实放不进可用宽</b>。
-    /// </summary>
+    /// <remarks>
+    /// <b>注意它不再等于"被截断"</b>（2026-09-22 口径）：机制**不写 <c>TextTrimming</c>**，
+    /// 所以放不下时不会出现省略号——它只说明"字已经缩到最小了还是不够"，
+    /// 这时内容会由容器按自己的口径裁切。用它做诊断，不要用它当"截断"的判据。
+    /// </remarks>
     public static bool IsTruncated(FrameworkElement element)
     {
         var applied = GetChosen(element);
@@ -501,33 +540,15 @@ public static class LocFit
         _ => null,
     };
 
-    /// <summary>
-    /// 触底之后的收尾：<b>自己判"到底截没截"</b>（按最终写入的字号重算一次），
-    /// 而不是照抄链路标记——那个标记只说明"到下限仍放不下"，真正会不会画出省略号还取决于渲染。
-    /// 截断与全文提示<b>成对出现</b>：截了就必须给得出全文，没截就不加提示。
-    /// </summary>
-    public static void ApplyOverflow(
-        FrameworkElement element, string text, double size, double available, in FontDescriptor desc)
-    {
-        var truncate = available > 0 && !Fits(text, size, available, desc);
-        var wanted = truncate ? TextTrimming.CharacterEllipsis : TextTrimming.None;
-
-        if (element is TextBlock block && block.TextTrimming != wanted)
-            block.TextTrimming = wanted;
-
-        var tip = truncate ? text : null;
-        if (!ReferenceEquals(ToolTipService.GetToolTip(element), tip))
-            ToolTipService.SetToolTip(element, tip);
-    }
-
     // ── 附加属性 ───────────────────────────────────────────────────────────
 
     /// <summary>
     /// 自适应策略（<b>文字由绑定写，本属性只管布局侧的行为</b>）。
     /// </summary>
     /// <remarks>
-    /// 用法：<c>Text="{loc:Fit some.key}" loc:LocFit.Mode="ShrinkThenEllipsis"</c>。
-    /// 转换器负责选形态并落字号，本属性负责挂布局事件、在尺寸变化后重算字号与截断。
+    /// 用法：<c>Text="{loc:Fit some.key}" views:LocFit.Mode="Shrink"</c>。
+    /// 转换器负责选形态（全长 / 短式），本属性负责挂布局事件、在尺寸变化后重算字号。
+    /// <b>不写 <c>TextTrimming</c>、不加 ToolTip</b>：没有截断，也就不需要"截断 + 全文提示"那一对。
     /// </remarks>
     public static readonly DependencyProperty ModeProperty =
         DependencyProperty.RegisterAttached(
@@ -662,23 +683,26 @@ public sealed class LocFitResolver : IMultiValueConverter
     }
 
     /// <summary>
-    /// 建一个"两个长度形态"的文本元素（日期 / 计数这类**结构化数据**：放不下时换短式 + 截断，不缩字号）。
+    /// 建一个接了自适应通道的文本单元格（日期 / 计数这类**结构化数据**：放不下就缩字号，**永不截断**）。
     /// </summary>
-    /// <param name="text">文案值（两个形态都在里面）。</param>
+    /// <param name="text">文案值（语言一变自己重算）。</param>
     /// <param name="fontSize">基准字号。</param>
-    /// <param name="mode">自适应策略（缺省 = 只换短式与截断）。</param>
-    public static TextBlock BuildCell(LocText text, double fontSize = 12.5, LocFitMode mode = LocFitMode.ShrinkThenEllipsis)
+    /// <param name="mode">自适应策略（缺省 = <see cref="LocFitMode.Shrink"/>：唯一的一档）。</param>
+    public static TextBlock BuildCell(LocText text, double fontSize = 12.5, LocFitMode mode = LocFitMode.Shrink)
     {
         var cell = new TextBlock
         {
             FontSize = fontSize,
             VerticalAlignment = VerticalAlignment.Center,
             DataContext = text,
+            // ⚠️ 显式 `None`：行样式给用户数据列设了 `CharacterEllipsis`，而**结构化单元格不许出现省略号**
+            //    （口径 2026-09-22：放不下就缩字号）。实测：不显式清掉时，1808 个日期格都带着省略号。
+            TextTrimming = TextTrimming.None,
         };
         if (mode == LocFitMode.Off) { cell.Text = text.Resolve(); return cell; }
 
         LocFit.SetMode(cell, mode);
-        LocFit.SetText(cell, text);   // 接入通道：文字与形态都由本机制管
+        LocFit.SetText(cell, text);   // 接入通道：文字与字号都由本机制管
         cell.SetBinding(TextBlock.TextProperty, BuildChosenBinding());
         return cell;   // 截断与全文提示成对出现：由 LocFit.ApplyOverflow 在布局后决定写不写
     }
