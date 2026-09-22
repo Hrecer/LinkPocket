@@ -410,9 +410,10 @@ namespace LinkPocket.Views
                 // ⚠️ 药丸样式自身不含 MinHeight/Padding：高度必须显式给（与其它页药丸统一的 32），
                 // 否则垂直 Padding=0 会把按钮压扁成一条。
                 Height = 32,
-                // ⚠️ 宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）。102 = 中文基线实测值；
-                //    英文全长（Find duplicates）放不下 ⇒ 走短式 "Scan"（降级链第 ② 步）。
-                Width = 102,
+                // ⚠️ 宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）：128 = 中文基线 +
+                //    「Find duplicates」在基准字号 13pt 下放得下的实测值（94.0px 文本 + 图标 22 + 内距 24 = 140 ⇒ 取 140）。
+                //    原 102 会把英文缩到 6.5pt（实测不可读）——放不下时让位的是字，但字号本身也是文案质量指标。
+                Width = 147,
                 Padding = new Thickness(14, 0, 14, 0),
                 Margin = new Thickness(0, 0, 8, 0),
                 Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { _dedupActionIcon, _dedupActionText } }
@@ -425,8 +426,9 @@ namespace LinkPocket.Views
             _dedupClearBtn = new Button
             {
                 Height = 32,   // 同上：药丸样式无高度默认值，必须显式给
-                // 冻结宽度（中文基线 93）：英文全长（Clear results）放不下 ⇒ 短式 "Clear"。
-                Width = 93,
+                // 冻结宽度：119 = 「Clear results」在 12.5pt 下放得下的实测值（73.3 + 图标 20 + 内距 24 ⇒ 取 119）。
+                // 原 93 会把英文缩到 8.0pt。
+                Width = 119,
                 Padding = new Thickness(12, 0, 12, 0),
                 IsEnabled = false,
                 Cursor = Cursors.Hand,

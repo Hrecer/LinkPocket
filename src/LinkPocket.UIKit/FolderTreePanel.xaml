@@ -73,7 +73,7 @@
                     </Style>
                 </MenuItem.Style>
             </MenuItem>
-            <MenuItem Header="{Binding DeleteMenuHeader}" Command="{Binding Host.DeleteNodeCommand}" CommandParameter="{Binding}">
+            <MenuItem Header="{loc:Value DeleteMenuHeader}" Command="{Binding Host.DeleteNodeCommand}" CommandParameter="{Binding}">
                 <MenuItem.Style>
                     <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
                         <Setter Property="Visibility" Value="Visible"/>

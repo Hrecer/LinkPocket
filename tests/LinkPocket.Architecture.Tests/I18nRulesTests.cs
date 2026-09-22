@@ -306,4 +306,84 @@ public class I18nRulesTests
         Assert.True(referenced.Count == 0,
             "界面引用了表里不存在的键（运行时只会显示 ⟨key⟩，属真缺陷）：\n" + string.Join("\n", referenced.Distinct()));
     }
+
+    /// <summary>承载用户可见文案的属性（<see cref="XamlTextAttr"/> 的取值面）。</summary>
+    private static readonly Regex XamlBindingToText = new(
+        @"\b(Text|Content|Header|HeaderText|ToolTip|Tag)\s*=\s*""\{Binding\s+(?<path>[^""{}]+?)\s*\}""",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// <c>LocValue</c> 型的公开属性名（模型里流的那一类）。这些成员**必须**经 <c>{loc:Value}</c> 取词。
+    /// </summary>
+    /// <remarks>
+    /// 形状扫描：属性声明 <c>LocValue Foo</c> / <c>LocValue? Foo</c>，或表达式体 <c>LocValue Foo =&gt; …</c>。
+    /// </remarks>
+    private static readonly Regex LocValueMember = new(
+        @"\bLocValue\??\s+(?<name>[A-Za-z_]\w*)\s*(?:\{|=>|$)",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>
+    /// <c>{Binding X}</c> 里**不适用本规则的成员名**（同名但类型不是 <see cref="LocValue"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 本规则按"成员名"判（不解析 DataContext 类型：那要跑 BAML，脆弱且与其它源码扫描规则不同族），
+    /// 于是"别处有个同名的 <c>LocValue</c> 成员"会被误报。实测只有这三个名字属于这一类：
+    /// <list type="bullet">
+    /// <item><c>Name</c> —— <c>FolderNodeViewModel.Name</c> / <c>BrowserRowViewModel.Name</c> 是**用户数据**（文件夹名 / 书签名）。
+    /// ⚠️ 反过来说：<c>ToolsPage.ToolItem.Name</c> 曾**正好是** <c>LocValue</c>（工具名是文案），
+    /// 那次已经改成 <c>{loc:Value Name}</c>——所以这个豁免只覆盖"用户数据那一侧"的绑定。</item>
+    /// <item><c>Title</c> / <c>Subtitle</c> —— 明细栏的 <c>TitleCopy</c> 等成员另有名字；</item>
+    /// </list>
+    /// 新增豁免必须在这里写清理由（用例里有一条规模断言盯着）。
+    /// </remarks>
+    private static readonly string[] UnrelatedMemberNames = { "Name", "Title", "Subtitle" };
+
+    /// <summary>
+    /// 禁止把 <c>LocValue</c> 直接绑到文案属性上 —— 那会画出 C# 记录字符串
+    /// （<c>LocValue { Key = appearance.slot.n, Args = System.ReadOnlyMemory&lt;Object&gt;… }</c>），
+    /// <b>两种语言都坏</b>：它既是 ASCII（"英文界面零 CJK"抓不到），又从来不等于上一种语言的文本
+    /// （"旧语言文本为零"也抓不到）——两个动态闸都放它过去，所以必须有这条静态闸。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 实测事故（2026-09-22 收口阶段四时发现，PNG 基线里一直看得见）：智能列表入口卡片（标题 + 副标题）、
+    /// 工具页左栏工具名、外观面板的色槽序号与色值、「派生摘要」、以及两处右键菜单的「删除」项，
+    /// 共 <b>8 处</b>写成 <c>{Binding Title}</c> 这类裸绑定，界面上直接画出记录字符串。
+    /// </para>
+    /// <para>
+    /// 判据 = "绑定的路径段里有任何一个名字，是界面层某个 <c>LocValue</c> 型成员的名字"（豁免见
+    /// <see cref="UnrelatedMemberNames"/>）。<b>漏报的代价</b>（用户界面画出记录字符串）远大于误报。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void 界面层_不许把LocValue裸绑到文案属性上()
+    {
+        var locValueMembers = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in CsFiles(UiDirs))
+            foreach (Match m in LocValueMember.Matches(Strip(File.ReadAllText(file), xaml: false)))
+                locValueMembers.Add(m.Groups["name"].Value);
+
+        Assert.True(locValueMembers.Count > 0,
+            "一个 LocValue 型成员都没扫到——扫描口径与代码形状漂移了（本规则会静默空跑）");
+        Assert.True(UnrelatedMemberNames.Length == 3,
+            "豁免清单的规模变了：请确认新增的豁免真的是'同名但类型不是 LocValue'，再改这个数字");
+
+        var offenders = new List<string>();
+        foreach (var file in Files(UiDirs).Where(f => f.EndsWith(".xaml", StringComparison.Ordinal)))
+        {
+            var body = Strip(File.ReadAllText(file), xaml: true);
+            foreach (Match m in XamlBindingToText.Matches(body))
+            {
+                var path = m.Groups["path"].Value.Trim();
+                var hit = path.Split('.', StringSplitOptions.RemoveEmptyEntries)
+                    .FirstOrDefault(seg => locValueMembers.Contains(seg)
+                                           && !UnrelatedMemberNames.Contains(seg, StringComparer.Ordinal));
+                if (hit is not null) offenders.Add($"{Relative(file)} → {{{hit}}}（路径 {path}）");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "以下位置把 LocValue 直接绑到了 Text/Content/ToolTip 上——界面上会画出 `LocValue { Key = … }` 记录字符串。" +
+            "请改成 `{loc:Value 成员名}`（与 `{loc:Loc}` 同一套版本失效机制）：\n" + string.Join("\n", offenders.Distinct()));
+    }
 }

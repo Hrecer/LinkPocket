@@ -162,7 +162,7 @@
             <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left"
                         Margin="12,0,12,8">
                 <Button x:Name="SearchJumpToLinkBtn" Command="{Binding JumpCommand}" IsEnabled="{Binding JumpEnabled}"
-                        Style="{StaticResource JumpPillButton}" VerticalAlignment="Center" Width="78"
+                        Style="{StaticResource JumpPillButton}" VerticalAlignment="Center" Width="86"
                         ToolTip="{loc:Loc common.jump}">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
@@ -183,20 +183,21 @@
                                    Opacity="0.85" VerticalAlignment="Center" Margin="12,0,7,0" Width="68"/>
                         <Border Width="1" Height="14" Background="{DynamicResource App.Text.Secondary}"
                                 Opacity="0.25" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <!-- 范围 chip：宽度**冻在中文基线 54**（约束 B）——chip 是界面骨架，不是内容；
-                             英文放不下时由 LocFit 换短式（Description → Desc）再缩字号。 -->
-                        <CheckBox IsChecked="{Binding SearchPath}" Style="{StaticResource SearchChip}" Width="60">
+                        <!-- 范围 chip：宽度**冻结**（约束 B）——chip 是界面骨架，不是内容。
+                             68 = 英文 `Description`（12pt 需 65.6px）放得下的实测值：原 60 会把它缩到 4.0pt（屏幕上是一道横线）。
+                             ⚠️ 别只钉中文基线：那样英文（比中文宽 30%~150%）只能靠缩字号硬挤。 -->
+                        <CheckBox IsChecked="{Binding SearchPath}" Style="{StaticResource SearchChip}" Width="68">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                        views:LocFit.Text="{loc:Fit ui.noun.path}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>
-                        <CheckBox IsChecked="{Binding SearchUrl}" Style="{StaticResource SearchChip}" Width="60">
+                        <CheckBox IsChecked="{Binding SearchUrl}" Style="{StaticResource SearchChip}" Width="68">
                             <TextBlock Text="URL"/>
                         </CheckBox>
-                        <CheckBox IsChecked="{Binding SearchTitle}" Style="{StaticResource SearchChip}" Width="60">
+                        <CheckBox IsChecked="{Binding SearchTitle}" Style="{StaticResource SearchChip}" Width="68">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                        views:LocFit.Text="{loc:Fit ui.noun.title}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>
-                        <CheckBox IsChecked="{Binding SearchDesc}" Style="{StaticResource SearchChip}" Width="60">
+                        <CheckBox IsChecked="{Binding SearchDesc}" Style="{StaticResource SearchChip}" Width="68">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                        views:LocFit.Text="{loc:Fit ui.noun.description}" views:LocFit.Mode="Shrink"/>
                         </CheckBox>

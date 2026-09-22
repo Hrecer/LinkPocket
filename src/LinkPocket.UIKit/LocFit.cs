@@ -159,26 +159,49 @@ public static class LocFit
     /// </remarks>
     public static double AvailableWidth(FrameworkElement element)
     {
-        var own = element.ActualWidth;
-        var ownValid = !double.IsNaN(own) && !double.IsInfinity(own) && own > 0;
-
         var shell = FrozenControlShell(element);
         if (shell is not null)
         {
+            // 可用宽 = **壳的内容区 − 同行兄弟 − 自身外边距**（与字号无关的那一格）。
             var content = shell.ActualWidth - HorizontalInsets(shell);
             content -= InlineSiblingsWidth(element, shell);
             content -= element.Margin.Left + element.Margin.Right;   // 自己的外边距同样占地方
-            // ⚠️ 取**两者较小**，而不是用壳的值替换：
-            //   壳可能是"大容器"（表格的滚动宿主、页面级控件都带 Width），它的内容区远大于本元素真正拿到的那一格
-            //   ——实测踩到：日期格（列宽 128、需要 135.3、字号停在 13.0 不缩）就是被整张表的宽度骗了；
-            //   而元素自己的实测宽在"行内组照给想要的宽"时又会偏大（面包屑被壳裁成 `Bookma` 那次）。
-            //   两者取小 = "它真正能用多少"，两种情况都对。
-            if (!ownValid) own = content;
-            return Math.Max(0, Math.Min(own, content));
+            content = Math.Max(0, content);
+
+            // ⚠️ **只有"外部显式限宽"才进一步收紧它**（实测踩到，见 WARNINGS 109）。
+            //    早期无条件取 `min(元素实得, 壳内容区)`，而"元素实得"在两种情形下都会骗人：
+            //    ① 元素自己的宽是本行为**缩过字号**之后算出来的 ⇒ 可用宽跟着字号一起变小，
+            //       形成**只缩不涨的死循环**（实测指纹：可用宽恰好 = 壳宽 ÷ 2 − 内距；
+            //       症状：把壳从 100 加宽到 155，字号一点不长）；
+            //    ② 元素被**内容自适应的中间容器**（水平 StackPanel / ContentPresenter）包着时，
+            //       "实得"只是那个容器的内容宽，而不是"这一格真正空着多少"。
+            //    真正需要收紧的只有一种：有人显式给了 MaxWidth（元素自己或它到壳之间的包装）。
+            var cap = MaxWidthCap(element, shell);
+            return cap > 0 ? Math.Min(content, cap) : content;
         }
 
-        if (!ownValid) return 0;
-        return Math.Max(0, own - HorizontalInsets(element));
+        var own = element.ActualWidth;
+        if (double.IsNaN(own) || double.IsInfinity(own) || own <= 0) return 0;
+        var ownSlot = Math.Max(0, own - HorizontalInsets(element));
+        var ownCap = MaxWidthCap(element, null);
+        return ownCap > 0 ? Math.Min(ownSlot, ownCap) : ownSlot;
+    }
+
+    /// <summary>元素自己（或它到壳之间的包装）显式给的 <c>MaxWidth</c>；没有则 0。</summary>
+    /// <remarks>
+    /// 这是"外部把这一格又切窄了"的唯一合法来源（表格单元格给文字挂 `MaxWidth`、窄栏里的文字块等）。
+    /// 容器**照内容给宽**（水平 <c>StackPanel</c> / <c>ContentPresenter</c>）不算约束——
+    /// 那正是"元素实得"会骗人的第二种情形。
+    /// </remarks>
+    private static double MaxWidthCap(DependencyObject element, DependencyObject? stopAt)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is FrameworkElement { MaxWidth: > 0 and < double.PositiveInfinity } capped)
+                return capped.MaxWidth;
+            if (stopAt is not null && ReferenceEquals(node, stopAt)) break;
+        }
+        return 0;
     }
 
     /// <summary>最近的**冻结宽度的控件壳**（显式 <c>Width</c> 的 <see cref="Control"/> 祖先）。</summary>

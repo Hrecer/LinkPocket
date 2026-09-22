@@ -83,10 +83,10 @@
                                         </Border>
 
                                         <StackPanel Grid.Column="1" Margin="16,0,8,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Title}" FontSize="17" FontWeight="SemiBold"
+                                            <TextBlock Text="{loc:Value Title}" FontSize="17" FontWeight="SemiBold"
                                                        Foreground="{DynamicResource App.Text.Primary}"
                                                        TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Text="{Binding Subtitle}" FontSize="12.5" Margin="0,4,0,0"
+                                            <TextBlock Text="{loc:Value Subtitle}" FontSize="12.5" Margin="0,4,0,0"
                                                        Foreground="{DynamicResource App.Text.Secondary}"
                                                        TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>

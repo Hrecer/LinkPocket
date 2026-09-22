@@ -45,3 +45,36 @@ public sealed class PillContentWidthConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException("usable content width is one-way: layout is not state.");
 }
+
+/// <summary>
+/// 「壳宽 − <c>parameter</c> 指定的横向内距」= 冻结壳里**留给内容的那一格宽**。
+/// </summary>
+/// <remarks>
+/// 与 <see cref="PillContentWidthConverter"/> 的分工：那个读**控件自己的** <c>Padding</c>，
+/// 适合"模板里能拿到控件实例"的场合；本转换器只吃一个**数字**（壳宽），
+/// 用在<b>拿不到控件实例</b>、但知道壳宽与内距的地方——例如面包屑根段的文字块
+/// （壳是模板外的 `Button`，它的内距是模板里写的常量）。
+/// <para>
+/// ⚠️ 存在的理由（实测）：面包屑根段的文字曾经写死 <c>Width="56"</c>（按浏览页那段 80 推出来的），
+/// 而回收站那侧壳只有 67 ⇒ 内容宽只有 43 <c>&lt;</c> 56 ⇒ 文字被容器裁掉，
+/// 英文界面画出来是 <c>rash</c>（"T" 没了）。**冻结几何里"这一格有多少"必须由壳现算，不能跨页复用常量。**
+/// </para>
+/// </remarks>
+public sealed class ShellContentWidthConverter : IValueConverter
+{
+    public static ShellContentWidthConverter Instance { get; } = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not double width || double.IsNaN(width) || double.IsInfinity(width) || width <= 0)
+            return double.PositiveInfinity;
+
+        var insets = parameter is string text && double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0;
+        return Math.Max(0, width - insets);
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException("usable content width is one-way: layout is not state.");
+}

@@ -165,4 +165,65 @@ public sealed class LocFitChannelTests
             }
         });
     }
+
+    /// <summary>
+    /// **`AvailableWidth` 不许把"本机制自己缩小的字号"当成下一轮的上限**（只缩不涨的死循环）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 实测事故（见 <c>WARNINGS</c> 109）：命令栏药丸的"可用宽"被算成**壳宽÷2 − 内距**——
+    /// 因为元素实测宽是按**缩过的字号**算的，而 <c>min(元素实得, 壳内容区)</c> 取了它。
+    /// 后果是死循环：第一次缩过头之后可用宽跟着字号一起变小，**把壳加宽也救不回来**
+    /// （实测把壳从 100 加到 155，字号一点没长）。
+    /// </para>
+    /// <para>
+    /// 本用例把两件事钉住：① 本行写过字号之后，可用宽 = **壳的内容区**（不随字号缩小）；
+    /// ② 没写过时仍取 `min`（那条是为了挡"大容器骗人"与"行内组自指"，不能被这条修法带走）。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void 缩过字号之后可用宽不跟着字号缩小()
+    {
+        OnUiThread(() =>
+        {
+            var text = new TextBlock { Text = "Delete permanently", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+            var group = new StackPanel { Orientation = Orientation.Horizontal };
+            group.Children.Add(new Border { Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center });
+            group.Children.Add(text);
+
+            var shell = new Button
+            {
+                Width = 200,
+                Height = 32,
+                Padding = new Thickness(12, 0, 12, 0),
+                Content = group,
+            };
+
+            var host = new Window
+            {
+                Width = 600, Height = 200, ShowActivated = false,
+                Left = -20000, Top = -20000,
+                Content = new StackPanel { Children = { shell } },
+            };
+            host.Show();
+            for (var i = 0; i < 5; i++) { Pump(); host.UpdateLayout(); }
+
+            // 期望的可用宽 = 壳 200 − 内距 24 − 图标 16 = 160（与字号无关；模板内部件另有约 2px 内距，
+            // 所以给 ±3 的余量——这里量的是"不随字号变"，不是像素精度）
+            var before = LocFit.AvailableWidth(text);
+
+            // 模拟"机制缩过字号"：写一个更小的字号，再跑一轮布局
+            LocFit.PlaceFontSize(text, 6.0);
+            for (var i = 0; i < 3; i++) { Pump(); host.UpdateLayout(); }
+            var after = LocFit.AvailableWidth(text);
+
+            host.Close();
+
+            Assert.InRange(before, 157, 163);   // 壳 200 − 内距 24 − 图标 16 = 160（模板内部件另有约 2px 内距）
+            Assert.True(after >= before - 1,
+                $"缩过字号之后可用宽不许变小（那会让字号再也长不回来）：缩前 {before:F1} → 缩后 {after:F1}");
+            Assert.True(text.ActualWidth < 160,
+                $"前提：缩到 6pt 后元素实测宽确实变小了（实际 {text.ActualWidth:F1}）——否则本用例在空跑");
+        });
+    }
 }

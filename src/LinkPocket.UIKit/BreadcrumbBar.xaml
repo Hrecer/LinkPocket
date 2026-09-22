@@ -151,13 +151,16 @@
                                                                 Value="{Binding Path=(local:LocFit.Chosen), RelativeSource={RelativeSource Self}}"/>
                                                         <Setter Property="local:LocFit.Text" Value="{loc:Segment Name}"/>
                                                         <Setter Property="local:LocFit.Mode" Value="Shrink"/>
-                                                        <!-- ⚠️ `Width`（不是 `MaxWidth`）是**这条通道能不能工作**的前提：
+                                                        <!-- ⚠️ `MaxWidth`（不是 `Width`）是**这条通道能不能工作**的前提：
                                                              文字若按内容取宽，`LocFit` 读到的"可用宽"就是它自己需要的宽，
                                                              于是永远判定"放得下"、字号一个都不缩，最后由壳把文字**裁掉**
                                                              （实测屏幕上是 `Bookma`；探针读数 `[Bookmarks] 想占 97.7px、壳只有 80px`）。
-                                                             56 = 浏览页 RootSegmentWidth(80) − 段内距(12+12)；
-                                                             回收站那侧 67 − 24 = 43，但其根名是 `Trash`（13pt 下约 33px），两边同一个值都成立。 -->
-                                                        <Setter Property="Width" Value="56"/>
+                                                             ⚠️ 取的是**本段按钮的内容宽**（`RootSegmentWidth − 段内距 24`），不是写死的 56：
+                                                             浏览页根段 80、回收站 67，写死 56 会让回收站那侧（内容宽只有 43）
+                                                             把 `Trash` 的第一个字母裁掉（实测英文界面画出 `rash`）。
+                                                             用 `MaxWidth` 而不是 `Width`：不写死数字，段宽改了一处就够。 -->
+                                                        <Setter Property="MaxWidth"
+                                                                Value="{Binding Width, RelativeSource={RelativeSource AncestorType=Button}, Converter={StaticResource ShellContentWidth}, ConverterParameter=24}"/>
                                                         <Setter Property="HorizontalAlignment" Value="Center"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>

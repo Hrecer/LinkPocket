@@ -63,11 +63,13 @@
                     CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
                 <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字。
-                     ⚠️ **命令栏四枚药丸的宽度是冻结几何**（Width 逐枚钉死 = 中文基线实测值）：
-                     内容自适应宽度会让英文文案把整条命令栏撑宽（英文比中文宽 30%~150%），
-                     连带把后面的药丸一起推走——那正是约束 B「英文零尺寸漂移」要挡住的东西。
-                     文案放不下时由 LocFit 让位（短式 → 缩字号 → 截断），**几何一寸不动**。 -->
-                <Button Command="{Binding NewFolderCommand}" Cursor="Hand" Width="113"
+                     ⚠️ **命令栏四枚药丸的宽度是冻结几何**（Width 逐枚钉死）：内容自适应宽度会让英文文案
+                      把整条命令栏撑宽（英文比中文宽 30%~150%），连带把后面的药丸一起推走。
+                     取值口径 = **英文全长在基准字号 13pt 下放得下的实测值**（内容宽 = 图标 22 + 文字 + 外边距）：
+                       新建文件夹 `New folder` 需 68.9px ⇒ 121；新建链接 `New link` 需 54.1px ⇒ 105；
+                       重命名 `Rename` 需 50.6px ⇒ 107；删除 `Delete` 需 40.3px ⇒ 93。
+                     放不下时仍由 LocFit 让位（只缩字号、绝不截断）。 -->
+                <Button Command="{Binding NewFolderCommand}" Cursor="Hand" Width="121"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="folder-plus" Width="16" Height="16" VerticalAlignment="Center"/>
@@ -77,7 +79,7 @@
                     </StackPanel>
                 </Button>
                 <!-- 新建链接：与新建文件夹并列，弹出 M3 链接编辑器（默认当前目录） -->
-                <Button x:Name="NewLinkButton" Command="{Binding NewLinkCommand}" Cursor="Hand" Width="101"
+                <Button x:Name="NewLinkButton" Command="{Binding NewLinkCommand}" Cursor="Hand" Width="105"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>
@@ -88,7 +90,7 @@
                 </Button>
                 <!-- 重命名：与 F2 / 右键「重命名」**同一条命令**（就地编辑；文件夹改名称、链接改标题）。
                      未选中或非单选时自动禁用（CanExecute 与 F2 同源）。 -->
-                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand" Width="90"
+                <Button Command="{Binding RenameSelectionCommand}" Cursor="Hand" Width="107"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="{loc:Loc btn.rename.tip}">
                     <StackPanel Orientation="Horizontal">
@@ -100,7 +102,7 @@
                 </Button>
                 <!-- 删除：删除选中项（文件夹/链接一律移入回收站，Windows 语义），未选中时禁用。
                      破坏性动作不设专门视觉（与次操作共用同一套呈现）。 -->
-                <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand" Width="80"
+                <Button Command="{Binding DeleteSelectionCommand}" Cursor="Hand" Width="93"
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
                         ToolTip="{loc:Loc btn.delete.tip}">
                     <StackPanel Orientation="Horizontal">
@@ -143,7 +145,7 @@
                      编辑态只做颜色/描边形变，高度两态恒为 40 —— 基态值都在控件 Style.Setters 里。
                      Windows 11 口径：点胶囊空白即进入路径编辑（无编辑按钮），Enter 导航、Esc 取消。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
-                                     RootSegmentWidth="80"
+                                     RootSegmentWidth="98"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=OneWay}"
                                      PathEditText="{Binding PathEditText, Mode=TwoWay}"
@@ -315,7 +317,7 @@
                                                 </Style>
                                             </MenuItem.Style>
                                         </MenuItem>
-                                        <MenuItem Header="{Binding Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
+                                        <MenuItem Header="{loc:Value Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
                                     </ContextMenu>
                                 </Border.ContextMenu>
                                 <Border.InputBindings>
