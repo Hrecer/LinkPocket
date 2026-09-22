@@ -29,6 +29,70 @@ public class SchemaMigratorTests
         return names.ToArray();
     }
 
+    /// <summary>库头标记：`application_id` = 产品标识、`user_version` = schema 版本。</summary>
+    private static (int AppId, int UserVersion) HeaderMarkers(string dbPath)
+    {
+        using var conn = new SqliteConnection($"Data Source={dbPath}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA application_id;";
+        var appId = Convert.ToInt32(cmd.ExecuteScalar());
+        cmd.CommandText = "PRAGMA user_version;";
+        return (appId, Convert.ToInt32(cmd.ExecuteScalar()));
+    }
+
+    [Fact]
+    public void 库头版本标记_产品标识与schema版本都写上_外来库按标记拒绝()
+    {
+        // 备份是用户数据的跨版本迁移通道，库头标记是同一件事的库侧答案：
+        // 不查任何表就能认出"这是哪个版本、哪个产品的库"（任何工具都能读）。
+        var dbPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lphdr_{Guid.NewGuid():N}.db");
+        string? upgradedPath = null;
+        string? foreignPath = null;
+        try
+        {
+            SchemaMigrator.EnsureSchema(dbPath);
+            var fresh = HeaderMarkers(dbPath);
+            Assert.Equal(SchemaMigrator.ApplicationId, fresh.AppId);
+            Assert.Equal(SchemaMigrator.CurrentSchemaVersion, fresh.UserVersion);
+            Assert.True(fresh.UserVersion > 0, "新建库的库头 user_version 必须写上（不许停在 0）");
+
+            // 升级路径（老库缺标记）也要补写：清掉标记后重跑 EnsureSchema（换路径避开"已核验"短路）
+            using (var conn = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "PRAGMA user_version = 0;";
+                cmd.ExecuteNonQuery();
+            }
+            var upgraded = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lphdr2_{Guid.NewGuid():N}.db");
+            File.Copy(dbPath, upgraded);
+            SchemaMigrator.EnsureSchema(upgraded);
+            Assert.Equal(SchemaMigrator.CurrentSchemaVersion, HeaderMarkers(upgraded).UserVersion);
+
+            // 带**别的** application_id 的库 = 外来文件 → 拒绝（与"有用户表但无版本表"同一条零责任口径）
+            var foreign = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpforeign_{Guid.NewGuid():N}.db");
+            using (var conn = new SqliteConnection($"Data Source={foreign}"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "PRAGMA application_id = 0x12345678; CREATE TABLE someone_elses (id INTEGER);";
+                cmd.ExecuteNonQuery();
+            }
+            var ex = Assert.Throws<InvalidOperationException>(() => SchemaMigrator.EnsureSchema(foreign));
+            Assert.Contains("foreign SQLite database", ex.Message);
+            foreignPath = foreign;
+            upgradedPath = upgraded;
+        }
+        finally
+        {
+            // 先清连接池再删文件：池里空闲的物理连接会占住句柄（实测 IOException）
+            SqliteConnection.ClearAllPools();
+            foreach (var path in new[] { dbPath, upgradedPath, foreignPath })
+                if (path != null && File.Exists(path)) File.Delete(path);
+        }
+    }
+
     private static int SchemaVersion(string dbPath)
     {
         using var conn = new SqliteConnection($"Data Source={dbPath}");

@@ -41,11 +41,18 @@ internal static class BackupIO
     public const string FileExtension = ".lpbackup";
 
     /// <summary>
-    /// 该版本串是否可被本实现读取：主版本相同、次版本 ≤ 本实现的次版本。
+    /// 该版本串是否可被本实现读取：**主版本在本实现认识的主版本集合里**，且（同主版本时）次版本 ≤ 本实现的次版本。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 与 <see cref="FormatVersion"/> 配对的**唯一**版本判定入口（读取路径只调它，
     /// 绝不在别处再写一遍字符串比较——"版本口味"必须只有一处）。
+    /// </para>
+    /// <para>
+    /// <b>为什么不是"主版本必须相等"</b>：备份是**用户数据跨版本迁移的唯一通道**——将来应用大版本升级
+    /// （schema / 结构变更）时，用户手里的旧包就是他的数据。写死"相等"会让新版本把所有旧包一律拒之门外。
+    /// 正确形态 = 本实现**认识**的（即已实现升级路径的）主版本都收，见 <see cref="ReadableMajors"/>。
+    /// </para>
     /// </remarks>
     public static bool Accepts(string? version)
     {
@@ -61,9 +68,24 @@ internal static class BackupIO
         if (!int.TryParse(parts[0], out var major) || !int.TryParse(parts.Length > 1 ? parts[1] : "0", out var minor))
             return false;
 
+        if (Array.IndexOf(ReadableMajors, major) < 0) return false;   // 不认识的主版本 → 拒绝并提示升级应用
         var (selfMajor, selfMinor) = SelfVersion();
-        return major == selfMajor && minor <= selfMinor;
+        return major < selfMajor || minor <= selfMinor;               // 旧主版本走升级路径；同主版本吃到本实现的次版本
     }
+
+    /// <summary>
+    /// 本实现**读得懂**的主版本集合（升序）。当前只有 2。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>加主版本（把 <see cref="FormatVersion"/> 改成 3.0）时必须做的事</b>：
+    /// ① 在读取路径上实现"2.x 包 → 新结构"的**升级换算**（字段改名 / 语义变更 / 删字段都在这一步消化）；
+    /// ② 把 2 加进本数组（本数组必须始终包含本实现自己的主版本）；
+    /// ③ 同步 `内部资产/文档/BACKUP-FORMAT.md` §2 的兼容判据与 `ProtocolSmoke` §5 的往返断言。
+    /// 只改 <see cref="FormatVersion"/> 而不加升级路径，等于**把所有旧包变成不可读**（用户数据被挡在门外）。
+    /// </para>
+    /// </remarks>
+    private static readonly int[] ReadableMajors = [2];
 
     private static (int Major, int Minor) SelfVersion()
     {

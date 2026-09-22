@@ -40,7 +40,7 @@ public static class AppTokens
     /// 与 <see cref="AccentContainer"/> **分开的两个令牌**：两者判据锚在不同的真实承载面上——
     /// 选中行画在**卡面**上（卡面比页面底还亮，浅色容器会被读成"没选中"），
     /// 而指示器 / 徽标 / 分段 / chip 画在**页面底或悬停底**上（深色容器在那里读成"灰块"）。
-    /// 同一个令牌服务两种承载面 ⇒ 调一处必破另一处（见 `文档/WARNINGS.md` 118）。
+    /// 同一个令牌服务两种承载面 ⇒ 调一处必破另一处（见 `内部资产/文档/WARNINGS.md` 118）。
     /// </remarks>
     public const string SurfaceSelected = "App.Surface.Selected";
 
@@ -50,7 +50,10 @@ public static class AppTokens
     /// <summary>内容区近白底 = 今天的 <c>TintSurface</c>。</summary>
     public const string SurfaceTint = "App.Surface.Tint";
 
-    /// <summary>侧区面板叠层 = 今天的 <c>TintPanel</c>。</summary>
+    /// <summary>
+    /// 侧区面板叠层 / **表头带** / 状态栏：**独立的一层**（页面底压深 <c>SurfacePanelDrop</c> 档）——
+    /// 与页面底、卡面都分得开，且与 <see cref="SurfaceHover"/> 不同色（悬停反馈画在它上面必须看得见）。
+    /// </summary>
     public const string SurfacePanel = "App.Surface.Panel";
 
     /// <summary>弹窗 / 遮罩面板底 = 今天的 <c>TintBg</c>。</summary>

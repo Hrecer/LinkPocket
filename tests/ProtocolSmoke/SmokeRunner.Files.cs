@@ -185,6 +185,19 @@ internal static partial class SmokeRunner
         var manifestText = ReadZipEntry(backupPath, "manifest.json");
         var dataText = ReadZipEntry(backupPath, "data.json");
         Asserts.That(manifestText.Contains("data_sha256"), "manifest 应含 data.json 的 SHA-256");
+        // 跨版本迁移的关键诊断信息：包要写清"是哪个应用版本、哪个格式版本产出的"（按 JSON 读，不按字符串形状猜）
+        using var manifest = System.Text.Json.JsonDocument.Parse(manifestText);
+        var root = manifest.RootElement;
+        var formatVersion = root.GetProperty("version").GetString() ?? "";
+        var appVersion = root.TryGetProperty("app_version", out var av) ? av.GetString() : null;
+        // 只断言家族前缀：主次版本由 `BackupIO.FormatVersion` 唯一持有，测试再写一遍字号就成了第二个事实源
+        Asserts.That(formatVersion.StartsWith("lpbackup/", StringComparison.Ordinal),
+            $"manifest 应写明 lpbackup 家族格式版本标识（实际 {formatVersion}）");
+        var selfVersion = System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                typeof(LinkPocket.Contracts.EngineException).Assembly)?.InformationalVersion;
+        Asserts.That(!string.IsNullOrWhiteSpace(appVersion) && appVersion == selfVersion,
+            $"manifest 的 app_version 应是当前应用版本（实际 {appVersion}，期望 {selfVersion}）");
         Asserts.That(dataText.Contains("\"key\""), "data.json 应使用临时 key 表达层级");
         Asserts.That(!dataText.Contains("folder_id") && !dataText.Contains("link_id"),
             "备份格式不应携带任何数据库 ID（防撞）");

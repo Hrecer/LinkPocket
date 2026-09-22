@@ -578,8 +578,10 @@
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>
-                <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.6"/>
+                <!-- 状态栏脚注：面板层（比卡面深）上的文字取 `Text.Secondary` —— 弱档（Muted）对面板只有 3.67，
+                     达不到 4.5 的可读门槛；弱档的适用面是卡面 / 悬停底，不是面板（见 `THEME.md` §4.2）。 -->
+                <TextBlock Text="LinkPocket · Material 3" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.75"/>
             </Grid>
         </Border>
 

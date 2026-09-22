@@ -134,17 +134,19 @@
 
                         <!-- Focusable=False：点击不抢走搜索框键盘焦点，避免聚焦胶囊态闪烁。
                              库 FilledButton 模板可能硬编码 Primary 底色 → 统一换 PrimaryPillButton（App.Accent.Fill） -->
-                        <!-- 空态两枚按钮：宽度按**英文在基准字号下放得下**冻结（92 / 72）——
-                             它们带「搜索/取消」这类无法再短的中英对照词，冻在中文基线（66/56）会把英文压到 6.5pt。
+                        <!-- 空态两枚按钮：宽度 = **冻结几何**，取值 = **中文基线**
+                             （Width = 文字宽(中文 13pt) + 内距 28 + 描边 2 + 模板内部件 4（实测））：
+                             「搜索」/「取消」各 2 字 = 26px ⇒ 60。英文 `Search` / `Cancel`（13pt 需 43 / 42px）
+                             放不下时由 LocFit 缩英文字号让位 —— **绝不为英文把几何放大**（中文是第一体验）。
                              高度显式 32 + 只留水平内距 = 与全站药丸同一口径（垂直内距 9 会让高度随字体行高漂）。 -->
-                        <Button Grid.Column="3" Padding="14,0" Height="32" FontSize="13" FontWeight="SemiBold" Width="106"
+                        <Button Grid.Column="3" Padding="14,0" Height="32" FontSize="13" FontWeight="SemiBold" Width="60"
                                 Style="{StaticResource PrimaryPillButton}"
                                 Command="{Binding SearchCommand}" Focusable="False"
                                 VerticalAlignment="Center" Margin="4,0,4,0">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                        views:LocFit.Text="{loc:Fit nav.item.search}" views:LocFit.Mode="Shrink"/>
                         </Button>
-                        <Button Grid.Column="4" Padding="14,0" Height="32" FontSize="13" Width="72"
+                        <Button Grid.Column="4" Padding="14,0" Height="32" FontSize="13" Width="60"
                                 Style="{StaticResource TextButton}" Command="{Binding CancelCommand}" Focusable="False"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"

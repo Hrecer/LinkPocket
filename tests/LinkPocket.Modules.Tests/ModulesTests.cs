@@ -1460,7 +1460,9 @@ public class BackupRobustnessTests
     [Theory]
     [InlineData("2.0")]              // 历史标识：现在必须拒绝（前缀宽松匹配是缺陷）
     [InlineData("2")]                // 缺家族名
-    [InlineData("lpbackup/3.0")]     // 更高主版本（结构可能已变）
+    [InlineData("lpbackup/3.0")]     // 更高主版本（本实现还没有 3.x 的读法）
+    [InlineData("lpbackup/1.0")]     // 更旧的主版本：本实现没有 1.x 的升级路径 ⇒ 拒绝
+                                     //（加主版本时把旧主版本加进 `BackupIO.ReadableMajors` 并实现升级换算 —— 备份是跨版本迁移通道）
     [InlineData("lpbackup/2.1")]     // 更高次版本（本实现读不了更新的包）
     [InlineData("lpbackup/2")]       // 缺次版本 → 视作 2.0，可读
     [InlineData("lpbackup/2.0.1")]   // 三段式非法

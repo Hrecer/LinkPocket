@@ -259,11 +259,13 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <!-- 表头悬停底 = **与行/药丸同一支悬停底**（App.Surface.Hover）。
-                                 ⚠️ 不可用 `App.State.Hover`：那支是**叠层色**（Text.Primary 8% 叠在表头带上
-                                 得深紫 #766486，语义是"压在底色上的一层"），直接当底色用会画出一颗深紫
-                                 药丸，与全站"悬停只是淡淡一层"的语言相反。 -->
-                            <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                            <!-- 表头悬停底 = **卡面色**（在表头带上"抬亮"一颗药丸）。
+                                 ⚠️ **悬停的方向由承载面决定**：行画在**卡面**上，悬停压深（`App.Surface.Hover`）；
+                                 表头画在**面板带**上（比卡面深），悬停必须**抬亮**，用悬停底会画成"越悬停越深"、
+                                 甚至与带同色（面板层曾 = 悬停底 ⇒ 对比度 1.000，悬停时屏幕上毫无变化）。
+                                 ⚠️ 也不可用 `App.State.Hover`：那支是叠层色（Text.Primary 8% 叠在带上是深紫 #766486），
+                                 直接当底色用会画出一颗深紫药丸，与全站"悬停只是淡淡一层"的语言相反。 -->
+                            <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.Surface.Card}"/>
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                         </Trigger>
                         <Trigger Property="Direction" Value="True">

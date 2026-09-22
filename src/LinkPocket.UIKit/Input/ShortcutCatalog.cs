@@ -332,7 +332,7 @@ public static class ShortcutCatalog
     };
 
     /// <summary>
-    /// 人类可读的键位清单（Markdown）——由内部工具导出为 `文档/KEYBOARD.md`，与总表同源。
+    /// 人类可读的键位清单（Markdown）——由内部工具导出为 `内部资产/文档/KEYBOARD.md`，与总表同源。
     /// 总表里存的是<b>文案键</b>，导出时按当前界面语言取词（文档跟着界面走，不写死某一种语言）。
     /// </summary>
     public static string Describe()

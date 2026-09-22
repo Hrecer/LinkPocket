@@ -47,10 +47,20 @@ public static class SchemaMigrator
             {
                 conn.Open();
 
+                var foreignAppId = ReadApplicationId(conn);
+                if (foreignAppId != 0 && foreignAppId != ApplicationId)
+                {
+                    throw new InvalidOperationException(
+                        $"Detected a foreign SQLite database: '{key}' (application_id=0x{foreignAppId:X8}, "
+                        + $"the LinkPocket marker is 0x{ApplicationId:X8}). LinkPocket never reads, converts or "
+                        + "rewrites a database it did not create (zero responsibility); move that file yourself and retry.");
+                }
+
                 var existingVersion = ReadSchemaVersion(conn);
                 if (existingVersion is { } version)
                 {
                     ApplyPending(conn, version);
+                    StampVersionMarkers(conn);
                 }
                 else if (HasUserTables(conn))
                 {
@@ -61,6 +71,7 @@ public static class SchemaMigrator
                 else
                 {
                     CreateBaseline(conn);
+                    StampVersionMarkers(conn);
                 }
             }
 
@@ -73,6 +84,57 @@ public static class SchemaMigrator
         {
             Gate.Release();
         }
+    }
+
+    /// <summary>
+    /// **库头版本标记**（SQLite 原生字段，不进 DDL）：`user_version` = 当前 schema 版本、
+    /// `application_id` = 产品标识 —— 任何工具（`sqlite3` / 第三方库 / 未来的升级器）不查任何表
+    /// 就能认出"这是哪个版本、哪个产品的库"。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 存在的理由：库里的 <c>schema_migrations</c> 是**内部**版本链，只有本应用会去读；
+    /// 而"用户手里这个 .db 是什么版本、该由哪个版本的应用接手"必须在**库文件本身**上答得出来
+    /// （备份是用户数据的迁移通道，库头标记是同一件事的库侧答案）。
+    /// </para>
+    /// <para>
+    /// 幂等：已经等于目标值就不写（新建库 / 每次升级后写一次；老库首次打开时补一次）。
+    /// </para>
+    /// </remarks>
+    public static void StampVersionMarkers(SqliteConnection conn)
+    {
+        if (ReadUserVersion(conn) != CurrentSchemaVersion)
+            ExecutePragma(conn, $"PRAGMA user_version = {CurrentSchemaVersion};");
+        if (ReadApplicationId(conn) != ApplicationId)
+            ExecutePragma(conn, $"PRAGMA application_id = {ApplicationId};");
+    }
+
+    /// <summary>`PRAGMA application_id`：LinkPocket 的库头产品标识（4 字符码 <c>'LPPK'</c>）。</summary>
+    /// <remarks>带**别的** application_id 的库 = 外来文件 → 明确拒绝（与"有用户表但无版本表"同一条零责任口径）。</remarks>
+    public const int ApplicationId = 0x4C50504B;
+
+    /// <summary>当前 schema 版本（= 版本链顶端）。</summary>
+    public static int CurrentSchemaVersion => Scripts[^1].Version;
+
+    private static int ReadUserVersion(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    private static int ReadApplicationId(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA application_id;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    private static void ExecutePragma(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
     }
 
     /// <summary>读取 schema_migrations 的当前版本；表不存在返回 null。</summary>

@@ -67,7 +67,7 @@ public sealed record ThemeFamilies(
 /// <b>配色成员优先级最高</b>——旧模型按色相聚族、单族时用 ±60° 旋转**发明**一个支撑色相，
 /// 且只取「色相圆均值 + 最大彩度」，于是配色成员的明度被整体丢弃
 /// （实测默认主题 5 色里 3 个对界面零影响），造出来的色相又会落进肤色带/冷色带。
-/// 见 `文档/WARNINGS.md` 76/77。
+/// 见 `内部资产/文档/WARNINGS.md` 76/77。
 /// </para>
 /// <para>
 /// 现行规则 = **彩度降序占槽**（并列取更暗者先）+ **明度最高者管表面**：
@@ -389,6 +389,28 @@ public static class PaletteSolver
     /// <summary>悬停底明度下限（再深就不像"浅色主题"了；文字弱档对它的对比度由对比度矩阵卡住）。</summary>
     public const double SurfaceHoverMinTone = 84.0;
 
+    /// <summary>
+    /// 面板层（表头带 / 侧区面板 / 状态栏 / 对话框底）相对页面底压深的档距。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 面板层原先是"= 悬停底"（同一支色），后果实测到了：画在面板上的**悬停反馈完全看不见** ——
+    /// 表头药丸悬停底与表头带同色（对比度 **1.000**），鼠标悬停表头时屏幕上什么变化都没有。
+    /// </para>
+    /// <para>
+    /// 现行 = **浅压深一档**（页面底 −5）：对卡面 **≥1.33**（行区是近白卡面，层次主要靠它读）、
+    /// 对选中底 ≥1.25、对页面底 1.142–1.146（11 套实测最弱值；判据在
+    /// <c>ThemeContrastTests.页面底_夹在明度档内_且卡面与选中底都看得见</c> 里）。
+    /// ⚠️ **不要为了"更分明"继续压深**：实测压到 T78 一档时整条表头带/侧栏读成**灰紫**
+    /// （对页面底 1.355 是够了，观感却坏了）——几何与层次的取舍以观感为准，用户的判据是"不发灰"。
+    /// 表头的悬停反馈也不再靠"比带更深"，而是**抬亮**（药丸用卡面色，见 `UIKit.xaml` 的表头模板）。
+    /// </para>
+    /// </remarks>
+    public const double SurfacePanelDrop = 5.0;
+
+    /// <summary>面板层的明度下限（再深就抢选中底的层级了）。</summary>
+    public const double SurfacePanelMinTone = 82.0;
+
     /// <summary>强调容器来源的最低明度档：低于它的成员当容器会"浅色容器上放浅色字"，读不出来。</summary>
     public const double ContainerSourceMinTone = 80.0;
 
@@ -446,7 +468,7 @@ public static class PaletteSolver
         var exact = definition.PaletteMode == PaletteMode.Exact;
 
         // ── 表面族：**配色里的背景色成员**（本色色相/彩度，明度夹在 87–91）就是页面底 ──
-        // 三个层由页面底按固定档距推出：卡面**从页面底提亮**一档；悬停底**从页面底压深**一档。
+        // 层次由页面底按固定档距推出：卡面**提亮**、悬停底**压深一档**、面板层再**压深一档**。
         // ⚠️ 档距的基准必须是**页面底**而不是"成员原色的明度"：原色比底色档更浅时（晴王青提饮 T97.9、
         //    薄荷气泡水 T98.1），按原色算出来的"卡面"会与页面底同色（实测对比度 1.003 / 1.000 = 看不出卡片）。
         var surfaceSource = families.SurfaceSource ?? At(families.NeutralHue, NeutralChroma, SurfaceBaseToneMax);
@@ -455,6 +477,10 @@ public static class PaletteSolver
         var surfaceBaseTone = ColorMath.Measure(surfaceBase).T;
         var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceBaseTone + SurfaceCardLift, SurfaceCardMaxTone));
         var surfaceHover = DarkenTo(surfaceBase, Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone));
+        // 面板层（表头带 / 侧区面板 / 状态栏 / 对话框底）比悬停底再深一档：它与页面底太近时"整片分不出层次"，
+        // 而**与悬停底同色**会让画在它上面的悬停反馈完全看不见（表头药丸悬停 = 同色涂抹，实测 1.000）。
+        // 取"页面底 −5"的浅层（11 套实测最弱：对页面底 1.142、对卡面 1.330、对选中底 1.249）。
+        var surfacePanel = DarkenTo(surfaceBase, Math.Clamp(surfaceBaseTone - SurfacePanelDrop, SurfacePanelMinTone, surfaceBaseTone));
 
         var textPrimary = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
         var textSecondary = At(families.NeutralHue, NeutralChroma, ToneScale.TextSecondary);
@@ -600,7 +626,7 @@ public static class PaletteSolver
             [AppTokens.SurfaceSelected] = surfaceSelected,
             [AppTokens.SurfaceTintCard] = surfaceCard,
             [AppTokens.SurfaceTint] = surfaceCard,
-            [AppTokens.SurfacePanel] = surfaceHover,
+            [AppTokens.SurfacePanel] = surfacePanel,
             [AppTokens.SurfaceDialog] = surfaceBase,
             [AppTokens.SurfaceFloating] = surfaceCard,
 
@@ -697,7 +723,7 @@ public static class PaletteSolver
     /// <para>
     /// ⚠️ <b>这一支只服务"画在页面底 / 悬停底上"的面</b>：列表行 / 树行的选中底画在**卡面**上，
     /// 用这个浅档会被读成"没选中"（实测它与卡面的对比只有 1.001–1.074）。两者是**两个令牌两条判据**，
-    /// 见 <see cref="SelectedSurfaceUntilVisible"/> 与 `文档/WARNINGS.md` 118。
+    /// 见 <see cref="SelectedSurfaceUntilVisible"/> 与 `内部资产/文档/WARNINGS.md` 118。
     /// </para>
     /// </remarks>
     private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover, double familyChroma)

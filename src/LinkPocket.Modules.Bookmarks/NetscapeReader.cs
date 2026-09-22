@@ -23,17 +23,57 @@ internal static class NetscapeReader
     private const int MaxLinkFaviconLength = 512;
     private const int MaxNestingDepth = 64;
 
+    /// <summary>外部输入上限：书签 HTML 的字节数（10k 条实测约 2MB，64MB = 30 倍余量）。</summary>
+    private const long MaxFileBytes = 64L * 1024 * 1024;
+
     // ============================================================
     // —— 对外入口 ——
     // ============================================================
 
     /// <summary>读取文件并解析（只读，不碰数据库；可取消）。</summary>
+    /// <remarks>
+    /// <para><b>外部输入的两道门</b>（与备份包同一口径）：</para>
+    /// <list type="bullet">
+    /// <item><b>大小上限</b>：读取端把整个文件读进内存，一个误选的大文件（视频 / 镜像 / 巨型 HTML）
+    /// 不该把进程拖垮 —— 超限**直接拒绝**（10k 条实测约 2MB，64MB 留 30 倍余量）。</item>
+    /// <item><b>编码</b>：现代浏览器导出一律 UTF-8。先按**严格 UTF-8** 解码，不是就回落到容错解码
+    /// 并把"文件不是合法 UTF-8、标题可能乱码"作为**告警**上报 —— 旧写法用容错解码一路静默，
+    /// 非 UTF-8 文件（旧版浏览器 / GBK 导出）会被导成一堆替换字符而没有任何提示。</item>
+    /// </list>
+    /// </remarks>
     public static async Task<ParsedDocument> ParseFileAsync(string filePath, CancellationToken ct = default)
     {
-        using var reader = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var html = await reader.ReadToEndAsync(ct);
+        var info = new FileInfo(filePath);
+        if (info.Length > MaxFileBytes)
+        {
+            return new ParsedDocument
+            {
+                Error = $"the file is too large to be a bookmark file: {info.Length / (1024.0 * 1024):F0}MB"
+                        + $" (limit {MaxFileBytes / (1024 * 1024)}MB)",
+            };
+        }
+
+        var preWarnings = new List<string>();
+        string html;
+        try
+        {
+            using var strict = new StreamReader(filePath,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: true);
+            html = await strict.ReadToEndAsync(ct);
+        }
+        catch (DecoderFallbackException)
+        {
+            using var tolerant = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            html = await tolerant.ReadToEndAsync(ct);
+            preWarnings.Add("the file is not valid UTF-8; titles may contain garbled characters"
+                            + " (re-export the bookmarks as UTF-8 to avoid this)");
+        }
+
         ct.ThrowIfCancellationRequested();
-        return Parse(html);
+        var doc = Parse(html);
+        doc.Warnings.InsertRange(0, preWarnings);
+        return doc;
     }
 
     // ============================================================

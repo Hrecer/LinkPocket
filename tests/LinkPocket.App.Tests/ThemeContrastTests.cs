@@ -60,6 +60,8 @@ public class ThemeContrastTests
             t => (t.Token(AppTokens.AccentIcon), t.Token(AppTokens.AccentContainer)), 3.0, "强调图标落在浅色容器上"),
         new("Text.Muted / Surface.Card",
             t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceCard)), 4.5, "弱文字对卡面（提示 / 占位 / 主题卡摘要）"),
+        new("Text.Secondary / Surface.Panel",
+            t => (t.Token(AppTokens.TextSecondary), t.Token(AppTokens.SurfacePanel)), 4.5, "面板层（表头带 / 侧栏 / 状态栏）上的文字档：弱档 Muted 对面板只有 3.67 ⇒ 面板上只许用 Secondary 及以上"),
         new("Line.Invalid / Surface.Card",
             t => (t.Token(AppTokens.LineInvalid), t.Token(AppTokens.SurfaceCard)), 4.5, "校验错误描边（= 文字主色，2px）"),
     };
@@ -182,6 +184,11 @@ public class ThemeContrastTests
         // 对卡面 ≥1.22（最硬）、对页面底 ≥1.08、对悬停底 ≥1.06。取值 = 允许的最深档
         //（`ContainerToneFloor` T76，实测对卡面 1.675 / 对页面底 1.431 / 对悬停底 1.325）。
         Assert.Equal(0xC0B8D0u, Rgb(t.Token(AppTokens.SurfaceSelected)));
+        // 面板层（表头带 / 侧区面板 / 状态栏）= **独立的一层**：页面底（T88.8）**浅压深 5 档** ⇒ T83.8。
+        // 与悬停底同色时画在它上面的悬停反馈看不见（实测 1.000，鼠标悬停表头毫无变化）；
+        // 而压得更深（T78 一档）会把整条表头带读成**灰紫**——层次的取舍以观感为准（用户判据 = 不发灰）。
+        // 表头的悬停反馈改成"抬亮"（药丸用卡面色），不再依赖本层比悬停底更深。
+        Assert.Equal(0xD6CDE7u, Rgb(t.Token(AppTokens.SurfacePanel)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
@@ -216,7 +223,9 @@ public class ThemeContrastTests
         //    反推**出来的，而弱文字本身在两种模式下取值不同（实测直配 4.47 / 自动 4.51，恰好骑在阈值两侧）
         //    → 两种模式的悬停底可能差一档。这是**有意的**：可读性不能为了"结构色逐字节相同"让路；
         //    该例外由下方 ③ 的实测断言与 `对比度矩阵`（两种模式逐条）共同守住。
-        var hoverTokens = new[] { AppTokens.SurfaceHover, AppTokens.SurfacePanel };
+        //    ⚠️ 面板层（`Surface.Panel`）已从"= 悬停底"改为**页面底自己的一个档**（对页面底 / 卡面 / 悬停底
+        //    都分得开），因此它不再跟着悬停底在两种模式间漂 —— 它回到下面这条"结构色逐字节相同"的断言里。
+        var hoverTokens = new[] { AppTokens.SurfaceHover };
         foreach (var token in AppTokens.AllColorTokens
                      .Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted })
                      .Except(hoverTokens))
@@ -302,7 +311,7 @@ public class ThemeContrastTests
     {
         // "给出的 4/5 个颜色要全部用上"的机器化判据 = **逐槽 leave-one-out**：
         // 去掉任一个身份色，至少有一个语义令牌变值。
-        // （旧模型实测：默认主题 5 色里 3 个去掉后 0 个令牌变化 —— 见 文档/WARNINGS.md 77。）
+        // （旧模型实测：默认主题 5 色里 3 个去掉后 0 个令牌变化 —— 见 内部资产/文档/WARNINGS.md 77。）
         var baseline = PaletteSolver.Solve(ThemeCatalog.Default);
         for (var slot = 0; slot < ThemeCatalog.Default.Palette.Count; slot++)
         {
@@ -358,6 +367,12 @@ public class ThemeContrastTests
         //     判据 = 对页面底 ≥1.08、对悬停底 ≥1.06（实测 1.085–1.215 / 1.175–1.388）。
         //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
         const double MinCardOnBase = 1.15;
+        // 面板层（`Surface.Panel`）的阈值：11 套实测最弱值 vsBase 1.142 / vsCard 1.330 / vsSelected 1.249
+        // （现行档距 = `PaletteSolver.SurfacePanelDrop` = 5；对卡面这条最硬 —— 行区是近白卡面，
+        // "表头是一条带"主要靠它读出来；表头**悬停**另算：药丸用卡面色，与带的对比 = 同一条 vsCard）。
+        const double PanelMinContrastOnBase = 1.12;
+        const double PanelMinContrastOnCard = 1.30;
+        const double PanelMinContrastOnSelected = 1.20;
         var failures = new List<string>();
         foreach (var theme in ThemeCatalog.All)
         {
@@ -398,6 +413,25 @@ public class ThemeContrastTests
             var containerOnHover = ColorMath.ContrastRatio(container, hover);
             if (containerOnHover < PaletteSolver.ContainerMinContrastOnHover)
                 failures.Add($"{theme.Id} 强调容器对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+
+            // 面板层（表头带 / 侧区面板 / 状态栏）= 页面底**浅压深 5 档**的独立一层：
+            //  ① 对卡面 ≥1.30（**表头是一条带**主要靠它读出来；表头悬停 = 药丸抬亮成卡面色，对比同此）；
+            //  ② 对页面底 ≥1.12（面板与页面底仍须分得开）；
+            //  ③ 对选中底 ≥1.20（面板不许抢选中底的层级）。
+            //    ⚠️ 别再要求"比悬停底更深"：压深到那一步（T78）整条带会读成灰紫；悬停的可见性由
+            //    "抬亮成卡面"承担（对比度 = 本条的 vsCard，实测 1.33–1.38）。
+            var panel = table.Token(AppTokens.SurfacePanel);
+            var panelOnCard = ColorMath.ContrastRatio(panel, card);
+            if (panelOnCard < PanelMinContrastOnCard)
+                failures.Add($"{theme.Id} 面板层对卡面 {panelOnCard:F3} < {PanelMinContrastOnCard}（表头带与行区分不出来）");
+
+            var panelOnBase = ColorMath.ContrastRatio(panel, baseColor);
+            if (panelOnBase < PanelMinContrastOnBase)
+                failures.Add($"{theme.Id} 面板层对页面底 {panelOnBase:F3} < {PanelMinContrastOnBase}（大片面板与页面底分不出层次）");
+
+            var panelOnSelected = ColorMath.ContrastRatio(panel, selected);
+            if (panelOnSelected < PanelMinContrastOnSelected)
+                failures.Add($"{theme.Id} 面板层对选中底 {panelOnSelected:F3} < {PanelMinContrastOnSelected}（面板抢了选中底的层级）");
         }
         Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
     }
