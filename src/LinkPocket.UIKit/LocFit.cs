@@ -334,9 +334,11 @@ public static class LocFit
     /// 值由比较决定写不写 ⇒ 谁先到都收敛，不存在"两套时序"这回事。
     /// </para>
     /// <para>
-    /// <b>为什么不需要外部驱动</b>：实验实测（<c>FitChannelExperiment</c>）——<c>LocTable.Version</c>
-    /// 这类子绑定一变，WPF 自己就会重跑 <c>{loc:FitValue …}</c> 的转换器（<c>attach=1 → versionBump=2</c>）。
-    /// 所以"切语言必须由某个宿主显式驱动"这条前提本身是错的。
+    /// <b>为什么不需要外部驱动</b>：语言一变，WPF 自己会把 <c>{loc:FitValue …}</c> 那条 MultiBinding 重算一遍；
+    /// 但**重算不等于取到新值**——第二路指向的是模型上的普通属性，WPF 会复用该子绑定的缓存值、
+    /// 不再调 getter。所以新语言是**由 <c>FitValueResolver</c> 烙进产出值**的（<c>LocText.LangVersion</c>），
+    /// 属性系统的变更推送自己会把这件事传到底：产出值变了 ⇒ <see cref="TextProperty"/> 的变更回调 ⇒
+    /// 本方法。整条链没有任何"强制重取 / 排优先级 / 遍历可视树"的环节。
     /// </para>
     /// <para>
     /// 幂等：稳态下重算得到同一个结论、不写任何属性（"值不变不写"——布局回环的唯一防线）。
