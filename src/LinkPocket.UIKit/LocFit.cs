@@ -15,7 +15,7 @@ namespace LinkPocket.Views;
 /// <summary>自适应策略（缺省 <see cref="Off"/> = 行为与引入本机制之前逐像素相同）。</summary>
 /// <remarks>
 /// <b>只有两档</b>：`Off` 与 `Shrink`。曾经有过第三档 `ShrinkThenEllipsis`（放不下就 <c>CharacterEllipsis</c> 截断），
-/// 已按定稿口径**删除**（2026-09-22）：**任何情况下都不截断**——放不下就继续缩小字号，直到放得下。
+/// 已按定稿口径**删除**：**任何情况下都不截断**——放不下就继续缩小字号，直到放得下。
 /// 截断的文案是错的文案（日期截成 `09/21/2026 1:4…` 就是错的日期），而"把字缩小"永远给出完整内容。
 /// </remarks>
 public enum LocFitMode
@@ -129,7 +129,7 @@ public static class LocFit
     /// <param name="available">可用宽（冻结壳里真正留给这段文字的那一格）。</param>
     /// <param name="desc">字体描述（族 / 字重 / 字宽 / DPI）。</param>
     /// <remarks>
-    /// <b>只有一条降级路径：把字号缩小。</b>不换文案、**不截断**（口径 2026-09-22）。
+    /// <b>只有一条降级路径：把字号缩小。</b>不换文案、**不截断**（定稿口径）。
     /// 曾经的"先换短式（`#short`）再缩字号"已删除：短式会让**中文侧**也被缩成短语
     /// （实测「恢复默认外观」在冻结宽度里被换成「恢复默认」——那是产品文案，不该由版式机制改）。
     /// 表里的 `#short` 键保留备查，但**自动链不使用它们**。
@@ -393,8 +393,12 @@ public static class LocFit
 
         /// <summary>本行为上一次写进去的字号（用于区分"外部改的"与"自己写的"）。</summary>
         public double WrittenSize;
-        /// <summary>上一次投影时的语言代数（见 <see cref="ObserveLanguage"/>）。</summary>
-        public int ObservedLangVersion = -1;
+
+        /// <summary>
+        /// 本元素的布局事件处理（**弱引用闭包**：WPF 的 `LayoutUpdated` 的 `sender` 恒为 null，
+        /// 处理器必须自带"我是谁"；闭包只持 <see cref="WeakReference{T}"/>，本表的值不反向强持有元素）。
+        /// </summary>
+        public EventHandler? LayoutHandler;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, FitState> States = new();
@@ -505,9 +509,14 @@ public static class LocFit
         var desc = Describe(element);
         var result = Evaluate(text.Resolve(), baseSize, available, desc);
 
+        // ⚠️ **当前语言不允许缩字号时不下探**（中文侧保持基准字号，见 AppLocale.AllowsFontShrink）。
+        //    放不下就是"这一格的宽度按别的语言定的"——该修的是那一格的宽度（按中文基线放宽），
+        //    不是把中文的字缩小。这里如实保持基准字号：字可能压到相邻格上，那**正是要被看见的信号**
+        //    （探针 `--only rendering` 会报"表头放不下"），而不是靠缩字号把它藏起来。
+        if (!Loc.AllowsFontShrink) result = new FitResult(baseSize);
         PlaceFontSize(element, result.Size);   // 值不变不写（回环防线）
 
-        // ⚠️ 到这里就结束：**不写 TextTrimming、不截断**（2026-09-22 口径）。
+        // ⚠️ 到这里就结束：**不写 TextTrimming、不截断**（定稿口径）。
         //    元素自己的 TextTrimming（行样式里给用户数据列设的省略号）不被本机制碰——
         //    本机制只管"把字号缩到放得下"，内容的完整性由缩字号保证。
         PlaceChosen(element, text.Resolve());
@@ -540,12 +549,17 @@ public static class LocFit
     /// </remarks>
     private static void Wire(FrameworkElement element)
     {
-        _ = StateOf(element);   // 登记
+        var state = StateOf(element);   // 登记
 
         if (GetMode(element) == LocFitMode.Off) return;
 
-        element.LayoutUpdated -= OnLayoutUpdated;   // 先摘后挂：避免重复订阅
-        element.LayoutUpdated += OnLayoutUpdated;
+        if (state.LayoutHandler is not null) element.LayoutUpdated -= state.LayoutHandler;   // 先摘后挂：避免重复订阅
+        // ⚠️ `LayoutUpdated` 的 `sender` **恒为 null**（WPF：这个事件不指向订阅对象），从 sender 认不出元素
+        //    ——用闭包把元素带进处理器，且只持**弱引用**（FitState 的值不反向强持有元素，见其注释，
+        //    见 `WARNINGS` 117）。旧实现按 `sender is FrameworkElement` 认人，这一路投影实际一次都没跑过。
+        var weak = new WeakReference<FrameworkElement>(element);
+        state.LayoutHandler = (_, _) => { if (weak.TryGetTarget(out var fe)) Project(fe); };
+        element.LayoutUpdated += state.LayoutHandler;
         element.SizeChanged -= OnSizeChanged;
         element.SizeChanged += OnSizeChanged;
         element.Loaded -= OnLoaded;
@@ -588,7 +602,7 @@ public static class LocFit
     /// 读数：本元素当前画出来的文字<b>在最终字号下还是放不进可用宽</b>（= 已经缩到退化边界仍放不下）。
     /// </summary>
     /// <remarks>
-    /// <b>注意它不再等于"被截断"</b>（2026-09-22 口径）：机制**不写 <c>TextTrimming</c>**，
+    /// <b>注意它不再等于"被截断"</b>（定稿口径）：机制**不写 <c>TextTrimming</c>**，
     /// 所以放不下时不会出现省略号——它只说明"字已经缩到最小了还是不够"，
     /// 这时内容会由容器按自己的口径裁切。用它做诊断，不要用它当"截断"的判据。
     /// </remarks>
@@ -600,10 +614,26 @@ public static class LocFit
         return available > 0 && !Fits(applied, FontSizeOf(element), available, Describe(element));
     }
 
-    /// <summary>把接入通道的值归一成 <see cref="LocText"/>（<c>string</c> = 只有全长；认不出就拒绝）。</summary>
+    /// <summary>
+    /// 把接入通道的值归一成 <see cref="LocText"/>（认不出就拒绝，<b>不静默画空</b>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 认三种输入：<see cref="LocText"/>（全长 + 可选短式，<c>{loc:Fit…}</c> 的产物）、
+    /// <see cref="LocValue"/>（键 + 参数，代码直写接入口的文案值——如表格表头模板那条
+    /// <c>{TemplateBinding Text}</c>）、以及成品 <c>string</c>（<c>{loc:Value…}</c> 取好词的字符串、
+    /// 用户数据与外部传入的显示串）。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b><see cref="LocValue"/> 这一支不能删</b>：少认一种形状，对应的值就落进
+    /// <c>_ =&gt; null</c>、<see cref="Project"/> 直接返回 ⇒ <b>那一处文字被整段吞掉</b>
+    /// （实测：表头只剩排序倒三角，而"文字非空"的静态判据照样绿——值还在，只是没人画）。
+    /// </para>
+    /// </remarks>
     private static LocText? Normalize(object? value) => value switch
     {
         LocText text => text,
+        LocValue locValue when !locValue.IsEmpty => LocText.Of(locValue),
         string raw when raw.Length > 0 => LocText.Of(LocValue.Literal(raw)),
         _ => null,
     };
@@ -631,8 +661,10 @@ public static class LocFit
         if (d is not FrameworkElement element) return;
         if ((LocFitMode)e.NewValue == LocFitMode.Off)
         {
+            // 先按登记的委托摘掉布局处理（`-=` 需要同一个委托实例），再丢状态
+            if (States.TryGetValue(element, out var state) && state.LayoutHandler is not null)
+                element.LayoutUpdated -= state.LayoutHandler;
             States.Remove(element);
-            element.LayoutUpdated -= OnLayoutUpdated;
             element.SizeChanged -= OnSizeChanged;
             element.Loaded -= OnLoaded;
             element.SetValue(ChosenProperty, string.Empty);
@@ -642,11 +674,6 @@ public static class LocFit
         // ⚠️ 此刻元素常常还没参与布局（可用宽 0）：Wire 里的 Project 只会落一个全长、不动字号，
         // 基准字号留到首次拿到真实可用宽时再学（否则会照着被压过的下限值学错，一次就回不去）。
         Wire(element);
-    }
-
-    private static void OnLayoutUpdated(object? sender, EventArgs e)
-    {
-        if (sender is FrameworkElement element) Project(element);
     }
 
     /// <summary>
@@ -764,7 +791,7 @@ public sealed class LocFitResolver : IMultiValueConverter
             VerticalAlignment = VerticalAlignment.Center,
             DataContext = text,
             // ⚠️ 显式 `None`：行样式给用户数据列设了 `CharacterEllipsis`，而**结构化单元格不许出现省略号**
-            //    （口径 2026-09-22：放不下就缩字号）。实测：不显式清掉时，1808 个日期格都带着省略号。
+            //    （定稿口径：放不下就缩字号）。实测：不显式清掉时，1808 个日期格都带着省略号。
             TextTrimming = TextTrimming.None,
         };
         if (mode == LocFitMode.Off) { cell.Text = text.Resolve(); return cell; }

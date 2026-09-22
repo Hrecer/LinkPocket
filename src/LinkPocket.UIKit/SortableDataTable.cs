@@ -196,6 +196,14 @@ public class SortableDataTable : Grid
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        // 表头文案的**换语言失效通道**：表头是代码建的控件（`ColumnList` 里只有键），
+        // 走不了 `{loc:Loc}` 那条绑定，所以由本控件听语言版本、只刷新文案（不重建表头）。
+        // ⚠️ 挂载点选**构造函数**而不是 `Loaded`：不挂进可视树的表（探针与单测直接建的那些）永远不触发
+        //    `Loaded`，那样"订阅了但没生效"和"没订阅"长得一模一样（实测踩过：语言切了表头还是中文）。
+        //    卸在 `Unloaded`（可重挂，不泄漏），与 `LocText` 的版本绑定是同一条底层机制。
+        Loc.Table.PropertyChanged += OnLocaleTableChanged;
+        Unloaded += (_, _) => Loc.Table.PropertyChanged -= OnLocaleTableChanged;
+
         _headerBand = new Border
         {
             CornerRadius = new CornerRadius(24, 24, 0, 0),
@@ -278,6 +286,28 @@ public class SortableDataTable : Grid
 
     private IEnumerable<DataTableColumn> ColumnList => Columns ?? Array.Empty<DataTableColumn>();
 
+    /// <summary>
+    /// 语言版本变了：<b>只重盖表头文案的语言代数</b>（不重建表头、不动列宽与排序）。
+    /// </summary>
+    /// <remarks>
+    /// 表头是代码建的控件（列定义里只有键），没有 <c>{loc:Loc}</c> 那种绑定位置，所以由本控件听版本。
+    /// 文案值是 <see cref="LinkPocket.I18n.LocText"/>（语言代数烙在值身份里）：语言一变必须**重盖一次代数**，
+    /// 值才会真的变化、WPF 才会把它推给模板里的自适应通道 —— 直写等值的 <c>LocValue</c> 会被属性系统
+    /// 判定"没变"，表头停在上一种语言（实测：版本事件到了、表头一个字没换）。
+    /// 只改文案 ⇒ 排序态、列宽、选中都不受影响。提示不在此重设：<c>SetTip</c> 那条绑定自带语言版本。
+    /// </remarks>
+    private void OnLocaleTableChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        var i = 0;
+        foreach (var col in ColumnList)
+        {
+            if (i >= _headerButtons.Count) break;
+            _headerButtons[i].SetValue(SortableHeaderButton.TextProperty,
+                LinkPocket.I18n.LocText.Of(Loc.K(col.LabelKey)));
+            i++;
+        }
+    }
+
     // —— 列定义变化：重建表头 + 列宽单一数据源 ——
 
     private void Rebuild()
@@ -329,8 +359,15 @@ public class SortableDataTable : Grid
                     Converter = ColumnTextWidthConverter.Instance,
                     Mode = BindingMode.OneWay,
                 });
-            // 表头文字与提示都走取词绑定（值是 LocValue）：换语言由版本失效自己重算，不靠宿主重烤
-            header.SetContent(Loc.K(col.LabelKey));
+            // 表头文字 = 文案值（LocText：语言代数烙在值身份里），提示 = 文案值走绑定。
+            // ⚠️ 写 `Text`（自有 DP）而不是 `Content`：`Content` 注册类型是 object，模板绑定会把
+            //    文案值转成 ToString 的记录字符串，自适应通道拿不到值（实测表头因此画不出列名）。
+            // ⚠️ 用 `SetValue` 直写而不是在自有 DP 上再套一层取词绑定：取词转换器产出的是**字符串**，
+            //    与 LocText 型 DP 类型不合，绑定静默失败、值停在默认值（实测表达式在、值恒空）。
+            //    这里本来就有"列定义一变就重建 + 语言版本一变就重盖代数"两条生命周期（见
+            //    OnLocaleTableChanged），直写已经够用。
+            header.SetValue(SortableHeaderButton.TextProperty,
+                LinkPocket.I18n.LocText.Of(Loc.K(col.LabelKey)));
             header.SetTip(Loc.K("ui.sort.tip", Loc.K(col.LabelKey)));
             header.Click += OnHeaderClick;
             cell.Children.Add(header);

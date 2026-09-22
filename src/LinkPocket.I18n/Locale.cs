@@ -75,6 +75,23 @@ public static class AppLocales
     };
 
     /// <summary>
+    /// 这个语言下**允许为了放得下而缩小字号**吗？<b>只有英文允许</b>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这是"以中文体验为中心"的可执行口径：几何按**中文基线**定稿，中文在任何一处都保持它的基准字号
+    /// （"中文侧一字不动"）；英文比中文宽 30%~150%，放不下时缩的是**英文的字号**，
+    /// 而不是让中文迁就英文撑出来的窄格子。
+    /// </para>
+    /// <para>
+    /// 反过来说：**中文被缩了字号就是缺陷**——它意味着那一格的宽度是按英文（或更短的文案）定的，
+    /// 该做的是按中文基线把那一格放宽（见 <c>UI-SPEC §3</c> 与 <c>WARNINGS</c> 116）。
+    /// 与主题/字体无关，纯粹是"当前这门语言的文案能不能自己让位"。
+    /// </para>
+    /// </remarks>
+    public static bool AllowsFontShrink(this AppLocale locale) => locale == AppLocale.En;
+
+    /// <summary>
     /// 日期格式化文化。英文**必须**显式取 en-US：进程 culture 为守排序钉在 zh-CN，
     /// 不显式传则 <c>tt</c> 渲染成「下午」。
     /// </summary>

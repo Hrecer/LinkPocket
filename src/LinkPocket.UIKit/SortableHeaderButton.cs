@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using LinkPocket.I18n;
 
 namespace LinkPocket.Views;
 
@@ -41,10 +42,25 @@ public class SortableHeaderButton : Button, ITextWidthHost
         nameof(TextWidth), typeof(double), typeof(SortableHeaderButton),
         new PropertyMetadata(double.NaN, OnTextWidthChanged));
 
+    /// <summary>模板里的文字部件（自适应通道挂在它身上；可变宽后由它重投影）。</summary>
+    private FrameworkElement? _headerText;
+
+    /// <summary>模板里表头文字部件的名字（<c>LocFit</c> 的接入点；重投影要指它，不是按钮本体）。</summary>
+    private const string HeaderTextPartName = "HeaderText";
+
+    public override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        _headerText = GetTemplateChild(HeaderTextPartName) as FrameworkElement;
+    }
+
     private static void OnTextWidthChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        // 可用宽变了 = 本列的几何约束变了（拖列宽 / 换语言后重算）→ 重新投影字号
-        if (d is SortableHeaderButton header) LocFit.Project(header);
+        // 可用宽变了 = 本列的几何约束变了（拖列宽）→ 对表头文字重新投影一次字号
+        //（文案变长变短都影响"放不放得下"：英文侧才缩字号，中文侧保持基准字号）。
+        // ⚠️ 必须投影**模板里的文字部件**：自适应通道（LocFit.Text/Mode）挂在它身上，
+        //    投影按钮本体是空操作（按钮自己 Mode=Off）。
+        if (d is SortableHeaderButton header && header._headerText is { } text) LocFit.Project(text);
     }
 
     public double TextWidth
@@ -69,6 +85,37 @@ public class SortableHeaderButton : Button, ITextWidthHost
     {
         get => (bool?)GetValue(DirectionProperty);
         set => SetValue(DirectionProperty, value);
+    }
+
+    /// <summary>
+    /// 表头文案（<b>文案值，不是字符串</b>）：模板把它接到自适应通道（<c>LocFit.Text</c>），
+    /// 语言一变由宿主**重盖语言代数**换新值、通道随之重新投影，不靠宿主重烤文本。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ <b>为什么是独立属性而不是复用 <c>Content</c></b>：<c>Content</c> 的注册类型是 <c>object</c>，
+    /// 模板里 <c>{TemplateBinding Content}</c> 会走**类型转换**，把 <see cref="LocValue"/> 转成
+    /// <c>ToString()</c> 的记录字符串（<c>LocValue { Key = …, Args = … }</c>）——
+    /// 实测表头因此画不出列名，还因为那条字符串很长被自适应缩到 8pt。
+    /// 注册成本属性则模板绑定原样传值，自适应通道拿到的是真正的文案值。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>为什么值类型是 <see cref="LocText"/> 而不是 <see cref="LocValue"/></b>：依赖属性按
+    /// **值相等**判"变没变"。<see cref="LocValue"/> 只有键与参数 ⇒ 语言一变后重写一次仍是**同一个值**，
+    /// WPF 判定没变、不推变更 ⇒ 模板里 <c>LocFit.Text</c> 拿不到新值 ⇒ 投影一次都不跑
+    /// （实测症状：切语言后表头停在上一种语言）。
+    /// <see cref="LocText.LangVersion"/> 把语言代数烙在值身份里，语言一变重盖一次代数值就**真的变了**，
+    /// 与 <c>{loc:Fit…}</c> 通道同一条失效机制（见 <c>WARNINGS</c> 97 的同族口径）。
+    /// </para>
+    /// </remarks>
+    public static readonly DependencyProperty TextProperty = DependencyProperty.Register(
+        nameof(Text), typeof(LocText), typeof(SortableHeaderButton),
+        new PropertyMetadata(LocText.Empty));
+
+    public LocText Text
+    {
+        get => (LocText)GetValue(TextProperty);
+        set => SetValue(TextProperty, value);
     }
 
     /// <summary>本列左右内距之和（药丸内距，与 <c>SortableDataTable</c> 给 <see cref="TextWidth"/> 的扣减一致）。</summary>

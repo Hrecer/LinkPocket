@@ -219,7 +219,7 @@
     <!-- 排序表头按钮（可复用组件）：数据驱动 —— Label/Field/Direction/TextWidth 四属性。
          Direction 三态：null=未激活（无指示器）、True=升序▲、False=降序▼。
          ⚠️ **表头文字走自适应通道**（与 UIKit.xaml 里其它冻结几何的面同一条链）：
-         列宽是冻结几何，而文案宽度随语言变（中文「按查看次数排序」13pt 需 84px，而该列只有 72px）——
+         列宽是冻结几何，而文案宽度随语言变（长文案 13pt 需 84px 一类，而该列可能只有 72px）——
          没有这条通道时文字按原字号画出去、压在相邻列上并被右缘裁掉（实测溢出 36px）。
          可用宽 = 控件自己的 `TextWidth`（列宽 − 内距，由 SortableDataTable 绑定），
          放不下时由 `LocFit` 缩字号，**绝不截断**。 -->
@@ -240,12 +240,15 @@
                     <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="12"
                             MinHeight="24" SnapsToDevicePixels="True">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <!-- 文字画 `Chosen`（自适应通道的产物），来源 = 本控件的 `Content`（LocText.SetContent 绑的
-                                 LocValue，换语言自己重算）；`MaxWidth` 是这条通道的**前置条件**：
-                                 文字若按内容取宽，"可用宽"就等于它自己需要的宽，字号一个都不缩。 -->
+                            <!-- 文字画 `Chosen`（自适应通道的产物），来源 = 本控件的 `Text`
+                                 （LocText：语言代数烙在值身份里，语言一变值真的变 ⇒ 通道重新投影）。
+                                 `MaxWidth` 是这条通道的**前置条件**：文字若按内容取宽，"可用宽"就等于
+                                 它自己需要的宽，字号一个都不缩。
+                                 ⚠️ 中文侧**不会**缩字号（`Loc.AllowsFontShrink` 只对英文为真）：
+                                 放不下就说明那一列该按中文基线加宽，不是把中文的字缩小。 -->
                             <TextBlock x:Name="HeaderText"
                                        Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{TemplateBinding Content}"
+                                       views:LocFit.Text="{TemplateBinding Text}"
                                        views:LocFit.Mode="Shrink"
                                        MaxWidth="{Binding TextWidth, RelativeSource={RelativeSource TemplatedParent}}"
                                        VerticalAlignment="Center"/>
@@ -256,9 +259,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <!-- 表头悬停底：原先写死的是**外来色板** #1F6750A4（M3 官方基线紫 12%），
-                                 与强调色不是同一支紫 → 换令牌（跟主题走）。 -->
-                            <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.State.Hover}"/>
+                            <!-- 表头悬停底 = **与行/药丸同一支悬停底**（App.Surface.Hover）。
+                                 ⚠️ 不可用 `App.State.Hover`：那支是**叠层色**（Text.Primary 8% 叠在表头带上
+                                 得深紫 #766486，语义是"压在底色上的一层"），直接当底色用会画出一颗深紫
+                                 药丸，与全站"悬停只是淡淡一层"的语言相反。 -->
+                            <Setter TargetName="Pill" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                         </Trigger>
                         <Trigger Property="Direction" Value="True">

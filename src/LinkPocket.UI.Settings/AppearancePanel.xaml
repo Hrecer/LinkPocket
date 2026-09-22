@@ -10,31 +10,31 @@
          这不是第二套分段实现——模板、指示器几何、滑动动画全在共享组件里。 -->
     <UserControl.Resources>
         <!-- 段宽 = **冻结几何**（约束 B：切语言段宽/指示器宽逐像素不变）。
-             108 = **英文全长**（`4 colors` / `5 colors` 各需 49px 文字 + 内距 28 + 余量）放得下的实测值；
-             原来只按中文基线取 64，英文只能缩到 8pt 以下。
+             取值口径 = **中文基线**（几何按中文定稿；英文放不下时缩英文字号让位，绝不为英文放大几何）：
+               段宽 = 文字宽(中文 13pt) + 项内距 28（`SlidingNavStripItemStyle` 的 Padding 14,0）+ 描边 2；
+               「4 色」文字宽 ≈24px（数字+空格+汉字）⇒ 54。
              断言高度 32 与面板药丸口径一致。 -->
         <Style x:Key="AppearanceSegmentItem" TargetType="ListBoxItem"
                BasedOn="{StaticResource SlidingNavStripItemStyle}">
             <Setter Property="Height" Value="32"/>
-            <Setter Property="MinWidth" Value="108"/>
-            <Setter Property="Width" Value="108"/>
+            <Setter Property="MinWidth" Value="54"/>
+            <Setter Property="Width" Value="54"/>
         </Style>
-        <!-- 字体来源分段（系统字体 / 自定义字体）：113 = 英文 `Custom fonts`（12pt 需 83.5px）放得下的实测值
-             （中文「自定义字体」= 5 字，比它窄，取同一值即两语言同时成立）。 -->
+        <!-- 字体来源分段（系统字体 / 自定义字体）：95 = 「自定义字体」5 字 × 13pt（65px）+ 项内距 28 + 描边 2。 -->
         <Style x:Key="AppearanceFontSegmentItem" TargetType="ListBoxItem"
                BasedOn="{StaticResource SlidingNavStripItemStyle}">
             <Setter Property="Height" Value="32"/>
-            <Setter Property="MinWidth" Value="113"/>
-            <Setter Property="Width" Value="113"/>
+            <Setter Property="MinWidth" Value="95"/>
+            <Setter Property="Width" Value="95"/>
         </Style>
-        <!-- 语言分段（自动 / 中文 / English）：80 = 最长项 `English`（13pt SemiBold 需 ~45px）+
-             项内距 28 + 余量，取整后的实测值。三枚等宽 → 指示器滑动距离恒定，
+        <!-- 语言分段（自动 / 中文 / English）：75 = 中文界面最长项 `English`（13pt SemiBold ≈45px）
+             + 项内距 28 + 描边 2。三枚等宽 → 指示器滑动距离恒定，
              段宽是**冻结几何**（切语言逐像素不变，英文放不下时由 LocFit 缩字号）。 -->
         <Style x:Key="AppearanceLanguageSegmentItem" TargetType="ListBoxItem"
                BasedOn="{StaticResource SlidingNavStripItemStyle}">
             <Setter Property="Height" Value="32"/>
-            <Setter Property="MinWidth" Value="80"/>
-            <Setter Property="Width" Value="80"/>
+            <Setter Property="MinWidth" Value="75"/>
+            <Setter Property="Width" Value="75"/>
         </Style>
     </UserControl.Resources>
 
@@ -55,10 +55,10 @@
                      的既有语言（主题卡单击即应用 / 起点复制即应用）自相矛盾；自选配色的应用入口只剩
                      **第 12 张「自选颜色」卡**（与点主题卡同一手势），故全局行只剩这一枚。 -->
                 <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
-                    <!-- 宽度 = 冻结几何，取值 = 英文全长（`Reset appearance` 需 101.9px）在基准字号 12pt
-                         下放得下的实测值；原 104 会把它缩到 8.0pt -->
+                    <!-- 宽度 = 冻结几何，取值 = **中文基线**：壳宽 = 「恢复默认外观」文字宽(中文 12pt = 72px)
+                         + 内距 32 + 描边 2 ⇒ 106。英文（`Reset appearance`）放不下时缩英文字号让位。 -->
                     <Button x:Name="ResetAppearanceBtn" Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
-                            Width="145" Cursor="Hand" Click="ResetAppearanceBtn_Click"
+                            Width="106" Cursor="Hand" Click="ResetAppearanceBtn_Click"
                             ToolTip="{loc:Loc appearance.btn.resetAll.tip}">
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                    views:LocFit.Text="{loc:Fit appearance.btn.resetAll}" views:LocFit.Mode="Shrink"/>
@@ -299,9 +299,12 @@
                                  ——只清草稿不动已应用外观会让"清空"变成界面一点没变的半截动作——
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                                <!-- 两枚按钮宽度 = 冻结几何，取值 = **中文基线**：壳宽 = 文字宽(中文 12pt) + 内距 28 + 描边 2：
+                                     「以「默认（紫罗兰）」为起点」= 13 字 × 12pt（156px，最长主题名「默认（紫罗兰）」）⇒ 186；
+                                     「清空颜色」= 4 字 × 12pt（48px）⇒ 78。英文放不下时缩英文字号让位。 -->
                                 <Button x:Name="StartFromThemeBtn"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        Width="208" Cursor="Hand" Click="StartFromThemeBtn_Click"
+                                        Width="186" Cursor="Hand" Click="StartFromThemeBtn_Click"
                                         ToolTip="{loc:Loc appearance.draft.startFrom.tip}">
                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                views:LocFit.Text="{loc:Value StartFromCurrentThemeLabel}"
@@ -309,7 +312,7 @@
                                 </Button>
                                 <Button x:Name="ClearDraftBtn"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        Width="106" Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
+                                        Width="78" Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
                                         ToolTip="{loc:Loc appearance.clearColors.tip}">
                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                views:LocFit.Text="{loc:Fit appearance.draft.clear}"
@@ -478,17 +481,17 @@
                         <Border Background="{DynamicResource App.Surface.Base}" CornerRadius="16" Padding="16,14">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <!-- 样例按钮：宽度 = **英文全长在基准字号下放得下**的实测值
-                                          （`Primary button` 需 86.5px ⇒ 120；`actions` 需 40.9px ⇒ 72）。
-                                         它们是**字体样例**，随字体轴变化，不随语言改尺寸。 -->
+                                    <!-- 样例按钮：宽度 = **中文基线**：壳宽 = 文字宽(中文 12pt = 36px) + 内距 28 + 描边 2 ⇒ 66。
+                                         它们是**字体样例**（随字体轴变化、不随语言改尺寸）；
+                                         英文（`Primary button` / `actions`）放不下时缩英文字号让位。 -->
                                     <Button Style="{StaticResource PrimaryPillButton}" Height="32" Padding="14,0"
-                                            Width="126" IsHitTestVisible="False">
+                                            Width="66" IsHitTestVisible="False">
                                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                    views:LocFit.Text="{loc:Fit appearance.sample.primaryButton}"
                                                    views:LocFit.Mode="Shrink"/>
                                     </Button>
                                     <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                            Width="74" Margin="8,0,0,0" IsHitTestVisible="False">
+                                            Width="66" Margin="8,0,0,0" IsHitTestVisible="False">
                                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                    views:LocFit.Text="{loc:Fit appearance.sample.actions}"
                                                    views:LocFit.Mode="Shrink"/>
@@ -513,12 +516,12 @@
                         </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <!-- 两枚按钮宽度 = 冻结几何，取值 = **英文全长在基准字号下放得下**的实测值
-                                 （`Apply font` 需 60.5px ⇒ 124；`Restore default font` 需 114.8px ⇒ 155）。
-                                 原 100/100 会把 `Restore default font` 缩到 7.0pt。 -->
+                            <!-- 两枚按钮宽度 = 冻结几何，取值 = **中文基线**：壳宽 = 文字宽(中文 12pt) + 内距 + 描边 2
+                                 （「应用字体」48 + 32 + 2 ⇒ 82；「恢复默认字体」72 + 28 + 2 ⇒ 102）。
+                                 英文（`Apply font` / `Restore default font`）放不下时缩英文字号让位。 -->
                             <Button x:Name="ApplyFontsBtn"
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                                    Width="124" Cursor="Hand" Click="ApplyFontsBtn_Click">
+                                    Width="82" Cursor="Hand" Click="ApplyFontsBtn_Click">
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                            views:LocFit.Text="{loc:Fit appearance.font.apply}" views:LocFit.Mode="Shrink"/>
                             </Button>
@@ -526,7 +529,7 @@
                                  与「恢复默认外观」的区别：这里不动主题与配色。 -->
                             <Button x:Name="ResetFontsBtn"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                    Width="155" Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
+                                    Width="102" Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
                                     ToolTip="{loc:Loc appearance.font.reset.tip}">
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                            views:LocFit.Text="{loc:Fit appearance.font.reset}" views:LocFit.Mode="Shrink"/>

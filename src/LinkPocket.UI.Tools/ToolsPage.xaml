@@ -246,11 +246,12 @@
                                   Padding="2,2,2,0" FocusVisualStyle="{x:Null}">
                         <StackPanel MaxWidth="820" HorizontalAlignment="Left">
 
-                            <!-- 方向切换：分段控件（容器 = TintCard 白底大药丸，CornerRadius 19 = 3 内距 + 16 段圆角，
-                                 与编辑页右上胶囊组/浏览页命令栏胶囊组同口径）。
+                            <!-- 方向切换：分段控件（容器 = **SlidingNavStripStyle 同一支胶囊底** `App.Surface.Hover`，
+                                 CornerRadius 19 = 3 内距 + 16 段圆角）——底色与顶部导航条 / 外观面板 4-5 色分段
+                                 同源，深浅语言一致（曾用 TintCard 白底，与滑动分段家族分不清深浅）。
                                  选中态 = SegIndicator 滑动指示器（PrimaryContainer），切换时 TranslateTransform.X
                                  用 CubicEase 缓动滑过去（见 ToolsPage.xaml.cs 的 MoveSegIndicator）；两段等宽星号列。 -->
-                            <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19"
+                            <Border Background="{DynamicResource App.Surface.Hover}" CornerRadius="19"
                                     Padding="3" HorizontalAlignment="Left">
                                 <Grid x:Name="SegGrid" SizeChanged="SegGrid_SizeChanged">
                                     <Grid.ColumnDefinitions>

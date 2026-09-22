@@ -103,14 +103,15 @@
                         CornerRadius="19" Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <!-- ⚠️ 三枚药丸的宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）：
-                             内容自适应宽度会让英文文案把整组撑宽（实测 PurgeButton 98→168.77），
-                             连带把面包屑挤窄。文案放不下时由 LocFit 让位（**只缩字号、绝不截断**），几何不动。
-                             宽度按"英文全长在基准字号 13pt 下都放得下"实测取值：
-                               Restore 需 47.3px ⇒ 96（别压它：实测压到 64 会让中文「还原」也掉到 6pt）；
-                               Restore to root 需 94.5px ⇒ 154；
-                               Delete permanently 需 122.8px ⇒ 192。 -->
+                             内容自适应宽度会把整组撑宽（实测 PurgeButton 98→168.77），连带把面包屑挤窄。
+                             取值口径 = **中文基线**（几何按中文定稿；英文放不下时缩英文字号让位）：
+                               壳宽 = 文字宽(中文 13pt) + 内距 24 + 描边 2 + 图标 16 + 文字外边距 6：
+                                 还原「还原」需 26px ⇒ 74；还原到根目录「还原到根目录」需 78px ⇒ 126；
+                                 永久删除「永久删除」需 52px ⇒ 100。
+                             中文永不缩字号：中文放不下 = 这一格宽度定错了，逐条加宽；
+                             英文放不下时由 LocFit 缩英文字号（**只缩字号、绝不截断**），几何不动。 -->
                         <Button x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
-                                IsEnabled="{Binding HasSelection}" Width="96"
+                                IsEnabled="{Binding HasSelection}" Width="74"
                                 Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,0"
                                 ToolTip="{loc:Loc trash.btn.restore.tip}">
                             <StackPanel Orientation="Horizontal">
@@ -121,7 +122,7 @@
                             </StackPanel>
                         </Button>
                         <Button x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
-                                IsEnabled="{Binding HasSelection}" Width="154"
+                                IsEnabled="{Binding HasSelection}" Width="126"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
                                 ToolTip="{loc:Loc trash.btn.restoreToRoot.tip}">
                             <StackPanel Orientation="Horizontal">
@@ -132,7 +133,7 @@
                             </StackPanel>
                         </Button>
                         <Button x:Name="PurgeButton" Cursor="Hand" Click="TrashPurge_Click"
-                                IsEnabled="{Binding HasSelection}" Width="192"
+                                IsEnabled="{Binding HasSelection}" Width="100"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
                                 ToolTip="{loc:Loc trash.btn.purge.tip}">
                             <StackPanel Orientation="Horizontal">
@@ -162,9 +163,10 @@
                     </StackPanel>
                 </Border>
                 <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦）；
-                     只读页：段不接拖放（CrumbDropEnabled=False） -->
+                     只读页：段不接拖放（CrumbDropEnabled=False）
+                     根段宽 = **冻结几何**，取值 = **中文基线**：「回收站」3 字 × 13pt（39px）+ 段内距 24 ⇒ 63。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
-                                     RootSegmentWidth="64"
+                                     RootSegmentWidth="63"
                                      CrumbDropEnabled="False"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"

@@ -166,10 +166,13 @@ public class ThemeContrastTests
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #6E5A80（彩度最高，本色压到填充档）
         Assert.Equal(0x6A567Cu, Rgb(t.Token(AppTokens.AccentIcon)));
         Assert.Equal(0x523F63u, Rgb(t.Token(AppTokens.AccentText)));
-        // 选中底 = "容器来源的色相 + 表面族彩度"抬到"对页面底 ≥1.08"的档
-        // （修前它与页面底**完全同色**=1.000，选中行看不见）。回归现象"紫罗兰发灰"——
-        // 彩度改与页面底同族（表面族彩度 C15.3）；旧的 C5.4 停在"背景色成员本色"上，会比页面底更灰。
-        Assert.Equal(0xEFE7FFu, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 选中底 = "容器来源的色相 + 表面族彩度"定到"**比承载它的卡面明显深**、又与页面底/悬停底分得开"的档。
+        // 演变：① 早先它与页面底**完全同色**（1.000，选中行看不见）；
+        //       ② 改成"对页面底 ≥1.08 就往浅处抬"之后，它与**卡面**的对比只有 1.001–1.074
+        //          （选中底比承载它的卡面还亮）→ 屏幕上"选中"与"未选中"几乎同色（用户当场报障）；
+        //       ③ 现行判据锚在真实承载面上：对卡面 ≥1.22（最硬）、对页面底 ≥1.04、对悬停底 ≥1.06。
+        // 彩度与页面底同族（表面族彩度），不发明色相。
+        Assert.Equal(0xC0B8D0u, Rgb(t.Token(AppTokens.AccentContainer)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
@@ -340,7 +343,8 @@ public class ThemeContrastTests
         // 四条判据（全部按实测对比度，不靠感觉）：
         //  ① 页面底明度落在 87–91；
         //  ② 卡面浮得起来（对页面底 **≥1.15**，实测 1.165–1.169）；
-        //  ③ 选中底 / 落点高亮看得见（对页面底 ≥1.08、对悬停底 ≥1.06）；
+        //  ③ 选中底 / 落点高亮看得见 —— **对卡面 ≥1.22**（选中行画在卡面上，这条最硬；实测 1.31–1.39）
+        //     + 对页面底 ≥1.08 + 对悬停底 ≥1.06；
         //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
         const double MinCardOnBase = 1.15;
         var failures = new List<string>();
@@ -359,6 +363,11 @@ public class ThemeContrastTests
             var cardRatio = ColorMath.ContrastRatio(card, baseColor);
             if (cardRatio < MinCardOnBase)
                 failures.Add($"{theme.Id} 卡面对页面底 {cardRatio:F3} < {MinCardOnBase}（卡片看不出是卡片）");
+
+            var containerOnCard = ColorMath.ContrastRatio(container, card);
+            if (containerOnCard < PaletteSolver.ContainerMinContrastOnCard)
+                failures.Add($"{theme.Id} 选中底对**卡面** {containerOnCard:F3} < {PaletteSolver.ContainerMinContrastOnCard}"
+                             + "（选中行与未选中行几乎同色——选中行画在卡面上，这条才是承载面）");
 
             var containerOnBase = ColorMath.ContrastRatio(container, baseColor);
             if (containerOnBase < PaletteSolver.ContainerMinContrastOnBase)

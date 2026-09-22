@@ -49,6 +49,14 @@ public static partial class Loc
     /// <summary>短式变体键后缀（<c>count.views</c> → <c>count.views#short</c>）。</summary>
     public const string ShortSuffix = "#short";
 
+    /// <summary>当前语言下**允许为了放得下而缩小字号**吗（只有英文允许；中文保持基准字号）。</summary>
+    /// <remarks>
+    /// 给 <c>LocFit</c> 用（它在 UIKit，不能引 Theming、也不该自己判断"这是哪门语言"）：
+    /// "以中文体验为中心"这条产品口径的**唯一判定点**在这里——几何按中文基线定稿，
+    /// 中文永不缩字号，英文放不下时才缩。见 <see cref="AppLocales.AllowsFontShrink"/>。
+    /// </remarks>
+    public static bool AllowsFontShrink => Table.Locale.AllowsFontShrink();
+
     /// <summary>这条文案有没有短式变体（<c>key#short</c> 在表里）。</summary>
     public static bool HasShort(string key) => Table.TryGet(key + ShortSuffix, out _);
 
