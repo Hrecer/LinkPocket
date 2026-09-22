@@ -35,7 +35,7 @@ internal sealed class FolderFindHandler : ICommandHandler
         var counts = await ctx.Uow.Trees.LinkCountsAsync(ctx.Ct);
         var result = matched
             .Select(f => f.ToDto(counts))
-            .OrderBy(f => f.Name, StringComparer.CurrentCulture)
+            .OrderBy(f => f.Name, NameOrder.Comparer)
             .ToList();
         return CommandResult.Ok(result);
     }

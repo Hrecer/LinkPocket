@@ -272,9 +272,10 @@ public partial class ColorPickerPopup : UserControl
         var asFill = ColorMath.ContrastRatio(argb, white);
         var asIcon = ColorMath.ContrastRatio(argb, card);
 
-        var s = CultureInfo.CurrentCulture;
-        ContrastOnFillText.SetText(Loc.K(asFill >= 4.5 ? "picker.onFillPass" : "picker.onFillFail", asFill.ToString("F2", s)));
-        ContrastAsIconText.SetText(Loc.K(asIcon >= 3.0 ? "picker.asIconPass" : "picker.asIconFail", asIcon.ToString("F2", s)));
+        // 数字格式一律 Invariant（小数点是 "."，不随语言变）：进程 culture 只为排序钉在 zh-CN，
+        // 但"数字跟着环境走"会让同一个对比度读数在不同机器上长得不一样。
+        ContrastOnFillText.SetText(Loc.K(asFill >= 4.5 ? "picker.onFillPass" : "picker.onFillFail", asFill.ToString("F2", CultureInfo.InvariantCulture)));
+        ContrastAsIconText.SetText(Loc.K(asIcon >= 3.0 ? "picker.asIconPass" : "picker.asIconFail", asIcon.ToString("F2", CultureInfo.InvariantCulture)));
     }
 
     /// <summary>

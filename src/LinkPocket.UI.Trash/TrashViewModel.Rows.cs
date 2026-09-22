@@ -89,10 +89,12 @@ public partial class TrashViewModel
         var sign = SortAscending ? 1 : -1;
         Comparison<TrashRowViewModel> byField = SortField switch
         {
-            "name" => (a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture) * sign,
-            "type" => (a, b) => string.Compare(a.TypeText.Resolve(), b.TypeText.Resolve(), StringComparison.CurrentCulture) * sign,
+            "name" => (a, b) => NameOrder.Compare(a.Name, b.Name) * sign,
+            // 按**身份**（文件夹 / 链接）排，不按投影出来的类型文案排：换语言不得改变任何顺序。
+            // 「文件夹在前」与左栏树的投影分组（TrashViewModel.Tree.SortChildren）同口径。
+            "type" => (a, b) => (a.IsFolder ? 0 : 1).CompareTo(b.IsFolder ? 0 : 1) * sign,
             // 按 canonical 排、不按投影排：换语言不得改变任何顺序（显示名会变，路径不会）
-            "origin_path" => (a, b) => string.Compare(a.OriginPath, b.OriginPath, StringComparison.CurrentCulture) * sign,
+            "origin_path" => (a, b) => NameOrder.Compare(a.OriginPath, b.OriginPath) * sign,
             _ => (a, b) => a.DeletedAt.CompareTo(b.DeletedAt) * sign,
         };
         rows.Sort((a, b) =>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Media;
 using LinkPocket.Contracts;
@@ -62,7 +63,9 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         _cardBackground = ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase));
 
         var f = table.Families;
-        Summary = Loc.K("appearance.palette.dualHue", f.AccentHue.ToString("F0"), f.SupportHue.ToString("F0"));
+        Summary = Loc.K("appearance.palette.dualHue",
+            f.AccentHue.ToString("F0", CultureInfo.InvariantCulture),
+            f.SupportHue.ToString("F0", CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -1210,7 +1213,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
         // 所以先置空再赋值：绑定才会把"池里的那一项"重新推进控件（先投影、后播报，仍由本 VM 单驱动）。
         _selectedUiFont = null;
         Raise(nameof(SelectedUiFont));
-        SelectedUiFont = PickOrPlaceholder(UiFonts, currentUi, FontCatalog.DefaultUiFamily);
+        SelectedUiFont = PickOrPlaceholder(UiFonts, currentUi, ThemeService.DefaultUiFont);
 
         static FontOptionViewModel? PickOrPlaceholder(
             ObservableCollection<FontOptionViewModel> pool, string current, string fallbackFamily)
@@ -1324,7 +1327,7 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// </remarks>
     public void ApplyFonts()
     {
-        var ui = SelectedUiFont?.Family ?? FontCatalog.DefaultUiFamily;
+        var ui = SelectedUiFont?.Family ?? ThemeService.DefaultUiFont;
 
         try
         {
@@ -1347,11 +1350,16 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// <para>
     /// 与 <see cref="ApplyFonts"/>（应用"当前选中"）是两件事：这里不读下拉的选中项，
     /// 直接走 <see cref="ThemeService.ApplyFonts(string?, string?, System.Windows.ResourceDictionary?)"/>
-    /// 的**无参形态**（= 回退链第一段：`Microsoft YaHei UI` / `Consolas`）。
+    /// 的**无参形态**——它取 <see cref="ThemeService.DefaultUiFont"/>：
+    /// <b>当前语言的默认族</b>（中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>，决策 5）。
     /// </para>
     /// <para>
-    /// 等宽字体已不再可改 —— 无参调用顺手把它也归默认，这正是"恢复默认字体"该做的；
-    /// 用户面语义 = 回到出厂字体。
+    /// <b>落盘的写法是有意的</b>：<c>SaveCurrentPreferences</c> 把"等于当前语言默认族"归一成空 ——
+    /// 于是"恢复默认字体"落成<b>没选过</b>，之后切语言时默认族才会跟着语言走；
+    /// 若写成具体族名，它会被当成"用户显式选过的族"（用户选择优先于语言）。
+    /// </para>
+    /// <para>
+    /// 等宽字体已不再可改 —— 无参调用顺手把它也归默认，这正是"恢复默认字体"该做的。
     /// </para>
     /// <para>
     /// 收尾三条与"删除当前生效字体"同口径：应用 → 落盘 → 候选重载 + 当前值重投影
@@ -1362,8 +1370,8 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     {
         try
         {
-            ThemeService.ApplyFonts();                 // 无参 = 默认族（不读下拉选中项）
-            ThemeService.SaveCurrentPreferences();
+            ThemeService.ApplyFonts();                 // 无参 = 当前语言的默认族（不读下拉选中项）
+            ThemeService.SaveCurrentPreferences();     // 默认族归一成"没选过"（见上）
             if (_fontsLoaded) await ReloadFontsAsync().ConfigureAwait(true);
             else ProjectCurrentFonts(ThemeService.CurrentUiFont);
             // 成功不播报 —— 下拉里换回默认族就是结果；失败照报
@@ -1406,9 +1414,15 @@ public sealed class AppearanceViewModel : System.ComponentModel.INotifyPropertyC
     /// 字体度量自检的提示（在容差内 = <see cref="LocValue.Empty"/>）。只提示、不阻止应用。
     /// 本层给的是<b>句子 + 数字</b>，不是成品文本——语言一切换它跟着重算。
     /// </summary>
+    /// <remarks>
+    /// 基准 = <see cref="ThemeService.DefaultUiFont"/>（<b>当前语言的默认族</b>）：
+    /// 自检问的是"这个字体比本语言的基准宽/高多少"，拿另一种语言的默认族当基准，
+    /// 会把中英默认族本身的宽度差算进结论里（默认族自己检自己却不等于 0）。
+    /// </remarks>
     public LocValue InspectFont(FontOptionViewModel option)
     {
-        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(option.Family), Loc.T("metric.sample"));
+        var verdict = FontMetricsProbe.Inspect(
+            FontCatalog.BuildTokenValue(option.Family), Loc.T("metric.sample"), ThemeService.DefaultUiFont);
         return verdict.Code switch
         {
             FontMetricsProbe.Verdict.TooWide => Loc.K("appearance.font.tooWide", Math.Abs(verdict.WidthDelta) * 100),

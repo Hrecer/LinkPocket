@@ -317,7 +317,7 @@ namespace LinkPocket.ViewModels
         private void SortFolderNodes(ObservableCollection<FolderNode> nodes)
         {
             // 根节点恒在最前，其余按名升序：根段现在是 token，混进名称排序会改变目录树次序
-            var sorted = nodes.OrderBy(n => !n.IsRoot).ThenBy(n => n.Name, StringComparer.CurrentCulture).ToList();
+            var sorted = nodes.OrderBy(n => !n.IsRoot).ThenBy(n => n.Name, NameOrder.Comparer).ToList();
             nodes.Clear();
             foreach (var n in sorted)
                 nodes.Add(n);

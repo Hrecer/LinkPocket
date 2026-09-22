@@ -697,7 +697,7 @@ public class AppearanceViewModelTests : IDisposable
         var vm = NewVm();
         Assert.Single(vm.UiFonts);                                // 只补"当前界面字体"这一个占位项
         Assert.All(vm.UiFonts, f => Assert.False(f.CanDelete));    // 占位项 = 系统字体口径（不可删）
-        Assert.Contains(vm.UiFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultUiFamily);
+        Assert.Contains(vm.UiFonts, f => f.Family == LinkPocket.Theming.Fonts.FontCatalog.DefaultUiFamily(null));
         Assert.NotNull(vm.SelectedUiFont);                        // 投影已就位（不是 null）
 
         vm.FontSource = FontSourceKind.Custom;
@@ -722,7 +722,7 @@ public class AppearanceViewModelTests : IDisposable
         Assert.Equal(ThemeService.CurrentUiFont, vm.SelectedUiFont!.Family, ignoreCase: true);
 
         // 默认字体一定在候选里（回退链承诺它存在）
-        Assert.Contains(vm.UiFonts, f => f.Family == FontCatalog.DefaultUiFamily);
+        Assert.Contains(vm.UiFonts, f => f.Family == FontCatalog.DefaultUiFamily(null));
 
         // 自定义来源 = **只列导入的字体**：没导入过就是空；有导入项时也一个系统字体都不许出现。
         vm.FontSource = FontSourceKind.Custom;
@@ -963,7 +963,7 @@ public class AppearanceViewModelTests : IDisposable
     public void 字体自检_默认字体无告警()
     {
         var vm = NewVm();
-        Assert.True(vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily)).IsEmpty);
+        Assert.True(vm.InspectFont(FontOption(FontCatalog.DefaultUiFamily(null))).IsEmpty);
     }
 
     // ── 必须碰全局的用例（应用/落盘）─────────────────────────────────
@@ -1028,7 +1028,7 @@ public class AppearanceViewModelTests : IDisposable
         Assert.True(vm.Status.Resolve().Length == 0);
         Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
         Assert.Equal(ThemeCatalog.DefaultId, ThemeService.Current.Id);
-        Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
+        Assert.Equal(FontCatalog.DefaultUiFamily(null), ThemeService.CurrentUiFont);
         // 调色台回**空态**：自选配色已随偏好一起清掉，留着 4/5 个色点会名不副实；
         // 格数 = 恢复后的出厂默认颜色数（5）
         Assert.Equal(PaletteSolver.EditableSlots(ThemeCatalog.Default).Count, vm.SlotCount);
@@ -1044,12 +1044,14 @@ public class AppearanceViewModelTests : IDisposable
     {
         ThemeService.ResetForTests();
         var vm = NewVm();
-        vm.SelectedUiFont = FontOption(FontCatalog.DefaultUiFamily);
+        vm.SelectedUiFont = FontOption(FontCatalog.DefaultUiFamily(null));
         vm.ApplyFonts();
 
-        Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
+        Assert.Equal(FontCatalog.DefaultUiFamily(null), ThemeService.CurrentUiFont);
         var prefs = UiPreferenceStore.Load(out _);
-        Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
+        // 落盘的是"没选过"（空）而不是那个具体族名：默认族按语言给（决策 5），
+        // 落成具体族名就等于替用户做了选择，切语言时默认族不会跟着走。
+        Assert.Null(prefs.Fonts.Ui);
         // 等宽字体**不可改**：面板动作不碰它
         Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
     }
@@ -1069,13 +1071,15 @@ public class AppearanceViewModelTests : IDisposable
 
             await vm.ResetFontsAsync();
 
-            Assert.Equal(FontCatalog.DefaultUiFamily, ThemeService.CurrentUiFont);
+            Assert.Equal(FontCatalog.DefaultUiFamily(null), ThemeService.CurrentUiFont);
             Assert.Equal(FontCatalog.DefaultMonoFamily, ThemeService.CurrentMonoFont);
             var prefs = UiPreferenceStore.Load(out var failed);
             Assert.False(failed);
-            Assert.Equal(FontCatalog.DefaultUiFamily, prefs.Fonts.Ui);
-            Assert.Equal(FontCatalog.DefaultMonoFamily, prefs.Fonts.Mono);
-            Assert.Equal(FontCatalog.DefaultUiFamily, vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
+            // 落盘的是"没选过"（空）：恢复默认 = 回到"按语言给默认族"的状态，
+            // 写具体族名会被当成"用户显式选过的族"，之后切语言默认族就不跟着走了。
+            Assert.Null(prefs.Fonts.Ui);
+            Assert.Null(prefs.Fonts.Mono);
+            Assert.Equal(FontCatalog.DefaultUiFamily(null), vm.SelectedUiFont?.Family);    // 下拉显示的 = 默认族
             Assert.True(vm.Status.Resolve().Length == 0);                                  // 成功不播报
         }
         finally

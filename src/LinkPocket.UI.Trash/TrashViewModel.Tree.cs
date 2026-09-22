@@ -82,7 +82,7 @@ public partial class TrashViewModel
     {
         var sorted = node.Children
             .OrderBy(n => n.IsLink ? 1 : 0)
-            .ThenBy(n => n.Name, StringComparer.CurrentCulture)
+            .ThenBy(n => n.Name, NameOrder.Comparer)
             .ToList();
         node.Children.Clear();
         foreach (var child in sorted)

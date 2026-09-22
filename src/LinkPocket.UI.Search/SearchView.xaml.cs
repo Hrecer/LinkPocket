@@ -8,6 +8,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using LinkPocket.Contracts;
 using LinkPocket.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
@@ -351,35 +352,36 @@ public partial class SearchView : UserControl
         return sp;
     }
 
-    /// <summary>把命中的关键词染成强调色（大小写不敏感），其余用普通画刷。
+    /// <summary>把命中的关键词染成强调色，其余用普通画刷。
     /// 画刷一律经**资源引用**（<paramref name="normalKey"/> = 资源键）：一次性取画刷赋值会在换主题后停在旧主题。</summary>
+    /// <remarks>
+    /// <b>匹配口径走 <see cref="TextMatch"/>（与引擎侧同源）</b>：命中区间由它给，本方法只负责把区间画出来。
+    /// 早先这里自己写了一套 <c>ToLowerInvariant()</c> + <c>Ordinal</c> 的匹配——它有两处硬伤：
+    /// ① 与引擎侧的 <c>OrdinalIgnoreCase</c> 是两套规则（非 ASCII 上会"查得到却标不出"）；
+    /// ② 大小写折叠会**改变长度**（<c>İ</c> 这类字符），拿折叠串的下标去切原串会串位甚至越界。
+    /// 现在下标一律是**原串上的下标**，切段不可能错位。
+    /// </remarks>
     private void AddHighlightedRuns(TextBlock tb, string text, string query, string normalKey)
     {
         tb.Inlines.Clear();
-        if (string.IsNullOrEmpty(query))
-        {
+        var ranges = TextMatch.Ranges(text, query);
+        if (ranges.Count == 0)        {
             tb.Inlines.Add(ColoredRun(text, normalKey));
             return;
         }
-        var lower = text.ToLowerInvariant();
-        var q = query.ToLowerInvariant();
+
         var pos = 0;
-        while (true)
+        foreach (var range in ranges)
         {
-            var hit = lower.IndexOf(q, pos, StringComparison.Ordinal);
-            if (hit < 0)
-            {
-                if (pos < text.Length)
-                    tb.Inlines.Add(ColoredRun(text[pos..], normalKey));
-                break;
-            }
-            if (hit > pos)
-                tb.Inlines.Add(ColoredRun(text[pos..hit], normalKey));
-            var accent = ColoredRun(text.Substring(hit, q.Length), "App.Accent.Fill");
+            if (range.Start > pos)
+                tb.Inlines.Add(ColoredRun(text[pos..range.Start], normalKey));
+            var accent = ColoredRun(text.Substring(range.Start, range.Length), "App.Accent.Fill");
             accent.FontWeight = FontWeights.Bold;
             tb.Inlines.Add(accent);
-            pos = hit + q.Length;
+            pos = range.End;
         }
+        if (pos < text.Length)
+            tb.Inlines.Add(ColoredRun(text[pos..], normalKey));
     }
 
     /// <summary>按资源键着色的 Run（Foreground 走 TextElement 附加属性 → 换主题自动跟随）。</summary>

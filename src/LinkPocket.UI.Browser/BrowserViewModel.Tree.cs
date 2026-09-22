@@ -75,7 +75,7 @@ public partial class BrowserViewModel
     /// 文件夹节点先于链接组已由构建顺序保证（链接组恒排在文件夹之后，Windows 口径）。</summary>
     private void AppendTreeLinkLeaves(FolderNode folder, IEnumerable<LinkDto> links)
     {
-        foreach (var l in links.OrderBy(l => l.Title, StringComparer.CurrentCulture))
+        foreach (var l in links.OrderBy(l => l.Title, NameOrder.Comparer))
         {
             folder.Children.Add(new FolderNode
             {

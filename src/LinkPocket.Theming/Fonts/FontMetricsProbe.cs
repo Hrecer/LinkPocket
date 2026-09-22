@@ -74,15 +74,24 @@ public static class FontMetricsProbe
     }
 
     /// <summary>
-    /// 自检：候选字体相对默认字体的宽度/行高是否超阈值。
+    /// 自检：候选字体相对**基准字体**的宽度/行高是否超阈值。
     /// </summary>
     /// <param name="candidateFamily">候选字体族令牌值。</param>
     /// <param name="probe">基准串（两种语言各自一条，见 <c>metric.sample</c>）。</param>
+    /// <param name="baselineFamily">
+    /// 基准字体族（缺省 <c>null</c> = 中文默认族）。<b>界面传当前语言的默认族</b>
+    /// （<c>ThemeService.DefaultUiFont</c>）：默认族按语言走（决策 5），
+    /// 拿另一种语言的默认族当基准会把两个默认族本身的宽度差算进结论里。
+    /// </param>
     /// <param name="fontSize">界面主字号（实测大量使用 12 / 12.5 / 13）。</param>
-    public static Verdict Inspect(string candidateFamily, string probe, double fontSize = 12.5)
+    /// <remarks>
+    /// 本层不引 <c>LinkPocket.I18n</c>，所以"当前语言是哪个"由调用方给
+    /// （与 <see cref="FontCatalog.DefaultUiFamily"/> 取语言码字符串同一条口径）。
+    /// </remarks>
+    public static Verdict Inspect(string candidateFamily, string probe, string? baselineFamily = null, double fontSize = 12.5)
     {
         var candidate = Measure(candidateFamily, fontSize, probe);
-        var baseline = Measure(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), fontSize, probe);
+        var baseline = Measure(FontCatalog.BuildTokenValue(baselineFamily), fontSize, probe);
 
         var w = candidate.Width / baseline.Width - 1.0;
         var h = candidate.Height / baseline.Height;

@@ -77,7 +77,9 @@ internal sealed class LinkExportHandler : ICommandHandler
         {
             sb.AppendLine(string.Join(",",
                 Csv(dto.LinkId), Csv(dto.Url), Csv(dto.Title), Csv(dto.Description), Csv(dto.FaviconUrl),
-                Csv(dto.ListId ?? string.Empty), dto.VisitCount.ToString(), dto.IsImportant ? "1" : "0",
+                Csv(dto.ListId ?? string.Empty),
+                dto.VisitCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                dto.IsImportant ? "1" : "0",
                 Csv(dto.CreatedAt.ToString("O")), Csv(dto.UpdatedAt.ToString("O"))));
         }
 

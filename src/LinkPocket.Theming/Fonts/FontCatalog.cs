@@ -286,8 +286,34 @@ public static class FontCatalog
     public static FontFamily BuildFontFamily(string? primaryFamily) =>
         new(BuildTokenValue(primaryFamily));
 
-    /// <summary>默认界面字体族（= 改造前 <c>AppFont</c> 的第一段）。</summary>
-    public const string DefaultUiFamily = "Microsoft YaHei UI";
+    /// <summary>默认界面字体族：<b>中文界面</b>（= 改造前 <c>AppFont</c> 的第一段）。</summary>
+    public const string ZhDefaultUiFamily = "Microsoft YaHei UI";
+
+    /// <summary>默认界面字体族：<b>英文界面</b>。</summary>
+    public const string EnDefaultUiFamily = "Segoe UI";
+
+    /// <summary>
+    /// 按界面语言给默认字体族（决策 5）：中文 = <see cref="ZhDefaultUiFamily"/>、英文 = <see cref="EnDefaultUiFamily"/>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么参数是语言码字符串</b>：本层（Theming）不引 <c>LinkPocket.I18n</c>，
+    /// 也不该引——语言语义归 I18n，这里只认"哪个默认族"这一个事实。
+    /// 取值域见 <c>Contracts.LocalePreference.CodeZh</c> / <c>CodeEn</c>；
+    /// 认不出来（<c>null</c> / 未知码）走中文，与"出厂缺省 = 简体中文"同一条口径。
+    /// </para>
+    /// <para>
+    /// <b>回退链两个方向都兜得住</b>（<see cref="BuildTokenValue"/>）：主族是 Segoe UI 时，
+    /// 缺 CJK 字形仍会落到链上的雅黑；主族是雅黑时，缺的拉丁字形本来就由系统兜底。
+    /// </para>
+    /// </remarks>
+    public static string DefaultUiFamily(string? languageCode)
+        => IsEnglish(languageCode) ? EnDefaultUiFamily : ZhDefaultUiFamily;
+
+    /// <summary>这个语言码是不是英文（只认 <c>en</c> / <c>en-*</c>；其余一律走中文默认族）。</summary>
+    private static bool IsEnglish(string? languageCode)
+        => !string.IsNullOrWhiteSpace(languageCode)
+           && languageCode.Trim().StartsWith("en", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>默认等宽字体族。</summary>
     public const string DefaultMonoFamily = "Consolas";

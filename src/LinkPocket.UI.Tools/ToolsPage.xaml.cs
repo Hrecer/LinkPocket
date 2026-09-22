@@ -1298,11 +1298,13 @@ namespace LinkPocket.Views
             }
         }
 
+        /// <summary>文件体积的可读形式。数字一律 <see cref="System.Globalization.CultureInfo.InvariantCulture"/>：
+        /// 小数点是 <c>.</c>，不随语言变（否则同一个文件在德语机器上会写成 <c>1,5 MB</c>）。</summary>
         private static string FormatBytes(long bytes)
         {
             if (bytes < 1024) return $"{bytes} B";
-            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes / (1024.0 * 1024.0):F2} MB";
+            if (bytes < 1024 * 1024) return System.FormattableString.Invariant($"{bytes / 1024.0:F1} KB");
+            return System.FormattableString.Invariant($"{bytes / (1024.0 * 1024.0):F2} MB");
         }
 
         // ============================================================

@@ -131,7 +131,8 @@ public static class ThemePublisher
     public static void LogApplied(ThemeDefinition definition, TokenTable table)
     {
         LpLog.Info(
-            $"Applied theme '{definition.Id}' ({definition.Source}, {definition.Palette.Count} colors, rotation {table.SurfaceRotation:F1} deg, {PublishedKeyCount(table)} keys)",
+            System.FormattableString.Invariant(
+                $"Applied theme '{definition.Id}' ({definition.Source}, {definition.Palette.Count} colors, rotation {table.SurfaceRotation:F1} deg, {PublishedKeyCount(table)} keys)"),
             LogCategory);
     }
 }

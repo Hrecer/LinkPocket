@@ -19,7 +19,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        // 外观装配：**唯一入口** ThemeService（读偏好 → 求解 → 库基线 → 全量权威表 → 字体令牌 → 留痕）。
+        // 启动序（三条，顺序是硬约束）：
+        // ① 语言先定 —— 偏好的语言模式/固定码由 I18n 解释成具体语言（auto 的判据在 I18n），
+        //    并登记给 ThemeService：**默认界面字体族按语言给**（决策 5），而它在 ② 里就要用。
+        //    探针与冒烟不读偏好文件，所以这里也必须容忍"偏好不存在 = 出厂中文"。
+        var languagePrefs = LinkPocket.Theming.Preferences.UiPreferenceStore.Load(out _).Language;
+        var locale = AppLocales.Resolve(languagePrefs.Mode, languagePrefs.Override, out var languageFellBack);
+        ThemeService.SetActiveLanguage(locale.CodeOf());
+        LocaleService.Apply(locale);
+
+        // ② 外观装配：**唯一入口** ThemeService（读偏好 → 求解 → 库基线 → 全量权威表 → 字体令牌 → 留痕）。
         // 必须在 InitializeComponent（App.xaml 资源合并）之后调用，
         // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
         //
@@ -29,12 +38,9 @@ public partial class App : Application
         // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
         var (fellBack, reason) = ThemeService.ApplyFromPreferences(Resources);
 
-        // 语言：偏好里存的只是字符串，解释与生效全在 I18n。**必须在建主窗口之前**——
-        // 首帧就得是最终语言，先画中文再跳英文等于给用户看一次闪烁。
-        LocaleService.Apply(AppLocales.Resolve(ThemeService.LanguageMode, ThemeService.LanguageOverride, out var languageFellBack));
-
-        // 根别名登记（各语言的根显示名 → 契约层）：路径首段匹配在 UIKit、根级占用名校验在 Kernel，
-        // 两者都不许引 I18n，所以由组合根把事实登记过去。
+        // ③ 语言切换的宿主级副作用（显示文本一律由取词绑定自己重算，不在这里重投影）。
+        //    组合根只做两件事：把新语言码登记给 ThemeService（默认字体族据此），并写回偏好。
+        LocaleService.LanguageChanged += AppLocaleChanged;
 
         LpIcons.RegisterAll();
         base.OnStartup(e);
@@ -77,6 +83,39 @@ public partial class App : Application
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
             MessageBox.Show(Loc.T("startup.failed"), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
+        }
+    }
+
+    /// <summary>语言切换的宿主级副作用（唯一一处）：登记新语言码 + 写回偏好。</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>显示文本不在这里重投影</b>：所有取词绑定都带 <c>LocTable.Version</c> 失效，
+    /// 换表即全体重算（<c>LocaleService.Apply</c> 的注释里记着这条为什么不再需要钩子）。
+    /// </para>
+    /// <para>
+    /// <b>为什么登记语言码</b>：默认界面字体族按语言给（决策 5），而"当前语言"的语义在 I18n；
+    /// ThemeService 只收一个字符串，不解释它。
+    /// </para>
+    /// <para>
+    /// <b>这里不猜"用户选的是跟随系统还是固定语言"</b>：那是偏好层的字段，
+    /// 由发起切换的那一处（语言卡 / 组合根）在 <c>SetLanguagePreference</c> 里写清楚；
+    /// 本方法只负责"把当前生效的语言如实落盘"，不替用户改写模式。
+    /// </para>
+    /// <para>
+    /// <b>落盘失败照抛并暴露</b>（与"字体应用成功但偏好保存失败"同口径）：语言已经当场生效，
+    /// 但"下次启动还是它"这件事没成立 —— 必须留痕，不静默。
+    /// </para>
+    /// </remarks>
+    private void AppLocaleChanged(AppLocale locale)
+    {
+        ThemeService.SetActiveLanguage(locale.CodeOf());
+        try
+        {
+            ThemeService.SaveCurrentPreferences();
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("failed to persist the language choice", ex, ThemeService.LogCategory);
         }
     }
 

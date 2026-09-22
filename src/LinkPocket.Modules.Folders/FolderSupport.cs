@@ -19,7 +19,7 @@ internal static class FolderSupport
 
     /// <summary>
     /// 子文件夹排序（与既有 SortFolders 逐条等价）：
-    /// 名称与各维度都遵循升/降序；「最后查看」为空（从未）恒排最后；名称做同序稳定兜底（CurrentCulture）。
+    /// 名称与各维度都遵循升/降序；「最后查看」为空（从未）恒排最后；名称做同序稳定兜底（<see cref="NameOrder"/>）。
     /// <c>sort_order</c> = 手动排序（<c>folders.sort</c> 写入的列），此前只有写路径没有读路径，现接通。
     /// 仅用于**一次读出的同一个目录的直接子文件夹**（数量有限），链接列表的排序一律 SQL 下推。
     /// </summary>
@@ -36,10 +36,10 @@ internal static class FolderSupport
                 ? source.OrderBy(f => f.LastVisitedAt == null).ThenByDescending(f => f.LastVisitedAt)
                 : source.OrderBy(f => f.LastVisitedAt == null).ThenBy(f => f.LastVisitedAt),
             _ => desc
-                ? source.OrderByDescending(f => f.Name, StringComparer.CurrentCulture)
-                : source.OrderBy(f => f.Name, StringComparer.CurrentCulture),
+                ? source.OrderByDescending(f => f.Name, NameOrder.Comparer)
+                : source.OrderBy(f => f.Name, NameOrder.Comparer),
         };
-        return ordered.ThenBy(f => f.Name, StringComparer.CurrentCulture).ToList();
+        return ordered.ThenBy(f => f.Name, NameOrder.Comparer).ToList();
     }
 
     /// <summary>面包屑：「全部书签 / A / B」（与既有 BuildBreadcrumb 逐条等价）。</summary>

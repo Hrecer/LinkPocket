@@ -224,7 +224,10 @@ public class FontSystemTests : IDisposable
         // 回退链（雅黑 / Segoe UI）与默认等宽字体必须**一定存在**：
         // 若机器上真的没有，回退链就是一句空话 —— 用真实枚举把它钉住。
         var families = FontCatalog.SystemFontFamilies();
-        Assert.Contains(FontCatalog.DefaultUiFamily, families);
+        // 两种语言的默认族 + 回退链都必须**一定存在**：若机器上真的没有，回退链就是一句空话。
+        // 英文默认族 Segoe UI 也是回退链成员（它同时承担"缺拉丁字形的兜底"）。
+        Assert.Contains(FontCatalog.ZhDefaultUiFamily, families);
+        Assert.Contains(FontCatalog.EnDefaultUiFamily, families);
         Assert.Contains(FontCatalog.DefaultMonoFamily, families);
         Assert.All(FontCatalog.FallbackChain, f => Assert.Contains(f, families));
     }
@@ -272,18 +275,25 @@ public class FontSystemTests : IDisposable
     [Fact]
     public void 度量自检_默认字体自身必须通过()
     {
-        // 自检是"相对默认字体"的比较——拿默认字体比自己必然应**完全相等**（否则阈值本身就是错的）。
-        var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(FontCatalog.DefaultUiFamily), "LinkPocket 书签管理 0123");
-        Assert.True(verdict.Ok, verdict.Code);
-        Assert.Equal(0.0, verdict.WidthDelta, 6);   // 宽度相对偏差 = 0
-        Assert.Equal(1.0, verdict.HeightRatio, 6);  // 行高倍率 = 1
+        // 自检是"相对**基准字体**"的比较——拿基准自己比自己必然应**完全相等**（否则阈值本身就是错的）。
+        // 基准按语言给（决策 5）：这里各检一次，两种语言的默认族都必须拿到 0 偏差。
+        foreach (var baseline in new[] { FontCatalog.ZhDefaultUiFamily, FontCatalog.EnDefaultUiFamily })
+        {
+            var probe = baseline == FontCatalog.EnDefaultUiFamily
+                ? "LinkPocket Bookmarks 0123"
+                : "LinkPocket 书签管理 0123";
+            var verdict = FontMetricsProbe.Inspect(FontCatalog.BuildTokenValue(baseline), probe, baseline);
+            Assert.True(verdict.Ok, $"{baseline}: {verdict.Code}");
+            Assert.Equal(0.0, verdict.WidthDelta, 6);   // 宽度相对偏差 = 0
+            Assert.Equal(1.0, verdict.HeightRatio, 6);  // 行高倍率 = 1
+        }
     }
 
     [Fact]
     public void 度量自检_极端字体族名回落默认_不抛()
     {
         // 不存在的字体族会回落到回退链；自检必须仍能给出结论，不许抛（面板要实时调它）。
-        var verdict = FontMetricsProbe.Inspect("__NoSuchFontFamily__", "LinkPocket Bookmarks 0123");
+        var verdict = FontMetricsProbe.Inspect("__NoSuchFontFamily__", "LinkPocket Bookmarks 0123", FontCatalog.EnDefaultUiFamily);
         Assert.False(string.IsNullOrWhiteSpace(verdict.Candidate.Text));
         Assert.True(verdict.Baseline.Width > 0);
     }
@@ -363,7 +373,10 @@ public class FontSystemTests : IDisposable
             UiPreferenceStore.Clear();
             var loaded = UiPreferenceStore.Load(out var failed);
             Assert.False(failed);
-            Assert.Equal(FontCatalog.DefaultUiFamily, loaded.Fonts.Ui);
+            // 「没选过」= 空（不是某个具体族名）：默认族按语言给（决策 5），
+            // 落成具体族名就等于替用户做了选择，切语言时默认族不会跟着走。
+            Assert.Null(loaded.Fonts.Ui);
+            Assert.Null(loaded.Fonts.Mono);
         }
         finally
         {

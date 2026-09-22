@@ -67,13 +67,18 @@ public sealed record ThemePreference
 }
 
 /// <summary>字体偏好：界面字体与等宽字体各一个族名（可为导入字体的族名）。</summary>
+/// <remarks>
+/// <b>空值 = "没选过"</b>：界面字体族按语言给默认（中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>，
+/// 决策 5），所以"用户没选过"必须能表达成空——写成具体族名就等于替用户做了选择，
+/// 之后切语言时默认族不会跟着走（<c>ThemeService.ResolveFonts</c> 读这个空值）。
+/// </remarks>
 public sealed record FontPreference
 {
-    /// <summary>界面字体族名（缺省 = 系统雅黑链）。</summary>
-    public string Ui { get; init; } = Fonts.FontCatalog.DefaultUiFamily;
+    /// <summary>界面字体族名；<c>null</c> = 没选过 = 当前语言的默认族。</summary>
+    public string? Ui { get; init; }
 
-    /// <summary>等宽字体族名（缺省 = Consolas 链）。</summary>
-    public string Mono { get; init; } = Fonts.FontCatalog.DefaultMonoFamily;
+    /// <summary>等宽字体族名；<c>null</c> = 默认族（<c>Consolas</c>）。</summary>
+    public string? Mono { get; init; }
 }
 
 /// <summary>

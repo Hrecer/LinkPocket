@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Theming.Fonts;
 
@@ -73,7 +74,9 @@ public sealed class WpfSystemFontSource : ISystemFontSource
             var name = family.FamilyNames.Values.FirstOrDefault() ?? family.Source;
             list.Add(new FontChoice(family.Source, name));
         }
-        list.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture));
+        // 排序键 = **族身份**（family.Source），不是本地化显示名：显示名会跟着系统语言变，
+        // 拿它排序等于"同一个字体列表在不同语言的机器上顺序不同"（字体卡切语言后候选顺序乱跳）。
+        list.Sort((a, b) => NameOrder.Compare(a.Family, b.Family));
         return new ReadOnlyCollection<FontChoice>(list);
     }
 }

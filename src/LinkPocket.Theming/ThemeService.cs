@@ -107,10 +107,43 @@ public static class ThemeService
     // ── 字体（与主题是两条独立的轴：一个主题不携带字体）──────────────────────
 
     /// <summary>当前界面字体族名（令牌链的第一段）。</summary>
-    public static string CurrentUiFont { get; private set; } = Fonts.FontCatalog.DefaultUiFamily;
+    public static string CurrentUiFont { get; private set; } = Fonts.FontCatalog.DefaultUiFamily(null);
 
     /// <summary>当前等宽字体族名。</summary>
     public static string CurrentMonoFont { get; private set; } = Fonts.FontCatalog.DefaultMonoFamily;
+
+    // ── 语言（透传：持久化在本层，语义在 LinkPocket.I18n）───────────────────
+    // 为什么不让 I18n 自己开一个偏好文件：偏好文件只有一份、要对用户可读，而 I18n 不能引 Theming
+    // （两边互引即成环）。中间以纯字符串为通货，本层只存不解释。
+    // ⚠️ 唯一的例外是"默认字体族按语言给"（决策 5）：那需要知道当前语言码，
+    //    但语义仍在 I18n —— 本层只读一个字符串，不解释它。
+
+    /// <summary>偏好里的语言模式（<c>auto</c> / <c>fixed</c>）；出厂缺省 = 跟随系统。</summary>
+    public static string LanguageMode { get; private set; } = LocalePreference.ModeAuto;
+
+    /// <summary>固定语言时的语言码；<c>auto</c> 时为 null。</summary>
+    public static string? LanguageOverride { get; private set; }
+
+    /// <summary>
+    /// 当前**生效**的语言码，由组合根在 <see cref="ApplyFromPreferences"/> 之前登记
+    /// （<c>auto</c> 的解析归 I18n，本层只接收结论）。
+    /// </summary>
+    public static string? ActiveLanguageCode { get; private set; }
+
+    /// <summary>
+    /// 登记当前生效的语言码（组合根在启动序里调用，先于 <see cref="ApplyFromPreferences"/>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么不在这里自己解析 <c>auto</c></b>：那需要读系统 UI 语言并套 I18n 的别名表 ——
+    /// 等于把语言语义抄进 Theming（双份事实源，见 <c>AppLocales.Resolve</c>）。
+    /// 本层只要一个字符串，用来选默认字体族。
+    /// </remarks>
+    public static void SetActiveLanguage(string? code) => ActiveLanguageCode = code;
+
+    /// <summary>
+    /// 本层理解的默认界面字体族：**偏好里显式选过的族优先，没选过就按当前语言给默认族**（决策 5）。
+    /// </summary>
+    public static string DefaultUiFont => Fonts.FontCatalog.DefaultUiFamily(ActiveLanguageCode);
 
     /// <summary>
     /// 应用字体（发布 <c>App.Font.Ui</c> / <c>App.Font.Mono</c> 两个令牌）。
@@ -121,7 +154,7 @@ public static class ThemeService
     /// </remarks>
     public static void ApplyFonts(string? uiFamily = null, string? monoFamily = null, ResourceDictionary? resources = null)
     {
-        CurrentUiFont = string.IsNullOrWhiteSpace(uiFamily) ? Fonts.FontCatalog.DefaultUiFamily : uiFamily.Trim();
+        CurrentUiFont = string.IsNullOrWhiteSpace(uiFamily) ? DefaultUiFont : uiFamily.Trim();
         CurrentMonoFont = string.IsNullOrWhiteSpace(monoFamily) ? Fonts.FontCatalog.DefaultMonoFamily : monoFamily.Trim();
 
         var target = resources ?? Application.Current?.Resources;
@@ -153,7 +186,7 @@ public static class ThemeService
         var hit = false;
         if (string.Equals(CurrentUiFont, family, StringComparison.OrdinalIgnoreCase))
         {
-            CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
+            CurrentUiFont = DefaultUiFont;
             hit = true;
         }
         if (string.Equals(CurrentMonoFont, family, StringComparison.OrdinalIgnoreCase))
@@ -215,32 +248,44 @@ public static class ThemeService
                 NeutralHue = _current.Source == Themes.ThemeSource.UserDefined ? _current.NeutralHueOverride : null,
                 AutoAdjustColors = PaletteMode == PaletteMode.Auto,
             },
-            Fonts = new Preferences.FontPreference { Ui = CurrentUiFont, Mono = CurrentMonoFont },
+            // 字体偏好**空 = 当前语言的默认族**（决策 5）：落盘时把"就是默认族"的写法归一成空，
+            // 否则"恢复默认字体"会写下一个**具体族名**——用户之后切语言时，它就被当成
+            // "显式选过的族"（用户选择优先于语言），默认族永远不跟着语言走。
+            // 落盘仍是同一个文件、同一条路径，只是把"没选过"这个事实写成"没选过"。
+            Fonts = new Preferences.FontPreference
+            {
+                Ui = UiPreferenceOrNull(CurrentUiFont),
+                Mono = string.Equals(CurrentMonoFont, Fonts.FontCatalog.DefaultMonoFamily, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : CurrentMonoFont,
+            },
             Language = new Preferences.LanguagePreference { Mode = LanguageMode, Override = LanguageOverride },
         });
     }
-
-    // ── 语言（透传：持久化在本层，语义在 LinkPocket.I18n）───────────────────
-    // 为什么不让 I18n 自己开一个偏好文件：偏好文件只有一份、要对用户可读，而 I18n 不能引 Theming
-    // （两边互引即成环）。中间以纯字符串为通货，本层只存不解释。
-
-    /// <summary>偏好里的语言模式（<c>auto</c> / <c>fixed</c>）；出厂缺省 = 跟随系统。</summary>
-    public static string LanguageMode { get; private set; } = LocalePreference.ModeAuto;
-
-    /// <summary>固定语言时的语言码；<c>auto</c> 时为 null。</summary>
-    public static string? LanguageOverride { get; private set; }
 
     /// <summary>
     /// 记下用户的语言选择（**不落盘**——落盘由调用方走 <see cref="SaveCurrentPreferences"/>，
     /// 与主题/字体同一条路，避免出现第二套写文件的路径）。
     /// </summary>
+    /// <remarks>
+    /// 设置模式与固定码之后，<see cref="ActiveLanguageCode"/> 由组合根用
+    /// <c>AppLocales.Resolve</c> 的结论登记（本层不解释 <c>auto</c>）。
+    /// </remarks>
     public static void SetLanguagePreference(string? mode, string? @override)
     {
         LanguageMode = string.IsNullOrWhiteSpace(mode) ? LocalePreference.ModeAuto : mode.Trim();
         LanguageOverride = string.IsNullOrWhiteSpace(@override) ? null : @override.Trim();
     }
 
-    /// <summary>偏好里的主题 → 主题定义（自选配色按需重建；非法一律回退出厂默认）。</summary>
+    /// <summary>
+    /// 界面字体写成偏好值时归一：**等于当前语言的默认族就是"没选过"（null）**，否则原样记下。
+    /// </summary>
+    /// <remarks>
+    /// 判据用 <see cref="DefaultUiFont"/>（当前语言）而不是某个固定族名：
+    /// "恢复默认字体"在英文界面下回的是 <c>Segoe UI</c>，那也要落成"没选过"。
+    /// </remarks>
+    private static string? UiPreferenceOrNull(string family)
+        => string.Equals(family, DefaultUiFont, StringComparison.OrdinalIgnoreCase) ? null : family;
     private static Themes.ThemeDefinition ResolveDefinition(Preferences.ThemePreference pref)
     {
         if (!pref.IsCustom)
@@ -278,6 +323,10 @@ public static class ThemeService
     /// <summary>偏好里的字体 → 族名（导入文件已不存在时如实报告，但**保留**偏好条目）。</summary>
     /// <remarks>
     /// <para>
+    /// <b>偏好为空 = "没选过" = 按当前语言给默认族</b>（决策 5）：用户显式选过的族跨语言不变
+    /// （用户选择优先于语言），没选过的才跟着语言走。
+    /// </para>
+    /// <para>
     /// <b>判据 = <see cref="Fonts.FontCatalog.All"/>（"这个字体能不能选"的唯一事实来源）</b>：
     /// 已导入文件 + 系统已装字体。启动路径与「外观」面板的候选列表读的是同一份，
     /// 不会出现"面板里能选、重启后判成不可用"这种两套判据的分歧。
@@ -300,12 +349,13 @@ public static class ThemeService
         // 用户只看到"界面字体已不可用"，等宽那份悄悄回退 = 观测面缺陷）。
         var reasons = new List<string>();
 
-        var ui = pref.Ui;
+        // 空 = 没选过 → 当前语言的默认族（用户显式选过的族不会被这里改掉）
+        var ui = string.IsNullOrWhiteSpace(pref.Ui) ? DefaultUiFont : pref.Ui.Trim();
         var mono = pref.Mono;
         if (!string.IsNullOrWhiteSpace(ui) && !available.Contains(ui))
         {
             reasons.Add($"the UI font '{ui}' is unavailable (file missing or not installed), fell back to the default font");
-            ui = Fonts.FontCatalog.DefaultUiFamily;
+            ui = DefaultUiFont;
         }
         if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
         {
@@ -367,7 +417,10 @@ public static class ThemeService
         _current = ThemeCatalog.Default;
         _table = null;
         PaletteMode = DefaultPaletteMode;   // 开关回缺省（打开 = 自动调色）—— 否则会漏进下一个用例
-        CurrentUiFont = Fonts.FontCatalog.DefaultUiFamily;
+        // ⚠️ 语言登记也要回出厂缺省：留着上一轮的语言码会让"默认字体族"漏进下一个用例
+        //    （同一类"测试结果取决于执行顺序"的偶发红）。
+        ActiveLanguageCode = null;
+        CurrentUiFont = DefaultUiFont;
         CurrentMonoFont = Fonts.FontCatalog.DefaultMonoFamily;
         if (clearPreferences) Preferences.UiPreferenceStore.Clear();
         // 字体来源与缓存也要复位：用例可能注入了假字体列表（FontCatalog.SystemSource），

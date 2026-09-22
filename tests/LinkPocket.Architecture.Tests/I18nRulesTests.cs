@@ -307,6 +307,93 @@ public class I18nRulesTests
             "界面引用了表里不存在的键（运行时只会显示 ⟨key⟩，属真缺陷）：\n" + string.Join("\n", referenced.Distinct()));
     }
 
+    /// <summary>
+    /// 日期/时间的**裸格式串**（G7）：界面层不许自己写 <c>ToString("yyyy-MM-dd HH:mm")</c> 这类格式，
+    /// 一律走 <c>UiClock</c> 唯一出口。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>口径 = 格式串里出现日期/时间字段</b>（<c>yyyy</c> / <c>MM</c> / <c>dd</c> / <c>HH</c> /
+    /// <c>mm</c> / <c>ss</c> / <c>tt</c> 之一），不是"所有 <c>ToString</c>"：
+    /// 纯数值格式（<c>"F2"</c> / <c>"F0"</c>）与机器面格式（<c>"O"</c> 往返、<c>"X6"</c> 十六进制）
+    /// 不在本闸射程内——它们由"数字一律 Invariant"那条口径管。
+    /// </para>
+    /// <para>
+    /// <b>判据只认 <c>ToString(...)</c> 的字面量实参</b>（<c>.ToString("…")</c>），
+    /// 不扫"任何含日期字母的字符串"：后者会把 <c>"System"</c>、<c>"MM/dd"</c> 之类的普通文案
+    /// 一并抓进来（假红），而那类文案本来就走 <c>Loc</c> 键。
+    /// </para>
+    /// <para>
+    /// <b>唯一豁免 = <c>I18n/UiClock.cs</c> 自身</b>（它就是要写格式串的那一处）。
+    /// 引擎侧与 Theming 的日期格式（日志文件名 / 备份时间戳 / SQL 时间戳）不在此列：
+    /// 它们是机器面，必须与界面语言无关。
+    /// </para>
+    /// </remarks>
+    private static readonly Regex BareDateFormat = new(
+        @"\.ToString\(\s*""(?=[^""\r\n]*\b(?:yyyy|MM|dd|HH|mm|ss|tt)\b)[^""\r\n]*""",
+        RegexOptions.Compiled);
+
+    private static readonly string[] ClockHome = { "src/LinkPocket.I18n/UiClock.cs" };
+
+    /// <summary>G7：界面层零裸日期格式串（一律走 <c>UiClock</c>）。</summary>
+    [Fact]
+    public void 界面层_零裸日期格式串()
+    {
+        var offenders = new List<string>();
+        foreach (var file in CsFiles(UiDirs))
+        {
+            var rel = Relative(file);
+            if (ClockHome.Contains(rel, StringComparer.Ordinal)) continue;
+            var body = Strip(File.ReadAllText(file), xaml: false);
+            var line = 0;
+            foreach (var raw in File.ReadAllLines(file))
+            {
+                line++;
+                if (raw.TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
+                foreach (Match m in BareDateFormat.Matches(Strip(raw, xaml: false)))
+                    offenders.Add($"{rel}:{line} → {m.Value}");
+            }
+        }
+
+        Assert.True(offenders.Count == 0,
+            "界面层出现裸日期格式串（换语言后这里会停在旧语言的格式上）：\n" +
+            string.Join("\n", offenders) +
+            "\n请改走 `UiClock.Format` / `UiClock.Text`（I18n 的日期唯一出口）。");
+    }
+
+    /// <summary>
+    /// 判据自查：G7 的正则必须**量得到东西**（否则它可能一直在空跑）。
+    /// </summary>
+    /// <remarks>
+    /// 本仓纪律：放宽/新增判据时必须留"它能红"的证据（同族见探针 P9 的负向对照）。
+    /// 这里用合成样本，不依赖仓库里恰好有没有违规。
+    /// </remarks>
+    [Fact]
+    public void 界面层_零裸日期格式串_判据能红()
+    {
+        foreach (var bad in new[]
+                 {
+                     """x.ToString("yyyy-MM-dd HH:mm")""",
+                     """y.ToString("MM/dd/yyyy h:mm tt")""",
+                     """z.ToString("HH:mm:ss")""",
+                 })
+        {
+            Assert.True(BareDateFormat.IsMatch(bad), $"G7 抓不到这条裸格式串：{bad}");
+        }
+
+        foreach (var good in new[]
+                 {
+                     """x.ToString("F2", CultureInfo.InvariantCulture)""",
+                     """y.ToString("O")""",
+                     """z.ToString()""",
+                     """w.ToString("X6")""",
+                     """var label = "System fonts";""",
+                 })
+        {
+            Assert.False(BareDateFormat.IsMatch(good), $"G7 误报（本不该在射程内）：{good}");
+        }
+    }
+
     /// <summary>承载用户可见文案的属性（<see cref="XamlTextAttr"/> 的取值面）。</summary>
     private static readonly Regex XamlBindingToText = new(
         @"\b(Text|Content|Header|HeaderText|ToolTip|Tag)\s*=\s*""\{Binding\s+(?<path>[^""{}]+?)\s*\}""",

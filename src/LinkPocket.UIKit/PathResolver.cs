@@ -80,7 +80,7 @@ public sealed class PathResolver
         var typedPlain = PathText.Unescape(typed.Trim());   // 用户输入的可能是转义名（如 "A\/B" 查找 A/B）
         return _childrenOf(head)
             .Where(n => typedPlain.Length == 0 || n.Name.StartsWith(typedPlain, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(n => n.Name, StringComparer.CurrentCulture)
+            .OrderBy(n => n.Name, NameOrder.Comparer)
             .Select(n => n.Name)
             .Take(MaxCandidates)
             .ToList();

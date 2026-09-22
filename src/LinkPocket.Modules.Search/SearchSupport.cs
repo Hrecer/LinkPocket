@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 using LinkPocket.Kernel;
 
@@ -55,7 +56,7 @@ internal static class SearchSupport
         var expanded = new List<FolderId>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Queue<string>(folders
-            .Where(f => f.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(f => TextMatch.Contains(f.Name, query))
             .Select(f => f.FolderId));
 
         while (pending.Count > 0)
@@ -69,17 +70,17 @@ internal static class SearchSupport
         return expanded;
     }
 
-    /// <summary>逐字段标注命中来源（与 SQL 谓词同义；供 search.explain 与结果高亮）。</summary>
+    /// <summary>逐字段标注命中来源（与 SQL 谓词同义；供 search.explain 与结果高亮）。
+    /// 匹配口径走 <see cref="TextMatch"/>——与界面侧高亮<b>同一份实现</b>（两套规则必然分叉）。</summary>
     private static List<string> MatchedFields(
         Link link, LinkSearchScope scope, IReadOnlySet<string> pathSet, string query)
     {
         var matched = new List<string>();
-        if (scope.Title && link.Title != null && link.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (scope.Title && TextMatch.Contains(link.Title, query))
             matched.Add("title");
-        if (scope.Url && link.Url.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (scope.Url && TextMatch.Contains(link.Url, query))
             matched.Add("url");
-        if (scope.Description && link.Description != null
-            && link.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (scope.Description && TextMatch.Contains(link.Description, query))
             matched.Add("description");
         if (link.ListId != null && pathSet.Contains(link.ListId))
             matched.Add("path");
