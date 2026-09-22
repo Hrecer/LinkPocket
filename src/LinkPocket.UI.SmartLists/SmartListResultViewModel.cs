@@ -107,11 +107,24 @@ namespace LinkPocket.ViewModels
         public int TotalCount
         {
             get => _totalCount;
-            set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalCountText)); }
+            set
+            {
+                if (_totalCount == value) return;
+                _totalCount = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TotalCountText));
+            }
         }
 
-        /// <summary>「共 N 项」整句（含变量的句子由模型出文本，语序随语言走）。</summary>
-        public string TotalCountText => LinkPocket.I18n.Loc.T("smartlists.count.total", _totalCount);
+        /// <summary>
+        /// 「共 N 项」整句（含变量的句子由模型出文本，语序随语言走）。
+        /// </summary>
+        /// <remarks>
+        /// ⚠️ <b>交出去的是文案值（键 + 参数），不是取好词的字符串</b>：返回 <c>string</c> 会把这句话
+        /// <b>冻结在读取那一刻的语言</b>上（绑定只认"属性值变了没有"，而普通属性不发通知），
+        /// 换语言后屏幕上留着上一种语言的计数句。界面侧一律写 <c>{loc:Value TotalCountText}</c>。
+        /// </remarks>
+        public LocValue TotalCountText => Loc.K("smartlists.count.total", _totalCount);
 
         // —— 选中态与详情栏（MVVM 自页面下沉；共享 ListSelection 核心，单选中） ——
 

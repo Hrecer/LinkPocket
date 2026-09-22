@@ -55,16 +55,20 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- 胶囊外壳：40 高恒定，编辑态只做颜色/描边形变，圆角保持 20（40 的全圆）。
+    <!-- 胶囊外壳：44 高恒定，编辑态只做颜色/描边形变，圆角保持 22（44 的全圆）。
          点空白 = 请求进入路径编辑（Windows 11 口径：无需任何按钮；段点击被 Button 吃掉不会到这）。
-         ⚠️ 本地值优先级高于样式触发器 —— 基态值必须写在 Style.Setters。 -->
-    <Border x:Name="CapsuleShell" Height="40" BorderThickness="2" VerticalAlignment="Center"
+         ⚠️ 本地值优先级高于样式触发器 —— 基态值必须写在 Style.Setters。
+         ⚠️ **44 这个数是算出来的，不是随手取的**：壳体内容高度 = 44 − 描边 2×2 − 内距 2×4 = 32，
+         正好等于段药丸声明的高度（32）。曾用 40：内容区只有 40 − 4 − 8 = 28 < 32 ⇒
+         整颗药丸被布局压成 28 高（圆角 14 的胶囊被压扁，悬停底看着"底下被切掉一条"）。
+         改这个数之前先跑「仅 i18nvisual 套件」（它逐段量"药丸实得高度 == 声明高度"）。 -->
+    <Border x:Name="CapsuleShell" Height="44" BorderThickness="2" VerticalAlignment="Center"
             local:BlankClick.IsInteractive="True"
             MouseLeftButtonDown="CrumbHost_MouseLeftButtonDown">
         <Border.Style>
             <Style TargetType="Border">
                 <Setter Property="Padding" Value="8,4"/>
-                <Setter Property="CornerRadius" Value="20"/>
+                <Setter Property="CornerRadius" Value="22"/>
                 <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
                 <Setter Property="BorderBrush" Value="Transparent"/>
                 <Style.Triggers>

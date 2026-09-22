@@ -161,17 +161,21 @@
 
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                                     Margin="0,0,2,0">
-                            <!-- 含变量的整句由模型给文本：三段"字面量 + 绑定 + 字面量"在英文里语序不成立 -->
-                            <TextBlock Text="{Binding ResultViewModel.TotalCountText, Mode=OneWay}" FontSize="12"
+                            <!-- 含变量的整句由模型给文本：三段"字面量 + 绑定 + 字面量"在英文里语序不成立。
+                                 ⚠️ 文案值一律经 `{loc:Value}` 取词（**不许裸绑 `{Binding}`**）：
+                                 裸绑画出来的是 `LocValue { Key = …, Args = … }` 记录字符串——
+                                 它既是 ASCII（"英文界面零 CJK"抓不到）、又从不等于上一种语言的文本
+                                 （"旧语言文本为零"也抓不到），两个动态闸都放它过去，只有静态闸 G11 管得住。 -->
+                            <TextBlock Text="{loc:Value ResultViewModel.TotalCountText}" FontSize="12"
                                        Foreground="{DynamicResource App.Text.Secondary}"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                            <TextBlock Text="{Binding ResultViewModel.Title}" FontSize="15" FontWeight="SemiBold"
+                            <TextBlock Text="{loc:Value ResultViewModel.Title}" FontSize="15" FontWeight="SemiBold"
                                        Foreground="{DynamicResource App.Text.Primary}" VerticalAlignment="Center"/>
                             <!-- 灰色提示：列表语义说明（与入口卡片副标题同一数据源） -->
-                            <TextBlock Text="{Binding ResultViewModel.Subtitle}" FontSize="12.5"
+                            <TextBlock Text="{loc:Value ResultViewModel.Subtitle}" FontSize="12.5"
                                        Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Center"
                                        Margin="12,1,0,0" TextTrimming="CharacterEllipsis"/>
                             <!-- 当前排序（默认排序可见化：列头箭头之外再给一句文字，避免"像没排序"） -->

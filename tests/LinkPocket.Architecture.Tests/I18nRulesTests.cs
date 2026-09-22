@@ -410,20 +410,26 @@ public class I18nRulesTests
         RegexOptions.Compiled | RegexOptions.Multiline);
 
     /// <summary>
-    /// <c>{Binding X}</c> 里**不适用本规则的成员名**（同名但类型不是 <see cref="LocValue"/>）。
+    /// <c>{Binding X}</c> 里**只许直接绑定（单段路径）**的成员名：同名但类型不是 <see cref="LocValue"/>。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 本规则按"成员名"判（不解析 DataContext 类型：那要跑 BAML，脆弱且与其它源码扫描规则不同族），
-    /// 于是"别处有个同名的 <c>LocValue</c> 成员"会被误报。实测只有这三个名字属于这一类：
-    /// <list type="bullet">
-    /// <item><c>Name</c> —— <c>FolderNodeViewModel.Name</c> / <c>BrowserRowViewModel.Name</c> 是**用户数据**（文件夹名 / 书签名）。
-    /// ⚠️ 反过来说：<c>ToolsPage.ToolItem.Name</c> 曾**正好是** <c>LocValue</c>（工具名是文案），
-    /// 那次已经改成 <c>{loc:Value Name}</c>——所以这个豁免只覆盖"用户数据那一侧"的绑定。</item>
-    /// <item><c>Title</c> / <c>Subtitle</c> —— 明细栏的 <c>TitleCopy</c> 等成员另有名字；</item>
-    /// </list>
-    /// 新增豁免必须在这里写清理由（用例里有一条规模断言盯着）。
+    /// 于是"别处有个同名的 <c>LocValue</c> 成员"会被误报。实测只有 <c>Name</c> 属于这一类：
+    /// <c>BrowserNode.Name</c> / <c>TrashNode.Name</c> 是**用户数据**（文件夹名 / 书签名），
+    /// 两个页面的 XAML 里各有一处 <c>{Binding Name}</c>。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>豁免只对"直接绑定"（路径里没有点）生效</b>——这一条是被真实事故逼出来的：
+    /// <c>{Binding Title}</c>（入口卡片上的用户数据侧）与 <c>{Binding ResultViewModel.Title}</c>
+    /// （结果页标题，值是 <c>LocValue</c>）在**成员名**上完全一样，早先按名字一刀切豁免，
+    /// 于是结果页那三处裸绑（标题 / 副标题 / 计数句）在闸下静默通过，界面上画出了
+    /// <c>LocValue { Key = smartlists.preset.mostVisited, … }</c>。
+    /// 判据收紧为：**带前缀的路径（有点）= 明确指向某个对象的成员，一律按 <c>LocValue</c> 判**，
+    /// 不加豁免；只有无前缀的直接绑定才可能落在"用户数据那一侧"。
+    /// </para>
     /// </remarks>
-    private static readonly string[] UnrelatedMemberNames = { "Name", "Title", "Subtitle" };
+    private static readonly string[] DirectBindingExemptNames = { "Name" };
 
     /// <summary>
     /// 禁止把 <c>LocValue</c> 直接绑到文案属性上 —— 那会画出 C# 记录字符串
@@ -433,13 +439,19 @@ public class I18nRulesTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 实测事故（2026-09-22 收口阶段四时发现，PNG 基线里一直看得见）：智能列表入口卡片（标题 + 副标题）、
+    /// 实测事故（收口阶段四时发现，PNG 基线里一直看得见）：智能列表入口卡片（标题 + 副标题）、
     /// 工具页左栏工具名、外观面板的色槽序号与色值、「派生摘要」、以及两处右键菜单的「删除」项，
     /// 共 <b>8 处</b>写成 <c>{Binding Title}</c> 这类裸绑定，界面上直接画出记录字符串。
     /// </para>
     /// <para>
-    /// 判据 = "绑定的路径段里有任何一个名字，是界面层某个 <c>LocValue</c> 型成员的名字"（豁免见
-    /// <see cref="UnrelatedMemberNames"/>）。<b>漏报的代价</b>（用户界面画出记录字符串）远大于误报。
+    /// 判据 = "绑定的路径段里有任何一个名字，是界面层某个 <c>LocValue</c> 型成员的名字"；
+    /// 唯一的豁免是 <see cref="DirectBindingExemptNames"/>，且**只对直接绑定生效**（见那里的说明）。
+    /// <b>漏报的代价</b>（用户界面画出记录字符串）远大于误报。
+    /// </para>
+    /// <para>
+    /// 闸只管<b>形状</b>，管不到"值是不是真的会随语言重算"——所以配套还有两条：
+    /// 探针逐页扫可视树里的 <c>LocValue {</c> 文本（动态总闸），以及"文案值不许是 <c>string</c>"这条口径
+    /// （<c>TotalCountText</c> 曾返回 <c>string</c>：形状上不是裸绑，但同样是"冻结在取词那一刻"）。
     /// </para>
     /// </remarks>
     [Fact]
@@ -452,8 +464,8 @@ public class I18nRulesTests
 
         Assert.True(locValueMembers.Count > 0,
             "一个 LocValue 型成员都没扫到——扫描口径与代码形状漂移了（本规则会静默空跑）");
-        Assert.True(UnrelatedMemberNames.Length == 3,
-            "豁免清单的规模变了：请确认新增的豁免真的是'同名但类型不是 LocValue'，再改这个数字");
+        Assert.True(DirectBindingExemptNames.Length == 1,
+            "豁免清单的规模变了：请确认新增的豁免真的是'同名但类型不是 LocValue'且只用于直接绑定，再改这个数字");
 
         var offenders = new List<string>();
         foreach (var file in Files(UiDirs).Where(f => f.EndsWith(".xaml", StringComparison.Ordinal)))
@@ -462,9 +474,10 @@ public class I18nRulesTests
             foreach (Match m in XamlBindingToText.Matches(body))
             {
                 var path = m.Groups["path"].Value.Trim();
+                var direct = !path.Contains('.', StringComparison.Ordinal);
                 var hit = path.Split('.', StringSplitOptions.RemoveEmptyEntries)
                     .FirstOrDefault(seg => locValueMembers.Contains(seg)
-                                           && !UnrelatedMemberNames.Contains(seg, StringComparer.Ordinal));
+                                           && !(direct && DirectBindingExemptNames.Contains(seg, StringComparer.Ordinal)));
                 if (hit is not null) offenders.Add($"{Relative(file)} → {{{hit}}}（路径 {path}）");
             }
         }
@@ -472,5 +485,47 @@ public class I18nRulesTests
         Assert.True(offenders.Count == 0,
             "以下位置把 LocValue 直接绑到了 Text/Content/ToolTip 上——界面上会画出 `LocValue { Key = … }` 记录字符串。" +
             "请改成 `{loc:Value 成员名}`（与 `{loc:Loc}` 同一套版本失效机制）：\n" + string.Join("\n", offenders.Distinct()));
+    }
+
+    /// <summary>
+    /// 判据自查：这条闸**抓得到**"带前缀路径的裸绑"、且**不误报**"直接绑定的用户数据同名成员"。
+    /// </summary>
+    /// <remarks>
+    /// 存在的理由是一次真实漏报：豁免按**成员名**一刀切（<c>Name</c>/<c>Title</c>/<c>Subtitle</c>），
+    /// 于是结果页的 <c>{Binding ResultViewModel.Title}</c>（值是 <c>LocValue</c>）被当成
+    /// "明细栏里那个同名的用户数据成员"放过去了——界面上画出记录字符串，而闸全绿。
+    /// 收紧判据（豁免只对直接绑定生效）之后，用这条用例把"能红"钉住：本仓纪律，
+    /// 改判据必须同时给出"它量得到东西"的证据（与探针 P9 的负向对照同一条）。
+    /// </remarks>
+    [Fact]
+    public void 界面层_不许把LocValue裸绑到文案属性上_判据能红()
+    {
+        var locValueMembers = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Title",      // 结果页标题（LocValue）
+            "Subtitle",   // 结果页副标题（LocValue）
+            "Name",       // 与用户数据同名（豁免只对直接绑定生效）
+        };
+        const string exemptFromDirect = "Name";
+
+        bool IsOffender(string bindingPath)
+        {
+            var path = bindingPath.Trim();
+            var direct = !path.Contains('.', StringComparison.Ordinal);
+            return path.Split('.', StringSplitOptions.RemoveEmptyEntries)
+                .Any(seg => locValueMembers.Contains(seg)
+                            && !(direct && seg == exemptFromDirect));
+        }
+
+        // 必须红：带前缀 = 明确指向某个对象的成员，一律按 LocValue 判
+        Assert.True(IsOffender("ResultViewModel.Title"));
+        Assert.True(IsOffender("ResultViewModel.Name"));      // 带前缀的 Name 也不豁免
+        Assert.True(IsOffender("ResultViewModel.Subtitle"));
+        Assert.True(IsOffender("ResultViewModel.Details.Name"));   // 多段路径同样按段判
+
+        // 必须绿：直接绑定的用户数据同名成员（文件树节点名 / 回收站单元名）
+        Assert.False(IsOffender("Name"));
+        // 必须绿：名字压根不在 LocValue 成员集合里（真正的用户数据成员）
+        Assert.False(IsOffender("TitleCopy"));
     }
 }

@@ -216,8 +216,13 @@
         </Setter>
     </Style>
 
-    <!-- 排序表头按钮（可复用组件）：数据驱动 —— Label/Field/Direction 三属性。
-         Direction 三态：null=未激活（无指示器）、True=升序▲、False=降序▼。 -->
+    <!-- 排序表头按钮（可复用组件）：数据驱动 —— Label/Field/Direction/TextWidth 四属性。
+         Direction 三态：null=未激活（无指示器）、True=升序▲、False=降序▼。
+         ⚠️ **表头文字走自适应通道**（与 UIKit.xaml 里其它冻结几何的面同一条链）：
+         列宽是冻结几何，而文案宽度随语言变（中文「按查看次数排序」13pt 需 84px，而该列只有 72px）——
+         没有这条通道时文字按原字号画出去、压在相邻列上并被右缘裁掉（实测溢出 36px）。
+         可用宽 = 控件自己的 `TextWidth`（列宽 − 内距，由 SortableDataTable 绑定），
+         放不下时由 `LocFit` 缩字号，**绝不截断**。 -->
     <Style TargetType="views:SortableHeaderButton">
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
@@ -235,7 +240,15 @@
                     <Border x:Name="Pill" Background="{TemplateBinding Background}" CornerRadius="12"
                             MinHeight="24" SnapsToDevicePixels="True">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <ContentPresenter VerticalAlignment="Center"/>
+                            <!-- 文字画 `Chosen`（自适应通道的产物），来源 = 本控件的 `Content`（LocText.SetContent 绑的
+                                 LocValue，换语言自己重算）；`MaxWidth` 是这条通道的**前置条件**：
+                                 文字若按内容取宽，"可用宽"就等于它自己需要的宽，字号一个都不缩。 -->
+                            <TextBlock x:Name="HeaderText"
+                                       Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                       views:LocFit.Text="{TemplateBinding Content}"
+                                       views:LocFit.Mode="Shrink"
+                                       MaxWidth="{Binding TextWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                       VerticalAlignment="Center"/>
                             <TextBlock x:Name="Indicator" FontSize="10" Margin="4,0,0,0"
                                        Foreground="{DynamicResource App.Accent.Text}" Visibility="Collapsed"
                                        VerticalAlignment="Center"/>

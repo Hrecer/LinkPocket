@@ -28,6 +28,28 @@ public enum LocFitMode
 }
 
 /// <summary>
+/// **文字格宽的声明口**：壳的宽度由外部数据决定（表格列宽）时，由壳把"这一格有多少"报给 <see cref="LocFit"/>。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 存在的理由：<see cref="LocFit.AvailableWidth"/> 的两条既有来源都失效于这类壳——
+/// ① 壳自己没有显式 <c>Width</c>（宽度来自 Grid 列定义）⇒ 找不到"冻结控件壳"；
+/// ② 元素实测宽在水平 <c>StackPanel</c> 里恒等于它需要的宽 ⇒ 自指。
+/// 结果是可用宽算成 0、字号一个都不缩，文字照原字号画到相邻列上（实测：智能列表表头溢出 36px、
+/// 被右缘裁掉半句）。
+/// </para>
+/// <para>
+/// 实现方只报数、不缓存：数值的唯一事实源仍在宿主那边（例如 <c>SortableDataTable.ColumnWidths</c>），
+/// 值一变就调一次 <see cref="LocFit.Project"/> 重新投影。
+/// </para>
+/// </remarks>
+public interface ITextWidthHost
+{
+    /// <summary>本格留给文字的可画宽度（已扣掉内距与同行其它元素）；<c>NaN</c> / ≤0 = 不声明。</summary>
+    double TextWidth { get; }
+}
+
+/// <summary>
 /// <b>几何冻结 + 字号自适应</b>的唯一实现：界面文案在**既有几何内**自己找位置，
 /// 绝不撑宽、绝不换行、绝不改 Padding、**绝不截断**（约束 B「英文零尺寸漂移」的可执行定义之一）。
 /// </summary>
@@ -159,6 +181,13 @@ public static class LocFit
     /// </remarks>
     public static double AvailableWidth(FrameworkElement element)
     {
+        // ⚠️ **宿主显式声明的文字格宽优先**（见 ITextWidthHost）：有些壳的宽度不是自己 `Width` 给的，
+        //    而是由外部数据决定（表格列宽）——那些壳自己没有 `Width`，`FrozenControlShell` 找不到，
+        //    于是"可用宽"算成 0、字号一个都不缩，文字照原字号画到相邻列上去（实测：表头溢出 36px）。
+        //    这类宿主自己知道"这一格有多少"，由它把数报上来（唯一事实源仍在宿主那边）。
+        var declared = DeclaredTextWidth(element);
+        if (declared > 0) return declared;
+
         var shell = FrozenControlShell(element);
         if (shell is not null)
         {
@@ -189,7 +218,7 @@ public static class LocFit
 
     /// <summary>元素自己（或它到壳之间的包装）显式给的 <c>MaxWidth</c>；没有则 0。</summary>
     /// <remarks>
-    /// 这是"外部把这一格又切窄了"的唯一合法来源（表格单元格给文字挂 `MaxWidth`、窄栏里的文字块等）。
+    /// 这是"外部把这一格又切窄了"的合法来源之一（表格单元格给文字挂 <c>MaxWidth</c>、窄栏里的文字块等）。
     /// 容器**照内容给宽**（水平 <c>StackPanel</c> / <c>ContentPresenter</c>）不算约束——
     /// 那正是"元素实得"会骗人的第二种情形。
     /// </remarks>
@@ -201,6 +230,22 @@ public static class LocFit
                 return capped.MaxWidth;
             if (stopAt is not null && ReferenceEquals(node, stopAt)) break;
         }
+        return 0;
+    }
+
+    /// <summary>
+    /// 元素自己（或它到壳之间的包装）**声明**的文字格宽；没有则 0。
+    /// </summary>
+    /// <remarks>
+    /// 给"壳宽由外部数据决定、壳自己不带 <c>Width</c>"的那类宿主用（表格表头 = 列宽决定宽度）。
+    /// 这类宿主知道"这一格有多少"，由它经 <see cref="ITextWidthHost"/> 报上来——
+    /// 唯一事实源仍在宿主那边（列宽单一数据源），这里只读不推。
+    /// </remarks>
+    private static double DeclaredTextWidth(DependencyObject element)
+    {
+        for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity } host)
+                return host.TextWidth;
         return 0;
     }
 

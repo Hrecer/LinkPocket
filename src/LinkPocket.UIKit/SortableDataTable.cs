@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -319,6 +319,16 @@ public class SortableDataTable : Grid
                 // 药丸紧挨（无外距），拖拽分隔线画在两药丸的贴合线上（同上一版本观感）
                 Margin = new Thickness(0, 0, 0, 0)
             };
+            // 表头文字的**可用宽** = 本列宽 − 药丸内距：列宽是冻结几何，文案宽度随语言变，
+            // 放不下时由 LocFit 缩字号（绝不是画到相邻列上被右缘裁掉——那正是没有这个数时的实测症状）。
+            // 值接列宽**单一数据源**：拖列宽 / 换语言后列宽重算都会走到这里重投影。
+            BindingOperations.SetBinding(header, SortableHeaderButton.TextWidthProperty,
+                new Binding($"ColumnWidths[{i}]")
+                {
+                    Source = this,
+                    Converter = ColumnTextWidthConverter.Instance,
+                    Mode = BindingMode.OneWay,
+                });
             // 表头文字与提示都走取词绑定（值是 LocValue）：换语言由版本失效自己重算，不靠宿主重烤
             header.SetContent(Loc.K(col.LabelKey));
             header.SetTip(Loc.K("ui.sort.tip", Loc.K(col.LabelKey)));
