@@ -34,6 +34,13 @@ public class TrashCrumbViewModel
 
     /// <summary>是否为当前位置（面包屑最后一级，高亮显示）。</summary>
     public bool IsLast { get; init; }
+
+    /// <summary>
+    /// 是否为虚根段（<c>@trash</c>）：根名是**随语言换的界面文案**（回收站 ⇄ Trash），
+    /// 模板据此把它的宽度冻在中文基线（页面给 <c>RootSegmentWidth</c>）并接自适应通道；
+    /// 其余段是用户数据（内容自适应、永不缩字号）。
+    /// </summary>
+    public bool IsRoot => Name is BookmarkPath.RootToken or BookmarkPath.TrashToken;
 }
 
 /// <summary>

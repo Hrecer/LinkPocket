@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using LinkPocket.I18n;
+using LinkPocket.Views;
 
 namespace LinkPocket.UIKit;
 
@@ -49,6 +50,22 @@ public static class LocText
         var holder = Get(element);
         holder.Set(value);
         element.SetBinding(FrameworkElement.ToolTipProperty, Build(holder));
+    }
+
+    /// <summary>
+    /// 代码侧接**自适应通道**（模板侧那句 <c>{loc:Fit key}</c> 的 C# 版）：文字与字号由
+    /// <see cref="LocFit"/> 按实测可用宽决定（短式优先 → 缩字号无下限），**宽度由调用方冻结**。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 只给"代码建的控件"用（能写 XAML 的地方一律写 <c>{loc:Fit key}</c>）。
+    /// 两条通道必须成对：<see cref="LocFit.TextProperty"/> 是**唯一事实来源**、
+    /// <c>TextBlock.Text</c> 只画 <c>LocFit.Chosen</c>——在这里再绑一次 Text 会让同一个属性有两个写者。
+    /// </remarks>
+    public static void SetFitText(this TextBlock text, string key, LocFitMode mode = LocFitMode.ShrinkThenEllipsis)
+    {
+        LocFit.SetMode(text, mode);
+        BindingOperations.SetBinding(text, LocFit.TextProperty, I18n.LocFitBinding.For(key));
+        text.SetBinding(TextBlock.TextProperty, LocFitResolver.BuildChosenBinding());
     }
 
     private static Holder Get(DependencyObject key) => Holders.GetValue(key, _ => new Holder());

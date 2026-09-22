@@ -87,12 +87,14 @@ public static class StringTables
 
         new StringRow("count.selected", "{0} 项已选中", "{0} selected"),
         new StringRow("appearance.sample.primaryButton", "主按钮", "Primary button"),
+        new StringRow("appearance.sample.primaryButton#short", "主按钮", "Primary"),
         new StringRow("storage.oneClickClear", "一键清除", "Clear in one click"),
         new StringRow("storage.wipe.warning", "此操作将清除所有书签、文件夹与回收站数据（含图标缓存），且不可恢复。",
             "This erases every bookmark, folder and recycle-bin item (icons cache included) and cannot be undone."),
         new StringRow("picker.hex", "十六进制", "Hexadecimal"),
         new StringRow("smartlists.count.total", "共 {0} 项", "{0} items total"),
         new StringRow("appearance.sample.actions", "次操作", "actions"),
+        new StringRow("appearance.sample.actions#short", "次操作", "Actions"),
         new StringRow("common.done", "完成", "Done"),
         new StringRow("common.failed", "失败", "Failed"),
         new StringRow("common.deleteSelected", "删除所选", "Delete selected"),
@@ -121,6 +123,9 @@ public static class StringTables
         new StringRow("storage.erased", "数据已全部清空！", "All data erased"),
         new StringRow("storage.clearing", "清除中...", "Clearing…"),
         new StringRow("tools.dedup.start", "开始查重", "Find duplicates"),
+        // 短式：冻结宽度的药丸里英文全长放不下（实测 "Find duplicates" 需要 ~95px，只有 52px）
+        new StringRow("tools.dedup.start#short", "查重", "Scan"),
+        new StringRow("tools.dedup.clear#short", "清除", "Clear"),
         new StringRow("tools.dedup.again", "重新查重", "Scan again"),
         new StringRow("tools.dedup.clear", "清除结果", "Clear results"),
         new StringRow("tools.dedup.none", "扫描完成：未发现重复", "Scan finished — no duplicates found"),
@@ -148,19 +153,26 @@ public static class StringTables
         new StringRow("appearance.badge.editing", "编辑中（未应用）", "Editing (not applied)"),
         new StringRow("appearance.badge.inUse", "当前使用", "In use"),
         new StringRow("appearance.btn.resetAll", "恢复默认外观", "Reset appearance"),
+        // 短式：面板顶部这枚药丸宽度冻在中文基线（104）⇒ 英文全长（~100px）放不下
+        new StringRow("appearance.btn.resetAll#short", "恢复默认", "Reset"),
         new StringRow("appearance.btn.resetAll.tip", "主题与字体一起回出厂默认，并清掉偏好文件", "Restores the factory theme and font together and clears the preferences file."),
         new StringRow("appearance.card.default", "默认", "Default"),
         new StringRow("appearance.clearColors.tip", "清空色槽并回到出厂默认（紫罗兰）外观；不改动字体与偏好文件", "Empties the slots and returns to the factory theme (Violet). Font and preferences are untouched."),
         new StringRow("appearance.draft.clear", "清空颜色", "Clear colors"),
+        // 短式：按钮宽度冻在中文基线（76）⇒ 英文全长（~95px）放不下
+        new StringRow("appearance.draft.clear#short", "清空", "Clear"),
         new StringRow("appearance.draft.startFrom", "以…为起点", "Start from …"),
         new StringRow("appearance.draft.startFrom.tip", "把当前主题的颜色复制到色槽当起点；主题本身不会被改动", "Copies the current theme's colors into the slots as a starting point. The preset itself is never changed."),
         new StringRow("appearance.font.apply", "应用字体", "Apply font"),
+        // 短式：两枚按钮宽度冻在中文基线（80 / 100）⇒ 英文全长放不下
+        new StringRow("appearance.font.apply#short", "应用", "Apply"),
         new StringRow("appearance.font.card.title", "字体", "Font"),
         new StringRow("appearance.font.delete", "删除字体", "Delete font"),
         new StringRow("appearance.font.delete.tip", "只删除导入到本应用目录的那份副本（不会动系统字体）", "Deletes only the copy inside this app's folder — system fonts are untouched."),
         new StringRow("appearance.font.hint", "可选系统已装字体，或导入自己的字体文件（.ttf / .otf / .ttc）", "Pick an installed system font, or import your own (.ttf / .otf / .ttc)."),
         new StringRow("appearance.font.import", "导入字体…", "Import font…"),
         new StringRow("appearance.font.reset", "恢复默认字体", "Restore default font"),
+        new StringRow("appearance.font.reset#short", "恢复默认", "Default"),
         new StringRow("appearance.font.reset.tip", "界面字体回默认族（等宽字体已固定为默认族，不改动主题与配色）", "Resets the interface font to its default family. The monospace family is fixed; themes and colors are untouched."),
         new StringRow("appearance.font.source.custom", "自定义字体", "Custom fonts"),
         new StringRow("appearance.font.source.system", "系统字体", "System fonts"),
@@ -180,6 +192,9 @@ public static class StringTables
         new StringRow("appearance.sample.title", "样例", "Sample"),
         new StringRow("appearance.slots.five", "5 色", "5 colors"),
         new StringRow("appearance.slots.four", "4 色", "4 colors"),
+        // 短式：分段段宽冻在中文基线（各 64）⇒ 英文全长放不下时用数字（上下文已有「颜色数」标题）
+        new StringRow("appearance.slots.four#short", "4 色", "4"),
+        new StringRow("appearance.slots.five#short", "5 色", "5"),
         new StringRow("appearance.status.paletteInvalid", "自选配色不合法，未应用", "Custom palette is invalid and was not applied."),
         new StringRow("appearance.studio.title", "调色台", "Palette studio"),
         new StringRow("appearance.theme.hint", "单击即应用，主题本身只读（预设不会被改掉）。最后一张「自选颜色」= 用下面调色台里的配色；想从某套现成主题改起，就用调色台里的「以…为起点」把它的颜色复制过去", "Click a card to apply it; presets are read-only. The last card, Custom colors, uses the palette from the studio below — to start from a preset, copy its colors with \"Start from …\"."),
@@ -568,7 +583,7 @@ public static class StringTables
         new StringRow("theme.greenPear", "青梨冻冻", "Green Pear"),
         new StringRow("theme.custom", "自选颜色", "Custom Colors"),
         new StringRow("appearance.btn.startFrom", "以「{0}」为起点", "Start from {0}"),
-        new StringRow("appearance.palette.draftIntro", "这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色；想从现成外观改起，点下面的按钮把「{0}」的颜色复制进来 —— 复制会立即应用为自选配色（「自选颜色」卡随即高亮），之后点色槽微调即可。", "Only your own palette is edited here; the themes above are read-only. Click a slot to pick a colour in the picker, or use the button below to copy the colours of {0} in (that applies immediately as your custom palette and highlights the Custom Colors card), then fine-tune any slot."),
+        new StringRow("appearance.palette.draftIntro", "这里只编辑你自己的配色，上面的主题是只读的。点色槽用取色盘选色；想从现成外观改起，点下面的按钮把「{0}」的颜色复制进来 —— 复制会立即应用为自选配色（「自选颜色」卡随即高亮），之后点色槽微调即可。", "Only your own palette is edited here; the themes above stay read-only. Click a slot to pick a colour, or copy {0} in with the button below — it applies at once as your custom palette, then fine-tune any slot."),
         new StringRow("trash.restore", "还原", "Restore"),
         new StringRow("trash.restore.tip", "还原到删除前所在位置", "Restore to where it was deleted from"),
         new StringRow("trash.restoreToRoot", "到根目录", "to the root"),
@@ -617,6 +632,8 @@ public static class StringTables
         new StringRow("tools.storage.wipe.warn", "如需保留数据，请先在「备份与恢复」中导出备份。", "If you want to keep your data, export a backup under Backup & Restore first."),
         new StringRow("ui.noun.actions", "操作", "Actions"),
         new StringRow("ui.noun.description", "描述", "Description"),
+        // 短式：范围 chip 宽度冻在中文基线（54），英文全长（Description ~66px）放不下 ⇒ 换更短的话
+        new StringRow("ui.noun.description#short", "描述", "Desc"),
         new StringRow("ui.noun.path", "路径", "Path"),
         new StringRow("ui.noun.title", "标题", "Title"),
         new StringRow("window.maximize", "最大化", "Maximize"),
@@ -635,6 +652,9 @@ public static class StringTables
         // 短式变体（降级链第 ③ 步"换一句更短的话"）：中文侧没有可缩的余地，两条填同一句；
         // 英文侧才真正短下来。有没有短式由**表里有没有这条键**决定，调用方不必逐处声明。
         new StringRow("trash.menu.purge#short", "删除", "Delete"),
+        // 「还原到根目录」的英文全长（Restore to root）在冻结宽度的药丸里放不下：
+        // 短式比缩字号更可读，也不会让三枚药丸的字号不齐（降级链第 ② 步优先于第 ③ 步）。
+        new StringRow("trash.menu.restoreToRoot#short", "还原到根目录", "To root"),
         new StringRow("count.selectedItems", "已选中 {0} 项", "{0} selected"),
         new StringRow("trash.status.count", "{0} · {1} 项", "{0} · {1} items"),
         new StringRow("trash.btn.restore.tip", "还原选中项到原位置 (Ctrl+R)", "Restore the selection to its original location (Ctrl+R)"),

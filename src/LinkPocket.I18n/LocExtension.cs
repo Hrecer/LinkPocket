@@ -304,6 +304,22 @@ public sealed class LocValueResolver : IMultiValueConverter
 }
 
 /// <summary>
+/// 自适应通道的**绑定工厂**：代码建的控件用它接同一条链（XAML 侧是 <c>{loc:Fit key}</c>）。
+/// </summary>
+/// <remarks>
+/// 存在的理由：模板侧的失效链是"<see cref="FitResolver"/> 每次求值造一个新的 <see cref="LocText"/>
+/// （语言版本烙在值里）"，代码侧若自己拿一个 <c>LocText</c> 常量交给 <c>LocFit.Text</c>，
+/// 语言换了那个值**不会变**，绑定不重算 ⇒ 屏幕上停在旧语言（WARNINGS 97 的同族陷阱）。
+/// 走本工厂拿到的绑定与模板侧逐字同形，所以"文案变了"这条入口不需要第二套机制。
+/// </remarks>
+public static class LocFitBinding
+{
+    /// <summary>字面键的自适应绑定（短式键按 <c>key#short</c> 约定推，**表里没有就不推**）。</summary>
+    public static MultiBinding For(string key)
+        => LocBinding.FitLiteral(key, Loc.HasShort(key) ? key + Loc.ShortSuffix : null);
+}
+
+/// <summary>
 /// 路径段解析器：虚根 token 与断链哨兵换成当前语言的显示名，其余段（用户自己的文件夹名）原样通过。
 /// 与 <see cref="LocResolver"/> 的区别是本表<b>不查键</b>——传进来的多半是用户数据。
 /// </summary>

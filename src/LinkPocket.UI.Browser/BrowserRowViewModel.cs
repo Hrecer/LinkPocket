@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media.Imaging;
+using LinkPocket.Contracts;
 using LinkPocket.I18n;
 
 namespace LinkPocket.ViewModels;
@@ -176,4 +177,11 @@ public class BrowserCrumbViewModel
 
     /// <summary>是否为当前目录（面包屑最后一级，高亮显示）。</summary>
     public bool IsLast { get; init; }
+
+    /// <summary>
+    /// 是否为虚根段（<c>@root</c> / <c>@trash</c>）：根名是**随语言换的界面文案**（全部书签 ⇄ Bookmarks），
+    /// 模板据此把它的宽度**冻在中文基线**（页面给 <c>RootSegmentWidth</c>）并接自适应通道；
+    /// 其余段是用户文件夹名（用户数据）：宽度保持内容自适应、永不缩字号。
+    /// </summary>
+    public bool IsRoot => Name is BookmarkPath.RootToken or BookmarkPath.TrashToken;
 }

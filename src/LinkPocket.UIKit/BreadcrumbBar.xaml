@@ -128,10 +128,42 @@
                                                     <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
                                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                                 </DataTrigger>
+                                                <!-- 根段（`@root`/`@trash`）的宽度 = **冻结几何**（页面给的 RootSegmentWidth，定稿口径
+                                                     = 中文基线）。根名随语言换（全部书签 ⇄ Bookmarks）⇒ 不定宽就会把地址栏撑宽、
+                                                     把后面的段整排推走（实测 80→97.18）。
+                                                     ⚠️ 模式是 `Shrink`（**只缩字号、绝不截断**）：实测 `ShrinkThenEllipsis` 在这枚
+                                                     80px 的壳里把 Bookmarks 画成了 `Bookma…` —— 截断的路径名是**错的名字**
+                                                     （与"截断的日期是错的日期"同一条产品判断）。 -->
+                                                <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                    <Setter Property="Width" Value="{Binding RootSegmentWidth, ElementName=Root}"/>
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Button.Style>
-                                    <TextBlock Text="{loc:Segment Name}"/>
+                                    <TextBlock>
+                                        <!-- 根段走自适应通道（宽度已冻结 ⇒ 字号是唯一让位的维度）；用户段原样画、绝不缩字号。 -->
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="{loc:Segment Name}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                        <Setter Property="Text"
+                                                                Value="{Binding Path=(local:LocFit.Chosen), RelativeSource={RelativeSource Self}}"/>
+                                                        <Setter Property="local:LocFit.Text" Value="{loc:Segment Name}"/>
+                                                        <Setter Property="local:LocFit.Mode" Value="Shrink"/>
+                                                        <!-- ⚠️ `MaxWidth` 是**这条通道能不能工作**的前提：文字若按内容取宽，
+                                                             `LocFit` 读到的"可用宽"就是它自己需要的宽，于是永远判定"放得下"、
+                                                             字号不缩，最后由壳把文字**裁掉**（实测屏幕上是 `Bookma`）。
+                                                             56 = 浏览页 RootSegmentWidth(80) − 段内距(12+12)；
+                                                             回收站那侧 67 − 24 = 43，但它的根名是 `Trash`（13pt 下约 33px），
+                                                             本来就在 43 之内，所以这一个值两边都成立。 -->
+                                                        <Setter Property="MaxWidth" Value="56"/>
+                                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </Button>
                                 <TextBlock Text="›" VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Muted}" Margin="2,0">
                                     <TextBlock.Style>

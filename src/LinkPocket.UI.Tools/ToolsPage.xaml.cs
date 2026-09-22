@@ -403,13 +403,16 @@ namespace LinkPocket.Views
         {
             _dedupActionIcon = new M3Icon { Kind = "content-duplicate", Width = 16, Height = 16, VerticalAlignment = VerticalAlignment.Center };
             _dedupActionText = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
-            _dedupActionText.SetText(Loc.K("tools.dedup.start"));
+            _dedupActionText.SetFitText("tools.dedup.start");
             _dedupActionBtn = new Button
             {
                 Style = (Style)Application.Current.FindResource("PrimaryPillButton"),
                 // ⚠️ 药丸样式自身不含 MinHeight/Padding：高度必须显式给（与其它页药丸统一的 32），
                 // 否则垂直 Padding=0 会把按钮压扁成一条。
                 Height = 32,
+                // ⚠️ 宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）。102 = 中文基线实测值；
+                //    英文全长（Find duplicates）放不下 ⇒ 走短式 "Scan"（降级链第 ② 步）。
+                Width = 102,
                 Padding = new Thickness(14, 0, 14, 0),
                 Margin = new Thickness(0, 0, 8, 0),
                 Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { _dedupActionIcon, _dedupActionText } }
@@ -418,10 +421,12 @@ namespace LinkPocket.Views
             HeaderActions.Children.Add(_dedupActionBtn);
 
             var clearLabel = new TextBlock { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(5, 0, 0, 0) };
-            clearLabel.SetText(Loc.K("tools.dedup.clear"));
+            clearLabel.SetFitText("tools.dedup.clear");
             _dedupClearBtn = new Button
             {
                 Height = 32,   // 同上：药丸样式无高度默认值，必须显式给
+                // 冻结宽度（中文基线 93）：英文全长（Clear results）放不下 ⇒ 短式 "Clear"。
+                Width = 93,
                 Padding = new Thickness(12, 0, 12, 0),
                 IsEnabled = false,
                 Cursor = Cursors.Hand,

@@ -9,10 +9,21 @@
          （SlidingNavStripItemStyle 的模板与选中语义），只把段高对齐本面板的 32 药丸口径。
          这不是第二套分段实现——模板、指示器几何、滑动动画全在共享组件里。 -->
     <UserControl.Resources>
+        <!-- 段宽 = **冻结几何**（约束 B：切语言段宽/指示器宽逐像素不变）。
+             64 = 中文基线实测值（`4 色`/`5 色` 段）；英文全长（5 colors）放不下 ⇒ 走短式 "5"。
+             断言高度 32 与面板药丸口径一致。 -->
         <Style x:Key="AppearanceSegmentItem" TargetType="ListBoxItem"
                BasedOn="{StaticResource SlidingNavStripItemStyle}">
             <Setter Property="Height" Value="32"/>
             <Setter Property="MinWidth" Value="64"/>
+            <Setter Property="Width" Value="64"/>
+        </Style>
+        <!-- 字体来源分段（系统字体 / 自定义字体）：段更长，同样冻在中文基线（87 = 实测 179 = 2×87 + 内距 6） -->
+        <Style x:Key="AppearanceFontSegmentItem" TargetType="ListBoxItem"
+               BasedOn="{StaticResource SlidingNavStripItemStyle}">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinWidth" Value="87"/>
+            <Setter Property="Width" Value="87"/>
         </Style>
     </UserControl.Resources>
 
@@ -33,10 +44,13 @@
                      的既有语言（主题卡单击即应用 / 起点复制即应用）自相矛盾；自选配色的应用入口只剩
                      **第 12 张「自选颜色」卡**（与点主题卡同一手势），故全局行只剩这一枚。 -->
                 <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
-                    <Button x:Name="ResetAppearanceBtn" Content="{loc:Loc appearance.btn.resetAll}"
-                            Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
-                            Cursor="Hand" Click="ResetAppearanceBtn_Click"
-                            ToolTip="{loc:Loc appearance.btn.resetAll.tip}"/>
+                    <!-- 宽度 = 冻结几何（中文基线 104）：英文全长（Reset appearance）放不下 ⇒ 短式 "Reset" -->
+                    <Button x:Name="ResetAppearanceBtn" Style="{StaticResource TonalButton}" Height="32" Padding="16,0"
+                            Width="104" Cursor="Hand" Click="ResetAppearanceBtn_Click"
+                            ToolTip="{loc:Loc appearance.btn.resetAll.tip}">
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit appearance.btn.resetAll}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- 「自动调整颜色」开关**独立成一张卡**（Material 3 Expressive 的 ToggleSwitch，不是勾选框）。
@@ -133,11 +147,15 @@
                                                 <TextBlock Grid.Column="0" Text="{loc:Value Name}" FontSize="13"
                                                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                            Foreground="{DynamicResource App.Text.Primary}"/>
-                                                <!-- 「默认」徽标只在出厂默认卡上出现（直接绑能力位，不走 code-behind 找元素） -->
-                                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1"
+                                                <!-- 「默认」徽标只在出厂默认卡上出现（直接绑能力位，不走 code-behind 找元素）。
+                                                     宽度冻在 48（英文 Default 在 10pt 下放得下；中文「默认」留白多一点） -->
+                                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1" Width="48"
                                                         Background="{DynamicResource App.Accent.Container}"
                                                         Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
-                                                    <TextBlock Text="{loc:Loc appearance.card.default}" FontSize="10"
+                                                    <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                                               views:LocFit.Text="{loc:Fit appearance.card.default}"
+                                                               views:LocFit.Mode="ShrinkThenEllipsis"
+                                                               FontSize="10" HorizontalAlignment="Center"
                                                                Foreground="{DynamicResource App.Text.OnContainer}"/>
                                                 </Border>
                                             </Grid>
@@ -270,14 +288,21 @@
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <Button x:Name="StartFromThemeBtn"
-                                        Content="{loc:Value StartFromCurrentThemeLabel}"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        Cursor="Hand" Click="StartFromThemeBtn_Click"
-                                        ToolTip="{loc:Loc appearance.draft.startFrom.tip}"/>
-                                <Button x:Name="ClearDraftBtn" Content="{loc:Loc appearance.draft.clear}"
+                                        Width="208" Cursor="Hand" Click="StartFromThemeBtn_Click"
+                                        ToolTip="{loc:Loc appearance.draft.startFrom.tip}">
+                                    <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                               views:LocFit.Text="{loc:Value StartFromCurrentThemeLabel}"
+                                               views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                </Button>
+                                <Button x:Name="ClearDraftBtn"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
-                                        ToolTip="{loc:Loc appearance.clearColors.tip}"/>
+                                        Width="88" Margin="10,0,0,0" Cursor="Hand" Click="ClearDraftBtn_Click"
+                                        ToolTip="{loc:Loc appearance.clearColors.tip}">
+                                    <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                               views:LocFit.Text="{loc:Fit appearance.draft.clear}"
+                                               views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                </Button>
                             </StackPanel>
 
                             <!-- 色槽：**居中**排列。
@@ -381,7 +406,7 @@
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,8">
                             <views:SlidingNavStrip x:Name="FontSourceStrip"
                                                    Style="{StaticResource SlidingNavStripStyle}"
-                                                   ItemContainerStyle="{StaticResource AppearanceSegmentItem}"
+                                                   ItemContainerStyle="{StaticResource AppearanceFontSegmentItem}"
                                                    SelectedIndex="{Binding FontSourceIndex, Mode=TwoWay}">
                                 <ListBoxItem Content="{loc:Loc appearance.font.source.system}"/>
                                 <ListBoxItem Content="{loc:Loc appearance.font.source.custom}"/>
@@ -437,10 +462,20 @@
                         <Border Background="{DynamicResource App.Surface.Base}" CornerRadius="16" Padding="16,14">
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Content="{loc:Loc appearance.sample.primaryButton}" Style="{StaticResource PrimaryPillButton}"
-                                            Height="32" Padding="14,0" IsHitTestVisible="False"/>
-                                    <Button Content="{loc:Loc appearance.sample.actions}" Style="{StaticResource TonalButton}"
-                                            Height="32" Padding="14,0" Margin="8,0,0,0" IsHitTestVisible="False"/>
+                                    <!-- 样例按钮：宽度也按冻结几何给（80 / 76 = 英文短式在基准字号下的需求）；
+                                         它们是**字体样例**，随字体轴变化，不随语言改尺寸。 -->
+                                    <Button Style="{StaticResource PrimaryPillButton}" Height="32" Padding="14,0"
+                                            Width="94" IsHitTestVisible="False">
+                                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                                   views:LocFit.Text="{loc:Fit appearance.sample.primaryButton}"
+                                                   views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                    </Button>
+                                    <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                                            Width="94" Margin="8,0,0,0" IsHitTestVisible="False">
+                                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                                   views:LocFit.Text="{loc:Fit appearance.sample.actions}"
+                                                   views:LocFit.Mode="ShrinkThenEllipsis"/>
+                                    </Button>
                                     <m3:M3Icon Kind="folder" Width="18" Height="18" Margin="10,0,0,0"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource App.Type.Folder}"/>
@@ -461,15 +496,22 @@
                         </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
-                            <Button x:Name="ApplyFontsBtn" Content="{loc:Loc appearance.font.apply}"
+                            <!-- 两枚按钮宽度 = 冻结几何（中文基线 80 / 100）；英文放不下 ⇒ 短式（Apply / Default） -->
+                            <Button x:Name="ApplyFontsBtn"
                                     Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
-                                    Cursor="Hand" Click="ApplyFontsBtn_Click"/>
+                                    Width="100" Cursor="Hand" Click="ApplyFontsBtn_Click">
+                                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                           views:LocFit.Text="{loc:Fit appearance.font.apply}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                            </Button>
                             <!-- 「恢复默认字体」= 不读下拉选中项，直接把界面字体回默认族并落盘。
                                  与「恢复默认外观」的区别：这里不动主题与配色。 -->
-                            <Button x:Name="ResetFontsBtn" Content="{loc:Loc appearance.font.reset}"
+                            <Button x:Name="ResetFontsBtn"
                                     Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                    Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
-                                    ToolTip="{loc:Loc appearance.font.reset.tip}"/>
+                                    Width="100" Margin="10,0,0,0" Cursor="Hand" Click="ResetFontsBtn_Click"
+                                    ToolTip="{loc:Loc appearance.font.reset.tip}">
+                                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                           views:LocFit.Text="{loc:Fit appearance.font.reset}" views:LocFit.Mode="ShrinkThenEllipsis"/>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </Border>

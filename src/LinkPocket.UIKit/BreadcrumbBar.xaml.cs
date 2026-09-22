@@ -204,6 +204,25 @@ namespace LinkPocket.Views
             set => SetValue(CrumbDropEnabledProperty, value);
         }
 
+        public static readonly DependencyProperty RootSegmentWidthProperty = DependencyProperty.Register(
+            nameof(RootSegmentWidth), typeof(double), typeof(BreadcrumbBar), new PropertyMetadata(double.NaN));
+
+        /// <summary>
+        /// 根段（`@root` / `@trash`，显示为本地化根名）的**冻结宽度**；<c>NaN</c>（缺省）= 按内容自适应。
+        /// </summary>
+        /// <remarks>
+        /// 根名是**会随语言换的界面文案**（全部书签 ⇄ Bookmarks），内容自适应会让英文把地址栏撑宽、
+        /// 把后面的段整体推走（实测浏览页 80→97.18）。按定稿口径：**宽度冻在中文基线**，
+        /// 英文放不下时由 <c>LocFit</c> 缩字号（几何一寸不动，让位的一律是字）。
+        /// 其余段是用户文件夹名（用户数据）——它们不随语言变，保持内容自适应、永不缩字号。
+        /// 值由各页显式给（浏览页 80 / 回收站 67），不放进共享模板做统一约束。
+        /// </remarks>
+        public double RootSegmentWidth
+        {
+            get => (double)GetValue(RootSegmentWidthProperty);
+            set => SetValue(RootSegmentWidthProperty, value);
+        }
+
         /// <summary>键盘上下移动候选（宿主转调 VM.MoveCandidate）。</summary>
         public event EventHandler<CandidateMoveEventArgs>? CandidateMoveRequested;
 

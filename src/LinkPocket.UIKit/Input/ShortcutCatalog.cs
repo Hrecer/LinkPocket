@@ -355,11 +355,11 @@ public static class ShortcutCatalog
             lines.Add("");
             if (page.Specs.Count == 0)
             {
-                lines.Add("shortcut.doc.none");
+                lines.Add(Loc.T("shortcut.doc.none"));
                 lines.Add("");
                 continue;
             }
-            lines.Add("shortcut.doc.tableHead");
+            lines.Add(Loc.T("shortcut.doc.tableHead"));
             lines.Add("|---|---|---|---|---|");
             foreach (var spec in page.Specs)
             {
@@ -370,12 +370,12 @@ public static class ShortcutCatalog
             }
             lines.Add("");
         }
-        lines.Add("shortcut.doc.controlHead");
+        lines.Add(Loc.T("shortcut.doc.controlHead"));
         lines.Add("");
-        lines.Add("shortcut.doc.controlTable");
+        lines.Add(Loc.T("shortcut.doc.controlTable"));
         lines.Add("|---|---|---|");
-        lines.Add("shortcut.doc.breadcrumb");
-        lines.Add("shortcut.doc.inlineRename");
+        lines.Add(Loc.T("shortcut.doc.breadcrumb"));
+        lines.Add(Loc.T("shortcut.doc.inlineRename"));
         lines.Add("");
         return string.Join("\n", lines);
     }

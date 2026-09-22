@@ -102,31 +102,41 @@
                 <Border DockPanel.Dock="Right" Background="{DynamicResource App.Surface.TintCard}"
                         CornerRadius="19" Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
+                        <!-- ⚠️ 三枚药丸的宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）：
+                             内容自适应宽度会让英文文案把整组撑宽（实测 PurgeButton 98→168.77），
+                             连带把面包屑挤窄。文案放不下时由 LocFit 让位（短式 → 缩字号），几何不动。
+                             96 = 中文基线 72 + 「Restore」在基准字号下的余量（实测 13pt 下约 45px）。 -->
                         <Button x:Name="RestoreButton" Cursor="Hand" Click="TrashRestore_Click"
-                                IsEnabled="{Binding HasSelection}"
+                                IsEnabled="{Binding HasSelection}" Width="96"
                                 Style="{StaticResource PrimaryPillButton}" Height="32" MinHeight="32" Padding="12,0"
                                 ToolTip="{loc:Loc trash.btn.restore.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc trash.menu.restore}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                           views:LocFit.Text="{loc:Fit trash.menu.restore}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="RestoreToRootButton" Cursor="Hand" Click="TrashRestoreToRoot_Click"
-                                IsEnabled="{Binding HasSelection}"
+                                IsEnabled="{Binding HasSelection}" Width="124"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
                                 ToolTip="{loc:Loc trash.btn.restoreToRoot.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="backup-restore" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc trash.menu.restoreToRoot}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                           views:LocFit.Text="{loc:Fit trash.menu.restoreToRoot}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                         <Button x:Name="PurgeButton" Cursor="Hand" Click="TrashPurge_Click"
-                                IsEnabled="{Binding HasSelection}"
+                                IsEnabled="{Binding HasSelection}" Width="98"
                                 Style="{StaticResource TonalButton}" Height="32" MinHeight="32" Padding="12,0" Margin="6,0,0,0"
                                 ToolTip="{loc:Loc trash.btn.purge.tip}">
                             <StackPanel Orientation="Horizontal">
                                 <m3:M3Icon Kind="delete-forever" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:Loc trash.menu.purge}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                           views:LocFit.Text="{loc:Fit trash.menu.purge}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                           FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -151,6 +161,7 @@
                 <!-- 面包屑地址栏：根 = 「回收站」；段可点导航、点空白即编辑（一次点击就绪，控件自持聚焦）；
                      只读页：段不接拖放（CrumbDropEnabled=False） -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
+                                     RootSegmentWidth="67"
                                      CrumbDropEnabled="False"
                                      Breadcrumbs="{Binding Breadcrumbs}"
                                      IsPathEditing="{Binding IsPathEditing, Mode=TwoWay}"

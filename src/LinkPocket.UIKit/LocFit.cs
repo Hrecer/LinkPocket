@@ -147,6 +147,19 @@ public static class LocFit
     }
 
     /// <summary>该元素在当前字号下的可用宽（实测宽 − 内距 − 自身外边距；负值收敛到 0）。</summary>
+    /// <remarks>
+    /// <para>
+    /// ⚠️ <b>"用壳的内容区反推可用宽"试过，已回滚</b>（2026-09-22 实测）：把可用宽改成
+    /// "壳内容区 − 同行其它子级"后，面包屑根段（壳 80px）被算成只剩 4px，文字直接撞退化边界掉到 <b>4.0pt</b>
+    /// ——比它要修的问题更糟。原因是模板内部的具名子级（ContentPresenter / 模板 Border）也会被当"壳"或"兄弟"，
+    /// 扣减链一旦认错一层就是数量级错误。
+    /// </para>
+    /// <para>
+    /// 现行口径（**回滚后**）：本属性只回答"元素自己这一格有多宽"，壳装不下的处置放在**几何那一侧**——
+    /// 冻结宽度按"两种语言在基准字号下都放得下"实测确定（探针的溢出判据给读数）。这样改一处只影响一个控件，
+    /// 不会像反推那样把十几种模板的差异一次性叠进来。
+    /// </para>
+    /// </remarks>
     public static double AvailableWidth(FrameworkElement element)
     {
         var width = element.ActualWidth;
