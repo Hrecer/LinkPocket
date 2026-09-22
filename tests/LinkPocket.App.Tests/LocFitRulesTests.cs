@@ -77,7 +77,7 @@ public sealed class LocFitRulesTests : IDisposable
     [Fact]
     public void 缩字号只取零点五档_不产生非网格字号()
     {
-        // 20 字，可用 190 ⇒ s ≤ 9.5 ⇒ 恰为下限（同为 0.5 网格点）
+        // 20 字，可用 190 ⇒ s ≤ 9.5 ⇒ 恰为 0.5 网格点
         var result = Fit(new string('m', 20), null, 12.5, 190);
 
         Assert.Equal(9.5, result.Size);
@@ -85,27 +85,75 @@ public sealed class LocFitRulesTests : IDisposable
     }
 
     [Fact]
-    public void 缩到下限仍放不下且无短式_截断()
+    public void 字号没有下限_放不下就一直缩到放得下为止()
     {
-        // 40 字 × 9.5 = 380 > 200
+        // 命令栏「重命名」的真实几何（实测自 BrowserView.xaml + TonalButton 样式）：
+        // 按钮 80、内距 12×2、图标 16 + 间距 7 ⇒ 文本可用宽 = 80 − 24 − 23 = 33。
+        // 真实宽度（FormattedText 实测）：中文「重命名」13pt 时 39.0（中文自己就溢出！
+        // 需要 11.0pt）；英文 `Rename` 13pt 时 46.2，需要 9.0pt。
+        // 旧的 `max(base×0.75, 9.5pt)` 下限会停在 9.5pt（33.7 > 33）而放不下——
+        // 这正是决策 6 被撤销的那条实测。这里用**实测比值**给替身度量，等价于真实排版。
+        LocFit.Metrics = request =>
+            request.Text == "Rename" ? request.Size * (46.2 / 13.0) : request.Size * (39.0 / 13.0);
+        LocFit.ClearCache();
+
+        var en = Fit("Rename", null, 13.0, 33.0);
+        Assert.False(en.Truncate, "缩字号必须能救下它，而不是退到截断");
+        Assert.True(en.Size < 9.5, $"必须允许缩到 9.5pt 以下才放得下，实际 {en.Size}pt");
+
+        var zh = Fit("重命名", null, 13.0, 33.0);
+        Assert.False(zh.Truncate, "中文侧同样必须靠缩字号救下（旧下限连中文都没兜住）");
+        Assert.True(zh.Size < 13.0, $"中文在 base 13pt 就已溢出，必须缩小，实际 {zh.Size}pt");
+    }
+
+    [Fact]
+    public void 缩到退化边界仍放不下且无短式_截断()
+    {
+        // 度量与字号无关（恒 400）：任何档都放不下 ⇒ 一路缩到退化边界，只能截断。
+        LocFit.Metrics = _ => 400;
+        LocFit.ClearCache();
+
         var result = Fit(new string('m', 40), null, 12.5, 200);
 
-        Assert.Equal(LocFit.MinFloor(12.5), result.Size);
+        Assert.Equal(LocFit.DegenerateFloor, result.Size);
         Assert.True(result.Truncate);
     }
 
     [Fact]
-    public void 缩到下限仍放不下但有短式_先试短式再决定截断()
+    public void 缩到退化边界仍放不下但有短式_先试短式再决定截断()
     {
-        // 每字号占 40px（与字数无关）。可用宽 79：任何档、任何形态都放不下 ⇒ 到顶只能截断。
-        LocFit.Metrics = request => request.Size * 40;
+        // 度量与字号无关（恒 400）：任何档、任何形态都放不下 ⇒ 到顶只能截断。
+        LocFit.Metrics = _ => 400;
         LocFit.ClearCache();
 
-        var truncated = Fit("长句", "短", 12.5, 79);
+        var truncated = Fit("长句", "短", 12.5, 200);
 
-        Assert.Equal(LocFit.MinFloor(12.5), truncated.Size);   // 12.5×0.75 = 9.375 → 抬到 9.5
+        Assert.Equal(LocFit.DegenerateFloor, truncated.Size);
         Assert.True(truncated.UseShort);                        // 有短式就先换短式，再谈截断
         Assert.True(truncated.Truncate);
+    }
+
+    [Fact]
+    public void 只缩不截的模式在退化边界不截断()
+    {
+        LocFit.Metrics = _ => 400;
+        LocFit.ClearCache();
+
+        var result = LocFit.Fit(new string('m', 40), null, 12.5, 200, allowTruncate: false, Desc);
+
+        Assert.Equal(LocFit.DegenerateFloor, result.Size);
+        Assert.False(result.Truncate);
+    }
+
+    [Fact]
+    public void 空文案原样返回基准字号_零可用宽也保持基准字号()
+    {
+        Assert.Equal(12.5, Fit("", null, 12.5, 100).Size);
+        Assert.Equal(12.5, Fit(null, null, 12.5, 100).Size);
+        // 可用宽 0/-5 = 一点位置都没有：不缩字号——宽度不因字号而变，缩了也放不下。
+        // （调用方另有"宽度为 0 先不判定"的守卫，等真拿到宽度再投。）
+        Assert.Equal(12.5, Fit("恢复默认外观", null, 12.5, 0).Size);
+        Assert.Equal(12.5, Fit(new string('m', 40), null, 12.5, -5).Size);
     }
 
     [Fact]
@@ -123,31 +171,18 @@ public sealed class LocFitRulesTests : IDisposable
     }
 
     [Fact]
-    public void 字号下限是基准的七成五与九点五之中较大者()
+    public void 退化边界是搜索的护栏_不是设计下限()
     {
-        Assert.Equal(9.5, LocFit.MinFloor(11));      // 11×0.75 = 8.25 → 抬到 9.5
-        Assert.Equal(9.5, LocFit.MinFloor(12.5));    // 12.5×0.75 = 9.375 → 抬到 9.5
-        Assert.Equal(12.75, LocFit.MinFloor(17));    // 17×0.75 = 12.75 → 比值生效
+        // 只有"可用宽被压到几乎为零"这类退化情形才碰得到它；真实需求离它很远
+        // （实测最深是命令栏「重命名」13pt → 9.0pt）。
+        Assert.Equal(4.0, LocFit.DegenerateFloor);
+
+        // 逐档缩：base 13pt、每字号占 3px、可用 12 ⇒ 需要 4pt 才放得下
+        LocFit.Metrics = request => request.Size * 3;
+        LocFit.ClearCache();
+        Assert.Equal(4.0, Fit("任意", null, 13.0, 12.0).Size);
     }
 
-    [Fact]
-    public void 只缩不截的模式在触底后不截断()
-    {
-        var result = LocFit.Fit(new string('m', 40), null, 12.5, 200, allowTruncate: false, Desc);
-
-        Assert.Equal(LocFit.MinFloor(12.5), result.Size);
-        Assert.False(result.Truncate);
-    }
-
-    [Fact]
-    public void 空文案原样返回基准字号_零可用宽收敛到下限()
-    {
-        Assert.Equal(12.5, Fit("", null, 12.5, 100).Size);
-        Assert.Equal(12.5, Fit(null, null, 12.5, 100).Size);
-        // 可用宽 0/-5 = 一点位置都没有：收敛到下限（TryFit 另有"宽度为 0 先不判定"的守卫）
-        Assert.Equal(LocFit.MinFloor(12.5), Fit("恢复默认外观", null, 12.5, 0).Size);
-        Assert.Equal(LocFit.MinFloor(12.5), Fit(new string('m', 40), null, 12.5, -5).Size);
-    }
 
     [Fact]
     public void 同一输入重复求值得到逐字段相同的结果_这是防布局回环的算法前提()
@@ -173,9 +208,9 @@ public sealed class LocFitRulesTests : IDisposable
     }
 
     [Fact]
-    public void 零宽或负宽不产生异常且收敛到下限()
+    public void 零宽或负宽不产生异常且保持基准字号()
     {
-        Assert.Equal(LocFit.MinFloor(12.5), Fit(new string('m', 40), null, 12.5, -5).Size);
+        Assert.Equal(12.5, Fit(new string('m', 40), null, 12.5, -5).Size);
     }
 
     [Fact]

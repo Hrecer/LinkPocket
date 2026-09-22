@@ -61,6 +61,13 @@ public sealed class LocFitChannelTests
     }
 
     /// <summary>把一段 UI 逻辑放到带 Dispatcher 的 STA 线程上跑（WPF 绑定要有消息泵）。</summary>
+    /// <remarks>
+    /// <b>跑完必须把那个 Dispatcher 关掉</b>：每个 <c>Dispatcher</c> 都会建一个隐藏窗口（消息泵的宿主），
+    /// 线程退出时它不会自己销毁。一个测试漏掉它，后续任何"再建一个 Dispatcher / 再开一个窗口"的代码
+    /// 都会失败，而且报的是 <c>Win32Exception(8) "内存资源不足"</c>——<b>报的是内存，实际是窗口句柄耗尽</b>
+    /// （实测：本机先后 24 个残留 dotnet 进程时，连 <c>FormattedText</c> 取宽都会抛这个错）。
+    /// 所以这里 <c>InvokeShutdown</c> + 泵到 <c>HasShutdownFinished</c>，把句柄还回去。
+    /// </remarks>
     private static void OnUiThread(Action action)
     {
         Exception? failure = null;
@@ -68,6 +75,16 @@ public sealed class LocFitChannelTests
         {
             try { action(); }
             catch (Exception ex) { failure = ex; }
+            finally
+            {
+                try
+                {
+                    Dispatcher.CurrentDispatcher.InvokeShutdown();
+                    // 泵到关停真正落地，否则隐藏窗口还在，句柄仍被占着
+                    while (!Dispatcher.CurrentDispatcher.HasShutdownFinished) Pump();
+                }
+                catch { /* 关停失败不掩盖真正的失败 */ }
+            }
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();

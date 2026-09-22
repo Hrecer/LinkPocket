@@ -71,7 +71,9 @@
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="folder-plus" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="{loc:Loc browser.newFolder}" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit browser.newFolder}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <!-- 新建链接：与新建文件夹并列，弹出 M3 链接编辑器（默认当前目录） -->
@@ -79,7 +81,9 @@
                         Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="link-plus" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="{loc:Loc browser.newLink}" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit browser.newLink}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <!-- 重命名：与 F2 / 右键「重命名」**同一条命令**（就地编辑；文件夹改名称、链接改标题）。
@@ -89,7 +93,9 @@
                         ToolTip="{loc:Loc btn.rename.tip}">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="pencil" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="{loc:Loc common.rename}" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit common.rename}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <!-- 删除：删除选中项（文件夹/链接一律移入回收站，Windows 语义），未选中时禁用。
@@ -99,7 +105,9 @@
                         ToolTip="{loc:Loc btn.delete.tip}">
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="delete-outline" Width="16" Height="16" VerticalAlignment="Center"/>
-                        <TextBlock Text="{loc:Loc common.delete}" FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit common.delete}" views:LocFit.Mode="ShrinkThenEllipsis"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>
             </StackPanel>

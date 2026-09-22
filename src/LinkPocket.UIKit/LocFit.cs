@@ -55,11 +55,20 @@ public enum LocFitMode
 /// </remarks>
 public static class LocFit
 {
-    /// <summary>字号下限比例（相对该元素的基准字号）。</summary>
-    public const double MinRatio = 0.75;
-
-    /// <summary>字号绝对下限（pt）。下限放到 9.5 就要求降级链真的会走到"短式"那一步。</summary>
-    public const double MinPoints = 9.5;
+    /// <summary>
+    /// 字号搜索的**退化边界**（pt）——不是设计上的下限，只是让搜索有界。
+    /// </summary>
+    /// <remarks>
+    /// <b>字号没有下限</b>：放不下就继续缩，直到在冻结几何里放得下（几何一个像素都不动，让位的一律是字）。
+    /// 本常量只防"可用宽接近 0 时无限往下试"这种退化情形；实测最深的需求是 13pt → 9.0pt（命令栏「重命名」的
+    /// 英文 `Rename`），离它很远。
+    /// <para>
+    /// 曾经有过 `max(base×0.75, 9.5pt)` 的**设计下限**，已按实测撤销——它挡在缩的路上，
+    /// "放不下"就成了它自己造成的：实测命令栏「重命名」在中文 base 13pt 下就已溢出 6px，
+    /// 而下限不许缩到能放下的 11pt。决策与撤销理由见 `国际化规划.md §6` 决策 6 的撤销说明。
+    /// </para>
+    /// </remarks>
+    public const double DegenerateFloor = 4.0;
 
     /// <summary>字号搜索步长（pt）。</summary>
     public const double Step = 0.5;
@@ -95,7 +104,7 @@ public static class LocFit
     /// <param name="shortText">短式文案；<c>null</c> = 这条文案没有短式变体。</param>
     /// <param name="baseSize">基准字号（元素本来要用的那个）。</param>
     /// <param name="available">可用宽（元素实测宽 − 内距）。</param>
-    /// <param name="allowTruncate">到下限仍放不下时是否允许截断（<c>false</c> = 停在 <see cref="MinFloor"/> 档）。</param>
+    /// <param name="allowTruncate">连退化边界都放不下时是否允许截断；<c>false</c> = 停在边界档。</param>
     /// <param name="desc">字体描述（族 / 字重 / 字宽 / DPI）。</param>
     public static FitResult Fit(
         string? full,
@@ -105,36 +114,39 @@ public static class LocFit
         bool allowTruncate,
         in FontDescriptor desc)
     {
-        var size = Math.Max(baseSize, MinPoints);
-        if (string.IsNullOrEmpty(full)) return new FitResult(size, UseShort: false, Truncate: false);
+        if (string.IsNullOrEmpty(full)) return new FitResult(baseSize, UseShort: false, Truncate: false);
 
-        var floor = MinFloor(baseSize);
-        // 可用宽为 0 或负（还没参与布局 / 被压成 0）＝ 一点位置都没有：直接收敛到下限。
-        // 调用方（转换器 / Project）另有"宽度为 0 时先不判定"的守卫，不会因为这条过早把稳定态钉死。
-        if (available <= 0) return new FitResult(floor, UseShort: false, Truncate: allowTruncate);
+        // 可用宽为 0 或负（还没参与布局 / 被压成 0）＝ 一点位置都没有：
+        // 不缩字号（缩了也没有意义——宽度不因字号而变），保持 base 让调用方另有守卫去处理。
+        if (available <= 0) return new FitResult(baseSize, UseShort: false, Truncate: allowTruncate);
 
         var hasShort = !string.IsNullOrEmpty(shortText);
 
         // ① 全长 @ base —— 绝大多数中文文案与短英文文案走到这里就结束
-        if (Fits(full!, size, available, desc)) return new FitResult(size, UseShort: false, Truncate: false);
+        if (Fits(full!, baseSize, available, desc)) return new FitResult(baseSize, UseShort: false, Truncate: false);
 
-        // ② 短式 @ base —— "换一句更短的话"优先于"把字缩小"（日期/计数这类结构化文本的出路）
-        if (hasShort && Fits(shortText!, size, available, desc)) return new FitResult(size, UseShort: true, Truncate: false);
+        // ② 短式 @ base —— "换一句更短的话"优先于"把字缩小"。
+        //     理由与字号无关，是产品判断：日期/计数这类结构化文本宁可去年份也不许截，
+        //     而且"换短式"不会让相邻控件的字号不齐。
+        if (hasShort && Fits(shortText!, baseSize, available, desc))
+            return new FitResult(baseSize, UseShort: true, Truncate: false);
 
-        // ③④ 从 base 往下取"能放下的最大档"：取最大（而不是逐档试到第一个能放下）
-        //     让结果是稳定解——重算必然得到同一个值，布局回环因此不成立。
-        for (var candidate = SnapDown(size - Step); candidate > floor; candidate = SnapDown(candidate - Step))
+        // ③ 步进缩小，直到放得下。**取"能放下的最大档"而不是"第一个放得下的档"**：
+        //    结果是稳定解（重算必然同值），布局回环因此不成立。
+        //    只判短式即可——全长在 base 都放不下，更小的字号只会更放不下（宽度随字号单调减）。
+        for (var candidate = SnapDown(baseSize - Step); candidate >= DegenerateFloor; candidate = SnapDown(candidate - Step))
         {
-            var text = hasShort && Fits(shortText!, candidate, available, desc) ? shortText : null;
-            if (text != null || Fits(full!, candidate, available, desc))
-                return new FitResult(candidate, UseShort: text != null, Truncate: false);
+            if (hasShort && Fits(shortText!, candidate, available, desc))
+                return new FitResult(candidate, UseShort: true, Truncate: false);
+            if (Fits(full!, candidate, available, desc))
+                return new FitResult(candidate, UseShort: false, Truncate: false);
         }
 
-        // ⑤ 触底：有短式就"用短式再截断"（同样宽度下短式留得住更多信息）
-        return new FitResult(floor, UseShort: hasShort, Truncate: allowTruncate);
+        // ④ 退化边界：可用宽被压到几乎为零之类的情形。有短式就"用短式"（同宽下留得住更多信息）。
+        return new FitResult(DegenerateFloor, UseShort: hasShort, Truncate: allowTruncate);
     }
 
-    /// <summary>该元素在当前字号下的可用宽（实测宽 − 内距；负值收敛到 0）。</summary>
+    /// <summary>该元素在当前字号下的可用宽（实测宽 − 内距 − 自身外边距；负值收敛到 0）。</summary>
     public static double AvailableWidth(FrameworkElement element)
     {
         var width = element.ActualWidth;
@@ -143,6 +155,12 @@ public static class LocFit
     }
 
     /// <summary>左右内距之和（含描边）：可用宽必须减掉它，否则文字会被内距挤出去。</summary>
+    /// <remarks>
+    /// ⚠️ <b>不要在这里再扣 <c>Margin</c></b>：试过一次，结果是全面缩过头——命令栏药丸从
+    /// 11.5/12.5/10.0 一路掉到 6.5/5.5/4.0，连"重命名"都撞上退化边界并露出缺键标记。
+    /// 原因是 <c>TextBlock.ActualWidth</c> 在受 <c>MaxWidth</c> 约束时**本身就是"可用宽 + 外边距"**
+    /// （实测 47.3 = 40.3 + 7），再扣一次等于把同一段间距算了两次。
+    /// </remarks>
     public static double HorizontalInsets(FrameworkElement element)
     {
         var insets = 0.0;
@@ -158,9 +176,6 @@ public static class LocFit
         }
         return insets;
     }
-
-    /// <summary>字号下限：<c>max(base×0.75, 9.5pt)</c>。</summary>
-    public static double MinFloor(double baseSize) => Math.Max(baseSize * MinRatio, MinPoints);
 
     /// <summary>按步长取整（向下，落在 0.5pt 网格上）。</summary>
     public static double SnapDown(double size) => Math.Floor(size / Step + 1e-6) * Step;
