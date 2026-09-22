@@ -42,13 +42,35 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     /// </summary>
     public const string PathKey = "@path";
 
+    /// <summary>
+    /// 时钟值的保留键：参数是 <c>(DateTime, 是否短式)</c>，渲染时按**当前**语言格式化。
+    /// </summary>
+    /// <remarks>
+    /// <b>存在的理由</b>：日期若在构造期就格式化成文本（<see cref="Literal"/>），那条文案就被**冻结**在
+    /// 取词那一刻的语言上了——版本号再怎么变，它也只是"一个已经烤好的字符串"。
+    /// 实测症状：切到英文后同一条单元格里 <c>Never</c> 换了、日期没换（前者走键、后者是成品文本），
+    /// 表格里于是两种语言混排。
+    /// 本形态让日期与 <see cref="Projection"/>（路径）同构：<b>存的是一份身份（时刻 + 形态），
+    /// 不是一句话</b>，什么时候取词由渲染边界决定。
+    /// </remarks>
+    public const string ClockKey = "@clock";
+
     /// <summary>canonical 路径 → 显示串的文案值（代码里建表格单元格 / 详情行时用）。</summary>
     public static LocValue Projection(string? canonical) => new(PathKey, new object?[] { canonical ?? string.Empty });
+
+    /// <summary>时刻 → 当前语言日期的文案值（不进库、不落状态，只在渲染边界求值）。</summary>
+    /// <param name="local">本地时间（调用方负责 <c>ToLocalTime()</c>，与全库同口径）。</param>
+    /// <param name="short">是否用短式（降级链第 ③ 步的"去年份"形态）。</param>
+    public static LocValue Clock(DateTime local, bool @short)
+        => new(ClockKey, new object?[] { local, @short });
 
     public bool IsEmpty => string.IsNullOrEmpty(Key);
 
     /// <summary>路径投影值（canonical → 显示串）。</summary>
     public bool IsPath => Key == PathKey;
+
+    /// <summary>时钟值（时刻 → 当前语言日期；见 <see cref="Clock"/>）。</summary>
+    public bool IsClock => Key == ClockKey;
 
     /// <summary>成品文本值（不查表；见 <see cref="Literal"/>）。</summary>
     public bool IsLiteral => Key == LiteralMarker;
@@ -56,8 +78,16 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     /// <summary>在当前语言下取词——<b>只允许渲染边界调用</b>。嵌套的 <see cref="LocValue"/> 参数一起解析。</summary>
     public string Resolve() => IsEmpty ? string.Empty
         : IsPath ? BookmarkDisplay.Path(Args.Span[0] as string)
+        : IsClock ? ResolveClock()
         : IsLiteral ? Args.Span[0] as string ?? string.Empty
         : Loc.T(Key, Args.ToArray());
+
+    /// <summary>时钟值按当前语言格式化（长式 / 短式由参数决定，见 <see cref="Clock"/>）。</summary>
+    private string ResolveClock()
+    {
+        if (Args.Length < 2 || Args.Span[0] is not DateTime local) return string.Empty;
+        return Args.Span[1] is true ? UiClock.FormatShort(local) : UiClock.Format(local);
+    }
 
     /// <summary>
     /// 短式形态（<c>key#short</c>）的当前语言文本——降级链第 ③ 步用（<c>LocFit</c>）。
@@ -70,6 +100,7 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
     public string ResolveShort()
     {
         if (IsPath || IsLiteral || string.IsNullOrEmpty(Key)) return Resolve();
+        if (IsClock) return ResolveClock();
         return Loc.Short(Key, Args.ToArray());
     }
 

@@ -37,13 +37,23 @@ public static class UiClock
     /// 一列日期的**两个长度形态**——表格日期列走这条（<c>LocFit</c> 按可用宽挑一个）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 存在的理由：日期列宽是冻结几何，而英文日期比中文宽约 25%（<c>09/21/2026 1:40 PM</c> vs
     /// <c>2026-09-21 13:40</c>）。放不下时的正确处置是<b>去年份的短式</b>，
     /// 绝不是把日期截成 <c>09/21/2026 1:4…</c>——<b>截断的日期是错的日期</b>。
     /// 中文侧没有可缩的余地，两条形态填同一句。
+    /// </para>
+    /// <para>
+    /// ⚠️ <b>两种形态都是"时刻"而不是"成品文本"</b>（<see cref="LocValue.Clock"/>，与
+    /// <see cref="LocValue.Projection"/> 同构）。曾经这里在构造期就 <c>Format</c> 成字符串，
+    /// 于是这条文案被<b>冻结</b>在取词那一刻的语言上：版本号再怎么变，它也只是"一个烤好的串"。
+    /// 实测症状极具误导性——切到英文后，同一个单元格里 <c>Never</c>（走键）换了、日期没换，
+    /// 表格里两种语言混排，而"日期列"这条判据看起来像绑定没生效。
+    /// 现在存的是一份身份（时刻 + 形态），取词发生在渲染边界。
+    /// </para>
     /// </remarks>
     public static LocText Text(DateTime local)
-        => new(LocValue.Literal(Format(local)), LocValue.Literal(FormatShort(local)));
+        => new(LocValue.Clock(local, @short: false), LocValue.Clock(local, @short: true));
 
     /// <summary>「从未」哨兵（没有访问时间时显示的东西，不是时间格式）。</summary>
     public static string Never => Loc.T("clock.never");

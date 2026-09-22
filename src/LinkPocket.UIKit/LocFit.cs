@@ -47,7 +47,7 @@ public enum LocFitMode
 /// </para>
 /// <para>
 /// <b>它是纯布局机制，一个字都不写进元素的 Text</b>：文字的唯一写者是<b>绑定</b>
-/// （<c>Text="{loc:Fit …}"</c> 的转换器）。<see cref="TryFit"/> 只写字号与截断/ToolTip。
+/// （<c>Text="{loc:Fit …}"</c> 的转换器）。<see cref="Project"/> 只写字号与截断/ToolTip。
 /// 历史教训：让本行为去写 <c>TextBlock.Text</c>，等于让一个属性有两个写者——
 /// 绑定重投的值被行为按上一次的判定盖住，切语言后模型已是新语言、屏幕上还留着旧语言
 /// （实测：模型侧 <c>09/20/2026 10:50 AM</c>、屏幕上 <c>2026-09-20 10:50</c>）。
@@ -110,7 +110,7 @@ public static class LocFit
 
         var floor = MinFloor(baseSize);
         // 可用宽为 0 或负（还没参与布局 / 被压成 0）＝ 一点位置都没有：直接收敛到下限。
-        // 调用方（转换器 / TryFit）另有"宽度为 0 时先不判定"的守卫，不会因为这条过早把稳定态钉死。
+        // 调用方（转换器 / Project）另有"宽度为 0 时先不判定"的守卫，不会因为这条过早把稳定态钉死。
         if (available <= 0) return new FitResult(floor, UseShort: false, Truncate: allowTruncate);
 
         var hasShort = !string.IsNullOrEmpty(shortText);
@@ -250,6 +250,9 @@ public static class LocFit
 
         /// <summary>文字生成侧上一次选了哪种形态（只读状态，供布局侧决定截断与 ToolTip）。</summary>
         public bool UseShort;
+
+        /// <summary>上一次投影时的语言代数（见 <see cref="ObserveLanguage"/>）。</summary>
+        public int ObservedLangVersion = -1;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, FitState> States = new();
@@ -260,13 +263,21 @@ public static class LocFit
     // ── 两个附加属性：接入通道 + 当前该显示的文本 ─────────────────────────
 
     /// <summary>
-    /// 接入通道：绑 <see cref="LocText"/>（或 <c>string</c>，或文案键），
-    /// 并触发 <see cref="ChosenProperty"/> 的重算。
+    /// 接入通道：绑 <see cref="LocText"/>（或 <c>string</c>，或文案键）。
     /// </summary>
     /// <remarks>
-    /// 它与 <see cref="ModeProperty"/> 是<b>并列的一条通道</b>：
-    /// <c>loc:LocFit.Text="{loc:FitValue ModifiedText}" loc:LocFit.Mode="ShrinkThenEllipsis"</c>。
-    /// XAML 的属性顺序不保证，所以谁后到都要能把链路接起来——两边都调 <see cref="Wire"/>。
+    /// <para>
+    /// <b>它同时是"文案变了"这个入口</b>：值一变就调 <see cref="Project"/>。
+    /// 这是必须的，因为接入值来自一条普通绑定（<c>{loc:FitValue ModifiedText}</c> —— 注意它<b>没有转换器</b>，
+    /// <c>FitValueResolver</c> 只是把 <see cref="LocText"/> 原样投出来），绑定重读只会换掉这个附加属性，
+    /// <b>不会</b>顺手重算显示文字。曾经"顺手重算"这件事是由一个外部驱动循环（<c>RefreshAll</c>）
+    /// 代劳的——那正是被删掉的补丁；本回调接管它，于是"文案变了"与"几何变了"都汇进同一个
+    /// <see cref="Project"/>，一进一出。
+    /// </para>
+    /// <para>
+    /// 它与 <see cref="ModeProperty"/> 是并列的两条通道，XAML 属性顺序不保证，
+    /// 所以谁后到都要能把链路接起来——两边都调 <see cref="Wire"/>，由 <see cref="Wire"/> 调 <see cref="Project"/>。
+    /// </para>
     /// </remarks>
     public static readonly DependencyProperty TextProperty =
         DependencyProperty.RegisterAttached(
@@ -285,133 +296,118 @@ public static class LocFit
     /// </remarks>
     public static readonly DependencyProperty ChosenProperty =
         DependencyProperty.RegisterAttached(
-            "Chosen", typeof(string), typeof(LocFit), new PropertyMetadata(string.Empty));
+            "Chosen", typeof(string), typeof(LocFit),
+            new PropertyMetadata(string.Empty, (d, e) =>
+            {
+                // 谁画本通道的产物，谁就进登记表——这条保证与"元素怎么被创建、什么时候拿到 Mode"无关：
+                // 模板里那句 Text="{Binding (views:LocFit.Chosen), RelativeSource=Self}" 是**唯一**
+                // 把结果显示出来的方式（代码侧走 BuildChosenBinding，同样落到这里）。
+                // 没有它，"登记"要靠另一条附加属性（Text/Mode）被赋值的时机，而那个时机不受本类控制
+                // （实测：Text 绑定先求值、Mode 还是默认 Off；等 Mode 到位时元素早已错过登记）。
+                if (d is FrameworkElement fe) _ = StateOf(fe);
+            }));
 
     public static void SetText(DependencyObject element, object? value) => element.SetValue(TextProperty, value);
     public static object? GetText(DependencyObject element) => element.GetValue(TextProperty);
     public static string GetChosen(DependencyObject element) => (string)element.GetValue(ChosenProperty);
 
-    // ── 语言版本 → 强制重取 ────────────────────────────────────────────────
+    // ── 唯一投影入口 ───────────────────────────────────────────────────────
 
     static LocFit()
     {
         // 主题 / 字体一变，基准字号与度量缓存都可能失效：清掉每元素状态让它们重新学一次
         // （字体族是度量缓存键的一部分，所以缓存本身不需要清）。
         Theming.ThemeService.Changed += (_, _) => States.Clear();
-
-        // 语言一变：**强制重取**所有已接入通道的元素的文案绑定。
-        //
-        // 为什么非要自己驱动：实测（探针 `fitchan` 套件）——把 `{loc:FitValue X}` 挂到
-        // `LocFit.Text` 之后，那条 MultiBinding 的两路都正确（`Version@LocTable` +
-        // `X@DataContext`）、版本号也确实递增了，但 **WPF 不会因为子绑定变化而重算它**：
-        // 屏幕上一直留着上一种语言的文本，而手动 `UpdateTarget()` 立刻就能拿到当前语言
-        // （实测 `2026-09-20 10:50` → `09/20 10:50 AM`）。
-        // 这条与"模型成员是普通属性、不发通知"是同一族问题：**失效信号不会自己传到底**，
-        // 必须由拥有这条通道的那一层显式驱动一次。
-        // 语言一变：**强制重取**所有已接入通道的元素的文案，并重算形态。
-        //
-        // 注册到 `LocaleService.AfterApply`：那一刻 Reload 已返回、LanguageChanged 已发完，
-        // 读到的必然是新语言（订阅 `LocTable.PropertyChanged` 会早一步，读到半成品状态）。
-        LocaleService.AfterApply = () =>
-        {
-            // 但**还要再排一次**：`AfterApply` 是在 `LocaleService.Apply` 里同步调的，
-            // 而此刻可视树/绑定链正在同一条调用栈上更新；等这一批消息跑完再驱动，
-            // 才是"语言切换真正落地"的时刻（实测同步驱动读到旧文本）。
-            var dispatcher = Application.Current?.Dispatcher;
-            if (dispatcher is null) { RefreshAll(); return; }
-            dispatcher.BeginInvoke(new Action(RefreshAll), DispatcherPriority.Loaded);
-        };
     }
 
     /// <summary>
-    /// 让所有已接入通道的元素<b>重取一遍文案绑定</b>（取词表版本变化时由 <see cref="LocFit"/> 调用）。
+    /// <b>唯一投影入口</b>：把当前的 <see cref="TextProperty"/> 值在**当前</b>可用宽与基准字号下
+    /// 投成 <b>显示文字 + 字号 + 截断/ToolTip</b>。
     /// </summary>
     /// <remarks>
-    /// <c>BindingOperations.GetMultiBindingExpression(...)?.UpdateTarget()</c> 就是"重新读一次来源"，
-    /// 不改动绑定本身；元素被回收后自然不在枚举里（<see cref="States"/> 是弱表）。
-    /// 跨线程调用（单测可能从非 UI 线程 <c>LocaleService.Apply</c>）按 <c>CheckAccess</c> 跳过——
-    /// 跨线程碰绑定会当场抛"调用线程无法访问此对象"。
+    /// <para>
+    /// <b>为什么只有一个入口</b>：显示文字曾经由布局侧单独维护（一个"二级缓存"），
+    /// 于是"切语言之后它还新不新"变成一个需要人记住、并且要靠外部驱动去续命的问题——
+    /// 仓库为此长出了 <c>AfterApply</c> 钩子、<c>RefreshAll</c> 遍历、<c>DispatcherPriority</c> 排队
+    /// 三件补丁，而实测它们<b>一件都没生效</b>（<c>ConvertCalls 0 → 0</c>：那套"强制重取"连转换器都没碰到）。
+    /// 现在两个触发源（文案变了 / 几何变了）走的是同一个方法、读的是同一份来源，
+    /// 值由比较决定写不写 ⇒ 谁先到都收敛，不存在"两套时序"这回事。
+    /// </para>
+    /// <para>
+    /// <b>为什么不需要外部驱动</b>：实验实测（<c>FitChannelExperiment</c>）——<c>LocTable.Version</c>
+    /// 这类子绑定一变，WPF 自己就会重跑 <c>{loc:FitValue …}</c> 的转换器（<c>attach=1 → versionBump=2</c>）。
+    /// 所以"切语言必须由某个宿主显式驱动"这条前提本身是错的。
+    /// </para>
+    /// <para>
+    /// 幂等：稳态下重算得到同一个结论、不写任何属性（"值不变不写"——布局回环的唯一防线）。
+    /// </para>
     /// </remarks>
-    public static void RefreshAll()
+    public static void Project(FrameworkElement element)
     {
-        var elements = new List<FrameworkElement>();
-        foreach (var entry in States)
-            if (entry.Key is FrameworkElement fe) elements.Add(fe);
+        if (GetMode(element) == LocFitMode.Off) return;
+        if (Normalize(GetText(element)) is not LocText text || text.IsEmpty) return;
 
-        RefreshRuns++;
-        RefreshElements += elements.Count;
-        BeforeRefreshProbe?.Invoke(elements);
+        var available = AvailableWidth(element);
 
-        foreach (var fe in elements)
+        // 可用宽为 0 = 还没参与布局：只落全长、不动字号。
+        // 在这里缩字号会把字号钉在下限上，而"基准字号"就照着压过的值学错了（一次就再也回不去）。
+        if (available <= 0)
         {
-            if (!fe.Dispatcher.CheckAccess()) continue;
-            var multi = BindingOperations.GetMultiBindingExpression(fe, TextProperty);
-            if (multi is not null)
-            {
-                multi.UpdateTarget();
-                RefreshMultiHit++;
-                AfterRefreshProbe?.Invoke(fe);
-                continue;
-            }
-            RefreshMultiMiss++;
-            BindingOperations.GetBindingExpression(fe, TextProperty)?.UpdateTarget();
+            PlaceChosen(element, text.Resolve());
+            return;
         }
 
-        foreach (var fe in elements)
-        {
-            if (fe.Dispatcher.CheckAccess()) TryFit(fe);
-        }
+        var baseSize = BaseSizeFor(element);
+        var desc = Describe(element);
+        var result = Evaluate(text.Resolve(), text.HasShort ? text.ResolveShort() : null,
+            baseSize, available, GetMode(element) == LocFitMode.ShrinkThenEllipsis, desc);
+
+        PlaceFontSize(element, result.Size);   // 值不变不写（回环防线）
+        RecordVariant(element, result.UseShort);
+
+        var shown = result.UseShort ? text.ResolveShort() : text.Resolve();
+        PlaceChosen(element, shown);
+        ApplyOverflow(element, shown, result.Size, available, desc);
     }
-
-    /// <summary>重取时拿到 MultiBinding 的元素数（诊断读数）。</summary>
-    public static int RefreshMultiHit { get; private set; }
-
-    /// <summary>重取时**没**拿到 MultiBinding 的元素数（诊断读数：它大就说明绑定不在预期位置上）。</summary>
-    public static int RefreshMultiMiss { get; private set; }
-
-    /// <summary>诊断钩子：每次重取后对每个元素调用一次（探针用它看"重取当场读回了什么"）。</summary>
-    public static Action<FrameworkElement>? AfterRefreshProbe { get; set; }
 
     /// <summary>
-    /// 诊断钩子：重取**开始前**调一次，给出本次要处理的元素快照。
-    /// 用来判定"屏幕上的那个元素到底在不在本次集合里"——这是"重取跑了却没生效"的分水岭。
+    /// 落<b>显示文字</b>——本类里写 <see cref="ChosenProperty"/> 的<b>唯一</b>一处。
     /// </summary>
-    public static Action<IReadOnlyList<FrameworkElement>>? BeforeRefreshProbe { get; set; }
-
-    /// <summary>语言版本驱动重取的次数（诊断读数：它必须随切语言增长，否则钩子没接上）。</summary>
-    public static int RefreshRuns { get; private set; }
-
-    /// <summary>历次重取触及的元素数合计（诊断读数：为 0 说明元素根本没登记进弱表）。</summary>
-    public static int RefreshElements { get; private set; }
-
-    /// <summary>弱表里当前登记的元素数（诊断读数）。</summary>
-    public static int TrackedCount
+    /// <remarks>
+    /// "值不变不写"在这里不只是性能：<c>SetValue</c> 会打断该附加属性上的绑定，
+    /// 所以稳定态下一次都不该写。调用方只有 <see cref="Project"/>，它每次都用现读的来源重算。
+    /// </remarks>
+    private static void PlaceChosen(FrameworkElement element, string shown)
     {
-        get
-        {
-            var count = 0;
-            foreach (var _ in States) count++;
-            return count;
-        }
+        if (!string.Equals(GetChosen(element), shown, StringComparison.Ordinal))
+            element.SetValue(ChosenProperty, shown);
     }
 
-    /// <summary>这个元素有没有登记进弱表（诊断读数：没登记就永远不会被重取）。</summary>
-    public static bool IsTracked(DependencyObject element)
-        => element is FrameworkElement fe && States.TryGetValue(fe, out _);
-
-    /// <summary>接入文案通道并立刻算一次形态（幂等；文字与 Mode 谁后到都走这里）。</summary>
+    /// <summary>接上通道：登记进每元素状态，并按需挂三个几何触发源 + 立刻投影一次。</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>登记与 <see cref="ModeProperty"/> 无关</b>（这条是踩出来的）：<c>Mode</c> 缺省是 <see cref="LocFitMode.Off"/>，
+    /// 而 XAML 里 <c>LocFit.Text</c> 的绑定<b>先求值</b>——那一刻 <c>Mode</c> 还没被赋值。
+    /// 旧实现遇到 <c>Off</c> 直接 <c>return</c>，连登记都没做。登记还另有一道保证在
+    /// <see cref="ChosenProperty"/> 上（谁画本通道的产物谁就进表），两道加起来才不会漏。
+    /// </para>
+    /// <para>
+    /// 两条通道（<see cref="TextProperty"/> / <see cref="ModeProperty"/>）谁后到都走这里，先摘后挂避免重复订阅。
+    /// </para>
+    /// </remarks>
     private static void Wire(FrameworkElement element)
     {
-        var mode = GetMode(element);
-        if (mode == LocFitMode.Off) return;
+        _ = StateOf(element);   // 登记
+
+        if (GetMode(element) == LocFitMode.Off) return;
+
         element.LayoutUpdated -= OnLayoutUpdated;   // 先摘后挂：避免重复订阅
         element.LayoutUpdated += OnLayoutUpdated;
         element.SizeChanged -= OnSizeChanged;
         element.SizeChanged += OnSizeChanged;
         element.Loaded -= OnLoaded;
         element.Loaded += OnLoaded;
-        _ = StateOf(element);
-        TryFit(element);
+        Project(element);
     }
 
     /// <summary>
@@ -446,13 +442,13 @@ public static class LocFit
     }
 
     /// <summary>
-    /// 文字生成的一侧（<c>{loc:Fit …}</c> 的转换器）用它把"这次选了什么形态"记下来，
-    /// 供 <see cref="TryFit"/> 决定截断与 ToolTip。<b>只读状态，不是写通道</b>。
+    /// 文字生成的一侧（<c>{loc:Fit …}</c> 的转换器 / <see cref="Project"/>）把"这次选了什么形态"记下来。
+    /// <b>只读状态，不是写通道</b>；<see cref="IsShortForm"/> 与 <see cref="IsTruncated"/> 是它的读数。
     /// </summary>
     public static void RecordVariant(FrameworkElement element, bool useShort)
         => StateOf(element).UseShort = useShort;
 
-    /// <summary>本元素上一次生成的形态是不是短式（诊断与用例读数）。</summary>
+    /// <summary>本元素当前生成的形态是不是短式（读数）。</summary>
     public static bool IsShortForm(FrameworkElement element)
         => States.TryGetValue(element, out var state) && state.UseShort;
 
@@ -465,49 +461,6 @@ public static class LocFit
         if (string.IsNullOrEmpty(applied)) return false;
         var available = AvailableWidth(element);
         return available > 0 && !Fits(applied, FontSizeOf(element), available, Describe(element));
-    }
-
-    // ── 布局侧：只写字号与截断 ─────────────────────────────────────────────
-
-    /// <summary>
-    /// 就当前文字与可用宽重算一次并落**字号 / 截断 / ToolTip**（<b>不碰文字</b>）。
-    /// 幂等：稳态下重算得到同一个结论、不写任何属性（"值不变不写"——布局回环的唯一防线）。
-    /// </summary>
-    public static void TryFit(FrameworkElement element)
-    {
-        var mode = GetMode(element);
-        if (mode == LocFitMode.Off) return;
-
-        if (Normalize(GetText(element)) is not LocText text || text.IsEmpty)
-        {
-            if (GetChosen(element).Length > 0) element.SetValue(ChosenProperty, string.Empty);
-            return;
-        }
-
-        // 可用宽为 0 = 还没参与布局：<b>先只落全长</b>，不动字号。
-        // 在这里缩字号会把字号钉在下限上，而"基准字号"就照着压过的值学错了（一次就再也回不去）。
-        var available = AvailableWidth(element);
-        if (available <= 0)
-        {
-            var plain = text.Resolve();
-            if (!string.Equals(GetChosen(element), plain, StringComparison.Ordinal))
-                element.SetValue(ChosenProperty, plain);
-            return;
-        }
-
-        var baseSize = BaseSizeFor(element);
-        var desc = Describe(element);
-        var result = Evaluate(text.Resolve(), text.HasShort ? text.ResolveShort() : null,
-            baseSize, available, mode == LocFitMode.ShrinkThenEllipsis, desc);
-
-        PlaceFontSize(element, result.Size);   // 值不变不写（回环防线）
-        RecordVariant(element, result.UseShort);
-
-        var shown = result.UseShort ? text.ResolveShort() : text.Resolve();
-        if (!string.Equals(GetChosen(element), shown, StringComparison.Ordinal))
-            element.SetValue(ChosenProperty, shown);
-
-        ApplyOverflow(element, shown, result.Size, available, desc);
     }
 
     /// <summary>把接入通道的值归一成 <see cref="LocText"/>（<c>string</c> = 只有全长；认不出就拒绝）。</summary>
@@ -567,14 +520,14 @@ public static class LocFit
             return;
         }
 
-        // ⚠️ 此刻元素常常还没参与布局（可用宽 0）：Wire 里的 TryFit 只会落一个全长、不动字号，
+        // ⚠️ 此刻元素常常还没参与布局（可用宽 0）：Wire 里的 Project 只会落一个全长、不动字号，
         // 基准字号留到首次拿到真实可用宽时再学（否则会照着被压过的下限值学错，一次就回不去）。
         Wire(element);
     }
 
     private static void OnLayoutUpdated(object? sender, EventArgs e)
     {
-        if (sender is FrameworkElement element) TryFit(element);
+        if (sender is FrameworkElement element) Project(element);
     }
 
     /// <summary>
@@ -592,12 +545,12 @@ public static class LocFit
     /// </remarks>
     private static void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (sender is FrameworkElement element) TryFit(element);
+        if (sender is FrameworkElement element) Project(element);
     }
 
     private static void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement element) TryFit(element);
+        if (sender is FrameworkElement element) Project(element);
     }
 }
 
@@ -606,16 +559,24 @@ public static class LocFit
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>它是文字的唯一写者</b>：binding 求出"该显示哪一形态"的字符串，同时把字号落到目标元素上。
-/// 形态（全长/短式）与字号（能不能放下）必须一起决定 —— 分给两个写者就会出现
-/// "绑定按新语言投了值、布局按旧判定又改回去"的互相覆盖（这条正是踩过的坑）。
+/// <b>它只是"文案变了"这个入口</b>，不做任何决定：把当前语言的 <see cref="LocText"/> 交给
+/// <see cref="LocFit.TextProperty"/>（唯一事实来源），然后调 <see cref="LocFit.Project"/>——
+/// 与"几何变了"那个入口（布局事件）走的是同一个方法。
+/// </para>
+/// <para>
+/// <b>为什么不需要任何人来驱动它</b>：输入里的 <c>[0]</c> 是 <c>LocTable.Version</c>，
+/// 语言一变这个子绑定就脏，WPF 自己会重跑本方法（实验实测：
+/// <c>attach=1 → versionBump=2 → contextSwap=3</c>，见 <c>FitChannelExperiment</c>）。
+/// 此前仓库里的 <c>LocaleService.AfterApply</c> 钩子 + <c>RefreshAll</c> 遍历 +
+/// <c>DispatcherPriority</c> 排队三件补丁，是建立在"WPF 不会因为子绑定变化而重算"这个**错误前提**上的，
+/// 实测它们连本方法都没碰到（<c>ConvertCalls 0 → 0</c>）——已整段删除。
 /// </para>
 /// <para>
 /// <b>为什么能拿到元素</b>：<see cref="LocFitExtension"/> 在 markup extension 阶段用
 /// <c>IProvideValueTarget</c> 拿到目标元素，塞进 <c>ConverterParameter</c>。
 /// </para>
 /// <para>
-/// 输入：<c>[0]</c> = 语言版本（<b>仅作失效触发器</b>：语言一变整条链自动重算）、
+/// 输入：<c>[0]</c> = 语言版本（<b>失效触发器</b>：语言一变整条链自动重算）、
 /// <c>[1]</c> = <see cref="LocText"/>（全长 + 可选短式）。
 /// </para>
 /// </remarks>
@@ -625,26 +586,17 @@ public sealed class LocFitResolver : IMultiValueConverter
 
     public object? Convert(object[] values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
     {
-        if (values.Length < 2 || values[1] is not LocText text || text.IsEmpty) return string.Empty;
-
         var element = parameter as FrameworkElement;
-        var mode = element is null ? LocFitMode.Off : LocFit.GetMode(element);
-        if (element is null || mode == LocFitMode.Off) return text.Resolve();   // 未启用：全长、不动字号
+        var text = values.Length > 1 ? values[1] as LocText? : null;
 
-        var available = LocFit.AvailableWidth(element);
-        var desc = LocFit.Describe(element);
-        var baseSize = LocFit.BaseSizeFor(element);
-        var result = LocFit.Evaluate(text.Resolve(), text.HasShort ? text.ResolveShort() : null,
-            baseSize, available, mode == LocFitMode.ShrinkThenEllipsis, desc);
+        // 未接入 / 空文案：显示为空，不留上一种语言的残影。
+        if (element is null || text is null || text.Value.IsEmpty) return string.Empty;
 
-        // 要素还没参与布局（可用宽 0）就不写字号：等布局后的 TryFit 重算——
-        // 在这里写会把字号钉在下限上，而"基准字号"就照着压过的值学错了。
-        if (available > 0) LocFit.PlaceFontSize(element, result.Size);
-
-        LocFit.RecordVariant(element, result.UseShort);
-        var shown = result.UseShort ? text.ResolveShort() : text.Resolve();
-        LocFit.ApplyOverflow(element, shown, result.Size, available, desc);
-        return shown;
+        // 供值：LocText 进唯一事实来源。它是**活引用**（Resolve 每次现取当前语言），
+        // 所以后续任何一次投影读到的都必然是当前语言。
+        LocFit.SetText(element, text.Value);
+        LocFit.Project(element);
+        return LocFit.GetChosen(element);
     }
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)

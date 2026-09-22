@@ -347,16 +347,41 @@ public sealed class FitResolver : IMultiValueConverter
 }
 
 /// <summary>
-/// 自适应文案的"值来自模型"解析器：把该路径的 <see cref="LocText"/> 原样透出去
-/// （取词与长度形态的判断都在 <c>LocFit</c> 里）。语言版本那一路只当失效触发器用。
+/// 自适应文案的"值来自模型"解析器：把该路径的 <see cref="LocText"/> 投出去，
+/// 并<b>把语言版本烙进这个值</b>（取词与长度形态的判断仍在 <c>LocFit</c> 里）。
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>为什么必须由本解析器烙版本</b>（实测根因，改这里之前先读）：本绑定第二路指向的是模型上的
+/// <b>普通属性</b>（如 <c>BrowserRowViewModel.ModifiedText</c>）。语言一变，WPF 会重算这条
+/// <c>MultiBinding</c>，但<b>复用第二路子绑定的缓存值、不再调 getter</b>——
+/// 实测 getter 全程只被读了一次，重算三次拿到的都是同一个旧值。
+/// </para>
+/// <para>
+/// 于是"重算出来的值"与"上一次的值"<b>值相等</b>，WPF 属性系统判定没变、不推给目标属性，
+/// 依赖这个值的下游（<c>LocFit</c> 的两级投影）一次都不会被唤醒，屏幕上继续画上一种语言。
+/// </para>
+/// <para>
+/// 本解析器手里同时有"版本"（<c>values[0]</c>）与"文案"（<c>values[1]</c>），所以由它把两者合成一个值：
+/// 版本一变，产出值就<b>真的不同</b>，属性系统的变更推送自己会把这件事传到底——
+/// 用的是 WPF 本来的机制，不是另装一套派发。
+/// </para>
+/// <para>
+/// 顺带说明那条版本子绑定的正确定位：它<b>不是</b>"失效触发器"（触发器不会让模型重新取值），
+/// 而是<b>把版本号送到本解析器手里</b>的那一路。
+/// </para>
+/// </remarks>
 public sealed class FitValueResolver : IMultiValueConverter
 {
     public static FitValueResolver Instance { get; } = new();
 
-    /// <param name="values">[0] = 语言版本（仅作失效触发器）；[1] = 模型里的 <see cref="LocText"/>。</param>
+    /// <param name="values">[0] = 语言版本；[1] = 模型里的 <see cref="LocText"/>。</param>
     public object? Convert(object[] values, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-        => values.Length > 1 ? values[1] : null;
+    {
+        if (values.Length < 2 || values[1] is not LocText text) return null;
+        var version = values[0] is int v ? v : Loc.Table.Version;
+        return text.LangVersion == version ? text : text with { LangVersion = version };
+    }
 
     public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, System.Globalization.CultureInfo culture)
         => throw new NotSupportedException("resolution is one-way: displayed text is not state.");

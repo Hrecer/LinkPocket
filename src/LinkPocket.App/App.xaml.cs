@@ -57,6 +57,11 @@ public partial class App : Application
         }
 
         // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
+        // ⚠️ 注意：本方法的调用**由 Application 的构造函数排进 Dispatcher 队列**，与是否调用 Run() 无关——
+        // 任何一次泵消息都会让它跑起来。探针（SmartProbe）不 Run 但照样泵消息，所以在修掉这点之前
+        // 它自己建的主窗口之外会**再多出一个**本方法建的完整主窗口，探针于是量到了另一棵可视树
+        // （实测：4494 个可见行单元格里只有 1 个在探针自己那棵树里）。
+        // 探针侧现在的做法是：先泵一次让本方法跑完，再复用 Application.Current.MainWindow（见 Program.Main）。
         // 装配失败（典型 = 旧格式库被 schema 红线拒绝 / 库文件损坏）必须对用户可见——
         // 启动期尚无窗口，用原生 MessageBox 一次性暴露原因后退出（红线特例：启动失败必须暴露）。
         try
