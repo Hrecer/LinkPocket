@@ -24,6 +24,19 @@ public static class Mappings
         UpdatedAt = link.UpdatedAt,
     };
 
+    /// <summary>
+    /// 树叶子专用的精简投影：只带走目录树真正读的四个字段。
+    /// 用于"全库链接"这种大集合（<c>folders.overview</c> 的 <c>tree_links</c>）——
+    /// 完整 <see cref="Contracts.LinkDto"/> 会连描述、时间戳、访问计数一起搬运，而树一个都不看。
+    /// </summary>
+    public static Contracts.TreeLinkDto ToTreeDto(this Link link) => new()
+    {
+        LinkId = link.LinkId,
+        Title = link.Title ?? string.Empty,
+        Url = link.Url,
+        ListId = link.ListId,
+    };
+
     /// <param name="counts">
     /// 链接计数两口径（<see cref="ITreeService.LinkCountsAsync"/> 的结果）：
     /// <c>LinkCount</c> = 递归（含子孙），<c>DirectLinkCount</c> = 直接子链接数。

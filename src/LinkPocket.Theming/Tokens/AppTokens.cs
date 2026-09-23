@@ -30,8 +30,24 @@ public static class AppTokens
     /// <summary>卡片面（列表 / 卡片默认底）= 库 <c>SurfaceContainerHigh</c>。</summary>
     public const string SurfaceCard = "App.Surface.Card";
 
-    /// <summary>悬停底色（行 / 项 hover）= 库 <c>SurfaceContainerHighest</c>。</summary>
+    /// <summary>
+    /// **页面底**这一层的悬停底（画在页面底上的项 hover / 以及"安静容器"底）= 库 <c>SurfaceContainerHighest</c>。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 悬停令牌**按承载面分键**（本键 / <see cref="SurfaceCardHover"/> / <see cref="SurfaceBandHover"/>）：
+    /// 每一支都是"把**它所在的那一层**压深一档"。一支通用悬停服务三层时，画在卡面 / 浅带上的悬停
+    /// 会换成**另一支色相、另一个明度档**的颜色 —— 屏幕上不是"这一条加深了"，而是"跳了一块别的颜色"
+    /// （实测：表头带换成弱撞色档后，表头悬停仍是页面底那一支的压深档 = 看着像旧灰色没变）。
+    /// </remarks>
     public const string SurfaceHover = "App.Surface.Hover";
+
+    /// <summary>**卡面**这一层的悬停底（主栏数据行 / 下拉项 / 菜单项 / 卡片行 hover）= 卡面压深一档。</summary>
+    public const string SurfaceCardHover = "App.Surface.CardHover";
+
+    /// <summary>
+    /// **浅带层**这一层的悬停底（表头药丸 / 目录树行 / 侧区面板内的项）= <see cref="SurfacePanel"/> 压深一档。
+    /// </summary>
+    public const string SurfaceBandHover = "App.Surface.BandHover";
 
     /// <summary>
     /// **列表行 / 树行的选中底与拖拽落点高亮**（主栏、树、下拉项、搜索结果行）。
@@ -41,6 +57,8 @@ public static class AppTokens
     /// 选中行画在**卡面**上（卡面比页面底还亮，浅色容器会被读成"没选中"），
     /// 而指示器 / 徽标 / 分段 / chip 画在**页面底或悬停底**上（深色容器在那里读成"灰块"）。
     /// 同一个令牌服务两种承载面 ⇒ 调一处必破另一处（见 `内部资产/文档/WARNINGS.md` 118）。
+    /// 档位 = **够得开阈值的最浅档**（对卡面 / 卡面悬停 / 页面底三条阈值一起量）：
+    /// 取"允许的最深档"会一路下探到 T76，同一彩度在更低明度上就是**灰**（实测被指"选中行过深偏灰"）。
     /// </remarks>
     public const string SurfaceSelected = "App.Surface.Selected";
 
@@ -51,10 +69,21 @@ public static class AppTokens
     public const string SurfaceTint = "App.Surface.Tint";
 
     /// <summary>
-    /// 侧区面板叠层 / **表头带** / 状态栏：**独立的一层**（页面底压深 <c>SurfacePanelDrop</c> 档）——
-    /// 与页面底、卡面都分得开，且与 <see cref="SurfaceHover"/> 不同色（悬停反馈画在它上面必须看得见）。
+    /// 侧区面板 / 状态栏 / 徽标底：**与表头带同一条浅带**（页面底提亮 <c>SurfaceBandLift</c> 档）——
+    /// 两枚键是**同一层的两个角色名**（同 `TintCard`/`Tint`/`Floating` 绑卡面），值必然相同。
     /// </summary>
     public const string SurfacePanel = "App.Surface.Panel";
+
+    /// <summary>
+    /// **表头带**：表格顶部的浅色条（浏览页 / 回收站 / 搜索 / 智能列表 / 去重明细共用）。
+    /// </summary>
+    /// <remarks>
+    /// = 页面底**本色档**（<c>SurfaceBandLift = 0</c>）+ 色相**贴到强调槽那一支成员**（仅当它与表面槽相邻
+    /// ≤ <c>SurfaceBandHueNeighbourMax</c>）⇒ 与页面底同族弱撞色；**与 <see cref="SurfacePanel"/>
+    /// 是同一条带的两个角色名**（值相同、只改档距一处两处一起动）。
+    /// 表头悬停画在它上面：药丸用 <see cref="SurfaceBandHover"/>（**本条带自己**压深一档，不是页面底那一支）。
+    /// </remarks>
+    public const string SurfaceHeaderBand = "App.Surface.HeaderBand";
 
     /// <summary>弹窗 / 遮罩面板底 = 今天的 <c>TintBg</c>。</summary>
     public const string SurfaceDialog = "App.Surface.Dialog";
@@ -194,7 +223,7 @@ public static class AppTokens
     /// <summary>全部**颜色**令牌（字体令牌不含在内——它们不是 <c>SolidColorBrush</c>）。</summary>
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
     {
-        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceSelected, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceDialog, SurfaceFloating,
+        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceCardHover, SurfaceBandHover, SurfaceSelected, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceHeaderBand, SurfaceDialog, SurfaceFloating,
         TextPrimary, TextSecondary, TextMuted, TextOnAccent, TextOnContainer,
         AccentFill, AccentIcon, AccentText, AccentContainer,
         SupportContainer, SupportIcon,

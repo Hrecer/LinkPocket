@@ -3,6 +3,7 @@ using LinkPocket.Services;
 using LinkPocket.Theming;
 using LinkPocket.I18n;
 using LinkPocket.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LinkPocket;
 
@@ -73,7 +74,7 @@ public partial class App : Application
         try
         {
             var host = Services.AppHost.CreateDefault();
-            var window = new MainWindow(host);
+            var window = host.Services.GetRequiredService<MainWindow>();   // 前端对象图由容器装配（见 AppServiceGraph）
             MainWindow = window; // ShutdownMode=OnMainWindowClose 依赖此引用
             window.Show();
         }

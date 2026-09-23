@@ -210,14 +210,14 @@ public class SortableDataTable : Grid
             // ⚠️ 高度固定 32px = 侧栏「文件夹」标题带（BrowserView.xaml 中同样 Height=32、文字垂直居中）：
             // 两条紫色色带等高，底边严格对齐（侧栏曾靠 Padding+行高撑出 31.x 导致底边差一点）。
             // 水平内距 16 = 行容器内距，列边界逐列对齐不变；表头内容垂直居中。
-            // 注意：此类数值属"对齐类"简单调整——后续微调直接改值即可，无需探针/截图等重验证流程。
+            // 注意：此类数值属"对齐类"简单调整——后续微调直接改值即可。
             Height = 32,
             Padding = new Thickness(16, 0, 16, 0)
         };
         // ⚠️ 表头底色必须是**资源引用**，不能 FindResource 取画刷后赋值（换主题后
         // 这一栏永远停在旧主题的紫。「切主题 = 资源字典换画刷实例」的地方，一次性取到的画刷会被
         // 固化成本地值，之后再也不跟随）。SetResourceReference 挂的是资源引用表达式 → 换主题即跟随。
-        _headerBand.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfacePanel);
+        _headerBand.SetResourceReference(Border.BackgroundProperty, Theming.Tokens.AppTokens.SurfaceHeaderBand);
         _headerBand.SetBinding(MarginProperty, new Binding(nameof(HeaderBandMargin)) { Source = this });
         _headerGrid = new Grid { VerticalAlignment = VerticalAlignment.Center };
         _headerBand.Child = _headerGrid;
@@ -254,6 +254,9 @@ public class SortableDataTable : Grid
         };
         _rowsScroller = scroller;
         VirtualizingPanel.SetIsVirtualizing(_rowsList, true);
+        // 容器复用：默认 Standard 模式每滚过一行就新建行容器（行模板含多级 RelativeSource 绑定 +
+        // 右键菜单，重建一次是实打实的开销）；Recycling 只换 DataContext。
+        VirtualizingPanel.SetVirtualizationMode(_rowsList, VirtualizationMode.Recycling);
         VirtualizingPanel.SetScrollUnit(_rowsList, ScrollUnit.Pixel); // 像素滚动，保持平滑手感
         VirtualizingPanel.SetCacheLength(_rowsList, new VirtualizationCacheLength(1));
         VirtualizingPanel.SetCacheLengthUnit(_rowsList, VirtualizationCacheLengthUnit.Page);
@@ -713,7 +716,10 @@ public class SortableDataTable : Grid
             Property = IsMouseOverProperty, Value = true,
             // 悬停底色同样走**资源引用**（Setter 里的 DynamicResource）：一次性取的画刷会被固化，
             // 换主题后悬停色仍停在旧主题。
-            Setters = { new Setter(BackgroundProperty, new DynamicResourceExtension("App.Surface.Hover")) }
+            // ⚠️ 取**卡面那一支**悬停（`App.Surface.CardHover`）：行画在卡面上，悬停必须是"这块卡加深一档"。
+            //    页面底那支 `App.Surface.Hover` 比卡面深 8 档、色相也不同 ⇒ 悬停看着像"跳了一块别的颜色"，
+            //    而且比选中底还深（悬停压过选中）。
+            Setters = { new Setter(BackgroundProperty, new DynamicResourceExtension("App.Surface.CardHover")) }
         });
         row.Style = style;
 

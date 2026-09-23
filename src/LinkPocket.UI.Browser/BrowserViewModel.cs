@@ -83,6 +83,26 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         set { _isLoading = value; OnPropertyChanged(); }
     }
 
+    private bool _isDeleting;
+    /// <summary>
+    /// 删除在途标志：命令可用性据此置灰，删除入口再挡一次。
+    /// </summary>
+    /// <remarks>
+    /// 删除是"每项一条命令"的循环写；连点/连发时第二次会对着已被移入回收站的行再删一次，
+    /// 逐项报失败（界面在成功之后又说失败）。第二套防护在 <c>DeleteItemsAsync</c> 入口。
+    /// </remarks>
+    public bool IsDeleting
+    {
+        get => _isDeleting;
+        private set
+        {
+            if (_isDeleting == value) return;
+            _isDeleting = value;
+            OnPropertyChanged();
+            CommandRefresh.Request();
+        }
+    }
+
     private bool _isNavigating;
     /// <summary>
     /// 导航加载（界面加载遮罩的唯一来源）：**只有用户发起的导航/刷新**才为 true——
@@ -695,7 +715,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
         ClearMainPaneSelectionCommand = new RelayCommand(ClearMainPaneSelection);
         ClearPageSelectionCommand = new RelayCommand(ClearPageSelection);
-        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive && !IsDeleting);
         RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming && IsListContextActive);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
         // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态

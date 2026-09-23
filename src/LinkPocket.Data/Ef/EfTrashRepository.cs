@@ -24,6 +24,11 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
             .OrderByDescending(l => l.DeletedAt)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<TrashedLink>> ListAllLinksAsync(CancellationToken ct)
+        => await db.TrashedLinks.AsNoTracking()
+            .OrderByDescending(l => l.DeletedAt)
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyDictionary<TrashFolderId, int>> CountLinksByUnitAsync(CancellationToken ct)
         => (await db.TrashedLinks.AsNoTracking()
                 .Where(l => l.TrashFolderId != null)

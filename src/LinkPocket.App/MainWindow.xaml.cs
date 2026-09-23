@@ -3,11 +3,13 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
 using LinkPocket.Views;
 
 using LinkPocket.I18n;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace LinkPocket;
 
@@ -20,7 +22,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 {
     private readonly Services.AppHost _host;
 
-    private readonly Managers.SelectionManager _selectionManager = new();
+    private readonly IServiceScope _scope;
 
     private readonly Services.ViewRegistry _regions = new();
 
@@ -30,7 +32,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         _host = host;
         InitializeComponent();
-        var vm = new MainViewModel(_host.Client, _host.Hub, _host.Ports, _selectionManager, _host.Locator);
+        // 页面对象图按窗口取一份（容器 Scoped）：再开一个窗口拿到的是干净的 VM 图，
+        // 不继承上一个窗口的选中/编辑态；窗口关闭时随作用域一起释放。
+        _scope = host.Services.CreateScope();
+        var vm = _scope.ServiceProvider.GetRequiredService<MainViewModel>();
         DataContext = vm;
         // 端口登记：本窗口实现 IDialogService/INavigationService/IBrowserLocateHost，
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
@@ -52,28 +57,25 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _regions.Register(NavIds.Settings, SettingsView);
 
         BrowserPage.DataContext = vm.BrowserViewModel;
-        // 搜索页（MVVM）：ViewModel 由 Shell 构造注入；「位置」路径解析复用
-        // MainViewModel 的目录树（与浏览页/智能列表同一份）。
-        _searchVm = new SearchViewModel(
-            _host.Client, _host.Ports.Navigation!, _host.Ports.Dialogs!,
-            listId => vm.FolderPathValue(listId),
-            _host.Locator);   // 「跳转」= 进浏览页对应目录并选中该行（定位组件；与 ID 跳转同一套语义）
+        // 搜索页（MVVM）：ViewModel 由容器解析（登记表见 AppServiceGraph）；「位置」路径解析
+        // 复用 MainViewModel 的目录树（与浏览页/智能列表同一份）。
+        _searchVm = _scope.ServiceProvider.GetRequiredService<SearchViewModel>();
         SearchView.DataContext = _searchVm;
         TrashView.DataContext = vm.TrashViewModel;
         SmartListsView.DataContext = vm.SmartListViewModel;
-        // 工具页：引擎客户端/定位组件与路径解析、目录树刷新都以委托注入（页面不认识 MainViewModel）；
-        // 外部数据变更（OnToolsDataChanged）由 Shell 转发，页面内保留原重跑守卫。
-        // navigation = 本窗口（INavigationService 端口）：工具页明细 Enter「打开详情」与搜索页/智能列表
-        // 走同一条路径（三页 Enter 都是打开详情页；跳转能力只作预留）。
+        // 工具页/设置页：依赖由容器解析后经 Configure 注入（页面是 XAML 实例化的控件，
+        // 不认识容器；navigation = 本窗口，实现 INavigationService 端口）。
         // locator 仍是 ID 跳转工具用的"进目录 + 选中行"组件，两者并存、互不替代。
-        ToolsView.Configure(_host.Client, _host.Locator, this,
+        var client = _scope.ServiceProvider.GetRequiredService<EngineClient>();
+        var locator = _scope.ServiceProvider.GetRequiredService<IContentLocator>();
+        ToolsView.Configure(client, locator, this,
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
-        SettingsView.Configure(_host.Client, vm.ReinitializeDatabaseAsync,
+        SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshFolderTreeAndUIAsync());
-        vm.ToolsDataChanged += (_, _) => ToolsView.OnExternalDataChanged();
+        vm.ToolsDataChanged += (_, _) => _ = ToolsView.OnExternalDataChangedAsync();
         // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）
-        vm.NavigatedToTools += (_, _) => ToolsView.OnNavigatedTo();
+        vm.NavigatedToTools += (_, _) => _ = ToolsView.OnNavigatedToAsync();
 
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入保内容+静默刷新 / 离开清选中 / 数据变更重跑）
         vm.NavigatedToSearch += (_, _) => _searchVm.OnNavigatedTo();
@@ -212,5 +214,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
         vm.SelectNavCommand.Execute(NavIds.Browser);
         _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
+    }
+
+    /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _scope.Dispose();
+        base.OnClosed(e);
     }
 }

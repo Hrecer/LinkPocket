@@ -158,9 +158,8 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
     {
         try
         {
-            // 必须与 FaviconStore.CacheDirectory 保持同步：Maintenance 模块不引 UIKit，
-            // 无法直接引用该常量——未来若图标缓存换目录，这里必须一起改
-            var dir = Path.Combine(AppContext.BaseDirectory, "favicons");
+            // 目录口径 = Contracts.FaviconCache 的唯一实现（引擎侧不再各写一份）
+            var dir = LinkPocket.Contracts.FaviconCache.CacheDirectory;
             if (!Directory.Exists(dir)) return true;
             Directory.Delete(dir, recursive: true);
             return true;

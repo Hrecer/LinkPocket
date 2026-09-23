@@ -40,7 +40,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsHighlighted" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                                <!-- 菜单项画在浮层底（= 卡面）上 ⇒ 悬停取卡面那一支 -->
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.CardHover}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.4"/>
@@ -128,7 +129,9 @@
                                 </Setter>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                                <!-- 树行画在**卡面**上（本控件根 = `App.Surface.Card`，只有顶部那条「导航」带是浅带层）
+                                     ⇒ 悬停取卡面那一支（本层压深一档），不是页面底那支 `Hover` -->
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.CardHover}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

@@ -3,7 +3,10 @@ obj/
 *.user
 *.suo
 linkpocket.db
-favicons/
+# 运行期图标缓存（建在程序目录 = bin/<cfg>/<tfm>/favicons）：按落点限定，
+# 不能写成裸 `favicons/` —— 那会把源码目录（如 Contracts/Favicons/）一起吞掉，
+# 症状是"本地编译全绿、别人克隆下来少一个文件"。
+bin/**/favicons/
 *.lpbackup
 *.zip
 build/artifacts/

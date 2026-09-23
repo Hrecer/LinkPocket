@@ -24,4 +24,10 @@ public interface ILinkRepository
 
     /// <summary>按 URL 找全部同址链接（Dedup 复用）。</summary>
     Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct);
+
+    /// <summary>
+    /// URL 出现多次的链接（去重扫描专用）：分组与计数**下推到 SQL**，只把重复项带回来。
+    /// 原实现把全表拉进内存再分组 —— 10k 库上每次数据变更（防抖重跑）都要重付一遍全表扫描。
+    /// </summary>
+    Task<IReadOnlyList<Link>> ListDuplicatedAsync(CancellationToken ct);
 }

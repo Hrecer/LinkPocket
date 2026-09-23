@@ -145,8 +145,8 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         if (string.IsNullOrEmpty(UrlText)) return;
         var host = _host;
         if (host == null) return;
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UrlText) { UseShellExecute = true }); }
-        catch { LpLog.Error($"failed to open the site: {UrlText}", null); }   // 观测面：失败留痕而非完全静默
+        if (Services.LinkLauncher.Open(UrlText) == Services.LinkLauncher.Result.NotWebAddress)
+            host.StatusText = Loc.K("common.linkNotOpenable");
         try
         {
             await _client.LinkVisitRecordAsync(IdText);

@@ -87,24 +87,26 @@ public partial class TrashViewModel : INotifyPropertyChanged
         OpenRowCommand = new RelayCommand<TrashRowViewModel?>(row => _ = OpenRowAsync(row));
         OpenNodeCommand = new RelayCommand<TrashNode?>(node => _ = OpenNodeAsync(node));
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1);
-        PurgeSelectionCommand = new RelayCommand(() => _ = PurgeSelectionGuardedAsync(), () => HasSelection && !IsDetailOverlayOpen);
-        PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node));
-        RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection && !IsDetailOverlayOpen);
-        RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection && !IsDetailOverlayOpen);
+        // 永久删除 / 还原：破坏性操作进行中一律置灰（IsMutating）——防连点/连发重入
+        // （少了这道闸，第二次请求必然撞「条目已不存在」，界面在成功之后报一次失败）
+        PurgeSelectionCommand = new RelayCommand(() => _ = PurgeSelectionGuardedAsync(), () => HasSelection && !IsDetailOverlayOpen && !IsMutating);
+        PurgeNodeCommand = new RelayCommand<TrashNode?>(node => _ = PurgeNodeAsync(node), node => node is { IsRoot: false, IsLink: false } && !IsMutating);
+        RestoreSelectionCommand = new RelayCommand(() => _ = RestoreSelectionAsync("origin"), () => HasSelection && !IsDetailOverlayOpen && !IsMutating);
+        RestoreSelectionToRootCommand = new RelayCommand(() => _ = RestoreSelectionAsync("root"), () => HasSelection && !IsDetailOverlayOpen && !IsMutating);
 
         // 详情覆盖层的动作：作用对象 = **覆盖层正在展示的那一项**，与"有没有被选中"无关，也不受覆盖层门禁约束
         // （门禁的意义是"别作用于被覆盖层挡住、看不见的选中"，而眼前这一项正是当前操作对象）。
         OpenDetailWebsiteCommand = new RelayCommand(OpenDetailWebsite, () => _detailLinkId != null);
-        RestoreDetailCommand = new RelayCommand(() => _ = RestoreDetailAsync("origin"), () => _detailLinkId != null);
-        RestoreDetailToRootCommand = new RelayCommand(() => _ = RestoreDetailAsync("root"), () => _detailLinkId != null);
-        PurgeDetailCommand = new RelayCommand(() => _ = PurgeDetailAsync(), () => _detailLinkId != null);
+        RestoreDetailCommand = new RelayCommand(() => _ = RestoreDetailAsync("origin"), () => _detailLinkId != null && !IsMutating);
+        RestoreDetailToRootCommand = new RelayCommand(() => _ = RestoreDetailAsync("root"), () => _detailLinkId != null && !IsMutating);
+        PurgeDetailCommand = new RelayCommand(() => _ = PurgeDetailAsync(), () => _detailLinkId != null && !IsMutating);
         CloseDetailOverlayCommand = new RelayCommand(CloseDetailOverlay);
         CopyDetailUrlCommand = new RelayCommand(CopyDetailUrl);
         CopyDetailIdCommand = new RelayCommand(CopyDetailId);
         RestoreNodeCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "origin"),
-            node => node is { IsRoot: false, IsLink: false });
+            node => node is { IsRoot: false, IsLink: false } && !IsMutating);
         RestoreNodeToRootCommand = new RelayCommand<TrashNode?>(node => _ = RestoreNodeAsync(node, "root"),
-            node => node is { IsRoot: false, IsLink: false });
+            node => node is { IsRoot: false, IsLink: false } && !IsMutating);
         ShowContextMenuCommand = new RelayCommand(ShowContextMenuForSelection);
         CopyLinkAddressCommand = new RelayCommand<TrashRowViewModel?>(CopyLinkAddress, row => row is { IsFolder: false });
         SelectAllCommand = new RelayCommand(SelectAllRows);
@@ -190,6 +192,26 @@ public partial class TrashViewModel : INotifyPropertyChanged
     {
         get => _hasError;
         private set { if (_hasError != value) { _hasError = value; OnPropertyChanged(); } }
+    }
+
+    private bool _isMutating;
+    /// <summary>
+    /// 破坏性/变更类操作（永久删除、还原）进行中：命令可用性据此置灰，方法入口再挡一次。
+    /// </summary>
+    /// <remarks>
+    /// 少了这道闸，按钮连点或 Delete 键连发会在第一次请求还在飞的时候再发一次：第二次必然撞上
+    /// 「条目已不存在」，于是第一次成功、第二次报失败并强制重拉——用户看到的是"删成功了但界面说失败"。
+    /// </remarks>
+    public bool IsMutating
+    {
+        get => _isMutating;
+        private set
+        {
+            if (_isMutating == value) return;
+            _isMutating = value;
+            OnPropertyChanged();
+            CommandRefresh.Request();
+        }
     }
 
     private LocValue _errorMessage;

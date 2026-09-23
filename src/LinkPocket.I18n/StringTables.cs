@@ -254,6 +254,7 @@ public static class StringTables
         new StringRow("common.edit", "编辑", "Edit"),
         new StringRow("common.info", "信息", "Info"),
         new StringRow("common.jump", "跳转", "Jump"),
+        new StringRow("common.linkNotOpenable", "这一项不是网页地址，无法打开", "This item is not a web address, so it cannot be opened"),
         new StringRow("common.ok", "确定", "OK"),
         new StringRow("common.open", "打开", "Open"),
         new StringRow("common.paste", "粘贴", "Paste"),

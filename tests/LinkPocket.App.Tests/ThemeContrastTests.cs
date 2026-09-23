@@ -50,6 +50,11 @@ public class ThemeContrastTests
             t => (t.Token(AppTokens.TextPrimary), t.Token(AppTokens.SurfaceSelected)), 7.0, "选中行正文（列表行 / 树行选中的主文字）"),
         new("Text.Secondary / Surface.Selected",
             t => (t.Token(AppTokens.TextSecondary), t.Token(AppTokens.SurfaceSelected)), 4.5, "选中行次列文字（日期 / 计数这类在选中底上）"),
+        // 选中行上的弱列（"从未"这类）确实会落在选中底上。**4.5 这条在这里与"对卡面 ≥1.22"互斥**
+        //（越浅字越清楚、与卡面越不开），走档取的是卡面阈值 ⇒ 实测 4.44；棘轮按实测下界卡住，
+        // 防"为了可见性把选中底再压深"（旧值 T76 时这一条只有 3.40）。
+        new("Text.Muted / Surface.Selected",
+            t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceSelected)), 4.4, "选中行弱列文字（棘轮：走档由『对卡面 ≥1.22』定，弱字 4.44）"),
         new("Support.Icon / Surface.Selected",
             t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceSelected)), 3.0, "文件夹图标落在选中行底上（列表里选中行 + 类型图标是常态组合）"),
         new("Accent.Icon / Surface.Selected",
@@ -181,14 +186,23 @@ public class ThemeContrastTests
         // ⚠️ 它**不**再给列表行 / 树行当选中底 —— 那类面画在卡面上，需要更深的一支（见下一条）。
         Assert.Equal(0xEFE7FFu, Rgb(t.Token(AppTokens.AccentContainer)));
         // 选中底 / 落点高亮 = **列表行 / 树行 / 下拉选中项**的底：判据锚在真实承载面（**卡面**）上，
-        // 对卡面 ≥1.22（最硬）、对页面底 ≥1.08、对悬停底 ≥1.06。取值 = 允许的最深档
-        //（`ContainerToneFloor` T76，实测对卡面 1.675 / 对页面底 1.431 / 对悬停底 1.325）。
-        Assert.Equal(0xC0B8D0u, Rgb(t.Token(AppTokens.SurfaceSelected)));
-        // 面板层（表头带 / 侧区面板 / 状态栏）= **独立的一层**：页面底（T88.8）**浅压深 5 档** ⇒ T83.8。
-        // 与悬停底同色时画在它上面的悬停反馈看不见（实测 1.000，鼠标悬停表头毫无变化）；
-        // 而压得更深（T78 一档）会把整条表头带读成**灰紫**——层次的取舍以观感为准（用户判据 = 不发灰）。
-        // 表头的悬停反馈改成"抬亮"（药丸用卡面色），不再依赖本层比悬停底更深。
-        Assert.Equal(0xD6CDE7u, Rgb(t.Token(AppTokens.SurfacePanel)));
+        // 取**够得开阈值的最浅档**（对卡面 ≥1.22、对卡面悬停 ≥1.06、对页面底 ≥1.08 ⇒ 实测 T85.5）。
+        // 早先取"允许的最深档"（T76 = `#C0B8D0`，对卡面 1.68，阈值只要 1.22）⇒ 同一彩度在更低明度上
+        // 就是**灰**，选中行读成"压了一块灰紫"。
+        Assert.Equal(0xDAD2EBu, Rgb(t.Token(AppTokens.SurfaceSelected)));
+        // 悬停 = **承载面自己压深一档**（三层各一支；色相与彩度都留在本层那一族 ⇒ 读作"加深"而非"换色"）。
+        // ⚠️ 按 **Auto**（缺省开关）口径钉：悬停档按"弱文字对它 ≥4.5"反推，而弱文字在两模式下取值不同
+        //（直配 #655A6F / 自动 #605D62）⇒ 两模式的悬停档可以差一档，逐模式各钉一支才有意义。
+        var ta = PaletteSolver.Solve(ThemeCatalog.Default);
+        Assert.Equal(0xDCD3EDu, Rgb(ta.Token(AppTokens.SurfaceHover)));        // 页面底 T88.8 → T86.0
+        Assert.Equal(0xE4DCEEu, Rgb(ta.Token(AppTokens.SurfaceCardHover)));    // 卡面 T94.8 → T88.9
+        Assert.Equal(0xE1D2EAu, Rgb(ta.Token(AppTokens.SurfaceBandHover)));    // 浅带 T89.0 → T86.0（同族色相）
+        // 浅带层（表头带 + 侧区面板 / 状态栏 / 徽标底）：**页面底本色档**（T89.0，不再提亮——提亮档读成"发白"）
+        // + 色相**贴到强调槽那一支成员**（表面 H297.4 ↔ 强调 H310.7，差 13.2° ⇒ 页面底偏蓝紫、条带偏玫紫
+        // = 同族弱撞色；只贴不插，插值会造出配色里没有的色相）⇒ `#EADAF3`。
+        // 两枚键是**同一层的两个角色名**（值必然相同）。
+        Assert.Equal(0xEADAF3u, Rgb(t.Token(AppTokens.SurfaceHeaderBand)));
+        Assert.Equal(0xEADAF3u, Rgb(t.Token(AppTokens.SurfacePanel)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
         Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
         Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
@@ -219,13 +233,14 @@ public class ThemeContrastTests
 
         // ① 两种模式的**结构色相同**（页面底 / 卡面 / 强调 / 容器 / 描边 / 正文 / 图标…）：
         //    自动调色不该把用户选的颜色换掉，它只调整文字两级的中性度。
-        //    ⚠️ 例外 = 悬停底（`Surface.Hover` 与绑到它的 `Surface.Panel`）：它的档位是**按"弱文字对它 ≥4.5"
-        //    反推**出来的，而弱文字本身在两种模式下取值不同（实测直配 4.47 / 自动 4.51，恰好骑在阈值两侧）
-        //    → 两种模式的悬停底可能差一档。这是**有意的**：可读性不能为了"结构色逐字节相同"让路；
-        //    该例外由下方 ③ 的实测断言与 `对比度矩阵`（两种模式逐条）共同守住。
-        //    ⚠️ 面板层（`Surface.Panel`）已从"= 悬停底"改为**页面底自己的一个档**（对页面底 / 卡面 / 悬停底
-        //    都分得开），因此它不再跟着悬停底在两种模式间漂 —— 它回到下面这条"结构色逐字节相同"的断言里。
-        var hoverTokens = new[] { AppTokens.SurfaceHover };
+        //    ⚠️ 例外 = **三层悬停档**（`Surface.Hover` / `Surface.CardHover` / `Surface.BandHover`）：
+        //    它们的档位是**按"弱文字对它 ≥4.5"反推**出来的，而弱文字本身在两种模式下取值不同
+        //    （实测直配 4.47 / 自动 4.51，恰好骑在阈值两侧）→ 两种模式的悬停底可能差一档。这是**有意的**：
+        //    可读性不能为了"结构色逐字节相同"让路；该例外由下方 ③ 的实测断言与 `对比度矩阵`（两种模式逐条）
+        //    共同守住。**选中底不受影响**：它拿"两种模式里更浅的那一支卡面悬停"当邻居约束，逐字节相同。
+        //    ⚠️ 面板层（`Surface.Panel`）已从"= 悬停底"改为**页面底自己的一个档**（浅带层），
+        //    因此它不再跟着悬停底在两种模式间漂 —— 它回到下面这条"结构色逐字节相同"的断言里。
+        var hoverTokens = new[] { AppTokens.SurfaceHover, AppTokens.SurfaceCardHover, AppTokens.SurfaceBandHover };
         foreach (var token in AppTokens.AllColorTokens
                      .Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted })
                      .Except(hoverTokens))
@@ -264,7 +279,8 @@ public class ThemeContrastTests
         var appTokens = new[]
         {
             AppTokens.SurfaceBase, AppTokens.SurfaceCard, AppTokens.SurfaceHover, AppTokens.SurfaceSelected,
-            AppTokens.SurfaceTintCard, AppTokens.AccentFill, AppTokens.AccentText,
+            AppTokens.SurfaceTintCard, AppTokens.SurfaceHeaderBand, AppTokens.SurfacePanel,
+            AppTokens.AccentFill, AppTokens.AccentText,
             AppTokens.AccentContainer, AppTokens.SupportContainer, AppTokens.SupportIcon,
             AppTokens.TypeFolder, AppTokens.TypeLink, AppTokens.LineOutline, AppTokens.LineVariant,
         };
@@ -367,12 +383,6 @@ public class ThemeContrastTests
         //     判据 = 对页面底 ≥1.08、对悬停底 ≥1.06（实测 1.085–1.215 / 1.175–1.388）。
         //  ④ 背景色成员与页面底**同色相**（近融，容差见下）。
         const double MinCardOnBase = 1.15;
-        // 面板层（`Surface.Panel`）的阈值：11 套实测最弱值 vsBase 1.142 / vsCard 1.330 / vsSelected 1.249
-        // （现行档距 = `PaletteSolver.SurfacePanelDrop` = 5；对卡面这条最硬 —— 行区是近白卡面，
-        // "表头是一条带"主要靠它读出来；表头**悬停**另算：药丸用卡面色，与带的对比 = 同一条 vsCard）。
-        const double PanelMinContrastOnBase = 1.12;
-        const double PanelMinContrastOnCard = 1.30;
-        const double PanelMinContrastOnSelected = 1.20;
         var failures = new List<string>();
         foreach (var theme in ThemeCatalog.All)
         {
@@ -400,9 +410,36 @@ public class ThemeContrastTests
             if (selectedOnBase < PaletteSolver.ContainerMinContrastOnBase)
                 failures.Add($"{theme.Id} 选中底对页面底 {selectedOnBase:F3} < {PaletteSolver.ContainerMinContrastOnBase}（选中行看不出来）");
 
-            var selectedOnHover = ColorMath.ContrastRatio(selected, hover);
-            if (selectedOnHover < PaletteSolver.ContainerMinContrastOnHover)
-                failures.Add($"{theme.Id} 选中底对悬停底 {selectedOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
+            // 悬停 = **承载面自己压深一档**（三层各一支令牌）。两条一起量：
+            //  ① 压深要看得见（对承载面 ≥1.03，太小 = "鼠标动没动看不出来"）；
+            //  ② 色相与彩度必须**留在承载面那一族**（Δ色相 ≤3°、Δ彩度 ≤3）——
+            //     否则画出来的不是"这一条加深"，而是"跳了一块别的颜色"（实测缺陷：表头带换成弱撞色档后
+            //     表头悬停仍取页面底那支 `Hover`（H298 / 比带深 3 档），屏幕上是一颗灰紫药丸）。
+            void CheckHoverLayer(string token, Argb carrier, Argb hover, double minOnCarrier)
+            {
+                var onCarrier = ColorMath.ContrastRatio(hover, carrier);
+                if (onCarrier < minOnCarrier)
+                    failures.Add($"{theme.Id} {token} 对承载面 {onCarrier:F3} < {minOnCarrier}（悬停反馈看不出来）");
+                if (ColorMath.Measure(hover).T >= ColorMath.Measure(carrier).T)
+                    failures.Add($"{theme.Id} {token} 没有比承载面更浅（悬停必须是**压深**一档）");
+                var cm = ColorMath.Measure(carrier);
+                var hm = ColorMath.Measure(hover);
+                if (ColorMath.HueDistance(cm.H, hm.H) > 3.0)
+                    failures.Add($"{theme.Id} {token} 色相 H{hm.H:F1} 离开承载面 H{cm.H:F1}（差 {ColorMath.HueDistance(cm.H, hm.H):F1}°）"
+                                 + "= 悬停画成了另一支颜色，不是本层加深");
+                if (Math.Abs(cm.C - hm.C) > 3.0)
+                    failures.Add($"{theme.Id} {token} 彩度 C{hm.C:F1} 偏离承载面 C{cm.C:F1} 超过 3（同层加深不许顺手改彩度）");
+            }
+            var cardHover = table.Token(AppTokens.SurfaceCardHover);
+            var bandHover = table.Token(AppTokens.SurfaceBandHover);
+            CheckHoverLayer("卡面悬停底", card, cardHover, 1.03);
+            CheckHoverLayer("浅带悬停底", table.Token(AppTokens.SurfaceHeaderBand), bandHover, 1.05);
+
+            // 选中行与悬停行画在**同一块卡**上 ⇒ 邻居是卡面悬停底（不是页面底那一支悬停）
+            var selectedOnCardHover = ColorMath.ContrastRatio(selected, cardHover);
+            if (selectedOnCardHover < PaletteSolver.ContainerMinContrastOnHover)
+                failures.Add($"{theme.Id} 选中底对**卡面悬停底** {selectedOnCardHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}"
+                             + "（鼠标划过选中行时看不出「哪一行是选中的」）");
 
             // 强调容器：画在页面底 / 悬停底上（导航指示器、分段指示器、徽标、chip）——
             // 它必须比页面底与悬停底都看得出来，否则"指示器与底同色"（这类面没有卡面那层提亮）。
@@ -414,24 +451,75 @@ public class ThemeContrastTests
             if (containerOnHover < PaletteSolver.ContainerMinContrastOnHover)
                 failures.Add($"{theme.Id} 强调容器对悬停底 {containerOnHover:F3} < {PaletteSolver.ContainerMinContrastOnHover}");
 
-            // 面板层（表头带 / 侧区面板 / 状态栏）= 页面底**浅压深 5 档**的独立一层：
-            //  ① 对卡面 ≥1.30（**表头是一条带**主要靠它读出来；表头悬停 = 药丸抬亮成卡面色，对比同此）；
-            //  ② 对页面底 ≥1.12（面板与页面底仍须分得开）；
-            //  ③ 对选中底 ≥1.20（面板不许抢选中底的层级）。
-            //    ⚠️ 别再要求"比悬停底更深"：压深到那一步（T78）整条带会读成灰紫；悬停的可见性由
-            //    "抬亮成卡面"承担（对比度 = 本条的 vsCard，实测 1.33–1.38）。
+            // 浅带层（表头带 + 侧区面板 / 状态栏 / 徽标底）分层手段**按贴不贴得上强调槽色相二选一**：
+            // 两枚键同值这件事本身要被机器卡住（改档时不会只改一边）。
+            //  ① 贴上（邻窗内）⇒ **色相分层**：页面底本色档（两支近邻色相分开，带/底 ≤1.03）；
+            //     贴不上 ⇒ 与页面底同色相，只能**明度分层**：压深 + 彩度补偿，带/底 ∈ [1.05, 1.15]
+            //     （下限 = 看得出"这是一条带"；上限 = 不压成灰块——阈值是下限不是越狠越好）；
+            //  ② 带对卡面 ≥1.06（"这是一条带"读得出来；实测贴上 1.165–1.170 / 压深 1.24–1.28）；
+            //  ③ 色相**只贴不插**：强调槽与表面槽相邻（≤ 邻窗）时带贴到强调槽那一支、色相差 = 槽位差；
+            //     不相邻时带与页面底**同色相**（宁可不撞，也不发明配色里不存在的色相）；
+            //     实测贴上的三套 = 紫罗兰 13.2 / 宇治抹茶 14.8 / 蓝莓酸奶 13.4，其余八套 = 0；
+            //  ④ 浅带**自己的**悬停档压在带上 ≥1.05（表头悬停 = 本层压深一档；由 CheckHoverLayer 量）。
+            const double BandMinContrastOnCard = 1.06;
+            // 邻窗的产品上限（写死在这里 = 棘轮）：把 `SurfaceBandHueNeighbourMax` 抬大会让"弱撞色"
+            // 变成真撞色（樱花白脱的表面槽与强调槽差 162.9°），越界即判红。
+            const double BandHueNeighbourWindowCap = 16.0;
+            var band = table.Token(AppTokens.SurfaceHeaderBand);
             var panel = table.Token(AppTokens.SurfacePanel);
-            var panelOnCard = ColorMath.ContrastRatio(panel, card);
-            if (panelOnCard < PanelMinContrastOnCard)
-                failures.Add($"{theme.Id} 面板层对卡面 {panelOnCard:F3} < {PanelMinContrastOnCard}（表头带与行区分不出来）");
+            if (band.ToInt() != panel.ToInt())
+                failures.Add($"{theme.Id} 表头带 {band.ToInt() & 0xFFFFFF:X6} 与面板层 {panel.ToInt() & 0xFFFFFF:X6} 不同值"
+                             + "（同一条浅带必须是同一个值：改档只改一处）");
 
-            var panelOnBase = ColorMath.ContrastRatio(panel, baseColor);
-            if (panelOnBase < PanelMinContrastOnBase)
-                failures.Add($"{theme.Id} 面板层对页面底 {panelOnBase:F3} < {PanelMinContrastOnBase}（大片面板与页面底分不出层次）");
+            var bandOnCard = ColorMath.ContrastRatio(band, card);
+            if (bandOnCard < BandMinContrastOnCard)
+                failures.Add($"{theme.Id} 表头带对卡面 {bandOnCard:F3} < {BandMinContrastOnCard}（表头带看不出来）");
 
-            var panelOnSelected = ColorMath.ContrastRatio(panel, selected);
-            if (panelOnSelected < PanelMinContrastOnSelected)
-                failures.Add($"{theme.Id} 面板层对选中底 {panelOnSelected:F3} < {PanelMinContrastOnSelected}（面板抢了选中底的层级）");
+            // 邻窗上限（棘轮）：`SurfaceBandHueNeighbourMax` 抬大会让"弱撞色"变成真撞色
+            //（樱花白脱的表面槽与强调槽差 162.9°），越界即判红。经本地变量比较，避免常量折叠成不可达分支。
+            var bandHueWindow = PaletteSolver.SurfaceBandHueNeighbourMax;
+            if (bandHueWindow > BandHueNeighbourWindowCap)
+                failures.Add($"{theme.Id} 浅带层邻窗 {bandHueWindow:F1}° > 上限 {BandHueNeighbourWindowCap:F1}°（弱撞色会变成两个色）");
+
+            const double HueRoundTripTolerance = 2.0;   // HCT↔sRGB 8 位往返会让实测色相偏 1–2°
+            var fam = PaletteSolver.SolveFamilies(theme);
+            var bandHue = ColorMath.Measure(band).H;
+            var bandTone = ColorMath.Measure(band).T;
+            var bandOnBase = ColorMath.ContrastRatio(band, baseColor);
+            var slotGap = ColorMath.HueDistance(fam.NeutralHue, fam.AccentHue);
+            if (slotGap <= PaletteSolver.SurfaceBandHueNeighbourMax)
+            {
+                // 相邻 ⇒ 带的色相**就是强调槽那一支成员**，不是两支色相中间插出来的新色相
+                var offAccent = ColorMath.HueDistance(bandHue, fam.AccentHue);
+                if (offAccent > HueRoundTripTolerance)
+                    failures.Add($"{theme.Id} 强调槽与表面槽差 {slotGap:F1}°（相邻）⇒ 表头带应贴到强调槽 H{fam.AccentHue:F1}，"
+                                 + $"实得 H{bandHue:F1}（差 {offAccent:F1}°）");
+                // 分层 = 色相：这一支停在页面底本色档（同档同彩、只换色相），动明度会改变既定配色观感
+                if (bandOnBase > 1.03)
+                    failures.Add($"{theme.Id} 贴色主题表头带对页面底 {bandOnBase:F3} > 1.03（色相分层的一支 = 页面底本色档）");
+                if (bandTone > baseTone + 0.6 || bandTone < PaletteSolver.SurfaceBaseToneMin - 0.6)
+                    failures.Add($"{theme.Id} 表头带 T{bandTone:F1} 不在 [87, 页面底 {baseTone:F1}] 内（贴色主题 = 页面底本色档）");
+            }
+            else
+            {
+                // 不相邻 ⇒ 带不换色相，与页面底同支
+                var offNeutral = ColorMath.HueDistance(bandHue, fam.NeutralHue);
+                if (offNeutral > HueRoundTripTolerance)
+                    failures.Add($"{theme.Id} 强调槽与表面槽差 {slotGap:F1}°（不相邻）⇒ 表头带必须与页面底同色相 H{fam.NeutralHue:F1}，"
+                                 + $"实得 H{bandHue:F1}（差 {offNeutral:F1}° = 发明了配色里没有的色相）");
+                // 分层 = 明度（同色相同彩度同明度 = 与页面底逐字节重合 = 融成一块）：压深档，窗口两头卡
+                if (bandOnBase is < 1.05 or > 1.15)
+                    failures.Add($"{theme.Id} 表头带对页面底 {bandOnBase:F3} 不在 [1.05, 1.15]"
+                                 + "（同色相主题只能明度分层：<1.05 = 融进页面底，>1.15 = 压成灰块）");
+                if (bandTone >= baseTone)
+                    failures.Add($"{theme.Id} 表头带 T{bandTone:F1} 未压在页面底 T{baseTone:F1} 之下（明度分层 = 压深档，不走提亮）");
+            }
+            var bandHueGap = ColorMath.HueDistance(bandHue, ColorMath.Measure(baseColor).H);
+            if (bandHueGap > PaletteSolver.SurfaceBandHueNeighbourMax + HueRoundTripTolerance)
+                failures.Add($"{theme.Id} 表头带与页面底色相差 {bandHueGap:F1}° > "
+                             + $"{PaletteSolver.SurfaceBandHueNeighbourMax + HueRoundTripTolerance:F1}°（弱撞色撞成了两个色）");
+
+            // ④（浅带悬停 = 本层压深一档且看得见、色相不逃）由上方 `CheckHoverLayer("浅带悬停底", …)` 一次量完。
         }
         Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
     }

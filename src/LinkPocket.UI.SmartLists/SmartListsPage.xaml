@@ -61,7 +61,9 @@
                                             <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
                                             <Style.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                                                    <!-- 基态是卡面 ⇒ 悬停 = 卡面压深一档（`CardHover`），
+                                                         取页面底那支 `Hover` 会让卡片"陷下去"而不是"加深一层" -->
+                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.CardHover}"/>
                                                 </Trigger>
                                             </Style.Triggers>
                                         </Style>

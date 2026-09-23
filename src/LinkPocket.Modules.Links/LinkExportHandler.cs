@@ -87,6 +87,11 @@ internal sealed class LinkExportHandler : ICommandHandler
 
         static string Csv(string value)
         {
+            // 公式注入防护：以 = + - @ 开头的单元格会被表格软件当公式执行（标题/描述/地址都可能来自
+            // 导入的书签文件，不是用户敲的）——前置一个单引号让它保持文本。
+            if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@')
+                value = "'" + value;
+
             if (value.IndexOfAny([',', '"', '\n', '\r']) < 0) return value;
             return $"\"{value.Replace("\"", "\"\"")}\"";
         }

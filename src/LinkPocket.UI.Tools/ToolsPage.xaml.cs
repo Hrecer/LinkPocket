@@ -189,13 +189,22 @@ namespace LinkPocket.Views
         /// 外部数据变更转发入口（Shell 订阅 MainViewModel.OnToolsDataChanged 后调用；
         /// 页面不再直接订阅 MainViewModel）。
         /// 数据变更（外部增删改）后自动重跑查重，避免展示过期结果。
+        /// 返回 Task 而非 async void：调用方是 Shell 的转发 lambda，异常在这里兜住并留痕
+        /// （async void 抛出的异常会直接落到 UI 线程的未处理异常上）。
         /// </summary>
-        public async void OnExternalDataChanged()
+        public async Task OnExternalDataChangedAsync()
         {
-            if (VmTools.HasRunDedup && DetailPanel.Visibility != Visibility.Visible
-                && (ToolListbox.SelectedItem as ToolItem)?.Id == "dedup")
+            try
             {
-                await RunDedupAsync();
+                if (VmTools.HasRunDedup && DetailPanel.Visibility != Visibility.Visible
+                    && (ToolListbox.SelectedItem as ToolItem)?.Id == "dedup")
+                {
+                    await RunDedupAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                LpLog.Error("dedup rescan after an external data change failed (page stays as-is)", ex);
             }
         }
 
@@ -206,14 +215,22 @@ namespace LinkPocket.Views
         /// · 列表视图 → 直接重跑查重；
         /// · 明细视图 → 重跑后按 URL 重组当前组（组已不再重复 → 退回主表，主表即最新）。
         /// 非去重工具 / 从未跑过查重 → 不做事。
+        /// 返回 Task 的理由同 <see cref="OnExternalDataChangedAsync"/>。
         /// </summary>
-        public async void OnNavigatedTo()
+        public async Task OnNavigatedToAsync()
         {
-            if ((ToolListbox.SelectedItem as ToolItem)?.Id != "dedup" || !VmTools.HasRunDedup) return;
+            try
+            {
+                if ((ToolListbox.SelectedItem as ToolItem)?.Id != "dedup" || !VmTools.HasRunDedup) return;
 
-            var inDetail = DetailPanel.Visibility == Visibility.Visible;
-            await RunDedupAsync();
-            if (inDetail) ReconcileOpenDetail();
+                var inDetail = DetailPanel.Visibility == Visibility.Visible;
+                await RunDedupAsync();
+                if (inDetail) ReconcileOpenDetail();
+            }
+            catch (Exception ex)
+            {
+                LpLog.Error("dedup rescan on entering the tools page failed (page stays as-is)", ex);
+            }
         }
 
         /// <summary>重扫后按 URL 重组当前明细组（组已不再重复 → 退回主表，主表即最新）。
@@ -333,12 +350,7 @@ namespace LinkPocket.Views
             var sel = VmTools.DetailSelection;
             var row = sel.HasAny ? _detailLinks.FirstOrDefault(l => sel.Contains(l.LinkId)) : null;
             if (row == null || string.IsNullOrWhiteSpace(row.Url)) return;
-            try
-            {
-                System.Diagnostics.Process.Start(
-                    new System.Diagnostics.ProcessStartInfo(row.Url) { UseShellExecute = true });
-            }
-            catch { /* 无法打开时保持静默 */ }
+            Services.LinkLauncher.Open(row.Url);
             _ = RecordDetailVisitAsync(row.LinkId);
         }
 
@@ -410,10 +422,12 @@ namespace LinkPocket.Views
                 // ⚠️ 药丸样式自身不含 MinHeight/Padding：高度必须显式给（与其它页药丸统一的 32），
                 // 否则垂直 Padding=0 会把按钮压扁成一条。
                 Height = 32,
-                // ⚠️ 宽度是**冻结几何**（约束 B：切语言宽高逐像素不变）：128 = 中文基线 +
-                //    「Find duplicates」在基准字号 13pt 下放得下的实测值（94.0px 文本 + 图标 22 + 内距 24 = 140 ⇒ 取 140）。
-                //    原 102 会把英文缩到 6.5pt（实测不可读）——放不下时让位的是字，但字号本身也是文案质量指标。
-                Width = 147,
+                // ⚠️ 宽度是**冻结几何**（约束 B：切语言宽高逐像素不变），取值口径 = **中文基线**：
+                //    Width = 文字宽(中文, 基准字号) + 图标 + 图标外边距 + 壳内距 + 模板内部件内距（实测 4）
+                //          = 「开始查重/重新查重」4 字 × 13pt = 52 + 16 + 6 + 14×2 + 4 = 106。
+                //    英文（Find duplicates / Scan again）放不下时由 `LocFit` 缩**英文的**字号让位 ——
+                //    绝不为英文放大几何（见 `UI-SPEC.md` §3 与 `WARNINGS` 116）。
+                Width = 106,
                 Padding = new Thickness(14, 0, 14, 0),
                 Margin = new Thickness(0, 0, 8, 0),
                 Content = new StackPanel { Orientation = Orientation.Horizontal, Children = { _dedupActionIcon, _dedupActionText } }
@@ -426,9 +440,10 @@ namespace LinkPocket.Views
             _dedupClearBtn = new Button
             {
                 Height = 32,   // 同上：药丸样式无高度默认值，必须显式给
-                // 冻结宽度：119 = 「Clear results」在 12.5pt 下放得下的实测值（73.3 + 图标 20 + 内距 24 ⇒ 取 119）。
-                // 原 93 会把英文缩到 8.0pt。
-                Width = 119,
+                // 冻结宽度 = **中文基线**：Width = 文字宽(中文, 基准字号) + 图标 + 图标外边距 + 壳内距 + 模板内部件内距（实测 3）
+                //          = 「清除结果」4 字 × 12.5pt = 50 + 14 + 5 + 12×2 + 3 = 96。
+                // 英文（Clear results）放不下时缩**英文的**字号让位，几何不变（`WARNINGS` 116）。
+                Width = 96,
                 Padding = new Thickness(12, 0, 12, 0),
                 IsEnabled = false,
                 Cursor = Cursors.Hand,

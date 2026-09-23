@@ -248,33 +248,42 @@ public partial class BrowserViewModel
 
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
     {
-        // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报
-        var deleted = 0;
-        var failed = 0;
-        foreach (var item in items)
+        if (IsDeleting) return;   // 命令可用性已拦，键盘/拖拽等不等 CanExecute 的路径在这里挡住
+        IsDeleting = true;
+        try
         {
-            try
+            // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报
+            var deleted = 0;
+            var failed = 0;
+            foreach (var item in items)
             {
-                if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
-                else await _client.LinkTrashAsync(item.Id);
-                deleted++;
+                try
+                {
+                    if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
+                    else await _client.LinkTrashAsync(item.Id);
+                    deleted++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    LpLog.Error($"failed to delete '{item.Name}' (Retry skips this item)", ex);   // 观测面铁律：失败必须暴露
+                }
             }
-            catch (Exception ex)
-            {
-                failed++;
-                LpLog.Error($"failed to delete '{item.Name}' (Retry skips this item)", ex);   // 观测面铁律：失败必须暴露
-            }
-        }
 
-        // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
-        StatusText = failed == 0
-            ? Loc.K("browser.status.deletedCount", deleted)
-            : deleted == 0
-                ? Loc.K("browser.status.deleteFailed")
-                : Loc.K("browser.status.deletedWithFailures", deleted, failed);
-        if (deleted > 0) ClearSelection();
-        // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
-        // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
+            // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
+            StatusText = failed == 0
+                ? Loc.K("browser.status.deletedCount", deleted)
+                : deleted == 0
+                    ? Loc.K("browser.status.deleteFailed")
+                    : Loc.K("browser.status.deletedWithFailures", deleted, failed);
+            if (deleted > 0) ClearSelection();
+            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
+            // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
+        }
+        finally
+        {
+            IsDeleting = false;
+        }
     }
 
     /// <summary>

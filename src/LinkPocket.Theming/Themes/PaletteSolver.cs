@@ -390,26 +390,48 @@ public static class PaletteSolver
     public const double SurfaceHoverMinTone = 84.0;
 
     /// <summary>
-    /// 面板层（表头带 / 侧区面板 / 状态栏 / 对话框底）相对页面底压深的档距。
+    /// 浅带层（表头带 `App.Surface.HeaderBand` / 面板层 `App.Surface.Panel`）的档距规则**按分层手段分两支**：
+    /// 色相贴上强调槽 ⇒ 页面底**本色档**（本常量 = 0，靠两支近邻色相分层）；
+    /// 色相贴不上 ⇒ 压深 <see cref="SurfaceBandToneDrop"/> 档（明度分层，另加 <see cref="SurfaceBandChromaComp"/> 彩度补偿）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 面板层原先是"= 悬停底"（同一支色），后果实测到了：画在面板上的**悬停反馈完全看不见** ——
-    /// 表头药丸悬停底与表头带同色（对比度 **1.000**），鼠标悬停表头时屏幕上什么变化都没有。
+    /// 这一层**同时定两处**：表格顶部的表头带 + 侧区面板 / 状态栏 / 徽标底——它们是**同一条带**
+    /// （角色不同、层级同一条，两枚键绑同一个值，同 `TintCard`/`Tint`/`Floating` 绑卡面的口径）。
+    /// 改档 = 那一片颜色**整体**换，不存在"只改一处、别处还是旧灰"的可能。
     /// </para>
     /// <para>
-    /// 现行 = **浅压深一档**（页面底 −5）：对卡面 **≥1.33**（行区是近白卡面，层次主要靠它读）、
-    /// 对选中底 ≥1.25、对页面底 1.142–1.146（11 套实测最弱值；判据在
-    /// <c>ThemeContrastTests.页面底_夹在明度档内_且卡面与选中底都看得见</c> 里）。
-    /// ⚠️ **不要为了"更分明"继续压深**：实测压到 T78 一档时整条表头带/侧栏读成**灰紫**
-    /// （对页面底 1.355 是够了，观感却坏了）——几何与层次的取舍以观感为准，用户的判据是"不发灰"。
-    /// 表头的悬停反馈也不再靠"比带更深"，而是**抬亮**（药丸用卡面色，见 `UIKit.xaml` 的表头模板）。
+    /// **贴不上的主题必须明度分层**：与页面底同色相、同彩度、同明度 = 逐字节重合
+    /// （实测 8 套带/底 = 1.000，侧区面板 / 状态栏融进页面底，看不出层）。
+    /// 压深方向是浅带层的常规语言（悬停底就是"承载面压深 2–3 档"的同一做法）；
+    /// 同彩度越深越显灰 ⇒ 压深必须伴彩度补偿。**提亮档不用**：大面积提亮读成"发白"（曾用 +3 实测）。
     /// </para>
     /// </remarks>
-    public const double SurfacePanelDrop = 5.0;
+    public const double SurfaceBandLift = 0.0;
 
-    /// <summary>面板层的明度下限（再深就抢选中底的层级了）。</summary>
-    public const double SurfacePanelMinTone = 82.0;
+    /// <summary>色相贴不上时浅带层相对页面底的压深档距（明度分层；11 套实测带/底 = 1.065–1.075，判据窗口 [1.05, 1.15] 两头卡）。</summary>
+    public const double SurfaceBandToneDrop = 2.5;
+
+    /// <summary>浅带层压深时的彩度补偿（抵消"同彩度越深越显灰"；色相仍不动，贴色域边界时由 <see cref="AtTone"/> 降彩度兜住）。</summary>
+    public const double SurfaceBandChromaComp = 2.0;
+
+    /// <summary>
+    /// 浅带层允许**贴到强调槽色相**的条件：强调槽与表面槽的色相差 ≤ 此值（度）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 效果 = 同一套配色里出现**两支近邻色相**：页面底 / 卡面走表面族色相，表头带 / 侧区面板 / 状态栏
+    /// 走强调槽那一支（默认主题表面 H297.4 ↔ 强调 H310.7，差 13.2° ⇒ 页面偏蓝紫、条带偏玫紫）
+    /// = **同族弱撞色**：看得出区别、但不突兀。
+    /// </para>
+    /// <para>
+    /// ⚠️ **只贴、不插值**：条带色相只能是**配色成员本来的色相**（强调槽或表面槽），不许落在两者之间。
+    /// 早先的写法是"向强调槽旋转、上限 14°"——那会在 11 套里的 5 套上停在一支**配色里根本不存在的色相**
+    /// （赭石玫瑰 / 莲鼠尾草 / 樱花白脱…实测离最近的配色成员 9.0°–14.7°），违反"界面色必须能在用户给的调色板里找到"。
+    /// 强调槽与表面槽不相邻的主题（樱花白脱差 162.9°）因此**不换色相**：条带与页面底同色，宁可不撞也不发明色。
+    /// </para>
+    /// </remarks>
+    public const double SurfaceBandHueNeighbourMax = 16.0;
 
     /// <summary>强调容器来源的最低明度档：低于它的成员当容器会"浅色容器上放浅色字"，读不出来。</summary>
     public const double ContainerSourceMinTone = 80.0;
@@ -477,10 +499,37 @@ public static class PaletteSolver
         var surfaceBaseTone = ColorMath.Measure(surfaceBase).T;
         var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceBaseTone + SurfaceCardLift, SurfaceCardMaxTone));
         var surfaceHover = DarkenTo(surfaceBase, Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone));
-        // 面板层（表头带 / 侧区面板 / 状态栏 / 对话框底）比悬停底再深一档：它与页面底太近时"整片分不出层次"，
-        // 而**与悬停底同色**会让画在它上面的悬停反馈完全看不见（表头药丸悬停 = 同色涂抹，实测 1.000）。
-        // 取"页面底 −5"的浅层（11 套实测最弱：对页面底 1.142、对卡面 1.330、对选中底 1.249）。
-        var surfacePanel = DarkenTo(surfaceBase, Math.Clamp(surfaceBaseTone - SurfacePanelDrop, SurfacePanelMinTone, surfaceBaseTone));
+        // 浅带层（表头带 + 侧区面板 / 状态栏 / 徽标底，**同一条带、同一个值**）：
+        //  色相 = **只在强调槽与表面槽本来就相邻（≤ `SurfaceBandHueNeighbourMax`）时贴到强调槽那一支**，
+        //         否则与页面底同色相。⇒ 弱撞色是"用配色里已有的第二支色相"，不是两支之间插出来的新色相。
+        //  分层手段随色相结果二选一：贴上 ⇒ 本色档（色相分层：两支近邻色相足以分开）；
+        //         贴不上 ⇒ 同色相 + 同彩度 + 同明度会与页面底逐字节重合（实测 8 套带/底 = 1.000），
+        //         只能明度分层：压深 `SurfaceBandToneDrop` 档 + 彩度补偿 `SurfaceBandChromaComp`。
+        var bandSticks = ColorMath.HueDistance(families.NeutralHue, families.AccentHue) <= SurfaceBandHueNeighbourMax;
+        var bandHue = bandSticks
+            ? ColorMath.NormalizeHue(families.AccentHue)
+            : ColorMath.NormalizeHue(families.NeutralHue);
+        double bandTone, bandChroma;
+        if (bandSticks)
+        {
+            // 色相分层 = 页面底本色档。档位夹在 [页面底档下限, 页面底本色档]：页面底自身可能因量化
+            // 落在 87 以下（实测有 86.95），因此下限取"两者较小者"，绝不让 Clamp 的 min > max。
+            bandTone = Math.Clamp(surfaceBaseTone + SurfaceBandLift,
+                Math.Min(SurfaceBaseToneMin, surfaceBaseTone), surfaceBaseTone);
+            bandChroma = families.SurfaceChroma;
+        }
+        else
+        {
+            // 明度分层 = 压深 + 彩度补偿（同彩度越深越显灰）。更低明度的色域更宽，
+            // +彩度反而比本色档更好放；放不下时 AtTone 降彩度兜住，色相永远不动。
+            bandTone = surfaceBaseTone - SurfaceBandToneDrop;
+            bandChroma = families.SurfaceChroma + SurfaceBandChromaComp;
+        }
+        var surfaceBand = bandSticks
+            ? At(bandHue, families.SurfaceChroma, bandTone)
+            : AtTone(bandHue, bandChroma, bandTone);
+        var surfaceHeaderBand = surfaceBand;
+        var surfacePanel = surfaceBand;
 
         var textPrimary = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
         var textSecondary = At(families.NeutralHue, NeutralChroma, ToneScale.TextSecondary);
@@ -506,45 +555,42 @@ public static class PaletteSolver
             textMuted = LightenTo(textPrimary, ToneScale.TextMuted);
         }
 
-        // 悬停底是**唯一一块比页面底更深的表面**（"弱文字对它"必须达标）→ 在"够深"的一侧里
-        // **取最深的那个还达标的档**：悬停反馈要看得出来，可读性也不能破（旧写法"从浅往深走到第一个达标"
-        // 会在高彩度浅色主题上直接走到与页面底同档 = 悬停反馈消失）。
+        // 悬停 = **承载面自己压深一档**（三层各一支令牌：页面底 `Surface.Hover` / 卡面 `Surface.CardHover`
+        // / 浅带层 `Surface.BandHover`）。一支通用悬停服务三层 ⇒ 画在卡面 / 浅带上的悬停会换成**另一支色相、
+        // 另一个明度档**的颜色：屏幕上不是"这一条加深了"，而是"跳了一块别的颜色"。
+        // 档位 = 在"够深"的一侧里**取最深的那个还达标的档**：反馈要看得出来，弱文字对比不许破 4.5
+        //（旧写法"从浅往深走到第一个达标"会在高彩度浅色主题上直接走到与承载面同档 = 悬停反馈消失）。
         // ⚠️ 判据必须**同时**包含两支弱字：中性 T12 更严（它达标时更浅的弱字也必然达标），
         //    而当前的 `textMuted` 才是真正会落在悬停底上的那一支（直配 = 配色墨提亮、自动 = 中性灰墨，
         //    两者的对比度实测骑在阈值两侧 4.47 / 4.51）。两支一起卡，两种模式都不会跌破 4.5。
         var hoverInk = At(families.NeutralHue, NeutralChroma, ToneScale.TextPrimary);
-        var hoverFloor = Math.Max(surfaceBaseTone - SurfaceHoverDrop, SurfaceHoverMinTone);
-        surfaceHover = DarkenTo(surfaceBase, surfaceBaseTone);
-        for (var tone = hoverFloor; tone <= surfaceBaseTone; tone += 1.0)
-        {
-            var candidate = DarkenTo(surfaceBase, tone);
-            if (ColorMath.ContrastRatio(hoverInk, candidate) >= ToneScale.MinMutedOnHover
-                && ColorMath.ContrastRatio(textMuted, candidate) >= ToneScale.MinMutedOnHover)
-            {
-                surfaceHover = candidate;   // 取第一个（= 最深）同时达标的档
-                break;
-            }
-        }
-
-        // ⚠️ **另一种模式的悬停底也算一遍，两者取更浅的那个**给选中底当约束：
-        //    悬停底在"自动调色"与"直配"下可能差一档（它的档位按"弱文字对它 ≥4.5"反推，
-        //    而弱文字两模式取值不同）。用"更浅的那个"当约束，选中底在两种模式下才会算出**同一个色**
-        //    —— 结构色必须逐字节相同（`配色应用方式_缺省是自动调色_直配只改文字两档` 卡住）。
         var otherMuted = exact
             ? At(families.NeutralHue, NeutralChroma, ToneScale.TextMuted)
             : LightenTo(textPrimary, ToneScale.TextMuted);
-        Argb HoverSurface(Argb muted)
+        Argb HoverOn(Argb carrier, Argb muted)
         {
-            for (var tone = hoverFloor; tone <= surfaceBaseTone; tone += 1.0)
+            var carrierTone = ColorMath.Measure(carrier).T;
+            var floor = Math.Max(carrierTone - SurfaceHoverDrop, SurfaceHoverMinTone);
+            for (var tone = floor; tone <= carrierTone; tone += 1.0)
             {
-                var candidate = DarkenTo(surfaceBase, tone);
+                var candidate = DarkenTo(carrier, tone);
                 if (ColorMath.ContrastRatio(hoverInk, candidate) >= ToneScale.MinMutedOnHover
                     && ColorMath.ContrastRatio(muted, candidate) >= ToneScale.MinMutedOnHover)
-                    return candidate;
+                    return candidate;   // 第一个（= 最深）同时达标的档
             }
-            return surfaceBase;
+            return carrier;   // 一档都不达标：宁可不给悬停反馈，也不压出读不出字的底
         }
-        var lightestHover = Lightest(HoverSurface(textMuted), HoverSurface(otherMuted));
+        surfaceHover = HoverOn(surfaceBase, textMuted);
+        var cardHover = HoverOn(surfaceCard, textMuted);
+        // 浅带层的字幕合同 = "面板上只许用 Secondary 及以上"（对比度矩阵 `Text.Secondary / Surface.Panel`）
+        // ⇒ 贴不上的一支按这支字反推悬停档：带已压深 2.5 档，若仍按弱字 ≥4.5 反推，悬停会被逼回承载面
+        // 同档（悬停消失），而弱字本来就不许上带。贴上的一支保持弱字口径（该分支的值逐字节不动）。
+        var bandHover = HoverOn(surfaceBand, bandSticks ? textMuted : textSecondary);
+        // ⚠️ 选中底的邻居约束用**另一种模式也算一遍、取更浅的那个**：悬停档按"弱文字对它 ≥4.5"反推，
+        //    而弱文字在两种模式下取值不同 ⇒ 悬停底可能差一档（这个例外由
+        //    `配色应用方式_缺省是自动调色_直配只改文字两档` 点名放行）。拿"更浅的那个"当约束，
+        //    选中底才会在两种模式下算出**同一个色**（结构色必须逐字节相同）。
+        var lightestCardHover = Lightest(HoverOn(surfaceCard, textMuted), HoverOn(surfaceCard, otherMuted));
 
         // 描边：取配色里最接近中间调的成员 —— **够深就直接用**，比档位浅才压到档位（直配）；自动模式保持原行为。
         var outlineSource = families.OutlineSource;
@@ -569,7 +615,9 @@ public static class PaletteSolver
         // 列表行 / 树行的**选中底与拖拽落点高亮** = 画在**卡面**上（卡面比页面底还亮 6 档），
         // 判据锚在卡面上（对卡面 ≥1.22，见 `SelectedSurfaceUntilVisible`）—— 因此它比强调容器深一大截。
         // **两个令牌、两条判据**：一个令牌服务两种承载面时，浅了行看不出选中、深了指示器/徽标发灰（WARNINGS 118）。
-        var surfaceSelected = SelectedSurfaceUntilVisible(accentContainer, surfaceBase, surfaceCard, lightestHover, families.SurfaceChroma);
+        // 邻居 = **卡面悬停底**（同一块卡上"悬停行"与"选中行"必须分得开），不是页面底那一支悬停。
+        var surfaceSelected = SelectedSurfaceUntilVisible(accentContainer, surfaceBase, surfaceCard, lightestCardHover,
+            families.SurfaceChroma);
         // 强调容器（导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip 的浅色底）= 承载面是**页面底与悬停底**，
         // 判据 = 对页面底 ≥1.08、对悬停底 ≥1.06 —— 沿浅色方向抬（`LiftContainerUntilVisible`）。
         // ⚠️ 直接取浅成员当容器时实测 8/11 套与页面底**完全同色**（1.000 —— 最浅成员往往既是页面底
@@ -623,10 +671,13 @@ public static class PaletteSolver
             [AppTokens.SurfaceBase] = surfaceBase,
             [AppTokens.SurfaceCard] = surfaceCard,
             [AppTokens.SurfaceHover] = surfaceHover,
+            [AppTokens.SurfaceCardHover] = cardHover,
+            [AppTokens.SurfaceBandHover] = bandHover,
             [AppTokens.SurfaceSelected] = surfaceSelected,
             [AppTokens.SurfaceTintCard] = surfaceCard,
             [AppTokens.SurfaceTint] = surfaceCard,
             [AppTokens.SurfacePanel] = surfacePanel,
+            [AppTokens.SurfaceHeaderBand] = surfaceHeaderBand,
             [AppTokens.SurfaceDialog] = surfaceBase,
             [AppTokens.SurfaceFloating] = surfaceCard,
 
@@ -767,27 +818,36 @@ public static class PaletteSolver
     /// <see cref="ContainerMinContrastOnCard"/>（最硬），并保持对页面底 / 悬停底的最低对比。
     /// </para>
     /// <para>
-    /// 取值方式 = **从允许的最深档（<see cref="ContainerToneFloor"/>）起往浅处找第一个三条阈值都满足的档位**
-    /// ——默认 11 套实测都在最深档即成立（对卡面 1.68–1.79 / 对页面底 1.43–1.53 / 对悬停底 1.33–1.38），
-    /// 即"取允许的最深"，与用户确认过的选中行深浅一致。
+    /// 取值方式 = **从最浅处往深处走，第一个三条阈值都满足的档位**（= 够得开阈值的**最浅**档）。
+    /// 早先反过来"从允许的最深档起往浅处找第一个达标" ⇒ 默认档 76 当场成立，于是选中底一路下探到
+    /// <c>#C0B8D0</c>（对卡面 1.68，阈值只要 1.22）——同一彩度在更低明度上就是**灰**，
+    /// 屏幕上选中行读成"压了一块灰紫"。可见性阈值是下限，不是"越狠越好"。
+    /// </para>
+    /// <para>
+    /// ⚠️ **不把"弱文字 ≥4.5"加进这条走档**：两条阈值在这套配色下互斥——对卡面 ≥1.22 要求 ≤T85.5，
+    /// 而弱文字 ≥4.5 要求 ≥T86（选中底越浅字越清楚、与卡面越不开）。加进去会让走档一路落回最深档
+    /// （实测：加了就退回 <c>#C0B8D0</c>，弱字反而 3.40 更差）。当前值弱字 4.44、次列 6.40、正文 11.21，
+    /// 弱字这一条由 <c>ThemeContrastTests.对比度矩阵</c> 按实测棘轮（≥4.4）卡住，不让它继续往深滑。
+    /// </para>
     /// </para>
     /// <para>
     /// 种子 = 容器来源（浅且安静的那个成员）；彩度 = 表面族彩度（**只增不减**，与页面底 / 悬停底同族）、
     /// 上限 = 容器安静档（<c>NeutralVariantChroma × 2</c>）；色相一律取自配色成员。
-    /// 悬停底传"两种模式里更浅的那一个"（调用方给）：否则选中底在自动 / 直配两模式下会算出不同的色
-    /// （结构色必须逐字节相同）。
+    /// 悬停底传"**卡面**那一支、且两种模式里更浅的那一个"（调用方给）：选中行与悬停行画在同一块卡上，
+    /// 邻居是它；用两种模式里更浅的那个当约束，选中底才在自动 / 直配下算出**同一个色**。
     /// </para>
     /// </remarks>
-    private static Argb SelectedSurfaceUntilVisible(Argb seed, Argb surfaceBase, Argb surfaceCard, Argb surfaceHover, double familyChroma)
+    private static Argb SelectedSurfaceUntilVisible(Argb seed, Argb surfaceBase, Argb surfaceCard, Argb cardHover,
+        double familyChroma)
     {
         var m = ColorMath.Measure(seed);
         var chroma = Math.Min(Math.Max(m.C, familyChroma), Math.Min(24.0, NeutralVariantChroma * 2));
-        for (var tone = ContainerToneFloor; tone <= 99.0; tone += 0.5)
+        for (var tone = 99.0; tone >= ContainerToneFloor; tone -= 0.5)
         {
             var candidate = ColorMath.FromAlphaHct(0xFF, m.H, chroma, tone);
             if (ColorMath.ContrastRatio(candidate, surfaceCard) < ContainerMinContrastOnCard) continue;
             if (ColorMath.ContrastRatio(candidate, surfaceBase) < ContainerMinContrastOnBase) continue;
-            if (ColorMath.ContrastRatio(candidate, surfaceHover) < ContainerMinContrastOnHover) continue;
+            if (ColorMath.ContrastRatio(candidate, cardHover) < ContainerMinContrastOnHover) continue;
             return candidate;
         }
         return ColorMath.FromAlphaHct(0xFF, m.H, chroma, ContainerToneFloor);

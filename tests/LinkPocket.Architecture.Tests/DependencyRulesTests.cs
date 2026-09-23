@@ -116,10 +116,14 @@ public class DependencyRulesTests
     [MemberData(nameof(UiPageProjects))]
     public void UI页面项目_只依赖UIKit与Contracts与I18n(string project)
     {
-        // 仍然"精确"：除这三个之外引到任何程序集都算越界（引擎实现、别的页面、Shell 都不许）。
+        // 仍然"精确"：除这几个之外引到任何程序集都算越界（引擎实现、别的页面、Shell 都不许）。
         // I18n 可选而非必需——页面按批次收口，未收口的页面不该被强迫引用一个用不上的程序集。
+        // Theming 仅「设置页」必需：外观面板（主题 / 调色台 / 字体 / 语言）就是 Theming 的编辑面，
+        // 它按定义要读主题目录、求解器与偏好存储——其余页面仍不许引（颜色科学不该散进页面）。
         var refs = ProjectReferences($"src/{project}/{project}.csproj");
-        var allowed = new[] { UIKit, Contracts, I18n };
+        var allowed = project == "LinkPocket.UI.Settings"
+            ? new[] { UIKit, Contracts, I18n, Theming }
+            : new[] { UIKit, Contracts, I18n };
         Assert.Contains(UIKit, refs);
         Assert.Contains(Contracts, refs);
         Assert.All(refs, r => Assert.Contains(r, allowed));
@@ -138,6 +142,91 @@ public class DependencyRulesTests
     {
         var refs = ProjectReferences("src/LinkPocket.UIKit/LinkPocket.UIKit.csproj");
         Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r));
+    }
+
+    /// <summary>
+    /// 源码层红线：UI 层（UIKit / UI.* / Shell 的界面代码）**不得使用引擎实现与容器的命名空间**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 为什么需要它：项目引用规则只能卡住"声明过的引用"，而 <c>ProjectReference</c> 是**传递**的 ——
+    /// 页面只要引了 UIKit，就能 using <c>LinkPocket.Theming</c>，页面引了 Contracts 也能摸到更底层的类型；
+    /// 历史上出现过"设置页直接用 Theming、csproj 里却没这一行"的漂移，csproj 检查全绿而实际依赖已经越界。
+    /// 这条规则直接读源码，抓的就是那一类。
+    /// </para>
+    /// <para>
+    /// 允许面（与 csproj 规则一致）：Shell（组合根）可以用 Engine 与 Composition —— <c>AppHost</c> 是
+    /// 唯一允许 new 具体实现、并直持引擎 wire 的地方；容器（<c>Microsoft.Extensions.DependencyInjection</c>）
+    /// 同理只许出现在组合根，页面与 UIKit 不许解析服务（否则就成了服务定位器）。
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData("LinkPocket.UIKit")]
+    [InlineData("LinkPocket.UI.Browser")]
+    [InlineData("LinkPocket.UI.Search")]
+    [InlineData("LinkPocket.UI.Trash")]
+    [InlineData("LinkPocket.UI.SmartLists")]
+    [InlineData("LinkPocket.UI.Tools")]
+    [InlineData("LinkPocket.UI.Settings")]
+    [InlineData("LinkPocket.App")]
+    public void UI层源码_不得使用引擎实现与容器(string project)
+    {
+        var isShell = project == Shell;
+        string[] forbidden = isShell
+            ? ["LinkPocket.Data", "LinkPocket.Kernel", "LinkPocket.Modules", "LinkPocket.Diagnostics"]
+            : ["LinkPocket.Engine", "LinkPocket.Data", "LinkPocket.Kernel", "LinkPocket.Modules", "LinkPocket.Composition", "LinkPocket.Diagnostics"];
+
+        var offenders = new List<string>();
+        foreach (var (relative, full) in SourceFiles(project))
+        {
+            var text = StripLineComments(File.ReadAllText(full));
+
+            foreach (var ns in forbidden)
+            {
+                // 两种真实写法都要抓：using 指令 与 全限定用法（含 LinkPocket.Composition.EngineComposer 那种）
+                if (text.Contains($"using {ns}", StringComparison.Ordinal)
+                    || text.Contains($"{ns}.", StringComparison.Ordinal))
+                {
+                    offenders.Add($"{relative} → {ns}");
+                }
+            }
+
+            if (!isShell && text.Contains("Microsoft.Extensions.DependencyInjection", StringComparison.Ordinal))
+                offenders.Add($"{relative} → Microsoft.Extensions.DependencyInjection");
+        }
+
+        Assert.True(offenders.Count == 0,
+            "UI 层源码越界使用引擎实现/容器（依赖只能经 Contracts 端口或 Shell 组合根）："
+            + string.Join("、", offenders));
+    }
+
+    /// <summary>去掉行注释（`//` 之后）——红线只判代码，注释里提到命名空间不算越界。</summary>
+    private static string StripLineComments(string text)
+    {
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var idx = lines[i].IndexOf("//", StringComparison.Ordinal);
+            if (idx >= 0) lines[i] = lines[i][..idx];
+        }
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>遍历 src 下某项目的全部源文件（跳过 obj/bin）。</summary>
+    private static IEnumerable<(string Relative, string Full)> SourceFiles(string project)
+    {
+        var root = Path.Combine(RepoRoot, "src", project);
+        Assert.True(Directory.Exists(root), $"项目目录不存在: {project}");
+        foreach (var file in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories))
+        {
+            if (!file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                && !file.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+            if (relative.Contains("/obj/", StringComparison.Ordinal)
+                || relative.Contains("/bin/", StringComparison.Ordinal)) continue;
+            yield return (relative, file);
+        }
     }
 
     [Fact]

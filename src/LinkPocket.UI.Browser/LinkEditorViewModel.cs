@@ -172,7 +172,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 {
                     try
                     {
-                        if (!await Services.FaviconStore.EnsureCachedAsync(favUrl))
+                        if (!await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl))
                             LpLog.Error($"favicon download failed (including fallback): {favUrl}", null);
                         return Services.FaviconService.LoadFromCache(favUrl);
                     }
@@ -221,7 +221,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 // async lambda + await，不在 Task.Run 里同步 GetAwaiter().GetResult()（与 FetchMetadataAsync 同构）
                 Favicon = await Task.Run(async () =>
                 {
-                    try { await Services.FaviconStore.EnsureCachedAsync(favUrl); } catch { }
+                    try { await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl); } catch { }
                     return Services.FaviconService.LoadFromCache(favUrl);
                 });
             }

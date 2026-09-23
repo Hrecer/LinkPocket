@@ -38,7 +38,16 @@ public sealed class UiEventHub
             _timer.Tick += (_, _) =>
             {
                 _timer.Stop();
-                RefreshRequested?.Invoke();
+                var handlers = RefreshRequested;
+                if (handlers == null) return;
+
+                // 逐个隔离：一个订阅方抛异常不得让其余页面的刷新一起失效
+                //（否则症状是"某次数据变更之后，某一页再也不刷新"，且现场没有任何痕迹）
+                foreach (var handler in handlers.GetInvocationList())
+                {
+                    try { ((Action)handler)(); }
+                    catch (Exception ex) { LpLog.Error("a refresh handler failed (the other pages continue)", ex); }
+                }
             };
         }
 

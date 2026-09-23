@@ -130,14 +130,8 @@ public partial class TrashViewModel
     {
         var url = DetailPane.Url;
         if (string.IsNullOrEmpty(url)) return;
-        try
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            LpLog.Error("failed to open the site (returned quietly, page stays)", ex);   // 观测面：失败留痕
-        }
+        if (Services.LinkLauncher.Open(url) == Services.LinkLauncher.Result.NotWebAddress)
+            StatusText = Loc.K("common.linkNotOpenable");
     }
 
     /// <summary>树节点被点击（视图转发；与浏览页 SelectTreeNodeAsync 同口径）：单元 = 选中 + 进入；链接叶子 = 主栏定位选中；虚根 = 回根。</summary>

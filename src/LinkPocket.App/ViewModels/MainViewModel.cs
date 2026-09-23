@@ -29,8 +29,6 @@ namespace LinkPocket.ViewModels
         /// <summary>路径回溯的层数上限（防御异常数据造成的环）。</summary>
         private const int MaxFolderDepth = 20;
 
-        private readonly Managers.SelectionManager _selectionManager;
-
         /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
         private readonly EngineClient _client;
         private readonly Services.UiEventHub _events;
@@ -49,13 +47,12 @@ namespace LinkPocket.ViewModels
         //   在二级视图时 Collapsed，与「导航常驻」原则冲突。页面内的视图切换由各页面自持状态。）
 
         public MainViewModel(EngineClient client, Services.UiEventHub events,
-            Services.UiPortProvider ports, Managers.SelectionManager selectionManager,
+            Services.UiPortProvider ports,
             Services.IContentLocator? locator = null)
         {
             _client = client;
             _events = events;
             _ports = ports;
-            _selectionManager = selectionManager;
 
             InitializeNavigationItems();
 
@@ -424,7 +421,9 @@ namespace LinkPocket.ViewModels
 
             // 无论当前在哪个页（清空动作发生在设置页），选中都回到「全部书签」：
             // 旧选中若指向已删除的文件夹则是无意义状态，且会阻碍浏览器页数据刷新。
-            _selectionManager.SelectFolder(string.Empty);
+            // ⚠️ 清的是**浏览页真正的选中集合**（ListSelection 是选中的唯一事实来源）：
+            // 旧写法走一个早已没有读者的 SelectionManager，等于什么都没清。
+            BrowserViewModel.ClearSelection();
         }
 
     }

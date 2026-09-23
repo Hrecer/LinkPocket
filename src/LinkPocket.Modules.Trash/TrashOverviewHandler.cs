@@ -46,11 +46,15 @@ internal sealed class TrashOverviewHandler : ICommandHandler
         }
 
         var linkDtos = new List<TrashEntryDto>();
-        foreach (var l in await ctx.Uow.Trash.ListStandaloneLinksAsync(ct))
+        // 一次取全量快照再按单元归位（原实现是"每个单元查一次" = 单元数一多就是 N+1 次查询）：
+        // 顺序与逐单元查询逐字等价 —— 先根级单独删除（删除时间倒序），再按单元顺序（删除时间倒序）展开
+        var allLinks = await ctx.Uow.Trash.ListAllLinksAsync(ct);
+        var byUnit = allLinks.Where(l => l.TrashFolderId != null).ToLookup(l => l.TrashFolderId!);
+        foreach (var l in allLinks.Where(l => l.TrashFolderId == null))
             linkDtos.Add(ToLinkEntry(l, null));
         foreach (var unit in folders)
         {
-            foreach (var l in await ctx.Uow.Trash.ListLinksByUnitAsync(new TrashFolderId(unit.TrashFolderId), ct))
+            foreach (var l in byUnit[unit.TrashFolderId])
                 linkDtos.Add(ToLinkEntry(l, unit.TrashFolderId));
         }
 

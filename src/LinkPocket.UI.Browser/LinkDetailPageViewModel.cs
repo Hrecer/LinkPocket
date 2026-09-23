@@ -127,11 +127,8 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         _visitBusy = true;
         try
         {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Url) { UseShellExecute = true });
-            }
-            catch (Exception ex) { LpLog.Error("failed to open the site (returned quietly, page stays)", ex); }   // 观测面：失败留痕
+            if (Services.LinkLauncher.Open(Url) == Services.LinkLauncher.Result.NotWebAddress)
+                _host.StatusText = Loc.K("common.linkNotOpenable");
 
             try
             {

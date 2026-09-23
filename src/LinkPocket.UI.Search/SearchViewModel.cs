@@ -55,7 +55,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             () => { if (PrimarySelected is { } item) _navigation.OpenLinkInBrowser(item.LinkId); },
             () => Selection.HasAny);
         OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.Count == 1);
-        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectionAsync(), () => Selection.HasAny);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectionAsync(), () => Selection.HasAny && !IsDeleting);
         SelectAllCommand = new RelayCommand(() => Selection.SelectAll(CurrentOrder()));
         ClearSelectionCommand = new RelayCommand(() => Selection.Clear());
         MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
@@ -229,6 +229,27 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(query)) return Task.CompletedTask;
         if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync();
         return SearchAsync();
+    }
+
+    private bool _isDeleting;
+
+    /// <summary>
+    /// 删除在途：命令可用性据此置灰，删除入口再挡一次。
+    /// </summary>
+    /// <remarks>
+    /// 删除是逐条命令的循环写，连点/连发时第二次会对着已移入回收站的条目再删一次，
+    /// 结果是"清空结果 + 报删除失败"的空态盖住刚刚成功的操作。
+    /// </remarks>
+    public bool IsDeleting
+    {
+        get => _isDeleting;
+        private set
+        {
+            if (_isDeleting == value) return;
+            _isDeleting = value;
+            OnPropertyChanged();
+            CommandRefresh.Request();
+        }
     }
 
     private bool _isNavigating;
@@ -476,8 +497,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     {
         var item = PrimarySelected;
         if (item == null) return;
-        try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
-        catch { /* 无法打开时保持静默 */ }
+        Services.LinkLauncher.Open(item.Url);
         try
         {
             await _api.LinkVisitRecordAsync(item.LinkId);
@@ -490,6 +510,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// <summary>删除选中：1 条 = 原单条文案；多条 = 批量计数；完成后静默重跑当前搜索刷新结果。</summary>
     private async Task DeleteSelectionAsync()
     {
+        if (IsDeleting) return;   // 命令可用性已拦，这里再挡一次（键盘路径等不经 CanExecute 时）
         var victims = SelectedItems;
         if (victims.Count == 0) return;
 
@@ -498,6 +519,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             : Loc.T("tools.dedup.deleteConfirm", victims.Count);
         if (!_dialogs.Confirm(Loc.T("common.title.deleteLink"), message, Loc.T("common.delete"))) return;
 
+        IsDeleting = true;
         try
         {
             foreach (var v in victims)
@@ -512,6 +534,10 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         {
             EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
                 Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
+        }
+        finally
+        {
+            IsDeleting = false;
         }
     }
 

@@ -10,6 +10,9 @@
   <ItemGroup>
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
     <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+    <!-- 外观面板（主题 / 调色台 / 字体 / 语言卡）就是 Theming 的编辑面：显式声明，
+         不再靠 UIKit 的传递引用"摸到"（声明与实际依赖一致，越界才看得出）。 -->
+    <ProjectReference Include="..\LinkPocket.Theming\LinkPocket.Theming.csproj" />
   </ItemGroup>
 
   <ItemGroup>

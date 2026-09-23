@@ -98,12 +98,14 @@ internal static class FolderViewCore
         // 不为它付全量链接代价（响应形状本来就恒 null）。
         if (withTreeLinks)
         {
+            // 只投影树叶子真正读的四个字段（id / 标题 / 地址 / 归属）：这是全库链接，
+            // 完整 LinkDto 会把描述、时间戳、访问计数等一起搬运，而树一个都不看。
             dto.TreeLinks = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter(),
                 Sort = new[] { new SortSpec("title", SortDir.Asc) },
                 Page = new PageSpec(1, 0),
-            }, ct)).Select(l => l.ToDto()).ToList();
+            }, ct)).Select(l => l.ToTreeDto()).ToList();
         }
 
         return dto;

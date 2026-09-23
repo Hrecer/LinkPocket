@@ -41,6 +41,8 @@ public partial class TrashViewModel
 
     private async Task ExecuteRestoreAsync(IReadOnlyList<string> linkIds, IReadOnlyList<string> folderIds, string to)
     {
+        if (IsMutating) return;   // 命令可用性已拦，键盘路径等不经 CanExecute 时在这里挡住
+        IsMutating = true;
         try
         {
             var result = await _client.TrashRestoreBatchAsync(linkIds, folderIds, to);
@@ -52,6 +54,10 @@ public partial class TrashViewModel
             LpLog.Error($"restore failed (links {linkIds.Count} / units {folderIds.Count}; to={to})", ex);
             ShowError(Loc.T("trash.restoreFailed"), Loc.T("err.unexpected"));
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已还原条目
+        }
+        finally
+        {
+            IsMutating = false;
         }
     }
 

@@ -24,7 +24,11 @@ internal sealed class SearchLinksHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important"),
             ParamSpec.Opt<string>("sort_order", "asc | desc"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        // 四个范围都是 `LIKE '%…%'`（子串匹配，索引帮不上忙，只能全表扫）——这条查询在界面上
+        // 会被反复触发（范围热切换、事件刷新、防抖补跑），同一次数据状态下的重复调用不该各扫一遍。
+        // 缓存键含参数；依赖事件 = 链接/文件夹/回收站变化，写操作照旧立即失效（不牺牲"不展示过期结果"）。
+        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

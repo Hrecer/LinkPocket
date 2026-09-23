@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 
 namespace LinkPocket.Modules.Backup;
@@ -451,18 +452,16 @@ internal static class BackupIO
         return file;
     }
 
-    // —— 图标缓存文件搬运（与既有实现同口径；目录约定与 FaviconCache 一致）——
-
-    private static readonly string CacheDirectory = Path.Combine(AppContext.BaseDirectory, "favicons");
+    // —— 图标缓存文件搬运（目录与命名口径 = Contracts.FaviconCache 的唯一实现）——
 
     private static void CollectFaviconFile(string faviconUrl, ConcurrentDictionary<string, string> faviconFiles)
     {
         try
         {
-            var resolvedUrl = ResolveFaviconUrl(faviconUrl);
+            var resolvedUrl = FaviconCache.ResolveFaviconUrl(faviconUrl);
             if (string.IsNullOrWhiteSpace(resolvedUrl)) return;
 
-            var cacheFilePath = GetCacheFilePath(resolvedUrl);
+            var cacheFilePath = FaviconCache.GetCacheFilePath(resolvedUrl);
             if (!File.Exists(cacheFilePath)) return;
 
             faviconFiles.TryAdd(resolvedUrl, cacheFilePath);
@@ -497,10 +496,10 @@ internal static class BackupIO
     {
         if (string.IsNullOrWhiteSpace(originalUrl)) return originalUrl;
 
-        var resolvedUrl = ResolveFaviconUrl(originalUrl);
+        var resolvedUrl = FaviconCache.ResolveFaviconUrl(originalUrl);
         if (faviconData is null) return originalUrl;
 
-        var cacheFilePath = GetCacheFilePath(resolvedUrl);
+        var cacheFilePath = FaviconCache.GetCacheFilePath(resolvedUrl);
         var fileName = Path.GetFileName(cacheFilePath);
         if (!faviconData.TryGetValue(fileName, out var bytes)) return originalUrl;
 
@@ -510,53 +509,9 @@ internal static class BackupIO
             if (existing.AsSpan().SequenceEqual(bytes)) return resolvedUrl;   // 本地那份与包内一致 → 无需重写
         }
 
-        Directory.CreateDirectory(CacheDirectory);
+        Directory.CreateDirectory(FaviconCache.CacheDirectory);
         await File.WriteAllBytesAsync(cacheFilePath, bytes, ct);
         return resolvedUrl;
-    }
-
-    internal static string ResolveFaviconUrl(string? originalUrl)
-    {
-        if (string.IsNullOrWhiteSpace(originalUrl)) return string.Empty;
-
-        var ext = GetExtensionFromUrl(originalUrl).ToLowerInvariant();
-        if (ext == ".svg")
-        {
-            try
-            {
-                var uri = new Uri(originalUrl);
-                return $"{uri.Scheme}://{uri.Host}/favicon.ico";
-            }
-            catch
-            {
-                return originalUrl;
-            }
-        }
-
-        return originalUrl;
-    }
-
-    private static string GetCacheFilePath(string faviconUrl)
-    {
-        var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(faviconUrl)));
-        var ext = GetExtensionFromUrl(faviconUrl);
-        return Path.Combine(CacheDirectory, $"{hash}{ext}");
-    }
-
-    private static string GetExtensionFromUrl(string url)
-    {
-        try
-        {
-            var ext = Path.GetExtension(new Uri(url).AbsolutePath);
-            if (ext is ".png" or ".jpg" or ".jpeg" or ".ico" or ".gif" or ".bmp" or ".webp" or ".svg")
-                return ext == ".jpeg" ? ".jpg" : ext;
-        }
-        catch
-        {
-            // 非法地址回落 .ico
-        }
-
-        return ".ico";
     }
 
     // —— 时间戳（统一 UTC 序列化；**解析失败必须暴露，不许伪造**）——

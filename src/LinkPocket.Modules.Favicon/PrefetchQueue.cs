@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Modules.Favicon;
 

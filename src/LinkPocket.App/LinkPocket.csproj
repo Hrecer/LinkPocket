@@ -29,6 +29,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Material3.Wpf" />
     <PackageReference Include="MdXaml" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
 </Project>

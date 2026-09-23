@@ -38,6 +38,12 @@ public sealed class AppHost
     /// <summary>浏览页宿主（「跳转」原语提供方）：由 MainWindow 构造时登记自身。</summary>
     public IBrowserLocateHost? LocateHost { get; set; }
 
+    /// <summary>
+    /// 前端对象图（容器）：Shell、页面 ViewModel 与共享件一律经它解析
+    /// （登记表见 <see cref="AppServiceGraph"/>；容器只在组合根内部使用，不进任何层契约）。
+    /// </summary>
+    public IServiceProvider Services { get; private set; } = null!;
+
     private AppHost(EngineClient client, EngineWire wire)
     {
         Client = client;
@@ -73,6 +79,7 @@ public sealed class AppHost
 
         var host = new AppHost(composed.Client, composed.Wire);
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
+        host.Services = AppServiceGraph.Build(host);   // 前端对象图（Shell/页面 VM/共享件）
         return host;
     }
 }

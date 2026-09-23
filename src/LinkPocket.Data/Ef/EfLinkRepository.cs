@@ -58,6 +58,14 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     public async Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct)
         => await db.Links.AsNoTracking().Where(l => l.Url == url).ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Link>> ListDuplicatedAsync(CancellationToken ct)
+        // 相关子查询（EXISTS 语义）= "同址还有别的链接"；比先查重复 URL 再 IN 更稳：
+        // IN 列表在超大库上会撞参数个数上限。返回顺序与去重页既有口径一致（URL → 创建时间 → ID）。
+        => await db.Links.AsNoTracking()
+            .Where(l => db.Links.Any(other => other.Url == l.Url && other.LinkId != l.LinkId))
+            .OrderBy(l => l.Url).ThenBy(l => l.CreatedAt).ThenBy(l => l.LinkId)
+            .ToListAsync(ct);
+
     private static IQueryable<Link> ApplyFilter(IQueryable<Link> q, LinkFilter f)
     {
         if (!string.IsNullOrEmpty(f.Search))

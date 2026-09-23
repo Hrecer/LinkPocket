@@ -18,6 +18,12 @@ public interface ITrashRepository
     /// <summary>某回收站单元的直接书签快照（TrashFolderId == unit）。</summary>
     Task<IReadOnlyList<TrashedLink>> ListLinksByUnitAsync(TrashFolderId unit, CancellationToken ct);
 
+    /// <summary>
+    /// 全部书签快照（含归属单元），按删除时间倒序。
+    /// 组合读取（trash.overview）用这一条替掉"每个单元查一次"的循环 —— 单元数一多就是 N+1 次查询。
+    /// </summary>
+    Task<IReadOnlyList<TrashedLink>> ListAllLinksAsync(CancellationToken ct);
+
     /// <summary>各回收站单元的书签快照计数。</summary>
     Task<IReadOnlyDictionary<TrashFolderId, int>> CountLinksByUnitAsync(CancellationToken ct);
 

@@ -17,7 +17,7 @@ public partial class TrashViewModel
     /// <summary>节点右键「永久删除」（单元 = 整子树）。</summary>
     private async Task PurgeNodeAsync(TrashNode? node)
     {
-        if (node == null || node.IsRoot || node.IsLink) return;
+        if (IsMutating || node == null || node.IsRoot || node.IsLink) return;
         await PurgeIdsAsync(new[] { node.Id }, isFolder: true, node.Name, LocValue.Empty);
     }
 
@@ -25,6 +25,7 @@ public partial class TrashViewModel
     /// （与选中集合无关、也不受覆盖层门禁影响）。删完条目消失 → 覆盖层由"条目消失即关"收尾。</summary>
     private async Task PurgeDetailAsync()
     {
+        if (IsMutating) return;
         var id = _detailLinkId;
         if (id == null) return;
         await PurgeIdsAsync(new[] { id }, isFolder: false, DetailPane.TitleData, DetailPane.TitleCopy);
@@ -33,6 +34,7 @@ public partial class TrashViewModel
     /// <summary>Delete 键 / 工具栏「永久删除」：删除当前选中项（可多选，批量命令 purge_batch）。</summary>
     private async Task PurgeSelectionGuardedAsync()
     {
+        if (IsMutating) return;
         var rows = SelectedRows.ToList();
         if (rows.Count == 0) return;
 
@@ -42,6 +44,7 @@ public partial class TrashViewModel
 
         if (!ConfirmPurge(name, rows.Count, rows.Any(r => r.IsFolder))) return;
 
+        IsMutating = true;
         try
         {
             await EngineConfirm.RunAsync(token => _client.TrashPurgeBatchAsync(linkIds, folderIds,
@@ -54,13 +57,20 @@ public partial class TrashViewModel
             ShowError(Loc.T("trash.purgeFailed"), Loc.T("err.unexpected"));
             await LoadAsync();   // 请求可能已在服务端生效（超时等）→ 重拉，避免 UI 残留已删条目
         }
+        finally
+        {
+            IsMutating = false;
+        }
     }
 
     /// <param name="nameData">条目的用户数据名（标题 / 单元名）。</param>
     /// <param name="nameCopy">条目的文案名（数据缺失时的兜底，如「无名称」）；空 = 用数据名。</param>
     private async Task PurgeIdsAsync(IReadOnlyList<string> ids, bool isFolder, string nameData, LocValue nameCopy)
     {
+        if (IsMutating) return;
         if (!ConfirmPurge(nameCopy.IsEmpty ? Loc.K("trash.thisOne", nameData) : nameCopy, 1, isFolder)) return;
+
+        IsMutating = true;
         try
         {
             await EngineConfirm.RunAsync(token => _client.TrashPurgeAsync(ids[0], isFolder,
@@ -72,6 +82,10 @@ public partial class TrashViewModel
             LpLog.Error("permanent delete failed (trash force-refreshed)", ex);
             ShowError(Loc.T("trash.purgeFailed"), Loc.T("err.unexpected"));
             await LoadAsync();
+        }
+        finally
+        {
+            IsMutating = false;
         }
     }
 

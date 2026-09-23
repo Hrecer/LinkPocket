@@ -115,8 +115,25 @@ public class FolderContentsDto
     /// 调用方按父目录分组后把直接链接叶子挂到对应文件夹节点下。仅 <c>folders.overview</c> 填充；
     /// <c>folders.contents</c> 恒为 null。
     /// </summary>
+    /// <remarks>
+    /// 用 <see cref="TreeLinkDto"/> 而非完整 <see cref="LinkDto"/>：这里就是**全库**链接（10k 库 = 1 万条），
+    /// 而树叶子只读四个字段（id / 标题 / 地址 / 归属）——把描述、时间戳、访问计数、重要标记一起搬，
+    /// 是每次导航都要多付一份序列化与反序列化的纯浪费。
+    /// </remarks>
     [JsonPropertyName("tree_links"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<LinkDto>? TreeLinks { get; set; }
+    public List<TreeLinkDto>? TreeLinks { get; set; }
+}
+
+/// <summary>
+/// 树叶子用的链接精简投影（仅 <c>folders.overview</c> 的 <c>tree_links</c>）：
+/// 目录树把链接挂成叶子只需要这四个字段；完整字段请用 <see cref="LinkDto"/>（主栏行数据源）。
+/// </summary>
+public class TreeLinkDto
+{
+    [JsonPropertyName("id")] public string LinkId { get; set; } = string.Empty;
+    [JsonPropertyName("title")] public string Title { get; set; } = string.Empty;
+    [JsonPropertyName("url")] public string Url { get; set; } = string.Empty;
+    [JsonPropertyName("list_id")] public string? ListId { get; set; }
 }
 
 public class PagedLinksDto

@@ -22,7 +22,7 @@ public partial class BrowserViewModel
     /// rootLinkCount = 同快照的根级直挂链接数；treeLinks = 同快照的全库活动链接（每文件夹直接链接叶子注入源）。
     /// 纯同步：无 IO/等待，签名用 void 不误导调用方。
     /// ParentId == FolderId 的自环坏数据排除（绝不把自己挂成自己的子节点）。</summary>
-    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount, List<LinkDto> treeLinks)
+    private void RebuildFolderTree(List<FolderDto> tree, int rootLinkCount, List<TreeLinkDto> treeLinks)
     {
         var expandedIds = new HashSet<string?>();
         CollectExpandedIds(FolderTree, expandedIds);
@@ -73,7 +73,7 @@ public partial class BrowserViewModel
     /// <summary>把某文件夹的直接链接作为叶子挂到该节点下：名称升序（树唯一排序口径）；
     /// 叶子 Id = 链接 ID、FolderId = null、ParentId = 所属目录（定位 = 进父目录 + 选中该行）。
     /// 文件夹节点先于链接组已由构建顺序保证（链接组恒排在文件夹之后，Windows 口径）。</summary>
-    private void AppendTreeLinkLeaves(FolderNode folder, IEnumerable<LinkDto> links)
+    private void AppendTreeLinkLeaves(FolderNode folder, IEnumerable<TreeLinkDto> links)
     {
         foreach (var l in links.OrderBy(l => l.Title, NameOrder.Comparer))
         {

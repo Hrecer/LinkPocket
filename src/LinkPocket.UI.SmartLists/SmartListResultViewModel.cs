@@ -356,8 +356,7 @@ namespace LinkPocket.ViewModels
         {
             var item = PrimarySelected;
             if (item == null) return;
-            try { Process.Start(new ProcessStartInfo(item.Url) { UseShellExecute = true }); }
-            catch { /* 无法打开时保持静默 */ }
+            Services.LinkLauncher.Open(item.Url);
             try
             {
                 await _client.LinkVisitRecordAsync(item.LinkId);

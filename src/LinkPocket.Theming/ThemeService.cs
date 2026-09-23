@@ -354,10 +354,6 @@ public static class ThemeService
     /// </remarks>
     private static (string Ui, string? Mono, string? Reason) ResolveFonts(Preferences.FontPreference pref)
     {
-        var available = Fonts.FontCatalog.All()
-            .Select(f => f.Family)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
         // 两条理由**都**要如实说（旧实现用 `reason ??=` 让等宽那条被静默吞掉：
         // 用户只看到"界面字体已不可用"，等宽那份悄悄回退 = 观测面缺陷）。
         var reasons = new List<string>();
@@ -365,15 +361,27 @@ public static class ThemeService
         // 空 = 没选过 → 当前语言的默认族（用户显式选过的族不会被这里改掉）
         var ui = string.IsNullOrWhiteSpace(pref.Ui) ? DefaultUiFont : pref.Ui.Trim();
         var mono = pref.Mono;
-        if (!string.IsNullOrWhiteSpace(ui) && !available.Contains(ui))
+
+        // 只有"用户显式选过族"才需要核对可用性：可用性判据 = FontCatalog.All()，它会触发系统字体
+        // **全量枚举**（开销与机器上装的字体数成正比：本机 17ms / 88 个族，几百个族的机器上是秒级），
+        // 而枚举发生在窗口显示之前。没选过的默认族是编译期常量 + 语言决定，不需要枚举就能确定，
+        // 于是在这条最常见的路径上省掉这一步。
+        if (!string.IsNullOrWhiteSpace(pref.Ui) || !string.IsNullOrWhiteSpace(mono))
         {
-            reasons.Add($"the UI font '{ui}' is unavailable (file missing or not installed), fell back to the default font");
-            ui = DefaultUiFont;
-        }
-        if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
-        {
-            reasons.Add($"the monospace font '{mono}' is unavailable (file missing or not installed), fell back to the default font");
-            mono = Fonts.FontCatalog.DefaultMonoFamily;
+            var available = Fonts.FontCatalog.All()
+                .Select(f => f.Family)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(pref.Ui) && !available.Contains(ui))
+            {
+                reasons.Add($"the UI font '{ui}' is unavailable (file missing or not installed), fell back to the default font");
+                ui = DefaultUiFont;
+            }
+            if (!string.IsNullOrWhiteSpace(mono) && !available.Contains(mono))
+            {
+                reasons.Add($"the monospace font '{mono}' is unavailable (file missing or not installed), fell back to the default font");
+                mono = Fonts.FontCatalog.DefaultMonoFamily;
+            }
         }
 
         var reason = reasons.Count == 0 ? null : string.Join("；", reasons);

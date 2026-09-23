@@ -63,13 +63,20 @@ public partial class BrowserViewModel
     /// <summary>
     /// 重新加载当前目录（事件推送订阅 / 导航显式调用；写操作不自行刷新，见 WARNINGS #18）。
     /// 选中的唯一事实来源是 <see cref="Selection"/>（行与树均为投影），故此方法本身不恢复选中——
-    /// 集合并未因刷新而消失。仅当 <paramref name="clearSelection"/> 为 true（导航切换目录）时清空选中。
+    /// 集合并未因刷新而消失。
+    ///
+    /// <para>
+    /// <b>导航（进入目录）不清空选中</b>：树里"选中该文件夹 + 进入"是同一件事的两面（高亮由 Selection 派生），
+    /// 清空会把刚点中的文件夹高亮一起抹掉；链接同理——选中集合是独立事实，切走再切回来按 ID 重新投影出现。
+    /// <paramref name="clearSelection"/> 留给确实要清空的调用方（如定位/重置类路径），导航路径不传。
+    /// </para>
+    ///
     /// 重入守卫 = 「最后请求必被处理」：加载进行中又来新请求（导航切换 / 防抖事件刷新）只置挂起标志，
     /// 当前加载收尾后自动补刷一次——绝不静默吞掉请求（曾导致：导航后列表停在旧目录）。
     /// </summary>
     public async Task RefreshAsync(bool clearSelection = false, bool navigating = false)
     {
-        // 导航切换目录：清空选中集合（行/树投影一起归零）；原地刷新则保留
+        // 清空选中（仅显式请求时）：行/树投影一起归零；原地刷新与导航都保留
         if (clearSelection)
             Selection.Clear();
         if (IsLoading)
@@ -100,7 +107,7 @@ public partial class BrowserViewModel
             //（与目录页同快照的树/计数 + 全量链接叶子：每文件夹直接链接一并注入，Windows 资源管理器语义）
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<LinkDto>());
+            RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<TreeLinkDto>());
             // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
             // ⚠️ 这里**不**先清空 Rows：行集要不要换，等目标行序算完再做等价判定（见下方"内容一致 → 不动集合"）。
@@ -121,8 +128,12 @@ public partial class BrowserViewModel
             }
 
             var linkRows = new List<BrowserRowViewModel>();
+            // Id → 图标地址：行序与来源列表同长，逐个 First(...) 找回来是 O(行 × 链接)
+            //（10k 库冷缓存时是千万级字符串比较，且发生在 UI 线程）
+            var faviconUrlById = new Dictionary<string, string?>(contents.Links.Count, StringComparer.Ordinal);
             foreach (var link in contents.Links)
             {
+                faviconUrlById[link.LinkId] = link.FaviconUrl;
                 linkRows.Add(new BrowserRowViewModel(link.LinkId, isFolder: false, link.Title)
                 {
                     Url = link.Url,
@@ -139,9 +150,10 @@ public partial class BrowserViewModel
             // favicon 懒加载清单：磁盘缓存未命中时后台拉取，完成后补到对应行
             var missing = linkRows
                 .Where(r => r.Favicon == null)
-                .Select(r => contents.Links.First(l => l.LinkId == r.Id).FaviconUrl)
+                .Select(r => faviconUrlById.GetValueOrDefault(r.Id))
                 .Where(url => !string.IsNullOrEmpty(url))
-                .Distinct()
+                .Select(url => url!)
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
 
             // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
@@ -179,28 +191,40 @@ public partial class BrowserViewModel
                 SetContextRow(null);   // 行对象已重建：右键命中行引用作废（删除文案随之复位）
             }
 
-            // favicon 后台预取 + Dispatcher 回填：行已可见，失败只丢图标（下次事件刷新追平）
+            // favicon 后台预取 + 回填：行已可见，失败只丢图标（下次事件刷新追平）。
+            // 下载的并发闸/去重/大小上限统一在 Contracts.FaviconCache；这里只负责
+            // "下载完把图补到**当前显示的行**" —— 逐行 Dispatcher.Invoke 是每行一次跨线程往返，
+            // 且回填前的 FirstOrDefault 曾在后台线程上读 UI 拥有的 Rows（集合可能正在被替换）。
             if (missing.Count > 0)
             {
+                var pendingIds = linkRows.Where(r => r.Favicon == null && !string.IsNullOrEmpty(faviconUrlById.GetValueOrDefault(r.Id)))
+                                         .Select(r => r.Id)
+                                         .ToList();
                 _ = Task.Run(async () =>
                 {
                     try { await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
                     catch { /* 网络失败属预期波动，行保持无图标 */ }
-                    foreach (var row in linkRows.Where(r => r.Favicon == null))
+
+                    var landed = new List<(string Id, System.Windows.Media.Imaging.BitmapImage Image)>();
+                    foreach (var id in pendingIds)
                     {
-                        var dto = contents.Links.FirstOrDefault(l => l.LinkId == row.Id);
-                        if (dto != null)
-                        {
-                            var img = Services.FaviconService.LoadFromCache(dto.FaviconUrl);
-                            if (img != null)
-                            {
-                                // ⚠️ 回填目标必须是**当前显示的行**：行集等价跳过后 Rows 保留的是旧行对象
-                                //（见上方"内容一致 → 不动集合"），只对新构建的行设置图标等于白设。
-                                var live = Rows.FirstOrDefault(r => string.Equals(r.Id, row.Id, StringComparison.Ordinal)) ?? row;
-                                System.Windows.Application.Current?.Dispatcher.Invoke(() => live.SetFavicon(img));
-                            }
-                        }
+                        var img = Services.FaviconService.LoadFromCache(faviconUrlById.GetValueOrDefault(id));
+                        if (img != null) landed.Add((id, img));
                     }
+
+                    if (landed.Count == 0) return;
+                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
+                    if (dispatcher == null) return;
+
+                    // 单次批量回填：索引在 UI 线程上建一次，之后 O(1) 命中
+                    _ = dispatcher.BeginInvoke(() =>
+                    {
+                        var live = new Dictionary<string, BrowserRowViewModel>(Rows.Count, StringComparer.Ordinal);
+                        foreach (var row in Rows) live.TryAdd(row.Id, row);
+                        foreach (var (id, image) in landed)
+                            if (live.TryGetValue(id, out var row) && row.Favicon == null)
+                                row.SetFavicon(image);
+                    });
                 });
             }
 
