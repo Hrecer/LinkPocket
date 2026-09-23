@@ -13,6 +13,7 @@ internal sealed class CommandContextImpl : ICommandContext
     private readonly List<EntityRef> _nestedTouched = [];
     private readonly List<string> _nestedWarnings = [];
     private readonly List<FieldChange> _nestedDiff = [];
+    private readonly List<PendingUndo> _pendingUndo = [];
 
     public CommandContextImpl(
         IUnitOfWork uow,
@@ -21,7 +22,8 @@ internal sealed class CommandContextImpl : ICommandContext
         string correlationId,
         CallerRef caller,
         CancellationToken ct,
-        EngineCore engine)
+        EngineCore engine,
+        string? undoGroupId = null)
     {
         Uow = uow;
         IsNested = isNested;
@@ -30,6 +32,7 @@ internal sealed class CommandContextImpl : ICommandContext
         Caller = caller;
         Ct = ct;
         _engine = engine;
+        UndoGroupId = undoGroupId;
     }
 
     public IUnitOfWork Uow { get; }
@@ -38,6 +41,9 @@ internal sealed class CommandContextImpl : ICommandContext
     public CancellationToken Ct { get; }
     public string CorrelationId { get; }
     public CallerRef Caller { get; }
+
+    /// <summary>顶层调用的撤销归属键（<c>CallOptions.UndoGroupId</c>）：批/宏步骤登记撤销时的缺省分组。</summary>
+    internal string? UndoGroupId { get; }
 
     /// <summary>所属引擎（同程序集编排组件复用嵌套派发入口）。</summary>
     internal EngineCore Engine => _engine;
@@ -76,6 +82,29 @@ internal sealed class CommandContextImpl : ICommandContext
         _nestedWarnings.Clear();
         _nestedDiff.Clear();
         return merged;
+    }
+
+    // ===== 批/宏步骤的撤销暂存（E5）=====
+
+    /// <summary>
+    /// 一条待登记的撤销记录（批/宏的嵌套步骤产出）。**登记点不在此处**——撤销栈是"已提交事实"的逆向账本，
+    /// 只能在提交成功后入栈：暂存 → 管道/批引擎提交后统一登记（干跑与回滚路径的暂存自然作废）。
+    /// </summary>
+    internal sealed record PendingUndo(
+        CommandDescriptor Descriptor, JsonElement Args, IReadOnlyList<UndoInverseStep>? Inverse, string? GroupId);
+
+    /// <summary>暂存一条步骤的撤销信息（<paramref name="groupId"/> = 所属批/宏的归属键，同键合并为一条记录）。</summary>
+    internal void AddPendingUndo(CommandDescriptor descriptor, JsonElement args,
+        IReadOnlyList<UndoInverseStep>? inverse, string? groupId)
+        => _pendingUndo.Add(new PendingUndo(descriptor, args, inverse, groupId));
+
+    /// <summary>取走全部暂存（提交后由登记点消费；干跑/回滚路径不消费即作废）。</summary>
+    public List<PendingUndo> TakePendingUndo()
+    {
+        if (_pendingUndo.Count == 0) return [];
+        var taken = new List<PendingUndo>(_pendingUndo);
+        _pendingUndo.Clear();
+        return taken;
     }
 }
 

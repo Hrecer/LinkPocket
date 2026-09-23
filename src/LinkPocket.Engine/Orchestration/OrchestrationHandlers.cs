@@ -137,8 +137,10 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
 
         // 宏实际运行耗时（此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
         var sw = Stopwatch.StartNew();
+        var context = (CommandContextImpl)ctx;
         var (results, touched, events, diff) = await BatchEngine.RunStepsNestedAsync(
-            (CommandContextImpl)ctx, script with { Name = $"macro:{name}" }, ctx.Ct);
+            context, script with { Name = $"macro:{name}" },
+            context.UndoGroupId ?? $"macro:{Guid.NewGuid():N}", ctx.Ct);
         sw.Stop();
 
         var summary = $"Macro '{name}' finished: {results.Count(r => r.Ok)}/{results.Count} steps succeeded";

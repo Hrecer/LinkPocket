@@ -100,11 +100,13 @@ public sealed class BatchEngine : IBatchEngine
         {
             if (script.Scope == BatchScope.Transactional)
             {
-                (results, touched, events, diff) = await RunTransactionalAsync(script, dryRun, correlationId, caller, ct);
+                (results, touched, events, diff) = await RunTransactionalAsync(script, dryRun, correlationId, caller,
+                    options?.UndoGroupId ?? batchId, ct);
             }
             else
             {
-                (results, touched, events, diff) = await RunIndependentAsync(script, dryRun, correlationId, caller, batchId, ct);
+                (results, touched, events, diff) = await RunIndependentAsync(script, dryRun, correlationId, caller,
+                    batchId, options?.UndoGroupId ?? batchId, ct);
             }
         }
         catch (EngineException ex) when (ex.Error.Code == EngineErrors.BatchAborted)
@@ -166,7 +168,7 @@ public sealed class BatchEngine : IBatchEngine
 
     /// <summary>事务批：写闸 + 单 UoW + 嵌套派发（abort/异常 = 不提交即回滚）。</summary>
     private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunTransactionalAsync(
-        BatchScript script, bool dryRun, string correlationId, CallerRef caller, CancellationToken ct)
+        BatchScript script, bool dryRun, string correlationId, CallerRef caller, string undoGroupId, CancellationToken ct)
     {
         await _engine.WriteGate.WaitAsync(ct);
         try
@@ -180,8 +182,9 @@ public sealed class BatchEngine : IBatchEngine
             List<FieldChange> diff;
             try
             {
-                ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, _engine);
-                (results, touched, events, diff) = await RunStepsNestedAsync(ctx, script, ct);
+                ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, _engine,
+                    undoGroupId);
+                (results, touched, events, diff) = await RunStepsNestedAsync(ctx, script, undoGroupId, ct);
 
                 if (dryRun)
                 {
@@ -208,6 +211,10 @@ public sealed class BatchEngine : IBatchEngine
                     foreach (var name in merged.Events)
                         await _engine.PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));
                 }
+
+                // 撤销登记（E5）：提交成功后统一入栈（一次批 = 一条记录 N 逆向步，归属键 = 批 ID / 调用方归属键）；
+                // 干跑与回滚路径的暂存自然作废，绝不入栈
+                _engine.FlushPendingUndo(ctx, caller);
             }
             return (results, touched, events, diff);
         }
@@ -223,7 +230,7 @@ public sealed class BatchEngine : IBatchEngine
     /// 每步的变更同样聚合（touched/events/diff）供批报告使用——独立批的步骤各走顶层管道，
     /// 不经父缓冲，聚合必须在本层做。</summary>
     private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunIndependentAsync(
-        BatchScript script, bool dryRun, string correlationId, CallerRef caller, string batchId, CancellationToken ct)
+        BatchScript script, bool dryRun, string correlationId, CallerRef caller, string batchId, string undoGroupId, CancellationToken ct)
     {
         var results = new List<BatchStepResult>();
         var touched = new List<EntityRef>();
@@ -237,8 +244,10 @@ public sealed class BatchEngine : IBatchEngine
             var args = BatchTemplate.Resolve(step.Args, refs);
             try
             {
+                // UndoGroupId = 批归属键：独立批逐步提交，撤销栈按同组合并为一条记录（一次批 = 一次用户动作）
                 var r = await _engine.ExecuteAsync<object>(step.Command, args, new CallOptions(
-                    DryRun: dryRun, CorrelationId: $"{correlationId}:{step.Ref}", Caller: caller), ct);
+                    DryRun: dryRun, CorrelationId: $"{correlationId}:{step.Ref}", Caller: caller,
+                    UndoGroupId: undoGroupId), ct);
                 TrackStepData(refs, step.Ref, r.Data);
                 if (r.Changes is { } changes)
                 {
@@ -271,9 +280,11 @@ public sealed class BatchEngine : IBatchEngine
     /// 嵌套步骤循环（事务批与宏运行共用）：在既有管道上下文内逐步嵌套派发。
     /// 策略 Abort 的步骤失败直接抛出（由调用方的管道回滚）；Continue/SkipAndLog 记录后继续。
     /// 返回步骤结果 + 聚合变更集（Touched/Events/Diff，供批报告与事件负载）。
+    /// 撤销（E5）：每个成功步骤的逆向信息暂存进 <paramref name="ctx"/>（归属键 = <paramref name="undoGroupId"/>），
+    /// 由提交成功后的登记点统一入栈——批/宏共用本处，干跑不暂存。
     /// </summary>
     internal static async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunStepsNestedAsync(
-        CommandContextImpl ctx, BatchScript script, CancellationToken ct)
+        CommandContextImpl ctx, BatchScript script, string undoGroupId, CancellationToken ct)
     {
         var results = new List<BatchStepResult>();
         var touched = new List<EntityRef>();
@@ -295,6 +306,11 @@ public sealed class BatchEngine : IBatchEngine
                     events.AddRange(changes.Events);
                     if (changes.Diff is { Count: > 0 } stepDiff) diff.AddRange(stepDiff);
                 }
+
+                // 撤销暂存（E5）：dry_run 零副作用 → 不暂存；无可逆信息的步骤由登记点自然跳过
+                if (!ctx.DryRun && ctx.Engine.Registry.Resolve(step.Command) is { } undoHandler)
+                    ctx.AddPendingUndo(undoHandler.Descriptor, args, r.Undo, undoGroupId);
+
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: true, Skipped: false,
                     ToElement(r.Data), null, null, stepSw.ElapsedMilliseconds));
             }

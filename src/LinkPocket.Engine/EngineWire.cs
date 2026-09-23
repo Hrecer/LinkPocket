@@ -157,9 +157,7 @@ public sealed class EngineWire(IEngine engine)
     /// <summary>查询结果 = 数据本体（JSON 可序列化：DTO / record / JsonElement 均直接落形）。</summary>
     private static object? ToWireData(object? data) => data;
 
-    private static BatchScript ParseScript(JsonElement scriptEl)
-        => JsonSerializer.Deserialize<BatchScript>(scriptEl.GetRawText(), EngineJson.ScriptOptions)
-           ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, "batch script is not valid BatchScript JSON"));
+    private static BatchScript ParseScript(JsonElement scriptEl) => BatchDispatch.ParseScript(scriptEl);
 
     /// <summary>必填 JSON 元素参数（复杂入参，如批脚本）；缺失即抛 REQUIRED_PARAM。</summary>
     private static JsonElement RequireElement(JsonElement args, string name)

@@ -95,6 +95,11 @@ public sealed class EngineCore : IEngine
     public async Task<CommandResult<T>> ExecuteAsync<T>(string command, object? args = null,
         CallOptions? options = null, CancellationToken ct = default)
     {
+        // 批三命令直路由（唯一实现 BatchDispatch；wire 的直接方法名同口径）：批引擎自身即管道父调用，
+        // 不走标准命令管道——进程内消费者（EngineClient / AI）与 wire 消费者必须同口径，禁止双实现。
+        if (BatchDispatch.IsBatchCommand(command))
+            return await DispatchBatchAsync<T>(command, args, options, ct).ConfigureAwait(false);
+
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
         var caller = CallOptions.CallerOf(options);
         var dryRun = options?.DryRun == true;
@@ -151,7 +156,8 @@ public sealed class EngineCore : IEngine
             CommandContextImpl ctx;
             try
             {
-                ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, this);
+                ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, this,
+                    undoGroupId: options?.UndoGroupId);
                 result = await handler.ExecuteAsync(ctx, argsJson);
 
                 if (dryRun)
@@ -210,6 +216,8 @@ public sealed class EngineCore : IEngine
                 // 撤销登记：顶层可撤销命令成功后入栈。
                 // 逆向步骤优先取**处理器回填**（能带旧值，重命名/移动靠它）；没有则退回描述符 + 原参数。
                 // UndoGroupId：同一次用户动作拆成的多次调用（一次粘贴多选）合并为一条记录。
+                // 批/宏步骤（E5）先消费暂存登记（同归属键合并为「一次批 = 一条记录 N 逆向步」），再登记顶层自身。
+                FlushPendingUndo(ctx, caller);
                 Undo?.Record(handler.Descriptor, argsJson, caller, result.Undo, options?.UndoGroupId);
             }
 
@@ -269,6 +277,10 @@ public sealed class EngineCore : IEngine
     public async Task<T> QueryAsync<T>(string query, object? args = null,
         CallOptions? options = null, CancellationToken ct = default)
     {
+        // 批的读流形态（batch.dry_run / batch.status）与写流同一处直路由
+        if (BatchDispatch.IsBatchCommand(query))
+            return await BatchDispatch.QueryAsync<T>(RequireBatch(), query, args, options, ct).ConfigureAwait(false);
+
         var correlationId = options?.CorrelationId ?? Guid.NewGuid().ToString("N");
         var caller = CallOptions.CallerOf(options);
 
@@ -335,7 +347,8 @@ public sealed class EngineCore : IEngine
         try
         {
             var childCtx = new CommandContextImpl(parent.Uow, isNested: true, parent.DryRun,
-                parent.CorrelationId, parent.Caller, linked?.Token ?? parent.Ct, this);
+                parent.CorrelationId, parent.Caller, linked?.Token ?? parent.Ct, this,
+                undoGroupId: parent.UndoGroupId);
 
             var sw = Stopwatch.StartNew();
             var result = await handler.ExecuteAsync(childCtx, json);
@@ -433,6 +446,34 @@ public sealed class EngineCore : IEngine
         => _registry.Resolve(command)
            ?? throw new EngineException(EngineErrors.Of(EngineErrors.UnknownCommand,
                $"unknown command '{command}'", correlationId: correlationId));
+
+    /// <summary>
+    /// 批/宏步骤的撤销统一入栈（E5）：提交成功后按归属键合并为**一条记录 N 逆向步**（撤销时逆序回绕、
+    /// 重做时正序重放，与"一条记录 = 一次用户动作"同口径）。登记失败 = 观测面失败（已提交事实不否定）。
+    /// </summary>
+    internal void FlushPendingUndo(CommandContextImpl ctx, CallerRef caller)
+    {
+        if (Undo is null) return;
+        foreach (var pending in ctx.TakePendingUndo())
+        {
+            try
+            {
+                Undo.Record(pending.Descriptor, pending.Args, caller, pending.Inverse, pending.GroupId);
+            }
+            catch (Exception undoEx)
+            {
+                RegisterObservationFailure("batch step undo registration failed", undoEx);
+            }
+        }
+    }
+
+    private Task<CommandResult<T>> DispatchBatchAsync<T>(string command, object? args,
+        CallOptions? options, CancellationToken ct)
+        => BatchDispatch.ExecuteAsync<T>(RequireBatch(), command, args, options, ct);
+
+    private IBatchEngine RequireBatch()
+        => Batch ?? throw new EngineException(EngineErrors.Of(EngineErrors.Internal,
+            "batch engine not wired (OrchestrationHost)"));
 
     private void EnsureConfirmed(CommandDescriptor descriptor, CallOptions? options, string correlationId)
     {
