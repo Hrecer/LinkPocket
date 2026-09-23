@@ -21,13 +21,15 @@ namespace LinkPocket.Views
     public partial class SettingsPage : UserControl
     {
         /// <summary>模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
-        public void Configure(EngineClient client, Func<Task> reinitializeAsync, Func<Task> refreshAfterImportAsync)
+        public void Configure(EngineClient client, Func<Task> reinitializeAsync, Func<Task> refreshAfterImportAsync,
+        IAiAssistant? assistant = null)
         {
             Api = client;
             ReinitializeAsync = reinitializeAsync;
             BackupPanelControl.Api = client;
             BackupPanelControl.ReinitializeAsync = reinitializeAsync;
             BackupPanelControl.RefreshAfterImportAsync = refreshAfterImportAsync;
+            if (assistant is not null) AiPanelControl.Configure(assistant);
         }
 
         private EngineClient Api { get; set; } = null!;
@@ -82,6 +84,7 @@ namespace LinkPocket.Views
             AppearancePanelControl.Visibility = Visibility.Collapsed;
             MaintenancePanel.Visibility = Visibility.Collapsed;
             BackupPanelControl.Visibility = Visibility.Collapsed;
+            AiPanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
             {
@@ -93,6 +96,8 @@ namespace LinkPocket.Views
                 MaintenancePanel.Visibility = Visibility.Visible;
             else if (SettingListBox.SelectedIndex == 2)
                 BackupPanelControl.Visibility = Visibility.Visible;
+            else if (SettingListBox.SelectedIndex == 3)
+                AiPanelControl.Visibility = Visibility.Visible;
 
             if (SettingListBox.SelectedIndex != 2)
                 BackupPanelControl.ResetState();

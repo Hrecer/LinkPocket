@@ -51,6 +51,7 @@ public class DependencyRulesTests
     {
         "LinkPocket.UI.Browser", "LinkPocket.UI.Search", "LinkPocket.UI.Trash",
         "LinkPocket.UI.SmartLists", "LinkPocket.UI.Tools", "LinkPocket.UI.Settings",
+        "LinkPocket.UI.Ai",
     };
     private static readonly string[] BusinessModules =
     {
@@ -168,6 +169,7 @@ public class DependencyRulesTests
     [InlineData("LinkPocket.UI.SmartLists")]
     [InlineData("LinkPocket.UI.Tools")]
     [InlineData("LinkPocket.UI.Settings")]
+    [InlineData("LinkPocket.UI.Ai")]
     [InlineData("LinkPocket.App")]
     public void UI层源码_不得使用引擎实现与容器(string project)
     {

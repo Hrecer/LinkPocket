@@ -23,6 +23,8 @@
     <ProjectReference Include="..\LinkPocket.UI.SmartLists\LinkPocket.UI.SmartLists.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Tools\LinkPocket.UI.Tools.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Settings\LinkPocket.UI.Settings.csproj" />
+    <ProjectReference Include="..\LinkPocket.UI.Ai\LinkPocket.UI.Ai.csproj" />
+    <ProjectReference Include="..\LinkPocket.Ai\LinkPocket.Ai.csproj" />
   </ItemGroup>
 
   <ItemGroup>

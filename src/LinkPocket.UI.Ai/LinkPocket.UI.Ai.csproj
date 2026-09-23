@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI.Ai：AI 助手页（三栏：会话 / 对话 / 变更与审计）。
+       依赖面 = UIKit + Contracts（经 UIKit 传递拿到 I18n；**不引 Theming** —— 页面只引 App.* 语义令牌）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.UI.Ai</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.UIKit\LinkPocket.UIKit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Material3.Wpf" />
+  </ItemGroup>
+
+</Project>

@@ -11,6 +11,7 @@
         xmlns:uitrash="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Trash"
         xmlns:uisl="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.SmartLists"
         xmlns:uitools="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Tools"
+        xmlns:uiai="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Ai"
         xmlns:uisettings="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UI.Settings"
         xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
         mc:Ignorable="d"
@@ -175,6 +176,10 @@
         <!-- ===== 智能列表视图（独立页面） ===== -->
         <uisl:SmartListsPage Grid.Row="1" x:Name="SmartListsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
         </uisl:SmartListsPage>
+
+        <!-- ===== AI 助手页（三栏：会话 / 对话 / 变更与审计） ===== -->
+        <uiai:AiView Grid.Row="1" x:Name="AiPage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+        </uiai:AiView>
 
         <!-- ===== 工具页面（空壳） ===== -->
         <uitools:ToolsPage Grid.Row="1" x:Name="ToolsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">

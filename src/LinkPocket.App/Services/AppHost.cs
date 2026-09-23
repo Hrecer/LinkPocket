@@ -25,8 +25,17 @@ public sealed class AppHost
     /// </summary>
     public IContentLocator Locator { get; }
 
+    /// <summary>IAiAssistant：由 <see cref="CreateDefault"/> 在装配末尾经 <see cref="AttachAi"/> 接上
+    /// （字段级 init 不可行：host 先建后接；构造期不读任何文件）。</summary>
+    private IAiAssistant _ai = null!;
+
+    private void AttachAi(IAiAssistant assistant) => _ai = assistant;
+
     /// <summary>UI 端口槽位：MainWindow（Shell）在构造时登记 IDialogService/INavigationService 实现。</summary>
     public UiPortProvider Ports { get; } = new();
+
+    /// <summary>AI 助手（IAiAssistant 的唯一实现 = LinkPocket.Ai 的运行时；构造不读任何文件）。</summary>
+    public IAiAssistant Ai => _ai;
 
     /// <summary>
     /// UI 事件枢纽：后端数据变更 → 界面刷新的唯一 300ms 防抖通道。
@@ -78,6 +87,8 @@ public sealed class AppHost
             throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
         var host = new AppHost(composed.Client, composed.Wire);
+        host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
+            LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
         host.Services = AppServiceGraph.Build(host);   // 前端对象图（Shell/页面 VM/共享件）
         return host;

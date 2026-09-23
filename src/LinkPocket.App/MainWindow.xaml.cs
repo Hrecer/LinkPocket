@@ -53,6 +53,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         _regions.Register(NavIds.Search, SearchView);
         _regions.Register(NavIds.Trash, TrashView);
         _regions.Register(NavIds.SmartLists, SmartListsView);
+        _regions.Register(NavIds.Ai, AiPage);
         _regions.Register(NavIds.Tools, ToolsView);
         _regions.Register(NavIds.Settings, SettingsView);
 
@@ -80,7 +81,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
         SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
-            () => vm.RefreshFolderTreeAndUIAsync());
+            () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai);
+        AiPage.Configure(_host.Ai);
         vm.ToolsDataChanged += (_, _) => _ = ToolsView.OnExternalDataChangedAsync();
         // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）
         vm.NavigatedToTools += (_, _) => _ = ToolsView.OnNavigatedToAsync();

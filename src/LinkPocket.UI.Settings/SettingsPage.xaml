@@ -39,6 +39,12 @@
                             <TextBlock Text="{loc:Loc nav.item.backup}" Margin="9,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="auto-fix" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc nav.panel.ai}" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
                 </views:SideNavList>
             </StackPanel>
         </Border>
@@ -114,6 +120,7 @@
 
             <!-- 备份与恢复界面 -->
             <local:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
+            <local:AiPanel x:Name="AiPanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->

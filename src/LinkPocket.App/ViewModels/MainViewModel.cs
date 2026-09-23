@@ -19,6 +19,7 @@ namespace LinkPocket.ViewModels
         public const string Browser = "browser";
         public const string Search = "search";
         public const string SmartLists = "smartlists";
+        public const string Ai = "ai";
         public const string Tools = "tools";
         public const string Trash = "trash";
         public const string Settings = "settings";
@@ -179,7 +180,8 @@ namespace LinkPocket.ViewModels
             {
                 new() { Id = NavIds.Browser, LabelKey = "nav.item.browser", IconKind = "folder-open-outline" },
                 new() { Id = NavIds.Search, LabelKey = "nav.item.search", IconKind = "magnify" },
-                new() { Id = NavIds.SmartLists, LabelKey = "nav.item.smartLists", IconKind = "auto-fix" },
+                new() { Id = NavIds.SmartLists, LabelKey = "nav.item.smartLists", IconKind = "trending-up" },
+                new() { Id = NavIds.Ai, LabelKey = "nav.item.ai", IconKind = "auto-fix" },
                 new() { Id = NavIds.Tools, LabelKey = "nav.item.tools", IconKind = "wrench-outline" },
                 new() { Id = NavIds.Trash, LabelKey = "nav.item.trash", IconKind = "delete-outline" },
                 new() { Id = NavIds.Settings, LabelKey = "nav.item.settings", IconKind = "cog-outline" }
