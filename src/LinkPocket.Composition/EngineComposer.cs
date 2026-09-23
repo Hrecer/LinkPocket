@@ -30,7 +30,7 @@ public sealed class ComposeOptions
     public string? StagingRoot { get; init; }
 }
 
-/// <summary>组合根装配结果：引擎本体 + 客户端门面 +（可选）wire + 命令注册表 +（可选）工厂。</summary>
+/// <summary>组合根装配结果：引擎本体 + 客户端门面 +（可选）wire + 命令注册表 +（可选）工厂 + 会话管理器。</summary>
 public sealed class EngineComposition
 {
     public required EngineCore Engine { get; init; }
@@ -38,6 +38,11 @@ public sealed class EngineComposition
     public EngineWire? Wire { get; init; }
     public required CommandRegistry Registry { get; init; }
     public LinkPocketDbContextFactory? Factory { get; init; }
+
+    /// <summary>会话管理器（能力门：只读拒绝写 + 滑窗限流）。四个宿主共用同一实现；
+    /// 调用方须自行 BeginAsync 并把 SessionId 放进 <c>CallOptions.Caller</c> 才受约束——
+    /// 未带 SessionId 的调用是宿主自有调用，零约束（既有口径）。</summary>
+    public required ISessionManager Sessions { get; init; }
 }
 
 /// <summary>
@@ -149,11 +154,15 @@ public static class EngineComposer
         registry.RegisterAll(LinkPocket.Modules.Maintenance.MaintenanceModule.CreateHandlers(
             () => engineRef!.RuntimeStats));
 
+        // 会话管理器：四宿主共用（AI 代理的限流/只读能力门的唯一执行点）。
+        // 未带 SessionId 的调用不受约束，故对既有界面/测试零影响。
+        var sessions = new SessionManager();
         var engine = new EngineCore(registry, uowFactory,
             audit: options.SqlAudit
                 ? new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(dbContextFactory))
                 : null,
-            idempotency: options.SqlIdempotency ? new SqlIdempotencyStore(dbContextFactory) : null);
+            idempotency: options.SqlIdempotency ? new SqlIdempotencyStore(dbContextFactory) : null,
+            sessions: sessions);
         engineRef = engine;
 
         // fallbackStagingRoot 仅在「库路径入口」非空；uowFactory 入口传 null →
@@ -171,6 +180,7 @@ public static class EngineComposer
             Wire = wire,
             Registry = registry,
             Factory = factory,
+            Sessions = sessions,
         };
     }
 }

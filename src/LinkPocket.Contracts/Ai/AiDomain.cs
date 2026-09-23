@@ -1,0 +1,126 @@
+namespace LinkPocket.Contracts;
+
+/// <summary>服务商接入协议：openai_chat = /chat/completions 兼容族（含国内网关与本地推理）；anthropic_messages = Messages API 族。</summary>
+public enum AiProtocol
+{
+    OpenAiChat = 0,
+    AnthropicMessages = 1,
+}
+
+/// <summary>服务商来源：preset = 内置模板；custom = 用户自建。</summary>
+public enum AiProviderSource
+{
+    Preset = 0,
+    Custom = 1,
+}
+
+/// <summary>模型来源：preset = 模板内置；fetched = 从服务商拉取；manual = 手填。</summary>
+public enum AiModelSource
+{
+    Preset = 0,
+    Fetched = 1,
+    Manual = 2,
+}
+
+/// <summary>服务商可用状态（设置页徽标：未配置 / 已验证 / 验证失败）。</summary>
+public enum AiProviderStatus
+{
+    NotConfigured = 0,
+    Verified = 1,
+    Failed = 2,
+}
+
+/// <summary>AI 工作模式：readonly = 纯问答（只读会话）；confirm_each = 每次写都审批（**缺省**）；auto_apply = 写自动执行（破坏性仍审批）。</summary>
+public enum AiMode
+{
+    ReadOnly = 0,
+    ConfirmEach = 1,
+    AutoApply = 2,
+}
+
+/// <summary>模型能力声明（用于上下文预算与工具/流式开关；未声明按保守缺省）。</summary>
+public sealed record AiModelInfo(
+    string Id,
+    string DisplayName,
+    AiModelSource Source,
+    bool Enabled,
+    int? ContextWindow,
+    int? MaxOutputTokens,
+    bool SupportsTools,
+    bool SupportsStreaming);
+
+/// <summary>服务商对外投影（**不含明文密钥**；ApiKeyMasked 只露前 4 后 4）。</summary>
+public sealed record AiProviderInfo(
+    string Id,
+    string DisplayName,
+    AiProtocol Protocol,
+    string BaseUrl,
+    AiProviderSource Source,
+    bool IsLocal,
+    bool Enabled,
+    bool HasApiKey,
+    string? ApiKeyMasked,
+    AiProviderStatus Status,
+    string? StatusErrorCode,
+    string? ApiKeyManagementUrl,
+    string? DocsUrl,
+    IReadOnlyList<AiModelInfo> Models);
+
+/// <summary>服务商草稿（设置页保存）：宽松阶段允许半填（可存），只有完整者进运行期 registry。</summary>
+public sealed record AiProviderDraft(
+    string Id,
+    string DisplayName,
+    AiProtocol Protocol,
+    string BaseUrl,
+    bool Enabled,
+    bool IsLocal);
+
+/// <summary>模型草稿（新增 / 启停 / 能力声明 / 手填）。</summary>
+public sealed record AiModelDraft(
+    string ProviderId,
+    string Id,
+    string DisplayName,
+    bool Enabled,
+    int? ContextWindow,
+    int? MaxOutputTokens,
+    bool SupportsTools,
+    bool SupportsStreaming);
+
+/// <summary>模型选择（会话级持久化）。</summary>
+public sealed record AiModelSelection(string ProviderId, string ModelId);
+
+/// <summary>选择解析失败的结构化原因（界面按码取词，**不抛异常**）。</summary>
+public enum AiSelectionIssue
+{
+    ProviderMissing = 0,
+    ModelMissing = 1,
+    ApiKeyMissing = 2,
+    ModelDisabled = 3,
+    CapabilityMissing = 4,
+}
+
+/// <summary>生效解析结果：Selection 非空 = 可用；否则 Issue 说明缺什么（ProviderName/ModelName 供界面显示）。</summary>
+public sealed record AiSelectionResolution(
+    AiModelSelection? Selection,
+    AiSelectionIssue? Issue,
+    string? ProviderName,
+    string? ModelName);
+
+/// <summary>连通性测试结果（三态 + 耗时 + 拉到的模型数；ErrorCode 走 LP.AI.*，界面按键取词）。</summary>
+public sealed record AiConnectivityResult(
+    AiProviderStatus Status,
+    string? ErrorCode,
+    long ElapsedMs,
+    int? ModelCount);
+
+/// <summary>助手偏好（设置页「AI 服务」；与外观偏好同族：独立文件、加字段不升版本、损坏如实暴露）。</summary>
+public sealed record AiPreferences(
+    string? ProviderId = null,
+    string? ModelId = null,
+    AiMode Mode = AiMode.ConfirmEach,
+    int MaxToolCallsPerTurn = 40,
+    int MaxChangesPerTurn = 200,
+    int MaxBatchSteps = 500,
+    int CallsPerMinute = 120,
+    int ContextBudgetTokens = 32000,
+    bool AdvancedToolsEnabled = false);
