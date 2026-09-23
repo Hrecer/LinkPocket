@@ -23,7 +23,7 @@ public partial class App : Application
         // 启动序（三条，顺序是硬约束）：
         // ① 语言先定 —— 偏好的语言模式/固定码由 I18n 解释成具体语言（auto 的判据在 I18n），
         //    并登记给 ThemeService：**默认界面字体族按语言给**（决策 5），而它在 ② 里就要用。
-        //    探针与冒烟不读偏好文件，所以这里也必须容忍"偏好不存在 = 出厂中文"。
+        //    渲染检查与冒烟不读偏好文件，所以这里也必须容忍"偏好不存在 = 出厂中文"。
         var languagePrefs = LinkPocket.Theming.Preferences.UiPreferenceStore.Load(out _).Language;
         var locale = AppLocales.Resolve(languagePrefs.Mode, languagePrefs.Override, out var languageFellBack);
         ThemeService.SetActiveLanguage(locale.CodeOf());
@@ -34,9 +34,9 @@ public partial class App : Application
         // 否则 M3 角色画刷会被 App.xaml 的 ResourceDictionary 整体覆盖。
         //
         // 历史（为什么要收成一处）：原先这里是「M3Theme.Apply(FromSeed(#6750A4)) + 手打 3 个表面补丁」，
-        // 而探针又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且画刷写死在 UIKit.xaml，
+        // 而渲染检查又抄了一份同样的补丁 —— 双份事实源，改主题必漂移；且画刷写死在 UIKit.xaml，
         // 换种子只改库角色、画刷纹丝不动（换主题只会"半主题化"）。
-        // 现在：颜色计算全在 LinkPocket.Theming，宿主与探针都只调 ThemeService。
+        // 现在：颜色计算全在 LinkPocket.Theming，宿主与渲染检查都只调 ThemeService。
         var (fellBack, reason) = ThemeService.ApplyFromPreferences(Resources);
 
         // ③ 语言切换的宿主级副作用（显示文本一律由取词绑定自己重算，不在这里重投影）。
@@ -65,10 +65,10 @@ public partial class App : Application
 
         // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
         // ⚠️ 注意：本方法的调用**由 Application 的构造函数排进 Dispatcher 队列**，与是否调用 Run() 无关——
-        // 任何一次泵消息都会让它跑起来。探针（SmartProbe）不 Run 但照样泵消息，所以在修掉这点之前
-        // 它自己建的主窗口之外会**再多出一个**本方法建的完整主窗口，探针于是量到了另一棵可视树
-        // （实测：4494 个可见行单元格里只有 1 个在探针自己那棵树里）。
-        // 探针侧现在的做法是：先泵一次让本方法跑完，再复用 Application.Current.MainWindow（见 Program.Main）。
+        // 任何一次泵消息都会让它跑起来。渲染检查（渲染检查）不 Run 但照样泵消息，所以在修掉这点之前
+        // 它自己建的主窗口之外会**再多出一个**本方法建的完整主窗口，渲染检查于是量到了另一棵可视树
+        // （实测：4494 个可见行单元格里只有 1 个在渲染检查自己那棵树里）。
+        // 渲染检查侧现在的做法是：先泵一次让本方法跑完，再复用 Application.Current.MainWindow（见 Program.Main）。
         // 装配失败（典型 = 旧格式库被 schema 红线拒绝 / 库文件损坏）必须对用户可见——
         // 启动期尚无窗口，用原生 MessageBox 一次性暴露原因后退出（红线特例：启动失败必须暴露）。
         try

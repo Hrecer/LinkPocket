@@ -195,7 +195,7 @@ namespace LinkPocket.ViewModels
 
                 // P4 浏览页：首次进入从根目录加载；已加载则原地重载（**入口对齐**——防抖刷新只送达
                 // "事件发生时的活跃页"，非活跃期间的变更必须在这里补：去重删除 / 书签导入 / 备份导入 /
-                // 回收站还原都会改这一页；页面显隐由 MainWindow.xaml 的 CurrentNavId DataTrigger 声明式控制）
+                // 回收站还原都会改这一页；页面显隐由 Shell 按视图注册表重投影）
                 if (navId == NavIds.Browser)
                 {
                     if (BrowserViewModel.Rows.Count == 0)

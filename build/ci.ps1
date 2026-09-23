@@ -166,7 +166,7 @@ if (-not $built) {
 Write-Host "[CI] 编译通过" -ForegroundColor Green
 
 # —— 2. 单元测试（逐项目串行：`dotnet test` 多项目并行跑会让测试宿主进程崩溃 0xC00000FD/0x80131506，
-#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，见内部文档 内部资产/文档/TESTING.md §2 与 内部资产/文档/WARNINGS.md ——）
+#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，）
 Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
 $testProjects = @(
     "tests/LinkPocket.Architecture.Tests",
@@ -229,7 +229,7 @@ Write-Host "[CI] 协议冒烟与性能门槛通过" -ForegroundColor Green
 
 # —— 收尾：关掉本次门禁起的常驻编译服务器 ——
 # `dotnet build` 默认 nodeReuse:true，跑完会常驻约 15 分钟（24 核机器实测 23 个进程 / ~3.3GB），
-# 多代叠加会逼近本机提交上限（曾致测试宿主 0xC00000FD，见内部文档 内部资产/文档/WARNINGS.md 第 26 条）。
+# 多代叠加会逼近本机提交上限（曾致测试宿主 0xC00000FD，第 26 条）。
 # 门禁是"跑完即净"的场景：收尾统一关掉（代价：下次编译冷启动约 +7s）。
 try {
     $null = & $dotnet build-server shutdown 2>&1

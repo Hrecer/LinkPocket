@@ -16,7 +16,7 @@ namespace LinkPocket.Architecture.Tests;
 /// </para>
 /// <para>
 /// <b>实测</b>：T2 改名后 <c>PillToneToBrushConverter</c> 仍查 <c>"AccentBtn"</c> → 回收站右栏
-/// 「还原」图标钮 Foreground = null（探针断言 <c>fg= accent=#FFA18EB0</c> 抓到）。故这条必须机器化。
+/// 「还原」图标钮 Foreground = null（渲染检查断言 <c>fg= accent=#FFA18EB0</c> 抓到）。故这条必须机器化。
 /// </para>
 /// </remarks>
 public class LegacyBrushKeyTests

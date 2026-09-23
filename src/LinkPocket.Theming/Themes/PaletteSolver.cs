@@ -67,7 +67,7 @@ public sealed record ThemeFamilies(
 /// <b>配色成员优先级最高</b>——旧模型按色相聚族、单族时用 ±60° 旋转**发明**一个支撑色相，
 /// 且只取「色相圆均值 + 最大彩度」，于是配色成员的明度被整体丢弃
 /// （实测默认主题 5 色里 3 个对界面零影响），造出来的色相又会落进肤色带/冷色带。
-/// 见 `内部资产/文档/WARNINGS.md` 76/77。
+/// 
 /// </para>
 /// <para>
 /// 现行规则 = **彩度降序占槽**（并列取更暗者先）+ **明度最高者管表面**：
@@ -774,7 +774,7 @@ public static class PaletteSolver
     /// <para>
     /// ⚠️ <b>这一支只服务"画在页面底 / 悬停底上"的面</b>：列表行 / 树行的选中底画在**卡面**上，
     /// 用这个浅档会被读成"没选中"（实测它与卡面的对比只有 1.001–1.074）。两者是**两个令牌两条判据**，
-    /// 见 <see cref="SelectedSurfaceUntilVisible"/> 与 `内部资产/文档/WARNINGS.md` 118。
+    /// 见 <see cref="SelectedSurfaceUntilVisible"/> 与 开发文档。
     /// </para>
     /// </remarks>
     private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover, double familyChroma)

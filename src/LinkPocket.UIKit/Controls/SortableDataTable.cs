@@ -198,7 +198,7 @@ public class SortableDataTable : Grid
 
         // 表头文案的**换语言失效通道**：表头是代码建的控件（`ColumnList` 里只有键），
         // 走不了 `{loc:Loc}` 那条绑定，所以由本控件听语言版本、只刷新文案（不重建表头）。
-        // ⚠️ 挂载点选**构造函数**而不是 `Loaded`：不挂进可视树的表（探针与单测直接建的那些）永远不触发
+        // ⚠️ 挂载点选**构造函数**而不是 `Loaded`：不挂进可视树的表（渲染检查与单测直接建的那些）永远不触发
         //    `Loaded`，那样"订阅了但没生效"和"没订阅"长得一模一样（实测踩过：语言切了表头还是中文）。
         //    卸在 `Unloaded`（可重挂，不泄漏），与 `LocText` 的版本绑定是同一条底层机制。
         Loc.Table.PropertyChanged += OnLocaleTableChanged;

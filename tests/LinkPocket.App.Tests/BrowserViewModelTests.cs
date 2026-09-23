@@ -9,7 +9,7 @@ namespace LinkPocket.App.Tests;
 /// <summary>
 /// 浏览页 VM 金标准（P4）：可观测行为断言——行渲染形态（文件夹在前/名称升序）、
 /// 导航与面包屑父链、跳转并选中。引擎用共享 Composition 全量装配（App 同口径），
-/// 数据全部经引擎命令读写（黑盒），不开 internal 后门；渲染回归仍由 SmartProbe 承担。
+/// 数据全部经引擎命令读写（黑盒），不开 internal 后门；渲染回归仍由 渲染检查 承担。
 /// </summary>
 public class BrowserViewModelTests
 {

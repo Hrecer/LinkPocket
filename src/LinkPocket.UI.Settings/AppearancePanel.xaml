@@ -333,7 +333,7 @@
                                     <DataTemplate>
                                         <!-- ⚠️ 宽度**钉死在 40**（= 色圆直径）：槽位文案是「颜色 1 / Colour 1」「未选 / Not set」，
                                              它的宽随语言变 9~12px，而这一格在 `WrapPanel` 里、项本身是内容自适应的
-                                             ⇒ 英文会把整项撑宽（实测 40 → 42.91px，探针几何不变式当场红）。
+                                             ⇒ 英文会把整项撑宽（实测 40 → 42.91px，几何不变式当场红）。
                                              与"空态占位卡钉宽"同一个口径：**居中 + 内容自适应 = 必须钉宽**（WARNINGS 103）。 -->
                                         <StackPanel Margin="0,0,14,12" HorizontalAlignment="Center" Width="40">
                                             <Button Cursor="Hand" FocusVisualStyle="{x:Null}"

@@ -21,7 +21,7 @@ namespace LinkPocket.Views;
 /// </list>
 ///
 /// <para>为什么自绘而不是调 OLE 原生拖拽图像：原生图像需要 shell <c>IDataObject</c> + <c>IDragSourceHelper</c>
-/// （P/Invoke + COM 互操作），观感与环境相关问题都难控制、探针也无法断言；自绘浮层挂在浏览页的 AdornerLayer 上，
+/// （P/Invoke + COM 互操作），观感与环境相关问题都难控制、渲染检查也无法断言；自绘浮层挂在浏览页的 AdornerLayer 上，
 /// 主栏 / 左栏树 / 跨栏拖拽天然是**同一套实现**（这正是本功能要的一致性）。</para>
 ///
 /// <para>⚠️ 必须 <c>IsHitTestVisible = false</c>：否则浮层会吃掉指针下方的 DragOver/Drop，
@@ -107,7 +107,7 @@ public sealed class DragVisualAdorner : Adorner
     /// <summary>
     /// 内容/尺寸变化后通知装饰层重排（**只有内容变化走这里**，指针位移不走——见 <see cref="UpdatePosition"/>）。
     /// ⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**：装饰层在 <c>AdornerLayer.Update</c> 里
-    /// 清掉缓存的变换并 invalidate measure，尺寸才会真的按新值落地（探针实测：不 Update 会冻在初次布局处）。</summary>
+    /// 清掉缓存的变换并 invalidate measure，尺寸才会真的按新值落地（渲染检查实测：不 Update 会冻在初次布局处）。</summary>
     private void RefreshLayer()
     {
         if (Parent is AdornerLayer layer) layer.Update(AdornedElement);

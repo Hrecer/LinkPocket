@@ -46,15 +46,23 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // ===== 区域视图注册 / 路由装配：navId → 页面的专一装配登记点 =====
         // 页面不再持有组合根（Host 已废除），依赖由 Shell 经窄接口注入；
         // 页面 DataContext = 各自的 ViewModel（浏览页=BrowserViewModel，其余页见下）。
-        // ⚠️ 语义说明：注册表只承载「navId → 页面 + 依赖注入」的装配登记契约（供未来宿主复用，
-        // 见 Services/ViewRegistry 文档）；页面显隐由 XAML 的 CurrentNavId 数据触发器驱动，
-        // 运行期不经过注册表解析。新增页面 = 注册一条 + 注入依赖即可。
+        // ⚠️ 唯一事实来源：**这一份注册表同时是导航表的唯一登记点** —— 页面显隐由本窗口按它重投影
+        //（见 ApplyNavVisibility），XAML 里不再有第二份 navId 字面量触发器，NavIds 常量只在注册处用一次。
+        // 新增页面 = 注册一条 + 注入依赖即可。
         _regions.Register(NavIds.Browser, BrowserPage);
         _regions.Register(NavIds.Search, SearchView);
         _regions.Register(NavIds.Trash, TrashView);
         _regions.Register(NavIds.SmartLists, SmartListsView);
         _regions.Register(NavIds.Tools, ToolsView);
         _regions.Register(NavIds.Settings, SettingsView);
+
+        // 显隐投影：CurrentNavId 变一次重投影一次（注册表 = 画布，注册了谁就管谁）
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.CurrentNavId) && DataContext is MainViewModel active)
+                ApplyNavVisibility(active.CurrentNavId);
+        };
+        ApplyNavVisibility(vm.CurrentNavId);
 
         BrowserPage.DataContext = vm.BrowserViewModel;
         // 搜索页（MVVM）：ViewModel 由容器解析（登记表见 AppServiceGraph）；「位置」路径解析
@@ -214,6 +222,22 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
         vm.SelectNavCommand.Execute(NavIds.Browser);
         _ = vm.BrowserViewModel.OpenDetailPageByIdAsync(linkId);
+    }
+
+    /// <summary>
+    /// 页面显隐的唯一投影点：当前 navId 对应的页面 Visible，其余（含未注册项）Collapsed。
+    /// </summary>
+    /// <remarks>
+    /// 旧写法在 XAML 里为六页各写一个 <c>DataTrigger</c>（字面 navId 字符串），于是"有哪些页、叫什么 id"
+    /// 存在两份表：注册表一份、XAML 一份 —— 新增页面时漏改任何一处都不会报错，只会"点不动/不显示"。
+    /// </remarks>
+    private void ApplyNavVisibility(string navId)
+    {
+        foreach (var id in _regions.NavIds)
+        {
+            if (_regions.Resolve(id) is { } page)
+                page.Visibility = string.Equals(id, navId, StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>

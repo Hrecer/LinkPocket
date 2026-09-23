@@ -148,7 +148,7 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
     /// <c>MoreAvailable</c> = 是否还有更早的行未回读（因达到上限而停）。
     /// 只回读 <c>.jsonl</c>——遗留 <c>.log</c> 是旧文本格式（"清空日志"会一并清理，但本方法不解析）。
     /// 读取以 <see cref="FileShare.ReadWrite"/> 打开：与写侧的长开句柄（Write + FileShare.ReadWrite）兼容，
-    /// 否则读会直接 IOException（见 `内部资产/文档/WARNINGS.md` 65）。
+    /// 否则读会直接 IOException。
     /// </summary>
     public LogFileTail ReadTail(int maxRecords)
     {

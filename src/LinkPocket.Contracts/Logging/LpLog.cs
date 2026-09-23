@@ -97,7 +97,7 @@ public static class LpLog
     /// 审计行）能被取齐的根据。
     /// <para>与 <see cref="BeginScope"/> 的分工：scope 是**自由字段**（进 scope 字典，用哪加哪）；
     /// 本上下文是**固定口径的三个字段**，调用链上任何记录一律自动携带——不靠"谁想起来谁手抄"，
-    /// 那种分工迟早漏（见 `内部资产/文档/WARNINGS.md` 32 的教训）。</para>
+    /// 那种分工迟早漏。</para>
     /// </summary>
     public static IDisposable BeginCall(string correlationId, string? command = null, string? caller = null)
     {

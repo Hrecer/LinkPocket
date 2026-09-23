@@ -17,7 +17,7 @@ namespace LinkPocket.ViewModels;
 /// ⚠️ 这里的键名必须与 <c>LinkPocket.Theming.Tokens.AppTokens</c> 一致：旧画刷键
 /// （<c>AccentBtn</c> / <c>WarnBg</c>）已搬进令牌体系，**代码里的字符串字面量不会跟着 XAML 一起被改名**——
 /// 漏改就会让绑定静默找不到资源（<c>TryFindResource</c> 返回 null → Foreground 为 null → 图标不显色，
-/// 实测被探针"右栏还原图标钮取色"断言抓到）。<c>ThemeRulesTests.禁止再引用旧画刷键名</c> 已把这类漏改机器化。
+/// 实测被渲染检查"右栏还原图标钮取色"断言抓到）。<c>ThemeRulesTests.禁止再引用旧画刷键名</c> 已把这类漏改机器化。
 /// </remarks>
 public sealed class PillToneToBrushConverter : IValueConverter
 {

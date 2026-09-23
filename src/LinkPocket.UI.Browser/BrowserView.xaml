@@ -150,7 +150,7 @@
                      Width = 文字宽(中文, 基准字号) + 段内距 + 模板内部件 + 余量
                      ——「全部书签」4 字 × 13px（52px）+ 段内距 24（药丸 Padding 12×2）
                      + 模板内部件 4（实测：段壳 60 时内容区 32）+ 余量 4（字体族可换，宁可略宽不裁字）⇒ 84。
-                     英文 `Bookmarks` 放不下时缩英文字号让位；中文放不下 = 这一段宽度定错了（探针 rendering 套件逐段量）。 -->
+                     英文 `Bookmarks` 放不下时缩英文字号让位；中文放不下 = 这一段宽度定错了（渲染检查逐段量）。 -->
                 <views:BreadcrumbBar x:Name="Breadcrumb" Margin="12,0,0,0"
                                      RootSegmentWidth="84"
                                      Breadcrumbs="{Binding Breadcrumbs}"

@@ -11,8 +11,8 @@ namespace LinkPocket.App.Tests;
 /// 因此树节点与主栏行走**同一条**移动路径；选中语义与主栏完全一致——拖未选中节点先单选该节点、
 /// 拖已选中节点拖动整个选中集合（树选中同样落在唯一选中集合 <c>_selectedIds</c> 里）。
 ///
-/// <para>真实手势（MouseMove 阈值 → 面板转发 → 宿主 DoDragDrop）在视图层，由 SmartProbe 探针承担；
-/// 这里锁 VM 侧语义与载荷构造（VM 单测覆盖不到的只有"事件接线"，那是探针的活）。</para>
+/// <para>真实手势（MouseMove 阈值 → 面板转发 → 宿主 DoDragDrop）在视图层，由 渲染检查 渲染检查承担；
+/// 这里锁 VM 侧语义与载荷构造（VM 单测覆盖不到的只有"事件接线"，那是渲染检查的活）。</para>
 /// </summary>
 public class TreeDragSourceTests
 {

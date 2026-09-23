@@ -13,8 +13,8 @@ namespace LinkPocket.Theming;
 /// <remarks>
 /// <para>
 /// 纪律（方案 §5.8）：<c>M3Theme.Apply</c> + 权威表写入**只在 <see cref="ThemePublisher"/> 里出现一次**；
-/// 宿主（<c>App</c>）与探针**都只能经本类**——这是"治双份事实源"的落点
-/// （原先 App 与 SmartProbe 各抄了一份"Apply + 3 个表面补丁"）。
+/// 宿主（<c>App</c>）与渲染检查**都只能经本类**——这是"治双份事实源"的落点
+/// （原先 App 与 渲染检查 各抄了一份"Apply + 3 个表面补丁"）。
 /// </para>
 /// <para>
 /// <b>为什么不提供"只调 Publish 不调 Apply"</b>：库模板自己消费的键（浮层内部等）需要基线，

@@ -10,7 +10,7 @@ namespace LinkPocket.Architecture.Tests;
 /// 四条断言，全部基于源文件文本扫描（编译期事实之外的"形状"约束）：
 /// <list type="number">
 /// <item><b>颜色计算只允许在 Theming</b>：除 <c>LinkPocket.Theming</c> 外全仓不得出现
-/// <c>Hct</c> / <c>TonalPalette</c> / <c>ColorScheme</c> 引用（白名单 = 探针工具）。</item>
+/// <c>Hct</c> / <c>TonalPalette</c> / <c>ColorScheme</c> 引用（白名单 = 渲染检查工具）。</item>
 /// <item><b>零颜色字面量</b>：<c>UI.*</c> / <c>UIKit</c> / <c>App</c> 的 <c>.xaml</c> 与 <c>.cs</c> 里
 /// 不得出现 <c>#RRGGBB</c> / <c>#AARRGGBB</c> / <c>Color.FromRgb</c> / <c>Brushes.*</c>。</item>
 /// <item><b>零警告色残留</b>：全仓不得出现 <c>WarnBg</c> / <c>WarnPillButton</c> / <c>PillTone.Warn</c>
@@ -65,7 +65,6 @@ public class ThemeRulesTests
     {
         var normalized = relativePath.Replace('\\', '/');
         return normalized.EndsWith("FaviconService.cs", StringComparison.Ordinal)
-            || normalized.EndsWith("SmartProbe/Program.cs", StringComparison.Ordinal)
             // 取色盘的**色相光谱条**：彩虹谱就是该控件的内容（类似标尺上的刻度），
             // 它不是"界面用哪支紫"这类可主题化的决策 —— 主题换了，色相环仍然是 0°→360° 的那道彩虹。
             // 这是全仓唯一允许出现"颜色谱"的位置；除它之外的取色盘颜色（叠加层端点、预览块、描边）

@@ -164,7 +164,7 @@
                      ⚠️ **两枚铅笔同色**：新体系只有一支强调色（`App.Accent.Fill` = 库 `Primary` = #6A567C），
                      不再用"深紫 vs 亮紫"两色区分。
                      UI-SPEC 对此情形的既定口径 = 「宁可同色 + 靠字形与提示区分」→ 故这里给**提示文案**，
-                     探针也改断言"工具提示可区分"而不是"颜色不同"。 -->
+                     渲染检查也改断言"工具提示可区分"而不是"颜色不同"。 -->
                 <Button Style="{StaticResource NavIconButton}"
                         Tag="{loc:Value RenameActionLabel}"
                         ToolTip="{loc:Value RenameActionLabel}"

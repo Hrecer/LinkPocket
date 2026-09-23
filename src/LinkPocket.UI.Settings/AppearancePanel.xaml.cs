@@ -39,7 +39,7 @@ namespace LinkPocket.Views
         public bool IsPickerOpen => PickerOverlay.Visibility == Visibility.Visible;
 
         /// <summary>
-        /// 装载字体候选（**唯一会枚举系统字体**的入口；进面板预热、下拉展开兜底与探针都走它）。
+        /// 装载字体候选（**唯一会枚举系统字体**的入口；进面板预热、下拉展开兜底与渲染检查都走它）。
         /// </summary>
         /// <remarks>
         /// <para>

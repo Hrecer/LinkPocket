@@ -17,7 +17,7 @@ namespace LinkPocket.App.Tests;
 /// <remarks>
 /// <para>
 /// 语言与偏好文件都是进程级状态，故挂 <see cref="LocaleStateCollection"/> 并逐用例收尾复位。
-/// 渲染与真实点击由探针的 <c>language</c> 套件覆盖（<c>CheckLanguageCard</c>）；
+/// 渲染与真实点击由渲染检查的 <c>language</c> 套件覆盖（<c>CheckLanguageCard</c>）；
 /// 这里钉的是可观测行为（分段 → 偏好的映射、字体跟随的判据）。
 /// </para>
 /// <para>

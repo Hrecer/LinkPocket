@@ -163,7 +163,7 @@ namespace LinkPocket.Views
                 {
                     // 位置列占 3 份剩余空间（名称 2 份）：路径最长、最需要宽度；
                     // 右侧四列压到刚好容纳内容 —— 日期列 114 = 12.5px 字号下 yyyy-MM-dd HH:mm
-                    // 的实测宽 105 + 9 列间余量（探针实测值；改小会截断成省略号，或让相邻列贴在一起）
+                    // 的实测宽 105 + 9 列间余量（渲染检查实测值；改小会截断成省略号，或让相邻列贴在一起）
                     // 省下的宽度全部让给名称/位置，URL 不得被压缩
                     Field = "path", LabelKey = "ui.noun.location", Width = -3,
                     SortKey = r => (IComparable)ResolveFolderName(((LinkItem)r).ListId).Resolve(),

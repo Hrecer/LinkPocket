@@ -121,7 +121,7 @@ public partial class ColorPickerPopup : UserControl
     /// <b>为什么用 <see cref="FrameworkElement.FindResource(string)"/> 而不是 TryFindResource + 兜底色</b>：
     /// 取不到令牌 = "主题尚未装配"这一真实故障，必须当场暴露（观测面纪律：禁止静默兜底）；
     /// 兜一个写死的白色会让故障表现成"一张看起来正常、实际不受主题控制的取色盘"。
-    /// 宿主（<c>App.OnStartup</c> / 探针）都保证令牌在构建窗口之前发布。
+    /// 宿主（<c>App.OnStartup</c> / 渲染检查）都保证令牌在构建窗口之前发布。
     /// </para>
     /// </remarks>
     private void ApplyTokenColors()

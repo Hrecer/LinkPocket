@@ -242,11 +242,96 @@ public static class LocFit
     /// 唯一事实源仍在宿主那边（列宽单一数据源），这里只读不推。
     /// </remarks>
     private static double DeclaredTextWidth(DependencyObject element)
+        => FindDeclaredHost(element) is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity } host
+            ? host.TextWidth
+            : 0;
+
+    /// <summary>最近的 <see cref="ITextWidthHost"/> 祖先（没有则 null）。</summary>
+    private static DependencyObject? FindDeclaredHost(DependencyObject element)
     {
         for (var node = element; node is not null; node = VisualTreeHelper.GetParent(node))
-            if (node is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity } host)
-                return host.TextWidth;
-        return 0;
+            if (node is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity })
+                return node;
+        return null;
+    }
+
+    /// <summary>
+    /// <c>LayoutUpdated</c> 的早退闸门：可用宽依赖的那几个量（声明宽 / 壳宽 / 同行兄弟宽 / 自身宽 / 字号）
+    /// 一个都没变 ⇒ 直接跳过<b>昂贵</b>的 <see cref="Project"/>（它要重走可视树算可用宽 + 分配文案缓存键）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么要这道闸</b>：<c>LayoutUpdated</c> 在<b>每个布局回合</b>都会派发（滚动一帧、动画一帧都算），
+    /// 而表格里每个自适应单元格都挂着它 —— 10k 库滚动时是"每帧几百次树遍历"。
+    /// 关键性质：竖直滚动只改 <c>TranslateTransform</c> / 视口偏移，宽度类量一个都不动 ⇒ 全部命中早退。
+    /// </para>
+    /// <para>
+    /// <b>为什么不是"干脆别订阅"</b>：<c>SizeChanged</c> 只认"自身尺寸变了"，而可用宽还可能因为
+    /// <b>同行兄弟变宽</b>（计数药丸从 9 → 10）或<b>外部声明的格宽变了</b>（表格列宽）而变化 —— 那两种
+    /// 只能靠这个回合末事件。闸门保留它，只是把"读了就能判"和"要遍历才能判"分开。
+    /// </para>
+    /// <para>
+    /// 缓存失效的判据 = 缓存的宿主/壳<b>不再是本元素的祖先</b>（模板重建、虚拟化复用换父）——
+    /// 命中失效就重新找一次并视为"形状变了"。
+    /// </para>
+    /// </remarks>
+    private static bool ShapeChanged(FrameworkElement element, FitState state)
+    {
+        var declared = 0.0;
+        if (state.DeclaredHost is { } cachedHost && cachedHost.TryGetTarget(out var hostNode)
+            && IsSelfOrAncestorOf(hostNode, element)
+            && hostNode is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity })
+        {
+            declared = ((ITextWidthHost)hostNode).TextWidth;
+        }
+        else
+        {
+            var found = FindDeclaredHost(element);
+            state.DeclaredHost = found is null ? null : new WeakReference<DependencyObject>(found);
+            if (found is ITextWidthHost { TextWidth: > 0 and < double.PositiveInfinity } fresh)
+                declared = fresh.TextWidth;
+        }
+
+        var shellWidth = 0.0;
+        var siblings = 0.0;
+        if (declared <= 0)
+        {
+            var shell = ResolveShell(element, state);
+            if (shell is not null)
+            {
+                shellWidth = shell.ActualWidth;
+                siblings = InlineSiblingsWidth(element, shell);
+            }
+        }
+
+        var self = element.ActualWidth;
+        var font = FontSizeOf(element);
+
+        var changed = !state.HasSignature
+            || Math.Abs(declared - state.SigDeclared) > 0.5
+            || Math.Abs(shellWidth - state.SigShellWidth) > 0.5
+            || Math.Abs(siblings - state.SigSiblings) > 0.5
+            || Math.Abs(self - state.SigSelfWidth) > 0.5
+            || Math.Abs(font - state.SigFontSize) > 1e-6;
+
+        state.SigDeclared = declared;
+        state.SigShellWidth = shellWidth;
+        state.SigSiblings = siblings;
+        state.SigSelfWidth = self;
+        state.SigFontSize = font;
+        state.HasSignature = true;
+        return changed;
+    }
+
+    /// <summary>取缓存的冻结壳；缓存失效（不再是祖先）时重找一次。</summary>
+    private static System.Windows.Controls.Control? ResolveShell(FrameworkElement element, FitState state)
+    {
+        if (state.Shell is { } cached && cached.TryGetTarget(out var shell) && IsSelfOrAncestorOf(shell, element))
+            return shell;
+
+        var found = FrozenControlShell(element);
+        state.Shell = found is null ? null : new WeakReference<System.Windows.Controls.Control>(found);
+        return found;
     }
 
     /// <summary>最近的**冻结宽度的控件壳**（显式 <c>Width</c> 的 <see cref="Control"/> 祖先）。</summary>
@@ -399,6 +484,26 @@ public static class LocFit
         /// 处理器必须自带"我是谁"；闭包只持 <see cref="WeakReference{T}"/>，本表的值不反向强持有元素）。
         /// </summary>
         public EventHandler? LayoutHandler;
+
+        // —— 形状签名（LayoutUpdated 的"便宜早退"依据，见 ShapeChanged）——
+        // `LayoutUpdated` 每次布局回合都会来（滚动一帧就来一次），而"可用宽"要遍历可视树才算得出来。
+        // 签名 = 可用宽真正依赖的那几个量的快照：声明宽 / 壳宽 / 同行兄弟宽 / 自身宽 / 字号；
+        // 缓存住"声明方"与"壳"的引用，就不必每回合重走树去找它们。
+
+        /// <summary>可用宽的声明方（<see cref="ITextWidthHost"/> 祖先；可能为 null）。</summary>
+        public WeakReference<DependencyObject>? DeclaredHost;
+
+        /// <summary>冻结宽度的控件壳（显式 Width 的 Control 祖先；可能为 null）。</summary>
+        public WeakReference<System.Windows.Controls.Control>? Shell;
+
+        /// <summary>是否已经采过签名。</summary>
+        public bool HasSignature;
+
+        public double SigDeclared;
+        public double SigShellWidth;
+        public double SigSiblings;
+        public double SigSelfWidth;
+        public double SigFontSize;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FrameworkElement, FitState> States = new();
@@ -512,7 +617,7 @@ public static class LocFit
         // ⚠️ **当前语言不允许缩字号时不下探**（中文侧保持基准字号，见 AppLocale.AllowsFontShrink）。
         //    放不下就是"这一格的宽度按别的语言定的"——该修的是那一格的宽度（按中文基线放宽），
         //    不是把中文的字缩小。这里如实保持基准字号：字可能压到相邻格上，那**正是要被看见的信号**
-        //    （探针 `--only rendering` 会报"表头放不下"），而不是靠缩字号把它藏起来。
+        //    （渲染检查 `--only rendering` 会报"表头放不下"），而不是靠缩字号把它藏起来。
         if (!Loc.AllowsFontShrink) result = new FitResult(baseSize);
         PlaceFontSize(element, result.Size);   // 值不变不写（回环防线）
 
@@ -558,7 +663,8 @@ public static class LocFit
         //    ——用闭包把元素带进处理器，且只持**弱引用**（FitState 的值不反向强持有元素，见其注释，
         //    见 `WARNINGS` 117）。旧实现按 `sender is FrameworkElement` 认人，这一路投影实际一次都没跑过。
         var weak = new WeakReference<FrameworkElement>(element);
-        state.LayoutHandler = (_, _) => { if (weak.TryGetTarget(out var fe)) Project(fe); };
+        // 回合末事件先过"形状变了没有"这道便宜闸（见 ShapeChanged）：没变就不进昂贵的投影。
+        state.LayoutHandler = (_, _) => { if (weak.TryGetTarget(out var fe) && ShapeChanged(fe, state)) Project(fe); };
         element.LayoutUpdated += state.LayoutHandler;
         element.SizeChanged -= OnSizeChanged;
         element.SizeChanged += OnSizeChanged;

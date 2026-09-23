@@ -55,7 +55,7 @@ internal static class StaPump
     /// <b>一次布局回合结束时经 Dispatcher 排入</b>，而直接调 <c>UpdateLayout()</c> 只跑完测量与排列、
     /// 从不排那个通知 —— 于是"依赖布局后通知"的行为（<c>LocFit</c> 就在那条路径上）在测试里
     /// <b>一次都不会被执行</b>，而断言会以"什么都没发生"的形式静默通过或假红。
-    /// 真实窗口有消息循环，所以这个坑只在测试里出现（见 <c>WARNINGS</c> 的"探针静默空跑"同族教训）。
+    /// 真实窗口有消息循环，所以这个坑只在测试里出现（见 <c>WARNINGS</c> 的"渲染检查静默空跑"同族教训）。
     /// </remarks>
     public static void PumpFor(int ms)
     {

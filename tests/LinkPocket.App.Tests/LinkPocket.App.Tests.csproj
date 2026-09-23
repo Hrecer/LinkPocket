@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- App.Tests 金标准（2026-09-18）：UiEventHub 300ms 防抖 + 页面 VM 行为单测。
-       界面 VM 仍由 SmartProbe 承担渲染回归（本工程只做可观测行为断言）；
+       界面 VM 的渲染回归由真实窗口自动化承担（本工程只做可观测行为断言）；
        VM 经共享 Composition 驱动真实引擎（临时库），不开 internal 后门。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>

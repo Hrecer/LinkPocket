@@ -29,7 +29,7 @@ namespace LinkPocket.App.Tests;
 /// <item>只有 3 个"必须验证落盘/应用"的用例才碰全局，且各自在 <see cref="Dispose"/> 里复位；</item>
 /// <item><b>绝不触发系统字体枚举</b>（<c>EnsureFontsLoaded</c> → <c>Fonts.SystemFontFamilies</c>）：
 /// 那条路径会拉起 WPF 字体缓存服务等进程级副作用，在测试宿主里会挂住不退
-/// （实测：一旦触发，宿主 20s+ 不退出，CI 看起来"卡死"）。字体**候选列表**由 SmartProbe 在真实窗口覆盖。</item>
+/// （实测：一旦触发，宿主 20s+ 不退出，CI 看起来"卡死"）。字体**候选列表**由 渲染检查 在真实窗口覆盖。</item>
 /// </list>
 /// </remarks>
 [Collection(UiPreferencesCollection.Name)]

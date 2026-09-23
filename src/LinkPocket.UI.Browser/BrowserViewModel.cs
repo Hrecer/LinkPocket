@@ -649,7 +649,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>路径编辑状态变化 → 属性通知 + 命令可用性（控制器只发一个 Changed）。
     /// ⚠️ **顺序敏感**（实测）：文本类通知必须先于 `IsPathEditing` —— 控件在"进入编辑态"的通知里
-    /// 做聚焦 + 整名全选，若此时 TextBox 还是旧文本，随后的文本更新会把选区清掉（探针"进入即全选"红）。</summary>
+    /// 做聚焦 + 整名全选，若此时 TextBox 还是旧文本，随后的文本更新会把选区清掉（渲染检查"进入即全选"红）。</summary>
     private void OnPathEditChanged()
     {
         OnPropertyChanged(nameof(PathEditText));

@@ -558,7 +558,7 @@ public static class StringTables
         new StringRow("shortcut.page.tools", "工具页", "Tools"),
         new StringRow("shortcut.page.settings", "设置页", "Settings"),
         new StringRow("shortcut.doc.title", "# LinkPocket 快捷键总表（每页一组、组间不互通）", "# LinkPocket Shortcut Reference (one group per page, scopes do not cross pages)"),
-        new StringRow("shortcut.doc.generated", "> **本文件由 `ShortcutCatalog` 生成**（工具：`dotnet run --project 内部资产/工具/SmartProbe -- --dump-shortcuts <路径>`），", "> **Generated from `ShortcutCatalog`** (tool: `dotnet run --project 内部资产/工具/SmartProbe -- --dump-shortcuts <path>`),"),
+        new StringRow("shortcut.doc.generated", "> **本文件由 `ShortcutCatalog` 生成**（改键位：改 `ShortcutCatalog` 后重新导出），", "> **Generated from `ShortcutCatalog`** (to change a key: edit `ShortcutCatalog`, then re-export),"),
         new StringRow("shortcut.doc.editSource", "> 请勿手改：改键位 → 改 `src/LinkPocket.UIKit/Input/ShortcutCatalog.cs` → 重新导出。", "> do not edit by hand: change the keys in `src/LinkPocket.UIKit/Input/ShortcutCatalog.cs`, then re-export."),
         new StringRow("shortcut.doc.isolation", "> 隔离规则：一页一组作用域，页面之间既不共享作用域也不继承彼此的作用域链；", "> Isolation: one scope group per page; pages share no scope and do not inherit each other's scope chain;"),
         new StringRow("shortcut.doc.globalKeys", "> 只有浏览页注册全局键（Ctrl+E/F 切搜索页）。", "> only the Browse page registers global keys (Ctrl+E/F switch to Search)."),

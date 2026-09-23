@@ -327,7 +327,7 @@ public class ThemeContrastTests
     {
         // "给出的 4/5 个颜色要全部用上"的机器化判据 = **逐槽 leave-one-out**：
         // 去掉任一个身份色，至少有一个语义令牌变值。
-        // （旧模型实测：默认主题 5 色里 3 个去掉后 0 个令牌变化 —— 见 内部资产/文档/WARNINGS.md 77。）
+        // （旧模型实测：默认主题 5 色里 3 个去掉后 0 个令牌变化 —— ）
         var baseline = PaletteSolver.Solve(ThemeCatalog.Default);
         for (var slot = 0; slot < ThemeCatalog.Default.Palette.Count; slot++)
         {
