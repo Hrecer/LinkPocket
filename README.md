@@ -74,7 +74,9 @@ There is no installer and nothing to configure. Your library (database, settings
 
 ## Interface
 
-*Screenshots of the browse, search, duplicate-finder and appearance screens are added with the 3.0.0 release.*
+![The browse view: folder tree on the left, the bookmark list in the middle, details for the selected bookmark on the right](docs/screenshots/browse.png)
+
+*The browse view — your folder tree on the left, the bookmark list in the middle, details for the selected bookmark on the right.*
 
 ## Credits
 
