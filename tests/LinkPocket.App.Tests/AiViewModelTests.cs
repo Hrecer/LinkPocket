@@ -1,5 +1,7 @@
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.UI.Ai;
+using LinkPocket.Views;
 using Xunit;
 
 namespace LinkPocket.App.Tests;
@@ -178,6 +180,138 @@ public class AiViewModelTests
 
         await vm.AuditPrevAsync();
         Assert.Equal(1, stub.AuditQueries[^1].Page);
+    }
+
+    // ── 审批卡（P3-7）：焦点请求 / 拒绝路径 / 卡片投影 / 动作短语键覆盖 ──
+
+    private static AiApproval Approval(
+        string id = "a-1",
+        string command = "folders.create",
+        AiApprovalDecision? decision = null,
+        int targetCount = 1,
+        IReadOnlyList<string>? targetNames = null,
+        int targetMore = 0,
+        string? targetPath = null,
+        string? allowScope = null,
+        string? impact = null,
+        IReadOnlyList<AiApprovalStep>? steps = null)
+        => new(id, 1, "t-1", "c-1", command, false, targetCount, targetNames ?? [],
+            null, impact, null, decision, decision is null ? null : "拒绝理由", 0, DateTimeOffset.UtcNow,
+            targetMore, targetPath, steps, allowScope);
+
+    [Fact]
+    public async Task 审批_待批时请求把焦点给拒绝_作决定后不再抢焦点()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        var requested = new List<string>();
+        vm.ApprovalFocusRequested += approvalId => requested.Add(approvalId);
+
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1", Approval: Approval()));
+
+        Assert.Equal("a-1", vm.OpenApprovalId);
+        Assert.Equal("a-1", Assert.Single(requested));
+
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1",
+            Approval: Approval(decision: AiApprovalDecision.Reject)));
+
+        Assert.Null(vm.OpenApprovalId);
+        Assert.Single(requested);   // 已作决定的卡不再请求焦点
+    }
+
+    [Fact]
+    public async Task 审批_拒绝路径把理由带回助手并清空理由输入()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1", Approval: Approval()));
+        vm.ApprovalReason = "别动我的书签";
+
+        await vm.RespondAsync(Assert.Single(vm.Approvals), AiApprovalDecision.Reject);
+
+        var call = Assert.Single(stub.ApprovalCalls);
+        Assert.Equal("s-1", call.SessionId);
+        Assert.Equal("a-1", call.ApprovalId);
+        Assert.Equal(AiApprovalDecision.Reject, call.Decision);
+        Assert.Equal("别动我的书签", call.Reason);
+        Assert.Equal("", vm.ApprovalReason);
+    }
+
+    [Fact]
+    public async Task 审批卡_对象作用域逐步骤与影响面全部投影出来()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1",
+            Approval: Approval(command: "batch.run", targetCount: 7, targetNames: ["工作", "临时"], targetMore: 5,
+                allowScope: "batch.run", impact: "entire database",
+                steps:
+                [
+                    new AiApprovalStep(1, "folders.create", "工作", 1, false, null),
+                    new AiApprovalStep(2, "trash.purge", null, 3, true, "skip_and_log"),
+                ])));
+
+        var card = vm.Feed.Single(i => i.Kind == AiFeedItem.ItemKind.Approval);
+
+        Assert.Equal("ai.action.batch.run", card.ActionKey);                      // 做什么
+        Assert.True(card.TargetValue.IsLiteral);
+        Assert.Equal("工作, 临时", card.TargetValue.Args.Span[0]);                // 动哪些对象
+        Assert.True(card.HasMoreTargets);                                          // 名称截断如实标注
+        Assert.Equal("ai.approve.target.more", card.MoreTargetsValue.Key);
+        Assert.Equal(5, card.MoreTargetsValue.Args.Span[0]);
+        Assert.True(card.HasImpact);
+        Assert.Equal("ai.approve.impact.database", card.ImpactValue.Key);          // 影响面来自引擎
+        Assert.True(card.HasApprovalSteps);                                        // 批 = 逐步骤影响
+        Assert.Equal(2, card.ApprovalSteps.Count);
+        Assert.Equal("ai.approve.steps.row", card.ApprovalSteps[0].IndexLabel.Key);
+        Assert.Equal("工作", card.ApprovalSteps[0].TargetValue.Args.Span[0]);
+        Assert.True(card.ApprovalSteps[1].IsDestructive);
+        Assert.Equal("ai.onError.skipAndLog", card.ApprovalSteps[1].OnErrorValue.Key);
+        Assert.True(card.HasAllowScope);                                           // 会话允许必须显示作用域
+        Assert.Equal("ai.approve.allowScope", card.AllowScopeValue.Key);
+        Assert.Equal("batch.run", card.AllowScopeValue.Args.Span[0]);
+        Assert.True(card.HasPreview);
+    }
+
+    [Fact]
+    public async Task 审批卡_一点可看的影响都没有_如实说明无法预览()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1",
+            Approval: Approval(command: "undo.undo", targetCount: 0)));
+
+        var card = vm.Feed.Single(i => i.Kind == AiFeedItem.ItemKind.Approval);
+
+        Assert.Equal("ai.action.undo.undo", card.ActionKey);
+        Assert.Equal("ai.approve.target.unknown", card.TargetValue.Key);
+        Assert.False(card.HasPreview);
+        Assert.False(card.HasApprovalSteps);
+        Assert.False(card.HasAllowScope);
+    }
+
+    [Fact]
+    public void 审批_每条变更命令都有动作短语键()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var keys = StringTables.Keys.ToHashSet(StringComparer.Ordinal);
+            var mutations = client.Describe().Commands.Where(c => c.Caps.HasFlag(CommandCaps.Mutation)).ToArray();
+            Assert.NotEmpty(mutations);
+
+            var missing = mutations.Where(c => !keys.Contains(AiKeyMap.Action(c.Name)))
+                .Select(c => c.Name).ToArray();
+            Assert.True(missing.Length == 0, "缺少审批动作短语键：" + string.Join(", ", missing));
+
+            // 键规范的段不许有下划线：命令名必须先转 camelCase 再拼键
+            Assert.Equal("ai.action.folders.moveBatch", AiKeyMap.Action("folders.move_batch"));
+            Assert.Equal("ai.action.trash.purgeBatch", AiKeyMap.Action("trash.purge_batch"));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
     }
 
     /// <summary>等一个可观测副作用落地（异步重载是 fire-and-forget 的界面口径；上限 2 秒，超时即失败）。</summary>

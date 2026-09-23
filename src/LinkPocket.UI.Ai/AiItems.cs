@@ -103,6 +103,61 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     /// <summary>"N 项变更"（含变量的整句 = LocValue，渲染边界取词）。</summary>
     public LocValue ChangeCountValue => Loc.K("ai.change.count", _changes.Count);
 
+    // ── 审批卡（功能书 §8.2：做什么 / 动哪些对象 / 影响预览 / 将记住的作用域 / 逐步骤）──
+
+    /// <summary>本地化动作短语键（缺命令名时回落到通用短语）。</summary>
+    public string ActionKey => Command.Length > 0 ? LinkPocket.Views.AiKeyMap.Action(Command) : "ai.action.unknown";
+
+    /// <summary>动哪些对象：已知名称原样（用户数据）→ 否则按数量 → 否则如实说"未指明"。</summary>
+    public LocValue TargetValue
+    {
+        get
+        {
+            var approval = Approval;
+            if (approval is null) return LocValue.Empty;
+            if (approval.TargetNames.Count > 0) return LocValue.Literal(string.Join(", ", approval.TargetNames));
+            return approval.TargetCount > 0
+                ? Loc.K("count.itemsN", approval.TargetCount)
+                : LocValue.Of("ai.approve.target.unknown");
+        }
+    }
+
+    /// <summary>名称列表被截断（还有 N 个对象没列出来）——如实标注，不假装列全了。</summary>
+    public bool HasMoreTargets
+        => Approval is { TargetMore: > 0, TargetNames.Count: > 0 };
+
+    public LocValue MoreTargetsValue => Loc.K("ai.approve.target.more", Approval?.TargetMore ?? 0);
+
+    /// <summary>单一目标的 canonical 路径（可解析时）；显示走当前语言投影。</summary>
+    public bool HasTargetPath => Approval?.TargetPath is not null;
+    public LocValue TargetPathValue => LocValue.Projection(Approval?.TargetPath ?? "");
+
+    /// <summary>批 / 宏的逐步骤影响（非批为空）。</summary>
+    public IReadOnlyList<AiApprovalStepRow> ApprovalSteps
+        => Approval?.Steps is { Count: > 0 } steps
+            ? steps.Select(step => new AiApprovalStepRow(step)).ToArray()
+            : [];
+    public bool HasApprovalSteps => Approval?.Steps is { Count: > 0 };
+
+    /// <summary>"批脚本步骤（共 N 步）"的标题（含变量整句 = LocValue）。</summary>
+    public LocValue StepsTitleValue
+        => Loc.K("ai.approve.steps.title", Approval?.Steps?.Count ?? 0);
+
+    /// <summary>批 / 宏却读不到脚本 → 如实说明"只按命令审批"（不假装看过了）。</summary>
+    public bool HasStepsNote => Command is "batch.run" or "macro.run" && !HasApprovalSteps;
+    public string StepsNoteKey => "ai.approve.steps.unread";
+
+    /// <summary>「本次会话总是允许」将记住的作用域（必须显示，不允许只显示"记住"）。</summary>
+    public bool HasAllowScope => Approval?.AllowScope is not null;
+    public LocValue AllowScopeValue
+        => Approval?.AllowScope is { } scope ? Loc.K("ai.approve.allowScope", scope) : LocValue.Empty;
+
+    /// <summary>影响预览：引擎下发的影响面 / 逐步骤 / 已知对象，三者都没有才如实说"无法预览"。</summary>
+    public LocValue ImpactValue => LinkPocket.Views.AiKeyMap.Impact(Approval?.PreviewSummary);
+    public bool HasImpact => Approval?.PreviewSummary is not null;
+    public bool HasPreview => HasImpact || HasApprovalSteps
+                               || Approval is { TargetCount: > 0 } or { TargetNames.Count: > 0 };
+
     public static AiFeedItem ForUser(AiMessage message)
         => new() { Kind = ItemKind.UserMessage, ItemId = message.MessageId, TurnId = message.TurnId, Text = message.Text };
 
@@ -130,7 +185,7 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         return item.WithState(call);
     }
 
-    public static AiFeedItem ForApproval(AiApproval approval, string targetSummary)
+    public static AiFeedItem ForApproval(AiApproval approval)
         => new()
         {
             Kind = ItemKind.Approval,
@@ -139,7 +194,6 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             Command = approval.Command,
             ApprovalId = approval.ApprovalId,
             IsDestructive = approval.IsDestructive,
-            Text = targetSummary,
             Approval = approval,
             IsApprovalOpen = approval.Decision is null,
         };
@@ -167,6 +221,18 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         IsApprovalOpen = approval.Decision is null;
         Raise(nameof(Approval));
         Raise(nameof(IsApprovalOpen));
+        Raise(nameof(TargetValue));
+        Raise(nameof(HasMoreTargets));
+        Raise(nameof(MoreTargetsValue));
+        Raise(nameof(HasTargetPath));
+        Raise(nameof(TargetPathValue));
+        Raise(nameof(ApprovalSteps));
+        Raise(nameof(HasApprovalSteps));
+        Raise(nameof(HasAllowScope));
+        Raise(nameof(AllowScopeValue));
+        Raise(nameof(ImpactValue));
+        Raise(nameof(HasImpact));
+        Raise(nameof(HasPreview));
     }
 
     /// <summary>挂一条本工具调用的变更（一张工具卡一张内联变更卡，见功能书 §7.5）。</summary>
@@ -197,6 +263,34 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     }
 
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>批 / 宏审批卡里的一行「逐步骤影响」（步骤号与命令是机器面原样，对象是用户数据或数量）。</summary>
+public sealed class AiApprovalStepRow(AiApprovalStep step)
+{
+    public AiApprovalStep Step { get; } = step;
+
+    public int Index => Step.Index;
+    public string Command => Step.Command;
+    public bool IsDestructive => Step.IsDestructive;
+
+    /// <summary>"步骤 N"（含变量整句 = LocValue，数字走 Invariant）。</summary>
+    public LocValue IndexLabel => Loc.K("ai.approve.steps.row", Step.Index);
+
+    /// <summary>本步骤的对象：名称（用户数据原样）→ 数量 → 未指明（模板占位符不当成值）。</summary>
+    public LocValue TargetValue => Step.TargetName is { Length: > 0 } name
+        ? LocValue.Literal(name)
+        : Step.TargetCount > 0
+            ? Loc.K("count.itemsN", Step.TargetCount)
+            : LocValue.Of("ai.approve.target.unknown");
+
+    /// <summary>错误策略（脚本没写 = 不显示该段）：已知取键，未知原样显示机器面标识符（不猜、不吞）。</summary>
+    public bool HasOnError => Step.OnError is not null;
+    public LocValue OnErrorValue => Step.OnError is null
+        ? LocValue.Empty
+        : LinkPocket.Views.AiKeyMap.OnError(Step.OnError) is { } key
+            ? LocValue.Of(key)
+            : LocValue.Literal(Step.OnError);
 }
 
 /// <summary>按 Kind 选模板（模板都在 AiView.xaml 的资源里，键名 = ai.template.*）。</summary>

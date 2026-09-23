@@ -22,6 +22,7 @@ public sealed class StubAiAssistant : IAiAssistant
     public List<AiModelDraft> SaveModelCalls { get; } = [];
     public List<AiPreferences> SavePreferencesCalls { get; } = [];
     public List<AiAuditQuery> AuditQueries { get; } = [];
+    public List<(string SessionId, string ApprovalId, AiApprovalDecision Decision, string? Reason)> ApprovalCalls { get; } = [];
     public int UndoCalls { get; private set; }
 
     public void RaiseNotify(AiNotification notification) => Notified?.Invoke(notification);
@@ -111,7 +112,11 @@ public sealed class StubAiAssistant : IAiAssistant
     public Task CancelTurnAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
 
     public Task RespondToApprovalAsync(string sessionId, string approvalId, AiApprovalDecision decision,
-        string? reason = null, CancellationToken ct = default) => Task.CompletedTask;
+        string? reason = null, CancellationToken ct = default)
+    {
+        ApprovalCalls.Add((sessionId, approvalId, decision, reason));
+        return Task.CompletedTask;
+    }
 
     public Task ExportAsync(string sessionId, AiExportFormat format, string outputPath, CancellationToken ct = default)
         => Task.CompletedTask;

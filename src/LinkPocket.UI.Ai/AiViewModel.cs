@@ -107,6 +107,23 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
 
     public string? ActiveSessionId => _activeSessionId;
 
+    private string? _openApprovalId;
+
+    /// <summary>有待批审批的 ID（null = 没有待批）。视图据此把**默认焦点放到「拒绝」**
+    /// （功能书 §8.2 交互红线：默认焦点落在拒绝上，不给"顺手回车就放行"留门）。</summary>
+    public string? OpenApprovalId
+    {
+        get => _openApprovalId;
+        private set
+        {
+            if (!Set(ref _openApprovalId, value, nameof(OpenApprovalId))) return;
+            if (value is not null) ApprovalFocusRequested?.Invoke(value);
+        }
+    }
+
+    /// <summary>出现了一张待批审批（视图把焦点移到该卡的「拒绝」按钮）。</summary>
+    public event Action<string>? ApprovalFocusRequested;
+
     /// <summary>进页对齐：刷新选择与服务商状态；无会话则建一个（缺省模式取偏好）。</summary>
     public async Task LoadAsync()
     {
@@ -160,7 +177,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
             Feed.Add(message.Role == AiRole.User ? AiFeedItem.ForUser(message) : AiFeedItem.ForAssistant(message));
         foreach (var call in detail.ToolCalls) Feed.Add(AiFeedItem.ForTool(call));
         foreach (var approval in detail.Approvals)
-            Feed.Add(AiFeedItem.ForApproval(approval, DescribeTarget(approval)));
+            Feed.Add(AiFeedItem.ForApproval(approval));
+        OpenApprovalId = detail.Approvals.LastOrDefault(a => a.Decision is null)?.ApprovalId;   // 进页仍待批 → 焦点给「拒绝」
 
         ApplySession(detail);
         AttachInlineChanges();
@@ -311,8 +329,12 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     private void UpsertApproval(AiApproval approval)
     {
         var existing = Feed.FirstOrDefault(i => i.ItemId == approval.ApprovalId);
-        if (existing is null) Feed.Add(AiFeedItem.ForApproval(approval, DescribeTarget(approval)));
+        if (existing is null) Feed.Add(AiFeedItem.ForApproval(approval));
         else existing.Apply(approval);
+
+        // 待批 → 焦点请求；作决定 → 撤下（同一张卡只请求一次）
+        if (approval.Decision is null) OpenApprovalId = approval.ApprovalId;
+        else if (_openApprovalId == approval.ApprovalId) OpenApprovalId = null;
 
         OnApprovalRecorded(approval);
     }

@@ -120,7 +120,22 @@ public enum AiApprovalDecision
     RejectAndStop = 3,
 }
 
-/// <summary>一次审批（请求字段 + 决定的最终结果；理由原样回灌模型）。</summary>
+/// <summary>
+/// 批 / 宏审批卡里的一行「逐步骤影响」（功能书 §8.2：批脚本审批必须逐步骤可见）。
+/// <paramref name="Command"/> 是机器面命令名；<paramref name="TargetName"/> 是用户数据（名称 / 标题 / URL），
+/// 解析不出名称时为 null（由 <see cref="TargetCount"/> 如实报数量）；模板占位符（<c>{ref…}</c>）
+/// 不是值——既不当名称也不当数量，此时 <see cref="TargetCount"/> = 0（未指明）。
+/// </summary>
+public sealed record AiApprovalStep(
+    int Index,
+    string Command,
+    string? TargetName,
+    int TargetCount,
+    bool IsDestructive,
+    string? OnError);
+
+/// <summary>一次审批（请求字段 + 决定的最终结果；理由原样回灌模型）。
+/// 影响面取自**入参与引擎**（不是模型自述）：解析有上限，超出只报数量并如实标记。</summary>
 public sealed record AiApproval(
     string ApprovalId,
     int Seq,
@@ -136,7 +151,15 @@ public sealed record AiApproval(
     AiApprovalDecision? Decision,
     string? Reason,
     long WaitMs,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    /// <summary>目标名单被截断：还有 <c>TargetMore</c> 个对象没列出来（不猜、不静默丢）。</summary>
+    int TargetMore = 0,
+    /// <summary>单一目标的 canonical 路径（可解析时；界面按当前语言投影显示）。</summary>
+    string? TargetPath = null,
+    /// <summary>批 / 宏的逐步骤影响（非批为 null）。</summary>
+    IReadOnlyList<AiApprovalStep>? Steps = null,
+    /// <summary>「本次会话总是允许」将记住的作用域（机器面：工具名 [+ 对象范围]；必须显示给用户）。</summary>
+    string? AllowScope = null);
 
 /// <summary>回合状态机。</summary>
 public enum AiTurnState

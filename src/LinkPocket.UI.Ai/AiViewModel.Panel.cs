@@ -186,9 +186,6 @@ public sealed partial class AiViewModel
         _lastTurnId = detail.Changes.Count > 0 ? detail.Changes[^1].TurnId : detail.Turns.LastOrDefault()?.TurnId;
         _auditPage = 1;
         ApplyPanelFilter();
-        Approvals.Clear();
-        foreach (var approval in _allApprovals.OrderByDescending(a => a.Seq))
-            Approvals.Add(new AiApprovalRow(approval, DescribeTarget(approval)));
         if (IsEngineTab) _ = ReloadEngineAuditAsync();
     }
 
@@ -241,6 +238,18 @@ public sealed partial class AiViewModel
             if (!Matches(change, kind, search)) continue;
             SessionChanges.Add(new AiChangeRow { Change = change });
             if (change.TurnId == _lastTurnId) TurnChanges.Add(new AiChangeRow { Change = change });
+        }
+
+        // 审批记录页签同样在这里重投影（回合进行中新增的审批也必须当场出现，不等换会话）
+        Approvals.Clear();
+        foreach (var approval in _allApprovals.OrderByDescending(a => a.Seq))
+        {
+            var target = DescribeTarget(approval);
+            if (search.Length > 0
+                && !approval.Command.Contains(search, StringComparison.OrdinalIgnoreCase)
+                && !target.Contains(search, StringComparison.OrdinalIgnoreCase))
+                continue;
+            Approvals.Add(new AiApprovalRow(approval, target));
         }
 
         var failed = _allToolCalls.Count(c => c.State == AiToolCallState.Failed);

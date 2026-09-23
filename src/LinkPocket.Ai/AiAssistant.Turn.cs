@@ -222,9 +222,24 @@ public sealed partial class AiAssistant
     {
         var descriptor = _tools.Descriptor(request.Name);
         var exposed = _tools.IsExposed(request.Name, preferences.AdvancedToolsEnabled);
-        var decision = exposed
-            ? AiPermissionChain.Decide(descriptor, file.Summary.Mode, HasSessionAllowance(request.Name))
-            : AiToolDecision.Deny;
+        // 批 / 宏先取脚本：**每一步都要过同一条暴露集闸**（否则"永不暴露"能被 batch.run 绕过；
+        // 关键不变量 = 审批只能把"要问"变成"允许"，永远不能把"禁止"变成"允许"）
+        var steps = await BuildStepsAsync(request, engineSession, run).ConfigureAwait(false);
+        var blockedStep = steps?.FirstOrDefault(step => step.Command.Length > 0
+            && !_tools.IsExposed(step.Command, preferences.AdvancedToolsEnabled));
+        // 七步链的每次判定都带显式原因并写日志（功能书 §8.1：放行/拦截都要能回答"为什么"）
+        var verdict = blockedStep is null
+            ? AiPermissionChain.Evaluate(descriptor, file.Summary.Mode, HasSessionAllowance(request.Name), exposed)
+            : new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Deny,
+                $"step_not_exposed:{blockedStep.Command}");
+        var decision = verdict.Decision;
+        LpLog.Write(LogLevel.Debug, "ai.permission", $"tool {request.Name}: {decision} ({verdict.Reason})",
+            props: new Dictionary<string, object?>
+            {
+                ["tool"] = request.Name,
+                ["decision"] = decision.ToString(),
+                ["reason"] = verdict.Reason,
+            });
 
         var callId = $"c-{Guid.NewGuid():N}";
         var call = new AiToolCall(callId, NextSeq(file), run.TurnId, request.Name, AiToolCallState.Pending,
@@ -240,31 +255,26 @@ public sealed partial class AiAssistant
             {
                 State = AiToolCallState.Rejected,
                 ErrorCode = AiErrors.ToolCallInvalid,
-                ResultJson = JsonSerializer.Serialize(new { error = "tool_not_allowed" }),
+                ResultJson = JsonSerializer.Serialize(new { error = "tool_not_allowed", reason = verdict.Reason }),
             });
+            // 拒绝回灌为**结构化工具结果**（含原因），模型同轮即可换方案（功能书 §8.4）
             file.Chat.Add(new AiChatMessage("tool",
-                JsonSerializer.Serialize(new { error = "tool_not_allowed", tool = request.Name }), null, request.Id));
+                JsonSerializer.Serialize(new { error = "tool_not_allowed", tool = request.Name, reason = verdict.Reason }),
+                null, request.Id));
             Persist(file);
             return false;
         }
 
-        // 破坏性命令：先探测影响面（不带令牌的校验类错误零副作用），审批卡据此如实描述
-        EngineError? confirm = null;
-        if (descriptor?.IsDestructive == true)
-        {
-            try
-            {
-                await ExecuteAsync(request, engineSession, run, token: null).ConfigureAwait(false);
-            }
-            catch (EngineException ex) when (ex.Error.Code == EngineErrors.ConfirmRequired)
-            {
-                confirm = ex.Error;
-            }
-        }
+        // 破坏性命令：先探测影响面（不带令牌的调用只可能命中校验类错误 = 零副作用），审批卡据此如实描述
+        var confirm = descriptor?.IsDestructive == true
+            ? await ProbeConfirmAsync(request, engineSession, run).ConfigureAwait(false)
+            : null;
 
+        // 影响面 = 入参与引擎给的事实（对象名称 / 数量 / 路径），不看模型怎么说——**只为审批卡解析**
         if (decision == AiToolDecision.Ask || confirm is not null)
         {
-            var approval = BuildApproval(file, run, call, descriptor, confirm);
+            var targets = await DescribeTargetsAsync(request, engineSession, run).ConfigureAwait(false);
+            var approval = BuildApproval(file, run, call, descriptor, confirm, targets, steps);
             file.Approvals.Add(approval);
             SetTurn(file, run, AiTurnState.AwaitingApproval);
             UpdateCall(file, call, c => c with { State = AiToolCallState.AwaitingApproval });
@@ -317,10 +327,36 @@ public sealed partial class AiAssistant
         UpdateCall(file, call, c => c with { State = AiToolCallState.Running });
         try
         {
-            var token = confirm?.Details is { } details && details.TryGetProperty("confirm_token", out var element)
-                ? element.GetString()
-                : null;
-            var result = await ExecuteAsync(request, engineSession, run, token, call.CallId).ConfigureAwait(false);
+            var confirmRetries = 0;
+
+            // 「批准后重发」（功能书 §8.3）：许可是用户给的、令牌是引擎发的——重发只搬运引擎**新发**的那枚，
+            // 绝不缓存、绝不自造、绝不复用过期令牌。换令牌不打扰用户第二次：对象与影响面没变，
+            // 变的只是那枚 60s 一次性的运输凭证。
+            async Task<CommandResult<JsonElement>> ExecuteWithConfirmAsync()
+            {
+                while (true)
+                {
+                    try
+                    {
+                        return await ExecuteAsync(request, engineSession, run, ConfirmTokenOf(confirm), call.CallId)
+                            .ConfigureAwait(false);
+                    }
+                    catch (EngineException ex) when (IsConfirmSignal(ex) && confirmRetries++ < MaxConfirmRetries)
+                    {
+                        confirm = ex.Error;
+                        if (ConfirmTokenOf(confirm) is null)
+                        {
+                            // 这条错误不带新令牌（令牌过期，引擎要"从头再来"）→ 无令牌重发逼引擎签一枚新的
+                            confirm = await ProbeConfirmAsync(request, engineSession, run).ConfigureAwait(false)
+                                     ?? ex.Error;
+                        }
+                        LpLog.Debug($"confirm re-issue {confirmRetries}/{MaxConfirmRetries}: {ex.Error.Code}",
+                            category: "ai.permission");
+                    }
+                }
+            }
+
+            var result = await ExecuteWithConfirmAsync().ConfigureAwait(false);
             stopwatch.Stop();
 
             // 台账：引擎字段级 diff 优先（名称/路径按"变更发生时刻"解析）；可撤销性以引擎撤销栈为准
@@ -410,8 +446,8 @@ public sealed partial class AiAssistant
         return new CommandResult<JsonElement>(true, ToElement(data), null, null);
     }
 
-    /// <summary>按引擎线的 snake_case 口径把返回值转成 JSON（模型与台账看到同一形状）。</summary>
-    private static JsonElement ToElement(object? data)
+    /// <summary>按引擎线的 snake_case 口径把返回值转成 JSON（模型、台账与审批卡看到同一形状）。</summary>
+    internal static JsonElement ToElement(object? data)
         => data is null
             ? JsonSerializer.SerializeToElement(new { })
             : JsonSerializer.SerializeToElement(data, ResultJson);
@@ -456,21 +492,89 @@ public sealed partial class AiAssistant
         }
     }
 
-    private static string? NameFromResult(JsonElement data)
+    /// <summary>单个工具调用最多搬运几枚确认令牌（每枚都由引擎新签；超出 = 引擎反复要求确认，如实失败）。</summary>
+    private const int MaxConfirmRetries = 2;
+
+    /// <summary>破坏性命令的影响面探测：不带令牌的调用只可能命中 <c>LP.SEC.003</c>（校验类、零副作用）。</summary>
+    private async Task<EngineError?> ProbeConfirmAsync(AiToolCallRequest request, Session engineSession, TurnRun run)
     {
-        if (data.ValueKind != JsonValueKind.Object) return null;
-        foreach (var field in new[] { "name", "title", "url" })
-            if (data.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String)
-                return value.GetString();
-        return null;
+        try
+        {
+            await ExecuteAsync(request, engineSession, run, token: null).ConfigureAwait(false);
+            return null;
+        }
+        catch (EngineException ex) when (ex.Error.Code == EngineErrors.ConfirmRequired)
+        {
+            return ex.Error;
+        }
+        catch (EngineException ex)
+        {
+            // 探测阶段的其它错误不进审批卡（把"将要失败"当成"影响面"是误导）——执行阶段原样上报
+            LpLog.Debug($"destructive probe returned {ex.Error.Code} (no confirm impact)", category: "ai.permission");
+            return null;
+        }
+    }
+
+    private static string? ConfirmTokenOf(EngineError? confirm)
+        => confirm?.Details is { } details && details.TryGetProperty("confirm_token", out var token)
+           && token.ValueKind == JsonValueKind.String
+            ? token.GetString()
+            : null;
+
+    /// <summary>引擎要求（再次）确认：缺令牌 / 令牌过期——两者都只能由引擎新签的令牌解决。</summary>
+    private static bool IsConfirmSignal(EngineException ex)
+        => ex.Error.Code is EngineErrors.ConfirmRequired or EngineErrors.ConfirmExpired;
+
+    /// <summary>审批卡的对象面：名称类参数直接用；ID 经 <c>locate.resolve</c> 换名称与 canonical 路径（有上限）。</summary>
+    private async Task<AiApprovalBrief.Targets> DescribeTargetsAsync(AiToolCallRequest request,
+        Session engineSession, TurnRun run)
+    {
+        var parsed = AiApprovalBrief.Parse(ParseDataOrEmpty(request.ArgumentsJson));
+        return await AiApprovalBrief.ResolveAsync(_client, parsed,
+                new CallerRef(CallerKind.Agent, engineSession.SessionId), run.Cts.Token)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>批 / 宏的逐步骤影响：批脚本在入参里；宏要读一次定义（读不到就如实说"只按命令审批"）。</summary>
+    private async Task<IReadOnlyList<AiApprovalStep>?> BuildStepsAsync(AiToolCallRequest request,
+        Session engineSession, TurnRun run)
+    {
+        JsonElement? script = null;
+        var args = ParseDataOrEmpty(request.ArgumentsJson);
+        if (request.Name is "batch.run" or "batch.dry_run")
+        {
+            if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty("script", out var body))
+                script = body.Clone();
+        }
+        else if (request.Name == "macro.run" && args.ValueKind == JsonValueKind.Object
+                 && args.TryGetProperty("name", out var macroName) && macroName.ValueKind == JsonValueKind.String)
+        {
+            try
+            {
+                var data = await _client.QueryAsync<object>("macro.get", new { name = macroName.GetString() },
+                        new CallOptions(Caller: new CallerRef(CallerKind.Agent, engineSession.SessionId),
+                            CorrelationId: TurnCorrelation(run.TurnId)), run.Cts.Token)
+                    .ConfigureAwait(false);
+                var element = ToElement(data);
+                if (element.ValueKind == JsonValueKind.Object) script = element.Clone();
+            }
+            catch (Exception ex) when (ex is EngineException or JsonException)
+            {
+                LpLog.Warn($"macro script unavailable on the approval card: {ex.Message}",
+                    category: "ai.permission");
+            }
+        }
+
+        return script is { } bodyElement ? AiApprovalBrief.ParseSteps(bodyElement, _tools) : null;
     }
 
     private AiApproval BuildApproval(AiSessionFile file, TurnRun run, AiToolCall call,
-        CommandDescriptor? descriptor, EngineError? confirm)
+        CommandDescriptor? descriptor, EngineError? confirm, AiApprovalBrief.Targets targets,
+        IReadOnlyList<AiApprovalStep>? steps)
     {
-        var target = NameFromResult(ParseDataOrEmpty(call.ArgsJson));
+        // impact 是**引擎**随 LP.SEC.003 下发的影响面（不是模型写的）；字符串值直接取，不留 JSON 引号
         var impact = confirm?.Details is { } details && details.TryGetProperty("impact", out var element)
-            ? element.GetRawText()
+            ? element.ValueKind == JsonValueKind.String ? element.GetString() : element.GetRawText()
             : null;
         return new AiApproval(
             ApprovalId: $"a-{Guid.NewGuid():N}",
@@ -479,15 +583,19 @@ public sealed partial class AiAssistant
             CallId: call.CallId,
             Command: call.Command,
             IsDestructive: descriptor?.IsDestructive == true,
-            TargetCount: target is null ? 1 : 1,
-            TargetNames: target is null ? [] : [target],
-            ScopeDescription: descriptor?.Impact?.ToString(),
+            TargetCount: targets.Count,
+            TargetNames: targets.Names,
+            ScopeDescription: descriptor?.Impact?.Text,
             PreviewSummary: impact,
             ErrorCodeWhenWaiting: confirm?.Code,
             Decision: null,
             Reason: null,
             WaitMs: 0,
-            At: DateTimeOffset.UtcNow);
+            At: DateTimeOffset.UtcNow,
+            TargetMore: Math.Max(0, targets.Count - targets.Names.Count),
+            TargetPath: targets.Path,
+            Steps: steps,
+            AllowScope: AiApprovalBrief.AllowScope(call.Command, targets));
     }
 
     private async Task<AiApprovalResponse> RequestApprovalAsync(AiApproval approval, TurnRun run, Action? notify = null)

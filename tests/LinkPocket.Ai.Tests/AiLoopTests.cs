@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using LinkPocket.Composition;
 using LinkPocket.Contracts;
 using LinkPocket.Engine;
@@ -86,6 +87,254 @@ public class AiLoopTests
         Assert.Equal(AiToolDecision.Allow, AiPermissionChain.Decide(create, AiMode.AutoApply, false));      // ⑥
         Assert.Equal(AiToolDecision.Ask, AiPermissionChain.Decide(create, AiMode.ConfirmEach, false));      // ⑦
         Assert.Equal(AiToolDecision.Allow, AiPermissionChain.Decide(create, AiMode.ConfirmEach, true));     // ⑤
+    }
+
+    [Fact]
+    public void 权限链_每次判定都带显式原因_暴露集压过一切()
+    {
+        var catalog = Catalog();
+        var create = catalog.Descriptor("folders.create")!;
+        var query = catalog.Descriptor("links.query")!;
+        var purge = catalog.Descriptor("trash.purge")!;
+
+        // ① 暴露集：不在暴露集 = 硬禁止（审批不能把"禁止"变成"允许"）
+        AssertReason(AiToolDecision.Deny, "not_exposed",
+            AiPermissionChain.Evaluate(create, AiMode.ConfirmEach, false, exposed: false));
+        AssertReason(AiToolDecision.Deny, "unknown_tool",
+            AiPermissionChain.Evaluate(null, AiMode.AutoApply, false));
+        // ② 只读：写拒、读放
+        AssertReason(AiToolDecision.Deny, "readonly_write", AiPermissionChain.Evaluate(create, AiMode.ReadOnly, false));
+        AssertReason(AiToolDecision.Allow, "readonly_query", AiPermissionChain.Evaluate(query, AiMode.ReadOnly, false));
+        // ③ 破坏性：任何模式（含自动应用 + 会话已允许）都要问
+        AssertReason(AiToolDecision.Ask, "destructive_needs_approval",
+            AiPermissionChain.Evaluate(purge, AiMode.AutoApply, true));
+        // ④⑤⑥⑦
+        AssertReason(AiToolDecision.Allow, "query", AiPermissionChain.Evaluate(query, AiMode.ConfirmEach, false));
+        AssertReason(AiToolDecision.Allow, "session_allowance",
+            AiPermissionChain.Evaluate(create, AiMode.ConfirmEach, true));
+        AssertReason(AiToolDecision.Allow, "auto_apply", AiPermissionChain.Evaluate(create, AiMode.AutoApply, false));
+        AssertReason(AiToolDecision.Ask, "confirm_each", AiPermissionChain.Evaluate(create, AiMode.ConfirmEach, false));
+
+        static void AssertReason(AiToolDecision expected, string reason, AiPermissionChain.AiPermissionVerdict actual)
+        {
+            Assert.Equal(expected, actual.Decision);
+            Assert.Equal(reason, actual.Reason);
+        }
+    }
+
+    // ── 审批卡的影响面（P3-7）：对象名称/数量/路径 · 批逐步骤 · 暴露集逐条套到批上 ──
+
+    [Fact]
+    public async Task 审批_对象的名称数量与canonical路径取自引擎而非模型自述()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: async client =>
+            {
+                var folder = await client.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+                await client.ExecuteAsync<object>("links.create",
+                    new { url = "https://scope.test/x", title = "Rust 圣经", list_id = folder.Data!.FolderId });
+            },
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://scope.test/x" }))
+                    .Single().LinkId;
+                return
+                [
+                    [ToolChunk(0, "c1", "links.update",
+                        $$"""{"id":"{{id}}","title":"Rust 圣经（第 2 版）"}"""), "data: [DONE]"],
+                    [TextChunk("renamed"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.ConfirmEach);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        AiApproval? seen = null;
+        host.Assistant.Notified += notification =>
+        {
+            if (notification.Kind == AiNotificationKind.ApprovalChanged && notification.Approval?.Decision is null)
+            {
+                seen = notification.Approval;
+                _ = host.Assistant.RespondToApprovalAsync(sessionId, notification.Approval!.ApprovalId,
+                    AiApprovalDecision.AllowOnce, null);
+            }
+        };
+
+        await host.Assistant.SendAsync(sessionId, "改个标题");
+
+        Assert.NotNull(seen);
+        Assert.Equal(1, seen!.TargetCount);
+        Assert.Equal("Rust 圣经", Assert.Single(seen.TargetNames));          // 名称来自 locate.resolve
+        Assert.Equal(0, seen.TargetMore);
+        Assert.Equal("@root/工作/Rust 圣经", seen.TargetPath);               // canonical 路径（界面再投影）
+        Assert.Equal("links.update · Rust 圣经", seen.AllowScope);           // 会话允许将记住的作用域
+        Assert.Null(seen.Steps);                                             // 非批没有逐步骤
+        Assert.Null(seen.PreviewSummary);                                    // 非破坏性 = 无引擎影响面
+        Assert.Equal(AiApprovalDecision.AllowOnce,
+            (await host.Assistant.GetSessionAsync(sessionId)).Approvals.Single().Decision);
+    }
+
+    [Fact]
+    public async Task 批_每一步都过暴露集闸_混入清库命令的批整批拒绝()
+    {
+        using var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "batch.run", BatchArgs(
+                ("a", "folders.create", """{"name":"不该出现"}""", null),
+                ("b", "maintenance.reinit", "{}", null))), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);   // 自动应用也压不过暴露集
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "清库");
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        var call = detail.ToolCalls.Single();
+        Assert.Equal(AiToolCallState.Rejected, call.State);
+        Assert.Empty(detail.Approvals);                                              // 禁止 ≠ 要问：连审批卡都没有
+        using var doc = JsonDocument.Parse(call.ResultJson!);
+        Assert.Equal("tool_not_allowed", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal("step_not_exposed:maintenance.reinit", doc.RootElement.GetProperty("reason").GetString());
+        var found = await host.Client.QueryAsync<object>("folders.find", new { name = "不该出现" });
+        Assert.Empty(Assert.IsAssignableFrom<System.Collections.IEnumerable>(found));   // 第一步也没执行
+    }
+
+    [Fact]
+    public async Task 批_审批卡逐步骤影响_模板不算值_破坏性步骤打标()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: async client =>
+                await client.ExecuteAsync<object>("links.create",
+                    new { url = "https://step.test/x", title = "待删" }),
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://step.test/x" }))
+                    .Single().LinkId;
+                return
+                [
+                    [
+                        ToolChunk(0, "c1", "batch.run", BatchArgs(
+                            ("a", "folders.create", """{"name":"批夹"}""", null),
+                            ("b", "links.query", $$"""{"filter":[{"field":"id","op":"eq","value":"{{id}}"}]}""", null),
+                            ("c", "links.trash", """{"id":"{b.items[0].id}"}""", "continue"),
+                            ("d", "audit.prune", """{"keep_days":90}""", "abort"))),
+                        "data: [DONE]",
+                    ],
+                    [TextChunk("done"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.ConfirmEach, advancedTools: true);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        AiApproval? seen = null;
+        host.Assistant.Notified += notification =>
+        {
+            if (notification.Kind == AiNotificationKind.ApprovalChanged && notification.Approval?.Decision is null)
+            {
+                seen = notification.Approval;
+                _ = host.Assistant.RespondToApprovalAsync(sessionId, notification.Approval!.ApprovalId,
+                    AiApprovalDecision.AllowOnce, null);
+            }
+        };
+
+        await host.Assistant.SendAsync(sessionId, "建个夹，删掉那条重复的");
+
+        Assert.NotNull(seen);
+        var steps = seen!.Steps!;
+        Assert.Equal(4, steps.Count);
+        Assert.Equal("folders.create", steps[0].Command);
+        Assert.Equal("批夹", steps[0].TargetName);                       // 字面名称 = 对象
+        Assert.Equal(1, steps[0].TargetCount);
+        Assert.False(steps[0].IsDestructive);
+        Assert.Null(steps[0].OnError);                                   // 没写策略 = 不显示（不编造）
+        Assert.Equal("links.query", steps[1].Command);
+        Assert.Equal(0, steps[1].TargetCount);                           // 过滤器不是对象，不冒领数量
+        Assert.Equal("links.trash", steps[2].Command);
+        Assert.Null(steps[2].TargetName);                                // {ref} 是占位符不是值
+        Assert.Equal(0, steps[2].TargetCount);                           // 展开后才知道动几个 → 如实报"未指明"
+        Assert.Equal("continue", steps[2].OnError);                      // 错误策略按脚本原样带出
+        Assert.Equal("audit.prune", steps[3].Command);
+        Assert.True(steps[3].IsDestructive);                             // 破坏性步骤打标
+        Assert.Equal("abort", steps[3].OnError);
+
+        // 批准后真的执行了：夹建出来、那条链接进回收站（批内的步骤逐条落到引擎）
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        var run = detail.ToolCalls.Single();
+        Assert.True(run.State == AiToolCallState.Completed,
+            $"state={run.State} error={run.ErrorCode} result={run.ResultJson}");
+        Assert.Single(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "批夹" }));
+        Assert.Empty(await host.Client.QueryAsync<List<LinkDto>>("links.find_by_url",
+            new { url = "https://step.test/x" }));
+    }
+
+    [Fact]
+    public async Task 破坏性_先探测影响面_批准前零副作用_批准后才真删()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: async client =>
+            {
+                var link = await client.ExecuteAsync<LinkDto>("links.create", new { url = "https://gone.test/x", title = "待清" });
+                await client.ExecuteAsync<object>("links.trash", new { id = link.Data!.LinkId });
+            },
+            scripts: async client =>
+            {
+                var trashed = (await client.TrashListAsync()).Single().Id;
+                return
+                [
+                    [ToolChunk(0, "c1", "trash.purge",
+                        $$"""{"id":"{{trashed}}","is_folder":false}"""), "data: [DONE]"],
+                    [TextChunk("purged"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.ConfirmEach, advancedTools: true);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        AiApproval? seen = null;
+        var stillThereBeforeApproval = false;
+        host.Assistant.Notified += notification =>
+        {
+            if (notification.Kind != AiNotificationKind.ApprovalChanged || notification.Approval?.Decision is not null)
+                return;
+            seen = notification.Approval;
+            // 探测只是"要令牌"的校验类错误：批准之前那条快照必须还躺在回收站里（Task.Run 避开测试同步上下文）
+            stillThereBeforeApproval = Task.Run(() => host.Client.TrashListAsync()).GetAwaiter().GetResult().Count == 1;
+            _ = host.Assistant.RespondToApprovalAsync(sessionId, notification.Approval!.ApprovalId,
+                AiApprovalDecision.AllowOnce, null);
+        };
+
+        await host.Assistant.SendAsync(sessionId, "彻底删掉那条");
+
+        Assert.NotNull(seen);
+        Assert.True(seen!.IsDestructive);
+        Assert.Equal(EngineErrors.ConfirmRequired, seen.ErrorCodeWhenWaiting);   // 影响面由引擎签发
+        Assert.False(string.IsNullOrWhiteSpace(seen.PreviewSummary));             // 引擎给的影响面（不空转）
+        Assert.True(stillThereBeforeApproval, "批准前必须零副作用（探测 = 校验类错误）");
+        Assert.Equal(1, seen.TargetCount);                                        // 对象数认得出来（快照 ID 解析不到名称，如实只报数量）
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        var purged = detail.ToolCalls.Single();
+        Assert.True(purged.State == AiToolCallState.Completed,
+            $"state={purged.State} error={purged.ErrorCode} result={purged.ResultJson}");  // 批准后带令牌重发，真删了
+        Assert.Empty(await host.Client.TrashListAsync());
+    }
+
+    /// <summary>拼一个 <c>batch.run</c> 入参（步骤按给定的 ref/命令/args[/on_error] 顺序；
+    /// JSON 由序列化器产出，不手拼花括号）。</summary>
+    private static string BatchArgs(params (string Ref, string Command, string Args, string? OnError)[] steps)
+    {
+        var array = new JsonArray();
+        foreach (var step in steps)
+        {
+            var node = new JsonObject
+            {
+                ["ref"] = step.Ref,
+                ["command"] = step.Command,
+                ["args"] = JsonNode.Parse(step.Args),
+            };
+            if (!string.IsNullOrEmpty(step.OnError)) node["on_error"] = step.OnError;
+            array.Add(node);
+        }
+        return JsonSerializer.Serialize(new { script = new JsonObject { ["scope"] = "transactional", ["steps"] = array } });
     }
 
     // ── 台账的粒度来源 / 名称路径解析 / 可撤销性（P2）────────────
@@ -402,7 +651,7 @@ public class AiLoopTests
         try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch (IOException) { }
     }
 
-    private static async Task ConfigureAsync(Host host, AiMode mode)
+    private static async Task ConfigureAsync(Host host, AiMode mode, bool advancedTools = false)
     {
         await host.Assistant.SaveProviderAsync(new AiProviderDraft("gw", "Gateway", AiProtocol.OpenAiChat,
             "https://gw.example.com/v1", Enabled: true, IsLocal: false));
@@ -410,7 +659,12 @@ public class AiLoopTests
         await host.Assistant.SaveModelAsync(new AiModelDraft("gw", "test-model", "Test model", true,
             ContextWindow: 32_000, MaxOutputTokens: 1024, SupportsTools: true, SupportsStreaming: true));
         var preferences = await host.Assistant.GetPreferencesAsync();
-        await host.Assistant.SavePreferencesAsync(preferences with { ProviderId = "gw", ModelId = "test-model" });
+        await host.Assistant.SavePreferencesAsync(preferences with
+        {
+            ProviderId = "gw",
+            ModelId = "test-model",
+            AdvancedToolsEnabled = advancedTools,   // Tier 2（永久删除 / 审计清理…）要显式开启
+        });
 
         var session = await host.Assistant.CreateSessionAsync();
         await host.Assistant.SetModeAsync(session.SessionId, mode);

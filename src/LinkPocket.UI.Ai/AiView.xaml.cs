@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.Input;
@@ -48,6 +49,7 @@ public partial class AiView : UserControl
         _navigate = navigate;
         DataContext = _viewModel;
         _viewModel.ExportRequested += OnExportRequested;
+        _viewModel.ApprovalFocusRequested += OnApprovalFocusRequested;   // 默认焦点落在「拒绝」
 
         // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）+ Ctrl+N 新建会话；一页一组、不注册全局键
         var commands = new ShortcutCommandMap()
@@ -250,5 +252,38 @@ public partial class AiView : UserControl
         var row = _viewModel.Approvals.FirstOrDefault(r => r.ApprovalId == approvalId);
         if (row is null) return;
         await _viewModel.RespondAsync(row, decision);
+    }
+
+    // ── 审批卡的默认焦点（功能书 §8.2：默认焦点落在「拒绝」）─────────────
+
+    /// <summary>出现待批审批 → 焦点给该卡的「拒绝」。通知可能来自回合线程，一律回调度器；
+    /// 等到 Loaded 优先级再找（模板要先生成出可视树）。</summary>
+    private void OnApprovalFocusRequested(string approvalId)
+        => Dispatcher.BeginInvoke(new Action(() => FocusApprovalReject(approvalId)),
+            System.Windows.Threading.DispatcherPriority.Loaded);
+
+    private void FocusApprovalReject(string approvalId)
+    {
+        if (!IsVisible) return;
+        var button = FindApprovalReject(this);
+        if (button?.DataContext is not AiFeedItem item || item.ApprovalId != approvalId) return;
+        if (!item.IsApprovalOpen) return;   // 已经作过决定的卡不抢焦点
+        button.Focus();
+        Keyboard.Focus(button);
+    }
+
+    /// <summary>模板里的按钮没有跨实例的名字，按 <c>Tag</c> 现扫可视树（每次现扫，不缓存元素引用）。</summary>
+    private static Button? FindApprovalReject(DependencyObject? root)
+    {
+        if (root is null) return null;
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Button { Tag: "AiApprovalReject" } button && button.IsVisible) return button;
+            var nested = FindApprovalReject(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 }
