@@ -262,7 +262,11 @@ public sealed record AiAuditQuery(
     bool? Success = null,         // 成功 / 失败筛选（服务端过滤）
     bool IncludePayloads = false, // 是否携带 args_json / changes_json 载荷
     int Page = 1,
-    int PerPage = 50);
+    int PerPage = 50,
+    /// <summary>时间下界（**含**；服务端过滤 = 分页与总数一起按它算，不做事后裁剪）。</summary>
+    DateTimeOffset? From = null,
+    /// <summary>时间上界（**不含**，半开区间——与引擎 audit.query 同口径；null = 不限）。</summary>
+    DateTimeOffset? To = null);
 
 /// <summary>一行引擎审计记录（机器面字段原样，界面只按键与数值渲染）。</summary>
 public sealed record AiEngineCallRow(

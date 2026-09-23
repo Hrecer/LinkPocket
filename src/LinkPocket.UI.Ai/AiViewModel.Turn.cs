@@ -1,5 +1,6 @@
 using System.Globalization;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.ViewModels;
 
 namespace LinkPocket.UI.Ai;
@@ -69,6 +70,53 @@ public sealed partial class AiViewModel
             await _assistant.RespondToApprovalAsync(sessionId, row.ApprovalId, decision, ApprovalReason)
                 .ConfigureAwait(true);
             ApprovalReason = "";
+        }
+        catch (AiException ex)
+        {
+            LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+        }
+    }
+
+    // ── 撤销本会话 AI 变更（功能书 §2 / §7.4：按批次分组逐批退，走 undo.undo 定点，绝不第二条撤销路径）──
+
+    private int _undoableBatches;
+
+    /// <summary>
+    /// 「撤销本会话 AI 变更」给不给（按钮与 Ctrl+Shift+Z 共用同一条 CanExecute）：
+    /// **有可撤销批次**（台账 ∩ 引擎撤销栈）**且没有回合在跑**——不给会失败的按钮。
+    /// </summary>
+    public bool CanUndoSession => _undoableBatches > 0 && !IsTurnRunning;
+
+    /// <summary>刷新可撤销批次数（纯读 <c>undo.list</c>；换会话 / 回合收尾 / 撤销之后各刷一次）。</summary>
+    public async Task RefreshUndoableAsync()
+    {
+        if (_activeSessionId is not { } sessionId) return;
+        try
+        {
+            var count = await _assistant.CountUndoableAsync(sessionId).ConfigureAwait(true);
+            if (_activeSessionId != sessionId) return;   // 期间换了会话：这次读数作废，不写投影
+            if (_undoableBatches == count) return;
+            _undoableBatches = count;
+            Raise(nameof(CanUndoSession));
+            CommandRefresh.Request();
+        }
+        catch (Exception ex) when (ex is AiException or EngineException)
+        {
+            // 读数失败**不静默**：按钮保持原样 + 如实报错；下一次刷新入口（换会话 / 回合收尾 / 撤完）会再试
+            LpLog.Warn("undoable batch count failed", ex, category: "ai.ledger");
+            LastErrorKey = LinkPocket.Views.AiKeyMap.Error((ex as AiException)?.Error.Code);
+        }
+    }
+
+    /// <summary>撤销本会话的 AI 变更（确认弹窗在视图侧——弹窗是视图的事，VM 只发命令 + 按结果如实提示；
+    /// 提示条那一步顺手重算可撤销批次，按钮跟着收起）。</summary>
+    public async Task UndoSessionAsync()
+    {
+        if (!CanUndoSession || _activeSessionId is not { } sessionId) return;
+        try
+        {
+            var result = await _assistant.UndoSessionAsync(sessionId).ConfigureAwait(true);
+            NoticeForUndo(result);
         }
         catch (AiException ex)
         {

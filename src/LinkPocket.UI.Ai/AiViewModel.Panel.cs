@@ -26,6 +26,32 @@ public sealed partial class AiViewModel
     private int _auditPage = 1;
     private int _auditPageCount = 1;
     private int _auditTotal;
+    private int _auditRangeIndex;
+
+    /// <summary>
+    /// 引擎审计的时间范围（0 = 全部 / 1 = 今天 / 2 = 近 7 天 / 3 = 近 30 天）——
+    /// 过滤走**服务端** <c>audit.query {from}</c>（功能书 §7.6 的时间范围过滤）；范围变了结果集就变了，回第一页。
+    /// </summary>
+    public int AuditRangeIndex
+    {
+        get => _auditRangeIndex;
+        set
+        {
+            if (!Set(ref _auditRangeIndex, value, nameof(AuditRangeIndex))) return;
+            if (!IsEngineTab) return;
+            _auditPage = 1;
+            _ = ReloadEngineAuditAsync();
+        }
+    }
+
+    /// <summary>范围 → 时间下界（**本地日界**：今天 = 今日 00:00；近 N 天 = 含今天在内的 N 个自然日）。null = 不限。</summary>
+    private DateTimeOffset? AuditRangeFrom() => _auditRangeIndex switch
+    {
+        1 => new DateTimeOffset(DateTime.Today),
+        2 => new DateTimeOffset(DateTime.Today.AddDays(-6)),
+        3 => new DateTimeOffset(DateTime.Today.AddDays(-29)),
+        _ => null,
+    };
 
     /// <summary>引擎审计行（数据源 = audit.query；载荷随行返回、默认收起）。</summary>
     public System.Collections.ObjectModel.ObservableCollection<AiEngineRow> EngineAudit { get; } = [];
@@ -186,6 +212,7 @@ public sealed partial class AiViewModel
         _lastTurnId = detail.Changes.Count > 0 ? detail.Changes[^1].TurnId : detail.Turns.LastOrDefault()?.TurnId;
         _auditPage = 1;
         ApplyPanelFilter();
+        _ = RefreshUndoableAsync();   // 换会话：按钮给不给按新会话的可撤销批次算
         if (IsEngineTab) _ = ReloadEngineAuditAsync();
     }
 
@@ -223,6 +250,7 @@ public sealed partial class AiViewModel
     private void OnTurnSettled()
     {
         ApplyPanelFilter();
+        _ = RefreshUndoableAsync();   // 回合里新产生的可撤销批次要让按钮出现
         if (IsEngineTab) _ = ReloadEngineAuditAsync();
     }
 
@@ -280,7 +308,8 @@ public sealed partial class AiViewModel
                 Success: success,
                 IncludePayloads: true,
                 Page: _auditPage,
-                PerPage: AuditPageSize)).ConfigureAwait(true);
+                PerPage: AuditPageSize,
+                From: AuditRangeFrom())).ConfigureAwait(true);
 
             EngineAudit.Clear();
             foreach (var row in page.Items) EngineAudit.Add(new AiEngineRow { Call = row });

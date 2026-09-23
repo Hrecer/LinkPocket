@@ -101,6 +101,20 @@ public interface IAiAssistant
     /// </summary>
     Task<AiUndoResult> UndoLastTurnAsync(string sessionId, CancellationToken ct = default);
 
+    /// <summary>
+    /// 撤销**本会话**的 AI 变更：按批次（归属键 = 工具调用 ID，一次批/宏 = 一条记录）分组**逐批退**，
+    /// 新者先撤；口径与 <see cref="UndoLastTurnAsync"/> 完全一致——走引擎既有 <c>undo.undo</c> 定点撤销，
+    /// **绝不做第二条撤销路径**；不在撤销栈里的如实跳过并计数，绝不给会失败的撤销。
+    /// 回合在跑时拒绝（<c>LP.AI.011</c>）。
+    /// </summary>
+    Task<AiUndoResult> UndoSessionAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 本会话**仍在引擎撤销栈里持有归属记录**的可撤销批次数（0 = 没有可撤销批次）。
+    /// 界面据此决定「撤销本会话 AI 变更」按钮给不给（**不给会失败的按钮**）；纯读，不改任何状态。
+    /// </summary>
+    Task<int> CountUndoableAsync(string sessionId, CancellationToken ct = default);
+
     // ── 通知（订阅一次，按 Kind 分派）──────────────────────────
 
     /// <summary>会话内容增量通知（消息 / 流式增量 / 工具调用 / 变更 / 审批 / 回合 / 会话摘要）。</summary>

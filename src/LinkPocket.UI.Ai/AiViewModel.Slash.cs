@@ -142,8 +142,12 @@ public sealed partial class AiViewModel
     // ── /undo：撤销上一轮 AI 变更（引擎 undo.undo 定点撤销；不可撤销的如实跳过）──
 
     private async Task SlashUndoAsync(string sessionId)
+        => NoticeForUndo(await _assistant.UndoLastTurnAsync(sessionId).ConfigureAwait(true));
+
+    /// <summary>撤销回执 → 提示条（回合级 <c>/undo</c> 与会话级「撤销本会话」共用：结果形状相同、文案同一套）。</summary>
+    private void NoticeForUndo(AiUndoResult result)
     {
-        var result = await _assistant.UndoLastTurnAsync(sessionId).ConfigureAwait(true);
+        _ = RefreshUndoableAsync();   // 撤完重新数一遍可撤销批次（按钮给不给跟着变）
         if (result.TotalCalls == 0)
         {
             Notice(Loc.K("ai.slash.undoNone"));

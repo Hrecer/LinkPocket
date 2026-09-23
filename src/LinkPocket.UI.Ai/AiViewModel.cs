@@ -44,7 +44,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public bool IsTurnRunning
     {
         get => _isTurnRunning;
-        private set => Set(ref _isTurnRunning, value, nameof(IsTurnRunning));
+        private set
+        {
+            if (!Set(ref _isTurnRunning, value, nameof(IsTurnRunning))) return;
+            Raise(nameof(CanUndoSession));   // 回合在跑时不给撤销（引擎写面正被占用）
+        }
     }
 
     public string ComposerText

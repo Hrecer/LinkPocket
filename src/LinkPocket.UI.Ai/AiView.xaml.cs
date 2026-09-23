@@ -26,6 +26,7 @@ public partial class AiView : UserControl
     private readonly ICommand _sendCommand;
     private readonly ICommand _escapeCommand;
     private readonly ICommand _newSessionCommand;
+    private readonly ICommand _undoSessionCommand;
 
     public AiView()
     {
@@ -34,6 +35,9 @@ public partial class AiView : UserControl
         _sendCommand = new RelayCommand(() => _ = SendAsync(), () => _viewModel?.CanSend == true);
         _escapeCommand = new RelayCommand(OnEscape);
         _newSessionCommand = new RelayCommand(() => _ = RunNewSessionAsync());
+        // 面板按钮与 Ctrl+Shift+Z 同一条命令（CanExecute = 有可撤销批次且没有回合在跑）
+        _undoSessionCommand = new RelayCommand(() => _ = UndoSessionAsync(),
+            () => _viewModel?.CanUndoSession == true);
     }
 
     /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。
@@ -44,18 +48,21 @@ public partial class AiView : UserControl
         _viewModel.Feed.CollectionChanged += OnFeedChanged;
         _viewModel.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(AiViewModel.CanSend)) CommandRefresh.Request();
+            if (e.PropertyName is nameof(AiViewModel.CanSend) or nameof(AiViewModel.CanUndoSession))
+                CommandRefresh.Request();   // 可用性同帧跟上（按钮灰亮 + 键位 CanExecute 同一处通知）
         };
         _navigate = navigate;
         DataContext = _viewModel;
         _viewModel.ExportRequested += OnExportRequested;
         _viewModel.ApprovalFocusRequested += OnApprovalFocusRequested;   // 默认焦点落在「拒绝」
 
-        // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）+ Ctrl+N 新建会话；一页一组、不注册全局键
+        // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）+ Ctrl+N 新建会话
+        // + Ctrl+Shift+Z 撤销本会话 AI 变更；一页一组、不注册全局键
         var commands = new ShortcutCommandMap()
             .Add(ShortcutAction.AiSend, _sendCommand)
             .Add(ShortcutAction.AiEscape, _escapeCommand)
-            .Add(ShortcutAction.AiNewSession, _newSessionCommand);
+            .Add(ShortcutAction.AiNewSession, _newSessionCommand)
+            .Add(ShortcutAction.AiUndoSession, _undoSessionCommand);
         _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Ai, commands), () => ShortcutScope.Ai);
         _shortcutHost.Attach(this);
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
@@ -233,6 +240,25 @@ public partial class AiView : UserControl
             e.Handled = true;
             _viewModel.CancelRename();
         }
+    }
+
+    // ── 撤销本会话 AI 变更（面板顶部按钮 + Ctrl+Shift+Z 同一条命令）──────────────
+
+    private async void OnUndoSession(object sender, RoutedEventArgs e) => await UndoSessionAsync();
+
+    /// <summary>
+    /// 撤销本会话的 AI 变更：**决策前弹确认**（功能书 §5.7）——弹窗是视图的事，
+    /// VM 只负责发命令与"按结果如实提示"；撤完 VM 重算可撤销批次，按钮跟着收起（不给会失败的按钮）。
+    /// </summary>
+    private async Task UndoSessionAsync()
+    {
+        if (_viewModel is null || !_viewModel.CanUndoSession) return;
+        // 非破坏动作：图标用 restore、chip 走次强调容器（全站不设危险色，不可逆性靠文案）
+        if (!ConfirmDialog.Show(Loc.T("ai.sessions.undo"), Loc.T("ai.sessions.undo.confirm"),
+                Loc.T("ai.sessions.undo"), "restore"))
+            return;
+        await _viewModel.UndoSessionAsync();
+        CommandRefresh.Request();
     }
 
     // ── 审批回应 ──────────────────────────────────────────────

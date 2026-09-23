@@ -314,6 +314,75 @@ public class AiViewModelTests
         }
     }
 
+    // ── 撤销本会话 + 审计时间范围（P3-8）──────────────────────────────
+
+    [Fact]
+    public async Task 撤销本会话_有可撤销批次才给按钮_撤完按新栈快照收起()
+    {
+        var (vm, stub) = NewVm();
+        stub.UndoableBatches = 2;
+        stub.UndoResult = new AiUndoResult(2, 2, 0, null);
+        await vm.LoadAsync();
+        await WaitUntilAsync(() => vm.CanUndoSession);
+
+        Assert.True(vm.CanUndoSession);
+
+        var counted = stub.CountUndoableCalls.Count;
+        await vm.UndoSessionAsync();
+
+        Assert.Equal("s-1", Assert.Single(stub.UndoSessionCalls));
+        Assert.Equal("ai.slash.undoDone", LastNoticeKey(vm));   // 回执与 /undo 同一套文案
+        Assert.Equal(counted + 1, stub.CountUndoableCalls.Count);   // 撤完自己重数了一遍
+
+        // 撤完引擎栈空了 → 面板重算"按钮给不给"（**不给会失败的按钮**）
+        stub.UndoableBatches = 0;
+        await vm.RefreshUndoableAsync();
+        Assert.False(vm.CanUndoSession);
+    }
+
+    [Fact]
+    public async Task 撤销本会话_没有可撤销批次_按钮不给也发不出命令()
+    {
+        var (vm, stub) = NewVm();
+        stub.UndoableBatches = 0;
+        await vm.LoadAsync();
+        await WaitUntilAsync(() => stub.CountUndoableCalls.Count > 0);   // 刷过了（读数为 0）
+
+        Assert.False(vm.CanUndoSession);
+        await vm.UndoSessionAsync();
+        Assert.Empty(stub.UndoSessionCalls);
+    }
+
+    [Fact]
+    public async Task 审计时间范围_切换即回第一页并把from带给服务端()
+    {
+        var (vm, stub) = NewVm();
+        stub.AuditPageCount = 2;
+        await vm.LoadAsync();
+        vm.TabIndex = 3;
+        await WaitUntilAsync(() => stub.AuditQueries.Count > 0);
+        Assert.Null(stub.AuditQueries[^1].From);          // 缺省 = 不限时间
+
+        await vm.AuditNextAsync();
+        Assert.Equal(2, stub.AuditQueries[^1].Page);
+
+        var seen = stub.AuditQueries.Count;
+        vm.AuditRangeIndex = 1;                           // 今天
+        await WaitUntilAsync(() => stub.AuditQueries.Count > seen);
+        Assert.Equal(1, stub.AuditQueries[^1].Page);      // 结果集变了 → 回第一页
+        var today = stub.AuditQueries[^1].From;
+        Assert.NotNull(today);
+        Assert.Equal(DateTime.Today, today!.Value.Date);  // 本地日界（今天 00:00）
+
+        vm.AuditRangeIndex = 2;                           // 近 7 天
+        await WaitUntilAsync(() => stub.AuditQueries.Count > seen + 1);
+        Assert.Equal(DateTime.Today.AddDays(-6), stub.AuditQueries[^1].From!.Value.Date);
+
+        vm.AuditRangeIndex = 0;                           // 回到全部
+        await WaitUntilAsync(() => stub.AuditQueries.Count > seen + 2);
+        Assert.Null(stub.AuditQueries[^1].From);
+    }
+
     /// <summary>等一个可观测副作用落地（异步重载是 fire-and-forget 的界面口径；上限 2 秒，超时即失败）。</summary>
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

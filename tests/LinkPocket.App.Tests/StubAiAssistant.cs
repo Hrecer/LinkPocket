@@ -23,6 +23,10 @@ public sealed class StubAiAssistant : IAiAssistant
     public List<AiPreferences> SavePreferencesCalls { get; } = [];
     public List<AiAuditQuery> AuditQueries { get; } = [];
     public List<(string SessionId, string ApprovalId, AiApprovalDecision Decision, string? Reason)> ApprovalCalls { get; } = [];
+    public List<string> UndoSessionCalls { get; } = [];
+    public List<string> CountUndoableCalls { get; } = [];
+    /// <summary>CountUndoableAsync 的预置读数（= 面板上「撤销本会话」按钮的给不给）。</summary>
+    public int UndoableBatches { get; set; }
     public int UndoCalls { get; private set; }
 
     public void RaiseNotify(AiNotification notification) => Notified?.Invoke(notification);
@@ -138,6 +142,18 @@ public sealed class StubAiAssistant : IAiAssistant
     {
         UndoCalls++;
         return Task.FromResult(UndoResult);
+    }
+
+    public Task<AiUndoResult> UndoSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        UndoSessionCalls.Add(sessionId);
+        return Task.FromResult(UndoResult);
+    }
+
+    public Task<int> CountUndoableAsync(string sessionId, CancellationToken ct = default)
+    {
+        CountUndoableCalls.Add(sessionId);
+        return Task.FromResult(UndoableBatches);
     }
 
     // ── 通知 ─────────────────────────────────────────────────

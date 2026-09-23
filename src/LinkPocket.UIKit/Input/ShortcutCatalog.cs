@@ -71,10 +71,12 @@ public static class ShortcutAction
     public const string TrashTreeExpand = "trash.treeExpand";
     public const string TrashFocusPath = "trash.focusPath";
 
-    // AI 助手页：Enter 发送（控件锚定在输入框）、Esc 焦点回输入框、Ctrl+N 新建会话
+    // AI 助手页：Enter 发送（控件锚定在输入框）、Esc 焦点回输入框、Ctrl+N 新建会话、
+    // Ctrl+Shift+Z 撤销本会话 AI 变更（决策前弹确认；作用域 = 本页，不注册全局键）
     public const string AiSend = "ai.send";
     public const string AiEscape = "ai.escape";
     public const string AiNewSession = "ai.newSession";
+    public const string AiUndoSession = "ai.undoSession";
 
     // 搜索页 / 智能列表 / 工具页
     public const string SearchRun = "search.run";
@@ -300,7 +302,9 @@ public static class ShortcutCatalog
     /// <summary>
     /// AI 助手页键位：Enter = 发送（**控件锚定**在输入框上——只在输入框获焦时生效，符合"输入控件让位"既有口径）；
     /// Esc = 分层出口的第一层（停止生成 → 否则焦点回输入框，命令侧按状态自行分层）；
-    /// Ctrl+N = 新建会话（与左栏按钮同一命令）。
+    /// Ctrl+N = 新建会话（与左栏按钮同一命令）；
+    /// Ctrl+Shift+Z = 撤销本会话 AI 变更（与审计面板顶部那枚按钮同一命令，**决策前弹确认**；
+    /// 输入框获焦时按"输入控件让位"不分发——编辑语义优先，撤销走按钮入口）。
     /// 本页**不注册全局键**（"任何页面唤出 AI"会破坏"只有浏览页注册全局键"这条不变量，本功能不做）。
     /// </summary>
     private static readonly ShortcutSpec[] AiSpecs =
@@ -309,6 +313,8 @@ public static class ShortcutCatalog
         new(ShortcutAction.AiEscape, Key.Escape, ShortcutScope.Ai, "shortcut.aiEscape"),
         new(ShortcutAction.AiNewSession, Key.N, ShortcutScope.Ai, "shortcut.aiNewSession",
             Modifiers: ModifierKeys.Control),
+        new(ShortcutAction.AiUndoSession, Key.Z, ShortcutScope.Ai, "shortcut.aiUndoSession",
+            Modifiers: ModifierKeys.Control | ModifierKeys.Shift, ContextGateKey: "gate.undoableSession"),
     };
 
     /// <summary>全部页面的键位组（**顺序即文档顺序**；每页一组，组不共享根作用域）。</summary>

@@ -68,6 +68,10 @@ public sealed partial class AiAssistant
                 correlation_id = correlationId,
                 success = query.Success,
                 include_payloads = query.IncludePayloads,
+                // 时间范围走**服务端**过滤（from 含 / to 不含，半开区间）：分页与总数一起按它算，
+                // 不做事后裁剪——否则"第 2 页 50 条"会变成过滤后的第 2 页，页码与读数对不上
+                from = query.From?.ToString("O"),
+                to = query.To?.ToString("O"),
                 page,
                 per_page = AuditFetchPageSize,
             }, new CallOptions(Caller: new CallerRef(CallerKind.Agent, null)), ct).ConfigureAwait(false);

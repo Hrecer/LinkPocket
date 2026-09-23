@@ -318,6 +318,97 @@ public class AiLoopTests
         Assert.Empty(await host.Client.TrashListAsync());
     }
 
+    // ── 撤销本会话 / 可撤销批次计数 / 审计时间范围（P3-8）──────────────────
+
+    [Fact]
+    public async Task 撤销本会话_按批次分组逐批退_跨回合也退_撤完归零()
+    {
+        using var host = NewHost(
+        [
+            [TextChunk("creating"), ToolChunk(0, "c1", "folders.create", """{"name":"会话夹一"}"""), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+            [TextChunk("creating"), ToolChunk(0, "c2", "folders.create", """{"name":"会话夹二"}"""), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建夹一");
+        await host.Assistant.SendAsync(sessionId, "建夹二");
+
+        Assert.Equal(2, await host.Assistant.CountUndoableAsync(sessionId));   // 两个回合 = 两个可撤销批次
+
+        var result = await host.Assistant.UndoSessionAsync(sessionId);
+
+        // 逐批定点撤（一个归属键 = 撤销栈里的一条记录）：新者先撤、两条都成
+        Assert.Equal(2, result.TotalCalls);
+        Assert.Equal(2, result.UndoneCalls);
+        Assert.Equal(0, result.MissingCalls);
+        Assert.Null(result.ErrorCode);
+
+        // 撤销"新建" = 软删进回收站（原 ID 保留可还原）
+        Assert.Empty(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "会话夹一" }));
+        Assert.Empty(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "会话夹二" }));
+        Assert.Equal(0, await host.Assistant.CountUndoableAsync(sessionId));   // 撤完就没得再给按钮了
+    }
+
+    [Fact]
+    public async Task 可撤销批次计数_只数引擎真登记过的_没登记的变更不给按钮()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: async client =>
+                await client.ExecuteAsync<object>("links.create", new { url = "https://rename.test/x", title = "甲" }),
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://rename.test/x" }))
+                    .Single().LinkId;
+                return
+                [
+                    [ToolChunk(0, "c1", "links.update", $$"""{"id":"{{id}}","title":"改名后的甲"}"""), "data: [DONE]"],
+                    [TextChunk("ok"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "把那条改个名");
+
+        // 台账里有变更，但改名不入引擎撤销栈 → 一个可撤销批次都没有（不给会失败的按钮）
+        Assert.Single((await host.Assistant.GetSessionAsync(sessionId)).Changes);
+        Assert.Equal(0, await host.Assistant.CountUndoableAsync(sessionId));
+
+        var result = await host.Assistant.UndoSessionAsync(sessionId);
+        Assert.Equal(0, result.TotalCalls);
+        Assert.Equal(0, result.UndoneCalls);
+        Assert.Null(result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task 审计时间范围过滤_服务端from把区间外的行挡掉()
+    {
+        using var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "folders.create", """{"name":"范围夹"}"""), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+        await host.Assistant.SendAsync(sessionId, "建个夹");
+
+        var all = await host.Assistant.QueryEngineAuditAsync(new AiAuditQuery(sessionId));
+        Assert.NotEmpty(all.Items);
+
+        // 下界推到未来 = 一行都不该进来（服务端过滤：分页与总数一起按它算）
+        var none = await host.Assistant.QueryEngineAuditAsync(
+            new AiAuditQuery(sessionId, From: DateTimeOffset.Now.AddHours(1)));
+        Assert.Equal(0, none.Total);
+        Assert.Empty(none.Items);
+
+        var recent = await host.Assistant.QueryEngineAuditAsync(
+            new AiAuditQuery(sessionId, From: DateTimeOffset.Now.AddHours(-1)));
+        Assert.Equal(all.Total, recent.Total);
+    }
+
     /// <summary>拼一个 <c>batch.run</c> 入参（步骤按给定的 ref/命令/args[/on_error] 顺序；
     /// JSON 由序列化器产出，不手拼花括号）。</summary>
     private static string BatchArgs(params (string Ref, string Command, string Args, string? OnError)[] steps)
