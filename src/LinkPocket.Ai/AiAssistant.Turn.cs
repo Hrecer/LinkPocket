@@ -133,7 +133,7 @@ public sealed partial class AiAssistant
             {
                 run.Cts.Token.ThrowIfCancellationRequested();
                 if (++toolCalls > preferences.MaxToolCallsPerTurn) throw TooManyCalls(preferences.MaxToolCallsPerTurn);
-                var stop = await DispatchAsync(file, run, engineSession, request, preferences, model).ConfigureAwait(false);
+                var stop = await DispatchAsync(file, run, engineSession, request, preferences).ConfigureAwait(false);
                 var executed = file.Changes.Count(c => string.Equals(c.TurnId, run.TurnId, StringComparison.Ordinal));
                 if (executed > preferences.MaxChangesPerTurn) throw TooManyChanges(preferences.MaxChangesPerTurn);
                 if (stop)
@@ -218,7 +218,7 @@ public sealed partial class AiAssistant
 
     /// <summary>派发一次工具调用（权限链 → 审批 → 执行 → 台账 → 回灌）。返回 true = 用户要求停止回合。</summary>
     private async Task<bool> DispatchAsync(AiSessionFile file, TurnRun run, Session engineSession,
-        AiToolCallRequest request, AiPreferences preferences, AiModelInfo model)
+        AiToolCallRequest request, AiPreferences preferences)
     {
         var descriptor = _tools.Descriptor(request.Name);
         var exposed = _tools.IsExposed(request.Name, preferences.AdvancedToolsEnabled);
@@ -319,10 +319,17 @@ public sealed partial class AiAssistant
             var token = confirm?.Details is { } details && details.TryGetProperty("confirm_token", out var element)
                 ? element.GetString()
                 : null;
-            var result = await ExecuteAsync(request, engineSession, run, token).ConfigureAwait(false);
+            var result = await ExecuteAsync(request, engineSession, run, token, call.CallId).ConfigureAwait(false);
             stopwatch.Stop();
 
-            var changes = BuildChanges(file, run, call, request.Name, descriptor, result, model, preferences);
+            // 台账：引擎字段级 diff 优先（名称/路径按"变更发生时刻"解析）；可撤销性以引擎撤销栈为准
+            var seq = NextSeq(file);
+            var undoable = await CheckUndoableAsync(descriptor, call.CallId, engineSession, run.Cts.Token)
+                .ConfigureAwait(false);
+            var changes = await new AiChangeLedger(_client, new CallerRef(CallerKind.Agent, engineSession.SessionId))
+                .BuildAsync(run.TurnId, call.CallId, request.Name, result, preferences.MaxChangesPerTurn + 1,
+                    undoable, () => seq++, run.Cts.Token).ConfigureAwait(false);
+
             var resultJson = result.Data.ValueKind == JsonValueKind.Undefined ? "{}" : result.Data.GetRawText();
             var inline = resultJson.Length <= AiArtifactStore.InlineLimitChars
                 ? resultJson
@@ -342,6 +349,9 @@ public sealed partial class AiAssistant
                 ChangeIds = changes.Select(x => x.ChangeId).ToArray(),
             });
             file.Changes.AddRange(changes);
+            foreach (var change in changes)
+                Notified?.Invoke(new AiNotification(AiNotificationKind.ChangeRecorded, file.Summary.SessionId,
+                    TurnId: run.TurnId, Change: change));
             file.Chat.Add(new AiChatMessage("tool", inline, null, request.Id));
             Persist(file);
             return false;
@@ -365,7 +375,7 @@ public sealed partial class AiAssistant
     }
 
     private async Task<CommandResult<JsonElement>> ExecuteAsync(AiToolCallRequest request, Session engineSession,
-        TurnRun run, string? token)
+        TurnRun run, string? token, string? undoGroupId = null)
     {
         JsonElement args;
         try
@@ -383,7 +393,8 @@ public sealed partial class AiAssistant
         var descriptor = _tools.Descriptor(request.Name);
         var options = new CallOptions(
             ConfirmToken: token,
-            Caller: new CallerRef(CallerKind.Agent, engineSession.SessionId));
+            Caller: new CallerRef(CallerKind.Agent, engineSession.SessionId),
+            UndoGroupId: undoGroupId);   // 本会话撤销的归属键（= 工具调用 ID）：台账据此在撤销栈里核对可撤销性
         // T 必须是 object：引擎按处理器声明的类型铸造返回值（DTO/列表各不相同），只有 object 恒可承接
         if (descriptor?.IsMutation == true)
         {
@@ -409,57 +420,39 @@ public sealed partial class AiAssistant
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>从引擎变更集产出台账条目（P1 = 实体级；字段级 diff 与名称解析见 P2）。</summary>
-    private List<AiChange> BuildChanges(AiSessionFile file, TurnRun run, AiToolCall call, string command,
-        CommandDescriptor? descriptor, CommandResult<JsonElement> result, AiModelInfo model, AiPreferences preferences)
+    /// <summary>
+    /// 可撤销性以**引擎撤销栈**为准（功能书 §7.4：不给会失败的撤销按钮）：
+    /// 只有声明 <see cref="CommandCaps.Reversible"/> 的命令才可能入栈，而"是否真的入栈"由引擎按
+    /// "本次是否产生了可逆变更"决定（改名/改属性类不入栈、事务批/宏不进栈）——因此查一次 <c>undo.list</c>
+    /// 与本调用的归属键（<see cref="CallOptions.UndoGroupId"/> = 工具调用 ID）核对。
+    /// 查询失败 = 标不可撤销（宁少不多），绝不因此让回合失败。
+    /// </summary>
+    private async Task<bool> CheckUndoableAsync(CommandDescriptor? descriptor, string callId,
+        Session engineSession, CancellationToken ct)
     {
-        var changes = new List<AiChange>();
-        if (result.Changes is not { } changeSet || changeSet.Touched.Count == 0) return changes;
-        var undoable = descriptor?.Caps.HasFlag(CommandCaps.Reversible) == true;   // descriptor 口径（P2 起以撤销栈条目为准）
-        foreach (var entity in changeSet.Touched)
+        if (descriptor?.Caps.HasFlag(CommandCaps.Reversible) != true) return false;
+        try
         {
-            if (entity.Id == "*") continue;   // 通配实体（如 audit.prune）不是具体对象，不入台账
-            changes.Add(new AiChange(
-                ChangeId: $"d-{Guid.NewGuid():N}",
-                Seq: NextSeq(file),
-                TurnId: run.TurnId,
-                CallId: call.CallId,
-                Command: command,
-                Kind: ClassifyChange(command),
-                EntityType: entity.Type,
-                EntityId: entity.Id,
-                EntityName: NameFromResult(result.Data),
-                EntityPath: null,
-                EntityExists: true,
-                Fields: null,
-                Outcome: AiChangeOutcome.Applied,
-                ErrorCode: null,
-                Undoable: undoable,
-                Source: AiChangeSource.EntityOnly,
-                Truncated: false,
-                Omitted: 0,
-                At: DateTimeOffset.UtcNow,
-                CorrelationId: null,
-                BatchId: null));
+            var list = await _client.QueryAsync<JsonElement>("undo.list", null,
+                    new CallOptions(Caller: new CallerRef(CallerKind.Agent, engineSession.SessionId)), ct)
+                .ConfigureAwait(false);
+            if (list.ValueKind != JsonValueKind.Object || !list.TryGetProperty("entries", out var entries)
+                || entries.ValueKind != JsonValueKind.Array)
+                return false;
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (entry.TryGetProperty("group_id", out var group) && group.ValueKind == JsonValueKind.String
+                    && string.Equals(group.GetString(), callId, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
         }
-        foreach (var change in changes)
-            Notified?.Invoke(new AiNotification(AiNotificationKind.ChangeRecorded, file.Summary.SessionId,
-                TurnId: run.TurnId, Change: change));
-        return changes;
+        catch (Exception ex) when (ex is EngineException or AiException or JsonException)
+        {
+            LpLog.Warn("undo stack lookup failed (the change is marked not undoable)", ex, category: "ai.ledger");
+            return false;
+        }
     }
-
-    private static AiChangeKind ClassifyChange(string command) => command switch
-    {
-        _ when command.Contains(".create", StringComparison.Ordinal) => AiChangeKind.Create,
-        _ when command.Contains(".trash", StringComparison.Ordinal) => AiChangeKind.Delete,
-        _ when command.Contains(".purge", StringComparison.Ordinal) => AiChangeKind.Purge,
-        _ when command.Contains("restore", StringComparison.Ordinal) => AiChangeKind.Restore,
-        _ when command.Contains(".move", StringComparison.Ordinal) => AiChangeKind.Move,
-        _ when command.Contains("import", StringComparison.Ordinal) => AiChangeKind.Import,
-        _ when command.Contains("export", StringComparison.Ordinal) => AiChangeKind.Export,
-        _ when command.Contains("update", StringComparison.Ordinal) => AiChangeKind.Update,
-        _ => AiChangeKind.Diagnostic,
-    };
 
     private static string? NameFromResult(JsonElement data)
     {

@@ -87,6 +87,112 @@ public class AiLoopTests
         Assert.Equal(AiToolDecision.Allow, AiPermissionChain.Decide(create, AiMode.ConfirmEach, true));     // ⑤
     }
 
+    // ── 台账的粒度来源 / 名称路径解析 / 可撤销性（P2）────────────
+
+    [Fact]
+    public async Task 台账_引擎字段级diff_按实体分组_带名称与容器路径()
+    {
+        using var host = NewHost(
+        [
+            [
+                TextChunk("work"), ToolChunk(0, "call_1", "folders.create", """{"name":"工作"}"""),
+                ToolChunk(1, "call_2", "links.create", """{"url":"https://a.test/x","title":"Rust 圣经","description":"中文教程"}"""),
+                "data: [DONE]",
+            ],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建夹并加书签");
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        Assert.Equal(2, detail.Changes.Count);
+
+        var folder = detail.Changes.Single(c => c.EntityType == "folder");
+        Assert.Equal(AiChangeKind.Create, folder.Kind);
+        Assert.Equal(AiChangeSource.EngineDiff, folder.Source);
+        Assert.Equal("工作", folder.EntityName);
+        Assert.Equal("@root", folder.EntityPath);                              // 位置 = 容器目录
+        Assert.Contains(folder.Fields!, f => f.Field == "name" && f.After?.GetString() == "工作");
+        Assert.True(folder.EntityExists);
+        Assert.True(folder.Undoable);                                         // 引擎撤销栈里确实登记了（单命令可逆变更）
+
+        var link = detail.Changes.Single(c => c.EntityType == "link");
+        Assert.Equal(AiChangeKind.Create, link.Kind);
+        Assert.Equal(AiChangeSource.EngineDiff, link.Source);
+        Assert.Equal("Rust 圣经", link.EntityName);                            // 名称取自 diff/查询结果（title 优先）
+        Assert.Equal("@root", link.EntityPath);
+        Assert.Contains(link.Fields!, f => f.Field == "url" && f.After?.GetString() == "https://a.test/x");
+    }
+
+    [Fact]
+    public async Task 台账_没有字段差异的实体_降级为仅实体级()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: client => client.ExecuteAsync<object>("links.create", new { url = "https://same.test/x", title = "甲" }),
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://same.test/x" }))
+                    .Single().LinkId;
+                // 同值改名 = 零字段变化（touched 里仍有该实体）→ 台账如实降级为"仅实体级"
+                return
+                [
+                    [ToolChunk(0, "call_1", "links.update", $$"""{"id":"{{id}}","title":"甲"}"""), "data: [DONE]"],
+                    [TextChunk("noop"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "改成同名");
+
+        var change = (await host.Assistant.GetSessionAsync(sessionId)).Changes.Single();
+        Assert.Equal(AiChangeSource.EntityOnly, change.Source);
+        Assert.Null(change.Fields);
+        Assert.Equal("甲", change.EntityName);                                 // 名称仍解析（实体还在主表）
+        Assert.False(change.Undoable);                                         // 改名不入撤销栈 → 不给会失败的撤销按钮
+    }
+
+    [Fact]
+    public async Task 台账_可撤销性以引擎撤销栈为准_移动带旧归属()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: async client =>
+            {
+                var folder = await client.ExecuteAsync<FolderDto>("folders.create", new { name = "工作" });
+                await client.ExecuteAsync<object>("links.create",
+                    new { url = "https://move.test/x", title = "乙", list_id = folder.Data!.FolderId });
+            },
+            scripts: async client =>
+            {
+                var link = (await client.QueryAsync<List<LinkDto>>("links.find_by_url", new { url = "https://move.test/x" }))
+                    .Single();
+                // 移出目录 → 归属变化 = 可逆变更（引擎撤销栈登记 + diff 带旧归属）
+                return
+                [
+                    [ToolChunk(0, "call_1", "links.move_batch", $$"""{"link_ids":["{{link.LinkId}}"]}"""), "data: [DONE]"],
+                    [TextChunk("moved"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "移到根");
+
+        var change = (await host.Assistant.GetSessionAsync(sessionId)).Changes.Single();
+        Assert.Equal(AiChangeKind.Move, change.Kind);
+        Assert.Equal(AiChangeSource.EngineDiff, change.Source);
+        Assert.True(change.Undoable);
+        Assert.Equal("@root", change.EntityPath);                              // 移动后位置 = 根
+        var location = Assert.Single(change.Fields!, f => f.Field == "folder_id");
+        Assert.Equal("工作", (await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "工作" }))
+            .Single().Name);                                                   // 旧归属目录可解析（台账按当时事实留痕）
+        // 归属从"工作"变为根级：Before 有值、After 为空（会话文件往返后"空值/不适用"统一为 null）
+        Assert.NotNull(location.Before);
+        Assert.Null(location.After);
+    }
+
     // ── 整条回合链路（假传输层 + 真实引擎）────────────────────
 
     /// <summary>照剧本吐 SSE 行的假传输层（CI 不打真实网络；每个剧本项对应一次模型请求）。</summary>
@@ -139,6 +245,19 @@ public class AiLoopTests
         var dataRoot = AiTestEnv.NewRoot();
         var composed = EngineComposer.Compose(dbPath);
         var transport = new ScriptedTransport(scripts);
+        var assistant = AiRuntime.Create(dataRoot, composed.Client, composed.Sessions, transport);
+        return new Host(assistant, composed.Client, composed.Sessions, transport, dataRoot, dbPath);
+    }
+
+    /// <summary>带预置数据的宿主：先 seed，再用真实 ID 生成模型剧本（模型/测试需要知道实体 ID）。</summary>
+    private static async Task<Host> NewSeededHostAsync(Func<EngineClient, Task> seed,
+        Func<EngineClient, Task<string[][]>> scripts)
+    {
+        var dbPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpai_{Guid.NewGuid():N}.db");
+        var dataRoot = AiTestEnv.NewRoot();
+        var composed = EngineComposer.Compose(dbPath);
+        await seed(composed.Client);
+        var transport = new ScriptedTransport(await scripts(composed.Client));
         var assistant = AiRuntime.Create(dataRoot, composed.Client, composed.Sessions, transport);
         return new Host(assistant, composed.Client, composed.Sessions, transport, dataRoot, dbPath);
     }
