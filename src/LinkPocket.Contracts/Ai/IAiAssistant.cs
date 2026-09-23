@@ -75,7 +75,7 @@ public interface IAiAssistant
     // ── 回合 ──────────────────────────────────────────────────
 
     /// <summary>发一条用户消息并跑一个回合；已有回合在跑 → LP.AI.011（details.reason = turn_in_progress）。</summary>
-    Task SendAsync(string sessionId, string text, CancellationToken ct = default);
+    Task SendAsync(string sessionId, string text, AiTurnContext? context = null, CancellationToken ct = default);
 
     /// <summary>停止当前回合（立即释放写入冻结；**已提交的变更不回退**）。</summary>
     Task CancelTurnAsync(string sessionId, CancellationToken ct = default);

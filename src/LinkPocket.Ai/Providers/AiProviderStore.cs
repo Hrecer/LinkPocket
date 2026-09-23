@@ -184,6 +184,24 @@ public sealed class AiProviderStore
         }
     }
 
+    /// <summary>清掉最近一次连通性测试记录（密钥变更后徽标回到"已配置未验证"）。</summary>
+    public AiProviderInfo ClearLastTestResult(string providerId, AiCredentialStore credentials)
+    {
+        ArgumentNullException.ThrowIfNull(credentials);
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
+        lock (_gate)
+        {
+            var file = Load();
+            var template = AiProviderCatalog.Find(providerId);
+            var record = RecordOf(file, providerId);
+            if (template is null && record is null)
+                throw UnknownProvider(providerId);
+
+            if (file.Tests?.Remove(providerId) == true) Save(file);
+            return Project(template, record, file.Tests, credentials);
+        }
+    }
+
     // ── 内部 ────────────────────────────────────────────────
 
     private static ProviderRecord FromTemplate(AiProviderTemplate template)

@@ -48,7 +48,9 @@ public sealed record AiToolCall(
     string? CorrelationId,
     string? BatchId,
     DateTimeOffset At,
-    IReadOnlyList<string>? ChangeIds = null);
+    IReadOnlyList<string>? ChangeIds = null,
+    /// <summary>工具结果的原始 JSON（回灌模型用；界面默认只显示 ResultSummary，"查看原始结果"才读它）。</summary>
+    string? ResultJson = null);
 
 /// <summary>变更分类（台账展示用）。</summary>
 public enum AiChangeKind
@@ -217,3 +219,10 @@ public enum AiExportFormat
     Csv = 1,
     Json = 2,
 }
+
+/// <summary>回合上下文快照（界面注入：用户"此刻在看什么"；语言决定模型回答语言）。</summary>
+public sealed record AiTurnContext(
+    string? NavId = null,
+    string? FolderPath = null,
+    IReadOnlyList<string>? SelectedNames = null,
+    string? LanguageCode = null);

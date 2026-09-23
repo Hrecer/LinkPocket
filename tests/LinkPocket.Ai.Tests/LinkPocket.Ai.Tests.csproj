@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LinkPocket.Ai\LinkPocket.Ai.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Composition\LinkPocket.Composition.csproj" />
     <ProjectReference Include="..\..\src\LinkPocket.Engine\LinkPocket.Engine.csproj" />
   </ItemGroup>
 
