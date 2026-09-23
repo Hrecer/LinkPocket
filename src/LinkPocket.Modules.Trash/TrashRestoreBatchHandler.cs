@@ -52,7 +52,8 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: touched,
                 Events: [DomainEventNames.FoldersChanged, DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"Restored {outcome.Links.Count} link(s) and {outcome.Units.Count} unit(s) ({outcome.RestoredFolderIds.Count} folder(s)){fellNote}"),
+                HumanSummary: $"Restored {outcome.Links.Count} link(s) and {outcome.Units.Count} unit(s) ({outcome.RestoredFolderIds.Count} folder(s)){fellNote}",
+                Diff: outcome.Diff.Count > 0 ? outcome.Diff : null),
             outcome.UndoSteps);
     }
 }

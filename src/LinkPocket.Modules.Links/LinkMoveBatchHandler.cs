@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Data;
 using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
@@ -38,6 +39,7 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
 
         var previousFolders = new HashSet<string>(StringComparer.Ordinal);
         var oldListIds = new Dictionary<string, string?>(StringComparer.Ordinal);   // 撤销载荷要带旧目录（变更前快照）
+        var diff = new List<FieldChange>();
         foreach (var linkId in linkIds)
         {
             var link = await ctx.Uow.Links.FindAsync(new LinkId(linkId), ct)
@@ -45,8 +47,10 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
                     EngineErrors.EntityNotFound, $"link {linkId} does not exist", correlationId: ctx.CorrelationId));
             if (link.ListId != null) previousFolders.Add(link.ListId);
             oldListIds[linkId] = link.ListId;
+            var before = LinkSnapshot.Of(link);
             link.ListId = target;
             link.UpdatedAt = DateTime.UtcNow;
+            diff.AddRange(EntityDiff.Diff(linkId, before, LinkSnapshot.Of(link)));
         }
 
         // 新旧目录父链内容变化 + LinkCount 缓存回填
@@ -70,7 +74,8 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: linkIds.Select(id => new EntityRef("link", id)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
-                HumanSummary: $"Moved {linkIds.Count} link(s)"),
+                HumanSummary: $"Moved {linkIds.Count} link(s)",
+                Diff: diff.Count > 0 ? diff : null),
             undo.Count > 0 ? undo : null);
     }
 }

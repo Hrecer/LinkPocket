@@ -399,11 +399,20 @@ public sealed class EngineCore : IEngine
         if (own?.Warnings is { Count: > 0 } ownWarnings) warnings.AddRange(ownWarnings);
         if (nested.Warnings is { Count: > 0 } nestedWarnings) warnings.AddRange(nestedWarnings);
 
-        var payload = JsonSerializer.SerializeToElement(new ChangeSet(
+        // 字段级 diff 同样聚合（自身 + 嵌套，按发生顺序）：订阅方/AI 台账能看到每一步改了哪个字段。
+        // 事件负载是**粗粒度广播**：diff 按**值**去重——嵌套步骤的变更在"经父缓冲发布"的命令
+        // （macro.run 等：处理器把子步骤变更同时写进自身结果与父缓冲）里会出现两份，
+        // 广播只留一份；命令结果与批报告保留完整序列（不去重，时间线保真）。
+        var diff = new List<FieldChange>();
+        if (own?.Diff is { Count: > 0 } ownDiff) diff.AddRange(ownDiff);
+        if (nested.Diff is { Count: > 0 } nestedDiff) diff.AddRange(nestedDiff);
+
+        var payload = ChangeSetPayload.From(new ChangeSet(
             touched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
             distinctEvents,
             own?.HumanSummary,
-            warnings.Count > 0 ? warnings.Distinct(StringComparer.Ordinal).ToArray() : null), EngineJson.Options);
+            warnings.Count > 0 ? warnings.Distinct(StringComparer.Ordinal).ToArray() : null,
+            diff.Count > 0 ? diff.Distinct().ToArray() : null));
 
         foreach (var name in distinctEvents)
             await PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));

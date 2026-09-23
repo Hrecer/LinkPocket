@@ -175,19 +175,14 @@ public sealed class EngineWire(IEngine engine)
     private static CallOptions DeserializeOptions(JsonElement el)
         => JsonSerializer.Deserialize<CallOptions>(el.GetRawText(), WireOptions) ?? new CallOptions();
 
+    /// <summary>写流响应结果：<c>{ ok, data, changes, audit_ref }</c>。changes 走载荷唯一投影
+    /// （<see cref="ChangeSetPayload"/>：与审计 changes_json / 事件负载同形状，diff 上限 2000 条 + 截断标记）。</summary>
     private static object ToWireResult<T>(CommandResult<T> r) => new
     {
         ok = r.Ok,
         data = r.Data,
         audit_ref = r.AuditRef,
-        changes = r.Changes == null
-            ? null
-            : new
-            {
-                touched = r.Changes.Touched.Select(t => new { type = t.Type, id = t.Id }),
-                events = r.Changes.Events,
-                human_summary = r.Changes.HumanSummary,
-            },
+        changes = r.Changes == null ? (JsonElement?)null : ChangeSetPayload.From(r.Changes),
     };
 
     private static string Require(JsonElement args, string name)

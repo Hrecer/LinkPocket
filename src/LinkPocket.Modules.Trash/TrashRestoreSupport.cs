@@ -84,6 +84,7 @@ internal static class TrashRestoreSupport
         var undoSteps = new List<UndoInverseStep>();
         var touched = new HashSet<string>(StringComparer.Ordinal);
         var namingTables = new Dictionary<string, SiblingNameTable>(StringComparer.Ordinal);
+        var diff = new List<FieldChange>();   // 字段级 diff：还原 = 实体重新回到主表（Before 为"不适用"，After 为落点后的现值）
 
         // —— 1. 先单元（选择顺序；父子同选 → 子被父覆盖）——
         foreach (var unitId in SelectEffectiveUnits(allUnits, folderIds))
@@ -136,6 +137,8 @@ internal static class TrashRestoreSupport
                     VisitCount = member.VisitCount,
                     UpdatedAt = DateTime.UtcNow,
                 }, ct);
+                diff.AddRange(EntityDiff.Diff(member.TrashFolderId, null,
+                    new FolderSnapshot(name, member.Description, isRoot ? landing : member.ParentTrashFolderId)));
                 restoredFolderIds.Add(member.TrashFolderId);
                 restoredFolderIdSet.Add(member.TrashFolderId);
             }
@@ -149,7 +152,7 @@ internal static class TrashRestoreSupport
                     if (await uow.Links.FindAsync(new LinkId(snapshot.LinkId), ct) != null)
                         throw Conflict($"bookmark {snapshot.LinkId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
                     var duplicate = await DuplicatedAtAsync(uow, restoredLinks, snapshot.TrashFolderId, snapshot.Url, ct);
-                    _ = await uow.Links.AddAsync(new Link
+                    var restored = new Link
                     {
                         LinkId = snapshot.LinkId,      // 保留原 ID
                         Url = snapshot.Url,
@@ -162,7 +165,9 @@ internal static class TrashRestoreSupport
                         IsImportant = snapshot.IsImportant,
                         CreatedAt = snapshot.CreatedAt,
                         UpdatedAt = DateTime.UtcNow,
-                    }, ct);
+                    };
+                    _ = await uow.Links.AddAsync(restored, ct);
+                    diff.AddRange(EntityDiff.Diff(snapshot.LinkId, null, LinkSnapshot.Of(restored)));
                     await uow.Trash.RemoveLinkAsync(new LinkId(snapshot.LinkId), ct);
                     restoredLinks.Add(new RestoredLinkInfo(
                         snapshot.LinkId, snapshot.Url, snapshot.Title, snapshot.TrashFolderId, false, duplicate));
@@ -199,7 +204,7 @@ internal static class TrashRestoreSupport
             if (fellBack) fellBackToRoot.Add(snapshot.Title ?? snapshot.Url);
 
             var duplicate = await DuplicatedAtAsync(uow, restoredLinks, landing, snapshot.Url, ct);
-            _ = await uow.Links.AddAsync(new Link
+            var restoredLink = new Link
             {
                 LinkId = snapshot.LinkId,      // 保留原 ID
                 Url = snapshot.Url,
@@ -212,7 +217,9 @@ internal static class TrashRestoreSupport
                 IsImportant = snapshot.IsImportant,
                 CreatedAt = snapshot.CreatedAt,
                 UpdatedAt = DateTime.UtcNow,
-            }, ct);
+            };
+            _ = await uow.Links.AddAsync(restoredLink, ct);
+            diff.AddRange(EntityDiff.Diff(snapshot.LinkId, null, LinkSnapshot.Of(restoredLink)));
             await uow.Trash.RemoveLinkAsync(new LinkId(id), ct);
             restoredLinks.Add(new RestoredLinkInfo(snapshot.LinkId, snapshot.Url, snapshot.Title, landing, fellBack, duplicate));
             restoredLinkIds.Add(id);
@@ -243,7 +250,7 @@ internal static class TrashRestoreSupport
             }
         }
 
-        return new TrashRestoreOutcome(restoredLinks, restoredUnits, restoredFolderIds, fellBackToRoot, renamed, undoSteps);
+        return new TrashRestoreOutcome(restoredLinks, restoredUnits, restoredFolderIds, fellBackToRoot, renamed, undoSteps, diff);
     }
 
     /// <summary>父子同选标准化：任一所选单元的祖先也在所选集合内 → 该单元被祖先覆盖（只处理祖先，顺序无关）。</summary>
@@ -330,7 +337,8 @@ internal sealed record TrashRestoreOutcome(
     IReadOnlyList<string> RestoredFolderIds,
     IReadOnlyList<string> FellBackToRoot,
     IReadOnlyList<TrashRestoreRename> Renamed,
-    IReadOnlyList<UndoInverseStep> UndoSteps);
+    IReadOnlyList<UndoInverseStep> UndoSteps,
+    IReadOnlyList<FieldChange> Diff);
 
 /// <summary>一条被还原的链接：落点 + 是否回落根 + 落点处是否已有同 URL（信息性）。</summary>
 internal sealed record RestoredLinkInfo(

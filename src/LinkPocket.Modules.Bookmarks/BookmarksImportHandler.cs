@@ -116,6 +116,15 @@ internal sealed class BookmarksImportHandler : ICommandHandler
         var summary = $"Imported {foldersToAdd.Count} folders and {linksToAdd.Count} bookmarks"
                       + (foldersRenamed > 0 ? $"({foldersRenamed} same-named entries were auto-numbered)" : "")
                       + (doc.SkippedCount > 0 ? $"({doc.SkippedCount} invalid entries skipped)" : "");
+
+        // 字段级 diff：导入的每个实体按"创建"口径给全字段新值（Before 为"不适用"）。
+        // 规模由导入文件决定；载荷侧有 2000 条上限 + 截断标记（ENGINE-API §1），此处不裁剪。
+        var diff = new List<FieldChange>(foldersToAdd.Count + linksToAdd.Count);
+        foreach (var folder in foldersToAdd)
+            diff.AddRange(EntityDiff.Diff(folder.FolderId, null, FolderSnapshot.Of(folder)));
+        foreach (var link in linksToAdd)
+            diff.AddRange(EntityDiff.Diff(link.LinkId, null, LinkSnapshot.Of(link)));
+
         return CommandResult.Ok(
             JsonSerializer.SerializeToElement(new
             {
@@ -132,6 +141,7 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.FoldersChanged],
                 HumanSummary: summary,
                 // 容错告警同时走 ChangeSet.Warnings（观测面契约：绝不静默吞掉；data.warnings 供 UI 展示保留）
-                Warnings: doc.Warnings.Count > 0 ? doc.Warnings : null));
+                Warnings: doc.Warnings.Count > 0 ? doc.Warnings : null,
+                Diff: diff.Count > 0 ? diff : null));
     }
 }

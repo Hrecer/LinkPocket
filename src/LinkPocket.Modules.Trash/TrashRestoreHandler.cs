@@ -41,7 +41,8 @@ internal sealed class TrashRestoreHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("link", info.LinkId)],
                 Events: [DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"Restored '{info.Title ?? info.Url}' to '{location}'{fellNote}"),
+                HumanSummary: $"Restored '{info.Title ?? info.Url}' to '{location}'{fellNote}",
+                Diff: outcome.Diff.Count > 0 ? outcome.Diff : null),
             outcome.UndoSteps);
     }
 }

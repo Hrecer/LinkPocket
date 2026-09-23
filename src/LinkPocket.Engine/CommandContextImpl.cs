@@ -12,6 +12,7 @@ internal sealed class CommandContextImpl : ICommandContext
     private readonly List<string> _nestedEvents = [];
     private readonly List<EntityRef> _nestedTouched = [];
     private readonly List<string> _nestedWarnings = [];
+    private readonly List<FieldChange> _nestedDiff = [];
 
     public CommandContextImpl(
         IUnitOfWork uow,
@@ -46,29 +47,34 @@ internal sealed class CommandContextImpl : ICommandContext
 
     /// <summary>累积嵌套子命令的变更集（父提交成功后随父事件一并发布并失效缓存；父审计条目下附带子记录）。
     /// <b>设计</b>：嵌套步骤的 HumanSummary 不向上合并——人话摘要只由顶层命令产出，
-    /// 嵌套子步骤只贡献「受影响实体 + 事件名」，避免多段摘要拼接带来文案割裂。</summary>
+    /// 嵌套子步骤只贡献「受影响实体 + 事件名 + 字段级 diff」，避免多段摘要拼接带来文案割裂。
+    /// diff **按发生顺序并入、不去重**（同一实体多次变更 = 多条记录，时间线保真）。</summary>
     public void CollectNestedChange(ChangeSet? changes)
     {
         if (changes is null) return;
         _nestedEvents.AddRange(changes.Events);
         _nestedTouched.AddRange(changes.Touched);
         if (changes.Warnings is { Count: > 0 }) _nestedWarnings.AddRange(changes.Warnings);
+        if (changes.Diff is { Count: > 0 }) _nestedDiff.AddRange(changes.Diff);
     }
 
-    /// <summary>取走嵌套变更集（事件名去重、受影响实体去重）：父级只发布/失效一次。</summary>
+    /// <summary>取走嵌套变更集（事件名去重、受影响实体去重；diff 保序不去重）：父级只发布/失效一次。</summary>
     public ChangeSet TakeNestedChanges()
     {
-        if (_nestedTouched.Count == 0 && _nestedEvents.Count == 0 && _nestedWarnings.Count == 0)
+        if (_nestedTouched.Count == 0 && _nestedEvents.Count == 0 && _nestedWarnings.Count == 0
+            && _nestedDiff.Count == 0)
             return ChangeSet.Empty;   // 无嵌套变更 = 空集短路，不为零集合反复分配新实例
 
         var merged = new ChangeSet(
             _nestedTouched.DistinctBy(r => (r.Type, r.Id)).ToArray(),
             _nestedEvents.Distinct(StringComparer.Ordinal).ToArray(),
             null,
-            _nestedWarnings.Count > 0 ? _nestedWarnings.Distinct(StringComparer.Ordinal).ToArray() : null);
+            _nestedWarnings.Count > 0 ? _nestedWarnings.Distinct(StringComparer.Ordinal).ToArray() : null,
+            _nestedDiff.Count > 0 ? _nestedDiff.ToArray() : null);
         _nestedEvents.Clear();
         _nestedTouched.Clear();
         _nestedWarnings.Clear();
+        _nestedDiff.Clear();
         return merged;
     }
 }

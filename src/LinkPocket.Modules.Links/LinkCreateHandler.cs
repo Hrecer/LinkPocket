@@ -84,6 +84,8 @@ internal sealed class LinkCreateHandler : ICommandHandler
 
         var summary = $"Link '{link.Title ?? link.Url}' created"
                       + (warnings == null ? "" : "(metadata not fetched)");
+        // 字段级 diff：创建 = 全字段新值（Before 为"不适用"）
+        var diff = EntityDiff.Diff(link.LinkId, null, LinkSnapshot.Of(link));
         // 撤销载荷：撤销"新建链接"（也覆盖"复制粘贴链接"）= 把刚建的链接移入回收站（软删除）。
         // **重做必须显式给出** = 从回收站还原（保留原 ID）：若按缺省重放 links.create，会生成**新 ID**，
         // 原 ID 丢失且回收站里留下旧快照（同一个用户动作变成两条数据）。
@@ -93,7 +95,8 @@ internal sealed class LinkCreateHandler : ICommandHandler
                 Touched: [new EntityRef("link", link.LinkId)],
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
                 HumanSummary: summary,
-                Warnings: warnings),
+                Warnings: warnings,
+                Diff: diff),
             [new UndoInverseStep("links.trash",
                 JsonSerializer.SerializeToElement(new { id = link.LinkId }),
                 new UndoAction("trash.restore",

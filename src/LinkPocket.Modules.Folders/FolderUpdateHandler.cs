@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Data;
 using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
@@ -35,6 +36,7 @@ internal sealed class FolderUpdateHandler : ICommandHandler
         var folder = await ctx.Uow.Folders.FindAsync(id, ct)
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
+        var before = FolderSnapshot.Of(folder);   // 字段级 diff 的旧值快照（改名编号前）
 
         if (name != null)
         {
@@ -50,11 +52,13 @@ internal sealed class FolderUpdateHandler : ICommandHandler
         // 改名 → 自身与全部祖先的内容构成变化（与既有 Touch 口径等价）
         await ctx.Uow.Trees.TouchModifiedAsync(id, ct);
 
+        var diff = EntityDiff.Diff(folder.FolderId, before, FolderSnapshot.Of(folder));
         return CommandResult.Ok(
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"Folder '{folder.Name}' updated"));
+                $"Folder '{folder.Name}' updated",
+                diff: diff.Count > 0 ? diff : null));
     }
 }

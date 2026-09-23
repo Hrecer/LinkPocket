@@ -137,15 +137,16 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
 
         // 宏实际运行耗时（此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
         var sw = Stopwatch.StartNew();
-        var (results, touched, events) = await BatchEngine.RunStepsNestedAsync(
+        var (results, touched, events, diff) = await BatchEngine.RunStepsNestedAsync(
             (CommandContextImpl)ctx, script with { Name = $"macro:{name}" }, ctx.Ct);
         sw.Stop();
 
         var summary = $"Macro '{name}' finished: {results.Count(r => r.Ok)}/{results.Count} steps succeeded";
+        var changes = new ChangeSet(touched, events, summary, Warnings: null, Diff: diff.Count > 0 ? diff : null);
         var report = new BatchReport(
             ctx.CorrelationId, $"macro:{name}", results.All(r => r.Ok), results,
-            new ChangeSet(touched, events, summary), summary, sw.ElapsedMilliseconds, ctx.CorrelationId);
-        return CommandResult.Ok(BatchEngine.ToElement(report), new ChangeSet(touched, events, summary));
+            changes, summary, sw.ElapsedMilliseconds, ctx.CorrelationId);
+        return CommandResult.Ok(BatchEngine.ToElement(report), changes);
     }
 }
 

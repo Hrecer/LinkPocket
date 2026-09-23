@@ -63,7 +63,8 @@ internal sealed class FolderCreateHandler : ICommandHandler
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"Folder '{folder.Name}' created"),
+                $"Folder '{folder.Name}' created",
+                diff: EntityDiff.Diff(folder.FolderId, null, FolderSnapshot.Of(folder))),
             [new UndoInverseStep("folders.delete",
                 JsonSerializer.SerializeToElement(new { folder_id = folder.FolderId, cascade = "trash_links" }),
                 new UndoAction("trash.restore_unit",

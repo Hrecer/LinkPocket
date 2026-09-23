@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Data;
 using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
@@ -43,6 +44,7 @@ internal sealed class LinkUpdateHandler : ICommandHandler
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
         var previousListId = link.ListId;
+        var before = LinkSnapshot.Of(link);   // 字段级 diff 的旧值快照（只有事务内这一次可读）
 
         if (!string.IsNullOrEmpty(url)) link.Url = url.Trim();
         if (title != null) link.Title = title;
@@ -71,12 +73,14 @@ internal sealed class LinkUpdateHandler : ICommandHandler
                     JsonSerializer.SerializeToElement(new { link_ids = new[] { id.Value }, target_list_id = previousListId }))
             };
 
+        var diff = EntityDiff.Diff(link.LinkId, before, LinkSnapshot.Of(link));
         return CommandResult.Ok(
             link.ToDto(),
             ChangeSet.Of(
                 new EntityRef("link", link.LinkId),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"Link '{link.Title ?? link.Url}' updated"),
+                $"Link '{link.Title ?? link.Url}' updated",
+                diff: diff.Count > 0 ? diff : null),
             undo);
     }
 }

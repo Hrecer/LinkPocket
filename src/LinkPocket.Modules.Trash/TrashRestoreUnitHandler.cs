@@ -54,7 +54,8 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("folder", unitId)],
                 Events: [DomainEventNames.FoldersChanged, DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                HumanSummary: $"Folder unit restored ({outcome.RestoredFolderIds.Count} folders / {outcome.Links.Count} links) to '{location}'{renameNote}{fellNote}"),
+                HumanSummary: $"Folder unit restored ({outcome.RestoredFolderIds.Count} folders / {outcome.Links.Count} links) to '{location}'{renameNote}{fellNote}",
+                Diff: outcome.Diff.Count > 0 ? outcome.Diff : null),
             outcome.UndoSteps);
     }
 }

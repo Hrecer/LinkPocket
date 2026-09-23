@@ -28,9 +28,10 @@ public sealed class SqlAuditWriter : IAuditWriter
         var at = entry.At.ToString("O");
         var argsJson = entry.ArgsJson is { Length: > MaxArgsJsonLength } long_
             ? long_[..MaxArgsJsonLength] : entry.ArgsJson;
+        // 变更载荷走唯一投影（与 wire changes / 事件负载同形状）：diff 上限 2000 条 + 自描述截断标记
         var changesJson = entry.Changes is null
             ? null
-            : JsonSerializer.Serialize(entry.Changes, EngineJson.Options);
+            : ChangeSetPayload.From(entry.Changes).GetRawText();
 
         using var db = _dbFactory();
         var connection = db.Database.GetDbConnection();

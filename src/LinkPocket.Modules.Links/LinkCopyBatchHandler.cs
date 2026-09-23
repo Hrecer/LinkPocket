@@ -35,6 +35,7 @@ internal sealed class LinkCopyBatchHandler : ICommandHandler
                     EngineErrors.EntityNotFound, $"target folder {target} does not exist", correlationId: ctx.CorrelationId));
 
         var created = new List<string>();
+        var diff = new List<FieldChange>();
         foreach (var linkId in linkIds)
         {
             var link = await ctx.Uow.Links.FindAsync(new LinkId(linkId), ct)
@@ -56,6 +57,7 @@ internal sealed class LinkCopyBatchHandler : ICommandHandler
             };
             _ = await ctx.Uow.Links.AddAsync(copy, ct);
             created.Add(copy.LinkId);
+            diff.AddRange(EntityDiff.Diff(copy.LinkId, null, LinkSnapshot.Of(copy)));   // 复制 = 创建口径的全字段新值
         }
 
         await ctx.Uow.Trees.TouchModifiedAsync(target == null ? null : new FolderId(target), ct);
@@ -66,6 +68,7 @@ internal sealed class LinkCopyBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: created.Select(id => new EntityRef("link", id)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged],
-                HumanSummary: $"Copied {created.Count} link(s)"));
+                HumanSummary: $"Copied {created.Count} link(s)",
+                Diff: diff.Count > 0 ? diff : null));
     }
 }

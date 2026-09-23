@@ -82,6 +82,7 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         // —— 同名自动编号：目标层已占用名 − 本次移动的项自身 → 逐个解析并累积 ——
         // 唯一入口 = 命名服务的占用表（先 Seed 目标层被占用名，再逐项 Resolve）；编号算法与比较口径都在 Kernel，
         // 本模块既不碰策略也不自建 HashSet——历史上正是这里"顺手用策略 + 自建集合"留下了最后一个旁路。
+        var snapshots = movedFolders.ToDictionary(f => f.FolderId, FolderSnapshot.Of, StringComparer.Ordinal);   // 变更前快照（含编号前的名字）
         var previousParentIds = movedFolders.Select(f => f.ParentId).ToHashSet(StringComparer.Ordinal);
         var renamedNotes = new List<string>();
         if (movedFolders.Count > 0)
@@ -107,10 +108,12 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
         // —— 变更阶段 ——
         // 旧父快照必须在变更**之前**取（撤销载荷要带旧值；变更后再读已是新值）
         var oldParents = movedFolders.ToDictionary(f => f.FolderId, f => f.ParentId, StringComparer.Ordinal);
+        var diff = new List<FieldChange>();
         foreach (var folder in movedFolders)
         {
             folder.ParentId = target;
             folder.UpdatedAt = DateTime.UtcNow;
+            diff.AddRange(EntityDiff.Diff(folder.FolderId, snapshots[folder.FolderId], FolderSnapshot.Of(folder)));
             await uow.Folders.UpdateAsync(folder, ct);   // ListAllAsync 是分离实体，必须显式登记修改
         }
 
@@ -134,7 +137,8 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             new ChangeSet(
                 Touched: movedFolders.Select(f => new EntityRef("folder", f.FolderId)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.FoldersChanged],
-                HumanSummary: summary),
+                HumanSummary: summary,
+                Diff: diff.Count > 0 ? diff : null),
             undo.Count > 0 ? undo : null);
     }
 }

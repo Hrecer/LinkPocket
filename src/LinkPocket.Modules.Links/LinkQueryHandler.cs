@@ -16,6 +16,7 @@ internal sealed class LinkQueryHandler : ICommandHandler
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> FieldOps =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
         {
+            ["id"] = new HashSet<string>(["eq", "in"]),   // 按 ID 取（AI 台账/审计的一次性名称解析走它，免 N 次 links.get）
             ["folder_id"] = new HashSet<string>(["eq", "isnull"]),
             ["title"] = new HashSet<string>(["contains"]),
             ["url"] = new HashSet<string>(["contains", "starts"]),
@@ -96,6 +97,9 @@ internal sealed class LinkQueryHandler : ICommandHandler
     private static LinkFilter ApplyCondition(LinkFilter filter, string field, string op, JsonElement? value, string correlationId)
         => field switch
         {
+            "id" => op == "in"
+                ? filter with { IdIn = RequireStringArray(value, field, correlationId) }
+                : filter with { IdIn = [RequireString(value, field, correlationId)] },
             "folder_id" => op == "isnull"
                 ? filter with { Unfiled = true }
                 : filter with { FolderId = new FolderId(RequireString(value, field, correlationId: correlationId)) },
@@ -183,6 +187,25 @@ internal sealed class LinkQueryHandler : ICommandHandler
             ? el.GetString()!
             : throw new EngineException(EngineErrors.Of(
                 EngineErrors.TypeMismatch, $"the value of field '{field}' must be a non-empty string", correlationId: correlationId));
+
+    /// <summary>字符串数组取值（id in [...]）；空数组 = 该条件无命中（与"启用但空集合"的既有口径一致）。</summary>
+    private static IReadOnlyList<string> RequireStringArray(JsonElement? value, string field, string correlationId)
+    {
+        if (value is not { ValueKind: JsonValueKind.Array } array)
+            throw new EngineException(EngineErrors.Of(
+                EngineErrors.TypeMismatch, $"the value of '{field} in' must be an array of strings", correlationId: correlationId));
+
+        var items = new List<string>(array.GetArrayLength());
+        foreach (var item in array.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(item.GetString()))
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.TypeMismatch, $"every item of '{field} in' must be a non-empty string", correlationId: correlationId));
+            items.Add(item.GetString()!);
+        }
+
+        return items;
+    }
 
     // —— 排序 / 分页 / 投影 ——
 

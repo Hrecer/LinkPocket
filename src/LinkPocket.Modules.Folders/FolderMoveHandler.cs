@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Data;
 using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
@@ -30,6 +31,7 @@ internal sealed class FolderMoveHandler : ICommandHandler
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"folder {id} does not exist", correlationId: ctx.CorrelationId));
         var previousParentId = folder.ParentId;
+        var before = FolderSnapshot.Of(folder);   // 字段级 diff 的旧值快照（移动 + 撞名编号前）
 
         if (target == id.Value)
             throw new EngineException(EngineErrors.Of(
@@ -66,12 +68,14 @@ internal sealed class FolderMoveHandler : ICommandHandler
                     JsonSerializer.SerializeToElement(new { folder_id = id.Value, target_parent_id = previousParentId }))
             };
 
+        var diff = EntityDiff.Diff(folder.FolderId, before, FolderSnapshot.Of(folder));
         return CommandResult.Ok(
             folder.ToDto(null),
             ChangeSet.Of(
                 new EntityRef("folder", folder.FolderId),
                 LinkPocket.Contracts.DomainEventNames.FoldersChanged,
-                $"Folder '{folder.Name}' moved"),
+                $"Folder '{folder.Name}' moved",
+                diff: diff.Count > 0 ? diff : null),
             undo);
     }
 }

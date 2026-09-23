@@ -31,6 +31,7 @@ internal sealed class LinkTrashHandler : ICommandHandler
             ?? throw new EngineException(EngineErrors.Of(
                 EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
         var originListId = link.ListId;
+        var before = LinkSnapshot.Of(link);   // 字段级 diff 的旧值快照（删除 = 原位置与身份快照）
 
         // 快照入库 + 主表删除（同一工作单元 → 引擎单事务原子提交）
         var snapshot = new TrashedLink
@@ -66,7 +67,8 @@ internal sealed class LinkTrashHandler : ICommandHandler
             new LinkPocket.Contracts.ChangeSet(
                 Touched: [new LinkPocket.Contracts.EntityRef("link", id.Value)],
                 Events: [LinkPocket.Contracts.DomainEventNames.LinksChanged, LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"'{link.Title ?? link.Url}' moved to trash"),
+                HumanSummary: $"'{link.Title ?? link.Url}' moved to trash",
+                Diff: EntityDiff.Diff(id.Value, before, null)),
             [new UndoInverseStep("trash.restore",
                 JsonSerializer.SerializeToElement(new { id = id.Value, to = "origin" }))]);
     }

@@ -82,6 +82,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (f.CreatedTo is { } to) q = q.Where(l => l.CreatedAt <= to);
 
         // —— links.query 结构化字段（每条独立下推；字段互斥由模块层保证）——
+        if (f.IdIn is { } ids) q = q.Where(l => ids.Contains(l.LinkId));
         if (f.Unfiled is { } unfiled) q = unfiled ? q.Where(l => l.ListId == null) : q.Where(l => l.ListId != null);
         if (!string.IsNullOrEmpty(f.TitleContains))
         {

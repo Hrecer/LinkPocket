@@ -54,6 +54,9 @@ public sealed record LinkFilter
 
     // —— links.query 结构化字段（字段名见 Links 模块白名单）——
 
+    /// <summary>id eq/in：按 ID 取（启用但空集合 = 无命中；null = 不过滤）。</summary>
+    public IReadOnlyList<string>? IdIn { get; init; }
+
     /// <summary>folder_id isnull：根级（无归属）书签。</summary>
     public bool? Unfiled { get; init; }
 

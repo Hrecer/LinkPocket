@@ -53,11 +53,20 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         var affectedLinks = allLinks.Where(l => l.ListId != null && descendantSet.Contains(l.ListId)).ToList();
 
         var trashedLinkCount = 0;
+        var diff = new List<FieldChange>();
         switch (cascade)
         {
             case "delete_all":
-                foreach (var link in affectedLinks) await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
-                foreach (var f in subtreeFolders) await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
+                foreach (var link in affectedLinks)
+                {
+                    diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));   // 物理删除 = 原值快照
+                    await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
+                }
+                foreach (var f in subtreeFolders)
+                {
+                    diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));
+                    await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
+                }
                 break;
 
             case "move_to_list":
@@ -74,11 +83,17 @@ internal sealed class FolderDeleteHandler : ICommandHandler
 
                 foreach (var link in affectedLinks)
                 {
+                    var before = LinkSnapshot.Of(link);
                     link.ListId = targetListId;
+                    diff.AddRange(EntityDiff.Diff(link.LinkId, before, LinkSnapshot.Of(link)));   // 链接转移 = 归属变更
                     await uow.Links.UpdateAsync(link, ct);
                 }
 
-                foreach (var f in subtreeFolders) await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
+                foreach (var f in subtreeFolders)
+                {
+                    diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));
+                    await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
+                }
                 await RefreshLinkCountAsync(uow, targetListId, ct);
                 break;
 
@@ -88,6 +103,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
 
                 foreach (var f in subtreeFolders)
                 {
+                    diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));   // 删除 = 原位置与身份快照
                     _ = await uow.Trash.AddFolderAsync(new TrashedFolder
                     {
                         TrashFolderId = f.FolderId,   // 回收站保留原 ID
@@ -107,6 +123,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
 
                 foreach (var link in affectedLinks)
                 {
+                    diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));   // 进回收站 = 原位置与身份快照
                     _ = await uow.Trash.AddLinkAsync(new TrashedLink
                     {
                         LinkId = link.LinkId,
@@ -159,7 +176,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("folder", id.Value)],
                 Events: events,
-                HumanSummary: $"Folder '{folder.Name}' deleted ({cascade})"),
+                HumanSummary: $"Folder '{folder.Name}' deleted ({cascade})",
+                Diff: diff.Count > 0 ? diff : null),
             undo);
     }
 

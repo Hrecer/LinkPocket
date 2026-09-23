@@ -30,11 +30,14 @@ internal sealed class DedupApplyHandler : ICommandHandler
         var plan = DedupPlanHandler.BuildPlan(args, groups, ctx.CorrelationId);
 
         var trashed = 0;
+        var diff = new List<FieldChange>();
         foreach (var group in plan.Groups)
         {
             foreach (var victim in group.Trash)
             {
-                _ = await ctx.DispatchNestedAsync("links.trash", new { id = victim.LinkId }, ctx.Ct);
+                // 嵌套步骤的字段级 diff 由 links.trash 产出；并回本命令结果（事件负载侧另有父缓冲聚合 + 值去重）
+                var result = await ctx.DispatchNestedAsync("links.trash", new { id = victim.LinkId }, ctx.Ct);
+                if (result.Changes?.Diff is { Count: > 0 } stepDiff) diff.AddRange(stepDiff);
                 trashed++;
             }
         }
@@ -45,7 +48,8 @@ internal sealed class DedupApplyHandler : ICommandHandler
             : new ChangeSet(
                 Touched: plan.Groups.SelectMany(g => g.Trash).Select(l => new EntityRef("link", l.LinkId)).ToList(),
                 Events: [LinkPocket.Contracts.DomainEventNames.TrashChanged],
-                HumanSummary: $"Duplicate scan done: {plan.Groups.Count} groups, {trashed} duplicate bookmarks moved to trash (strategy {plan.Strategy})");
+                HumanSummary: $"Duplicate scan done: {plan.Groups.Count} groups, {trashed} duplicate bookmarks moved to trash (strategy {plan.Strategy})",
+                Diff: diff.Count > 0 ? diff : null);
 
         return CommandResult.Ok(
             JsonSerializer.SerializeToElement(new { strategy = plan.Strategy, groups = plan.Groups.Count, trashed }),

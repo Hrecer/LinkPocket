@@ -95,15 +95,16 @@ public sealed class BatchEngine : IBatchEngine
         List<BatchStepResult> results;
         var touched = new List<EntityRef>();
         var events = new List<string>();
+        var diff = new List<FieldChange>();
         try
         {
             if (script.Scope == BatchScope.Transactional)
             {
-                (results, touched, events) = await RunTransactionalAsync(script, dryRun, correlationId, caller, ct);
+                (results, touched, events, diff) = await RunTransactionalAsync(script, dryRun, correlationId, caller, ct);
             }
             else
             {
-                results = await RunIndependentAsync(script, dryRun, correlationId, caller, batchId, ct);
+                (results, touched, events, diff) = await RunIndependentAsync(script, dryRun, correlationId, caller, batchId, ct);
             }
         }
         catch (EngineException ex) when (ex.Error.Code == EngineErrors.BatchAborted)
@@ -134,7 +135,7 @@ public sealed class BatchEngine : IBatchEngine
             throw;
         }
 
-        var report = BuildReport(batchId, script.Name, results, touched, events, sw.ElapsedMilliseconds, correlationId);
+        var report = BuildReport(batchId, script.Name, results, touched, events, diff, sw.ElapsedMilliseconds, correlationId);
         TrackStatus(batchId, new BatchStatus(batchId, script.Name, report.Ok ? "completed" : "failed",
             results.Count, script.Steps.Count));
 
@@ -164,7 +165,7 @@ public sealed class BatchEngine : IBatchEngine
     }
 
     /// <summary>事务批：写闸 + 单 UoW + 嵌套派发（abort/异常 = 不提交即回滚）。</summary>
-    private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events)> RunTransactionalAsync(
+    private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunTransactionalAsync(
         BatchScript script, bool dryRun, string correlationId, CallerRef caller, CancellationToken ct)
     {
         await _engine.WriteGate.WaitAsync(ct);
@@ -176,10 +177,11 @@ public sealed class BatchEngine : IBatchEngine
             List<BatchStepResult> results;
             List<EntityRef> touched;
             List<string> events;
+            List<FieldChange> diff;
             try
             {
                 ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, _engine);
-                (results, touched, events) = await RunStepsNestedAsync(ctx, script, ct);
+                (results, touched, events, diff) = await RunStepsNestedAsync(ctx, script, ct);
 
                 if (dryRun)
                 {
@@ -202,12 +204,12 @@ public sealed class BatchEngine : IBatchEngine
                 var merged = ctx.TakeNestedChanges();
                 if (merged.Events.Count > 0)
                 {
-                    var payload = JsonSerializer.SerializeToElement(merged, EngineJson.Options);
+                    var payload = ChangeSetPayload.From(merged);
                     foreach (var name in merged.Events)
                         await _engine.PublishAsync(new DomainEvent(name, DateTimeOffset.Now, payload, correlationId, caller));
                 }
             }
-            return (results, touched, events);
+            return (results, touched, events, diff);
         }
         finally
         {
@@ -217,11 +219,16 @@ public sealed class BatchEngine : IBatchEngine
 
     /// <summary>独立批：每步走完整顶层管道（各自隐式事务；abort 只停后续步骤，已执行步骤保持生效）。
     /// 中止（OnError=Abort 失败）通过抛 <see cref="EngineErrors.BatchAborted"/> 表达，由调用方 catch 转状态——
-    /// 本方法只返回逐步骤结果，不再有「aborted 标志」这一恒 false 的死字段。</summary>
-    private async Task<List<BatchStepResult>> RunIndependentAsync(
+    /// 本方法只返回逐步骤结果，不再有「aborted 标志」这一恒 false 的死字段。
+    /// 每步的变更同样聚合（touched/events/diff）供批报告使用——独立批的步骤各走顶层管道，
+    /// 不经父缓冲，聚合必须在本层做。</summary>
+    private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunIndependentAsync(
         BatchScript script, bool dryRun, string correlationId, CallerRef caller, string batchId, CancellationToken ct)
     {
         var results = new List<BatchStepResult>();
+        var touched = new List<EntityRef>();
+        var events = new List<string>();
+        var diff = new List<FieldChange>();
         var refs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var step in script.Steps)
         {
@@ -233,6 +240,12 @@ public sealed class BatchEngine : IBatchEngine
                 var r = await _engine.ExecuteAsync<object>(step.Command, args, new CallOptions(
                     DryRun: dryRun, CorrelationId: $"{correlationId}:{step.Ref}", Caller: caller), ct);
                 TrackStepData(refs, step.Ref, r.Data);
+                if (r.Changes is { } changes)
+                {
+                    touched.AddRange(changes.Touched);
+                    events.AddRange(changes.Events);
+                    if (changes.Diff is { Count: > 0 } stepDiff) diff.AddRange(stepDiff);
+                }
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: true, Skipped: false,
                     ToElement(r.Data), null, null, stepSw.ElapsedMilliseconds));
             }
@@ -251,20 +264,21 @@ public sealed class BatchEngine : IBatchEngine
             }
             TrackStatus(batchId, new BatchStatus(batchId, script.Name, "running", results.Count, script.Steps.Count));
         }
-        return results;
+        return (results, touched, events, diff);
     }
 
     /// <summary>
     /// 嵌套步骤循环（事务批与宏运行共用）：在既有管道上下文内逐步嵌套派发。
     /// 策略 Abort 的步骤失败直接抛出（由调用方的管道回滚）；Continue/SkipAndLog 记录后继续。
-    /// 返回步骤结果 + 聚合变更集（Touched/Events，供批报告）。
+    /// 返回步骤结果 + 聚合变更集（Touched/Events/Diff，供批报告与事件负载）。
     /// </summary>
-    internal static async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events)> RunStepsNestedAsync(
+    internal static async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunStepsNestedAsync(
         CommandContextImpl ctx, BatchScript script, CancellationToken ct)
     {
         var results = new List<BatchStepResult>();
         var touched = new List<EntityRef>();
         var events = new List<string>();
+        var diff = new List<FieldChange>();
         var refs = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var step in script.Steps)
         {
@@ -279,6 +293,7 @@ public sealed class BatchEngine : IBatchEngine
                 {
                     touched.AddRange(changes.Touched);
                     events.AddRange(changes.Events);
+                    if (changes.Diff is { Count: > 0 } stepDiff) diff.AddRange(stepDiff);
                 }
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: true, Skipped: false,
                     ToElement(r.Data), null, null, stepSw.ElapsedMilliseconds));
@@ -296,7 +311,7 @@ public sealed class BatchEngine : IBatchEngine
                     stepSw.ElapsedMilliseconds));
             }
         }
-        return (results, touched, events);
+        return (results, touched, events, diff);
     }
 
     // ===== 结果聚合 / 校验 / 工具 =====
@@ -331,7 +346,7 @@ public sealed class BatchEngine : IBatchEngine
     }
 
     private static BatchReport BuildReport(string batchId, string name, List<BatchStepResult> results,
-        List<EntityRef> touched, List<string> events, long elapsedMs, string correlationId)
+        List<EntityRef> touched, List<string> events, List<FieldChange> diff, long elapsedMs, string correlationId)
     {
         var ok = results.All(r => r.Ok);
         var summary = ok
@@ -339,7 +354,7 @@ public sealed class BatchEngine : IBatchEngine
             : $"Batch '{name}' finished with failures: {results.Count(r => r.Ok)}/{results.Count} steps succeeded";
 
         return new BatchReport(batchId, name, ok, results,
-            new ChangeSet(touched, events, summary), summary, elapsedMs, correlationId);
+            new ChangeSet(touched, events, summary, Warnings: null, Diff: diff.Count > 0 ? diff : null), summary, elapsedMs, correlationId);
     }
 }
 
