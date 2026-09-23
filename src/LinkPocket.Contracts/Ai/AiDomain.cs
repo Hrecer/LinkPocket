@@ -22,12 +22,17 @@ public enum AiModelSource
     Manual = 2,
 }
 
-/// <summary>服务商可用状态（设置页徽标：未配置 / 已验证 / 验证失败）。</summary>
+/// <summary>服务商可用状态（设置页徽标）：未配置 / 已配置未验证 / 已验证 / 验证失败。</summary>
 public enum AiProviderStatus
 {
+    /// <summary>配置不完整（缺地址、缺密钥或无启用模型）。</summary>
     NotConfigured = 0,
+    /// <summary>配置完整且最近一次连通性测试成功。</summary>
     Verified = 1,
+    /// <summary>配置完整但最近一次连通性测试失败（ErrorCode 说明原因）。</summary>
     Failed = 2,
+    /// <summary>配置完整、尚未做过连通性测试。</summary>
+    Configured = 3,
 }
 
 /// <summary>AI 工作模式：readonly = 纯问答（只读会话）；confirm_each = 每次写都审批（**缺省**）；auto_apply = 写自动执行（破坏性仍审批）。</summary>
@@ -52,6 +57,7 @@ public sealed record AiModelInfo(
 /// <summary>服务商对外投影（**不含明文密钥**；ApiKeyMasked 只露前 4 后 4）。</summary>
 public sealed record AiProviderInfo(
     string Id,
+    /// <summary>显示名：预设/覆盖层未改名时 = 模板英文名；用户改过名时 = 用户输入（用户数据）。</summary>
     string DisplayName,
     AiProtocol Protocol,
     string BaseUrl,
@@ -64,7 +70,27 @@ public sealed record AiProviderInfo(
     string? StatusErrorCode,
     string? ApiKeyManagementUrl,
     string? DocsUrl,
-    IReadOnlyList<AiModelInfo> Models);
+    IReadOnlyList<AiModelInfo> Models,
+    /// <summary>准入校验问题清单（空 = 配置完整可运行期使用）；界面按 FieldPath 高亮、按 Code 取词。</summary>
+    IReadOnlyList<AiConfigIssue>? Issues = null,
+    /// <summary>预设显示名的文案键（界面优先用它取词）；用户改过名或自建服务商 → null（直接显示 DisplayName）。</summary>
+    string? DisplayNameKey = null);
+
+/// <summary>配置校验问题（字段路径 + 稳定码；界面负责取词）。</summary>
+public sealed record AiConfigIssue(string FieldPath, string Code);
+
+/// <summary>配置校验问题码（稳定；界面按码取词）。</summary>
+public static class AiConfigIssueCodes
+{
+    /// <summary>必填项为空（display_name 等）。</summary>
+    public const string Required = "required";
+    /// <summary>接入地址不是合法的 http/https 绝对地址。</summary>
+    public const string InvalidUrl = "invalid_url";
+    /// <summary>缺 API Key（本地服务商不需要）。</summary>
+    public const string ApiKeyMissing = "api_key_missing";
+    /// <summary>没有任何已启用模型。</summary>
+    public const string NoEnabledModel = "no_enabled_model";
+}
 
 /// <summary>服务商草稿（设置页保存）：宽松阶段允许半填（可存），只有完整者进运行期 registry。</summary>
 public sealed record AiProviderDraft(
