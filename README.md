@@ -1,6 +1,6 @@
 # LinkPocket
 
-**Your bookmarks, in one place that is actually yours.** A local-first bookmark manager for Windows: fast to navigate, easy to keep tidy, and portable down to the last file.
+**Your links, in one place that is actually yours.** A standalone, local-first personal knowledge base for Windows — import, organize and create your own links: fast to navigate, easy to keep tidy, and portable down to the last file.
 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
@@ -10,6 +10,7 @@
 
 ## Why LinkPocket
 
+- **Standalone, not a browser accessory.** No extension to install and no sync service to trust — your links live in one self-contained library on your machine, whether they came from a browser, an export file, or your own typing.
 - **Local first.** No account, no sync service, no telemetry. Everything lives in a single folder next to the app — copy it to a USB stick and your whole library comes along.
 - **Built for large libraries.** Tens of thousands of bookmarks stay responsive: virtualized lists, instant folder switching, and background work that never blocks the interface.
 - **Nothing destructive happens by accident.** Deleting moves things to a recycle bin, permanent removal and full wipes ask twice, and edits can be undone.
