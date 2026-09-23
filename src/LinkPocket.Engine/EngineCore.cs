@@ -136,6 +136,7 @@ public sealed class EngineCore : IEngine
 
         var sw = Stopwatch.StartNew();
         bool gateOwned = false;
+        CommandContextImpl? ctx = null;   // 提升到 catch 可见：失败审计要带 BatchId（宏处理器运行期间会登记）
         try
         {
             await _writeGate.WaitAsync(ct);
@@ -153,11 +154,10 @@ public sealed class EngineCore : IEngine
             ITransactionScope? tx = dryRun ? uow.BeginTransaction() : null;
             if (tx != null) await tx.BeginAsync(ct);
             CommandResult result;
-            CommandContextImpl ctx;
             try
             {
                 ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, this,
-                    undoGroupId: options?.UndoGroupId);
+                    undoGroupId: options?.UndoGroupId, batchId: options?.BatchId);
                 result = await handler.ExecuteAsync(ctx, argsJson);
 
                 if (dryRun)
@@ -229,7 +229,7 @@ public sealed class EngineCore : IEngine
                 auditRef = _audit.Write(new AuditEntry(
                     DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
                     Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
-                    ArgsJson: argsSnapshot.Json, ArgsTruncated: argsSnapshot.Truncated));
+                    ArgsJson: argsSnapshot.Json, BatchId: ctx?.BatchId, ArgsTruncated: argsSnapshot.Truncated));
             }
             catch (Exception auditEx)
             {
@@ -249,14 +249,14 @@ public sealed class EngineCore : IEngine
         }
         catch (EngineException ex)
         {
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsSnapshot, ctx?.BatchId);
             LpLog.Warn($"Command failed: {command} ({ex.Error.Code})", ex, category: "engine.pipeline");
             throw;
         }
         catch (OperationCanceledException)
         {
             // 取消也落审计（观测面：所有调用可追溯，取消不例外）
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsSnapshot);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsSnapshot, ctx?.BatchId);
             LpLog.Warn($"Command cancelled: {command}", category: "engine.pipeline");
             throw new EngineException(EngineErrors.Of(EngineErrors.Cancelled, "Call cancelled", correlationId: correlationId));
         }
@@ -264,7 +264,7 @@ public sealed class EngineCore : IEngine
         {
             var wrapped = new EngineException(EngineErrors.Of(
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
-            WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsSnapshot);
+            WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsSnapshot, ctx?.BatchId);
             LpLog.Error($"Command internal error: {command}", ex, category: "engine.pipeline");
             throw wrapped;
         }
@@ -338,52 +338,83 @@ public sealed class EngineCore : IEngine
         // 嵌套派发按 Descriptor 形态路由：既允许 mutation（复用父 UoW/写闸），也允许 query
         // （只读预检复用父 UoW，如 staging.inspect→bookmarks.inspect）——不强制 IsMutation，
         // 因查询嵌套是既有合法用法（守卫会误伤只读预检）。
-        var handler = ResolveOrThrow(command, parent.CorrelationId);
         var json = EngineJson.ToJsonElement(args);
-
-        // 当调用方显式传入自己的 ct（非 default）时，用 LinkedTokenSource 联合父 ct——
-        // 父取消同样会传播到子命令；传 default（缺省路径）则直接继承父 ct（零开销等价）。
-        var linked = ct == default ? null : CancellationTokenSource.CreateLinkedTokenSource(parent.Ct, ct);
+        // 嵌套入参快照与顶层同口径：先脱敏后截断（G4——否则 AI 无法自证"发过哪些参数"）。
+        var nestedArgs = SnapshotArgs(json);
+        var sw = Stopwatch.StartNew();
         try
         {
-            var childCtx = new CommandContextImpl(parent.Uow, isNested: true, parent.DryRun,
-                parent.CorrelationId, parent.Caller, linked?.Token ?? parent.Ct, this,
-                undoGroupId: parent.UndoGroupId);
+            var handler = ResolveOrThrow(command, parent.CorrelationId);
 
-            var sw = Stopwatch.StartNew();
-            var result = await handler.ExecuteAsync(childCtx, json);
+            // 当调用方显式传入自己的 ct（非 default）时，用 LinkedTokenSource 联合父 ct——
+            // 父取消同样会传播到子命令；传 default（缺省路径）则直接继承父 ct（零开销等价）。
+            var linked = ct == default ? null : CancellationTokenSource.CreateLinkedTokenSource(parent.Ct, ct);
+            try
+            {
+                var childCtx = new CommandContextImpl(parent.Uow, isNested: true, parent.DryRun,
+                    parent.CorrelationId, parent.Caller, linked?.Token ?? parent.Ct, this,
+                    undoGroupId: parent.UndoGroupId, batchId: parent.BatchId);
 
-            // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
-            parent.CollectNestedChange(result.Changes);
+                var result = await handler.ExecuteAsync(childCtx, json);
 
-            // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）。
-            // 观测面纪律：嵌套子审计失败**不否定父命令**（只计数 + 记日志；顶上还有父审计条目兜底）。
+                // 嵌套变更加入父缓冲：父提交成功后随父事件一并发布（提交语义唯一归属父管道）
+                parent.CollectNestedChange(result.Changes);
+
+                // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）。
+                // 观测面纪律：嵌套子审计失败**不否定父命令**（只计数 + 记日志；顶上还有父审计条目兜底）。
+                try
+                {
+                    _audit.Write(new AuditEntry(
+                        DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
+                        sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
+                        DryRun: parent.DryRun, IsNested: true, StackTrace: null,
+                        ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated));
+                }
+                catch (Exception auditEx)
+                {
+                    RegisterObservationFailure("nested audit write failed", auditEx);
+                }
+
+                // 里程碑（Debug）：嵌套派发轨迹——与父命令同 correlation，可还原"一条用户动作"的完整链路
+                if (LpLog.IsEnabled(LogLevel.Debug))
+                    LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Nested dispatch completed: {command}", props: new Dictionary<string, object?>
+                    {
+                        // 首类字段（corr / cmd / caller）= 外层调用（调用上下文）；被派发的子命令另给 nested_cmd，避免歧义
+                        ["nested_cmd"] = command,
+                        ["nested"] = true,
+                    }, elapsedMs: sw.ElapsedMilliseconds);
+
+                return result;
+            }
+            finally
+            {
+                linked?.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            // 失败的嵌套步骤同样留痕（IsNested 子记录 + 错误码 + 入参 + batch_id）：
+            // 否则 Continue/SkipAndLog 策略下"跳过的那一步"在 audit.query 里查无此步，取不齐整批。
+            // 观测面纪律同上：审计写失败只计数，原始异常永远优先上抛。
+            var code = ex switch
+            {
+                EngineException e => e.Error.Code,
+                OperationCanceledException => EngineErrors.Cancelled,
+                _ => EngineErrors.Internal,
+            };
             try
             {
                 _audit.Write(new AuditEntry(
                     DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
-                    sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
-                    DryRun: parent.DryRun, IsNested: true, StackTrace: null));
+                    sw.ElapsedMilliseconds, Success: false, ErrorCode: code, Changes: null,
+                    DryRun: parent.DryRun, IsNested: true, StackTrace: ex.StackTrace?.ToString(),
+                    ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated));
             }
             catch (Exception auditEx)
             {
-                RegisterObservationFailure("nested audit write failed", auditEx);
+                RegisterObservationFailure("nested failure audit write failed", auditEx);
             }
-
-            // 里程碑（Debug）：嵌套派发轨迹——与父命令同 correlation，可还原"一条用户动作"的完整链路
-            if (LpLog.IsEnabled(LogLevel.Debug))
-                LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Nested dispatch completed: {command}", props: new Dictionary<string, object?>
-                {
-                    // 首类字段（corr / cmd / caller）= 外层调用（调用上下文）；被派发的子命令另给 nested_cmd，避免歧义
-                    ["nested_cmd"] = command,
-                    ["nested"] = true,
-                }, elapsedMs: sw.ElapsedMilliseconds);
-
-            return result;
-        }
-        finally
-        {
-            linked?.Dispose();
+            throw;
         }
     }
 
@@ -510,8 +541,9 @@ public sealed class EngineCore : IEngine
     /// <summary>入参快照（审计 ArgsJson 列）：空对象不记；**先脱敏**（敏感键的字符串值 + URL 查询串掩码，
     /// 走契约 <see cref="LogRedactor.RedactJson"/>）**再截断** 4000 字符并如实标记截断（v6 args_truncated）。
     /// 顺序不可颠倒：掩码只会让文本变短，先截后脱敏会白截一段、还会把半个敏感值留在末尾。
-    /// 审计 args 的脱敏**无开关**——它是持久化的对外读面（<c>audit.query</c>），不给"忘记开"留口子。</summary>
-    private static (string? Json, bool Truncated) SnapshotArgs(JsonElement argsJson)
+    /// 审计 args 的脱敏**无开关**——它是持久化的对外读面（<c>audit.query</c>），不给"忘记开"留口子。
+    /// internal：批引擎的父审计条目复用同一实现（批脚本入参快照与单命令同口径）。</summary>
+    internal static (string? Json, bool Truncated) SnapshotArgs(JsonElement argsJson)
     {
         if (argsJson.ValueKind != JsonValueKind.Object || argsJson.EnumerateObject().MoveNext() == false)
             return (null, false);
@@ -525,14 +557,15 @@ public sealed class EngineCore : IEngine
     /// 历史缺陷：三处 catch 里裸调 <c>_audit.Write</c>，审计抛异常时错误码/栈被顶替且该异常自身无审计。
     /// </summary>
     private void WriteFailureAudit(string command, string correlationId, CallerRef caller, Stopwatch sw,
-        bool dryRun, string errorCode, string? stackTrace, (string? Json, bool Truncated) argsSnapshot)
+        bool dryRun, string errorCode, string? stackTrace, (string? Json, bool Truncated) argsSnapshot,
+        string? batchId = null)
     {
         try
         {
             _audit.Write(new AuditEntry(
                 DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
                 Success: false, errorCode, null, DryRun: dryRun, IsNested: false, stackTrace,
-                ArgsJson: argsSnapshot.Json, ArgsTruncated: argsSnapshot.Truncated));
+                ArgsJson: argsSnapshot.Json, BatchId: batchId, ArgsTruncated: argsSnapshot.Truncated));
         }
         catch (Exception auditEx)
         {

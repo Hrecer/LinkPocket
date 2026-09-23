@@ -23,7 +23,8 @@ internal sealed class CommandContextImpl : ICommandContext
         CallerRef caller,
         CancellationToken ct,
         EngineCore engine,
-        string? undoGroupId = null)
+        string? undoGroupId = null,
+        string? batchId = null)
     {
         Uow = uow;
         IsNested = isNested;
@@ -33,6 +34,7 @@ internal sealed class CommandContextImpl : ICommandContext
         Ct = ct;
         _engine = engine;
         UndoGroupId = undoGroupId;
+        BatchId = batchId;
     }
 
     public IUnitOfWork Uow { get; }
@@ -44,6 +46,12 @@ internal sealed class CommandContextImpl : ICommandContext
 
     /// <summary>顶层调用的撤销归属键（<c>CallOptions.UndoGroupId</c>）：批/宏步骤登记撤销时的缺省分组。</summary>
     internal string? UndoGroupId { get; }
+
+    /// <summary>所属批/宏的运行键（audit_log <c>batch_id</c> 列）：嵌套派发向子上下文透传，
+    /// 使 <c>audit.query {batch_id}</c> 能取齐该批的每一步（G4）。来源：批引擎填批 ID；
+    /// 宏运行填自身 correlation（与 BatchReport.BatchId 同口径）；非编排调用为 null。
+    /// 可变 = 仅限宏处理器在派发步骤前登记（顶层上下文由引擎构造时不知宏身份）。</summary>
+    internal string? BatchId { get; set; }
 
     /// <summary>所属引擎（同程序集编排组件复用嵌套派发入口）。</summary>
     internal EngineCore Engine => _engine;

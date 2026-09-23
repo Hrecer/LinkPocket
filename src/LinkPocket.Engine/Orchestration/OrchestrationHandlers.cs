@@ -145,6 +145,9 @@ internal sealed class MacroRunHandler(IMacroStore macros, EngineLimits limits) :
         // 宏实际运行耗时（此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
         var sw = Stopwatch.StartNew();
         var context = (CommandContextImpl)ctx;
+        // 宏的批运行键 = 自身 correlation（与 BatchReport.BatchId 同口径）：
+        // 步骤审计与 macro.run 父条目共用它，audit.query {batch_id} 即可取齐整次宏运行。
+        context.BatchId ??= context.CorrelationId;
         var (results, touched, events, diff) = await BatchEngine.RunStepsNestedAsync(
             context, script with { Name = $"macro:{name}" },
             context.UndoGroupId ?? $"macro:{Guid.NewGuid():N}", ctx.Ct);

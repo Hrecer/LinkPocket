@@ -27,7 +27,10 @@ public sealed record CallerRef(CallerKind Kind, string? SessionId = null)
 /// IdempotencyKey = 24h 窗口内重复调用返回首次结果；
 /// CorrelationId = 缺省自动生成，贯穿审计/日志/错误/事件；
 /// UndoGroupId = **撤销分组**：同一次用户动作拆成的多次顶层调用（如"一次粘贴多选"）携带同一组 ID，
-/// 撤销栈把它们合并为**一条**记录——一次 Ctrl+Z 撤销整个动作（Windows 资源管理器口径）。
+/// 撤销栈把它们合并为**一条**记录——一次 Ctrl+Z 撤销整个动作（Windows 资源管理器口径）；
+/// BatchId = **批运行键**（audit_log batch_id 列）：独立批的步骤走完整顶层管道，
+/// 经此选项携带批 ID，使 <c>audit.query {batch_id}</c> 能取齐该批父条目与每一步
+/// （事务批的嵌套步骤由上下文透传，不经本选项）。
 /// </summary>
 public sealed record CallOptions(
     bool DryRun = false,
@@ -35,7 +38,8 @@ public sealed record CallOptions(
     string? IdempotencyKey = null,
     string? CorrelationId = null,
     CallerRef? Caller = null,
-    string? UndoGroupId = null)
+    string? UndoGroupId = null,
+    string? BatchId = null)
 {
     /// <summary>生效调用方的**唯一出处**（未显式指定 = <see cref="CallerRef.Ui"/>）：
     /// 引擎管道与客户端调用记录都取它——否则"引擎按 ui 跑、日志记成 null"这种两套口径迟早漂移。</summary>

@@ -105,7 +105,7 @@ public sealed class BatchEngine : IBatchEngine
             if (script.Scope == BatchScope.Transactional)
             {
                 (results, touched, events, diff) = await RunTransactionalAsync(script, dryRun, correlationId, caller,
-                    options?.UndoGroupId ?? batchId, ct);
+                    options?.UndoGroupId ?? batchId, batchId, ct);
             }
             else
             {
@@ -146,13 +146,17 @@ public sealed class BatchEngine : IBatchEngine
             results.Count, script.Steps.Count));
 
         // 父级审计条目（batch_id 列关联；每步已有 IsNested 子记录）。
+        // 入参快照 = 批脚本本身（与单命令同口径：先脱敏后截断；G4——否则 AI/排障无法自证"发过哪些参数"）。
         // 观测面纪律：父审计失败**不否定已完成的事实**（报告照常返回，失败计数 + 记日志）。
+        var scriptArgs = EngineCore.SnapshotArgs(JsonSerializer.SerializeToElement(
+            new { script }, EngineJson.ScriptOptions));
         try
         {
             _engine.Audit.Write(new AuditEntry(
                 DateTimeOffset.Now, "batch.run", correlationId, caller, sw.ElapsedMilliseconds,
                 Success: report.Ok, ErrorCode: report.Ok ? null : EngineErrors.BatchAborted,
-                Changes: report.Changes, DryRun: dryRun, IsNested: false, StackTrace: null, BatchId: batchId));
+                Changes: report.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
+                ArgsJson: scriptArgs.Json, BatchId: batchId, ArgsTruncated: scriptArgs.Truncated));
         }
         catch (Exception auditEx)
         {
@@ -172,7 +176,8 @@ public sealed class BatchEngine : IBatchEngine
 
     /// <summary>事务批：写闸 + 单 UoW + 嵌套派发（abort/异常 = 不提交即回滚）。</summary>
     private async Task<(List<BatchStepResult> Results, List<EntityRef> Touched, List<string> Events, List<FieldChange> Diff)> RunTransactionalAsync(
-        BatchScript script, bool dryRun, string correlationId, CallerRef caller, string undoGroupId, CancellationToken ct)
+        BatchScript script, bool dryRun, string correlationId, CallerRef caller, string undoGroupId,
+        string batchId, CancellationToken ct)
     {
         await _engine.WriteGate.WaitAsync(ct);
         try
@@ -186,8 +191,9 @@ public sealed class BatchEngine : IBatchEngine
             List<FieldChange> diff;
             try
             {
+                // BatchId：嵌套步骤审计的关联键（audit.query {batch_id} 取齐每一步）
                 ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, _engine,
-                    undoGroupId);
+                    undoGroupId, batchId);
                 (results, touched, events, diff) = await RunStepsNestedAsync(ctx, script, undoGroupId, ct);
 
                 if (dryRun)
@@ -248,10 +254,11 @@ public sealed class BatchEngine : IBatchEngine
             var args = BatchTemplate.Resolve(step.Args, refs);
             try
             {
-                // UndoGroupId = 批归属键：独立批逐步提交，撤销栈按同组合并为一条记录（一次批 = 一次用户动作）
+                // UndoGroupId = 批归属键：独立批逐步提交，撤销栈按同组合并为一条记录（一次批 = 一次用户动作）；
+                // BatchId = 批运行键：步骤走完整顶层管道，审计 batch_id 列经选项携带（与事务批嵌套行同口径）
                 var r = await _engine.ExecuteAsync<object>(step.Command, args, new CallOptions(
                     DryRun: dryRun, CorrelationId: $"{correlationId}:{step.Ref}", Caller: caller,
-                    UndoGroupId: undoGroupId), ct);
+                    UndoGroupId: undoGroupId, BatchId: batchId), ct);
                 TrackStepData(refs, step.Ref, r.Data);
                 if (r.Changes is { } changes)
                 {
