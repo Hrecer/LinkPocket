@@ -17,7 +17,8 @@ internal sealed class LinkSmartListHandler : ICommandHandler
         Description: "Smart list presets: recently_added | recently_visited | recently_edited | most_visited",
         Parameters:
         [
-            ParamSpec.Req<string>("kind", "recently_added | recently_visited | recently_edited | most_visited"),
+            ParamSpec.Req<string>("kind", "recently_added | recently_visited | recently_edited | most_visited",
+                enumValues: ["recently_added", "recently_visited", "recently_edited", "most_visited"]),
             ParamSpec.Opt<int>("limit", "Maximum rows returned (default 50)"),
             ParamSpec.Opt<int>("days", "Time window in days, only for the recently_* presets (default 7)"),
         ],

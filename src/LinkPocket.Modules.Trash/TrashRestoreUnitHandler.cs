@@ -24,7 +24,8 @@ internal sealed class TrashRestoreUnitHandler : ICommandHandler
         Parameters:
         [
             ParamSpec.Req<string>("unit_id", "Trash unit ID (= the original folder ID)"),
-            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion parent (falls back to root and reports it when the parent is gone); root = root level"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion parent (falls back to root and reports it when the parent is gone); root = root level",
+                enumValues: ["origin", "root"]),
             ParamSpec.Opt<string>("target_parent_id", "Explicit destination parent folder ID (mutually exclusive with to, must exist)"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,

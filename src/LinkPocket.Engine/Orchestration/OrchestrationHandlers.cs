@@ -34,7 +34,8 @@ internal sealed class MacroSaveHandler(IMacroStore macros, EngineLimits limits) 
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.save", Category: "macro", Description: "Save a named batch script (macro / skill library; invalid scripts are rejected)",
-        Parameters: [ParamSpec.Req<string>("name", "Macro name"), ParamSpec.Req<JsonElement>("script", "Batch script (BatchScript JSON)")],
+        Parameters: [ParamSpec.Req<string>("name", "Macro name"),
+            ParamSpec.Req<JsonElement>("script", "Batch script (BatchScript JSON)", schema: ParamSchemas.BatchScript)],
         Caps: CommandCaps.Mutation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -412,7 +413,7 @@ internal sealed class StagingTransformHandler(StagingService staging) : ICommand
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "staging.transform", Category: "staging", Description: "Run a pure-function transform pipeline over a staged file (filter_links/rename_folder/map_field/strip_prefix/dedupe/reencode; dry_run returns a preview only)",
-        Parameters: [ParamSpec.Req<string>("staging_id", "Staging ID"), ParamSpec.Req<JsonElement>("ops", "Transform operator array [{op, args}]"), ParamSpec.Opt<bool>("dry_run", "Dry run (default false)")],
+        Parameters: [ParamSpec.Req<string>("staging_id", "Staging ID"), ParamSpec.Req<JsonElement>("ops", "Transform operator array [{op, args}]", schema: ParamSchemas.StagingOps), ParamSpec.Opt<bool>("dry_run", "Dry run (default false)")],
         Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)

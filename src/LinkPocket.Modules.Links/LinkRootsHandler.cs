@@ -14,8 +14,10 @@ internal sealed class LinkRootsHandler : ICommandHandler
         Description: "Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; capped at per_page=50)",
         Parameters:
         [
-            ParamSpec.Opt<string>("sort_by", "created_at | updated_at | last_visited_at | visit_count | title"),
-            ParamSpec.Opt<string>("sort_order", "asc | desc"),
+            // 枚举 = QueryParsing.LinkSortFieldNames（SQL 下推白名单，7 字段；描述与白名单同源）
+            ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
+                enumValues: QueryParsing.LinkSortFieldNames),
+            ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
             ParamSpec.Opt<int>("per_page", "Cap (default 50)"),
         ],
         Caps: CommandCaps.Query);

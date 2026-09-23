@@ -21,10 +21,10 @@ public sealed class BatchEngine : IBatchEngine
     public static readonly IReadOnlyList<CommandDescriptor> Descriptors =
     [
         new("batch.run", "batch", "Execute a batch of commands in script order (a transactional batch shares one unit of work and rolls the whole batch back on abort; a standalone batch commits each step)",
-            [ParamSpec.Req<JsonElement>("script", "Batch script { name, steps: [{ ref, command, args, on_error }], scope }; step args reference earlier results: {ref}, {ref.path}, {ref.path[n]} (array index), {ref.path[*].field} (map over array), {ref.path.length}")],
+            [ParamSpec.Req<JsonElement>("script", "Batch script { name, steps: [{ ref, command, args, on_error }], scope }; step args reference earlier results: {ref}, {ref.path}, {ref.path[n]} (array index), {ref.path[*].field} (map over array), {ref.path.length}", schema: ParamSchemas.BatchScript)],
             CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
         new("batch.dry_run", "batch", "Dry-run a batch script: every step executes without commit, returning per-step results and impact with zero side effects",
-            [ParamSpec.Req<JsonElement>("script", "Batch script")],
+            [ParamSpec.Req<JsonElement>("script", "Batch script", schema: ParamSchemas.BatchScript)],
             CommandCaps.Query | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
         new("batch.status", "batch", "Query batch run status (batch_id is issued by batch.run reports / error details)",
             [ParamSpec.Req<string>("batch_id", "Batch ID")],

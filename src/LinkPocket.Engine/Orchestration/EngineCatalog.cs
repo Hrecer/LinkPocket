@@ -121,7 +121,7 @@ public sealed class EngineCatalog : IEngineCatalog
                 ["name"] = p.Name,
                 ["in"] = "query",
                 ["description"] = p.Description,
-                ["schema"] = new Dictionary<string, object?> { ["type"] = MapJsonType(p.TypeName) },
+                ["schema"] = MapQuerySchema(p),
             }).ToArray();
         }
         else
@@ -171,26 +171,51 @@ public sealed class EngineCatalog : IEngineCatalog
     }
 
     /// <summary>
-    /// 单个参数在 AI 工具清单/OpenAPI 中的 JSON Schema 形态：标量 = { type }；
-    /// 集合（IReadOnlyList&lt;T&gt; / List&lt;T&gt;）= { type: "array", items: { type: 元素类型 } }（此前集合
-    /// 被一律归为 "object"，AI 调用方无法得知它是数组）。
+    /// 单个参数在 AI 工具清单/OpenAPI 中的 JSON Schema 形态（P3-6 元数据透出，塌陷面收窄）：
+    /// ① 参数带 Schema 片段（<see cref="ParamSchemas"/>，如批脚本 / 查询过滤 / 暂存算子）→ 片段整体透出；
+    /// ② 标量带 EnumValues（处理器的 LP.VAL.003 白名单）→ 机械映射之上加 enum；
+    /// ③ 集合（IReadOnlyList&lt;T&gt; / List&lt;T&gt;）= { type: "array", items: { type: 元素类型 } }
+    /// （此前集合被一律归为 "object"，AI 调用方无法得知它是数组）。
     /// </summary>
     private static Dictionary<string, object> MapParameter(ParamSpec p)
     {
+        if (p.Schema is not null)
+        {
+            var fragment = JsonSerializer.Deserialize<Dictionary<string, object>>(p.Schema)!;
+            if (!fragment.ContainsKey("description")) fragment["description"] = p.Description;   // 片段未写描述时用参数描述补齐
+            return fragment;
+        }
+        Dictionary<string, object> map;
         if (TryItemType(p.TypeName, out var itemTypeName))
         {
-            return new Dictionary<string, object>
+            var items = new Dictionary<string, object?> { ["type"] = itemTypeName };
+            if (p.EnumValues is not null) items["enum"] = p.EnumValues;
+            map = new Dictionary<string, object>
             {
                 ["type"] = "array",
-                ["items"] = new Dictionary<string, object?> { ["type"] = itemTypeName },
+                ["items"] = items,
                 ["description"] = p.Description,
             };
         }
-        return new Dictionary<string, object>
+        else
         {
-            ["type"] = MapJsonType(p.TypeName),
-            ["description"] = p.Description,
-        };
+            map = new Dictionary<string, object>
+            {
+                ["type"] = MapJsonType(p.TypeName),
+                ["description"] = p.Description,
+            };
+            if (p.EnumValues is not null) map["enum"] = p.EnumValues;
+        }
+        return map;
+    }
+
+    /// <summary>OpenAPI 查询参数的 schema：与 requestBody 侧同一套元数据透出（枚举/片段），
+    /// 仅省略 description（外层参数已有同文案，避免两处重复）。</summary>
+    private static Dictionary<string, object> MapQuerySchema(ParamSpec p)
+    {
+        var schema = MapParameter(p);
+        schema.Remove("description");
+        return schema;
     }
 
     /// <summary>集合类型名（ParamSpec 规范化后形如 IReadOnlyList&lt;string&gt;）→ 元素 JSON 类型；非集合返回 false。</summary>

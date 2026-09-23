@@ -64,11 +64,13 @@ internal sealed class LogsQueryHandler : ICommandHandler
         Parameters:
         [
             ParamSpec.Opt<long>("cursor", "Return only records with a higher sequence (in-process cursor, source=memory only; default 0 = all)"),
-            ParamSpec.Opt<string>("level", "Minimum level: trace/debug/info/warn/error/fatal (case-insensitive, out of range -> LP.VAL.003)"),
+            ParamSpec.Opt<string>("level", "Minimum level: trace/debug/info/warn/error/fatal (case-insensitive, out of range -> LP.VAL.003)",
+                enumValues: LogLevels.Names),
             ParamSpec.Opt<string>("category", "Category exact match (e.g. ui / engine.call / engine.pipeline / modules.trash)"),
             ParamSpec.Opt<string>("correlation_id",
                 "Correlation ID: every log line of one user action (UI call record + engine milestones + action summary) -- the same key as audit.query"),
-            ParamSpec.Opt<string>("source", "Read source: memory (default, in-process ring) | file (log files)"),
+            ParamSpec.Opt<string>("source", "Read source: memory (default, in-process ring) | file (log files)",
+                enumValues: ["memory", "file"]),
             ParamSpec.Opt<int>("limit", $"Maximum rows returned (default {DefaultLimit}, cap {MaxLimit})"),
         ],
         Caps: CommandCaps.Query);
@@ -128,7 +130,8 @@ internal sealed class LogsLevelHandler : ICommandHandler
         Description: "Switch the minimum log level at runtime (in-process only, not persisted, no restart; log pipeline not configured -> LP.STATE.005)",
         Parameters:
         [
-            ParamSpec.Req<string>("level", "New minimum level: trace/debug/info/warn/error/fatal (case-insensitive)"),
+            ParamSpec.Req<string>("level", "New minimum level: trace/debug/info/warn/error/fatal (case-insensitive)",
+                enumValues: LogLevels.Names),
         ],
         Caps: CommandCaps.Mutation);
 

@@ -6,17 +6,23 @@ namespace LinkPocket.Kernel;
 /// </summary>
 public static class QueryParsing
 {
-    /// <summary>链接排序白名单（与 Data 排序引擎的 LinkFields 一致）。</summary>
-    public static readonly IReadOnlySet<string> LinkSortFields = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "title", "url", "created_at", "updated_at", "last_visited_at", "visit_count", "is_important",
-    };
+    /// <summary>链接排序白名单（与 Data 排序引擎的 LinkFields 一致）。
+    /// 有序名字表是**枚举元数据的事实源**（目录/描述符 enum 引用它——有序 = 生成物逐字节稳定）；
+    /// 集合由它派生，两处不会漂移。</summary>
+    public static readonly IReadOnlyList<string> LinkSortFieldNames =
+        ["title", "url", "created_at", "updated_at", "last_visited_at", "visit_count", "is_important"];
 
-    /// <summary>文件夹排序白名单（与 Data 排序引擎的 FolderFields 一致）。</summary>
-    public static readonly IReadOnlySet<string> FolderSortFields = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "name", "created_at", "updated_at", "visit_count", "sort_order",
-    };
+    /// <summary>链接排序白名单（校验用集合；成员 = <see cref="LinkSortFieldNames"/>）。</summary>
+    public static readonly IReadOnlySet<string> LinkSortFields =
+        new HashSet<string>(LinkSortFieldNames, StringComparer.Ordinal);
+
+    /// <summary>文件夹排序白名单（与 Data 排序引擎的 FolderFields 一致）；有序名字表同上（枚举元数据事实源）。</summary>
+    public static readonly IReadOnlyList<string> FolderSortFieldNames =
+        ["name", "created_at", "updated_at", "visit_count", "sort_order"];
+
+    /// <summary>文件夹排序白名单（校验用集合；成员 = <see cref="FolderSortFieldNames"/>）。</summary>
+    public static readonly IReadOnlySet<string> FolderSortFields =
+        new HashSet<string>(FolderSortFieldNames, StringComparer.Ordinal);
 
     public static IReadOnlyList<SortSpec> ParseSort(
         string? sortBy, string? sortOrder, IReadOnlySet<string> allowed, string fallback)

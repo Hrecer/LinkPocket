@@ -16,7 +16,7 @@ internal sealed class LinkExportHandler : ICommandHandler
         Parameters:
         [
             ParamSpec.Req<string>("file_path", "Export target absolute path"),
-            ParamSpec.Opt<string>("format", "json (default) | csv"),
+            ParamSpec.Opt<string>("format", "json (default) | csv", enumValues: ["json", "csv"]),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.FileIo);
 

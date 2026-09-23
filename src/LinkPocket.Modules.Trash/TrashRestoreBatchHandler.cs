@@ -19,7 +19,8 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
         [
             ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "List of trash bookmark snapshot IDs"),
             ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "List of trash unit IDs"),
-            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion location; root = root level"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion location; root = root level",
+                enumValues: ["origin", "root"]),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible);
 

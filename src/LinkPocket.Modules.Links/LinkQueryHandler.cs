@@ -34,10 +34,10 @@ internal sealed class LinkQueryHandler : ICommandHandler
         Description: "Structured link query: filter ([{field,op,value}]) + sort ([{field,dir}]) + page ({index,size}, size=0 for all) + fields projection",
         Parameters:
         [
-            ParamSpec.Opt<JsonElement>("filter", "Filter condition array"),
-            ParamSpec.Opt<JsonElement>("sort", "Sort array"),
-            ParamSpec.Opt<JsonElement>("page", "Paging {index,size}"),
-            ParamSpec.Opt<JsonElement>("fields", "Projected field name array"),
+            ParamSpec.Opt<JsonElement>("filter", "Filter condition array", schema: ParamSchemas.LinkQueryFilter),
+            ParamSpec.Opt<JsonElement>("sort", "Sort array", schema: ParamSchemas.LinkQuerySort),
+            ParamSpec.Opt<JsonElement>("page", "Paging {index,size}", schema: ParamSchemas.LinkQueryPage),
+            ParamSpec.Opt<JsonElement>("fields", "Projected field name array", schema: ParamSchemas.LinkQueryFields),
         ],
         Caps: CommandCaps.Query);
 

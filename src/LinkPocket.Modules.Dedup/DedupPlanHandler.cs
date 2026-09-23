@@ -18,9 +18,12 @@ internal sealed class DedupPlanHandler : ICommandHandler
         Description: "Build a duplicate handling plan (pure dry run, zero side effects): strategy + optional URL filter + explicit keepers -> per-group keep/trash lists",
         Parameters:
         [
-            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)"),
-            ParamSpec.Opt<JsonElement>("group_urls", "Plan only groups with these URLs; default = all duplicate groups"),
-            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit {url: link_id}"),
+            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)",
+                enumValues: [DedupStrategy.KeepMostVisited, DedupStrategy.KeepNewest, DedupStrategy.KeepExplicit]),
+            ParamSpec.Opt<JsonElement>("group_urls", "Plan only groups with these URLs; default = all duplicate groups",
+                schema: ParamSchemas.DedupGroupUrls),
+            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit {url: link_id}",
+                schema: ParamSchemas.DedupExplicitKeep),
         ],
         Caps: CommandCaps.Query);
 

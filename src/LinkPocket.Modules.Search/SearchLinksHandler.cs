@@ -20,9 +20,10 @@ internal sealed class SearchLinksHandler : ICommandHandler
             ParamSpec.Opt<bool>("search_url", "Search URLs"),
             ParamSpec.Opt<bool>("search_description", "Search descriptions"),
             ParamSpec.Opt<bool>("search_path", "Search paths (a folder-name hit expands its subtree)"),
-            // 与 QueryParsing.LinkSortFields / EfSortEngine.LinkFields 全量对齐（7 字段）
-            ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important"),
-            ParamSpec.Opt<string>("sort_order", "asc | desc"),
+            // 与 QueryParsing.LinkSortFields / EfSortEngine.LinkFields 全量对齐（7 字段；枚举引用同一事实源）
+            ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
+                enumValues: QueryParsing.LinkSortFieldNames),
+            ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
         ],
         Caps: CommandCaps.Query,
         // 四个范围都是 `LIKE '%…%'`（子串匹配，索引帮不上忙，只能全表扫）——这条查询在界面上

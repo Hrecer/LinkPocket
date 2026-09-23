@@ -19,7 +19,8 @@ internal sealed class TrashRestoreHandler : ICommandHandler
         Parameters:
         [
             ParamSpec.Req<string>("id", "Trash bookmark snapshot ID (= the original link_id)"),
-            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion folder; root = root level"),
+            ParamSpec.Opt<string>("to", "origin (default) = pre-deletion folder; root = root level",
+                enumValues: ["origin", "root"]),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: "links.trash");   // 撤销 = 再移入回收站（与落点无关）；重做/落点由处理器回填，见流水线

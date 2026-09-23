@@ -20,8 +20,10 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
         Parameters:
         [
             ParamSpec.Opt<string>("folder_id", "Folder ID; default = root (the root is not an entity and has no ID)"),
-            ParamSpec.Opt<string>("sort_by", "Sort field: title | updated_at | last_visited_at | visit_count | created_at (links) / name | sort_order | updated_at | last_visited_at | visit_count | created_at (child folders)"),
-            ParamSpec.Opt<string>("sort_order", "asc | desc"),
+            // 双列表排序（链接走 LinkSortFieldNames、子文件夹走 FolderSupport.SortFieldNames），枚举 = 两者并集
+            ParamSpec.Opt<string>("sort_by", "Sort field: title | url | created_at | updated_at | last_visited_at | visit_count | is_important (links) / name | sort_order | created_at | updated_at | last_visited_at | visit_count (child folders)",
+                enumValues: [.. QueryParsing.LinkSortFieldNames, .. FolderSupport.SortFieldNames]),
+            ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
             ParamSpec.Opt<int>("page", "Page number (1-based)"),
             ParamSpec.Opt<int>("per_page", "Links per page; 0 = everything (bounded by the engine cap, truncated = true when capped)"),
         ],

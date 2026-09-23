@@ -23,7 +23,8 @@ public class AiLoopTests
                 [ParamSpec.Req<string>("name", "Folder name"), ParamSpec.Opt<string>("parent_id", "Parent ID")],
                 CommandCaps.Mutation | CommandCaps.Reversible),
             new CommandDescriptor("links.query", "links", "query links",
-                [ParamSpec.Opt<JsonElement>("filter", "filter"), ParamSpec.Opt<JsonElement>("page", "page")],
+                [ParamSpec.Opt<JsonElement>("filter", "filter", schema: ParamSchemas.LinkQueryFilter),
+                 ParamSpec.Opt<JsonElement>("page", "page", schema: ParamSchemas.LinkQueryPage)],
                 CommandCaps.Query),
             new CommandDescriptor("trash.purge", "trash", "purge",
                 [ParamSpec.Req<string>("id", "id")], CommandCaps.Mutation | CommandCaps.Destructive),
@@ -65,7 +66,7 @@ public class AiLoopTests
         using (var doc = JsonDocument.Parse(query.ParametersJson))
         {
             Assert.True(doc.RootElement.GetProperty("properties").TryGetProperty("filter", out var filter));
-            Assert.Equal("array", filter.GetProperty("type").GetString());   // 精选 schema 而非塌陷成 object
+            Assert.Equal("array", filter.GetProperty("type").GetString());   // 描述符 Schema 片段而非塌陷成 object
         }
     }
 
@@ -224,12 +225,14 @@ public class AiLoopTests
     }
 
     [Fact]
-    public void 工具目录_linksQuery精选schema_过滤白名单含id的eq与in()
+    public void 工具目录_描述符元数据schema_过滤白名单含id的eq与in()
     {
+        // P3-6：精选 schema 已进描述符（ParamSchemas 单一事实源），模型面从 ParamSpec.Schema 透出
         var query = Catalog().Build(advancedTools: false).Single(t => t.Name == "links.query");
         using var doc = JsonDocument.Parse(query.ParametersJson);
         var description = doc.RootElement.GetProperty("properties").GetProperty("filter").GetProperty("description").GetString();
         Assert.Contains("id(eq,in)", description, StringComparison.Ordinal);
+        Assert.Equal("array", doc.RootElement.GetProperty("properties").GetProperty("filter").GetProperty("type").GetString());
     }
 
     [Fact]

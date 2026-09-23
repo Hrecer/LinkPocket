@@ -23,8 +23,10 @@ internal sealed class LinkListHandler : ICommandHandler
             ParamSpec.Opt<bool>("is_important", "Only important bookmarks"),
             ParamSpec.Opt<string>("date_from", "Creation time lower bound (ISO)"),
             ParamSpec.Opt<string>("date_to", "Creation time upper bound (ISO)"),
-            ParamSpec.Opt<string>("sort_by", "created_at | updated_at | last_visited_at | visit_count | title"),
-            ParamSpec.Opt<string>("sort_order", "asc | desc"),
+            // 枚举 = QueryParsing.LinkSortFieldNames（SQL 下推白名单，7 字段；描述与白名单同源）
+            ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
+                enumValues: QueryParsing.LinkSortFieldNames),
+            ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
             ParamSpec.Opt<int>("page", "Page number (1-based)"),
             ParamSpec.Opt<int>("per_page", "Page size (default 20)"),
         ],

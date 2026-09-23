@@ -32,16 +32,30 @@ public sealed record ImpactSummary(string Text)
     public override string ToString() => Text;
 }
 
-/// <summary>命令参数描述（目录自描述用；TypeName 机器可读，参与入参校验）。</summary>
-public sealed record ParamSpec(string Name, string TypeName, string Description, bool Required)
+/// <summary>命令参数描述（目录自描述用；TypeName 机器可读，参与入参校验）。
+/// P3-6 起携带可选元数据：<c>EnumValues</c>（标量参数的合法取值集——与处理器的校验白名单/归一规则同源，
+/// 严格校验处即 LP.VAL.003 白名单）、<c>Schema</c>（复杂/嵌套参数的 JSON Schema 片段，取
+/// <see cref="ParamSchemas"/> 的常量——单一事实源，catalog 三件与 AI 工具清单共用），由
+/// <c>EngineCatalog.MapParameter</c> 透出，收窄"塌陷成裸 object"的 schema 面。</summary>
+public sealed record ParamSpec(string Name, string TypeName, string Description, bool Required,
+    IReadOnlyList<string>? EnumValues = null,
+    string? Schema = null)
 {
     /// <summary>
     /// 类型名规范化：<c>typeof(IReadOnlyList&lt;string&gt;).Name</c> 是带反引号的
     /// <c>"IReadOnlyList`1"</c>——落到目录/AI 工具清单里既畸形又丢失泛型信息；这里展平成可读形态
     /// <c>"IReadOnlyList&lt;string&gt;"</c>（泛型参数递归规范化）。
     /// </summary>
-    public static ParamSpec Req<T>(string name, string description) => new(name, TypeNameOf(typeof(T)), description, true);
-    public static ParamSpec Opt<T>(string name, string description) => new(name, TypeNameOf(typeof(T)), description, false);
+    public static ParamSpec Req<T>(string name, string description,
+        IReadOnlyList<string>? enumValues = null, string? schema = null)
+        => new(name, TypeNameOf(typeof(T)), description, true, enumValues, schema);
+
+    /// <summary>可选参数（可带元数据）：<paramref name="enumValues"/> = 标量的合法取值集（与处理器 LP.VAL.003 白名单一致）；
+    /// <paramref name="schema"/> = 复杂/嵌套参数的 JSON Schema 片段（取 <see cref="ParamSchemas"/> 常量，单一事实源）。
+    /// 调用约定：传字符串数组 = 枚举；传字符串常量 = schema 片段（类型不同，无歧义）。</summary>
+    public static ParamSpec Opt<T>(string name, string description,
+        IReadOnlyList<string>? enumValues = null, string? schema = null)
+        => new(name, TypeNameOf(typeof(T)), description, false, enumValues, schema);
 
     internal static string TypeNameOf(Type type)
         => type.IsGenericType

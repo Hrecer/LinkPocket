@@ -17,6 +17,12 @@ internal static class FolderSupport
         }
     }
 
+    /// <summary>子文件夹排序的合法字段（= <see cref="SortFolders"/> switch 覆盖的取值；name 走缺省分支）。
+    /// 有序名字表是枚举元数据的事实源（目录/描述符 enum 引用；注意与 <c>QueryParsing.FolderSortFields</c>
+    /// ——SQL 下推白名单——不同：本表多 last_visited_at，内存排序支持它）。</summary>
+    public static readonly IReadOnlyList<string> SortFieldNames =
+        ["name", "sort_order", "created_at", "updated_at", "last_visited_at", "visit_count"];
+
     /// <summary>
     /// 子文件夹排序（与既有 SortFolders 逐条等价）：
     /// 名称与各维度都遵循升/降序；「最后查看」为空（从未）恒排最后；名称做同序稳定兜底（<see cref="NameOrder"/>）。

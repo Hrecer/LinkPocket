@@ -21,7 +21,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         Parameters:
         [
             ParamSpec.Req<string>("folder_id", "Folder ID"),
-            ParamSpec.Opt<string>("cascade", "trash_links (default) | delete_all | move_to_list"),
+            ParamSpec.Opt<string>("cascade", "trash_links (default) | delete_all | move_to_list",
+                enumValues: ["trash_links", "delete_all", "move_to_list"]),
             ParamSpec.Opt<string>("target_list_id", "Target folder ID for move_to_list mode"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,

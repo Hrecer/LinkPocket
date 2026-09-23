@@ -17,8 +17,10 @@ internal sealed class FolderTreeHandler : ICommandHandler
         Description: "Get all folders (flat; link_count = recursive link count, direct_link_count = direct child link count, hierarchy assembled by the caller)",
         Parameters:
         [
-            ParamSpec.Opt<string>("sort_by", "name | sort_order | created_at | updated_at | last_visited_at | visit_count"),
-            ParamSpec.Opt<string>("sort_order", "asc | desc"),
+            // 枚举 = FolderSupport.SortFieldNames（内存排序 switch 的取值集，含 last_visited_at）
+            ParamSpec.Opt<string>("sort_by", "name | sort_order | created_at | updated_at | last_visited_at | visit_count",
+                enumValues: FolderSupport.SortFieldNames),
+            ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
         ],
         Caps: CommandCaps.Query,
         // 树 = 文件夹全量 + 计数两口径全量重算（树快照缓存 + folders.changed 精确失效）

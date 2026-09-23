@@ -18,9 +18,12 @@ internal sealed class DedupApplyHandler : ICommandHandler
         Description: "Apply the duplicate handling plan: move the surplus bookmark of each group into the trash per strategy (nested links.trash dispatch, dry_run can rehearse it)",
         Parameters:
         [
-            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)"),
-            ParamSpec.Opt<JsonElement>("group_urls", "Handle only groups with these URLs; default = all duplicate groups"),
-            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit; unlisted groups are not handled"),
+            ParamSpec.Opt<string>("strategy", "keep_most_visited (default) | keep_newest | keep_explicit (unlisted groups are skipped)",
+                enumValues: [DedupStrategy.KeepMostVisited, DedupStrategy.KeepNewest, DedupStrategy.KeepExplicit]),
+            ParamSpec.Opt<JsonElement>("group_urls", "Handle only groups with these URLs; default = all duplicate groups",
+                schema: ParamSchemas.DedupGroupUrls),
+            ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit; unlisted groups are not handled",
+                schema: ParamSchemas.DedupExplicitKeep),
         ],
         Caps: CommandCaps.Mutation);
 

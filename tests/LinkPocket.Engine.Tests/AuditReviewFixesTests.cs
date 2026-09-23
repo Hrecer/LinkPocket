@@ -123,6 +123,60 @@ public class AuditReviewFixesTests
         Assert.Contains("array", openapi);
     }
 
+    // ===== P3-6：ParamSpec 枚举/嵌套元数据透出（塌陷面收窄）=====
+
+    [Fact]
+    public void Catalog_Exports_Enum_Metadata_On_Scalar_And_Array_Items()
+    {
+        var registry = new CommandRegistry();
+        registry.Register(new MetaHandler());
+        var catalog = new EngineCatalog(registry, includeBatch: false);
+        using var doc = JsonDocument.Parse(catalog.Export(ManifestFormat.FunctionCalling));
+
+        var props = doc.RootElement[0].GetProperty("function").GetProperty("parameters").GetProperty("properties");
+        // 标量枚举 → 顶层 enum
+        var mode = props.GetProperty("mode");
+        Assert.Equal("string", mode.GetProperty("type").GetString());
+        Assert.Equal(new[] { "alpha", "beta" },
+            mode.GetProperty("enum").EnumerateArray().Select(v => v.GetString()).ToArray());
+        // 集合枚举 → items.enum（enum 挂在元素上，不是数组上）
+        var ids = props.GetProperty("ids");
+        Assert.Equal("array", ids.GetProperty("type").GetString());
+        Assert.Contains("id1", ids.GetProperty("items").GetProperty("enum").EnumerateArray().Select(v => v.GetString()));
+        Assert.False(ids.TryGetProperty("enum", out _));
+    }
+
+    [Fact]
+    public void Catalog_Exports_Schema_Fragment_Instead_Of_Collapsed_Object()
+    {
+        var registry = new CommandRegistry();
+        registry.Register(new MetaHandler());
+        var catalog = new EngineCatalog(registry, includeBatch: false);
+
+        var tools = catalog.Export(ManifestFormat.FunctionCalling);
+        // Schema 片段整体透出：批脚本参数不再塌陷成裸 object（有 properties/steps/on_error 枚举）
+        Assert.Contains("\"steps\"", tools);
+        Assert.Contains("\"SkipAndLog\"", tools);
+        Assert.Contains("\"transactional\"", tools);
+
+        // OpenAPI 查询参数同样透出片段（且不在 schema 里重复外层 description）
+        var openapi = catalog.Export(ManifestFormat.OpenApiLite);
+        Assert.Contains("\"SkipAndLog\"", openapi);
+    }
+
+    [Fact]
+    public void Catalog_BatchDescriptors_Carry_Script_Schema()
+    {
+        var registry = new CommandRegistry();
+        var catalog = new EngineCatalog(registry, includeBatch: true);
+
+        var tools = catalog.Export(ManifestFormat.FunctionCalling);
+        // 真实批描述符：script 参数带 ParamSchemas.BatchScript（机器可读 + on_error 正确拼写）
+        Assert.Contains("\"on_error\"", tools);
+        Assert.Contains("\"SkipAndLog\"", tools);
+        Assert.Contains("{ref.path[*]", tools);
+    }
+
     // ===== 辅助 =====
 
     private static void Cleanup(string path)
@@ -142,6 +196,23 @@ internal sealed class ArraysHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         "test.arrays", "test", "集合参数断言",
         [ParamSpec.Req<IReadOnlyList<string>>("tags", "标签列表")], CommandCaps.Mutation);
+
+    public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
+        => Task.FromResult(CommandResult.Ok("ok"));
+}
+
+/// <summary>测试命令（P3-6）：标量枚举 + 集合枚举 + Schema 片段三类元数据的导出断言。</summary>
+internal sealed class MetaHandler : ICommandHandler
+{
+    public CommandDescriptor Descriptor { get; } = new(
+        "test.meta", "test", "元数据导出断言",
+        [
+            ParamSpec.Opt<string>("mode", "Mode", enumValues: ["alpha", "beta"]),
+            ParamSpec.Opt<string>("tag", "Tag", enumValues: ["x", "y"]),
+            ParamSpec.Opt<IReadOnlyList<string>>("ids", "Ids", enumValues: ["id1"]),
+            ParamSpec.Opt<JsonElement>("script", "Batch script", schema: ParamSchemas.BatchScript),
+        ],
+        CommandCaps.Query);   // Query → OpenAPI 走 query 参数位（断言片段在查询侧也透出）
 
     public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
         => Task.FromResult(CommandResult.Ok("ok"));
