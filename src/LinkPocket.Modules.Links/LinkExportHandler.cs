@@ -37,36 +37,47 @@ internal sealed class LinkExportHandler : ICommandHandler
         var links = await ctx.Uow.Links.ListAsync(new LinkQuerySpec(), ctx.Ct);
         var dtos = links.Select(l => l.ToDto()).ToList();
 
+        string content;
         try
         {
-            if (format == "json")
-            {
-                var options = new JsonSerializerOptions
+            content = format == "json"
+                ? JsonSerializer.Serialize(dtos, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
                     WriteIndented = true,
                     DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-                };
-                await File.WriteAllTextAsync(fullPath, JsonSerializer.Serialize(dtos, options), ctx.Ct);
-            }
-            else
-            {
-                await File.WriteAllTextAsync(fullPath, BuildCsv(dtos), ctx.Ct);
-            }
+                })
+                : BuildCsv(dtos);
         }
         catch (Exception ex)
         {
             throw new EngineException(EngineErrors.Of(
-                EngineErrors.FileIoError, $"export file write failed: {ex.Message}", retryable: true));
+                EngineErrors.FileIoError, $"export serialization failed: {ex.Message}", retryable: true));
         }
 
-        var bytes = new FileInfo(fullPath).Length;
+        // 干跑零副作用：内容照常生成（影响面 = 将写 N 字节），但绝不落盘（功能书 §7.8 的干跑边界自此收口）
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(content);
+        if (!ctx.DryRun)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(fullPath, content, ctx.Ct);
+            }
+            catch (Exception ex)
+            {
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.FileIoError, $"export file write failed: {ex.Message}", retryable: true));
+            }
+        }
+
         return CommandResult.Ok(
             new LinkExportResult(fullPath, format, dtos.Count, bytes),
             ChangeSet.Of(
                 new EntityRef("file", fullPath),
                 LinkPocket.Contracts.DomainEventNames.LinksChanged,
-                $"Exported {dtos.Count} link(s) to {fullPath}"));
+                ctx.DryRun
+                    ? $"Would export {dtos.Count} link(s) to {fullPath} ({bytes} bytes)"
+                    : $"Exported {dtos.Count} link(s) to {fullPath}"));
     }
 
     internal static string BuildCsv(IReadOnlyList<LinkDto> dtos)

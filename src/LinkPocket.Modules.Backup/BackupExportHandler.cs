@@ -35,6 +35,23 @@ internal sealed class BackupExportHandler : ICommandHandler
         var folders = await ctx.Uow.Folders.ListAllAsync(ct);
         var links = await ctx.Uow.Links.ListAsync(new LinkQuerySpec(), ct);
 
+        // 干跑零副作用：不打包、不落盘（临时文件也算落盘）；如实预告影响面（行数 + 目标路径），
+        // file_bytes 留给真实执行（干跑不谎报字节数）
+        if (ctx.DryRun)
+            return CommandResult.Ok(
+                JsonSerializer.SerializeToElement(new
+                {
+                    dry_run = true,
+                    file_path = fullPath,
+                    format_version = BackupIO.FormatVersion,
+                    total_folders = folders.Count,
+                    total_links = links.Count,
+                }),
+                ChangeSet.Of(
+                    new EntityRef("file", fullPath),
+                    LinkPocket.Contracts.DomainEventNames.LinksChanged,
+                    $"Would export backup ({folders.Count} folders, {links.Count} bookmarks)"));
+
         try
         {
             await BackupIO.PackAsync(folders, links, fullPath, ct);

@@ -496,6 +496,49 @@ public class OrchestrationTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task Staging_命令级干跑_不落盘不登记()
+    {
+        var (engine, _, path) = CreateEngine(withOrchestration: true);
+        var root = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpstagingcmd_{Guid.NewGuid():N}");
+        var source = Path.Combine(root, "src.json");
+        Directory.CreateDirectory(root);
+        await File.WriteAllTextAsync(source, """[{"url":"https://a.example/1","title":"甲"}]""");
+        try
+        {
+            // staging.stage 干跑：不拷贝、不登记（拷进暂存区就是落盘）
+            var dryStage = await engine.ExecuteAsync<JsonElement>("staging.stage",
+                new { source_path = source }, new CallOptions(DryRun: true));
+            Assert.True(dryStage.Data.GetProperty("dry_run").GetBoolean());
+            var files = (await engine.QueryAsync<JsonElement>("staging.list")).GetProperty("files");
+            Assert.Equal(0, files.GetArrayLength());
+
+            // 真实 stage 后：discard 干跑不删副本、transform 干跑（CallOptions.DryRun）不改写内容
+            var staged = (await engine.ExecuteAsync<StagedFile>("staging.stage", new { source_path = source })).Data!;
+            await engine.ExecuteAsync<JsonElement>("staging.discard",
+                new { staging_id = staged.StagingId }, new CallOptions(DryRun: true));
+            Assert.Equal(1, ((await engine.QueryAsync<JsonElement>("staging.list")).GetProperty("files")).GetArrayLength());
+
+            var dryTransform = await engine.ExecuteAsync<StagingTransformReport>("staging.transform", new
+            {
+                staging_id = staged.StagingId,
+                ops = new[] { new { op = "dedupe", args = new { by = "url" } } },
+                dry_run = false,   // 参数说落盘——命令级干跑必须压过它
+            }, new CallOptions(DryRun: true));
+            Assert.True(dryTransform.Data!.DryRun);   // 两路干跑同义
+            var text = await File.ReadAllTextAsync(staged.FullPath);
+            Assert.Contains("甲", text);
+
+            // 收尾真实 discard：暂存副本由登记方清理（不留垃圾）
+            await engine.ExecuteAsync<JsonElement>("staging.discard", new { staging_id = staged.StagingId });
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+            TestEnv.Cleanup(path);
+        }
+    }
+
     // ===== 审计 / 幂等落表 =====
 
     [Fact]

@@ -321,6 +321,20 @@ internal sealed class StagingStageHandler(StagingService staging) : ICommandHand
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var source = CommandArgs.RequireString(args, "source_path");
+        if (ctx.DryRun)
+        {
+            // 干跑零副作用：不拷贝、不登记（拷进暂存区就是落盘）；校验照做、影响面如实预告
+            if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
+                throw new EngineException(EngineErrors.Of(EngineErrors.InvalidPath,
+                    $"file does not exist: {source}", details: JsonSerializer.SerializeToElement(new { @param = "source_path" })));
+            var info = new FileInfo(source);
+            return CommandResult.Ok(
+                JsonSerializer.SerializeToElement(
+                    new { dry_run = true, source_path = source, file_name = info.Name, size_bytes = info.Length },
+                    EngineJson.Options),
+                ChangeSet.Of(new EntityRef("staged", "*"), DomainEventNames.StagingStaged, $"Would stage '{info.Name}'"));
+        }
+
         var staged = await staging.StageAsync(source, ctx.Ct);
         return CommandResult.Ok(staged, ChangeSet.Of(new EntityRef("staged", staged.StagingId), DomainEventNames.StagingStaged, $"Staged '{staged.FileName}'"));
     }
@@ -349,6 +363,16 @@ internal sealed class StagingDiscardHandler(StagingService staging) : ICommandHa
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var id = CommandArgs.RequireString(args, "staging_id");
+        if (ctx.DryRun)
+        {
+            // 干跑零副作用：不删暂存副本、不注销登记；存在性照查（校验错误零副作用照报）
+            if ((await staging.ListAsync(ctx.Ct)).All(f => f.StagingId != id))
+                throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"staged file does not exist: {id}"));
+            return CommandResult.Ok(
+                JsonSerializer.SerializeToElement(new { dry_run = true, staging_id = id }, EngineJson.Options),
+                ChangeSet.Of(new EntityRef("staged", id), DomainEventNames.StagingDiscarded, "Would discard staged file"));
+        }
+
         if (!await staging.DiscardAsync(id, ctx.Ct))
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, $"staged file does not exist: {id}"));
         return CommandResult.Ok(JsonSerializer.SerializeToElement(id),
@@ -384,7 +408,8 @@ internal sealed class StagingTransformHandler(StagingService staging) : ICommand
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var id = CommandArgs.RequireString(args, "staging_id");
-        var dryRun = CommandArgs.OptionalBool(args, "dry_run");
+        // 命令级干跑（CallOptions.DryRun）与参数级 dry_run 同义：transform 会落盘改写暂存文件，两路都必须只预览
+        var dryRun = CommandArgs.OptionalBool(args, "dry_run") || ctx.DryRun;
         var opsJson = CommandArgs.Raw(args, "ops")
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "required parameter 'ops' is missing", details: JsonSerializer.SerializeToElement(new { @param = "ops" })));
@@ -418,6 +443,8 @@ internal sealed class StagingCommitHandler(StagingService staging) : ICommandHan
         var id = CommandArgs.RequireString(args, "staging_id");
         var command = CommandArgs.RequireString(args, "command");
         var extra = CommandArgs.Raw(args, "args");
+        // 干跑（ctx.DryRun）经 DispatchNestedAsync 原样透传给目标命令：目标自检 DryRun（本命令自身零副作用），
+        // 暂存副本也不删——"转交 + 清理"里的清理归 staging.discard
         var merged = staging.BuildCommitArgs(id, extra);
         var result = await ctx.DispatchNestedAsync(command, merged, ctx.Ct);
         return CommandResult.Ok(BatchEngine.ToElement(result.Data), result.Changes);

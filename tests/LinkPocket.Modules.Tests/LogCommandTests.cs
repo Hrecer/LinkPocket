@@ -69,7 +69,9 @@ public class LogCommandTests
             var incremental = await engine.QueryAsync<LogQueryResult>("logs.query",
                 new { category = TestCategory, cursor = all.NextCursor });
             Assert.Empty(incremental.Items);
-            Assert.Equal(all.NextCursor, incremental.NextCursor);
+            // 游标只增不退即可：游标是**全局序号**，并行测试类的外源记录（engine.pipeline 的 Warn/Error）
+            // 会在两次查询之间推进它——本类只断言自己分类的记录（见类注释），不作"环里没动过"的整体断言
+            Assert.True(incremental.NextCursor >= all.NextCursor);
 
             LpLog.Info("第四条", TestCategory);
             var next = await engine.QueryAsync<LogQueryResult>("logs.query",

@@ -17,7 +17,8 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
         Category: "favicon",
         Description: "Queue links with missing favicons for background prefetch (returns immediately; concurrency 4, deduplicated, backoff on failure)",
         Parameters: [ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "Specific links; default = every link in the database without a favicon")],
-        Caps: CommandCaps.Mutation);
+        // NetworkOutsideGate：真实下载在写闸外的后台队列里发生（本命令只入队）——干跑必须零副作用（不入队、不下载、不落缓存）
+        Caps: CommandCaps.Mutation | CommandCaps.NetworkOutsideGate);
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -45,6 +46,18 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
                 .Where(l => !string.IsNullOrWhiteSpace(l.FaviconUrl))
                 .Select(l => l.FaviconUrl!)
                 .ToList();
+        }
+
+        // 干跑零副作用：不入队（入队即触发写闸外的下载与缓存落盘）；按去重口径如实预告排队数
+        if (ctx.DryRun)
+        {
+            var wouldQueue = faviconUrls.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            return CommandResult.Ok(
+                JsonSerializer.SerializeToElement(new { dry_run = true, would_queue = wouldQueue }),
+                ChangeSet.Of(
+                    new EntityRef("favicon_cache", "*"),
+                    LinkPocket.Contracts.DomainEventNames.LinksChanged,
+                    $"Would queue {wouldQueue} favicon(s) for prefetch"));
         }
 
         var queued = PrefetchQueue.EnqueueMissing(faviconUrls);
