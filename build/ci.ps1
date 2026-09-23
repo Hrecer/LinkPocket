@@ -172,6 +172,7 @@ $testProjects = @(
     "tests/LinkPocket.Architecture.Tests",
     "tests/LinkPocket.Engine.Tests",
     "tests/LinkPocket.Diagnostics.Tests",
+    "tests/LinkPocket.Ai.Tests",
     "tests/LinkPocket.Modules.Tests",
     "tests/LinkPocket.App.Tests"
 )

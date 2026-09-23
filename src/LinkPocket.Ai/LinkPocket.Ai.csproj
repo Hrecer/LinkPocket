@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- AI 运行时（引擎的消费者，只被组合根 new）：
+       服务商/模型配置与凭据保管、唯一 HTTP 客户端与协议适配、回合循环与审批、变更台账、会话存储。
+       依赖面只有 Contracts（+ DPAPI 官方包）；禁引 Engine/Data/Kernel/Modules.*/Composition/Diagnostics/UI.*
+       （架构测试 LayerRulesTests.Ai运行时_只依赖契约层 卡住）。
+       定位 = 与 Headless/CatalogExport 同级的"消费者"，故 net8.0（可被 net8.0 宿主复用）。 -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket.Ai</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+
+</Project>

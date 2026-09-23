@@ -17,6 +17,7 @@ public class LayerRulesTests
     private const string Data = "LinkPocket.Data";
     private const string Infrastructure = "LinkPocket.Infrastructure";
     private const string Engine = "LinkPocket.Engine";
+    private const string Ai = "LinkPocket.Ai";
 
     /// <summary>十个业务模块（方案第五章 + 定位模块）。</summary>
     private static readonly string[] BusinessModules =
@@ -78,6 +79,15 @@ public class LayerRulesTests
     [Fact]
     public void Engine_只依赖契约内核与数据层_不引用业务模块()
         => AssertRefs(Engine, Contracts, Kernel, Data);
+
+    /// <summary>AI 运行时（引擎的消费者）：只许依赖契约层——一切读写经 IEngine/EngineClient 管道，
+    /// 实现不得引用 Engine/Data/Kernel/Modules.*（与界面消费者同一约束；唯一额外依赖 = DPAPI 官方包）。</summary>
+    [Fact]
+    public void Ai运行时_只依赖契约层与DPAPI包()
+    {
+        AssertRefs(Ai, Contracts);
+        Assert.Equal(new[] { "System.Security.Cryptography.ProtectedData" }, PackageReferences(Ai));
+    }
 
     /// <summary>架构红线：协议容器 LinkPocket.Infrastructure 程序集必须不存在（零残留）。
     /// 与其配套的协议门面（Transport/ILinkPocketApi/TransportedLinkPocketApi 类型）在
