@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Engine;
@@ -15,11 +16,11 @@ namespace LinkPocket.Engine;
 internal static class OrchestrationHandlers
 {
     public static IReadOnlyList<ICommandHandler> CreateAll(
-        IMacroStore macros, UndoCoordinator undo, StagingService staging)
+        IMacroStore macros, UndoCoordinator undo, StagingService staging, EngineLimits limits)
         =>
         [
-            new MacroSaveHandler(macros), new MacroGetHandler(macros), new MacroListHandler(macros),
-            new MacroDeleteHandler(macros), new MacroRunHandler(macros),
+            new MacroSaveHandler(macros, limits), new MacroGetHandler(macros), new MacroListHandler(macros),
+            new MacroDeleteHandler(macros), new MacroRunHandler(macros, limits),
             new UndoListHandler(undo), new UndoListRedoHandler(undo), new UndoUndoHandler(undo), new UndoRedoHandler(undo),
             new UndoClearHandler(undo),
             new StagingStageHandler(staging), new StagingListHandler(staging), new StagingDiscardHandler(staging),
@@ -29,7 +30,7 @@ internal static class OrchestrationHandlers
 
 // ===== macro.* =====
 
-internal sealed class MacroSaveHandler(IMacroStore macros) : ICommandHandler
+internal sealed class MacroSaveHandler(IMacroStore macros, EngineLimits limits) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.save", Category: "macro", Description: "Save a named batch script (macro / skill library; invalid scripts are rejected)",
@@ -42,6 +43,10 @@ internal sealed class MacroSaveHandler(IMacroStore macros) : ICommandHandler
         var script = CommandArgs.Raw(args, "script")
             ?? throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "required parameter 'script' is missing", details: JsonSerializer.SerializeToElement(new { @param = "script" })));
+
+        // 落表前全量校验（形状 / 步骤上限）：描述符承诺"非法脚本被拒"，校验必须在写入前完成（校验类错误零副作用）
+        var parsed = BatchDispatch.ParseScript(script);
+        BatchEngine.ValidateScript(parsed, limits);
 
         // 干跑：**只校验、不落表**。宏走的是 IMacroStore 自己的连接（不在引擎事务内），
         // 真写下去就等于"干跑改了库"——违反不变量 3（干跑执行但不提交、零副作用）。
@@ -111,7 +116,7 @@ internal sealed class MacroDeleteHandler(IMacroStore macros) : ICommandHandler
     }
 }
 
-internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
+internal sealed class MacroRunHandler(IMacroStore macros, EngineLimits limits) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.run", Category: "macro", Description: "Run a macro with transactional batch semantics (nested step dispatch shares this command's unit of work; abort rolls the whole batch back)",
@@ -127,13 +132,15 @@ internal sealed class MacroRunHandler(IMacroStore macros) : ICommandHandler
         try
         {
             script = JsonSerializer.Deserialize<BatchScript>(scriptJson, EngineJson.ScriptOptions)
-                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"the script of macro '{name}' is not a valid batch script"));
-        }
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"the script of macro '{name}' is not a valid batch script"));        }
         catch (JsonException)
         {
             // 坏 JSON 是输入问题而非内部错误：必须报 ProtocolMalformed，不得冒泡成 LP.INTERNAL
             throw new EngineException(EngineErrors.Of(EngineErrors.ProtocolMalformed, $"the script of macro '{name}' is not a valid batch script"));
         }
+
+        // 运行前再校验一遍形状与步骤上限（保存期已验过——存量宏与手改库里的脚本也要过这道闸）
+        BatchEngine.ValidateScript(script, limits);
 
         // 宏实际运行耗时（此前 ElapsedMs 恒为 0，诊断面丢失「宏跑了多久」）
         var sw = Stopwatch.StartNew();

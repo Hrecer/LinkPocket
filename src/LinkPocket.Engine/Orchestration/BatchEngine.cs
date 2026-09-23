@@ -21,7 +21,7 @@ public sealed class BatchEngine : IBatchEngine
     public static readonly IReadOnlyList<CommandDescriptor> Descriptors =
     [
         new("batch.run", "batch", "Execute a batch of commands in script order (a transactional batch shares one unit of work and rolls the whole batch back on abort; a standalone batch commits each step)",
-            [ParamSpec.Req<JsonElement>("script", "Batch script { name, steps: [{ ref, command, args, on_error }], scope }")],
+            [ParamSpec.Req<JsonElement>("script", "Batch script { name, steps: [{ ref, command, args, on_error }], scope }; step args reference earlier results: {ref}, {ref.path}, {ref.path[n]} (array index), {ref.path[*].field} (map over array), {ref.path.length}")],
             CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
         new("batch.dry_run", "batch", "Dry-run a batch script: every step executes without commit, returning per-step results and impact with zero side effects",
             [ParamSpec.Req<JsonElement>("script", "Batch script")],
@@ -36,10 +36,14 @@ public sealed class BatchEngine : IBatchEngine
     private const int MaxStatusEntries = 256;
 
     private readonly EngineCore _engine;
+    private readonly EngineLimits _limits;
     private readonly ConcurrentDictionary<string, BatchStatus> _status = new(StringComparer.Ordinal);
 
-    public BatchEngine(EngineCore engine)
-        => _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    public BatchEngine(EngineCore engine, EngineLimits? limits = null)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _limits = limits ?? EngineLimits.Default;
+    }
 
     private void TrackStatus(string batchId, BatchStatus status)
     {
@@ -71,7 +75,7 @@ public sealed class BatchEngine : IBatchEngine
 
     private async Task<BatchReport> RunCoreAsync(BatchScript script, bool dryRun, CallOptions? options, CancellationToken ct)
     {
-        ValidateScript(script);
+        ValidateScript(script, _limits);
         var batchId = Guid.NewGuid().ToString("N");
         var correlationId = options?.CorrelationId ?? $"batch:{batchId}";
         var caller = options?.Caller ?? new CallerRef(CallerKind.Batch, batchId);
@@ -346,11 +350,15 @@ public sealed class BatchEngine : IBatchEngine
             _ => JsonSerializer.SerializeToElement(data, EngineJson.Options),
         };
 
-    private static void ValidateScript(BatchScript script)
+    internal static void ValidateScript(BatchScript script, EngineLimits limits)
     {
         if (script.Steps.Count == 0)
             throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "a batch script needs at least one step", details: JsonSerializer.SerializeToElement(new { @param = "steps" })));
+        if (script.Steps.Count > limits.MaxBatchSteps)
+            throw new EngineException(EngineErrors.Of(EngineErrors.EnumOutOfRange,
+                $"a batch script has {script.Steps.Count} steps (limit {limits.MaxBatchSteps})",
+                details: JsonSerializer.SerializeToElement(new { @param = "steps", limit = limits.MaxBatchSteps })));
         if (script.Steps.Any(s => string.IsNullOrWhiteSpace(s.Command)))
             throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 "every batch step must specify command", details: JsonSerializer.SerializeToElement(new { @param = "steps[].command" })));
@@ -376,6 +384,11 @@ public sealed class BatchEngine : IBatchEngine
 
 /// <summary>
 /// 批步骤模板解析：<c>{ref}</c> / <c>{ref.path.sub}</c> 引用更早步骤的结果数据。
+/// 路径段支持三种谓词（G8 收口）：
+/// <c>[n]</c> 数组下标（越界 / 非数组 <b>如实报错</b>，绝不静默留空）；
+/// <c>[*]</c> 展开 / 逐元映射（<c>{ref.items[*].id}</c> → 同形数组，可直接喂 <c>link_ids</c> 这类数组参数；
+/// 出现在数组字面量里时整体摊平拼接）；
+/// <c>length</c> 数组 / 字符串长度（对象上有同名属性时<b>属性优先</b>，零歧义）。
 /// 整串精确匹配 = 直接替换为结果元素（任意类型）；串内嵌引用 = 以字符串形式替换（标量取值、复合取原始 JSON）。
 /// </summary>
 internal static class BatchTemplate
@@ -401,13 +414,25 @@ internal static class BatchTemplate
     {
         var target = new System.Text.Json.Nodes.JsonArray();
         foreach (var item in arr.EnumerateArray())
+        {
+            // 数组字面量里的整串 [*] 引用 = 展开摊平：["pre", "{q.items[*].id}"] → ["pre", "A", "B", ...]
+            if (item.ValueKind == JsonValueKind.String && IsSpreadToken(item.GetString()!, out var spreadToken))
+            {
+                if (TryLookup(spreadToken, refs, out var expanded) && expanded.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var element in expanded.EnumerateArray())
+                        target.Add(System.Text.Json.Nodes.JsonNode.Parse(element.GetRawText()));
+                    continue;
+                }
+            }
             target.Add(System.Text.Json.Nodes.JsonNode.Parse(Resolve(item, refs).GetRawText()));
+        }
         return JsonSerializer.SerializeToElement(target);
     }
 
     private static JsonElement ResolveString(string text, IReadOnlyDictionary<string, JsonElement> refs)
     {
-        // 整串精确引用：{ref} 或 {ref.a.b} → 替换为结果元素本体
+        // 整串精确引用：{ref} / {ref.a.b} / {ref.a[0]} / {ref.a[*].id} / {ref.a.length} → 替换为结果元素本体
         if (text.StartsWith('{') && text.EndsWith('}') && IsRefToken(text.AsSpan(1, text.Length - 2), out var token))
         {
             if (TryLookup(token, refs, out var value)) return value.Clone();
@@ -418,7 +443,7 @@ internal static class BatchTemplate
     }
 
     private static string ReplaceInline(string text, IReadOnlyDictionary<string, JsonElement> refs)
-        => System.Text.RegularExpressions.Regex.Replace(text, @"\{(?<token>[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)\}", match =>
+        => System.Text.RegularExpressions.Regex.Replace(text, TokenPattern, match =>
         {
             var token = match.Groups["token"].Value;
             if (!TryLookup(token, refs, out var value)) return match.Value;   // 非引用令牌原样保留
@@ -427,33 +452,146 @@ internal static class BatchTemplate
                 : value.ToString();
         });
 
+    /// <summary>引用令牌形态：<c>段(段)*</c>，每段 = 标识符 + 可选 <c>[n]</c> / <c>[*]</c>。</summary>
+    private const string TokenPattern = @"\{(?<token>[A-Za-z0-9_]+(?:\[\*\]|\[\d+\])?(?:\.(?:[A-Za-z0-9_]+(?:\[\*\]|\[\d+\])?))*)\}";
+
     private static bool IsRefToken(ReadOnlySpan<char> span, out string token)
     {
         token = span.ToString();
         if (token.Length == 0) return false;
         foreach (var part in token.Split('.'))
         {
-            if (part.Length == 0 || !part.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
-                return false;
+            if (!TryParseSegment(part, out _)) return false;
         }
         return true;
     }
 
+    private static bool IsSpreadToken(string text, out string token)
+    {
+        token = "";
+        if (!(text.StartsWith('{') && text.EndsWith('}'))) return false;
+        if (!IsRefToken(text.AsSpan(1, text.Length - 2), out token)) return false;
+        return token.Contains("[*]", StringComparison.Ordinal);
+    }
+
+    /// <summary>路径段 = 标识符 + 可选下标谓词（<c>[n]</c> 下标 / <c>[*]</c> 展开）。</summary>
+    private readonly record struct Segment(string Name, int? Index, bool Star);
+
+    private static bool TryParseSegment(string part, out Segment segment)
+    {
+        segment = default;
+        if (part.Length == 0) return false;
+        var bracket = part.IndexOf('[');
+        var name = bracket < 0 ? part : part[..bracket];
+        foreach (var c in name)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_') return false;
+        }
+        if (bracket < 0)
+        {
+            segment = new Segment(name, null, false);
+            return true;
+        }
+
+        if (!part.EndsWith(']')) return false;
+        var inner = part[(bracket + 1)..^1];
+        if (inner == "*")
+        {
+            segment = new Segment(name, null, true);
+            return true;
+        }
+        if (!int.TryParse(inner, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var index) || index < 0)
+            return false;
+        segment = new Segment(name, index, false);
+        return true;
+    }
+
+    /// <summary>
+    /// 引用求值：未知步骤 / 缺属性 = 未命中（整串报错、内嵌保留字面量，维持既有口径）；
+    /// <b>结构性错误（下标越界、非数组展开、双展开）一律如实抛 <see cref="EngineErrors.TypeMismatch"/></b>——
+    /// 这是脚本作者的错误，绝不静默留空。
+    /// </summary>
     private static bool TryLookup(string token, IReadOnlyDictionary<string, JsonElement> refs, out JsonElement value)
     {
         value = default;
-        var dot = token.IndexOf('.');
-        var refName = dot < 0 ? token : token[..dot];
-        if (!refs.TryGetValue(refName, out var root)) return false;
+        var parts = token.Split('.');
+        if (!TryParseSegment(parts[0], out var head)) return false;
+        if (!refs.TryGetValue(head.Name, out var current)) return false;
 
-        value = root;
-        if (dot < 0) return true;
-        foreach (var segment in token[(dot + 1)..].Split('.'))
+        for (var i = 0; i < parts.Length; i++)
         {
-            if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(segment, out var child))
-                return false;
-            value = child;
+            var seg = head;
+            if (i > 0)
+            {
+                if (!TryParseSegment(parts[i], out seg)) return false;
+                if (!Step(ref current, seg.Name)) return false;
+            }
+
+            if (seg.Star)
+            {
+                // 展开 / 逐元映射：剩余路径逐元素求值，产出同形数组
+                if (current.ValueKind != JsonValueKind.Array)
+                    throw Mismatch($"template reference '{{{token}}}' cannot expand: value at '{seg.Name}' is not an array");
+                var mapped = new List<JsonElement>();
+                var at = 0;
+                foreach (var element in current.EnumerateArray())
+                {
+                    var item = element;
+                    for (var j = i + 1; j < parts.Length; j++)
+                    {
+                        if (!TryParseSegment(parts[j], out var rest)) return false;
+                        if (rest.Star)
+                            throw Mismatch($"template reference '{{{token}}}' has more than one [*] expansion");
+                        if (!Step(ref item, rest.Name))
+                            throw Mismatch($"template reference '{{{token}}}' element [{at}] has no '{rest.Name}'");
+                        ApplyIndex(ref item, rest.Index, token);
+                    }
+                    mapped.Add(item.Clone());
+                    at++;
+                }
+                value = JsonSerializer.SerializeToElement(mapped);
+                return true;
+            }
+
+            ApplyIndex(ref current, seg.Index, token);
         }
+
+        value = current;
         return true;
     }
+
+    /// <summary>路径段求值：对象属性优先；数组 / 字符串上的 <c>length</c> 取长度（对象同名属性优先）。</summary>
+    private static bool Step(ref JsonElement current, string name)
+    {
+        if (name == "length" && current.ValueKind != JsonValueKind.Object)
+        {
+            var length = current.ValueKind switch
+            {
+                JsonValueKind.Array => current.GetArrayLength(),
+                JsonValueKind.String => (current.GetString() ?? string.Empty).Length,
+                _ => -1,
+            };
+            if (length < 0) return false;
+            current = JsonSerializer.SerializeToElement(length);
+            return true;
+        }
+
+        if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(name, out var child)) return false;
+        current = child;
+        return true;
+    }
+
+    private static void ApplyIndex(ref JsonElement current, int? index, string token)
+    {
+        if (index is not { } at) return;
+        if (current.ValueKind != JsonValueKind.Array)
+            throw Mismatch($"template reference '{{{token}}}' cannot index with [{at}]: value is not an array");
+        if (at >= current.GetArrayLength())
+            throw Mismatch($"template reference '{{{token}}}' index [{at}] is out of range (length {current.GetArrayLength()})");
+        current = current[at];
+    }
+
+    private static EngineException Mismatch(string message)
+        => new(EngineErrors.Of(EngineErrors.TypeMismatch, message));
 }
