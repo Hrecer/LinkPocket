@@ -54,12 +54,7 @@
 
 - **11 built-in themes**, plus a color studio: give it your own palette and the entire interface — surfaces, text, highlights, borders — is derived from it.
 - Import your own font files and use them across the whole app.
-- Switch the interface between **简体中文 and English** instantly; your bookmarks, folders and paths stay exactly as they are.
-
-### Know what happened
-
-- An operation history records what changed, when, and with what result — useful when you want to know why something looks different.
-- A built-in log view lets you inspect recent activity without leaving the app.
+- **简体中文 and English**, switched instantly from the settings — or leave it on **Automatic**: an English Windows gets English, any other display language gets Simplified Chinese. Switching never touches your bookmarks, folders or paths.
 
 ## Getting started
 
