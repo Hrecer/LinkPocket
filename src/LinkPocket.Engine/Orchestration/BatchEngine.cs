@@ -77,6 +77,9 @@ public sealed class BatchEngine : IBatchEngine
         var caller = options?.Caller ?? new CallerRef(CallerKind.Batch, batchId);
         var sw = Stopwatch.StartNew();
 
+        // 能力门：与单命令同一条 —— 只读会话拒批；写入冻结时只有持锁会话能批（否则界面/宿主可借批绕过冻结）
+        _engine.Sessions?.Enforce(caller, isMutation: true, correlationId);
+
         TrackStatus(batchId, new BatchStatus(batchId, script.Name, "running", 0, script.Steps.Count));
 
         // 里程碑（Debug）：批开始——批是"一条用户动作"的容器，与各步嵌套审计同 correlation

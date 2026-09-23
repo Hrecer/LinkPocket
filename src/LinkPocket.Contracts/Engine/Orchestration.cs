@@ -213,14 +213,24 @@ public sealed record Session(
     int RateLimitPerMinute,
     DateTimeOffset StartedAt);
 
-/// <summary>会话管理器（ISessionManager）：Begin/End + 每次 Execute/Query 前的能力校验。</summary>
+/// <summary>当前写锁快照（界面投影用：状态带文案 + 写入入口置灰；**权威在引擎**）。</summary>
+public sealed record WriteHold(string SessionId, string Reason, DateTimeOffset TakenAt);
+
+/// <summary>会话管理器（ISessionManager）：Begin/End + 每次 Execute/Query 前的能力校验 + 写入冻结（写锁）。</summary>
 public interface ISessionManager
 {
     Task<Session> BeginAsync(SessionProfile profile, CancellationToken ct = default);
     Task EndAsync(string sessionId, CancellationToken ct = default);
     Session? Get(string sessionId);
-    /// <summary>能力门：会话存在性 + 只读拒绝写 + 限流（违反即抛 EngineException）。</summary>
+    /// <summary>能力门：会话存在性 + 只读拒绝写 + 限流 + **写入冻结**（违反即抛 EngineException）。</summary>
     void Enforce(CallerRef caller, bool isMutation, string correlationId);
+
+    /// <summary>取写入冻结（写锁）：AI 改数据期间只放行持锁会话的写，其它写入一律 <c>LP.SEC.006</c>。
+    /// <b>必须在回合终态 / 用户停止时 Dispose</b>（另有最大存活兜底，见实现）。</summary>
+    IDisposable BeginWriteHold(string sessionId, string reason);
+
+    /// <summary>当前写锁（无持锁者 → null）。</summary>
+    WriteHold? CurrentWriteHold { get; }
 }
 
 /// <summary>目录导出格式（IEngineCatalog.Export）。</summary>

@@ -54,6 +54,17 @@ internal static class TestEnv
         }
         return engine;
     }
+
+    /// <summary>临时库清理（清连接池 → 删文件；失败交给系统清理）。</summary>
+    public static void Cleanup(string path)
+    {
+        try
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch { /* 临时文件交给系统清理 */ }
+    }
 }
 
 /// <summary>注入式失败审计写入器：Write 必抛（验证"观测面失败不否定已提交事实"与失败路径守卫）。</summary>

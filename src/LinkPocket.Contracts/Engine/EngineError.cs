@@ -47,6 +47,8 @@ public static class EngineErrors
     public const string ConfirmRequired = "LP.SEC.003";
     public const string ConfirmExpired = "LP.SEC.004";
     public const string RateLimited = "LP.SEC.005";
+    /// <summary>写入冻结：AI 正在修改数据期间，非持锁会话（含不带 SessionId 的界面/宿主调用）的写入一律拒绝。</summary>
+    public const string WriteFrozenByAgent = "LP.SEC.006";
     public const string DbError = "LP.ENG.001";
     public const string NetworkError = "LP.ENG.002";
     public const string Cancelled = "LP.ENG.003";

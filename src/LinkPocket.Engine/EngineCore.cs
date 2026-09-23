@@ -89,6 +89,8 @@ public sealed class EngineCore : IEngine
     internal Func<IUnitOfWork> UowFactory => _uowFactory;
     internal IAuditWriter Audit => _audit;
     internal CommandRegistry Registry => _registry;
+    /// <summary>会话能力门（同程序集编排组件复用：批引擎的写入冻结 / 只读会话检查走同一条）。</summary>
+    internal ISessionManager? Sessions => _sessions;
 
     public async Task<CommandResult<T>> ExecuteAsync<T>(string command, object? args = null,
         CallOptions? options = null, CancellationToken ct = default)
