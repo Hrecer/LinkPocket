@@ -193,6 +193,36 @@ public class AiLoopTests
         Assert.Null(location.After);
     }
 
+    [Fact]
+    public async Task 引擎审计_按回合关联取齐本回合的调用史()
+    {
+        using var host = NewHost(
+        [
+            [ToolChunk(0, "call_1", "folders.create", """{"name":"审计夹"}"""), "data: [DONE]"],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建夹");
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        var turnId = detail.Turns.Single().TurnId;
+
+        var page = await host.Assistant.QueryEngineAuditAsync(new AiAuditQuery(sessionId, turnId, IncludePayloads: true));
+        var row = Assert.Single(page.Items);
+        Assert.Equal("folders.create", row.Command);
+        Assert.Equal($"ai:{turnId}", row.CorrelationId);
+        Assert.True(row.Success);
+        Assert.False(row.IsNested);
+        Assert.Contains("审计夹", row.ArgsJson);                 // 载荷自描述（脱敏后的入参快照）
+        Assert.Contains("name", row.ChangesJson);                // 变更载荷里带字段级 diff
+        Assert.DoesNotContain("sk-", row.ArgsJson);              // 密钥绝不进审计（兜底断言）
+
+        // 工具调用本身也带上同一条关联（界面「关联」列的取值来源）
+        Assert.Equal($"ai:{turnId}", detail.ToolCalls.Single().CorrelationId);
+    }
+
     // ── 整条回合链路（假传输层 + 真实引擎）────────────────────
 
     /// <summary>照剧本吐 SSE 行的假传输层（CI 不打真实网络；每个剧本项对应一次模型请求）。</summary>

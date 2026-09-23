@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
+             xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              xmlns:local="clr-namespace:LinkPocket.UI.Ai"
              Background="{DynamicResource App.Surface.Base}">
     <UserControl.Resources>
@@ -26,6 +27,23 @@
                     </StackPanel>
                     <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource App.Text.Muted}"/>
+                    <!-- 内联变更卡（功能书 §7.5）：本调用的逐条变更，展开/收起由各行自持 -->
+                    <StackPanel Margin="0,6,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasChanges}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{loc:Value ChangeCountValue}" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <ItemsControl ItemsSource="{Binding Changes}" Margin="0,2,0,0"
+                                      ItemTemplate="{StaticResource AiChangeRowTemplate}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -87,6 +105,144 @@
                                       ToolTemplate="{StaticResource AiToolTemplate}"
                                       ApprovalTemplate="{StaticResource AiApprovalTemplate}"
                                       NoticeTemplate="{StaticResource AiNoticeTemplate}"/>
+
+        <!-- 字段级 diff 的一行：字段名走键；值里字符串 = 用户数据原样（长值截断到一行 + 悬浮看全文）。
+             冻结宽度口径（中文基线）：字段名 56 = 4 字 × 11pt（44px）+ 余量；
+             值格 74 = 可用宽（286 − 14×2 − 项内距）下"旧 → 新"三段并列的最长可读宽。 -->
+        <DataTemplate x:Key="AiFieldRowTemplate">
+            <StackPanel Orientation="Horizontal" Margin="0,1">
+                <TextBlock Text="{loc:Value FieldName}" FontSize="11" Width="56" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                <TextBlock Text="{loc:Value Before}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
+                           ToolTip="{loc:Value Before}" Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="→" FontSize="11" Margin="4,0" Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="{loc:Value After}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
+                           ToolTip="{loc:Value After}" Foreground="{DynamicResource App.Text.Primary}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- 台账一行（对话流内联变更卡与右栏共用同一份模板）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
+             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。 -->
+        <DataTemplate x:Key="AiChangeRowTemplate">
+            <StackPanel Margin="0,3">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey KindKey}" FontSize="12" Foreground="{DynamicResource App.Accent.Text}"/>
+                    <TextBlock Text="{Binding EntityLabel}" FontSize="12" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.Text.Primary}"/>
+                </StackPanel>
+                <TextBlock Text="{loc:Value PathValue}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="{Binding EntitySuffix}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Muted}"/>
+                <ItemsControl ItemsSource="{Binding VisibleFields}" ItemTemplate="{StaticResource AiFieldRowTemplate}"/>
+                <Button Height="24" Padding="8,0" FontSize="11"
+                        HorizontalAlignment="Left" Margin="0,2,0,0" Content="{loc:LocKey ExpandKey}"
+                        Click="OnToggleChangeExpand">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CanExpand}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                    <TextBlock Text="{loc:LocKey SourceKey}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSourceNote}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Text="{loc:Value TruncatedValue}" FontSize="11" Foreground="{DynamicResource App.Accent.Text}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTruncated}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- 引擎审计一行：命令/结果/耗时/干跑与嵌套标记是机器面原样；时间走时钟投影。 -->
+        <DataTemplate x:Key="AiEngineRowTemplate">
+            <StackPanel Margin="0,3">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Command}" FontSize="12" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.Text.Primary}"/>
+                    <TextBlock Text="{loc:LocKey ResultKey}" FontSize="11" Margin="6,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Value TimeValue}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                    <TextBlock Text="{Binding ElapsedText}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Text.Muted}"/>
+                    <TextBlock Text="{Binding ErrorCode}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Loc ai.audit.flag.dryRun}" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DryRun}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{loc:Loc ai.audit.flag.nested}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Text.Secondary}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsNested}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{Binding BatchId}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Text.Muted}"/>
+                </StackPanel>
+                <Button Height="24" Padding="8,0" FontSize="11"
+                        HorizontalAlignment="Left" Margin="0,2,0,0" Content="{loc:LocKey PayloadKey}"
+                        Click="OnTogglePayload">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasPayload}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <TextBlock Text="{Binding PayloadText}" FontSize="10.5" TextWrapping="Wrap" Margin="0,2,0,0"
+                           FontFamily="{DynamicResource App.Font.Mono}" Foreground="{DynamicResource App.Text.Muted}"/>
+            </StackPanel>
+        </DataTemplate>
     </UserControl.Resources>
 
     <Grid>
@@ -107,8 +263,37 @@
                     <Button x:Name="DeleteSessionButton" Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
                             Content="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession"/>
                 </StackPanel>
+                <!-- 就地重命名（右键「重命名」进入）：Enter 提交、Esc 取消（不做失焦提交——无归属的失焦是时序炸弹，见 WARNINGS 34） -->
+                <TextBox x:Name="RenameBox" DockPanel.Dock="Bottom" Height="30" Margin="0,8,0,0"
+                         VerticalContentAlignment="Center" Padding="8,0"
+                         Text="{Binding RenameText, UpdateSourceTrigger=PropertyChanged}"
+                         KeyDown="OnRenameKeyDown"
+                         Background="{DynamicResource App.Surface.TintCard}"
+                         BorderBrush="{DynamicResource App.Line.Variant}"
+                         Foreground="{DynamicResource App.Text.Primary}">
+                    <TextBox.Style>
+                        <Style TargetType="TextBox">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsRenamingSession}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBox.Style>
+                </TextBox>
                 <ListBox x:Name="SessionList" Margin="0,10,0,0" Background="Transparent" BorderThickness="0"
                          ItemsSource="{Binding Sessions}" SelectionChanged="OnSessionSelected">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <ContextMenu.Resources>
+                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+                            </ContextMenu.Resources>
+                            <MenuItem Header="{loc:Loc ai.sessions.rename}" Click="OnRenameSession"/>
+                            <MenuItem Header="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
+                            <MenuItem Header="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession"/>
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Margin="0,4">
@@ -127,8 +312,24 @@
                        Foreground="{DynamicResource App.Text.Secondary}"/>
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource App.Surface.Card}" CornerRadius="18" Padding="12" Margin="0,8,0,0">
                 <StackPanel>
-                    <TextBlock Text="{loc:LocKey SelectionErrorKey}" TextWrapping="Wrap" FontSize="12"
-                               Foreground="{DynamicResource App.Accent.Text}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{loc:LocKey SelectionErrorKey}" TextWrapping="Wrap" FontSize="12"
+                                   Foreground="{DynamicResource App.Accent.Text}"/>
+                        <!-- 未配置服务商/模型时的直达入口（页面不认导航表，由 Shell 切页） -->
+                        <Button x:Name="OpenSettingsButton" Height="24" Padding="8,0" FontSize="11" Margin="8,0,0,0"
+                                Content="{loc:Loc ai.hint.openSettings}" Click="OnOpenSettings">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsConfigured}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
                     <TextBox x:Name="ComposerBox" MinHeight="64" MaxHeight="160" TextWrapping="Wrap" AcceptsReturn="True"
                              Text="{Binding ComposerText, UpdateSourceTrigger=PropertyChanged}"
                              Background="Transparent" BorderThickness="0" Foreground="{DynamicResource App.Text.Primary}"/>
@@ -152,54 +353,216 @@
             </ScrollViewer>
         </DockPanel>
 
-        <!-- 右栏：变更与审计 -->
-        <Border Grid.Column="2" Background="{DynamicResource App.Surface.Panel}" CornerRadius="24,0,0,24">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="14">
-                    <TextBlock Text="{loc:Loc ai.audit.turnChanges}" FontWeight="SemiBold" Foreground="{DynamicResource App.Text.Primary}"/>
-                    <TextBlock Text="{loc:Loc ai.audit.empty}" FontSize="12" Foreground="{DynamicResource App.Text.Muted}"/>
-                    <ItemsControl ItemsSource="{Binding TurnChanges}" Margin="0,6,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,3">
-                                    <TextBlock Text="{loc:LocKey KindKey}" Foreground="{DynamicResource App.Text.Primary}"/>
-                                    <TextBlock Text="{Binding EntityLabel}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource App.Text.Primary}"/>
-                                    <TextBlock Text="{Binding EntitySuffix}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                                    <TextBlock Text="{Binding OutcomeLabel}" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}"/>
-                                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+        <!-- 右栏：变更与审计（四页签 = 本轮 / 本会话 / 审批 / 引擎审计；功能书 §5.2、§7.6）。
+             右栏是**查看面**（选中/过滤的投影）：点它不反向取消任何东西 → BlankClick.IsInteractive。 -->
+        <Border Grid.Column="2" Background="{DynamicResource App.Surface.Panel}" CornerRadius="24,0,0,24"
+                views:BlankClick.IsInteractive="True">
+            <Grid Margin="14,12,14,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                    <TextBlock Text="{loc:Loc ai.audit.sessionChanges}" FontWeight="SemiBold" Margin="0,16,0,0"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                    <ItemsControl ItemsSource="{Binding SessionChanges}" Margin="0,6,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,3">
-                                    <TextBlock Text="{Binding EntityLabel}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource App.Text.Primary}"/>
-                                    <TextBlock Text="{Binding EntitySuffix}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="{loc:Loc ai.audit.approvals}" FontWeight="SemiBold" Margin="0,16,0,0"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                    <ItemsControl ItemsSource="{Binding Approvals}" Margin="0,6,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,3">
-                                    <TextBlock Text="{Binding Command}" Foreground="{DynamicResource App.Text.Primary}"/>
-                                    <TextBlock Text="{Binding DecisionText}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                                    <TextBlock Text="{Binding Reason}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                <!-- 段宽 = 冻结几何（中文基线）：可用宽 238 ⇒ 4 段 × 58；文字宽 2 字 × 13pt（26px）
+                     + 项内距 28 + 描边 2 ⇒ 56，取 58 留余量。完整页签名在 ToolTip 里（窄栏放不下长标签）。 -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <views:SlidingNavStrip x:Name="PanelTabs" Style="{StaticResource SlidingNavStripStyle}"
+                                           SelectedIndex="{Binding TabIndex, Mode=TwoWay}">
+                        <ListBoxItem Content="{loc:Loc ai.audit.tab.turn}" ToolTip="{loc:Loc ai.audit.turnChanges}">
+                            <ListBoxItem.Style>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
+                                    <Setter Property="Height" Value="30"/>
+                                    <Setter Property="MinWidth" Value="58"/>
+                                    <Setter Property="Width" Value="58"/>
+                                </Style>
+                            </ListBoxItem.Style>
+                        </ListBoxItem>
+                        <ListBoxItem Content="{loc:Loc ai.audit.tab.session}" ToolTip="{loc:Loc ai.audit.sessionChanges}">
+                            <ListBoxItem.Style>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
+                                    <Setter Property="Height" Value="30"/>
+                                    <Setter Property="MinWidth" Value="58"/>
+                                    <Setter Property="Width" Value="58"/>
+                                </Style>
+                            </ListBoxItem.Style>
+                        </ListBoxItem>
+                        <ListBoxItem Content="{loc:Loc ai.audit.tab.approvals}" ToolTip="{loc:Loc ai.audit.approvals}">
+                            <ListBoxItem.Style>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
+                                    <Setter Property="Height" Value="30"/>
+                                    <Setter Property="MinWidth" Value="58"/>
+                                    <Setter Property="Width" Value="58"/>
+                                </Style>
+                            </ListBoxItem.Style>
+                        </ListBoxItem>
+                        <ListBoxItem Content="{loc:Loc ai.audit.tab.engine}" ToolTip="{loc:Loc ai.audit.engine}">
+                            <ListBoxItem.Style>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
+                                    <Setter Property="Height" Value="30"/>
+                                    <Setter Property="MinWidth" Value="58"/>
+                                    <Setter Property="Width" Value="58"/>
+                                </Style>
+                            </ListBoxItem.Style>
+                        </ListBoxItem>
+                    </views:SlidingNavStrip>
                 </StackPanel>
-            </ScrollViewer>
+
+                <!-- 过滤行：搜索（对象名 / 命令名）+ 分类（变更页签）/ 结果（引擎审计页签） -->
+                <Grid Grid.Row="1" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PanelSearch" Height="30" VerticalContentAlignment="Center" Padding="8,0"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             Background="{DynamicResource App.Surface.TintCard}"
+                             BorderBrush="{DynamicResource App.Line.Variant}"
+                             Foreground="{DynamicResource App.Text.Primary}"
+                             ToolTip="{loc:Loc ai.audit.search}"/>
+                    <ComboBox Grid.Column="1" Width="92" Height="30" Margin="8,0,0,0"
+                              SelectedIndex="{Binding ChangeFilterIndex, Mode=TwoWay}">
+                        <ComboBox.Style>
+                            <Style TargetType="ComboBox">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ComboBox.Style>
+                        <ComboBoxItem Content="{loc:Loc ai.audit.filter.all}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.create}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.update}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.move}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.delete}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.purge}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.restore}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.import}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.export}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.change.kind.diagnostic}"/>
+                    </ComboBox>
+                    <ComboBox Grid.Column="1" Width="92" Height="30" Margin="8,0,0,0"
+                              SelectedIndex="{Binding AuditResultIndex, Mode=TwoWay}">
+                        <ComboBox.Style>
+                            <Style TargetType="ComboBox">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ComboBox.Style>
+                        <ComboBoxItem Content="{loc:Loc ai.audit.filter.all}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.audit.result.ok}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.audit.result.failed}"/>
+                    </ComboBox>
+                </Grid>
+
+                <!-- 列表（四个页签各一份；同一份台账行模板与对话流共用） -->
+                <ScrollViewer Grid.Row="2" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding TurnChanges}" ItemTemplate="{StaticResource AiChangeRowTemplate}">
+                            <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.Style>
+                        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding SessionChanges}" ItemTemplate="{StaticResource AiChangeRowTemplate}">
+                            <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsApprovalTab}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.Style>
+                        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding Approvals}">
+                            <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsApprovalTab}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.Style>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,3">
+                                        <TextBlock Text="{Binding Command}" Foreground="{DynamicResource App.Text.Primary}"/>
+                                        <TextBlock Text="{Binding Target}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource App.Text.Muted}"/>
+                                        <TextBlock Text="{Binding DecisionText}" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}"/>
+                                        <TextBlock Text="{Binding Reason}" FontSize="11" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <ItemsControl ItemsSource="{Binding EngineAudit}" ItemTemplate="{StaticResource AiEngineRowTemplate}">
+                            <ItemsControl.Style>
+                                <Style TargetType="ItemsControl">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.Style>
+                        </ItemsControl>
+                        <TextBlock Text="{loc:LocKey AuditHintKey}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Foreground="{DynamicResource App.Text.Muted}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- 汇总状态条（含变量的整句由 VM 出 LocValue） -->
+                <TextBlock Grid.Row="3" Text="{loc:Value SummaryValue}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话） -->
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,0">
+                    <ComboBox x:Name="ExportFormatBox" Width="118" Height="30" SelectedIndex="0">
+                        <ComboBoxItem Content="{loc:Loc ai.export.markdown}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.export.csv}"/>
+                        <ComboBoxItem Content="{loc:Loc ai.export.json}"/>
+                    </ComboBox>
+                    <Button x:Name="ExportAuditButton" Style="{StaticResource TonalButton}" Height="30" Margin="8,0,0,0"
+                            Content="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

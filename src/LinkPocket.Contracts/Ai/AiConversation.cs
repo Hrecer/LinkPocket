@@ -226,3 +226,39 @@ public sealed record AiTurnContext(
     string? FolderPath = null,
     IReadOnlyList<string>? SelectedNames = null,
     string? LanguageCode = null);
+
+/// <summary>
+/// 引擎审计页签的查询（数据源 = 引擎的 <c>audit.query</c>）：
+/// 按**回合关联**（correlation = <c>ai:&lt;turnId&gt;</c>）取齐该回合的引擎调用史；
+/// <see cref="TurnId"/> 为 null = 本会话最近若干回合合并（按时间倒序）。
+/// </summary>
+public sealed record AiAuditQuery(
+    string SessionId,
+    string? TurnId = null,
+    string? Search = null,        // 命令名子串（客户端过滤：引擎侧无模糊参数）
+    bool? Success = null,         // 成功 / 失败筛选（服务端过滤）
+    bool IncludePayloads = false, // 是否携带 args_json / changes_json 载荷
+    int Page = 1,
+    int PerPage = 50);
+
+/// <summary>一行引擎审计记录（机器面字段原样，界面只按键与数值渲染）。</summary>
+public sealed record AiEngineCallRow(
+    DateTimeOffset At,
+    string Command,
+    string Caller,
+    string CorrelationId,
+    bool Success,
+    string? ErrorCode,
+    long ElapsedMs,
+    bool DryRun,
+    bool IsNested,
+    string? BatchId,
+    string? ArgsJson,
+    string? ChangesJson);
+
+/// <summary>引擎审计页（分页口径与 audit.query 一致）。</summary>
+public sealed record AiAuditPage(
+    IReadOnlyList<AiEngineCallRow> Items,
+    int Total,
+    int Page,
+    int PageCount);

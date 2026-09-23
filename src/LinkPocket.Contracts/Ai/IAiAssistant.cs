@@ -91,6 +91,9 @@ public interface IAiAssistant
     /// <summary>导出会话或台账报告（同目录临时文件 + 原子替换；导出物**绝不含密钥**）。</summary>
     Task ExportAsync(string sessionId, AiExportFormat format, string outputPath, CancellationToken ct = default);
 
+    /// <summary>引擎审计页签的数据源（audit.query）：按回合关联取齐该回合/本会话的引擎调用史。</summary>
+    Task<AiAuditPage> QueryEngineAuditAsync(AiAuditQuery query, CancellationToken ct = default);
+
     // ── 通知（订阅一次，按 Kind 分派）──────────────────────────
 
     /// <summary>会话内容增量通知（消息 / 流式增量 / 工具调用 / 变更 / 审批 / 回合 / 会话摘要）。</summary>

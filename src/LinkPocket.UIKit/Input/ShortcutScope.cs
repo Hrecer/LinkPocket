@@ -51,6 +51,9 @@ namespace LinkPocket.Input
 
         /// <summary>设置页（当前无页面级快捷键；占位以保持"每页一组"的对称）。</summary>
         Settings,
+
+        /// <summary>AI 助手页：Enter 发送（控件锚定在输入框上）、Esc 焦点回输入框。</summary>
+        Ai,
     }
 
     /// <summary>作用域链（近 → 远）：解析顺序的唯一事实源，禁止在别处自行拼"回退逻辑"。</summary>
@@ -82,6 +85,7 @@ namespace LinkPocket.Input
         private static readonly ShortcutScope[] SmartListsChain = { ShortcutScope.SmartLists };
         private static readonly ShortcutScope[] ToolsChain = { ShortcutScope.Tools };
         private static readonly ShortcutScope[] SettingsChain = { ShortcutScope.Settings };
+        private static readonly ShortcutScope[] AiChain = { ShortcutScope.Ai };
 
         /// <summary>从活跃作用域向外回退的解析顺序（第一个命中的绑定胜出）。</summary>
         public static IReadOnlyList<ShortcutScope> Chain(ShortcutScope active) => active switch
@@ -96,6 +100,7 @@ namespace LinkPocket.Input
             ShortcutScope.SmartLists => SmartListsChain,
             ShortcutScope.Tools => ToolsChain,
             ShortcutScope.Settings => SettingsChain,
+            ShortcutScope.Ai => AiChain,
             _ => GlobalChain
         };
     }

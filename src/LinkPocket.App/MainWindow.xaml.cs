@@ -82,7 +82,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             () => vm.RefreshFolderTreeAndUIAsync());
         SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai);
-        AiPage.Configure(_host.Ai);
+        AiPage.Configure(_host.Ai, navId => vm.SelectNavCommand.Execute(navId));
         vm.ToolsDataChanged += (_, _) => _ = ToolsView.OnExternalDataChangedAsync();
         // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）
         vm.NavigatedToTools += (_, _) => _ = ToolsView.OnNavigatedToAsync();

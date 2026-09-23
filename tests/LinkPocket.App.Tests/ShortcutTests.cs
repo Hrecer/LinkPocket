@@ -81,7 +81,9 @@ public class ShortcutTests
             {
                 Assert.False(string.IsNullOrWhiteSpace(spec.ActionId));
                 Assert.False(string.IsNullOrWhiteSpace(spec.DescriptionKey));
-                Assert.StartsWith(page.Page.ToString().ToLowerInvariant().Substring(0, 4), spec.ActionId);
+                // 页码前缀 = 页名前 4 字符（页名短于 4 字符时取全名：如 Ai → "ai."）
+                var name = page.Page.ToString().ToLowerInvariant();
+                Assert.StartsWith(name[..Math.Min(4, name.Length)], spec.ActionId);
             }
     }
 

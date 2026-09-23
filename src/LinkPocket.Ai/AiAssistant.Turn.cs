@@ -228,7 +228,8 @@ public sealed partial class AiAssistant
 
         var callId = $"c-{Guid.NewGuid():N}";
         var call = new AiToolCall(callId, NextSeq(file), run.TurnId, request.Name, AiToolCallState.Pending,
-            request.ArgumentsJson, Shorten(request.ArgumentsJson, 160), null, null, 0, false, null, null,
+            request.ArgumentsJson, Shorten(request.ArgumentsJson, 160), null, null, 0, false,
+            TurnCorrelation(run.TurnId), null,   // 关联 = 本回合（引擎审计页签按它取齐本回合的调用史）
             DateTimeOffset.UtcNow);
         file.ToolCalls.Add(call);
         SetTurn(file, run, AiTurnState.ToolRunning, toolCallCount: file.ToolCalls.Count(c => c.TurnId == run.TurnId));
@@ -394,6 +395,7 @@ public sealed partial class AiAssistant
         var options = new CallOptions(
             ConfirmToken: token,
             Caller: new CallerRef(CallerKind.Agent, engineSession.SessionId),
+            CorrelationId: TurnCorrelation(run.TurnId),   // 一个回合的全部引擎调用共用一条关联（审计/日志同一把钥匙）
             UndoGroupId: undoGroupId);   // 本会话撤销的归属键（= 工具调用 ID）：台账据此在撤销栈里核对可撤销性
         // T 必须是 object：引擎按处理器声明的类型铸造返回值（DTO/列表各不相同），只有 object 恒可承接
         if (descriptor?.IsMutation == true)

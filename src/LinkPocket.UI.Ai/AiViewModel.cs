@@ -156,13 +156,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         foreach (var approval in detail.Approvals)
             Feed.Add(AiFeedItem.ForApproval(approval, DescribeTarget(approval)));
 
-        SessionChanges.Clear();
-        foreach (var change in detail.Changes.OrderByDescending(c => c.Seq)) SessionChanges.Add(new AiChangeRow { Change = change });
-        RefreshTurnChanges(detail.Changes);
-
-        Approvals.Clear();
-        foreach (var approval in detail.Approvals.OrderByDescending(a => a.Seq))
-            Approvals.Add(new AiApprovalRow(approval, DescribeTarget(approval)));
+        ApplySession(detail);
+        AttachInlineChanges();
 
         IsTurnRunning = detail.Summary.ActiveTurnState is AiTurnState.Pending or AiTurnState.Streaming
             or AiTurnState.ToolRunning or AiTurnState.AwaitingApproval;
@@ -187,13 +182,13 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>导出当前会话（目标路径由宿主对话框给出）。</summary>
-    public async Task<bool> ExportSessionAsync(string outputPath)
+    /// <summary>导出当前会话（缺省 Markdown；CSV = 台账逐条、JSON = 完整会话文件）。</summary>
+    public async Task<bool> ExportSessionAsync(string outputPath, AiExportFormat format = AiExportFormat.Markdown)
     {
         if (_activeSessionId is not { } sessionId) return false;
         try
         {
-            await _assistant.ExportAsync(sessionId, AiExportFormat.Markdown, outputPath).ConfigureAwait(true);
+            await _assistant.ExportAsync(sessionId, format, outputPath).ConfigureAwait(true);
             return true;
         }
         catch (AiException ex)
@@ -234,14 +229,6 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     private static string DescribeTarget(AiApproval approval)
         => approval.TargetNames.Count > 0 ? string.Join(", ", approval.TargetNames) : "";
 
-    private void RefreshTurnChanges(IReadOnlyList<AiChange> changes)
-    {
-        var lastTurn = changes.Count > 0 ? changes[^1].TurnId : null;
-        TurnChanges.Clear();
-        foreach (var change in changes.Where(c => c.TurnId == lastTurn).OrderByDescending(c => c.Seq))
-            TurnChanges.Add(new AiChangeRow { Change = change });
-    }
-
     private void OnFreezeChanged() => Raise(nameof(IsWriteFrozen));
 
     private void OnNotified(AiNotification notification)
@@ -272,7 +259,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 UpsertApproval(approval);
                 break;
             case AiNotificationKind.ChangeRecorded when notification.Change is { } change:
-                if (notification.SessionId == _activeSessionId) UpsertChange(change);
+                if (notification.SessionId == _activeSessionId) OnChangeRecorded(change);
                 break;
             case AiNotificationKind.TurnChanged when notification.Turn is { } turn:
                 if (notification.SessionId != _activeSessionId) break;
@@ -288,6 +275,9 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                     AiTurnState.Cancelled => "ai.status.stopped",
                     _ => StatusKey,
                 };
+                if (turn.State is AiTurnState.Completed or AiTurnState.Failed or AiTurnState.Cancelled
+                    or AiTurnState.Interrupted)
+                    OnTurnSettled();
                 break;
             case AiNotificationKind.SessionChanged when notification.Session is { } summary:
                 var index = Sessions.ToList().FindIndex(s => s.SessionId == summary.SessionId);
@@ -318,16 +308,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         if (existing is null) Feed.Add(AiFeedItem.ForApproval(approval, DescribeTarget(approval)));
         else existing.Apply(approval);
 
-        var row = Approvals.FirstOrDefault(r => r.ApprovalId == approval.ApprovalId);
-        if (row is null) Approvals.Insert(0, new AiApprovalRow(approval, DescribeTarget(approval)));
-        else row.Apply(approval);
-    }
-
-    private void UpsertChange(AiChange change)
-    {
-        SessionChanges.Insert(0, new AiChangeRow { Change = change });
-        if (TurnChanges.Count == 0 || TurnChanges[0].Change.TurnId == change.TurnId)
-            TurnChanges.Insert(0, new AiChangeRow { Change = change });
+        OnApprovalRecorded(approval);
     }
 
     private bool Set<T>(ref T field, T value, string name)

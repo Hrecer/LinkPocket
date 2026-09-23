@@ -15,6 +15,7 @@ public enum ShortcutPage
     SmartLists,
     Tools,
     Settings,
+    Ai,
 }
 
 /// <summary>动作 id（总表与各页的命令映射共用同一批常量，避免手打错）。</summary>
@@ -69,6 +70,10 @@ public static class ShortcutAction
     public const string TrashTreeCollapse = "trash.treeCollapse";
     public const string TrashTreeExpand = "trash.treeExpand";
     public const string TrashFocusPath = "trash.focusPath";
+
+    // AI 助手页：Enter 发送（控件锚定在输入框）、Esc 焦点回输入框
+    public const string AiSend = "ai.send";
+    public const string AiEscape = "ai.escape";
 
     // 搜索页 / 智能列表 / 工具页
     public const string SearchRun = "search.run";
@@ -291,6 +296,17 @@ public static class ShortcutCatalog
             ContextGateKey: "gate.pickerOpen"),
     };
 
+    /// <summary>
+    /// AI 助手页键位：Enter = 发送（**控件锚定**在输入框上——只在输入框获焦时生效，符合"输入控件让位"既有口径）；
+    /// Esc = 分层出口的第一层（停止生成 → 否则焦点回输入框，命令侧按状态自行分层）。
+    /// 本页**不注册全局键**（"任何页面唤出 AI"会破坏"只有浏览页注册全局键"这条不变量，本功能不做）。
+    /// </summary>
+    private static readonly ShortcutSpec[] AiSpecs =
+    {
+        new(ShortcutAction.AiSend, Key.Enter, ShortcutScope.Ai, "shortcut.aiSend", ControlName: "ComposerBox"),
+        new(ShortcutAction.AiEscape, Key.Escape, ShortcutScope.Ai, "shortcut.aiEscape"),
+    };
+
     /// <summary>全部页面的键位组（**顺序即文档顺序**；每页一组，组不共享根作用域）。</summary>
     public static readonly IReadOnlyList<ShortcutPageSpec> Pages = new[]
     {
@@ -300,6 +316,7 @@ public static class ShortcutCatalog
         new ShortcutPageSpec(ShortcutPage.SmartLists, "shortcut.page.smartLists", ShortcutScope.SmartLists, SmartListsSpecs),
         new ShortcutPageSpec(ShortcutPage.Tools, "shortcut.page.tools", ShortcutScope.Tools, ToolsSpecs),
         new ShortcutPageSpec(ShortcutPage.Settings, "shortcut.page.settings", ShortcutScope.Settings, SettingsSpecs),
+        new ShortcutPageSpec(ShortcutPage.Ai, "shortcut.page.ai", ShortcutScope.Ai, AiSpecs),
     };
 
     public static ShortcutPageSpec For(ShortcutPage page)
