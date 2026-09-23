@@ -97,7 +97,7 @@
             </Border>
         </DataTemplate>
         <DataTemplate x:Key="AiNoticeTemplate">
-            <TextBlock Text="{Binding Text}" Margin="0,4,60,4" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
+            <TextBlock Text="{loc:Value NoticeValue}" Margin="0,4,60,4" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
         </DataTemplate>
         <local:AiFeedTemplateSelector x:Key="AiFeedSelector"
                                       UserTemplate="{StaticResource AiUserTemplate}"
@@ -548,9 +548,49 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- 汇总状态条（含变量的整句由 VM 出 LocValue） -->
-                <TextBlock Grid.Row="3" Text="{loc:Value SummaryValue}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"
-                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                <!-- 分页（引擎审计页签）+ 汇总状态条（含变量的整句由 VM 出 LocValue） -->
+                <StackPanel Grid.Row="3" Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Button Height="24" Padding="10,0"
+                                Content="{loc:Loc ai.audit.page.prev}" Click="OnAuditPrev">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanPrevAuditPage}" Value="False">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <TextBlock Text="{loc:Value AuditPageValue}" FontSize="11" Margin="8,0"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <Button Height="24" Padding="10,0"
+                                Content="{loc:Loc ai.audit.page.next}" Click="OnAuditNext">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanNextAuditPage}" Value="False">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Text="{loc:Value SummaryValue}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                </StackPanel>
 
                 <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话） -->
                 <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,8,0,0">

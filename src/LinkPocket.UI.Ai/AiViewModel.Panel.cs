@@ -22,7 +22,10 @@ public sealed partial class AiViewModel
     private bool _isRenamingSession;
     private string _renameText = "";
     private LocValue _summaryValue = LocValue.Empty;
-    private string _auditHintKey = "ai.audit.engine.limit";
+    private string _auditHintKey = "ai.audit.engine.scope";
+    private int _auditPage = 1;
+    private int _auditPageCount = 1;
+    private int _auditTotal;
 
     /// <summary>引擎审计行（数据源 = audit.query；载荷随行返回、默认收起）。</summary>
     public System.Collections.ObjectModel.ObservableCollection<AiEngineRow> EngineAudit { get; } = [];
@@ -52,7 +55,11 @@ public sealed partial class AiViewModel
         set
         {
             if (!Set(ref _searchText, value, nameof(SearchText))) return;
-            if (IsEngineTab) _ = ReloadEngineAuditAsync();
+            if (IsEngineTab)
+            {
+                _auditPage = 1;   // 过滤变化 = 回第一页（过滤后页数会变，停在旧页会翻空）
+                _ = ReloadEngineAuditAsync();
+            }
             else ApplyPanelFilter();
         }
     }
@@ -73,8 +80,10 @@ public sealed partial class AiViewModel
         get => _auditResultIndex;
         set
         {
-            if (Set(ref _auditResultIndex, value, nameof(AuditResultIndex)) && IsEngineTab)
-                _ = ReloadEngineAuditAsync();
+            if (!Set(ref _auditResultIndex, value, nameof(AuditResultIndex))) return;
+            if (!IsEngineTab) return;
+            _auditPage = 1;
+            _ = ReloadEngineAuditAsync();
         }
     }
 
@@ -85,11 +94,34 @@ public sealed partial class AiViewModel
         private set => Set(ref _summaryValue, value, nameof(SummaryValue));
     }
 
-    /// <summary>引擎审计的边界提示键（本会话范围 = 最近若干回合、最多一页）。</summary>
+    /// <summary>引擎审计的边界提示键（本会话范围 = 最近若干回合合并；分页归分页、边界照实说）。</summary>
     public string AuditHintKey
     {
         get => _auditHintKey;
         private set => Set(ref _auditHintKey, value, nameof(AuditHintKey));
+    }
+
+    /// <summary>引擎审计分页读数（含变量的整句 = LocValue，渲染边界取词）。</summary>
+    public LocValue AuditPageValue
+        => Loc.K("ai.audit.page", _auditPage, _auditPageCount, _auditTotal);
+
+    public bool CanPrevAuditPage => _auditPage > 1;
+    public bool CanNextAuditPage => _auditPage < _auditPageCount;
+
+    /// <summary>上一页（到头不动）。</summary>
+    public async Task AuditPrevAsync()
+    {
+        if (!CanPrevAuditPage) return;
+        _auditPage--;
+        await ReloadEngineAuditAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>下一页（到尾不动）。</summary>
+    public async Task AuditNextAsync()
+    {
+        if (!CanNextAuditPage) return;
+        _auditPage++;
+        await ReloadEngineAuditAsync().ConfigureAwait(true);
     }
 
     // ── 会话重命名（左栏）─────────────────────────────────────
@@ -152,6 +184,7 @@ public sealed partial class AiViewModel
         _allToolCalls = [.. detail.ToolCalls];
         _allApprovals = [.. detail.Approvals];
         _lastTurnId = detail.Changes.Count > 0 ? detail.Changes[^1].TurnId : detail.Turns.LastOrDefault()?.TurnId;
+        _auditPage = 1;
         ApplyPanelFilter();
         Approvals.Clear();
         foreach (var approval in _allApprovals.OrderByDescending(a => a.Seq))
@@ -237,16 +270,25 @@ public sealed partial class AiViewModel
                 Search: _searchText.Trim().Length > 0 ? _searchText.Trim() : null,
                 Success: success,
                 IncludePayloads: true,
-                Page: 1,
-                PerPage: 50)).ConfigureAwait(true);
+                Page: _auditPage,
+                PerPage: AuditPageSize)).ConfigureAwait(true);
 
             EngineAudit.Clear();
             foreach (var row in page.Items) EngineAudit.Add(new AiEngineRow { Call = row });
-            AuditHintKey = page.Items.Count >= 50 ? "ai.audit.engine.limit" : "ai.audit.engine.scope";
+            _auditPage = Math.Max(1, page.Page);
+            _auditPageCount = Math.Max(1, page.PageCount);
+            _auditTotal = page.Total;
+            Raise(nameof(AuditPageValue));
+            Raise(nameof(CanPrevAuditPage));
+            Raise(nameof(CanNextAuditPage));
+            AuditHintKey = "ai.audit.engine.scope";
         }
         catch (AiException ex)
         {
             LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
         }
     }
+
+    /// <summary>引擎审计单页行数（功能书 §7.6：单页 50 条 + 分页）。</summary>
+    private const int AuditPageSize = 50;
 }

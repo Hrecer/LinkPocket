@@ -255,6 +255,54 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
+    /// <summary>展开 / 收起某模型的能力编辑行（显式保存，不做失焦提交）。</summary>
+    public void ToggleModelEdit(AiModelRow row)
+    {
+        if (row.IsEditing) row.CancelEdit();
+        else row.BeginEdit();
+    }
+
+    /// <summary>
+    /// 保存某模型的能力声明（<c>ContextWindow</c> / <c>MaxOutputTokens</c> / <c>SupportsTools</c> / <c>SupportsStreaming</c>）。
+    /// 数字框留空 = 未声明（按保守缺省）；非法值就地报错、不发保存（拿不准就报错，不猜意图）。
+    /// </summary>
+    public async Task SaveModelCapabilitiesAsync(AiModelRow row)
+    {
+        if (!TryParseCapability(row.ContextWindowInput, out var contextWindow)
+            || !TryParseCapability(row.MaxOutputTokensInput, out var maxOutputTokens))
+        {
+            row.ErrorKey = "ai.settings.model.invalidNumber";
+            return;
+        }
+
+        row.ErrorKey = "";
+        try
+        {
+            await _assistant.SaveModelAsync(new AiModelDraft(row.ProviderId, row.Model.Id, row.Model.DisplayName,
+                row.Model.Enabled, contextWindow, maxOutputTokens, row.SupportsTools, row.SupportsStreaming))
+                .ConfigureAwait(true);
+            await RefreshProvidersAsync().ConfigureAwait(true);
+            RefreshModels();
+        }
+        catch (AiException ex)
+        {
+            row.ErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+        }
+    }
+
+    /// <summary>能力数字框解析：空白 = 未声明（null）；正整数 = 声明值；其余一律非法。</summary>
+    private static bool TryParseCapability(string input, out int? value)
+    {
+        value = null;
+        var text = input.Trim();
+        if (text.Length == 0) return true;
+        if (!int.TryParse(text, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var number) || number < 1)
+            return false;
+        value = number;
+        return true;
+    }
+
     /// <summary>保存助手偏好（默认模型 / 模式 / 高级工具）。</summary>
     public async Task SavePreferencesAsync()
     {
@@ -317,14 +365,112 @@ public sealed class AiProviderRow(AiProviderInfo info)
     public void Update(AiProviderInfo next) => Info = next;
 }
 
-/// <summary>模型行（启用开关 + 能力机器面标识）。</summary>
-public sealed class AiModelRow(string providerId, AiModelInfo model)
+/// <summary>模型行（启用开关 + 能力编辑行；提示行是机器面标识符）。</summary>
+public sealed class AiModelRow : INotifyPropertyChanged
 {
-    public string ProviderId { get; } = providerId;
-    public AiModelInfo Model { get; private set; } = model;
+    private bool _isEditing;
+    private string _contextWindowInput = "";
+    private string _maxOutputTokensInput = "";
+    private bool _supportsTools;
+    private bool _supportsStreaming;
+    private string? _errorKey;
+
+    public AiModelRow(string providerId, AiModelInfo model)
+    {
+        ProviderId = providerId;
+        Model = model;
+        _supportsTools = model.SupportsTools;
+        _supportsStreaming = model.SupportsStreaming;
+    }
+
+    public string ProviderId { get; }
+    public AiModelInfo Model { get; private set; }
     public string Hint => $"{Model.Source} · {(Model.SupportsTools ? "tools" : "no-tools")} · ctx {Model.ContextWindow ?? 0}";
 
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>能力编辑行是否展开（显式保存，不做失焦提交——归属唯一、不怕刷新重建行）。</summary>
+    public bool IsEditing
+    {
+        get => _isEditing;
+        private set
+        {
+            if (_isEditing == value) return;
+            _isEditing = value;
+            Raise(nameof(IsEditing));
+            Raise(nameof(EditKey));
+        }
+    }
+
+    /// <summary>展开 / 收起按钮文案键。</summary>
+    public string EditKey => IsEditing ? "ai.diff.collapse" : "ai.settings.model.capabilities";
+
+    public string ContextWindowInput
+    {
+        get => _contextWindowInput;
+        set => Set(ref _contextWindowInput, value, nameof(ContextWindowInput));
+    }
+
+    public string MaxOutputTokensInput
+    {
+        get => _maxOutputTokensInput;
+        set => Set(ref _maxOutputTokensInput, value, nameof(MaxOutputTokensInput));
+    }
+
+    public bool SupportsTools
+    {
+        get => _supportsTools;
+        set => Set(ref _supportsTools, value, nameof(SupportsTools));
+    }
+
+    public bool SupportsStreaming
+    {
+        get => _supportsStreaming;
+        set => Set(ref _supportsStreaming, value, nameof(SupportsStreaming));
+    }
+
+    /// <summary>行内校验 / 保存错误的文案键（空 = 无错误）。</summary>
+    public string ErrorKey
+    {
+        get => _errorKey ?? "";
+        set
+        {
+            _errorKey = string.IsNullOrEmpty(value) ? null : value;
+            Raise(nameof(ErrorKey));
+            Raise(nameof(HasError));
+        }
+    }
+
+    public bool HasError => _errorKey is not null;
+
+    /// <summary>进入编辑（输入从当前模型能力初始化；数字框留空 = 未声明）。</summary>
+    public void BeginEdit()
+    {
+        ContextWindowInput = Model.ContextWindow?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        MaxOutputTokensInput = Model.MaxOutputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        SupportsTools = Model.SupportsTools;
+        SupportsStreaming = Model.SupportsStreaming;
+        ErrorKey = "";
+        IsEditing = true;
+    }
+
+    public void CancelEdit()
+    {
+        ErrorKey = "";
+        IsEditing = false;
+    }
+
     public void Update(AiModelInfo next) => Model = next;
+
+    private bool Set<T>(ref T field, T value, string name)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        Raise(name);
+        return true;
+    }
+
+    private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
 /// <summary>默认模型选择项（标签是机器面标识符，无需取词）。</summary>

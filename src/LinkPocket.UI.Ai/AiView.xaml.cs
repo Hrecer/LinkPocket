@@ -24,6 +24,7 @@ public partial class AiView : UserControl
     private ShortcutHost? _shortcutHost;
     private readonly ICommand _sendCommand;
     private readonly ICommand _escapeCommand;
+    private readonly ICommand _newSessionCommand;
 
     public AiView()
     {
@@ -31,6 +32,7 @@ public partial class AiView : UserControl
         IsVisibleChanged += OnVisibleChanged;
         _sendCommand = new RelayCommand(() => _ = SendAsync(), () => _viewModel?.CanSend == true);
         _escapeCommand = new RelayCommand(OnEscape);
+        _newSessionCommand = new RelayCommand(() => _ = RunNewSessionAsync());
     }
 
     /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。
@@ -45,11 +47,13 @@ public partial class AiView : UserControl
         };
         _navigate = navigate;
         DataContext = _viewModel;
+        _viewModel.ExportRequested += OnExportRequested;
 
-        // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）；一页一组、不注册全局键
+        // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）+ Ctrl+N 新建会话；一页一组、不注册全局键
         var commands = new ShortcutCommandMap()
             .Add(ShortcutAction.AiSend, _sendCommand)
-            .Add(ShortcutAction.AiEscape, _escapeCommand);
+            .Add(ShortcutAction.AiEscape, _escapeCommand)
+            .Add(ShortcutAction.AiNewSession, _newSessionCommand);
         _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Ai, commands), () => ShortcutScope.Ai);
         _shortcutHost.Attach(this);
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
@@ -94,6 +98,7 @@ public partial class AiView : UserControl
     {
         if (_viewModel is null) return;
         await _viewModel.SendAsync();
+        SelectActiveInList();   // 斜杠命令 /new 会换会话：左栏选中跟上
         ScrollFeedToEnd();
         CommandRefresh.Request();
     }
@@ -132,7 +137,12 @@ public partial class AiView : UserControl
         if ((sender as FrameworkElement)?.DataContext is AiEngineRow row) row.TogglePayload();
     }
 
-    private async void OnExportSession(object sender, RoutedEventArgs e)
+    private async void OnExportSession(object sender, RoutedEventArgs e) => await RunExportDialogAsync();
+
+    /// <summary>/export 斜杠命令的落点（导出格式沿用右栏格式下拉的当前选择）。</summary>
+    private async void OnExportRequested() => await RunExportDialogAsync();
+
+    private async Task RunExportDialogAsync()
     {
         if (_viewModel is null) return;
         var format = ExportFormatBox.SelectedIndex switch
@@ -159,11 +169,28 @@ public partial class AiView : UserControl
 
     // ── 左栏：会话 ────────────────────────────────────────────
 
-    private async void OnNewSession(object sender, RoutedEventArgs e)
+    private async void OnNewSession(object sender, RoutedEventArgs e) => await RunNewSessionAsync();
+
+    private async Task RunNewSessionAsync()
     {
         if (_viewModel is null) return;
         await _viewModel.NewSessionAsync();
         SelectActiveInList();
+        ScrollFeedToEnd();
+    }
+
+    // ── 右栏：引擎审计分页 ────────────────────────────────────
+
+    private async void OnAuditPrev(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.AuditPrevAsync();
+    }
+
+    private async void OnAuditNext(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.AuditNextAsync();
     }
 
     private async void OnSessionSelected(object sender, SelectionChangedEventArgs e)

@@ -1,5 +1,6 @@
 using System.Globalization;
 using LinkPocket.Contracts;
+using LinkPocket.ViewModels;
 
 namespace LinkPocket.UI.Ai;
 
@@ -15,10 +16,12 @@ public sealed partial class AiViewModel
         set => Set(ref _approvalReason, value, nameof(ApprovalReason));
     }
 
-    /// <summary>能否发送（未配置服务商 / 正在跑回合 / 输入为空 → 否）。</summary>
-    public bool CanSend => IsConfigured && !IsTurnRunning && ComposerText.Trim().Length > 0;
+    /// <summary>能否发送（未配置服务商 / 正在跑回合 / 输入为空 → 否；斜杠命令不走模型、未配置也可发）。</summary>
+    public bool CanSend
+        => !IsTurnRunning && ComposerText.Trim().Length > 0
+           && (IsConfigured || ComposerText.Trim().StartsWith('/'));
 
-    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页；更完整的位置/选中上下文见 P2）。</summary>
+    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页；以"/"开头 = 本地斜杠命令，不发给模型）。</summary>
     public async Task SendAsync()
     {
         if (!CanSend || _activeSessionId is not { } sessionId) return;
@@ -27,7 +30,10 @@ public sealed partial class AiViewModel
         LastErrorKey = null;
         try
         {
-            await _assistant.SendAsync(sessionId, text, BuildContext()).ConfigureAwait(true);
+            if (text.StartsWith('/'))
+                await TrySlashAsync(sessionId, text).ConfigureAwait(true);
+            else
+                await _assistant.SendAsync(sessionId, text, BuildContext()).ConfigureAwait(true);
         }
         catch (AiException ex)
         {
@@ -36,6 +42,7 @@ public sealed partial class AiViewModel
         finally
         {
             Raise(nameof(CanSend));
+            CommandRefresh.Request();
         }
     }
 

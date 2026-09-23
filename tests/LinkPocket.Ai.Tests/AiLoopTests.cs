@@ -223,6 +223,107 @@ public class AiLoopTests
         Assert.Equal($"ai:{turnId}", detail.ToolCalls.Single().CorrelationId);
     }
 
+    [Fact]
+    public void 工具目录_linksQuery精选schema_过滤白名单含id的eq与in()
+    {
+        var query = Catalog().Build(advancedTools: false).Single(t => t.Name == "links.query");
+        using var doc = JsonDocument.Parse(query.ParametersJson);
+        var description = doc.RootElement.GetProperty("properties").GetProperty("filter").GetProperty("description").GetString();
+        Assert.Contains("id(eq,in)", description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task 引擎审计_本会话范围按页切分_搜索过滤后页数与总数如实()
+    {
+        using var host = NewHost(
+        [
+            [
+                TextChunk("go"),
+                ToolChunk(0, "c1", "folders.create", """{"name":"夹一"}"""),
+                ToolChunk(1, "c2", "folders.create", """{"name":"夹二"}"""),
+                ToolChunk(2, "c3", "folders.create", """{"name":"夹三"}"""),
+                "data: [DONE]",
+            ],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建三个夹");
+
+        var page1 = await host.Assistant.QueryEngineAuditAsync(new AiAuditQuery(sessionId, PerPage: 2, Page: 1));
+        Assert.Equal(3, page1.Total);
+        Assert.Equal(2, page1.PageCount);
+        Assert.Equal(2, page1.Items.Count);
+
+        var page2 = await host.Assistant.QueryEngineAuditAsync(new AiAuditQuery(sessionId, PerPage: 2, Page: 2));
+        Assert.Equal(2, page2.Page);
+        Assert.Single(page2.Items);
+        Assert.Equal(3, page1.Items.Concat(page2.Items).Distinct().Count());   // 两页合起来 = 全集、无重叠
+
+        var filtered = await host.Assistant.QueryEngineAuditAsync(
+            new AiAuditQuery(sessionId, Search: "folders.create", PerPage: 2, Page: 1));
+        Assert.Equal(3, filtered.Total);
+        Assert.Equal(2, filtered.PageCount);
+
+        var none = await host.Assistant.QueryEngineAuditAsync(new AiAuditQuery(sessionId, Search: "links."));
+        Assert.Equal(0, none.Total);
+    }
+
+    [Fact]
+    public async Task 撤销上一轮_按归属键定点撤销_再撤一次如实报无可撤销()
+    {
+        using var host = NewHost(
+        [
+            [
+                TextChunk("go"),
+                ToolChunk(0, "c1", "folders.create", """{"name":"撤销一"}"""),
+                ToolChunk(1, "c2", "folders.create", """{"name":"撤销二"}"""),
+                "data: [DONE]",
+            ],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建两个夹");
+
+        var result = await host.Assistant.UndoLastTurnAsync(sessionId);
+        Assert.Equal(2, result.TotalCalls);
+        Assert.Equal(2, result.UndoneCalls);
+        Assert.Equal(0, result.MissingCalls);
+        Assert.Null(result.ErrorCode);
+
+        // 创建类的撤销 = 软删（进回收站）：主表不再有这两个夹（回收站里保留原 ID 可还原）
+        var left = await host.Client.QueryAsync<object>("folders.find", new { name = "撤销一" });
+        Assert.Empty(Assert.IsAssignableFrom<System.Collections.IEnumerable>(left));
+
+        var again = await host.Assistant.UndoLastTurnAsync(sessionId);
+        Assert.Equal(0, again.TotalCalls);          // 撤销栈里已无归属记录 = 无可撤销，绝不空转
+        Assert.Equal(0, again.UndoneCalls);
+    }
+
+    [Fact]
+    public async Task 模型能力_显式越界如实报错_合法值往返保留()
+    {
+        using var host = NewHost([]);
+        await ConfigureAsync(host, AiMode.ConfirmEach);
+
+        // 显式 0 = 越界（null 才是"未声明"）：拿不准就报错，不猜意图
+        var ex = await Assert.ThrowsAsync<AiException>(() => host.Assistant.SaveModelAsync(
+            new AiModelDraft("gw", "test-model", "Test model", true,
+                ContextWindow: 0, MaxOutputTokens: 1024, SupportsTools: true, SupportsStreaming: true)));
+        Assert.Equal(AiErrors.AiDataStoreFailed, ex.Error.Code);
+
+        await host.Assistant.SaveModelAsync(new AiModelDraft("gw", "test-model", "Test model", true,
+            ContextWindow: 64_000, MaxOutputTokens: 4_096, SupportsTools: false, SupportsStreaming: true));
+        var model = (await host.Assistant.ListProvidersAsync()).Single(p => p.Id == "gw").Models.Single();
+        Assert.Equal(64_000, model.ContextWindow);
+        Assert.Equal(4_096, model.MaxOutputTokens);
+        Assert.False(model.SupportsTools);
+        Assert.True(model.SupportsStreaming);
+    }
+
     // ── 整条回合链路（假传输层 + 真实引擎）────────────────────
 
     /// <summary>照剧本吐 SSE 行的假传输层（CI 不打真实网络；每个剧本项对应一次模型请求）。</summary>

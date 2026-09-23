@@ -36,6 +36,9 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     public AiApproval? Approval { get; private set; }
     public AiToolCall? ToolCall { get; private set; }
 
+    /// <summary>提示条的文案值（系统提示不是用户数据：走键 + 参数，渲染边界取词）。</summary>
+    public LocValue NoticeValue { get; init; } = LocValue.Empty;
+
     private readonly List<AiChangeRow> _changes = [];
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -141,8 +144,8 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             IsApprovalOpen = approval.Decision is null,
         };
 
-    public static AiFeedItem ForNotice(string itemId, string text)
-        => new() { Kind = ItemKind.Notice, ItemId = itemId, Text = text };
+    public static AiFeedItem ForNotice(string itemId, LocValue value)
+        => new() { Kind = ItemKind.Notice, ItemId = itemId, NoticeValue = value };
 
     public void AppendDelta(string chunk) => Text += chunk;
 

@@ -92,13 +92,71 @@
                     <ItemsControl ItemsSource="{Binding Models}" Margin="0,10,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,3">
-                                    <ToggleButton IsChecked="{Binding Model.Enabled, Mode=OneWay}" Click="OnToggleModel"
-                                                  VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding Model.Id}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource App.Text.Primary}"/>
-                                    <TextBlock Text="{Binding Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                               FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                                <StackPanel Margin="0,3">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ToggleButton IsChecked="{Binding Model.Enabled, Mode=OneWay}" Click="OnToggleModel"
+                                                      VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Model.Id}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                                        <TextBlock Text="{Binding Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                   FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                                        <Button Style="{StaticResource TonalButton}" Height="32" Margin="10,0,0,0"
+                                                Content="{loc:LocKey EditKey}" Click="OnToggleModelEdit"/>
+                                    </StackPanel>
+                                    <!-- 能力编辑行（功能书 §4.5：上下文窗口 / 最大输出 / 工具调用 / 流式；显式保存） -->
+                                    <StackPanel Margin="34,4,0,0">
+                                        <StackPanel.Style>
+                                            <Style TargetType="StackPanel">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </StackPanel.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{loc:Loc ai.settings.model.contextWindow}" FontSize="12"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                                            <TextBox Width="100" Height="32" Margin="8,0,16,0"
+                                                     Text="{Binding ContextWindowInput, UpdateSourceTrigger=PropertyChanged}"
+                                                     Background="{DynamicResource App.Surface.TintCard}"
+                                                     BorderBrush="{DynamicResource App.Line.Variant}"
+                                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                                            <TextBlock Text="{loc:Loc ai.settings.model.maxOutputTokens}" FontSize="12"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                                            <TextBox Width="100" Height="32" Margin="8,0,0,0"
+                                                     Text="{Binding MaxOutputTokensInput, UpdateSourceTrigger=PropertyChanged}"
+                                                     Background="{DynamicResource App.Surface.TintCard}"
+                                                     BorderBrush="{DynamicResource App.Line.Variant}"
+                                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                            <ToggleButton IsChecked="{Binding SupportsTools, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{loc:Loc ai.settings.model.supportsTools}" FontSize="12" Margin="8,0,16,0"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
+                                            <ToggleButton IsChecked="{Binding SupportsStreaming, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{loc:Loc ai.settings.model.supportsStreaming}" FontSize="12" Margin="8,0,0,0"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Style="{StaticResource TonalButton}" Height="32"
+                                                    Content="{loc:Loc ai.settings.save}" Click="OnSaveModelCapabilities"/>
+                                            <TextBlock Text="{loc:LocKey ErrorKey}" FontSize="11" Margin="10,0,0,0"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Accent.Text}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasError}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </StackPanel>
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

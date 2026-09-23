@@ -27,75 +27,90 @@ public sealed partial class AiAssistant
         var perPage = Math.Clamp(query.PerPage, 1, 200);
         var page = Math.Max(1, query.Page);
 
+        var rows = new List<AiEngineCallRow>();
         if (query.TurnId is { } turnId)
         {
             if (!file.Turns.Any(t => string.Equals(t.TurnId, turnId, StringComparison.Ordinal)))
                 return new AiAuditPage([], 0, 1, 0);
-            return await QueryByCorrelationAsync(TurnCorrelation(turnId), query, page, perPage, ct).ConfigureAwait(false);
+            rows.AddRange(await QueryByCorrelationAsync(TurnCorrelation(turnId), query, ct).ConfigureAwait(false));
         }
-
-        // 本会话：最近 N 个回合各查一页后合并（超出的更早回合不在本页签的范围内，如实标注在界面）
-        var turns = file.Turns.TakeLast(MaxAuditTurns).Reverse().ToArray();
-        if (turns.Length == 0) return new AiAuditPage([], 0, 1, 0);
-
-        var rows = new List<AiEngineCallRow>();
-        foreach (var turn in turns)
+        else
         {
-            var slice = await QueryByCorrelationAsync(TurnCorrelation(turn.TurnId), query, 1, perPage, ct)
-                .ConfigureAwait(false);
-            rows.AddRange(slice.Items);
+            // 本会话：最近 N 个回合合并（更早回合不在本页签范围内，边界如实标注在界面提示）
+            foreach (var turn in file.Turns.TakeLast(MaxAuditTurns).Reverse())
+                rows.AddRange(await QueryByCorrelationAsync(TurnCorrelation(turn.TurnId), query, ct).ConfigureAwait(false));
         }
 
-        var merged = rows.OrderByDescending(r => r.At).Take(perPage).ToArray();
-        return new AiAuditPage(merged, merged.Length, 1, 1);
+        // 命令名搜索在客户端做（引擎侧无模糊参数）；过滤后按时间倒序统一切页
+        // ——"回合内"与"最近 20 回合合并"两种范围共用同一套分页口径（功能书 §7.6 的分页 UI）
+        var filtered = rows
+            .Where(row => query.Search is not { Length: > 0 } search
+                || row.Command.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(row => row.At)
+            .ToList();
+
+        var pageCount = Math.Max(1, (filtered.Count + perPage - 1) / perPage);
+        var current = Math.Min(page, pageCount);
+        var start = (current - 1) * perPage;
+        var items = filtered.Skip(start).Take(perPage).ToArray();
+        return new AiAuditPage(items, filtered.Count, current, pageCount);
     }
 
-    private async Task<AiAuditPage> QueryByCorrelationAsync(string correlationId, AiAuditQuery query,
-        int page, int perPage, CancellationToken ct)
+    /// <summary>取齐一条关联下的全部审计行（分页拉全量后由调用方统一切页；引擎单页上限 1000，翻页兜底防丢）。</summary>
+    private async Task<List<AiEngineCallRow>> QueryByCorrelationAsync(string correlationId, AiAuditQuery query,
+        CancellationToken ct)
     {
-        var data = await _client.QueryAsync<object>("audit.query", new
+        var rows = new List<AiEngineCallRow>();
+        for (var page = 1; page <= MaxAuditFetchPages; page++)
         {
-            correlation_id = correlationId,
-            success = query.Success,
-            include_payloads = query.IncludePayloads,
-            page,
-            per_page = perPage,
-        }, new CallOptions(Caller: new CallerRef(CallerKind.Agent, null)), ct).ConfigureAwait(false);
-
-        var json = data is null ? default : JsonSerializer.SerializeToElement(data, AuditRowJson);
-        if (json.ValueKind != JsonValueKind.Object) return new AiAuditPage([], 0, page, 0);
-
-        var items = new List<AiEngineCallRow>();
-        if (json.TryGetProperty("items", out var array) && array.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var row in array.EnumerateArray())
+            var data = await _client.QueryAsync<object>("audit.query", new
             {
-                var command = Str(row, "command");
-                if (command is null) continue;
-                // 命令名搜索在客户端做（引擎侧无模糊参数）；"命令名子串"口径与界面提示一致
-                if (query.Search is { Length: > 0 } search
-                    && !command.Contains(search, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                items.Add(new AiEngineCallRow(
-                    At: Time(row, "at"),
-                    Command: command,
-                    Caller: Str(row, "caller") ?? "",
-                    CorrelationId: Str(row, "correlation_id") ?? correlationId,
-                    Success: Bool(row, "success"),
-                    ErrorCode: Str(row, "error_code"),
-                    ElapsedMs: Num(row, "elapsed_ms"),
-                    DryRun: Bool(row, "dry_run"),
-                    IsNested: Bool(row, "is_nested"),
-                    BatchId: Str(row, "batch_id"),
-                    ArgsJson: Str(row, "args_json"),
-                    ChangesJson: Str(row, "changes_json")));
+                correlation_id = correlationId,
+                success = query.Success,
+                include_payloads = query.IncludePayloads,
+                page,
+                per_page = AuditFetchPageSize,
+            }, new CallOptions(Caller: new CallerRef(CallerKind.Agent, null)), ct).ConfigureAwait(false);
+
+            var json = data is null ? default : JsonSerializer.SerializeToElement(data, AuditRowJson);
+            if (json.ValueKind != JsonValueKind.Object) return rows;
+
+            var fetched = 0;
+            if (json.TryGetProperty("items", out var array) && array.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in array.EnumerateArray())
+                {
+                    var command = Str(row, "command");
+                    if (command is null) continue;
+                    fetched++;
+                    rows.Add(new AiEngineCallRow(
+                        At: Time(row, "at"),
+                        Command: command,
+                        Caller: Str(row, "caller") ?? "",
+                        CorrelationId: Str(row, "correlation_id") ?? correlationId,
+                        Success: Bool(row, "success"),
+                        ErrorCode: Str(row, "error_code"),
+                        ElapsedMs: Num(row, "elapsed_ms"),
+                        DryRun: Bool(row, "dry_run"),
+                        IsNested: Bool(row, "is_nested"),
+                        BatchId: Str(row, "batch_id"),
+                        ArgsJson: Str(row, "args_json"),
+                        ChangesJson: Str(row, "changes_json")));
+                }
             }
+
+            var total = Num(json, "total");
+            if (fetched == 0 || rows.Count >= total) return rows;
         }
 
-        var total = Num(json, "total");
-        var pageCount = Num(json, "page_count");
-        return new AiAuditPage(items, (int)total, (int)Math.Max(1, pageCount), (int)Math.Max(1, pageCount));
+        return rows;
     }
+
+    /// <summary>单次抓取的引擎单页上限（audit.query 的 per_page 上限 1000）。</summary>
+    private const int AuditFetchPageSize = 1000;
+
+    /// <summary>翻页兜底上限（一条关联超过 1 万行时如实停手——单回合不可能到，防的是病态输入）。</summary>
+    private const int MaxAuditFetchPages = 10;
 
     private static readonly JsonSerializerOptions AuditRowJson = new()
     {

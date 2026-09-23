@@ -262,3 +262,14 @@ public sealed record AiAuditPage(
     int Total,
     int Page,
     int PageCount);
+
+/// <summary>
+/// 撤销上一轮 AI 变更的机器面回执（界面按键取词）：
+/// <see cref="TotalCalls"/> = 本轮在撤销栈里仍有归属记录的可撤销调用数；<see cref="UndoneCalls"/> = 实际撤销数；
+/// <see cref="MissingCalls"/> = 应撤销但栈里已不存在的数（如实计数，不猜）；<see cref="ErrorCode"/> = 首个失败的错误码（部分失败如实携带）。
+/// </summary>
+public sealed record AiUndoResult(
+    int TotalCalls,
+    int UndoneCalls,
+    int MissingCalls,
+    string? ErrorCode);

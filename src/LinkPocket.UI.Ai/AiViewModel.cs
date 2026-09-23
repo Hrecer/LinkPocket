@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using LinkPocket.Contracts;
+using LinkPocket.ViewModels;
 
 namespace LinkPocket.UI.Ai;
 
@@ -49,7 +50,12 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public string ComposerText
     {
         get => _composerText;
-        set => Set(ref _composerText, value, nameof(ComposerText));
+        set
+        {
+            if (!Set(ref _composerText, value, nameof(ComposerText))) return;
+            Raise(nameof(CanSend));   // 可用性同帧跟上（含"/"开头的斜杠命令在未配置时也可发）
+            CommandRefresh.Request();
+        }
     }
 
     /// <summary>状态行文案键（取词在视图侧）。</summary>

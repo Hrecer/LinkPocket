@@ -90,6 +90,18 @@ public partial class AiPanel : UserControl
         await _viewModel.ToggleModelAsync(row);
     }
 
+    private void OnToggleModelEdit(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
+        _viewModel.ToggleModelEdit(row);
+    }
+
+    private async void OnSaveModelCapabilities(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
+        await _viewModel.SaveModelCapabilitiesAsync(row);
+    }
+
     private async void OnSavePreferences(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;

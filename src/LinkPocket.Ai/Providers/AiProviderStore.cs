@@ -110,6 +110,7 @@ public sealed class AiProviderStore
         ArgumentNullException.ThrowIfNull(credentials);
         ArgumentException.ThrowIfNullOrWhiteSpace(draft.ProviderId);
         ArgumentException.ThrowIfNullOrWhiteSpace(draft.Id);
+        ValidateCapabilities(draft);
         lock (_gate)
         {
             var file = Load();
@@ -303,6 +304,19 @@ public sealed class AiProviderStore
             AiErrors.ProviderNotConfigured,
             "unknown provider: the provider must be a preset template or an already saved custom provider",
             details: JsonSerializer.SerializeToElement(new { provider_id = providerId })));
+
+    /// <summary>能力字段取值范围（null = 未声明 = 按保守缺省；显式越界一律报错——拿不准就报错，不猜意图）。</summary>
+    private static void ValidateCapabilities(AiModelDraft draft)
+    {
+        if (draft.ContextWindow is < 1 or > 2_000_000) throw OutOfRange("context_window");
+        if (draft.MaxOutputTokens is < 1 or > 2_000_000) throw OutOfRange("max_output_tokens");
+    }
+
+    private static AiException OutOfRange(string field)
+        => new(AiErrors.Of(
+            AiErrors.AiDataStoreFailed,
+            $"model capability out of range: {field}",
+            details: JsonSerializer.SerializeToElement(new { field })));
 
     private FileModel Load()
     {

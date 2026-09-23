@@ -94,6 +94,13 @@ public interface IAiAssistant
     /// <summary>引擎审计页签的数据源（audit.query）：按回合关联取齐该回合/本会话的引擎调用史。</summary>
     Task<AiAuditPage> QueryEngineAuditAsync(AiAuditQuery query, CancellationToken ct = default);
 
+    /// <summary>
+    /// 撤销上一轮（最近回合）的 AI 变更：按归属键（工具调用 ID）在引擎撤销栈里逐条定点撤销（新者先撤），
+    /// 走既有 <c>undo.undo</c>、不做第二条撤销路径；引擎未登记逆向的变更不进可撤销集合（如实跳过）。
+    /// 回合在跑时拒绝（<c>LP.AI.011</c>）。
+    /// </summary>
+    Task<AiUndoResult> UndoLastTurnAsync(string sessionId, CancellationToken ct = default);
+
     // ── 通知（订阅一次，按 Kind 分派）──────────────────────────
 
     /// <summary>会话内容增量通知（消息 / 流式增量 / 工具调用 / 变更 / 审批 / 回合 / 会话摘要）。</summary>
