@@ -125,12 +125,25 @@ public sealed class StubAiAssistant : IAiAssistant
     /// <summary>会话详情预置（未预置 = 空详情）。</summary>
     public Dictionary<string, AiSessionDetail> Details { get; } = [];
 
+    /// <summary>建草稿调用计数（断言"连点复用同一个草稿"用）。</summary>
+    public int CreateSessionCalls { get; private set; }
+
+    /// <summary>被丢弃的草稿 id（断言"未用草稿有回收"用）。</summary>
+    public List<string> DiscardedDrafts { get; } = [];
+
+    /// <summary>建会话 = 建**草稿**（与真实引擎同语义）：不进 <see cref="Sessions"/>（列表只有正式会话）。</summary>
     public Task<AiSessionSummary> CreateSessionAsync(CancellationToken ct = default)
     {
-        var summary = new AiSessionSummary($"s-new{Sessions.Count}", "", AiMode.ConfirmEach, null, null,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, 0, null);
-        Sessions.Insert(0, summary);
+        CreateSessionCalls++;
+        var summary = new AiSessionSummary($"s-draft{CreateSessionCalls}", "", AiMode.ConfirmEach, null, null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, 0, null, AiSessionPersistence.Deferred);
         return Task.FromResult(summary);
+    }
+
+    public Task DiscardDraftSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        DiscardedDrafts.Add(sessionId);
+        return Task.CompletedTask;
     }
 
     public Task RenameSessionAsync(string sessionId, string title, CancellationToken ct = default) => Task.CompletedTask;

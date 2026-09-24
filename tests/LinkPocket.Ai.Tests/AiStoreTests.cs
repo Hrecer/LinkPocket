@@ -108,4 +108,63 @@ public class AiStoreTests
         }
         finally { AiTestEnv.Drop(root); }
     }
+
+    [Fact]
+    public void 草稿_不落盘不进列表_提升后才写文件()
+    {
+        var root = AiTestEnv.NewRoot();
+        try
+        {
+            var store = new AiSessionStore(root);
+            store.CreateDraft(NewFile("s-draft"));
+
+            // 草稿：内存里能读到、标为 Deferred，但磁盘上什么都没有、列表为空。
+            var draft = store.Load("s-draft")!;
+            Assert.Equal(AiSessionPersistence.Deferred, draft.Summary.Persistence);
+            Assert.True(store.IsDraft("s-draft"));
+            Assert.Empty(store.List());
+            Assert.False(Directory.Exists(store.StoreDirectory)
+                && Directory.EnumerateFiles(store.StoreDirectory, "*.json").Any());
+
+            // 草稿态下 Save 也不落盘（原地更新内存聚合）。
+            draft.Messages.Add(new AiMessage("m-1", 1, AiRole.User, "hi", DateTimeOffset.UtcNow, "t-1"));
+            store.Save(draft);
+            Assert.Empty(store.List());
+
+            // 提升：落盘 + 从草稿表移除，此后进列表、且标记为正式。
+            store.Promote("s-draft");
+            Assert.False(store.IsDraft("s-draft"));
+            var promoted = Assert.Single(store.List());
+            Assert.Equal("s-draft", promoted.SessionId);
+            Assert.Equal(AiSessionPersistence.Immediate, promoted.Persistence);
+            Assert.Single(store.Load("s-draft")!.Messages);   // 草稿期间写的消息一并落盘
+        }
+        finally { AiTestEnv.Drop(root); }
+    }
+
+    [Fact]
+    public void 丢弃草稿_只删内存_正式会话不受影响()
+    {
+        var root = AiTestEnv.NewRoot();
+        try
+        {
+            var store = new AiSessionStore(root);
+            var real = NewFile("s-real");
+            store.Save(real);            // 正式会话（落盘）
+
+            store.CreateDraft(NewFile("s-draft"));
+            store.DiscardDraft("s-draft");
+
+            Assert.Null(store.Load("s-draft"));
+            Assert.False(store.IsDraft("s-draft"));
+            Assert.NotNull(store.Load("s-real"));            // 正式会话毫发无损
+            Assert.Single(store.List());
+
+            // 对正式会话调用 Promote / DiscardDraft 都是幂等 no-op（绝不误删真会话）。
+            store.Promote("s-real");
+            store.DiscardDraft("s-real");
+            Assert.NotNull(store.Load("s-real"));
+        }
+        finally { AiTestEnv.Drop(root); }
+    }
 }

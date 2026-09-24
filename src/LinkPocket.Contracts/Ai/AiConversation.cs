@@ -211,7 +211,8 @@ public sealed record AiTurn(
     int? ContextTokens = null,
     int? ContextWindowTokens = null);
 
-/// <summary>会话摘要（左栏列表用）。</summary>
+/// <summary>会话摘要（左栏列表用）。<paramref name="Persistence"/> = 草稿 / 正式（见 <see cref="AiSessionPersistence"/>）；
+/// **列表只装正式会话**，草稿不进列表。</summary>
 public sealed record AiSessionSummary(
     string SessionId,
     string Title,
@@ -222,7 +223,8 @@ public sealed record AiSessionSummary(
     DateTimeOffset UpdatedAt,
     int MessageCount,
     int ChangeCount,
-    AiTurnState? ActiveTurnState);
+    AiTurnState? ActiveTurnState,
+    AiSessionPersistence Persistence = AiSessionPersistence.Immediate);
 
 /// <summary>会话详情（对话 + 工具调用 + 台账 + 审批 + 回合；各列表按 Seq 排序即时间线）。</summary>
 public sealed record AiSessionDetail(

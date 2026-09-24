@@ -47,6 +47,24 @@ public enum AiMode
     AutoApply = 2,
 }
 
+/// <summary>
+/// 会话是否已持久化（**「会话已落进会话库」这一事实的协议侧镜像**）。
+/// <para><see cref="Immediate"/> = 正式会话：已在 <c>sessions/</c> 落盘、进左栏列表。</para>
+/// <para><see cref="Deferred"/> = **草稿**：只在内存里存在（不落盘、不进列表），
+/// 由第一条消息（<see cref="IAiAssistant.SendAsync"/>）**提升**为 <see cref="Immediate"/>——
+/// 提升即落盘。未被提升的草稿可以在切换会话 / 关闭页面时被静默丢弃，绝不留下空会话。</para>
+/// <para>这是「连点新建产生一堆空会话」的结构性解法：新建只造草稿，草稿不落盘就不进列表，
+/// 反复点也只是复用同一个草稿（单飞），而不是真的建出一串会话。</para>
+/// </summary>
+public enum AiSessionPersistence
+{
+    /// <summary>已持久化：正式会话（落盘 + 进列表）。</summary>
+    Immediate = 0,
+
+    /// <summary>草稿：仅内存，未落盘、不进列表；首发时提升为 <see cref="Immediate"/>。</summary>
+    Deferred = 1,
+}
+
 /// <summary>模型输入模态声明（模型编辑弹窗「输入模态」那一组；<c>Text</c> 恒为真且不可关，
 /// 其余按模型实际能力勾选）。</summary>
 public sealed record AiModelInputFormat(

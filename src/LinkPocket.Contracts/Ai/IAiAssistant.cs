@@ -66,8 +66,18 @@ public interface IAiAssistant
     /// <summary>会话详情（对话 + 工具调用 + 台账 + 审批 + 回合）。</summary>
     Task<AiSessionDetail> GetSessionAsync(string sessionId, CancellationToken ct = default);
 
-    /// <summary>新建会话（模式取偏好缺省）。</summary>
+    /// <summary>
+    /// 新建会话 = **建草稿**（模式取偏好缺省）：只造一个内存里的 <see cref="AiSessionPersistence.Deferred"/>
+    /// 会话，**不落盘、不进左栏列表**，直到第一条消息发出（<see cref="SendAsync"/> 内部提升为正式）才真正落盘。
+    /// 连点这个入口只会反复复用同一个草稿（界面单飞），不会产生一串空会话。
+    /// </summary>
     Task<AiSessionSummary> CreateSessionAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 丢弃一个**尚未提升**的草稿（正式会话或已被提升的会话 = 幂等 no-op，绝不误删真会话）。
+    /// 界面在「草稿无人使用」（换会话 / 关页 / 重新预热换代）时调用，保证空草稿不残留。
+    /// </summary>
+    Task DiscardDraftSessionAsync(string sessionId, CancellationToken ct = default);
 
     Task RenameSessionAsync(string sessionId, string title, CancellationToken ct = default);
 

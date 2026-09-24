@@ -200,6 +200,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
+            RetireDraft();   // 进页对齐 = 回到权威列表：上一轮留下的未用草稿在此回收（正式会话不受影响）
             RefreshSelection();
             await RefreshModelsAsync().ConfigureAwait(true);
             var sessions = await _assistant.ListSessionsAsync().ConfigureAwait(true);
@@ -218,25 +219,14 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>新建会话并切过去。左栏行只经 <see cref="UpsertSession"/> 写入（幂等 upsert）：
-    /// 显式插入与 SessionChanged 通知各插一次，曾让同一个会话在左栏出现两行。</summary>
-    public async Task NewSessionAsync()
-    {
-        try
-        {
-            var created = await _assistant.CreateSessionAsync().ConfigureAwait(true);
-            UpsertSession(created);
-            await OpenSessionAsync(created.SessionId).ConfigureAwait(true);
-        }
-        catch (AiException ex)
-        {
-            LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
-        }
-    }
+    // 新建会话见 AiViewModel.Draft.cs（草稿语义 + 单飞：连点不产生多条空会话）。
 
-    /// <summary>切到某个会话（重投影对话流、台账、审批）。</summary>
+    /// <summary>切到某个会话（重投影对话流、台账、审批）。切走时回收**未被提升**的草稿——
+    /// 用户已经在另一个会话里了，空草稿不该继续占着内存。</summary>
     public async Task OpenSessionAsync(string sessionId)
     {
+        // 打开的是"正式会话"（列表里的），说明草稿已被弃用：换代回收（pending 的会等收口，见 RetireDraft）。
+        RetireDraft();
         _activeSessionId = sessionId;
         Raise(nameof(ActiveSessionId));
         var detail = await _assistant.GetSessionAsync(sessionId).ConfigureAwait(true);
@@ -307,9 +297,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         => groups.GetValueOrDefault(turnId, [])
             .FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.UserMessage)?.Text ?? "";
 
-    /// <summary>会话行清单按摘要就地更新（新会话插入 / 已有会话改状态）。</summary>
+    /// <summary>会话行清单按摘要就地更新（新会话插入 / 已有会话改状态）。**草稿不进列表**——
+    /// 草稿是"还没被用起来的会话"，露在左栏就等于又回到"点一下就多一条空会话"的老毛病。</summary>
     private void UpsertSession(AiSessionSummary summary)
     {
+        if (summary.Persistence == AiSessionPersistence.Deferred) return;   // 草稿：只在内存，不上列表
         var index = Sessions.ToList().FindIndex(s => s.SessionId == summary.SessionId);
         if (index >= 0) Sessions[index].Apply(summary);
         else Sessions.Insert(0, new AiSessionRow(summary));
@@ -599,6 +591,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     {
         _assistant.Notified -= OnNotified;
         _assistant.WriteFreezeChanged -= OnFreezeChanged;
+        RetireDraft();   // 关页：未提升的草稿静默回收（草稿在引擎侧本就是内存态，这里显式清一次）
     }
 }
 

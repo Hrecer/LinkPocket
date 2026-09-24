@@ -197,8 +197,11 @@ public sealed partial class AiAssistant : IAiAssistant
 
     // ── 会话 ──────────────────────────────────────────────────
 
+    /// <summary>会话清单。**只含正式会话**：草稿只活在内存里，<c>_sessionStore.List()</c> 扫的是 sessions 目录，
+    /// 草稿不在目录中，天然不会被列出来（这里再显式滤一次，防未来实现漂移）。</summary>
     public Task<IReadOnlyList<AiSessionSummary>> ListSessionsAsync(CancellationToken ct = default)
-        => Task.FromResult(_sessionStore.List());
+        => Task.FromResult<IReadOnlyList<AiSessionSummary>>(
+            _sessionStore.List().Where(s => s.Persistence != AiSessionPersistence.Deferred).ToArray());
 
     public Task<AiSessionDetail> GetSessionAsync(string sessionId, CancellationToken ct = default)
     {
@@ -211,11 +214,21 @@ public sealed partial class AiAssistant : IAiAssistant
         var mode = _preferences.Load().Mode;
         var now = DateTimeOffset.UtcNow;
         var sessionId = $"s-{Guid.NewGuid():N}";
-        var summary = new AiSessionSummary(sessionId, "", mode, null, null, now, now, 0, 0, null);
-        var file = AiSessionFile.Create(summary);
-        _sessionStore.Save(file);
+        // 新建 = 草稿（deferred）：**只进内存、不落盘、不进列表**。连点这个入口只会反复复用同一个草稿
+        // （界面单飞），不再产生一串空会话。首个回合开始时由 SendAsync 提升为 immediate（那时才落盘）。
+        var summary = new AiSessionSummary(sessionId, "", mode, null, null, now, now, 0, 0, null,
+            AiSessionPersistence.Deferred);
+        _sessionStore.CreateDraft(AiSessionFile.Create(summary));
         Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, sessionId, Session: summary));
         return Task.FromResult(summary);
+    }
+
+    /// <summary>丢弃未提升的草稿（幂等）；正式会话 / 已被提升 → no-op（绝不误删真会话）。</summary>
+    public Task DiscardDraftSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (!_sessionStore.IsDraft(sessionId)) return Task.CompletedTask;
+        _sessionStore.DiscardDraft(sessionId);
+        return Task.CompletedTask;
     }
 
     public Task RenameSessionAsync(string sessionId, string title, CancellationToken ct = default)

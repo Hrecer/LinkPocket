@@ -161,9 +161,12 @@ internal static class AiTestHost
             AdvancedToolsEnabled = advancedTools,   // Tier 2（永久删除 / 审计清理…）要显式开启
         });
 
-        var session = await host.Assistant.CreateSessionAsync();
-        await host.Assistant.SetModeAsync(session.SessionId, mode);
-        return session.SessionId;
+        // 引擎测试要的是「一条可用的正式会话」，不关心草稿阶段：**不建草稿**（草稿只在专门用例里断言），
+        // 直接落一份空会话文件——于是 `ListSessionsAsync()` 能列出它、`ReadSessionFile` 能读到它。
+        var sessionId = $"s-{Guid.NewGuid():N}";
+        SeedSessionFile(host.DataRoot, sessionId, []);
+        await host.Assistant.SetModeAsync(sessionId, mode);
+        return sessionId;
     }
 
     /// <summary>会话文件里的一行模型历史（预置长历史用；字段名与 <c>AiSessionStore</c> 的序列化一致）。</summary>
@@ -175,49 +178,27 @@ internal static class AiTestHost
         => JsonDocument.Parse(File.ReadAllText(Path.Combine(dataRoot, "sessions", sessionId + ".json")))
             .RootElement.Clone();
 
-    /// <summary>预置一个会话文件（长历史 / 熔断计数 / 跨会话读取目标），模拟"上次留下的会话"。</summary>
+    /// <summary>
+    /// 预置一个**正式**会话文件（长历史 / 熔断计数 / 跨会话读取目标），模拟"上次留下的会话"。
+    /// 走 <see cref="AiSessionStore"/> 写入，并顺手丢弃同 id 的内存草稿——否则 <c>CreateSessionAsync</c>
+    /// 刚造的草稿会遮住这份预置文件（草稿在内存里优先于磁盘）。
+    /// </summary>
     internal static void SeedSessionFile(string dataRoot, string sessionId, IEnumerable<ChatLine> chat,
         int compactFailures = 0, IEnumerable<(string Text, AiRole Role)>? messages = null)
     {
-        var directory = Path.Combine(dataRoot, "sessions");
-        Directory.CreateDirectory(directory);
+        var store = new AiSessionStore(dataRoot);
+        store.DiscardDraft(sessionId);   // 同 id 草稿清掉：预置的就是"已经在库里的正式会话"
         var now = DateTimeOffset.UtcNow;
         var seq = 0;
-        var uiMessages = (messages ?? []).Select(item => new
-        {
-            MessageId = $"m-seed{++seq}",
-            Seq = seq,
-            Role = (int)item.Role,
-            Text = item.Text,
-            At = now,
-            TurnId = (string?)null,
-        }).ToArray();
-        var payload = new
-        {
-            Version = 1,
-            Summary = new
-            {
-                SessionId = sessionId,
-                Title = "seeded",
-                Mode = AiMode.AutoApply,
-                ProviderId = (string?)null,
-                ModelId = (string?)null,
-                CreatedAt = now,
-                UpdatedAt = now,
-                MessageCount = uiMessages.Length,
-                ChangeCount = 0,
-                ActiveTurnState = (object?)null,
-            },
-            Messages = uiMessages,
-            ToolCalls = Array.Empty<object>(),
-            Changes = Array.Empty<object>(),
-            Approvals = Array.Empty<object>(),
-            Turns = Array.Empty<object>(),
-            Chat = chat.Select(line => new { line.Role, line.Text, line.ToolCalls, line.ToolCallId }).ToArray(),
-            CompactFailures = compactFailures,
-        };
-        File.WriteAllText(Path.Combine(directory, sessionId + ".json"),
-            JsonSerializer.Serialize(payload, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
+        var uiMessages = (messages ?? []).Select(item => new AiMessage($"m-seed{++seq}", seq, item.Role,
+            item.Text, now, null)).ToArray();
+        var file = AiSessionFile.Create(new AiSessionSummary(sessionId, "seeded", AiMode.AutoApply,
+            null, null, now, now, uiMessages.Length, 0, null, AiSessionPersistence.Immediate));
+        file.Messages.AddRange(uiMessages);
+        file.Chat.AddRange(chat.Select(line => new AiChatMessage(line.Role, line.Text,
+            line.ToolCalls, line.ToolCallId)));
+        file.CompactFailures = compactFailures;
+        store.Save(file);
     }
 
     /// <summary>会话文件里 Chat 的正文序列（断言占位符 / 摘要注入）。</summary>

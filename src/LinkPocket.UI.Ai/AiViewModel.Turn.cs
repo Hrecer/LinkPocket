@@ -29,8 +29,11 @@ public sealed partial class AiViewModel
         if (!CanSend) return;
         var text = ComposerText.Trim();
         var mentions = text.StartsWith('/') ? null : MentionsForSend(text);
-        var sessionId = _activeSessionId ?? await EnsureSessionAsync().ConfigureAwait(true);
+        var sessionId = _activeSessionId ?? await EnsureDraftSessionAsync().ConfigureAwait(true);
         if (sessionId is null) return;
+        // 首发即提升：草稿从此成为正式会话（引擎侧在 SendAsync 里落盘），界面标记为不再回收。
+        // 斜杠命令也走同一条提升路径——它同样是"这个会话被真正用起来了"。
+        PromoteDraft(sessionId);
         ComposerText = "";
         CancelMentions();
         LastErrorKey = null;
@@ -53,15 +56,20 @@ public sealed partial class AiViewModel
         }
     }
 
-    /// <summary>懒建会话：第一条消息 / 斜杠命令要用会话时才建，建好即设为当前（左栏行走同一个 upsert）。</summary>
-    private async Task<string?> EnsureSessionAsync()
+    /// <summary>
+    /// 懒建 = 取（或建）一个**草稿**：第一条消息 / 斜杠命令要用会话时才准备载体。
+    /// 草稿本就存在（用户先点了「新建会话」）则直接复用同一个 id——这正是"连点不炸"的来源；
+    /// 真落盘发生在引擎的 <c>SendAsync</c>（提升草稿为正式会话）里。
+    /// </summary>
+    private async Task<string?> EnsureDraftSessionAsync()
     {
         try
         {
-            var created = await _assistant.CreateSessionAsync().ConfigureAwait(true);
-            UpsertSession(created);
-            await OpenSessionAsync(created.SessionId).ConfigureAwait(true);
-            return created.SessionId;
+            var draft = await EnsureDraftAsync().ConfigureAwait(true);
+            if (draft is null) return null;
+            _activeSessionId = draft.SessionId;
+            Raise(nameof(ActiveSessionId));
+            return draft.SessionId;
         }
         catch (AiException ex)
         {

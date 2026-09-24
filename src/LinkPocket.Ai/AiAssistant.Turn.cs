@@ -14,6 +14,13 @@ public sealed partial class AiAssistant
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         var file = _sessionStore.Load(sessionId) ?? throw NotFound(sessionId);
 
+        // 首发提升草稿 → 正式（落盘 + 进列表）：**在回合真正开始之前**做，确保这一回合的任何持久化
+        // （用户消息、工具调用、台账）都写进一份已落盘的会话文件里；中途失败也不会留下"永久草稿"。
+        // 已是正式会话 = 幂等 no-op。
+        _sessionStore.Promote(sessionId);
+        if (file.Summary.Persistence == AiSessionPersistence.Deferred)
+            file.Summary = file.Summary with { Persistence = AiSessionPersistence.Immediate };
+
         TurnRun run;
         lock (_gate)
         {

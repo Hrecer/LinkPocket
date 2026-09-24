@@ -389,4 +389,77 @@ public class AiViewModelTests
         for (var i = 0; i < 200 && !condition(); i++) await Task.Delay(10);
         Assert.True(condition(), "异步重载未在 2 秒内落地");
     }
+
+    // ── 草稿新建：连点不产空会话 / 未用草稿可回收 / 首发提升 ─────────
+
+    [Fact]
+    public async Task 新建会话_连点多次_复用同一个草稿_左栏不增行()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        var before = vm.Sessions.Count;
+
+        for (var i = 0; i < 5; i++) await vm.NewSessionAsync();
+
+        Assert.Equal(1, stub.CreateSessionCalls);        // 单飞：只建了一个草稿
+        Assert.Equal(before, vm.Sessions.Count);         // 左栏一行没多
+        Assert.Equal("s-draft1", vm.ActiveSessionId);    // 停在那个草稿上
+    }
+
+    [Fact]
+    public async Task 草稿_切到别的会话_未用草稿被回收()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        await vm.NewSessionAsync();
+        Assert.Empty(stub.DiscardedDrafts);              // 刚建好还在用：不回收
+
+        await vm.OpenSessionAsync("s-1");                // 切到正式会话 → 草稿弃用
+
+        Assert.Contains("s-draft1", stub.DiscardedDrafts);
+    }
+
+    [Fact]
+    public async Task 草稿_会话变更通知_不进左栏列表()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        var before = vm.Sessions.Count;
+
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.SessionChanged, "s-draft9",
+            Session: new AiSessionSummary("s-draft9", "", AiMode.ConfirmEach, null, null,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, 0, null, AiSessionPersistence.Deferred)));
+
+        Assert.Equal(before, vm.Sessions.Count);         // 草稿通知被过滤，左栏不动
+        Assert.DoesNotContain(vm.Sessions, s => s.SessionId == "s-draft9");
+    }
+
+    [Fact]
+    public async Task 草稿_提升通知_进左栏列表()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        await vm.NewSessionAsync();
+        var before = vm.Sessions.Count;
+
+        // 引擎在草稿被提升为正式会话时发 SessionChanged(Immediate)。
+        stub.RaiseNotify(new AiNotification(AiNotificationKind.SessionChanged, "s-draft1",
+            Session: new AiSessionSummary("s-draft1", "你好", AiMode.ConfirmEach, "gw", "m1",
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 1, 0, null, AiSessionPersistence.Immediate)));
+
+        Assert.Equal(before + 1, vm.Sessions.Count);
+        Assert.Contains(vm.Sessions, s => s.SessionId == "s-draft1" && s.Title == "你好");
+    }
+
+    [Fact]
+    public async Task 关页_未用草稿被回收()
+    {
+        var (vm, stub) = NewVm();
+        await vm.LoadAsync();
+        await vm.NewSessionAsync();
+
+        vm.Dispose();
+
+        Assert.Contains("s-draft1", stub.DiscardedDrafts);
+    }
 }

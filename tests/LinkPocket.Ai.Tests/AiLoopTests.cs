@@ -763,4 +763,75 @@ public class AiLoopTests
         using var doc = JsonDocument.Parse(detail.ToolCalls.Single().ResultJson!);
         Assert.Equal("rejected_by_user", doc.RootElement.GetProperty("error").GetString());
     }
+
+    // ── 草稿新建：连点不产空会话 / 首发提升 / 未用草稿可回收 ─────────
+
+    [Fact]
+    public async Task 新建会话_是草稿_不进列表不落盘()
+    {
+        using var host = NewHost([[TextChunk("ok"), "data: [DONE]"]]);
+        await ConfigureHostOnlyAsync(host, AiMode.AutoApply);
+
+        var draft = await host.Assistant.CreateSessionAsync();
+
+        Assert.Equal(AiSessionPersistence.Deferred, draft.Persistence);
+        Assert.Empty(await host.Assistant.ListSessionsAsync());     // 草稿不进列表
+        Assert.False(File.Exists(Path.Combine(host.DataRoot, "sessions", draft.SessionId + ".json")));
+        // 连点多次：每次都是新的草稿 id（草稿各自独立），但**都不进列表**——列表始终为空。
+        for (var i = 0; i < 5; i++) await host.Assistant.CreateSessionAsync();
+        Assert.Empty(await host.Assistant.ListSessionsAsync());
+    }
+
+    [Fact]
+    public async Task 草稿_首发提升为正式会话_落盘并进列表()
+    {
+        using var host = NewHost([[TextChunk("答"), "data: [DONE]"]]);
+        await ConfigureHostOnlyAsync(host, AiMode.AutoApply);
+        var draft = await host.Assistant.CreateSessionAsync();
+        var path = Path.Combine(host.DataRoot, "sessions", draft.SessionId + ".json");
+        Assert.False(File.Exists(path));                            // 提升前不落盘
+
+        await host.Assistant.SendAsync(draft.SessionId, "你好");
+
+        var listed = Assert.Single(await host.Assistant.ListSessionsAsync());
+        Assert.Equal(draft.SessionId, listed.SessionId);
+        Assert.Equal(AiSessionPersistence.Immediate, listed.Persistence);
+        Assert.True(File.Exists(path));                            // 提升即落盘
+        Assert.Equal("你好", listed.Title);                        // 首发顺带定标题
+    }
+
+    [Fact]
+    public async Task 未提升草稿_可丢弃_正式会话不受影响()
+    {
+        using var host = NewHost([[TextChunk("答"), "data: [DONE]"]]);
+        await ConfigureHostOnlyAsync(host, AiMode.AutoApply);
+        var draft = await host.Assistant.CreateSessionAsync();
+
+        await host.Assistant.DiscardDraftSessionAsync(draft.SessionId);
+
+        // 丢弃后连会话都不存在了（内存草稿已删）：再发消息会如实报"会话不存在"，而不是静默复活。
+        await Assert.ThrowsAsync<AiException>(() => host.Assistant.SendAsync(draft.SessionId, "喂"));
+
+        // 对一条已提升的正式会话调丢弃 = 幂等 no-op（绝不误删真会话）。
+        var real = await host.Assistant.CreateSessionAsync();
+        await host.Assistant.SendAsync(real.SessionId, "真的在聊");
+        await host.Assistant.DiscardDraftSessionAsync(real.SessionId);
+        Assert.Single(await host.Assistant.ListSessionsAsync());
+    }
+
+    /// <summary>只配好服务商 / 模型 / 偏好（**不建会话**），供草稿用例自己控制会话生命周期。</summary>
+    private static async Task ConfigureHostOnlyAsync(Host host, AiMode mode)
+    {
+        await host.Assistant.SaveProviderAsync(new AiProviderDraft("gw", "Gateway",
+            AiProtocol.OpenAiChat, "https://gw.example.com/v1", Enabled: true, IsLocal: false));
+        await host.Assistant.SetApiKeyAsync("gw", "sk-1234567890abcdef");
+        await host.Assistant.SaveModelAsync(new AiModelDraft("gw", "test-model", "Test model", true,
+            ContextWindow: 32_000, MaxOutputTokens: 1024, SupportsTools: true, SupportsStreaming: true));
+        var preferences = await host.Assistant.GetPreferencesAsync();
+        await host.Assistant.SavePreferencesAsync(preferences with
+        {
+            ProviderId = "gw",
+            ModelId = "test-model",
+        });
+    }
 }

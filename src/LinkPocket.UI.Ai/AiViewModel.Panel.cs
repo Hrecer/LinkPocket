@@ -215,6 +215,13 @@ public sealed partial class AiViewModel
     {
         _activeSessionId = null;
         Raise(nameof(ActiveSessionId));
+        ClearConversationContent();
+    }
+
+    /// <summary>只清对话流 / 台账 / 右栏与撤销读数，**不动 <c>_activeSessionId</c>**
+    /// （草稿态停在空白草稿上时用它：会话 id 要保留，内容本就是空的）。</summary>
+    private void ClearConversationContent()
+    {
         Feed.Clear();
         Turns.Clear();
         _allChanges.Clear();
