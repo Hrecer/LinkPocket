@@ -6,8 +6,25 @@ namespace LinkPocket.Data;
 /// <summary>链接仓储 EF 实现（internal——黑盒封装，仅经 IUnitOfWork 暴露）。</summary>
 internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
 {
+    /// <summary>
+    /// 本上下文是否走过 SQL 命中的 Remove（走过才可能存在同 key 的**待删**实例，Add 才需要接管扫描）。
+    /// 无条件扫描 = 每次 Add 都 O(本上下文实体数) → 10k 导入 O(n²)（实测 34s 顶穿 5s 门槛，见 WARNINGS 135）；
+    /// 正常新增热路径必须保持 O(1)。恢复/还原本就先走 Remove → 扫描照做，语义不变。
+    /// </summary>
+    private bool _removed;
+
+    /// <summary>
+    /// 按 ID 点查 = **读己之写**（语义同 <c>EfFolderRepository.FindAsync</c>，ENGINE-API §5）：
+    /// SQL 命中且跟踪态 Deleted → null；SQL 未命中只认跟踪器 Added（未提交的新增）。
+    /// </summary>
     public async Task<Link?> FindAsync(LinkId id, CancellationToken ct)
-        => await db.Links.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
+    {
+        var link = await db.Links.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
+        if (link is not null)
+            return db.Entry(link).State == EntityState.Deleted ? null : link;
+        var pending = db.Links.Local.FirstOrDefault(l => l.LinkId == id.Value);
+        return pending is not null && db.Entry(pending).State == EntityState.Added ? pending : null;
+    }
 
     public async Task<IReadOnlyList<Link>> ListAsync(LinkQuerySpec spec, CancellationToken ct)
     {
@@ -38,7 +55,22 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
 
     public Task<Link> AddAsync(Link link, CancellationToken ct)
     {
-        // 只登记不保存：提交权归工作单元 CommitAsync（失败零副作用、干跑可回滚的前提）
+        // 只登记不保存：提交权归工作单元 CommitAsync（失败零副作用、干跑可回滚的前提）。
+        // 同批"先移入回收站、后按原 ID 还原/重建"：跟踪器里同 key 的待删实例 = 行仍在库 →
+        // 交给新实例接管（待删取消 + 新值按 UPDATE 提交；直接 Add 会撞 EF 身份冲突）。
+        // 接管扫描只在本上下文走过 Remove 后才做（_removed）：同批删除→重建的场景才需要它，
+        // 而每加必扫会把 O(1) 的新增变成 O(n²)（10k 导入实测 34s，见 _removed 注释）。
+        if (_removed)
+        {
+            var tracked = db.Links.Local.FirstOrDefault(l => l.LinkId == link.LinkId);
+            if (tracked is not null && db.Entry(tracked).State == EntityState.Deleted)
+            {
+                db.Entry(tracked).State = EntityState.Detached;
+                db.Links.Attach(link);
+                db.Entry(link).State = EntityState.Modified;
+                return Task.FromResult(link);
+            }
+        }
         db.Links.Add(link);
         return Task.FromResult(link);
     }
@@ -51,8 +83,16 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
 
     public async Task RemoveAsync(LinkId id, CancellationToken ct)
     {
+        // 语义同 EfFolderRepository.RemoveAsync：SQL 优先；未命中且跟踪器 Added = 取消暂存。
         var link = await db.Links.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct);
-        if (link != null) db.Links.Remove(link);
+        if (link is null)
+        {
+            var pending = db.Links.Local.FirstOrDefault(l => l.LinkId == id.Value);
+            if (pending is not null && db.Entry(pending).State == EntityState.Added) db.Links.Remove(pending);
+            return;
+        }
+        db.Links.Remove(link);
+        _removed = true;   // 出现同 key 待删实例 → 后续 Add 才需要接管扫描（AddAsync）
     }
 
     public async Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct)
