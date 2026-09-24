@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace LinkPocket.Contracts;
 
@@ -33,7 +33,11 @@ public sealed record AiMessage(
     DateTimeOffset At,
     string? TurnId,
     bool IsStreaming = false,
-    IReadOnlyList<AiMentionRef>? Mentions = null);
+    IReadOnlyList<AiMentionRef>? Mentions = null,
+    /// <summary>模型的思考原文（reasoning / thinking）。**只给人看**——不回灌模型、不进上下文预算；
+    /// 未开启思考的模型恒为 null。各协议字段名不同（OpenAI 兼容 <c>reasoning_content</c>、
+    /// 部分网关 <c>reasoning</c>、Anthropic <c>thinking</c>），由适配器统一成本字段。</summary>
+    string? Reasoning = null);
 
 /// <summary>工具调用状态机（一次模型工具调用 = 一个可持久化的状态机对象）。</summary>
 public enum AiToolCallState
@@ -286,7 +290,10 @@ public sealed record AiNotification(
     AiSessionSummary? Session = null,
     AiContextCompaction? Compaction = null,
     AiBatchProgress? Progress = null,
-    AiRateLimitNotice? RateLimit = null);
+    AiRateLimitNotice? RateLimit = null,
+    /// <summary>思考原文的增量（与 <see cref="TextDelta"/> 分开走：正文与思考是两条流，
+    /// 合成一条会让界面分不清哪段该进气泡、哪段该进折叠块）。</summary>
+    string? ReasoningDelta = null);
 
 /// <summary>导出格式（会话快照与审计报告；CSV 用于台账逐条）。</summary>
 public enum AiExportFormat

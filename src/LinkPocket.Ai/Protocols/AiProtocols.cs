@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using LinkPocket.Contracts;
 
@@ -19,7 +19,7 @@ public sealed record AiChatRequest(
     string Model, string System, IReadOnlyList<AiChatMessage> Messages,
     IReadOnlyList<AiToolSpec> Tools, int MaxOutputTokens, bool Stream);
 
-/// <summary>流式增量：Kind = text（正文） / tool（工具调用拼装） / usage（用量读数）。
+/// <summary>流式增量：Kind = text（正文） / reasoning（思考原文） / tool（工具调用拼装） / usage（用量读数）。
 /// <para><c>ToolCallId</c> 是**归并键**（流式分片只稳定给出序号：OpenAI <c>idx:N</c> / Anthropic <c>blk:N</c>）；
 /// <c>ProviderId</c> 是服务商给的真实调用 ID（可能只在首片出现，缺省用归并键兜底）。</para>
 /// <para><c>InputTokens</c> / <c>OutputTokens</c>（Kind = usage）= 服务商下发的用量读数；语义 = **本次请求的累计值**
@@ -31,7 +31,7 @@ public sealed record AiChatDelta(string Kind, string? Text = null, string? ToolC
 
 /// <summary>一次完整回复（非流式，或流式结束后的汇总）。</summary>
 public sealed record AiChatCompletion(string Text, IReadOnlyList<AiToolCallRequest> ToolCalls,
-    int? InputTokens, int? OutputTokens);
+    int? InputTokens, int? OutputTokens, string? Reasoning = null);
 
 /// <summary>协议适配器：请求装配 / 响应解析 / 模型列表 / 流式行解析（每协议一份，纯函数无状态）。</summary>
 public interface IAiProtocolAdapter
@@ -137,12 +137,14 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
     {
         using var doc = JsonDocument.Parse(body);
         var text = "";
+        string? reasoning = null;
         var calls = new List<AiToolCallRequest>();
         if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
         {
             var message = choices[0].GetProperty("message");
             if (message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
                 text = content.GetString() ?? "";
+            reasoning = OpenAiReasoningText(message);
             if (message.TryGetProperty("tool_calls", out var toolCalls) && toolCalls.ValueKind == JsonValueKind.Array)
                 foreach (var call in toolCalls.EnumerateArray())
                 {
@@ -155,7 +157,7 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         }
         return new AiChatCompletion(text, calls,
             AiJson.IntAt(doc.RootElement, "usage", "prompt_tokens"),
-            AiJson.IntAt(doc.RootElement, "usage", "completion_tokens"));
+            AiJson.IntAt(doc.RootElement, "usage", "completion_tokens"), reasoning);
     }
 
     public AiChatDelta? ParseStreamLine(string line)
@@ -168,6 +170,11 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         if (OpenAiUsage(doc.RootElement) is { } usage) return usage;
         if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
         if (!choices[0].TryGetProperty("delta", out var delta)) return null;
+
+        // 思考原文：字段名各网关不一（DeepSeek/GLM/z.ai 系 reasoning_content，OpenRouter 系 reasoning）。
+        // 必须在正文之前判——思考先来、正文后来；两者同帧时先给思考，下一帧再给正文（不丢内容）。
+        if (OpenAiReasoningText(delta) is { Length: > 0 } reasoning)
+            return new AiChatDelta("reasoning", Text: reasoning);
 
         if (delta.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String
             && content.GetString() is { Length: > 0 } text)
@@ -197,6 +204,21 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(apiKey)) headers["Authorization"] = $"Bearer {apiKey}";
         return headers;
+    }
+
+    /// <summary>
+    /// 从一段 delta / message 里取思考原文。兼容两类字段名：
+    /// <c>reasoning_content</c>（DeepSeek / GLM / z.ai 系）与 <c>reasoning</c>（OpenRouter 等网关，可能是字符串或
+    /// <c>{content|text}</c> 对象）。取不到 = 该网关不返回思考，如实返回 null（不编造）。
+    /// </summary>
+    internal static string? OpenAiReasoningText(JsonElement node)
+    {
+        if (node.ValueKind != JsonValueKind.Object) return null;
+        if (AiJson.String(node, "reasoning_content") is { Length: > 0 } direct) return direct;
+        if (!node.TryGetProperty("reasoning", out var reasoning)) return null;
+        if (reasoning.ValueKind == JsonValueKind.String) return reasoning.GetString();
+        if (reasoning.ValueKind != JsonValueKind.Object) return null;
+        return AiJson.String(reasoning, "content") ?? AiJson.String(reasoning, "text");
     }
 
     /// <summary>OpenAI 流式用量块（`stream_options.include_usage`；两个字段都缺 = 不是用量块）。</summary>
@@ -297,6 +319,7 @@ public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
     {
         using var doc = JsonDocument.Parse(body);
         var text = new System.Text.StringBuilder();
+        var reasoning = new System.Text.StringBuilder();
         var calls = new List<AiToolCallRequest>();
         if (doc.RootElement.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
             foreach (var item in output.EnumerateArray())
@@ -315,11 +338,19 @@ public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
                             AiJson.String(item, "name") ?? "",
                             AiJson.String(item, "arguments") ?? "{}"));
                         break;
+                    case "reasoning":
+                        // 思考项：正文在 summary[].text
+                        if (!item.TryGetProperty("summary", out var summary)
+                            || summary.ValueKind != JsonValueKind.Array) break;
+                        foreach (var part in summary.EnumerateArray())
+                            reasoning.Append(AiJson.String(part, "text"));
+                        break;
                 }
             }
         return new AiChatCompletion(text.ToString(), calls,
             AiJson.IntAt(doc.RootElement, "usage", "input_tokens"),
-            AiJson.IntAt(doc.RootElement, "usage", "output_tokens"));
+            AiJson.IntAt(doc.RootElement, "usage", "output_tokens"),
+            reasoning.Length > 0 ? reasoning.ToString() : null);
     }
 
     public AiChatDelta? ParseStreamLine(string line)
@@ -334,6 +365,11 @@ public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
             case "response.output_text.delta":
                 return AiJson.String(doc.RootElement, "delta") is { Length: > 0 } text
                     ? new AiChatDelta("text", Text: text)
+                    : null;
+            case "response.reasoning_summary_text.delta":
+            case "response.reasoning_text.delta":
+                return AiJson.String(doc.RootElement, "delta") is { Length: > 0 } thought
+                    ? new AiChatDelta("reasoning", Text: thought)
                     : null;
             case "response.output_item.added":
             {
@@ -453,12 +489,14 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
     {
         using var doc = JsonDocument.Parse(body);
         var text = new System.Text.StringBuilder();
+        var reasoning = new System.Text.StringBuilder();
         var calls = new List<AiToolCallRequest>();
         if (doc.RootElement.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
             foreach (var block in content.EnumerateArray())
             {
                 var type = AiJson.String(block, "type");
                 if (type == "text") text.Append(AiJson.String(block, "text"));
+                else if (type == "thinking") reasoning.Append(AiJson.String(block, "thinking"));
                 else if (type == "tool_use")
                     calls.Add(new AiToolCallRequest(
                         AiJson.String(block, "id") ?? $"tool_{calls.Count}",
@@ -467,7 +505,8 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
             }
         return new AiChatCompletion(text.ToString(), calls,
             AiJson.IntAt(doc.RootElement, "usage", "input_tokens"),
-            AiJson.IntAt(doc.RootElement, "usage", "output_tokens"));
+            AiJson.IntAt(doc.RootElement, "usage", "output_tokens"),
+            reasoning.Length > 0 ? reasoning.ToString() : null);
     }
 
     public AiChatDelta? ParseStreamLine(string line)
@@ -497,6 +536,11 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
                 if (!doc.RootElement.TryGetProperty("delta", out var delta)) return null;
                 var deltaType = AiJson.String(delta, "type");
                 if (deltaType == "text_delta") return new AiChatDelta("text", Text: AiJson.String(delta, "text"));
+                // 扩展思考：Anthropic 的思考走独立的 thinking_delta（block 类型是 thinking）
+                if (deltaType == "thinking_delta")
+                    return AiJson.String(delta, "thinking") is { Length: > 0 } thought
+                        ? new AiChatDelta("reasoning", Text: thought)
+                        : null;
                 if (deltaType == "input_json_delta")
                     return new AiChatDelta("tool", ToolCallId: StreamKey(doc.RootElement),
                         ArgumentsDelta: AiJson.String(delta, "partial_json"));

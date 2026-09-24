@@ -14,6 +14,7 @@ namespace LinkPocket.UI.Ai;
 public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly IAiAssistant _assistant;
+    private readonly System.Windows.Threading.Dispatcher _dispatcher;
 
     private string? _activeSessionId;
     private string _composerText = "";
@@ -28,6 +29,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public AiViewModel(IAiAssistant assistant)
     {
         _assistant = assistant ?? throw new ArgumentNullException(nameof(assistant));
+        // VM 在 UI 线程上构造（视图 Configure 里 new）：把该线程记下来当投影线程。
+        // 兜底 = 应用主 Dispatcher（测试宿主会在别的线程上构造 VM，取应用级的那支才对）。
+        _dispatcher = System.Windows.Threading.Dispatcher.FromThread(System.Threading.Thread.CurrentThread)
+                     ?? System.Windows.Application.Current?.Dispatcher
+                     ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
         _assistant.Notified += OnNotified;
         _assistant.WriteFreezeChanged += OnFreezeChanged;
     }
@@ -436,12 +442,45 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnFreezeChanged() => Raise(nameof(IsWriteFrozen));
 
+    /// <summary>
+    /// 引擎通知的**唯一入口**，也是它到界面的**线程边界**。
+    /// <para>⚠️ 引擎的回合循环内部全部 <c>ConfigureAwait(false)</c>——工具执行、流式解析、通知触发
+    /// 都在线程池上（用户日志实录：<c>OnNotified → AppendToTurn → 视图 ScrollToEnd</code> 整条链在后台线程上跑，
+    /// 一碰 <c>ScrollViewer</c> 就「调用线程无法访问此对象」→ 回合续体被杀 → 界面从此停在"进行中"，工具卡与
+    /// 审批卡永远不出现）。所以**所有投影必须回到 UI 线程**：这里判一次线程，不在就转发过去。
+    /// 同优先级的 <c>BeginInvoke</c> 保序，流式增量不会乱序。</para>
+    /// </summary>
     private void OnNotified(AiNotification notification)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            _dispatcher.BeginInvoke(() => OnNotified(notification));
+            return;
+        }
+        OnNotifiedOnUi(notification);
+    }
+
+    private void OnNotifiedOnUi(AiNotification notification)
     {
         switch (notification.Kind)
         {
             case AiNotificationKind.MessageAdded when notification.Message is { } message:
                 UpsertMessage(message);
+                break;
+            case AiNotificationKind.StreamDelta when notification.ReasoningDelta is { } thought:
+                // 思考增量与正文增量同走一条路，但落在**不同字段**（折叠块 vs 气泡）
+                var thinking = Feed.FirstOrDefault(i => i.ItemId == notification.MessageId);
+                if (thinking is null)
+                {
+                    var shell = AiFeedItem.ForAssistant(new AiMessage(notification.MessageId ?? "", 0, AiRole.Assistant, "",
+                        DateTimeOffset.UtcNow, notification.TurnId, IsStreaming: true));
+                    AppendToTurn(shell);
+                    shell.AppendReasoning(thought);
+                }
+                else
+                {
+                    thinking.AppendReasoning(thought);
+                }
                 break;
             case AiNotificationKind.StreamDelta when notification.TextDelta is { } delta:
                 var streaming = Feed.FirstOrDefault(i => i.ItemId == notification.MessageId);

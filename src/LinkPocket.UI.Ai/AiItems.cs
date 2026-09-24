@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -39,6 +39,10 @@ public sealed class AiFeedItem : INotifyPropertyChanged
 
     private string _text = "";
     private string _renderText = "";
+    private string _reasoningText = "";
+    private string _reasoningRender = "";
+    private DateTimeOffset _lastReasoningAt;
+    private bool _isReasoningOpen;
     private DateTimeOffset _lastRenderAt;
     private string _stateKey = "";
     private string _stateSuffix = "";
@@ -98,6 +102,61 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             _renderText = value;
             Raise(nameof(RenderText));
         }
+    }
+
+    /// <summary>
+    /// 模型思考原文（reasoning / thinking）。**只给人看**：不回灌模型、不进上下文预算。
+    /// 流式期间按 <see cref="RenderThrottle"/> 节流跟进（思考常有几万字，逐 delta 重排会白烧 UI 线程），
+    /// <see cref="Finalize"/> 补一次全文。
+    /// </summary>
+    public string ReasoningText
+    {
+        get => _reasoningRender;
+        private set
+        {
+            if (_reasoningRender == value) return;
+            _reasoningRender = value;
+            // 初始化器直接给投影面时（重开会话），原文也要跟着立起来，否则 HasReasoning 会是假
+            if (_reasoningText.Length == 0) _reasoningText = value;
+            Raise(nameof(ReasoningText));
+            Raise(nameof(HasReasoning));
+            Raise(nameof(ReasoningLengthValue));
+        }
+    }
+
+    /// <summary>思考块是否露面（没有思考的模型 / 未开启思考 → 整块不占位）。</summary>
+    public bool HasReasoning => _reasoningText.Length > 0;
+
+    /// <summary>思考块是否展开（缺省收起：它是参考材料，不是正文；要看原文再点开）。</summary>
+    public bool IsReasoningOpen
+    {
+        get => _isReasoningOpen;
+        private set
+        {
+            if (_isReasoningOpen == value) return;
+            _isReasoningOpen = value;
+            Raise(nameof(IsReasoningOpen));
+            Raise(nameof(ReasoningToggleKey));
+        }
+    }
+
+    public void ToggleReasoning() => IsReasoningOpen = !IsReasoningOpen;
+
+    /// <summary>展开 / 收起的按钮文案键。</summary>
+    public string ReasoningToggleKey => IsReasoningOpen ? "ai.reasoning.collapse" : "ai.reasoning.expand";
+
+    /// <summary>收起时显示的读数（"思考 N 字"，让人知道里面有多少东西）。</summary>
+    public LocValue ReasoningLengthValue => Loc.K("ai.reasoning.chars", _reasoningText.Length);
+
+    /// <summary>思考增量（原文立即累积；投影面按节流跟进）。</summary>
+    public void AppendReasoning(string chunk)
+    {
+        _reasoningText += chunk;
+        Raise(nameof(HasReasoning));
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastReasoningAt < RenderThrottle) return;
+        _lastReasoningAt = now;
+        ReasoningText = _reasoningText;
     }
 
     /// <summary>状态文案键（工具行用；如 ai.tool.state.running）。</summary>
@@ -443,6 +502,7 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             At = message.At,
             Text = message.Text,
             RenderText = message.Text,
+            ReasoningText = message.Reasoning ?? "",
             IsStreaming = message.IsStreaming,
         };
 
@@ -492,6 +552,10 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     {
         Text = message.Text;
         RenderText = message.Text;
+        // 思考原文以落定态为准（流式期间是节流投影，这里补全文）
+        _reasoningText = message.Reasoning ?? _reasoningText;
+        ReasoningText = _reasoningText;
+        Raise(nameof(HasReasoning));
         IsStreaming = false;
     }
 

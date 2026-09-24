@@ -360,6 +360,12 @@ public partial class AiView : UserControl
         ComposerBox.Focus();
     }
 
+    /// <summary>展开 / 收起思考原文（缺省收起：思考是参考材料，不是正文）。</summary>
+    private void OnToggleReasoning(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AiFeedItem item) item.ToggleReasoning();
+    }
+
     /// <summary>折叠 / 展开一轮（只改显隐；折叠后条目不再占位，导航轨照旧可达）。</summary>
     private void OnToggleTurn(object sender, RoutedEventArgs e)
     {

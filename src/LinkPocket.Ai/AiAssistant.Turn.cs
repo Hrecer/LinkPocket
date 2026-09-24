@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using LinkPocket.Contracts;
@@ -170,6 +170,8 @@ public sealed partial class AiAssistant
         var messageId = $"m-{Guid.NewGuid():N}";
         var seq = NextSeq(file);
         var text = new StringBuilder();
+        // 思考原文（reasoning / thinking）：与正文**分开累积**——它只给人看，不回灌模型、不进上下文预算。
+        var reasoning = new StringBuilder();
         var calls = new Dictionary<string, (string Id, string Name, StringBuilder Args)>(StringComparer.Ordinal);
         var displayed = false;
         int? requestInput = null, requestOutput = null;   // 本次请求的用量读数（服务商未声明 = null）
@@ -190,6 +192,22 @@ public sealed partial class AiAssistant
                         // 累计语义（非增量）：取最后非空值（OpenAI 一次性给两值 / Anthropic 分两处给）
                         requestInput = delta.InputTokens ?? requestInput;
                         requestOutput = delta.OutputTokens ?? requestOutput;
+                    }
+                    else if (delta.Kind == "reasoning" && delta.Text is { Length: > 0 } thought)
+                    {
+                        // 思考**先来**（正文在后）：所以它也得负责把消息壳挂出来，否则只思考不说话的模型
+                        // （或"思考完直接调工具"的那种）在界面上什么都不显示。
+                        reasoning.Append(thought);
+                        if (!displayed)
+                        {
+                            displayed = true;
+                            Notified?.Invoke(new AiNotification(AiNotificationKind.MessageAdded, file.Summary.SessionId,
+                                TurnId: run.TurnId,
+                                Message: new AiMessage(messageId, seq, AiRole.Assistant, "", DateTimeOffset.UtcNow,
+                                    run.TurnId, IsStreaming: true)));
+                        }
+                        Notified?.Invoke(new AiNotification(AiNotificationKind.StreamDelta, file.Summary.SessionId,
+                            TurnId: run.TurnId, MessageId: messageId, ReasoningDelta: thought));
                     }
                     else if (delta.Kind == "text" && delta.Text is { Length: > 0 } chunk)
                     {
@@ -235,9 +253,10 @@ public sealed partial class AiAssistant
         RecordUsage(provider.Id, model.Id, AiUsagePurpose.Turn, requestInput, requestOutput);
 
         var message = new AiMessage(messageId, seq, AiRole.Assistant, text.ToString(), DateTimeOffset.UtcNow,
-            run.TurnId);
+            run.TurnId, Reasoning: reasoning.Length > 0 ? reasoning.ToString() : null);
         file.Messages.Add(message);
-        if (text.Length > 0)
+        // 落定通知的触发条件含思考：只思考没正文的回合（思考完直接调工具）也要把最终态推给界面
+        if (text.Length > 0 || reasoning.Length > 0)
             Notified?.Invoke(new AiNotification(AiNotificationKind.MessageAdded, file.Summary.SessionId,
                 TurnId: run.TurnId, Message: message));
 

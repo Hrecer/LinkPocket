@@ -412,9 +412,92 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- 助手消息：无气泡，左对齐 Markdown；操作行恒占位、悬停才显形（与用户消息同口径） -->
+        <!-- 助手消息：无气泡，左对齐 Markdown；思考块（有才出现，缺省收起）+ 操作行恒占位、悬停显形 -->
         <DataTemplate x:Key="AiAssistantTemplate">
             <StackPanel x:Name="AssistantRoot" Margin="0,8,0,8" Background="Transparent">
+                <!-- 思考块：**有思考才出现**；缺省收起（它是参考材料，不是正文），点标题看完整原文。
+                     标题在收起时带字数读数——不点开也知道里面有多少东西。 -->
+                <StackPanel Margin="0,0,0,4">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasReasoning}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <Button HorizontalAlignment="Left" Style="{StaticResource AiRowButton}" Click="OnToggleReasoning">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="chevron-down" Width="12" Height="12" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Muted}">
+                                <m3:M3Icon.Style>
+                                    <Style TargetType="{x:Type m3:M3Icon}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsReasoningOpen}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </m3:M3Icon.Style>
+                            </m3:M3Icon>
+                            <m3:M3Icon Kind="chevron-right" Width="12" Height="12" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Muted}">
+                                <m3:M3Icon.Style>
+                                    <Style TargetType="{x:Type m3:M3Icon}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsReasoningOpen}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </m3:M3Icon.Style>
+                            </m3:M3Icon>
+                            <TextBlock Text="{loc:Loc ai.reasoning.title}" FontSize="12" Margin="4,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <TextBlock Text="{loc:Value ReasoningLengthValue}" FontSize="11" Margin="6,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Muted}">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsReasoningOpen}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Button>
+                    <!-- 思考原文：**等宽**（它是模型的原始推理串，不是排版好的正文）；随流式增长 -->
+                    <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="10" Padding="10,8"
+                            Margin="0,4,0,0" MaxHeight="420">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding HasReasoning}" Value="True"/>
+                                            <Condition Binding="{Binding IsReasoningOpen}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding ReasoningText}" TextWrapping="Wrap"
+                                       FontSize="12" LineHeight="18"
+                                       FontFamily="{DynamicResource App.Font.Mono}"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
                 <views:MarkdownText Markdown="{Binding RenderText}" FontSize="13"/>
                 <StackPanel x:Name="AssistantActions" Orientation="Horizontal" Margin="0,2,0,0"
                             Opacity="0" IsHitTestVisible="False">
