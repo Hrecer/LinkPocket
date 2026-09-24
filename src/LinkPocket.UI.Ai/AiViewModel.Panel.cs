@@ -164,18 +164,25 @@ public sealed partial class AiViewModel
         set => Set(ref _renameText, value, nameof(RenameText));
     }
 
+    /// <summary>
+    /// 进入就地重命名。**先清掉上一行的编辑态**——早先只把 <c>_renamingSessionId</c> 换成新行、
+    /// 不碰旧行的标志，于是"改 A 改到一半又去改 B"会把 A 永久留在编辑态：<see cref="CancelRename"/>
+    /// 只会收掉当前那一个 id，A 的 <c>IsRenaming</c> 再也没人碰 → 界面上一行空编辑框卡死（用户实测）。
+    /// </summary>
     public void BeginRename(AiSessionRow session)
     {
+        foreach (var row in Sessions)
+            if (!ReferenceEquals(row, session)) row.IsRenaming = false;
         _renamingSessionId = session.SessionId;
         RenameText = session.Title;
         session.IsRenaming = true;
         IsRenamingSession = true;
     }
 
+    /// <summary>退出重命名（**清全部行**而不只是当前 id：任何残留的编辑态都是卡死的空编辑框）。</summary>
     public void CancelRename()
     {
-        if (_renamingSessionId is { } id && Sessions.FirstOrDefault(s => s.SessionId == id) is { } row)
-            row.IsRenaming = false;
+        foreach (var row in Sessions) row.IsRenaming = false;
         _renamingSessionId = null;
         IsRenamingSession = false;
     }

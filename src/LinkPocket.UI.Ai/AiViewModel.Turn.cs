@@ -155,6 +155,29 @@ public sealed partial class AiViewModel
         }
     }
 
+    /// <summary>
+    /// 「回溯」一轮：回退该轮做过的**全部操作**（走既有撤销栈，逐归属键定点撤销），
+    /// 并把这一轮我们说过的话重新填回输入框、等我们发送。
+    /// <para>为什么两件事绑在一起：回溯的用处就是"这轮它做歪了，我要把话改一改再说一遍"——
+    /// 只回退不填字，人还得自己去翻上面抄一遍；只填字不回退，那要回退的东西还留在库里。</para>
+    /// <para>不裁剪对话历史：回溯回退的是**数据面**（引擎操作），对话本身是已经发生过的记录。</para>
+    /// </summary>
+    public async Task RewindTurnAsync(AiFeedItem turn)
+    {
+        if (_activeSessionId is not { } sessionId || turn.TurnId is not { } turnId) return;
+        if (IsTurnRunning) return;   // 引擎写面正被占用：与撤销同一道闸（绝不给会失败的操作）
+        try
+        {
+            var result = await _assistant.UndoTurnAsync(sessionId, turnId).ConfigureAwait(true);
+            ComposerText = turn.PreviewText;   // 填回这一轮的原话（用户可改后再发）
+            NoticeForUndo(result);
+        }
+        catch (AiException ex)
+        {
+            LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+        }
+    }
+
     private static AiTurnContext BuildContext(IReadOnlyList<AiMentionRef>? mentions = null)
         => new(NavId: "ai", LanguageCode: CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
             Mentions: mentions is { Count: > 0 } ? mentions : null);

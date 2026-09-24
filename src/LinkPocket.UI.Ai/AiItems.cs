@@ -587,24 +587,6 @@ public sealed class AiSessionRow(AiSessionSummary summary) : INotifyPropertyChan
 
     private bool _isRenaming;
 
-    /// <summary>
-    /// 批量操作里的勾选态（Ctrl / Shift + 点击或右键勾选）。**不是** ListBox 的选中态——
-    /// 选中态管"正在看哪个会话"，勾选态管"要对哪几个下手"，两件事混用一个状态会让
-    /// "顺手点了三条会话来看"变成"顺手删掉三条会话"。
-    /// </summary>
-    public bool IsChecked
-    {
-        get => _isChecked;
-        set
-        {
-            if (_isChecked == value) return;
-            _isChecked = value;
-            Raise(nameof(IsChecked));
-        }
-    }
-
-    private bool _isChecked;
-
     public void Apply(AiSessionSummary summary)
     {
         _summary = summary;
@@ -702,8 +684,13 @@ internal static class AiRailVisual
     public const int TravelMs = 150;
 
     /// <summary>悬浮预览卡的开 / 收延迟（毫秒）：开得稍慢（滚过整轨不一路闪卡），收得干脆。</summary>
+    /// <remarks>
+    /// 收的宽限**长于**参照的 80ms：参照的卡由 Radix HoverCard 托管，指针进卡即算"还在里面"；
+    /// WPF 的 Popup 是独立窗口，从条挪到卡要跨过那条缝——80ms 会把**可点的卡**在途中收掉。
+    /// 行为与参照一致（指针停在哪一边都算悬浮），补的是"跨缝"这段时间。
+    /// </remarks>
     public const int PreviewOpenDelayMs = 120;
-    public const int PreviewCloseDelayMs = 80;
+    public const int PreviewCloseDelayMs = 260;
 
     /// <summary>预览卡文案的截断口径：总字符上限 220、段落上限 2（与参照实现同值）。</summary>
     public const int PreviewMaxChars = 220;

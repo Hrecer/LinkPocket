@@ -202,6 +202,15 @@ public sealed class StubAiAssistant : IAiAssistant
         return Task.FromResult(UndoResult);
     }
 
+    /// <summary>「回溯」记录 (会话, 回合)——断言点的是"哪一轮"，不只是"撤了几次"。</summary>
+    public List<(string SessionId, string TurnId)> UndoTurnCalls { get; } = [];
+
+    public Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
+    {
+        UndoTurnCalls.Add((sessionId, turnId));
+        return Task.FromResult(UndoResult);
+    }
+
     public Task<int> CountUndoableAsync(string sessionId, CancellationToken ct = default)
     {
         CountUndoableCalls.Add(sessionId);

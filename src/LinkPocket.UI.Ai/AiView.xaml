@@ -308,46 +308,61 @@
         <!-- 回合分隔行：整行可点（折叠该轮）；行底一条 1px 细线 -->
         <DataTemplate x:Key="AiTurnHeaderTemplate">
             <StackPanel Margin="0,12,0,2">
-                <Button Style="{StaticResource AiRowButton}" Click="OnToggleTurn"
-                        ToolTip="{loc:LocKey ToggleKey}">
-                    <StackPanel Orientation="Horizontal">
-                        <m3:M3Icon Kind="chevron-down" Width="13" Height="13" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Muted}">
-                            <m3:M3Icon.Style>
-                                <Style TargetType="{x:Type m3:M3Icon}">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </m3:M3Icon.Style>
-                        </m3:M3Icon>
-                        <m3:M3Icon Kind="chevron-right" Width="13" Height="13" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Muted}">
-                            <m3:M3Icon.Style>
-                                <Style TargetType="{x:Type m3:M3Icon}">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </m3:M3Icon.Style>
-                        </m3:M3Icon>
-                        <TextBlock Text="{loc:Value HeaderValue}" FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center"
+                <!-- 一轮 = 折叠开关（左）+ 回溯（右）。回溯**常显**：它每轮都要在，
+                     藏进悬浮里会变成"要用的时候找不到"。 -->
+                <Grid Background="Transparent">
+                    <Button HorizontalAlignment="Left" Style="{StaticResource AiRowButton}" Click="OnToggleTurn"
+                            ToolTip="{loc:LocKey ToggleKey}">
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="chevron-down" Width="13" Height="13" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Muted}">
+                                <m3:M3Icon.Style>
+                                    <Style TargetType="{x:Type m3:M3Icon}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </m3:M3Icon.Style>
+                            </m3:M3Icon>
+                            <m3:M3Icon Kind="chevron-right" Width="13" Height="13" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Muted}">
+                                <m3:M3Icon.Style>
+                                    <Style TargetType="{x:Type m3:M3Icon}">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </m3:M3Icon.Style>
+                            </m3:M3Icon>
+                            <TextBlock Text="{loc:Value HeaderValue}" FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="RewindTurnButton" HorizontalAlignment="Right" Style="{StaticResource SideIconButton}"
+                            Width="22" Height="20" Padding="2" Tag="{loc:Loc ai.turn.rewind}"
+                            Click="OnRewindTurn">
+                        <m3:M3Icon Kind="restore" Width="13" Height="13"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
-                    </StackPanel>
-                </Button>
+                    </Button>
+                </Grid>
                 <Border Height="1" Background="{DynamicResource App.Line.Variant}"/>
             </StackPanel>
         </DataTemplate>
 
         <!-- 用户消息：右对齐气泡（右上角缺角）+ 上方提及 chip + 悬停操作行 -->
+        <!-- ⚠️ 根元素必须给 `Background="Transparent"`：WPF 里**没有背景的面板在空白处不参与命中测试**，
+             于是"鼠标往复制按钮上移"这一步会落到面板的空隙里 → IsMouseOver 转假 → 行立刻透明、按钮再也点不到。
+             透明底让整块行区（含操作行那一条）成为悬浮区，与参照的 group-hover 同语义。 -->
         <DataTemplate x:Key="AiUserTemplate">
-            <StackPanel x:Name="UserRoot" Margin="0,8,0,8" HorizontalAlignment="Right" MaxWidth="560">
+            <StackPanel x:Name="UserRoot" Margin="0,8,0,8" HorizontalAlignment="Right" MaxWidth="560"
+                        Background="Transparent">
                 <ItemsControl ItemsSource="{Binding Mentions}" Margin="0,0,0,4" HorizontalAlignment="Right">
                     <ItemsControl.Style>
                         <Style TargetType="ItemsControl">
@@ -384,8 +399,12 @@
                         CornerRadius="16,16,4,16" Padding="14,10">
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
                 </Border>
+                <!-- ⚠️ 操作行**恒占位**，只用不透明度显隐（参照实现同口径：`opacity-0 → group-hover:opacity-100`）。
+                     早先用 `Visibility=Collapsed` 是两处缺陷的同一个根因：
+                     ① 行一收，整块消息变矮 → 悬停/移开时布局跳一下；
+                     ② 行一收就把鼠标所在的那一块从命中区里删掉 → "往复制按钮上一移，按钮就没了"。 -->
                 <StackPanel x:Name="UserActions" Orientation="Horizontal" HorizontalAlignment="Right"
-                            Margin="0,2,0,0" Visibility="Collapsed">
+                            Margin="0,2,0,0" Opacity="0" IsHitTestVisible="False">
                     <Button Style="{StaticResource AiGhostTextButton}" Content="{loc:Loc ai.feed.copy}"
                             Click="OnCopyMessage"/>
                     <TextBlock Text="{loc:Value TimeValue}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
@@ -394,27 +413,28 @@
             </StackPanel>
             <DataTemplate.Triggers>
                 <Trigger SourceName="UserRoot" Property="IsMouseOver" Value="True">
-                    <Setter TargetName="UserActions" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="UserActions" Property="Opacity" Value="1"/>
+                    <Setter TargetName="UserActions" Property="IsHitTestVisible" Value="True"/>
                 </Trigger>
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- 助手消息：无气泡，左对齐 Markdown；悬停出现操作行 -->
+        <!-- 助手消息：无气泡，左对齐 Markdown；操作行恒占位、悬停才显形（与用户消息同口径） -->
         <DataTemplate x:Key="AiAssistantTemplate">
-            <StackPanel x:Name="AssistantRoot" Margin="0,8,0,8">
+            <StackPanel x:Name="AssistantRoot" Margin="0,8,0,8" Background="Transparent">
                 <views:MarkdownText Markdown="{Binding RenderText}" FontSize="13"/>
-                <StackPanel x:Name="AssistantActions" Orientation="Horizontal" Margin="0,2,0,0" Visibility="Collapsed">
+                <StackPanel x:Name="AssistantActions" Orientation="Horizontal" Margin="0,2,0,0"
+                            Opacity="0" IsHitTestVisible="False">
                     <Button Style="{StaticResource AiGhostTextButton}" Content="{loc:Loc ai.feed.copy}"
                             Click="OnCopyMessage"/>
-                    <Button Style="{StaticResource AiGhostTextButton}" Content="{loc:Loc ai.skill.saveFromMessage}"
-                            Click="OnSaveMessageAsSkill"/>
                     <TextBlock Text="{loc:Value TimeValue}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource App.Text.Muted}"/>
                 </StackPanel>
             </StackPanel>
             <DataTemplate.Triggers>
                 <Trigger SourceName="AssistantRoot" Property="IsMouseOver" Value="True">
-                    <Setter TargetName="AssistantActions" Property="Visibility" Value="Visible"/>
+                    <Setter TargetName="AssistantActions" Property="Opacity" Value="1"/>
+                    <Setter TargetName="AssistantActions" Property="IsHitTestVisible" Value="True"/>
                 </Trigger>
             </DataTemplate.Triggers>
         </DataTemplate>
@@ -924,22 +944,14 @@
                                        Foreground="{DynamicResource App.Text.Primary}"/>
                         </Border>
                     </StackPanel>
+                    <!-- 行内动作只留**删除**一枚。
+                         ⚠️ 重命名**不放行内**（用户实测：悬停时动作正好长在鼠标底下，点一下切会话就变成进了重命名，
+                         而且编辑框拿不到焦点时 Esc 也救不回来 → "卡在重命名里出不来"）。重命名只走右键菜单。
+                         导出无实现（一点即报错，已从本页退场）。动作与读数同一格同一高度换装，不换行不变高。 -->
                     <StackPanel x:Name="SessionActions" Orientation="Horizontal" VerticalAlignment="Center"
                                 Visibility="Collapsed">
-                        <Button x:Name="SessionRename" Style="{StaticResource SideIconButton}" Width="22" Height="20"
-                                Padding="2" Tag="{loc:Loc ai.sessions.rename}" Click="OnRenameSession">
-                            <m3:M3Icon Kind="pencil-outline" Width="13" Height="13"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </Button>
-                        <Button x:Name="SessionExport" Style="{StaticResource SideIconButton}" Width="22" Height="20"
-                                Padding="2" Margin="2,0,0,0" Tag="{loc:Loc ai.sessions.export}" Click="OnExportSession">
-                            <m3:M3Icon Kind="export" Width="13" Height="13"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </Button>
                         <Button x:Name="SessionDelete" Style="{StaticResource SideIconButton}" Width="22" Height="20"
-                                Padding="2" Margin="2,0,0,0" Tag="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession">
+                                Padding="2" Tag="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession">
                             <m3:M3Icon Kind="delete-outline" Width="13" Height="13"
                                        HorizontalAlignment="Center" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Accent.Text}"/>
@@ -1051,12 +1063,17 @@
                 </Button>
                 <ListBox x:Name="SessionList" Margin="0,8,0,0" Background="Transparent" BorderThickness="0"
                          ItemsSource="{Binding Sessions}" ItemTemplate="{StaticResource AiSessionItemTemplate}"
-                         SelectionChanged="OnSessionSelected">
+                         SelectionChanged="OnSessionSelected"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="6,0"/>
                             <Setter Property="Margin" Value="0,2"/>
                             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            <!-- ⚠️ 必须 Stretch：ListBoxItem 的默认值是 Left，行会按内容量宽
+                                 （悬停时动作比读数宽 → 行宽忽宽忽窄；只有一条会话时右侧更明显地被缩掉）。
+                                 行是"列表里的一张卡"，宽度归列表，不归内容。 -->
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
@@ -1082,12 +1099,7 @@
                                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
                                                 <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource App.Accent.Container}"/>
                                             </Trigger>
-                                            <!-- 勾选态有**自己的一条边**（强调色描边），不与"选中"共用视觉：
-                                                 两件事长得一样的话，"我在看哪一个"和"我要删哪几个"就分不出来了 -->
-                                            <DataTrigger Binding="{Binding IsChecked}" Value="True">
-                                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
-                                                <Setter TargetName="Bd" Property="BorderThickness" Value="1.5"/>
-                                            </DataTrigger>
+                                            <!-- 勾选态已随批量操作一起退场（只留删除 / 重命名两件） -->
                                             <MultiTrigger>
                                                 <MultiTrigger.Conditions>
                                                     <Condition Property="IsSelected" Value="True"/>
@@ -1099,10 +1111,10 @@
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>
-                            <!-- 右键先选中该行（菜单动作作用于选中行），与行内动作按钮同一入口 -->
+                            <!-- 右键先选中该行（菜单动作作用于选中行） -->
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnSessionRowRightClick"/>
-                            <!-- Ctrl / Shift + 点击 = 勾选（批量操作目标集），不切"当前会话" -->
-                            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="OnSessionRowPreviewClick"/>
+                            <!-- 行级 Enter / Esc：编辑框没拿到焦点时的兜底出口（否则整行卡在编辑态） -->
+                            <EventSetter Event="PreviewKeyDown" Handler="OnSessionRowKeyDown"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ContextMenu>
@@ -1110,61 +1122,24 @@
                             <ContextMenu.Resources>
                                 <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
                             </ContextMenu.Resources>
+                            <!-- 只有删除与重命名两件（用户口径：只要求这两个，别的一律不加） -->
                             <MenuItem Header="{loc:Loc ai.sessions.rename}" Click="OnRenameSession"/>
-                            <MenuItem Header="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
                             <MenuItem Header="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession"/>
-                            <Separator/>
-                            <MenuItem Header="{loc:Loc ai.sessions.bulk.all}" Click="OnSelectAllSessions"/>
-                            <MenuItem Header="{loc:Loc ai.sessions.bulk.clear}" Click="OnClearSessionSelection"/>
-                            <MenuItem Header="{loc:Loc ai.sessions.bulk.delete}" Click="OnDeleteSelectedSessions"/>
                         </ContextMenu>
                     </ListBox.ContextMenu>
                 </ListBox>
-                <!-- 批量操作条：勾选了两条以上才出现（单条走行内按钮与右键，不摆一条只有一项的工具栏）。
-                     删除是不可逆的批量动作 → 文案里带条数，且只经右键「删除所选」这一条路径，不做顺手键。 -->
-                <Border DockPanel.Dock="Bottom" Background="{DynamicResource App.Surface.TintCard}"
-                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1" CornerRadius="10"
-                        Padding="8,5" Margin="0,8,0,0">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasSessionSelection}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <Grid>
-                        <TextBlock Text="{loc:Value SessionSelectionValue}" FontSize="12" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Primary}"/>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="BulkRenameButton" Style="{StaticResource SideIconButton}" Width="24" Height="22"
-                                    Padding="2" Tag="{loc:Loc ai.sessions.bulk.rename}" Click="OnBulkRenameSessions">
-                                <m3:M3Icon Kind="pencil-outline" Width="13" Height="13"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"/>
-                            </Button>
-                            <Button x:Name="BulkDeleteButton" Style="{StaticResource SideIconButton}" Width="24" Height="22"
-                                    Padding="2" Margin="4,0,0,0" Tag="{loc:Loc ai.sessions.bulk.delete}" Click="OnDeleteSelectedSessions">
-                                <m3:M3Icon Kind="delete-outline" Width="13" Height="13"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Accent.Text}"/>
-                            </Button>
-                            <Button x:Name="BulkClearButton" Style="{StaticResource SideIconButton}" Width="24" Height="22"
-                                    Padding="2" Margin="4,0,0,0" Tag="{loc:Loc ai.sessions.bulk.clear}" Click="OnClearSessionSelection">
-                                <m3:M3Icon Kind="close" Width="13" Height="13"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"/>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
             </DockPanel>
         </Border>
 
-        <!-- ===== 中栏：状态行 + 对话区（居中内容列）+ 输入区 ===== -->
+        <!-- ===== 中栏：导航轨槽 + 状态行 + 对话区（居中内容列）+ 输入区 =====
+             ⚠️ 导航轨的槽在**本层**（贴对话栏左缘），不在内容单元里：内容单元是 928 居中列，
+             轨一旦放进去就会被一起带到接近窗口中心（用户实测"都快占据中心了"）。
+             放到这一层后，状态行 / 对话区 / 输入区同在窄了一槽的那一列里继续对齐。 -->
         <Grid Grid.Column="1" Margin="16,10,16,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -1172,7 +1147,7 @@
             </Grid.RowDefinitions>
 
             <!-- 状态行：运行中才出现（左）；右端常驻右栏开关 -->
-            <Grid>
+            <Grid Grid.Column="1">
                 <StackPanel Margin="0,0,0,6">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -1232,66 +1207,86 @@
                 </Button>
             </Grid>
 
-            <!-- 对话区：内容单元（导航轨 48 + 时间线）居中；浮层声明在 ScrollViewer 之后（z 序）。
+            <!-- 对话区：内容单元（时间线）居中；浮层声明在 ScrollViewer 之后（z 序）。
                  宽度 = Stretch + MaxWidth 928（**不用 HorizontalAlignment=Center**：居中 + 内容自适应时，
-                 单元宽会跟着文字长度走，英文界面会整体变宽——见 WARNINGS 103）。 -->
-            <Grid Grid.Row="1" MaxWidth="928" HorizontalAlignment="Stretch">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="48"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+                 单元宽会跟着文字长度走，英文界面会整体变宽——见 WARNINGS 103）。
+                 导航轨**不在这一层**：它在下面单列占一槽、贴对话栏左缘。 -->
+            <Grid Grid.Column="1" Grid.Row="1" MaxWidth="928" HorizontalAlignment="Stretch">
+                <Grid Margin="8,0,8,0">
+                    <ScrollViewer x:Name="FeedScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Background="Transparent" ScrollChanged="OnFeedScrollChanged">
+                        <ItemsControl x:Name="FeedItems" ItemsSource="{Binding Feed}"
+                                      ItemTemplateSelector="{StaticResource AiFeedSelector}"/>
+                    </ScrollViewer>
 
-                <!-- 轮次导航轨：贴左边缘、垂直居中，每轮一枚圆头短横条；鼠标滑过形成"山峰"。
-                     ⚠️ 山峰只有横向在变（2.6 / 1.7 / 1.25 / 1，150ms 推移），不透明度只有两档
-                     （指到的那根 1，其余 0.58）；当前视口那一轮无悬浮时走 0.9 的深色，
-                     悬浮期间让位给山峰——这三条都照参照实现的口径。
-                     悬停弹出预览卡（用户说了什么 + 助手回了什么），点击定位到该轮。 -->
-                <ItemsControl x:Name="TurnRail" Grid.Column="0" VerticalAlignment="Center"
-                              HorizontalAlignment="Center" ItemsSource="{Binding Turns}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button x:Name="RailButton" Width="36" Height="10" Padding="0"
-                                    HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"
-                                    Cursor="Hand" FocusVisualStyle="{x:Null}" Click="OnRailClick"
-                                    MouseEnter="OnRailEnter" MouseLeave="OnRailLeave"
-                                    ToolTip="{loc:Value RailTipValue}">
-                                <Button.Template>
-                                    <ControlTemplate TargetType="Button">
-                                        <!-- 命中区是 36×10：条只占左侧（静止 12、峰 31.2），
-                                             余下的是"好按"的余量，不是可见形状。
-                                             IsCurrent 从按钮的数据上下文（该轮的分隔行）直接取，
-                                             不靠外层 DataTemplate 触发器——模板内的元素不在 DataTemplate 的
-                                             触发器目标命名域里，这是 WARNINGS 里同一类"命名域"坑。 -->
-                                        <Border Background="Transparent">
-                                            <local:RailBar x:Name="Bar" HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                           IsCurrent="{Binding IsActive, Mode=OneWay}"
-                                                           BarBrush="{DynamicResource App.Line.Outline}"
-                                                           AccentBrush="{DynamicResource App.Text.Primary}"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Button.Template>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                    <ItemsControl.Style>
-                        <Style TargetType="ItemsControl">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ShowRail}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ItemsControl.Style>
-                </ItemsControl>
+                    <!-- 空对话区不设占位卡：没有会话 / 空会话一律就是空白（引导卡与它的示例提示已退场；
+                         未配置由发送钮的可用性与模型下拉的空态文案承担）。 -->
+
+                    <!-- 回到最新（离开底部才出现；点了回底并恢复跟随；显隐由视图按滚动位置投影） -->
+                    <Button x:Name="BackToLatestButton" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                            Margin="0,0,0,10" Height="32" Width="32" Padding="0" Visibility="Collapsed"
+                            Style="{StaticResource TonalButton}" Tag="{loc:Loc ai.feed.backToLatest}"
+                            Click="OnBackToLatest">
+                        <m3:M3Icon Kind="arrow-down" Width="14" Height="14"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Button>
+                </Grid>
+            </Grid>
+
+            <!-- 轮次导航轨：贴对话栏左缘（槽内左侧 12px，与参照的 left-3 同口径）、垂直居中；
+                 每轮一枚圆头短横条，鼠标滑过形成"山峰"。
+                 ⚠️ 山峰只有横向在变（2.6 / 1.7 / 1.25 / 1，150ms 推移），不透明度只有两档
+                 （指到的那根 1，其余 0.58）；当前视口那一轮无悬浮时走 0.9 的深色，
+                 悬浮期间让位给山峰——这几条都照参照实现的口径。
+                 悬停弹出预览卡（用户说了什么 + 助手回了什么），点条或点卡都定位到该轮。 -->
+            <ItemsControl x:Name="TurnRail" Grid.Column="0" Grid.Row="1" VerticalAlignment="Center"
+                          HorizontalAlignment="Left" Margin="12,0,0,0" Panel.ZIndex="5" ItemsSource="{Binding Turns}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button x:Name="RailButton" Width="36" Height="10" Padding="0"
+                                HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"
+                                Cursor="Hand" FocusVisualStyle="{x:Null}" Click="OnRailClick"
+                                MouseEnter="OnRailEnter" MouseLeave="OnRailLeave"
+                                ToolTip="{loc:Value RailTipValue}">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <!-- 命中区是 36×10：条只占左侧（静止 12、峰 31.2），
+                                         余下的是"好按"的余量，不是可见形状。
+                                         IsCurrent 从按钮的数据上下文（该轮的分隔行）直接取，
+                                         不靠外层 DataTemplate 触发器——模板内的元素不在 DataTemplate 的
+                                         触发器目标命名域里，这是 WARNINGS 里同一类"命名域"坑。 -->
+                                    <Border Background="Transparent">
+                                        <local:RailBar x:Name="Bar" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       IsCurrent="{Binding IsActive, Mode=OneWay}"
+                                                       BarBrush="{DynamicResource App.Line.Outline}"
+                                                       AccentBrush="{DynamicResource App.Text.Primary}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+                <ItemsControl.Style>
+                    <Style TargetType="ItemsControl">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowRail}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Style>
+            </ItemsControl>
 
                 <!-- 导航轨悬停预览卡：只摆两段正文（用户说了什么 / 助手回了什么），不加标题行——
                      参照实现的卡里就是 <p> 用户 + <p> 助手，没有第三行。
-                     声明在 ScrollViewer 之后 → z 序在对话流之上，不会被消息盖住；
-                     不吃指针事件（IsHitTestVisible=False），免得卡自己把 MouseLeave 挡掉。 -->
+                     声明在 ScrollViewer 之后 → z 序在对话流之上，不会被消息盖住。
+                     **卡可命中、可点击**：悬停看到预览之后，点一下就跳到那一轮（鼠标进卡要能取消收起定时器）。 -->
                 <Popup x:Name="RailPreviewPopup" Placement="Right" AllowsTransparency="True" StaysOpen="True"
-                       PopupAnimation="Fade" IsHitTestVisible="False">
+                       PopupAnimation="Fade" Grid.ColumnSpan="2">
                     <Border x:Name="RailPreviewCard" Width="288" Margin="8,0,0,0" Padding="10"
+                            Cursor="Hand" MouseLeftButtonUp="OnRailPreviewClick"
+                            MouseEnter="OnRailPreviewEnter" MouseLeave="OnRailPreviewLeave"
                             Background="{DynamicResource App.Surface.Floating}"
                             BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1" CornerRadius="8">
                         <Border.Effect>
@@ -1334,29 +1329,8 @@
                     </Border>
                 </Popup>
 
-                <Grid Grid.Column="1" Margin="8,0,8,0">
-                    <ScrollViewer x:Name="FeedScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                                  Background="Transparent" ScrollChanged="OnFeedScrollChanged">
-                        <ItemsControl x:Name="FeedItems" ItemsSource="{Binding Feed}"
-                                      ItemTemplateSelector="{StaticResource AiFeedSelector}"/>
-                    </ScrollViewer>
-
-                    <!-- 空对话区不设占位卡：没有会话 / 空会话一律就是空白（引导卡与它的示例提示已退场；
-                         未配置由发送钮的可用性与模型下拉的空态文案承担）。 -->
-
-                    <!-- 回到最新（离开底部才出现；点了回底并恢复跟随；显隐由视图按滚动位置投影） -->
-                    <Button x:Name="BackToLatestButton" HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                            Margin="0,0,0,10" Height="32" Width="32" Padding="0" Visibility="Collapsed"
-                            Style="{StaticResource TonalButton}" Tag="{loc:Loc ai.feed.backToLatest}"
-                            Click="OnBackToLatest">
-                        <m3:M3Icon Kind="arrow-down" Width="14" Height="14"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Button>
-                </Grid>
-            </Grid>
-
             <!-- 输入区：页面底上的一张卡（技能条 / 编辑器 / 提及 / 输入框 / 工具行） -->
-            <Border x:Name="ComposerCard" Grid.Row="2" MaxWidth="928" HorizontalAlignment="Stretch"
+            <Border x:Name="ComposerCard" Grid.Column="1" Grid.Row="2" MaxWidth="928" HorizontalAlignment="Stretch"
                     Background="{DynamicResource App.Surface.Card}" BorderThickness="1"
                     BorderBrush="{DynamicResource App.Line.Variant}" CornerRadius="19" Padding="12" Margin="0,8,0,0">
                 <StackPanel>
@@ -1532,26 +1506,13 @@
                                  PreviewMouseLeftButtonUp="OnMentionCandidateClicked"/>
                     </Border>
 
-                    <!-- 输入框（占位提示用键；多行无边框） -->
+                    <!-- 输入框：多行无边框。**不摆占位提示**——"给 AI 派个活…（Enter 发送，Shift+Enter 换行）"
+                         是把显式约定写进界面噪音里：两条键位在快捷键总表里已有归属，空输入框自己就说明"该打字了"。 -->
                     <Grid>
                         <TextBox x:Name="ComposerBox" MinHeight="56" MaxHeight="200" TextWrapping="Wrap" AcceptsReturn="True"
                                  Text="{Binding ComposerText, UpdateSourceTrigger=PropertyChanged}"
                                  Background="Transparent" BorderThickness="0" Padding="0,4"
                                  Foreground="{DynamicResource App.Text.Primary}"/>
-                        <TextBlock x:Name="ComposerPlaceholder" Text="{loc:Loc ai.composer.placeholder}" FontSize="13"
-                                   Margin="2,8,0,0" VerticalAlignment="Top" IsHitTestVisible="False"
-                                   Foreground="{DynamicResource App.Text.Muted}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ShowComposerPlaceholder}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
                     </Grid>
 
                     <!-- 工具行：左 = @提及 / 技能编辑器 / 模式三段；右 = 用量环 / 模型下拉 / 发送·停止 -->
@@ -2144,7 +2105,7 @@
                     </ComboBox>
                     <Button x:Name="ExportAuditButton" Style="{StaticResource TonalButton}" Height="30"
                             Width="68" Padding="0" Margin="8,0,0,0"
-                            Content="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
+                            Content="{loc:Loc ai.sessions.export}" Click="OnExportAudit"/>
                 </StackPanel>
             </Grid>
         </Border>

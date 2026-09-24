@@ -19,11 +19,26 @@ public sealed partial class AiAssistant
     {
         var file = LoadForUndo(sessionId);
         var lastTurn = file.Turns.LastOrDefault();
-        var callIds = lastTurn is null
-            ? []
-            : CallIdsNewestFirst(file, change => string.Equals(change.TurnId, lastTurn.TurnId, StringComparison.Ordinal));
-        return UndoCallIdsAsync(sessionId, callIds, ct);
+        return lastTurn is null
+            ? UndoCallIdsAsync(sessionId, [], ct)
+            : UndoTurnCoreAsync(sessionId, file, lastTurn.TurnId, ct);
     }
+
+    /// <summary>
+    /// 撤销指定回合（「回溯」按钮的落点）。与 <see cref="UndoLastTurnAsync"/> 同一条实现路径，
+    /// 差别只有过滤条件——"这一轮"是同一个概念，不该有两份撤销代码。
+    /// </summary>
+    public Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
+        var file = LoadForUndo(sessionId);
+        return UndoTurnCoreAsync(sessionId, file, turnId, ct);
+    }
+
+    private Task<AiUndoResult> UndoTurnCoreAsync(string sessionId, AiSessionFile file, string turnId,
+        CancellationToken ct)
+        => UndoCallIdsAsync(sessionId,
+            CallIdsNewestFirst(file, change => string.Equals(change.TurnId, turnId, StringComparison.Ordinal)), ct);
 
     public Task<AiUndoResult> UndoSessionAsync(string sessionId, CancellationToken ct = default)
     {

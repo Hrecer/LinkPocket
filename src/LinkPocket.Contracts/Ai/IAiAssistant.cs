@@ -155,6 +155,14 @@ public interface IAiAssistant
     Task<AiUndoResult> UndoLastTurnAsync(string sessionId, CancellationToken ct = default);
 
     /// <summary>
+    /// 撤销**指定回合**的 AI 变更（「回溯」按钮的落点）：口径与 <see cref="UndoLastTurnAsync"/> 完全一致——
+    /// 只换过滤条件（该回合的归属键），仍然走引擎既有 <c>undo.undo</c> 逐条定点撤销，**不做第二条撤销路径**。
+    /// 回溯的不是"这一轮"而是"这一轮做过的所有操作"，所以它不裁剪对话历史，只回退数据面。
+    /// 回合在跑时拒绝（<c>LP.AI.011</c>）。
+    /// </summary>
+    Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default);
+
+    /// <summary>
     /// 撤销**本会话**的 AI 变更：按批次（归属键 = 工具调用 ID，一次批/宏 = 一条记录）分组**逐批退**，
     /// 新者先撤；口径与 <see cref="UndoLastTurnAsync"/> 完全一致——走引擎既有 <c>undo.undo</c> 定点撤销，
     /// **绝不做第二条撤销路径**；不在撤销栈里的如实跳过并计数，绝不给会失败的撤销。

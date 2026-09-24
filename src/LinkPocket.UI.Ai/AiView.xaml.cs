@@ -36,7 +36,7 @@ public partial class AiView : UserControl
     private double _storedPanelWidth = 286;
     private Button? _copiedButton;
     private AiFeedItem? _railHover;
-    private AiFeedItem? _pendingRailPreview;
+    private AiFeedItem? _railPreviewTarget;
     private bool _railHoverInitialized;
     private readonly DispatcherTimer _railPreviewOpenTimer;
     private readonly DispatcherTimer _railPreviewCloseTimer;
@@ -201,11 +201,17 @@ public partial class AiView : UserControl
     private void OnRailClick(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not AiFeedItem header) return;
+        JumpToTurn(header);
+        SetRailHover(header);   // 点完条还在鼠标下：预览卡留在原位，不闪一下再回来
+    }
+
+    /// <summary>滚动定位到某一轮的开头（条与预览卡共用一条路径：两个入口不许各写一份定位口径）。</summary>
+    private void JumpToTurn(AiFeedItem header)
+    {
         if (FeedItems.ItemContainerGenerator.ContainerFromItem(header) is not FrameworkElement container) return;
         var offset = container.TransformToAncestor(FeedScroll).Transform(new Point(0, 0)).Y;
-        _stickToBottom = false;
+        _stickToBottom = false;   // 手动跳转 = 停止吸底跟随，否则下一次内容增量会把人拽回底部
         FeedScroll.ScrollToVerticalOffset(FeedScroll.VerticalOffset + offset - 8);
-        SetRailHover(header);   // 点完条还在鼠标下：预览卡留在原位，不闪一下再回来
     }
 
     /// <summary>鼠标滑到某一根条上：整轨进入"山峰"态（按距离分档推移），并弹该轮的预览卡。</summary>
@@ -216,6 +222,20 @@ public partial class AiView : UserControl
     }
 
     private void OnRailLeave(object sender, MouseEventArgs e) => ScheduleRailPreviewClose();
+
+    /// <summary>鼠标进到预览卡上：取消收起（卡是可点目标，不该在"从条挪到卡"的路上消失）。</summary>
+    private void OnRailPreviewEnter(object sender, MouseEventArgs e) => _railPreviewCloseTimer.Stop();
+
+    private void OnRailPreviewLeave(object sender, MouseEventArgs e) => ScheduleRailPreviewClose();
+
+    /// <summary>点预览卡 = 跳到卡里那一轮（与点条同一条定位路径）。</summary>
+    private void OnRailPreviewClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_railPreviewTarget is not { } header) return;
+        e.Handled = true;
+        CloseRailPreview();
+        JumpToTurn(header);
+    }
 
     /// <summary>
     /// 山峰态 = 逐条按"与悬浮位置的距离"取档（0 峰 / 1 相邻 / 2 次相邻 / 其余静止），
@@ -228,6 +248,7 @@ public partial class AiView : UserControl
         var hoverIndex = _viewModel.Turns.IndexOf(header);
         if (hoverIndex < 0) return;
         _railHover = header;
+        _railPreviewTarget = header;
         var animate = _railHoverInitialized;   // 首次不做动画：从静止态"长出来"会像加载动画
         _railHoverInitialized = true;
 
@@ -244,23 +265,26 @@ public partial class AiView : UserControl
         _railPreviewOpenTimer.Stop();
         _railPreviewCloseTimer.Stop();
         _railPreviewOpenTimer.Start();
-        _pendingRailPreview = header;
     }
 
-    /// <summary>离开一根条：不立刻收卡（80ms 宽限，让"从条滑到卡"或"相邻条之间挪"不闪断）。</summary>
+    /// <summary>
+    /// 离开一根条 / 离开卡：不立刻收（留宽限让"从条滑到卡"或"相邻条之间挪"不闪断）。
+    /// ⚠️ 宽限期**长于**参照的 80ms：参照的卡由 Radix HoverCard 托管、指针进卡即算"还在里面"；
+    /// WPF 的 Popup 是另一个窗口，从条挪到卡要跨过那条缝，80ms 会把可点的卡在途中收掉。
+    /// 行为（指针停在哪一边都算悬浮）与参照一致，只是把"跨缝"这段时间补上。
+    /// </summary>
     private void ScheduleRailPreviewClose()
     {
         _railPreviewOpenTimer.Stop();
-        _pendingRailPreview = null;
         _railPreviewCloseTimer.Stop();
         _railPreviewCloseTimer.Start();
     }
 
     private void OpenRailPreview()
     {
-        if (_pendingRailPreview is null || RailPreviewPopup is null) return;
-        RailsPreviewPlacement(_pendingRailPreview);
-        RailPreviewPopup.DataContext = _pendingRailPreview;
+        if (_railPreviewTarget is null || RailPreviewPopup is null) return;
+        RailsPreviewPlacement(_railPreviewTarget);
+        RailPreviewPopup.DataContext = _railPreviewTarget;
         RailPreviewPopup.IsOpen = true;
     }
 
@@ -274,12 +298,12 @@ public partial class AiView : UserControl
         RailPreviewPopup.VerticalOffset = 0;
     }
 
-    /// <summary>真的收：全部回静止档，预览卡收起。</summary>
+    /// <summary>真的收：全部回静止档，预览卡收起（目标同时作废——卡都收了就没有可点的对象）。</summary>
     private void CloseRailPreview()
     {
         _railHover = null;
         _railHoverInitialized = false;
-        _pendingRailPreview = null;
+        _railPreviewTarget = null;
         if (_viewModel is not null)
             foreach (var header in _viewModel.Turns)
                 if (RailBarAt(header) is { } bar)
@@ -308,6 +332,22 @@ public partial class AiView : UserControl
             if (FindDescendant<T>(child) is { } nested) return nested;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 「回溯」这一轮：回退该轮全部操作 + 把该轮原话填回输入框等发送。
+    /// 不可逆的批量动作先确认（与删除同一套口径）；不可撤销的变更引擎会如实跳过并计数，
+    /// 所以文案说的是"回退做过的操作"，不承诺"什么都退得回来"。
+    /// </summary>
+    private async void OnRewindTurn(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem turn) return;
+        if (!ConfirmDialog.Show(Loc.T("ai.turn.rewind"), Loc.T("ai.turn.rewind.confirm"),
+                Loc.T("ai.turn.rewind"), "restore"))
+            return;
+        await _viewModel.RewindTurnAsync(turn);
+        ComposerBox.Focus();
     }
 
     /// <summary>折叠 / 展开一轮（只改显隐；折叠后条目不再占位，导航轨照旧可达）。</summary>
@@ -425,10 +465,14 @@ public partial class AiView : UserControl
         if ((sender as FrameworkElement)?.DataContext is AiEngineRow row) row.TogglePayload();
     }
 
-    private async void OnExportSession(object sender, RoutedEventArgs e) => await RunExportDialogAsync();
-
-    /// <summary>/export 斜杠命令的落点（导出格式沿用右栏格式下拉的当前选择）。</summary>
+    /// <summary>
+    /// 右栏「导出」（格式由旁边的下拉框选）与 <c>/export</c> 斜杠命令共用这一条路径。
+    /// ⚠️ 左栏会话行/右键菜单里的「导出」已退场：那个入口导出的是**当前会话**（不是右键那一行），
+    /// 且在草稿态（还没落盘）上必然报错——入口与语义都对不上，直接砍掉。
+    /// </summary>
     private async void OnExportRequested() => await RunExportDialogAsync();
+
+    private async void OnExportAudit(object sender, RoutedEventArgs e) => await RunExportDialogAsync();
 
     private async Task RunExportDialogAsync()
     {
@@ -468,49 +512,33 @@ public partial class AiView : UserControl
         ScrollFeedToEnd();
     }
 
-    /// <summary>右键先选中该行（菜单动作作用于选中行）——与行内动作按钮同一入口。</summary>
+    /// <summary>右键先选中该行（菜单动作作用于选中行）。</summary>
     private void OnSessionRowRightClick(object sender, MouseButtonEventArgs e)
     {
         if (_viewModel is null || sender is not ListBoxItem item) return;
         item.IsSelected = true;
-        // 右键落在已勾选的行上 = 对整批下手（勾选态已表达"要动哪几个"）；否则只作用这一行。
-        if (item.DataContext is AiSessionRow row && !row.IsChecked) _viewModel.ClearSessionSelection();
-        e.Handled = false;
     }
 
     /// <summary>
-    /// Ctrl / Shift + 点击 = 勾选（批量操作的目标集），**不改"当前会话"**；
-    /// 普通点击照旧切会话（交给 SelectionChanged）。把勾选键放在 PreviewMouseLeftButtonDown
-    /// 并置 Handled，是为了别让这次点击顺手把对话流也切走。
+    /// 行级 Enter / Esc。⚠️ 这是"重命名卡死"的兜底出口：编辑框的键处理挂在 TextBox 上，
+    /// 万一焦点没落进编辑框（模板刚实例化 / 别处抢了焦点），那条路径就永远不会被走到，
+    /// 于是整行停在编辑态、Esc 也救不回来。挂到行容器上，等焦点落在行内任何一处都收得回来。
     /// </summary>
-    private void OnSessionRowPreviewClick(object sender, MouseButtonEventArgs e)
+    private async void OnSessionRowKeyDown(object sender, KeyEventArgs e)
     {
-        if (_viewModel is null || sender is not ListBoxItem item || item.DataContext is not AiSessionRow row) return;
-        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
-        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
-        if (!ctrl && !shift) return;
-        e.Handled = true;
-        if (shift && SessionList.SelectedItem is AiSessionRow anchor) _viewModel.CheckSessionRange(anchor, row);
-        else _viewModel.ToggleSessionChecked(row);
+        if (_viewModel is null || !_viewModel.IsRenamingSession) return;
+        if (sender is not ListBoxItem { DataContext: AiSessionRow { IsRenaming: true } }) return;
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await _viewModel.CommitRenameAsync();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            _viewModel.CancelRename();
+        }
     }
-
-    private async void OnDeleteSelectedSessions(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        var count = _viewModel.CheckedSessions.Count;
-        if (count == 0) return;
-        if (!ConfirmDialog.Show(Loc.T("ai.sessions.bulk.delete"), Loc.T("ai.sessions.bulk.delete.confirm", count),
-                Loc.T("ai.sessions.bulk.delete"), "delete-outline"))
-            return;
-        await _viewModel.DeleteCheckedSessionsAsync();
-        SelectActiveInList();
-    }
-
-    private void OnSelectAllSessions(object sender, RoutedEventArgs e) => _viewModel?.CheckAllSessions();
-
-    private void OnClearSessionSelection(object sender, RoutedEventArgs e) => _viewModel?.ClearSessionSelection();
-
-    private void OnBulkRenameSessions(object sender, RoutedEventArgs e) => _viewModel?.BeginBulkRename();
 
     // ── 右栏：引擎审计分页 ────────────────────────────────────
 
@@ -529,15 +557,25 @@ public partial class AiView : UserControl
     private async void OnSessionSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_viewModel is null || SessionList.SelectedItem is not AiSessionRow row) return;
+        // 切到别的会话 = 收掉还没提交的重命名（内容已经换人了，旧行的编辑框不该跟着飘过去）
+        if (_viewModel.IsRenamingSession && !row.IsRenaming) _viewModel.CancelRename();
         if (row.SessionId == _viewModel.ActiveSessionId) return;
         await _viewModel.OpenSessionAsync(row.SessionId);
         _stickToBottom = true;
         ScrollFeedToEnd();
     }
 
+    /// <summary>
+    /// 取本条动作要作用的那一行：**优先看发起者的数据上下文**，取不到才回落到选中行。
+    /// ⚠️ 只用 <c>SelectedItem</c> 会删错人：点行内删除钮不会改选中态，悬停 B 点删除而 A 还选着，
+    /// 删掉的就是 A。右键菜单那条路走的是"先选中再开菜单"，两条入口因此都落在同一行上。
+    /// </summary>
+    private AiSessionRow? SessionOf(object sender)
+        => (sender as FrameworkElement)?.DataContext as AiSessionRow ?? SessionList.SelectedItem as AiSessionRow;
+
     private async void OnDeleteSession(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || SessionList.SelectedItem is not AiSessionRow row) return;
+        if (_viewModel is null || SessionOf(sender) is not { } row) return;
         if (!ConfirmDialog.Show(Loc.T("ai.sessions.delete"), Loc.T("ai.sessions.delete.confirm"),
                 Loc.T("ai.sessions.delete"), "delete-outline"))
             return;
@@ -723,15 +761,6 @@ public partial class AiView : UserControl
     {
         if (_viewModel is null) return;
         await _viewModel.OpenSkillEditorAsync(null);
-        SkillNameBox.Focus();
-    }
-
-    /// <summary>助手消息「存为技能」：把该条正文预填进编辑器（技能 = 可再用的一段提示）。</summary>
-    private async void OnSaveMessageAsSkill(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem item) return;
-        await _viewModel.OpenSkillEditorAsync(null, item.Text);
         SkillNameBox.Focus();
     }
 

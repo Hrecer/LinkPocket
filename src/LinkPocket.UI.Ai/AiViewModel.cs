@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
@@ -79,13 +79,9 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!Set(ref _composerText, value, nameof(ComposerText))) return;
             Raise(nameof(CanSend));   // 可用性同帧跟上（含"/"开头的斜杠命令在未配置时也可发）
-            Raise(nameof(ShowComposerPlaceholder));
             CommandRefresh.Request();
         }
     }
-
-    /// <summary>输入框占位提示的显隐（空文本才显示；WPF 的 TextBox 没有原生占位符）。</summary>
-    public bool ShowComposerPlaceholder => _composerText.Length == 0;
 
     /// <summary>状态行文案键（取词在视图侧）。</summary>
     public string StatusKey
@@ -332,92 +328,6 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         {
             LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
         }
-    }
-
-    // ── 批量操作（删除 / 重命名 / 全选）：勾选态与"正在看哪个会话"分开 ──────────────
-    //
-    // 为什么不让 ListBox 的 SelectionMode=Extended 直接承担：选中态在本页是"当前会话"，
-    // 它牵着对话流、右栏台账、审批焦点一起换。把"选了三条"复用到这个状态上，等于
-    // 顺手点了三条会话看就变成顺手对三条会话下手。所以勾选是独立的一层。
-
-    /// <summary>已勾选的会话（按清单顺序，不是点击顺序）。</summary>
-    public IReadOnlyList<AiSessionRow> CheckedSessions => Sessions.Where(s => s.IsChecked).ToArray();
-
-    /// <summary>批量操作条是否露面（两条起：单条走行内按钮与右键，不摆一条只有一项的工具栏）。</summary>
-    public bool HasSessionSelection => Sessions.Count(s => s.IsChecked) > 1;
-
-    /// <summary>批量操作条的读数（"已选 N 个会话"；含变量的整句走键）。</summary>
-    public LocValue SessionSelectionValue => Loc.K("ai.sessions.bulk.count", Sessions.Count(s => s.IsChecked));
-
-    /// <summary>勾选 / 取消一条（Ctrl + 点击的语义：不改"当前会话"）。</summary>
-    public void ToggleSessionChecked(AiSessionRow session)
-    {
-        session.IsChecked = !session.IsChecked;
-        RaiseSessionSelection();
-    }
-
-    /// <summary>勾选 / 取消从某一条到某一条之间的一段（Shift + 点击的语义）。</summary>
-    public void CheckSessionRange(AiSessionRow from, AiSessionRow to)
-    {
-        var start = Sessions.IndexOf(from);
-        var end = Sessions.IndexOf(to);
-        if (start < 0 || end < 0) return;
-        if (start > end) (start, end) = (end, start);
-        for (var i = start; i <= end; i++) Sessions[i].IsChecked = true;
-        RaiseSessionSelection();
-    }
-
-    public void CheckAllSessions()
-    {
-        foreach (var session in Sessions) session.IsChecked = true;
-        RaiseSessionSelection();
-    }
-
-    public void ClearSessionSelection()
-    {
-        foreach (var session in Sessions) session.IsChecked = false;
-        RaiseSessionSelection();
-    }
-
-    /// <summary>
-    /// 批量删除。逐条走同一条引擎删除路径（一条失败不吞其余），删完把"当前会话被删掉"
-    /// 这件事交给单片删除的那段逻辑收尾（切到清单第一条 / 回到空态）。
-    /// </summary>
-    public async Task DeleteCheckedSessionsAsync()
-    {
-        var targets = CheckedSessions;
-        if (targets.Count == 0) return;
-        var activeWasDeleted = false;
-        foreach (var session in targets)
-        {
-            if (session.SessionId == _activeSessionId) activeWasDeleted = true;
-            try
-            {
-                await _assistant.DeleteSessionAsync(session.SessionId).ConfigureAwait(true);
-                Sessions.Remove(session);
-            }
-            catch (AiException ex)
-            {
-                LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
-            }
-        }
-        RaiseSessionSelection();
-        if (!activeWasDeleted) return;
-        if (Sessions.FirstOrDefault() is { } next) await OpenSessionAsync(next.SessionId).ConfigureAwait(true);
-        else ClearConversation();
-    }
-
-    /// <summary>批量重命名：命中每条会话的同一处就地编辑路径（重命名一条提交一次）。</summary>
-    public void BeginBulkRename()
-    {
-        if (CheckedSessions.FirstOrDefault() is { } first) BeginRename(first);
-    }
-
-    private void RaiseSessionSelection()
-    {
-        Raise(nameof(CheckedSessions));
-        Raise(nameof(HasSessionSelection));
-        Raise(nameof(SessionSelectionValue));
     }
 
     /// <summary>导出当前会话（缺省 Markdown；CSV = 台账逐条、JSON = 完整会话文件）。</summary>
