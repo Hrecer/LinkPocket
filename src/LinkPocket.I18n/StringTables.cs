@@ -756,7 +756,7 @@ public static class StringTables
         new StringRow("ai.hint.selectModel", "请先启用一个可用模型", "Enable an available model first."),
         new StringRow("ai.hint.openSettings", "去设置 AI 服务", "Open AI service settings"),
         new StringRow("ai.audit.tab.turn", "本轮", "Turn"),
-        new StringRow("ai.audit.tab.session", "本会话", "Session"),
+        new StringRow("ai.audit.tab.session", "会话", "Session"),   // 冻结段 58 = 2 字短签（全名在 ToolTip「本会话变更」；页签 4 同款先例：审计）
         new StringRow("ai.audit.tab.approvals", "审批", "Approval"),
         new StringRow("ai.audit.tab.engine", "审计", "Engine"),
         new StringRow("ai.audit.engine", "引擎审计", "Engine audit"),
@@ -783,6 +783,8 @@ public static class StringTables
         new StringRow("ai.diff.bool.true", "是", "yes"),
         new StringRow("ai.diff.bool.false", "否", "no"),
         new StringRow("ai.diff.source.entityOnly", "仅实体级", "entity level only"),
+        new StringRow("ai.diff.source.reconciled", "AI 对账", "AI reconciled"),
+        new StringRow("ai.diff.reconcile.mismatch", "引擎与对账不一致", "engine/reconcile mismatch"),
         new StringRow("ai.diff.truncated", "另有 {0} 项未列出", "{0} more not listed"),
         new StringRow("ai.field.url", "地址", "URL"),
         new StringRow("ai.field.title", "标题", "Title"),

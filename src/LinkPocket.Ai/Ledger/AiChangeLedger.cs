@@ -7,7 +7,9 @@ namespace LinkPocket.Ai;
 /// 变更台账（**唯一实现**）：把一次工具调用的引擎结果转成逐条变更记录。
 ///
 /// <para><b>粒度优先级</b>（AI-ASSISTANT §7.1）：引擎字段级 diff = 权威（分组到实体，Source=EngineDiff）；
-/// 只在 touched 里、没有 diff 的实体 = 兜底（Source=EntityOnly，界面如实标注"仅实体级"）。</para>
+/// 只在 touched 里、没有 diff 的实体 = 兜底（Source=EntityOnly，界面如实标注"仅实体级"）；
+/// <b>AI 对账有观测字段的实体 → Source=Reconciled</b>（引擎 touched 无 diff 的兜底升级），
+/// 引擎 diff 与对账不一致 → <b>只标注</b>（ReconcileMismatch + 界面提示，绝不改写引擎字段）。</para>
 ///
 /// <para><b>名称/路径在变更发生时刻解析</b>：台账记的是当时的事实——实体后来被改名/删除不改写历史。
 /// 解析用两次引擎查询（<c>folders.tree</c> 一次 + <c>links.query</c> 一次），失败只降级为"没有名称"
@@ -28,9 +30,11 @@ internal sealed class AiChangeLedger(EngineClient client, CallerRef caller)
     };
 
     /// <summary>从一次工具调用的结果产出台账条目；<paramref name="maxChanges"/> 之外的条目丢弃并如实标注截断。
-    /// <paramref name="nextSeq"/> 给出会话级序号（条目按时间线排序的唯一依据）。</summary>
+    /// <paramref name="nextSeq"/> 给出会话级序号（条目按时间线排序的唯一依据）；
+    /// <paramref name="reconcile"/> = AI 对账结论（功能书 §7.1：兜底升 Reconciled、不一致只标注不改写）。</summary>
     public async Task<List<AiChange>> BuildAsync(string turnId, string callId, string command,
-        CommandResult<JsonElement> result, int maxChanges, bool undoable, Func<int> nextSeq, CancellationToken ct)
+        CommandResult<JsonElement> result, int maxChanges, bool undoable, Func<int> nextSeq, CancellationToken ct,
+        ReconcileOutcome? reconcile = null)
     {
         if (result.Changes is not { } changeSet) return [];
         var entries = CollectEntities(changeSet);
@@ -47,6 +51,20 @@ internal sealed class AiChangeLedger(EngineClient client, CallerRef caller)
             var entry = entries[i];
             var kind = ClassifyChange(command);
             var identity = IdentityOf(names, entry);
+
+            // 对账介入（只按实体键取，找不到就不介入——对账缺席 = 原口径）：
+            // 引擎有 diff → 字段以引擎为准，仅标注不一致；引擎 touched 无 diff 且对账有观测 → Reconciled 兜底。
+            var key = AiReconciler.Key(entry.Type, entry.Id);
+            var fields = entry.Fields;
+            var source = fields is not null ? AiChangeSource.EngineDiff : AiChangeSource.EntityOnly;
+            var mismatch = reconcile?.Mismatched.Contains(key) == true;
+            if (fields is null && reconcile is not null
+                && reconcile.Reconciled.TryGetValue(key, out var reconciledFields) && reconciledFields.Count > 0)
+            {
+                fields = reconciledFields;
+                source = AiChangeSource.Reconciled;
+            }
+
             changes.Add(new AiChange(
                 ChangeId: $"d-{Guid.NewGuid():N}",
                 Seq: nextSeq(),
@@ -59,16 +77,17 @@ internal sealed class AiChangeLedger(EngineClient client, CallerRef caller)
                 EntityName: identity.Name,
                 EntityPath: identity.Path,
                 EntityExists: ResolveExistence(entry, kind, identity),
-                Fields: entry.Fields,
+                Fields: fields,
                 Outcome: AiChangeOutcome.Applied,
                 ErrorCode: null,
                 Undoable: undoable,
-                Source: entry.Fields is null ? AiChangeSource.EntityOnly : AiChangeSource.EngineDiff,
+                Source: source,
                 Truncated: omitted > 0 && i == entries.Count - 1,
                 Omitted: omitted > 0 && i == entries.Count - 1 ? omitted : 0,
                 At: now,
                 CorrelationId: null,
-                BatchId: null));
+                BatchId: null,
+                ReconcileMismatch: mismatch));
         }
 
         if (omitted > 0)

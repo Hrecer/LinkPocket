@@ -6,6 +6,97 @@
              xmlns:local="clr-namespace:LinkPocket.UI.Ai"
              Background="{DynamicResource App.Surface.Base}">
     <UserControl.Resources>
+        <!-- ⚠️ 模板必须**先定义后引用**：DataTemplate 内嵌的 StaticResource 引用前向键（键定义在引用之后）
+             时解析被推迟到运行期、且找不到同字典的兄弟键 → 首次渲染直接 XamlParseException（审批卡/工具卡
+             都会炸掉整个对话流）。P3+-2 探针 ai 套件首渲即红后改为本顺序；新增模板一律放在引用者之前。
+             探针的「模板可独立实例化」读数钉住这条不变量（见 WARNINGS 134）。 -->
+        <!-- 字段级 diff 的一行：字段名走键；值里字符串 = 用户数据原样（长值截断到一行 + 悬浮看全文）。
+             冻结宽度口径（中文基线）：字段名 56 = 4 字 × 11pt（44px）+ 余量；
+             值格 74 = 可用宽（286 − 14×2 − 项内距）下"旧 → 新"三段并列的最长可读宽。 -->
+        <DataTemplate x:Key="AiFieldRowTemplate">
+            <StackPanel Orientation="Horizontal" Margin="0,1">
+                <TextBlock Text="{loc:Value FieldName}" FontSize="11" Width="56" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                <TextBlock Text="{loc:Value Before}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
+                           ToolTip="{loc:Value Before}" Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="→" FontSize="11" Margin="4,0" Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="{loc:Value After}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
+                           ToolTip="{loc:Value After}" Foreground="{DynamicResource App.Text.Primary}"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- 台账一行（对话流内联变更卡与右栏共用同一份模板）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
+             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。 -->
+        <DataTemplate x:Key="AiChangeRowTemplate">
+            <StackPanel Margin="0,3">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey KindKey}" FontSize="12" Foreground="{DynamicResource App.Accent.Text}"/>
+                    <TextBlock Text="{Binding EntityLabel}" FontSize="12" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.Text.Primary}"/>
+                </StackPanel>
+                <TextBlock Text="{loc:Value PathValue}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="{Binding EntitySuffix}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Muted}"/>
+                <ItemsControl ItemsSource="{Binding VisibleFields}" ItemTemplate="{StaticResource AiFieldRowTemplate}"/>
+                <Button Height="24" Padding="8,0" FontSize="11"
+                        HorizontalAlignment="Left" Margin="0,2,0,0" Content="{loc:LocKey ExpandKey}"
+                        Click="OnToggleChangeExpand">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CanExpand}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                    <TextBlock Text="{loc:LocKey SourceKey}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSourceNote}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <!-- 对账与引擎 diff 不一致（功能书 §7.1：只标注不改写事实）——与 SourceKey 同带、独立可见性 -->
+                    <TextBlock Text="{loc:LocKey MismatchKey}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasMismatch}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Text="{loc:Value TruncatedValue}" FontSize="11" Foreground="{DynamicResource App.Accent.Text}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTruncated}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
         <!-- 对话流模板（按 Kind 选择）；文案一律走键，用户数据 / 模型输出 / 机器面标识符原样显示 -->
         <DataTemplate x:Key="AiUserTemplate">
             <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="18" Padding="14,10" Margin="60,6,0,6" HorizontalAlignment="Right">
@@ -46,6 +137,60 @@
                     </StackPanel>
                 </StackPanel>
             </Border>
+        </DataTemplate>
+        <!-- 批 / 宏审批卡的一行步骤 -->
+        <DataTemplate x:Key="AiApprovalStepTemplate">
+            <StackPanel Margin="0,2">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Value IndexLabel}" FontSize="11" FontWeight="SemiBold"
+                               Foreground="{DynamicResource App.Text.OnContainer}"/>
+                    <TextBlock Text="{Binding Command}" FontSize="11" Margin="6,0,0,0"
+                               Foreground="{DynamicResource App.Text.OnContainer}"/>
+                    <TextBlock Text="{loc:Loc ai.approve.destructive}" FontSize="11" Margin="6,0,0,0"
+                               Foreground="{DynamicResource App.Text.OnContainer}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDestructive}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Value TargetValue}" FontSize="11"
+                               Foreground="{DynamicResource App.Text.OnContainer}"/>
+                    <TextBlock Text="{loc:Loc ai.approve.steps.onError}" FontSize="11" Margin="6,0,0,0"
+                               Foreground="{DynamicResource App.Text.OnContainer}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasOnError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Text="{loc:Value OnErrorValue}" FontSize="11" Margin="4,0,0,0"
+                               Foreground="{DynamicResource App.Text.OnContainer}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasOnError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
         </DataTemplate>
         <!-- 审批卡（功能书 §8.2）：做什么（本地化动作短语 + 机器面命令名）/ 动哪些对象（名称·数量·路径）/
              影响预览（引擎给的或如实说明无法预览）/ 批的逐步骤影响 / 「会话允许」将记住的作用域 /
@@ -213,60 +358,6 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
-        <!-- 批 / 宏审批卡的一行步骤 -->
-        <DataTemplate x:Key="AiApprovalStepTemplate">
-            <StackPanel Margin="0,2">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:Value IndexLabel}" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource App.Text.OnContainer}"/>
-                    <TextBlock Text="{Binding Command}" FontSize="11" Margin="6,0,0,0"
-                               Foreground="{DynamicResource App.Text.OnContainer}"/>
-                    <TextBlock Text="{loc:Loc ai.approve.destructive}" FontSize="11" Margin="6,0,0,0"
-                               Foreground="{DynamicResource App.Text.OnContainer}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsDestructive}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:Value TargetValue}" FontSize="11"
-                               Foreground="{DynamicResource App.Text.OnContainer}"/>
-                    <TextBlock Text="{loc:Loc ai.approve.steps.onError}" FontSize="11" Margin="6,0,0,0"
-                               Foreground="{DynamicResource App.Text.OnContainer}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasOnError}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{loc:Value OnErrorValue}" FontSize="11" Margin="4,0,0,0"
-                               Foreground="{DynamicResource App.Text.OnContainer}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasOnError}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-            </StackPanel>
-        </DataTemplate>
         <DataTemplate x:Key="AiNoticeTemplate">
             <TextBlock Text="{loc:Value NoticeValue}" Margin="0,4,60,4" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
         </DataTemplate>
@@ -277,79 +368,6 @@
                                       ApprovalTemplate="{StaticResource AiApprovalTemplate}"
                                       NoticeTemplate="{StaticResource AiNoticeTemplate}"/>
 
-        <!-- 字段级 diff 的一行：字段名走键；值里字符串 = 用户数据原样（长值截断到一行 + 悬浮看全文）。
-             冻结宽度口径（中文基线）：字段名 56 = 4 字 × 11pt（44px）+ 余量；
-             值格 74 = 可用宽（286 − 14×2 − 项内距）下"旧 → 新"三段并列的最长可读宽。 -->
-        <DataTemplate x:Key="AiFieldRowTemplate">
-            <StackPanel Orientation="Horizontal" Margin="0,1">
-                <TextBlock Text="{loc:Value FieldName}" FontSize="11" Width="56" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource App.Text.Secondary}"/>
-                <TextBlock Text="{loc:Value Before}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
-                           ToolTip="{loc:Value Before}" Foreground="{DynamicResource App.Text.Muted}"/>
-                <TextBlock Text="→" FontSize="11" Margin="4,0" Foreground="{DynamicResource App.Text.Muted}"/>
-                <TextBlock Text="{loc:Value After}" FontSize="11" Width="74" TextTrimming="CharacterEllipsis"
-                           ToolTip="{loc:Value After}" Foreground="{DynamicResource App.Text.Primary}"/>
-            </StackPanel>
-        </DataTemplate>
-
-        <!-- 台账一行（对话流内联变更卡与右栏共用同一份模板）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
-             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。 -->
-        <DataTemplate x:Key="AiChangeRowTemplate">
-            <StackPanel Margin="0,3">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:LocKey KindKey}" FontSize="12" Foreground="{DynamicResource App.Accent.Text}"/>
-                    <TextBlock Text="{Binding EntityLabel}" FontSize="12" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                </StackPanel>
-                <TextBlock Text="{loc:Value PathValue}" FontSize="11" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource App.Text.Muted}"/>
-                <TextBlock Text="{Binding EntitySuffix}" FontSize="11" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource App.Text.Muted}"/>
-                <ItemsControl ItemsSource="{Binding VisibleFields}" ItemTemplate="{StaticResource AiFieldRowTemplate}"/>
-                <Button Height="24" Padding="8,0" FontSize="11"
-                        HorizontalAlignment="Left" Margin="0,2,0,0" Content="{loc:LocKey ExpandKey}"
-                        Click="OnToggleChangeExpand">
-                    <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding CanExpand}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                    <TextBlock Text="{loc:LocKey SourceKey}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Accent.Text}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasSourceNote}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <TextBlock Text="{loc:Value TruncatedValue}" FontSize="11" Foreground="{DynamicResource App.Accent.Text}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsTruncated}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
-        </DataTemplate>
 
         <!-- 引擎审计一行：命令/结果/耗时/干跑与嵌套标记是机器面原样；时间走时钟投影。 -->
         <DataTemplate x:Key="AiEngineRowTemplate">
@@ -804,9 +822,12 @@
                                Foreground="{DynamicResource App.Text.Secondary}"/>
                 </StackPanel>
 
-                <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话） -->
+                <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话）。
+                     段宽算式（中文基线实测，WARNINGS 116）：最紧文案「Markdown（人读）」109.6 + 下拉框
+                     图标与箭头占位 26 ⇒ 内容区需 ≥135.6 → 取 140（英文 Markdown (readable) 113.1 同宽放下）；
+                     118 是六页时代未量 AI 页留下的错格，P3+-2 纳入度量首跑即红。 -->
                 <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,8,0,0">
-                    <ComboBox x:Name="ExportFormatBox" Width="118" Height="30" SelectedIndex="0">
+                    <ComboBox x:Name="ExportFormatBox" Width="140" Height="30" SelectedIndex="0">
                         <ComboBoxItem Content="{loc:Loc ai.export.markdown}"/>
                         <ComboBoxItem Content="{loc:Loc ai.export.csv}"/>
                         <ComboBoxItem Content="{loc:Loc ai.export.json}"/>

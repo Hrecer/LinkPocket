@@ -87,7 +87,9 @@ public enum AiChangeSource
 /// <summary>字段级差异（before/after 是引擎原始值，界面负责格式化显示）。</summary>
 public sealed record AiFieldChange(string Field, JsonElement? Before, JsonElement? After);
 
-/// <summary>台账条目：一条变更 = 一个实体的影响（创建 / 修改 / 移动 / 删除 / 还原…）。</summary>
+/// <summary>台账条目：一条变更 = 一个实体的影响（创建 / 修改 / 移动 / 删除 / 还原…）。
+/// <paramref name="ReconcileMismatch"/> = AI 对账与引擎 diff 不一致的**如实标注**
+/// （功能书 §7.1：只告警标注、不改写引擎事实——引擎 diff 仍是权威）。</summary>
 public sealed record AiChange(
     string ChangeId,
     int Seq,
@@ -109,7 +111,8 @@ public sealed record AiChange(
     int Omitted,
     DateTimeOffset At,
     string? CorrelationId,
-    string? BatchId);
+    string? BatchId,
+    bool ReconcileMismatch = false);
 
 /// <summary>审批决定四档（界面默认焦点落在「拒绝」）。</summary>
 public enum AiApprovalDecision

@@ -323,6 +323,15 @@ public sealed partial class AiAssistant
             WriteFreezeChanged?.Invoke();
         }
 
+        // 对账前快照（功能书 §7.1 第三来源）：白名单写命令在**执行前**读一次目标快照；
+        // 快照读失败只降级（对账缺席 = 原口径），绝不让回合失败。非白名单命令零开销。
+        var argsForReconcile = ParseDataOrEmpty(request.ArgumentsJson);
+        var reconcileBefore = AiReconciler.IsWhitelisted(request.Name)
+            ? await new AiReconciler(_client, new CallerRef(CallerKind.Agent, null))
+                .CaptureBeforeAsync(request.Name, argsForReconcile, TurnCorrelation(run.TurnId), run.Cts.Token)
+                .ConfigureAwait(false)
+            : null;
+
         var stopwatch = Stopwatch.StartNew();
         UpdateCall(file, call, c => c with { State = AiToolCallState.Running });
         try
@@ -359,13 +368,27 @@ public sealed partial class AiAssistant
             var result = await ExecuteWithConfirmAsync().ConfigureAwait(false);
             stopwatch.Stop();
 
+            // 对账（功能书 §7.1）：执行后再读一次快照 → 自算字段 diff 并与引擎 diff 比对。
+            // 引擎 diff 仍是权威：不一致只告警标注（ai.ledger warn + 台账 ReconcileMismatch），不改写事实。
+            ReconcileOutcome? reconcile = null;
+            if (reconcileBefore is not null)
+            {
+                var reconcileAfter = await new AiReconciler(_client, new CallerRef(CallerKind.Agent, null))
+                    .CaptureAfterAsync(request.Name, argsForReconcile,
+                        result.Data.ValueKind == JsonValueKind.Undefined ? null : result.Data,
+                        TurnCorrelation(run.TurnId), run.Cts.Token)
+                    .ConfigureAwait(false);
+                if (reconcileAfter is not null)
+                    reconcile = AiReconciler.Compute(request.Name, reconcileBefore, reconcileAfter, result.Changes);
+            }
+
             // 台账：引擎字段级 diff 优先（名称/路径按"变更发生时刻"解析）；可撤销性以引擎撤销栈为准
             var seq = NextSeq(file);
             var undoable = await CheckUndoableAsync(descriptor, call.CallId, engineSession, run.Cts.Token)
                 .ConfigureAwait(false);
             var changes = await new AiChangeLedger(_client, new CallerRef(CallerKind.Agent, engineSession.SessionId))
                 .BuildAsync(run.TurnId, call.CallId, request.Name, result, preferences.MaxChangesPerTurn + 1,
-                    undoable, () => seq++, run.Cts.Token).ConfigureAwait(false);
+                    undoable, () => seq++, run.Cts.Token, reconcile).ConfigureAwait(false);
 
             var resultJson = result.Data.ValueKind == JsonValueKind.Undefined ? "{}" : result.Data.GetRawText();
             var inline = resultJson.Length <= AiArtifactStore.InlineLimitChars

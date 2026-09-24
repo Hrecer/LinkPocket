@@ -401,9 +401,18 @@ public sealed class AiChangeRow : INotifyPropertyChanged
     /// <summary>展开 / 收起的按钮文案键。</summary>
     public string ExpandKey => IsExpanded ? "ai.diff.collapse" : "ai.diff.expand";
 
-    /// <summary>粒度来源标注：只有"仅实体级"需要如实标注（引擎 diff 是默认口径）。</summary>
-    public string? SourceKey => Change.Source == AiChangeSource.EntityOnly ? "ai.diff.source.entityOnly" : null;
+    /// <summary>粒度来源标注：只有"仅实体级 / AI 对账"需要如实标注（引擎 diff 是默认口径）。</summary>
+    public string? SourceKey => Change.Source switch
+    {
+        AiChangeSource.EntityOnly => "ai.diff.source.entityOnly",
+        AiChangeSource.Reconciled => "ai.diff.source.reconciled",
+        _ => null,
+    };
     public bool HasSourceNote => SourceKey is not null;
+
+    /// <summary>对账与引擎 diff 不一致的标注（功能书 §7.1：只标注、不改写引擎事实）。</summary>
+    public string? MismatchKey => Change.ReconcileMismatch ? "ai.diff.reconcile.mismatch" : null;
+    public bool HasMismatch => Change.ReconcileMismatch;
 
     /// <summary>上游截断如实标注（"另有 N 项未列出"）。</summary>
     public LocValue TruncatedValue => Change.Truncated
