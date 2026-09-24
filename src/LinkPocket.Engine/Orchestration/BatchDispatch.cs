@@ -30,16 +30,26 @@ internal static class BatchDispatch
         return Adapt<T>(report);
     }
 
-    private static async Task<object> RunAsync(IBatchEngine batch, string command, JsonElement args,
+    private static async Task<object?> RunAsync(IBatchEngine batch, string command, JsonElement args,
         CallOptions? options, CancellationToken ct)
         => command switch
         {
             "batch.run" => await batch.RunAsync(ParseScript(Element(args, "script")), options, ct).ConfigureAwait(false),
             "batch.dry_run" => await batch.DryRunAsync(ParseScript(Element(args, "script")), ct).ConfigureAwait(false),
-            _ => batch.GetStatus(String(args, "batch_id"))
-                ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
-                    $"batch not found: {String(args, "batch_id")}")),
+            _ => Status(batch, args),
         };
+
+    /// <summary>状态读面：给了 <c>batch_id</c> = 精确读（不存在如实报 <c>ENTITY_NOT_FOUND</c>）；
+    /// 省略 = 读**在飞批**（空闲 → null，不是错误——"现在没有批在跑"是合法答案）。</summary>
+    private static BatchStatus? Status(IBatchEngine batch, JsonElement args)
+    {
+        if (args.ValueKind == JsonValueKind.Object && args.TryGetProperty("batch_id", out var value)
+            && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString()))
+            return batch.GetStatus(value.GetString()!)
+                ?? throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
+                    $"batch not found: {value.GetString()}"));
+        return batch.CurrentStatus;
+    }
 
     /// <summary>批脚本解析（snake_case + 枚举字符串；wire 与引擎入口共用）。</summary>
     public static BatchScript ParseScript(JsonElement scriptEl)
@@ -55,17 +65,15 @@ internal static class BatchDispatch
             : throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
                 $"batch command needs '{name}'", details: JsonSerializer.SerializeToElement(new { @param = name })));
 
-    private static string String(JsonElement args, string name)
-        => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(name, out var value)
-           && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
-            ? value.GetString()!
-            : throw new EngineException(EngineErrors.Of(EngineErrors.RequiredParam,
-                $"batch command needs '{name}'", details: JsonSerializer.SerializeToElement(new { @param = name })));
-
-    /// <summary>结果适配：<c>object</c> 直接承接；<c>JsonElement</c> 走 snake_case 序列化；其余按类型还原。</summary>
-    private static T Adapt<T>(object report)
+    /// <summary>结果适配：<c>object</c> 直接承接；<c>JsonElement</c> 走 snake_case 序列化；其余按类型还原。
+    /// <c>null</c>（batch.status 空闲）→ JsonElement 给 <c>ValueKind.Null</c>，其余类型给 default。</summary>
+    private static T Adapt<T>(object? report)
     {
         if (report is T typed) return typed;
+        if (report is null)
+            return typeof(T) == typeof(JsonElement)
+                ? (T)(object)JsonSerializer.SerializeToElement<object?>(null, EngineJson.Options)
+                : default!;
         var element = JsonSerializer.SerializeToElement(report, EngineJson.Options);
         return typeof(T) == typeof(JsonElement)
             ? (T)(object)element

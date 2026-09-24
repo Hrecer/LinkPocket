@@ -17,6 +17,9 @@ public sealed partial class AiAssistant : IAiAssistant
     private readonly AiCredentialStore _credentials;
     private readonly AiPreferenceStore _preferences;
     private readonly AiSessionStore _sessionStore;
+    private readonly AiSkillStore _skillStore;
+    private readonly AiUsageStore _usage;
+    private readonly AiLocalTools _localTools;
     private readonly IAiHttpTransport _http;
     private readonly AiToolCatalog _tools;
 
@@ -35,6 +38,8 @@ public sealed partial class AiAssistant : IAiAssistant
         AiCredentialStore credentials,
         AiPreferenceStore preferences,
         AiSessionStore sessionStore,
+        AiSkillStore skillStore,
+        AiUsageStore usage,
         IAiHttpTransport http)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
@@ -44,6 +49,9 @@ public sealed partial class AiAssistant : IAiAssistant
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
         _preferences = preferences ?? throw new ArgumentNullException(nameof(preferences));
         _sessionStore = sessionStore ?? throw new ArgumentNullException(nameof(sessionStore));
+        _skillStore = skillStore ?? throw new ArgumentNullException(nameof(skillStore));
+        _usage = usage ?? throw new ArgumentNullException(nameof(usage));
+        _localTools = new AiLocalTools(sessionStore, skillStore);
         _http = http ?? throw new ArgumentNullException(nameof(http));
     }
 
@@ -54,6 +62,10 @@ public sealed partial class AiAssistant : IAiAssistant
         public string TurnId { get; } = turnId;
         public CancellationTokenSource Cts { get; } = cts;
         public bool WriteHoldTaken { get; set; }
+
+        /// <summary>本回合模型用量累计（含摘要请求；服务商未声明用量 = 0 → 落盘为 null）。</summary>
+        public int InputTokens { get; set; }
+        public int OutputTokens { get; set; }
     }
 
     internal sealed record AiApprovalResponse(AiApprovalDecision Decision, string? Reason);

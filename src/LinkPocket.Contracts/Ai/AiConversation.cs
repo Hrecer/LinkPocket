@@ -10,7 +10,21 @@ public enum AiRole
     Notice = 2,
 }
 
-/// <summary>一条消息（用户 / 助手 / 系统提示；文本是用户数据或模型输出，界面原样投影，不做取词）。</summary>
+/// <summary>@提及对象的类型。</summary>
+public enum AiMentionKind
+{
+    Folder = 0,
+    Link = 1,
+}
+
+/// <summary>一条 @提及记录（**稳定标识符进消息序列化**：身份是 Kind + Id，名称只是显示）。</summary>
+public sealed record AiMentionRef(AiMentionKind Kind, string Id, string Name);
+
+/// <summary>提及候选（面板显示：类型 + 名称 + canonical 路径；路径解析不到为 null，如实不猜）。</summary>
+public sealed record AiMentionCandidate(AiMentionKind Kind, string Id, string Name, string? Path = null);
+
+/// <summary>一条消息（用户 / 助手 / 系统提示；文本是用户数据或模型输出，界面原样投影，不做取词）。
+/// <paramref name="Mentions"/> = 该消息携带的 @提及记录（用户消息才有；随会话文件持久化）。</summary>
 public sealed record AiMessage(
     string MessageId,
     int Seq,
@@ -18,7 +32,8 @@ public sealed record AiMessage(
     string Text,
     DateTimeOffset At,
     string? TurnId,
-    bool IsStreaming = false);
+    bool IsStreaming = false,
+    IReadOnlyList<AiMentionRef>? Mentions = null);
 
 /// <summary>工具调用状态机（一次模型工具调用 = 一个可持久化的状态机对象）。</summary>
 public enum AiToolCallState
@@ -177,7 +192,7 @@ public enum AiTurnState
     Interrupted = 7,
 }
 
-/// <summary>一个回合（一次用户输入到模型停止）。</summary>
+/// <summary>一个回合（一次用户输入到模型停止）。<paramref name="InputTokens"/>/<paramref name="OutputTokens"/> = 本回合模型请求的服务商用量读数（未声明用量 = null，不编造）。</summary>
 public sealed record AiTurn(
     string TurnId,
     int Index,
@@ -188,7 +203,9 @@ public sealed record AiTurn(
     int ToolCallCount,
     int ChangeCount,
     int CallCount,
-    bool WriteFrozen);
+    bool WriteFrozen,
+    int? InputTokens = null,
+    int? OutputTokens = null);
 
 /// <summary>会话摘要（左栏列表用）。</summary>
 public sealed record AiSessionSummary(
@@ -222,7 +239,29 @@ public enum AiNotificationKind
     ApprovalChanged = 4,
     TurnChanged = 5,
     SessionChanged = 6,
+    /// <summary>上下文压缩发生（微压缩或摘要）——对话流如实留一条提示条。</summary>
+    ContextCompacted = 7,
+    /// <summary>批执行进度读数（轮询 `batch.status`）。</summary>
+    ToolProgress = 8,
+    /// <summary>被引擎限流（已如实提示并自动等待重试一次）。</summary>
+    RateLimited = 9,
 }
+
+/// <summary>一次上下文压缩的事实（如实播报：省了多少 / 是否生成了摘要）。
+/// <paramref name="Failed"/> = 摘要连续失败已达熔断上限（如实提示"已停止自动压缩"）。</summary>
+public sealed record AiContextCompaction(
+    string TurnId,
+    bool IsSummary,
+    int ClearedToolResults,
+    int TokensSaved,
+    int MessagesSummarized,
+    bool Failed = false);
+
+/// <summary>批执行进度读数（来源 = `batch.status` 轮询；<paramref name="Total"/> ≤ 0 = 步数未知）。</summary>
+public sealed record AiBatchProgress(string TurnId, string CallId, string State, int Completed, int Total);
+
+/// <summary>被引擎限流时的如实读数（功能书 §5.5：如实提示 + 自动等待重试一次，等待上限 30s）。</summary>
+public sealed record AiRateLimitNotice(string TurnId, long RetryAfterMs, bool Retried);
 
 /// <summary>增量通知（fat record：只填对应 Kind 的字段；UI 只订阅一次）。</summary>
 public sealed record AiNotification(
@@ -236,7 +275,10 @@ public sealed record AiNotification(
     AiChange? Change = null,
     AiApproval? Approval = null,
     AiTurn? Turn = null,
-    AiSessionSummary? Session = null);
+    AiSessionSummary? Session = null,
+    AiContextCompaction? Compaction = null,
+    AiBatchProgress? Progress = null,
+    AiRateLimitNotice? RateLimit = null);
 
 /// <summary>导出格式（会话快照与审计报告；CSV 用于台账逐条）。</summary>
 public enum AiExportFormat
@@ -246,12 +288,14 @@ public enum AiExportFormat
     Json = 2,
 }
 
-/// <summary>回合上下文快照（界面注入：用户"此刻在看什么"；语言决定模型回答语言）。</summary>
+/// <summary>回合上下文快照（界面注入：用户"此刻在看什么"；语言决定模型回答语言）。
+/// <paramref name="Mentions"/> = 输入区 @提及的对象（稳定 ID 随消息记录持久化；模型上下文注入 ID 与 canonical 路径）。</summary>
 public sealed record AiTurnContext(
     string? NavId = null,
     string? FolderPath = null,
     IReadOnlyList<string>? SelectedNames = null,
-    string? LanguageCode = null);
+    string? LanguageCode = null,
+    IReadOnlyList<AiMentionRef>? Mentions = null);
 
 /// <summary>
 /// 引擎审计页签的查询（数据源 = 引擎的 <c>audit.query</c>）：

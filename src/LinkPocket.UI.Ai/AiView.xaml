@@ -2,10 +2,22 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
+             xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
              xmlns:local="clr-namespace:LinkPocket.UI.Ai"
              Background="{DynamicResource App.Surface.Base}">
     <UserControl.Resources>
+        <local:AiMentionKindIconConverter x:Key="AiMentionIconConverter"/>
+        <!-- 技能编辑器的输入域（卡内变体：不写模板、透明底 + 弱描边；与本页会话重命名框同一套取值） -->
+        <Style x:Key="AiEditorBox" TargetType="TextBox">
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource App.Surface.TintCard}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource App.Line.Variant}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+        </Style>
         <!-- ⚠️ 模板必须**先定义后引用**：DataTemplate 内嵌的 StaticResource 引用前向键（键定义在引用之后）
              时解析被推迟到运行期、且找不到同字典的兄弟键 → 首次渲染直接 XamlParseException（审批卡/工具卡
              都会炸掉整个对话流）。P3+-2 探针 ai 套件首渲即红后改为本顺序；新增模板一律放在引用者之前。
@@ -105,7 +117,13 @@
         </DataTemplate>
         <DataTemplate x:Key="AiAssistantTemplate">
             <Border Background="{DynamicResource App.Surface.HeaderBand}" CornerRadius="18" Padding="14,10" Margin="0,6,60,6" HorizontalAlignment="Left">
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                <StackPanel>
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                    <!-- 从这条回复「存为技能」（预填进技能编辑器；技能 = 提示模板 + 可选绑定的宏） -->
+                    <Button Style="{StaticResource TonalButton}" Height="24" Padding="10,0" Margin="0,6,0,0"
+                            HorizontalAlignment="Right" Content="{loc:Loc ai.skill.saveFromMessage}"
+                            Click="OnSaveMessageAsSkill"/>
+                </StackPanel>
             </Border>
         </DataTemplate>
         <DataTemplate x:Key="AiToolTemplate">
@@ -337,16 +355,16 @@
                                 </Style.Triggers>
                             </Style>
                         </StackPanel.Style>
-                        <Button Style="{StaticResource TonalButton}" Height="32" Margin="0,0,8,0"
+                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="0,0,8,0"
                                 Content="{loc:Loc ai.approve.allowOnce}" Click="OnApproveOnce"/>
-                        <Button Style="{StaticResource TonalButton}" Height="32" Margin="0,0,8,0"
+                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="0,0,8,0"
                                 Content="{loc:Loc ai.approve.allowSession}" Click="OnApproveSession"/>
                         <!-- 默认焦点落在「拒绝」（视图按 Tag 找它）；不设 IsDefault——否则焦点在别的选项上时
                              按 Enter 会触发「拒绝」，与用户点的那一档对不上 -->
                         <Button Tag="AiApprovalReject"
-                                Style="{StaticResource TonalButton}" Height="32" Margin="0,0,8,0"
+                                Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="0,0,8,0"
                                 Content="{loc:Loc ai.approve.reject}" Click="OnReject"/>
-                        <Button Style="{StaticResource TonalButton}" Height="32"
+                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                 Content="{loc:Loc ai.approve.rejectStop}" Click="OnRejectStop"/>
                     </StackPanel>
                     <!-- 理由（可选；拒绝时回灌模型，模型同轮换方案） -->
@@ -360,6 +378,43 @@
         </DataTemplate>
         <DataTemplate x:Key="AiNoticeTemplate">
             <TextBlock Text="{loc:Value NoticeValue}" Margin="0,4,60,4" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
+        </DataTemplate>
+        <!-- 技能 chip（点名称 = 运行 / 填参数；✕ = 删除）：技能条与参数行同一份语言 -->
+        <DataTemplate x:Key="AiSkillChipTemplate">
+            <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="14" Padding="3,2" Margin="0,0,6,6">
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource TonalButton}" Height="24" Padding="10,0"
+                            Content="{Binding Name}" Click="OnRunSkill" ToolTip="{loc:Loc ai.skill.params.run}"/>
+                    <Button Style="{StaticResource TonalButton}" Height="24" Width="24" Padding="0" Margin="4,0,0,0"
+                            Click="OnDeleteSkill" ToolTip="{loc:Loc ai.skill.delete}">
+                        <m3:M3Icon Kind="close" Width="12" Height="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <!-- 提及候选一行（图标 + 名称 + 位置；点击选入） -->
+        <DataTemplate x:Key="AiMentionCandidateTemplate">
+            <StackPanel Orientation="Horizontal" Margin="0,3">
+                <m3:M3Icon Kind="{Binding Kind, Converter={StaticResource AiMentionIconConverter}}" Width="14" Height="14"
+                           VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource App.Text.Primary}"/>
+                <TextBlock Text="{Binding Path}" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource App.Text.Muted}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Path}" Value="{x:Null}">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
         </DataTemplate>
         <local:AiFeedTemplateSelector x:Key="AiFeedSelector"
                                       UserTemplate="{StaticResource AiUserTemplate}"
@@ -447,9 +502,9 @@
                 <Button DockPanel.Dock="Top" x:Name="NewSessionButton" Style="{StaticResource TonalButton}" Height="32"
                         Content="{loc:Loc ai.sessions.new}" Click="OnNewSession"/>
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button x:Name="ExportSessionButton" Style="{StaticResource TonalButton}" Height="32"
+                    <Button x:Name="ExportSessionButton" Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                             Content="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
-                    <Button x:Name="DeleteSessionButton" Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                    <Button x:Name="DeleteSessionButton" Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                             Content="{loc:Loc ai.sessions.delete}" Click="OnDeleteSession"/>
                 </StackPanel>
                 <!-- 就地重命名（右键「重命名」进入）：Enter 提交、Esc 取消（不做失焦提交——无归属的失焦是时序炸弹，见 WARNINGS 34） -->
@@ -497,10 +552,211 @@
 
         <!-- 中栏：对话流 + 输入区 -->
         <DockPanel Grid.Column="1" Margin="16,12,16,12">
-            <TextBlock DockPanel.Dock="Top" Text="{loc:LocKey StatusKey}" Margin="0,0,0,8"
-                       Foreground="{DynamicResource App.Text.Secondary}"/>
+            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:Value StatusValue}" VerticalAlignment="Center"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <TextBlock Text="{loc:Value ProgressTextValue}" Margin="10,0,0,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                </StackPanel>
+                <!-- 回合进行中 = 进度条（批执行时按 batch.status 轮询给确定进度；不确定态由视图扫值） -->
+                <views:WavyProgressBar x:Name="TurnProgress" Height="18" Margin="0,4,0,0"
+                                       Minimum="0" Maximum="{Binding ProgressMaximum}"
+                                       ActiveBrush="{DynamicResource App.Accent.Fill}"
+                                       TrackBrush="{DynamicResource App.Line.Variant}">
+                    <views:WavyProgressBar.Style>
+                        <Style TargetType="views:WavyProgressBar">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsProgressVisible}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </views:WavyProgressBar.Style>
+                </views:WavyProgressBar>
+            </StackPanel>
             <Border DockPanel.Dock="Bottom" Background="{DynamicResource App.Surface.Card}" CornerRadius="18" Padding="12" Margin="0,8,0,0">
                 <StackPanel>
+                    <!-- 技能条（有技能才出现；点 chip = 运行/填参数，＋ = 新建） -->
+                    <DockPanel Margin="0,0,0,2">
+                        <DockPanel.Style>
+                            <Style TargetType="DockPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSkills}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DockPanel.Style>
+                        <Button x:Name="NewSkillButton" DockPanel.Dock="Right" Style="{StaticResource TonalButton}"
+                                Height="24" Width="24" Padding="0" Margin="6,0,0,4" VerticalAlignment="Top"
+                                ToolTip="{loc:Loc ai.skill.new}" Click="OnNewSkill">
+                            <m3:M3Icon Kind="plus" Width="12" Height="12"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Button>
+                        <ItemsControl ItemsSource="{Binding Skills}" ItemTemplate="{StaticResource AiSkillChipTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </DockPanel>
+
+                    <!-- 技能编辑器（新建 / 编辑 / 从助手消息预填） -->
+                    <StackPanel Margin="0,2,0,6">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSkillEditorOpen}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{loc:Value SkillEditorTitleValue}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <TextBlock Text="{loc:Loc ai.skill.editor.name}" FontSize="11" Margin="0,6,0,2"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <TextBox x:Name="SkillNameBox" Style="{StaticResource AiEditorBox}"
+                                 Text="{Binding SkillName, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="{loc:Loc ai.skill.editor.description}" FontSize="11" Margin="0,6,0,2"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <TextBox Style="{StaticResource AiEditorBox}"
+                                 Text="{Binding SkillDescription, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="{loc:Loc ai.skill.editor.template}" FontSize="11" Margin="0,6,0,2"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <TextBox Style="{StaticResource AiEditorBox}" Height="64" AcceptsReturn="True" TextWrapping="Wrap"
+                                 VerticalContentAlignment="Top" Padding="8,5"
+                                 Text="{Binding SkillTemplate, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="{loc:Loc ai.skill.editor.macro}" FontSize="11" Margin="0,6,0,2"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox x:Name="SkillMacroBox" Width="220" Height="30" HorizontalAlignment="Left"
+                                      ItemsSource="{Binding MacroNames}" SelectedItem="{Binding SkillMacro, Mode=TwoWay}"/>
+                            <Button Style="{StaticResource TonalButton}" Height="30" Width="30" Padding="0" Margin="6,0,0,0"
+                                    ToolTip="{loc:Loc ai.skill.editor.macro}" Click="OnClearSkillMacro">
+                                <m3:M3Icon Kind="close" Width="12" Height="12"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </Button>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Height="28" Padding="16,0" Content="{loc:Loc ai.skill.editor.save}" Click="OnSaveSkill">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryPillButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CanSaveSkill}" Value="False">
+                                                <Setter Property="IsEnabled" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Style="{StaticResource TonalButton}" Height="28" Padding="14,0" Margin="8,0,0,0"
+                                    Content="{loc:Loc ai.skill.editor.cancel}" Click="OnCancelSkillEditor"/>
+                        </StackPanel>
+                        <TextBlock Text="{loc:LocKey SkillEditorErrorKey}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Line.Invalid}"/>
+                    </StackPanel>
+
+                    <!-- 技能参数行（有占位的技能：一占位一输入框，填完点「运行」） -->
+                    <StackPanel Margin="0,2,0,6">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSkillRunOpen}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="{loc:Loc ai.skill.params.title}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.Primary}"/>
+                        <ItemsControl ItemsSource="{Binding SkillParameters}" Margin="0,4,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding Name}" Width="120" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                                        <TextBox Style="{StaticResource AiEditorBox}" Width="220"
+                                                 Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <Button Style="{StaticResource PrimaryPillButton}" Height="28" Padding="16,0"
+                                    Content="{loc:Loc ai.skill.params.run}" Click="OnRunSkillWithParams"/>
+                            <Button Style="{StaticResource TonalButton}" Height="28" Padding="14,0" Margin="8,0,0,0"
+                                    Content="{loc:Loc ai.skill.editor.cancel}" Click="OnCancelSkillRun"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 提及 chip 区（待发集合；点 ✕ 摘除） -->
+                    <ItemsControl ItemsSource="{Binding Mentions}" Margin="0,0,0,2">
+                        <ItemsControl.Style>
+                            <Style TargetType="ItemsControl">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasMentions}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ItemsControl.Style>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource App.Accent.Container}" CornerRadius="12"
+                                        Padding="8,2" Margin="0,0,6,4">
+                                    <StackPanel Orientation="Horizontal">
+                                        <m3:M3Icon Kind="{Binding Kind, Converter={StaticResource AiMentionIconConverter}}"
+                                                   Width="12" Height="12" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                        <TextBlock Text="@" Margin="5,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                        <Button Style="{StaticResource TonalButton}" Height="18" Width="18" Padding="0"
+                                                Margin="6,0,0,0" ToolTip="{loc:Loc ai.mention.remove}"
+                                                Click="OnRemoveMention">
+                                            <m3:M3Icon Kind="close" Width="10" Height="10"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- 提及候选面板（@ 触发；↑↓ 移动、Enter/点击选入、Esc 关闭） -->
+                    <Border Margin="0,0,0,6" Padding="6,4" MaxHeight="200"
+                            Background="{DynamicResource App.Surface.Floating}"
+                            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1" CornerRadius="12">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMentionPanelOpen}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <ListBox x:Name="MentionList" Background="Transparent" BorderThickness="0" MaxHeight="190"
+                                 ItemsSource="{Binding MentionCandidates}"
+                                 SelectedIndex="{Binding MentionSelectionIndex, Mode=TwoWay}"
+                                 ItemTemplate="{StaticResource AiMentionCandidateTemplate}"
+                                 PreviewMouseLeftButtonUp="OnMentionCandidateClicked"/>
+                    </Border>
+
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="{loc:LocKey SelectionErrorKey}" TextWrapping="Wrap" FontSize="12"
                                    Foreground="{DynamicResource App.Accent.Text}"/>
@@ -528,9 +784,9 @@
                             <ComboBoxItem Content="{loc:Loc ai.mode.confirmEach}"/>
                             <ComboBoxItem Content="{loc:Loc ai.mode.autoApply}"/>
                         </ComboBox>
-                        <Button x:Name="SendButton" Style="{StaticResource PrimaryPillButton}" Height="32" Margin="8,0,0,0"
+                        <Button x:Name="SendButton" Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0" Margin="8,0,0,0"
                                 Content="{loc:Loc ai.composer.send}" Click="OnSend"/>
-                        <Button x:Name="StopButton" Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                        <Button x:Name="StopButton" Style="{StaticResource TonalButton}" Height="32" Padding="16,0" Margin="8,0,0,0"
                                 Content="{loc:Loc ai.composer.stop}" Click="OnStop"/>
                     </StackPanel>
                     <TextBlock Text="{loc:LocKey LastErrorKey}" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0"
@@ -820,6 +1076,9 @@
                     </StackPanel>
                     <TextBlock Text="{loc:Value SummaryValue}" FontSize="11" TextWrapping="Wrap"
                                Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <!-- 用量行（功能书 §2「用量可见」/ §7.6）：本会话轮数 · 工具调用 · token 合计 -->
+                    <TextBlock Text="{loc:Value UsageValue}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{DynamicResource App.Text.Muted}"/>
                 </StackPanel>
 
                 <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话）。
@@ -832,7 +1091,7 @@
                         <ComboBoxItem Content="{loc:Loc ai.export.csv}"/>
                         <ComboBoxItem Content="{loc:Loc ai.export.json}"/>
                     </ComboBox>
-                    <Button x:Name="ExportAuditButton" Style="{StaticResource TonalButton}" Height="30" Margin="8,0,0,0"
+                    <Button x:Name="ExportAuditButton" Style="{StaticResource TonalButton}" Height="30" Padding="14,0" Margin="8,0,0,0"
                             Content="{loc:Loc ai.sessions.export}" Click="OnExportSession"/>
                 </StackPanel>
             </Grid>

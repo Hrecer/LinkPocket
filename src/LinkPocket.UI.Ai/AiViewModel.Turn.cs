@@ -22,19 +22,22 @@ public sealed partial class AiViewModel
         => !IsTurnRunning && ComposerText.Trim().Length > 0
            && (IsConfigured || ComposerText.Trim().StartsWith('/'));
 
-    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页；以"/"开头 = 本地斜杠命令，不发给模型）。</summary>
+    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页 + @提及；以"/"开头 = 本地斜杠命令，不发给模型）。</summary>
     public async Task SendAsync()
     {
         if (!CanSend || _activeSessionId is not { } sessionId) return;
         var text = ComposerText.Trim();
+        var mentions = text.StartsWith('/') ? null : MentionsForSend(text);
         ComposerText = "";
+        CancelMentions();
         LastErrorKey = null;
         try
         {
             if (text.StartsWith('/'))
                 await TrySlashAsync(sessionId, text).ConfigureAwait(true);
             else
-                await _assistant.SendAsync(sessionId, text, BuildContext()).ConfigureAwait(true);
+                await _assistant.SendAsync(sessionId, text, BuildContext(mentions)).ConfigureAwait(true);
+            ClearMentions();
         }
         catch (AiException ex)
         {
@@ -124,6 +127,7 @@ public sealed partial class AiViewModel
         }
     }
 
-    private static AiTurnContext BuildContext()
-        => new(NavId: "ai", LanguageCode: CultureInfo.CurrentUICulture.TwoLetterISOLanguageName);
+    private static AiTurnContext BuildContext(IReadOnlyList<AiMentionRef>? mentions = null)
+        => new(NavId: "ai", LanguageCode: CultureInfo.CurrentUICulture.TwoLetterISOLanguageName,
+            Mentions: mentions is { Count: > 0 } ? mentions : null);
 }

@@ -17,6 +17,9 @@ public sealed class AiSessionFile
     public List<AiTurn> Turns { get; init; } = [];
     public List<AiChatMessage> Chat { get; init; } = [];
 
+    /// <summary>摘要连续失败计数（熔断；成功一次清零）——随会话文件持久化，重启不重置。</summary>
+    public int CompactFailures { get; set; }
+
     public static AiSessionFile Create(AiSessionSummary summary) => new() { Summary = summary };
 }
 

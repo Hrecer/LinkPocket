@@ -246,11 +246,12 @@ public sealed partial class AiViewModel
         ApplyPanelFilter();
     }
 
-    /// <summary>回合终态：刷新汇总（调用 / 失败 / 被拒 / 干跑）与引擎审计页签。</summary>
+    /// <summary>回合终态：刷新汇总（调用 / 失败 / 被拒 / 干跑）、用量读数与引擎审计页签。</summary>
     private void OnTurnSettled()
     {
         ApplyPanelFilter();
         _ = RefreshUndoableAsync();   // 回合里新产生的可撤销批次要让按钮出现
+        _ = RefreshUsageAsync();
         if (IsEngineTab) _ = ReloadEngineAuditAsync();
     }
 

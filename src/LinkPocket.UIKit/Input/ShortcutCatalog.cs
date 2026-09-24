@@ -403,6 +403,7 @@ public static class ShortcutCatalog
         lines.Add("|---|---|---|");
         lines.Add(Loc.T("shortcut.doc.breadcrumb"));
         lines.Add(Loc.T("shortcut.doc.inlineRename"));
+        lines.Add(Loc.T("shortcut.doc.aiMentions"));
         lines.Add("");
         return string.Join("\n", lines);
     }

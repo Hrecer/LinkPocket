@@ -72,6 +72,44 @@ public interface IAiAssistant
     /// <summary>切换会话模式（只读 / 每次确认 / 自动应用）。</summary>
     Task SetModeAsync(string sessionId, AiMode mode, CancellationToken ct = default);
 
+    // ── 提及（输入区 @）────────────────────────────────────────
+
+    /// <summary>
+    /// 提及候选检索（文件夹 + 链接，按已输入片段匹配；<paramref name="limit"/> 上限内按名称序返回）。
+    /// 纯读（folders.find / links.query），失败的候选来源如实缺席（不猜、不编）。
+    /// </summary>
+    Task<IReadOnlyList<AiMentionCandidate>> SearchMentionsAsync(string query, int limit = 8,
+        CancellationToken ct = default);
+
+    // ── 技能库 ────────────────────────────────────────────────
+
+    /// <summary>技能清单（<c>{程序根}/ai/skills.json</c>；损坏如实暴露 <c>LP.AI.015</c>）。</summary>
+    Task<IReadOnlyList<AiSkill>> ListSkillsAsync(CancellationToken ct = default);
+
+    /// <summary>保存技能（名称唯一；模板里 `{参数}` 占位上限 8 个；非空宏名经 <c>macro.get</c> 校验存在）。</summary>
+    Task<AiSkill> SaveSkillAsync(AiSkillDraft draft, CancellationToken ct = default);
+
+    /// <summary>删除技能。</summary>
+    Task DeleteSkillAsync(string skillId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 运行技能：渲染提示模板（填入参数；未填的占位保持字面）作为**用户消息**发起一个回合
+    /// （走正常回合与审批链，绝不绕过）。回合在跑时拒绝（<c>LP.AI.011</c>）。
+    /// </summary>
+    Task RunSkillAsync(string sessionId, string skillId, IReadOnlyDictionary<string, string>? parameters = null,
+        CancellationToken ct = default);
+
+    /// <summary>宏名清单（技能编辑器的绑定下拉；数据源 = 引擎 <c>macro.list</c>）。</summary>
+    Task<IReadOnlyList<string>> ListMacroNamesAsync(CancellationToken ct = default);
+
+    // ── 用量 ──────────────────────────────────────────────────
+
+    /// <summary>本会话用量读数（模型调用 / 工具调用 / token 合计；数据源 = 会话文件里的逐轮读数）。</summary>
+    Task<AiSessionUsage> GetSessionUsageAsync(string sessionId, CancellationToken ct = default);
+
+    /// <summary>近 N 天用量汇总（数据源 = <c>ai/usage.json</c> 的按天 × 模型聚合）。</summary>
+    Task<AiUsageSummary> GetUsageSummaryAsync(int days = 7, CancellationToken ct = default);
+
     // ── 回合 ──────────────────────────────────────────────────
 
     /// <summary>发一条用户消息并跑一个回合；已有回合在跑 → LP.AI.011（details.reason = turn_in_progress）。</summary>

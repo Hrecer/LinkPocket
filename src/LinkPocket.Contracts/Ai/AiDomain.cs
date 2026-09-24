@@ -150,3 +150,44 @@ public sealed record AiPreferences(
     int CallsPerMinute = 120,
     int ContextBudgetTokens = 32000,
     bool AdvancedToolsEnabled = false);
+
+/// <summary>技能（提示词模板 + 可选绑定的宏；存 <c>{程序根}/ai/skills.json</c>）。
+/// <paramref name="Parameters"/> = 模板里解析出的 `{参数}` 占位名（只读投影，按出现顺序去重）。</summary>
+public sealed record AiSkill(
+    string SkillId,
+    string Name,
+    string Description,
+    string PromptTemplate,
+    string? MacroName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<string>? Parameters = null);
+
+/// <summary>技能草稿（保存入参；<paramref name="SkillId"/> 为空 = 新建）。</summary>
+public sealed record AiSkillDraft(
+    string? SkillId,
+    string Name,
+    string Description,
+    string PromptTemplate,
+    string? MacroName);
+
+/// <summary>用量用途（按用途分账：对话请求 / 上下文摘要请求）。</summary>
+public enum AiUsagePurpose
+{
+    Turn = 0,
+    Summary = 1,
+}
+
+/// <summary>本会话用量读数（审计面板底部状态条：轮数 / 工具调用次数 / token 合计；逐轮读数之和，单一来源 = 会话文件）。</summary>
+public sealed record AiSessionUsage(int Turns, int ToolCalls, long InputTokens, long OutputTokens);
+
+/// <summary>按天用量（设置页「AI 服务」只读行；<paramref name="Day"/> = 本地日）。</summary>
+public sealed record AiUsageDay(DateTimeOffset Day, int Calls, long InputTokens, long OutputTokens);
+
+/// <summary>近 N 天用量汇总（数据源 = <c>ai/usage.json</c>；天数与合计一起给出，不做事后裁剪）。</summary>
+public sealed record AiUsageSummary(
+    int Days,
+    IReadOnlyList<AiUsageDay> Items,
+    long Calls,
+    long InputTokens,
+    long OutputTokens);

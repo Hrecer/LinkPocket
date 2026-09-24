@@ -188,6 +188,27 @@ public class BatchUndoTests
         }
         finally { TestEnv.Cleanup(path); }
     }
+
+    [Fact]
+    public async Task 批状态_省略批次号_读在飞批_空闲时为null()
+    {
+        var (engine, _, path) = Create();
+        try
+        {
+            // 空闲：data = null（"现在没有批在跑"是合法答案，不是错误）
+            var idle = await engine.QueryAsync<JsonElement>("batch.status", new { });
+            Assert.Equal(JsonValueKind.Null, idle.ValueKind);
+            Assert.Null(engine.Batch!.CurrentStatus);
+
+            // 批跑完即自清零（状态表里只剩终态，没有 running 条目）
+            var report = await engine.Batch.RunAsync(Script("A"));
+            Assert.NotNull(engine.Batch.GetStatus(report.BatchId));
+            Assert.Null(engine.Batch.CurrentStatus);
+            var after = await engine.QueryAsync<JsonElement>("batch.status", new { });
+            Assert.Equal(JsonValueKind.Null, after.ValueKind);
+        }
+        finally { TestEnv.Cleanup(path); }
+    }
 }
 
 /// <summary>test.mark（Reversible）：向内存账本追加标记；**处理器回填**逆向步（弹出该标记）。</summary>

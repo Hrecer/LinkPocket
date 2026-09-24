@@ -18,6 +18,7 @@ public sealed class StubAiAssistant : IAiAssistant
 
     // ── 调用记录 ─────────────────────────────────────────────
     public List<(string SessionId, string Text)> SendCalls { get; } = [];
+    public List<AiTurnContext?> SendContexts { get; } = [];
     public List<(string SessionId, AiMode Mode)> SetModeCalls { get; } = [];
     public List<AiModelDraft> SaveModelCalls { get; } = [];
     public List<AiPreferences> SavePreferencesCalls { get; } = [];
@@ -110,6 +111,7 @@ public sealed class StubAiAssistant : IAiAssistant
     public Task SendAsync(string sessionId, string text, AiTurnContext? context = null, CancellationToken ct = default)
     {
         SendCalls.Add((sessionId, text));
+        SendContexts.Add(context);
         return Task.CompletedTask;
     }
 
@@ -154,6 +156,75 @@ public sealed class StubAiAssistant : IAiAssistant
     {
         CountUndoableCalls.Add(sessionId);
         return Task.FromResult(UndoableBatches);
+    }
+
+    // ── 提及 / 技能 / 用量（P4）─────────────────────────────────
+
+    /// <summary>提及候选预置（SearchMentionsAsync 按名称/ID 子串过滤后返回）。</summary>
+    public List<AiMentionCandidate> MentionCandidates { get; } = [];
+    public List<string> MentionQueries { get; } = [];
+
+    /// <summary>技能库预置（ListSkillsAsync 的读数；Save/Delete 会就地更新它）。</summary>
+    public List<AiSkill> Skills { get; } = [];
+    public List<AiSkillDraft> SaveSkillCalls { get; } = [];
+    public List<string> DeleteSkillCalls { get; } = [];
+    public List<(string SessionId, string SkillId, IReadOnlyDictionary<string, string>? Parameters)> RunSkillCalls { get; } = [];
+    public List<string> MacroNames { get; } = [];
+    public List<(string SessionId, int Days)> UsageSummaryCalls { get; } = [];
+    public AiSessionUsage SessionUsage { get; set; } = new(0, 0, 0, 0);
+    public AiUsageSummary UsageSummary { get; set; } = new(7, [], 0, 0, 0);
+
+    public Task<IReadOnlyList<AiMentionCandidate>> SearchMentionsAsync(string query, int limit = 8,
+        CancellationToken ct = default)
+    {
+        MentionQueries.Add(query);
+        var items = MentionCandidates
+            .Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        || c.Id.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Take(limit)
+            .ToArray();
+        return Task.FromResult<IReadOnlyList<AiMentionCandidate>>(items);
+    }
+
+    public Task<IReadOnlyList<AiSkill>> ListSkillsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AiSkill>>(Skills.ToArray());
+
+    public Task<AiSkill> SaveSkillAsync(AiSkillDraft draft, CancellationToken ct = default)
+    {
+        SaveSkillCalls.Add(draft);
+        var saved = new AiSkill(draft.SkillId ?? $"k-{Skills.Count + 1}", draft.Name, draft.Description,
+            draft.PromptTemplate, draft.MacroName, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            LinkPocket.Ai.AiSkillStore.ExtractParameters(draft.PromptTemplate));
+        var index = Skills.FindIndex(s => s.SkillId == saved.SkillId);
+        if (index >= 0) Skills[index] = saved;
+        else Skills.Add(saved);
+        return Task.FromResult(saved);
+    }
+
+    public Task DeleteSkillAsync(string skillId, CancellationToken ct = default)
+    {
+        DeleteSkillCalls.Add(skillId);
+        Skills.RemoveAll(s => s.SkillId == skillId);
+        return Task.CompletedTask;
+    }
+
+    public Task RunSkillAsync(string sessionId, string skillId,
+        IReadOnlyDictionary<string, string>? parameters = null, CancellationToken ct = default)
+    {
+        RunSkillCalls.Add((sessionId, skillId, parameters));
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> ListMacroNamesAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>>(MacroNames.ToArray());
+
+    public Task<AiSessionUsage> GetSessionUsageAsync(string sessionId, CancellationToken ct = default)
+        => Task.FromResult(SessionUsage);
+
+    public Task<AiUsageSummary> GetUsageSummaryAsync(int days = 7, CancellationToken ct = default)
+    {
+        UsageSummaryCalls.Add((string.Empty, days));
+        return Task.FromResult(UsageSummary);
     }
 
     // ── 通知 ─────────────────────────────────────────────────

@@ -26,8 +26,8 @@ public sealed class BatchEngine : IBatchEngine
         new("batch.dry_run", "batch", "Dry-run a batch script: every step executes without commit, returning per-step results and impact with zero side effects",
             [ParamSpec.Req<JsonElement>("script", "Batch script", schema: ParamSchemas.BatchScript)],
             CommandCaps.Query | CommandCaps.LongRunning | CommandCaps.SupportsCancellation),
-        new("batch.status", "batch", "Query batch run status (batch_id is issued by batch.run reports / error details)",
-            [ParamSpec.Req<string>("batch_id", "Batch ID")],
+        new("batch.status", "batch", "Query batch run status: pass batch_id (issued by batch.run reports / error details), or omit it to read the in-flight batch (null when idle)",
+            [ParamSpec.Opt<string>("batch_id", "Batch ID; omit to read the current in-flight batch")],
             CommandCaps.Query),
     ];
 
@@ -70,6 +70,11 @@ public sealed class BatchEngine : IBatchEngine
 
     public BatchStatus? GetStatus(string batchId)
         => _status.TryGetValue(batchId, out var status) ? status : null;
+
+    /// <summary>当前在飞的批（状态表里唯一 state = running 的一条；写闸保证同一时刻至多一个批在跑，
+    /// 批结束即转终态 → 本读数**自清零**，不存在"忘了清标记"的泄漏面）。</summary>
+    public BatchStatus? CurrentStatus
+        => _status.Values.FirstOrDefault(status => status.State == "running");
 
     // ===== 核心执行 =====
 

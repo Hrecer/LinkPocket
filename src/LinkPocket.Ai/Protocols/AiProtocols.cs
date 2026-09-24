@@ -19,11 +19,15 @@ public sealed record AiChatRequest(
     string Model, string System, IReadOnlyList<AiChatMessage> Messages,
     IReadOnlyList<AiToolSpec> Tools, int MaxOutputTokens, bool Stream);
 
-/// <summary>流式增量：Kind = text（正文） / tool（工具调用拼装）。
+/// <summary>流式增量：Kind = text（正文） / tool（工具调用拼装） / usage（用量读数）。
 /// <para><c>ToolCallId</c> 是**归并键**（流式分片只稳定给出序号：OpenAI <c>idx:N</c> / Anthropic <c>blk:N</c>）；
-/// <c>ProviderId</c> 是服务商给的真实调用 ID（可能只在首片出现，缺省用归并键兜底）。</para></summary>
+/// <c>ProviderId</c> 是服务商给的真实调用 ID（可能只在首片出现，缺省用归并键兜底）。</para>
+/// <para><c>InputTokens</c> / <c>OutputTokens</c>（Kind = usage）= 服务商下发的用量读数；语义 = **本次请求的累计值**
+/// （非增量，取最后非空值即可）——OpenAI 需请求体带 <c>stream_options.include_usage</c>，
+/// Anthropic 在 message_start / message_delta 里给。</para></summary>
 public sealed record AiChatDelta(string Kind, string? Text = null, string? ToolCallId = null,
-    string? ToolName = null, string? ArgumentsDelta = null, string? ProviderId = null);
+    string? ToolName = null, string? ArgumentsDelta = null, string? ProviderId = null,
+    int? InputTokens = null, int? OutputTokens = null);
 
 /// <summary>一次完整回复（非流式，或流式结束后的汇总）。</summary>
 public sealed record AiChatCompletion(string Text, IReadOnlyList<AiToolCallRequest> ToolCalls,
@@ -98,6 +102,8 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
             ["max_tokens"] = request.MaxOutputTokens,
             ["stream"] = request.Stream,
         };
+        if (request.Stream)
+            body["stream_options"] = new JsonObject { ["include_usage"] = true };
         if (request.Tools.Count > 0)
         {
             var tools = new JsonArray();
@@ -156,6 +162,8 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         var payload = line["data:".Length..].Trim();
         if (payload.Length == 0 || payload == "[DONE]") return null;
         using var doc = JsonDocument.Parse(payload);
+        // usage 块（stream_options.include_usage）的 choices 是**空数组**：必须先判它再判 choices（见 WARNINGS 137）
+        if (OpenAiUsage(doc.RootElement) is { } usage) return usage;
         if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0) return null;
         if (!choices[0].TryGetProperty("delta", out var delta)) return null;
 
@@ -187,6 +195,17 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(apiKey)) headers["Authorization"] = $"Bearer {apiKey}";
         return headers;
+    }
+
+    /// <summary>OpenAI 流式用量块（`stream_options.include_usage`；两个字段都缺 = 不是用量块）。</summary>
+    private static AiChatDelta? OpenAiUsage(JsonElement root)
+    {
+        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return null;
+        var input = AiJson.Int(usage, "prompt_tokens");
+        var output = AiJson.Int(usage, "completion_tokens");
+        return input is null && output is null
+            ? null
+            : new AiChatDelta("usage", InputTokens: input, OutputTokens: output);
     }
 }
 
@@ -294,6 +313,11 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
         var type = AiJson.String(doc.RootElement, "type");
         switch (type)
         {
+            case "message_start":
+                // 输入侧用量在 message_start 里（含缓存读写三段，互不重叠）
+                return AnthropicUsage(doc.RootElement, "message", inputSide: true);
+            case "message_delta":
+                return AnthropicUsage(doc.RootElement, "", inputSide: false);
             case "content_block_start":
             {
                 if (!doc.RootElement.TryGetProperty("content_block", out var block)) return null;
@@ -321,6 +345,35 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
     private static string? StreamKey(JsonElement root)
         => root.TryGetProperty("index", out var index) && index.TryGetInt32(out var n) ? $"blk:{n}" : null;
 
+    /// <summary>Anthropic 用量：message_start 给输入侧（含缓存读写三段，互不重叠），message_delta 给输出侧。</summary>
+    private static AiChatDelta? AnthropicUsage(JsonElement root, string container, bool inputSide)
+    {
+        if (container.Length > 0
+            && (!root.TryGetProperty(container, out var nested) || nested.ValueKind != JsonValueKind.Object))
+            return null;
+        var scope = container.Length > 0 ? root.GetProperty(container) : root;
+        if (!scope.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return null;
+
+        if (inputSide)
+        {
+            var input = Sum(AiJson.Int(usage, "input_tokens"), AiJson.Int(usage, "cache_creation_input_tokens"),
+                AiJson.Int(usage, "cache_read_input_tokens"));
+            return input is null ? null : new AiChatDelta("usage", InputTokens: input);
+        }
+
+        var output = AiJson.Int(usage, "output_tokens");
+        return output is null ? null : new AiChatDelta("usage", OutputTokens: output);
+    }
+
+    private static int? Sum(params int?[] values)
+    {
+        int? total = null;
+        foreach (var value in values)
+            if (value is { } number)
+                total = (total ?? 0) + number;
+        return total;
+    }
+
     private static Dictionary<string, string> Headers(string? apiKey)
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -339,6 +392,9 @@ internal static class AiJson
         => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+
+    public static int? Int(JsonElement element, string name)
+        => element.TryGetProperty(name, out var value) && value.TryGetInt32(out var result) ? result : null;
 
     public static int? IntAt(JsonElement element, string parent, string name)
         => element.TryGetProperty(parent, out var node) && node.TryGetProperty(name, out var value)

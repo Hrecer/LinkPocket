@@ -38,7 +38,9 @@ public class ShortcutRulesTests
             "AI 页会话重命名框（RenameBox）自身的编辑键：Enter 提交 / Esc 取消——" +
             "只在编辑框获得焦点时生效，属控件编辑语义；发送键（Enter）已走总表 ControlName 控件锚定，不在此列",
         ["LinkPocket.UI.Ai/AiView.xaml.cs"] =
-            "同上：会话重命名框的 KeyDown（Enter 提交 / Esc 取消）——控件内编辑语义，不参与页面级仲裁",
+            "同上：会话重命名框的 KeyDown（Enter 提交 / Esc 取消）；以及输入框 @ 提及面板的 " +
+            "PreviewKeyDown（↑/↓ 移动候选、Enter 选入、Esc 关面板，只在面板打开时生效）——" +
+            "两者都是控件内编辑语义，不参与页面级仲裁",
     };
 
     private static string RepoRoot

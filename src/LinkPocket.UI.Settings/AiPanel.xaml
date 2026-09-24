@@ -201,6 +201,13 @@
                                Foreground="{DynamicResource App.Text.Primary}"/>
                     <TextBlock Text="{loc:Loc ai.settings.data.desc}" FontSize="12" Margin="0,4,0,14"
                                TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <!-- 用量（近 7 天；只读行，按天 × 模型汇总） -->
+                    <TextBlock Text="{loc:Loc ai.settings.usage.title}" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource App.Text.Primary}"/>
+                    <TextBlock Text="{loc:Value UsageValue}" FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <TextBlock Text="{loc:Loc ai.settings.usage.tip}" FontSize="11" Margin="0,2,0,14"
+                               TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Muted}"/>
                     <Button Style="{StaticResource TonalButton}" Height="32" HorizontalAlignment="Left"
                             Content="{loc:Loc ai.settings.clearData}" Click="OnClearSessions"/>
                 </StackPanel>

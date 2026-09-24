@@ -39,6 +39,8 @@ public static class AiErrors
     public const string UnsupportedCapability = "LP.AI.014";
     /// <summary>AI 数据文件损坏 / 不可写（服务商配置、助手偏好等；凭据见 012、会话见 013）：如实暴露并拒绝覆盖。</summary>
     public const string AiDataStoreFailed = "LP.AI.015";
+    /// <summary>AI 层入参校验失败（如技能名称重复 / 模板占位超限；字段名在 details.field）：如实拒绝，不静默截断。</summary>
+    public const string InvalidInput = "LP.AI.016";
 
     /// <summary>缺省可重试性（网络 / 上游限流 / 响应残缺 = 可重试）。</summary>
     public static bool IsRetryableByDefault(string code)

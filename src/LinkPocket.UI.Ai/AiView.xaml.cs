@@ -27,6 +27,8 @@ public partial class AiView : UserControl
     private readonly ICommand _escapeCommand;
     private readonly ICommand _newSessionCommand;
     private readonly ICommand _undoSessionCommand;
+    private readonly System.Windows.Threading.DispatcherTimer _progressTimer;
+    private double _indeterminateValue;
 
     public AiView()
     {
@@ -38,6 +40,13 @@ public partial class AiView : UserControl
         // 面板按钮与 Ctrl+Shift+Z 同一条命令（CanExecute = 有可撤销批次且没有回合在跑）
         _undoSessionCommand = new RelayCommand(() => _ = UndoSessionAsync(),
             () => _viewModel?.CanUndoSession == true);
+
+        // 不确定态进度 = 视图侧扫值（业务状态仍在 VM：IsProgressVisible / IsProgressIndeterminate）
+        _progressTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(40),
+        };
+        _progressTimer.Tick += (_, _) => SyncProgress();
     }
 
     /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。
@@ -50,11 +59,20 @@ public partial class AiView : UserControl
         {
             if (e.PropertyName is nameof(AiViewModel.CanSend) or nameof(AiViewModel.CanUndoSession))
                 CommandRefresh.Request();   // 可用性同帧跟上（按钮灰亮 + 键位 CanExecute 同一处通知）
+            if (e.PropertyName is nameof(AiViewModel.IsProgressVisible) or nameof(AiViewModel.ProgressValue)
+                or nameof(AiViewModel.ProgressMaximum) or nameof(AiViewModel.IsProgressIndeterminate))
+                Dispatcher.BeginInvoke(new Action(SyncProgress));
         };
         _navigate = navigate;
         DataContext = _viewModel;
         _viewModel.ExportRequested += OnExportRequested;
         _viewModel.ApprovalFocusRequested += OnApprovalFocusRequested;   // 默认焦点落在「拒绝」
+
+        // 输入框的控件级编辑语义（@ 提及面板的 ↑↓/Enter/Esc、光标跟踪）：**先于**快捷键宿主订阅，
+        // 面板打开时由这里吃掉 Enter，控件锚定的「发送」因此不会误触发（同元素先订阅者先跑）。
+        ComposerBox.TextChanged += OnComposerTextChanged;
+        ComposerBox.SelectionChanged += OnComposerSelectionChanged;
+        ComposerBox.PreviewKeyDown += OnComposerPreviewKeyDown;
 
         // 键位：Enter 发送（控件锚定在输入框上）+ Esc（分层出口）+ Ctrl+N 新建会话
         // + Ctrl+Shift+Z 撤销本会话 AI 变更；一页一组、不注册全局键
@@ -66,6 +84,7 @@ public partial class AiView : UserControl
         _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Ai, commands), () => ShortcutScope.Ai);
         _shortcutHost.Attach(this);
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
+        _progressTimer.Start();
     }
 
     /// <summary>入口对齐：进入本页即刷新会话清单并重投影当前会话（对话内容不重载为本地状态）。</summary>
@@ -311,5 +330,134 @@ public partial class AiView : UserControl
             if (nested is not null) return nested;
         }
         return null;
+    }
+
+    // ── 提及面板（输入区 @；控件级编辑语义：由输入框自持、只在面板打开时生效）────────────
+
+    private void OnComposerTextChanged(object sender, TextChangedEventArgs e)
+        => _viewModel?.UpdateMentionQuery(ComposerBox.Text, ComposerBox.CaretIndex);
+
+    private void OnComposerSelectionChanged(object sender, RoutedEventArgs e)
+    {
+        _viewModel?.UpdateMentionQuery(ComposerBox.Text, ComposerBox.CaretIndex);
+        ApplyPendingCaret();
+    }
+
+    private void OnComposerPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_viewModel is not { IsMentionPanelOpen: true }) return;
+        switch (e.Key)
+        {
+            case Key.Up:
+                e.Handled = true;
+                _viewModel.MoveMentionSelection(-1);
+                break;
+            case Key.Down:
+                e.Handled = true;
+                _viewModel.MoveMentionSelection(1);
+                break;
+            case Key.Enter:
+                e.Handled = true;   // 面板打开时 Enter = 选入候选（发送让位）
+                _viewModel.CommitMentionSelection();
+                ApplyPendingCaret();
+                break;
+            case Key.Escape:
+                e.Handled = true;
+                _viewModel.CancelMentions();
+                break;
+        }
+    }
+
+    private void OnMentionCandidateClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (_viewModel is null || !_viewModel.IsMentionPanelOpen) return;
+        _viewModel.CommitMentionSelection();
+        ApplyPendingCaret();
+        ComposerBox.Focus();
+    }
+
+    private void OnRemoveMention(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if ((sender as FrameworkElement)?.DataContext is AiMentionRef mention) _viewModel.RemoveMention(mention);
+    }
+
+    /// <summary>把"选入后光标应到哪"落到输入框（VM 给一次性请求；无请求不动光标）。</summary>
+    private void ApplyPendingCaret()
+    {
+        if (_viewModel?.TakePendingCaret() is not { } caret) return;
+        ComposerBox.CaretIndex = Math.Clamp(caret, 0, ComposerBox.Text.Length);
+    }
+
+    // ── 技能条 / 编辑器 / 参数行 ──────────────────────────────
+
+    private async void OnNewSkill(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.OpenSkillEditorAsync(null);
+        SkillNameBox.Focus();
+    }
+
+    /// <summary>助手消息「存为技能」：把该条正文预填进编辑器（技能 = 可再用的一段提示）。</summary>
+    private async void OnSaveMessageAsSkill(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem item) return;
+        await _viewModel.OpenSkillEditorAsync(null, item.Text);
+        SkillNameBox.Focus();
+    }
+
+    private void OnRunSkill(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if ((sender as FrameworkElement)?.DataContext is AiSkill skill) _viewModel.BeginRunSkill(skill);
+    }
+
+    private void OnRunSkillWithParams(object sender, RoutedEventArgs e) => _ = _viewModel?.RunSkillAsync();
+
+    private void OnCancelSkillRun(object sender, RoutedEventArgs e) => _viewModel?.CancelSkillRun();
+
+    private async void OnSaveSkill(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.SaveSkillAsync();
+    }
+
+    private void OnCancelSkillEditor(object sender, RoutedEventArgs e) => _viewModel?.CancelSkillEditor();
+
+    private void OnClearSkillMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not null) _viewModel.SkillMacro = null;
+    }
+
+    private async void OnDeleteSkill(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        if ((sender as FrameworkElement)?.DataContext is not AiSkill skill) return;
+        if (!ConfirmDialog.Show(Loc.T("ai.skill.delete"), Loc.T("ai.skill.delete.confirm"),
+                Loc.T("ai.skill.delete"), "delete-outline"))
+            return;
+        await _viewModel.DeleteSkillAsync(skill);
+    }
+
+    // ── 进度条（不确定态由视图扫值；确定态取 VM 的批进度读数）────────────
+
+    private void SyncProgress()
+    {
+        if (_viewModel is null || !IsVisible) return;
+        if (!_viewModel.IsProgressVisible)
+        {
+            TurnProgress.Value = 0;
+            return;
+        }
+        if (_viewModel.IsProgressIndeterminate)
+        {
+            _indeterminateValue = _indeterminateValue >= 100 ? 0 : _indeterminateValue + 4;
+            TurnProgress.Value = _indeterminateValue;
+        }
+        else
+        {
+            TurnProgress.Value = _viewModel.ProgressValue;
+        }
     }
 }

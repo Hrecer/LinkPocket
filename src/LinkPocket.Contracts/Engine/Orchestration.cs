@@ -77,6 +77,10 @@ public interface IBatchEngine
     Task<BatchReport> RunAsync(BatchScript script, CallOptions? options = null, CancellationToken ct = default);
     Task<BatchReport> DryRunAsync(BatchScript script, CancellationToken ct = default);
     BatchStatus? GetStatus(string batchId);
+
+    /// <summary>当前**在飞**的批状态（空闲 = null）——进度轮询读面：写闸保证同一时刻最多一个批在跑，
+    /// "当前"因此无歧义；批 ID 由引擎在开始时生成、消费方开始时还拿不到它。</summary>
+    BatchStatus? CurrentStatus { get; }
 }
 
 /// <summary>命名批处理（宏/技能库）持久化契约：存 schema v2 的 macros 表。</summary>

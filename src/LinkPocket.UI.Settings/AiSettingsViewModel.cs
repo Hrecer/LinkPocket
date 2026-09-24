@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 
 namespace LinkPocket.UI.Settings;
 
@@ -99,7 +100,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         set => Set(ref _defaultModelChoice, value, nameof(DefaultModelChoice));
     }
 
-    /// <summary>进面板对齐：读偏好 + 刷新清单（含损坏文件如实暴露）。</summary>
+    /// <summary>进面板对齐：读偏好 + 刷新清单 + 用量读数（含损坏文件如实暴露）。</summary>
     public async Task LoadAsync()
     {
         try
@@ -110,10 +111,37 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
             await RefreshProvidersAsync(preferences).ConfigureAwait(true);
             TestStatusKey = "";
             TestDetail = "";
+            await RefreshUsageAsync().ConfigureAwait(true);
         }
         catch (AiException ex)
         {
             TestStatusKey = "ai.err.dataStoreFailed";
+            TestDetail = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+        }
+    }
+
+    // ── 近 7 天用量（只读行；数据源 = ai/usage.json 的按天 × 模型汇总）────────────
+
+    private LocValue _usageValue = LocValue.Empty;
+
+    /// <summary>近 7 天用量整句（含变量，渲染边界取词；读数取不到 = 空）。</summary>
+    public LocValue UsageValue
+    {
+        get => _usageValue;
+        private set => Set(ref _usageValue, value, nameof(UsageValue));
+    }
+
+    public async Task RefreshUsageAsync()
+    {
+        try
+        {
+            var summary = await _assistant.GetUsageSummaryAsync(7).ConfigureAwait(true);
+            UsageValue = summary.Calls == 0
+                ? LocValue.Empty
+                : Loc.K("ai.settings.usage.line", summary.Calls, summary.InputTokens, summary.OutputTokens);
+        }
+        catch (AiException ex)
+        {
             TestDetail = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
         }
     }

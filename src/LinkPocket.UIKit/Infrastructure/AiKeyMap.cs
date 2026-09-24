@@ -36,6 +36,7 @@ public static class AiKeyMap
         AiErrors.SessionStoreFailed => "ai.err.sessionStoreFailed",
         AiErrors.UnsupportedCapability => "ai.err.unsupportedCapability",
         AiErrors.AiDataStoreFailed => "ai.err.dataStoreFailed",
+        AiErrors.InvalidInput => "ai.err.invalidInput",
         _ => "ai.err.generic",
     };
 

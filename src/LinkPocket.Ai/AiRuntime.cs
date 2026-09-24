@@ -27,8 +27,10 @@ public static class AiRuntime
         var providers = new AiProviderStore(dataRoot);
         var preferences = new AiPreferenceStore(dataRoot);
         var sessions = new AiSessionStore(dataRoot);
+        var skills = new AiSkillStore(dataRoot);
+        var usage = new AiUsageStore(dataRoot);
         var catalog = new AiToolCatalog(client.Describe());
         return new AiAssistant(client, engineSessions, catalog, providers, credentials, preferences, sessions,
-            transport ?? new HttpAiTransport());
+            skills, usage, transport ?? new HttpAiTransport());
     }
 }

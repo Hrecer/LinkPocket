@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using LinkPocket.Contracts;
+using LinkPocket.I18n;
 using LinkPocket.ViewModels;
 
 namespace LinkPocket.UI.Ai;
@@ -48,6 +49,12 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!Set(ref _isTurnRunning, value, nameof(IsTurnRunning))) return;
             Raise(nameof(CanUndoSession));   // 回合在跑时不给撤销（引擎写面正被占用）
+            Raise(nameof(IsProgressVisible));
+            if (!value)
+            {
+                ClearProgress();
+                ClearStatusOverride();
+            }
         }
     }
 
@@ -66,7 +73,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public string StatusKey
     {
         get => _statusKey;
-        private set => Set(ref _statusKey, value, nameof(StatusKey));
+        private set
+        {
+            if (!Set(ref _statusKey, value, nameof(StatusKey))) return;
+            Raise(nameof(StatusValue));
+        }
     }
 
     public string? LastErrorKey
@@ -146,6 +157,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 ? id
                 : Sessions[0].SessionId;
             await OpenSessionAsync(target).ConfigureAwait(true);
+            await RefreshSkillsAsync().ConfigureAwait(true);
         }
         catch (AiException ex)
         {
@@ -190,6 +202,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         IsTurnRunning = detail.Summary.ActiveTurnState is AiTurnState.Pending or AiTurnState.Streaming
             or AiTurnState.ToolRunning or AiTurnState.AwaitingApproval;
         StatusKey = IsTurnRunning ? "ai.status.running" : "ai.status.idle";
+        ClearMentions();   // 提及 chip 是"待发集合"：换会话即清（不跨会话带走）
+        _ = RefreshUsageAsync();
     }
 
     public async Task DeleteSessionAsync(AiSessionSummary session)
@@ -311,6 +325,22 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 var index = Sessions.ToList().FindIndex(s => s.SessionId == summary.SessionId);
                 if (index >= 0) Sessions[index] = summary;
                 else Sessions.Insert(0, summary);
+                break;
+            case AiNotificationKind.ContextCompacted when notification.Compaction is { } compaction:
+                if (notification.SessionId != _activeSessionId) break;
+                Notice(compaction.Failed
+                    ? Loc.K("ai.context.failed")
+                    : compaction.IsSummary
+                        ? Loc.K("ai.context.summarized")
+                        : Loc.K("ai.context.micro", compaction.ClearedToolResults, compaction.TokensSaved));
+                break;
+            case AiNotificationKind.ToolProgress when notification.Progress is { } progress:
+                if (notification.SessionId != _activeSessionId) break;
+                ApplyProgress(progress);
+                break;
+            case AiNotificationKind.RateLimited when notification.RateLimit is { } rateLimit:
+                if (notification.SessionId != _activeSessionId) break;
+                ApplyRateLimit(rateLimit);
                 break;
         }
     }
