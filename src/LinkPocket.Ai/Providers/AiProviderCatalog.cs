@@ -5,7 +5,7 @@ namespace LinkPocket.Ai;
 /// <summary>
 /// 预设服务商目录（12 条，功能书 §4.2）。这些是**模板数据**：用户保存的服务商记录是它的覆盖层，
 /// 删除用户记录即回到出厂模板；与预设不撞名的 Id 则是用户自建服务商（自定义）。
-/// <para>显示名一律走**文案键**（<c>ai.provider.*</c>，中文只许出现在 StringTables.cs）；
+/// <para>显示名一律走**文案键**（<c>ai.provider.*</c>，中文只许出现在 <c>I18n/Strings/*.json</c>）；
 /// <c>DisplayName</c> 只是 ASCII 回退名。</para>
 /// </summary>
 public static class AiProviderCatalog

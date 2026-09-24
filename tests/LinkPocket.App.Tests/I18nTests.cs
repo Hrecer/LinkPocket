@@ -35,6 +35,23 @@ public sealed class I18nTests : IDisposable
     }
 
     [Fact]
+    public void 文案数据_必须是嵌入资源且两份都能加载()
+    {
+        // 与 Architecture 的 G12（csproj 声明）成对：这条量**运行期真的读得到**
+        var names = typeof(StringTables).Assembly.GetManifestResourceNames();
+        Assert.Contains(names, name => name.EndsWith(".Strings.zh-CN.json", StringComparison.Ordinal));
+        Assert.Contains(names, name => name.EndsWith(".Strings.en.json", StringComparison.Ordinal));
+
+        var zh = StringTables.For(AppLocale.ZhCn);
+        var en = StringTables.For(AppLocale.En);
+        Assert.True(zh.Count > 100, $"文案条数异常少：{zh.Count}");
+        Assert.Equal(zh.Count, en.Count);
+        Assert.Equal(StringTables.Keys.Count, zh.Count);
+        Assert.Equal("全部书签", zh["nav.root.bookmarks"]);
+        Assert.Equal("Bookmarks", en["nav.root.bookmarks"]);
+    }
+
+    [Fact]
     public void 缺键在界面上显形_不回退成空串()
     {
         var text = Loc.T("nav.root.没有这条键");

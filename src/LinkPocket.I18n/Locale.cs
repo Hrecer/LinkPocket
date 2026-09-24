@@ -4,7 +4,7 @@ using LinkPocket.Contracts;
 
 namespace LinkPocket.I18n;
 
-/// <summary>支持的语言。加一门语言 = 加一个枚举值 + 在 <see cref="StringTables"/> 里补一列，根别名与保留名自动跟着表走。</summary>
+/// <summary>支持的语言。加一门语言 = 加一个枚举值 + 加一份 <c>Strings/&lt;语言码&gt;.json</c>（键序与既有文件逐行一致），根别名与保留名自动跟着表走。</summary>
 public enum AppLocale
 {
     /// <summary>简体中文（出厂缺省）。</summary>

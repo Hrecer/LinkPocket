@@ -17,4 +17,9 @@
     <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 文案数据（嵌入资源：零文件丢失面；改文案只改这两份 JSON，见 内部资产/文档/I18N.md §4.2） -->
+    <EmbeddedResource Include="Strings\*.json" />
+  </ItemGroup>
+
 </Project>

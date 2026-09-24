@@ -12,7 +12,7 @@ namespace LinkPocket.Ai;
 /// </summary>
 public sealed record AiProviderTemplate(
     string Id,
-    /// <summary>显示名的**文案键**（界面取词；中文只许出现在 StringTables.cs，此处一律 ASCII）。</summary>
+    /// <summary>显示名的**文案键**（界面取词；中文只许出现在 <c>I18n/Strings/*.json</c>，此处一律 ASCII）。</summary>
     string DisplayNameKey,
     /// <summary>显示名回退（ASCII 英文名）：仅在界面拿不到 Key 取词结果时使用，不作为界面文案主路径。</summary>
     string DisplayName,

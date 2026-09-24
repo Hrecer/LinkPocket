@@ -46,12 +46,14 @@ public class I18nRulesTests
     };
 
     /// <summary>
-    /// 中文文案的唯一归属地。除此之外，<c>src/**</c> 的 C# 里不许出现任何 CJK 字面量：
-    /// 引擎层带英文技术文案，UI 层带键与 <c>LocValue</c>，界面语言只在渲染边界生效。
+    /// 中文文案的**唯一归属地**：两份文案数据文件（嵌入资源，见 <c>I18N.md</c> §4.2）。
+    /// 除此之外 <c>src/**</c> 的 C# 里不许出现任何 CJK 字面量：引擎层带英文技术文案，
+    /// UI 层带键与 <c>LocValue</c>，界面语言只在渲染边界生效。
     /// </summary>
     private static readonly string[] CopyHome =
     {
-        "src/LinkPocket.I18n/StringTables.cs",
+        "src/LinkPocket.I18n/Strings/zh-CN.json",
+        "src/LinkPocket.I18n/Strings/en.json",
     };
 
     /// <summary>
@@ -268,29 +270,89 @@ public class I18nRulesTests
     [Fact]
     public void 字符串表_两表键对称且无空文本()
     {
-        var path = Path.Combine(RepoRoot, "src", "LinkPocket.I18n", "StringTables.cs");
-        Assert.True(File.Exists(path), "字符串表文件不存在");
-        var rows = Regex.Matches(File.ReadAllText(path), @"new StringRow\(\s*""([^""]+)""\s*,\s*""((?:\\.|[^""\\])*)""\s*,\s*""((?:\\.|[^""\\])*)""");
-        Assert.True(rows.Count > 0, "一行都没解析到——扫描口径与表形状漂移了");
+        var zh = ReadCopyFile(CopyHome[0]);
+        var en = ReadCopyFile(CopyHome[1]);
+
+        Assert.True(zh.Count > 100, "文案条数异常少——扫描口径或文件形状漂移了");
+        Assert.Equal(zh.Count, en.Count);
+        // 键序逐行一致：对称不是"记着的约定"，是**写出来就能看见**的结构
+        for (var i = 0; i < zh.Count; i++)
+            Assert.Equal(zh[i].Key, en[i].Key);
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var m in rows.Cast<Match>())
+        foreach (var (key, zhText) in zh)
         {
-            var key = m.Groups[1].Value;
             Assert.True(seen.Add(key), $"键重复：{key}");
             // 段首小写、其后允许 camelCase（restoreToRoot 比 restore_to_root 读得动）；变体只认三个
             Assert.Matches(@"^[a-z][a-z0-9]*(\.[a-z][a-zA-Z0-9]*)+(#(one|other|short))?$", key);
-            Assert.NotEqual("", m.Groups[2].Value.Trim());
-            Assert.NotEqual("", m.Groups[3].Value.Trim());
+            Assert.NotEqual("", zhText.Trim());
         }
+        Assert.All(en, pair => Assert.NotEqual("", pair.Value.Trim()));
+    }
+
+    /// <summary>读一份文案文件（注释允许：与运行时加载器同一套解析选项）。</summary>
+    private static IReadOnlyList<KeyValuePair<string, string>> ReadCopyFile(string relative)
+    {
+        var path = Path.Combine(RepoRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(path), $"文案文件不存在：{relative}");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path), nodeOptions: null,
+            documentOptions: new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+            });
+        var obj = Assert.IsType<System.Text.Json.Nodes.JsonObject>(node);
+        return obj.Select(pair => new KeyValuePair<string, string>(pair.Key, pair.Value?.GetValue<string>() ?? ""))
+            .ToArray();
+    }
+
+    [Fact]
+    public void 文案归属地_文件真实存在()
+    {
+        foreach (var relative in CopyHome.Append(IdentityData[0]))
+        {
+            var path = Path.Combine(RepoRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(path), $"豁免/归属路径指向的文件不存在（僵尸豁免）：{relative}");
+        }
+    }
+
+    /// <summary>
+    /// G12（静态侧）：文案文件必须在 csproj 里声明为**嵌入资源**——与运行时加载器
+    /// （<c>StringTables</c> 按资源名后缀找文件）成对；漏改 csproj 在这里红，而不是运行期"找不到资源"。
+    /// </summary>
+    [Fact]
+    public void 文案文件_必须是嵌入资源()
+    {
+        var csproj = Path.Combine(RepoRoot, "src", "LinkPocket.I18n", "LinkPocket.I18n.csproj");
+        var body = File.ReadAllText(csproj);
+        Assert.Contains("EmbeddedResource", body, StringComparison.Ordinal);
+        Assert.Contains("Strings", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// G13：<c>src/**/*.json</c> 里含 CJK 的白名单**只许两份文案文件**——
+    /// 防"把中文塞进别的数据文件"绕过 G2（C# 那条只管 <c>.cs</c>）。
+    /// </summary>
+    [Fact]
+    public void 数据文件_含中文的白名单只许文案文件()
+    {
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepoRoot, "src"), "*.json",
+                     SearchOption.AllDirectories))
+        {
+            if (IsGenerated(file)) continue;
+            var relative = Relative(file);
+            if (CopyHome.Contains(relative, StringComparer.Ordinal)) continue;
+            if (Regex.IsMatch(File.ReadAllText(file), Cjk)) offenders.Add(relative);
+        }
+        Assert.True(offenders.Count == 0,
+            "src 下的 JSON 数据文件里出现中文（文案只许放两份文案文件里）：\n" + string.Join("\n", offenders));
     }
 
     [Fact]
     public void 界面引用的键_必须在表里存在()
     {
-        var tablePath = Path.Combine(RepoRoot, "src", "LinkPocket.I18n", "StringTables.cs");
-        var keys = Regex.Matches(File.ReadAllText(tablePath), @"new StringRow\(\s*""([^""]+)""")
-            .Cast<Match>().Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+        var keys = ReadCopyFile(CopyHome[0]).Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
 
         var referenced = new List<string>();
         foreach (var file in Files(UiDirs).Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
