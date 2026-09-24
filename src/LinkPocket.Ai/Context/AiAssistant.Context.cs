@@ -11,8 +11,9 @@ namespace LinkPocket.Ai;
 /// </summary>
 public sealed partial class AiAssistant
 {
-    /// <summary>压缩评估与执行（在每次模型请求之前调用；不抛——压缩失败不该杀死回合）。</summary>
-    private async Task CompactContextIfNeededAsync(AiSessionFile file, TurnRun run, AiProviderInfo provider,
+    /// <summary>压缩评估与执行（在每次模型请求之前调用；不抛——压缩失败不该杀死回合）。
+    /// 返回 = **本次将要发出去的那份历史**的上下文估算（压缩后重算；界面用量环按它如实读数）。</summary>
+    private async Task<int> CompactContextIfNeededAsync(AiSessionFile file, TurnRun run, AiProviderInfo provider,
         AiModelInfo model, AiPreferences preferences, string systemPrompt, string? apiKey)
     {
         try
@@ -49,10 +50,11 @@ public sealed partial class AiAssistant
                 if (decision.Reason == "circuit_breaker")
                     LpLog.Warn($"context summarization is stopped after {file.CompactFailures} consecutive failures",
                         category: "ai.context");
-                return;
             }
-
-            await SummarizeAsync(file, run, provider, model, apiKey).ConfigureAwait(false);
+            else
+            {
+                await SummarizeAsync(file, run, provider, model, apiKey).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -68,6 +70,8 @@ public sealed partial class AiAssistant
             if (file.CompactFailures >= AiCompactionPolicy.MaxConsecutiveSummaryFailures)
                 NotifyCompaction(file, run, new AiContextCompaction(run.TurnId, true, 0, 0, 0) { Failed = true });
         }
+
+        return AiTokenEstimator.Estimate(systemPrompt) + AiTokenEstimator.EstimateChat(file.Chat);
     }
 
     /// <summary>LLM 摘要：把"除最近 1 组回合以外"的历史换成一条 user 角色的摘要消息。</summary>

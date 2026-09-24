@@ -9,13 +9,15 @@ namespace LinkPocket.Views;
 /// </summary>
 public static class AiKeyMap
 {
-    /// <summary>服务商状态徽标 / 连通性结果 → 键。</summary>
+    /// <summary>服务商状态徽标 / 连通性结果 → 键。
+    /// ⚠️ 与「回合状态」分开一套键（`ai.status.*` 那组是回合/页面的状态行文案）——曾共用
+    /// `ai.status.failed`，于是设置页的服务商徽标画的是"上一回合失败了"。</summary>
     public static string Status(AiProviderStatus status) => status switch
     {
-        AiProviderStatus.Verified => "ai.status.verified",
-        AiProviderStatus.Failed => "ai.status.failed",
-        AiProviderStatus.Configured => "ai.status.configured",
-        _ => "ai.status.notConfigured",
+        AiProviderStatus.Verified => "ai.status.provider.verified",
+        AiProviderStatus.Failed => "ai.status.provider.failed",
+        AiProviderStatus.Configured => "ai.status.provider.configured",
+        _ => "ai.status.provider.notConfigured",
     };
 
     /// <summary>LP.AI.* 错误码 → 键（未收录即通用文案）。</summary>
@@ -75,6 +77,29 @@ public static class AiKeyMap
                 result += char.ToUpperInvariant(parts[i][0]) + parts[i][1..];
         return result;
     }
+
+    /// <summary>
+    /// 命令名（机器面，含下划线）→ 工具行的**域图标**字形键（只认 <c>LpIcons</c> 已注册的字形；
+    /// 未收录的域回落通用工具图标——不猜、不新增字形）。
+    /// </summary>
+    public static string Icon(string? command) => command?.Split('.')[0] switch
+    {
+        "folders" => "folder-outline",
+        "links" => "link-variant",
+        "trash" => "delete-outline",
+        "search" => "magnify",
+        "bookmarks" => "bookmark-outline",
+        "backup" => "backup-restore",
+        "dedup" => "content-duplicate",
+        "favicon" => "star",
+        "locate" => "map-marker",
+        "maintenance" => "cog-outline",
+        "macro" or "skill" => "auto-fix",
+        "undo" or "session" => "history",
+        "staging" => "import",
+        "batch" => "sort",
+        _ => "wrench-outline",
+    };
 
     /// <summary>
     /// 引擎随 <c>LP.SEC.003</c> 下发的影响面摘要（机器面英文）→ 键；未收录的形状 = 带参数的整句

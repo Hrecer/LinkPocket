@@ -3,8 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
-             xmlns:views="clr-namespace:LinkPocket.Views"
-             xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml">
+             xmlns:views="clr-namespace:LinkPocket.Views">
 
     <!-- ================= 「链接详情」共享页（UIKit） =================
          浏览页详情页 与 回收站只读详情页 **共用同一份界面与同一份模型**：
@@ -128,26 +127,8 @@
                         <StackPanel>
                             <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <mdxaml:MarkdownScrollViewer Markdown="{Binding Description}"
-                                                         FontFamily="{DynamicResource App.Font.Ui}"
-                                                         IsSelectionEnabled="True"
-                                                         VerticalScrollBarVisibility="Disabled"
-                                                         HorizontalScrollBarVisibility="Disabled">
-                                <mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                                    <Style TargetType="FlowDocument" BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
-                                        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
-                                        <Style.Resources>
-                                            <Style TargetType="Paragraph">
-                                                <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-                                            </Style>
-                                            <Style TargetType="Run">
-                                                <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
-                                            </Style>
-                                        </Style.Resources>
-                                    </Style>
-                                </mdxaml:MarkdownScrollViewer.MarkdownStyle>
-                            </mdxaml:MarkdownScrollViewer>
+                            <!-- 渲染口径（字体/前景/链接出口/图片不抓取）全在共享控件里，见 views:MarkdownText -->
+                            <views:MarkdownText Markdown="{Binding Description}"/>
                         </StackPanel>
                     </Border>
 

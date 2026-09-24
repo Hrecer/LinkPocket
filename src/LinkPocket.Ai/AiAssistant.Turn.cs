@@ -120,9 +120,11 @@ public sealed partial class AiAssistant
         for (var toolCalls = 0; toolCalls < preferences.MaxToolCallsPerTurn;)
         {
             run.Cts.Token.ThrowIfCancellationRequested();
-            // 压缩评估在每次模型请求之前（微压缩 → 摘要；失败不杀死回合、如实留痕）
-            await CompactContextIfNeededAsync(file, run, provider, model, preferences, system, apiKey)
+            // 压缩评估在每次模型请求之前（微压缩 → 摘要；失败不杀死回合、如实留痕）；
+            // 返回的估算 = 即将发出去的那份历史 → 记进回合，供界面用量环如实读数
+            run.ContextTokens = await CompactContextIfNeededAsync(file, run, provider, model, preferences, system, apiKey)
                 .ConfigureAwait(false);
+            run.ContextWindowTokens = AiCompactionPolicy.WindowTokens(model, preferences);
             SetTurn(file, run, AiTurnState.Streaming);
             var completion = await StreamModelAsync(file, run, adapter, provider, apiKey, model, tools, system,
                 preferences, engineSession).ConfigureAwait(false);
@@ -727,6 +729,8 @@ public sealed partial class AiAssistant
             WriteFrozen = run.WriteHoldTaken,
             InputTokens = run.InputTokens > 0 ? run.InputTokens : null,
             OutputTokens = run.OutputTokens > 0 ? run.OutputTokens : null,
+            ContextTokens = run.ContextTokens > 0 ? run.ContextTokens : null,
+            ContextWindowTokens = run.ContextWindowTokens > 0 ? run.ContextWindowTokens : null,
         };
         file.Turns[index] = turn;
         Notified?.Invoke(new AiNotification(AiNotificationKind.TurnChanged, file.Summary.SessionId,
@@ -746,6 +750,8 @@ public sealed partial class AiAssistant
                 WriteFrozen = run.WriteHoldTaken,
                 InputTokens = run.InputTokens > 0 ? run.InputTokens : null,
                 OutputTokens = run.OutputTokens > 0 ? run.OutputTokens : null,
+                ContextTokens = run.ContextTokens > 0 ? run.ContextTokens : null,
+                ContextWindowTokens = run.ContextWindowTokens > 0 ? run.ContextWindowTokens : null,
             };
         Persist(file);
         if (index >= 0)

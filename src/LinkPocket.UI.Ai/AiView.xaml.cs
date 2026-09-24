@@ -1,8 +1,10 @@
 using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.Input;
@@ -13,7 +15,7 @@ using Microsoft.Win32;
 namespace LinkPocket.Views;
 
 /// <summary>
-/// AI 助手页（三栏：会话 / 对话 / 变更与审计）。视图只做输入采集与命令转发；
+/// AI 助手页（三栏：会话 / 对话 / 变更与审计）。视图只做输入采集、滚动定位与命令转发；
 /// 业务状态全在 <see cref="IAiAssistant"/> 与 <see cref="AiViewModel"/> 侧（UI 是纯投影）。
 /// 键位全部来自总表（<c>ShortcutCatalog</c> 的 Ai 组），本页只做「动作 id → 命令」映射。
 /// </summary>
@@ -27,8 +29,13 @@ public partial class AiView : UserControl
     private readonly ICommand _escapeCommand;
     private readonly ICommand _newSessionCommand;
     private readonly ICommand _undoSessionCommand;
-    private readonly System.Windows.Threading.DispatcherTimer _progressTimer;
+    private readonly DispatcherTimer _progressTimer;
+    private readonly DispatcherTimer _tickTimer;
+    private readonly DispatcherTimer _copyTimer;
     private double _indeterminateValue;
+    private bool _stickToBottom = true;
+    private double _storedPanelWidth = 286;
+    private Button? _copiedButton;
 
     public AiView()
     {
@@ -42,11 +49,16 @@ public partial class AiView : UserControl
             () => _viewModel?.CanUndoSession == true);
 
         // 不确定态进度 = 视图侧扫值（业务状态仍在 VM：IsProgressVisible / IsProgressIndeterminate）
-        _progressTimer = new System.Windows.Threading.DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(40),
-        };
+        _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
         _progressTimer.Tick += (_, _) => SyncProgress();
+
+        // 秒针：运行中的回合分隔行重投影"已用 N 秒"（业务读数在 VM）
+        _tickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _tickTimer.Tick += (_, _) => _viewModel?.Tick();
+
+        // "已复制"回执的复位（同一条消息的按钮 1.2s 后复原）
+        _copyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        _copyTimer.Tick += (_, _) => RestoreCopyLabel();
     }
 
     /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。
@@ -85,6 +97,7 @@ public partial class AiView : UserControl
         _shortcutHost.Attach(this);
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
         _progressTimer.Start();
+        _tickTimer.Start();
     }
 
     /// <summary>入口对齐：进入本页即刷新会话清单并重投影当前会话（对话内容不重载为本地状态）。</summary>
@@ -100,6 +113,7 @@ public partial class AiView : UserControl
         _loaded = true;
         await _viewModel.LoadAsync();
         SelectActiveInList();
+        _stickToBottom = true;
         ScrollFeedToEnd();
     }
 
@@ -107,16 +121,142 @@ public partial class AiView : UserControl
     {
         if (_viewModel?.ActiveSessionId is not { } id) return;
         foreach (var session in SessionList.Items)
-            if (session is AiSessionSummary summary && summary.SessionId == id)
+            if (session is AiSessionRow row && row.SessionId == id)
             {
-                SessionList.SelectedItem = session;
+                SessionList.SelectedItem = row;
                 break;
             }
     }
 
-    private void OnFeedChanged(object? sender, NotifyCollectionChangedEventArgs e) => ScrollFeedToEnd();
+    private void OnFeedChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_stickToBottom) ScrollFeedToEnd();
+    }
 
     private void ScrollFeedToEnd() => FeedScroll?.ScrollToEnd();
+
+    // ── 对话区：吸底跟随 / 回到最新 / 轮次导航轨 ─────────────────
+
+    /// <summary>滚动位置投影：吸底跟随（内容变高自动跟）、「回到最新」显隐、导航轨当前轮高亮。</summary>
+    private void OnFeedScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (FeedScroll is null) return;
+        var atBottom = FeedScroll.ScrollableHeight - FeedScroll.VerticalOffset <= 8;
+        if (atBottom) _stickToBottom = true;
+        else if (e.VerticalChange < 0) _stickToBottom = false;   // 用户上滚 = 停止跟随
+        if (e.ExtentHeightChange != 0 && _stickToBottom) ScrollFeedToEnd();
+        if (BackToLatestButton is not null)
+            BackToLatestButton.Visibility = atBottom ? Visibility.Collapsed : Visibility.Visible;
+        UpdateRail();
+    }
+
+    private void OnBackToLatest(object sender, RoutedEventArgs e)
+    {
+        _stickToBottom = true;
+        ScrollFeedToEnd();
+    }
+
+    /// <summary>导航轨高亮 = 视口顶端所在的那一轮（纯滚动定位，不改业务状态）。</summary>
+    private void UpdateRail()
+    {
+        if (_viewModel is null || FeedScroll is null) return;
+        AiFeedItem? active = null;
+        foreach (var header in _viewModel.Turns)
+        {
+            if (FeedItems.ItemContainerGenerator.ContainerFromItem(header) is not FrameworkElement container) continue;
+            if (container.TransformToAncestor(FeedScroll).Transform(new Point(0, 0)).Y > 12) break;
+            active = header;
+        }
+        active ??= _viewModel.Turns.FirstOrDefault();
+        foreach (var header in _viewModel.Turns) header.IsActive = ReferenceEquals(header, active);
+    }
+
+    private void OnRailClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem header) return;
+        if (FeedItems.ItemContainerGenerator.ContainerFromItem(header) is not FrameworkElement container) return;
+        var offset = container.TransformToAncestor(FeedScroll).Transform(new Point(0, 0)).Y;
+        _stickToBottom = false;
+        FeedScroll.ScrollToVerticalOffset(FeedScroll.VerticalOffset + offset - 8);
+    }
+
+    /// <summary>折叠 / 展开一轮（只改显隐；折叠后条目不再占位，导航轨照旧可达）。</summary>
+    private void OnToggleTurn(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiFeedItem item) return;
+        _viewModel.ToggleTurn(item);
+        Dispatcher.BeginInvoke(new Action(UpdateRail), DispatcherPriority.Loaded);
+    }
+
+    private void OnToggleToolRow(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AiFeedItem item
+            && item.Kind == AiFeedItem.ItemKind.ToolCall)
+            item.ToggleExpand();
+    }
+
+    /// <summary>复制一条消息原文（用户数据原样；回执只改按钮文字，1.2s 后复原）。</summary>
+    private void OnCopyMessage(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.DataContext is not AiFeedItem item || item.Text.Length == 0) return;
+        try
+        {
+            Clipboard.SetText(item.Text);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn("clipboard write failed", ex, category: "ai.page");
+            return;
+        }
+        _copiedButton = button;
+        button.Content = Loc.T("ai.feed.copied");
+        _copyTimer.Stop();
+        _copyTimer.Start();
+    }
+
+    private void RestoreCopyLabel()
+    {
+        _copyTimer.Stop();
+        if (_copiedButton is { } button) button.Content = Loc.T("ai.feed.copy");
+        _copiedButton = null;
+    }
+
+    /// <summary>空态示例提示：点了填进输入框即发送（示例文案在点击这一刻取词，之后就是用户消息）。</summary>
+    private void OnExamplePrompt(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || (sender as FrameworkElement)?.Tag is not string key) return;
+        _viewModel.ComposerText = Loc.T(key);
+        _ = SendAsync();
+    }
+
+    // ── 右栏收起 / 展开（宽度可拖；收起 = 整列归零）────────────────
+
+    private void OnTogglePanel(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        _viewModel.IsPanelCollapsed = !_viewModel.IsPanelCollapsed;
+        ApplyPanelState();
+    }
+
+    private void ApplyPanelState()
+    {
+        var collapsed = _viewModel?.IsPanelCollapsed == true;
+        if (collapsed)
+        {
+            if (PanelColumn.ActualWidth > 0) _storedPanelWidth = PanelColumn.ActualWidth;
+            PanelColumn.MinWidth = 0;
+            PanelColumn.Width = new GridLength(0);
+            DetailsPanel.Visibility = Visibility.Collapsed;
+            PanelSplitter.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            PanelColumn.MinWidth = 230;
+            PanelColumn.Width = new GridLength(Math.Clamp(_storedPanelWidth, 230, 400));
+            DetailsPanel.Visibility = Visibility.Visible;
+            PanelSplitter.Visibility = Visibility.Visible;
+        }
+    }
 
     // ── 中栏：发送 / 停止 / 审批 ──────────────────────────────
 
@@ -127,6 +267,7 @@ public partial class AiView : UserControl
         if (_viewModel is null) return;
         await _viewModel.SendAsync();
         SelectActiveInList();   // 斜杠命令 /new 会换会话：左栏选中跟上
+        _stickToBottom = true;
         ScrollFeedToEnd();
         CommandRefresh.Request();
     }
@@ -204,7 +345,25 @@ public partial class AiView : UserControl
         if (_viewModel is null) return;
         await _viewModel.NewSessionAsync();
         SelectActiveInList();
+        _stickToBottom = true;
         ScrollFeedToEnd();
+    }
+
+    /// <summary>右键先选中该行（菜单动作作用于选中行）——与「更多」按钮同一入口。</summary>
+    private void OnSessionRowRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is ListBoxItem item) item.IsSelected = true;
+    }
+
+    /// <summary>行悬停的「更多」：先选中该行，再在当前行上打开与右键同一份菜单。</summary>
+    private void OnSessionMore(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement source || source.DataContext is not AiSessionRow row) return;
+        SessionList.SelectedItem = row;
+        if (SessionList.ContextMenu is not { } menu) return;
+        menu.PlacementTarget = source;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
     }
 
     // ── 右栏：引擎审计分页 ────────────────────────────────────
@@ -223,27 +382,51 @@ public partial class AiView : UserControl
 
     private async void OnSessionSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (_viewModel is null || SessionList.SelectedItem is not AiSessionSummary summary) return;
-        if (summary.SessionId == _viewModel.ActiveSessionId) return;
-        await _viewModel.OpenSessionAsync(summary.SessionId);
+        if (_viewModel is null || SessionList.SelectedItem is not AiSessionRow row) return;
+        if (row.SessionId == _viewModel.ActiveSessionId) return;
+        await _viewModel.OpenSessionAsync(row.SessionId);
+        _stickToBottom = true;
         ScrollFeedToEnd();
     }
 
     private async void OnDeleteSession(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || SessionList.SelectedItem is not AiSessionSummary summary) return;
+        if (_viewModel is null || SessionList.SelectedItem is not AiSessionRow row) return;
         if (!ConfirmDialog.Show(Loc.T("ai.sessions.delete"), Loc.T("ai.sessions.delete.confirm"),
                 Loc.T("ai.sessions.delete"), "delete-outline"))
             return;
-        await _viewModel.DeleteSessionAsync(summary);
+        await _viewModel.DeleteSessionAsync(row);
         SelectActiveInList();
     }
 
     private void OnRenameSession(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || SessionList.SelectedItem is not AiSessionSummary summary) return;
-        _viewModel.BeginRename(summary);
-        RenameBox.Focus();
+        if (_viewModel is null || SessionList.SelectedItem is not AiSessionRow row) return;
+        _viewModel.BeginRename(row);
+        // 就地编辑框在行的数据模板里：等模板把可见性样式跑完再聚焦
+        Dispatcher.BeginInvoke(new Action(FocusRenameBox), DispatcherPriority.Loaded);
+    }
+
+    private void FocusRenameBox()
+    {
+        var box = FindDescendant<TextBox>(SessionList,
+            candidate => candidate.Tag as string == "AiRenameBox" && candidate.IsVisible);
+        box?.Focus();
+        if (box is not null) Keyboard.Focus(box);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject? root, Func<T, bool> predicate) where T : DependencyObject
+    {
+        if (root is null) return null;
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match && predicate(match)) return match;
+            var nested = FindDescendant(child, predicate);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     private async void OnRenameKeyDown(object sender, KeyEventArgs e)
@@ -310,26 +493,12 @@ public partial class AiView : UserControl
     private void FocusApprovalReject(string approvalId)
     {
         if (!IsVisible) return;
-        var button = FindApprovalReject(this);
+        var button = FindDescendant<Button>(this, candidate => candidate.Tag as string == "AiApprovalReject"
+            && candidate.IsVisible);
         if (button?.DataContext is not AiFeedItem item || item.ApprovalId != approvalId) return;
         if (!item.IsApprovalOpen) return;   // 已经作过决定的卡不抢焦点
         button.Focus();
         Keyboard.Focus(button);
-    }
-
-    /// <summary>模板里的按钮没有跨实例的名字，按 <c>Tag</c> 现扫可视树（每次现扫，不缓存元素引用）。</summary>
-    private static Button? FindApprovalReject(DependencyObject? root)
-    {
-        if (root is null) return null;
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is Button { Tag: "AiApprovalReject" } button && button.IsVisible) return button;
-            var nested = FindApprovalReject(child);
-            if (nested is not null) return nested;
-        }
-        return null;
     }
 
     // ── 提及面板（输入区 @；控件级编辑语义：由输入框自持、只在面板打开时生效）────────────
@@ -374,6 +543,19 @@ public partial class AiView : UserControl
         _viewModel.CommitMentionSelection();
         ApplyPendingCaret();
         ComposerBox.Focus();
+    }
+
+    /// <summary>工具行的 `@` 钮：在光标处插入 `@` 并打开候选面板（与手敲 `@` 同一条路径）。</summary>
+    private void OnInsertMention(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var caret = Math.Clamp(ComposerBox.CaretIndex, 0, ComposerBox.Text.Length);
+        var text = ComposerBox.Text;
+        _viewModel.ComposerText = text[..caret] + "@" + text[caret..];
+        ComposerBox.CaretIndex = caret + 1;
+        _viewModel.UpdateMentionQuery(_viewModel.ComposerText, caret + 1);
+        ComposerBox.Focus();
+        Keyboard.Focus(ComposerBox);
     }
 
     private void OnRemoveMention(object sender, RoutedEventArgs e)

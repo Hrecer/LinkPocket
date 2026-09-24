@@ -8,11 +8,14 @@ public sealed partial class AiAssistant
     public Task<AiSessionUsage> GetSessionUsageAsync(string sessionId, CancellationToken ct = default)
     {
         var file = _sessionStore.Load(sessionId) ?? throw NotFound(sessionId);
+        var latest = file.Turns.LastOrDefault(t => t.ContextTokens is > 0);
         return Task.FromResult(new AiSessionUsage(
             file.Turns.Count,
             file.ToolCalls.Count,
             file.Turns.Sum(t => (long)(t.InputTokens ?? 0)),
-            file.Turns.Sum(t => (long)(t.OutputTokens ?? 0))));
+            file.Turns.Sum(t => (long)(t.OutputTokens ?? 0)),
+            latest?.ContextTokens,
+            latest?.ContextWindowTokens ?? 0));
     }
 
     public Task<AiUsageSummary> GetUsageSummaryAsync(int days = 7, CancellationToken ct = default)

@@ -179,7 +179,16 @@ public enum AiUsagePurpose
 }
 
 /// <summary>本会话用量读数（审计面板底部状态条：轮数 / 工具调用次数 / token 合计；逐轮读数之和，单一来源 = 会话文件）。</summary>
-public sealed record AiSessionUsage(int Turns, int ToolCalls, long InputTokens, long OutputTokens);
+/// <summary>本会话用量读数（数据源 = 会话文件里的逐轮记录）。
+/// <paramref name="ContextTokens"/>/<paramref name="ContextWindowTokens"/> = **最近一次模型请求**的上下文占用读数
+/// （本地估算口径，与压缩阈值同源；还没发过请求 = null / 0——界面显示空环，不编造）。</summary>
+public sealed record AiSessionUsage(
+    int Turns,
+    int ToolCalls,
+    long InputTokens,
+    long OutputTokens,
+    int? ContextTokens = null,
+    int ContextWindowTokens = 0);
 
 /// <summary>按天用量（设置页「AI 服务」只读行；<paramref name="Day"/> = 本地日）。</summary>
 public sealed record AiUsageDay(DateTimeOffset Day, int Calls, long InputTokens, long OutputTokens);

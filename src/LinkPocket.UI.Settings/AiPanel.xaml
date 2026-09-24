@@ -3,6 +3,108 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:local="clr-namespace:LinkPocket.Views">
+    <UserControl.Resources>
+        <!-- 输入域（M3 填充式字段）：与设置页其它面板的 `CardField` 同一视觉语言——
+             圆角 + 卡面内的填充底 + 聚焦换面板底 + `Tag` 当占位提示；
+             方形边框的原生 WPF 文本框一律不用（那是"没接样式"，不是朴素）。 -->
+        <Style x:Key="AiField" TargetType="TextBox">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd" CornerRadius="12" Background="{DynamicResource App.Surface.Hover}">
+                            <Grid>
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"/>
+                                <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
+                                           Opacity="0.7" IsHitTestVisible="False" Visibility="Collapsed"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="Text" Value="">
+                                <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 密码框（独立类型，同构一份；无 Text 属性 → 不做占位提示，靠上面的字段标签说明） -->
+        <Style x:Key="AiFieldPassword" TargetType="PasswordBox">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource App.Accent.Fill}"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="Bd" CornerRadius="12" Background="{DynamicResource App.Surface.Hover}">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 服务商行：列表行的既有语言（圆角 12 + 悬停压深一档 + 选中底）——行铺在卡面上，
+             悬停取卡面承托面的那一支（App.Surface.CardHover），选中用列表行令牌。 -->
+        <Style x:Key="AiProviderItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="12"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.CardHover}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 状态徽标（chip）：状态文字走键，底 = 次强调容器 -->
+        <Style x:Key="AiStatusBadge" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource App.Support.Container}"/>
+            <Setter Property="CornerRadius" Value="9"/>
+            <Setter Property="Padding" Value="8,2"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="32,24,32,24" MaxWidth="760" HorizontalAlignment="Left">
 
@@ -20,53 +122,94 @@
                         </Grid.ColumnDefinitions>
                         <ListBox x:Name="ProviderList" Grid.Column="0" MinHeight="220" Background="Transparent"
                                  BorderThickness="0" ItemsSource="{Binding Providers}"
+                                 ItemContainerStyle="{StaticResource AiProviderItem}"
                                  SelectedItem="{Binding SelectedProvider, Mode=TwoWay}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Margin="0,4">
-                                        <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource App.Text.Primary}"/>
-                                        <TextBlock Text="{loc:LocKey StatusKey}" FontSize="11"
-                                                   Foreground="{DynamicResource App.Text.Muted}"/>
+                                    <StackPanel>
+                                        <!-- 显示名：预设走文案键；用户改过名 / 自建 = 用户数据原样 -->
+                                        <Grid>
+                                            <TextBlock Text="{loc:LocKey DisplayKey}" TextTrimming="CharacterEllipsis"
+                                                       FontSize="13" Foreground="{DynamicResource App.Text.Primary}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasDisplayKey}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                       FontSize="13" Foreground="{DynamicResource App.Text.Primary}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasDisplayKey}" Value="False">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                        <Border Style="{StaticResource AiStatusBadge}">
+                                            <TextBlock Text="{loc:LocKey StatusKey}" FontSize="10.5"
+                                                       Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                        </Border>
                                     </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
                         <StackPanel Grid.Column="1" Margin="16,0,0,0">
                             <TextBlock Text="{loc:Loc ai.settings.displayName}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBox x:Name="DisplayNameBox" Height="32" Margin="0,4,0,10"
-                                     Text="{Binding DisplayNameInput, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="{DynamicResource App.Surface.TintCard}" BorderBrush="{DynamicResource App.Line.Variant}"
-                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                            <TextBox x:Name="DisplayNameBox" Style="{StaticResource AiField}" Margin="0,4,0,10"
+                                     Text="{Binding DisplayNameInput, UpdateSourceTrigger=PropertyChanged}"/>
                             <TextBlock Text="{loc:Loc ai.settings.baseUrl}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBox x:Name="BaseUrlBox" Height="32" Margin="0,4,0,10"
-                                     Text="{Binding BaseUrlInput, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="{DynamicResource App.Surface.TintCard}" BorderBrush="{DynamicResource App.Line.Variant}"
-                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                            <TextBox x:Name="BaseUrlBox" Style="{StaticResource AiField}" Margin="0,4,0,10"
+                                     Text="{Binding BaseUrlInput, UpdateSourceTrigger=PropertyChanged}"/>
 
                             <TextBlock Text="{loc:Loc ai.settings.apiKey}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,10">
-                                <PasswordBox x:Name="KeyBox" Width="240" Height="32"/>
-                                <Button Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                                <PasswordBox x:Name="KeyBox" Style="{StaticResource AiFieldPassword}" Width="240"/>
+                                <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                         Content="{loc:Loc ai.settings.apiKeySave}" Click="OnSaveKey"/>
-                                <Button Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                                <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                         Content="{loc:Loc ai.settings.apiKeyRemove}" Click="OnRemoveKey"/>
                                 <TextBlock Text="{Binding ApiKeyMasked}" VerticalAlignment="Center" Margin="10,0,0,0"
+                                           FontFamily="{DynamicResource App.Font.Mono}" FontSize="12"
                                            Foreground="{DynamicResource App.Text.Muted}"/>
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal">
-                                <Button Style="{StaticResource TonalButton}" Height="32"
+                                <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                         Content="{loc:Loc ai.settings.save}" Click="OnSaveProvider"/>
-                                <Button Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                                <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                         Content="{loc:Loc ai.settings.test}" Click="OnTest"/>
-                                <Button Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                                <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                         Content="{loc:Loc ai.settings.delete}" Click="OnDeleteProvider"/>
                             </StackPanel>
-                            <TextBlock Margin="0,8,0,0" Foreground="{DynamicResource App.Accent.Text}">
-                                <Run Text="{loc:LocKey TestStatusKey}"/>
-                                <Run Text="{Binding TestDetail, Mode=OneWay}"/>
-                            </TextBlock>
+                            <!-- 连通性 / 保存回执：状态走键（徽标）+ 明细走 LocValue -->
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Border Margin="0,0,8,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource AiStatusBadge}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding TestStatusKey}" Value="">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{loc:LocKey TestStatusKey}" FontSize="10.5"
+                                               Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                </Border>
+                                <TextBlock Text="{loc:Value TestDetail}" VerticalAlignment="Center" FontSize="11"
+                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -80,13 +223,12 @@
                     <TextBlock Text="{loc:Loc ai.settings.models.desc}" FontSize="12" Margin="0,4,0,14"
                                TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource TonalButton}" Height="32"
+                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                 Content="{loc:Loc ai.settings.fetch}" Click="OnFetchModels"/>
-                        <TextBox x:Name="NewModelBox" Width="220" Height="32" Margin="8,0,0,0"
-                                 Text="{Binding NewModelId, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="{DynamicResource App.Surface.TintCard}" BorderBrush="{DynamicResource App.Line.Variant}"
-                                 Foreground="{DynamicResource App.Text.Primary}"/>
-                        <Button Style="{StaticResource TonalButton}" Height="32" Margin="8,0,0,0"
+                        <TextBox x:Name="NewModelBox" Style="{StaticResource AiField}" Width="220" Margin="8,0,0,0"
+                                 Tag="{loc:Loc ai.settings.modelId.hint}"
+                                 Text="{Binding NewModelId, UpdateSourceTrigger=PropertyChanged}"/>
+                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                 Content="{loc:Loc ai.settings.add}" Click="OnAddModel"/>
                     </StackPanel>
                     <ItemsControl ItemsSource="{Binding Models}" Margin="0,10,0,0">
@@ -97,14 +239,16 @@
                                         <ToggleButton IsChecked="{Binding Model.Enabled, Mode=OneWay}" Click="OnToggleModel"
                                                       VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding Model.Id}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                   FontFamily="{DynamicResource App.Font.Mono}" FontSize="12.5"
                                                    Foreground="{DynamicResource App.Text.Primary}"/>
-                                        <TextBlock Text="{Binding Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                                   FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                                        <Button Style="{StaticResource TonalButton}" Height="32" Margin="10,0,0,0"
+                                        <TextBlock Text="{loc:Value Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                                   FontSize="11" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource App.Text.Muted}"/>
+                                        <Button Style="{StaticResource TonalButton}" Height="30" Padding="12,0" Margin="10,0,0,0"
                                                 Content="{loc:LocKey EditKey}" Click="OnToggleModelEdit"/>
                                     </StackPanel>
                                     <!-- 能力编辑行（功能书 §4.5：上下文窗口 / 最大输出 / 工具调用 / 流式；显式保存） -->
-                                    <StackPanel Margin="34,4,0,0">
+                                    <StackPanel Margin="34,6,0,0">
                                         <StackPanel.Style>
                                             <Style TargetType="StackPanel">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -118,20 +262,14 @@
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{loc:Loc ai.settings.model.contextWindow}" FontSize="12"
                                                        VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
-                                            <TextBox Width="100" Height="32" Margin="8,0,16,0"
-                                                     Text="{Binding ContextWindowInput, UpdateSourceTrigger=PropertyChanged}"
-                                                     Background="{DynamicResource App.Surface.TintCard}"
-                                                     BorderBrush="{DynamicResource App.Line.Variant}"
-                                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                                            <TextBox Style="{StaticResource AiField}" Width="100" Margin="8,0,16,0"
+                                                     Text="{Binding ContextWindowInput, UpdateSourceTrigger=PropertyChanged}"/>
                                             <TextBlock Text="{loc:Loc ai.settings.model.maxOutputTokens}" FontSize="12"
                                                        VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
-                                            <TextBox Width="100" Height="32" Margin="8,0,0,0"
-                                                     Text="{Binding MaxOutputTokensInput, UpdateSourceTrigger=PropertyChanged}"
-                                                     Background="{DynamicResource App.Surface.TintCard}"
-                                                     BorderBrush="{DynamicResource App.Line.Variant}"
-                                                     Foreground="{DynamicResource App.Text.Primary}"/>
+                                            <TextBox Style="{StaticResource AiField}" Width="100" Margin="8,0,0,0"
+                                                     Text="{Binding MaxOutputTokensInput, UpdateSourceTrigger=PropertyChanged}"/>
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                             <ToggleButton IsChecked="{Binding SupportsTools, Mode=TwoWay}" VerticalAlignment="Center"/>
                                             <TextBlock Text="{loc:Loc ai.settings.model.supportsTools}" FontSize="12" Margin="8,0,16,0"
                                                        VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
@@ -139,11 +277,11 @@
                                             <TextBlock Text="{loc:Loc ai.settings.model.supportsStreaming}" FontSize="12" Margin="8,0,0,0"
                                                        VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
                                         </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                            <Button Style="{StaticResource TonalButton}" Height="32"
+                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                            <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                                     Content="{loc:Loc ai.settings.save}" Click="OnSaveModelCapabilities"/>
                                             <TextBlock Text="{loc:LocKey ErrorKey}" FontSize="11" Margin="10,0,0,0"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Accent.Text}">
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Line.Invalid}">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -189,7 +327,8 @@
                     </StackPanel>
                     <TextBlock Text="{loc:Loc ai.settings.advancedTools.desc}" FontSize="12" Margin="0,4,0,0"
                                TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
-                    <Button Style="{StaticResource PrimaryPillButton}" Height="32" HorizontalAlignment="Left" Margin="0,12,0,0"
+                    <Button Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0"
+                            HorizontalAlignment="Left" Margin="0,12,0,0"
                             Content="{loc:Loc ai.settings.save}" Click="OnSavePreferences"/>
                 </StackPanel>
             </Border>
@@ -208,7 +347,7 @@
                                Foreground="{DynamicResource App.Text.Secondary}"/>
                     <TextBlock Text="{loc:Loc ai.settings.usage.tip}" FontSize="11" Margin="0,2,0,14"
                                TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Muted}"/>
-                    <Button Style="{StaticResource TonalButton}" Height="32" HorizontalAlignment="Left"
+                    <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" HorizontalAlignment="Left"
                             Content="{loc:Loc ai.settings.clearData}" Click="OnClearSessions"/>
                 </StackPanel>
             </Border>

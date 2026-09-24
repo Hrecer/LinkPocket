@@ -66,6 +66,10 @@ public sealed partial class AiAssistant : IAiAssistant
         /// <summary>本回合模型用量累计（含摘要请求；服务商未声明用量 = 0 → 落盘为 null）。</summary>
         public int InputTokens { get; set; }
         public int OutputTokens { get; set; }
+
+        /// <summary>本回合**最近一次**请求的上下文占用读数（本地估算 tokens 与窗口；0 = 还没读过）。</summary>
+        public int ContextTokens { get; set; }
+        public int ContextWindowTokens { get; set; }
     }
 
     internal sealed record AiApprovalResponse(AiApprovalDecision Decision, string? Reason);

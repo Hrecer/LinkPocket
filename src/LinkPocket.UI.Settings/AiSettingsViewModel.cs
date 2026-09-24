@@ -18,7 +18,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
     private string _baseUrlInput = "";
     private string _newModelId = "";
     private string _testStatusKey = "";
-    private string _testDetail = "";
+    private LocValue _testDetail = LocValue.Empty;
     private int _modeIndex = 1;
     private bool _advancedTools;
     private AiModelChoice? _defaultModelChoice;
@@ -41,7 +41,9 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
             DisplayNameInput = value?.Info.DisplayName ?? "";
             BaseUrlInput = value?.Info.BaseUrl ?? "";
             TestStatusKey = value is null ? "" : LinkPocket.Views.AiKeyMap.Status(value.Info.Status);
-            TestDetail = value?.Info.StatusErrorCode is { } code ? LinkPocket.Views.AiKeyMap.Error(code) : "";
+            TestDetail = value?.Info.StatusErrorCode is { } code
+                ? LocValue.Of(LinkPocket.Views.AiKeyMap.Error(code))
+                : LocValue.Empty;
             RefreshModels();
         }
     }
@@ -64,13 +66,15 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         set => Set(ref _newModelId, value, nameof(NewModelId));
     }
 
+    /// <summary>连通性 / 保存结果的状态文案键（空 = 不显示）。</summary>
     public string TestStatusKey
     {
         get => _testStatusKey;
         private set => Set(ref _testStatusKey, value, nameof(TestStatusKey));
     }
 
-    public string TestDetail
+    /// <summary>连通性 / 保存结果的明细（含变量的整句 = LocValue：耗时与模型数由这里给、渲染边界取词）。</summary>
+    public LocValue TestDetail
     {
         get => _testDetail;
         private set => Set(ref _testDetail, value, nameof(TestDetail));
@@ -110,13 +114,13 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
             AdvancedTools = preferences.AdvancedToolsEnabled;
             await RefreshProvidersAsync(preferences).ConfigureAwait(true);
             TestStatusKey = "";
-            TestDetail = "";
+            TestDetail = LocValue.Empty;
             await RefreshUsageAsync().ConfigureAwait(true);
         }
         catch (AiException ex)
         {
             TestStatusKey = "ai.err.dataStoreFailed";
-            TestDetail = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+            TestDetail = LocValue.Of(LinkPocket.Views.AiKeyMap.Error(ex.Error.Code));
         }
     }
 
@@ -142,7 +146,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }
         catch (AiException ex)
         {
-            TestDetail = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+            TestDetail = LocValue.Of(LinkPocket.Views.AiKeyMap.Error(ex.Error.Code));
         }
     }
 
@@ -229,14 +233,15 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         if (SelectedProvider is null) return;
         var id = SelectedProvider.Info.Id;
         TestStatusKey = "ai.status.testing";
-        TestDetail = "";
+        TestDetail = LocValue.Empty;
         await GuardAsync(async () =>
         {
             var result = await _assistant.TestConnectivityAsync(id).ConfigureAwait(true);
             TestStatusKey = LinkPocket.Views.AiKeyMap.Status(result.Status);
             TestDetail = result.ErrorCode is { } code
-                ? $"{LinkPocket.Views.AiKeyMap.Error(code)} · {result.ElapsedMs} ms"
-                : $"{result.ElapsedMs} ms · {result.ModelCount ?? 0} models";
+                ? Loc.K("ai.settings.test.detailErr", LocValue.Of(LinkPocket.Views.AiKeyMap.Error(code)),
+                    result.ElapsedMs)
+                : Loc.K("ai.settings.test.detail", result.ElapsedMs, result.ModelCount ?? 0);
             await RefreshProvidersAsync().ConfigureAwait(true);
         }).ConfigureAwait(true);
     }
@@ -366,7 +371,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         catch (AiException ex)
         {
             TestStatusKey = "ai.err.generic";
-            TestDetail = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+            TestDetail = LocValue.Of(LinkPocket.Views.AiKeyMap.Error(ex.Error.Code));
         }
     }
 
@@ -387,6 +392,10 @@ public sealed class AiProviderRow(AiProviderInfo info)
     public AiProviderInfo Info { get; private set; } = info;
     public string StatusKey => LinkPocket.Views.AiKeyMap.Status(Info.Status);
     public string? DisplayKey => Info.DisplayNameKey;
+
+    /// <summary>预设显示名走文案键（本地化）；用户改过名 / 自建 → 直接显示原名（用户数据）。</summary>
+    public bool HasDisplayKey => Info.DisplayNameKey is { Length: > 0 };
+
     public string DisplayText => Info.DisplayName;
     public bool HasApiKey => Info.HasApiKey;
 
@@ -413,7 +422,18 @@ public sealed class AiModelRow : INotifyPropertyChanged
 
     public string ProviderId { get; }
     public AiModelInfo Model { get; private set; }
-    public string Hint => $"{Model.Source} · {(Model.SupportsTools ? "tools" : "no-tools")} · ctx {Model.ContextWindow ?? 0}";
+    /// <summary>副行：来源 · 工具调用 · 上下文窗口（未声明如实说"未声明"，不画 0 冒充读数）。</summary>
+    public LocValue Hint => Loc.K("ai.settings.model.line",
+        LocValue.Of(Model.Source switch
+        {
+            AiModelSource.Preset => "ai.settings.model.source.preset",
+            AiModelSource.Fetched => "ai.settings.model.source.fetched",
+            _ => "ai.settings.model.source.manual",
+        }),
+        LocValue.Of(Model.SupportsTools ? "ai.settings.model.tools.yes" : "ai.settings.model.tools.no"),
+        Model.ContextWindow is { } window
+            ? LocValue.Literal(window.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            : LocValue.Of("ai.settings.model.ctx.unset"));
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

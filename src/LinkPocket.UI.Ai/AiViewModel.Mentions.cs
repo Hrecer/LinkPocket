@@ -25,7 +25,7 @@ public sealed partial class AiViewModel
     public ObservableCollection<AiMentionRef> Mentions { get; } = [];
 
     /// <summary>提及候选（面板列表）。</summary>
-    public ObservableCollection<AiMentionCandidate> MentionCandidates { get; } = [];
+    public ObservableCollection<AiMentionCandidateRow> MentionCandidates { get; } = [];
 
     public bool IsMentionPanelOpen
     {
@@ -156,7 +156,7 @@ public sealed partial class AiViewModel
             var items = await _assistant.SearchMentionsAsync(query, 8).ConfigureAwait(true);
             if (!string.Equals(_mentionQuery, query, StringComparison.Ordinal)) return;   // 期间又敲了：本次结果作废
             MentionCandidates.Clear();
-            foreach (var item in items) MentionCandidates.Add(item);
+            foreach (var item in items) MentionCandidates.Add(new AiMentionCandidateRow(item));
             MentionSelectionIndex = 0;
             IsMentionPanelOpen = MentionCandidates.Count > 0;
         }

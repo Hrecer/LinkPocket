@@ -5,7 +5,8 @@
                     xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
                     xmlns:browserviews="clr-namespace:LinkPocket.Views.Browser"
                     xmlns:vm="clr-namespace:LinkPocket.ViewModels"
-                    xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf">
+                    xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
+                    xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml">
 
     <!--
     ============================================================
@@ -894,4 +895,22 @@
             </Button>
         </Grid>
     </DataTemplate>
+
+    <!-- ===== Markdown 文档样式（共享控件 views:MarkdownText 专用；唯一实现） =====
+         以 MdXaml 的 GithubLike 为底，只把字体 / 前景换成语义令牌；段落与行内文本再显式跟一次字体
+         （GithubLike 里对 Paragraph/Run 有自己的字体设置，只改 FlowDocument 一级会漏）。
+         字号不在此固定：由使用处的控件 FontSize 决定（描述卡与对话流的正文档不同）。 -->
+    <Style x:Key="MarkdownDocumentStyle" TargetType="FlowDocument"
+           BasedOn="{x:Static mdxaml:MarkdownStyle.GithubLike}">
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+        <Style.Resources>
+            <Style TargetType="Paragraph">
+                <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
+            </Style>
+            <Style TargetType="Run">
+                <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
+            </Style>
+        </Style.Resources>
+    </Style>
 </ResourceDictionary>

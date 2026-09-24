@@ -84,9 +84,13 @@ public sealed class StubAiAssistant : IAiAssistant
 
     public Task<AiSessionDetail> GetSessionAsync(string sessionId, CancellationToken ct = default)
     {
+        if (Details.TryGetValue(sessionId, out var detail)) return Task.FromResult(detail);
         var summary = Sessions.Single(s => s.SessionId == sessionId);
         return Task.FromResult(new AiSessionDetail(summary, [], [], [], [], []));
     }
+
+    /// <summary>会话详情预置（未预置 = 空详情）。</summary>
+    public Dictionary<string, AiSessionDetail> Details { get; } = [];
 
     public Task<AiSessionSummary> CreateSessionAsync(CancellationToken ct = default)
     {

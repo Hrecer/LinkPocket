@@ -26,6 +26,9 @@ public sealed class AiUsageTests
         Assert.Equal(1, usage.Turns);
         Assert.Equal(120, usage.InputTokens);
         Assert.Equal(30, usage.OutputTokens);
+        // 上下文占用读数（界面用量环的数据源）：本地估算 > 0；模型未声明窗口 → 偏好缺省窗口
+        Assert.True(usage.ContextTokens > 0);
+        Assert.Equal(32_000, usage.ContextWindowTokens);
 
         var file = JsonDocument.Parse(File.ReadAllText(Path.Combine(host.DataRoot, "usage.json"))).RootElement;
         var entry = file.GetProperty("Entries").EnumerateArray().Single();

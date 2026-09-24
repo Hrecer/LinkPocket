@@ -19,6 +19,19 @@ public sealed partial class AiViewModel
         ? LocValue.Empty
         : Loc.K("ai.usage.line", _usage.Turns, _usage.ToolCalls, _usage.InputTokens, _usage.OutputTokens);
 
+    /// <summary>输入区用量环：有没有读数（新会话 / 还没发过消息 = 没有 → 空环，不编造）。</summary>
+    public bool HasContextUsage => _usage is { ContextTokens: > 0, ContextWindowTokens: > 0 };
+
+    /// <summary>上下文占用百分比（0–100；无读数 = 0）。</summary>
+    public double ContextUsagePercent => HasContextUsage
+        ? Math.Clamp(_usage!.ContextTokens!.Value * 100.0 / _usage.ContextWindowTokens, 0, 100)
+        : 0;
+
+    /// <summary>用量环的悬浮提示：估算占用 / 窗口（本地估算口径与压缩阈值同源）。</summary>
+    public LocValue UsageTipValue => HasContextUsage
+        ? Loc.K("ai.usage.context", _usage!.ContextTokens!.Value, _usage.ContextWindowTokens)
+        : LocValue.Of("ai.usage.context.none");
+
     /// <summary>状态行文案：瞬时读数（限流等待等）优先，否则按键取词。</summary>
     public LocValue StatusValue => _statusOverride ?? LocValue.Of(StatusKey);
 
@@ -46,6 +59,9 @@ public sealed partial class AiViewModel
             if (_activeSessionId != sessionId) return;   // 期间换了会话：这次读数作废
             _usage = usage;
             Raise(nameof(UsageValue));
+            Raise(nameof(HasContextUsage));
+            Raise(nameof(ContextUsagePercent));
+            Raise(nameof(UsageTipValue));
         }
         catch (AiException ex)
         {

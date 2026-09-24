@@ -164,15 +164,18 @@ public sealed partial class AiViewModel
         set => Set(ref _renameText, value, nameof(RenameText));
     }
 
-    public void BeginRename(AiSessionSummary session)
+    public void BeginRename(AiSessionRow session)
     {
         _renamingSessionId = session.SessionId;
         RenameText = session.Title;
+        session.IsRenaming = true;
         IsRenamingSession = true;
     }
 
     public void CancelRename()
     {
+        if (_renamingSessionId is { } id && Sessions.FirstOrDefault(s => s.SessionId == id) is { } row)
+            row.IsRenaming = false;
         _renamingSessionId = null;
         IsRenamingSession = false;
     }
@@ -181,11 +184,12 @@ public sealed partial class AiViewModel
     public async Task CommitRenameAsync()
     {
         if (_renamingSessionId is not { } sessionId) return;
+        var title = RenameText.Trim();
         try
         {
-            await _assistant.RenameSessionAsync(sessionId, RenameText.Trim()).ConfigureAwait(true);
+            await _assistant.RenameSessionAsync(sessionId, title).ConfigureAwait(true);
             var index = Sessions.ToList().FindIndex(s => s.SessionId == sessionId);
-            if (index >= 0) Sessions[index] = Sessions[index] with { Title = RenameText.Trim() };
+            if (index >= 0) Sessions[index].Apply(Sessions[index].Summary with { Title = title });
         }
         catch (AiException ex)
         {
@@ -222,9 +226,12 @@ public sealed partial class AiViewModel
         _allChanges.Add(change);
         _lastTurnId = change.TurnId;
         ApplyPanelFilter();
-        // 工具卡内联：一条变更挂回它所属的那张调用卡（功能书 §7.5）
+        // 工具行内联：一条变更挂回它所属的那张调用行（功能书 §7.5）
         var card = Feed.FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.ToolCall && i.ItemId == change.CallId);
         card?.AttachChange(new AiChangeRow { Change = change });
+        // 回合分隔行的"变更 M 项"当场跟上（回合状态通知不一定紧跟着来）
+        HeaderOf(change.TurnId)?.SetChangeCount(
+            _allChanges.Count(c => string.Equals(c.TurnId, change.TurnId, StringComparison.Ordinal)));
     }
 
     /// <summary>换会话：把每个工具调用的变更内联挂回它的卡片（对话是本地状态，随详情一次投影）。</summary>
