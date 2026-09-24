@@ -8,8 +8,9 @@
              Background="{DynamicResource App.Surface.Base}">
     <UserControl.Resources>
         <local:AiMentionKindIconConverter x:Key="AiMentionIconConverter"/>
-        <!-- 页面内输入域（M3 填充式字段，唯一一份）：圆角 12 + 承载面压深一档的填充 + 聚焦换面板底 +
-             `Tag` 当占位提示。**方形描边文本框一律不用**（那是"没接样式"）。承载面在卡面/浅带层/强调容器
+        <!-- 页面内输入域（M3 填充式字段，唯一一份）：圆角 12 + 承载面压深一档的填充 + 聚焦换面板底。
+             **方形描边文本框一律不用**（那是"没接样式"）。**不设占位水印**：水印画在模板里、
+             拿不到自适应通道（放不下只能被裁成省略号），故一律不设。承载面在卡面/浅带层/强调容器
              上都成立（填充取的是页面底承托面的悬停支，比三者都深）。 -->
         <Style x:Key="AiFieldBox" TargetType="TextBox">
             <Setter Property="Height" Value="30"/>
@@ -25,20 +26,10 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="Bd" CornerRadius="12" Background="{DynamicResource App.Surface.Hover}">
-                            <Grid>
-                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-                                <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}"
-                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                           Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.7"
-                                           IsHitTestVisible="False" Visibility="Collapsed"
-                                           TextTrimming="CharacterEllipsis"/>
-                            </Grid>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="Text" Value="">
-                                <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
-                            </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
                             </Trigger>
@@ -645,7 +636,6 @@
                     </StackPanel>
                     <!-- 理由（可选；拒绝时回灌模型，模型同轮换方案） -->
                     <TextBox Style="{StaticResource AiFieldBox}" Margin="0,2,0,0"
-                             Tag="{loc:Loc ai.approve.reason}"
                              Text="{Binding DataContext.ApprovalReason, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"/>
                     <TextBlock Text="{Binding Reason}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.OnContainer}"/>
                 </StackPanel>
@@ -1573,7 +1563,6 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="PanelSearch" Style="{StaticResource AiFieldBox}"
-                             Tag="{loc:Loc ai.audit.search}"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
                     <ComboBox Grid.Column="1" Width="104" Height="30" Margin="8,0,0,0"
                               SelectedIndex="{Binding ChangeFilterIndex, Mode=TwoWay}">

@@ -20,7 +20,10 @@ public class AiProviderStoreTests
         Assert.Equal(templates.Count, templates.Select(t => t.DisplayNameKey).Distinct(StringComparer.Ordinal).Count());
         Assert.All(templates, t =>
         {
-            Assert.Equal($"ai.provider.{t.Id}", t.DisplayNameKey);   // 键 = ai.provider.<id>（中文只在 StringTables）
+            // 键 = ai.provider.<显示名键段>（中文只在 StringTables）。键名段只允许字母数字：
+            // 服务商 Id 是**机器面标识符**（可含连字符、持久化在用户配置里），两者不共用形状。
+            Assert.StartsWith("ai.provider.", t.DisplayNameKey, StringComparison.Ordinal);
+            Assert.Matches("^ai\\.provider\\.[a-z][a-zA-Z0-9]*$", t.DisplayNameKey);
             Assert.False(string.IsNullOrWhiteSpace(t.DisplayName));
             Assert.True(t.DisplayName.All(char.IsAscii), $"{t.Id} 的回退名必须是 ASCII：{t.DisplayName}");
             Assert.StartsWith("http", t.BaseUrl, StringComparison.Ordinal);

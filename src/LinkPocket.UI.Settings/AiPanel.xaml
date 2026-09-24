@@ -7,7 +7,8 @@
              xmlns:local="clr-namespace:LinkPocket.Views">
     <UserControl.Resources>
         <!-- 输入域（M3 填充式字段）：与设置页其它面板的 `CardField` 同一视觉语言——
-             圆角 + 卡面内的填充底 + 聚焦换面板底 + `Tag` 当占位提示；
+             圆角 + 卡面内的填充底 + 聚焦换面板底。**不设占位水印**：水印画在模板里、
+             拿不到自适应通道（放不下只能被裁成省略号），故一律不设；
              方形边框的原生 WPF 文本框一律不用（那是"没接样式"，不是朴素）。 -->
         <Style x:Key="AiField" TargetType="TextBox">
             <Setter Property="Height" Value="32"/>
@@ -23,19 +24,10 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="Bd" CornerRadius="12" Background="{DynamicResource App.Surface.Hover}">
-                            <Grid>
-                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
-                                              VerticalAlignment="Center"/>
-                                <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}"
-                                           VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
-                                           Opacity="0.7" IsHitTestVisible="False" Visibility="Collapsed"
-                                           TextTrimming="CharacterEllipsis"/>
-                            </Grid>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="Text" Value="">
-                                <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
-                            </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
                             </Trigger>
@@ -276,7 +268,6 @@
                         <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
                                 Content="{loc:Loc ai.settings.fetch}" Click="OnFetchModels"/>
                         <TextBox x:Name="NewModelBox" Style="{StaticResource AiField}" Width="220" Margin="8,0,0,0"
-                                 Tag="{loc:Loc ai.settings.modelId.hint}"
                                  Text="{Binding NewModelId, UpdateSourceTrigger=PropertyChanged}"/>
                         <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                 Content="{loc:Loc ai.settings.add}" Click="OnAddModel"/>
@@ -412,7 +403,6 @@
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
                                             <TextBox Style="{StaticResource AiField}" Width="120" Height="28" Margin="0,0,6,6"
-                                                     Tag="{loc:Loc ai.settings.model.reasoning.add}"
                                                      Text="{Binding NewReasoningLevel, UpdateSourceTrigger=PropertyChanged}"/>
                                             <Button Style="{StaticResource TonalButton}" Height="28" Padding="12,0" Margin="0,0,0,6"
                                                     Content="{loc:Loc ai.settings.add}" Click="OnAddReasoningLevel"/>
@@ -424,7 +414,6 @@
                                                    ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"/>
                                         <TextBox Style="{StaticResource AiField}" Height="64" AcceptsReturn="True"
                                                  TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="10,8"
-                                                 Tag="{loc:Loc ai.settings.model.reasoning.mapHint}"
                                                  ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"
                                                  Text="{Binding ReasoningMapInput, UpdateSourceTrigger=PropertyChanged}"/>
 
