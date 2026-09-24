@@ -232,14 +232,42 @@ public enum AiUsagePurpose
 /// <summary>本会话用量读数（审计面板底部状态条：轮数 / 工具调用次数 / token 合计；逐轮读数之和，单一来源 = 会话文件）。</summary>
 /// <summary>本会话用量读数（数据源 = 会话文件里的逐轮记录）。
 /// <paramref name="ContextTokens"/>/<paramref name="ContextWindowTokens"/> = **最近一次模型请求**的上下文占用读数
-/// （本地估算口径，与压缩阈值同源；还没发过请求 = null / 0——界面显示空环，不编造）。</summary>
+/// （本地估算口径，与压缩阈值同源；还没发过请求 = null / 0——界面显示空环，不编造）。
+/// <paramref name="Breakdown"/> = 同一次请求的**分项构成**（各段字符数折算的估算 token），
+/// 供悬浮面板画出"这一段排了多少"；没有读数 = 空表（不编造分项）。</summary>
 public sealed record AiSessionUsage(
     int Turns,
     int ToolCalls,
     long InputTokens,
     long OutputTokens,
     int? ContextTokens = null,
-    int ContextWindowTokens = 0);
+    int ContextWindowTokens = 0,
+    IReadOnlyList<AiContextSourceItem>? Breakdown = null);
+
+/// <summary>上下文构成的来源（与系统提示词的分段一一对应，顺序即展示顺序）。</summary>
+public enum AiContextSource
+{
+    /// <summary>固定系统提示词（角色、工具规则、安全约束、当前模式）。</summary>
+    SystemPrompt = 0,
+
+    /// <summary>当前页面上下文（所在页 / 当前目录 / 选中项）。</summary>
+    PageContext = 1,
+
+    /// <summary>用户点名引用的对象（提及 + 会话引用）。</summary>
+    Mentions = 2,
+
+    /// <summary>已加载技能（提示词模板）。</summary>
+    Skills = 3,
+
+    /// <summary>工具模式的 schema（发给模型的工具清单）。</summary>
+    ToolSchemas = 4,
+
+    /// <summary>对话消息（历史 + 本轮）。</summary>
+    Messages = 5,
+}
+
+/// <summary>上下文分项（来源 + 估算 token）；<paramref name="Tokens"/> = 0 的项不进列表。</summary>
+public sealed record AiContextSourceItem(AiContextSource Source, int Tokens);
 
 /// <summary>按天用量（设置页「AI 服务」只读行；<paramref name="Day"/> = 本地日）。</summary>
 public sealed record AiUsageDay(DateTimeOffset Day, int Calls, long InputTokens, long OutputTokens);

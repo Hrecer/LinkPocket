@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using LinkPocket.Contracts;
 
@@ -11,10 +12,14 @@ namespace LinkPocket.Ai;
 /// </summary>
 public sealed partial class AiAssistant
 {
+    /// <summary>一次请求前的上下文估算结果：总量 + 分项（分项只列**真实存在**的段，0 的不列）。</summary>
+    private readonly record struct ContextReading(int Total, IReadOnlyList<AiContextSourceItem> Breakdown);
+
     /// <summary>压缩评估与执行（在每次模型请求之前调用；不抛——压缩失败不该杀死回合）。
     /// 返回 = **本次将要发出去的那份历史**的上下文估算（压缩后重算；界面用量环按它如实读数）。</summary>
-    private async Task<int> CompactContextIfNeededAsync(AiSessionFile file, TurnRun run, AiProviderInfo provider,
-        AiModelInfo model, AiPreferences preferences, string systemPrompt, string? apiKey)
+    private async Task<ContextReading> CompactContextIfNeededAsync(AiSessionFile file, TurnRun run,
+        AiProviderInfo provider, AiModelInfo model, AiPreferences preferences, string systemPrompt,
+        string? apiKey, AiTurnContext? context, AiTurnMaterial material, IReadOnlyList<AiToolSpec> tools)
     {
         try
         {
@@ -71,7 +76,73 @@ public sealed partial class AiAssistant
                 NotifyCompaction(file, run, new AiContextCompaction(run.TurnId, true, 0, 0, 0) { Failed = true });
         }
 
-        return AiTokenEstimator.Estimate(systemPrompt) + AiTokenEstimator.EstimateChat(file.Chat);
+        return BuildContextReading(file, systemPrompt, context, material, tools);
+    }
+
+    /// <summary>
+    /// 把"即将发出去的那份请求"按**真实分段**折算成估算 token：
+    /// 固定系统提示词 / 页面上下文 / 提及 / 技能 / 工具 schema / 消息历史。
+    /// 分项之和 = 总量（<see cref="AiTokenEstimator"/> 同源口径），界面悬浮面板据此画占比。
+    /// </summary>
+    private static ContextReading BuildContextReading(AiSessionFile file, string systemPrompt,
+        AiTurnContext? context, AiTurnMaterial material, IReadOnlyList<AiToolSpec> tools)
+    {
+        var messages = AiTokenEstimator.EstimateChat(file.Chat);
+
+        // 系统提示词按分段重算：总量不变（同一份文本），只是为了知道"哪一段占了多少"。
+        var pageContext = new StringBuilder();
+        if (context is not null)
+        {
+            if (context.NavId is { } nav) pageContext.AppendLine($"- user is on page: {nav}");
+            if (context.FolderPath is { } path) pageContext.AppendLine($"- current folder: {path}");
+            if (context.SelectedNames is { Count: > 0 } names)
+                pageContext.AppendLine($"- selected: {string.Join(", ", names.Take(20))}{(names.Count > 20 ? $" (+{names.Count - 20})" : "")}");
+        }
+
+        var mentions = new StringBuilder();
+        if (material.MentionLines is { Count: > 0 })
+            foreach (var line in material.MentionLines) mentions.AppendLine($"- {line}");
+        if (material.SessionReferences is { Length: > 0 } referenceReminder)
+            mentions.AppendLine(referenceReminder);
+
+        var skills = material.SkillsSection ?? string.Empty;
+        var segmentTokens = AiTokenEstimator.Estimate(pageContext.ToString())
+            + AiTokenEstimator.Estimate(mentions.ToString())
+            + AiTokenEstimator.Estimate(skills)
+            + EstimateToolSchemas(tools);
+        var systemTotal = AiTokenEstimator.Estimate(systemPrompt);
+
+        var items = new List<AiContextSourceItem>(6);
+        void Add(AiContextSource source, int tokens)
+        {
+            if (tokens > 0) items.Add(new AiContextSourceItem(source, tokens));
+        }
+
+        // 固定提示词 = 总量减掉各可拆段（不为负）；可拆段各自单列。
+        Add(AiContextSource.SystemPrompt, Math.Max(0, systemTotal - segmentTokens));
+        Add(AiContextSource.PageContext, AiTokenEstimator.Estimate(pageContext.ToString()));
+        Add(AiContextSource.Mentions, AiTokenEstimator.Estimate(mentions.ToString()));
+        Add(AiContextSource.Skills, AiTokenEstimator.Estimate(skills));
+        Add(AiContextSource.ToolSchemas, EstimateToolSchemas(tools));
+        Add(AiContextSource.Messages, messages);
+
+        var total = items.Sum(i => i.Tokens);
+        items.Sort((left, right) => right.Tokens.CompareTo(left.Tokens));   // 大项在前，与参照一致
+        return new ContextReading(total, items);
+    }
+
+    /// <summary>工具 schema 的估算（名字 + 描述 + 参数 JSON；真实发给模型的那份）。</summary>
+    private static int EstimateToolSchemas(IReadOnlyList<AiToolSpec> tools)
+    {
+        if (tools.Count == 0) return 0;
+        var builder = new StringBuilder();
+        foreach (var tool in tools)
+        {
+            builder.AppendLine(tool.Name);
+            builder.AppendLine(tool.Description);
+            if (tool.ParametersJson is { Length: > 0 } schema) builder.AppendLine(schema);
+        }
+        return AiTokenEstimator.Estimate(builder.ToString());
     }
 
     /// <summary>LLM 摘要：把"除最近 1 组回合以外"的历史换成一条 user 角色的摘要消息。</summary>

@@ -128,9 +128,11 @@ public sealed partial class AiAssistant
         {
             run.Cts.Token.ThrowIfCancellationRequested();
             // 压缩评估在每次模型请求之前（微压缩 → 摘要；失败不杀死回合、如实留痕）；
-            // 返回的估算 = 即将发出去的那份历史 → 记进回合，供界面用量环如实读数
-            run.ContextTokens = await CompactContextIfNeededAsync(file, run, provider, model, preferences, system, apiKey)
-                .ConfigureAwait(false);
+            // 返回的估算 = 即将发出去的那份历史 → 记进回合，供界面用量环与悬浮分项面板如实读数
+            var reading = await CompactContextIfNeededAsync(file, run, provider, model, preferences, system, apiKey,
+                context, material, tools).ConfigureAwait(false);
+            run.ContextTokens = reading.Total;
+            run.Breakdown = reading.Breakdown;
             run.ContextWindowTokens = AiCompactionPolicy.WindowTokens(model, preferences);
             SetTurn(file, run, AiTurnState.Streaming);
             var completion = await StreamModelAsync(file, run, adapter, provider, apiKey, model, tools, system,
@@ -738,6 +740,7 @@ public sealed partial class AiAssistant
             OutputTokens = run.OutputTokens > 0 ? run.OutputTokens : null,
             ContextTokens = run.ContextTokens > 0 ? run.ContextTokens : null,
             ContextWindowTokens = run.ContextWindowTokens > 0 ? run.ContextWindowTokens : null,
+            Breakdown = run.Breakdown.Count > 0 ? run.Breakdown : null,
         };
         file.Turns[index] = turn;
         Notified?.Invoke(new AiNotification(AiNotificationKind.TurnChanged, file.Summary.SessionId,
@@ -759,6 +762,7 @@ public sealed partial class AiAssistant
                 OutputTokens = run.OutputTokens > 0 ? run.OutputTokens : null,
                 ContextTokens = run.ContextTokens > 0 ? run.ContextTokens : null,
                 ContextWindowTokens = run.ContextWindowTokens > 0 ? run.ContextWindowTokens : null,
+                Breakdown = run.Breakdown.Count > 0 ? run.Breakdown : null,
             };
         Persist(file);
         if (index >= 0)

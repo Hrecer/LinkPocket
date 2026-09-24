@@ -32,6 +32,78 @@ public sealed partial class AiViewModel
         ? Loc.K("ai.usage.context", _usage!.ContextTokens!.Value, _usage.ContextWindowTokens)
         : LocValue.Of("ai.usage.context.none");
 
+    /// <summary>悬浮面板的标题行读数：「已用 / 窗口 (百分比)」；无读数 = 空。</summary>
+    public LocValue ContextSummaryValue => HasContextUsage
+        ? Loc.K("ai.usage.panel.summary",
+            FormatTokens(_usage!.ContextTokens!.Value),
+            FormatTokens(_usage.ContextWindowTokens),
+            (ContextUsagePercent / 100).ToString("P1", CurrentCulture))
+        : LocValue.Empty;
+
+    /// <summary>悬浮面板的分项行（来源名 + 占比；按 token 降序，空表 = 面板只显示摘要）。</summary>
+    public IReadOnlyList<AiContextSourceRow> ContextSourceRows => _contextRows;
+
+    /// <summary>悬浮面板有没有分项（没有 = 只显示标题与摘要，不摆空列表）。</summary>
+    public bool HasContextSources => _contextRows.Count > 0;
+
+    private IReadOnlyList<AiContextSourceRow> _contextRows = [];
+    private bool _contextPanelOpen;
+
+    /// <summary>用量环的容量面板是否展开（悬浮 / 聚焦时开；离开且未聚焦时合）。</summary>
+    public bool IsContextPanelOpen
+    {
+        get => _contextPanelOpen;
+        set
+        {
+            if (_contextPanelOpen == value) return;
+            _contextPanelOpen = value;
+            Raise(nameof(IsContextPanelOpen));
+        }
+    }
+
+    /// <summary>把引擎给出的分项折算成界面行（占比 = 该项 / 总量；总量 0 = 空表）。</summary>
+    private void RebuildContextRows()
+    {
+        var breakdown = _usage?.Breakdown;
+        if (breakdown is not { Count: > 0 })
+        {
+            _contextRows = [];
+            return;
+        }
+
+        var total = breakdown.Sum(i => i.Tokens);
+        if (total <= 0)
+        {
+            _contextRows = [];
+            return;
+        }
+
+        _contextRows = breakdown
+            .Select((item, index) => new AiContextSourceRow(
+                Loc.K($"ai.usage.source.{SourceKey(item.Source)}"),
+                item.Tokens,
+                item.Tokens * 100.0 / total,
+                index))
+            .ToList();
+    }
+
+    /// <summary>分项枚举 → 文案键尾段（键形固定，英文侧逐条对应）。</summary>
+    private static string SourceKey(AiContextSource source) => source switch
+    {
+        AiContextSource.SystemPrompt => "systemPrompt",
+        AiContextSource.PageContext => "pageContext",
+        AiContextSource.Mentions => "mentions",
+        AiContextSource.Skills => "skills",
+        AiContextSource.ToolSchemas => "toolSchemas",
+        _ => "messages",
+    };
+
+    /// <summary>token 数按千位分隔（与摘要行同口径；不缩写，避免 1.2k 这种二次换算）。</summary>
+    private static string FormatTokens(long value) => value.ToString("N0", CurrentCulture);
+
+    private static System.Globalization.CultureInfo CurrentCulture
+        => System.Globalization.CultureInfo.CurrentCulture;
+
     /// <summary>状态行文案：瞬时读数（限流等待等）优先，否则按键取词。</summary>
     public LocValue StatusValue => _statusOverride ?? LocValue.Of(StatusKey);
 
@@ -58,10 +130,14 @@ public sealed partial class AiViewModel
             var usage = await _assistant.GetSessionUsageAsync(sessionId).ConfigureAwait(true);
             if (_activeSessionId != sessionId) return;   // 期间换了会话：这次读数作废
             _usage = usage;
+            RebuildContextRows();
             Raise(nameof(UsageValue));
             Raise(nameof(HasContextUsage));
             Raise(nameof(ContextUsagePercent));
             Raise(nameof(UsageTipValue));
+            Raise(nameof(ContextSummaryValue));
+            Raise(nameof(ContextSourceRows));
+            Raise(nameof(HasContextSources));
         }
         catch (AiException ex)
         {

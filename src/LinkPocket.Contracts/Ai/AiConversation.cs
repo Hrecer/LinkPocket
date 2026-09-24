@@ -194,7 +194,8 @@ public enum AiTurnState
 
 /// <summary>一个回合（一次用户输入到模型停止）。<paramref name="InputTokens"/>/<paramref name="OutputTokens"/> = 本回合模型请求的服务商用量读数（未声明用量 = null，不编造）。
 /// <paramref name="ContextTokens"/>/<paramref name="ContextWindowTokens"/> = 本回合**最近一次**模型请求的上下文占用读数
-/// （本地估算口径，与压缩阈值同源；界面用量环的数据源，没有读过 = null）。</summary>
+/// （本地估算口径，与压缩阈值同源；界面用量环的数据源，没有读过 = null）。
+/// <paramref name="Breakdown"/> = 同一次请求的分项构成（估算 token；供悬浮面板画分项，没读过 = null）。</summary>
 public sealed record AiTurn(
     string TurnId,
     int Index,
@@ -209,7 +210,8 @@ public sealed record AiTurn(
     int? InputTokens = null,
     int? OutputTokens = null,
     int? ContextTokens = null,
-    int? ContextWindowTokens = null);
+    int? ContextWindowTokens = null,
+    IReadOnlyList<AiContextSourceItem>? Breakdown = null);
 
 /// <summary>会话摘要（左栏列表用）。<paramref name="Persistence"/> = 草稿 / 正式（见 <see cref="AiSessionPersistence"/>）；
 /// **列表只装正式会话**，草稿不进列表。</summary>

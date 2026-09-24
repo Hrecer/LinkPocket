@@ -15,7 +15,8 @@ public sealed partial class AiAssistant
             file.Turns.Sum(t => (long)(t.InputTokens ?? 0)),
             file.Turns.Sum(t => (long)(t.OutputTokens ?? 0)),
             latest?.ContextTokens,
-            latest?.ContextWindowTokens ?? 0));
+            latest?.ContextWindowTokens ?? 0,
+            latest?.Breakdown));
     }
 
     public Task<AiUsageSummary> GetUsageSummaryAsync(int days = 7, CancellationToken ct = default)

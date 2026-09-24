@@ -70,6 +70,9 @@ public sealed partial class AiAssistant : IAiAssistant
         /// <summary>本回合**最近一次**请求的上下文占用读数（本地估算 tokens 与窗口；0 = 还没读过）。</summary>
         public int ContextTokens { get; set; }
         public int ContextWindowTokens { get; set; }
+
+        /// <summary>同一次请求的**分项构成**（估算 token；空 = 还没读过）。</summary>
+        public IReadOnlyList<AiContextSourceItem> Breakdown { get; set; } = [];
     }
 
     internal sealed record AiApprovalResponse(AiApprovalDecision Decision, string? Reason);
