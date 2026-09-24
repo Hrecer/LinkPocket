@@ -1,4 +1,4 @@
-using LinkPocket.Contracts;
+﻿using LinkPocket.Contracts;
 
 namespace LinkPocket.App.Tests;
 
@@ -203,12 +203,13 @@ public sealed class StubAiAssistant : IAiAssistant
     }
 
     /// <summary>「回溯」记录 (会话, 回合)——断言点的是"哪一轮"，不只是"撤了几次"。</summary>
-    public List<(string SessionId, string TurnId)> UndoTurnCalls { get; } = [];
+    public List<(string SessionId, string TurnId)> RewindCalls { get; } = [];
 
-    public Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
+    public Task<AiRewindResult> RewindTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
     {
-        UndoTurnCalls.Add((sessionId, turnId));
-        return Task.FromResult(UndoResult);
+        RewindCalls.Add((sessionId, turnId));
+        return Task.FromResult(new AiRewindResult(UndoResult.TotalCalls, UndoResult.UndoneCalls,
+            UndoResult.MissingCalls, 1, 2, UndoResult.ErrorCode));
     }
 
     public Task<int> CountUndoableAsync(string sessionId, CancellationToken ct = default)

@@ -355,3 +355,16 @@ public sealed record AiUndoResult(
     int UndoneCalls,
     int MissingCalls,
     string? ErrorCode);
+
+/// <summary>
+/// 回溯回执：数据面（撤销了几项）+ 会话面（裁掉了几轮 / 几条消息）。
+/// 两者分开报，是因为它们的"没做成"是不同的诚实边界——撤销可能因未登记逆向而跳过，
+/// 裁剪则只会因为回合找不到而不发生。
+/// </summary>
+public sealed record AiRewindResult(
+    int TotalCalls,
+    int UndoneCalls,
+    int MissingCalls,
+    int RemovedTurns,
+    int RemovedMessages,
+    string? ErrorCode);

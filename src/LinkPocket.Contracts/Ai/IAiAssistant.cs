@@ -155,12 +155,15 @@ public interface IAiAssistant
     Task<AiUndoResult> UndoLastTurnAsync(string sessionId, CancellationToken ct = default);
 
     /// <summary>
-    /// 撤销**指定回合**的 AI 变更（「回溯」按钮的落点）：口径与 <see cref="UndoLastTurnAsync"/> 完全一致——
-    /// 只换过滤条件（该回合的归属键），仍然走引擎既有 <c>undo.undo</c> 逐条定点撤销，**不做第二条撤销路径**。
-    /// 回溯的不是"这一轮"而是"这一轮做过的所有操作"，所以它不裁剪对话历史，只回退数据面。
-    /// 回合在跑时拒绝（<c>LP.AI.011</c>）。
+    /// **回溯**到某一轮之前（「回溯」按钮的落点）：一次调用做两件事，缺一件就不是回溯——
+    /// ① 回退该轮做过的**全部数据操作**（走引擎既有 <c>undo.undo</c>，与「撤销上一轮」同一条核心路径）；
+    /// ② 把会话**裁到该轮之前**——该轮及其之后的回合 / 消息 / 工具调用 / 变更 / 审批 / 模型历史一并移除，
+    /// 于是"这一轮好像没发生过"。
+    /// <para>为什么不裁剪就够、为什么必须一起做：只回退数据面的话，对话里那条提问与回答还在，
+    /// 用户看到的是"说了半天、库回到原样、但记录还挂着"，完全不是回溯的语义。</para>
+    /// <para>回合在跑时拒绝（<c>LP.AI.011</c>）；不可撤销的操作如实跳过并计数，不承诺"什么都退得回来"。</para>
     /// </summary>
-    Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default);
+    Task<AiRewindResult> RewindTurnAsync(string sessionId, string turnId, CancellationToken ct = default);
 
     /// <summary>
     /// 撤销**本会话**的 AI 变更：按批次（归属键 = 工具调用 ID，一次批/宏 = 一条记录）分组**逐批退**，

@@ -1,4 +1,4 @@
-// LinkPocket 界面文案（English）—— 界面文案的唯一数据来源。
+﻿// LinkPocket 界面文案（English）—— 界面文案的唯一数据来源。
 // 规则：一行一键；键序与另一份语言文件**逐行一致**（护栏 G4）；允许 `//` 注释（加载器跳过）；UTF-8 无 BOM。
 // 新增 / 修改文案只改这里，不碰任何 .cs；键规范与护栏见 内部资产/文档/I18N.md §4 / §9.1。
 {
@@ -899,8 +899,10 @@
   "ai.turn.failed": "Failed · {0}",
   "ai.turn.expand": "Expand this turn",
   "ai.turn.collapse": "Collapse this turn",
-  "ai.turn.rewind": "Rewind this turn",
-  "ai.turn.rewind.confirm": "This reverts everything this turn did and puts this turn's wording back in the input box for you to send. Reverting goes through the undo stack; operations without a registered inverse are skipped and reported.",
+  "ai.rewind": "Rewind",
+  "ai.rewind.confirm": "This reverts everything this turn did, removes the turn from the conversation, and puts its wording back in the input box for you to send. Reverting goes through the undo stack; operations without a registered inverse are skipped and reported.",
+  "ai.rewind.done": "Rewound: dropped {0} turn(s), reverted {1} operation(s)",
+  "ai.rewind.partial": "Partly rewound: dropped {0} turn(s), reverted {1}/{2} operation(s)",
   "ai.rail.turn": "Turn {0}",
   "ai.rail.tip": "{0} · {1}\n{2}",
   "ai.rail.userFallback": "User input",

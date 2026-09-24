@@ -81,6 +81,13 @@ public class WavyProgressBar : FrameworkElement
     public double ThumbHeight { get; set; } = 16.0;
 
     private const double PhaseSpeed = 5.5;   // 波浪行进速度（rad/s）
+
+    /// <summary>
+    /// 重绘的最小间隔（毫秒）：合成帧回调按显示器刷新率来（60/120/144Hz），
+    /// 逐帧重绘会把 GPU 白烧在一条装饰性波浪上（见 <see cref="OnRendering"/> 注释）。
+    /// 40ms = 25fps —— 缓慢起伏的波浪在这个帧率下与逐帧无可见差别。
+    /// </summary>
+    private const double MinFrameIntervalMs = 40;
     private const double SampleStep = 1.5;   // 波形采样步长（px）
 
     private double _phase;
@@ -125,6 +132,15 @@ public class WavyProgressBar : FrameworkElement
         }
         if (e is RenderingEventArgs re)
         {
+            // ⚠️ **按帧节流**：CompositionTarget.Rendering 是合成帧回调（显示器多少 Hz 就来多少次，60/120/144…），
+            // 每帧 InvalidateVisual 会让整窗按显示器刷新率持续重新合成——云模型场景下界面基本静止（只有这条波在动），
+            // 于是 GPU 占用被这一条波吃满（用户实测 3D 占用 65% / 本进程 44%）。波浪是装饰性的缓慢起伏，
+            // 25fps 已看不出差别；低于目标间隔的帧直接跳过（相位由**真实经过时间**推进，跳过帧不会让波变慢）。
+            if (_lastRenderTime is { } last
+                && (re.RenderingTime - last).TotalMilliseconds < MinFrameIntervalMs)
+            {
+                return;
+            }
             if (_lastRenderTime.HasValue && re.RenderingTime > _lastRenderTime.Value)
                 _phase += (re.RenderingTime - _lastRenderTime.Value).TotalSeconds * PhaseSpeed;
             _lastRenderTime = re.RenderingTime;

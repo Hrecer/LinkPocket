@@ -222,6 +222,11 @@ public sealed partial class AiAssistant
                 // 只在"还没产生任何输出"时重试整次请求（避免重复内容）；过程写日志不静默
                 attempts++;
                 LpLog.Warn($"model request retry {attempts}/2: {ex.Error.Code}", category: "ai.turn");
+                // ⚠️ **限流不许立刻重试**：429 = 单位时间配额用尽，立刻再来一次几乎必然再 429，
+                // 而每一次都要把整份提示词重新送上去算一遍——用户看到的就是"一个简单问题也要等一分多钟"。
+                // 等一小会儿再试一次（配额窗口常见粒度是秒级），仍失败就如实报错，不再空转。
+                if (ex.Error.Code == AiErrors.UpstreamRateLimited)
+                    await Task.Delay(TimeSpan.FromSeconds(3), run.Cts.Token).ConfigureAwait(false);
             }
         }
 

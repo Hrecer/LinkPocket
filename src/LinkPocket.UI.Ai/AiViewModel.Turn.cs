@@ -156,26 +156,36 @@ public sealed partial class AiViewModel
     }
 
     /// <summary>
-    /// 「回溯」一轮：回退该轮做过的**全部操作**（走既有撤销栈，逐归属键定点撤销），
-    /// 并把这一轮我们说过的话重新填回输入框、等我们发送。
-    /// <para>为什么两件事绑在一起：回溯的用处就是"这轮它做歪了，我要把话改一改再说一遍"——
-    /// 只回退不填字，人还得自己去翻上面抄一遍；只填字不回退，那要回退的东西还留在库里。</para>
-    /// <para>不裁剪对话历史：回溯回退的是**数据面**（引擎操作），对话本身是已经发生过的记录。</para>
+    /// 「回溯」一轮：① 回退这一轮做过的**全部操作**；② 把这一轮从会话里**去掉**（该轮及其之后的
+    /// 回合、消息、工具调用、变更、审批、模型历史一并移除）；③ 把这一轮我们说过的话填回输入框等你发送。
+    /// <para>三件事绑在一起才是回溯：只回退数据 → 记录还挂着；只删记录 → 库里的改动还留着；
+    /// 不填回原话 → 人还得自己翻上去抄一遍。</para>
     /// </summary>
-    public async Task RewindTurnAsync(AiFeedItem turn)
+    public async Task RewindTurnAsync(AiFeedItem userItem)
     {
-        if (_activeSessionId is not { } sessionId || turn.TurnId is not { } turnId) return;
+        if (_activeSessionId is not { } sessionId || userItem.TurnId is not { } turnId) return;
         if (IsTurnRunning) return;   // 引擎写面正被占用：与撤销同一道闸（绝不给会失败的操作）
         try
         {
-            var result = await _assistant.UndoTurnAsync(sessionId, turnId).ConfigureAwait(true);
-            ComposerText = turn.PreviewText;   // 填回这一轮的原话（用户可改后再发）
-            NoticeForUndo(result);
+            var result = await _assistant.RewindTurnAsync(sessionId, turnId).ConfigureAwait(true);
+            ComposerText = userItem.Text;   // 这一轮的原话（用户可改后再发）
+            await OpenSessionAsync(sessionId).ConfigureAwait(true);   // 会话已裁过，重新投影
+            NoticeForRewind(result);
         }
         catch (AiException ex)
         {
             LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
         }
+    }
+
+    /// <summary>回溯回执：数据面（撤了几项 / 有几项退不回来）与会话面（裁了几轮）分开说。</summary>
+    private void NoticeForRewind(AiRewindResult result)
+    {
+        _ = RefreshUndoableAsync();
+        if (result.ErrorCode is { } code) LastErrorKey = LinkPocket.Views.AiKeyMap.Error(code);
+        Notice(result.MissingCalls == 0 && result.ErrorCode is null
+            ? Loc.K("ai.rewind.done", result.RemovedTurns, result.UndoneCalls)
+            : Loc.K("ai.rewind.partial", result.RemovedTurns, result.UndoneCalls, result.TotalCalls));
     }
 
     private static AiTurnContext BuildContext(IReadOnlyList<AiMentionRef>? mentions = null)

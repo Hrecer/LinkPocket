@@ -1,4 +1,4 @@
-<UserControl x:Class="LinkPocket.Views.AiView"
+﻿<UserControl x:Class="LinkPocket.Views.AiView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
@@ -308,11 +308,8 @@
         <!-- 回合分隔行：整行可点（折叠该轮）；行底一条 1px 细线 -->
         <DataTemplate x:Key="AiTurnHeaderTemplate">
             <StackPanel Margin="0,12,0,2">
-                <!-- 一轮 = 折叠开关（左）+ 回溯（右）。回溯**常显**：它每轮都要在，
-                     藏进悬浮里会变成"要用的时候找不到"。 -->
-                <Grid Background="Transparent">
-                    <Button HorizontalAlignment="Left" Style="{StaticResource AiRowButton}" Click="OnToggleTurn"
-                            ToolTip="{loc:LocKey ToggleKey}">
+                <Button Style="{StaticResource AiRowButton}" Click="OnToggleTurn"
+                        ToolTip="{loc:LocKey ToggleKey}">
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="chevron-down" Width="13" Height="13" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Text.Muted}">
@@ -342,16 +339,8 @@
                             </m3:M3Icon>
                             <TextBlock Text="{loc:Value HeaderValue}" FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="RewindTurnButton" HorizontalAlignment="Right" Style="{StaticResource SideIconButton}"
-                            Width="22" Height="20" Padding="2" Tag="{loc:Loc ai.turn.rewind}"
-                            Click="OnRewindTurn">
-                        <m3:M3Icon Kind="restore" Width="13" Height="13"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Secondary}"/>
-                    </Button>
-                </Grid>
+                    </StackPanel>
+                </Button>
                 <Border Height="1" Background="{DynamicResource App.Line.Variant}"/>
             </StackPanel>
         </DataTemplate>
@@ -407,6 +396,10 @@
                             Margin="0,2,0,0" Opacity="0" IsHitTestVisible="False">
                     <Button Style="{StaticResource AiGhostTextButton}" Content="{loc:Loc ai.feed.copy}"
                             Click="OnCopyMessage"/>
+                    <!-- 回溯与复制并排，就在用户这条消息底下：回溯作用的对象就是"这条提问带来的那一轮"，
+                         挂在用户消息上才指得清是回溯哪一轮（挂在"本轮用时 N 秒"那行会读成"回退整轮的所有思考"）。 -->
+                    <Button Style="{StaticResource AiGhostTextButton}" Content="{loc:Loc ai.rewind}"
+                            Margin="8,0,0,0" Click="OnRewindTurn"/>
                     <TextBlock Text="{loc:Value TimeValue}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
                                Foreground="{DynamicResource App.Text.Muted}"/>
                 </StackPanel>
@@ -1113,6 +1106,8 @@
                             </Setter>
                             <!-- 右键先选中该行（菜单动作作用于选中行） -->
                             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnSessionRowRightClick"/>
+                            <!-- 点在行上就切会话（不依赖"选中项变了"——见 handler 注释里的那个卡死场景） -->
+                            <EventSetter Event="MouseLeftButtonUp" Handler="OnSessionRowClicked"/>
                             <!-- 行级 Enter / Esc：编辑框没拿到焦点时的兜底出口（否则整行卡在编辑态） -->
                             <EventSetter Event="PreviewKeyDown" Handler="OnSessionRowKeyDown"/>
                         </Style>

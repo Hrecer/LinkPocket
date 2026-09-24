@@ -106,10 +106,15 @@ public sealed partial class AiAssistant
             mentions.AppendLine(referenceReminder);
 
         var skills = material.SkillsSection ?? string.Empty;
-        var segmentTokens = AiTokenEstimator.Estimate(pageContext.ToString())
-            + AiTokenEstimator.Estimate(mentions.ToString())
-            + AiTokenEstimator.Estimate(skills)
-            + EstimateToolSchemas(tools);
+        // ⚠️ 每段**只估一次**并复用：早先把同一串（尤其工具 schema——它是把 79 条名字 + 描述 + JSON
+        // 拼起来的最大一段）估了两遍，等于每次请求白烧一遍全量扫描与一次大字符串拼接。
+        var pageContextText = pageContext.ToString();
+        var mentionsText = mentions.ToString();
+        var pageContextTokens = AiTokenEstimator.Estimate(pageContextText);
+        var mentionsTokens = AiTokenEstimator.Estimate(mentionsText);
+        var skillsTokens = AiTokenEstimator.Estimate(skills);
+        var toolSchemaTokens = EstimateToolSchemas(tools);
+        var segmentTokens = pageContextTokens + mentionsTokens + skillsTokens + toolSchemaTokens;
         var systemTotal = AiTokenEstimator.Estimate(systemPrompt);
 
         var items = new List<AiContextSourceItem>(6);
@@ -120,10 +125,10 @@ public sealed partial class AiAssistant
 
         // 固定提示词 = 总量减掉各可拆段（不为负）；可拆段各自单列。
         Add(AiContextSource.SystemPrompt, Math.Max(0, systemTotal - segmentTokens));
-        Add(AiContextSource.PageContext, AiTokenEstimator.Estimate(pageContext.ToString()));
-        Add(AiContextSource.Mentions, AiTokenEstimator.Estimate(mentions.ToString()));
-        Add(AiContextSource.Skills, AiTokenEstimator.Estimate(skills));
-        Add(AiContextSource.ToolSchemas, EstimateToolSchemas(tools));
+        Add(AiContextSource.PageContext, pageContextTokens);
+        Add(AiContextSource.Mentions, mentionsTokens);
+        Add(AiContextSource.Skills, skillsTokens);
+        Add(AiContextSource.ToolSchemas, toolSchemaTokens);
         Add(AiContextSource.Messages, messages);
 
         var total = items.Sum(i => i.Tokens);

@@ -144,6 +144,12 @@ public partial class AiView : UserControl
         ScrollFeedToEnd();
     }
 
+    /// <summary>
+    /// 把左栏选中态同步到当前会话。
+    /// ⚠️ 当前会话**不在列表里**（草稿态 / 空态）时必须**清空选中**——否则旧行仍选着，
+    /// 用户点它时 <c>SelectionChanged</c> 不触发（选中项没变），表现为"新建会话之后怎么点都点不进去、
+    /// 完全回不到那个对话"。清空之后任何一行被点到都是"从无到有"的变更，事件必然来。
+    /// </summary>
     private void SelectActiveInList()
     {
         if (_viewModel?.ActiveSessionId is not { } id) return;
@@ -151,8 +157,9 @@ public partial class AiView : UserControl
             if (session is AiSessionRow row && row.SessionId == id)
             {
                 SessionList.SelectedItem = row;
-                break;
+                return;
             }
+        SessionList.SelectedItem = null;   // 草稿不在列表里：清空，让下一次点击一定产生变更
     }
 
     private void OnFeedChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -335,18 +342,21 @@ public partial class AiView : UserControl
     }
 
     /// <summary>
-    /// 「回溯」这一轮：回退该轮全部操作 + 把该轮原话填回输入框等发送。
-    /// 不可逆的批量动作先确认（与删除同一套口径）；不可撤销的变更引擎会如实跳过并计数，
+    /// 「回溯」这条用户消息带来的那一轮：回退该轮全部操作 + 把该轮从会话里去掉 + 原话填回输入框等发送。
+    /// 不可逆的动作先确认；不可撤销的变更引擎会如实跳过并计数，
     /// 所以文案说的是"回退做过的操作"，不承诺"什么都退得回来"。
     /// </summary>
     private async void OnRewindTurn(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
-        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem turn) return;
-        if (!ConfirmDialog.Show(Loc.T("ai.turn.rewind"), Loc.T("ai.turn.rewind.confirm"),
-                Loc.T("ai.turn.rewind"), "restore"))
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem item) return;
+        if (item.TurnId is null) return;
+        if (!ConfirmDialog.Show(Loc.T("ai.rewind"), Loc.T("ai.rewind.confirm"),
+                Loc.T("ai.rewind"), "restore"))
             return;
-        await _viewModel.RewindTurnAsync(turn);
+        await _viewModel.RewindTurnAsync(item);
+        _stickToBottom = true;
+        ScrollFeedToEnd();
         ComposerBox.Focus();
     }
 
@@ -517,6 +527,22 @@ public partial class AiView : UserControl
     {
         if (_viewModel is null || sender is not ListBoxItem item) return;
         item.IsSelected = true;
+    }
+
+    /// <summary>
+    /// 点在会话行上：切到该会话 + 收掉进行中的重命名。
+    /// <para>为什么不能只靠 <c>SelectionChanged</c>：它只在"选中项**变了**"时来。当前会话是草稿（不在列表里）
+    /// 而这一行恰好还选着时，点它等于没变 → 事件不来 → 什么都点不进去。这里按"点了哪一行"直接判，
+    /// 与选中态无关；重复触发由 <c>ActiveSessionId</c> 相等那一句挡掉。</para>
+    /// </summary>
+    private async void OnSessionRowClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (_viewModel is null || sender is not ListBoxItem { DataContext: AiSessionRow row }) return;
+        if (_viewModel.IsRenamingSession && !row.IsRenaming) _viewModel.CancelRename();
+        if (row.SessionId == _viewModel.ActiveSessionId) return;
+        await _viewModel.OpenSessionAsync(row.SessionId);
+        _stickToBottom = true;
+        ScrollFeedToEnd();
     }
 
     /// <summary>

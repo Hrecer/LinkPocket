@@ -25,14 +25,61 @@ public sealed partial class AiAssistant
     }
 
     /// <summary>
-    /// 撤销指定回合（「回溯」按钮的落点）。与 <see cref="UndoLastTurnAsync"/> 同一条实现路径，
-    /// 差别只有过滤条件——"这一轮"是同一个概念，不该有两份撤销代码。
+    /// **回溯**：先撤销该轮的数据操作，再把会话裁到该轮之前。两件事必须都做，缺一件就不是回溯
+    /// （只撤数据 → 记录还挂着；只裁记录 → 库里的改动还留着）。
     /// </summary>
-    public Task<AiUndoResult> UndoTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
+    public async Task<AiRewindResult> RewindTurnAsync(string sessionId, string turnId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
-        var file = LoadForUndo(sessionId);
-        return UndoTurnCoreAsync(sessionId, file, turnId, ct);
+        var file = LoadForUndo(sessionId);   // 回合在跑 → Busy；会话不存在 → NotFound
+
+        // ① 数据面：先撤（此时回合记录还在，CallIdsNewestFirst 要靠它取归属键）
+        var undo = await UndoTurnCoreAsync(sessionId, file, turnId, ct).ConfigureAwait(false);
+
+        // ② 会话面：裁掉该轮及其之后（重新 Load 一次，撤销过程中文件已被引擎写过）
+        file = _sessionStore.Load(sessionId) ?? throw NotFound(sessionId);
+        var turns = file.Turns.OrderBy(t => t.Index).ToList();
+        var cut = turns.FindIndex(t => string.Equals(t.TurnId, turnId, StringComparison.Ordinal));
+        if (cut < 0)
+            return new AiRewindResult(undo.TotalCalls, undo.UndoneCalls, undo.MissingCalls, 0, 0, undo.ErrorCode);
+
+        var dropped = turns.Skip(cut).ToList();
+        var droppedIds = dropped.Select(t => t.TurnId).ToHashSet(StringComparer.Ordinal);
+        file.Turns.RemoveAll(t => droppedIds.Contains(t.TurnId));
+        var removedMessages = file.Messages.RemoveAll(m => m.TurnId is { } id && droppedIds.Contains(id));
+        file.ToolCalls.RemoveAll(c => droppedIds.Contains(c.TurnId));
+        file.Changes.RemoveAll(c => droppedIds.Contains(c.TurnId));
+        file.Approvals.RemoveAll(a => droppedIds.Contains(a.TurnId));
+
+        TrimChatForDroppedTurns(file, dropped.Count);
+        _sessionStore.Save(file);
+
+        Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, sessionId,
+            Session: file.Summary));
+        return new AiRewindResult(undo.TotalCalls, undo.UndoneCalls, undo.MissingCalls,
+            dropped.Count, removedMessages, undo.ErrorCode);
+    }
+
+    /// <summary>
+    /// 裁掉模型历史末尾的 N 段。模型历史是**一维**的（没有回合 id），但每轮都以一条 <c>user</c> 开头，
+    /// 所以从尾部往回数 N 个段起点就是切割点。**从尾往头数**（不是从头往尾数）：压缩会往头部插一条
+    /// 合成的 <c>user</c> 摘要，从头数会被它错开一位。
+    /// </summary>
+    private static void TrimChatForDroppedTurns(AiSessionFile file, int droppedTurns)
+    {
+        if (droppedTurns <= 0) return;
+        var cut = 0;
+        var seen = 0;
+        for (var i = file.Chat.Count - 1; i >= 0; i--)
+        {
+            if (!string.Equals(file.Chat[i].Role, "user", StringComparison.Ordinal)) continue;
+            seen++;
+            if (seen < droppedTurns) continue;
+            cut = i;
+            break;
+        }
+        if (seen < droppedTurns) { file.Chat.Clear(); return; }   // 历史比回合短：整段清掉（如实，不猜边界）
+        if (cut < file.Chat.Count) file.Chat.RemoveRange(cut, file.Chat.Count - cut);
     }
 
     private Task<AiUndoResult> UndoTurnCoreAsync(string sessionId, AiSessionFile file, string turnId,
