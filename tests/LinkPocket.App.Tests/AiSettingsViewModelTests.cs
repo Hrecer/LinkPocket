@@ -148,6 +148,60 @@ public class AiSettingsViewModelTests
         Assert.Equal(new[] { "gw" }, stub.DeleteProviderCalls);
     }
 
+    // ── 空接入地址：把请求挡在源头（用户实测：新建自定义服务商后什么都没填就点「拉取模型」）──
+
+    /// <summary>一条地址为空的**自建**服务商（新建后未填地址的现场）。</summary>
+    private static (AiSettingsViewModel Vm, StubAiAssistant Stub) NewEmptyUrlVm()
+    {
+        var stub = new StubAiAssistant();
+        stub.Providers.Add(new AiProviderInfo("custom-07b7ff88", "custom-07b7ff88", AiProtocol.AnthropicMessages,
+            "", AiProviderSource.Custom, false, true, false, null, AiProviderStatus.NotConfigured,
+            null, null, null, []));
+        return (new AiSettingsViewModel(stub), stub);
+    }
+
+    [Fact]
+    public async Task 拉取模型_地址为空_就地提示且不发请求()
+    {
+        var (vm, stub) = NewEmptyUrlVm();
+        await vm.LoadAsync();
+        Assert.Equal("", vm.BaseUrlInput);          // 新建的自定义服务商：地址是空的
+
+        await vm.FetchModelsAsync();
+
+        Assert.Empty(stub.RefreshModelsCalls);      // **不发请求**（空地址会一路走到 HTTP 层的 Uri 解析）
+        Assert.Equal("ai.err.invalidInput", vm.TestStatusKey);
+        Assert.Equal("ai.settings.baseUrlRequired", vm.TestDetail.Key);
+    }
+
+    [Fact]
+    public async Task 连通性测试_地址为空_就地提示且不发请求()
+    {
+        var (vm, stub) = NewEmptyUrlVm();
+        await vm.LoadAsync();
+
+        await vm.TestAsync();
+
+        Assert.Empty(stub.TestCalls);
+        Assert.Equal("ai.err.invalidInput", vm.TestStatusKey);
+        Assert.Equal("ai.settings.baseUrlRequired", vm.TestDetail.Key);
+    }
+
+    [Fact]
+    public async Task 拉取模型_地址有草稿_先落盘再拉_请求打在用户刚填的地址上()
+    {
+        var (vm, stub) = NewEmptyUrlVm();
+        await vm.LoadAsync();
+        vm.BaseUrlInput = "https://gw.test/v1";     // 只改了输入框、还没点保存
+
+        await vm.FetchModelsAsync();
+
+        var draft = Assert.Single(stub.SaveProviderCalls);
+        Assert.Equal("https://gw.test/v1", draft.BaseUrl);
+        Assert.Equal(new[] { "custom-07b7ff88" }, stub.RefreshModelsCalls);
+        Assert.Equal("https://gw.test/v1", RowOf(vm, "custom-07b7ff88").Info.BaseUrl);   // 左列跟着更新
+    }
+
     // ── 「添加服务商」模板选择器（右栏的另一种模式）────────────────
 
     [Fact]

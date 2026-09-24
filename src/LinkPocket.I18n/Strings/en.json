@@ -637,6 +637,7 @@
   "ai.settings.providerPicker.back": "Back",
   "ai.settings.save": "Save",
   "ai.settings.test": "Test connection",
+  "ai.settings.baseUrlRequired": "Fill in the base URL first",
   "ai.status.testing": "Testing…",
   // AI 服务商显示名（模板数据的文案键；中文只许在这里出现，LinkPocket.Ai 侧一律 ASCII）
   "ai.provider.zaiStandardApi": "Z.ai API",

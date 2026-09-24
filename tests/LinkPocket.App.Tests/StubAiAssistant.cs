@@ -23,6 +23,12 @@ public sealed class StubAiAssistant : IAiAssistant
     public List<AiModelDraft> SaveModelCalls { get; } = [];
     /// <summary>DeleteProviderAsync 的记录（服务商删除权限用例看它有没有被调到）。</summary>
     public List<string> DeleteProviderCalls { get; } = [];
+    /// <summary>SaveProviderAsync 的记录（「拉取模型前先落地址草稿」用例看它有没有被调到）。</summary>
+    public List<AiProviderDraft> SaveProviderCalls { get; } = [];
+    /// <summary>RefreshModelsAsync（拉取模型）的记录；空地址用例断言它**没有**被调到。</summary>
+    public List<string> RefreshModelsCalls { get; } = [];
+    /// <summary>TestConnectivityAsync 的记录（同口径）。</summary>
+    public List<string> TestCalls { get; } = [];
     public List<AiPreferences> SavePreferencesCalls { get; } = [];
     public List<AiAuditQuery> AuditQueries { get; } = [];
     public List<(string SessionId, string ApprovalId, AiApprovalDecision Decision, string? Reason)> ApprovalCalls { get; } = [];
@@ -44,7 +50,19 @@ public sealed class StubAiAssistant : IAiAssistant
         => throw new NotSupportedException("测试桩不落配置");
 
     public Task<AiProviderInfo> SaveProviderAsync(AiProviderDraft draft, CancellationToken ct = default)
-        => throw new NotSupportedException("测试桩不落配置");
+    {
+        SaveProviderCalls.Add(draft);
+        var index = Providers.FindIndex(p => p.Id == draft.Id);
+        var info = index < 0 ? null : Providers[index];
+        if (info is not null)
+            Providers[index] = info with
+            {
+                DisplayName = draft.DisplayName,
+                BaseUrl = draft.BaseUrl,
+                Protocol = draft.Protocol,
+            };
+        return Task.FromResult(Providers.Single(p => p.Id == draft.Id));
+    }
 
     public Task DeleteProviderAsync(string providerId, CancellationToken ct = default)
     {
@@ -63,10 +81,16 @@ public sealed class StubAiAssistant : IAiAssistant
     }
 
     public Task<IReadOnlyList<AiModelInfo>> RefreshModelsAsync(string providerId, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AiModelInfo>>([]);
+    {
+        RefreshModelsCalls.Add(providerId);
+        return Task.FromResult(Providers.Single(p => p.Id == providerId).Models);
+    }
 
     public Task<AiConnectivityResult> TestConnectivityAsync(string providerId, CancellationToken ct = default)
-        => Task.FromResult(new AiConnectivityResult(AiProviderStatus.Verified, null, 1, 0));
+    {
+        TestCalls.Add(providerId);
+        return Task.FromResult(new AiConnectivityResult(AiProviderStatus.Verified, null, 1, 0));
+    }
 
     public Task<AiPreferences> GetPreferencesAsync(CancellationToken ct = default)
         => Task.FromResult(Preferences);

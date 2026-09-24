@@ -332,15 +332,22 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
-    /// <summary>连通性测试（结果三态 + 耗时；徽标就地更新）。</summary>
+    /// <summary>连通性测试（结果三态 + 耗时；徽标就地更新）。地址空 = 就地提示，不发请求（与拉取模型同口径）。</summary>
     public async Task TestAsync()
     {
         if (SelectedProvider is null) return;
+        if (string.IsNullOrWhiteSpace(BaseUrlInput))
+        {
+            TestStatusKey = "ai.err.invalidInput";
+            TestDetail = LocValue.Of("ai.settings.baseUrlRequired");
+            return;
+        }
         var id = SelectedProvider.Info.Id;
         TestStatusKey = "ai.status.testing";
         TestDetail = LocValue.Empty;
         await GuardAsync(async () =>
         {
+            await SaveProviderAsync().ConfigureAwait(true);   // 地址草稿先落地（否则测的是旧地址）
             var result = await _assistant.TestConnectivityAsync(id).ConfigureAwait(true);
             TestStatusKey = LinkPocket.Views.AiKeyMap.Status(result.Status);
             TestDetail = result.ErrorCode is { } code
@@ -351,14 +358,26 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
-    /// <summary>拉取模型列表（不支持 → 引导手填；新模型默认未启用）。</summary>
+    /// <summary>
+    /// 拉取模型列表（不支持 → 引导手填；新模型默认未启用）。
+    /// **地址是必填的存在前提**：新建的自定义服务商地址为空时，先就地提示而不是发一个不可能成功的请求
+    /// （空地址会一路走到 HTTP 层 —— 那层现在也会给稳定错误码，但让用户在源头看到原因更好）。
+    /// **地址是输入框草稿**：这里会先把它落盘，否则用户改了地址没保存就点拉取，请求打的是旧地址。
+    /// </summary>
     public async Task FetchModelsAsync()
     {
         if (SelectedProvider is null) return;
         var id = SelectedProvider.Info.Id;
+        if (string.IsNullOrWhiteSpace(BaseUrlInput))
+        {
+            TestStatusKey = "ai.err.invalidInput";
+            TestDetail = LocValue.Of("ai.settings.baseUrlRequired");
+            return;
+        }
         await GuardAsync(async () =>
         {
-            await _assistant.RefreshModelsAsync(id);
+            await SaveProviderAsync().ConfigureAwait(true);   // 显示名 / 地址 / 接入格式的草稿先落地
+            await _assistant.RefreshModelsAsync(id);          // 地址非法时上面已就地报错并返回，这里是有效地址
             await RefreshProvidersAsync().ConfigureAwait(true);
             RefreshModels();
         }).ConfigureAwait(true);

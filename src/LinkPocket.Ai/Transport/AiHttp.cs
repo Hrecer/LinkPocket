@@ -163,6 +163,10 @@ public sealed class HttpAiTransport : IAiHttpTransport, IDisposable
         {
             throw new AiException(AiErrors.Of(AiErrors.ProviderUnreachable, "request timed out"));
         }
+        catch (AiException)
+        {
+            throw;   // 已带稳定码（如地址非法）：原样上抛，不再包一层网络错
+        }
         catch (HttpRequestException ex)
         {
             throw new AiException(AiErrors.Of(AiErrors.ProviderUnreachable, $"network error: {ex.Message}"));
@@ -178,7 +182,14 @@ public sealed class HttpAiTransport : IAiHttpTransport, IDisposable
 
     private static HttpRequestMessage Build(AiHttpRequest request)
     {
-        var message = new HttpRequestMessage(new HttpMethod(request.Method), request.Url);
+        // Base URL 未填 / 非法 → 这里必须**自己抛 AiException**：HttpRequestException 之外的异常
+        // （new Uri 抛 UriFormatException）会穿透到界面的 `async void` 处理器，被兜底成"界面异常"弹窗。
+        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            throw new AiException(AiErrors.Of(AiErrors.InvalidInput,
+                $"provider base url is missing or not a valid http(s) url: {request.Url}"));
+
+        var message = new HttpRequestMessage(new HttpMethod(request.Method), uri);
         if (request.BodyJson is { } body)
             message.Content = new StringContent(body, Encoding.UTF8, "application/json");
         foreach (var (name, value) in request.Headers)

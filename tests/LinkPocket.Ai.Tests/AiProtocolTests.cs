@@ -208,6 +208,25 @@ public class AiProtocolTests
     }
 
     [Fact]
+    public async Task 传输_地址为空或非法_给稳定错误码而不是穿出UriFormatException()
+    {
+        // 新建的自定义服务商地址未填就点「拉取模型」：空地址会一路走到这里。
+        // 曾经 `new HttpRequestMessage(method, "")` 抛 UriFormatException —— 那不是 AiException，
+        // 会穿过 VM 的 GuardAsync（只捕 AiException）与 `async void` 处理器，兜底成"界面异常"弹窗。
+        var handler = Stub(HttpStatusCode.OK, "{}");
+        using var transport = new HttpAiTransport(handler);
+
+        foreach (var url in new[] { "", "   ", "not a url", "ftp://example.com/v1/models" })
+        {
+            var error = await Assert.ThrowsAsync<AiException>(() => transport.SendAsync(
+                new AiHttpRequest("GET", url, new Dictionary<string, string>(), null)));
+            Assert.Equal(AiErrors.InvalidInput, error.Error.Code);
+            Assert.False(error.Error.Retryable);   // 入参错不是网络抖动，不重试
+        }
+        Assert.Equal(0, handler.Attempts);          // 一个包都没发出去
+    }
+
+    [Fact]
     public async Task 传输_流式逐行吐出SSE原始行()
     {
         using var transport = new HttpAiTransport(Stub(HttpStatusCode.OK,
