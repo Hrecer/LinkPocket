@@ -43,6 +43,12 @@ public partial class AiPanel : UserControl
         await _viewModel.SaveProviderAsync();
     }
 
+    private async void OnAddCustomProvider(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.AddCustomProviderAsync();
+    }
+
     private async void OnDeleteProvider(object sender, RoutedEventArgs e)
     {
         if (_viewModel?.SelectedProvider is not { } provider) return;

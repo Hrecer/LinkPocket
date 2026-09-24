@@ -15,7 +15,7 @@ public class AiProviderStoreTests
     public void 服务商目录_预设Id唯一_接入地址与申请入口齐备_且显示名走文案键()
     {
         var templates = AiProviderCatalog.Templates;
-        Assert.Equal(21, templates.Count);
+        Assert.Equal(6, templates.Count);
         Assert.Equal(templates.Count, templates.Select(t => t.Id).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(templates.Count, templates.Select(t => t.DisplayNameKey).Distinct(StringComparer.Ordinal).Count());
         Assert.All(templates, t =>
@@ -42,13 +42,13 @@ public class AiProviderStoreTests
             var list = new AiProviderStore(root).List(Credentials(root));
 
             Assert.Equal(AiProviderCatalog.Templates.Count, list.Count);
-            var openai = Assert.Single(list, p => p.Id == "openai");
-            Assert.Equal(AiProviderSource.Preset, openai.Source);
-            Assert.Equal("ai.provider.openai", openai.DisplayNameKey);
-            Assert.False(openai.HasApiKey);
-            Assert.Equal(AiProviderStatus.NotConfigured, openai.Status);
-            Assert.Contains(openai.Issues!, i => i is { FieldPath: "api_key", Code: AiConfigIssueCodes.ApiKeyMissing });
-            Assert.Contains(openai.Models, m => m is { Id: "gpt-6-astra", Enabled: true, Source: AiModelSource.Preset });
+            var deepseek = Assert.Single(list, p => p.Id == "deepseek");
+            Assert.Equal(AiProviderSource.Preset, deepseek.Source);
+            Assert.Equal("ai.provider.deepseek", deepseek.DisplayNameKey);
+            Assert.False(deepseek.HasApiKey);
+            Assert.Equal(AiProviderStatus.NotConfigured, deepseek.Status);
+            Assert.Contains(deepseek.Issues!, i => i is { FieldPath: "api_key", Code: AiConfigIssueCodes.ApiKeyMissing });
+            Assert.Contains(deepseek.Models, m => m is { Id: "deepseek-flash", Enabled: true, Source: AiModelSource.Preset });
 
             var local = Assert.Single(list, p => p.Id == "local");
             Assert.True(local.IsLocal);
@@ -65,21 +65,21 @@ public class AiProviderStoreTests
         {
             var credentials = Credentials(root);
             var store = new AiProviderStore(root);
-            credentials.Set("openai", "sk-1234567890abcdef");
+            credentials.Set("deepseek", "sk-1234567890abcdef");
 
-            var configured = Assert.Single(store.List(credentials), p => p.Id == "openai");
+            var configured = Assert.Single(store.List(credentials), p => p.Id == "deepseek");
             Assert.Equal(AiProviderStatus.Configured, configured.Status);
             Assert.True(configured.HasApiKey);
             Assert.Equal("sk-1…cdef", configured.ApiKeyMasked);
             Assert.Empty(configured.Issues!);
 
-            Assert.Equal(AiProviderStatus.Verified, store.SetLastTestResult("openai", null, credentials).Status);
+            Assert.Equal(AiProviderStatus.Verified, store.SetLastTestResult("deepseek", null, credentials).Status);
 
-            var failed = store.SetLastTestResult("openai", AiErrors.AuthFailed, credentials);
+            var failed = store.SetLastTestResult("deepseek", AiErrors.AuthFailed, credentials);
             Assert.Equal(AiProviderStatus.Failed, failed.Status);
             Assert.Equal(AiErrors.AuthFailed, failed.StatusErrorCode);
             Assert.Equal(AiProviderStatus.Failed,
-                Assert.Single(store.List(credentials), p => p.Id == "openai").Status);   // 重启后徽标仍在
+                Assert.Single(store.List(credentials), p => p.Id == "deepseek").Status);   // 重启后徽标仍在
         }
         finally { AiTestEnv.Drop(root); }
     }
@@ -138,12 +138,12 @@ public class AiProviderStoreTests
         {
             var credentials = Credentials(root);
             var store = new AiProviderStore(root);
-            store.SaveProvider(new AiProviderDraft("openai", "", AiProtocol.OpenAiChat,
-                "https://api.openai.com/v1", Enabled: true, IsLocal: false), credentials);
+            store.SaveProvider(new AiProviderDraft("deepseek", "", AiProtocol.OpenAiChat,
+                "https://api.deepseek.com/v1", Enabled: true, IsLocal: false), credentials);
 
-            var info = Assert.Single(store.List(credentials), p => p.Id == "openai");
-            Assert.Equal("ai.provider.openai", info.DisplayNameKey);
-            Assert.Equal("OpenAI", info.DisplayName);
+            var info = Assert.Single(store.List(credentials), p => p.Id == "deepseek");
+            Assert.Equal("ai.provider.deepseek", info.DisplayNameKey);
+            Assert.Equal("DeepSeek", info.DisplayName);
         }
         finally { AiTestEnv.Drop(root); }
     }
@@ -180,14 +180,14 @@ public class AiProviderStoreTests
             var credentials = Credentials(root);
             var store = new AiProviderStore(root);
 
-            var merged = store.MergeFetchedModels("openai", ["gpt-6-astra", "o3-mini"], credentials);
+            var merged = store.MergeFetchedModels("deepseek", ["deepseek-flash", "o3-mini"], credentials);
             var fetched = Assert.Single(merged.Models, m => m.Id == "o3-mini");
             Assert.False(fetched.Enabled);
             Assert.Equal(AiModelSource.Fetched, fetched.Source);
-            Assert.Equal(AiModelSource.Preset, Assert.Single(merged.Models, m => m.Id == "gpt-6-astra").Source);
+            Assert.Equal(AiModelSource.Preset, Assert.Single(merged.Models, m => m.Id == "deepseek-flash").Source);
 
             var enabled = store.SaveModel(
-                new AiModelDraft("openai", "o3-mini", "o3-mini", true, 200_000, null, true, true), credentials);
+                new AiModelDraft("deepseek", "o3-mini", "o3-mini", true, 200_000, null, true, true), credentials);
             var updated = Assert.Single(enabled.Models, m => m.Id == "o3-mini");
             Assert.True(updated.Enabled);
             Assert.Equal(AiModelSource.Fetched, updated.Source);
@@ -204,7 +204,7 @@ public class AiProviderStoreTests
         {
             var credentials = Credentials(root);
             var store = new AiProviderStore(root);
-            store.SaveModel(new AiModelDraft("openai", "gpt-6-astra", "gpt-6-astra", Enabled: true,
+            store.SaveModel(new AiModelDraft("deepseek", "deepseek-flash", "deepseek-flash", Enabled: true,
                 ContextWindow: 200_000, MaxOutputTokens: 32_000,
                 SupportsTools: true, SupportsStreaming: false,
                 new AiModelInputFormat(SupportsText: true, SupportsImage: true, SupportsVideo: false, SupportsPdf: true),
@@ -213,7 +213,7 @@ public class AiProviderStoreTests
                 new AiModelReasoning(["low", "high"], """{"reasoning_effort":"$level"}""")), credentials);
 
             var model = Assert.Single(
-                Assert.Single(store.List(credentials), p => p.Id == "openai").Models, m => m.Id == "gpt-6-astra");
+                Assert.Single(store.List(credentials), p => p.Id == "deepseek").Models, m => m.Id == "deepseek-flash");
             Assert.True(model.InputFormat!.SupportsImage);
             Assert.True(model.InputFormat.SupportsPdf);
             Assert.False(model.InputFormat.SupportsVideo);
@@ -272,18 +272,18 @@ public class AiProviderStoreTests
         var root = AiTestEnv.NewRoot();
         try
         {
-            new AiCredentialStore(root, new AiTestEnv.FakeCipher()).Set("openai", "sk-1234567890abcdef");
+            new AiCredentialStore(root, new AiTestEnv.FakeCipher()).Set("deepseek", "sk-1234567890abcdef");
             var store = new AiProviderStore(root);
 
             var list = store.List(new AiCredentialStore(root, new AiTestEnv.FailingUnprotectCipher()));
             Assert.Equal(AiProviderCatalog.Templates.Count, list.Count);   // 清单照常给出
 
-            var openai = Assert.Single(list, p => p.Id == "openai");
-            Assert.True(openai.HasApiKey);                                  // 文件里有（如实）
-            Assert.Null(openai.ApiKeyMasked);
-            Assert.Equal(AiProviderStatus.Failed, openai.Status);
-            Assert.Equal(AiErrors.CredentialStoreFailed, openai.StatusErrorCode);
-            Assert.DoesNotContain(openai.Issues!, i => i.Code == AiConfigIssueCodes.ApiKeyMissing);
+            var deepseek = Assert.Single(list, p => p.Id == "deepseek");
+            Assert.True(deepseek.HasApiKey);                                  // 文件里有（如实）
+            Assert.Null(deepseek.ApiKeyMasked);
+            Assert.Equal(AiProviderStatus.Failed, deepseek.Status);
+            Assert.Equal(AiErrors.CredentialStoreFailed, deepseek.StatusErrorCode);
+            Assert.DoesNotContain(deepseek.Issues!, i => i.Code == AiConfigIssueCodes.ApiKeyMissing);
         }
         finally { AiTestEnv.Drop(root); }
     }

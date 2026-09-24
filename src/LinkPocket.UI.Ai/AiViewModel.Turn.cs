@@ -22,12 +22,15 @@ public sealed partial class AiViewModel
         => !IsTurnRunning && ComposerText.Trim().Length > 0
            && (IsConfigured || ComposerText.Trim().StartsWith('/'));
 
-    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页 + @提及；以"/"开头 = 本地斜杠命令，不发给模型）。</summary>
+    /// <summary>发送当前输入（回合上下文：当前语言 + 当前页 + @提及；以"/"开头 = 本地斜杠命令，不发给模型）。
+    /// 没有当前会话时**懒建一个**（进页不再自动建会话）。</summary>
     public async Task SendAsync()
     {
-        if (!CanSend || _activeSessionId is not { } sessionId) return;
+        if (!CanSend) return;
         var text = ComposerText.Trim();
         var mentions = text.StartsWith('/') ? null : MentionsForSend(text);
+        var sessionId = _activeSessionId ?? await EnsureSessionAsync().ConfigureAwait(true);
+        if (sessionId is null) return;
         ComposerText = "";
         CancelMentions();
         LastErrorKey = null;
@@ -47,6 +50,23 @@ public sealed partial class AiViewModel
         {
             Raise(nameof(CanSend));
             CommandRefresh.Request();
+        }
+    }
+
+    /// <summary>懒建会话：第一条消息 / 斜杠命令要用会话时才建，建好即设为当前（左栏行走同一个 upsert）。</summary>
+    private async Task<string?> EnsureSessionAsync()
+    {
+        try
+        {
+            var created = await _assistant.CreateSessionAsync().ConfigureAwait(true);
+            UpsertSession(created);
+            await OpenSessionAsync(created.SessionId).ConfigureAwait(true);
+            return created.SessionId;
+        }
+        catch (AiException ex)
+        {
+            LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+            return null;
         }
     }
 

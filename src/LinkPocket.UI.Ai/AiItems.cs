@@ -676,6 +676,10 @@ public sealed class AiChangeRow : INotifyPropertyChanged
     public bool HasFields => Fields.Count > 0;
     public bool CanExpand => Fields.Count > CollapsedFieldCount;
 
+    /// <summary>右栏紧凑行的字段变更条数（整句由 LocValue 出、渲染边界取词）：逐字段明细与对话流
+    /// 工具卡内联的变更卡同源，右栏不再重复铺一遍。</summary>
+    public LocValue FieldCountValue => Loc.K("ai.diff.fieldCount", Fields.Count);
+
     /// <summary>折叠 = 前 5 条；展开 = 全量。</summary>
     public IReadOnlyList<AiFieldRow> VisibleFields => IsExpanded || !CanExpand
         ? Fields

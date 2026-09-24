@@ -123,8 +123,8 @@
             </StackPanel>
         </DataTemplate>
 
-        <!-- 台账一行（对话流内联变更卡与右栏共用同一份模板）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
-             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。 -->
+        <!-- 台账一行（**对话流内联变更卡**用）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
+             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。右栏走 AiChangeRowCompactTemplate。 -->
         <DataTemplate x:Key="AiChangeRowTemplate">
             <StackPanel Margin="0,3">
                 <StackPanel Orientation="Horizontal">
@@ -167,6 +167,63 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <!-- 对账与引擎 diff 不一致（功能书 §7.1：只标注不改写事实）——与 SourceKey 同带、独立可见性 -->
+                    <TextBlock Text="{loc:LocKey MismatchKey}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasMismatch}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+                <TextBlock Text="{loc:Value TruncatedValue}" FontSize="11" Foreground="{DynamicResource App.Accent.Text}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsTruncated}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- 右栏紧凑行：字段级明细**不在这里铺**（与对话流工具卡内联的变更卡完全同源，只给条数）；
+             要看逐字段旧→新，展开对话流里那一次工具调用。 -->
+        <DataTemplate x:Key="AiChangeRowCompactTemplate">
+            <StackPanel Margin="0,3">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey KindKey}" FontSize="12" Foreground="{DynamicResource App.Accent.Text}"/>
+                    <TextBlock Text="{Binding EntityLabel}" FontSize="12" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource App.Text.Primary}"/>
+                </StackPanel>
+                <TextBlock Text="{loc:Value PathValue}" FontSize="11" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource App.Text.Muted}"/>
+                <TextBlock Text="{loc:Value FieldCountValue}" FontSize="11"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
+                    <TextBlock Text="{loc:LocKey SourceKey}" FontSize="11" Margin="8,0,0,0"
+                               Foreground="{DynamicResource App.Accent.Text}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSourceNote}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                     <TextBlock Text="{loc:LocKey MismatchKey}" FontSize="11" Margin="8,0,0,0"
                                Foreground="{DynamicResource App.Accent.Text}">
                         <TextBlock.Style>
@@ -1042,74 +1099,8 @@
                                       ItemTemplateSelector="{StaticResource AiFeedSelector}"/>
                     </ScrollViewer>
 
-                    <!-- 空态引导卡（未配置服务商时换成配置引导；示例提示可点即发）。
-                         宽高**冻结**（中文基线 + 英文换行余量）：语言切换不许改变卡片尺寸（见 WARNINGS 116）。 -->
-                    <Border x:Name="GuideCard" HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Width="520" Height="200" Background="{DynamicResource App.Surface.Card}"
-                            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
-                            CornerRadius="19" Padding="22,20">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ShowGuide}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{loc:Loc ai.empty.title}" FontSize="15" FontWeight="SemiBold"
-                                       Foreground="{DynamicResource App.Text.Primary}"/>
-                            <!-- 描述固定两行高（中文一行、英文两行——固定高度保证卡片尺寸不随语言变） -->
-                            <TextBlock Text="{loc:Loc ai.empty.desc}" FontSize="12" TextWrapping="Wrap" Height="32"
-                                       Margin="0,6,0,0" Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <!-- 未配置服务商 / 未选模型：如实提示 + 直达设置 -->
-                            <StackPanel Margin="0,10,0,0">
-                                <StackPanel.Style>
-                                    <Style TargetType="StackPanel">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsConfigured}" Value="False">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </StackPanel.Style>
-                                <TextBlock Text="{loc:LocKey SelectionErrorKey}" FontSize="12" TextWrapping="Wrap"
-                                           Foreground="{DynamicResource App.Accent.Text}"/>
-                                <Button x:Name="OpenSettingsButton" Style="{StaticResource TonalButton}" Height="30"
-                                        Width="176" Margin="0,8,0,0" HorizontalAlignment="Left"
-                                        Cursor="Hand" ToolTip="{loc:Loc ai.hint.openSettings}" Click="OnOpenSettings">
-                                    <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                               views:LocFit.Text="{loc:Fit ai.hint.openSettings}"
-                                               views:LocFit.Mode="Shrink"/>
-                                </Button>
-                            </StackPanel>
-                            <!-- 三条示例提示（可点：填进输入框即发送） -->
-                            <StackPanel Margin="0,12,0,0">
-                                <StackPanel.Style>
-                                    <Style TargetType="StackPanel">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsConfigured}" Value="False">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </StackPanel.Style>
-                                <Button Style="{StaticResource AiRowButton}" Height="30" Tag="ai.empty.example1"
-                                        Content="{loc:Loc ai.empty.example1}" HorizontalContentAlignment="Stretch"
-                                        Click="OnExamplePrompt"/>
-                                <Button Style="{StaticResource AiRowButton}" Height="30" Tag="ai.empty.example2"
-                                        Content="{loc:Loc ai.empty.example2}" HorizontalContentAlignment="Stretch"
-                                        Click="OnExamplePrompt"/>
-                                <Button Style="{StaticResource AiRowButton}" Height="30" Tag="ai.empty.example3"
-                                        Content="{loc:Loc ai.empty.example3}" HorizontalContentAlignment="Stretch"
-                                        Click="OnExamplePrompt"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
+                    <!-- 空对话区不设占位卡：没有会话 / 空会话一律就是空白（引导卡与它的示例提示已退场；
+                         未配置由发送钮的可用性与模型下拉的空态文案承担）。 -->
 
                     <!-- 回到最新（离开底部才出现；点了回底并恢复跟随；显隐由视图按滚动位置投影） -->
                     <Button x:Name="BackToLatestButton" HorizontalAlignment="Center" VerticalAlignment="Bottom"
@@ -1628,10 +1619,11 @@
                     </ComboBox>
                 </StackPanel>
 
-                <!-- 列表（四个页签各一份；同一份台账行模板与对话流共用） -->
+                <!-- 列表（四个页签各一份）：变更两页签走**紧凑行**（字段明细与对话流同源，不在右栏重复铺）；
+                     审批 / 引擎审计各用自己的行与分页。 -->
                 <ScrollViewer Grid.Row="4" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <ItemsControl ItemsSource="{Binding TurnChanges}" ItemTemplate="{StaticResource AiChangeRowTemplate}">
+                        <ItemsControl ItemsSource="{Binding TurnChanges}" ItemTemplate="{StaticResource AiChangeRowCompactTemplate}">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
                                     <Setter Property="Visibility" Value="Visible"/>
@@ -1643,7 +1635,7 @@
                                 </Style>
                             </ItemsControl.Style>
                         </ItemsControl>
-                        <ItemsControl ItemsSource="{Binding SessionChanges}" ItemTemplate="{StaticResource AiChangeRowTemplate}">
+                        <ItemsControl ItemsSource="{Binding SessionChanges}" ItemTemplate="{StaticResource AiChangeRowCompactTemplate}">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
                                     <Setter Property="Visibility" Value="Collapsed"/>

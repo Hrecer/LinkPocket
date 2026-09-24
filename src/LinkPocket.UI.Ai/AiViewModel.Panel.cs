@@ -205,6 +205,38 @@ public sealed partial class AiViewModel
     public async Task<bool> ExportAuditAsync(AiExportFormat format, string outputPath)
         => await ExportSessionAsync(outputPath, format).ConfigureAwait(true);
 
+    // ── 无会话空态 ────────────────────────────────────────────
+
+    /// <summary>
+    /// 回到「没有会话」（进页时一条会话都没有 / 把最后一条删了）：清空对话流、台账、右栏与撤销读数。
+    /// **不建新会话**——空就是空；用户真要说话时由 <c>SendAsync</c> 懒建（见 AiViewModel.Turn.cs）。
+    /// </summary>
+    private void ClearConversation()
+    {
+        _activeSessionId = null;
+        Raise(nameof(ActiveSessionId));
+        Feed.Clear();
+        Turns.Clear();
+        _allChanges.Clear();
+        _allToolCalls.Clear();
+        _allApprovals.Clear();
+        _lastTurnId = null;
+        _undoableBatches = 0;
+        _auditPage = 1;
+        _auditPageCount = 1;
+        _auditTotal = 0;
+        ApplyPanelFilter();
+        EngineAudit.Clear();
+        Raise(nameof(CanUndoSession));
+        Raise(nameof(AuditPageValue));
+        Raise(nameof(CanPrevAuditPage));
+        Raise(nameof(CanNextAuditPage));
+        Raise(nameof(ShowRail));
+        IsTurnRunning = false;
+        StatusKey = "ai.status.idle";
+        ClearMentions();
+    }
+
     // ── 投影（唯一入口）──────────────────────────────────────
 
     /// <summary>换会话 / 进页：整份重投影（台账、审批、汇总、审计页签）。</summary>

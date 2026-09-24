@@ -23,7 +23,6 @@ public partial class AiView : UserControl
 {
     private AiViewModel? _viewModel;
     private bool _loaded;
-    private Action<string>? _navigate;
     private ShortcutHost? _shortcutHost;
     private readonly ICommand _sendCommand;
     private readonly ICommand _escapeCommand;
@@ -61,9 +60,8 @@ public partial class AiView : UserControl
         _copyTimer.Tick += (_, _) => RestoreCopyLabel();
     }
 
-    /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。
-    /// <paramref name="navigate"/> = 页内"去设置"这类直达入口（Shell 提供，页面不认导航表）。</summary>
-    public void Configure(IAiAssistant assistant, Action<string>? navigate = null)
+    /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。</summary>
+    public void Configure(IAiAssistant assistant)
     {
         _viewModel = new AiViewModel(assistant);
         _viewModel.Feed.CollectionChanged += OnFeedChanged;
@@ -75,7 +73,6 @@ public partial class AiView : UserControl
                 or nameof(AiViewModel.ProgressMaximum) or nameof(AiViewModel.IsProgressIndeterminate))
                 Dispatcher.BeginInvoke(new Action(SyncProgress));
         };
-        _navigate = navigate;
         DataContext = _viewModel;
         _viewModel.ExportRequested += OnExportRequested;
         _viewModel.ApprovalFocusRequested += OnApprovalFocusRequested;   // 默认焦点落在「拒绝」
@@ -98,6 +95,7 @@ public partial class AiView : UserControl
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
         _progressTimer.Start();
         _tickTimer.Start();
+        ApplyPanelState();   // 右栏缺省收起（VM 侧初值 = 收起；这里把列宽投影成 0）
     }
 
     /// <summary>入口对齐：进入本页即刷新会话清单并重投影当前会话（对话内容不重载为本地状态）。</summary>
@@ -221,14 +219,6 @@ public partial class AiView : UserControl
         _copiedButton = null;
     }
 
-    /// <summary>空态示例提示：点了填进输入框即发送（示例文案在点击这一刻取词，之后就是用户消息）。</summary>
-    private void OnExamplePrompt(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null || (sender as FrameworkElement)?.Tag is not string key) return;
-        _viewModel.ComposerText = Loc.T(key);
-        _ = SendAsync();
-    }
-
     // ── 右栏收起 / 展开（宽度可拖；收起 = 整列归零）────────────────
 
     private void OnTogglePanel(object sender, RoutedEventArgs e)
@@ -290,9 +280,6 @@ public partial class AiView : UserControl
         ComposerBox.Focus();
         Keyboard.Focus(ComposerBox);
     }
-
-    /// <summary>未配置服务商/模型时的直达入口（Shell 负责切页；页面不认导航表）。</summary>
-    private void OnOpenSettings(object sender, RoutedEventArgs e) => _navigate?.Invoke("settings");
 
     // ── 右栏：展开 / 载荷 / 导出 ──────────────────────────────
 

@@ -73,7 +73,7 @@ public class AiTimelineTests
         Assert.Equal(new[] { 1, 2 }, vm.Turns.Select(t => t.TurnIndex));
         Assert.True(vm.ShowRail);
         Assert.True(vm.Turns[^1].IsActive);   // 进页停在最新一轮
-        Assert.False(vm.IsConversationEmpty);
+        Assert.Contains(vm.Feed, i => i.Kind == AiFeedItem.ItemKind.UserMessage);   // 有真实内容（空态判定随引导卡退场）
     }
 
     [Fact]
@@ -194,17 +194,17 @@ public class AiTimelineTests
     }
 
     [Fact]
-    public void 右栏_可收起_开关提示跟随()
+    public void 右栏_缺省收起_开关提示跟随()
     {
         var (vm, _) = NewVm();
 
-        Assert.False(vm.IsPanelCollapsed);
-        Assert.Equal("ai.panel.collapse", vm.PanelToggleKey);
+        Assert.True(vm.IsPanelCollapsed);                     // 缺省收起（右栏与对话流重复的内容不占常驻宽度）
+        Assert.Equal("ai.panel.expand", vm.PanelToggleKey);
 
         vm.TogglePanel();
 
-        Assert.True(vm.IsPanelCollapsed);
-        Assert.Equal("ai.panel.expand", vm.PanelToggleKey);
+        Assert.False(vm.IsPanelCollapsed);
+        Assert.Equal("ai.panel.collapse", vm.PanelToggleKey);
     }
 
     [Fact]

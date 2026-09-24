@@ -38,6 +38,9 @@ public sealed class StubAiAssistant : IAiAssistant
     public Task<IReadOnlyList<AiProviderInfo>> ListProvidersAsync(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AiProviderInfo>>(Providers);
 
+    public Task<AiProviderInfo> CreateCustomProviderAsync(CancellationToken ct = default)
+        => throw new NotSupportedException("测试桩不落配置");
+
     public Task<AiProviderInfo> SaveProviderAsync(AiProviderDraft draft, CancellationToken ct = default)
         => throw new NotSupportedException("测试桩不落配置");
 

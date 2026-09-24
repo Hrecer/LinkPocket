@@ -21,10 +21,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     private bool _isTurnRunning;
     private AiMode _mode = AiMode.ConfirmEach;
     private bool _isConfigured;
-    private string _selectionErrorKey = "";
     private string? _lastErrorKey;
-    private bool _isPanelCollapsed;
-    private bool _isConversationEmpty = true;
+    private bool _isPanelCollapsed = true;
     private AiModelOption? _selectedModel;
 
     public AiViewModel(IAiAssistant assistant)
@@ -130,23 +128,12 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public bool IsConfigured
     {
         get => _isConfigured;
-        private set
-        {
-            if (!Set(ref _isConfigured, value, nameof(IsConfigured))) return;
-            Raise(nameof(ShowGuide));
-        }
-    }
-
-    /// <summary>未配置时的引导文案键（取词在视图侧）。</summary>
-    public string SelectionErrorKey
-    {
-        get => _selectionErrorKey;
-        private set => Set(ref _selectionErrorKey, value, nameof(SelectionErrorKey));
+        private set => Set(ref _isConfigured, value, nameof(IsConfigured));
     }
 
     public string? ActiveSessionId => _activeSessionId;
 
-    /// <summary>右栏「变更与审计」的收起态（顶栏开关；收起后不再占宽）。</summary>
+    /// <summary>右栏「变更与审计」的收起态（顶栏开关；收起后不再占宽）——**缺省收起**。</summary>
     public bool IsPanelCollapsed
     {
         get => _isPanelCollapsed;
@@ -159,12 +146,6 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public string PanelToggleKey => IsPanelCollapsed ? "ai.panel.expand" : "ai.panel.collapse";
 
     public void TogglePanel() => IsPanelCollapsed = !IsPanelCollapsed;
-
-    /// <summary>对话区空态（只剩会话头 / 什么都没有）：显示引导卡（三条示例提示 + 模式说明）。</summary>
-    public bool IsConversationEmpty => _isConversationEmpty;
-
-    /// <summary>引导卡是否显示（空对话时显示；未配置服务商时同卡换成配置引导）。</summary>
-    public bool ShowGuide => _isConversationEmpty;
 
     /// <summary>模型下拉的当前值（无启用模型 = 提示去配置）。</summary>
     public AiModelOption? SelectedModel
@@ -213,7 +194,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     /// <summary>出现了一张待批审批（视图把焦点移到该卡的「拒绝」按钮）。</summary>
     public event Action<string>? ApprovalFocusRequested;
 
-    /// <summary>进页对齐：刷新选择 / 模型清单 / 会话清单；无会话则建一个（缺省模式取偏好）。</summary>
+    /// <summary>进页对齐：刷新选择 / 模型清单 / 会话清单。**不自动建会话**——一条会话都没有就是空态
+    /// （用户点「新建会话」或直接发消息时才建，见 <see cref="NewSessionAsync"/>）。</summary>
     public async Task LoadAsync()
     {
         try
@@ -223,15 +205,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
             var sessions = await _assistant.ListSessionsAsync().ConfigureAwait(true);
             Sessions.Clear();
             foreach (var session in sessions) Sessions.Add(new AiSessionRow(session));
-            if (Sessions.Count == 0)
-            {
-                var created = await _assistant.CreateSessionAsync().ConfigureAwait(true);
-                Sessions.Insert(0, new AiSessionRow(created));
-            }
             var target = _activeSessionId is { } id && Sessions.Any(s => s.SessionId == id)
                 ? id
-                : Sessions[0].SessionId;
-            await OpenSessionAsync(target).ConfigureAwait(true);
+                : Sessions.FirstOrDefault()?.SessionId;
+            if (target is not null) await OpenSessionAsync(target).ConfigureAwait(true);
+            else ClearConversation();
             await RefreshSkillsAsync().ConfigureAwait(true);
         }
         catch (AiException ex)
@@ -240,13 +218,14 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>新建会话并切过去。</summary>
+    /// <summary>新建会话并切过去。左栏行只经 <see cref="UpsertSession"/> 写入（幂等 upsert）：
+    /// 显式插入与 SessionChanged 通知各插一次，曾让同一个会话在左栏出现两行。</summary>
     public async Task NewSessionAsync()
     {
         try
         {
             var created = await _assistant.CreateSessionAsync().ConfigureAwait(true);
-            Sessions.Insert(0, new AiSessionRow(created));
+            UpsertSession(created);
             await OpenSessionAsync(created.SessionId).ConfigureAwait(true);
         }
         catch (AiException ex)
@@ -336,17 +315,17 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         else Sessions.Insert(0, new AiSessionRow(summary));
     }
 
+    /// <summary>删除会话；删掉的正是当前会话时切到清单里的第一条，**一条不剩就回到无会话空态**
+    /// （不再顺手新建一条——那会让人以为"删了又冒出一个"）。</summary>
     public async Task DeleteSessionAsync(AiSessionRow session)
     {
         try
         {
             await _assistant.DeleteSessionAsync(session.SessionId).ConfigureAwait(true);
             Sessions.Remove(session);
-            if (_activeSessionId == session.SessionId)
-            {
-                if (Sessions.Count == 0) await NewSessionAsync().ConfigureAwait(true);
-                else await OpenSessionAsync(Sessions[0].SessionId).ConfigureAwait(true);
-            }
+            if (_activeSessionId != session.SessionId) return;
+            if (Sessions.FirstOrDefault() is { } next) await OpenSessionAsync(next.SessionId).ConfigureAwait(true);
+            else ClearConversation();
         }
         catch (AiException ex)
         {
@@ -404,16 +383,9 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
 
     private void RefreshSelection()
     {
+        // 未配置时的如实表达只剩一处：CanSend（发送钮可用性）与模型下拉的空态文案。
         var resolution = _assistant.ResolveSelection();
         IsConfigured = resolution.Selection is not null;
-        SelectionErrorKey = resolution.Issue switch
-        {
-            AiSelectionIssue.ProviderMissing => "ai.hint.configure",
-            AiSelectionIssue.ApiKeyMissing => "ai.hint.apiKey",
-            AiSelectionIssue.ModelMissing or AiSelectionIssue.ModelDisabled => "ai.hint.selectModel",
-            AiSelectionIssue.CapabilityMissing => "ai.hint.capability",
-            _ => "",
-        };
     }
 
     /// <summary>模型清单（已启用模型；当前值 = 助手偏好里的选择，不在清单里 = 未选）。</summary>
@@ -610,18 +582,8 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         ? null
         : Feed.FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.TurnHeader && i.TurnId == turnId);
 
-    /// <summary>空态判定（只剩回合头 = 空；提示条也算内容，如实照显示）。</summary>
-    private void NotifyFeedShape()
-    {
-        var empty = !Feed.Any(i => i.Kind != AiFeedItem.ItemKind.TurnHeader);
-        if (empty != _isConversationEmpty)
-        {
-            _isConversationEmpty = empty;
-            Raise(nameof(IsConversationEmpty));
-            Raise(nameof(ShowGuide));
-        }
-        Raise(nameof(ShowRail));
-    }
+    /// <summary>对话流形状变化：轮次导航轨的显隐跟着轮数走（两轮以上才占位）。</summary>
+    private void NotifyFeedShape() => Raise(nameof(ShowRail));
 
     private bool Set<T>(ref T field, T value, string name)
     {

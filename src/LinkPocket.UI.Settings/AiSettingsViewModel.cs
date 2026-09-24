@@ -209,6 +209,17 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
+    /// <summary>新建自定义服务商（可建多个）：Id 由 AI 层生成，建成即选中并进右侧表单。</summary>
+    public async Task AddCustomProviderAsync()
+    {
+        await GuardAsync(async () =>
+        {
+            var created = await _assistant.CreateCustomProviderAsync().ConfigureAwait(true);
+            await RefreshProvidersAsync().ConfigureAwait(true);
+            SelectedProvider = Providers.FirstOrDefault(p => p.Info.Id == created.Id) ?? SelectedProvider;
+        }).ConfigureAwait(true);
+    }
+
     /// <summary>删除服务商（预设回出厂模板、自定义整体移除；密钥一并删除）。</summary>
     public async Task DeleteProviderAsync()
     {

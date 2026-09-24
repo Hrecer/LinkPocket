@@ -147,12 +147,17 @@
                                Foreground="{DynamicResource App.Text.Primary}"/>
                     <TextBlock Text="{loc:Loc ai.settings.providers.desc}" FontSize="12" Margin="0,4,0,14"
                                TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <!-- 左列 = 服务商清单（6 条预设 + 自建）＋「添加自定义服务商」；右列 = 选中项的配置表单 -->
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="260"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <views:SideNavList x:Name="ProviderList" Grid.Column="0" MinHeight="220"
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <views:SideNavList x:Name="ProviderList" Grid.Row="0" Grid.Column="0" MinHeight="220"
                                            Style="{StaticResource SideNavListStyle}"
                                            ItemsSource="{Binding Providers}"
                                            ItemContainerStyle="{StaticResource AiProviderItem}"
@@ -196,7 +201,11 @@
                                 </DataTemplate>
                             </views:SideNavList.ItemTemplate>
                         </views:SideNavList>
-                        <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                        <!-- 自定义服务商可建多个：建成即选中，直接进右侧表单填名称 / 地址 / 接入格式 / 密钥 -->
+                        <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource TonalButton}" Height="30"
+                                Margin="0,8,0,0" HorizontalAlignment="Left" Padding="12,0"
+                                Content="{loc:Loc ai.settings.addCustom}" Click="OnAddCustomProvider"/>
+                        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="16,0,0,0">
                             <TextBlock Text="{loc:Loc ai.settings.displayName}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                             <TextBox x:Name="DisplayNameBox" Style="{StaticResource AiField}" Margin="0,4,0,10"
                                      Text="{Binding DisplayNameInput, UpdateSourceTrigger=PropertyChanged}"/>
