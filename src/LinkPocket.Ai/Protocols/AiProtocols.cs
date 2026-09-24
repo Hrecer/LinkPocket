@@ -50,10 +50,12 @@ public static class AiProtocols
 {
     public static readonly IAiProtocolAdapter OpenAiChat = new OpenAiChatAdapter();
     public static readonly IAiProtocolAdapter AnthropicMessages = new AnthropicMessagesAdapter();
+    public static readonly IAiProtocolAdapter OpenAiResponses = new OpenAiResponsesAdapter();
 
     public static IAiProtocolAdapter For(AiProtocol kind) => kind switch
     {
         AiProtocol.AnthropicMessages => AnthropicMessages,
+        AiProtocol.OpenAiResponses => OpenAiResponses,
         _ => OpenAiChat,
     };
 }
@@ -206,6 +208,170 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         return input is null && output is null
             ? null
             : new AiChatDelta("usage", InputTokens: input, OutputTokens: output);
+    }
+}
+
+/// <summary>OpenAI Responses 族（`/responses`）：system 走顶层 `instructions`，对话走 `input` 项数组
+/// （助手消息拆成 `output_text` 项 + `function_call` 项，工具结果 = `function_call_output` 项），
+/// 工具声明是扁平形态（`{type:function, name, …}`，不套 `function` 外层）；
+/// 流式事件名一律 `response.*` 前缀，用量在 `response.completed` 的 `response.usage`。</summary>
+public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
+{
+    public AiProtocol Kind => AiProtocol.OpenAiResponses;
+
+    public AiHttpRequest BuildChatRequest(AiProviderInfo provider, string? apiKey, AiChatRequest request)
+    {
+        var input = new JsonArray();
+        foreach (var message in request.Messages)
+        {
+            if (message.Role == "tool")
+            {
+                input.Add(new JsonObject
+                {
+                    ["type"] = "function_call_output",
+                    ["call_id"] = message.ToolCallId ?? "",
+                    ["output"] = message.Text,
+                });
+                continue;
+            }
+
+            if (message.Role == "assistant")
+            {
+                if (message.ToolCalls is { Count: > 0 })
+                    foreach (var call in message.ToolCalls)
+                        input.Add(new JsonObject
+                        {
+                            ["type"] = "function_call",
+                            ["call_id"] = call.Id,
+                            ["name"] = call.Name,
+                            ["arguments"] = string.IsNullOrWhiteSpace(call.ArgumentsJson) ? "{}" : call.ArgumentsJson,
+                        });
+                if (!string.IsNullOrEmpty(message.Text))
+                    input.Add(new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = new JsonArray
+                        {
+                            new JsonObject { ["type"] = "output_text", ["text"] = message.Text },
+                        },
+                    });
+                continue;
+            }
+
+            input.Add(new JsonObject { ["role"] = "user", ["content"] = message.Text });
+        }
+
+        var body = new JsonObject
+        {
+            ["model"] = request.Model,
+            ["input"] = input,
+            ["max_output_tokens"] = request.MaxOutputTokens,
+            ["stream"] = request.Stream,
+        };
+        if (!string.IsNullOrEmpty(request.System)) body["instructions"] = request.System;
+        if (request.Tools.Count > 0)
+        {
+            var tools = new JsonArray();
+            foreach (var tool in request.Tools)
+                tools.Add(new JsonObject
+                {
+                    ["type"] = "function",
+                    ["name"] = tool.Name,
+                    ["description"] = tool.Description,
+                    ["parameters"] = JsonNode.Parse(tool.ParametersJson),
+                });
+            body["tools"] = tools;
+        }
+
+        return new AiHttpRequest("POST", $"{provider.BaseUrl.TrimEnd('/')}/responses",
+            Headers(apiKey), body.ToJsonString());
+    }
+
+    public AiHttpRequest BuildModelsRequest(AiProviderInfo provider, string? apiKey)
+        => new("GET", $"{provider.BaseUrl.TrimEnd('/')}/models", Headers(apiKey), null);
+
+    public IReadOnlyList<string> ParseModels(string body)
+        => AiJson.StringsAt(body, "data", "id");
+
+    public AiChatCompletion ParseCompletion(string body)
+    {
+        using var doc = JsonDocument.Parse(body);
+        var text = new System.Text.StringBuilder();
+        var calls = new List<AiToolCallRequest>();
+        if (doc.RootElement.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
+            foreach (var item in output.EnumerateArray())
+            {
+                switch (AiJson.String(item, "type"))
+                {
+                    case "message":
+                        if (item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+                            foreach (var block in content.EnumerateArray())
+                                if (AiJson.String(block, "type") == "output_text")
+                                    text.Append(AiJson.String(block, "text"));
+                        break;
+                    case "function_call":
+                        calls.Add(new AiToolCallRequest(
+                            AiJson.String(item, "call_id") ?? $"call_{calls.Count}",
+                            AiJson.String(item, "name") ?? "",
+                            AiJson.String(item, "arguments") ?? "{}"));
+                        break;
+                }
+            }
+        return new AiChatCompletion(text.ToString(), calls,
+            AiJson.IntAt(doc.RootElement, "usage", "input_tokens"),
+            AiJson.IntAt(doc.RootElement, "usage", "output_tokens"));
+    }
+
+    public AiChatDelta? ParseStreamLine(string line)
+    {
+        if (!line.StartsWith("data:", StringComparison.Ordinal)) return null;
+        var payload = line["data:".Length..].Trim();
+        if (payload.Length == 0 || payload == "[DONE]") return null;
+        using var doc = JsonDocument.Parse(payload);
+        var type = AiJson.String(doc.RootElement, "type");
+        switch (type)
+        {
+            case "response.output_text.delta":
+                return AiJson.String(doc.RootElement, "delta") is { Length: > 0 } text
+                    ? new AiChatDelta("text", Text: text)
+                    : null;
+            case "response.output_item.added":
+            {
+                if (!doc.RootElement.TryGetProperty("item", out var item)) return null;
+                return AiJson.String(item, "type") == "function_call"
+                    ? new AiChatDelta("tool", ToolCallId: MergeKey(doc.RootElement),
+                        ToolName: AiJson.String(item, "name"), ProviderId: AiJson.String(item, "call_id"))
+                    : null;
+            }
+            case "response.function_call_arguments.delta":
+                return AiJson.String(doc.RootElement, "delta") is { Length: > 0 } args
+                    ? new AiChatDelta("tool", ToolCallId: MergeKey(doc.RootElement), ArgumentsDelta: args)
+                    : null;
+            case "response.completed":
+            {
+                // 用量读数在 response.usage（语义 = 本次请求的累计值）
+                if (!doc.RootElement.TryGetProperty("response", out var done)
+                    || done.ValueKind != JsonValueKind.Object) return null;
+                var inputTokens = AiJson.IntAt(done, "usage", "input_tokens");
+                var outputTokens = AiJson.IntAt(done, "usage", "output_tokens");
+                return inputTokens is null && outputTokens is null
+                    ? null
+                    : new AiChatDelta("usage", InputTokens: inputTokens, OutputTokens: outputTokens);
+            }
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>流式工具调用的归并键 = 输出项序号（真实调用 id 只在 `output_item.added` 出现）。</summary>
+    private static string? MergeKey(JsonElement root)
+        => root.TryGetProperty("output_index", out var index) && index.TryGetInt32(out var n) ? $"out:{n}" : null;
+
+    private static Dictionary<string, string> Headers(string? apiKey)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(apiKey)) headers["Authorization"] = $"Bearer {apiKey}";
+        return headers;
     }
 }
 

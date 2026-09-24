@@ -302,7 +302,7 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <!-- 助手消息：无气泡（ZCode 口径），左对齐 Markdown；悬停出现操作行 -->
+        <!-- 助手消息：无气泡，左对齐 Markdown；悬停出现操作行 -->
         <DataTemplate x:Key="AiAssistantTemplate">
             <StackPanel x:Name="AssistantRoot" Margin="0,8,0,8">
                 <views:MarkdownText Markdown="{Binding RenderText}" FontSize="13"/>
@@ -1402,7 +1402,7 @@
                                       VerticalAlignment="Center" ToolTip="{loc:Loc ai.composer.model}"
                                       ItemsSource="{Binding Models}" SelectedItem="{Binding SelectedModel, Mode=TwoWay}">
                                 <ComboBox.Style>
-                                    <Style TargetType="ComboBox">
+                                    <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}">
                                         <Setter Property="Visibility" Value="Visible"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding HasModels}" Value="False">
@@ -1578,7 +1578,7 @@
                     <ComboBox Grid.Column="1" Width="104" Height="30" Margin="8,0,0,0"
                               SelectedIndex="{Binding ChangeFilterIndex, Mode=TwoWay}">
                         <ComboBox.Style>
-                            <Style TargetType="ComboBox">
+                            <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}">
                                 <Setter Property="Visibility" Value="Visible"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
@@ -1601,7 +1601,7 @@
                     <ComboBox Grid.Column="1" Width="104" Height="30" Margin="8,0,0,0"
                               SelectedIndex="{Binding AuditResultIndex, Mode=TwoWay}">
                         <ComboBox.Style>
-                            <Style TargetType="ComboBox">
+                            <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsEngineTab}" Value="True">

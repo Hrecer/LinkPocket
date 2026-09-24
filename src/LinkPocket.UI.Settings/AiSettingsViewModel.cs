@@ -16,6 +16,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
     private AiProviderRow? _selectedProvider;
     private string _displayNameInput = "";
     private string _baseUrlInput = "";
+    private int _protocolIndex;
     private string _newModelId = "";
     private string _testStatusKey = "";
     private LocValue _testDetail = LocValue.Empty;
@@ -40,6 +41,7 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
             if (!Set(ref _selectedProvider, value, nameof(SelectedProvider))) return;
             DisplayNameInput = value?.Info.DisplayName ?? "";
             BaseUrlInput = value?.Info.BaseUrl ?? "";
+            ProtocolIndex = value is null ? 0 : Math.Max(0, Array.IndexOf(ProtocolOrder, value.Info.Protocol));
             TestStatusKey = value is null ? "" : LinkPocket.Views.AiKeyMap.Status(value.Info.Status);
             TestDetail = value?.Info.StatusErrorCode is { } code
                 ? LocValue.Of(LinkPocket.Views.AiKeyMap.Error(code))
@@ -58,6 +60,19 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
     {
         get => _baseUrlInput;
         set => Set(ref _baseUrlInput, value, nameof(BaseUrlInput));
+    }
+
+    /// <summary>「API 格式」下拉的显示顺序（**与协议枚举解耦**：下拉按接入格式族排，映射只在这一处做），
+    /// 下拉项文案见 <c>ai.settings.apiFormat.*</c>。</summary>
+    private static readonly AiProtocol[] ProtocolOrder =
+        [AiProtocol.AnthropicMessages, AiProtocol.OpenAiChat, AiProtocol.OpenAiResponses];
+
+    /// <summary>接入格式（= 协议）下拉的选中序号（索引进 <see cref="ProtocolOrder"/>）。
+    /// 保存时落成 <see cref="AiProtocol"/>；换服务商时跟随该服务商当前格式。</summary>
+    public int ProtocolIndex
+    {
+        get => _protocolIndex;
+        set => Set(ref _protocolIndex, value, nameof(ProtocolIndex));
     }
 
     public string NewModelId
@@ -187,7 +202,8 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         await GuardAsync(async () =>
         {
             await _assistant.SaveProviderAsync(new AiProviderDraft(
-                info.Id, DisplayNameInput, info.Protocol, BaseUrlInput, info.Enabled, info.IsLocal));
+                info.Id, DisplayNameInput, ProtocolOrder[Math.Clamp(ProtocolIndex, 0, ProtocolOrder.Length - 1)],
+                BaseUrlInput, info.Enabled, info.IsLocal));
             await RefreshProvidersAsync().ConfigureAwait(true);
             Raise(nameof(ApiKeyMasked));
         }).ConfigureAwait(true);

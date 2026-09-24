@@ -15,7 +15,7 @@ public class AiProviderStoreTests
     public void 服务商目录_预设Id唯一_接入地址与申请入口齐备_且显示名走文案键()
     {
         var templates = AiProviderCatalog.Templates;
-        Assert.Equal(12, templates.Count);
+        Assert.Equal(21, templates.Count);
         Assert.Equal(templates.Count, templates.Select(t => t.Id).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(templates.Count, templates.Select(t => t.DisplayNameKey).Distinct(StringComparer.Ordinal).Count());
         Assert.All(templates, t =>
@@ -45,7 +45,7 @@ public class AiProviderStoreTests
             Assert.False(openai.HasApiKey);
             Assert.Equal(AiProviderStatus.NotConfigured, openai.Status);
             Assert.Contains(openai.Issues!, i => i is { FieldPath: "api_key", Code: AiConfigIssueCodes.ApiKeyMissing });
-            Assert.Contains(openai.Models, m => m is { Id: "gpt-4o", Enabled: true, Source: AiModelSource.Preset });
+            Assert.Contains(openai.Models, m => m is { Id: "gpt-6-astra", Enabled: true, Source: AiModelSource.Preset });
 
             var local = Assert.Single(list, p => p.Id == "local");
             Assert.True(local.IsLocal);
@@ -120,7 +120,7 @@ public class AiProviderStoreTests
 
             store.DeleteProvider("deepseek");
             var factory = Assert.Single(store.List(credentials), p => p.Id == "deepseek");
-            Assert.Equal("https://api.deepseek.com/v1", factory.BaseUrl);
+            Assert.Equal("https://api.deepseek.com/anthropic", factory.BaseUrl);
             Assert.Equal("DeepSeek", factory.DisplayName);
             Assert.Equal("ai.provider.deepseek", factory.DisplayNameKey);   // 删除覆盖层 → 回到走键的出厂态
         }
@@ -177,11 +177,11 @@ public class AiProviderStoreTests
             var credentials = Credentials(root);
             var store = new AiProviderStore(root);
 
-            var merged = store.MergeFetchedModels("openai", ["gpt-4o", "o3-mini"], credentials);
+            var merged = store.MergeFetchedModels("openai", ["gpt-6-astra", "o3-mini"], credentials);
             var fetched = Assert.Single(merged.Models, m => m.Id == "o3-mini");
             Assert.False(fetched.Enabled);
             Assert.Equal(AiModelSource.Fetched, fetched.Source);
-            Assert.Equal(AiModelSource.Preset, Assert.Single(merged.Models, m => m.Id == "gpt-4o").Source);
+            Assert.Equal(AiModelSource.Preset, Assert.Single(merged.Models, m => m.Id == "gpt-6-astra").Source);
 
             var enabled = store.SaveModel(
                 new AiModelDraft("openai", "o3-mini", "o3-mini", true, 200_000, null, true, true), credentials);

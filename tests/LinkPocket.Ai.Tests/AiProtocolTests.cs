@@ -65,11 +65,51 @@ public class AiProtocolTests
     }
 
     [Fact]
-    public void 两协议_模型列表解析一致()
+    public void Responses协议_请求装配_instructions与input项与扁平工具()
+    {
+        var request = new AiChatRequest("gpt-6-astra", "SYS",
+            [new AiChatMessage("user", "hi"),
+             new AiChatMessage("assistant", "there", [new AiToolCallRequest("call_1", "folders.find", """{"name":"x"}""")]),
+             new AiChatMessage("tool", """{"ok":true}""", null, "call_1")],
+            [Tool()], 1024, Stream: true);
+
+        var http = AiProtocols.OpenAiResponses.BuildChatRequest(
+            Provider(AiProtocol.OpenAiResponses, "https://api.openai.com/v1"), "sk-1234567890abcdef", request);
+
+        Assert.Equal("POST", http.Method);
+        Assert.Equal("https://api.openai.com/v1/responses", http.Url);
+        Assert.Equal("Bearer sk-1234567890abcdef", http.Headers["Authorization"]);
+        using var doc = JsonDocument.Parse(http.BodyJson!);
+        Assert.Equal("SYS", doc.RootElement.GetProperty("instructions").GetString());
+        var input = doc.RootElement.GetProperty("input");
+        Assert.Equal("user", input[0].GetProperty("role").GetString());
+        // 助手消息拆成两类项：function_call 项 + output_text 消息项
+        Assert.Equal("function_call", input[1].GetProperty("type").GetString());
+        Assert.Equal("call_1", input[1].GetProperty("call_id").GetString());
+        Assert.Equal("output_text", input[2].GetProperty("content")[0].GetProperty("type").GetString());
+        // 工具结果 = function_call_output 项
+        Assert.Equal("function_call_output", input[3].GetProperty("type").GetString());
+        Assert.Equal("call_1", input[3].GetProperty("call_id").GetString());
+        // 工具声明扁平（不套 function 外层）
+        var tool = doc.RootElement.GetProperty("tools")[0];
+        Assert.Equal("function", tool.GetProperty("type").GetString());
+        Assert.Equal("folders.find", tool.GetProperty("name").GetString());
+        Assert.True(tool.TryGetProperty("parameters", out _));
+        Assert.False(tool.TryGetProperty("function", out _));
+        Assert.True(doc.RootElement.GetProperty("stream").GetBoolean());
+    }
+
+    [Fact]
+    public void 三协议_模型列表解析一致_且按协议路由到对应适配器()
     {
         const string body = """{"data":[{"id":"m-1"},{"id":"m-2"}]}""";
         Assert.Equal(["m-1", "m-2"], AiProtocols.OpenAiChat.ParseModels(body));
         Assert.Equal(["m-1", "m-2"], AiProtocols.AnthropicMessages.ParseModels(body));
+        Assert.Equal(["m-1", "m-2"], AiProtocols.OpenAiResponses.ParseModels(body));
+
+        Assert.Equal(AiProtocol.OpenAiChat, AiProtocols.For(AiProtocol.OpenAiChat).Kind);
+        Assert.Equal(AiProtocol.AnthropicMessages, AiProtocols.For(AiProtocol.AnthropicMessages).Kind);
+        Assert.Equal(AiProtocol.OpenAiResponses, AiProtocols.For(AiProtocol.OpenAiResponses).Kind);
     }
 
     [Fact]
@@ -98,6 +138,28 @@ public class AiProtocolTests
         Assert.Equal("tool_7", blockStart.ProviderId);
         Assert.Equal("blk:1", blockDelta!.ToolCallId);
         Assert.Equal("""{"a""", blockDelta.ArgumentsDelta);
+
+        var responseText = AiProtocols.OpenAiResponses.ParseStreamLine(
+            """data: {"type":"response.output_text.delta","delta":"he"}""");
+        Assert.Equal("text", responseText!.Kind);
+        Assert.Equal("he", responseText.Text);
+
+        var itemAdded = AiProtocols.OpenAiResponses.ParseStreamLine(
+            """data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","call_id":"call_9","name":"folders.find"}}""");
+        var argsDelta = AiProtocols.OpenAiResponses.ParseStreamLine(
+            """data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"na"}""");
+        Assert.Equal("out:1", itemAdded!.ToolCallId);
+        Assert.Equal("call_9", itemAdded.ProviderId);
+        Assert.Equal("folders.find", itemAdded.ToolName);
+        Assert.Equal("out:1", argsDelta!.ToolCallId);   // 同一归并键 → 参数可拼装
+        Assert.Equal("""{"na""", argsDelta.ArgumentsDelta);
+
+        // 用量只在收尾事件里（response.usage 是本次请求的累计值）
+        var completed = AiProtocols.OpenAiResponses.ParseStreamLine(
+            """data: {"type":"response.completed","response":{"usage":{"input_tokens":7,"output_tokens":9}}}""");
+        Assert.Equal("usage", completed!.Kind);
+        Assert.Equal(7, completed.InputTokens);
+        Assert.Equal(9, completed.OutputTokens);
     }
 
     [Fact]
@@ -115,6 +177,14 @@ public class AiProtocolTests
             """);
         Assert.Equal("hi", anthropic.Text);
         Assert.Equal("""{"a":1}""", anthropic.ToolCalls[0].ArgumentsJson);
+
+        var responses = AiProtocols.OpenAiResponses.ParseCompletion("""
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"hi"}]},{"type":"function_call","call_id":"c1","name":"f","arguments":"{}"}],"usage":{"input_tokens":3,"output_tokens":4}}
+            """);
+        Assert.Equal("hi", responses.Text);
+        Assert.Equal("c1", responses.ToolCalls[0].Id);
+        Assert.Equal(3, responses.InputTokens);
+        Assert.Equal(4, responses.OutputTokens);
     }
 
     [Fact]

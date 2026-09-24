@@ -1,10 +1,14 @@
 namespace LinkPocket.Contracts;
 
-/// <summary>服务商接入协议：openai_chat = /chat/completions 兼容族（含国内网关与本地推理）；anthropic_messages = Messages API 族。</summary>
+/// <summary>服务商接入协议（= 设置页「格式」下拉的三档）：
+/// openai_chat = Chat Completions 兼容族（含国内网关与本地推理）；
+/// anthropic_messages = Messages API 族；
+/// openai_responses = Responses API 族。</summary>
 public enum AiProtocol
 {
     OpenAiChat = 0,
     AnthropicMessages = 1,
+    OpenAiResponses = 2,
 }
 
 /// <summary>服务商来源：preset = 内置模板；custom = 用户自建。</summary>

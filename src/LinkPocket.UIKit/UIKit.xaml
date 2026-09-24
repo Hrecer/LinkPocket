@@ -73,10 +73,13 @@
     <!-- 隐式样式 = 上面那份（控件处不写 Style 也成立） -->
     <Style TargetType="{x:Type views:SelectableText}" BasedOn="{StaticResource SelectableTextStyle}"/>
 
-    <!-- 下拉框（隐式样式，全站唯一定义）：**M3 圆角字段**外观。
+    <!-- 下拉框（全站唯一定义）：**M3 圆角字段**外观。
          ⚠️ 不写模板时 WPF 用系统 Aero 皮肤（直角 + 系统箭头 + 蓝色焦点框），与全站圆角/令牌语言完全不符。
-         模板里每个颜色都走 App.* 令牌，焦点一律不描边。 -->
-    <Style TargetType="ComboBox">
+         模板里每个颜色都走 App.* 令牌，焦点一律不描边。
+         ⚠️ 控件处若另写局部 `<ComboBox.Style>`（例如按状态切 Visibility），**必须** `BasedOn="{StaticResource ComboBoxStyle}"`：
+         局部 Style 会**整份替换**隐式样式，不 BasedOn 就丢掉上面整个模板 → 该控件回退 Aero（直角 + 系统箭头），
+         同一页里出现"一半圆角、一半直角"的混搭。 -->
+    <Style x:Key="ComboBoxStyle" TargetType="ComboBox">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
         <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
@@ -160,6 +163,8 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- 隐式样式 = 上面那份（控件处不写 Style 也成立） -->
+    <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}"/>
 
     <!-- 下拉项：圆角 8 + 悬停/选中两种底色（选中 = `App.Surface.Selected`，与列表行选中同一语言） -->
     <Style TargetType="ComboBoxItem">

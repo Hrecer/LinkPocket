@@ -5,10 +5,11 @@ namespace LinkPocket.Ai;
 /// <summary>
 /// 服务商模板（**预设数据**）：加一家服务商 = 加一条数据，不改代码。
 /// <para><c>BaseUrl</c> 约定 = 服务根，由协议适配器拼固定路径：
-/// OpenAI 族 <c>{BaseUrl}/chat/completions</c>（故 BaseUrl 通常以 <c>/v1</c> 结尾）、
-/// Anthropic 族 <c>{BaseUrl}/v1/messages</c>。模板值是**可编辑缺省**，用户可在设置页改。</para>
-/// <para>内置模型 ID 只放"长期稳定"的少数几个，**不维护长名单**（服务商模型表必然腐化）——
-/// 其余模型靠「拉取模型列表」或手填（功能书 §4.5）。</para>
+/// Chat Completions 族 <c>{BaseUrl}/chat/completions</c>、Responses 族 <c>{BaseUrl}/responses</c>
+/// （两族 BaseUrl 通常以 <c>/v1</c> 结尾）、Anthropic 族 <c>{BaseUrl}/v1/messages</c>。
+/// 模板值是**可编辑缺省**，用户可在设置页改。</para>
+/// <para><c>PresetModelIds</c> = 该服务商出厂内置的模型清单（随目录一起更新）；
+/// 服务商模型表会腐化，用户可用「拉取模型列表」或手填覆盖它（功能书 §4.5）。</para>
 /// </summary>
 public sealed record AiProviderTemplate(
     string Id,
