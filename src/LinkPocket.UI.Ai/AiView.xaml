@@ -1372,12 +1372,29 @@
                             </views:SlidingNavStrip>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <!-- 上下文用量环（读数来自 AI 运行时的只读读数；没有读数 = 空环） -->
-                            <local:UsageRing x:Name="ContextRing" Width="26" Height="26" Margin="0,0,6,0"
-                                             VerticalAlignment="Center" Percent="{Binding ContextUsagePercent}"
-                                             TrackBrush="{DynamicResource App.Line.Variant}"
-                                             FillBrush="{DynamicResource App.Accent.Fill}"
-                                             ToolTip="{loc:Value UsageTipValue}"/>
+                            <!-- 上下文用量环 = 一枚 ghost 图标按钮（28 方形 + 圆角，悬浮给底色），
+                                 环本体只占 14（与同排图标同高）。读数来自 AI 运行时的只读读数；没有读数 = 空环。 -->
+                            <Border x:Name="ContextRingButton" Width="28" Height="28" Margin="0,0,6,0"
+                                    VerticalAlignment="Center" CornerRadius="6" Background="Transparent"
+                                    ToolTip="{loc:Value UsageTipValue}" Cursor="Hand"
+                                    Focusable="True" FocusVisualStyle="{x:Null}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource App.State.Hover}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource App.State.Hover}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <local:UsageRing x:Name="ContextRing" Width="14" Height="14"
+                                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                 Percent="{Binding ContextUsagePercent}"
+                                                 IconBrush="{DynamicResource App.Text.Muted}"/>
+                            </Border>
                             <!-- 模型下拉（标签 = 供应商 / 模型；选择即写助手偏好，与 /model 同一条路径） -->
                             <ComboBox x:Name="ModelBox" Height="32" MaxWidth="220" MinWidth="120" Margin="0,0,6,0"
                                       VerticalAlignment="Center" ToolTip="{loc:Loc ai.composer.model}"

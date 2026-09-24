@@ -18,10 +18,10 @@ public static class AiProviderCatalog
     [
         new("zai-standard-api", "ai.provider.zaiStandardApi", "Z.ai API", AiProtocol.OpenAiChat,
             "https://api.z.ai/api/paas/v4", IsLocal: false, "https://z.ai/manage-apikey/apikey-list", null,
-            ["GLM-5.3", "GLM-5.3-Flash", "GLM-4-Flash"]),
+            ["GLM-5.3", "GLM-5.3-Flash", "GLM-4.7-Flash"]),
         new("bigmodel-standard-api", "ai.provider.bigmodelStandardApi", "BigModel API", AiProtocol.OpenAiChat,
             "https://open.bigmodel.cn/api/paas/v4", IsLocal: false, "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", null,
-            ["GLM-5.3", "GLM-5.3-Flash", "GLM-4-Flash"]),
+            ["GLM-5.3", "GLM-5.3-Flash", "GLM-4.7-Flash"]),
         new("moonshot-kimi", "ai.provider.moonshotKimi", "Kimi", AiProtocol.AnthropicMessages,
             "https://api.moonshot.cn/anthropic", IsLocal: false, "https://platform.kimi.com/console/api-keys", null,
             ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.7-code-highspeed", "k3", "k3-256k"]),
