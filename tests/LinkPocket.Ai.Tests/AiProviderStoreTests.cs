@@ -194,6 +194,37 @@ public class AiProviderStoreTests
     }
 
     [Fact]
+    public void 服务商存储_模型配置落库回读_输入模态能力与推理等级()
+    {
+        var root = AiTestEnv.NewRoot();
+        try
+        {
+            var credentials = Credentials(root);
+            var store = new AiProviderStore(root);
+            store.SaveModel(new AiModelDraft("openai", "gpt-6-astra", "gpt-6-astra", Enabled: true,
+                ContextWindow: 200_000, MaxOutputTokens: 32_000,
+                SupportsTools: true, SupportsStreaming: false,
+                new AiModelInputFormat(SupportsText: true, SupportsImage: true, SupportsVideo: false, SupportsPdf: true),
+                SupportsJsonSchemaOutput: true, SupportsNativeWebSearch: false,
+                SupportsMidConversationSystem: true,
+                new AiModelReasoning(["low", "high"], """{"reasoning_effort":"$level"}""")), credentials);
+
+            var model = Assert.Single(
+                Assert.Single(store.List(credentials), p => p.Id == "openai").Models, m => m.Id == "gpt-6-astra");
+            Assert.True(model.InputFormat!.SupportsImage);
+            Assert.True(model.InputFormat.SupportsPdf);
+            Assert.False(model.InputFormat.SupportsVideo);
+            Assert.True(model.SupportsJsonSchemaOutput);
+            Assert.False(model.SupportsNativeWebSearch);
+            Assert.True(model.SupportsMidConversationSystem);
+            Assert.Equal(["low", "high"], model.Reasoning!.Levels);
+            Assert.Equal("""{"reasoning_effort":"$level"}""", model.Reasoning.MapJson);
+            Assert.False(model.SupportsStreaming);
+        }
+        finally { AiTestEnv.Drop(root); }
+    }
+
+    [Fact]
     public void 服务商存储_文件损坏时拒绝覆盖并报LP_AI_015()
     {
         const string broken = "{ not json";

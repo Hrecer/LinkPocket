@@ -298,7 +298,9 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         {
             await _assistant.SaveModelAsync(new AiModelDraft(row.ProviderId, row.Model.Id, row.Model.DisplayName,
                 !row.Model.Enabled, row.Model.ContextWindow, row.Model.MaxOutputTokens,
-                row.Model.SupportsTools, row.Model.SupportsStreaming));
+                row.Model.SupportsTools, row.Model.SupportsStreaming,
+                row.Model.InputFormat, row.Model.SupportsJsonSchemaOutput, row.Model.SupportsNativeWebSearch,
+                row.Model.SupportsMidConversationSystem, row.Model.Reasoning));
             await RefreshProvidersAsync().ConfigureAwait(true);
             RefreshModels();
         }).ConfigureAwait(true);
@@ -311,10 +313,8 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         else row.BeginEdit();
     }
 
-    /// <summary>
-    /// 保存某模型的能力声明（<c>ContextWindow</c> / <c>MaxOutputTokens</c> / <c>SupportsTools</c> / <c>SupportsStreaming</c>）。
-    /// 数字框留空 = 未声明（按保守缺省）；非法值就地报错、不发保存（拿不准就报错，不猜意图）。
-    /// </summary>
+    /// <summary>保存某模型的配置（上下文窗口 / 最大输出 / 输入模态 / 能力 / 推理等级 / 工具 / 流式）。
+    /// 数字框留空 = 未声明（按保守缺省）；非法值就地报错、不发保存（拿不准就报错，不猜意图）。</summary>
     public async Task SaveModelCapabilitiesAsync(AiModelRow row)
     {
         if (!TryParseCapability(row.ContextWindowInput, out var contextWindow)
@@ -328,7 +328,10 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         try
         {
             await _assistant.SaveModelAsync(new AiModelDraft(row.ProviderId, row.Model.Id, row.Model.DisplayName,
-                row.Model.Enabled, contextWindow, maxOutputTokens, row.SupportsTools, row.SupportsStreaming))
+                row.Model.Enabled, contextWindow, maxOutputTokens, row.SupportsTools, row.SupportsStreaming,
+                new AiModelInputFormat(true, row.SupportsImage, row.SupportsVideo, row.SupportsPdf),
+                row.SupportsJsonSchemaOutput, row.SupportsNativeWebSearch, row.SupportsMidConversationSystem,
+                ToReasoning(row)))
                 .ConfigureAwait(true);
             await RefreshProvidersAsync().ConfigureAwait(true);
             RefreshModels();
@@ -338,6 +341,25 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
             row.ErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
         }
     }
+
+    /// <summary>推理等级草稿 → 声明对象：等级与映射都空 = 未声明（不落空壳）。</summary>
+    private static AiModelReasoning? ToReasoning(AiModelRow row)
+    {
+        var map = string.IsNullOrWhiteSpace(row.ReasoningMapInput) ? null : row.ReasoningMapInput;
+        return row.ReasoningLevels.Count == 0 && map is null ? null : new AiModelReasoning([.. row.ReasoningLevels], map);
+    }
+
+    /// <summary>追加一个推理等级（空值忽略、重名忽略；顺序 = 添加顺序）。</summary>
+    public static void AddReasoningLevel(AiModelRow row)
+    {
+        var level = row.NewReasoningLevel.Trim();
+        if (level.Length == 0 || row.ReasoningLevels.Contains(level, StringComparer.Ordinal)) return;
+        row.ReasoningLevels.Add(level);
+        row.NewReasoningLevel = "";
+    }
+
+    /// <summary>删除一个推理等级。</summary>
+    public static void RemoveReasoningLevel(AiModelRow row, string level) => row.ReasoningLevels.Remove(level);
 
     /// <summary>能力数字框解析：空白 = 未声明（null）；正整数 = 声明值；其余一律非法。</summary>
     private static bool TryParseCapability(string input, out int? value)
@@ -426,6 +448,14 @@ public sealed class AiModelRow : INotifyPropertyChanged
     private string _maxOutputTokensInput = "";
     private bool _supportsTools;
     private bool _supportsStreaming;
+    private bool _supportsImage;
+    private bool _supportsVideo;
+    private bool _supportsPdf;
+    private bool _supportsJsonSchemaOutput;
+    private bool _supportsNativeWebSearch;
+    private bool _supportsMidConversationSystem;
+    private string _reasoningMapInput = "";
+    private string _newReasoningLevel = "";
     private string? _errorKey;
 
     public AiModelRow(string providerId, AiModelInfo model)
@@ -438,7 +468,7 @@ public sealed class AiModelRow : INotifyPropertyChanged
 
     public string ProviderId { get; }
     public AiModelInfo Model { get; private set; }
-    /// <summary>副行：来源 · 工具调用 · 上下文窗口（未声明如实说"未声明"，不画 0 冒充读数）。</summary>
+    /// <summary>副行：来源 · 工具调用（上下文窗口由行上的徽标承担，不在副行重复）。</summary>
     public LocValue Hint => Loc.K("ai.settings.model.line",
         LocValue.Of(Model.Source switch
         {
@@ -446,10 +476,25 @@ public sealed class AiModelRow : INotifyPropertyChanged
             AiModelSource.Fetched => "ai.settings.model.source.fetched",
             _ => "ai.settings.model.source.manual",
         }),
-        LocValue.Of(Model.SupportsTools ? "ai.settings.model.tools.yes" : "ai.settings.model.tools.no"),
-        Model.ContextWindow is { } window
-            ? LocValue.Literal(window.ToString(System.Globalization.CultureInfo.InvariantCulture))
-            : LocValue.Of("ai.settings.model.ctx.unset"));
+        LocValue.Of(Model.SupportsTools ? "ai.settings.model.tools.yes" : "ai.settings.model.tools.no"));
+
+    /// <summary>行内上下文窗口徽标：读数压缩成 K/M（机器面读数，不进文案表）；未声明 → 空（不画空徽标）。</summary>
+    public string ContextWindowBadge
+        => Model.ContextWindow is { } window ? ShortWindow(window) : "";
+
+    public bool HasContextWindowBadge => Model.ContextWindow is not null;
+
+    /// <summary>徽标的悬浮提示（整句 = LocValue：数值由这里给、渲染边界取词）。</summary>
+    public LocValue ContextWindowBadgeTip => Model.ContextWindow is { } window
+        ? Loc.K("ai.settings.model.ctx.badgeLabel", LocValue.Literal(ShortWindow(window)))
+        : LocValue.Of("ai.settings.model.ctx.unset");
+
+    private static string ShortWindow(int window) => window switch
+    {
+        >= 1_000_000 => (window / 1_000_000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "M",
+        >= 1_000 => (window / 1_000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "K",
+        _ => window.ToString(System.Globalization.CultureInfo.InvariantCulture),
+    };
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -493,6 +538,60 @@ public sealed class AiModelRow : INotifyPropertyChanged
         set => Set(ref _supportsStreaming, value, nameof(SupportsStreaming));
     }
 
+    /// <summary>输入模态（文本恒为真，不给开关）。</summary>
+    public bool SupportsImage
+    {
+        get => _supportsImage;
+        set => Set(ref _supportsImage, value, nameof(SupportsImage));
+    }
+
+    public bool SupportsVideo
+    {
+        get => _supportsVideo;
+        set => Set(ref _supportsVideo, value, nameof(SupportsVideo));
+    }
+
+    public bool SupportsPdf
+    {
+        get => _supportsPdf;
+        set => Set(ref _supportsPdf, value, nameof(SupportsPdf));
+    }
+
+    public bool SupportsJsonSchemaOutput
+    {
+        get => _supportsJsonSchemaOutput;
+        set => Set(ref _supportsJsonSchemaOutput, value, nameof(SupportsJsonSchemaOutput));
+    }
+
+    public bool SupportsNativeWebSearch
+    {
+        get => _supportsNativeWebSearch;
+        set => Set(ref _supportsNativeWebSearch, value, nameof(SupportsNativeWebSearch));
+    }
+
+    public bool SupportsMidConversationSystem
+    {
+        get => _supportsMidConversationSystem;
+        set => Set(ref _supportsMidConversationSystem, value, nameof(SupportsMidConversationSystem));
+    }
+
+    /// <summary>推理等级映射（机器面 JSON 原文；空 = 未声明）。</summary>
+    public string ReasoningMapInput
+    {
+        get => _reasoningMapInput;
+        set => Set(ref _reasoningMapInput, value, nameof(ReasoningMapInput));
+    }
+
+    /// <summary>新增推理等级的输入框（点「添加」把非空值追加到 <see cref="ReasoningLevels"/>）。</summary>
+    public string NewReasoningLevel
+    {
+        get => _newReasoningLevel;
+        set => Set(ref _newReasoningLevel, value, nameof(NewReasoningLevel));
+    }
+
+    /// <summary>推理等级（**有序**；编辑期为草稿，点保存才落库）。</summary>
+    public ObservableCollection<string> ReasoningLevels { get; } = [];
+
     /// <summary>行内校验 / 保存错误的文案键（空 = 无错误）。</summary>
     public string ErrorKey
     {
@@ -514,6 +613,17 @@ public sealed class AiModelRow : INotifyPropertyChanged
         MaxOutputTokensInput = Model.MaxOutputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
         SupportsTools = Model.SupportsTools;
         SupportsStreaming = Model.SupportsStreaming;
+        var input = Model.InputFormat;
+        SupportsImage = input?.SupportsImage ?? false;
+        SupportsVideo = input?.SupportsVideo ?? false;
+        SupportsPdf = input?.SupportsPdf ?? false;
+        SupportsJsonSchemaOutput = Model.SupportsJsonSchemaOutput;
+        SupportsNativeWebSearch = Model.SupportsNativeWebSearch;
+        SupportsMidConversationSystem = Model.SupportsMidConversationSystem;
+        ReasoningMapInput = Model.Reasoning?.MapJson ?? "";
+        ReasoningLevels.Clear();
+        foreach (var level in Model.Reasoning?.Levels ?? []) ReasoningLevels.Add(level);
+        NewReasoningLevel = "";
         ErrorKey = "";
         IsEditing = true;
     }

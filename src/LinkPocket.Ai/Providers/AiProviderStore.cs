@@ -18,7 +18,12 @@ public sealed class AiProviderStore
 {
     private sealed record ModelRecord(
         string Id, string DisplayName, bool Enabled, int? ContextWindow, int? MaxOutputTokens,
-        bool SupportsTools, bool SupportsStreaming, AiModelSource Source);
+        bool SupportsTools, bool SupportsStreaming, AiModelSource Source,
+        AiModelInputFormat? InputFormat = null,
+        bool SupportsJsonSchemaOutput = false,
+        bool SupportsNativeWebSearch = false,
+        bool SupportsMidConversationSystem = false,
+        AiModelReasoning? Reasoning = null);
 
     private sealed record ProviderRecord(
         string Id, string DisplayName, AiProtocol Protocol, string BaseUrl, bool Enabled, bool IsLocal,
@@ -126,7 +131,9 @@ public sealed class AiProviderStore
                 draft.Id.Trim(),
                 string.IsNullOrWhiteSpace(draft.DisplayName) ? draft.Id.Trim() : draft.DisplayName.Trim(),
                 draft.Enabled, draft.ContextWindow, draft.MaxOutputTokens,
-                draft.SupportsTools, draft.SupportsStreaming, source);
+                draft.SupportsTools, draft.SupportsStreaming, source,
+                draft.InputFormat, draft.SupportsJsonSchemaOutput, draft.SupportsNativeWebSearch,
+                draft.SupportsMidConversationSystem, draft.Reasoning);
             if (index >= 0) models[index] = updated;
             else models.Add(updated);
 
@@ -292,7 +299,8 @@ public sealed class AiProviderStore
 
     private static AiModelInfo ToInfo(ModelRecord m)
         => new(m.Id, m.DisplayName, m.Source, m.Enabled, m.ContextWindow, m.MaxOutputTokens,
-            m.SupportsTools, m.SupportsStreaming);
+            m.SupportsTools, m.SupportsStreaming, m.InputFormat, m.SupportsJsonSchemaOutput,
+            m.SupportsNativeWebSearch, m.SupportsMidConversationSystem, m.Reasoning);
 
     private static bool IsHttpUrl(string? value)
         => !string.IsNullOrWhiteSpace(value)

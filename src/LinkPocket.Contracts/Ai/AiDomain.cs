@@ -47,6 +47,20 @@ public enum AiMode
     AutoApply = 2,
 }
 
+/// <summary>模型输入模态声明（模型编辑弹窗「输入模态」那一组；<c>Text</c> 恒为真且不可关，
+/// 其余按模型实际能力勾选）。</summary>
+public sealed record AiModelInputFormat(
+    bool SupportsText = true,
+    bool SupportsImage = false,
+    bool SupportsVideo = false,
+    bool SupportsPdf = false);
+
+/// <summary>模型推理等级声明：「有序等级名」+「等级 → 供应商参数的 JSON 映射」。
+/// <paramref name="MapJson"/> 是**机器面**原文（界面上屏前逐字给，不做插值）。</summary>
+public sealed record AiModelReasoning(
+    IReadOnlyList<string> Levels,
+    string? MapJson = null);
+
 /// <summary>模型能力声明（用于上下文预算与工具/流式开关；未声明按保守缺省）。</summary>
 public sealed record AiModelInfo(
     string Id,
@@ -56,7 +70,17 @@ public sealed record AiModelInfo(
     int? ContextWindow,
     int? MaxOutputTokens,
     bool SupportsTools,
-    bool SupportsStreaming);
+    bool SupportsStreaming,
+    /// <summary>输入模态声明（null = 未声明 = 仅文本）。</summary>
+    AiModelInputFormat? InputFormat = null,
+    /// <summary>是否支持 JSON Schema 结构化输出。</summary>
+    bool SupportsJsonSchemaOutput = false,
+    /// <summary>是否支持供应商原生联网搜索。</summary>
+    bool SupportsNativeWebSearch = false,
+    /// <summary>是否支持会话中插入系统提示。</summary>
+    bool SupportsMidConversationSystem = false,
+    /// <summary>推理等级声明（null = 不支持推理等级）。</summary>
+    AiModelReasoning? Reasoning = null);
 
 /// <summary>服务商对外投影（**不含明文密钥**；ApiKeyMasked 只露前 4 后 4）。</summary>
 public sealed record AiProviderInfo(
@@ -114,7 +138,12 @@ public sealed record AiModelDraft(
     int? ContextWindow,
     int? MaxOutputTokens,
     bool SupportsTools,
-    bool SupportsStreaming);
+    bool SupportsStreaming,
+    AiModelInputFormat? InputFormat = null,
+    bool SupportsJsonSchemaOutput = false,
+    bool SupportsNativeWebSearch = false,
+    bool SupportsMidConversationSystem = false,
+    AiModelReasoning? Reasoning = null);
 
 /// <summary>模型选择（会话级持久化）。</summary>
 public sealed record AiModelSelection(string ProviderId, string ModelId);

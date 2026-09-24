@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.UI.Settings;
@@ -100,6 +101,27 @@ public partial class AiPanel : UserControl
     {
         if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
         await _viewModel.SaveModelCapabilitiesAsync(row);
+    }
+
+    private void OnAddReasoningLevel(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
+        AiSettingsViewModel.AddReasoningLevel(row);
+    }
+
+    private void OnRemoveReasoningLevel(object sender, RoutedEventArgs e)
+    {
+        // 删除钮在等级芯片内层模板里：它自己的 DataContext 是等级名，行要从祖先上取。
+        if (_viewModel is null || sender is not FrameworkElement { Tag: string level } button) return;
+        if (FindRow(button) is not { } row) return;
+        AiSettingsViewModel.RemoveReasoningLevel(row, level);
+    }
+
+    private static AiModelRow? FindRow(DependencyObject node)
+    {
+        for (var current = node; current is not null; current = VisualTreeHelper.GetParent(current))
+            if (current is FrameworkElement { DataContext: AiModelRow row }) return row;
+        return null;
     }
 
     private async void OnSavePreferences(object sender, RoutedEventArgs e)
