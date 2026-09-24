@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 using LinkPocket.Services;
 using MdXaml;
 
@@ -40,6 +42,27 @@ public sealed class MarkdownText : MarkdownScrollViewer
     private static void OnDocumentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (e.NewValue is FlowDocument document) Neutralize(document);
+    }
+
+    /// <summary>
+    /// 滚轮让给外层滚动容器（类注释口径①的执行点）。
+    /// <para>⚠️ 基类是 RichTextBox 系：其内部文本编辑器会把 MouseWheel 冒泡事件标记为**已处理**——
+    /// 即使自身滚动条已禁用（本控件两条 ScrollBarVisibility 都是 Disabled，从不自己滚）。
+    /// 于是外层滚动容器（AI 对话流的 FeedScroll / 详情页滚动区）永远收不到滚轮事件，
+    /// 症状就是"指针停在消息文字上滚轮失灵，只能去拖滚动条"。
+    /// 修法：在隧道阶段（PreviewMouseWheel 先于内部编辑器）截下并把事件**重发给可视父级**——
+    /// 不能自抛再冒泡（会先撞上基类自己的冒泡类处理器、又被吞一次），必须越过自身。
+    /// 嵌套的可滚动块（思考原文、工具详情）不在本控件内部，自滚不受影响。</para>
+    /// </summary>
+    protected override void OnPreviewMouseWheel(MouseWheelEventArgs e)
+    {
+        if (VisualTreeHelper.GetParent(this) is not UIElement parent) return;   // 不在可视树：不干预
+        e.Handled = true;   // 压掉原始冒泡：绝不让内部文本编辑器看到这枚滚轮
+        parent.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
+        {
+            RoutedEvent = MouseWheelEvent,
+            Source = this,
+        });
     }
 
     /// <summary>文档级净化：链接改接唯一出口、图片元素整体摘除（逻辑树递归，覆盖段落 / 列表 / 表格 / 引用）。</summary>

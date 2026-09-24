@@ -645,6 +645,36 @@ public class AiLoopTests
     }
 
     [Fact]
+    public async Task 回溯_撤销记录已失效_台账如实报无法回退()
+    {
+        using var host = NewHost(
+        [
+            [TextChunk("go"), ToolChunk(0, "c1", "folders.create", """{"name":"回溯夹"}"""), "data: [DONE]"],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "建一个夹");
+
+        // 模拟"撤销记录已失效"（重启清空 / 超容量淘汰）：清空引擎撤销栈，台账的 Undoable 标记不变
+        await host.Client.ExecuteAsync<object>("undo.clear", new { });
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        var result = await host.Assistant.RewindTurnAsync(sessionId, detail.Turns.Single().TurnId);
+
+        // 台账口径：这一轮的归属键还挂在账上，但撤销栈已经没了 → 如实报"无法回退"，绝不报成成功
+        Assert.Equal(1, result.TotalCalls);
+        Assert.Equal(0, result.UndoneCalls);
+        Assert.Equal(1, result.MissingCalls);
+        Assert.Equal(1, result.RemovedTurns);       // 会话面照常裁剪（对话记录去掉）
+        Assert.Null(result.ErrorCode);
+
+        // 库里的夹子还原不了——这正是回执要点名的事实，不是静默吞掉
+        Assert.NotEmpty(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "回溯夹" }));
+    }
+
+    [Fact]
     public async Task 模型能力_显式越界如实报错_合法值往返保留()
     {
         using var host = NewHost([]);

@@ -53,6 +53,47 @@ public sealed partial class AiAssistant : IAiAssistant
         _usage = usage ?? throw new ArgumentNullException(nameof(usage));
         _localTools = new AiLocalTools(sessionStore, skillStore);
         _http = http ?? throw new ArgumentNullException(nameof(http));
+        SweepOrphanedTurns();   // 启动清扫：上次进程的僵尸运行态回合（见方法注释——不清会连锁卡死回溯）
+    }
+
+    /// <summary>
+    /// 清扫孤儿运行态回合（启动时一次）。进程内回合不可能跨进程存活——会话文件里遗留的
+    /// Pending / Streaming / ToolRunning / AwaitingApproval 都是上次进程被杀（崩溃 / 关窗 / 停电）留下的僵尸。
+    /// 不清的后果是**连锁**的：① 回合头"本轮进行中 · 已用 N 秒"永久存在且每秒跳秒；
+    /// ② 摘要 ActiveTurnState 恒为运行态 → 左栏行转圈不停、进会话即 IsTurnRunning；
+    /// ③ 界面的回溯 / 撤销读同一个投影（<see cref="AiViewModel"/> 的 IsTurnRunning）→ 静默拒绝、点了没反应。
+    /// 落定为 Interrupted（"本轮已停止"），EndedAt 取**清扫前**该文件的最后写入时刻（僵尸死前最后一次持久化）。
+    /// 审批也一并落定：待批表在内存，重启后那张卡永远等不到决定。
+    /// </summary>
+    private void SweepOrphanedTurns()
+    {
+        try
+        {
+            foreach (var summary in _sessionStore.List())
+            {
+                var file = _sessionStore.Load(summary.SessionId);
+                if (file is null) continue;
+                var endedAt = file.Summary.UpdatedAt;   // 先取：Save 会刷新 UpdatedAt，那不是"死"的时刻
+                var orphans = file.Turns.Count(t => t.State is AiTurnState.Pending or AiTurnState.Streaming
+                    or AiTurnState.ToolRunning or AiTurnState.AwaitingApproval);
+                if (orphans == 0) continue;
+                for (var i = 0; i < file.Turns.Count; i++)
+                {
+                    var turn = file.Turns[i];
+                    if (turn.State is not (AiTurnState.Pending or AiTurnState.Streaming
+                        or AiTurnState.ToolRunning or AiTurnState.AwaitingApproval)) continue;
+                    file.Turns[i] = turn with { State = AiTurnState.Interrupted, EndedAt = endedAt };
+                }
+                file.Summary = file.Summary with { ActiveTurnState = file.Turns.LastOrDefault()?.State };
+                _sessionStore.Save(file);
+                LpLog.Info($"swept {orphans} orphaned running turn(s)", category: "ai.turn");
+            }
+        }
+        catch (Exception ex)
+        {
+            // 清扫失败不拦启动：症状退回"僵尸回合头 / 回溯被拒"，下次启动再试（如实留痕）
+            LpLog.Warn("orphaned turn sweep failed (startup continues)", ex, category: "ai.turn");
+        }
     }
 
     /// <summary>进行中的回合（进程内唯一）。</summary>

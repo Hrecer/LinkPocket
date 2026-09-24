@@ -33,15 +33,21 @@ public sealed partial class AiAssistant
         ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
         var file = LoadForUndo(sessionId);   // 回合在跑 → Busy；会话不存在 → NotFound
 
-        // ① 数据面：先撤（此时回合记录还在，CallIdsNewestFirst 要靠它取归属键）
-        var undo = await UndoTurnCoreAsync(sessionId, file, turnId, ct).ConfigureAwait(false);
+        // ① 数据面：先撤（此时回合记录还在，归属键要靠它取）。
+        // 回执按**台账**口径计数（TotalCalls = 这一轮标记过可撤销的全部归属键）——撤销栈是内存态，
+        // 重启清空 / 超容量淘汰后"栈里没了"≠"台账记错了"，那是"这一轮的操作已无法回退"，
+        // 必须如实进 MissingCalls，绝不报成"回退 0 项也算成功"（用户就靠这个读数判断库还原没还原）。
+        var scopedCalls = CallIdsNewestFirst(file,
+            change => string.Equals(change.TurnId, turnId, StringComparison.Ordinal));
+        var undo = await UndoCallIdsAsync(sessionId, scopedCalls, ct).ConfigureAwait(false);
 
         // ② 会话面：裁掉该轮及其之后（重新 Load 一次，撤销过程中文件已被引擎写过）
         file = _sessionStore.Load(sessionId) ?? throw NotFound(sessionId);
         var turns = file.Turns.OrderBy(t => t.Index).ToList();
         var cut = turns.FindIndex(t => string.Equals(t.TurnId, turnId, StringComparison.Ordinal));
         if (cut < 0)
-            return new AiRewindResult(undo.TotalCalls, undo.UndoneCalls, undo.MissingCalls, 0, 0, undo.ErrorCode);
+            return new AiRewindResult(scopedCalls.Count, undo.UndoneCalls, scopedCalls.Count - undo.UndoneCalls,
+                0, 0, undo.ErrorCode);
 
         var dropped = turns.Skip(cut).ToList();
         var droppedIds = dropped.Select(t => t.TurnId).ToHashSet(StringComparer.Ordinal);
@@ -56,7 +62,7 @@ public sealed partial class AiAssistant
 
         Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, sessionId,
             Session: file.Summary));
-        return new AiRewindResult(undo.TotalCalls, undo.UndoneCalls, undo.MissingCalls,
+        return new AiRewindResult(scopedCalls.Count, undo.UndoneCalls, scopedCalls.Count - undo.UndoneCalls,
             dropped.Count, removedMessages, undo.ErrorCode);
     }
 
@@ -169,6 +175,8 @@ public sealed partial class AiAssistant
             }
         }
 
+        // /undo 的口径以**撤销栈现状**为准（与按钮的 CountUndoableAsync 同一把钥匙）：
+        // 条目已被先前的撤销消费（转入重做栈）或失效 → "无可撤销"；绝不空转。
         var result = new AiUndoResult(candidates.Count, undone, candidates.Count - undone, firstError);
         Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, sessionId,
             Session: _sessionStore.Load(sessionId)?.Summary));

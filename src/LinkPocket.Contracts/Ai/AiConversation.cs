@@ -353,9 +353,10 @@ public sealed record AiAuditPage(
     int PageCount);
 
 /// <summary>
-/// 撤销上一轮 AI 变更的机器面回执（界面按键取词）：
+/// 撤销上一轮 AI 变更的机器面回执（界面按键取词；**口径以撤销栈现状为准**，与按钮可用性同一把钥匙）：
 /// <see cref="TotalCalls"/> = 本轮在撤销栈里仍有归属记录的可撤销调用数；<see cref="UndoneCalls"/> = 实际撤销数；
-/// <see cref="MissingCalls"/> = 应撤销但栈里已不存在的数（如实计数，不猜）；<see cref="ErrorCode"/> = 首个失败的错误码（部分失败如实携带）。
+/// <see cref="MissingCalls"/> = 应撤销但没撤成的数（栈里已不存在 / 执行失败；如实计数，不猜）；
+/// <see cref="ErrorCode"/> = 首个失败的错误码（部分失败如实携带）。
 /// </summary>
 public sealed record AiUndoResult(
     int TotalCalls,
@@ -367,6 +368,9 @@ public sealed record AiUndoResult(
 /// 回溯回执：数据面（撤销了几项）+ 会话面（裁掉了几轮 / 几条消息）。
 /// 两者分开报，是因为它们的"没做成"是不同的诚实边界——撤销可能因未登记逆向而跳过，
 /// 裁剪则只会因为回合找不到而不发生。
+/// <para>⚠️ 数据面按**台账**口径计数（<see cref="TotalCalls"/> = 这一轮标记过可撤销的全部归属键，
+/// 不以撤销栈现状为准）：撤销栈是内存态，重启清空后"栈里没了"= "这一轮的操作已无法回退"，
+/// 全部进 <see cref="MissingCalls"/>——回执绝不把"无法回退"报成"回退 0 项也算成功"。</para>
 /// </summary>
 public sealed record AiRewindResult(
     int TotalCalls,

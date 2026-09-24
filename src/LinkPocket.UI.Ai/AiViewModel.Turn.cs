@@ -164,7 +164,12 @@ public sealed partial class AiViewModel
     public async Task RewindTurnAsync(AiFeedItem userItem)
     {
         if (_activeSessionId is not { } sessionId || userItem.TurnId is not { } turnId) return;
-        if (IsTurnRunning) return;   // 引擎写面正被占用：与撤销同一道闸（绝不给会失败的操作）
+        if (IsTurnRunning)
+        {
+            // 被拒必须说出口——静默 return 的症状就是用户口中的"点了回溯什么都没发生"
+            Notice(LocValue.Of("ai.rewind.busy"));
+            return;   // 引擎写面正被占用：与撤销同一道闸（绝不给会失败的操作）
+        }
         try
         {
             var result = await _assistant.RewindTurnAsync(sessionId, turnId).ConfigureAwait(true);
@@ -178,14 +183,18 @@ public sealed partial class AiViewModel
         }
     }
 
-    /// <summary>回溯回执：数据面（撤了几项 / 有几项退不回来）与会话面（裁了几轮）分开说。</summary>
+    /// <summary>回溯回执：数据面（撤了几项 / 有几项退不回来 / 为何退不回来）与会话面（裁了几轮）分开说。</summary>
     private void NoticeForRewind(AiRewindResult result)
     {
         _ = RefreshUndoableAsync();
         if (result.ErrorCode is { } code) LastErrorKey = LinkPocket.Views.AiKeyMap.Error(code);
-        Notice(result.MissingCalls == 0 && result.ErrorCode is null
-            ? Loc.K("ai.rewind.done", result.RemovedTurns, result.UndoneCalls)
-            : Loc.K("ai.rewind.partial", result.RemovedTurns, result.UndoneCalls, result.TotalCalls));
+        Notice(result switch
+        {
+            // 一项都没退成但有台账记录 → 撤销栈已失效（重启清空 / 淘汰），如实点名，不报"已回溯"
+            { UndoneCalls: 0, TotalCalls: > 0 } => Loc.K("ai.rewind.expired", result.RemovedTurns, result.TotalCalls),
+            { MissingCalls: 0, ErrorCode: null } => Loc.K("ai.rewind.done", result.RemovedTurns, result.UndoneCalls),
+            _ => Loc.K("ai.rewind.partial", result.RemovedTurns, result.UndoneCalls, result.TotalCalls),
+        });
     }
 
     private static AiTurnContext BuildContext(IReadOnlyList<AiMentionRef>? mentions = null)
