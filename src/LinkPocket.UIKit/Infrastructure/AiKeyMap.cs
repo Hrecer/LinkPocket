@@ -20,6 +20,14 @@ public static class AiKeyMap
         _ => "ai.status.provider.notConfigured",
     };
 
+    /// <summary>接入格式（协议）→ 键；设置页表单与「添加服务商」模板卡共用这一处映射。</summary>
+    public static string Protocol(AiProtocol protocol) => protocol switch
+    {
+        AiProtocol.AnthropicMessages => "ai.settings.apiFormat.anthropicMessages",
+        AiProtocol.OpenAiResponses => "ai.settings.apiFormat.responses",
+        _ => "ai.settings.apiFormat.chatCompletions",
+    };
+
     /// <summary>LP.AI.* 错误码 → 键（未收录即通用文案）。</summary>
     public static string Error(string? code) => code switch
     {

@@ -135,8 +135,52 @@
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
         </Style>
+        <!-- 模板卡（「添加服务商」选择器）：一张卡 = 一个起点；卡面自左排开、右侧一枚箭头，
+             与全站「可进入」的语言一致（悬停换面板底 + 描边加深，不用阴影）。 -->
+        <Style x:Key="AiTemplateCard" TargetType="Button">
+            <Setter Property="Width" Value="206"/>
+            <Setter Property="MinHeight" Value="52"/>
+            <Setter Property="Margin" Value="0,0,8,8"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="14" Padding="{TemplateBinding Padding}"
+                                Background="{DynamicResource App.Surface.Hover}"
+                                BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                                <m3:M3Icon Grid.Column="1" Kind="chevron-right" Width="15" Height="15"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"
+                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource App.Line.Outline}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 弹窗字段标签（模型元数据弹窗：与表单同一套字号/字色语言） -->
+        <Style x:Key="AiDialogLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+        </Style>
     </UserControl.Resources>
 
+    <Grid>
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="32,24,32,24" MaxWidth="760" HorizontalAlignment="Left">
 
@@ -201,11 +245,71 @@
                                 </DataTemplate>
                             </views:SideNavList.ItemTemplate>
                         </views:SideNavList>
-                        <!-- 自定义服务商可建多个：建成即选中，直接进右侧表单填名称 / 地址 / 接入格式 / 密钥 -->
+                        <!-- 「添加服务商」= 模板选择器入口（与详情同占右栏：先选接入格式，再进表单填名称 / 地址 / 密钥） -->
                         <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource TonalButton}" Height="30"
                                 Margin="0,8,0,0" HorizontalAlignment="Left" Padding="12,0"
-                                Content="{loc:Loc ai.settings.addCustom}" Click="OnAddCustomProvider"/>
-                        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="16,0,0,0">
+                                Content="{loc:Loc ai.settings.addProvider}" Click="OnBeginAddProvider"/>
+                        <!-- 右栏 · 二 = 「添加服务商」模板选择器（返回键回详情；点卡即建/即选，可建多个） -->
+                        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="16,0,0,0"
+                                    Visibility="{Binding IsPickingTemplate, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource SideIconButton}" Width="28" Height="28"
+                                        ToolTip="{loc:Loc ai.settings.providerPicker.back}" Click="OnCancelAddProvider">
+                                    <m3:M3Icon Kind="arrow-left" Width="16" Height="16"
+                                               Foreground="{DynamicResource App.Text.Primary}"/>
+                                </Button>
+                                <TextBlock Text="{loc:Loc ai.settings.providerPicker.title}" FontSize="14"
+                                           FontWeight="SemiBold" Margin="8,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                            </StackPanel>
+                            <TextBlock Text="{loc:Loc ai.settings.providerPicker.desc}" FontSize="11.5" Margin="0,6,0,0"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
+
+                            <!-- 预设模板：点卡 = 选中该预设（出厂模板已在左列，不重复建记录） -->
+                            <TextBlock Text="{loc:Loc ai.settings.providerPicker.presetGroup}" Style="{StaticResource AiDialogLabel}"
+                                       Margin="0,14,0,2"/>
+                            <ItemsControl ItemsSource="{Binding PresetProviders}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource AiTemplateCard}" Click="OnPickPresetProvider"
+                                                Tag="{Binding}">
+                                            <StackPanel>
+                                                <TextBlock Text="{loc:LocKey DisplayKey}" FontSize="13" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                                <TextBlock Text="{loc:LocKey ProtocolKey}" FontSize="10.5" Margin="0,2,0,0"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- 其他 = 按接入格式自建（可建多个）：卡片即协议，选中即建并进表单 -->
+                            <TextBlock Text="{loc:Loc ai.settings.providerPicker.otherGroup}" Style="{StaticResource AiDialogLabel}"
+                                       Margin="0,6,0,2"/>
+                            <WrapPanel>
+                                <Button Style="{StaticResource AiTemplateCard}" Tag="AnthropicMessages"
+                                        Content="{loc:Loc ai.settings.providerPicker.compatAnthropic}"
+                                        Click="OnAddCompatProvider"/>
+                                <Button Style="{StaticResource AiTemplateCard}" Tag="OpenAiChat"
+                                        Content="{loc:Loc ai.settings.providerPicker.compatOpenAi}"
+                                        Click="OnAddCompatProvider"/>
+                                <Button Style="{StaticResource AiTemplateCard}" Tag="OpenAiResponses"
+                                        Content="{loc:Loc ai.settings.providerPicker.compatResponses}"
+                                        Click="OnAddCompatProvider"/>
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <!-- 右栏 · 一 = 选中服务商的详情表单 -->
+                        <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="16,0,0,0"
+                                    Visibility="{Binding IsProviderFormVisible, Converter={StaticResource BoolToVis}}">
                             <TextBlock Text="{loc:Loc ai.settings.displayName}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
                             <TextBox x:Name="DisplayNameBox" Style="{StaticResource AiField}" Margin="0,4,0,10"
                                      Text="{Binding DisplayNameInput, UpdateSourceTrigger=PropertyChanged}"/>
@@ -240,8 +344,10 @@
                                         Content="{loc:Loc ai.settings.save}" Click="OnSaveProvider"/>
                                 <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
                                         Content="{loc:Loc ai.settings.test}" Click="OnTest"/>
+                                <!-- 预设是出厂模板、不是用户数据：**不给删除键**（不摆会失败的按钮） -->
                                 <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
-                                        Content="{loc:Loc ai.settings.delete}" Click="OnDeleteProvider"/>
+                                        Content="{loc:Loc ai.settings.delete}" Click="OnDeleteProvider"
+                                        Visibility="{Binding CanDeleteProvider, Converter={StaticResource BoolToVis}}"/>
                             </StackPanel>
                             <!-- 连通性 / 保存回执：状态走键（徽标）+ 明细走 LocValue -->
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -269,185 +375,71 @@
             <!-- 模型 -->
             <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20" Margin="0,16,0,0">
                 <StackPanel>
-                    <TextBlock Text="{loc:Loc ai.settings.models}" FontSize="15" FontWeight="SemiBold"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                    <TextBlock Text="{loc:Loc ai.settings.models.desc}" FontSize="12" Margin="0,4,0,14"
-                               TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
                     <StackPanel Orientation="Horizontal">
-                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                        <TextBlock Text="{loc:Loc ai.settings.models}" FontSize="15" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Primary}"/>
+                        <Button Style="{StaticResource TonalButton}" Height="30" Padding="12,0" Margin="12,0,0,0"
                                 Content="{loc:Loc ai.settings.fetch}" Click="OnFetchModels"/>
-                        <TextBox x:Name="NewModelBox" Style="{StaticResource AiField}" Width="220" Margin="8,0,0,0"
-                                 Text="{Binding NewModelId, UpdateSourceTrigger=PropertyChanged}"/>
-                        <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0" Margin="8,0,0,0"
-                                Content="{loc:Loc ai.settings.add}" Click="OnAddModel"/>
+                        <Button Style="{StaticResource TonalButton}" Height="30" Padding="12,0" Margin="8,0,0,0"
+                                Content="{loc:Loc ai.settings.model.add}" Click="OnBeginAddModel"/>
                     </StackPanel>
-                    <ItemsControl ItemsSource="{Binding Models}" Margin="0,10,0,0">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,3">
-                                    <!-- 模型行：启用开关 / 模型 ID（等宽 = 机器面标识符）/ 上下文窗口徽标 / 配置入口 -->
-                                    <StackPanel Orientation="Horizontal">
-                                        <ToggleButton IsChecked="{Binding Model.Enabled, Mode=OneWay}" Click="OnToggleModel"
-                                                      VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding Model.Id}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                                   FontFamily="{DynamicResource App.Font.Mono}" FontSize="12.5"
-                                                   Foreground="{DynamicResource App.Text.Primary}"/>
-                                        <Border Margin="8,0,0,0" ToolTip="{loc:Value ContextWindowBadgeTip}">
-                                            <Border.Style>
-                                                <Style TargetType="Border" BasedOn="{StaticResource AiModelBadge}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding HasContextWindowBadge}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
-                                            <TextBlock Text="{Binding ContextWindowBadge}" FontSize="10.5"
-                                                       FontFamily="{DynamicResource App.Font.Mono}"
-                                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                                        </Border>
-                                        <TextBlock Text="{loc:Value Hint}" Margin="10,0,0,0" VerticalAlignment="Center"
-                                                   FontSize="11" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource App.Text.Muted}"/>
-                                        <Button Style="{StaticResource TonalButton}" Height="30" Padding="12,0" Margin="10,0,0,0"
-                                                Content="{loc:LocKey EditKey}" Click="OnToggleModelEdit"/>
-                                    </StackPanel>
-                                    <!-- 模型配置编辑（显式保存；分组 = 窗口/输出 → 输入类型 → 能力 → 推理等级 → 推理映射） -->
-                                    <StackPanel Margin="34,6,0,0">
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsEditing}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-
-                                        <!-- 窗口 / 输出（数字框留空 = 未声明） -->
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{loc:Loc ai.settings.model.contextWindow}" FontSize="12"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
-                                                       ToolTip="{loc:Loc ai.settings.model.help.contextWindow}"/>
-                                            <TextBox Style="{StaticResource AiField}" Width="100" Margin="8,0,16,0"
-                                                     ToolTip="{loc:Loc ai.settings.model.help.contextWindow}"
-                                                     Text="{Binding ContextWindowInput, UpdateSourceTrigger=PropertyChanged}"/>
-                                            <TextBlock Text="{loc:Loc ai.settings.model.maxOutputTokens}" FontSize="12"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
-                                                       ToolTip="{loc:Loc ai.settings.model.help.maxOutputTokens}"/>
-                                            <TextBox Style="{StaticResource AiField}" Width="100" Margin="8,0,0,0"
-                                                     ToolTip="{loc:Loc ai.settings.model.help.maxOutputTokens}"
-                                                     Text="{Binding MaxOutputTokensInput, UpdateSourceTrigger=PropertyChanged}"/>
-                                        </StackPanel>
-
-                                        <!-- 输入类型（文本为必选项：选中且不可关） -->
-                                        <TextBlock Text="{loc:Loc ai.settings.model.input.title}" FontSize="12" Margin="0,10,0,4"
-                                                   Foreground="{DynamicResource App.Text.Secondary}"
-                                                   ToolTip="{loc:Loc ai.settings.model.help.inputModalities}"/>
-                                        <WrapPanel>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}" IsChecked="True" IsEnabled="False"
-                                                          Content="{loc:Loc ai.settings.model.input.text}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsImage, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.input.image}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsVideo, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.input.video}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsPdf, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.input.pdf}"/>
-                                        </WrapPanel>
-
-                                        <!-- 模型能力 -->
-                                        <TextBlock Text="{loc:Loc ai.settings.model.capabilities.title}" FontSize="12" Margin="0,6,0,4"
-                                                   Foreground="{DynamicResource App.Text.Secondary}"
-                                                   ToolTip="{loc:Loc ai.settings.model.help.capabilities}"/>
-                                        <WrapPanel>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsTools, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.supportsTools}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsStreaming, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.supportsStreaming}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsJsonSchemaOutput, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.capability.jsonSchema}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsNativeWebSearch, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.capability.nativeWebSearch}"/>
-                                            <ToggleButton Style="{StaticResource AiCheckChip}"
-                                                          IsChecked="{Binding SupportsMidConversationSystem, Mode=TwoWay}"
-                                                          Content="{loc:Loc ai.settings.model.capability.midConversationSystem}"/>
-                                        </WrapPanel>
-
-                                        <!-- 推理等级（有序：低 → 高；每档可删，尾部可加） -->
-                                        <TextBlock Text="{loc:Loc ai.settings.model.reasoning.title}" FontSize="12" Margin="0,6,0,4"
-                                                   Foreground="{DynamicResource App.Text.Secondary}"
-                                                   ToolTip="{loc:Loc ai.settings.model.help.reasoningLevels}"/>
-                                        <WrapPanel>
-                                            <ItemsControl ItemsSource="{Binding ReasoningLevels}">
-                                                <ItemsControl.ItemsPanel>
-                                                    <ItemsPanelTemplate>
-                                                        <WrapPanel/>
-                                                    </ItemsPanelTemplate>
-                                                </ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <Border Style="{StaticResource AiModelBadge}" Margin="0,0,6,6" Padding="8,1">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="{Binding}" FontSize="11.5" VerticalAlignment="Center"
-                                                                           Foreground="{DynamicResource App.Text.Primary}"/>
-                                                                <Button Style="{StaticResource AiChipDeleteButton}" Margin="4,0,-2,0"
-                                                                        Tag="{Binding}"
-                                                                        ToolTip="{loc:Loc ai.settings.model.reasoning.delete}"
-                                                                        Click="OnRemoveReasoningLevel">
-                                                                    <m3:M3Icon Kind="close" Width="11" Height="11"
-                                                                               Foreground="{DynamicResource App.Text.Secondary}"/>
-                                                                </Button>
-                                                            </StackPanel>
-                                                        </Border>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <TextBox Style="{StaticResource AiField}" Width="120" Height="28" Margin="0,0,6,6"
-                                                     Text="{Binding NewReasoningLevel, UpdateSourceTrigger=PropertyChanged}"/>
-                                            <Button Style="{StaticResource TonalButton}" Height="28" Padding="12,0" Margin="0,0,0,6"
-                                                    Content="{loc:Loc ai.settings.add}" Click="OnAddReasoningLevel"/>
-                                        </WrapPanel>
-
-                                        <!-- 推理参数映射（机器面 JSON 原文，逐字上屏） -->
-                                        <TextBlock Text="{loc:Loc ai.settings.model.reasoning.map}" FontSize="12" Margin="0,2,0,4"
-                                                   Foreground="{DynamicResource App.Text.Secondary}"
-                                                   ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"/>
-                                        <TextBox Style="{StaticResource AiField}" Height="64" AcceptsReturn="True"
-                                                 TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="10,8"
-                                                 ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"
-                                                 Text="{Binding ReasoningMapInput, UpdateSourceTrigger=PropertyChanged}"/>
-
-                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                            <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                                    Content="{loc:Loc ai.settings.save}" Click="OnSaveModelCapabilities"/>
-                                            <TextBlock Text="{loc:LocKey ErrorKey}" FontSize="11" Margin="10,0,0,0"
-                                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Line.Invalid}">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding HasError}" Value="True">
-                                                                <Setter Property="Visibility" Value="Visible"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <TextBlock Text="{loc:Loc ai.settings.models.desc}" FontSize="12" Margin="0,4,0,0"
+                               TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Secondary}"/>
+                    <!-- 模型列表：**定高内滚**（拉取后可能几十条；卡片本身不随模型数量变长） -->
+                    <Border MaxHeight="240" Margin="0,12,0,0" CornerRadius="14"
+                            Background="{DynamicResource App.Surface.Hover}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,8">
+                            <ItemsControl ItemsSource="{Binding Models}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <!-- 模型行 = 一行读数：启用开关 / 模型 ID（等宽 = 机器面标识符）/
+                                             上下文窗口徽标 / 来源·工具 / 配置入口（弹窗） -->
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <ToggleButton IsChecked="{Binding Model.Enabled, Mode=OneWay}"
+                                                          Click="OnToggleModel" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" Margin="10,0,8,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Model.Id}" VerticalAlignment="Center"
+                                                               FontFamily="{DynamicResource App.Font.Mono}" FontSize="12.5"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource App.Text.Primary}"/>
+                                                    <Border Margin="8,0,0,0" ToolTip="{loc:Value ContextWindowBadgeTip}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border" BasedOn="{StaticResource AiModelBadge}">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding HasContextWindowBadge}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding ContextWindowBadge}" FontSize="10.5"
+                                                                   FontFamily="{DynamicResource App.Font.Mono}"
+                                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{loc:Value Hint}" FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource App.Text.Muted}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Style="{StaticResource AiChipDeleteButton}"
+                                                    Width="26" Height="26" VerticalAlignment="Center"
+                                                    ToolTip="{loc:Loc ai.settings.model.edit}" Click="OnEditModel">
+                                                <m3:M3Icon Kind="pencil-outline" Width="13" Height="13"
+                                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
                 </StackPanel>
             </Border>
 
@@ -502,4 +494,157 @@
             </Border>
         </StackPanel>
     </ScrollViewer>
+
+    <!-- 模型元数据弹窗（添加 / 配置同一个弹窗）：**配置项全部收在这里**——
+         面板本身只留一行读数，模型再多也不变长。正文单独滚动，卡高封顶。
+         字段绑定一律经 `ModelDialogRow.*`（弹窗的 DataContext 仍是面板 VM：
+         保存 / 取消是面板的动作，不属于某一行）。 -->
+    <Border Background="{DynamicResource App.Overlay.Scrim}" Panel.ZIndex="300"
+            Visibility="{Binding IsModelDialogOpen, Converter={StaticResource BoolToVis}}">
+        <Border Background="{DynamicResource App.Surface.Dialog}" CornerRadius="24"
+                Width="560" MaxHeight="560" Padding="24,20"
+                VerticalAlignment="Center" HorizontalAlignment="Center">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="{loc:LocKey ModelDialogTitleKey}" FontSize="16"
+                           FontWeight="SemiBold" Foreground="{DynamicResource App.Text.Primary}"/>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,16,0,0">
+                    <Button Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
+                            Content="{loc:Loc common.cancel}" Click="OnCancelModelDialog"/>
+                    <Button Style="{StaticResource PrimaryPillButton}" Height="32" Padding="16,0" Margin="8,0,0,0"
+                            Content="{loc:Loc ai.settings.save}" Click="OnSaveModelDialog"/>
+                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+                    <StackPanel>
+                        <!-- 模型 ID：添加时可填（机器面标识符）；配置时是既成事实、只读展示 -->
+                        <TextBlock Text="{loc:Loc ai.settings.model.id}" Style="{StaticResource AiDialogLabel}"/>
+                        <TextBox Style="{StaticResource AiField}" Margin="0,4,0,10"
+                                 FontFamily="{DynamicResource App.Font.Mono}"
+                                 Visibility="{Binding IsModelDialogAdd, Converter={StaticResource BoolToVis}}"
+                                 Text="{Binding ModelDialogRow.ModelIdInput, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Style="{StaticResource AiField}" Margin="0,4,0,10" IsReadOnly="True"
+                                 FontFamily="{DynamicResource App.Font.Mono}"
+                                 Foreground="{DynamicResource App.Text.Secondary}"
+                                 Visibility="{Binding IsModelDialogAdd, Converter={StaticResource InvBoolToVis}}"
+                                 Text="{Binding ModelDialogRow.ModelIdInput, Mode=OneWay}"/>
+
+                        <!-- 窗口 / 输出（数字框留空 = 未声明） -->
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{loc:Loc ai.settings.model.contextWindow}" Style="{StaticResource AiDialogLabel}"
+                                       VerticalAlignment="Center"
+                                       ToolTip="{loc:Loc ai.settings.model.help.contextWindow}"/>
+                            <TextBox Style="{StaticResource AiField}" Width="110" Margin="8,0,16,0"
+                                     ToolTip="{loc:Loc ai.settings.model.help.contextWindow}"
+                                     Text="{Binding ModelDialogRow.ContextWindowInput, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="{loc:Loc ai.settings.model.maxOutputTokens}" Style="{StaticResource AiDialogLabel}"
+                                       VerticalAlignment="Center"
+                                       ToolTip="{loc:Loc ai.settings.model.help.maxOutputTokens}"/>
+                            <TextBox Style="{StaticResource AiField}" Width="110" Margin="8,0,0,0"
+                                     ToolTip="{loc:Loc ai.settings.model.help.maxOutputTokens}"
+                                     Text="{Binding ModelDialogRow.MaxOutputTokensInput, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <!-- 输入类型（文本为必选项：选中且不可关） -->
+                        <TextBlock Text="{loc:Loc ai.settings.model.input.title}" Style="{StaticResource AiDialogLabel}"
+                                   Margin="0,12,0,4"
+                                   ToolTip="{loc:Loc ai.settings.model.help.inputModalities}"/>
+                        <WrapPanel>
+                            <ToggleButton Style="{StaticResource AiCheckChip}" IsChecked="True" IsEnabled="False"
+                                          Content="{loc:Loc ai.settings.model.input.text}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsImage, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.input.image}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsVideo, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.input.video}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsPdf, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.input.pdf}"/>
+                        </WrapPanel>
+
+                        <!-- 模型能力 -->
+                        <TextBlock Text="{loc:Loc ai.settings.model.capabilities.title}" Style="{StaticResource AiDialogLabel}"
+                                   Margin="0,8,0,4"
+                                   ToolTip="{loc:Loc ai.settings.model.help.capabilities}"/>
+                        <WrapPanel>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsTools, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.supportsTools}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsStreaming, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.supportsStreaming}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsJsonSchemaOutput, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.capability.jsonSchema}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsNativeWebSearch, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.capability.nativeWebSearch}"/>
+                            <ToggleButton Style="{StaticResource AiCheckChip}"
+                                          IsChecked="{Binding ModelDialogRow.SupportsMidConversationSystem, Mode=TwoWay}"
+                                          Content="{loc:Loc ai.settings.model.capability.midConversationSystem}"/>
+                        </WrapPanel>
+
+                        <!-- 推理等级（有序：低 → 高；每档可删，尾部可加） -->
+                        <TextBlock Text="{loc:Loc ai.settings.model.reasoning.title}" Style="{StaticResource AiDialogLabel}"
+                                   Margin="0,8,0,4"
+                                   ToolTip="{loc:Loc ai.settings.model.help.reasoningLevels}"/>
+                        <WrapPanel>
+                            <ItemsControl ItemsSource="{Binding ModelDialogRow.ReasoningLevels}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource AiModelBadge}" Margin="0,0,6,6" Padding="8,1">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding}" FontSize="11.5" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource App.Text.Primary}"/>
+                                                <Button Style="{StaticResource AiChipDeleteButton}" Margin="4,0,-2,0"
+                                                        Tag="{Binding}"
+                                                        ToolTip="{loc:Loc ai.settings.model.reasoning.delete}"
+                                                        Click="OnRemoveReasoningLevel">
+                                                    <m3:M3Icon Kind="close" Width="11" Height="11"
+                                                               Foreground="{DynamicResource App.Text.Secondary}"/>
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBox Style="{StaticResource AiField}" Width="120" Height="28" Margin="0,0,6,6"
+                                     Text="{Binding ModelDialogRow.NewReasoningLevel, UpdateSourceTrigger=PropertyChanged}"/>
+                            <Button Style="{StaticResource TonalButton}" Height="28" Padding="12,0" Margin="0,0,0,6"
+                                    Content="{loc:Loc ai.settings.add}" Click="OnAddReasoningLevel"/>
+                        </WrapPanel>
+
+                        <!-- 推理参数映射（机器面 JSON 原文，逐字上屏） -->
+                        <TextBlock Text="{loc:Loc ai.settings.model.reasoning.map}" Style="{StaticResource AiDialogLabel}"
+                                   Margin="0,4,0,4"
+                                   ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"/>
+                        <TextBox Style="{StaticResource AiField}" Height="64" AcceptsReturn="True"
+                                 TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="10,8"
+                                 ToolTip="{loc:Loc ai.settings.model.help.reasoningMapping}"
+                                 Text="{Binding ModelDialogRow.ReasoningMapInput, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <TextBlock Text="{loc:LocKey ModelDialogRow.ErrorKey}" FontSize="11" Margin="0,8,0,0"
+                                   Foreground="{DynamicResource App.Line.Invalid}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ModelDialogRow.HasError}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Border>
+    </Grid>
 </UserControl>

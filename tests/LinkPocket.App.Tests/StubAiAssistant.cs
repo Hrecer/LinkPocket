@@ -21,6 +21,8 @@ public sealed class StubAiAssistant : IAiAssistant
     public List<AiTurnContext?> SendContexts { get; } = [];
     public List<(string SessionId, AiMode Mode)> SetModeCalls { get; } = [];
     public List<AiModelDraft> SaveModelCalls { get; } = [];
+    /// <summary>DeleteProviderAsync 的记录（服务商删除权限用例看它有没有被调到）。</summary>
+    public List<string> DeleteProviderCalls { get; } = [];
     public List<AiPreferences> SavePreferencesCalls { get; } = [];
     public List<AiAuditQuery> AuditQueries { get; } = [];
     public List<(string SessionId, string ApprovalId, AiApprovalDecision Decision, string? Reason)> ApprovalCalls { get; } = [];
@@ -38,13 +40,17 @@ public sealed class StubAiAssistant : IAiAssistant
     public Task<IReadOnlyList<AiProviderInfo>> ListProvidersAsync(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AiProviderInfo>>(Providers);
 
-    public Task<AiProviderInfo> CreateCustomProviderAsync(CancellationToken ct = default)
+    public Task<AiProviderInfo> CreateCustomProviderAsync(AiProtocol protocol, CancellationToken ct = default)
         => throw new NotSupportedException("测试桩不落配置");
 
     public Task<AiProviderInfo> SaveProviderAsync(AiProviderDraft draft, CancellationToken ct = default)
         => throw new NotSupportedException("测试桩不落配置");
 
-    public Task DeleteProviderAsync(string providerId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task DeleteProviderAsync(string providerId, CancellationToken ct = default)
+    {
+        DeleteProviderCalls.Add(providerId);
+        return Task.CompletedTask;
+    }
 
     public Task SetApiKeyAsync(string providerId, string apiKey, CancellationToken ct = default) => Task.CompletedTask;
 

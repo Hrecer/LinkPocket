@@ -105,7 +105,7 @@ public class AiProviderStoreTests
     }
 
     [Fact]
-    public void 服务商存储_覆盖预设后删除_回到出厂模板()
+    public void 服务商存储_预设不可删_覆盖后仍在且删除被拒()
     {
         var root = AiTestEnv.NewRoot();
         try
@@ -121,11 +121,11 @@ public class AiProviderStoreTests
             Assert.Null(overridden.DisplayNameKey);   // 改过名 → 不再走文案键（显示用户数据）
             Assert.Equal("https://platform.deepseek.com/api_keys", overridden.ApiKeyManagementUrl);   // 模板元数据仍在
 
-            store.DeleteProvider("deepseek");
-            var factory = Assert.Single(store.List(credentials), p => p.Id == "deepseek");
-            Assert.Equal("https://api.deepseek.com/anthropic", factory.BaseUrl);
-            Assert.Equal("DeepSeek", factory.DisplayName);
-            Assert.Equal("ai.provider.deepseek", factory.DisplayNameKey);   // 删除覆盖层 → 回到走键的出厂态
+            // 预设 = 出厂模板、不是用户数据 → 删除被**如实拒绝**（LP.AI.016），覆盖层原样保留
+            var ex = Assert.Throws<AiException>(() => store.DeleteProvider("deepseek"));
+            Assert.Equal(AiErrors.InvalidInput, ex.Error.Code);
+            Assert.Equal("https://my-proxy.example.com/v1",
+                Assert.Single(store.List(credentials), p => p.Id == "deepseek").BaseUrl);
         }
         finally { AiTestEnv.Drop(root); }
     }

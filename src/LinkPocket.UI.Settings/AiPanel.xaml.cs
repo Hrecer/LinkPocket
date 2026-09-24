@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using LinkPocket.Contracts;
 using LinkPocket.I18n;
 using LinkPocket.UI.Settings;
@@ -43,10 +42,25 @@ public partial class AiPanel : UserControl
         await _viewModel.SaveProviderAsync();
     }
 
-    private async void OnAddCustomProvider(object sender, RoutedEventArgs e)
+    // ── 「添加服务商」模板选择器 ────────────────────────────────
+
+    private void OnBeginAddProvider(object sender, RoutedEventArgs e) => _viewModel?.BeginAddProvider();
+
+    private void OnCancelAddProvider(object sender, RoutedEventArgs e) => _viewModel?.CancelAddProvider();
+
+    /// <summary>点预设卡 = 选中该预设（出厂模板已在左列，不重复建记录）。</summary>
+    private void OnPickPresetProvider(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null) return;
-        await _viewModel.AddCustomProviderAsync();
+        if (_viewModel is null || sender is not FrameworkElement { Tag: AiProviderRow row }) return;
+        _viewModel.SelectedProvider = row;
+    }
+
+    /// <summary>点「其他」组的兼容卡 = 按该接入格式自建一个服务商（Tag 是协议枚举名，机器面）。</summary>
+    private async void OnAddCompatProvider(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null || sender is not FrameworkElement { Tag: string name }
+            || !Enum.TryParse<AiProtocol>(name, out var protocol)) return;
+        await _viewModel.AddCustomProviderAsync(protocol);
     }
 
     private async void OnDeleteProvider(object sender, RoutedEventArgs e)
@@ -85,49 +99,42 @@ public partial class AiPanel : UserControl
         await _viewModel.FetchModelsAsync();
     }
 
-    private async void OnAddModel(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        await _viewModel.AddModelAsync();
-    }
-
     private async void OnToggleModel(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
         await _viewModel.ToggleModelAsync(row);
     }
 
-    private void OnToggleModelEdit(object sender, RoutedEventArgs e)
+    // ── 模型元数据弹窗（添加 / 配置；草稿与配置项都在弹窗里）────────
+
+    private void OnBeginAddModel(object sender, RoutedEventArgs e) => _viewModel?.BeginAddModel();
+
+    private void OnEditModel(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
-        _viewModel.ToggleModelEdit(row);
+        _viewModel.BeginEditModel(row);
     }
 
-    private async void OnSaveModelCapabilities(object sender, RoutedEventArgs e)
+    private void OnCancelModelDialog(object sender, RoutedEventArgs e) => _viewModel?.CancelModelDialog();
+
+    private async void OnSaveModelDialog(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
-        await _viewModel.SaveModelCapabilitiesAsync(row);
+        if (_viewModel is null) return;
+        await _viewModel.SaveModelDialogAsync();
     }
 
     private void OnAddReasoningLevel(object sender, RoutedEventArgs e)
     {
-        if (_viewModel is null || (sender as FrameworkElement)?.DataContext is not AiModelRow row) return;
+        if (_viewModel?.ModelDialogRow is not { } row) return;
         AiSettingsViewModel.AddReasoningLevel(row);
     }
 
     private void OnRemoveReasoningLevel(object sender, RoutedEventArgs e)
     {
-        // 删除钮在等级芯片内层模板里：它自己的 DataContext 是等级名，行要从祖先上取。
-        if (_viewModel is null || sender is not FrameworkElement { Tag: string level } button) return;
-        if (FindRow(button) is not { } row) return;
+        // 删除钮在等级芯片内层模板里：芯片的 DataContext 是等级名，行取弹窗当前那一个。
+        if (_viewModel?.ModelDialogRow is not { } row
+            || sender is not FrameworkElement { Tag: string level }) return;
         AiSettingsViewModel.RemoveReasoningLevel(row, level);
-    }
-
-    private static AiModelRow? FindRow(DependencyObject node)
-    {
-        for (var current = node; current is not null; current = VisualTreeHelper.GetParent(current))
-            if (current is FrameworkElement { DataContext: AiModelRow row }) return row;
-        return null;
     }
 
     private async void OnSavePreferences(object sender, RoutedEventArgs e)

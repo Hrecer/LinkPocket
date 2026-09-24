@@ -14,8 +14,9 @@ public interface IAiAssistant
     Task<IReadOnlyList<AiProviderInfo>> ListProvidersAsync(CancellationToken ct = default);
 
     /// <summary>新建一个自定义服务商（可建多个）：Id 由 AI 层生成、与预设不撞名，
-    /// 初值 = 空名 + 空地址 + 缺省接入格式（草稿宽松）；用户在表单里补名称 / 地址 / 接入格式 / 密钥。</summary>
-    Task<AiProviderInfo> CreateCustomProviderAsync(CancellationToken ct = default);
+    /// 初值 = 空名 + 空地址 + <paramref name="protocol"/>（接入格式由「添加服务商」的模板选择器给，
+    /// 与预设不撞名；草稿宽松）；用户在表单里补名称 / 地址 / 密钥。</summary>
+    Task<AiProviderInfo> CreateCustomProviderAsync(AiProtocol protocol, CancellationToken ct = default);
 
     /// <summary>保存服务商（草稿可半填；只有完整者进运行期 registry）。</summary>
     Task<AiProviderInfo> SaveProviderAsync(AiProviderDraft draft, CancellationToken ct = default);

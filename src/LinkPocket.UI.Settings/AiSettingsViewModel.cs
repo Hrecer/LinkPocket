@@ -17,7 +17,8 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
     private string _displayNameInput = "";
     private string _baseUrlInput = "";
     private int _protocolIndex;
-    private string _newModelId = "";
+    private AiModelRow? _modelDialogRow;
+    private bool _isModelDialogAdd;
     private string _testStatusKey = "";
     private LocValue _testDetail = LocValue.Empty;
     private int _modeIndex = 1;
@@ -30,6 +31,10 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<AiProviderRow> Providers { get; } = [];
+
+    /// <summary>预设服务商（「添加服务商」模板选择器里的卡；**与左列同一批投影**，不另立事实源）。</summary>
+    public ObservableCollection<AiProviderRow> PresetProviders { get; } = [];
+
     public ObservableCollection<AiModelRow> Models { get; } = [];
     public ObservableCollection<AiModelChoice> ModelChoices { get; } = [];
 
@@ -39,6 +44,8 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         set
         {
             if (!Set(ref _selectedProvider, value, nameof(SelectedProvider))) return;
+            IsPickingTemplate = false;   // 选中任一服务商 = 回表单（模板选择器只是右栏的另一种模式）
+            CancelModelDialog();         // 模型弹窗里的草稿属于上一个服务商，换人即丢
             DisplayNameInput = value?.Info.DisplayName ?? "";
             BaseUrlInput = value?.Info.BaseUrl ?? "";
             ProtocolIndex = value is null ? 0 : Math.Max(0, Array.IndexOf(ProtocolOrder, value.Info.Protocol));
@@ -47,8 +54,36 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
                 ? LocValue.Of(LinkPocket.Views.AiKeyMap.Error(code))
                 : LocValue.Empty;
             RefreshModels();
+            Raise(nameof(CanDeleteProvider));
         }
     }
+
+    /// <summary>能否删除：**只有自定义服务商可删**（预设是出厂模板、不是用户数据；改名 / 改地址仍可覆盖）。</summary>
+    public bool CanDeleteProvider => SelectedProvider?.Info.Source == AiProviderSource.Custom;
+
+    // ── 「添加服务商」模板选择器（右栏的另一种模式；与表单互斥）──────────────
+
+    private bool _isPickingTemplate;
+
+    /// <summary>右栏是否处于「添加服务商」模板选择器模式（此时表单让位）。</summary>
+    public bool IsPickingTemplate
+    {
+        get => _isPickingTemplate;
+        private set
+        {
+            if (!Set(ref _isPickingTemplate, value, nameof(IsPickingTemplate))) return;
+            Raise(nameof(IsProviderFormVisible));
+        }
+    }
+
+    /// <summary>表单是否展出（模板选择器打开时收起：同一块右栏只画一个）。</summary>
+    public bool IsProviderFormVisible => !_isPickingTemplate;
+
+    /// <summary>打开模板选择器（自建服务商从接入格式模板起步，可建多个）。</summary>
+    public void BeginAddProvider() => IsPickingTemplate = true;
+
+    /// <summary>返回服务商详情（模板选择器的「返回」）。</summary>
+    public void CancelAddProvider() => IsPickingTemplate = false;
 
     public string DisplayNameInput
     {
@@ -75,10 +110,50 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         set => Set(ref _protocolIndex, value, nameof(ProtocolIndex));
     }
 
-    public string NewModelId
+    // ── 模型元数据弹窗（**行只留一行读数**；配置全部收进弹窗，面板不随模型变长）──────
+
+    /// <summary>弹窗里的模型草稿行（null = 弹窗未开）。</summary>
+    public AiModelRow? ModelDialogRow
     {
-        get => _newModelId;
-        set => Set(ref _newModelId, value, nameof(NewModelId));
+        get => _modelDialogRow;
+        private set
+        {
+            if (!Set(ref _modelDialogRow, value, nameof(ModelDialogRow))) return;
+            Raise(nameof(IsModelDialogOpen));
+            Raise(nameof(ModelDialogTitleKey));
+        }
+    }
+
+    public bool IsModelDialogOpen => _modelDialogRow is not null;
+
+    /// <summary>弹窗是「添加模型」（模型 ID 可填）还是「模型配置」（ID 是既成事实，只读）。</summary>
+    public bool IsModelDialogAdd => _isModelDialogAdd;
+
+    public string ModelDialogTitleKey => _isModelDialogAdd ? "ai.settings.model.add" : "ai.settings.model.edit";
+
+    /// <summary>打开「添加模型」弹窗（空草稿：ID 待填，能力按保守缺省）。</summary>
+    public void BeginAddModel()
+    {
+        if (SelectedProvider is null) return;
+        _isModelDialogAdd = true;
+        ModelDialogRow = AiModelRow.NewDraft(SelectedProvider.Info.Id);
+        ModelDialogRow.BeginEdit();
+    }
+
+    /// <summary>打开「模型配置」弹窗（草稿从该模型当前能力取初值）。</summary>
+    public void BeginEditModel(AiModelRow row)
+    {
+        _isModelDialogAdd = false;
+        ModelDialogRow = row;
+        row.BeginEdit();
+    }
+
+    /// <summary>关闭弹窗（草稿丢弃，不落库）。</summary>
+    public void CancelModelDialog()
+    {
+        if (_modelDialogRow is null) return;
+        _modelDialogRow.CancelEdit();
+        ModelDialogRow = null;
     }
 
     /// <summary>连通性 / 保存结果的状态文案键（空 = 不显示）。</summary>
@@ -170,11 +245,14 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         preferences ??= await _assistant.GetPreferencesAsync().ConfigureAwait(true);
         var keepId = SelectedProvider?.Info.Id;
         Providers.Clear();
+        PresetProviders.Clear();
         ModelChoices.Clear();
 
         foreach (var info in await _assistant.ListProvidersAsync().ConfigureAwait(true))
         {
-            Providers.Add(new AiProviderRow(info));
+            var row = new AiProviderRow(info);
+            Providers.Add(row);
+            if (info.Source == AiProviderSource.Preset) PresetProviders.Add(row);
             foreach (var model in info.Models.Where(m => m.Enabled))
                 ModelChoices.Add(new AiModelChoice(info.Id, model.Id));
         }
@@ -209,21 +287,21 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
-    /// <summary>新建自定义服务商（可建多个）：Id 由 AI 层生成，建成即选中并进右侧表单。</summary>
-    public async Task AddCustomProviderAsync()
+    /// <summary>按接入格式新建自定义服务商（可建多个）：Id 由 AI 层生成，建成即选中并进右侧表单。</summary>
+    public async Task AddCustomProviderAsync(AiProtocol protocol)
     {
         await GuardAsync(async () =>
         {
-            var created = await _assistant.CreateCustomProviderAsync().ConfigureAwait(true);
+            var created = await _assistant.CreateCustomProviderAsync(protocol).ConfigureAwait(true);
             await RefreshProvidersAsync().ConfigureAwait(true);
             SelectedProvider = Providers.FirstOrDefault(p => p.Info.Id == created.Id) ?? SelectedProvider;
         }).ConfigureAwait(true);
     }
 
-    /// <summary>删除服务商（预设回出厂模板、自定义整体移除；密钥一并删除）。</summary>
+    /// <summary>删除**自定义**服务商（连同模型与密钥）；预设不可删（界面按钮已按 <see cref="CanDeleteProvider"/> 收起）。</summary>
     public async Task DeleteProviderAsync()
     {
-        if (SelectedProvider is null) return;
+        if (SelectedProvider is null || !CanDeleteProvider) return;
         var id = SelectedProvider.Info.Id;
         await GuardAsync(async () =>
         {
@@ -286,22 +364,6 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
-    /// <summary>手填模型（新增默认启用，来源 = 手填）。</summary>
-    public async Task AddModelAsync()
-    {
-        if (SelectedProvider is null || string.IsNullOrWhiteSpace(NewModelId)) return;
-        var providerId = SelectedProvider.Info.Id;
-        var modelId = NewModelId.Trim();
-        await GuardAsync(async () =>
-        {
-            await _assistant.SaveModelAsync(new AiModelDraft(providerId, modelId, modelId, Enabled: true,
-                ContextWindow: null, MaxOutputTokens: null, SupportsTools: true, SupportsStreaming: true));
-            NewModelId = "";
-            await RefreshProvidersAsync().ConfigureAwait(true);
-            RefreshModels();
-        }).ConfigureAwait(true);
-    }
-
     /// <summary>启用 / 停用一个模型（能力声明保持现值）。</summary>
     public async Task ToggleModelAsync(AiModelRow row)
     {
@@ -317,17 +379,17 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         }).ConfigureAwait(true);
     }
 
-    /// <summary>展开 / 收起某模型的能力编辑行（显式保存，不做失焦提交）。</summary>
-    public void ToggleModelEdit(AiModelRow row)
+    /// <summary>保存弹窗里的模型（添加 = 新模型；配置 = 覆盖既有模型的能力声明）。
+    /// 模型 ID 必填；数字框留空 = 未声明（按保守缺省）；非法值就地报错、不发保存（拿不准就报错，不猜意图）。</summary>
+    public async Task SaveModelDialogAsync()
     {
-        if (row.IsEditing) row.CancelEdit();
-        else row.BeginEdit();
-    }
-
-    /// <summary>保存某模型的配置（上下文窗口 / 最大输出 / 输入模态 / 能力 / 推理等级 / 工具 / 流式）。
-    /// 数字框留空 = 未声明（按保守缺省）；非法值就地报错、不发保存（拿不准就报错，不猜意图）。</summary>
-    public async Task SaveModelCapabilitiesAsync(AiModelRow row)
-    {
+        if (ModelDialogRow is not { } row) return;
+        var modelId = row.ModelIdInput.Trim();
+        if (modelId.Length == 0)
+        {
+            row.ErrorKey = "ai.settings.model.idRequired";
+            return;
+        }
         if (!TryParseCapability(row.ContextWindowInput, out var contextWindow)
             || !TryParseCapability(row.MaxOutputTokensInput, out var maxOutputTokens))
         {
@@ -338,12 +400,13 @@ public sealed class AiSettingsViewModel : INotifyPropertyChanged
         row.ErrorKey = "";
         try
         {
-            await _assistant.SaveModelAsync(new AiModelDraft(row.ProviderId, row.Model.Id, row.Model.DisplayName,
+            await _assistant.SaveModelAsync(new AiModelDraft(row.ProviderId, modelId, modelId,
                 row.Model.Enabled, contextWindow, maxOutputTokens, row.SupportsTools, row.SupportsStreaming,
                 new AiModelInputFormat(true, row.SupportsImage, row.SupportsVideo, row.SupportsPdf),
                 row.SupportsJsonSchemaOutput, row.SupportsNativeWebSearch, row.SupportsMidConversationSystem,
                 ToReasoning(row)))
                 .ConfigureAwait(true);
+            CancelModelDialog();
             await RefreshProvidersAsync().ConfigureAwait(true);
             RefreshModels();
         }
@@ -448,13 +511,17 @@ public sealed class AiProviderRow(AiProviderInfo info)
     public string DisplayText => Info.DisplayName;
     public bool HasApiKey => Info.HasApiKey;
 
+    /// <summary>接入格式的文案键（模板卡上的副行）。</summary>
+    public string ProtocolKey => LinkPocket.Views.AiKeyMap.Protocol(Info.Protocol);
+
     public void Update(AiProviderInfo next) => Info = next;
 }
 
-/// <summary>模型行（启用开关 + 能力编辑行；提示行是机器面标识符）。</summary>
+/// <summary>模型行（**一行读数**：启用开关 + 模型 ID + 上下文窗口徽标 + 来源·工具；
+/// 配置编辑在弹窗里，行不随模型数量或配置项变长）。</summary>
 public sealed class AiModelRow : INotifyPropertyChanged
 {
-    private bool _isEditing;
+    private string _modelIdInput = "";
     private string _contextWindowInput = "";
     private string _maxOutputTokensInput = "";
     private bool _supportsTools;
@@ -476,6 +543,11 @@ public sealed class AiModelRow : INotifyPropertyChanged
         _supportsTools = model.SupportsTools;
         _supportsStreaming = model.SupportsStreaming;
     }
+
+    /// <summary>「添加模型」弹窗的空草稿行：ID 待填、能力按保守缺省（工具与流式按支持，其余未声明）。</summary>
+    public static AiModelRow NewDraft(string providerId)
+        => new(providerId, new AiModelInfo("", "", AiModelSource.Manual, Enabled: true,
+            ContextWindow: null, MaxOutputTokens: null, SupportsTools: true, SupportsStreaming: true));
 
     public string ProviderId { get; }
     public AiModelInfo Model { get; private set; }
@@ -509,21 +581,12 @@ public sealed class AiModelRow : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>能力编辑行是否展开（显式保存，不做失焦提交——归属唯一、不怕刷新重建行）。</summary>
-    public bool IsEditing
+    /// <summary>弹窗里的模型 ID 草稿（添加时待填、配置时只读展示既有 ID）。</summary>
+    public string ModelIdInput
     {
-        get => _isEditing;
-        private set
-        {
-            if (_isEditing == value) return;
-            _isEditing = value;
-            Raise(nameof(IsEditing));
-            Raise(nameof(EditKey));
-        }
+        get => _modelIdInput;
+        set => Set(ref _modelIdInput, value, nameof(ModelIdInput));
     }
-
-    /// <summary>展开 / 收起按钮文案键。</summary>
-    public string EditKey => IsEditing ? "ai.diff.collapse" : "ai.settings.model.capabilities";
 
     public string ContextWindowInput
     {
@@ -617,9 +680,10 @@ public sealed class AiModelRow : INotifyPropertyChanged
 
     public bool HasError => _errorKey is not null;
 
-    /// <summary>进入编辑（输入从当前模型能力初始化；数字框留空 = 未声明）。</summary>
+    /// <summary>弹窗打开时初始化草稿（输入从当前模型能力取；数字框留空 = 未声明；显式保存，不做失焦提交）。</summary>
     public void BeginEdit()
     {
+        ModelIdInput = Model.Id;
         ContextWindowInput = Model.ContextWindow?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
         MaxOutputTokensInput = Model.MaxOutputTokens?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
         SupportsTools = Model.SupportsTools;
@@ -636,14 +700,10 @@ public sealed class AiModelRow : INotifyPropertyChanged
         foreach (var level in Model.Reasoning?.Levels ?? []) ReasoningLevels.Add(level);
         NewReasoningLevel = "";
         ErrorKey = "";
-        IsEditing = true;
     }
 
-    public void CancelEdit()
-    {
-        ErrorKey = "";
-        IsEditing = false;
-    }
+    /// <summary>弹窗关闭：草稿丢弃（下次打开重新取初值）。</summary>
+    public void CancelEdit() => ErrorKey = "";
 
     public void Update(AiModelInfo next) => Model = next;
 

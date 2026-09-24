@@ -9,7 +9,7 @@ namespace LinkPocket.Ai;
 /// <list type="bullet">
 /// <item><b>草稿宽松</b>：半填也能保存（设置页允许边填边存），只拒空 Id；</item>
 /// <item><b>准入严格</b>：完整性由投影的 <see cref="AiProviderInfo.Issues"/> 如实列出（空 = 可进运行期使用），不静默兜底；</item>
-/// <item>预设模板 = 数据、用户记录 = 覆盖层：删除用户记录即回到出厂模板；</item>
+/// <item>预设模板 = 数据、用户记录 = 覆盖层：覆盖层可改可删，**预设本身不可删除**（删除被拒，见 <see cref="DeleteProvider"/>）；</item>
 /// <item>文件损坏 / 版本不符 → <b>拒绝覆盖</b>并报 <c>LP.AI.015</c>。</item>
 /// </list>
 /// 自定义服务商：Id 与预设不撞名即可（与预设同名 = 覆盖该预设）。
@@ -95,10 +95,14 @@ public sealed class AiProviderStore
         }
     }
 
-    /// <summary>删除：预设 → 回到出厂模板（连同测试记录）；自定义 → 整体移除。凭据由界面显式删除。</summary>
+    /// <summary>
+    /// 删除**自定义**服务商（连同测试记录）。**预设不可删**：它是出厂模板、不是用户数据
+    /// （改名 / 改地址仍可覆盖，但删除一律拒绝 → <c>LP.AI.016</c>，绝不静默忽略）。凭据由界面显式删除。
+    /// </summary>
     public void DeleteProvider(string providerId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(providerId);
+        if (AiProviderCatalog.IsPreset(providerId)) throw PresetNotDeletable(providerId);
         lock (_gate)
         {
             var file = Load();
@@ -107,6 +111,11 @@ public sealed class AiProviderStore
             if (removed > 0 || testRemoved) Save(file);
         }
     }
+
+    private static AiException PresetNotDeletable(string providerId)
+        => new(AiErrors.Of(AiErrors.InvalidInput,
+            "preset providers cannot be deleted (they are factory templates, not user data)",
+            details: JsonSerializer.SerializeToElement(new { provider_id = providerId })));
 
     /// <summary>新增 / 更新一个模型（更新保留原来源；新模型来源 = 手填）。</summary>
     public AiProviderInfo SaveModel(AiModelDraft draft, AiCredentialStore credentials)

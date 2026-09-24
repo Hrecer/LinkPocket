@@ -97,9 +97,9 @@ public sealed partial class AiAssistant : IAiAssistant
 
     /// <summary>自定义服务商 Id = <c>custom-</c> + 8 位十六进制：与预设的人工命名 Id 天然不撞，
     /// 也不与静态模板目录耦合（模板只承载预设条目）。</summary>
-    public Task<AiProviderInfo> CreateCustomProviderAsync(CancellationToken ct = default)
+    public Task<AiProviderInfo> CreateCustomProviderAsync(AiProtocol protocol, CancellationToken ct = default)
         => Task.FromResult(_providers.SaveProvider(
-            new AiProviderDraft("custom-" + Guid.NewGuid().ToString("N")[..8], "", AiProtocol.OpenAiChat,
+            new AiProviderDraft("custom-" + Guid.NewGuid().ToString("N")[..8], "", protocol,
                 "", Enabled: true, IsLocal: false), _credentials));
 
     public Task<AiProviderInfo> SaveProviderAsync(AiProviderDraft draft, CancellationToken ct = default)
