@@ -272,17 +272,22 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         foreach (var turn in order)
         {
             var header = AiFeedItem.ForTurn(turn);
-            header.SetPreview(PreviewOf(groups, turn.TurnId));
+            var items = groups.GetValueOrDefault(turn.TurnId, []);
+            header.SetPreview(PreviewOf(items));
+            header.SetReplyPreview(ReplyPreviewOf(items));
             Feed.Add(header);
             Turns.Add(header);
-            foreach (var item in groups.GetValueOrDefault(turn.TurnId, [])) Feed.Add(item);
+            foreach (var item in items) Feed.Add(item);
             groups.Remove(turn.TurnId);
         }
 
         foreach (var (turnId, items) in groups.OrderBy(g => g.Value.FirstOrDefault()?.At ?? DateTimeOffset.MaxValue))
         {
+            var ordered = items.ToList();
             var header = AiFeedItem.ForTurn(new AiTurn(turnId, ++fallbackIndex, AiTurnState.Completed,
                 items.FirstOrDefault()?.At ?? DateTimeOffset.UtcNow, null, null, 0, 0, 0, false));
+            header.SetPreview(PreviewOf(ordered));
+            header.SetReplyPreview(ReplyPreviewOf(ordered));
             Feed.Add(header);
             Turns.Add(header);
             foreach (var item in items) Feed.Add(item);
@@ -293,9 +298,13 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     }
 
     /// <summary>该轮的首条用户消息（导航轨悬停提示；没有用户消息 = 空）。</summary>
-    private static string PreviewOf(IReadOnlyDictionary<string, List<AiFeedItem>> groups, string turnId)
-        => groups.GetValueOrDefault(turnId, [])
-            .FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.UserMessage)?.Text ?? "";
+    /// <summary>本轮首条用户消息（导航轨悬停预览卡的"用户说了什么"）。</summary>
+    private static string PreviewOf(IReadOnlyList<AiFeedItem> items)
+        => items.FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.UserMessage)?.Text ?? "";
+
+    /// <summary>本轮首条助手回复（导航轨悬停预览卡的"助手回了什么"）。</summary>
+    private static string ReplyPreviewOf(IReadOnlyList<AiFeedItem> items)
+        => items.FirstOrDefault(i => i.Kind == AiFeedItem.ItemKind.AssistantMessage)?.Text ?? "";
 
     /// <summary>会话行清单按摘要就地更新（新会话插入 / 已有会话改状态）。**草稿不进列表**——
     /// 草稿是"还没被用起来的会话"，露在左栏就等于又回到"点一下就多一条空会话"的老毛病。</summary>
@@ -325,9 +334,94 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>导出当前会话（缺省 Markdown；CSV = 台账逐条、JSON = 完整会话文件）。</summary>
-    public async Task<bool> ExportSessionAsync(string outputPath, AiExportFormat format = AiExportFormat.Markdown)
+    // ── 批量操作（删除 / 重命名 / 全选）：勾选态与"正在看哪个会话"分开 ──────────────
+    //
+    // 为什么不让 ListBox 的 SelectionMode=Extended 直接承担：选中态在本页是"当前会话"，
+    // 它牵着对话流、右栏台账、审批焦点一起换。把"选了三条"复用到这个状态上，等于
+    // 顺手点了三条会话看就变成顺手对三条会话下手。所以勾选是独立的一层。
+
+    /// <summary>已勾选的会话（按清单顺序，不是点击顺序）。</summary>
+    public IReadOnlyList<AiSessionRow> CheckedSessions => Sessions.Where(s => s.IsChecked).ToArray();
+
+    /// <summary>批量操作条是否露面（两条起：单条走行内按钮与右键，不摆一条只有一项的工具栏）。</summary>
+    public bool HasSessionSelection => Sessions.Count(s => s.IsChecked) > 1;
+
+    /// <summary>批量操作条的读数（"已选 N 个会话"；含变量的整句走键）。</summary>
+    public LocValue SessionSelectionValue => Loc.K("ai.sessions.bulk.count", Sessions.Count(s => s.IsChecked));
+
+    /// <summary>勾选 / 取消一条（Ctrl + 点击的语义：不改"当前会话"）。</summary>
+    public void ToggleSessionChecked(AiSessionRow session)
     {
+        session.IsChecked = !session.IsChecked;
+        RaiseSessionSelection();
+    }
+
+    /// <summary>勾选 / 取消从某一条到某一条之间的一段（Shift + 点击的语义）。</summary>
+    public void CheckSessionRange(AiSessionRow from, AiSessionRow to)
+    {
+        var start = Sessions.IndexOf(from);
+        var end = Sessions.IndexOf(to);
+        if (start < 0 || end < 0) return;
+        if (start > end) (start, end) = (end, start);
+        for (var i = start; i <= end; i++) Sessions[i].IsChecked = true;
+        RaiseSessionSelection();
+    }
+
+    public void CheckAllSessions()
+    {
+        foreach (var session in Sessions) session.IsChecked = true;
+        RaiseSessionSelection();
+    }
+
+    public void ClearSessionSelection()
+    {
+        foreach (var session in Sessions) session.IsChecked = false;
+        RaiseSessionSelection();
+    }
+
+    /// <summary>
+    /// 批量删除。逐条走同一条引擎删除路径（一条失败不吞其余），删完把"当前会话被删掉"
+    /// 这件事交给单片删除的那段逻辑收尾（切到清单第一条 / 回到空态）。
+    /// </summary>
+    public async Task DeleteCheckedSessionsAsync()
+    {
+        var targets = CheckedSessions;
+        if (targets.Count == 0) return;
+        var activeWasDeleted = false;
+        foreach (var session in targets)
+        {
+            if (session.SessionId == _activeSessionId) activeWasDeleted = true;
+            try
+            {
+                await _assistant.DeleteSessionAsync(session.SessionId).ConfigureAwait(true);
+                Sessions.Remove(session);
+            }
+            catch (AiException ex)
+            {
+                LastErrorKey = LinkPocket.Views.AiKeyMap.Error(ex.Error.Code);
+            }
+        }
+        RaiseSessionSelection();
+        if (!activeWasDeleted) return;
+        if (Sessions.FirstOrDefault() is { } next) await OpenSessionAsync(next.SessionId).ConfigureAwait(true);
+        else ClearConversation();
+    }
+
+    /// <summary>批量重命名：命中每条会话的同一处就地编辑路径（重命名一条提交一次）。</summary>
+    public void BeginBulkRename()
+    {
+        if (CheckedSessions.FirstOrDefault() is { } first) BeginRename(first);
+    }
+
+    private void RaiseSessionSelection()
+    {
+        Raise(nameof(CheckedSessions));
+        Raise(nameof(HasSessionSelection));
+        Raise(nameof(SessionSelectionValue));
+    }
+
+    /// <summary>导出当前会话（缺省 Markdown；CSV = 台账逐条、JSON = 完整会话文件）。</summary>
+    public async Task<bool> ExportSessionAsync(string outputPath, AiExportFormat format = AiExportFormat.Markdown)    {
         if (_activeSessionId is not { } sessionId) return false;
         try
         {
@@ -545,6 +639,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         {
             var header = EnsureHeader(turnId, item.At);
             if (item.Kind == AiFeedItem.ItemKind.UserMessage) header.SetPreview(item.Text);
+            if (item.Kind == AiFeedItem.ItemKind.AssistantMessage) header.SetReplyPreview(item.Text);
             for (var i = Feed.Count - 1; i >= 0; i--)
                 if (Feed[i].TurnId == turnId)
                 {

@@ -8,6 +8,17 @@ using LinkPocket.I18n;
 namespace LinkPocket.UI.Ai;
 
 /// <summary>
+/// 用量环悬浮面板里的一行分项（来源名 + 估算 token + 占比条宽度）。
+/// <paramref name="Percent"/> = 该项占上下文总量的百分比（0–100），直接当宽度用。
+/// <paramref name="ToneIndex"/> = 取色档位（按降序 0 起；参照实现是同一强调色的五档深浅）。
+/// </summary>
+public sealed record AiContextSourceRow(LocValue Label, int Tokens, double Percent, int ToneIndex)
+{
+    /// <summary>右侧读数（占比百分比，一位小数；走文案键，别在 C# 里拼格式串）。</summary>
+    public LocValue PercentValue => Loc.K("ai.usage.panel.percent", Percent);
+}
+
+/// <summary>
 /// 对话流里的一行（回合分隔行 / 消息 / 工具调用行 / 审批卡 / 提示条）：同一 VM、按 Kind 选模板。
 /// 时间线是**平铺**的一条列表：回合分隔行也是一行，其后的条目按 TurnId 归属它（折叠 = 该轮条目隐藏）。
 /// </summary>
@@ -196,7 +207,35 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         }
     }
 
+    /// <summary>本轮助手回复的首段（导航轨悬停预览卡用；用户数据原样）。未产生回复前为空。</summary>
+    public string ReplyText
+    {
+        get => _replyText;
+        private set
+        {
+            if (_replyText == value) return;
+            _replyText = value;
+            Raise(nameof(ReplyText));
+            Raise(nameof(HasReplyPreview));
+        }
+    }
+
+    private string _replyText = "";
+
+    /// <summary>预览卡第一段是否还是"没有正文"的空值（空 → 模板换成回落文案）。</summary>
+    public bool HasAskPreview => PreviewText.Trim().Length > 0;
+
+    /// <summary>悬停预览卡是否还有"助手回了什么"这一段（还没有回复 / 提示词为空 → 不摆空块）。</summary>
+    public bool HasReplyPreview => _replyText.Trim().Length > 0;
+
     public void SetPreview(string text) => PreviewText = text;
+
+    /// <summary>设本轮回复预览（只记第一条助手消息；后续增量不覆盖首印象）。</summary>
+    public void SetReplyPreview(string text)
+    {
+        if (_replyText.Length > 0) return;
+        ReplyText = text;
+    }
 
     public bool IsCollapsed
     {
@@ -244,9 +283,26 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             : Loc.K("ai.turn.worked", DurationValue),
     };
 
-    /// <summary>导航轨悬停提示：第 N 轮 · 时间 + 首条用户消息。</summary>
+    /// <summary>导航轨悬停提示（按钮自带的键位提示）：第 N 轮 · 时间 + 首条用户消息。</summary>
     public LocValue RailTipValue => Loc.K("ai.rail.tip", Loc.K("ai.rail.turn", TurnIndex),
         LocValue.Clock(At.LocalDateTime, false), LocValue.Literal(PreviewText));
+
+    /// <summary>
+    /// 预览卡第一段：用户说了什么（按 220 字符 / 2 段归一化）。
+    /// 空文本不在这里回落文案——回落由模板的 DataTrigger 换一条 <see cref="RailPreviewAskFallbackKey"/> 承担，
+    /// 这样模型里不出现"为拿回落词而取的成品字符串"。
+    /// </summary>
+    public LocValue RailPreviewAsk => LocValue.Literal(AiRailVisual.NormalizePreview(PreviewText, ""));
+
+    /// <summary>用户正文缺位时的回落文案键（参照实现叫"用户输入"）。</summary>
+    public static string RailPreviewAskFallbackKey => "ai.rail.userFallback";
+
+    /// <summary>预览卡第二段：助手回了什么（同样归一化）。空 + 回合在跑 → 走"助手仍在工作"键。</summary>
+    public LocValue RailPreviewReplyText => LocValue.Literal(AiRailVisual.NormalizePreview(_replyText, ""));
+
+    /// <summary>助手正文缺位时的回落文案键（在跑 = 仍在工作，已收尾 = 暂无正文）。</summary>
+    public string RailPreviewReplyFallbackKey =>
+        IsRunning ? "ai.rail.running" : "ai.rail.emptyReply";
 
     private LocValue DurationValue
     {
@@ -531,6 +587,24 @@ public sealed class AiSessionRow(AiSessionSummary summary) : INotifyPropertyChan
 
     private bool _isRenaming;
 
+    /// <summary>
+    /// 批量操作里的勾选态（Ctrl / Shift + 点击或右键勾选）。**不是** ListBox 的选中态——
+    /// 选中态管"正在看哪个会话"，勾选态管"要对哪几个下手"，两件事混用一个状态会让
+    /// "顺手点了三条会话来看"变成"顺手删掉三条会话"。
+    /// </summary>
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set
+        {
+            if (_isChecked == value) return;
+            _isChecked = value;
+            Raise(nameof(IsChecked));
+        }
+    }
+
+    private bool _isChecked;
+
     public void Apply(AiSessionSummary summary)
     {
         _summary = summary;
@@ -585,6 +659,95 @@ public sealed class AiApprovalStepRow(AiApprovalStep step)
         : LinkPocket.Views.AiKeyMap.OnError(Step.OnError) is { } key
             ? LocValue.Of(key)
             : LocValue.Literal(Step.OnError);
+}
+
+/// <summary>
+/// 导航轨一根短横条在"悬浮山峰"里的视觉态。
+/// ⚠️ 口径来自参照实现的 <c>resolveConversationTurnNavigatorBarVisualState</c>：
+/// **不透明度只有两档**——指到的那根 1、其余一律 0.58（不是"越远越淡"的渐变）；
+/// 所以"山峰"完全由 <paramref name="ScaleX"/> 承担：2.6 / 1.7 / 1.25 / 1。
+/// </summary>
+internal readonly record struct RailVisual(double ScaleX, double Opacity);
+
+/// <summary>导航轨的视觉常量：与"山峰"算法一起钉在一处，视图只做插值。</summary>
+internal static class AiRailVisual
+{
+    /// <summary>横向峰值倍数（指到的那根）。</summary>
+    public const double PeakScale = 2.6;
+
+    /// <summary>峰侧的相邻倍数（上下各一根）。</summary>
+    public const double NearScale = 1.7;
+
+    /// <summary>峰侧的次相邻倍数（上下各再一根）。</summary>
+    public const double MidScale = 1.25;
+
+    /// <summary>峰顶的不透明度（唯独这一档是 1）。</summary>
+    public const double PeakOpacity = 1.0;
+
+    /// <summary>其余所有档位共用的不透明度（含静止态；参照实现里没有第三档）。</summary>
+    public const double MutedOpacity = 0.58;
+
+    /// <summary>
+    /// 「当前视口所在那一轮」的不透明度：0.9。它只在**没有悬浮焦点**时生效
+    /// （参照实现的 <c>showScrollActiveColor</c>），悬浮时让位给山峰。
+    /// </summary>
+    public const double CurrentOpacity = 0.9;
+
+    /// <summary>条本身的尺寸（宽 × 高，单位 DIP；峰值 2.6 倍 ≈ 31.2）。</summary>
+    public const double BarWidth = 12;
+    public const double BarHeight = 2;
+    public const double PeakWidth = 31.2;
+
+    /// <summary>推移时长（毫秒）：150ms 是"丝滑"的来源——再短显得跳，再长跟不上手。</summary>
+    public const int TravelMs = 150;
+
+    /// <summary>悬浮预览卡的开 / 收延迟（毫秒）：开得稍慢（滚过整轨不一路闪卡），收得干脆。</summary>
+    public const int PreviewOpenDelayMs = 120;
+    public const int PreviewCloseDelayMs = 80;
+
+    /// <summary>预览卡文案的截断口径：总字符上限 220、段落上限 2（与参照实现同值）。</summary>
+    public const int PreviewMaxChars = 220;
+    public const int PreviewMaxParagraphs = 2;
+
+    /// <summary>不足两根不露面（一根时轨道没有导航意义，只是视觉噪音）。</summary>
+    public const int MinTurns = 2;
+
+    /// <summary>
+    /// 按"与悬浮位置的距离"取视觉态：0 = 指到的那根（峰），1 / 2 = 相邻与次相邻，其余 = 静止。
+    /// 悬浮离开（<paramref name="hoverIndex"/> 为负）= 全部回静止档。
+    /// </summary>
+    public static RailVisual VisualAt(int hoverIndex, int index)
+    {
+        if (hoverIndex < 0) return new RailVisual(1, MutedOpacity);
+        return Math.Abs(index - hoverIndex) switch
+        {
+            0 => new RailVisual(PeakScale, PeakOpacity),
+            1 => new RailVisual(NearScale, MutedOpacity),
+            2 => new RailVisual(MidScale, MutedOpacity),
+            _ => new RailVisual(1, MutedOpacity),
+        };
+    }
+
+    /// <summary>
+    /// 预览文本归一化（与参照实现同口径）：先按空行切段、段内折叠空白、只取前
+    /// <see cref="PreviewMaxParagraphs"/> 段，再按 <see cref="PreviewMaxChars"/> 截断
+    /// （截断处补 "..."）。空文本回落到 <paramref name="fallback"/>。
+    /// </summary>
+    public static string NormalizePreview(string text, string fallback)
+    {
+        var paragraphs = (text ?? "")
+            .Trim()
+            .Split(["\n\n"], StringSplitOptions.None)
+            .Select(paragraph => string.Join(" ", paragraph.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)))
+            .Where(paragraph => paragraph.Length > 0)
+            .Take(PreviewMaxParagraphs)
+            .ToArray();
+        if (paragraphs.Length == 0) return fallback;
+        var joined = string.Join("\n", paragraphs);
+        if (joined.Length <= PreviewMaxChars) return joined;
+        var keep = Math.Max(8, PreviewMaxChars) - 3;
+        return joined[..Math.Min(keep, joined.Length)].TrimEnd() + "...";
+    }
 }
 
 /// <summary>按 Kind 选模板（模板都在 AiView.xaml 的资源里，键名 = ai.template.*）。</summary>

@@ -35,6 +35,11 @@ public partial class AiView : UserControl
     private bool _stickToBottom = true;
     private double _storedPanelWidth = 286;
     private Button? _copiedButton;
+    private AiFeedItem? _railHover;
+    private AiFeedItem? _pendingRailPreview;
+    private bool _railHoverInitialized;
+    private readonly DispatcherTimer _railPreviewOpenTimer;
+    private readonly DispatcherTimer _railPreviewCloseTimer;
 
     public AiView()
     {
@@ -58,6 +63,30 @@ public partial class AiView : UserControl
         // "已复制"回执的复位（同一条消息的按钮 1.2s 后复原）
         _copyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
         _copyTimer.Tick += (_, _) => RestoreCopyLabel();
+
+        // 导航轨预览卡的时延：开 120ms / 收 80ms（跟随鼠标滚过整条轨时不一路闪卡；
+        // 收给宽限是为了"从条滑到卡上"或"在相邻条之间挪"不闪断）
+        _railPreviewOpenTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(AiRailVisual.PreviewOpenDelayMs) };
+        _railPreviewOpenTimer.Tick += (_, _) => { _railPreviewOpenTimer.Stop(); OpenRailPreview(); };
+        _railPreviewCloseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(AiRailVisual.PreviewCloseDelayMs) };
+        _railPreviewCloseTimer.Tick += (_, _) => { _railPreviewCloseTimer.Stop(); CloseRailPreview(); };
+
+        // 用量环的容量面板：**鼠标在环或面板上**才展开（移开就合）。
+        // 两处各挂进出，是因为面板在 Popup 里（不在环的视觉树内）——只看环的话，
+        // 鼠标移进面板就被判成"离开"而立刻收起来，面板根本点不到。
+        ContextRingButton.MouseEnter += (_, _) => SetContextPanel(open: true);
+        ContextRingButton.MouseLeave += (_, _) => SetContextPanel(open: false);
+        ContextRingButton.GotKeyboardFocus += (_, _) => SetContextPanel(open: true);
+        ContextRingButton.LostKeyboardFocus += (_, _) => SetContextPanel(open: false);
+        ContextUsagePanel.MouseEnter += (_, _) => SetContextPanel(open: true);
+        ContextUsagePanel.MouseLeave += (_, _) => SetContextPanel(open: false);
+    }
+
+    /// <summary>面板开合（鼠标在环与面板之间来回移动时不闪：离开环的事件后紧跟面板的进入）。</summary>
+    private void SetContextPanel(bool open)
+    {
+        if (_viewModel is null) return;
+        _viewModel.IsContextPanelOpen = open;
     }
 
     /// <summary>窄注入（与其它页一致：页面不认识容器，由 Shell 传依赖）。</summary>
@@ -176,6 +205,109 @@ public partial class AiView : UserControl
         var offset = container.TransformToAncestor(FeedScroll).Transform(new Point(0, 0)).Y;
         _stickToBottom = false;
         FeedScroll.ScrollToVerticalOffset(FeedScroll.VerticalOffset + offset - 8);
+        SetRailHover(header);   // 点完条还在鼠标下：预览卡留在原位，不闪一下再回来
+    }
+
+    /// <summary>鼠标滑到某一根条上：整轨进入"山峰"态（按距离分档推移），并弹该轮的预览卡。</summary>
+    private void OnRailEnter(object sender, MouseEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem header) return;
+        SetRailHover(header);
+    }
+
+    private void OnRailLeave(object sender, MouseEventArgs e) => ScheduleRailPreviewClose();
+
+    /// <summary>
+    /// 山峰态 = 逐条按"与悬浮位置的距离"取档（0 峰 / 1 相邻 / 2 次相邻 / 其余静止），
+    /// 每条自己 150ms 推到目标档——动画值只改横向倍数与不透明度，不改布局宽度。
+    /// 预览卡按参照的时延开（120ms）：滚过整条轨不会一路闪卡。
+    /// </summary>
+    private void SetRailHover(AiFeedItem header)
+    {
+        if (_viewModel is null) return;
+        var hoverIndex = _viewModel.Turns.IndexOf(header);
+        if (hoverIndex < 0) return;
+        _railHover = header;
+        var animate = _railHoverInitialized;   // 首次不做动画：从静止态"长出来"会像加载动画
+        _railHoverInitialized = true;
+
+        for (var i = 0; i < _viewModel.Turns.Count; i++)
+        {
+            var visual = AiRailVisual.VisualAt(hoverIndex, i);
+            if (RailBarAt(_viewModel.Turns[i]) is { } bar)
+            {
+                bar.IsRailHovered = true;   // 悬浮期间"当前轮"让位给山峰（与参照的 showScrollActiveColor 同一口径）
+                bar.AnimateTo(visual.ScaleX, visual.Opacity, animate);
+            }
+        }
+
+        _railPreviewOpenTimer.Stop();
+        _railPreviewCloseTimer.Stop();
+        _railPreviewOpenTimer.Start();
+        _pendingRailPreview = header;
+    }
+
+    /// <summary>离开一根条：不立刻收卡（80ms 宽限，让"从条滑到卡"或"相邻条之间挪"不闪断）。</summary>
+    private void ScheduleRailPreviewClose()
+    {
+        _railPreviewOpenTimer.Stop();
+        _pendingRailPreview = null;
+        _railPreviewCloseTimer.Stop();
+        _railPreviewCloseTimer.Start();
+    }
+
+    private void OpenRailPreview()
+    {
+        if (_pendingRailPreview is null || RailPreviewPopup is null) return;
+        RailsPreviewPlacement(_pendingRailPreview);
+        RailPreviewPopup.DataContext = _pendingRailPreview;
+        RailPreviewPopup.IsOpen = true;
+    }
+
+    /// <summary>预览卡贴到"当根条"的右侧（卡的垂直中心对齐该条）。</summary>
+    private void RailsPreviewPlacement(AiFeedItem header)
+    {
+        if (RailPreviewPopup is null) return;
+        if (RailBarAt(header) is not { } bar) return;
+        RailPreviewPopup.PlacementTarget = bar;
+        RailPreviewPopup.Placement = PlacementMode.Right;
+        RailPreviewPopup.VerticalOffset = 0;
+    }
+
+    /// <summary>真的收：全部回静止档，预览卡收起。</summary>
+    private void CloseRailPreview()
+    {
+        _railHover = null;
+        _railHoverInitialized = false;
+        _pendingRailPreview = null;
+        if (_viewModel is not null)
+            foreach (var header in _viewModel.Turns)
+                if (RailBarAt(header) is { } bar)
+                {
+                    bar.IsRailHovered = false;
+                    bar.AnimateTo(1, AiRailVisual.MutedOpacity, animate: true);
+                }
+        if (RailPreviewPopup is not null) RailPreviewPopup.IsOpen = false;
+    }
+
+    /// <summary>取某一轮对应的那条横条（容器还没生成时返回 null：不猜、不缓存过期实例）。</summary>
+    private RailBar? RailBarAt(AiFeedItem header)
+    {
+        if (TurnRail is null) return null;
+        if (TurnRail.ItemContainerGenerator.ContainerFromItem(header) is not DependencyObject container) return null;
+        return FindDescendant<RailBar>(container);
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 
     /// <summary>折叠 / 展开一轮（只改显隐；折叠后条目不再占位，导航轨照旧可达）。</summary>
@@ -336,22 +468,49 @@ public partial class AiView : UserControl
         ScrollFeedToEnd();
     }
 
-    /// <summary>右键先选中该行（菜单动作作用于选中行）——与「更多」按钮同一入口。</summary>
+    /// <summary>右键先选中该行（菜单动作作用于选中行）——与行内动作按钮同一入口。</summary>
     private void OnSessionRowRightClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListBoxItem item) item.IsSelected = true;
+        if (_viewModel is null || sender is not ListBoxItem item) return;
+        item.IsSelected = true;
+        // 右键落在已勾选的行上 = 对整批下手（勾选态已表达"要动哪几个"）；否则只作用这一行。
+        if (item.DataContext is AiSessionRow row && !row.IsChecked) _viewModel.ClearSessionSelection();
+        e.Handled = false;
     }
 
-    /// <summary>行悬停的「更多」：先选中该行，再在当前行上打开与右键同一份菜单。</summary>
-    private void OnSessionMore(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Ctrl / Shift + 点击 = 勾选（批量操作的目标集），**不改"当前会话"**；
+    /// 普通点击照旧切会话（交给 SelectionChanged）。把勾选键放在 PreviewMouseLeftButtonDown
+    /// 并置 Handled，是为了别让这次点击顺手把对话流也切走。
+    /// </summary>
+    private void OnSessionRowPreviewClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not FrameworkElement source || source.DataContext is not AiSessionRow row) return;
-        SessionList.SelectedItem = row;
-        if (SessionList.ContextMenu is not { } menu) return;
-        menu.PlacementTarget = source;
-        menu.Placement = PlacementMode.Bottom;
-        menu.IsOpen = true;
+        if (_viewModel is null || sender is not ListBoxItem item || item.DataContext is not AiSessionRow row) return;
+        var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
+        var shift = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+        if (!ctrl && !shift) return;
+        e.Handled = true;
+        if (shift && SessionList.SelectedItem is AiSessionRow anchor) _viewModel.CheckSessionRange(anchor, row);
+        else _viewModel.ToggleSessionChecked(row);
     }
+
+    private async void OnDeleteSelectedSessions(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        var count = _viewModel.CheckedSessions.Count;
+        if (count == 0) return;
+        if (!ConfirmDialog.Show(Loc.T("ai.sessions.bulk.delete"), Loc.T("ai.sessions.bulk.delete.confirm", count),
+                Loc.T("ai.sessions.bulk.delete"), "delete-outline"))
+            return;
+        await _viewModel.DeleteCheckedSessionsAsync();
+        SelectActiveInList();
+    }
+
+    private void OnSelectAllSessions(object sender, RoutedEventArgs e) => _viewModel?.CheckAllSessions();
+
+    private void OnClearSessionSelection(object sender, RoutedEventArgs e) => _viewModel?.ClearSessionSelection();
+
+    private void OnBulkRenameSessions(object sender, RoutedEventArgs e) => _viewModel?.BeginBulkRename();
 
     // ── 右栏：引擎审计分页 ────────────────────────────────────
 
