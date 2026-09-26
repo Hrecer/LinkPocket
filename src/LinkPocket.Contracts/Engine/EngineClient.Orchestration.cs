@@ -28,6 +28,11 @@ public sealed partial class EngineClient
         => ExecuteAsync<JsonElement>("macro.save",
             new { name, script = JsonSerializer.SerializeToElement(script, EngineOptions) }, options, ct);
 
+    /// <summary>保存宏（脚本 = **原始 JSON 元素**；界面编辑器给的是文本，合法性由引擎校验）。</summary>
+    public Task<CommandResult<JsonElement>> MacroSaveRawAsync(string name, JsonElement script,
+        CallOptions? options = null, CancellationToken ct = default)
+        => ExecuteAsync<JsonElement>("macro.save", new { name, script }, options, ct);
+
     /// <summary>读取宏定义。</summary>
     public Task<JsonElement> MacroGetAsync(string name, CancellationToken ct = default)
         => QueryAsync<JsonElement>("macro.get", new { name }, null, ct);

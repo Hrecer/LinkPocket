@@ -56,6 +56,8 @@ namespace LinkPocket.Views
                 _shortcutHost = new ShortcutHost(
                     ShortcutCatalog.Build(ShortcutPage.Trash, BuildShortcutCommands(ViewModel)), () => ActiveScope);
                 _shortcutHost.Attach(this);
+                // 右键「刷新」= F5 同一个命令（本页菜单里本来就有「刷新」项，追加逻辑按同名幂等跳过）
+                PageRefresh.Register(this, ViewModel.RefreshCommand);
             };
 
             // 切到本页（全局导航切页）→ 键盘焦点收进本页（快捷键按焦点路由）
@@ -160,43 +162,12 @@ namespace LinkPocket.Views
 
         private void ScrollRowIntoView(TrashRowViewModel row)
         {
-            var list = TrashTable.RowsList;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-            {
-                if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement realized)
-                {
-                    realized.BringIntoView();
-                    return;
-                }
-
-                var scroller = FindAncestorScrollViewer(list);
-                var index = ViewModel?.Rows.IndexOf(row) ?? -1;
-                if (scroller == null || index < 0) return;
-                var rowHeight = EstimateRowHeight(list);
-                scroller.ScrollToVerticalOffset(Math.Max(0, index * rowHeight - scroller.ViewportHeight / 3));
-                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-                {
-                    if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement afterScroll)
-                        afterScroll.BringIntoView();
-                }));
-            }));
+            // 唯一实现 = 共享数据表的 ScrollItemIntoView（同浏览页）：行未实现时按索引估算、
+            // 容器实现后再对齐。原先这里自带一套"从行列表**向上**找 ScrollViewer"的实现——
+            // 列表虚拟化生效后 ScrollViewer 由行列表的控件模板生成（**子孙**而非祖先），
+            // 向上查找必然为 null，跳转/定位会静默地不滚动。
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => TrashTable.ScrollItemIntoView(row)));
         }
-
-        private static ScrollViewer? FindAncestorScrollViewer(DependencyObject child)
-        {
-            var current = VisualTreeHelper.GetParent(child);
-            while (current != null)
-            {
-                if (current is ScrollViewer sv) return sv;
-                current = VisualTreeHelper.GetParent(current);
-            }
-            return null;
-        }
-
-        private static double EstimateRowHeight(ItemsControl list)
-            => list.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement first && first.ActualHeight > 1
-                ? first.ActualHeight
-                : 36;
 
         // 行错峰入场已收口到 UIKit `Views.RowEntrance`（唯一实现，见 OnRefreshCompleted）。
 

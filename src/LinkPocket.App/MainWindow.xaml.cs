@@ -92,6 +92,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         vm.NavigatedFromSearch += (_, _) => _searchVm.OnNavigatedFrom();
         vm.SearchRefreshRequested += (_, _) => _ = _searchVm.RefreshFromEventAsync();
 
+        // 右键必有「刷新」（标题栏/导航条除外）：菜单里的刷新项走各页登记的刷新命令，
+        // 与 F5 是同一个命令对象（见 PageRefresh / ContextRefresh）。
+        ContextRefresh.Install(this, TitleBar);
+
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
         SizeChanged += (_, _) => UpdateShellClip();
@@ -235,12 +239,26 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// </remarks>
     private void ApplyNavVisibility(string navId)
     {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         foreach (var id in _regions.NavIds)
         {
             if (_regions.Resolve(id) is { } page)
                 page.Visibility = string.Equals(id, navId, StringComparison.Ordinal) ? Visibility.Visible : Visibility.Collapsed;
         }
+
+        // 显隐翻转本身只是赋值 —— "卡"发生在翻转之后：被显示的页面要跑 measure/arrange +
+        // 首帧模板实例化（虚拟化只实例化视口那几屏，但那几屏仍要建）。
+        // 量法：`Loaded` 优先级的回调排在布局/渲染那一档之后 ⇒ 此刻的墙钟 ≈ 翻转→布局跑完。
+        // 纯观测：回调里只写一行 cat=app.nav 的日志，不阻塞、不改时序。
+        var shown = _regions.Resolve(navId);
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+            LpLog.Write(LogLevel.Info, NavLogCategory,
+                $"visibility->{navId} shown={shown?.GetType().Name ?? "(none)"}",
+                elapsedMs: watch.ElapsedMilliseconds)));
     }
+
+    /// <summary>切页耗时留痕的分类（与 MainViewModel / BrowserViewModel 同一支：现场日志按它取）。</summary>
+    private const string NavLogCategory = "app.nav";
 
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)

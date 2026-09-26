@@ -46,15 +46,29 @@ public sealed partial class EngineClient
         => ExecuteAsync<TrashPurgeBatchResult>("trash.purge_batch",
             new { link_ids = linkIds, folder_ids = folderIds }, o, ct);
 
-    /// <summary>搜索（query 空 = 空结果口径；范围开关决定命中字段）。</summary>
+    /// <summary>搜索（query 空 = 空结果口径；范围开关决定命中字段）。
+    /// <paramref name="perPage"/> &gt; 0 = 引擎侧 SQL LIMIT（十万级命中的关键路径：只搬要渲染的那一页，
+    /// 12MB JSON 过管道是实测的 ~800ms 纯浪费）；缺省 0 = 全量（向后兼容）。命中总数用 <see cref="SearchCountAsync"/>。</summary>
     public Task<List<LinkDto>> SearchLinksAsync(string query, bool searchTitle = true,
         bool searchUrl = false, bool searchDescription = false, bool searchPath = false,
         string sortBy = "title", string sortOrder = "asc",
+        int page = 1, int perPage = 0,
         CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<LinkDto>>("search.links", new
         {
             query, search_title = searchTitle, search_url = searchUrl,
             search_description = searchDescription, search_path = searchPath,
             sort_by = sortBy, sort_order = sortOrder,
+            page, per_page = perPage,
+        }, o, ct);
+
+    /// <summary>搜索命中总数（与 search.links 同谓词的 COUNT，不物化实体）：截断提示的"共 N 条"供数。</summary>
+    public Task<int> SearchCountAsync(string query, bool searchTitle = true,
+        bool searchUrl = false, bool searchDescription = false, bool searchPath = false,
+        CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<int>("search.count", new
+        {
+            query, search_title = searchTitle, search_url = searchUrl,
+            search_description = searchDescription, search_path = searchPath,
         }, o, ct);
 }

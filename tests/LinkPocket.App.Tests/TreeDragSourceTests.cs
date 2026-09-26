@@ -93,9 +93,12 @@ public class TreeDragSourceTests
             Assert.True(root.IsRoot);
             Assert.Empty(vm.PrepareDragFromNode(root));
 
-            // 链接叶子也是拖拽源（载荷 IsFolder=false；落点仍是文件夹）
-            var leaf = vm.FolderTree[0].Children
-                .Single(c => c.FolderId == a.FolderId).Children.Single(c => c.Id == link.LinkId);
+            // 链接叶子也是拖拽源（载荷 IsFolder=false；落点仍是文件夹）。
+            // 叶子按需加载：先展开该目录（懒加载 = 展开才注入）
+            var aNode = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
+            aNode.IsExpanded = true;
+            await vm.WaitForTreeLinksAsync(aNode);
+            var leaf = aNode.Children.Single(c => c.Id == link.LinkId);
             var item = Assert.Single(vm.PrepareDragFromNode(leaf));
             Assert.Equal(link.LinkId, item.Id);
             Assert.False(item.IsFolder);

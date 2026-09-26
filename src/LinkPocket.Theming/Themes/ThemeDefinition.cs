@@ -90,6 +90,20 @@ public sealed record ThemeDefinition
     public double? NeutralHueOverride { get; init; }
 
     /// <summary>
+    /// 悬停反馈的**可见性护栏**：<c>true</c> 时，派生出的悬停底不允许落回页面底的色值上——
+    /// 撞色就继续压深，直到与页面底分得开为止。
+    /// </summary>
+    /// <remarks>
+    /// 为什么需要它、为什么默认关：通用档距里「卡面提亮」与「悬停压深」是同一个档距（各 6 档），
+    /// 于是「卡面压深一档」在数学上必然回到页面底那一档——**卡面悬停底 = 页面底色值**。
+    /// 在这个主题上它落到肉眼不可分辨的程度（实测晴王青提饮：按钮悬停底 <c>#D7EBC9</c> 对页面底
+    /// <c>#D9EBC8</c>，ΔRGB ≤ 2；卡面悬停底与页面底<b>逐字节相同</b>）——鼠标移上去等于没有反馈。
+    /// 护栏只改**悬停档位的落点**（仍受弱字 ≥4.5 的判据约束，不会压出读不出字的底），
+    /// 不动色相/彩度/其它令牌。默认关 ⇒ 其余主题取值逐字节不变。
+    /// </remarks>
+    public bool EnforceHoverVisibility { get; init; }
+
+    /// <summary>
     /// 配色应用方式（缺省 <see cref="PaletteMode.Auto"/> = 打开「自动调整颜色」，按明度档位表自动重排）。
     /// </summary>
     /// <remarks>

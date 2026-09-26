@@ -188,7 +188,14 @@ public sealed class BatchEngine : IBatchEngine
         try
         {
             await using var uow = _engine.UowFactory();
-            ITransactionScope? tx = dryRun ? uow.BeginTransaction() : null;
+            // **总是**开显式事务：步骤之间的 flush（见 RunStepsNestedAsync）只写进事务、不提交，
+            // 整批的原子性由这里收口——成功提交；异常与干跑回滚。
+            // 干跑必须**立即** BeginAsync：绕过变更跟踪的批量语句（ExecuteDelete / ExecuteUpdate 等）
+            // 只在本连接已有事务时才可回滚，否则"执行但不提交"会被绕开（改动直接落库）。
+            var tx = uow.BeginTransaction();
+            // 持写事务期间的嵌套审计先缓冲（SqlAuditWriter 是独立短连接，撞写锁会 busy 超时/步；
+            // 见 CommandContextImpl.NestedAuditBuffer）——收口后统一写出，成功与回滚路径都留痕。
+            var auditBuffer = new List<AuditEntry>();
             CommandContextImpl ctx;
             List<BatchStepResult> results;
             List<EntityRef> touched;
@@ -196,23 +203,19 @@ public sealed class BatchEngine : IBatchEngine
             List<FieldChange> diff;
             try
             {
+                await tx.BeginAsync(ct);
                 // BatchId：嵌套步骤审计的关联键（audit.query {batch_id} 取齐每一步）
                 ctx = new CommandContextImpl(uow, isNested: false, dryRun, correlationId, caller, ct, _engine,
-                    undoGroupId, batchId);
+                    undoGroupId, batchId) { NestedAuditBuffer = auditBuffer };
                 (results, touched, events, diff) = await RunStepsNestedAsync(ctx, script, undoGroupId, ct);
 
-                if (dryRun)
-                {
-                    if (tx != null) await tx.RollbackAsync(ct);
-                }
-                else
-                {
-                    await uow.CommitAsync(ct);
-                }
+                if (dryRun) await tx.RollbackAsync(ct);
+                else await tx.CommitAsync(ct);
             }
             finally
             {
-                if (tx != null) await tx.DisposeAsync();
+                await tx.DisposeAsync();
+                _engine.FlushNestedAudit(auditBuffer);
             }
 
             if (!dryRun)
@@ -329,6 +332,20 @@ public sealed class BatchEngine : IBatchEngine
 
                 results.Add(new BatchStepResult(step.Ref, step.Command, Ok: true, Skipped: false,
                     ToElement(r.Data), null, null, stepSw.ElapsedMilliseconds));
+
+                // **步骤间 flush**：把本步改动写进当前事务（不提交），让**后续步骤**读得到。
+                // 没有它："先移动、再删除"这类脚本里，删除步骤按**数据库现状**做筛选
+                //（folders.delete 的 cascade 读 links 表）⇒ 看到移动前的旧状态：实测事故（2026-09-26）
+                // move_batch 报 moved 1630、紧接着 cascade 把这 1630 条整批扫进回收站（根目录空空，
+                // 数据躺在回收站里）。干跑同样 flush——干跑必须与真跑同语义，最后统一回滚；
+                // 两侧的原子性都有外层显式事务兜底（事务批见 RunTransactionalAsync、宏见 MacroRunHandler）。
+                // **步骤间 flush**：把本步改动写进当前事务（不提交），让**后续步骤**读得到。
+                // 没有它："先移动、再删除"这类脚本里，删除步骤按**数据库现状**做筛选
+                //（folders.delete 的 cascade 读 links 表）⇒ 看到移动前的旧状态：实测事故（2026-09-26）
+                // move_batch 报 moved 1630、紧接着 cascade 把这 1630 条整批扫进回收站（根目录空空，
+                // 数据躺在回收站里）。干跑同样 flush——干跑必须与真跑同语义，最后统一回滚；
+                // 两侧的原子性都有外层显式事务兜底（事务批见 RunTransactionalAsync、宏见 MacroRunHandler）。
+                await ctx.Uow.CommitAsync(ct);
             }
             catch (EngineException ex)
             {

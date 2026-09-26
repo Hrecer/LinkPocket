@@ -117,6 +117,23 @@ public interface IAiAssistant
     /// <summary>宏名清单（技能编辑器的绑定下拉；数据源 = 引擎 <c>macro.list</c>）。</summary>
     Task<IReadOnlyList<string>> ListMacroNamesAsync(CancellationToken ct = default);
 
+    // ── 宏管理（2026-09-26：宏此前只有引擎命令、没有任何界面管理面）────────────
+
+    /// <summary>宏清单（名称 + 更新时间；数据源 = 引擎 macro.list）。</summary>
+    Task<IReadOnlyList<AiMacroInfo>> ListMacrosAsync(CancellationToken ct = default);
+
+    /// <summary>读宏的批脚本原文（JSON 文本；数据源 = 引擎 macro.get）。</summary>
+    Task<string> GetMacroScriptAsync(string name, CancellationToken ct = default);
+
+    /// <summary>保存宏（<paramref name="scriptJson"/> = 批脚本 JSON 文本；引擎负责校验，无效拒绝入库）。</summary>
+    Task SaveMacroAsync(string name, string scriptJson, CancellationToken ct = default);
+
+    /// <summary>删除宏。</summary>
+    Task DeleteMacroAsync(string name, CancellationToken ct = default);
+
+    /// <summary>运行宏（引擎 macro.run，事务批语义：中止整体回滚）。</summary>
+    Task RunMacroAsync(string name, CancellationToken ct = default);
+
     // ── 用量 ──────────────────────────────────────────────────
 
     /// <summary>本会话用量读数（模型调用 / 工具调用 / token 合计；数据源 = 会话文件里的逐轮读数）。</summary>
@@ -131,7 +148,10 @@ public interface IAiAssistant
     Task SendAsync(string sessionId, string text, AiTurnContext? context = null, CancellationToken ct = default);
 
     /// <summary>停止当前回合（立即释放写入冻结；**已提交的变更不回退**）。</summary>
-    Task CancelTurnAsync(string sessionId, CancellationToken ct = default);
+    /// <summary>停止当前回合。返回 <c>true</c> = 取消信号已发出；<c>false</c> = 该会话当前没有在跑的回合。</summary>
+    /// <summary>请求取消在跑的回合。<paramref name="sessionId"/> 为空 = **取消任意在跑的回合**
+    ///（界面"发送新消息前先停旧回合"用——旧回合常常不属于当前会话）；返回 false = 没有可取消的回合。</summary>
+    Task<bool> CancelTurnAsync(string? sessionId, CancellationToken ct = default);
 
     // ── 审批 ──────────────────────────────────────────────────
 

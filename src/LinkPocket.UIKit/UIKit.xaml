@@ -290,11 +290,14 @@
         </Setter>
     </Style>
 
-    <!-- TonalButton：MD3 色调按钮（SecondaryContainer 底 + OnSecondaryContainer 文）。
+    <!-- TonalButton：MD3 色调按钮（**次按钮底** `App.Surface.Control` + 容器字）。
          浏览页命令栏浮动胶囊组内使用。注意：模板用 TemplateBinding Padding，
          不落入库 TextButton「Padding 硬编码 14,0」的裁切坑。
          ⚠️ 状态层必须铺满整颗药丸（MD3 规范做法：底色 / 全幅状态层 / 内容 三层 Grid）——
-         之前状态层放在带 Padding 的 Border 里只盖住文字区，悬停会出现"只有一小块变灰"的怪相。 -->
+         之前状态层放在带 Padding 的 Border 里只盖住文字区，悬停会出现"只有一小块变灰"的怪相。
+         ⚠️ 底**不再取支撑槽本色**（`App.Support.Container`）：本色深浅随配色在 1.02–1.97 之间摆动 ——
+         青提那套本色近白 ⇒ 与命令栏胶囊重合；暮色玫瑰那套本色 T73 ⇒ 一整块重色。
+         次按钮底锚在表面族上（与页面底 / 卡面同色调），对卡面 1.50、对面板 1.20–1.31、对选中行底 1.12–1.19。 -->
     <Style x:Key="TonalButton" TargetType="Button">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
@@ -308,9 +311,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Grid>
-                        <Border x:Name="Bd" Background="{DynamicResource App.Support.Container}"
+                        <Border x:Name="Bd" Background="{DynamicResource App.Surface.Control}"
                                 CornerRadius="16"/>
-                        <Border x:Name="StateLayer" Background="{DynamicResource App.Support.Container}"
+                        <Border x:Name="StateLayer" Background="{DynamicResource App.Surface.Control}"
                                 Opacity="0" CornerRadius="16"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -352,6 +355,53 @@
                         <Border x:Name="Bd" Background="{DynamicResource App.Accent.Fill}"
                                 CornerRadius="16"/>
                         <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
+                                Opacity="0" CornerRadius="16"/>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- SoftPillButton：**淡底深墨**的药丸（与 PrimaryPillButton 同形，只是配色轻一档）。
+         为什么要有它：搜索这类"高频但不该抢戏"的按钮用强调填充（T40 深底 + 白字）时，
+         每一套主题里都是一整块重色（实测 11/11 套，用户："偏深、太强烈"）。
+         淡底 = `App.Surface.Control`（**次按钮底**，与 TonalButton 同一支；原先取 `App.Accent.Container`，
+         青提那套是近白 `#FFF5CF` ⇒ 按钮"无色"），墨 = `App.Text.OnContainer`（浅色容器上的字，与 TonalButton 同）。
+         悬停/按压 = 同一支墨叠 8%/12%（MD3 状态层口径，与 Primary 同，只换了墨的来源）。
+         ⚠️ 主操作（确认对话框的"确定"这类）仍用 PrimaryPillButton —— 那一处需要最强的视觉重量。 -->
+    <Style x:Key="SoftPillButton" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource App.Surface.Control}"/>
+        <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
+        <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"/>
+                        <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnContainer}"
                                 Opacity="0" CornerRadius="16"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
@@ -671,9 +721,11 @@
     <!-- 壳宽 − 内距 = 冻结壳里留给内容的那一格（拿不到控件实例时用；面包屑根段文字用它） -->
     <views:ShellContentWidthConverter x:Key="ShellContentWidth"/>
 
-    <!-- 计数药丸（浏览页面包屑 / 文件夹树节点共用） -->
+    <!-- 计数药丸（浏览页面包屑 / 文件夹树节点共用）：底 = **次按钮底**（与 TonalButton 同一支）。
+         承载面 = 卡面（普通行）与**选中底**（选中行）两种 —— 本色那一支实测在选中行上只剩 1.03（青提），
+         而次按钮底对两种承载面分别 ≥1.50 / ≥1.12，药丸形状在选中行上也保得住。 -->
     <Style x:Key="CountPill" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource App.Support.Container}"/>
+        <Setter Property="Background" Value="{DynamicResource App.Surface.Control}"/>
         <Setter Property="CornerRadius" Value="9"/>
         <Setter Property="MinHeight" Value="18"/>
         <Setter Property="Padding" Value="9,0"/>

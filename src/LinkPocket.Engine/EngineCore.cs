@@ -172,6 +172,10 @@ public sealed class EngineCore : IEngine
             finally
             {
                 if (tx != null) await tx.DisposeAsync();
+                // 嵌套审计缓冲（批/宏在持写事务期间挂上）：事务收口（提交/回滚）后再落 SQL——
+                // SqlAuditWriter 是独立短连接，持锁期间写会撞 SQLite 写锁（busy 超时/步）。
+                FlushNestedAudit(ctx?.NestedAuditBuffer);
+                if (ctx != null) ctx.NestedAuditBuffer = null;
             }
 
             if (!dryRun)
@@ -376,13 +380,16 @@ public sealed class EngineCore : IEngine
 
                 // 嵌套审计记录实测耗时（此前恒为 0，诊断面丢失「哪一步慢」）。
                 // 观测面纪律：嵌套子审计失败**不否定父命令**（只计数 + 记日志；顶上还有父审计条目兜底）。
+                // 缓冲优先：父级持有未提交写事务（批/宏）时不落 SQL，收口后统一写（见 NestedAuditBuffer）。
                 try
                 {
-                    _audit.Write(new AuditEntry(
+                    var entry = new AuditEntry(
                         DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
                         sw.ElapsedMilliseconds, Success: true, ErrorCode: null, result.Changes,
                         DryRun: parent.DryRun, IsNested: true, StackTrace: null,
-                        ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated));
+                        ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated);
+                    if (parent.NestedAuditBuffer is { } buffer) buffer.Add(entry);
+                    else _audit.Write(entry);
                 }
                 catch (Exception auditEx)
                 {
@@ -418,11 +425,13 @@ public sealed class EngineCore : IEngine
             };
             try
             {
-                _audit.Write(new AuditEntry(
+                var entry = new AuditEntry(
                     DateTimeOffset.Now, command, parent.CorrelationId, parent.Caller,
                     sw.ElapsedMilliseconds, Success: false, ErrorCode: code, Changes: null,
                     DryRun: parent.DryRun, IsNested: true, StackTrace: ex.StackTrace?.ToString(),
-                    ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated));
+                    ArgsJson: nestedArgs.Json, BatchId: parent.BatchId, ArgsTruncated: nestedArgs.Truncated);
+                if (parent.NestedAuditBuffer is { } buffer) buffer.Add(entry);   // 缓冲优先（见 NestedAuditBuffer）
+                else _audit.Write(entry);
             }
             catch (Exception auditEx)
             {
@@ -584,6 +593,22 @@ public sealed class EngineCore : IEngine
         catch (Exception auditEx)
         {
             RegisterObservationFailure("failure audit write failed", auditEx);
+        }
+    }
+
+    /// <summary>
+    /// 把缓冲的嵌套审计写出（批/宏在事务收口后经管道或批引擎调用，见 <see cref="CommandContextImpl.NestedAuditBuffer"/>）。
+    /// 此时写锁已释放，独立短连接不再与在途写事务竞争；单条失败只计数不抛（观测面纪律：不否定已完成的事实）。
+    /// </summary>
+    internal void FlushNestedAudit(List<AuditEntry>? buffer)
+    {
+        if (buffer is null or { Count: 0 }) return;
+        var pending = buffer.ToArray();
+        buffer.Clear();   // 先清后写：写失败不重试（不无限重试、不否定事实）
+        foreach (var entry in pending)
+        {
+            try { _audit.Write(entry); }
+            catch (Exception auditEx) { RegisterObservationFailure("buffered nested audit write failed", auditEx); }
         }
     }
 

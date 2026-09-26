@@ -79,7 +79,12 @@ public sealed class AppHost
         // 数据库路径沿用旧面默认（AppContext.BaseDirectory/linkpocket.db，WAL + schema 版本链
         // 由 LinkPocketDbContextFactory 一次性启好），保证既有用户数据无缝接管（同一文件，零迁移）。
         var composed = LinkPocket.Composition.EngineComposer.Compose(
-            System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"));
+            System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"),
+            new LinkPocket.Composition.ComposeOptions
+            {
+                // 撤销栈落盘：关掉应用再打开，"还能撤销"这件事不蒸发（实测用户要求跨进程回溯）
+                UndoJournalPath = System.IO.Path.Join(AppContext.BaseDirectory, "undo-journal.json"),
+            });
 
         // null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），
         // 若未来选项被改动导致 null，这里立即失败而不是把 null 埋进 AppHost.Wire 等运行期 NRE。

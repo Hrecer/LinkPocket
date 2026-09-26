@@ -17,7 +17,10 @@ public sealed record AiToolSpec(string Name, string Description, string Paramete
 /// <summary>一次模型请求（中性形态）。</summary>
 public sealed record AiChatRequest(
     string Model, string System, IReadOnlyList<AiChatMessage> Messages,
-    IReadOnlyList<AiToolSpec> Tools, int MaxOutputTokens, bool Stream);
+    IReadOnlyList<AiToolSpec> Tools, int MaxOutputTokens, bool Stream,
+    /// <summary>本模型是否支持"服务端执行的原生联网搜索"（按厂商方言在 tools 里<b>声明</b>内置工具；
+    /// 客户端**绝不自行执行**它——那样只会拿到一个自己无法出结果的 tool_call）。</summary>
+    bool NativeWebSearch = false);
 
 /// <summary>流式增量：Kind = text（正文） / reasoning（思考原文） / tool（工具调用拼装） / usage（用量读数）。
 /// <para><c>ToolCallId</c> 是**归并键**（流式分片只稳定给出序号：OpenAI <c>idx:N</c> / Anthropic <c>blk:N</c>）；
@@ -106,7 +109,7 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
         };
         if (request.Stream)
             body["stream_options"] = new JsonObject { ["include_usage"] = true };
-        if (request.Tools.Count > 0)
+        if (request.Tools.Count > 0 || request.NativeWebSearch)
         {
             var tools = new JsonArray();
             foreach (var tool in request.Tools)
@@ -120,6 +123,10 @@ public sealed class OpenAiChatAdapter : IAiProtocolAdapter
                         ["parameters"] = JsonNode.Parse(tool.ParametersJson),
                     },
                 });
+            // 原生联网搜索（**服务端执行**的公司方言形状：小米 MiMo / 智谱 GLM / MiniMax 等
+            // 在 chat/completions 里都收 {"type":"web_search"}；客户端只声明，结果由服务端回灌）。
+            if (request.NativeWebSearch)
+                tools.Add(new JsonObject { ["type"] = "web_search" });
             body["tools"] = tools;
         }
 
@@ -291,7 +298,7 @@ public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
             ["stream"] = request.Stream,
         };
         if (!string.IsNullOrEmpty(request.System)) body["instructions"] = request.System;
-        if (request.Tools.Count > 0)
+        if (request.Tools.Count > 0 || request.NativeWebSearch)
         {
             var tools = new JsonArray();
             foreach (var tool in request.Tools)
@@ -302,6 +309,9 @@ public sealed class OpenAiResponsesAdapter : IAiProtocolAdapter
                     ["description"] = tool.Description,
                     ["parameters"] = JsonNode.Parse(tool.ParametersJson),
                 });
+            // 原生联网搜索（Responses 形状：OpenAI 官方 / DeepSeek 等收 {"type":"web_search"}，服务端执行）
+            if (request.NativeWebSearch)
+                tools.Add(new JsonObject { ["type"] = "web_search" });
             body["tools"] = tools;
         }
 
@@ -462,7 +472,7 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
             ["max_tokens"] = request.MaxOutputTokens,
             ["stream"] = request.Stream,
         };
-        if (request.Tools.Count > 0)
+        if (request.Tools.Count > 0 || request.NativeWebSearch)
         {
             var tools = new JsonArray();
             foreach (var tool in request.Tools)
@@ -471,6 +481,14 @@ public sealed class AnthropicMessagesAdapter : IAiProtocolAdapter
                     ["name"] = tool.Name,
                     ["description"] = tool.Description,
                     ["input_schema"] = JsonNode.Parse(tool.ParametersJson),
+                });
+            // 原生联网搜索（Anthropic server tool：服务端执行、结果自动回灌；客户端只声明）
+            if (request.NativeWebSearch)
+                tools.Add(new JsonObject
+                {
+                    ["type"] = "web_search_20250305",
+                    ["name"] = "web_search",
+                    ["max_uses"] = 5,
                 });
             body["tools"] = tools;
         }

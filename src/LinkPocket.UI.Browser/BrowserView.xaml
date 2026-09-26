@@ -44,6 +44,88 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="Margin" Value="0,0,12,0"/>
         </Style>
+
+        <!-- 行右键菜单：**单实例共享**（此前写在各行模板里 ⇒ 每个行容器都实例化一整套
+             7 个 MenuItem + 各自的内联 Style/DataTrigger；实测代价见 UiBench：每行容器 ~2ms 布局）。
+             绑定对象 = **当前右键命中的那一行** —— 由 `RowBorder_ContextMenuOpening` **显式**把它的
+             DataContext 设为命中行（不依赖 PlacementTarget 的继承：共享实例的下一次打开必须换人）。 -->
+        <ContextMenu x:Key="BrowserRowMenu">
+            <ContextMenu.Resources>
+                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
+            </ContextMenu.Resources>
+            <MenuItem Header="{loc:Loc common.open}" Command="{Binding Host.RowOpenCommand}" CommandParameter="{Binding}"/>
+            <MenuItem Header="{loc:Loc browser.newFolderIn.tip}" Command="{Binding Host.NewFolderCommand}"
+                      CommandParameter="{Binding Id}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{loc:Loc common.copyLink}" Command="{Binding Host.CopyUrlCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <!-- 编辑 = 打开整页编辑器（URL / 名称 / 描述 / 图标）；仅链接有，且单选时显示。
+                 只想改标题请用下面的「重命名」（就地编辑，与 Windows F2 同效）。 -->
+            <MenuItem Header="{loc:Loc common.edit}" Command="{Binding Host.EditRowCommand}" CommandParameter="{Binding}"
+                      ToolTip="{loc:Loc editor.edit.tip}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsFolder}" Value="False"/>
+                                    <Condition Binding="{Binding Host.HasMultipleSelection}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <!-- 重命名（就地编辑，F2 同效）：文件夹改名称、链接改标题；单选时显示 -->
+            <MenuItem Header="{loc:Loc common.rename}" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Host.HasMultipleSelection}" Value="False">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{loc:Loc common.details}" Command="{Binding Host.OpenDetailCommand}" CommandParameter="{Binding}"
+                      ToolTip="{loc:Loc crumb.openDetail.tip}">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="{loc:Value Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
+        </ContextMenu>
     </UserControl.Resources>
 
     <!-- 三段式：导航栏 / 内容区 / 状态栏 -->
@@ -246,87 +328,9 @@
                                     PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"
                                     MouseMove="RowBorder_MouseMove"
                                     MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
+                                    ContextMenu="{StaticResource BrowserRowMenu}"
                                     ContextMenuOpening="RowBorder_ContextMenuOpening"
                                     AllowDrop="True" DragOver="RowBorder_DragOver" DragLeave="RowBorder_DragLeave" Drop="RowBorder_Drop">
-                                <Border.ContextMenu>
-                                    <ContextMenu>
-                                        <ContextMenu.Resources>
-                                            <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}"/>
-                                        </ContextMenu.Resources>
-                                        <MenuItem Header="{loc:Loc common.open}" Command="{Binding Host.RowOpenCommand}" CommandParameter="{Binding}"/>
-                                        <MenuItem Header="{loc:Loc browser.newFolderIn.tip}" Command="{Binding Host.NewFolderCommand}"
-                                                  CommandParameter="{Binding Id}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <MenuItem Header="{loc:Loc common.copyLink}" Command="{Binding Host.CopyUrlCommand}" CommandParameter="{Binding}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <!-- 编辑 = 打开整页编辑器（URL / 名称 / 描述 / 图标）；仅链接有，且单选时显示。
-                                             只想改标题请用下面的「重命名」（就地编辑，与 Windows F2 同效）。 -->
-                                        <MenuItem Header="{loc:Loc common.edit}" Command="{Binding Host.EditRowCommand}" CommandParameter="{Binding}"
-                                                  ToolTip="{loc:Loc editor.edit.tip}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsFolder}" Value="False"/>
-                                                                <Condition Binding="{Binding Host.HasMultipleSelection}" Value="False"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </MultiDataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <!-- 重命名（就地编辑，F2 同效）：文件夹改名称、链接改标题；单选时显示 -->
-                                        <MenuItem Header="{loc:Loc common.rename}" Command="{Binding Host.RenameRowCommand}" CommandParameter="{Binding}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Host.HasMultipleSelection}" Value="False">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <MenuItem Header="{loc:Loc common.details}" Command="{Binding Host.OpenDetailCommand}" CommandParameter="{Binding}"
-                                                  ToolTip="{loc:Loc crumb.openDetail.tip}">
-                                            <MenuItem.Style>
-                                                <Style TargetType="MenuItem" BasedOn="{StaticResource LpMenuItem}">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </MenuItem.Style>
-                                        </MenuItem>
-                                        <MenuItem Header="{loc:Value Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
-                                    </ContextMenu>
-                                </Border.ContextMenu>
                                 <Border.InputBindings>
                                     <MouseBinding Gesture="LeftDoubleClick"
                                                   Command="{Binding DataContext.RowOpenCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -457,7 +461,7 @@
                                         <!-- 就地改名编辑框（Windows 口径）：覆盖在名称文本与计数药丸之上，
                                              宽度 = 名称列剩余整宽（跨 文本/药丸/余白 三列，由 * 列吸收剩余）；
                                              数据驱动（IsRenaming 是 VM 重命名会话的投影）+ 自持 Enter/Esc/失焦语义 -->
-                                        <views:InlineNameEditor Grid.Column="1" Grid.ColumnSpan="3"
+                                        <views:LazyInlineNameEditor Grid.Column="1" Grid.ColumnSpan="3"
                                                                 HorizontalAlignment="Stretch"
                                                                 IsEditing="{Binding IsRenaming}"
                                                                 Text="{Binding Host.EditingName, Mode=TwoWay}"

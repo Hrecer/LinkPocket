@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- 产品版本：**备份的 `app_version` 字段直接取它**（`BackupIO.AppVersionOfThisBuild` 读程序集信息版本）——
          "这份包是哪个版本写出来的"是跨版本迁移的关键诊断信息，必须准确。 -->
-    <Version>3.0.0</Version>
+    <Version>3.2.0</Version>
     <!-- 不要给信息版本追加 "+<commit>" 后缀：备份字段与展示处一律要干净的语义化版本号 -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>

@@ -160,8 +160,18 @@ public sealed record UndoEntry(
     CallerRef Caller,
     string? GroupId = null)
 {
-    /// <summary>最近一步的原命令（撤销清单展示用；多步记录取最后一步）。</summary>
-    public string Command => Steps.Count > 0 ? Steps[^1].Command : string.Empty;
+    /// <summary>
+    /// **步骤未驻留内存时的展示摘要**（最近一步的原命令名）。
+    /// </summary>
+    /// <remarks>
+    /// 跨进程撤销日志把"大条目"（一次批量动作动辄上千步）的步骤放在日志的**独立分片**里：
+    /// 启动只读摘要（撤销清单、Ctrl+Z 可用性都够用），真要撤销到它时由协调器**按需水合**步骤
+    /// （见 <c>UndoCoordinator</c> 的三档落盘方案）。步骤已驻留时 <see cref="Command"/> 仍以真实步骤为准。
+    /// </remarks>
+    public string? SummaryCommand { get; init; }
+
+    /// <summary>最近一步的原命令（撤销清单展示用；多步记录取最后一步；未水合时回落到摘要）。</summary>
+    public string Command => Steps.Count > 0 ? Steps[^1].Command : SummaryCommand ?? string.Empty;
 }
 
 /// <summary>
@@ -180,6 +190,19 @@ public interface IUndoCoordinator
 
     /// <summary>弹出待撤销条目（id 缺省 = 最近一条；未找到返回 null），弹出后转入重做栈。</summary>
     Task<UndoEntry?> TakeUndoAsync(string? id, CancellationToken ct);
+
+    /// <summary>
+    /// **取（不弹）**最近一条撤销记录，**并保证步骤已就绪**（大条目的步骤在日志分片里时按需水合）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 与 <see cref="ListAsync"/> 的分工：列表返回的是**摘要视图**（大条目的 <c>Steps</c> 为空，
+    /// 只够显示"有多少条/叫什么"）；**要执行**就必须走本方法 —— 处理器若从列表里拿步骤，
+    /// 大条目会"一步都不跑却报成功"（实测：1631 步的批量删除、撤销报 ok 但 touched/events 全空）。
+    /// </remarks>
+    Task<UndoEntry?> PeekUndoAsync(string? id, CancellationToken ct);
+
+    /// <summary>**取（不弹）**最近一条重做记录，步骤同样保证已就绪（见 <see cref="PeekUndoAsync"/>）。</summary>
+    Task<UndoEntry?> PeekRedoAsync(CancellationToken ct);
 
     /// <summary>弹出待重做条目（重放原命令原参数；栈空返回 null）。</summary>
     Task<UndoEntry?> TakeRedoAsync(CancellationToken ct);

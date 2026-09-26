@@ -230,7 +230,7 @@ public class AiReconcileTests
                     [TextChunk("copied"), "data: [DONE]"],
                 ];
             });
-        await ConfigureAsync(host, AiMode.AutoApply, advancedTools: true);   // folders.copy 是 Tier 2
+        await ConfigureAsync(host, AiMode.AutoApply);   // folders.copy 已放回默认层（2026-09-26 收敛）
         var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
 
         await host.Assistant.SendAsync(sessionId, "复制文件夹");

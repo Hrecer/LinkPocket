@@ -8,6 +8,7 @@ public static class SearchModule
     public static IReadOnlyList<ICommandHandler> CreateHandlers() =>
     [
         new SearchLinksHandler(),
+        new SearchCountHandler(),
         new SearchExplainHandler(),
     ];
 }

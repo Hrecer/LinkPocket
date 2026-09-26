@@ -59,8 +59,23 @@ public static class AppTokens
     /// 同一个令牌服务两种承载面 ⇒ 调一处必破另一处。
     /// 档位 = **够得开阈值的最浅档**（对卡面 / 卡面悬停 / 页面底三条阈值一起量）：
     /// 取"允许的最深档"会一路下探到 T76，同一彩度在更低明度上就是**灰**（实测被指"选中行过深偏灰"）。
+    /// <b>色相 = 表面族色相</b>（不是容器槽成员的色相）：选中行铺在页面 / 卡面上，只有与背景同色调才读作
+    /// "这一行被选中"（实测青提：容器槽成员是奶黄 ⇒ 选中底是黄的，与绿背景差 35°，被指"选中态是黄色"）。
     /// </remarks>
     public const string SurfaceSelected = "App.Surface.Selected";
+
+    /// <summary>
+    /// **次按钮底**（TonalButton / SoftPillButton / 计数药丸的淡色底）——表面族色相 + 表面族彩度，
+    /// 取"对卡面 ≥ <c>PaletteSolver.ControlSurfaceMinContrastOnCard</c> 的**最浅达标档**"。
+    /// </summary>
+    /// <remarks>
+    /// 为什么与 <see cref="SupportContainer"/> 分开：支撑容器 = **配色成员本色**，深浅随用户配色在
+    /// 对卡面 1.02–1.97 之间摆动 —— 青提那套本色近白（按钮与命令栏胶囊**重合**）、暮色玫瑰那套本色 T73
+    /// （一整块重色）。而"次按钮 / 计数药丸"这类面必须**每套主题都稳定可见**且不抢戏，故锚在表面族上：
+    /// 与页面底 / 卡面**同色调**（读作"这一层的浅色控件面"），且对卡面 / 面板 / 选中行底三种承载面都分得开。
+    /// 真需要"本色"的地方（chip / 徽标 / 分段指示器 / 图标容器）仍用 <see cref="SupportContainer"/>。
+    /// </remarks>
+    public const string SurfaceControl = "App.Surface.Control";
 
     /// <summary>近白胶囊容器（返回圆钮 / 编辑页按钮组 / 工具页分段 / 命令栏）= 今天的 <c>TintCard</c>。</summary>
     public const string SurfaceTintCard = "App.Surface.TintCard";
@@ -223,7 +238,7 @@ public static class AppTokens
     /// <summary>全部**颜色**令牌（字体令牌不含在内——它们不是 <c>SolidColorBrush</c>）。</summary>
     public static IReadOnlyList<string> AllColorTokens { get; } = new[]
     {
-        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceCardHover, SurfaceBandHover, SurfaceSelected, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceHeaderBand, SurfaceDialog, SurfaceFloating,
+        SurfaceBase, SurfaceCard, SurfaceHover, SurfaceCardHover, SurfaceBandHover, SurfaceSelected, SurfaceControl, SurfaceTintCard, SurfaceTint, SurfacePanel, SurfaceHeaderBand, SurfaceDialog, SurfaceFloating,
         TextPrimary, TextSecondary, TextMuted, TextOnAccent, TextOnContainer,
         AccentFill, AccentIcon, AccentText, AccentContainer,
         SupportContainer, SupportIcon,

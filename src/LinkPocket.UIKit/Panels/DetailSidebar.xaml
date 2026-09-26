@@ -100,10 +100,12 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
+                <!-- 详情栏的「打开」用**淡底深墨**（SoftPillButton）：右栏是"看信息"的地方，
+                     一整块强调填充（T40 深底 + 白字）在这里又亮又抢戏（用户实测："极其糟糕"）。 -->
                 <Button Grid.Column="0" Height="32"
                         VerticalAlignment="Center" Padding="12,0"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                        Style="{StaticResource PrimaryPillButton}"
+                        Style="{StaticResource SoftPillButton}"
                         Grid.ColumnSpan="{Binding OpenColumnSpan}"
                         Command="{Binding OpenCommand}"
                         ToolTip="{loc:Value OpenToolTip}"

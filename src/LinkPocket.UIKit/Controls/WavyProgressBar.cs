@@ -36,6 +36,12 @@ public class WavyProgressBar : FrameworkElement
         nameof(TrackBrush), typeof(Brush), typeof(WavyProgressBar),
         new FrameworkPropertyMetadata(null, OnBrushChanged));
 
+    /// <summary>不确定态（进度未知）：忽略 <see cref="Value"/>，画一段**行进中的波浪**（MD3 indeterminate wavy）；
+    /// 不给滑标（滑标表示确定位置）。用于"正在导入 / 正在导出"这类只知道在跑、不知道跑到哪的操作。</summary>
+    public static readonly DependencyProperty IsIndeterminateProperty = DependencyProperty.Register(
+        nameof(IsIndeterminate), typeof(bool), typeof(WavyProgressBar),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
     public double Minimum
     {
         get => (double)GetValue(MinimumProperty);
@@ -67,6 +73,16 @@ public class WavyProgressBar : FrameworkElement
         get => (Brush?)GetValue(TrackBrushProperty);
         set => SetValue(TrackBrushProperty, value);
     }
+
+    /// <summary>不确定态：忽略 <see cref="Value"/>，画一段行进中的波浪（不给滑标）。</summary>
+    public bool IsIndeterminate
+    {
+        get => (bool)GetValue(IsIndeterminateProperty);
+        set => SetValue(IsIndeterminateProperty, value);
+    }
+
+    /// <summary>不确定态里波浪段的长度（占轨道宽度的比例）。</summary>
+    public double IndeterminateSpanRatio { get; set; } = 0.34;
 
     /// <summary>波长（px）：一个完整正弦周期的横向长度。</summary>
     public double WaveLength { get; set; } = 16.0;
@@ -177,8 +193,53 @@ public class WavyProgressBar : FrameworkElement
         if (w <= 0 || h <= 0 || _activePen == null || _trackPen == null || _thumbPen == null) return;
 
         var cy = h / 2;
-        var span = Maximum - Minimum;
-        var p = span > 0 ? Math.Clamp((Value - Minimum) / span, 0.0, 1.0) : 0.0;
+
+        // 不确定态：不画滑标、不看 Value —— 轨道铺满直线，上面跑一段波浪（行进 + 起伏都取自 _phase）
+        if (IsIndeterminate)
+        {
+            dc.DrawLine(_trackPen, new Point(0, cy), new Point(w, cy));
+
+            var span = Math.Max(StrokeWidth * 2, w * Math.Clamp(IndeterminateSpanRatio, 0.05, 1.0));
+            // 行进周期 = 2 个起伏周期（避免"跑得太快像故障"，也别慢到看着停了）
+            var travel = (_phase / (Math.PI * 4)) % 1.0;
+            var head = travel * (w + span) - span;          // 从左侧屏外进、右侧屏外出
+            var from = Math.Max(0.0, head);
+            var to = Math.Min(w, head + span);
+            if (to > from)
+            {
+                var geometry = new StreamGeometry();
+                using (var ctx = geometry.Open())
+                {
+                    var started = false;
+                    for (var x = from; x <= to; x += SampleStep)
+                    {
+                        var y = cy + Amplitude * Math.Sin(x / WaveLength * 2 * Math.PI - _phase);
+                        if (!started)
+                        {
+                            ctx.BeginFigure(new Point(x, y), false, false);
+                            started = true;
+                        }
+                        else
+                        {
+                            ctx.LineTo(new Point(x, y), true, false);
+                        }
+                    }
+
+                    if (started)
+                    {
+                        var yEnd = cy + Amplitude * Math.Sin(to / WaveLength * 2 * Math.PI - _phase);
+                        ctx.LineTo(new Point(to, yEnd), true, false);
+                    }
+                }
+
+                geometry.Freeze();
+                dc.DrawGeometry(null, _activePen, geometry);
+            }
+            return;
+        }
+
+        var spanValue = Maximum - Minimum;
+        var p = spanValue > 0 ? Math.Clamp((Value - Minimum) / spanValue, 0.0, 1.0) : 0.0;
         var px = Math.Max(StrokeWidth, p * (w - StrokeWidth));   // 滑标不贴边被裁
 
         // 剩余轨道：直线

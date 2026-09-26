@@ -27,6 +27,14 @@ public class AiLoopTests
                 CommandCaps.Query),
             new CommandDescriptor("trash.purge", "trash", "purge",
                 [ParamSpec.Req<string>("id", "id")], CommandCaps.Mutation | CommandCaps.Destructive),
+            new CommandDescriptor("folders.copy", "folders", "copy folder",
+                [ParamSpec.Req<string>("folder_id", "Folder ID")], CommandCaps.Mutation | CommandCaps.Reversible),
+            new CommandDescriptor("folders.delete", "folders", "delete folder",
+                [ParamSpec.Req<string>("folder_id", "Folder ID"),
+                 ParamSpec.Opt<string>("cascade", "trash_links | delete_all | move_to_list")],
+                CommandCaps.Mutation | CommandCaps.Reversible),
+            new CommandDescriptor("links.export", "links", "export links",
+                [ParamSpec.Req<string>("file_path", "Target path")], CommandCaps.Mutation | CommandCaps.FileIo),
             new CommandDescriptor("maintenance.reinit", "maintenance", "reset",
                 [], CommandCaps.Mutation | CommandCaps.Destructive),
         ]);
@@ -45,6 +53,23 @@ public class AiLoopTests
         Assert.False(catalog.IsExposed("maintenance.reinit", advancedTools: true));   // 永不暴露
         Assert.DoesNotContain(catalog.Build(advancedTools: true), t => t.Name == "maintenance.reinit");
         Assert.DoesNotContain(catalog.Build(advancedTools: false), t => t.Name == "trash.purge");
+
+        // 2026-09-26 收敛：可撤销/只写文件/轻度写的命令放回默认层（原先 23 条挤在门后）
+        Assert.True(catalog.IsExposed("folders.copy", advancedTools: false));
+        Assert.True(catalog.IsExposed("links.export", advancedTools: false));
+
+        // folders.delete 按 cascade 分档：进回收站（可还原、有撤销逆向）默认给；两个不可逆档留门后
+        Assert.Equal(AiToolExposure.Exposed,
+            catalog.ExposureOf("folders.delete", advancedTools: false, """{"folder_id":"f1"}"""));
+        Assert.Equal(AiToolExposure.Exposed,
+            catalog.ExposureOf("folders.delete", advancedTools: false, """{"folder_id":"f1","cascade":"trash_links"}"""));
+        Assert.Equal(AiToolExposure.AdvancedToolsRequired,
+            catalog.ExposureOf("folders.delete", advancedTools: false, """{"folder_id":"f1","cascade":"delete_all"}"""));
+        Assert.Equal(AiToolExposure.AdvancedToolsRequired,
+            catalog.ExposureOf("folders.delete", advancedTools: false, """{"folder_id":"f1","cascade":"move_to_list"}"""));
+        Assert.Equal(AiToolExposure.Exposed,
+            catalog.ExposureOf("folders.delete", advancedTools: true, """{"folder_id":"f1","cascade":"delete_all"}"""));
+        Assert.NotNull(catalog.SafeVariantHint("folders.delete", advancedTools: false));    // 被挡时给模型可执行的话
     }
 
     [Fact]
@@ -192,9 +217,145 @@ public class AiLoopTests
         Assert.Empty(detail.Approvals);                                              // 禁止 ≠ 要问：连审批卡都没有
         using var doc = JsonDocument.Parse(call.ResultJson!);
         Assert.Equal("tool_not_allowed", doc.RootElement.GetProperty("error").GetString());
-        Assert.Equal("step_not_exposed:maintenance.reinit", doc.RootElement.GetProperty("reason").GetString());
+        Assert.Equal("step_never_exposed:maintenance.reinit", doc.RootElement.GetProperty("reason").GetString());
         var found = await host.Client.QueryAsync<object>("folders.find", new { name = "不该出现" });
         Assert.Empty(Assert.IsAssignableFrom<System.Collections.IEnumerable>(found));   // 第一步也没执行
+    }
+
+    /// <summary>
+    /// **默认档就放行**（2026-09-26 收敛）：没开"高级工具"时，AI 也能把文件夹删进回收站。
+    /// 这条是用户原话的落地——"AI 应该可以删除，只是操作的时候需要我弹窗确认而已"：
+    /// 删进回收站可还原、且登记了撤销逆向，属安全档；物理删除档仍在门后（下一条测试钉住）。
+    /// </summary>
+    [Fact]
+    public async Task 直接调用_删文件夹进回收站_没开高级工具也放行_且真的进了回收站()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: client => client.ExecuteAsync<object>("folders.create", new { name = "待清理" }),
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<FolderDto>>("folders.find", new { name = "待清理" }))
+                    .Single().FolderId;
+                // 故意**不传** cascade：走引擎默认（trash_links）——这就是"安全档"
+                return
+                [
+                    [ToolChunk(0, "c1", "folders.delete", $$"""{"folder_id":"{{id}}"}"""), "data: [DONE]"],
+                    [TextChunk("done"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.AutoApply);          // advancedTools 缺省 false
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "把这个空文件夹删掉");
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        Assert.Equal(AiToolCallState.Completed, detail.ToolCalls.Single().State);      // ← 不再被拒
+        Assert.Contains(detail.Changes, c => c.EntityType == "folder" && c.Kind == AiChangeKind.Delete);
+        // 数据面：主表里没有了，但**在回收站里**（可还原——这正是"安全档"的判据）
+        Assert.Empty(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "待清理" }));
+        var trash = await host.Client.QueryAsync<List<TrashEntryDto>>("trash.list");
+        Assert.Contains(trash, e => e.Name == "待清理" && e.EntryType == TrashEntryType.Folder);
+    }
+
+    /// <summary>
+    /// **不可逆档仍在门后**：没开"高级工具"时，`cascade=delete_all`（物理删除）与 `move_to_list`
+    /// 都要被拦在分发入口，**数据一动不动**——这是"安全档默认给"的前提。
+    /// </summary>
+    [Fact]
+    public async Task 直接调用_物理删除文件夹_没开高级工具被拦_数据不动()
+    {
+        using var host = await NewSeededHostAsync(
+            seed: client => client.ExecuteAsync<object>("folders.create", new { name = "别动我" }),
+            scripts: async client =>
+            {
+                var id = (await client.QueryAsync<List<FolderDto>>("folders.find", new { name = "别动我" }))
+                    .Single().FolderId;
+                return
+                [
+                    [ToolChunk(0, "c1", "folders.delete",
+                        $$"""{"folder_id":"{{id}}","cascade":"delete_all"}"""), "data: [DONE]"],
+                    [TextChunk("done"), "data: [DONE]"],
+                ];
+            });
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "连数据一起物理删掉");
+
+        var call = (await host.Assistant.GetSessionAsync(sessionId)).ToolCalls.Single();
+        Assert.Equal(AiToolCallState.Rejected, call.State);
+        using var doc = JsonDocument.Parse(call.ResultJson!);
+        // 直接调用 → 原因不带 step_ 前缀（批步骤那条见"拒绝原因三态可分"测试）
+        Assert.Equal("advanced_tools_required:folders.delete", doc.RootElement.GetProperty("reason").GetString());
+        Assert.Contains("trash_links", doc.RootElement.GetProperty("hint").GetString()!);   // 给出安全档出路
+        // 数据面：文件夹还在（拦在入口 = 零副作用）
+        Assert.Single(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "别动我" }));
+    }
+
+    /// <summary>
+    /// 拒绝原因**三态可分**：名字不存在（模型拼错）≠ 命令存在但需开高级开关 ≠ 永不暴露。
+    /// 现场踩过：三者原先都回 <c>step_not_exposed</c>，模型据此对用户宣称"引擎没有向 AI 开放删除文件夹的接口"，
+    /// 真实原因只是"设置里没开高级工具"。这条钉子钉住"原因 + 可执行指引 + 候选名字"三件套。
+    /// </summary>
+    [Fact]
+    public async Task 批_拒绝原因三态可分_名字不存在给候选命令_需高级开关指明去设置()
+    {
+        // ① 名字不存在（模型凭直觉拼的 folders.trash）→ unknown_command + 真实存在的同域命令
+        using (var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "batch.run", BatchArgs(
+                ("a", "folders.trash", """{"folder_id":"x"}""", null))), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]))
+        {
+            await ConfigureAsync(host, AiMode.AutoApply);
+            var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+            await host.Assistant.SendAsync(sessionId, "删掉空文件夹");
+
+            var call = (await host.Assistant.GetSessionAsync(sessionId)).ToolCalls.Single();
+            using var doc = JsonDocument.Parse(call.ResultJson!);
+            Assert.Equal("step_unknown_command:folders.trash", doc.RootElement.GetProperty("reason").GetString());
+            var existing = doc.RootElement.GetProperty("existing_commands").EnumerateArray()
+                .Select(e => e.GetString()).ToList();
+            Assert.Contains("folders.delete", existing);          // 真名直接摆出来，一轮就能改对
+        }
+
+        // ② 命令存在、但会话没开"高级工具" → advanced_tools_required + 指明去哪开
+        using (var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "batch.run", BatchArgs(
+                ("a", "folders.delete", """{"folder_id":"x","cascade":"delete_all"}""", null))), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]))
+        {
+            await ConfigureAsync(host, AiMode.AutoApply);          // advancedTools 缺省 false
+            var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+            await host.Assistant.SendAsync(sessionId, "删掉空文件夹");
+
+            var call = (await host.Assistant.GetSessionAsync(sessionId)).ToolCalls.Single();
+            using var doc = JsonDocument.Parse(call.ResultJson!);
+            Assert.Equal("step_advanced_tools_required:folders.delete",
+                doc.RootElement.GetProperty("reason").GetString());   // ← 不再是笼统的 step_not_exposed
+            var hint = doc.RootElement.GetProperty("hint").GetString()!;
+            Assert.Contains("Advanced tools", hint);
+            Assert.Contains("trash_links", hint);                     // 顺带告诉它：安全档本来就放行，别放弃
+        }
+
+        // ③ 开了"高级工具"之后同一条命令放行（原因码与开关一一对应，不是永远拦）
+        using (var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "folders.create", """{"name":"高级夹"}"""), "data: [DONE]"],
+            [TextChunk("ok"), "data: [DONE]"],
+        ]))
+        {
+            await ConfigureAsync(host, AiMode.AutoApply, advancedTools: true);
+            var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+            await host.Assistant.SendAsync(sessionId, "建个夹");
+            var call = (await host.Assistant.GetSessionAsync(sessionId)).ToolCalls.Single();
+            Assert.Equal(AiToolCallState.Completed, call.State);
+        }
     }
 
     [Fact]
@@ -672,6 +833,44 @@ public class AiLoopTests
 
         // 库里的夹子还原不了——这正是回执要点名的事实，不是静默吞掉
         Assert.NotEmpty(await host.Client.QueryAsync<List<FolderDto>>("folders.find", new { name = "回溯夹" }));
+    }
+
+    /// <summary>
+    /// **回归钉子**：AI 通过 <c>batch.run</c> 做的改动必须被标成可撤销，回溯要真的退掉它。
+    /// 修复前的两个连带症状（用户原话："对话确实没了，但它显示回溯了零项改动，可 AI 明明都做了改动"）：
+    /// ① 台账按顶层描述符的能力位否决 → <c>batch.run</c> 不带 Reversible，于是批里的每次创建/删除全标成
+    ///    <c>Undoable=false</c>（而撤销栈里其实躺着记录）；② 回溯因此取不到归属键，报"回退 0 项"，
+    ///    数据原封不动，那条撤销记录从此再没人消费。
+    /// </summary>
+    [Fact]
+    public async Task 回溯_批里的改动也按撤销栈标可撤销_并真的退掉()
+    {
+        using var host = NewHost(
+        [
+            [ToolChunk(0, "c1", "batch.run", BatchArgs(
+                ("a", "links.create", """{"url":"https://batch.example/x","title":"批建"}""", null))), "data: [DONE]"],
+            [TextChunk("done"), "data: [DONE]"],
+        ]);
+        await ConfigureAsync(host, AiMode.AutoApply);
+        var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
+
+        await host.Assistant.SendAsync(sessionId, "用批建一个书签");
+
+        var detail = await host.Assistant.GetSessionAsync(sessionId);
+        Assert.Contains(detail.Changes, change => change.Undoable);            // ← 修复前全为 false
+        Assert.Single(await host.Client.QueryAsync<List<LinkDto>>("links.find_by_url",
+            new { url = "https://batch.example/x" }));
+
+        var result = await host.Assistant.RewindTurnAsync(sessionId, detail.Turns.Single().TurnId);
+
+        Assert.Equal(1, result.TotalCalls);
+        Assert.Equal(1, result.UndoneCalls);                                  // ← 修复前恒为 0
+        Assert.Equal(0, result.MissingCalls);
+        Assert.Equal(1, result.RemovedTurns);
+
+        // 数据面真的回退了：主表里不再有这条链接（创建类的撤销 = 软删进回收站）
+        Assert.Empty(await host.Client.QueryAsync<List<LinkDto>>("links.find_by_url",
+            new { url = "https://batch.example/x" }));
     }
 
     [Fact]

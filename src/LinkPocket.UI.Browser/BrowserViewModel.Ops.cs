@@ -175,12 +175,26 @@ public partial class BrowserViewModel
             // 新项不在当前视图（在别的文件夹内新建）→ 无可见行可改名，只报告
             if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId)) return;
 
+            // **乐观插入**（2026-09-26）：不等事件刷新，新行立即置尾出现——
+            // 万行目录下"建夹 170ms + 300ms 防抖 + 整表重建"就是用户实测的"新建要卡半秒甚至一秒"。
+            // 时间戳用引擎返回值（DTO 缺省才落到本机时钟），事件刷新（改名期间被推迟）稍后按真值对齐。
+            var dto = created.Data;
+            Rows.Add(new BrowserRowViewModel(newId, isFolder: true, name)
+            {
+                LinkCount = 0,
+                ModifiedAt = dto?.UpdatedAt ?? DateTime.Now,
+                CreatedAt = dto?.CreatedAt ?? DateTime.Now,
+                LastViewedAt = dto?.LastVisitedAt,
+                Host = this,
+            });
+
             // Windows 口径：新项临时置尾（不参与排序）+ 选中 + 滚入视口，并直接进入就地改名
             MarkRecentlyPinned(new[] { newId });
             SetSelection(new[] { newId }, newId);
             _pendingFocusId = newId;
             BeginRename(newId, isFolder: true, name, BrowserPane.Main);
-            // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）
+            // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）；
+            // 改名期间该刷新被推迟（RefreshPreservingSelectionAsync），提交/取消时立即补跑
         }
         catch (Exception)
         {

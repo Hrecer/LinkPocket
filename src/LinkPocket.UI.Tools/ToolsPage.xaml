@@ -348,9 +348,11 @@
                                     <StackPanel x:Name="ImportProgressRow" Visibility="Collapsed" Margin="0,16,0,0">
                                         <TextBlock x:Name="ImportProgressText" FontSize="12"
                                                    Foreground="{DynamicResource App.Text.Secondary}"/>
-                                        <ProgressBar x:Name="ImportProgressBar" Height="6" Margin="0,8,0,0"
-                                                     IsIndeterminate="True" Foreground="{DynamicResource App.Accent.Fill}"
-                                                     Background="{DynamicResource App.Surface.Hover}"/>
+                                        <!-- MD3 不确定态波浪进度条（全站同一种进度条；原生 ProgressBar 是方形实心块，与 MD3E 语言不符） -->
+                                        <views:WavyProgressBar x:Name="ImportProgressBar" Height="16" Margin="0,8,0,0"
+                                                               IsIndeterminate="True"
+                                                               ActiveBrush="{DynamicResource App.Accent.Fill}"
+                                                               TrackBrush="{DynamicResource App.Line.Variant}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -454,9 +456,11 @@
                                     <StackPanel x:Name="ExportProgressRow" Visibility="Collapsed" Margin="0,16,0,0">
                                         <TextBlock x:Name="ExportProgressText" FontSize="12"
                                                    Foreground="{DynamicResource App.Text.Secondary}"/>
-                                        <ProgressBar x:Name="ExportProgressBar" Height="6" Margin="0,8,0,0"
-                                                     IsIndeterminate="True" Foreground="{DynamicResource App.Accent.Fill}"
-                                                     Background="{DynamicResource App.Surface.Hover}"/>
+                                        <!-- MD3 不确定态波浪进度条（全站同一种进度条；原生 ProgressBar 是方形实心块，与 MD3E 语言不符） -->
+                                        <views:WavyProgressBar x:Name="ExportProgressBar" Height="16" Margin="0,8,0,0"
+                                                               IsIndeterminate="True"
+                                                               ActiveBrush="{DynamicResource App.Accent.Fill}"
+                                                               TrackBrush="{DynamicResource App.Line.Variant}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

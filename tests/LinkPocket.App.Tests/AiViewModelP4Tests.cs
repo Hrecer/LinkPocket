@@ -170,14 +170,11 @@ public class AiViewModelP4Tests
             var (vm, stub) = NewVm();
             await vm.LoadAsync();
 
-            Assert.True(vm.IsProgressIndeterminate);                       // 还没有批进度读数
+            Assert.True(vm.ProgressTextValue.IsEmpty);            // 还没有批进度读数（进度条已退场，只留文字）
 
             stub.RaiseNotify(new AiNotification(AiNotificationKind.ToolProgress, "s-1",
                 Progress: new AiBatchProgress("t-1", "c-1", "running", 12, 40)));
 
-            Assert.False(vm.IsProgressIndeterminate);
-            Assert.Equal(12, vm.ProgressValue);
-            Assert.Equal(40, vm.ProgressMaximum);
             Assert.Equal("ai.progress.steps", vm.ProgressTextValue.Key);
         });
 

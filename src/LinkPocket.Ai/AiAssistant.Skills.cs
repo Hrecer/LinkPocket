@@ -49,6 +49,57 @@ public sealed partial class AiAssistant
             .ConfigureAwait(false);
     }
 
+    // ── 宏管理面（2026-09-26：界面此前只能靠对话让 AI 存/跑宏）──────────────────
+
+    /// <summary>调用宏命令的统一入口：管理操作以 **User** 身份（与 Agent 面的只读查询区分）。</summary>
+    private CallOptions MacroCall => new(Caller: new CallerRef(CallerKind.Ui, null));
+
+    public async Task<IReadOnlyList<AiMacroInfo>> ListMacrosAsync(CancellationToken ct = default)
+    {
+        var data = await _client.QueryAsync<object>("macro.list", null, MacroCall, ct).ConfigureAwait(false);
+        var element = ToElement(data);
+        var items = element.ValueKind == JsonValueKind.Object && element.TryGetProperty("macros", out var macros)
+            ? macros
+            : element;
+        var list = new List<AiMacroInfo>();
+        foreach (var item in AiJsonWalk.EnumerateArrayOrEmpty(items))
+        {
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("name", out var name)) continue;
+            var updatedAt = item.TryGetProperty("updated_at", out var at) && at.ValueKind == JsonValueKind.String
+                            && DateTimeOffset.TryParse(at.GetString(), out var parsed) ? parsed : DateTimeOffset.MinValue;
+            if (name.GetString() is { Length: > 0 } value) list.Add(new AiMacroInfo(value, updatedAt));
+        }
+        return list.OrderBy(m => m.Name, NameOrder.Comparer).ToArray();
+    }
+
+    public async Task<string> GetMacroScriptAsync(string name, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var data = await _client.QueryAsync<object>("macro.get", new { name }, MacroCall, ct).ConfigureAwait(false);
+        return ToElement(data).GetRawText();
+    }
+
+    public async Task SaveMacroAsync(string name, string scriptJson, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        // JSON 先本地解析一次：语法错误当场抛（带位置），而不是让引擎给一句笼统拒绝
+        var script = System.Text.Json.JsonDocument.Parse(scriptJson).RootElement.Clone();
+        await _client.MacroSaveRawAsync(name, script, MacroCall, ct).ConfigureAwait(false);
+        LpLog.Debug($"macro saved: {name}", category: "ai.macro");
+    }
+
+    public Task DeleteMacroAsync(string name, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return _client.MacroDeleteAsync(name, MacroCall, ct);
+    }
+
+    public Task RunMacroAsync(string name, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return _client.MacroRunAsync(name, MacroCall, ct);
+    }
+
     public async Task<IReadOnlyList<string>> ListMacroNamesAsync(CancellationToken ct = default)
     {
         try

@@ -104,6 +104,17 @@ public sealed partial class AiAssistant : IAiAssistant
         public CancellationTokenSource Cts { get; } = cts;
         public bool WriteHoldTaken { get; set; }
 
+        /// <summary>
+        /// 本回合是否执行过**用户已批准的批 / 宏**（走到引擎执行 = 审批已经放行）。
+        /// </summary>
+        /// <remarks>
+        /// 批脚本动辄一次产生几百上千条变更记录（实测：一次移动根目录全部书签 = 1430 条），
+        /// 这是用户**看见步数并批准**的整体操作，不该再被"单回合变更数上限"枪毙——
+        /// 实测它把一次成功的批量移动标成了"本轮失败"（LP.AI.011），而数据其实全都移完了。
+        /// 单回合变更上限仍然约束**未走批的散写**（防模型失控逐条狂改）。
+        /// </remarks>
+        public bool HasApprovedBatch { get; set; }
+
         /// <summary>本回合模型用量累计（含摘要请求；服务商未声明用量 = 0 → 落盘为 null）。</summary>
         public int InputTokens { get; set; }
         public int OutputTokens { get; set; }

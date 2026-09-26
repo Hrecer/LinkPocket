@@ -78,6 +78,7 @@ public partial class SearchView : UserControl
                 _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Search, commands), () => ShortcutScope.Search);
                 _shortcutHost.Attach(this);
                 _shortcutHost.AttachControls(ShortcutPage.Search, this, commands);
+                PageRefresh.Register(this, _vm.RefreshCommand);   // 右键「刷新」= F5 同一个命令
             }
         };
     }

@@ -7,13 +7,26 @@ namespace LinkPocket.Modules.Folders;
 /// <summary>文件夹域内部支撑：后代收集 / 排序 / 面包屑（internal）。</summary>
 internal static class FolderSupport
 {
-    /// <summary>递归收集后代文件夹 ID（不含自身；内存树遍历——文件夹数量有限）。</summary>
+    /// <summary>
+    /// 收集后代文件夹 ID（不含自身）。**迭代 + 子查表 + 环保护**（2026-09-26 重写）：
+    /// 原实现是"每层对全量文件夹做一次 Where 扫描"的递归 —— O(F × 深度)，深层树放大明显；
+    /// 且无环保护，坏数据父链成环（A→B→A）时是**栈溢出**而不是报错。子查表一次建好（O(F)），
+    /// BFS 队列推进（栈深与树深无关），visited 集合保证成环即终止。
+    /// </summary>
     public static void CollectDescendantIds(IReadOnlyList<Folder> allFolders, string folderId, List<string> into)
     {
-        foreach (var child in allFolders.Where(f => f.ParentId == folderId))
+        var childrenOf = allFolders.ToLookup(f => f.ParentId, f => f.FolderId, StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal) { folderId };
+        var pending = new Queue<string>();
+        pending.Enqueue(folderId);
+        while (pending.Count > 0)
         {
-            into.Add(child.FolderId);
-            CollectDescendantIds(allFolders, child.FolderId, into);
+            foreach (var child in childrenOf[pending.Dequeue()])
+                if (visited.Add(child))
+                {
+                    into.Add(child);
+                    pending.Enqueue(child);
+                }
         }
     }
 

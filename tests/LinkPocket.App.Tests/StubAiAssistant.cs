@@ -1,4 +1,4 @@
-﻿using LinkPocket.Contracts;
+﻿﻿using LinkPocket.Contracts;
 
 namespace LinkPocket.App.Tests;
 
@@ -106,7 +106,13 @@ public sealed class StubAiAssistant : IAiAssistant
 
     public AiSelectionResolution ResolveSelection() => Selection;
 
-    public bool IsTurnRunning => false;
+    /// <summary>回合在跑（测试可设；默认 false）。</summary>
+    public bool TurnRunning { get; set; }
+
+    public bool IsTurnRunning => TurnRunning;
+
+    /// <summary>CancelTurnAsync 的调用记录（含传 null = 取消任意）。</summary>
+    public List<string?> CancelCalls { get; } = [];
     public bool IsWriteFrozen => false;
     public string? WriteFreezeSessionId => null;
 
@@ -165,7 +171,11 @@ public sealed class StubAiAssistant : IAiAssistant
         return Task.CompletedTask;
     }
 
-    public Task CancelTurnAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<bool> CancelTurnAsync(string? sessionId, CancellationToken ct = default)
+    {
+        CancelCalls.Add(sessionId);
+        return Task.FromResult(TurnRunning);
+    }
 
     public Task RespondToApprovalAsync(string sessionId, string approvalId, AiApprovalDecision decision,
         string? reason = null, CancellationToken ct = default)
@@ -286,6 +296,24 @@ public sealed class StubAiAssistant : IAiAssistant
         UsageSummaryCalls.Add((string.Empty, days));
         return Task.FromResult(UsageSummary);
     }
+
+    // ── 宏管理（测试桩：空清单 + 可保存，供界面 VM 测试）──
+
+    public Task<IReadOnlyList<AiMacroInfo>> ListMacrosAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AiMacroInfo>>([]);
+
+    public Task<string> GetMacroScriptAsync(string name, CancellationToken ct = default)
+        => Task.FromResult("{\"steps\":[]}");
+
+    public Task SaveMacroAsync(string name, string scriptJson, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task DeleteMacroAsync(string name, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task RunMacroAsync(string name, CancellationToken ct = default)
+        => Task.CompletedTask;
+
 
     // ── 通知 ─────────────────────────────────────────────────
 

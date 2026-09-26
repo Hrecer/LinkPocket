@@ -83,6 +83,7 @@ public sealed partial class AiViewModel
             // 草稿态：没有可投影的会话内容，对话区是空白（空态），会话列表不动。
             if (_activeSessionId == draft.SessionId) return;
             _activeSessionId = draft.SessionId;
+            ClearUsage();   // 进草稿即清用量读数（环与上下文面板一起退场；读数由 RefreshUsageAsync 的草稿闸门守着）
             Raise(nameof(ActiveSessionId));
             ClearConversationContent();
             Mode = _mode;   // 草稿模式取偏好缺省（引擎建草稿时已定），这里保持投影一致

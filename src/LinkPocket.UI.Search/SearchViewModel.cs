@@ -120,6 +120,31 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 结果区**最多渲染多少行**。
+    /// </summary>
+    /// <remarks>
+    /// 搜索结果表用的是共享数据表的**工厂模式**（`BuildRow` 直接生成控件、不做容器化）⇒
+    /// 行数 = 实例化的控件数，实测约 **2.3 ms/行**。真实库上搜一个常见字母命中 24 953 条时，
+    /// 一次搜索要让 UI 线程停摆 **57 秒**（引擎侧只占 325 ms，其余全是行实例化与布局）。
+    /// 引擎命令 `search.links` 目前**没有分页参数**，所以上限只能先落在界面这一侧：
+    /// 渲染前 N 条 + **把截断如实写出来**（绝不静默截断）。
+    /// 引擎侧分页 + 结果区续载见 `PERF-LARGE-LIBRARY.md` 的 P0-3 / P1-2。
+    /// </remarks>
+    public const int MaxRenderedResults = 500;
+
+    /// <summary>本次搜索的全部命中数（未被截断时等于结果行数）。</summary>
+    public int TotalHitCount { get; private set; }
+
+    /// <summary>本次搜索是否发生了截断（命中数超过 <see cref="MaxRenderedResults"/>）。</summary>
+    public bool ResultsTruncated { get; private set; }
+
+    /// <summary>结果区提示（只在截断时出词；其余时候是空值、不占视觉）。
+    /// 类型是 <see cref="LocText"/>（自适应通道的解析器只认它；<see cref="LocValue"/> 会一个字都画不出）。</summary>
+    public LocText ResultNotice => ResultsTruncated
+        ? LocText.Of(Loc.K("search.result.truncated", TotalHitCount, MaxRenderedResults))
+        : LocText.Empty;
+
     private SearchEmptyState? _emptyState;
     /// <summary>当前空态（加载/引导/无结果/错误），视图监听后渲染。</summary>
     public SearchEmptyState? EmptyState
@@ -309,23 +334,44 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             return;
         }
 
-        // 加载态：清空数据 + 加载占位
+        // 加载态：清空数据 + 加载占位（截断提示一并复位，绝不把上一次的读数留在屏上）
         Selection.Clear();
         EmptyState = new SearchEmptyState("magnify", Loc.K("search.state.searching"), null,
             "SecondaryContainer", "OnSecondaryContainer");
         Results = null;
+        TotalHitCount = 0;
+        ResultsTruncated = false;
+        OnPropertyChanged(nameof(TotalHitCount));
+        OnPropertyChanged(nameof(ResultsTruncated));
+        OnPropertyChanged(nameof(ResultNotice));
 
         try
         {
-            var dtos = await _api.SearchLinksAsync(query,
+            // **引擎侧分页**（2026-09-26）：只搬要渲染的一页（SQL LIMIT），命中总数用同谓词的
+            // search.count 并行取——原先把 24 981 条命中（约 12MB JSON）全量物化过管道，
+            // 界面只用前 500 条：实测 ~950ms 里引擎只占 160ms，其余全是搬运。
+            var linksTask = _api.SearchLinksAsync(query,
                 searchTitle: SearchTitle, searchUrl: SearchUrl,
                 searchDescription: SearchDesc, searchPath: SearchPath,
-                sortBy: "title", sortOrder: "asc");
+                sortBy: "title", sortOrder: "asc",
+                page: 1, perPage: MaxRenderedResults);
+            var countTask = _api.SearchCountAsync(query,
+                searchTitle: SearchTitle, searchUrl: SearchUrl,
+                searchDescription: SearchDesc, searchPath: SearchPath);
+            await Task.WhenAll(linksTask, countTask);
+            var dtos = linksTask.Result;
 
             LastQuery = query;
 
             // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
+            TotalHitCount = countTask.Result;
+            ResultsTruncated = TotalHitCount > dtos.Count;
             var results = dtos.Select(LinkItem.FromDto).ToList();
+
+            OnPropertyChanged(nameof(TotalHitCount));
+            OnPropertyChanged(nameof(ResultsTruncated));
+            OnPropertyChanged(nameof(ResultNotice));
+
             EmptyState = results.Count == 0
                 ? new SearchEmptyState("emoticon-sad-outline",
                     Loc.K("search.state.noResults", query),
@@ -448,13 +494,23 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         try
         {
-            var dtos = await _api.SearchLinksAsync(query,
+            var linksTask = _api.SearchLinksAsync(query,
                 searchTitle: SearchTitle, searchUrl: SearchUrl,
                 searchDescription: SearchDesc, searchPath: SearchPath,
-                sortBy: "title", sortOrder: "asc");
+                sortBy: "title", sortOrder: "asc",
+                page: 1, perPage: MaxRenderedResults);
+            var countTask = _api.SearchCountAsync(query,
+                searchTitle: SearchTitle, searchUrl: SearchUrl,
+                searchDescription: SearchDesc, searchPath: SearchPath);
+            await Task.WhenAll(linksTask, countTask);
             if (gen != _scopeRefreshGen) return; // 已有更新的范围变化，放弃旧结果
 
-            var results = dtos.Select(LinkItem.FromDto).ToList();
+            TotalHitCount = countTask.Result;
+            ResultsTruncated = TotalHitCount > linksTask.Result.Count;
+            OnPropertyChanged(nameof(TotalHitCount));
+            OnPropertyChanged(nameof(ResultsTruncated));
+            OnPropertyChanged(nameof(ResultNotice));
+            var results = linksTask.Result.Select(LinkItem.FromDto).ToList();
             Results = results;
 
             // 选中保持（多选亦然）：剔除已不在新结果里的 ID；其余保持（投影自动更新行与右栏）

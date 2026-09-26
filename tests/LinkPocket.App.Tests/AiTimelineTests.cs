@@ -58,21 +58,30 @@ public class AiTimelineTests
     }
 
     [Fact]
-    public async Task 时间线_按回合分组_分隔行在前_条目按序()
+    public async Task 时间线_按回合分组_用户消息在组外_历史轮缺省收起()
     {
+        // 层级口径（对齐参照设计）：每轮 = 用户消息（组外，不受折叠影响）→ 回合状态行 → 该轮工作（组内）。
+        // 历史轮**缺省收起**（只显示状态行），仅最后一轮展开——重开会话不被旧思考/工具占满。
         var (vm, _) = NewVm(TwoTurns());
 
         await vm.LoadAsync();
 
         Assert.Equal(new[]
         {
-            AiFeedItem.ItemKind.TurnHeader, AiFeedItem.ItemKind.UserMessage, AiFeedItem.ItemKind.AssistantMessage,
-            AiFeedItem.ItemKind.ToolCall, AiFeedItem.ItemKind.TurnHeader, AiFeedItem.ItemKind.UserMessage,
+            AiFeedItem.ItemKind.UserMessage, AiFeedItem.ItemKind.TurnHeader, AiFeedItem.ItemKind.AssistantMessage,
+            AiFeedItem.ItemKind.ToolCall, AiFeedItem.ItemKind.UserMessage, AiFeedItem.ItemKind.TurnHeader,
             AiFeedItem.ItemKind.AssistantMessage,
         }, vm.Feed.Select(i => i.Kind));
         Assert.Equal(new[] { 1, 2 }, vm.Turns.Select(t => t.TurnIndex));
         Assert.True(vm.ShowRail);
         Assert.True(vm.Turns[^1].IsActive);   // 进页停在最新一轮
+        // 与参照实现同规则：**只有还在跑 / 被中断 / 失败的一轮保持展开**，已结束的一律收起
+        //（种子两轮都是 Completed ⇒ 都收起），只看得到每轮一行"已工作 X" + AI 的最终回复。
+        Assert.True(vm.Turns[0].IsCollapsed);
+        Assert.True(vm.Turns[^1].IsCollapsed);
+        Assert.False(vm.Turns[^1].IsLockedOpen);   // 已结束 ⇒ 可点开（箭头在、能收能放）
+        Assert.True(vm.Feed.First(i => i.ItemId == "c-1").HiddenByTurn);    // 收起轮的**工作**条目随之隐藏
+        Assert.False(vm.Feed.First(i => i.ItemId == "m-1").HiddenByTurn);   // 用户消息在组外，不受折叠影响
         Assert.Contains(vm.Feed, i => i.Kind == AiFeedItem.ItemKind.UserMessage);   // 有真实内容（空态判定随引导卡退场）
     }
 
@@ -95,12 +104,17 @@ public class AiTimelineTests
         var (vm, stub) = NewVm(TwoTurns());
         await vm.LoadAsync();
 
-        vm.ToggleTurn(vm.Turns[0]);
+        Assert.True(vm.Turns[0].IsCollapsed);                                // 历史轮缺省收起
+        Assert.True(vm.Feed.First(i => i.ItemId == "c-1").HiddenByTurn);     // 工作条目随之隐藏
+        Assert.False(vm.Feed.First(i => i.ItemId == "m-1").HiddenByTurn);    // 用户消息在组外，不受影响
+        Assert.False(vm.Feed.First(i => i.ItemId == "m-3").HiddenByTurn);   // 最后一轮（展开）不受影响
 
-        Assert.True(vm.Turns[0].IsCollapsed);
-        Assert.True(vm.Feed.First(i => i.ItemId == "m-1").HiddenByTurn);
-        Assert.True(vm.Feed.First(i => i.ItemId == "c-1").HiddenByTurn);
-        Assert.False(vm.Feed.First(i => i.ItemId == "m-3").HiddenByTurn);   // 另一轮不受影响
+        vm.ToggleTurn(vm.Turns[0]);   // 展开
+
+        Assert.False(vm.Turns[0].IsCollapsed);
+        Assert.False(vm.Feed.First(i => i.ItemId == "c-1").HiddenByTurn);
+
+        vm.ToggleTurn(vm.Turns[0]);   // 再收起
 
         // 折叠期间该轮又来了新条目（工具状态变化）→ 同样隐藏
         stub.RaiseNotify(new AiNotification(AiNotificationKind.ToolCallChanged, "s-1", TurnId: "t-1",
@@ -109,11 +123,12 @@ public class AiTimelineTests
         Assert.True(vm.Feed.First(i => i.ItemId == "c-2").HiddenByTurn);
 
         vm.ToggleTurn(vm.Turns[0]);
-        Assert.All(vm.Feed.Where(i => i.TurnId == "t-1"), i => Assert.False(i.HiddenByTurn));
+        Assert.All(vm.Feed.Where(i => i.TurnId == "t-1" && i.Kind != AiFeedItem.ItemKind.UserMessage),
+            i => Assert.False(i.HiddenByTurn));   // 工作条目全部随展开可见（用户消息本来就在组外）
     }
 
     [Fact]
-    public async Task 时间线_新轮第一条消息_先补分隔行再排条目()
+    public async Task 时间线_新轮第一条消息_用户消息在前_回合头随后()
     {
         var (vm, stub) = NewVm(TwoTurns());
         await vm.LoadAsync();
@@ -122,8 +137,9 @@ public class AiTimelineTests
         stub.RaiseNotify(new AiNotification(AiNotificationKind.MessageAdded, "s-1", TurnId: "t-3",
             Message: new AiMessage("m-5", 7, AiRole.User, "第三问", DateTimeOffset.UtcNow, "t-3")));
 
-        Assert.Equal(before + 2, vm.Feed.Count);   // 分隔行 + 用户消息
-        Assert.Equal(AiFeedItem.ItemKind.TurnHeader, vm.Feed[^2].Kind);
+        Assert.Equal(before + 2, vm.Feed.Count);   // 用户消息 + 回合状态行
+        Assert.Equal(AiFeedItem.ItemKind.UserMessage, vm.Feed[^2].Kind);   // 用户消息在组外（前）
+        Assert.Equal(AiFeedItem.ItemKind.TurnHeader, vm.Feed[^1].Kind);    // 状态行随后
         Assert.Equal("第三问", vm.Turns[^1].PreviewText);
         Assert.Equal(3, vm.Turns.Count);
     }
@@ -191,20 +207,6 @@ public class AiTimelineTests
         Assert.False(vm.HasContextUsage);
         Assert.Equal(0, vm.ContextUsagePercent);
         Assert.Equal("ai.usage.context.none", vm.UsageTipValue.Key);
-    }
-
-    [Fact]
-    public void 右栏_缺省收起_开关提示跟随()
-    {
-        var (vm, _) = NewVm();
-
-        Assert.True(vm.IsPanelCollapsed);                     // 缺省收起（右栏与对话流重复的内容不占常驻宽度）
-        Assert.Equal("ai.panel.expand", vm.PanelToggleKey);
-
-        vm.TogglePanel();
-
-        Assert.False(vm.IsPanelCollapsed);
-        Assert.Equal("ai.panel.collapse", vm.PanelToggleKey);
     }
 
     [Fact]

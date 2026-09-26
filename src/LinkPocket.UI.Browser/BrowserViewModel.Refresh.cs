@@ -18,6 +18,9 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public partial class BrowserViewModel
 {
+    /// <summary>刷新阶段耗时的日志分类（与 MainViewModel / MainWindow 同一支：现场日志按它取）。</summary>
+    private const string NavLogCategory = "app.nav";
+
     /// <summary>
     /// 应用排序（字段与方向已由共享表控件切换完毕）并重排。
     /// 走 RefreshPreservingSelectionAsync：重排不丢选中（Windows 点列头也不丢）。
@@ -97,17 +100,30 @@ public partial class BrowserViewModel
         // 真刷新（导航加载 = 进入目录 / 点当前位置重载 / F5）同时让"刚置入项临时置尾"归位（Windows 口径）。
         if (navigating) { IsNavigating = true; _navigatingInChain = true; ClearRecentlyPinned(); }
         IsLoading = true;
+        // 阶段耗时留痕（cat=app.nav）：切页/防抖刷新"到底贵在哪一段"的取证入口。
+        // 只读 Stopwatch，不改变任何时序；marks = 各阶段结束时的累计毫秒（日志里换算成每段增量）。
+        var navWatch = Stopwatch.StartNew();
+        var navMarks = new long[5];
         try
         {
             // 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
             // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
-            var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder);
+            // **首页分页**（2026-09-26）：只取前 PageChunkSize 条链接（SQL LIMIT），滚动接近底部自动续载
+            // （RequestNextPageAsync）。10 000 条全量 = 引擎 432ms + 万行 VM 115ms，冷开 680ms 里的大头；
+            // 十万级下"一次全量"根本不可行。文件夹不参与分页（引擎整页返回）。
+            var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder,
+                perPage: PageChunkSize);
+            _loadedPage = contents.CurrentPage;
+            _lastPage = contents.PerPage > 0 ? Math.Max(contents.LastPage, 1) : 1;
+            _directLinkTotal = contents.DirectLinkCount;
+            navMarks[0] = navWatch.ElapsedMilliseconds;   // 引擎读（folders.overview 单快照）
 
-            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树
-            //（与目录页同快照的树/计数 + 全量链接叶子：每文件夹直接链接一并注入，Windows 资源管理器语义）
+            // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树（只建文件夹节点——
+            // 链接叶子改为"节点展开时按需加载"，见 BrowserViewModel.Tree.cs 的懒加载注释）
             var tree = contents.Tree ?? new List<FolderDto>();
             _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            RebuildFolderTree(tree, contents.RootLinkCount ?? 0, contents.TreeLinks ?? new List<TreeLinkDto>());
+            RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
+            navMarks[1] = navWatch.ElapsedMilliseconds;   // 目录树重建
             // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
             // ⚠️ 这里**不**先清空 Rows：行集要不要换，等目标行序算完再做等价判定（见下方"内容一致 → 不动集合"）。
@@ -147,15 +163,6 @@ public partial class BrowserViewModel
                 });
             }
 
-            // favicon 懒加载清单：磁盘缓存未命中时后台拉取，完成后补到对应行
-            var missing = linkRows
-                .Where(r => r.Favicon == null)
-                .Select(r => faviconUrlById.GetValueOrDefault(r.Id))
-                .Where(url => !string.IsNullOrEmpty(url))
-                .Select(url => url!)
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-
             // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
             // ⚠️ 行必须先同步就位（favicon 属附属数据，网络预取绝不阻塞行渲染——
             //    曾因「await 预取再建行」在网络慢时把 Rows 长时间留在上一目录，跳转定位读到旧行集 → RowMissing 间歇回归）。
@@ -184,49 +191,26 @@ public partial class BrowserViewModel
                     if (byId.TryGetValue(id, out var row)) nextRows.Add(row);
             }
 
-            if (!BrowserRowViewModel.SameSequence(Rows, nextRows))
+            // **差分刷新**：行序列（Id + 顺序 + 类型）没变时**不换集合**，只把变了的展示字段原地写回
+            // （每处各发一次属性通知）—— 一次 Reset 都没有 ⇒ 视口内的行容器（连同右键菜单、布局行为、
+            // 列宽投影）原地保留，只重画真变了的那几格。实测：大目录里"数据刚被批脚本改过再打开/刷新"
+            // 这一下从 64ms 布局降到个位数。行的增减 / 重排 / 换目录仍走下面的整表替换
+            // （那时容器与数据项的对应关系已经变了，必须重建）。
+            if (BrowserRowViewModel.SameIdentity(Rows, nextRows))
             {
-                Rows.Clear();
-                foreach (var row in nextRows) Rows.Add(row);
+                for (var i = 0; i < nextRows.Count; i++) Rows[i].ApplyFrom(nextRows[i]);
+            }
+            else if (!BrowserRowViewModel.SameSequence(Rows, nextRows))
+            {
+                // 整体替换 = **一次** Reset 通知（逐条 Add 在 10 001 行时会发 10 001 次，见 BulkObservableCollection）
+                _rowsReplaced = true;   // 新行对象：选中/改名投影不必逐行通知（绑定首次求值即读宿主状态）
+                Rows.ReplaceAll(nextRows);
                 SetContextRow(null);   // 行对象已重建：右键命中行引用作废（删除文案随之复位）
             }
 
-            // favicon 后台预取 + 回填：行已可见，失败只丢图标（下次事件刷新追平）。
-            // 下载的并发闸/去重/大小上限统一在 Contracts.FaviconCache；这里只负责
-            // "下载完把图补到**当前显示的行**" —— 逐行 Dispatcher.Invoke 是每行一次跨线程往返，
-            // 且回填前的 FirstOrDefault 曾在后台线程上读 UI 拥有的 Rows（集合可能正在被替换）。
-            if (missing.Count > 0)
-            {
-                var pendingIds = linkRows.Where(r => r.Favicon == null && !string.IsNullOrEmpty(faviconUrlById.GetValueOrDefault(r.Id)))
-                                         .Select(r => r.Id)
-                                         .ToList();
-                _ = Task.Run(async () =>
-                {
-                    try { await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
-                    catch { /* 网络失败属预期波动，行保持无图标 */ }
-
-                    var landed = new List<(string Id, System.Windows.Media.Imaging.BitmapImage Image)>();
-                    foreach (var id in pendingIds)
-                    {
-                        var img = Services.FaviconService.LoadFromCache(faviconUrlById.GetValueOrDefault(id));
-                        if (img != null) landed.Add((id, img));
-                    }
-
-                    if (landed.Count == 0) return;
-                    var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                    if (dispatcher == null) return;
-
-                    // 单次批量回填：索引在 UI 线程上建一次，之后 O(1) 命中
-                    _ = dispatcher.BeginInvoke(() =>
-                    {
-                        var live = new Dictionary<string, BrowserRowViewModel>(Rows.Count, StringComparer.Ordinal);
-                        foreach (var row in Rows) live.TryAdd(row.Id, row);
-                        foreach (var (id, image) in landed)
-                            if (live.TryGetValue(id, out var row) && row.Favicon == null)
-                                row.SetFavicon(image);
-                    });
-                });
-            }
+            // favicon 后台预取 + 回填（与续载共用一条链路，见 StartFaviconPrefetch）
+            StartFaviconPrefetch(linkRows, faviconUrlById);
+            navMarks[2] = navWatch.ElapsedMilliseconds;   // 建行（含 favicon 本地解码）
 
             // 选中的唯一事实来源是 Selection：Rows 已重建且行是投影，这里只需把集合同步到
             // 主栏行 + 树 + 派生状态（数量/详情/命令）。不改变 Selection 本身。
@@ -236,6 +220,7 @@ public partial class BrowserViewModel
 
             // 粘贴完成后的定位：新行已在重建中就位 → 滚入视口（行不在当前数据里则留待下次刷新）
             ConsumePendingFocus();
+            navMarks[3] = navWatch.ElapsedMilliseconds;   // 侧栏/选中/改名投影 + 定位
 
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
             Breadcrumbs.Clear();
@@ -249,8 +234,20 @@ public partial class BrowserViewModel
                 });
             }
 
-            StatusText = Loc.K("browser.status.totalWithBreakdown",
-                contents.SubFolders.Count + contents.Links.Count, contents.SubFolders.Count, contents.Links.Count);
+            navMarks[4] = navWatch.ElapsedMilliseconds;   // 面包屑
+
+            // 分页态如实说出来（§2.5 教训：截断不许静默）——"共 N 项"按**引擎总数**报，不是已加载数
+            if (HasMorePages)
+            {
+                StatusText = Loc.K("browser.status.totalPaged",
+                    contents.SubFolders.Count + _directLinkTotal, contents.SubFolders.Count, _directLinkTotal,
+                    contents.SubFolders.Count + TotalLoadedLinks);
+            }
+            else
+            {
+                StatusText = Loc.K("browser.status.totalWithBreakdown",
+                    contents.SubFolders.Count + _directLinkTotal, contents.SubFolders.Count, _directLinkTotal);
+            }
         }
         catch (Exception ex)
         {
@@ -259,8 +256,22 @@ public partial class BrowserViewModel
         }
         finally
         {
+            // 阶段耗时留痕（cat=app.nav）：成功与失败都记（失败时后面的阶段为 0）。
+            // 放在 finally 的**最前**：后面的"挂起补刷"递归各自记自己那一行，不混进本次。
+            LpLog.Write(LogLevel.Info, NavLogCategory,
+                $"refresh:folder={Controller.CurrentFolderId ?? "root"} nav={navigating} rows={Rows.Count}"
+                + $" overview={navMarks[0]}ms tree={navMarks[1] - navMarks[0]}ms"
+                + $" rows-b={navMarks[2] - navMarks[1]}ms side={navMarks[3] - navMarks[2]}ms"
+                + $" crumbs={navMarks[4] - navMarks[3]}ms",
+                elapsedMs: navWatch.ElapsedMilliseconds);
             IsLoading = false;
+            // 观测定痕（cat=app.nav）：`CommandRefresh.Request` 内是**全局** CommandManager 重查
+            //（InvalidateRequerySuggested ⇒ 遍历可视树里的 CommandBinding），每次刷新还在 finally 与
+            // RefreshUndoStateAsync 里各调一次 —— "导航后那块阻塞"的并列嫌疑（只记耗时，不改行为）。
+            var cmdWatch = Stopwatch.StartNew();
             CommandRefresh.Request();
+            LpLog.Write(LogLevel.Info, NavLogCategory, "cmdrefresh:requery(refresh-finally)",
+                elapsedMs: cmdWatch.ElapsedMilliseconds);
             // 撤销/重做可用性轻量同步（Ctrl+Z/Y 的 CanExecute 要准）：每次刷新链收尾取一次 undo 栈态。
             // 只读查询、不产生事件 → 不会引发刷新循环；失败静默保持保守禁用（见 RefreshUndoStateAsync）。
             _ = RefreshUndoStateAsync();
@@ -283,6 +294,14 @@ public partial class BrowserViewModel
                 var wasNavigation = _navigatingInChain;
                 _navigatingInChain = false;
                 RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
+                if (wasNavigation)
+                {
+                    // 遮罩可见窗口的收尾时刻（cat=app.nav）：与 `refresh:` 行的时间戳相减 = 遮罩亮了多久。
+                    // 遮罩是导航态每帧 InvalidateVisual 的那一支（见 SmartProbe/TOOL.md 的饿死记录），
+                    // 导航结束后的淡出帧也落在这之后。
+                    LpLog.Write(LogLevel.Info, NavLogCategory,
+                        "overlay:hidden (navigation chain settled)", elapsedMs: navWatch.ElapsedMilliseconds);
+                }
             }
         }
     }
@@ -342,6 +361,172 @@ public partial class BrowserViewModel
     /// 只有"切换目录"才用 <see cref="LoadAsync"/>（它带清空标志）。
     /// </summary>
     public Task RefreshPreservingSelectionAsync()
-        => RefreshAsync(clearSelection: false);
+    {
+        // **改名进行中 → 推迟重建**：整表 ReplaceAll 会销毁承载改名编辑框的行——
+        // 编辑中的文本/焦点/光标全部丢失（乐观插入新建文件夹后，事件刷新恰好落在打字中途，
+        // 实测必现）。推迟到提交/取消时立即补跑（<see cref="FlushDeferredRefresh"/>），
+        // 窗口 = 改名时长（秒级）；期间的其它写操作由后续事件刷新照常追平。
+        if (_rename.IsActive)
+        {
+            _refreshDeferredByRename = true;
+            return Task.CompletedTask;
+        }
+        return RefreshAsync(clearSelection: false);
+    }
+
+    private bool _refreshDeferredByRename;
+
+    /// <summary>首页/续载的每页链接数（SQL LIMIT）：2 000 条 ≈ 引擎 ~100ms + VM ~25ms，
+    /// 首开无感；十万级目录靠滚动续载铺开，单次成本恒定。文件夹不参与分页（引擎整页返回）。</summary>
+    internal const int PageChunkSize = 2000;
+
+    private int _loadedPage = 1;
+    private int _lastPage = 1;
+    private int _directLinkTotal;
+    private bool _pageLoadInFlight;
+
+    /// <summary>还有未加载的链接页（状态栏"已加载前 N 项"与续载触发的判据）。</summary>
+    public bool HasMorePages => _loadedPage < _lastPage;
+
+    /// <summary>当前已加载的链接数（min(已到页号 × 页大小, 引擎总数)）。</summary>
+    private int TotalLoadedLinks => Math.Min(_loadedPage * PageChunkSize, _directLinkTotal);
+
+    /// <summary>
+    /// 分页续载：滚动接近底部（<see cref="SortableDataTable.ScrollNearBottom"/>）时取下一页链接并**追加**
+    /// （BulkObservableCollection.AddRange = 一次 Reset 通知）。续载是纯追加：不重建、不触碰选中/改名会话
+    /// （改名编辑中的行对象原样保留）。降序时链接在前，新页插到首个文件夹行之前保持顺序。
+    /// 目录已切换 / 已有更新刷新 → 丢弃（按发起时的目录 ID 与请求页号核对）。
+    /// </summary>
+    public async Task RequestNextPageAsync()
+    {
+        // 改名进行中不续载：改名编辑框在行尾时会"自动滚到底"跟焦（WPF 聚焦语义），
+        // 续载追加 → 集合 Reset → 编辑框重建再聚焦 → 再滚底 → 再触发……实测把剩余页全部拉完。
+        // 改名结束的补跑刷新本就回到首页态，这里续了也白续。
+        if (!HasMorePages || _pageLoadInFlight || IsLoading || _rename.IsActive) return;
+        var folderId = Controller.CurrentFolderId;
+        var nextPage = _loadedPage + 1;
+        _pageLoadInFlight = true;
+        try
+        {
+            var dto = await _client.FoldersOverviewAsync(folderId, sortBy: SortBy, sortOrder: SortOrder,
+                page: nextPage, perPage: PageChunkSize);
+            if (Controller.CurrentFolderId != folderId || dto.CurrentPage != nextPage) return;   // 已切换 → 丢弃
+
+            var rows = dto.Links.Select(l => new BrowserRowViewModel(l.LinkId, isFolder: false, l.Title)
+            {
+                Url = l.Url,
+                ModifiedAt = l.UpdatedAt,
+                CreatedAt = l.CreatedAt,
+                LastViewedAt = l.LastVisitedAt,
+                ViewCount = l.VisitCount,
+                Favicon = Services.FaviconService.LoadFromCache(l.FaviconUrl),
+                Host = this,
+                IsCut = _clipboardCtl.IsCutInClipboard(l.LinkId, false),
+            }).ToList();
+
+            if (SortOrder == "desc")
+            {
+                // 降序 = 链接 → 文件夹：新页插到**第一个文件夹行**之前（置尾项在最尾，不受影响）
+                var insertAt = Rows.Count;
+                for (var i = 0; i < Rows.Count; i++)
+                    if (Rows[i].IsFolder) { insertAt = i; break; }   // 降序：首个文件夹行 = 链接区的末尾
+                for (var i = rows.Count - 1; i >= 0; i--) Rows.Insert(insertAt, rows[i]);
+            }
+            else
+            {
+                Rows.AddRange(rows);   // 升序 = 文件夹 → 链接：追加到尾
+            }
+
+            _loadedPage = dto.CurrentPage;
+            StatusText = HasMorePages
+                ? Loc.K("browser.status.totalPaged",
+                    dto.SubFolders.Count + _directLinkTotal, dto.SubFolders.Count, _directLinkTotal,
+                    dto.SubFolders.Count + TotalLoadedLinks)
+                : Loc.K("browser.status.totalWithBreakdown",
+                    dto.SubFolders.Count + _directLinkTotal, dto.SubFolders.Count, _directLinkTotal);
+
+            var faviconUrlById = new Dictionary<string, string?>(dto.Links.Count, StringComparer.Ordinal);
+            foreach (var l in dto.Links) faviconUrlById[l.LinkId] = l.FaviconUrl;
+            StartFaviconPrefetch(rows, faviconUrlById);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("folder page continuation failed", ex);   // 续载失败留痕；下次滚到底自动重试
+        }
+        finally
+        {
+            _pageLoadInFlight = false;
+        }
+    }
+
+    /// <summary>
+    /// favicon 后台预取 + 回填：行已可见，失败只丢图标（下次事件刷新追平）。
+    /// 下载的并发闸/去重/大小上限统一在 Contracts.FaviconCache；这里只负责
+    /// "下载完把图补到**当前显示的行**" —— 逐行 Dispatcher.Invoke 是每行一次跨线程往返，
+    /// 且回填前的 FirstOrDefault 曾在后台线程上读 UI 拥有的 Rows（集合可能正在被替换）。
+    /// 主刷新与分页续载共用（续载行同样只画名称 + 图标）。
+    /// </summary>
+    private void StartFaviconPrefetch(List<BrowserRowViewModel> linkRows,
+        Dictionary<string, string?> faviconUrlById)
+    {
+        // favicon 懒加载清单：磁盘缓存未命中时后台拉取，完成后补到对应行
+        var missing = linkRows
+            .Where(r => r.Favicon == null)
+            .Select(r => faviconUrlById.GetValueOrDefault(r.Id))
+            .Where(url => !string.IsNullOrEmpty(url))
+            .Select(url => url!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (missing.Count == 0) return;
+        var pendingIds = linkRows.Where(r => r.Favicon == null && !string.IsNullOrEmpty(faviconUrlById.GetValueOrDefault(r.Id)))
+                                 .Select(r => r.Id)
+                                 .ToList();
+        _ = Task.Run(async () =>
+        {
+            try { await Task.WhenAll(missing.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
+            catch { /* 网络失败属预期波动，行保持无图标 */ }
+
+            var landed = new List<(string Id, System.Windows.Media.Imaging.BitmapImage Image)>();
+            foreach (var id in pendingIds)
+            {
+                var img = Services.FaviconService.LoadFromCache(faviconUrlById.GetValueOrDefault(id));
+                if (img != null) landed.Add((id, img));
+            }
+
+            if (landed.Count == 0) return;
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher == null) return;
+
+            // 单次批量回填：索引在 UI 线程上建一次，之后 O(1) 命中
+            _ = dispatcher.BeginInvoke(() =>
+            {
+                // 观测定痕（cat=app.nav）：这段是**刷新链之后的异步续体**（网络取完图标才回填），
+                // 回填 = 给行换图标 ⇒ 重绑 + 重排 + 重绘 —— 正是"导航后 +240~380ms 那块阻塞"的嫌疑。
+                // 记条数与自身耗时，与 `refresh:` 行按时间戳对一下即可归因（不改任何行为）。
+                var watch = Stopwatch.StartNew();
+                var live = new Dictionary<string, BrowserRowViewModel>(Rows.Count, StringComparer.Ordinal);
+                foreach (var row in Rows) live.TryAdd(row.Id, row);
+                var applied = 0;
+                foreach (var (id, image) in landed)
+                    if (live.TryGetValue(id, out var row) && row.Favicon == null)
+                    {
+                        row.SetFavicon(image);
+                        applied++;
+                    }
+                LpLog.Write(LogLevel.Info, NavLogCategory,
+                    $"favicon:backfill fetched={missing.Count} landed={landed.Count} applied={applied} rows={Rows.Count}",
+                    elapsedMs: watch.ElapsedMilliseconds);
+            });
+        });
+    }
+
+    /// <summary>补跑被改名推迟的刷新（提交/取消收尾时调用；无推迟 = 空操作）。</summary>
+    private void FlushDeferredRefresh()
+    {
+        if (!_refreshDeferredByRename) return;
+        _refreshDeferredByRename = false;
+        _ = RefreshPreservingSelectionAsync();
+    }
 
 }

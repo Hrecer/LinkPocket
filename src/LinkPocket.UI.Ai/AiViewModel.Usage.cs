@@ -104,17 +104,52 @@ public sealed partial class AiViewModel
     private static System.Globalization.CultureInfo CurrentCulture
         => System.Globalization.CultureInfo.CurrentCulture;
 
-    /// <summary>状态行文案：瞬时读数（限流等待等）优先，否则按键取词。</summary>
+    /// <summary>状态行文案：瞬时读数（限流等待 / 回溯回执等）优先，否则按键取词。</summary>
     public LocValue StatusValue => _statusOverride ?? LocValue.Of(StatusKey);
 
-    /// <summary>进度条是否显示（回合进行中 = 显示）。</summary>
-    public bool IsProgressVisible => IsTurnRunning;
+    /// <summary>状态行是否显示：回合进行中，或有一条**限时反馈**（回溯回执等）正在展示。</summary>
+    public bool IsProgressVisible => IsTurnRunning || _statusOverride is not null;
 
-    /// <summary>不确定态（不知道步数：回合进行中且还没有批进度读数）。</summary>
-    public bool IsProgressIndeterminate => _progress is not { Total: > 0 };
+    private System.Threading.CancellationTokenSource? _statusFlashCts;
 
-    public double ProgressValue => _progress?.Completed ?? 0;
-    public double ProgressMaximum => _progress is { Total: > 0 } batch ? batch.Total : 100;
+    /// <summary>
+    /// 状态行限时反馈：显示 <paramref name="seconds"/> 秒后自动恢复——
+    /// 回溯这类"一次性回执"不再往对话流里塞一条**永久占一整行**的记录（实测：回溯完成后
+    /// 那条记录一直钉在顶端，不知道什么时候才消失）。被下一次状态变化覆盖即提前结束。
+    /// </summary>
+    private void FlashStatus(LocValue value, int seconds = 8)
+    {
+        _statusFlashCts?.Cancel();
+        _statusFlashCts?.Dispose();
+        var cts = new System.Threading.CancellationTokenSource();
+        _statusFlashCts = cts;
+        _statusOverride = value;
+        Raise(nameof(StatusValue));
+        Raise(nameof(IsProgressVisible));
+        _ = Task.Delay(TimeSpan.FromSeconds(seconds), cts.Token).ContinueWith(t =>
+        {
+            if (t.IsCanceled) return;
+            if (!ReferenceEquals(_statusFlashCts, cts)) return;   // 已被新的反馈接管
+            _statusOverride = null;
+            Raise(nameof(StatusValue));
+            Raise(nameof(IsProgressVisible));
+        }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    /// <summary>清空本会话用量读数（换到草稿 / 会话不可用时调用；环随之退场，不编造数字）。</summary>
+    private void ClearUsage()
+    {
+        if (_usage is null && _contextRows.Count == 0) return;
+        _usage = null;
+        _contextRows = [];
+        Raise(nameof(UsageValue));
+        Raise(nameof(HasContextUsage));
+        Raise(nameof(ContextUsagePercent));
+        Raise(nameof(UsageTipValue));
+        Raise(nameof(ContextSummaryValue));
+        Raise(nameof(ContextSourceRows));
+        Raise(nameof(HasContextSources));
+    }
 
     /// <summary>进度文字（知道总步数才有；"正在执行 12/40 步"）。</summary>
     public LocValue ProgressTextValue => _progress is { Total: > 0 } batch
@@ -124,11 +159,34 @@ public sealed partial class AiViewModel
     /// <summary>刷新本会话用量读数（回合收尾 / 换会话 / 进页）。</summary>
     public async Task RefreshUsageAsync()
     {
-        if (_activeSessionId is not { } sessionId) return;
+        // **草稿态必须清掉读数**，两个口子都堵上：
+        // ① 没有活动会话；② 活动的是**内存草稿**（新建对话、正在打字）——草稿也是一条真实会话，
+        //    它的用量读数是"系统提示 + 工具定义"的估算（实测 55.6%，大头是工具定义 72%），
+        //    用户一条消息都还没发，环亮着就是在编造"已经用掉这么多"（参照实现：草稿态根本不渲染）。
+        // ⚠️ 判据必须带 State：草稿**提升为正式会话后 `_draft` 仍被保留**（Promoted 态，防误回收），
+        //    只看 SessionId 会把真实会话一直误判成草稿 ⇒ 每次刷新都 ClearUsage（实测症状：
+        //    发完消息回合收尾刷新了读数，面板仍是"还没有上下文读数"）。
+        var isDraftSession = _activeSessionId is { } id && _draft is { } d && d.SessionId == id
+            && d.State == DraftState.Draft;
+        if (_activeSessionId is not { } sessionId || isDraftSession)
+        {
+            ClearUsage();
+            return;
+        }
         try
         {
             var usage = await _assistant.GetSessionUsageAsync(sessionId).ConfigureAwait(true);
             if (_activeSessionId != sessionId) return;   // 期间换了会话：这次读数作废
+            // ⚠️ 期间**变成草稿**同样作废：草稿也是一条真实会话，引擎会返回"系统提示 + 工具定义"的**估算**
+            //（实测 53.0%、工具定义占 75.9%）——它看着像"已经用掉这么多"，而用户一条消息都还没发。
+            // 时序窗口：新建会话时 `_activeSessionId` 先指向新草稿、`_draft` 还是旧的 ⇒ 上面的草稿判据漏判。
+            // 同样必须带 State：已提升（Promoted）的会话不是草稿，别把刚取回的真实读数又清掉。
+            if (_activeSessionId is { } current && _draft is { } draftNow && draftNow.SessionId == current
+                && draftNow.State == DraftState.Draft)
+            {
+                ClearUsage();
+                return;
+            }
             _usage = usage;
             RebuildContextRows();
             Raise(nameof(UsageValue));
@@ -149,9 +207,6 @@ public sealed partial class AiViewModel
     private void ApplyProgress(AiBatchProgress progress)
     {
         _progress = progress;
-        Raise(nameof(ProgressValue));
-        Raise(nameof(ProgressMaximum));
-        Raise(nameof(IsProgressIndeterminate));
         Raise(nameof(ProgressTextValue));
     }
 
@@ -159,9 +214,6 @@ public sealed partial class AiViewModel
     {
         if (_progress is null) return;
         _progress = null;
-        Raise(nameof(ProgressValue));
-        Raise(nameof(ProgressMaximum));
-        Raise(nameof(IsProgressIndeterminate));
         Raise(nameof(ProgressTextValue));
     }
 

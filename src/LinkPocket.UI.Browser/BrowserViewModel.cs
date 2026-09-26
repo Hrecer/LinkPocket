@@ -54,7 +54,11 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     public NavigationHistory Controller { get; } = new();
 
-    public ObservableCollection<BrowserRowViewModel> Rows { get; } = new();
+    /// <summary>
+    /// 主栏行集合。类型是**批量集合**：刷新时整体替换只发一次通知——逐条 Add 会让 10 001 行发出
+    /// 10 001 次 <c>CollectionChanged</c>，那是"打开大目录"里 UI 侧的主要成本（见 `PERF-LARGE-LIBRARY.md`）。
+    /// </summary>
+    public BulkObservableCollection<BrowserRowViewModel> Rows { get; } = new();
     public ObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
 
     /// <summary>左侧文件夹树：虚拟根节点"全部书签"（IsRoot，无 FolderId）+ 各级子文件夹。</summary>
@@ -539,8 +543,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         CommandRefresh.Request();
     }
 
-    /// <summary>取消改名（Esc）：只收会话，不写数据。</summary>
-    public void CancelRename() => EndRename();
+    /// <summary>取消改名（Esc）：只收会话，不写数据；被推迟的刷新立即补跑。</summary>
+    public void CancelRename()
+    {
+        EndRename();
+        FlushDeferredRefresh();
+    }
 
     /// <summary>
     /// 页面级收尾动作：**收掉当前改名的编辑态**（右键菜单打开时调用）。
@@ -597,18 +605,48 @@ public partial class BrowserViewModel : INotifyPropertyChanged
                 await _client.LinkUpdateAsync(session.Id, title: name);
                 StatusText = Loc.K("browser.status.renamed", name);
             }
-            // 刷新交给后端事件（300ms 防抖）：事件链刷新本就保留选中（选中在 Selection，不随重建丢）
+
+            // **乐观更新**（引擎已落库，事件刷新稍后对齐）：行与树的名字立即改——
+            // 万行目录下"回车 → 等 300ms 防抖 + 整表重建才看到新名字"是实测的第二次等待。
+            Rows.FirstOrDefault(r => r.Id == session.Id && r.IsFolder == session.IsFolder)
+                ?.UpdateName(name);
+            UpdateTreeNodeName(session.Id, name);
         }
         catch (Exception)
         {
             ShowError(Loc.T("status.renameFailed"), Loc.T("err.unexpected"));
         }
+        finally
+        {
+            FlushDeferredRefresh();   // 改名期间的被推迟刷新，此刻立即补跑（提交失败也要补：行区数据可能已过期）
+        }
     }
 
-    /// <summary>重命名态投影：行与树节点上的 IsRenaming 全部从会话状态派生（与选中投影同构）。</summary>
+    /// <summary>在树里按 ID（文件夹或链接叶子）找节点并乐观改名（找不到 = 不在树里，跳过）。</summary>
+    private void UpdateTreeNodeName(string id, string name)
+    {
+        bool Walk(IEnumerable<FolderNode> nodes)
+        {
+            foreach (var n in nodes)
+            {
+                if ((n.IsLink && n.Id == id) || (!n.IsLink && n.FolderId == id))
+                {
+                    n.Name = name;
+                    return true;
+                }
+                if (Walk(n.Children)) return true;
+            }
+            return false;
+        }
+        Walk(FolderTree);
+    }
+
+    /// <summary>重命名态投影：行与树节点上的 IsRenaming 全部从会话状态派生（与选中投影同构）。
+    /// 行集合刚被整体替换时行侧跳过（理由同 <see cref="SyncMainRowSelection"/>：新行的绑定首次求值即正确）。</summary>
     private void ApplyRenameToView()
     {
-        foreach (var r in Rows) r.InvalidateIsRenaming();
+        if (!_rowsReplaced)
+            foreach (var r in Rows) r.InvalidateIsRenaming();
         foreach (var node in AllTreeNodes())
             node.IsRenaming = IsRenamingId(node.IsLink ? node.Id : node.FolderId, BrowserPane.Tree);
     }

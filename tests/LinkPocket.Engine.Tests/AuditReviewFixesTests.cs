@@ -93,6 +93,46 @@ public class AuditReviewFixesTests
         Assert.Equal(8, remaining.Count);
     }
 
+    // ===== 撤销栈跨进程持久化：落盘 → 新实例恢复（应用重启后仍可回溯）=====
+
+    [Fact]
+    public async Task UndoCoordinator_Journal_Survives_New_Instance()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"lp-undo-test-{Guid.NewGuid():N}.json");
+        try
+        {
+            var descriptor = new CommandDescriptor("test.x", "test", "d", [], CommandCaps.Mutation, UndoInverse: "test.y");
+            static System.Text.Json.JsonElement Args() => JsonSerializer.Deserialize<JsonElement>("{}");
+
+            // 实例 A：登记 3 条 → 落盘
+            var a = new UndoCoordinator(path);
+            for (var i = 0; i < 3; i++) a.Record(descriptor, Args(), CallerRef.Test);
+            var before = await a.ListAsync(default);
+            Assert.Equal(3, before.Count);
+
+            // 实例 B（模拟应用重启）：从同一份存档恢复 → 栈还在，条目逐字段一致
+            var b = new UndoCoordinator(path);
+            var after = await b.ListAsync(default);
+            Assert.Equal(before.Count, after.Count);
+            Assert.Equal(before.Select(e => e.Id), after.Select(e => e.Id));
+            Assert.Equal(before.Select(e => e.Command), after.Select(e => e.Command));
+            Assert.All(after, e => Assert.NotEmpty(e.Steps));
+
+            // 实例 B 撤销一条（Take 取走 → 逆向执行成功后 MarkUndone 转入重做栈，与 undo.undo 处理器同序）
+            // → 落盘；实例 C 读到的是撤销后的状态（2 条 + 重做 1 条）
+            var taken = await b.TakeUndoAsync(null, default);
+            Assert.NotNull(taken);
+            b.MarkUndone(taken!);
+            var c = new UndoCoordinator(path);
+            Assert.Equal(2, (await c.ListAsync(default)).Count);
+            Assert.Equal(1, (await c.ListRedoAsync(default)).Count);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     // ===== 目录/AI 工具清单的数组参数类型 =====
 
     [Fact]

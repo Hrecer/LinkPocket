@@ -92,8 +92,10 @@ public class DropTargetTests
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
 
-            var leaf = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId)
-                .Children.Single(c => c.Id == link.LinkId);
+            var aNode = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
+            aNode.IsExpanded = true;                     // 叶子按需加载：展开该目录
+            await vm.WaitForTreeLinksAsync(aNode);
+            var leaf = aNode.Children.Single(c => c.Id == link.LinkId);
             vm.SetDropTarget(new BrowserDropTarget(link.LinkId, BrowserPane.Tree, "X"));
 
             Assert.False(leaf.IsDropTarget);

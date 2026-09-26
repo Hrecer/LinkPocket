@@ -35,6 +35,18 @@ public static class ToneScale
     /// </remarks>
     public const double MinMutedOnHover = 4.5;
 
+    /// <summary>
+    /// 容器上的墨对**容器底**的最低对比度（对比度矩阵里这一对的判据）。
+    /// 容器取配色成员本色后深浅不定，墨必须按容器反推——这也是"容器最多只能提亮到哪一档"的判据。
+    /// </summary>
+    public const double MinInkOnContainer = 7.0;
+
+    /// <summary>
+    /// 类型图标（文件夹 / 链接这类前景图标）对**承载面**的最低对比度（WCAG 非文本图形 3:1）。
+    /// 图标色按它**从深往浅**取最浅的达标档——不钉死在填充档，否则每一套主题都黑压压一片。
+    /// </summary>
+    public const double MinIconOnSurface = 3.0;
+
     /// <summary>强调填充 / 强调图标：白字 ≈6.5、对卡面 ≈5.8。</summary>
     public const double AccentFill = 40.0;
 

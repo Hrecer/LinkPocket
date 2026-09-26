@@ -33,8 +33,9 @@ public static class ThemeCatalog
     /// ⚠️ 第 5 色 = 背景色成员：表面族色相与页面底由它推出（见上），改它等于改整页底色与卡面层感。
     /// </para>
     /// <para>
-    /// 第 4 色（浅调成员）取 <c>#E0CEEC</c>（H310.5 C18.8 T85，与强调填充同一个紫、更清爽，
-    /// 原值 `#D5C7DE` C15.1 / T82 偏灰）。彩度刻意保持在 16.6–22.4 之间 ——
+    /// 第 4 色（浅调成员）取 <c>#E8D0DE</c>（淡粉，与紫色相邻的粉带、非传统粉）：5 个色原本
+    /// 色相 297°–311° 全在同一紫族（实测"太单调"）——换粉后容器/徽标底多一个色相，主调与页面底不动。
+    /// 彩度刻意保持在 16.6–22.4 之间 ——
     /// 高于就抢支撑槽（#A18EB0）、低于就抢描边槽（#3F3448），只有落在这段里才"只换它自己"。
     /// </para>
     /// </remarks>
@@ -42,7 +43,7 @@ public static class ThemeCatalog
     {
         Id = DefaultId,
         Source = ThemeSource.FactoryDefault,
-        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xE0CEEC, 0xE3DDE8),
+        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xEFC8DC, 0xE3DDE8),
         ChromaCap = ChromaCap.Standard,
     };
 
@@ -74,7 +75,12 @@ public static class ThemeCatalog
         Preset("caramel-rose", 0x4A3424, 0x7E5C40, 0xC09478, 0xDCBEA0, 0xF0E4D2),
         // 5–10：设计档「4 色配色」（浅色底 / 浅彩 / 近白 / 深彩）
         Preset("uji-matcha", 0xE8F2EF, 0xBCE8D5, 0xD5EBD5, 0x60787A),
-        Preset("shine-muscat", 0xDBF9F2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB),
+        // 唯一开了悬停可见性护栏的预设：这套配色的卡面只比页面底亮 6 档，
+        // 悬停压深 6 档后正好回到页面底色值（按钮悬停底 #D7EBC9 对页面底 #D9EBC8，ΔRGB ≤ 2）——
+        // 实测"鼠标移上去和背景一个色"，护栏把悬停档再往下压 3 档才分得开。
+        // 第 1 色原本 `#DBF9F2`（青）彩度排第 3 ⇒ 只拿到"容器色相位"而容器实际色另取奶黄，青色被覆盖、
+        // 界面上完全不可见（实测"青色和天蓝色都没用上"）。提高它的彩度让它占到**强调**槽（青色成为主调）。
+        Preset("shine-muscat", 0xA9F0E2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB) with { EnforceHoverVisibility = true },
         Preset("blueberry-yogurt", 0xF2F6FF, 0xB7CBF4, 0xE2ECFF, 0x88ABF2),
         Preset("mint-soda", 0xBCF1E0, 0xEFFFE0, 0xD7FADF, 0x8ED6DE),
         Preset("sakura-panna", 0xFEDFE9, 0xEEF6EE, 0xFEE6EC, 0xFFC7D6),

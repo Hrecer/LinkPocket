@@ -13,9 +13,9 @@
          样式自包含：FolderTreeStyle/FolderTreeItemStyle/TreeExpanderToggle/CountPill/LpMenuItem 都在本控件资源里。 -->
 
     <UserControl.Resources>
-        <!-- 列表行计数药丸（与主栏行/侧栏统一的 M3E 胶囊） -->
+        <!-- 列表行计数药丸（与主栏行/侧栏统一的 M3E 胶囊）：底 = 次按钮底（与 UIKit 的 CountPill 同一支） -->
         <Style x:Key="CountPill" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource App.Support.Container}"/>
+            <Setter Property="Background" Value="{DynamicResource App.Surface.Control}"/>
             <Setter Property="CornerRadius" Value="9"/>
             <Setter Property="MinHeight" Value="18"/>
             <Setter Property="Padding" Value="9,0"/>
@@ -303,7 +303,7 @@
                                          宽度跟随名称实测宽（至少 120）；高度按树行内容高覆盖
                                          （树文本 13 号 → 行内容约 17，负 margin 压掉外框 → 进入编辑不改变行高）；
                                          数据驱动（IsRenaming 投影）+ 自持 Enter/Esc/失焦 -->
-                                    <local:InlineNameEditor MinWidth="120" HorizontalAlignment="Left"
+                                    <local:LazyInlineNameEditor MinWidth="120" HorizontalAlignment="Left"
                                                             Width="{Binding ActualWidth, ElementName=NodeName}"
                                                             Height="17" Margin="0,-2"
                                                             IsEditing="{Binding IsRenaming}"

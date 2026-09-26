@@ -149,9 +149,30 @@ internal sealed class MacroRunHandler(IMacroStore macros, EngineLimits limits) :
         // 宏的批运行键 = 自身 correlation（与 BatchReport.BatchId 同口径）：
         // 步骤审计与 macro.run 父条目共用它，audit.query {batch_id} 即可取齐整次宏运行。
         context.BatchId ??= context.CorrelationId;
-        var (results, touched, events, diff) = await BatchEngine.RunStepsNestedAsync(
-            context, script with { Name = $"macro:{name}" },
-            context.UndoGroupId ?? $"macro:{Guid.NewGuid():N}", ctx.Ct);
+        // 宏的步骤循环同样"每步 flush"（见 <see cref="BatchEngine.RunStepsNestedAsync"/>）——flush 只写
+        // 事务、不提交，"abort 整体回滚"的承诺必须由这里的显式事务兜住（否则中途失败时，前面步骤的
+        // flush 已经落库）。**干跑不重开**：管道（EngineCore 的干跑路径）已开显式事务并在最后回滚，
+        // 跟着它走即可；非干跑管道没有事务，由这里开、成功后提交。
+        // 持事务期间的嵌套审计先缓冲（独立短连接会撞写锁）：**收口后由管道统一写出**
+        //（EngineCore.ExecuteAsync 的 finally），这里只挂上（见 CommandContextImpl.NestedAuditBuffer）。
+        context.NestedAuditBuffer = new List<AuditEntry>();
+        var tx = ctx.DryRun ? null : ctx.Uow.BeginTransaction();
+        List<BatchStepResult> results;
+        List<EntityRef> touched;
+        List<string> events;
+        List<FieldChange> diff;
+        try
+        {
+            if (tx != null) await tx.BeginAsync(ctx.Ct);
+            (results, touched, events, diff) = await BatchEngine.RunStepsNestedAsync(
+                context, script with { Name = $"macro:{name}" },
+                context.UndoGroupId ?? $"macro:{Guid.NewGuid():N}", ctx.Ct);
+            if (tx != null) await tx.CommitAsync(ctx.Ct);
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
+        }
         sw.Stop();
 
         var summary = $"Macro '{name}' finished: {results.Count(r => r.Ok)}/{results.Count} steps succeeded";
@@ -204,12 +225,16 @@ internal sealed class UndoUndoHandler(UndoCoordinator undo) : ICommandHandler
 
         // 先取（不弹）再执行：逆向命令失败或事务回滚时条目必须仍在撤销栈（曾先 Take 后执行，
         // 失败即丢条目，用户无法重试）；执行成功后才弹栈并转入重做栈。
-        var entries = await undo.ListAsync(ctx.Ct);
-        var entry = id is null
-            ? entries.FirstOrDefault()
-            : entries.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal));
+        // ⚠️ 必须用**带水合的 peek**（PeekUndoAsync），不能用 ListAsync：
+        // 列表是**摘要视图**（大条目的步骤在日志分片里、Steps 为空）—— 从列表拿步骤会让
+        // 1631 步的批量删除"一步都不跑却报 ok"（实测的假成功，用户："回溯成功了，文件夹还在回收站"）。
+        var entry = await undo.PeekUndoAsync(id, ctx.Ct);
         if (entry is null)
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "nothing to undo"));
+        if (entry.Steps.Count == 0)
+            // 步骤本应已就绪；到这里说明分片读不出来（外部删除/损坏）——**如实失败**，不许假成功
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
+                "the undo record's steps are unavailable (journal payload missing)"));
 
         // 逆序回退：一次动作的多步（如一次粘贴多项）按**相反顺序**撤销，避免中途引用已消失的目标。
         // 单项失败不中断整批（与 UI 侧批量语义一致）：失败项如实记录并跳过，整条最终被消费
@@ -257,11 +282,14 @@ internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        // 先取（不弹）再执行：失败时条目留在重做栈（同 undo.undo 的防丢语义）
-        var redoEntries = await undo.ListRedoAsync(ctx.Ct);
-        var entry = redoEntries.FirstOrDefault();
+        // 先取（不弹）再执行：失败时条目留在重做栈（同 undo.undo 的防丢语义）。
+        // ⚠️ 与 undo.undo 同理：必须用**带水合的 peek**（ListRedoAsync 是摘要视图，大条目 Steps 为空 ⇒ 一步不跑却报 ok）。
+        var entry = await undo.PeekRedoAsync(ctx.Ct);
         if (entry is null)
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "nothing to redo"));
+        if (entry.Steps.Count == 0)
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
+                "the redo record's steps are unavailable (journal payload missing)"));
 
         // 正序重放（撤销时是逆序，重做对称回来）。重做动作 = 步骤显式给出者优先
         //（创建类必须显式：重放 links.create 会生成**新 ID**，原 ID 丢失且回收站留旧快照），否则重放原命令原参数。

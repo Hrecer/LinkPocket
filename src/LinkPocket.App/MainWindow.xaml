@@ -105,7 +105,8 @@
         </Grid.RowDefinitions>
 
         <!-- ===== 全局标题栏（所有页面共享）：Brand chip + 分段胶囊导航 + 圆角窗口键 ===== -->
-        <Border Grid.Row="0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+        <!-- 标题栏（品牌 + 胶囊导航 + 窗口键）：**右键刷新的排除区**——导航条上的右键不接管 -->
+        <Border Grid.Row="0" x:Name="TitleBar" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <Grid Margin="12,8,12,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>

@@ -50,6 +50,12 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
             var before = LinkSnapshot.Of(link);
             link.ListId = target;
             link.UpdatedAt = DateTime.UtcNow;
+            // ⚠️ **显式落库**（同仓"更新"类处理器一律走 Uow.*.UpdateAsync）：只改内存属性靠 EF 跟踪，
+            // 在本仓实测**"归属置空（移到根级）"这一条不落盘** —— 命令照样报 ok、changes 里还写着 touched links，
+            // 而链接根本没动（2026-09-26 实数据事故：AI 用 target_list_id 缺省拆文件夹 ⇒ 移动是空操作，
+            // 紧接的 folders.delete(cascade=trash_links) 把 1630 条连文件夹一起扫进回收站）。
+            // 回归网：tests/LinkPocket.Modules.Tests/MoveBatchTargetTests.cs
+            await ctx.Uow.Links.UpdateAsync(link, ct);
             diff.AddRange(EntityDiff.Diff(linkId, before, LinkSnapshot.Of(link)));
         }
 
@@ -61,12 +67,15 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
         foreach (var folderId in previousFolders)
             await LinkSupport.RefreshLinkCountAsync(ctx.Uow, folderId, ct);
 
-        // 撤销载荷：每项一步（各自旧目录可能不同）→ 逆向 = 单项移回原目录。
+        // 撤销载荷：**按原目录分组，一个目标一步**（不是每链接一步）。
         // 用 move_batch 而非 links.update：只有它能表达"移回根级"（target_list_id 缺省 = 根）。
+        // ⚠️ 为什么必须分组：一次 1630 条的批量移动若记成 1630 步，撤销就要跑 1630 次嵌套命令
+        //（实测 undo.undo 单次 **5034ms**，用户："回溯的时候卡了好几秒"）；同源的一批一次移回即可。
         var undo = linkIds
             .Where(id => oldListIds[id] != target)
-            .Select(id => new UndoInverseStep("links.move_batch",
-                JsonSerializer.SerializeToElement(new { link_ids = new[] { id }, target_list_id = oldListIds[id] })))
+            .GroupBy(id => oldListIds[id])
+            .Select(g => new UndoInverseStep("links.move_batch",
+                JsonSerializer.SerializeToElement(new { link_ids = g.ToArray(), target_list_id = g.Key })))
             .ToList();
 
         return CommandResult.Ok(

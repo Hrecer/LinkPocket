@@ -49,9 +49,13 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             </Trigger>
+                            <!-- ⚠️ 选中底曾经用 `App.Support.Container`（= 支撑槽**本色**）：本色深浅不定，
+                                 青提那套的本色本身就近白 ⇒ 选中与未选**一个色**，用户实测"怎么点都看不出选了哪个"。
+                                 改用**专门表示"选中"的那支**（`App.Surface.Selected`，对卡面 ≥1.22 的判据），
+                                 墨 = 主文字，字重加粗（尺寸仍不变）。 -->
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Support.Container}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -139,6 +143,8 @@
                              「搜索」/「取消」各 2 字 = 26px ⇒ 60。英文 `Search` / `Cancel`（13pt 需 43 / 42px）
                              放不下时由 LocFit 缩英文字号让位 —— **绝不为英文把几何放大**（中文是第一体验）。
                              高度显式 32 + 只留水平内距 = 与全站药丸同一口径（垂直内距 9 会让高度随字体行高漂）。 -->
+                        <!-- 搜索 = 本页**主操作**：口径 = 主操作走强调填充（深底白字）、次操作走次按钮底（淡而可见）。
+                             它曾用「淡底深墨」压低视觉重量（"高频但不该抢戏"），用户实测"太浅，应该深一点" ⇒ 改回强调填充。 -->
                         <Button Grid.Column="3" Padding="14,0" Height="32" FontSize="13" FontWeight="SemiBold" Width="60"
                                 Style="{StaticResource PrimaryPillButton}"
                                 Command="{Binding SearchCommand}" Focusable="False"
@@ -205,6 +211,14 @@
                         </CheckBox>
                     </StackPanel>
                 </Border>
+
+                <!-- 截断提示（只在命中数超过渲染上限时出词）：**段落级说明文本**——宽度内容自适应、不钉宽，
+                     走 LocFit 自适应通道（放不下缩字号，绝不截断）；上限 380 保证窄窗口下也不撑破工具行。
+                     ⚠️ 这类"数据读数"必须写出来：静默截断比卡顿更难被发现（用户会以为"库里就这么点"）。 -->
+                <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                           views:LocFit.Text="{loc:FitValue ResultNotice}" views:LocFit.Mode="Shrink"
+                           MaxWidth="380" FontSize="12.5" VerticalAlignment="Center" Margin="14,0,0,0"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
             </StackPanel>
 
             <!-- 结果区：完全可复用、数据驱动的 SortableDataTable（表头排序/表格化行/空态一体）；

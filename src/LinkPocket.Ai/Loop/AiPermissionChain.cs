@@ -35,8 +35,10 @@ public static class AiPermissionChain
     public static AiPermissionVerdict Evaluate(CommandDescriptor? descriptor, AiMode mode, bool sessionAllowed,
         bool exposed = true)
     {
-        if (!exposed) return new(AiToolDecision.Deny, "not_exposed");                  // ① 暴露集（硬禁止，审批压不过）
-        if (descriptor is null) return new(AiToolDecision.Deny, "unknown_tool");       // ① 目录里没有
+        // ①a 目录里没有这个命令名 → 原因就是"名字不存在"（拼错），不能说成"未暴露"：
+        //     两者对模型是**完全不同的处置**——前者改名字重试，后者要告诉用户去开高级开关。
+        if (descriptor is null) return new(AiToolDecision.Deny, "unknown_tool");
+        if (!exposed) return new(AiToolDecision.Deny, "not_exposed");                  // ①b 暴露集（硬禁止，审批压不过）
         if (mode == AiMode.ReadOnly)                                                   // ② 只读会话
             return descriptor.IsQuery
                 ? new(AiToolDecision.Allow, "readonly_query")

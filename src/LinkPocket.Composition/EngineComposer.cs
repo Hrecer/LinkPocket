@@ -28,6 +28,12 @@ public sealed class ComposeOptions
 
     /// <summary>暂存区根（staging.transform 文件准备区）；null = 由库路径推导 linkpocket_staging_*。</summary>
     public string? StagingRoot { get; init; }
+
+    /// <summary>
+    /// 撤销栈落盘文件；<b>null = 纯内存不持久化</b>（缺省——测试宿主彼此隔离，共享一份存档会互相污染）。
+    /// 正式应用显式传数据目录里的文件名，撤销才能跨进程（关闭重开后仍可回溯）。
+    /// </summary>
+    public string? UndoJournalPath { get; init; }
 }
 
 /// <summary>组合根装配结果：引擎本体 + 客户端门面 +（可选）wire + 命令注册表 +（可选）工厂 + 会话管理器。</summary>
@@ -169,7 +175,8 @@ public static class EngineComposer
         // 由 StagingService 走 TempArea 兜底。选项优先级 = StagingRoot（显式）> fallbackStagingRoot（推导）> TempArea（缺省）。
         if (options.IncludeOrchestration)
             registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, dbContextFactory,
-                options.StagingRoot ?? fallbackStagingRoot));
+                options.StagingRoot ?? fallbackStagingRoot,
+                undoJournalPath: options.UndoJournalPath));
 
         var client = new EngineClient(engine);
         var wire = options.BuildWire ? new EngineWire(engine) : null;   // 构造期缓存目录 → 必须在注册完成后创建

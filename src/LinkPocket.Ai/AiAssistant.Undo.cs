@@ -58,6 +58,7 @@ public sealed partial class AiAssistant
         file.Approvals.RemoveAll(a => droppedIds.Contains(a.TurnId));
 
         TrimChatForDroppedTurns(file, dropped.Count);
+        RecomputeSummary(file);   // 读数对齐裁剪后的文件（否则左栏停在裁剪前的旧值）
         _sessionStore.Save(file);
 
         Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, sessionId,

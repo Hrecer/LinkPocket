@@ -24,6 +24,10 @@ internal sealed class SearchLinksHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
                 enumValues: QueryParsing.LinkSortFieldNames),
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
+            // 分页（可选；per_page 缺省 0 = 全量，向后兼容）。命中总数用 search.count（同谓词 COUNT，
+            // 不物化实体不过管道），界面"命中 N 条 / 截断提示"由它供数。
+            ParamSpec.Opt<int>("page", "Page index (1-based, default 1)"),
+            ParamSpec.Opt<int>("per_page", "Items per page (0 = all, default 0)"),
         ],
         Caps: CommandCaps.Query,
         // 四个范围都是 `LIKE '%…%'`（子串匹配，索引帮不上忙，只能全表扫）——这条查询在界面上
@@ -48,7 +52,9 @@ internal sealed class SearchLinksHandler : ICommandHandler
             CommandArgs.OptionalBool(args, "search_path"),
             sortBy,
             QueryParsing.NormalizeOrder(sortOrder),
-            ctx.Ct);
+            ctx.Ct,
+            CommandArgs.OptionalInt(args, "page", 1),
+            CommandArgs.OptionalInt(args, "per_page", 0));
 
         return CommandResult.Ok(hits.Select(h => h.Link.ToDto()).ToList());
     }

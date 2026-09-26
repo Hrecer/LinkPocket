@@ -104,6 +104,17 @@ internal sealed class FolderDeleteHandler : ICommandHandler
 
                 foreach (var f in subtreeFolders)
                 {
+                    // **幂等守卫**：回收站键 = 原文件夹 ID（TrashedFolder.TrashFolderId）——同一文件夹
+                    // 不可能二进回收站。批/宏的嵌套步骤共享同一 UoW，脚本里若出现重复 ID（AI 用 {ref}
+                    // 拼错、或两次删除同一实体），第二次 Add 会在 EF 身份映射里撞同键，直接把
+                    // InvalidOperationException 冒到 UI 线程（实测弹"界面异常，建议重启"）。这里显式拦截：
+                    // 已在回收站 = 如实报 EntityNotFound（批整体回滚，语义正确），绝不静默二次入站。
+                    if (await uow.Trash.FindFolderAsync(new TrashFolderId(f.FolderId), ct) is not null)
+                        throw new EngineException(EngineErrors.Of(
+                            EngineErrors.EntityNotFound,
+                            $"folder {f.FolderId} is already in the trash (duplicate delete in the same batch?)",
+                            correlationId: ctx.CorrelationId));
+
                     diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));   // 删除 = 原位置与身份快照
                     _ = await uow.Trash.AddFolderAsync(new TrashedFolder
                     {

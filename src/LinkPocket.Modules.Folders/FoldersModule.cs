@@ -15,6 +15,7 @@ public static class FoldersModule
         new FolderContentsHandler(limits ?? EngineLimits.Default),
         new FolderOverviewHandler(limits ?? EngineLimits.Default),
         new FolderTreeHandler(),
+        new FolderTreeLinksHandler(limits ?? EngineLimits.Default),
         new FolderGetHandler(),
         new FolderBreadcrumbHandler(),
         new FolderCycleCheckHandler(),

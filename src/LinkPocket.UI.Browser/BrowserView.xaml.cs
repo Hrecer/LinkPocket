@@ -96,6 +96,13 @@ public partial class BrowserView : UserControl
             _shortcutHost = new ShortcutHost(
                 ShortcutCatalog.Build(ShortcutPage.Browser, BuildShortcutCommands(ViewModel)), () => ActiveScope);
             _shortcutHost.Attach(this);
+            // 右键「刷新」用**同一个命令对象**（F5 那条），不做第二条刷新路径
+            if (ViewModel is { } browserVm)
+            {
+                PageRefresh.Register(this, browserVm.RefreshCommand);
+                // 分页续载：滚动接近底部 → 自动追加下一页（VM 内有页号/在飞/切换三重短路）
+                MainTable.ScrollNearBottom += (_, _) => _ = browserVm.RequestNextPageAsync();
+            }
         };
 
         // 页面被切到前台（全局导航切页）→ 键盘焦点收进本页：
@@ -248,49 +255,13 @@ public partial class BrowserView : UserControl
     private void ScrollRowIntoView(BrowserRowViewModel row)
     {
         if (ViewModel == null) return;
-        var list = MainTable.RowsList;
 
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-        {
-            if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement realized)
-            {
-                realized.BringIntoView();
-                return;
-            }
-
-            var scroller = FindAncestorScrollViewer(list);
-            var index = ViewModel.Rows.IndexOf(row);
-            if (scroller == null || index < 0) return;
-
-            var rowHeight = EstimateRowHeight(list);
-            scroller.ScrollToVerticalOffset(Math.Max(0, index * rowHeight - scroller.ViewportHeight / 3));
-
-            // 容器实现后精确对齐（第二段）
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-            {
-                if (list.ItemContainerGenerator.ContainerFromItem(row) is FrameworkElement afterScroll)
-                    afterScroll.BringIntoView();
-            }));
-        }));
-    }
-
-    private static ScrollViewer? FindAncestorScrollViewer(DependencyObject child)
-    {
-        var current = VisualTreeHelper.GetParent(child);
-        while (current != null)
-        {
-            if (current is ScrollViewer sv) return sv;
-            current = VisualTreeHelper.GetParent(current);
-        }
-        return null;
-    }
-
-    /// <summary>行高估算：优先取已实现容器的实测高度，否则用共享表的常规行高兜底。</summary>
-    private static double EstimateRowHeight(ItemsControl list)
-    {
-        if (list.ItemContainerGenerator.ContainerFromIndex(0) is FrameworkElement first && first.ActualHeight > 1)
-            return first.ActualHeight;
-        return 36;
+        // 唯一实现 = 共享数据表的 ScrollItemIntoView（模板模式与工厂模式同一套：
+        // 行未实现时按索引 + 平均行高估算滚动，容器实现后再让它自己对齐）。
+        // ⚠️ 这里原先自带一套"从行列表**向上**找 ScrollViewer + 估算"的实现——列表虚拟化生效后，
+        //    ScrollViewer 由行列表的**控件模板**生成（是行列表的**子孙**而不是祖先），
+        //    那条向上查找必然返回 null ⇒ 跳转/定位静默地不滚动（探针实测：等待滚动 5 秒超时）。
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => MainTable.ScrollItemIntoView(row)));
     }
 
     // 行错峰入场已收口到 UIKit `Views.RowEntrance.Play(rows)`（**唯一实现**，与回收站/搜索页/智能列表/去重明细共用）：
@@ -334,10 +305,15 @@ public partial class BrowserView : UserControl
         if (ViewModel == null || row == null) return;
         if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
 
-        // Windows 口径（慢双击改名）：对**按下时已是唯一选中**的行再次单击（单击 / 无修饰键 / 未拖拽）
-        // → 进入就地改名。首次单击只是选中（按下即反馈），第二次单击才改名；
-        // 双击的第二击 ClickCount = 2 已被上面的 `clicks > 1` 挡掉，二者互不干扰。
-        if (_pressWasSoleSelection && mods == ModifierKeys.None && !ViewModel.IsRenaming)
+        // Windows 口径（慢双击改名）两条件，缺一即不改名 —— 用户实测"老是误触改名、进不去文件夹"
+        // 的根因就是缺了第二条：① 按下时它已是唯一选中；② **不是对同一行的快速连击**
+        // （间隔 < 系统双击时间 = 用户想双击打开 → 改名让位）。第二条与 ClickCount 无关：
+        // 选择/刷新会让行容器重建，重建后 WPF 的 ClickCount 会从 1 重新计数，于是"想双击进入"
+        // 的第二击被当成单击，直接进了改名。
+        // 注：Windows 还要求点在**名称**上；本项目未做这一条——见 WARNINGS 161（探针的合成事件
+        // 送不到深层命中元素，无法验证该判据，宁可不做也不让改名整体失效）。
+        if (_pressWasSoleSelection && !_pressRapidRepeat
+            && mods == ModifierKeys.None && !ViewModel.IsRenaming)
         {
             ViewModel.BeginRenameRow(row);
             return;
@@ -361,9 +337,15 @@ public partial class BrowserView : UserControl
             return;
         }
 
-        if ((sender as FrameworkElement)?.DataContext is not BrowserRowViewModel row || ViewModel == null) return;
+        if (sender is not FrameworkElement element
+            || element.DataContext is not BrowserRowViewModel row
+            || ViewModel == null) return;
         if (!row.IsSelected) ViewModel.SelectRowWithModifiers(row, ModifierKeys.None);
         ViewModel.SetContextRow(row);
+        // 行菜单是**单实例共享**的（见 XAML `BrowserRowMenu`：此前每行容器各实例化一整套菜单，
+        // 实测每行容器 ~2ms 布局）：这里显式把它换成"这次命中的行"—— 不依赖 PlacementTarget 的继承，
+        // 也绝不让上一次打开的 DataContext 留着（否则菜单里的命令作用在上一行上）。
+        if (element.ContextMenu is { } menu) menu.DataContext = row;
     }
 
         // —— 面包屑地址栏（Views/BreadcrumbBar）事件转接：编辑态与候选导航仍由 BrowserViewModel 驱动 ——

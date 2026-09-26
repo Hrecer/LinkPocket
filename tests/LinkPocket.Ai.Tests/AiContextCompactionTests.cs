@@ -156,7 +156,11 @@ public sealed class AiContextCompactionTests
     public async Task 微压缩_节省不足即不改写()
     {
         using var host = AiTestHost.NewHost([[AiTestHost.TextChunk("done")]]);
-        await AiTestHost.ConfigureAsync(host, AiMode.AutoApply, contextWindow: 2_000);
+        // ⚠️ 窗口按"estimate 落在 [微压缩阈值, 摘要阈值) 的边界窗口"校准：系统提示词变长
+        //（新增 "Acting, not asking" 一节、新增批量写入一节）会把估算推过摘要阈值——那边没有
+        // 非流式脚本，直接 NotSupportedException。窗口给足余量，让"节省不足"这个语义仍可测。
+        // 阈值 = 窗口 − 预留 − 缓冲；微压缩阈值 = min(阈值×90%, 阈值−2000)。
+        await AiTestHost.ConfigureAsync(host, AiMode.AutoApply, contextWindow: 5_200);
         var sessionId = (await host.Assistant.ListSessionsAsync()).Single().SessionId;
         // 8 组但每组结果只有 20 字符：清了也省不到最小节省 → 不改写
         AiTestHost.SeedSessionFile(host.DataRoot, sessionId, LongToolHistory(groups: 8, size: 20));

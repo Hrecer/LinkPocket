@@ -23,7 +23,6 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     private AiMode _mode = AiMode.ConfirmEach;
     private bool _isConfigured;
     private string? _lastErrorKey;
-    private bool _isPanelCollapsed = true;
     private AiModelOption? _selectedModel;
 
     public AiViewModel(IAiAssistant assistant)
@@ -52,8 +51,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     /// <summary>导航轨显隐（只有一轮时不占位）。</summary>
     public bool ShowRail => Turns.Count > 1;
 
-    public ObservableCollection<AiChangeRow> TurnChanges { get; } = [];
-    public ObservableCollection<AiChangeRow> SessionChanges { get; } = [];
+    /// <summary>审批行（对话内审批卡的**回查源**：按钮按审批 ID 从这里取行，见 AiViewModel.Ledger）。</summary>
     public ObservableCollection<AiApprovalRow> Approvals { get; } = [];
 
     /// <summary>模型下拉（全部已启用模型；选择写助手偏好，与 `/model` 同一条路径）。</summary>
@@ -69,6 +67,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         {
             if (!Set(ref _isTurnRunning, value, nameof(IsTurnRunning))) return;
             Raise(nameof(CanUndoSession));   // 回合在跑时不给撤销（引擎写面正被占用）
+            Raise(nameof(CanSend));          // 回合在跑时发送置灰（不允许并发；停止后可发）
             Raise(nameof(IsProgressVisible));
             if (!value)
             {
@@ -134,20 +133,6 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public string? ActiveSessionId => _activeSessionId;
-
-    /// <summary>右栏「变更与审计」的收起态（顶栏开关；收起后不再占宽）——**缺省收起**。</summary>
-    public bool IsPanelCollapsed
-    {
-        get => _isPanelCollapsed;
-        set
-        {
-            if (Set(ref _isPanelCollapsed, value, nameof(IsPanelCollapsed))) Raise(nameof(PanelToggleKey));
-        }
-    }
-
-    public string PanelToggleKey => IsPanelCollapsed ? "ai.panel.expand" : "ai.panel.collapse";
-
-    public void TogglePanel() => IsPanelCollapsed = !IsPanelCollapsed;
 
     /// <summary>模型下拉的当前值（无启用模型 = 提示去配置）。</summary>
     public AiModelOption? SelectedModel
@@ -271,28 +256,43 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         var groups = timeline.GroupBy(x => x.TurnId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Seq).Select(x => x.Item).ToList(), StringComparer.Ordinal);
 
-        foreach (var turn in order)
+        // 层级口径（对齐参照设计）：每轮 = **用户消息段（组外）→ 回合状态行 → 该轮工作（组内，可折叠）**；
+        // **历史轮缺省收起**（只显示状态行），仅最后一轮展开——重开会话不再被一屏又一屏的旧思考/工具占满。
+        var lastTurnId = order.LastOrDefault()?.TurnId;
+        void AddTurn(string turnId, AiTurn turn, List<AiFeedItem> items)
         {
+            var userItems = items.Where(i => i.Kind == AiFeedItem.ItemKind.UserMessage).ToList();
+            var workItems = items.Where(i => i.Kind != AiFeedItem.ItemKind.UserMessage).ToList();
+
+            foreach (var u in userItems) Feed.Add(u);
+
             var header = AiFeedItem.ForTurn(turn);
-            var items = groups.GetValueOrDefault(turn.TurnId, []);
             header.SetPreview(PreviewOf(items));
             header.SetReplyPreview(ReplyPreviewOf(items));
+            // 与参照实现同规则：**只有还在跑 / 被中断 / 失败的那一轮保持展开**，
+            // 其余全部收起（重开会话只看到每轮一行"已工作 X" + AI 的最终回复）。
+            var collapsed = !header.IsLockedOpen;
+            header.SetInitialCollapsed(collapsed);
             Feed.Add(header);
             Turns.Add(header);
-            foreach (var item in items) Feed.Add(item);
+            foreach (var w in workItems)
+            {
+                w.SetHiddenByTurn(collapsed);
+                Feed.Add(w);
+            }
+        }
+
+        foreach (var turn in order)
+        {
+            AddTurn(turn.TurnId, turn, groups.GetValueOrDefault(turn.TurnId, []));
             groups.Remove(turn.TurnId);
         }
 
         foreach (var (turnId, items) in groups.OrderBy(g => g.Value.FirstOrDefault()?.At ?? DateTimeOffset.MaxValue))
         {
             var ordered = items.ToList();
-            var header = AiFeedItem.ForTurn(new AiTurn(turnId, ++fallbackIndex, AiTurnState.Completed,
-                items.FirstOrDefault()?.At ?? DateTimeOffset.UtcNow, null, null, 0, 0, 0, false));
-            header.SetPreview(PreviewOf(ordered));
-            header.SetReplyPreview(ReplyPreviewOf(ordered));
-            Feed.Add(header);
-            Turns.Add(header);
-            foreach (var item in items) Feed.Add(item);
+            AddTurn(turnId, new AiTurn(turnId, ++fallbackIndex, AiTurnState.Completed,
+                items.FirstOrDefault()?.At ?? DateTimeOffset.UtcNow, null, null, 0, 0, 0, false), ordered);
         }
 
         if (Turns.LastOrDefault() is { } latest) latest.IsActive = true;
@@ -312,6 +312,9 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     /// 草稿是"还没被用起来的会话"，露在左栏就等于又回到"点一下就多一条空会话"的老毛病。</summary>
     private void UpsertSession(AiSessionSummary summary)
     {
+        // 诊断留痕（会话列表"新行不出现"的现场取证）：记录每一次收到的摘要与是否被草稿过滤挡下。
+        LpLog.Write(LogLevel.Info, "ai.page",
+            $"session upsert: id={summary.SessionId} persistence={summary.Persistence} msgs={summary.MessageCount} title='{summary.Title}'");
         if (summary.Persistence == AiSessionPersistence.Deferred) return;   // 草稿：只在内存，不上列表
         var index = Sessions.ToList().FindIndex(s => s.SessionId == summary.SessionId);
         if (index >= 0) Sessions[index].Apply(summary);
@@ -376,7 +379,14 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public void ToggleTurn(AiFeedItem header)
     {
         if (header.Kind != AiFeedItem.ItemKind.TurnHeader) return;
+        if (header.IsLockedOpen) return;   // 运行中 / 中断 / 失败：锁死展开，点了也不收
         header.ToggleCollapsed();
+        SyncWorkVisibility(header);
+    }
+
+    /// <summary>该轮工作段的显隐对齐分隔行的折叠态（分隔行之后、下一个分隔行之前的全部条目）。</summary>
+    private void SyncWorkVisibility(AiFeedItem header)
+    {
         var index = Feed.IndexOf(header);
         if (index < 0) return;
         for (var i = index + 1; i < Feed.Count && Feed[i].Kind != AiFeedItem.ItemKind.TurnHeader; i++)
@@ -465,9 +475,12 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         switch (notification.Kind)
         {
             case AiNotificationKind.MessageAdded when notification.Message is { } message:
+                // 非当前会话的消息不进本视图（否则"在 A 里发消息、切到新草稿"时旧会话内容会串进来）
+                if (notification.SessionId != _activeSessionId) break;
                 UpsertMessage(message);
                 break;
             case AiNotificationKind.StreamDelta when notification.ReasoningDelta is { } thought:
+                if (notification.SessionId != _activeSessionId) break;   // 同上：流式增量按会话过滤
                 // 思考增量与正文增量同走一条路，但落在**不同字段**（折叠块 vs 气泡）
                 var thinking = Feed.FirstOrDefault(i => i.ItemId == notification.MessageId);
                 if (thinking is null)
@@ -483,6 +496,7 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 }
                 break;
             case AiNotificationKind.StreamDelta when notification.TextDelta is { } delta:
+                if (notification.SessionId != _activeSessionId) break;   // 同上：流式增量按会话过滤
                 var streaming = Feed.FirstOrDefault(i => i.ItemId == notification.MessageId);
                 if (streaming is null)
                 {
@@ -497,9 +511,11 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 }
                 break;
             case AiNotificationKind.ToolCallChanged when notification.ToolCall is { } call:
+                if (notification.SessionId != _activeSessionId) break;   // 非当前会话不入本视图
                 UpsertTool(call);
                 break;
             case AiNotificationKind.ApprovalChanged when notification.Approval is { } approval:
+                if (notification.SessionId != _activeSessionId) break;   // 同上
                 UpsertApproval(approval);
                 break;
             case AiNotificationKind.ChangeRecorded when notification.Change is { } change:
@@ -507,7 +523,14 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
                 break;
             case AiNotificationKind.TurnChanged when notification.Turn is { } turn:
                 if (notification.SessionId != _activeSessionId) break;
-                HeaderOf(notification.TurnId ?? turn.TurnId)?.ApplyTurn(turn);
+                if (HeaderOf(notification.TurnId ?? turn.TurnId) is { } header)
+                {
+                    header.ApplyTurn(turn);
+                    // 结算即收起（ApplyTurn 内）只改到分隔行自己——条目的显隐必须在这里落地。
+                    // 少了这一同步：完成后"状态已收起、思考与工具还摊着"，此时点第一下执行的其实是
+                    // "展开"（画面本来就没收起，看着毫无反应），第二下才真合（用户实测：要点两下）。
+                    SyncWorkVisibility(header);
+                }
                 IsTurnRunning = turn.State is AiTurnState.Pending or AiTurnState.Streaming or AiTurnState.ToolRunning
                     or AiTurnState.AwaitingApproval;
                 StatusKey = turn.State switch
@@ -586,6 +609,19 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
         var at = -1;
         if (item.TurnId is { } turnId)
         {
+            // **用户消息在回合组之外**（对齐参照设计的层级：用户消息 → 回合状态行 → 该轮工作）：
+            // 新回合的第一条用户消息先落位，回合状态行随后补在它**后面**——
+            // 此前头先建、用户消息插其后，"本轮进行中"跑到用户气泡的上面，层级完全颠倒。
+            if (item.Kind == AiFeedItem.ItemKind.UserMessage && HeaderOf(turnId) is null)
+            {
+                Feed.Add(item);
+                var newHeader = EnsureHeader(turnId, item.At);
+                newHeader.SetPreview(item.Text);
+                item.SetHiddenByTurn(false);   // 在头之前，不受该轮折叠影响
+                NotifyFeedShape();
+                return;
+            }
+
             var header = EnsureHeader(turnId, item.At);
             if (item.Kind == AiFeedItem.ItemKind.UserMessage) header.SetPreview(item.Text);
             if (item.Kind == AiFeedItem.ItemKind.AssistantMessage) header.SetReplyPreview(item.Text);

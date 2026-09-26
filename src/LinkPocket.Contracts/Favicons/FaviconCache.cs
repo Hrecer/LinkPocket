@@ -37,6 +37,34 @@ public static class FaviconCache
     /// <summary>同地址在飞去重：键 = 解析后地址。</summary>
     private static readonly ConcurrentDictionary<string, Task<bool>> InFlight = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 失败负面缓存（进程内）：键 = 解析后地址，值 = 在此之前不再重试的时刻。
+    /// </summary>
+    /// <remarks>
+    /// 没有它时，"每次刷新都重试全部失败地址"是实测发生过的：真实库里 21 445 条链接的 favicon_url
+    /// 是内嵌 <c>data:</c> URI（一条真实网址都没有），界面每次刷新都把去重后的 1 976 个地址重发一遍，
+    /// 单次会话产生 3 587 条失败日志、持续 5 分钟（现场日志实证）。
+    /// 失败多为"该站点没有图标 / 网络抖动"，给一段退避而不是永久封杀：TTL 过后仍会重试一次。
+    /// </remarks>
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> FailedUntil = new(StringComparer.Ordinal);
+
+    /// <summary>失败退避时长。</summary>
+    private static readonly TimeSpan FailureBackoff = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// 内嵌图标（<c>data:</c> URI）判定。这类地址**不是可下载的网址**：
+    /// 它自己就带着图标字节（`data:image/png;base64,…`），进网络只会得到
+    /// `NotSupportedException: The 'data' scheme is not supported`（现场 2 394 条），
+    /// 而且降级链还会把 <c>uri.Host</c> 为空的它拼成 `data:///favicon.ico` 再失败一次。
+    /// 内嵌图标的显示由界面层解码（UIKit 的 `FaviconService`）。
+    /// </summary>
+    public static bool IsInlineData(string? url)
+        => !string.IsNullOrWhiteSpace(url) && url.StartsWith("data:", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>日志用的地址短写（内嵌图标与超长地址绝不整段进日志：单日 5.2 MB 日志的成因）。</summary>
+    private static string ShortUrl(string url)
+        => url.Length <= 96 ? url : string.Concat(url.AsSpan(0, 96), "…(", url.Length.ToString(), " chars)");
+
     private static readonly HttpClient Http = CreateHttpClient();
 
     private static HttpClient CreateHttpClient()
@@ -48,10 +76,13 @@ public static class FaviconCache
         return client;
     }
 
-    /// <summary>SVG 不能直接当图标解码 → 回落站点根 <c>/favicon.ico</c>；地址非法时原样返回。</summary>
+    /// <summary>SVG 不能直接当图标解码 → 回落站点根 <c>/favicon.ico</c>；地址非法时原样返回。
+    /// 内嵌图标（<c>data:</c>）原样返回——它没有"站点根"，回落只会拼出非法地址。</summary>
     public static string ResolveFaviconUrl(string? originalUrl)
     {
         if (string.IsNullOrWhiteSpace(originalUrl)) return string.Empty;
+
+        if (IsInlineData(originalUrl)) return originalUrl;
 
         if (GetExtensionFromUrl(originalUrl).Equals(".svg", StringComparison.OrdinalIgnoreCase))
             return BuildDefaultFaviconUrl(originalUrl);
@@ -96,9 +127,16 @@ public static class FaviconCache
     {
         if (string.IsNullOrWhiteSpace(faviconUrl)) return Task.FromResult(false);
 
+        // 内嵌图标：字节就在地址里，没有可下载的东西（界面自己解码），一个包都不发。
+        if (IsInlineData(faviconUrl)) return Task.FromResult(false);
+
         var resolvedUrl = ResolveFaviconUrl(faviconUrl);
         var cachePath = GetCacheFilePath(resolvedUrl);
         if (File.Exists(cachePath)) return Task.FromResult(true);
+
+        // 退避窗口内不再重试（失败多为"该站点没有图标"，每次刷新重发一遍纯属白烧）。
+        if (FailedUntil.TryGetValue(resolvedUrl, out var until) && until > DateTimeOffset.UtcNow)
+            return Task.FromResult(false);
 
         return InFlight.GetOrAdd(resolvedUrl, key => DownloadAndCacheAsync(key, cachePath, ct));
     }
@@ -129,10 +167,15 @@ public static class FaviconCache
                     }
                 }
 
-                if (bytes == null) return false;
+                if (bytes == null)
+                {
+                    MarkFailed(resolvedUrl);
+                    return false;
+                }
 
                 Directory.CreateDirectory(CacheDirectory);
                 await File.WriteAllBytesAsync(cachePath, bytes, ct).ConfigureAwait(false);
+                FailedUntil.TryRemove(resolvedUrl, out _);   // 成功即解除退避
                 return true;
             }
             finally
@@ -142,7 +185,8 @@ public static class FaviconCache
         }
         catch (Exception ex)
         {
-            LpLog.Error($"favicon cache write failed: {resolvedUrl} - {ex.Message}", ex);
+            MarkFailed(resolvedUrl);
+            LpLog.Error($"favicon cache write failed: {ShortUrl(resolvedUrl)} - {ex.Message}", ex);
             return false;
         }
         finally
@@ -151,6 +195,10 @@ public static class FaviconCache
         }
     }
 
+    /// <summary>记一次失败：写入退避窗口（下次刷新在窗口内不再重发同一地址）。</summary>
+    private static void MarkFailed(string resolvedUrl)
+        => FailedUntil[resolvedUrl] = DateTimeOffset.UtcNow + FailureBackoff;
+
     private static async Task<byte[]?> TryDownloadAsync(string url, CancellationToken ct)
     {
         try
@@ -158,13 +206,13 @@ public static class FaviconCache
             using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {url}", null);
+                LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {ShortUrl(url)}", null);
                 return null;
             }
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxBytes)
             {
-                LpLog.Error($"favicon download refused (declared {declared} bytes > {MaxBytes}): {url}", null);
+                LpLog.Error($"favicon download refused (declared {declared} bytes > {MaxBytes}): {ShortUrl(url)}", null);
                 return null;
             }
 
@@ -176,7 +224,7 @@ public static class FaviconCache
             {
                 if (buffer.Length + read > MaxBytes)
                 {
-                    LpLog.Error($"favicon download refused (body over {MaxBytes} bytes): {url}", null);
+                    LpLog.Error($"favicon download refused (body over {MaxBytes} bytes): {ShortUrl(url)}", null);
                     return null;
                 }
                 buffer.Write(chunk, 0, read);
@@ -186,7 +234,7 @@ public static class FaviconCache
         }
         catch (Exception ex)
         {
-            LpLog.Error($"favicon download threw: {url} - {ex.Message}", ex);
+            LpLog.Error($"favicon download threw: {ShortUrl(url)} - {ex.Message}", ex);
             return null;
         }
     }

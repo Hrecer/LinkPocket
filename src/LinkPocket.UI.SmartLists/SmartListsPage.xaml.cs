@@ -87,6 +87,8 @@ namespace LinkPocket.Views
                     .Add(ShortcutAction.SmartListsRefresh, new RelayCommand(() => ResultVm?.RefreshCommand.Execute(null)))),
                 () => ShortcutScope.SmartLists);
             _shortcutHost.Attach(this);
+            // 右键「刷新」= F5 同一个包装命令（结果页的刷新）
+            PageRefresh.Register(this, new RelayCommand(() => ResultVm?.RefreshCommand.Execute(null)));
         }
 
         // ============================================================

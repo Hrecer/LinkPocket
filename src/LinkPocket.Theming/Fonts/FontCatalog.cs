@@ -283,8 +283,41 @@ public static class FontCatalog
     }
 
     /// <summary>构造 WPF <see cref="FontFamily"/>（令牌值 → 对象）。</summary>
-    public static FontFamily BuildFontFamily(string? primaryFamily) =>
-        new(BuildTokenValue(primaryFamily));
+    /// <remarks>
+    /// <b>导入字体必须带"字体目录基址"</b>：它不在系统字体目录里，只给族名字符串时 WPF 找不到这一族，
+    /// 会静默落到回退链上的下一族（实测：Aa漫语手写体 ⇒ 实际渲染成 Microsoft YaHei UI，
+    /// 界面毫无变化 = "点了应用应用不了"）。带基址的 <c>"./#族名"</c> 才会真正命中那一份文件字体，
+    /// 回退链照旧挂在后面（缺字形时仍落雅黑，不会变方块）。
+    /// </remarks>
+    public static FontFamily BuildFontFamily(string? primaryFamily)
+    {
+        var primary = (primaryFamily ?? string.Empty).Trim();
+        // 兼容早先存进偏好的旧格式（'./#族名'）：剥掉前缀再查
+        var name = primary.StartsWith("./#", StringComparison.Ordinal) ? primary[3..] : primary;
+        if (name.Length > 0 && TryFindImportedDirectory(name, out var dir))
+            return new FontFamily(new Uri(dir, UriKind.Absolute), "./#" + name + FallbackSuffix(name));
+        return new FontFamily(BuildTokenValue(primaryFamily));
+    }
+
+    /// <summary>回退链后缀（<c>", 雅黑, Segoe UI"</c>；主族自己不计入）。</summary>
+    private static string FallbackSuffix(string primary) =>
+        ", " + string.Join(", ", FallbackChain.Where(f => !string.Equals(f, primary, StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>该族名是不是**本应用导入的那一份文件字体**；是则给出它所在目录（用于构造带基址的 FontFamily）。</summary>
+    private static bool TryFindImportedDirectory(string family, out string directory)
+    {
+        foreach (var choice in ImportedFonts())
+        {
+            var own = choice.Family.StartsWith("./#", StringComparison.Ordinal) ? choice.Family[3..] : choice.Family;
+            if (!string.Equals(own, family, StringComparison.OrdinalIgnoreCase)) continue;
+            var dir = Path.GetDirectoryName(choice.FilePath ?? string.Empty);
+            if (string.IsNullOrEmpty(dir)) continue;
+            directory = dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return true;
+        }
+        directory = string.Empty;
+        return false;
+    }
 
     /// <summary>默认界面字体族：<b>中文界面</b>（= 改造前 <c>AppFont</c> 的第一段）。</summary>
     public const string ZhDefaultUiFamily = "Microsoft YaHei UI";
@@ -327,7 +360,14 @@ public static class FontCatalog
             var families = System.Windows.Media.Fonts.GetFontFamilies(new Uri(path, UriKind.Absolute));
             var first = families.FirstOrDefault();
             if (first is null) return false;
-            family = first.Source;
+            // ⚠️ 存**纯族名**，不是 <c>FontFamily.Source</c>：对文件 URI 取族时 Source 是
+            // "./#族名" 这种**相对引用**（实测 Aa漫语手写体 ⇒ './#AaManYuShouXieTi'）。
+            // 把它当族名直接构造 FontFamily，WPF 在系统字体里找不到这一族，会**静默落到回退链上的
+            // 下一族**（实测回退成 Microsoft YaHei UI）—— 表现就是"导入成功、点了应用，界面字体没变"。
+            var en = System.Windows.Markup.XmlLanguage.GetLanguage("en-us");
+            family = first.FamilyNames.TryGetValue(en, out var n) && !string.IsNullOrWhiteSpace(n)
+                ? n
+                : first.FamilyNames.Values.FirstOrDefault() ?? first.Source;
             return !string.IsNullOrWhiteSpace(family);
         }
         catch (Exception ex)

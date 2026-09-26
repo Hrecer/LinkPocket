@@ -178,8 +178,13 @@ public class SortableDataTable : Grid
     private readonly Border _headerBand;
     private readonly Grid _headerGrid;
     private readonly ItemsControl _rowsList;
-    /// <summary>行区滚动宿主（排序后需要恢复滚动位置，故持有引用）。</summary>
-    private readonly ScrollViewer _rowsScroller;
+    /// <summary>
+    /// 行区滚动宿主（排序后需要恢复滚动位置、把某行滚入视口）。
+    /// ⚠️ **惰性取**：它现在由行列表的控件模板生成（模板未应用时不存在），
+    /// 不能在构造函数里抓引用（那只在"ScrollViewer 包在 ItemsControl 外面"的旧结构下成立，
+    /// 而那个结构正是**虚拟化失效**的原因，见 <see cref="BuildRowsTemplate"/>）。
+    /// </summary>
+    private ScrollViewer? _rowsScroller;
     /// <summary>空态承载器（独立 ContentControl，绝不与 ItemsSource 混用 Items —— 混用会抛
     /// "在使用 ItemsSource 之前，项集合必须为空"，搜索结果因此永远渲染不出来）。</summary>
     private readonly ContentControl _emptyHost;
@@ -227,6 +232,7 @@ public class SortableDataTable : Grid
         _rowsList = new ItemsControl
         {
             ItemsPanel = BuildRowsPanel(),
+            Template = BuildRowsTemplate(),
             Padding = new Thickness(0, 4, 0, 0),
             // 「聚焦禁描边」是硬性口径，且**逐类容器都要核对**（WARNINGS 43）：表格内部的
             // ScrollViewer / ItemsControl / ContentControl 来自框架默认模板，FocusVisualStyle 非空
@@ -242,26 +248,19 @@ public class SortableDataTable : Grid
             Visibility = Visibility.Collapsed,
             FocusVisualStyle = null
         };
-        // 虚拟化前提：行列表必须是 ScrollViewer 的直接内容（隔一层容器会让视口约束传不进
-        // VirtualizingStackPanel，退化为全量实例化）；空态改为覆盖层，不再与行列表同容器。
-        var scroller = new ScrollViewer
-        {
-            Content = _rowsList,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            CanContentScroll = true,
-            FocusVisualStyle = null
-        };
-        _rowsScroller = scroller;
+        // 虚拟化四项**在 ItemsControl 与面板模板两处都写**：
+        // 面板读的是"面板上的值"（模板里那份），而滚动单位这类设置的实际生效路径会去问 ItemsControl——
+        // 实测只写在面板上时，读回来是 Pixel 但滚动行为与 Extent 仍是"按项"（Extent=项数，不是像素高）。
+        // 两处都写，谁读都对；重复设置同一附加属性没有副作用。
         VirtualizingPanel.SetIsVirtualizing(_rowsList, true);
-        // 容器复用：默认 Standard 模式每滚过一行就新建行容器（行模板含多级 RelativeSource 绑定 +
-        // 右键菜单，重建一次是实打实的开销）；Recycling 只换 DataContext。
         VirtualizingPanel.SetVirtualizationMode(_rowsList, VirtualizationMode.Recycling);
-        VirtualizingPanel.SetScrollUnit(_rowsList, ScrollUnit.Pixel); // 像素滚动，保持平滑手感
+        VirtualizingPanel.SetScrollUnit(_rowsList, ScrollUnit.Pixel);
         VirtualizingPanel.SetCacheLength(_rowsList, new VirtualizationCacheLength(1));
         VirtualizingPanel.SetCacheLengthUnit(_rowsList, VirtualizationCacheLengthUnit.Page);
+
+        // 空态与行列表同容器叠放（空态是覆盖层、不参与命中）。
         var rowsArea = new Grid();
-        rowsArea.Children.Add(scroller);
+        rowsArea.Children.Add(_rowsList);
         rowsArea.Children.Add(_emptyHost);
         Children.Add(rowsArea);
         SetRow(rowsArea, 1);
@@ -270,21 +269,114 @@ public class SortableDataTable : Grid
         // 也必须等布局结束后才能实测（行容器是布局期生成的）。
         _rowsList.SizeChanged += (_, _) => ScheduleHeaderAlignment();
         Loaded += (_, _) => ScheduleHeaderAlignment();
+
+        // 容器**被实现**（滚进视口）时重投影一次选中底色。
+        // ⚠️ 为什么需要：虚拟化生效后，行容器是"用到才挂进可视树"的——工厂模式（搜索/回收站/智能列表）
+        //    的行底色是**画在容器上**的（`_rowMap` + SetResourceReference），
+        //    而 `ApplySelection` 只在调用的那一刻给当时**已实现**的行上色 ⇒
+        //    滚动到之前没实现过的选中行时底色会缺一块（"选中丢了"的假象）。
+        //    这是虚拟化的必然连带项，不是可选优化。
+        _rowsList.ItemContainerGenerator.StatusChanged += (_, _) => RepaintSelectionOnRealizedContainers();
     }
 
+    /// <summary>
+    /// 行列表面板：<see cref="VirtualizingStackPanel"/>，**虚拟化属性直接写在面板上**。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 属性为什么不写在 ItemsControl 上（那样写曾经整整失效一版）：
+    /// <c>VirtualizingPanel.IsVirtualizing</c> 是继承属性，会传到面板；
+    /// 而 <c>VirtualizationMode</c> / <c>ScrollUnit</c> / <c>CacheLength</c> **不是**继承属性——
+    /// 写在 ItemsControl 上时，实测面板读回的仍是默认值（`Mode=Standard`、`ScrollUnit=Item`）。
+    /// 写在面板标签上才是"这条设置真的到了它该在的地方"。
+    /// <para>⚠️ 1.1 如实说明：虚拟化只对【模板模式】（ItemsSource=数据对象 + ItemTemplate）生效；
+    /// 【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），Panel 直接挂进可视树、
+    /// 不做容器化 → 行数 = 实例化的控件数（万级数据下实测约 2.3 ms/行，见 `PERF-LARGE-LIBRARY.md`）。
+    /// 工厂模式用于搜索/智能列表/回收站，它们的规模必须由**调用方**保证（搜索无上限是已知缺陷）。</para>
+    /// </remarks>
     private static ItemsPanelTemplate BuildRowsPanel()
     {
-        // UI 虚拟化（windowing）：VirtualizingStackPanel 只实例化可视区 ± 缓存页的「数据容器」。
-        // ⚠️ 1.1 如实说明：虚拟化只对【模板模式】（ItemsSource=数据对象 + ItemTemplate，浏览页大表）
-        // 生效；【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），Panel 会直接
-        // 挂进可视树，不做容器化 → 行数 = 实例化的控件数。工厂模式用于搜索/智能列表/回收站：
-        // 数据量受分页（per_page）/列表上限（≤100）/业务规模约束，全量实例化内可接受；
-        // 若未来工厂模式要支撑万级行，需改为 DataTemplate + 数据对象（配合 _rowMap 的选中/排序恢复）。
         const string xaml =
             "<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>" +
-            "<VirtualizingStackPanel/>" +
+            "<VirtualizingStackPanel VirtualizingPanel.IsVirtualizing='True' " +
+            "VirtualizingPanel.VirtualizationMode='Recycling' " +
+            "VirtualizingPanel.ScrollUnit='Pixel' " +
+            "VirtualizingPanel.CacheLength='1' VirtualizingPanel.CacheLengthUnit='Page'/>" +
             "</ItemsPanelTemplate>";
         return (ItemsPanelTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
+    }
+
+    /// <summary>
+    /// 行列表的控件模板：<b>ScrollViewer 直接包 <see cref="ItemsPresenter"/></b>。
+    /// </summary>
+    /// <remarks>
+    /// 这是 WPF 列表虚拟化**唯一生效的形状**（ListBox / TreeView 的默认模板都是它）：
+    /// ScrollViewer 的滚动宿主（<c>ScrollContentPresenter</c>）必须直接看到
+    /// <see cref="ItemsPresenter"/> 里的 <see cref="VirtualizingStackPanel"/>，才会把
+    /// <c>IScrollInfo</c> 交给面板；否则滚动宿主退化成 <c>ScrollContentPresenter</c> 自己（物理滚动），
+    /// 面板的 <c>Extent/Viewport</c> 恒为 0 → **每个数据项都实例化一个行容器**。
+    /// <para>旧结构（ScrollViewer 包在 ItemsControl 外面：`scroller.Content = _rowsList`）实测在
+    /// 1 630 行时实例化 1 630 个行容器、10 001 行时实例化 10 001 个（打开一个 10 001 行的目录
+    /// 让 UI 线程停摆 37～90 秒）。改成本模板后同样数据实测 25 个容器、首屏 0.6～0.9 秒。</para>
+    /// <para>⚠️ 滚动宿主改由模板生成 ⇒ 引用它的地方一律经 <see cref="RowsScroller"/> 惰性取。</para>
+    /// </remarks>
+    private static ControlTemplate BuildRowsTemplate()
+    {
+        const string xaml =
+            "<ControlTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' " +
+            "xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' TargetType='ItemsControl'>" +
+            "<Border Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'>" +
+            // FocusVisualStyle 置空（WARNINGS 43/62：框架默认容器的焦点虚线框必须逐类摘掉）。
+            "<ScrollViewer CanContentScroll='True' VerticalScrollBarVisibility='Auto' " +
+            "HorizontalScrollBarVisibility='Disabled' Focusable='False' FocusVisualStyle='{x:Null}'>" +
+            "<ItemsPresenter/>" +
+            "</ScrollViewer></Border></ControlTemplate>";
+        return (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
+    }
+
+    /// <summary>行区滚动宿主（模板生成，惰性取）。模板未应用时返回 null——调用方必须容忍。</summary>
+    /// <summary>行区滚动**接近底部**（余量不足两屏）：分页续载的触发信号——
+    /// 万行目录不再一次全量搬运（引擎按 per_page 切片，界面滚到底自动追加下一页）。
+    /// 少行表（Extent 没超出两屏）也会触发，由订阅方用"还有没有下一页"自行短路。</summary>
+    public event EventHandler? ScrollNearBottom;
+
+    private ScrollViewer? RowsScroller
+    {
+        get
+        {
+            if (_rowsScroller == null)
+            {
+                _rowsScroller = FindVisualChild<ScrollViewer>(_rowsList);
+                if (_rowsScroller != null)
+                {
+                    double lastFiredOffset = -1;
+                    _rowsScroller.ScrollChanged += (_, e) =>
+                    {
+                        if (e.ExtentHeight <= 0 || e.ViewportHeight <= 0) return;
+                        // 只在**向下滚过上次触发点**时发信号：续载追加 → Reset 重建 → 编辑框重聚焦
+                        // 会把视口拉回底部（实测把 7 页一口气拉完），必须用"偏移在增长"斩断这条环。
+                        if (e.VerticalOffset <= lastFiredOffset) return;
+                        if (e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - e.ViewportHeight * 2)
+                        {
+                            lastFiredOffset = e.VerticalOffset;
+                            ScrollNearBottom?.Invoke(this, EventArgs.Empty);
+                        }
+                    };
+                }
+            }
+            return _rowsScroller;
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T hit) return hit;
+            if (FindVisualChild<T>(child) is { } deep) return deep;
+        }
+        return null;
     }
 
     private IEnumerable<DataTableColumn> ColumnList => Columns ?? Array.Empty<DataTableColumn>();
@@ -505,14 +597,10 @@ public class SortableDataTable : Grid
                 return g;
         }
 
-        // 模板模式：从已实例化的行容器向下查找
-        for (var i = 0; i < _rowsList.Items.Count; i++)
-        {
-            if (_rowsList.ItemContainerGenerator.ContainerFromIndex(i) is DependencyObject container
-                && FindColumnGrid(container) is { } hit)
-                return hit;
-        }
-        return null;
+        // 模板模式：直接在**已实现的行容器**里找（虚拟化下可视树里只有视口 ± 缓存页那些）。
+        // ⚠️ 不要写成 `for (i < Items.Count) ContainerFromIndex(i)`：那是按数据项逐个问容器，
+        //    在万级数据上每次表头对齐都要空转上万次（且容易把"未实现"误当"没有行"）。
+        return FindColumnGrid(_rowsList);
     }
 
     private Grid? FindColumnGrid(DependencyObject root)
@@ -644,7 +732,7 @@ public class SortableDataTable : Grid
 
         // 排序只是重排同一批数据：应保留选中行与滚动位置（否则"点一下表头，选中没了、详情栏还在"）
         var previousSelection = preserveView ? _paintedSelection.ToList() : null;
-        var previousOffset = preserveView ? _rowsScroller.VerticalOffset : 0;
+        var previousOffset = preserveView ? (RowsScroller?.VerticalOffset ?? 0) : 0;
         var keepView = preserveView && RowHasData();
 
         var items = SortedItems().ToList();
@@ -684,7 +772,7 @@ public class SortableDataTable : Grid
         {
             var target = previousOffset;
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
-                new Action(() => _rowsScroller.ScrollToVerticalOffset(target)));
+                new Action(() => RowsScroller?.ScrollToVerticalOffset(target)));
         }
     }
 
@@ -790,14 +878,59 @@ public class SortableDataTable : Grid
         }
     }
 
+    /// <summary>
+    /// 容器实现状态变化 → 把**当前选中集合**重投影到已实现的行容器上（虚拟化的连带项，见构造函数注释）。
+    /// 只对工厂模式有意义（模板模式的行选中由行模板自己的绑定投影）。
+    /// </summary>
+    private void RepaintSelectionOnRealizedContainers()
+    {
+        if (IsTemplateMode) return;
+        if (_rowsList.ItemContainerGenerator.Status != GeneratorStatus.ContainersGenerated) return;
+
+        // 逐项是幂等的（覆盖式重设同一个资源引用）；没挂进可视树的行设了也无害——挂上时自然带着它。
+        foreach (var item in _paintedSelection)
+            if (_rowMap.TryGetValue(item, out var row))
+                row.SetResourceReference(BackgroundProperty, "App.Surface.Selected");
+    }
+
     /// <summary>当前**视觉顺序**的数据项（含当前排序）——外部托管页面据此做 ↑/↓、Ctrl+A。</summary>
     public IReadOnlyList<object> OrderedItems() => SortedItems().ToList();
 
     /// <summary>把某数据行滚入视口（移动选中 / 定位后保证可见）。</summary>
+    /// <remarks>
+    /// 模板模式下**不依赖行容器已实现**（虚拟化后视口外的行没有容器）：
+    /// 先按数据索引与平均行高估算一个偏移把目标滚进大致位置，再让真实容器自己 <c>BringIntoView</c> 对齐。
+    /// 工厂模式仍走行映射（那些行本来就是控件、必然在）。
+    /// </remarks>
     public void ScrollItemIntoView(object item)
     {
-        if (_rowMap.TryGetValue(item, out var row))
+        // 已实现（挂进可视树）的行：让它自己进来。虚拟化下"有行对象"不等于"已实现"（工厂模式的行对象常驻、
+        // 但可能没挂进可视树，此时 BringIntoView 是空操作），故判据落在 IsVisible 上。
+        if (_rowMap.TryGetValue(item, out var row) && row.IsVisible)
+        {
             row.BringIntoView();
+            return;
+        }
+
+        var index = _rowsList.Items.IndexOf(item);
+        if (index < 0) return;
+
+        var scroller = RowsScroller;
+        if (scroller == null) return;
+
+        if (_rowsList.ItemContainerGenerator.ContainerFromIndex(index) is FrameworkElement realized && realized.IsVisible)
+        {
+            realized.BringIntoView();
+            return;
+        }
+
+        // 未实现：按平均行高估算滚动（行高由内容定，量出来比猜常量可靠），随后容器已生成即对齐。
+        var count = _rowsList.Items.Count;
+        if (count <= 0 || scroller.ExtentHeight <= 0) return;
+        var average = scroller.ExtentHeight / count;
+        scroller.ScrollToVerticalOffset(Math.Max(0, (index - 2) * average));
+        _rowsList.UpdateLayout();
+        (_rowsList.ItemContainerGenerator.ContainerFromIndex(index) as FrameworkElement)?.BringIntoView();
     }
 
     /// <summary>

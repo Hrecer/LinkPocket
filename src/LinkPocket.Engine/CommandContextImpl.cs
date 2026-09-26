@@ -56,6 +56,15 @@ internal sealed class CommandContextImpl : ICommandContext
     /// <summary>所属引擎（同程序集编排组件复用嵌套派发入口）。</summary>
     internal EngineCore Engine => _engine;
 
+    /// <summary>
+    /// 嵌套步骤审计的**缓冲**（批/宏在"持有未提交写事务"期间挂上，事务收口后由挂载方统一写出；
+    /// null = 无缓冲，嵌套审计照旧即时直写）。
+    /// <para><b>为什么必须缓冲</b>：审计落表（<c>SqlAuditWriter</c>）是**独立短连接**，其设计前提是
+    /// "调用点均在主事务提交/回滚之后"。批/宏一旦长期持有写事务，独立连接每步都撞 SQLite 写锁
+    /// （busy 等待默认 30 秒超时；实测两条批测试各卡 60 秒）。缓冲后审计**仍完整落库**，只是晚一步。</para>
+    /// </summary>
+    internal List<AuditEntry>? NestedAuditBuffer { get; set; }
+
     public Task<CommandResult> DispatchNestedAsync(string command, object? args = null, CancellationToken ct = default)
         => _engine.ExecuteNestedAsync(this, command, args, ct);
 

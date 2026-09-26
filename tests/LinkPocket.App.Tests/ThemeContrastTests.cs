@@ -44,6 +44,8 @@ public class ThemeContrastTests
             t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceCard)), 3.0, "文件夹类型色（替代旧琥珀，对卡面 5.79 ✅）"),
         new("Text.OnContainer / Support.Container",
             t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.SupportContainer)), 7.0, "次强调药丸 / **删除类药丸**（与次操作共用）"),
+        new("Text.OnContainer / Surface.Control",
+            t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.SurfaceControl)), 7.0, "次按钮 / 计数药丸 / 侧栏「打开」的容器字（承载面 = 次按钮底）"),
         new("Text.OnContainer / Accent.Container",
             t => (t.Token(AppTokens.TextOnContainer), t.Token(AppTokens.AccentContainer)), 7.0, "导航 / 分段指示器 / 徽标 / chip 上的字（浅色强调容器）"),
         new("Text.Primary / Surface.Selected",
@@ -53,8 +55,10 @@ public class ThemeContrastTests
         // 选中行上的弱列（"从未"这类）确实会落在选中底上。**4.5 这条在这里与"对卡面 ≥1.22"互斥**
         //（越浅字越清楚、与卡面越不开），走档取的是卡面阈值 ⇒ 实测 4.44；棘轮按实测下界卡住，
         // 防"为了可见性把选中底再压深"（旧值 T76 时这一条只有 3.40）。
+        // ⚠️ 棘轮保持 4.4：选中底色相改为**表面族色相**后，最紧的一套是青提（走档由「对卡面悬停 ≥1.06」
+        // 钉在 T85.5）实测 **4.404** —— 留 0.004 余量，变动即红（这是棘轮该有的行为，故不预先放宽）。
         new("Text.Muted / Surface.Selected",
-            t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceSelected)), 4.4, "选中行弱列文字（棘轮：走档由『对卡面 ≥1.22』定，弱字 4.44）"),
+            t => (t.Token(AppTokens.TextMuted), t.Token(AppTokens.SurfaceSelected)), 4.4, "选中行弱列文字（棘轮：走档由『对卡面 ≥1.22』定，实测最低 4.404 = 青提）"),
         new("Support.Icon / Surface.Selected",
             t => (t.Token(AppTokens.SupportIcon), t.Token(AppTokens.SurfaceSelected)), 3.0, "文件夹图标落在选中行底上（列表里选中行 + 类型图标是常态组合）"),
         new("Accent.Icon / Surface.Selected",
@@ -190,6 +194,10 @@ public class ThemeContrastTests
         // 早先取"允许的最深档"（T76 = `#C0B8D0`，对卡面 1.68，阈值只要 1.22）⇒ 同一彩度在更低明度上
         // 就是**灰**，选中行读成"压了一块灰紫"。
         Assert.Equal(0xDAD2EBu, Rgb(t.Token(AppTokens.SurfaceSelected)));
+        // 次按钮底（TonalButton / SoftPillButton / 计数药丸）= 表面族色相 + **提高一大档的彩度**（+14，去灰），
+        // 取"对卡面 ≥1.60 的最浅达标档"（实测 T77.5 C30）。旧值 `#BFABCE`（支撑本色）对卡面 1.857，用户："偏深"；
+        // 1.50/1.60 档（C16 表面族彩度）用户："发灰 / 和背景差不多" —— 灰的根因是彩度、不是深浅。
+        Assert.Equal(0xC6B8ECu, Rgb(t.Token(AppTokens.SurfaceControl)));
         // 悬停 = **承载面自己压深一档**（三层各一支；色相与彩度都留在本层那一族 ⇒ 读作"加深"而非"换色"）。
         // ⚠️ 按 **Auto**（缺省开关）口径钉：悬停档按"弱文字对它 ≥4.5"反推，而弱文字在两模式下取值不同
         //（直配 #655A6F / 自动 #605D62）⇒ 两模式的悬停档可以差一档，逐模式各钉一支才有意义。
@@ -204,11 +212,17 @@ public class ThemeContrastTests
         Assert.Equal(0xEADAF3u, Rgb(t.Token(AppTokens.SurfaceHeaderBand)));
         Assert.Equal(0xEADAF3u, Rgb(t.Token(AppTokens.SurfacePanel)));
         // 容器字 = 支撑族 T15（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
-        Assert.Equal(0x2D203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
-        Assert.Equal(0xF0DBFFu, Rgb(t.Token(AppTokens.SupportContainer))); // ← 色3 #A18EB0（支撑槽本色提亮）
+        Assert.Equal(0x2E203Bu, Rgb(t.Token(AppTokens.TextOnContainer)));
+        // ← 色3 #A18EB0（支撑槽本色）**沿本色提亮到"容器字读得清"的第一档**（T61.7 → T72.7）。
+        //   旧写法一律提到容器档（T90 ⇒ `#F0DBFF`）：那会把不够浅的成员改造成配色里没有的颜色
+        //   （暮色玫瑰的藕紫 `#907884` 被提亮成甜粉 `#F8DBE8` —— 用户实测"没选粉色，按钮却是粉的"）。
+        //   现在只在**本色压得字读不出来**时才提亮，且停在刚够用那一档 ⇒ 色相/彩度仍是本色。
+        Assert.Equal(0xBFABCEu, Rgb(t.Token(AppTokens.SupportContainer)));
         Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.SupportIcon)));
-        Assert.Equal(0x695877u, Rgb(t.Token(AppTokens.TypeFolder)));
-        Assert.Equal(0xA898B4u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色（#E0CEEC）压到描边档
+        // 文件夹图标 = 支撑图标**沿本色提淡**到"对页面底刚好 3:1"的最浅档（T40 → T53.1）：
+        // 钉在填充档时 11/11 套都是同一种黑压压的深度（用户："偏深、太强烈"）。
+        Assert.Equal(0x8A7899u, Rgb(t.Token(AppTokens.TypeFolder)));
+        Assert.Equal(0xB794A7u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 色4 本色（#EFC8DC 淡粉）压到描边档
         // ← 色5（背景色成员 **#F7EEF8**：原 #F2EEF5 H287.7 加彩度后发蓝，故改值）的**色相**
         //   + 配色"浅调成员"（色4 #D5C7DE, C15.1）的**彩度量级**：明度压到 **87–91 深度档**（T91）；
         //   彩度不再取"背景色成员本色"（只有 C5.4，整页发灰）→ 取浅调成员量级（封顶 16）→ C15.3。
@@ -279,6 +293,7 @@ public class ThemeContrastTests
         var appTokens = new[]
         {
             AppTokens.SurfaceBase, AppTokens.SurfaceCard, AppTokens.SurfaceHover, AppTokens.SurfaceSelected,
+            AppTokens.SurfaceControl,
             AppTokens.SurfaceTintCard, AppTokens.SurfaceHeaderBand, AppTokens.SurfacePanel,
             AppTokens.AccentFill, AppTokens.AccentText,
             AppTokens.AccentContainer, AppTokens.SupportContainer, AppTokens.SupportIcon,
@@ -522,6 +537,61 @@ public class ThemeContrastTests
             // ④（浅带悬停 = 本层压深一档且看得见、色相不逃）由上方 `CheckHoverLayer("浅带悬停底", …)` 一次量完。
         }
         Assert.True(failures.Count == 0, "表面族层次未达标：\n" + string.Join("\n", failures));
+    }
+
+    [Fact]
+    public void 次按钮底_每套主题都稳定可见_且与表面族同色调()
+    {
+        // 底 = 表面族色相 + 表面族彩度，锚 = "对**卡面** ≥ `ControlSurfaceMinContrastOnCard` 的最浅达标档"。
+        // 为什么单独立一条：这类面（TonalButton / SoftPillButton / 计数药丸）原先用支撑槽**本色**，
+        // 实测跨 1.02–1.97 两头都不合格 —— 青提本色对卡面 1.026（ΔRGB 各 3 = 与命令栏胶囊重合）、
+        // 宇治抹茶本色对页面底 1.000（逐字节同色）、藕粉灰绿 / 焦糖玫瑰本色对卡面 1.966（一整块重色）。
+        // 三条判据分别对应三种**真实承载面**：
+        //  ① 对卡面 ≥ 1.50（命令栏浮动胶囊里的四枚药丸；这条同时是走档的锚）；
+        //  ② 对面板 ≥ 1.15（右侧栏「打开」画在 `Surface.Panel` 上，实测最紧 1.201）；
+        //  ③ 对选中行底 ≥ 1.06（计数药丸画在选中行上，实测最紧 1.116 —— 低于它药丸形状就没了）；
+        //  ④ 容器字 ≥7 由上面的矩阵管；色相必须留在表面族（≤3°，否则"控件面"会跳成另一个颜色）。
+        //     ⚠️ 判据锚在**表面族的请求色相**（`SolveFamilies`），不是卡面的**实测**色相：
+        //     卡面画在 T97 / 近无彩的那一头，8 位量化会把它的实测色相带偏（实测藕粉灰绿：请求 H49.4
+        //     → 卡面实测 H57.5，差 8°；而次按钮底实测只差 1.7°）—— 拿卡面当基准会把量化噪声当成回归。
+        //     近无彩（C<3）时色相不可观测，按本仓惯例跳过。
+        const double MinOnPanel = 1.15;
+        const double MinOnSelected = 1.06;
+        const double HueTolerance = 3.0;
+        const double UnobservableChroma = 3.0;
+        var failures = new List<string>();
+        foreach (var theme in ThemeCatalog.All)
+        {
+            var t = PaletteSolver.Solve(theme);
+            var control = t.Token(AppTokens.SurfaceControl);
+            var card = t.Token(AppTokens.SurfaceCard);
+            var panel = t.Token(AppTokens.SurfacePanel);
+            var selected = t.Token(AppTokens.SurfaceSelected);
+
+            var onCard = ColorMath.ContrastRatio(control, card);
+            if (onCard < PaletteSolver.ControlSurfaceMinContrastOnCard)
+                failures.Add($"{theme.Id} 次按钮底对卡面 {onCard:F3} < {PaletteSolver.ControlSurfaceMinContrastOnCard:F2}"
+                             + "（与命令栏胶囊重合 —— 本色那一支实测只有 1.026）");
+
+            var onPanel = ColorMath.ContrastRatio(control, panel);
+            if (onPanel < MinOnPanel)
+                failures.Add($"{theme.Id} 次按钮底对面板 {onPanel:F3} < {MinOnPanel}（右侧栏「打开」看不见）");
+
+            var onSelected = ColorMath.ContrastRatio(control, selected);
+            if (onSelected < MinOnSelected)
+                failures.Add($"{theme.Id} 次按钮底对选中行底 {onSelected:F3} < {MinOnSelected}"
+                             + "（计数药丸在选中行上丢掉形状）");
+
+            var measured = ColorMath.Measure(control);
+            if (measured.C < UnobservableChroma) continue;
+            var fam = PaletteSolver.SolveFamilies(theme);
+            var familyHue = fam.SurfaceSource is { } ss ? ColorMath.Measure(ss).H : fam.NeutralHue;
+            var offHue = ColorMath.HueDistance(measured.H, familyHue);
+            if (offHue > HueTolerance)
+                failures.Add($"{theme.Id} 次按钮底色相 H{measured.H:F1} 离开表面族 H{familyHue:F1}（差 {offHue:F1}°"
+                             + " = 控件面跳成了另一个颜色，不再是同色调的浅色控件面）");
+        }
+        Assert.True(failures.Count == 0, "次按钮底未达标：\n" + string.Join("\n", failures));
     }
 
     [Fact]

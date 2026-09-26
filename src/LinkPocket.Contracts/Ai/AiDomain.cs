@@ -215,6 +215,15 @@ public sealed record AiSkill(
     IReadOnlyList<string>? Parameters = null);
 
 /// <summary>技能草稿（保存入参；<paramref name="SkillId"/> 为空 = 新建）。</summary>
+/// <summary>宏清单行（macro.list 的投影：名称 + 更新时间，不带脚本体——脚本按需 macro.get）。</summary>
+public sealed record AiMacroInfo(string Name, DateTimeOffset UpdatedAt)
+{
+    /// <summary>清单行的本地化时间文本（列表直接绑定；MinValue = 引擎未给时间，显示占位）。</summary>
+    public string UpdatedAtText => UpdatedAt == DateTimeOffset.MinValue
+        ? "-"
+        : UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+}
+
 public sealed record AiSkillDraft(
     string? SkillId,
     string Name,

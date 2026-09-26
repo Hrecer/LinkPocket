@@ -25,24 +25,109 @@ public class BrowserRowViewModel : INotifyPropertyChanged
 
     public bool IsFolder { get; }
 
-    public string Name { get; }
+    private string _name = string.Empty;
+    /// <summary>可变（带通知）：**乐观改名**用它立即反映新名字（引擎已落库、事件刷新稍后对齐）——
+    /// 万行目录下"回车 → 等 300ms 防抖 + 整表重建才看到新名字"是实测的第二次等待。</summary>
+    public string Name
+    {
+        get => _name;
+        private set
+        {
+            if (string.Equals(_name, value, StringComparison.Ordinal)) return;
+            _name = value;
+            OnPropertyChanged();
+        }
+    }
 
+    /// <summary>乐观改名（仅界面投影；数据以引擎为准，事件刷新终会对齐）。</summary>
+    public void UpdateName(string name) => Name = name;
+
+    // ── 展示字段：**可原地更新**（差分刷新用）────────────────────────────────
+    // 口径：行序列（Id + 顺序）不变时，刷新走 `ApplyFrom` **原地写回**而不是换新对象 ——
+    // 换新对象要整表 ReplaceAll（一次 Reset ⇒ 视口内行容器连同右键菜单/布局行为全部重建，
+    // 实测大目录一次 64ms 布局）。所以这些字段必须可写且**逐字段发通知**（只通知真变了的）。
+    // 写入口只有两个：对象初始化器（构造）与 `ApplyFrom`（刷新）—— `internal set` 不对外开放。
+
+    private string? _url;
     /// <summary>仅书签行有值。</summary>
-    public string? Url { get; init; }
+    public string? Url
+    {
+        get => _url;
+        internal set { if (string.Equals(_url, value, StringComparison.Ordinal)) return; _url = value; OnPropertyChanged(); }
+    }
 
+    private int _linkCount;
     /// <summary>仅文件夹行有值：该文件夹下所有链接总数（递归，内核计算）。</summary>
-    public int LinkCount { get; init; }
+    public int LinkCount
+    {
+        get => _linkCount;
+        internal set { if (_linkCount == value) return; _linkCount = value; OnPropertyChanged(); }
+    }
 
-    public DateTime ModifiedAt { get; init; }
+    private DateTime _modifiedAt;
+    public DateTime ModifiedAt
+    {
+        get => _modifiedAt;
+        internal set { if (_modifiedAt == value) return; _modifiedAt = value; OnPropertyChanged(); }
+    }
 
+    private DateTime _createdAt;
     /// <summary>创建时间（文件夹由内核维护；链接为其自身创建时间）。</summary>
-    public DateTime CreatedAt { get; init; }
+    public DateTime CreatedAt
+    {
+        get => _createdAt;
+        internal set { if (_createdAt == value) return; _createdAt = value; OnPropertyChanged(); }
+    }
 
+    private DateTime? _lastViewedAt;
     /// <summary>最后查看时间（内核维护：文件夹为子孙链接被查看时沿父链刷新；链接为自身被查看时间）。</summary>
-    public DateTime? LastViewedAt { get; init; }
+    public DateTime? LastViewedAt
+    {
+        get => _lastViewedAt;
+        internal set { if (_lastViewedAt == value) return; _lastViewedAt = value; OnPropertyChanged(); }
+    }
 
+    private int _viewCount;
     /// <summary>查看次数（内核维护：文件夹为子树上溯增量；链接为自身访问次数）。</summary>
-    public int ViewCount { get; init; }
+    public int ViewCount
+    {
+        get => _viewCount;
+        internal set { if (_viewCount == value) return; _viewCount = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>
+    /// **原地更新**：把另一份（同 Id、同位置的）行的展示字段写回本行 —— 只写真的变了的那些，
+    /// 每个变了的值各发一次属性通知（绑它的那一格自己重画，不动集合、不动容器）。
+    /// </summary>
+    /// <remarks>
+    /// 与"整表替换"的分工：本方法**只**用于"行序列（Id + 顺序）完全一致"的刷新；
+    /// 行的增减 / 重排 / 换目录仍走 <c>Rows.ReplaceAll</c>（那时容器的对应关系已经变了，必须重建）。
+    /// </remarks>
+    internal void ApplyFrom(BrowserRowViewModel fresh)
+    {
+        Name = fresh.Name;
+        Url = fresh.Url;
+        LinkCount = fresh.LinkCount;
+        ModifiedAt = fresh.ModifiedAt;
+        CreatedAt = fresh.CreatedAt;
+        LastViewedAt = fresh.LastViewedAt;
+        ViewCount = fresh.ViewCount;
+        IsCut = fresh.IsCut;
+        SetFavicon(fresh.Favicon);   // 值相同不发通知（见 SetFavicon）
+    }
+
+    /// <summary>
+    /// 两个行序列是否**同一批行**（条数、逐项 Id 与类型都一致 = 只有展示字段可能变）——
+    /// 差分刷新的判据：真时走 <see cref="ApplyFrom"/> 原地更新，假时走整表替换。
+    /// </summary>
+    public static bool SameIdentity(IReadOnlyList<BrowserRowViewModel>? a, IReadOnlyList<BrowserRowViewModel>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a == null || b == null || a.Count != b.Count) return false;
+        for (var i = 0; i < a.Count; i++)
+            if (a[i].Id != b[i].Id || a[i].IsFolder != b[i].IsFolder) return false;
+        return true;
+    }
 
     /// <summary>
     /// 「最后更新」列：未设置时间（默认值）时显示占位符 <c>—</c>，避免出现 0001-01-01。

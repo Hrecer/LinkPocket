@@ -17,7 +17,8 @@ internal static class SearchSupport
         Kernel.IUnitOfWork uow, string query,
         bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
         string sortBy, string sortOrder,
-        CancellationToken ct)
+        CancellationToken ct,
+        int page = 1, int perPage = 0)
     {
         var scope = new LinkSearchScope
         {
@@ -37,11 +38,36 @@ internal static class SearchSupport
                 // 缺省/空串/非法 sort_by 统一落回「title 升序」（与 search.links 文档口径一致；
                 // 此前 fallback=created_at，`sort_by:""` 会静默变成按创建时间排序）
                 Sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "title"),
+                // per_page > 0 = SQL 级 LIMIT（十万级命中的关键路径：界面只渲染前几百条，
+                // 全量物化 + 12MB JSON 过管道是实测的 ~800ms 纯浪费；0 = 全量，向后兼容）
+                Page = perPage > 0 ? new PageSpec(page, perPage) : new PageSpec(1, 0),
             }, ct);
 
         // 命中字段：对已筛出的候选集重算谓词（SQL 匹配 ⊇ 内存 OrdinalIgnoreCase 匹配，不会漏标）
         var pathSet = scope.Folders.Select(f => f.Value).ToHashSet(StringComparer.Ordinal);
         return links.Select(l => (l, MatchedFields(l, scope, pathSet, query))).ToList();
+    }
+
+    /// <summary>
+    /// 与 <see cref="SearchAsync"/> 同谓词的命中总数（COUNT 下推）：不物化实体、不算命中字段——
+    /// 专供 <c>search.count</c>，与分页后的主查询并行取"命中 N 条"。
+    /// </summary>
+    public static async Task<int> CountAsync(
+        Kernel.IUnitOfWork uow, string query,
+        bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
+        CancellationToken ct)
+    {
+        var scope = new LinkSearchScope
+        {
+            Query = query,
+            Title = searchTitle,
+            Url = searchUrl,
+            Description = searchDescription,
+            Folders = searchPath ? await ExpandMatchingFoldersAsync(uow, query, ct) : [],
+        };
+
+        if (!scope.Any) return 0;   // 全范围未启用 = 无命中（与 SearchAsync 口径一致）
+        return await uow.Links.CountAsync(new LinkFilter { SearchScope = scope }, ct);
     }
 
     /// <summary>目录名命中的文件夹 + 其整棵子树（命中目录本身也算命中）。</summary>

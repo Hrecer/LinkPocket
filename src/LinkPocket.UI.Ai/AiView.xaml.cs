@@ -28,12 +28,9 @@ public partial class AiView : UserControl
     private readonly ICommand _escapeCommand;
     private readonly ICommand _newSessionCommand;
     private readonly ICommand _undoSessionCommand;
-    private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _tickTimer;
     private readonly DispatcherTimer _copyTimer;
-    private double _indeterminateValue;
     private bool _stickToBottom = true;
-    private double _storedPanelWidth = 286;
     private Button? _copiedButton;
     private AiFeedItem? _railHover;
     private AiFeedItem? _railPreviewTarget;
@@ -51,10 +48,6 @@ public partial class AiView : UserControl
         // 面板按钮与 Ctrl+Shift+Z 同一条命令（CanExecute = 有可撤销批次且没有回合在跑）
         _undoSessionCommand = new RelayCommand(() => _ = UndoSessionAsync(),
             () => _viewModel?.CanUndoSession == true);
-
-        // 不确定态进度 = 视图侧扫值（业务状态仍在 VM：IsProgressVisible / IsProgressIndeterminate）
-        _progressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
-        _progressTimer.Tick += (_, _) => SyncProgress();
 
         // 秒针：运行中的回合分隔行重投影"已用 N 秒"（业务读数在 VM）
         _tickTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -98,13 +91,12 @@ public partial class AiView : UserControl
         {
             if (e.PropertyName is nameof(AiViewModel.CanSend) or nameof(AiViewModel.CanUndoSession))
                 CommandRefresh.Request();   // 可用性同帧跟上（按钮灰亮 + 键位 CanExecute 同一处通知）
-            if (e.PropertyName is nameof(AiViewModel.IsProgressVisible) or nameof(AiViewModel.ProgressValue)
-                or nameof(AiViewModel.ProgressMaximum) or nameof(AiViewModel.IsProgressIndeterminate))
-                Dispatcher.BeginInvoke(new Action(SyncProgress));
         };
         DataContext = _viewModel;
         _viewModel.ExportRequested += OnExportRequested;
-        _viewModel.ApprovalFocusRequested += OnApprovalFocusRequested;   // 默认焦点落在「拒绝」
+        // 审批卡**不再自动抢焦点**（实测用户要求："4 个选项要平等"）——
+        // 卡片一出现就给某一项键盘焦点，那一项的边框/底色就会与其它三项不平等，
+        // 用户必须点一下空白才能"抹平"。选项由用户自己点（或 Tab 到）才获得焦点。
 
         // 输入框的控件级编辑语义（@ 提及面板的 ↑↓/Enter/Esc、光标跟踪）：**先于**快捷键宿主订阅，
         // 面板打开时由这里吃掉 Enter，控件锚定的「发送」因此不会误触发（同元素先订阅者先跑）。
@@ -122,12 +114,21 @@ public partial class AiView : UserControl
         _shortcutHost = new ShortcutHost(ShortcutCatalog.Build(ShortcutPage.Ai, commands), () => ShortcutScope.Ai);
         _shortcutHost.Attach(this);
         _shortcutHost.AttachControls(ShortcutPage.Ai, this, commands);
-        _progressTimer.Start();
+        // 右键「刷新」= 重跑入口对齐那条链（重新拉会话清单 + 重投影当前会话；对话内容不动）
+        PageRefresh.Register(this, new RelayCommand(() => _ = RefreshPageAsync()));
         _tickTimer.Start();
-        ApplyPanelState();   // 右栏缺省收起（VM 侧初值 = 收起；这里把列宽投影成 0）
     }
 
     /// <summary>入口对齐：进入本页即刷新会话清单并重投影当前会话（对话内容不重载为本地状态）。</summary>
+    /// <summary>右键「刷新」：与入口对齐同一条链（重新拉会话清单并重投影当前会话，不重载对话内容）。</summary>
+    private async Task RefreshPageAsync()
+    {
+        if (_viewModel is null) return;
+        await _viewModel.LoadAsync();
+        SelectActiveInList();
+        ScrollFeedToEnd();
+    }
+
     private async void OnVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (IsVisible) await EnsureLoadedAsync();
@@ -407,35 +408,6 @@ public partial class AiView : UserControl
         _copiedButton = null;
     }
 
-    // ── 右栏收起 / 展开（宽度可拖；收起 = 整列归零）────────────────
-
-    private void OnTogglePanel(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        _viewModel.IsPanelCollapsed = !_viewModel.IsPanelCollapsed;
-        ApplyPanelState();
-    }
-
-    private void ApplyPanelState()
-    {
-        var collapsed = _viewModel?.IsPanelCollapsed == true;
-        if (collapsed)
-        {
-            if (PanelColumn.ActualWidth > 0) _storedPanelWidth = PanelColumn.ActualWidth;
-            PanelColumn.MinWidth = 0;
-            PanelColumn.Width = new GridLength(0);
-            DetailsPanel.Visibility = Visibility.Collapsed;
-            PanelSplitter.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            PanelColumn.MinWidth = 230;
-            PanelColumn.Width = new GridLength(Math.Clamp(_storedPanelWidth, 230, 400));
-            DetailsPanel.Visibility = Visibility.Visible;
-            PanelSplitter.Visibility = Visibility.Visible;
-        }
-    }
-
     // ── 中栏：发送 / 停止 / 审批 ──────────────────────────────
 
     private async void OnSend(object sender, RoutedEventArgs e) => await SendAsync();
@@ -476,43 +448,35 @@ public partial class AiView : UserControl
         if ((sender as FrameworkElement)?.DataContext is AiChangeRow row) row.ToggleExpand();
     }
 
-    private void OnTogglePayload(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is AiEngineRow row) row.TogglePayload();
-    }
-
     /// <summary>
-    /// 右栏「导出」（格式由旁边的下拉框选）与 <c>/export</c> 斜杠命令共用这一条路径。
+    /// <c>/export</c> 斜杠命令：格式由**保存对话框自己**选（三格式各一条筛选器），
+    /// 不再依赖右栏那个下拉框——右栏已按产品决定删除，导出能力保留在这一条路径上。
     /// ⚠️ 左栏会话行/右键菜单里的「导出」已退场：那个入口导出的是**当前会话**（不是右键那一行），
     /// 且在草稿态（还没落盘）上必然报错——入口与语义都对不上，直接砍掉。
     /// </summary>
     private async void OnExportRequested() => await RunExportDialogAsync();
 
-    private async void OnExportAudit(object sender, RoutedEventArgs e) => await RunExportDialogAsync();
-
     private async Task RunExportDialogAsync()
     {
         if (_viewModel is null) return;
-        var format = ExportFormatBox.SelectedIndex switch
-        {
-            1 => AiExportFormat.Csv,
-            2 => AiExportFormat.Json,
-            _ => AiExportFormat.Markdown,
-        };
-        var extension = format switch { AiExportFormat.Csv => "csv", AiExportFormat.Json => "json", _ => "md" };
-        var filter = format switch
-        {
-            AiExportFormat.Csv => Loc.T("ai.export.filter.csv"),
-            AiExportFormat.Json => Loc.T("ai.export.filter.json"),
-            _ => Loc.T("ai.sessions.export.filter"),
-        };
         var dialog = new SaveFileDialog
         {
-            Filter = filter,
-            FileName = $"linkpocket-ai-{DateTime.Now:yyyyMMdd-HHmmss}.{extension}",
+            Filter = string.Join("|",
+                Loc.T("ai.sessions.export.filter"),
+                Loc.T("ai.export.filter.csv"),
+                Loc.T("ai.export.filter.json")),
+            FileName = $"linkpocket-ai-{DateTime.Now:yyyyMMdd-HHmmss}.md",
+            FilterIndex = 1,
         };
         if (dialog.ShowDialog() != true) return;
-        await _viewModel.ExportAuditAsync(format, dialog.FileName);
+        // 以**用户实际选择的扩展名**为准（改文件名也能改格式），不认识就按 Markdown
+        var format = System.IO.Path.GetExtension(dialog.FileName).ToLowerInvariant() switch
+        {
+            ".csv" => AiExportFormat.Csv,
+            ".json" => AiExportFormat.Json,
+            _ => AiExportFormat.Markdown,
+        };
+        await _viewModel.ExportSessionAsync(dialog.FileName, format);
     }
 
     // ── 左栏：会话 ────────────────────────────────────────────
@@ -570,20 +534,6 @@ public partial class AiView : UserControl
             e.Handled = true;
             _viewModel.CancelRename();
         }
-    }
-
-    // ── 右栏：引擎审计分页 ────────────────────────────────────
-
-    private async void OnAuditPrev(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        await _viewModel.AuditPrevAsync();
-    }
-
-    private async void OnAuditNext(object sender, RoutedEventArgs e)
-    {
-        if (_viewModel is null) return;
-        await _viewModel.AuditNextAsync();
     }
 
     private async void OnSessionSelected(object sender, SelectionChangedEventArgs e)
@@ -683,38 +633,41 @@ public partial class AiView : UserControl
 
     private async void OnApproveOnce(object sender, RoutedEventArgs e) => await RespondAsync(sender, AiApprovalDecision.AllowOnce);
 
+    /// <summary>点「拒绝」：**先展开可选的反馈区**（附一句说明给模型换方案；不想说就直接「确认拒绝」）。</summary>
+    private void OnBeginReject(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AiFeedItem item) item.IsRejectFeedbackOpen = true;
+    }
+
+    private async void OnConfirmReject(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not AiFeedItem item) return;
+        item.IsRejectFeedbackOpen = false;
+        await RespondAsync(sender, AiApprovalDecision.Reject, item.RejectReason);
+    }
+
+    private void OnCancelReject(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is AiFeedItem item)
+        {
+            item.IsRejectFeedbackOpen = false;
+            item.RejectReason = "";
+        }
+    }
+
     private async void OnApproveSession(object sender, RoutedEventArgs e) => await RespondAsync(sender, AiApprovalDecision.AllowForSession);
 
-    private async void OnReject(object sender, RoutedEventArgs e) => await RespondAsync(sender, AiApprovalDecision.Reject);
+
 
     private async void OnRejectStop(object sender, RoutedEventArgs e) => await RespondAsync(sender, AiApprovalDecision.RejectAndStop);
 
-    private async Task RespondAsync(object sender, AiApprovalDecision decision)
+    private async Task RespondAsync(object sender, AiApprovalDecision decision, string? reason = null)
     {
         if (_viewModel is null) return;
         if ((sender as FrameworkElement)?.DataContext is not AiFeedItem { ApprovalId: { } approvalId }) return;
         var row = _viewModel.Approvals.FirstOrDefault(r => r.ApprovalId == approvalId);
         if (row is null) return;
-        await _viewModel.RespondAsync(row, decision);
-    }
-
-    // ── 审批卡的默认焦点（功能书 §8.2：默认焦点落在「拒绝」）─────────────
-
-    /// <summary>出现待批审批 → 焦点给该卡的「拒绝」。通知可能来自回合线程，一律回调度器；
-    /// 等到 Loaded 优先级再找（模板要先生成出可视树）。</summary>
-    private void OnApprovalFocusRequested(string approvalId)
-        => Dispatcher.BeginInvoke(new Action(() => FocusApprovalReject(approvalId)),
-            System.Windows.Threading.DispatcherPriority.Loaded);
-
-    private void FocusApprovalReject(string approvalId)
-    {
-        if (!IsVisible) return;
-        var button = FindDescendant<Button>(this, candidate => candidate.Tag as string == "AiApprovalReject"
-            && candidate.IsVisible);
-        if (button?.DataContext is not AiFeedItem item || item.ApprovalId != approvalId) return;
-        if (!item.IsApprovalOpen) return;   // 已经作过决定的卡不抢焦点
-        button.Focus();
-        Keyboard.Focus(button);
+        await _viewModel.RespondAsync(row, decision, reason);
     }
 
     // ── 提及面板（输入区 @；控件级编辑语义：由输入框自持、只在面板打开时生效）────────────
@@ -789,9 +742,61 @@ public partial class AiView : UserControl
 
     // ── 技能条 / 编辑器 / 参数行 ──────────────────────────────
 
+    // ── 宏管理（清单 / 查看 / 新建 / 编辑 / 运行 / 删除）────────────────────
+
+    private async void OnOpenMacros(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        _viewModel.CancelSkillEditor();   // 两个面板互斥（同区叠放，都开着会挤成一团）
+        await _viewModel.OpenMacroPanelAsync();
+    }
+
+    private async void OnMacroSelected(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.SelectMacroAsync(_viewModel.SelectedMacroName);
+    }
+
+    private async void OnNewMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.BeginMacroEditorAsync(null);
+    }
+
+    private async void OnEditMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.BeginMacroEditorAsync(_viewModel.SelectedMacroName);
+    }
+
+    private async void OnSaveMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null) return;
+        await _viewModel.SaveMacroAsync();
+    }
+
+    private void OnCancelMacroEditor(object sender, RoutedEventArgs e) => _viewModel?.CloseMacroEditor();
+
+    private void OnCloseMacros(object sender, RoutedEventArgs e) => _viewModel?.CloseMacroPanel();
+
+    private async void OnRunMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.SelectedMacroName is not { } name) return;
+        var macro = _viewModel.Macros.FirstOrDefault(m => m.Name == name);
+        if (macro != null) await _viewModel.RunMacroAsync(macro);
+    }
+
+    private async void OnDeleteMacro(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel?.SelectedMacroName is not { } name) return;
+        var macro = _viewModel.Macros.FirstOrDefault(m => m.Name == name);
+        if (macro != null) await _viewModel.DeleteMacroAsync(macro);
+    }
+
     private async void OnNewSkill(object sender, RoutedEventArgs e)
     {
         if (_viewModel is null) return;
+        _viewModel.CloseMacroPanel();   // 两个面板互斥
         await _viewModel.OpenSkillEditorAsync(null);
         SkillNameBox.Focus();
     }
@@ -829,24 +834,4 @@ public partial class AiView : UserControl
         await _viewModel.DeleteSkillAsync(skill);
     }
 
-    // ── 进度条（不确定态由视图扫值；确定态取 VM 的批进度读数）────────────
-
-    private void SyncProgress()
-    {
-        if (_viewModel is null || !IsVisible) return;
-        if (!_viewModel.IsProgressVisible)
-        {
-            TurnProgress.Value = 0;
-            return;
-        }
-        if (_viewModel.IsProgressIndeterminate)
-        {
-            _indeterminateValue = _indeterminateValue >= 100 ? 0 : _indeterminateValue + 4;
-            TurnProgress.Value = _indeterminateValue;
-        }
-        else
-        {
-            TurnProgress.Value = _viewModel.ProgressValue;
-        }
-    }
 }

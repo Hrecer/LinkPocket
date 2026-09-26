@@ -46,12 +46,27 @@ public sealed partial class AiAssistant
         }
     }
 
-    public Task CancelTurnAsync(string sessionId, CancellationToken ct = default)
+    /// <summary>请求取消当前回合。<c>true</c> = 取消信号已发给在跑的回合；
+    /// <c>false</c> = 该会话当前**没有**在跑的回合（UI 据此如实提示，而不是"点了没反应"）。</summary>
+    public Task<bool> CancelTurnAsync(string? sessionId, CancellationToken ct = default)
     {
         TurnRun? run;
         lock (_gate) run = _running;
-        if (run is not null && string.Equals(run.SessionId, sessionId, StringComparison.Ordinal)) run.Cts.Cancel();
-        return Task.CompletedTask;
+        // sessionId 为空 = "取消任意在跑的回合"：界面"发新消息前自动停旧回合"用（旧回合常不属于当前会话，
+        // 用当前会话 id 去匹配永远失败 ⇒ 现场表现为"新会话的消息发不出去"）。停止按钮仍传当前会话，
+        // 不匹配时如实返回 false（"这个会话没有在跑的回合"）。
+        var matched = run is not null
+            && (sessionId is null || string.Equals(run.SessionId, sessionId, StringComparison.Ordinal));
+        if (matched)
+        {
+            run!.Cts.Cancel();
+            LpLog.Info($"turn cancel requested: {run.TurnId}", category: "ai.turn");
+        }
+        else
+        {
+            LpLog.Warn($"turn cancel ignored: no running turn for session {sessionId}", category: "ai.turn");
+        }
+        return Task.FromResult(matched);
     }
 
     // ── 回合主体 ──────────────────────────────────────────────
@@ -121,6 +136,8 @@ public sealed partial class AiAssistant
     {
         var adapter = AiProtocols.For(provider.Protocol);
         var apiKey = _credentials.TryGetPlaintext(provider.Id);
+        // 联网只走模型侧能力（本地搜索兜底已按产品决定移除）：方言命中就声明内置搜索工具。
+        var nativeWebSearch = WebSearchDialect.Supports(provider);
         var tools = _tools.Build(preferences.AdvancedToolsEnabled).Concat(AiLocalTools.Specs).ToArray();
         var system = BuildSystemPrompt(context, provider, model, file.Summary.Mode, material);
 
@@ -152,7 +169,10 @@ public sealed partial class AiAssistant
                 if (++toolCalls > preferences.MaxToolCallsPerTurn) throw TooManyCalls(preferences.MaxToolCallsPerTurn);
                 var stop = await DispatchAsync(file, run, engineSession, request, preferences).ConfigureAwait(false);
                 var executed = file.Changes.Count(c => string.Equals(c.TurnId, run.TurnId, StringComparison.Ordinal));
-                if (executed > preferences.MaxChangesPerTurn) throw TooManyChanges(preferences.MaxChangesPerTurn);
+                // 变更上限只拦**散写**（防失控逐条狂改）；用户批准过的批 / 宏一步就可能动上千条，
+                // 把它枪毙只会造成"任务实际完成、界面却报失败"的假象（实测 LP.AI.011）。
+                if (executed > preferences.MaxChangesPerTurn && !run.HasApprovedBatch)
+                    throw TooManyChanges(preferences.MaxChangesPerTurn);
                 if (stop)
                 {
                     FinishTurn(file, run, AiTurnState.Cancelled, AiErrors.TurnCancelled);
@@ -176,7 +196,8 @@ public sealed partial class AiAssistant
         var displayed = false;
         int? requestInput = null, requestOutput = null;   // 本次请求的用量读数（服务商未声明 = null）
 
-        var request = new AiChatRequest(model.Id, system, file.Chat, tools, model.MaxOutputTokens ?? 4096, Stream: true);
+        var request = new AiChatRequest(model.Id, system, file.Chat, tools, model.MaxOutputTokens ?? 4096, Stream: true,
+            NativeWebSearch: WebSearchDialect.Supports(provider));
         var attempts = 0;
         while (true)
         {
@@ -185,6 +206,12 @@ public sealed partial class AiAssistant
                 await foreach (var line in _http.SendStreamLinesAsync(
                                    adapter.BuildChatRequest(provider, apiKey, request), run.Cts.Token))
                 {
+                    // 来源标注现场取证：原生搜索的 annotations/citations 在各家流式协议里形状不同，
+                    // 先把含标注的 SSE 行原样留痕（logs/*.jsonl, cat=ai.protocol），拿到真实形状再写解析。
+                    if (line.Contains("url_citation", StringComparison.Ordinal)
+                        || line.Contains("\"annotations\"", StringComparison.Ordinal)
+                        || line.Contains("\"citations\"", StringComparison.Ordinal))
+                        LpLog.Write(LogLevel.Info, "ai.protocol", $"web-source annotation line: {line}");
                     var delta = adapter.ParseStreamLine(line);
                     if (delta is null) continue;
                     if (delta.Kind == "usage")
@@ -276,19 +303,42 @@ public sealed partial class AiAssistant
         // → 免审批、不取写锁；不走七步链（链的每一步都以引擎描述符为前提）
         var local = AiLocalTools.IsLocal(request.Name);
         var descriptor = local ? null : _tools.Descriptor(request.Name);
-        var exposed = local || _tools.IsExposed(request.Name, preferences.AdvancedToolsEnabled);
+        var exposure = local
+            ? AiToolExposure.Exposed
+            : _tools.ExposureOf(request.Name, preferences.AdvancedToolsEnabled, request.ArgumentsJson);
+        var exposed = exposure == AiToolExposure.Exposed;
         // 批 / 宏先取脚本：**每一步都要过同一条暴露集闸**（否则"永不暴露"能被 batch.run 绕过；
         // 关键不变量 = 审批只能把"要问"变成"允许"，永远不能把"禁止"变成"允许"）
-        var steps = local ? null : await BuildStepsAsync(request, engineSession, run).ConfigureAwait(false);
-        var blockedStep = steps?.FirstOrDefault(step => step.Command.Length > 0
-            && !_tools.IsExposed(step.Command, preferences.AdvancedToolsEnabled));
+        var built = local ? default : await BuildStepsAsync(request, engineSession, run).ConfigureAwait(false);
+        var steps = built.Card;
+        string? blockedCommand = null;
+        var blockedExposure = AiToolExposure.Exposed;
+        if (built.Gate is { } gateSteps)
+        {
+            foreach (var (command, argsJson) in gateSteps)
+            {
+                if (command.Length == 0) continue;
+                var stepExposure = _tools.ExposureOf(command, preferences.AdvancedToolsEnabled, argsJson);
+                if (stepExposure == AiToolExposure.Exposed) continue;
+                blockedCommand = command;
+                blockedExposure = stepExposure;
+                break;
+            }
+        }
         // 七步链的每次判定都带显式原因并写日志（功能书 §8.1：放行/拦截都要能回答"为什么"）
-        var verdict = local
-            ? new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Allow, "local_readonly_tool")
-            : blockedStep is null
-                ? AiPermissionChain.Evaluate(descriptor, file.Summary.Mode, HasSessionAllowance(request.Name), exposed)
-                : new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Deny,
-                    $"step_not_exposed:{blockedStep.Command}");
+        // 被拦时原因按**最准确的那一个**给出：名字不存在 / 需开高级开关 / 永不暴露三者对模型的处置完全不同
+        //（改名字重试 / 转告用户去设置 / 告诉用户只能手动），一律回一句"未暴露"会让它误报"引擎没有这个能力"。
+        var block = local
+            ? null
+            : blockedCommand is not null
+                ? BuildToolBlock(blockedCommand, blockedExposure, inBatch: true)
+                : exposure != AiToolExposure.Exposed
+                    ? BuildToolBlock(request.Name, exposure, inBatch: false)
+                    : null;
+        var verdict = block?.Verdict
+            ?? (local
+                ? new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Allow, "local_readonly_tool")
+                : AiPermissionChain.Evaluate(descriptor, file.Summary.Mode, HasSessionAllowance(request.Name), exposed));
         var decision = verdict.Decision;
         LpLog.Write(LogLevel.Debug, "ai.permission", $"tool {request.Name}: {decision} ({verdict.Reason})",
             props: new Dictionary<string, object?>
@@ -308,16 +358,17 @@ public sealed partial class AiAssistant
 
         if (decision == AiToolDecision.Deny)
         {
+            // 拒绝回灌为**结构化工具结果**（含原因与可执行指引），模型同轮即可换方案（功能书 §8.4）：
+            // 只有原因码时模型会自行脑补（实测把"命令名不存在"讲成"引擎没有开放这个接口"，
+            // 让用户以为功能缺失）；把 hint 一起给它，它就能如实转述"去设置里开高级开关"。
+            var payload = BuildDenyPayload(request.Name, verdict.Reason, block);
             UpdateCall(file, call, c => c with
             {
                 State = AiToolCallState.Rejected,
                 ErrorCode = AiErrors.ToolCallInvalid,
-                ResultJson = JsonSerializer.Serialize(new { error = "tool_not_allowed", reason = verdict.Reason }),
+                ResultJson = payload,
             });
-            // 拒绝回灌为**结构化工具结果**（含原因），模型同轮即可换方案（功能书 §8.4）
-            file.Chat.Add(new AiChatMessage("tool",
-                JsonSerializer.Serialize(new { error = "tool_not_allowed", tool = request.Name, reason = verdict.Reason }),
-                null, request.Id));
+            file.Chat.Add(new AiChatMessage("tool", payload, null, request.Id));
             Persist(file);
             return false;
         }
@@ -445,7 +496,11 @@ public sealed partial class AiAssistant
 
                 var work = ExecuteWithConfirmAsync();
                 if (request.Name is "batch.run" or "batch.dry_run" or "macro.run")
+                {
+                    // 走到引擎执行 = 审批已放行（或模式放行）：本回合的变更不再受"散写上限"约束
+                    if (request.Name is not "batch.dry_run") run.HasApprovedBatch = true;
                     await PollBatchProgressAsync(file, run, call, work).ConfigureAwait(false);
+                }
                 return await work.ConfigureAwait(false);
             }
 
@@ -565,17 +620,86 @@ public sealed partial class AiAssistant
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
+    /// <summary>被拦的三件套：判定 + 给模型的**可执行指引** + 候选命令名（只对"名字不存在"给）。</summary>
+    private sealed record ToolBlock(AiPermissionChain.AiPermissionVerdict Verdict, string Hint,
+        IReadOnlyList<string>? Suggestions);
+
+    /// <summary>
+    /// 按"最准确的原因"造判定：三种不可用必须分开——<c>unknown_command</c>（名字不存在，改名字重试）/
+    /// <c>advanced_tools_required</c>（命令存在，用户去设置里开高级工具即可）/ <c>never_exposed</c>（只能手动）。
+    /// 现场教训：三者原先都回 <c>step_not_exposed</c>，模型分不清，于是把"我拼错了名字"讲成
+    /// "引擎没有向 AI 开放这个接口"，用户以为功能缺失。
+    /// </summary>
+    private ToolBlock BuildToolBlock(string command, AiToolExposure exposure, bool inBatch)
+    {
+        var reason = (inBatch ? "step_" : "") + (exposure switch
+        {
+            AiToolExposure.UnknownCommand => "unknown_command",
+            AiToolExposure.AdvancedToolsRequired => "advanced_tools_required",
+            _ => "never_exposed",
+        });
+        var subject = inBatch ? $"the batch step calling '{command}'" : $"the tool '{command}'";
+        return exposure switch
+        {
+            AiToolExposure.UnknownCommand => new ToolBlock(
+                new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Deny, $"{reason}:{command}"),
+                $"No such command: {subject} does not exist in the engine, so the name is wrong. Never invent "
+                + "command names - use only names from the tool list (existing_commands lists real ones).",
+                _tools.Suggestions(command)),
+            AiToolExposure.AdvancedToolsRequired => new ToolBlock(
+                new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Deny, $"{reason}:{command}"),
+                $"Not switched on: {subject} exists in the engine, but this session may not use it. The user has to "
+                + "turn on \"Advanced tools\" in Settings -> AI first (every call then still asks for approval). "
+                + "Tell the user exactly that - do NOT claim the engine or the app does not support the feature, "
+                + "and do not keep retrying other names for it."
+                + SafeVariantClause(command),
+                _tools.Suggestions(command)),
+            _ => new ToolBlock(
+                new AiPermissionChain.AiPermissionVerdict(AiToolDecision.Deny, $"{reason}:{command}"),
+                $"{subject} is permanently unavailable to the assistant; it stays available to the user in the app "
+                + "UI, so tell the user they can do it by hand.",
+                null),
+        };
+    }
+
+    /// <summary>被"参数档位"（而非整条命令）挡住时的补充说明：告诉模型哪一档默认就能用。</summary>
+    private string SafeVariantClause(string command)
+        => _tools.SafeVariantHint(command, advancedTools: false) is { } hint ? $" {hint}" : "";
+
+    /// <summary>拒绝回灌体（落库与喂模型同一份）：<c>error</c> / <c>reason</c> 保持原字段名，
+    /// 新增 <c>hint</c>（可执行指引）与 <c>existing_commands</c>（候选命令名，仅名字不存在时）。</summary>
+    private static string BuildDenyPayload(string tool, string reason, ToolBlock? block)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["error"] = "tool_not_allowed",
+            ["tool"] = tool,
+            ["reason"] = reason,
+        };
+        if (block is { Hint.Length: > 0 }) payload["hint"] = block.Hint;
+        if (block?.Suggestions is { Count: > 0 } suggestions) payload["existing_commands"] = suggestions;
+        return JsonSerializer.Serialize(payload);
+    }
+
     /// <summary>
     /// 可撤销性以**引擎撤销栈**为准（功能书 §7.4：不给会失败的撤销按钮）：
-    /// 只有声明 <see cref="CommandCaps.Reversible"/> 的命令才可能入栈，而"是否真的入栈"由引擎按
-    /// "本次是否产生了可逆变更"决定（改名/改属性类不入栈、事务批/宏不进栈）——因此查一次 <c>undo.list</c>
-    /// 与本调用的归属键（<see cref="CallOptions.UndoGroupId"/> = 工具调用 ID）核对。
-    /// 查询失败 = 标不可撤销（宁少不多），绝不因此让回合失败。
+    /// 撤销栈里有没有"本调用的归属键"（<see cref="CallOptions.UndoGroupId"/> = 工具调用 ID），
+    /// 是唯一判据——查询失败 = 标不可撤销（宁少不多），绝不因此让回合失败。
+    ///
+    /// <para><b>不要再拿顶层描述符的 <see cref="CommandCaps.Reversible"/> 当否决条件</b>：那只说明
+    /// "这条命令自己声明了逆向"，而**编排命令的可撤销性来自它的嵌套步骤**——<c>batch.run</c> / <c>macro.run</c>
+    /// 的每一步都按同一归属键登记，最终在父管道提交后合并成"一条记录 N 逆向步"
+    ///（<see cref="LinkPocket.Engine.BatchEngine"/> 传 <c>UndoGroupId = options.UndoGroupId</c> →
+    /// <c>EngineCore.FlushPendingUndo</c> → <c>UndoCoordinator.Record(groupId:)</c>）。
+    /// 而 <c>batch.run</c> 的描述符能力是 Mutation|LongRunning|SupportsCancellation（**不带 Reversible**）。
+    /// <b>实测踩过</b>：AI 用批创建书签 → 台账逐条标 <c>Undoable=false</c> → 回溯按台账取归属键取到空 →
+    /// 界面报"回退 0 项操作"、对话被裁掉、<b>而库里的改动原封不动</b>（撤销栈里其实躺着那条记录，从此再没人消费）。</para>
     /// </summary>
     private async Task<bool> CheckUndoableAsync(CommandDescriptor? descriptor, string callId,
         Session engineSession, CancellationToken ct)
     {
-        if (descriptor?.Caps.HasFlag(CommandCaps.Reversible) != true) return false;
+        // 查询不可能产生变更 → 根本不会入栈，免去一次查询（唯一保留的快捷否，与业务语义无关）
+        if (descriptor is null || descriptor.IsQuery) return false;
         try
         {
             var list = await _client.QueryAsync<JsonElement>("undo.list", null,
@@ -652,9 +776,11 @@ public sealed partial class AiAssistant
             .ConfigureAwait(false);
     }
 
-    /// <summary>批 / 宏的逐步骤影响：批脚本在入参里；宏要读一次定义（读不到就如实说"只按命令审批"）。</summary>
-    private async Task<IReadOnlyList<AiApprovalStep>?> BuildStepsAsync(AiToolCallRequest request,
-        Session engineSession, TurnRun run)
+    /// <summary>批 / 宏的逐步骤影响：批脚本在入参里；宏要读一次定义（读不到就如实说"只按命令审批"）。
+    /// 返回两份：<c>Card</c> = 审批卡的展示面；<c>Gate</c> = 暴露集闸用的（命令, 入参）——闸要按参数档位判，
+    /// 展示面不需要参数（见 <see cref="AiApprovalBrief.ParseGateSteps"/>）。</summary>
+    private async Task<(IReadOnlyList<AiApprovalStep>? Card, IReadOnlyList<(string Command, string ArgsJson)>? Gate)>
+        BuildStepsAsync(AiToolCallRequest request, Session engineSession, TurnRun run)
     {
         JsonElement? script = null;
         var args = ParseDataOrEmpty(request.ArgumentsJson);
@@ -682,7 +808,9 @@ public sealed partial class AiAssistant
             }
         }
 
-        return script is { } bodyElement ? AiApprovalBrief.ParseSteps(bodyElement, _tools) : null;
+        return script is { } bodyElement
+            ? (AiApprovalBrief.ParseSteps(bodyElement, _tools), AiApprovalBrief.ParseGateSteps(bodyElement))
+            : (null, null);
     }
 
     private AiApproval BuildApproval(AiSessionFile file, TurnRun run, AiToolCall call,
@@ -738,6 +866,17 @@ public sealed partial class AiAssistant
 
     private void Persist(AiSessionFile file)
     {
+        RecomputeSummary(file);
+        _sessionStore.Save(file);
+        Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, file.Summary.SessionId,
+            Session: file.Summary));
+    }
+
+    /// <summary>Summary 读数对齐到文件现状（消息数 / 变更数 / 末轮状态 / 更新时间）。
+    /// **凡改动文件内容后再保存的路径都必须过这里**：回溯裁掉回合后若直接 Save，
+    /// 左栏会话读数会停在旧值（实测：裁掉一整轮后还显示"9 条消息 / 201 变更"）。</summary>
+    private static void RecomputeSummary(AiSessionFile file)
+    {
         file.Summary = file.Summary with
         {
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -745,9 +884,6 @@ public sealed partial class AiAssistant
             ChangeCount = file.Changes.Count,
             ActiveTurnState = file.Turns.LastOrDefault()?.State,
         };
-        _sessionStore.Save(file);
-        Notified?.Invoke(new AiNotification(AiNotificationKind.SessionChanged, file.Summary.SessionId,
-            Session: file.Summary));
     }
 
     private void SetTurn(AiSessionFile file, TurnRun run, AiTurnState state, int? toolCallCount = null)
@@ -941,8 +1077,14 @@ public sealed partial class AiAssistant
         builder.AppendLine($"Answer in language code: {context?.LanguageCode ?? "zh"}.");
         builder.AppendLine("## Capabilities");
         builder.AppendLine("You drive the bookmark engine through tools (folders/links/trash/search/dedup/staging/batch/macro/undo/audit). Prefer one batch script (batch.run) over many single commands when several steps are needed; dry-run first when unsure.");
+        builder.AppendLine("## Batch-first for multi-target writes");
+        builder.AppendLine("When a task writes to several objects at once (delete/move/rename a set of folders or links), default to ONE batch.run covering them all: each separate write call opens its own approval card (13 folders = 13 cards to click through), and repeated single calls are not transactional (a failure halfway leaves the library half-changed). Query ids first (folders.find / links.query), put them in step args, use {ref} only for values produced by an earlier step; validate with batch.dry_run when unsure. Splitting into several turns is fine when a later step depends on a decision the user must make after seeing an earlier result.");
         builder.AppendLine("## Tool rules");
         builder.AppendLine("Read before writing: never guess IDs - query first (links.query, folders.find, folders.tree). Paths are canonical (@root/...). Bulk operations: build a batch script with {ref} templates; validate it with batch.dry_run when the impact matters.");
+        builder.AppendLine("## Acting, not asking");
+        builder.AppendLine("NEVER ask the user to reply a keyword (like 'confirm', 'yes', 'go ahead') to proceed - there is a dedicated approval card for that: when an action needs approval, issue the command or batch directly and the UI collects the user's decision. If the current mode is auto-accept, safe operations just run - do not ask at all. When you need information only the user has, ask ONE concrete question and end your turn; never list a menu of numbered options for the user to pick by number, and never say 'reply X to continue'. After finishing a task, report what was done in one short summary and stop - do not ask whether to continue unless a real decision is required.");
+        builder.AppendLine("## Tool availability");
+        builder.AppendLine("The tool list is the complete set of commands that exist: never call a name you did not see there, and if you are unsure, look it up (folders.find / links.query / batch.dry_run) instead of guessing. A rejected call carries reason + hint: `unknown_command` means the name is wrong (use existing_commands); `advanced_tools_required` means the command exists but the user must switch on \"Advanced tools\" in Settings -> AI - say that to the user, never that the engine or app lacks the feature; `never_exposed` means it is only available to the user by hand. Some commands are allowed by default only in their safe variant (e.g. folders.delete with cascade=trash_links); choosing a destructive variant returns advanced_tools_required - the hint tells you which value is safe, so use it instead of dropping the task. Batch/macro steps pass the same gate, so a single bad step rejects the whole batch.");
         builder.AppendLine("## Safety");
         builder.AppendLine("Destructive operations need explicit user approval; never try to bypass approvals or repeat a rejected action. Never open URLs. Never read or write credentials.");
         builder.AppendLine("## Untrusted data");

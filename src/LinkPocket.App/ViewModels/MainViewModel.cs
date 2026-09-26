@@ -30,6 +30,16 @@ namespace LinkPocket.ViewModels
         /// <summary>路径回溯的层数上限（防御异常数据造成的环）。</summary>
         private const int MaxFolderDepth = 20;
 
+        /// <summary>
+        /// 切页 / 刷新耗时的日志分类（观测面）：现场日志按它取"从设置页跳浏览页卡在哪一段"。
+        /// </summary>
+        /// <remarks>
+        /// 记的是**阶段的墙钟耗时**（<c>LpLog.Write(…, elapsedMs:)</c> 落到 JSONL 顶层 <c>ms</c>）：
+        /// <c>switch-&gt;</c> 切页总时长、<c>visibility-&gt;</c> 显隐翻转→布局跑完（见 MainWindow）、
+        /// <c>refresh:</c> 防抖驱动的活跃页刷新、<c>tree:</c> 目录树重载。
+        /// </remarks>
+        private const string NavLogCategory = "app.nav";
+
         /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
         private readonly EngineClient _client;
         private readonly Services.UiEventHub _events;
@@ -91,6 +101,7 @@ namespace LinkPocket.ViewModels
 
         private async Task RefreshActiveViewAsync()
         {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 switch (_currentNavId)
@@ -120,6 +131,13 @@ namespace LinkPocket.ViewModels
             {
                 // 事件驱动的刷新失败不应打断 UI——记录并暴露（观测面纪律），不再纯静默
                 LpLog.Error($"debounced refresh of the active page failed ({_currentNavId})", ex);
+            }
+            finally
+            {
+                // 300ms 防抖之后的活跃页刷新耗时（cat=app.nav）：批脚本场景下这条会连续出现，
+                // "防抖首次全量"是否成立看它。
+                LpLog.Write(LogLevel.Info, NavLogCategory,
+                    $"refresh:{_currentNavId} (debounced)", elapsedMs: watch.ElapsedMilliseconds);
             }
         }
 
@@ -190,6 +208,8 @@ namespace LinkPocket.ViewModels
 
         private async void SelectNav(string navId)
         {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var mode = "none";
             try
             {
                 CurrentNavId = navId;
@@ -200,6 +220,7 @@ namespace LinkPocket.ViewModels
                 // 回收站还原都会改这一页；页面显隐由 Shell 按视图注册表重投影）
                 if (navId == NavIds.Browser)
                 {
+                    mode = BrowserViewModel.Rows.Count == 0 ? "firstLoad" : "refresh";
                     if (BrowserViewModel.Rows.Count == 0)
                         _ = BrowserViewModel.LoadAsync(null);
                     else
@@ -230,6 +251,28 @@ namespace LinkPocket.ViewModels
                 // 这里就地记录 + 暴露，不让「切页失败」静默
                 LpLog.Error($"navigation switch to {navId} failed", ex);
             }
+            finally
+            {
+                // 耗时留痕（cat=app.nav）：浏览页的装载是 fire-and-forget（上面 `_ =`），
+                // 它的真实开销看 BrowserViewModel 的 `refresh:` 行；本行 = 切页入口本身 +
+                // 回收站/工具页那两个 await 的耗时。
+                LpLog.Write(LogLevel.Info, NavLogCategory,
+                    $"switch->{navId} mode={mode} rows={BrowserViewModel.Rows.Count} treeNodes={CountFolderNodes(FolderItems)}",
+                    elapsedMs: watch.ElapsedMilliseconds);
+            }
+        }
+
+        /// <summary>目录树的节点总数（日志读数用：判断"树是否随库增长"）。</summary>
+        private static int CountFolderNodes(ObservableCollection<FolderNode> nodes)
+        {
+            var total = 0;
+            foreach (var node in nodes)
+            {
+                total++;
+                if (node.Children is { Count: > 0 } children)
+                    total += CountFolderNodes(children);
+            }
+            return total;
         }
 
         /// <summary>导航条选中项（SlidingNavStrip.SelectedItem 双向绑定）：点选变化即切换页面；
@@ -262,6 +305,7 @@ namespace LinkPocket.ViewModels
 
         public async Task LoadFolderTreeAsync()
         {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var counts = await _client.LinkStatsAsync();
@@ -273,7 +317,7 @@ namespace LinkPocket.ViewModels
                 {
                     IsRoot = true, Name = BookmarkPath.RootToken, LinkCount = counts.RootLevel,
                     IconKind = "bookmark-outline",
-                    Children = new ObservableCollection<FolderNode>()
+                    Children = new BulkObservableCollection<FolderNode>()
                 };
                 folderNodes.Add(rootNode);
 
@@ -286,7 +330,7 @@ namespace LinkPocket.ViewModels
                         Id = folder.FolderId, FolderId = folder.FolderId, Name = folder.Name, LinkCount = count,
                         ParentId = folder.ParentId,
                         IconKind = count > 0 ? "folder" : "folder-outline",
-                        Children = new ObservableCollection<FolderNode>()
+                        Children = new BulkObservableCollection<FolderNode>()
                     };
                     lookup[folder.FolderId] = node;
                 }
@@ -310,6 +354,13 @@ namespace LinkPocket.ViewModels
             catch (Exception ex)
             {
                 LpLog.Error("folder tree load failed", ex);
+            }
+            finally
+            {
+                // 目录树重载 = 两条引擎读（统计 + 全量树）+ 建节点（cat=app.nav）。
+                // 它挂在 300ms 防抖上（与活跃页刷新并行发），是"树全量重建"嫌疑的取证点。
+                LpLog.Write(LogLevel.Info, NavLogCategory,
+                    $"tree:loaded nodes={CountFolderNodes(FolderItems)}", elapsedMs: watch.ElapsedMilliseconds);
             }
         }
 

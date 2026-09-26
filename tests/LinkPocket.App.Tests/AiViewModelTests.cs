@@ -80,15 +80,17 @@ public class AiViewModelTests
     }
 
     [Fact]
-    public async Task 斜杠命令_audit_切到引擎审计页签()
+    public async Task 斜杠命令_audit_已随右栏删除_如实报未知命令()
     {
+        // 引擎审计的查看面（右栏页签）已被产品决定删除，`/audit` 随之退场：
+        // 不做"点了没反应"的假入口，也不假装它还打开什么——一律走未知命令的如实提示。
         var (vm, _) = NewVm();
         await vm.LoadAsync();
         vm.ComposerText = "/audit";
 
         await vm.SendAsync();
 
-        Assert.True(vm.IsEngineTab);
+        Assert.Equal("ai.slash.unknown", LastNoticeKey(vm));
     }
 
     [Fact]
@@ -160,28 +162,6 @@ public class AiViewModelTests
         Assert.False(vm.CanSend);
     }
 
-    [Fact]
-    public async Task 引擎审计_翻页携带页码_到尾页禁用下一页()
-    {
-        var (vm, stub) = NewVm();
-        stub.AuditPageCount = 2;
-        await vm.LoadAsync();
-        vm.TabIndex = 3;
-        await WaitUntilAsync(() => stub.AuditQueries.Count > 0);   // 页签切换触发的异步重载落地
-
-        Assert.Equal(1, stub.AuditQueries[^1].Page);
-        Assert.True(vm.CanNextAuditPage);
-        Assert.False(vm.CanPrevAuditPage);
-
-        await vm.AuditNextAsync();
-        Assert.Equal(2, stub.AuditQueries[^1].Page);
-        Assert.False(vm.CanNextAuditPage);
-        Assert.True(vm.CanPrevAuditPage);
-
-        await vm.AuditPrevAsync();
-        Assert.Equal(1, stub.AuditQueries[^1].Page);
-    }
-
     // ── 审批卡（P3-7）：焦点请求 / 拒绝路径 / 卡片投影 / 动作短语键覆盖 ──
 
     private static AiApproval Approval(
@@ -220,21 +200,20 @@ public class AiViewModelTests
     }
 
     [Fact]
-    public async Task 审批_拒绝路径把理由带回助手并清空理由输入()
+    public async Task 审批_拒绝路径把理由带回助手()
     {
+        // 理由随**这一次调用**传入（卡上的拒绝反馈框），不再是 VM 全局字段——多卡等待时不会串味
         var (vm, stub) = NewVm();
         await vm.LoadAsync();
         stub.RaiseNotify(new AiNotification(AiNotificationKind.ApprovalChanged, "s-1", Approval: Approval()));
-        vm.ApprovalReason = "别动我的书签";
 
-        await vm.RespondAsync(Assert.Single(vm.Approvals), AiApprovalDecision.Reject);
+        await vm.RespondAsync(Assert.Single(vm.Approvals), AiApprovalDecision.Reject, "别动我的书签");
 
         var call = Assert.Single(stub.ApprovalCalls);
         Assert.Equal("s-1", call.SessionId);
         Assert.Equal("a-1", call.ApprovalId);
         Assert.Equal(AiApprovalDecision.Reject, call.Decision);
         Assert.Equal("别动我的书签", call.Reason);
-        Assert.Equal("", vm.ApprovalReason);
     }
 
     [Fact]
@@ -314,7 +293,7 @@ public class AiViewModelTests
         }
     }
 
-    // ── 撤销本会话 + 审计时间范围（P3-8）──────────────────────────────
+    // ── 撤销本会话（P3-8）──────────────────────────────────────────
 
     [Fact]
     public async Task 撤销本会话_有可撤销批次才给按钮_撤完按新栈快照收起()
@@ -334,7 +313,7 @@ public class AiViewModelTests
         Assert.Equal("ai.slash.undoDone", LastNoticeKey(vm));   // 回执与 /undo 同一套文案
         Assert.Equal(counted + 1, stub.CountUndoableCalls.Count);   // 撤完自己重数了一遍
 
-        // 撤完引擎栈空了 → 面板重算"按钮给不给"（**不给会失败的按钮**）
+        // 撤完引擎栈空了 → 重新数一遍"还有没有可撤销的"（**不给会失败的操作**）
         stub.UndoableBatches = 0;
         await vm.RefreshUndoableAsync();
         Assert.False(vm.CanUndoSession);
@@ -351,36 +330,6 @@ public class AiViewModelTests
         Assert.False(vm.CanUndoSession);
         await vm.UndoSessionAsync();
         Assert.Empty(stub.UndoSessionCalls);
-    }
-
-    [Fact]
-    public async Task 审计时间范围_切换即回第一页并把from带给服务端()
-    {
-        var (vm, stub) = NewVm();
-        stub.AuditPageCount = 2;
-        await vm.LoadAsync();
-        vm.TabIndex = 3;
-        await WaitUntilAsync(() => stub.AuditQueries.Count > 0);
-        Assert.Null(stub.AuditQueries[^1].From);          // 缺省 = 不限时间
-
-        await vm.AuditNextAsync();
-        Assert.Equal(2, stub.AuditQueries[^1].Page);
-
-        var seen = stub.AuditQueries.Count;
-        vm.AuditRangeIndex = 1;                           // 今天
-        await WaitUntilAsync(() => stub.AuditQueries.Count > seen);
-        Assert.Equal(1, stub.AuditQueries[^1].Page);      // 结果集变了 → 回第一页
-        var today = stub.AuditQueries[^1].From;
-        Assert.NotNull(today);
-        Assert.Equal(DateTime.Today, today!.Value.Date);  // 本地日界（今天 00:00）
-
-        vm.AuditRangeIndex = 2;                           // 近 7 天
-        await WaitUntilAsync(() => stub.AuditQueries.Count > seen + 1);
-        Assert.Equal(DateTime.Today.AddDays(-6), stub.AuditQueries[^1].From!.Value.Date);
-
-        vm.AuditRangeIndex = 0;                           // 回到全部
-        await WaitUntilAsync(() => stub.AuditQueries.Count > seen + 2);
-        Assert.Null(stub.AuditQueries[^1].From);
     }
 
     /// <summary>等一个可观测副作用落地（异步重载是 fire-and-forget 的界面口径；上限 2 秒，超时即失败）。</summary>

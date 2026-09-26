@@ -81,6 +81,9 @@ public partial class BrowserViewModel
     /// </summary>
     public async Task RefreshUndoStateAsync()
     {
+        // 观测定痕（cat=app.nav）：刷新链收尾处的**两条引擎读**（列表 + 重做列表）也落在 UI 线程续体上，
+        // 是"导航后那块阻塞"的并列嫌疑（见 favicon:backfill 的同源说明；只记耗时，不改行为）。
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             // ⚠️ 两个查询的返回都是**对象** `{ "entries": [...] }`（不是裸数组）——按数组解析会恒为空
@@ -89,9 +92,17 @@ public partial class BrowserViewModel
             _canRedo = await HasEntriesAsync(await _client.UndoListRedoAsync());
             OnPropertyChanged(nameof(CanUndo));
             OnPropertyChanged(nameof(CanRedo));
+            var cmdWatch = System.Diagnostics.Stopwatch.StartNew();
             CommandRefresh.Request();
+            LinkPocket.Contracts.LpLog.Write(LinkPocket.Contracts.LogLevel.Info, NavLogCategory,
+                "cmdrefresh:requery(undo-state)", elapsedMs: cmdWatch.ElapsedMilliseconds);
         }
         catch { /* 查询失败不阻断；CanExecute 保守禁用 */ }
+        finally
+        {
+            LinkPocket.Contracts.LpLog.Write(LinkPocket.Contracts.LogLevel.Info, NavLogCategory,
+                $"undo-state:queried canUndo={_canUndo} canRedo={_canRedo}", elapsedMs: watch.ElapsedMilliseconds);
+        }
     }
 
     private static Task<bool> HasEntriesAsync(System.Text.Json.JsonElement list)

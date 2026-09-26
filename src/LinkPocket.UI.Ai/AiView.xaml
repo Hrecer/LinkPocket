@@ -73,6 +73,72 @@
         </Style>
         <!-- 审批卡的选项行：整行可点（主文案 + 一行说明）；默认焦点落在「拒绝」由视图按 Tag 找。
              底 = 透明 + 1px 弱描边（卡底是强调容器色，选项用状态叠层表达悬停/聚焦，不发明新色）。 -->
+        <!-- 发送 / 停止（参照口径）：**28×28 的圆角方形**（圆角 8，不是药丸）。
+             发送 = 强调填充 + 反白箭头；停止 = 中性底 + 实心方块（图标填色，不是描边）。
+             两者占同一个位置，**互斥切换**：运行中且草稿为空 → 停止，否则发送。 -->
+        <Style x:Key="ComposerSendButton" TargetType="Button">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Bd" Background="{DynamicResource App.Accent.Fill}" CornerRadius="8"/>
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
+                                    Opacity="0" CornerRadius="8"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.2"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.28"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ComposerStopButton" TargetType="Button">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Bd" Background="{DynamicResource App.Surface.Panel}" CornerRadius="8"/>
+                            <Border x:Name="StateLayer" Background="{DynamicResource App.Text.Primary}"
+                                    Opacity="0" CornerRadius="8"/>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="AiApprovalOption" TargetType="Button">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderBrush" Value="{DynamicResource App.Line.Variant}"/>
@@ -91,12 +157,16 @@
                                 CornerRadius="12" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
                         </Border>
+                        <!-- 悬停 = 页面底悬停（`App.Surface.Hover`，比通用状态悬停淡——青提实测那支被压得很深）。
+                             **键盘焦点不给填充底色**：审批卡弹出时焦点自动落在首项，若焦点也上底色，
+                             卡片一出现就有一块"没碰它却亮着"的色块（用户实测："非要我悬停一下才变回正常"）。
+                             焦点改用**边框上色**表达：键盘用户仍看得出焦点在哪，鼠标用户看到的永远是安静的描边卡。 -->
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.State.Hover}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.State.Hover}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource App.Line.Outline}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -173,7 +243,7 @@
         </DataTemplate>
 
         <!-- 台账一行（**对话流内联变更卡**用）：分类 + 实体 + 位置 + 字段级明细 + 撤销口径。
-             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。右栏走 AiChangeRowCompactTemplate。 -->
+             "仅实体级"与"另有 N 项未列出"如实标注（功能书 §7.8）。 -->
         <DataTemplate x:Key="AiChangeRowTemplate">
             <StackPanel Margin="0,3">
                 <StackPanel Orientation="Horizontal">
@@ -245,71 +315,24 @@
             </StackPanel>
         </DataTemplate>
 
-        <!-- 右栏紧凑行：字段级明细**不在这里铺**（与对话流工具卡内联的变更卡完全同源，只给条数）；
-             要看逐字段旧→新，展开对话流里那一次工具调用。 -->
-        <DataTemplate x:Key="AiChangeRowCompactTemplate">
-            <StackPanel Margin="0,3">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:LocKey KindKey}" FontSize="12" Foreground="{DynamicResource App.Accent.Text}"/>
-                    <TextBlock Text="{Binding EntityLabel}" FontSize="12" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                </StackPanel>
-                <TextBlock Text="{loc:Value PathValue}" FontSize="11" TextTrimming="CharacterEllipsis"
-                           Foreground="{DynamicResource App.Text.Muted}"/>
-                <TextBlock Text="{loc:Value FieldCountValue}" FontSize="11"
-                           Foreground="{DynamicResource App.Text.Secondary}"/>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:LocKey UndoableKey}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                    <TextBlock Text="{loc:LocKey SourceKey}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Accent.Text}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasSourceNote}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{loc:LocKey MismatchKey}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Accent.Text}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasMismatch}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <TextBlock Text="{loc:Value TruncatedValue}" FontSize="11" Foreground="{DynamicResource App.Accent.Text}">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsTruncated}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-            </StackPanel>
-        </DataTemplate>
-
         <!-- ================= 对话流模板（按 Kind 选择） =================
              文案一律走键；用户数据 / 模型输出 / 机器面标识符原样显示。 -->
 
         <!-- 回合分隔行：整行可点（折叠该轮）；行底一条 1px 细线 -->
         <DataTemplate x:Key="AiTurnHeaderTemplate">
             <StackPanel Margin="0,12,0,2">
-                <Button Style="{StaticResource AiRowButton}" Click="OnToggleTurn"
-                        ToolTip="{loc:LocKey ToggleKey}">
+                <Button Click="OnToggleTurn" ToolTip="{loc:LocKey ToggleKey}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource AiRowButton}">
+                            <!-- 运行中 / 中断 / 失败 = 锁死展开：**不给可点的提手**（箭头已隐藏，
+                                 tooltip 也一并停掉——否则"收起这一轮"的提示指向一个点了不动的动作） -->
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsLockedOpen}" Value="True">
+                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="chevron-down" Width="13" Height="13" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Text.Muted}">
@@ -318,6 +341,10 @@
                                         <Setter Property="Visibility" Value="Visible"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <!-- 运行中 / 中断 / 失败 = 锁死展开：**不画箭头**，点了也不收 -->
+                                            <DataTrigger Binding="{Binding IsLockedOpen}" Value="True">
                                                 <Setter Property="Visibility" Value="Collapsed"/>
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -332,6 +359,9 @@
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsCollapsed}" Value="True">
                                                 <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsLockedOpen}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -419,18 +449,26 @@
                      标题在收起时带字数读数——不点开也知道里面有多少东西。 -->
                 <StackPanel Margin="0,0,0,4">
                     <StackPanel.Style>
+                        <!-- 思考块属于**工作段**：有思考、且这一轮没被收起时才出现
+                             （正文是同一个条目里的另一段，**不随回合折叠**）。 -->
                         <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasReasoning}" Value="True">
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasReasoning}" Value="True"/>
+                                        <Condition Binding="{Binding HideReasoningByTurn}" Value="False"/>
+                                    </MultiDataTrigger.Conditions>
                                     <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
+                                </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
                     <Button HorizontalAlignment="Left" Style="{StaticResource AiRowButton}" Click="OnToggleReasoning">
                         <StackPanel Orientation="Horizontal">
-                            <m3:M3Icon Kind="chevron-down" Width="12" Height="12" VerticalAlignment="Center"
+                            <!-- 方向语义（对齐参照设计）：**收起 = ›（点开）、展开 = ⌄（可收）**。
+                                 此前两者反挂：收起显示"⌄"、展开显示"›"——指示符与实际状态相反。 -->
+                            <m3:M3Icon Kind="chevron-right" Width="12" Height="12" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Text.Muted}">
                                 <m3:M3Icon.Style>
                                     <Style TargetType="{x:Type m3:M3Icon}">
@@ -443,7 +481,7 @@
                                     </Style>
                                 </m3:M3Icon.Style>
                             </m3:M3Icon>
-                            <m3:M3Icon Kind="chevron-right" Width="12" Height="12" VerticalAlignment="Center"
+                            <m3:M3Icon Kind="chevron-down" Width="12" Height="12" VerticalAlignment="Center"
                                        Foreground="{DynamicResource App.Text.Muted}">
                                 <m3:M3Icon.Style>
                                     <Style TargetType="{x:Type m3:M3Icon}">
@@ -473,9 +511,9 @@
                             </TextBlock>
                         </StackPanel>
                     </Button>
-                    <!-- 思考原文：**等宽**（它是模型的原始推理串，不是排版好的正文）；随流式增长 -->
-                    <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="10" Padding="10,8"
-                            Margin="0,4,0,0" MaxHeight="420">
+                    <!-- 思考原文（参照口径）：**正文字体、不是等宽**——它是"读的一段话"，不是要复制的技术串；
+                         限高 240 可滚；左侧一道细线 + 缩进（读起来是"附在正文旁的一段"，不是一块色底）。 -->
+                    <Border Margin="0,4,0,0" MaxHeight="240">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -491,10 +529,12 @@
                             </Style>
                         </Border.Style>
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <TextBlock Text="{Binding ReasoningText}" TextWrapping="Wrap"
-                                       FontSize="12" LineHeight="18"
-                                       FontFamily="{DynamicResource App.Font.Mono}"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <Border BorderThickness="1,0,0,0" BorderBrush="{DynamicResource App.Line.Variant}"
+                                    Padding="10,0,0,0" Margin="2,0,0,0">
+                                <TextBlock Text="{Binding ReasoningText}" TextWrapping="Wrap"
+                                           FontSize="12" LineHeight="18"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </Border>
                         </ScrollViewer>
                     </Border>
                 </StackPanel>
@@ -761,6 +801,20 @@
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
                         <ItemsControl ItemsSource="{Binding ApprovalSteps}" Margin="0,2,0,0"
                                       ItemTemplate="{StaticResource AiApprovalStepTemplate}"/>
+                        <!-- 超出预览上限的那几步：一行交代清楚（**不静默省略**——条数照实说） -->
+                        <TextBlock Text="{loc:Value HiddenStepsValue}" FontSize="11" Margin="0,2,0,0"
+                                   Foreground="{DynamicResource App.Text.OnContainer}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasHiddenSteps}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                     <TextBlock Text="{loc:LocKey StepsNoteKey}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
                                Foreground="{DynamicResource App.Text.OnContainer}">
@@ -819,7 +873,7 @@
                         </Button>
                         <!-- 默认焦点落在「拒绝」（视图按 Tag 找它）；不设 IsDefault——否则焦点在别的选项上时
                              按 Enter 会触发「拒绝」，与用户点的那一档对不上 -->
-                        <Button Style="{StaticResource AiApprovalOption}" Tag="AiApprovalReject" Click="OnReject">
+                        <Button Style="{StaticResource AiApprovalOption}" Tag="AiApprovalReject" Click="OnBeginReject">
                             <StackPanel>
                                 <TextBlock Text="{loc:Loc ai.approve.reject}" FontSize="13"
                                            Foreground="{DynamicResource App.Text.OnContainer}"/>
@@ -836,10 +890,32 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-                    <!-- 理由（可选；拒绝时回灌模型，模型同轮换方案） -->
-                    <TextBox Style="{StaticResource AiFieldBox}" Margin="0,2,0,0"
-                             Text="{Binding DataContext.ApprovalReason, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"/>
-                    <TextBlock Text="{Binding Reason}" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.OnContainer}"/>
+                    <!-- 拒绝反馈区（**点「拒绝」才展开**）：说明可选，确认后随决定回灌模型（模型同轮换方案）。
+                         不再常驻一个输入框——实测用户把常驻框误读成"必须打字才能执行的确认框"。 -->
+                    <StackPanel Margin="0,6,0,0">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsApprovalOpen}" Value="True"/>
+                                            <Condition Binding="{Binding IsRejectFeedbackOpen}" Value="True"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBox Style="{StaticResource AiFieldBox}" ToolTip="{loc:Loc ai.approve.reasonHint}"
+                                 Text="{Binding RejectReason, UpdateSourceTrigger=PropertyChanged}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0"
+                                    Content="{loc:Loc ai.approve.rejectConfirm}" Click="OnConfirmReject"/>
+                            <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0" Margin="6,0,0,0"
+                                    Content="{loc:Loc common.cancel}" Click="OnCancelReject"/>
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -1047,78 +1123,12 @@
                 </DataTrigger>
             </DataTemplate.Triggers>
         </DataTemplate>
-
-        <!-- 引擎审计一行：命令/结果/耗时/干跑与嵌套标记是机器面原样；时间走时钟投影。 -->
-        <DataTemplate x:Key="AiEngineRowTemplate">
-            <StackPanel Margin="0,3">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding Command}" FontSize="12" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource App.Text.Primary}"/>
-                    <TextBlock Text="{loc:LocKey ResultKey}" FontSize="11" Margin="6,0,0,0"
-                               Foreground="{DynamicResource App.Accent.Text}"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:Value TimeValue}" FontSize="11" Foreground="{DynamicResource App.Text.Muted}"/>
-                    <TextBlock Text="{Binding ElapsedText}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Text.Muted}"/>
-                    <TextBlock Text="{Binding ErrorCode}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Accent.Text}"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{loc:Loc ai.audit.flag.dryRun}" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DryRun}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{loc:Loc ai.audit.flag.nested}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Text.Secondary}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsNested}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBlock Text="{Binding BatchId}" FontSize="11" Margin="8,0,0,0"
-                               Foreground="{DynamicResource App.Text.Muted}"/>
-                </StackPanel>
-                <Button Height="24" Padding="8,0" FontSize="11"
-                        HorizontalAlignment="Left" Margin="0,2,0,0" Content="{loc:LocKey PayloadKey}"
-                        Click="OnTogglePayload">
-                    <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasPayload}" Value="False">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                <TextBlock Text="{Binding PayloadText}" FontSize="10.5" TextWrapping="Wrap" Margin="0,2,0,0"
-                           FontFamily="{DynamicResource App.Font.Mono}" Foreground="{DynamicResource App.Text.Muted}"/>
-            </StackPanel>
-        </DataTemplate>
     </UserControl.Resources>
 
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="200"/>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition x:Name="SplitterColumn" Width="4"/>
-            <ColumnDefinition x:Name="PanelColumn" Width="286" MinWidth="230" MaxWidth="400"/>
         </Grid.ColumnDefinitions>
 
         <!-- ===== 左栏：会话（新建行 + 会话清单） ===== -->
@@ -1224,8 +1234,14 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- 状态行：运行中才出现（左）；右端常驻右栏开关 -->
+            <!-- 状态行：运行中才有过程读数（左）；右端常驻**本会话用量**
+                 （轮数 / 工具调用 / token 合计）——它原先只在右栏状态条里；右栏删除后挪到这里，
+                  功能书 §2「用量可见」是硬要求，不能随栏一起消失。单行 + 截断 + 悬浮看全。 -->
             <Grid Grid.Column="1">
+                <TextBlock x:Name="UsageLine" Text="{loc:Value UsageValue}"
+                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                           MaxWidth="380" Margin="12,0,0,0" FontSize="11" TextTrimming="CharacterEllipsis"
+                           ToolTip="{loc:Value UsageValue}" Foreground="{DynamicResource App.Text.Muted}"/>
                 <StackPanel Margin="0,0,0,6">
                     <StackPanel.Style>
                         <Style TargetType="StackPanel">
@@ -1243,46 +1259,7 @@
                         <TextBlock Text="{loc:Value ProgressTextValue}" Margin="10,0,0,0" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.Secondary}"/>
                     </StackPanel>
-                    <!-- 回合进行中 = 进度条（批执行时按 batch.status 轮询给确定进度；不确定态由视图扫值） -->
-                    <views:WavyProgressBar x:Name="TurnProgress" Height="18" Margin="0,4,0,0"
-                                           Minimum="0" Maximum="{Binding ProgressMaximum}"
-                                           ActiveBrush="{DynamicResource App.Accent.Fill}"
-                                           TrackBrush="{DynamicResource App.Line.Variant}"/>
                 </StackPanel>
-                <Button x:Name="PanelToggleButton" HorizontalAlignment="Right" VerticalAlignment="Top"
-                        Style="{StaticResource SideIconButton}" Tag="{loc:LocKey PanelToggleKey}"
-                        Click="OnTogglePanel">
-                    <Grid>
-                        <m3:M3Icon Kind="chevron-right" Width="14" Height="14"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Secondary}">
-                            <m3:M3Icon.Style>
-                                <Style TargetType="{x:Type m3:M3Icon}">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsPanelCollapsed}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </m3:M3Icon.Style>
-                        </m3:M3Icon>
-                        <m3:M3Icon Kind="chevron-left" Width="14" Height="14"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource App.Text.Secondary}">
-                            <m3:M3Icon.Style>
-                                <Style TargetType="{x:Type m3:M3Icon}">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsPanelCollapsed}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </m3:M3Icon.Style>
-                        </m3:M3Icon>
-                    </Grid>
-                </Button>
             </Grid>
 
             <!-- 对话区：内容单元（时间线）居中；浮层声明在 ScrollViewer 之后（z 序）。
@@ -1293,8 +1270,22 @@
                 <Grid Margin="8,0,8,0">
                     <ScrollViewer x:Name="FeedScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   Background="Transparent" ScrollChanged="OnFeedScrollChanged">
+                        <!-- 折叠 = **项容器**的可见性（一处生效，覆盖所有条目模板）：
+                             回合状态行的展开/收起改变条目的 HiddenByTurn，这里把它落到界面上。
+                             ⚠️ 之前 VM 侧算了这个值、界面却没消费 ⇒ 点了"本轮进行中"毫无反应。
+                             助手的**最终回复不参与折叠**（HiddenByTurn 在项上排除了它）。 -->
                         <ItemsControl x:Name="FeedItems" ItemsSource="{Binding Feed}"
-                                      ItemTemplateSelector="{StaticResource AiFeedSelector}"/>
+                                      ItemTemplateSelector="{StaticResource AiFeedSelector}">
+                            <ItemsControl.ItemContainerStyle>
+                                <Style TargetType="ContentPresenter">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HiddenByTurn}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ItemsControl.ItemContainerStyle>
+                        </ItemsControl>
                     </ScrollViewer>
 
                     <!-- 空对话区不设占位卡：没有会话 / 空会话一律就是空白（引导卡与它的示例提示已退场；
@@ -1488,6 +1479,107 @@
                                    Foreground="{DynamicResource App.Line.Invalid}"/>
                     </StackPanel>
 
+                    <!-- 宏管理面板（清单 + 选中脚本 + 编辑器；与技能编辑器同区同风格） -->
+                    <StackPanel Margin="0,2,0,6">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMacroPanelOpen}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Grid>
+                            <TextBlock Text="{loc:Loc ai.macro.title}" FontWeight="SemiBold" HorizontalAlignment="Left"
+                                       Foreground="{DynamicResource App.Text.Primary}"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0"
+                                        Content="{loc:Loc ai.macro.new}" Click="OnNewMacro"/>
+                                <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0" Margin="6,0,0,0"
+                                        ToolTip="{loc:Loc ai.macro.close}" Click="OnCloseMacros">
+                                    <m3:M3Icon Kind="close" Width="12" Height="12" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <ListBox x:Name="MacroList" Height="110" Margin="0,6,0,0" Background="Transparent"
+                                 BorderThickness="0"
+                                 ItemsSource="{Binding Macros}"
+                                 SelectedValue="{Binding SelectedMacroName, Mode=TwoWay}"
+                                 SelectedValuePath="Name"
+                                 SelectionChanged="OnMacroSelected">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding UpdatedAtText}" HorizontalAlignment="Right"
+                                                   FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="{loc:Loc ai.macro.script}" FontSize="11" Margin="0,6,0,2"
+                                   Foreground="{DynamicResource App.Text.Secondary}"/>
+                        <TextBox x:Name="MacroScriptView" Style="{StaticResource AiFieldBox}" Height="96" IsReadOnly="True"
+                                 AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="8,5"
+                                 FontFamily="Consolas"
+                                 Text="{Binding SelectedMacroScript, Mode=OneWay}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0"
+                                    Content="{loc:Loc ai.macro.run}" Click="OnRunMacro"/>
+                            <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0" Margin="6,0,0,0"
+                                    Content="{loc:Loc ai.macro.edit}" Click="OnEditMacro"/>
+                            <Button Style="{StaticResource TonalButton}" Height="26" Padding="12,0" Margin="6,0,0,0"
+                                    Content="{loc:Loc ai.macro.delete}" Click="OnDeleteMacro"/>
+                        </StackPanel>
+
+                        <!-- 宏编辑器（新建 / 编辑；JSON 文本，引擎校验） -->
+                        <StackPanel Margin="0,8,0,0">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsMacroEditing}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="{loc:Value MacroEditorTitleValue}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource App.Text.Primary}"/>
+                            <TextBlock Text="{loc:Loc ai.macro.editor.name}" FontSize="11" Margin="0,6,0,2"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <TextBox Style="{StaticResource AiFieldBox}"
+                                     Text="{Binding MacroDraftName, UpdateSourceTrigger=PropertyChanged}"/>
+                            <TextBlock Text="{loc:Loc ai.macro.editor.script}" FontSize="11" Margin="0,6,0,2"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <TextBox Style="{StaticResource AiFieldBox}" Height="96" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalContentAlignment="Top" Padding="8,5" FontFamily="Consolas"
+                                     Text="{Binding MacroDraftScript, UpdateSourceTrigger=PropertyChanged}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Height="28" Padding="16,0" Content="{loc:Loc ai.macro.editor.save}" Click="OnSaveMacro">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PrimaryPillButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CanSaveMacro}" Value="False">
+                                                    <Setter Property="IsEnabled" Value="False"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Style="{StaticResource TonalButton}" Height="28" Padding="14,0" Margin="8,0,0,0"
+                                        Content="{loc:Loc ai.macro.editor.cancel}" Click="OnCancelMacroEditor"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="{loc:LocKey MacroErrorKey}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource App.Line.Invalid}"/>
+                    </StackPanel>
+
                     <!-- 技能参数行（有占位的技能：一占位一输入框，填完点「运行」） -->
                     <StackPanel Margin="0,2,0,6">
                         <StackPanel.Style>
@@ -1610,6 +1702,13 @@
                             <Button x:Name="SkillButton" Style="{StaticResource SideIconButton}" Width="30" Height="28"
                                     Tag="{loc:Loc ai.skill.new}" Click="OnNewSkill">
                                 <m3:M3Icon Kind="auto-fix" Width="14" Height="14"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </Button>
+                            <!-- 宏管理（清单 / 查看脚本 / 新建 / 编辑 / 运行 / 删除；此前宏只能靠对话让 AI 操作） -->
+                            <Button x:Name="MacroButton" Style="{StaticResource SideIconButton}" Width="30" Height="28"
+                                    Tag="{loc:Loc ai.macro.title}" Click="OnOpenMacros">
+                                <m3:M3Icon Kind="wrench-outline" Width="14" Height="14"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
                             </Button>
@@ -1831,11 +1930,10 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <!-- 发送 / 停止（图标钮：32 圆 = 药丸圆角的方钮；都带悬浮提示） -->
-                            <Button x:Name="SendButton" Width="32" Height="32"
-                                    Padding="0" Tag="{loc:Loc ai.composer.send}" Click="OnSend">
+                            <!-- 发送 / 停止：同位置互斥切换（运行中 → 停止；否则发送） -->
+                            <Button x:Name="SendButton" Tag="{loc:Loc ai.composer.send}" Click="OnSend">
                                 <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource PrimaryPillButton}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource ComposerSendButton}">
                                         <Setter Property="Visibility" Value="Visible"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsTurnRunning}" Value="True">
@@ -1850,10 +1948,10 @@
                                 <m3:M3Icon Kind="arrow-up" Width="15" Height="15"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Button>
-                            <Button x:Name="StopButton" Width="32" Height="32"
-                                    Padding="0" Tag="{loc:Loc ai.composer.stop}" Click="OnStop">
+                            <Button x:Name="StopButton" Tag="{loc:Loc ai.composer.stop}" Click="OnStop"
+                                    ToolTip="{loc:Loc ai.composer.stopAny}">
                                 <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
+                                    <Style TargetType="Button" BasedOn="{StaticResource ComposerStopButton}">
                                         <Setter Property="Visibility" Value="Collapsed"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsTurnRunning}" Value="True">
@@ -1862,7 +1960,9 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
-                                <m3:M3Icon Kind="stop" Width="13" Height="13"
+                                <!-- 实心方块（与参照同款：停止 = 一个填色的方，不是描边图标） -->
+                                <Rectangle Width="10" Height="10" RadiusX="1.5" RadiusY="1.5"
+                                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Button>
                         </StackPanel>
@@ -1873,319 +1973,5 @@
             </Border>
         </Grid>
 
-        <!-- ===== 右栏可拖拽分隔线 ===== -->
-        <GridSplitter x:Name="PanelSplitter" Grid.Column="2" Width="4" HorizontalAlignment="Center"
-                      VerticalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
-
-        <!-- ===== 右栏：变更与审计（四页签 = 本轮 / 本会话 / 审批 / 引擎审计；功能书 §5.2、§7.6）。
-             右栏是**查看面**（选中/过滤的投影）：点它不反向取消任何东西 → BlankClick.IsInteractive。 -->
-        <Border Grid.Column="3" x:Name="DetailsPanel" Background="{DynamicResource App.Surface.Panel}"
-                CornerRadius="24,0,0,24" Margin="0,0,0,8"
-                views:BlankClick.IsInteractive="True">
-            <Grid Margin="14,12,14,12">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <!-- 段宽 = 冻结几何（中文基线）：可用宽 238 ⇒ 4 段 × 58；文字宽 2 字 × 13pt（26px）
-                     + 项内距 28 + 描边 2 ⇒ 56，取 58 留余量。完整页签名在 ToolTip 里（窄栏放不下长标签）。
-                     文字走自适应通道（英文只缩字号、绝不截断——见 LocFit 定稿口径）。 -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <views:SlidingNavStrip x:Name="PanelTabs" Style="{StaticResource SlidingNavStripStyle}"
-                                           SelectedIndex="{Binding TabIndex, Mode=TwoWay}">
-                        <ListBoxItem ToolTip="{loc:Loc ai.audit.turnChanges}">
-                            <ListBoxItem.Style>
-                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
-                                    <Setter Property="Height" Value="30"/>
-                                    <Setter Property="MinWidth" Value="58"/>
-                                    <Setter Property="Width" Value="58"/>
-                                </Style>
-                            </ListBoxItem.Style>
-                            <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ai.audit.tab.turn}" views:LocFit.Mode="Shrink"/>
-                        </ListBoxItem>
-                        <ListBoxItem ToolTip="{loc:Loc ai.audit.sessionChanges}">
-                            <ListBoxItem.Style>
-                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
-                                    <Setter Property="Height" Value="30"/>
-                                    <Setter Property="MinWidth" Value="58"/>
-                                    <Setter Property="Width" Value="58"/>
-                                </Style>
-                            </ListBoxItem.Style>
-                            <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ai.audit.tab.session}" views:LocFit.Mode="Shrink"/>
-                        </ListBoxItem>
-                        <ListBoxItem ToolTip="{loc:Loc ai.audit.approvals}">
-                            <ListBoxItem.Style>
-                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
-                                    <Setter Property="Height" Value="30"/>
-                                    <Setter Property="MinWidth" Value="58"/>
-                                    <Setter Property="Width" Value="58"/>
-                                </Style>
-                            </ListBoxItem.Style>
-                            <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ai.audit.tab.approvals}" views:LocFit.Mode="Shrink"/>
-                        </ListBoxItem>
-                        <ListBoxItem ToolTip="{loc:Loc ai.audit.engine}">
-                            <ListBoxItem.Style>
-                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SlidingNavStripItemStyle}">
-                                    <Setter Property="Height" Value="30"/>
-                                    <Setter Property="MinWidth" Value="58"/>
-                                    <Setter Property="Width" Value="58"/>
-                                </Style>
-                            </ListBoxItem.Style>
-                            <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                                       views:LocFit.Text="{loc:Fit ai.audit.tab.engine}" views:LocFit.Mode="Shrink"/>
-                        </ListBoxItem>
-                    </views:SlidingNavStrip>
-                </StackPanel>
-
-                <!-- 「撤销本会话 AI 变更」（面板顶部 = 功能书 §2 的入口位置）：
-                     **有可撤销批次才给按钮**（不给会失败的按钮），与 Ctrl+Shift+Z 同一条命令、决策前弹确认 -->
-                <Button x:Name="UndoSessionButton" Grid.Row="1" HorizontalAlignment="Stretch" Height="30"
-                        Content="{loc:Loc ai.sessions.undo}" Click="OnUndoSession">
-                    <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding CanUndoSession}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-
-                <!-- 过滤行：搜索（对象名 / 命令名）+ 分类（变更页签）/ 结果（引擎审计页签） -->
-                <Grid Grid.Row="2" Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="PanelSearch" Style="{StaticResource AiFieldBox}"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"/>
-                    <ComboBox Grid.Column="1" Width="104" Height="30" Margin="8,0,0,0"
-                              SelectedIndex="{Binding ChangeFilterIndex, Mode=TwoWay}">
-                        <ComboBox.Style>
-                            <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ComboBox.Style>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.filter.all}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.create}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.update}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.move}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.delete}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.purge}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.restore}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.import}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.export}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.change.kind.diagnostic}"/>
-                    </ComboBox>
-                    <ComboBox Grid.Column="1" Width="104" Height="30" Margin="8,0,0,0"
-                              SelectedIndex="{Binding AuditResultIndex, Mode=TwoWay}">
-                        <ComboBox.Style>
-                            <Style TargetType="ComboBox" BasedOn="{StaticResource ComboBoxStyle}">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ComboBox.Style>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.filter.all}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.result.ok}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.result.failed}"/>
-                    </ComboBox>
-                </Grid>
-
-                <!-- 时间范围（引擎审计页签专用一行：窄栏挤不下"搜索 + 结果 + 范围"三个控件，
-                     按 WARNINGS 51 换排布而不是缩字/缩内距；过滤走服务端 audit.query {from}） -->
-                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-                    <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </StackPanel.Style>
-                    <ComboBox x:Name="AuditRangeBox" Width="110" Height="30"
-                              SelectedIndex="{Binding AuditRangeIndex, Mode=TwoWay}"
-                              ToolTip="{loc:Loc ai.audit.range.tip}">
-                        <ComboBoxItem Content="{loc:Loc ai.audit.filter.all}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.range.today}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.range.d7}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.audit.range.d30}"/>
-                    </ComboBox>
-                </StackPanel>
-
-                <!-- 列表（四个页签各一份）：变更两页签走**紧凑行**（字段明细与对话流同源，不在右栏重复铺）；
-                     审批 / 引擎审计各用自己的行与分页。 -->
-                <ScrollViewer Grid.Row="4" Margin="0,10,0,0" VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <ItemsControl ItemsSource="{Binding TurnChanges}" ItemTemplate="{StaticResource AiChangeRowCompactTemplate}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                        </ItemsControl>
-                        <ItemsControl ItemsSource="{Binding SessionChanges}" ItemTemplate="{StaticResource AiChangeRowCompactTemplate}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsApprovalTab}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding IsChangesTab}" Value="False">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                        </ItemsControl>
-                        <ItemsControl ItemsSource="{Binding Approvals}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsApprovalTab}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,3">
-                                        <TextBlock Text="{Binding Command}" Foreground="{DynamicResource App.Text.Primary}"/>
-                                        <TextBlock Text="{Binding Target}" FontSize="11" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource App.Text.Muted}"/>
-                                        <TextBlock Text="{Binding DecisionText}" FontSize="11" Foreground="{DynamicResource App.Text.Secondary}"/>
-                                        <TextBlock Text="{Binding Reason}" FontSize="11" TextWrapping="Wrap"
-                                                   Foreground="{DynamicResource App.Text.Secondary}"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                        <ItemsControl ItemsSource="{Binding EngineAudit}" ItemTemplate="{StaticResource AiEngineRowTemplate}">
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                        </ItemsControl>
-                        <TextBlock Text="{loc:LocKey AuditHintKey}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Foreground="{DynamicResource App.Text.Muted}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- 分页（引擎审计页签）+ 汇总状态条（含变量的整句由 VM 出 LocValue） -->
-                <StackPanel Grid.Row="5" Margin="0,8,0,0">
-                    <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsEngineTab}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <Button Height="24" Width="64" Padding="0"
-                                Content="{loc:Loc ai.audit.page.prev}" Click="OnAuditPrev">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CanPrevAuditPage}" Value="False">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                        <TextBlock Text="{loc:Value AuditPageValue}" FontSize="11" Margin="8,0"
-                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
-                        <Button Height="24" Width="64" Padding="0"
-                                Content="{loc:Loc ai.audit.page.next}" Click="OnAuditNext">
-                            <Button.Style>
-                                <Style TargetType="Button" BasedOn="{StaticResource TonalButton}">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding CanNextAuditPage}" Value="False">
-                                            <Setter Property="IsEnabled" Value="False"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                    </StackPanel>
-                    <!-- 汇总 / 用量行：单行 + 截断（**冻结高度**：换行会让右栏的 * 行随语言变高，
-                         偷走审计列表的高度；全量读数在悬浮提示里） -->
-                    <TextBlock Text="{loc:Value SummaryValue}" FontSize="11" TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis" ToolTip="{loc:Value SummaryValue}"
-                               Foreground="{DynamicResource App.Text.Secondary}"/>
-                    <!-- 用量行（功能书 §2「用量可见」/ §7.6）：本会话轮数 · 工具调用 · token 合计 -->
-                    <TextBlock Text="{loc:Value UsageValue}" FontSize="11" Margin="0,2,0,0" TextWrapping="NoWrap"
-                               TextTrimming="CharacterEllipsis" ToolTip="{loc:Value UsageValue}"
-                               Foreground="{DynamicResource App.Text.Muted}"/>
-                </StackPanel>
-
-                <!-- 导出（三格式：Markdown 人读 / CSV 台账逐条 / JSON 完整会话）。
-                     段宽算式（中文基线实测，WARNINGS 116）：最紧文案「Markdown（人读）」109.6 + 下拉框
-                     图标与箭头占位 26 ⇒ 内容区需 ≥135.6 → 取 140（英文 Markdown (readable) 113.1 同宽放下）；
-                     118 是六页时代未量 AI 页留下的错格，P3+-2 纳入度量首跑即红。 -->
-                <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,8,0,0">
-                    <ComboBox x:Name="ExportFormatBox" Width="140" Height="30" SelectedIndex="0">
-                        <ComboBoxItem Content="{loc:Loc ai.export.markdown}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.export.csv}"/>
-                        <ComboBoxItem Content="{loc:Loc ai.export.json}"/>
-                    </ComboBox>
-                    <Button x:Name="ExportAuditButton" Style="{StaticResource TonalButton}" Height="30"
-                            Width="68" Padding="0" Margin="8,0,0,0"
-                            Content="{loc:Loc ai.sessions.export}" Click="OnExportAudit"/>
-                </StackPanel>
-            </Grid>
-        </Border>
     </Grid>
 </UserControl>

@@ -16,7 +16,7 @@ public static class OrchestrationHost
     /// <summary>装配编排层并返回待注册命令（stagingRoot 缺省 = 临时目录下 linkpocket-staging）。</summary>
     public static IReadOnlyList<ICommandHandler> CreateHandlers(
         EngineCore engine, Func<LinkPocketDbContext> dbFactory, string? stagingRoot = null,
-        Kernel.EngineLimits? limits = null)
+        Kernel.EngineLimits? limits = null, string? undoJournalPath = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(dbFactory);
@@ -24,7 +24,7 @@ public static class OrchestrationHost
         var batch = new BatchEngine(engine, limits);
         engine.Batch = batch;
 
-        var undo = new UndoCoordinator();
+        var undo = new UndoCoordinator(undoJournalPath);
         engine.Undo = undo;
 
         var staging = new StagingService(stagingRoot, () => engine);

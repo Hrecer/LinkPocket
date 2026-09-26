@@ -14,8 +14,7 @@ namespace LinkPocket.Modules.Folders;
 /// </summary>
 internal static class FolderViewCore
 {
-    public static async Task<FolderContentsDto> BuildAsync(ICommandContext ctx, JsonElement args, EngineLimits limits,
-        bool withTreeLinks = false)
+    public static async Task<FolderContentsDto> BuildAsync(ICommandContext ctx, JsonElement args, EngineLimits limits)
     {
         var folderId = CommandArgs.OptionalString(args, "folder_id");
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
@@ -91,22 +90,10 @@ internal static class FolderViewCore
             ? dto.DirectLinkCount                                // 根分支已算过根级数，直接复用
             : await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
 
-        // 全库活动链接（树叶子注入数据源）：每链接携带 list_id 归属目录（null = 根级），
-        // UI 按父目录分组后把直接链接叶子挂到对应文件夹节点下；同一 UoW 单快照（不跨命令漂移），
-        // 名称升序 + ID 兜底 = 与树同口径的确定性输出（size 0 = 全量）。
-        // 仅 folders.overview 需要（withTreeLinks=true）：folders.contents 是 10k 库性能门槛命令，
-        // 不为它付全量链接代价（响应形状本来就恒 null）。
-        if (withTreeLinks)
-        {
-            // 只投影树叶子真正读的四个字段（id / 标题 / 地址 / 归属）：这是全库链接，
-            // 完整 LinkDto 会把描述、时间戳、访问计数等一起搬运，而树一个都不看。
-            dto.TreeLinks = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
-            {
-                Filter = new LinkFilter(),
-                Sort = new[] { new SortSpec("title", SortDir.Asc) },
-                Page = new PageSpec(1, 0),
-            }, ct)).Select(l => l.ToTreeDto()).ToList();
-        }
+        // 目录树的链接叶子**不再由本命令搬运**（`TreeLinks` 恒为 null）：它已改为界面侧
+        // "节点展开时按需加载"（消费方用 `links.query` 取单个目录的直接链接，且只要名称/地址投影）。
+        // 原实现每次刷新都搬全库链接：真实库 27 064 条 → 响应体 7.18～13.5 MB、wire 4.3～6.6 s，
+        // 而界面一眼用到的只有"展开着的那些节点"（见 PERF-LARGE-LIBRARY.md）。
 
         return dto;
     }

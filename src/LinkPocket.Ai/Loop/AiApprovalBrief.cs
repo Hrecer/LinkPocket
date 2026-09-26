@@ -145,6 +145,33 @@ internal static class AiApprovalBrief
         return list;
     }
 
+    /// <summary>
+    /// 暴露集闸用的**逐步骤（命令, 入参 JSON）**：批 / 宏的每一步都要按自己的参数档位判定
+    /// （例如 <c>folders.delete</c> 的 <c>cascade</c> 是"进回收站"还是"物理删除"）。
+    /// 与 <see cref="ParseSteps"/> 分开：那一条产出的是**审批卡展示面**（不含参数与命令实参）。
+    /// </summary>
+    public static IReadOnlyList<(string Command, string ArgsJson)>? ParseGateSteps(JsonElement? script)
+    {
+        if (script is not { ValueKind: JsonValueKind.Object } obj
+            || !obj.TryGetProperty("steps", out var steps)
+            || steps.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var list = new List<(string Command, string ArgsJson)>();
+        foreach (var step in steps.EnumerateArray())
+        {
+            if (step.ValueKind != JsonValueKind.Object) continue;
+            var command = step.TryGetProperty("command", out var name) && name.ValueKind == JsonValueKind.String
+                ? name.GetString() ?? ""
+                : "";
+            var argsJson = step.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object
+                ? args.GetRawText()
+                : "{}";
+            list.Add((command, argsJson));
+        }
+        return list;
+    }
+
     /// <summary>「本次会话总是允许」将记住的作用域（工具名 [+ 对象范围]，机器面；界面按键包成本地化整句）。</summary>
     public static string AllowScope(string command, Targets targets)
     {

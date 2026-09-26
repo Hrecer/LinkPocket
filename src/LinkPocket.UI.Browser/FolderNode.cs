@@ -1,3 +1,4 @@
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -15,7 +16,7 @@ public class FolderNode : INotifyPropertyChanged
     private string? _parentName;
     private int _linkCount;
     private string _iconKind = "folder-outline";
-    private ObservableCollection<FolderNode> _children = new();
+    private BulkObservableCollection<FolderNode> _children = new();
 
     public string Id
     {
@@ -128,13 +129,48 @@ public class FolderNode : INotifyPropertyChanged
     public bool IsExpanded
     {
         get => _isExpanded;
-        set { _isExpanded = value; OnPropertyChanged(); }
+        set
+        {
+            if (_isExpanded == value) return;
+            _isExpanded = value;
+            OnPropertyChanged();
+            // 展开 = 懒加载直接链接叶子的**唯一触发点**（宿主自己做去重、查询与投影）。
+            // 展开状态是双向绑定的（TreeViewItem.IsExpanded ↔ 本属性），所以点 chevron、键盘 →
+            // 以及"重建树时按上次展开状态恢复"（对象初始化器里 Host 先于 IsExpanded 赋值）都会走到这里。
+            if (value) Host?.OnTreeNodeExpanded(this);
+        }
     }
+
+    /// <summary>
+    /// 该节点的**直接链接叶子是否已注入**（懒加载状态：不作通知，纯内部标记）。
+    /// </summary>
+    /// <remarks>
+    /// 为什么叶子要懒加载：树的叶子 = 全库每一条链接，而"注入"意味着为每条链接造一个节点对象、
+    /// 往子集合里加一次（各发一次集合通知）。真实库 27 064 条链接时，**每次刷新**都要重建 27 070 个节点
+    /// （实测 40 ms 建对象 + 27 070 次集合通知）；十万级时这条成本会线性放大到不可接受。
+    /// 改成"展开才注入"后，成本只与"用户实际展开的节点"成正比，且与主栏一样天然受虚拟化保护。
+    /// 语义不变：展开某文件夹即见其直接书签（Windows 资源管理器同样如此）。
+    /// </remarks>
+    public bool LinksLoaded { get; set; }
+
+    /// <summary>该节点的叶子**正在加载**中（防重入：一次展开可能连来多个触发）。</summary>
+    public bool LinksLoading { get; set; }
+
+    /// <summary>
+    /// 已注入叶子的**目录内容版本**（建节点时取自 <c>FolderDto.UpdatedAt</c>；内核在内容变动
+    /// ——新增/删除/改名/移入移出，含撤销回退——时沿父链刷新它，**查看不算**）。
+    /// 刷新重建时与快照里的新版本比对：相等 ⇒ 叶子内容必然没变，原样搬运（省掉一次查询）；
+    /// 不等 ⇒ 叶子可能陈旧（实测：回溯把链接挪回去后，已展开节点下的叶子还是旧的），
+    /// 不再搬运并标记未加载——已展开的在恢复展开态时自动重取，未展开的等下次展开。
+    /// </summary>
+    public DateTime LeavesVersion { get; set; }
 
     /// <summary>所属 VM：树节点右键菜单经此绑定命令（ContextMenu 不在可视树）。</summary>
     public LinkPocket.ViewModels.BrowserViewModel? Host { get; set; }
 
-    public ObservableCollection<FolderNode> Children
+    /// <summary>子节点集合。类型是**批量集合**：懒加载一批叶子（可能上万条）只发一次通知，
+    /// 而不是每片叶子各发一次（`TreeView` 的订阅者要逐次处理）。</summary>
+    public BulkObservableCollection<FolderNode> Children
     {
         get => _children;
         set

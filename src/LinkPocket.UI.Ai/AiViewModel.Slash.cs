@@ -37,9 +37,6 @@ public sealed partial class AiViewModel
                 case "/new":
                     await NewSessionAsync().ConfigureAwait(true);
                     break;
-                case "/audit":
-                    TabIndex = 3;
-                    break;
                 case "/export":
                     ExportRequested?.Invoke();
                     break;

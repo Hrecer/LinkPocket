@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using LinkPocket.Contracts;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using LinkPocket.Input;
@@ -73,6 +74,10 @@ public partial class BrowserView : UserControl
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out ScreenPoint point);
 
+    /// <summary>系统双击时间（毫秒）：快速连击判定取**系统设置**，不写死常量。</summary>
+    [DllImport("user32.dll")]
+    private static extern int GetDoubleClickTime();
+
     [StructLayout(LayoutKind.Sequential)]
     private struct ScreenPoint
     {
@@ -107,6 +112,16 @@ public partial class BrowserView : UserControl
 
     /// <summary>按下时的点击计数：≥2 = 双击手势的第二击，绝不承载选择语义（第二击只作打开）。</summary>
     private int _pressClickCount;
+
+    /// <summary>本次按下是否属于"对同一行的快速连击"：与上一次按下同一行且间隔小于系统双击时间。
+    /// ⚠️ 不能只信 <see cref="MouseButtonEventArgs.ClickCount"/>：选择/刷新会让行容器被重建，
+    /// 重建后 WPF 的 ClickCount 从 1 重新计数 —— 于是"想双击进入文件夹"的第二击被判成单击，
+    /// 直接进了改名（用户实测：老是误触重命名、进不去文件夹）。按时间戳判定与元素身份无关。</summary>
+    private bool _pressRapidRepeat;
+
+    /// <summary>上一次按下的行与时刻（快速连击判定用）。</summary>
+    private object? _lastPressRow;
+    private long _lastPressTick;
 
     /// <summary>本次手势是否已进入拖拽（拖拽结束的抬起不得再补做选择收敛）。</summary>
     private bool _dragStarted;
@@ -148,6 +163,14 @@ public partial class BrowserView : UserControl
     /// 主栏行与树节点都能构造，放置端按 Id 通用）。</summary>
     public record BrowserDragPayload(IReadOnlyList<DragItem> Items);
 
+    /// <summary>
+    /// 本次鼠标事件的**命中元素**：真实输入时 <c>OriginalSource</c> = 最深的命中元素；
+    /// 合成事件（探针 / 测试直调 <c>RaiseEvent</c>）只填 <c>Source</c>、<c>OriginalSource</c> 为 null
+    /// ——只用 OriginalSource 会让判据在合成事件下恒为"没命中"（实测：探针里"点在名字上"判 false）。
+    /// </summary>
+    private static DependencyObject? HitOf(MouseButtonEventArgs e)
+        => (e.OriginalSource ?? e.Source) as DependencyObject;
+
     /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -160,13 +183,19 @@ public partial class BrowserView : UserControl
 
         // 就地改名编辑框内的鼠标操作（定位光标 / 选词 / 双击选词）归编辑框自己：
         // 不参与行选择、不进入拖拽、也不承载双击打开（否则双击编辑框会把目录打开）。
-        if (InlineNameEditor.IsWithin(e.OriginalSource as DependencyObject)) return;
+        if (InlineNameEditor.IsWithin(HitOf(e))) return;
 
         _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         if (ViewModel == null || _pressRow == null) return;
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         // 记下"按下时它已是唯一选中"——抬起据此判定"再次单击同一项"（Windows 慢双击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
+        // 快速连击（同一行、间隔 < 系统双击时间）= 用户想双击打开 → 改名让位
+        var now = Environment.TickCount64;
+        _pressRapidRepeat = ReferenceEquals(_lastPressRow, _pressRow)
+            && now - _lastPressTick < GetDoubleClickTime();
+        _lastPressRow = _pressRow;
+        _lastPressTick = now;
         if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)
             ViewModel.SelectRowWithModifiers(_pressRow, ModifierKeys.None);
     }
@@ -178,7 +207,7 @@ public partial class BrowserView : UserControl
     private void RowBorder_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         _rowRightDragStart = e.GetPosition(this);
-        _rightPressRow = InlineNameEditor.IsWithin(e.OriginalSource as DependencyObject)
+        _rightPressRow = InlineNameEditor.IsWithin(HitOf(e))
             ? null
             : (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         _rightDragGesture = false;   // 新手势开始：上一次的抑制窗口到此为止

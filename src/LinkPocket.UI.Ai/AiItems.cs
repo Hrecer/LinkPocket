@@ -101,6 +101,10 @@ public sealed class AiFeedItem : INotifyPropertyChanged
             if (_renderText == value) return;
             _renderText = value;
             Raise(nameof(RenderText));
+            // 正文到达即恢复可见：收起回合时该条目还没有正文（被判成"纯思考工作段"整条藏起），
+            // 之后正文流式进来——**最终回复永远不许被折叠藏住**，此时必须把它从隐藏里捞回来。
+            if (Kind == ItemKind.AssistantMessage && HiddenByTurn && !string.IsNullOrWhiteSpace(value))
+                HiddenByTurn = false;
         }
     }
 
@@ -206,6 +210,33 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         }
     }
 
+    private bool _isRejectFeedbackOpen;
+    /// <summary>拒绝反馈区是否展开（**点「拒绝」才出现**——说明是可选的，不是必须输入的确认框；
+    /// 常驻的输入框会让用户以为"必须打字才能执行"，实测正是误读来源）。setter 公开：TwoWay 绑定。</summary>
+    public bool IsRejectFeedbackOpen
+    {
+        get => _isRejectFeedbackOpen;
+        set
+        {
+            if (_isRejectFeedbackOpen == value) return;
+            _isRejectFeedbackOpen = value;
+            Raise(nameof(IsRejectFeedbackOpen));
+        }
+    }
+
+    private string _rejectReason = "";
+    /// <summary>拒绝时附给模型的一句说明（可选；空 = 只拒绝不给理由）。setter 公开：TwoWay 绑定。</summary>
+    public string RejectReason
+    {
+        get => _rejectReason;
+        set
+        {
+            if (_rejectReason == value) return;
+            _rejectReason = value;
+            Raise(nameof(RejectReason));
+        }
+    }
+
     /// <summary>工具行的展开态（一行摘要 → 参数 / 结果 / 内联变更卡）。</summary>
     public bool IsExpanded
     {
@@ -247,7 +278,50 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         }
     }
 
-    public void SetHiddenByTurn(bool hidden) => HiddenByTurn = hidden;
+    /// <summary>
+    /// 助手条目的**思考块**是否随回合折叠隐藏（条目本体与正文永远常显）。
+    /// </summary>
+    /// <remarks>
+    /// 助手条目里其实有两段身份不同的东西：**思考过程**（工作段，属于"这一轮干了什么"）与
+    /// **最终回复**（正文，属于"AI 说了什么"）。前者要随回合收起，后者不许被收起——
+    /// 所以不能靠"整条 Collapsed"来表达折叠：那要么把正文一起藏了，要么（排除整条后）连思考过程都收不掉
+    ///（实测症状：收起一轮只藏了工具行，三段"思考过程"还留在屏幕上）。
+    /// </remarks>
+    public bool HideReasoningByTurn
+    {
+        get => _hideReasoningByTurn;
+        private set
+        {
+            if (_hideReasoningByTurn == value) return;
+            _hideReasoningByTurn = value;
+            Raise(nameof(HideReasoningByTurn));
+        }
+    }
+
+    private bool _hideReasoningByTurn;
+
+    /// <summary>随所属回合的折叠而显隐（助手条目走 <see cref="HideReasoningByTurn"/>，见其说明）。</summary>
+    public void SetHiddenByTurn(bool hidden)
+    {
+        if (Kind == ItemKind.AssistantMessage)
+        {
+            // 助手条目里的两段身份不同：**最终正文**永远常显（收起一轮收的是"干了什么"，不是"说了什么"）；
+            // **思考过程**属于工作段，随回合收起。
+            // ⚠️ 有一种条目**只有思考、没有正文**（模型一轮里分段思考，每段是独立条目）——
+            // 它整个就是工作段：只藏"条目内的思考块"会留下一串 16px 的空壳占位
+            //（实测：收起后三个"思考过程"行看着"藏了但没收走"）⇒ 整条随回合收起。
+            var hasBody = !string.IsNullOrWhiteSpace(RenderText);
+            HiddenByTurn = hidden && !hasBody;
+            HideReasoningByTurn = hidden;
+            return;
+        }
+        // 两处例外不能藏：
+        // ① 待审批卡**等着用户点**（允许 / 拒绝），收起一轮把它藏起来就无从下手（探针实测：焦点拿不到）；
+        // ② 用户消息是"说了什么"（对话本身），不是"干了什么"，永远常显——且它物理上排在所属回合
+        //    分隔行**之前**，折叠一轮的显隐遍历（分隔行往后走到下一个分隔行）会路过**下一轮**的用户消息：
+        //    藏掉它就是"折叠上一轮，把下一轮刚发的那句话一起吞了"（用户实测症状）。
+        HiddenByTurn = hidden && Kind is not (ItemKind.Approval or ItemKind.UserMessage);
+    }
 
     // ── 回合分隔行（Kind = TurnHeader）：整行 = 「本轮用时 N 秒 · 变更 M 项」，点击折叠该轮 ──
 
@@ -309,6 +383,16 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     }
 
     public void ToggleCollapsed() => IsCollapsed = !IsCollapsed;
+
+    /// <summary>重投影时设定**初始折叠态**（BuildFeed 专用：历史轮收起、最后一轮展开；
+    /// 运行时的折叠/展开走 <see cref="ToggleCollapsed"/>，不经过这里）。</summary>
+    internal void SetInitialCollapsed(bool collapsed)
+    {
+        if (_isCollapsed == collapsed) return;
+        _isCollapsed = collapsed;
+        Raise(nameof(IsCollapsed));
+        Raise(nameof(ToggleKey));
+    }
 
     public string ToggleKey => IsCollapsed ? "ai.turn.expand" : "ai.turn.collapse";
 
@@ -372,9 +456,27 @@ public sealed class AiFeedItem : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 这一轮的"工作段"是否**锁死展开**（不渲染收起箭头、点了也不收）。
+    /// </summary>
+    /// <remarks>
+    /// 与参照实现同规则：运行中 / 被中断 / 失败 的那一轮必须保持展开（正在发生的事不该被收起，
+    /// 中断与失败要让人一眼看到卡在哪一步）；其余（**已结束**的轮）一律收起——
+    /// 只看得到一行"已工作 X"和 AI 的最终回复，旧的思考与工具调用不再占满屏幕。
+    /// </remarks>
+    public bool IsLockedOpen => _turnState is not AiTurnState.Completed;
+
     public void ApplyTurn(AiTurn turn)
     {
+        var wasLocked = IsLockedOpen;
         _turnState = turn.State;
+        // 刚结束的那一轮**随即收起**（参照实现：结束即 fold，只留正文与状态行）。
+        // 锁死态解除时补一次通知：箭头要出现、折叠态要生效。
+        if (wasLocked && !IsLockedOpen)
+        {
+            SetInitialCollapsed(true);
+            Raise(nameof(IsLockedOpen));
+        }
         _startedAt = turn.StartedAt;
         _endedAt = turn.EndedAt;
         _changeCount = turn.ChangeCount;
@@ -439,12 +541,36 @@ public sealed class AiFeedItem : INotifyPropertyChanged
     public bool HasTargetPath => Approval?.TargetPath is not null;
     public LocValue TargetPathValue => LocValue.Projection(Approval?.TargetPath ?? "");
 
-    /// <summary>批 / 宏的逐步骤影响（非批为空）。</summary>
+    /// <summary>
+    /// 步骤预览一次最多列几条。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ **这不是照搬参照实现**：参照的审批卡里根本没有"步骤列表"这个概念——它的一次请求就是
+    /// 一张卡、一个工具调用块（多目标只作为一条命令串 / 一个文件列表呈现，文件列表上限 6 条是
+    /// <c>permission-request-preview.ts</c> 里"提取涉及文件路径"的截断，与本表的语义不同）。
+    /// 我们的审批对象經常是**一条多步批脚本**，逐条铺开能看清要动什么，所以保留列表，
+    /// 只是不让它铺满整张卡：超出前 6 条的部分用一行"另 N 步"交代（条数照实说，不静默省略）。
+    /// </remarks>
+    public const int ApprovalStepPreviewMax = 6;
+
+    /// <summary>
+    /// 批 / 宏的逐步骤影响（非批为空）。**只列前 <see cref="ApprovalStepPreviewMax"/> 条**。
+    /// </summary>
+    /// <remarks>
+    /// 为什么截断：删 13 个空文件夹这种"一条批脚本 13 步"的请求，把 13 行全铺开，
+    /// 看上去就是"每个文件夹都通知我一遍"（实测反馈）。一次请求 = 一张卡、一个按钮通过；
+    /// 卡片只负责让人看清**大概要动什么**，超出的用一行"另 N 步"交代清楚（一条不少，只是不铺开）。
+    /// </remarks>
     public IReadOnlyList<AiApprovalStepRow> ApprovalSteps
         => Approval?.Steps is { Count: > 0 } steps
-            ? steps.Select(step => new AiApprovalStepRow(step)).ToArray()
+            ? steps.Take(ApprovalStepPreviewMax).Select(step => new AiApprovalStepRow(step)).ToArray()
             : [];
     public bool HasApprovalSteps => Approval?.Steps is { Count: > 0 };
+
+    /// <summary>被截断掉的步骤数（&gt; 0 时卡片补一行"另 N 步"，绝不静默省略）。</summary>
+    public int HiddenStepCount => Math.Max(0, (Approval?.Steps?.Count ?? 0) - ApprovalStepPreviewMax);
+    public bool HasHiddenSteps => HiddenStepCount > 0;
+    public LocValue HiddenStepsValue => Loc.K("ai.approve.steps.more", HiddenStepCount);
 
     /// <summary>"批脚本步骤（共 N 步）"的标题（含变量整句 = LocValue）。</summary>
     public LocValue StepsTitleValue
@@ -939,52 +1065,3 @@ public sealed class AiChangeRow : INotifyPropertyChanged
     private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-/// <summary>右栏「引擎审计」页签的一行（机器面字段原样；时间走时钟投影、结果走键）。</summary>
-public sealed class AiEngineRow : INotifyPropertyChanged
-{
-    private bool _payloadOpen;
-
-    public required AiEngineCallRow Call { get; init; }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public string Command => Call.Command;
-    public string Caller => Call.Caller;
-    public string CorrelationId => Call.CorrelationId;
-
-    /// <summary>时间走 <see cref="LocValue.Clock"/>（存身份、渲染边界取词，见 WARNINGS 97）。</summary>
-    public LocValue TimeValue => LocValue.Clock(Call.At.LocalDateTime, false);
-
-    public string ResultKey => Call.Success ? "ai.audit.result.ok" : "ai.audit.result.failed";
-    public string? ErrorCode => Call.ErrorCode;
-    public string ElapsedText => $"{Call.ElapsedMs} ms";
-    public bool DryRun => Call.DryRun;
-    public bool IsNested => Call.IsNested;
-    public string? BatchId => Call.BatchId;
-
-    /// <summary>载荷（机器的入参快照与变更载荷；默认收起，功能书 §7.6 的"可开关载荷"）。</summary>
-    public string? PayloadText => _payloadOpen
-        ? $"args: {Call.ArgsJson ?? "-"}\nchanges: {Call.ChangesJson ?? "-"}"
-        : null;
-
-    public bool HasPayload => Call.ArgsJson is { Length: > 0 } || Call.ChangesJson is { Length: > 0 };
-
-    public bool IsPayloadOpen
-    {
-        get => _payloadOpen;
-        private set
-        {
-            if (_payloadOpen == value) return;
-            _payloadOpen = value;
-            Raise(nameof(IsPayloadOpen));
-            Raise(nameof(PayloadText));
-            Raise(nameof(PayloadKey));
-        }
-    }
-
-    public string PayloadKey => IsPayloadOpen ? "ai.diff.collapse" : "ai.audit.payloads.show";
-
-    public void TogglePayload() => IsPayloadOpen = !IsPayloadOpen;
-
-    private void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}

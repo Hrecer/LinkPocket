@@ -390,6 +390,15 @@ public static class PaletteSolver
     public const double SurfaceHoverMinTone = 84.0;
 
     /// <summary>
+    /// 悬停可见性护栏：悬停底对**页面底**的最低可分辨对比度（低于它 = 鼠标移上去看不出变化）。
+    /// 只在 <see cref="ThemeDefinition.EnforceHoverVisibility"/> 打开时参与判定。
+    /// </summary>
+    public const double HoverVisibilityMinRatio = 1.06;
+
+    /// <summary>悬停可见性护栏允许探到的最深档（弱字 ≥4.5 的判据照旧由循环卡住，不在这里放水）。</summary>
+    public const double SurfaceHoverGuardMinTone = 84.0;
+
+    /// <summary>
     /// 浅带层（表头带 `App.Surface.HeaderBand` / 面板层 `App.Surface.Panel`）的档距规则**按分层手段分两支**：
     /// 色相贴上强调槽 ⇒ 页面底**本色档**（本常量 = 0，靠两支近邻色相分层）；
     /// 色相贴不上 ⇒ 压深 <see cref="SurfaceBandToneDrop"/> 档（明度分层，另加 <see cref="SurfaceBandChromaComp"/> 彩度补偿）。
@@ -495,6 +504,10 @@ public static class PaletteSolver
         //    薄荷气泡水 T98.1），按原色算出来的"卡面"会与页面底同色（实测对比度 1.003 / 1.000 = 看不出卡片）。
         var surfaceSource = families.SurfaceSource ?? At(families.NeutralHue, NeutralChroma, SurfaceBaseToneMax);
         var surfaceSourceTone = ColorMath.Measure(surfaceSource).T;
+        // 表面族色相 = "背景色成员"本色的色相（`SurfaceBaseOf` 内部用的是同一个）——
+        // 表面三层之外，**选中底与次按钮底也锚在它上面**（见下方两处），这样"选中行 / 次按钮"
+        // 与它们所在的页面 / 卡面天然同色调，不会读成"跳了一块别的颜色"。
+        var surfaceHue = families.SurfaceSource is { } surfSrc ? ColorMath.Measure(surfSrc).H : families.NeutralHue;
         var surfaceBase = SurfaceBaseOf(families);
         var surfaceBaseTone = ColorMath.Measure(surfaceBase).T;
         var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceBaseTone + SurfaceCardLift, SurfaceCardMaxTone));
@@ -571,6 +584,13 @@ public static class PaletteSolver
         {
             var carrierTone = ColorMath.Measure(carrier).T;
             var floor = Math.Max(carrierTone - SurfaceHoverDrop, SurfaceHoverMinTone);
+            // 悬停可见性护栏（仅对开了它的主题）：「卡面提亮」与「悬停压深」同为 6 档时，
+            // 卡面那一支压深后**正好落回页面底色值**——鼠标移上去和背景一个色，反馈等于消失。
+            // 这里只把**撞色的那一支**的起点再往下探（别的支取值不动），探到与页面底分得开为止。
+            if (definition.EnforceHoverVisibility)
+                while (floor > SurfaceHoverGuardMinTone
+                       && ColorMath.ContrastRatio(DarkenTo(carrier, floor), surfaceBase) < HoverVisibilityMinRatio)
+                    floor -= 1.0;
             for (var tone = floor; tone <= carrierTone; tone += 1.0)
             {
                 var candidate = DarkenTo(carrier, tone);
@@ -616,8 +636,32 @@ public static class PaletteSolver
         // 判据锚在卡面上（对卡面 ≥1.22，见 `SelectedSurfaceUntilVisible`）—— 因此它比强调容器深一大截。
         // **两个令牌、两条判据**：一个令牌服务两种承载面时，浅了行看不出选中、深了指示器/徽标发灰（WARNINGS 118）。
         // 邻居 = **卡面悬停底**（同一块卡上"悬停行"与"选中行"必须分得开），不是页面底那一支悬停。
-        var surfaceSelected = SelectedSurfaceUntilVisible(accentContainer, surfaceBase, surfaceCard, lightestCardHover,
+        // ⚠️ **色相 = 表面族色相**，不是强调容器槽成员的色相：选中行铺在页面 / 卡面上，只有与背景同色调
+        //    才读作"这一行被选中"（实测青提：容器槽成员是奶黄 H100.9 ⇒ 选中底 `#DFD6B0` 与表面族 H137 差
+        //    35.3°，用户："选中态是黄色，而不是与背景同色调"）。彩度 / 明度 / 三条阈值一概不动 ⇒
+        //    只有"容器槽与表面槽不同色相"的主题变值（11 套里实测只有晴王青提饮一套）。
+        var containerSeed = ColorMath.Measure(accentContainer);
+        var selectedSeed = At(surfaceHue, containerSeed.C, containerSeed.T);
+        var surfaceSelected = SelectedSurfaceUntilVisible(selectedSeed, surfaceBase, surfaceCard, lightestCardHover,
             families.SurfaceChroma);
+        // **次按钮底**（TonalButton / SoftPillButton / 计数药丸）= 表面族色相 + **提高一档的彩度**，
+        // 取"对卡面 ≥ `ControlSurfaceMinContrastOnCard` 的**最浅**达标档"。
+        // 承载面三种：卡面（命令栏胶囊里的四枚药丸）/ 面板（右侧栏「打开」）/ 选中行底（计数药丸）——
+        // 走档锚在**卡面**（三者里最亮的承载面：对面板 / 选中底的对比度自动更高）。
+        // ⚠️ 彩度**不再取表面族彩度**（那是"背景色成员的量级"，默认主题只有 C16）：
+        // 浅明度 + 低彩度 = 灰紫——"深浅怎么调都还是灰"（用户实测两轮："发灰"是根因、"和背景差不多"是表象）。
+        // "+14" = 比表面族鲜艳一大档（默认 C16→30），封顶 34（浅明度上"看得出颜色"需要更高的彩度）。
+        // 为什么不用支撑槽本色：本色深浅随配色摆动 ⇒ 实测对卡面 1.02–1.97（重合 ↔ 重色，两头都被用户点过名），
+        // 详见 `ControlSurfaceMinContrastOnCard` 的注释。
+        var controlChroma = Math.Min(34.0, families.SurfaceChroma + 14.0);
+        var surfaceControl = At(surfaceHue, controlChroma, ControlSurfaceToneFloor);
+        for (var tone = 99.0; tone >= ControlSurfaceToneFloor; tone -= 0.5)
+        {
+            var candidate = At(surfaceHue, controlChroma, tone);
+            if (ColorMath.ContrastRatio(candidate, surfaceCard) < ControlSurfaceMinContrastOnCard) continue;
+            surfaceControl = candidate;
+            break;
+        }
         // 强调容器（导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip 的浅色底）= 承载面是**页面底与悬停底**，
         // 判据 = 对页面底 ≥1.08、对悬停底 ≥1.06 —— 沿浅色方向抬（`LiftContainerUntilVisible`）。
         // ⚠️ 直接取浅成员当容器时实测 8/11 套与页面底**完全同色**（1.000 —— 最浅成员往往既是页面底
@@ -628,15 +672,25 @@ public static class PaletteSolver
             Math.Max(ColorMath.Measure(accentContainer).C, NeutralChroma), ToneScale.AccentOnContainer);
 
         var supportIconSource = families.SupportSource ?? accentFill;
-        // 支撑容器：够浅就直接用（直配）/ 否则提亮到容器档；再不行才用强调色提亮兜底。
+        // 支撑容器 = **配色成员本色**（用户选的颜色），不再提亮到"容器档"。
+        // 为什么改：把暮色玫瑰的藕紫 `#907884`（T53 C13.7）提亮到容器档 T90 而彩度不下调，
+        // 得到的是 `#F8DBE8` —— 一支**配色里根本不存在的甜粉**（实测：用户看到的"凭空冒出来的粉色按钮"）。
+        // 浅底上同样的彩度显眼得多，"够浅才能直接用"这条门槛逼着深成员必须被改造；
+        // 直接取本色 = 界面上出现的每一支都能在用户给的调色板里找到（悬停/状态这类派生仍走算法）。
+        // 墨先按**本色**定档（色相与本色的容器一致，下面提亮容器时对比度只随明度变）
+        var inkOnSupport = DarkenTo(supportIconSource, ToneScale.SupportOnContainer);
         var supportContainer = families.SupportSource is { } supportSrc
-            ? Direct(supportSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.SupportContainer)
+            ? LightenUntilInkReadable(supportSrc, inkOnSupport, ToneScale.MinInkOnContainer)
             : LightenTo(accentFill, ToneScale.SupportContainer);
         var supportOnContainer = DarkenTo(supportContainer, ToneScale.SupportOnContainer);
         // 支撑图标：够深就直接用，浅了压到填充档（与强调图标同一口径）。
         var supportIcon = ColorMath.Measure(supportIconSource).T <= ToneScale.AccentFill
             ? supportIconSource
             : DarkenTo(supportIconSource, ToneScale.AccentFill);
+        // **文件夹图标 = 这一支再提淡**：钉在填充档（T40 上下）时，每一套主题里的文件夹图标都
+        // 黑压压一片（实测 11/11 套 —— 用户："偏深、太强烈"）。改成沿**本色的色相与彩度**往浅走，
+        // 取"对页面底刚好还看得见"的最浅档 = 浅浅深了一层的那种淡（判据 3:1，WCAG 非文本图形）。
+        var typeFolder = LightenUntilVisible(supportIcon, surfaceBase, ToneScale.MinIconOnSurface);
 
         // ── 第 7 步：全量发布 ──────────────────────────────────────────────
         var anchored = new Dictionary<string, Argb>(StringComparer.Ordinal);
@@ -674,6 +728,7 @@ public static class PaletteSolver
             [AppTokens.SurfaceCardHover] = cardHover,
             [AppTokens.SurfaceBandHover] = bandHover,
             [AppTokens.SurfaceSelected] = surfaceSelected,
+            [AppTokens.SurfaceControl] = surfaceControl,
             [AppTokens.SurfaceTintCard] = surfaceCard,
             [AppTokens.SurfaceTint] = surfaceCard,
             [AppTokens.SurfacePanel] = surfacePanel,
@@ -698,7 +753,7 @@ public static class PaletteSolver
             [AppTokens.SupportContainer] = supportContainer,
             [AppTokens.SupportIcon] = supportIcon,
 
-            [AppTokens.TypeFolder] = supportIcon,
+            [AppTokens.TypeFolder] = typeFolder,
             [AppTokens.TypeLink] = accentFill,
 
             [AppTokens.LineOutline] = outline,
@@ -713,6 +768,12 @@ public static class PaletteSolver
             accentIsDeep ? accentFill : surfaceCard,
             accentIsDeep ? white : textPrimary,
             ToneScale.StateHoverOpacity);
+        // 同一条护栏（仅对开了它的主题）：按钮悬停底若是"浅承载面叠墨"，结果可能正好落回页面底色值
+        //（实测晴王青提饮 #D7EBC9 对页面底 #D9EBC8，ΔRGB ≤ 2）——改叠在**已经压深的卡面悬停底**上，
+        // 反馈才看得出来。叠层强度与墨色都不变，只是承载面换成深一档的那一支。
+        if (definition.EnforceHoverVisibility
+            && ColorMath.ContrastRatio(tokens[AppTokens.StateHover], surfaceBase) < HoverVisibilityMinRatio)
+            tokens[AppTokens.StateHover] = ColorMath.Overlay(cardHover, textPrimary, ToneScale.StateHoverOpacity);
         tokens[AppTokens.StatePressed] = ColorMath.Overlay(
             surfaceCard, textPrimary, ToneScale.StatePressedOpacity);
         tokens[AppTokens.StateDisabledFill] = ColorMath.Overlay(
@@ -777,6 +838,48 @@ public static class PaletteSolver
     /// 见 <see cref="SelectedSurfaceUntilVisible"/> 与 开发文档。
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// 把一支**前景图标色**沿自己的色相/彩度往浅走，取"对承载面刚好看得见"的**最浅**那一档。
+    /// </summary>
+    /// <remarks>
+    /// 钉档位（旧写法）与"按可见性取档"的差别：图标钉在填充档（T40 上下）时，每一套主题里都是
+    /// 同一种黑压压的深度；而"取最浅的达标档"让每一套主题自动落在它自己能读的边界上——
+    /// 浅色主题给出浅浅深了一层的淡，深色主题也不会糊掉。色相与彩度始终是配色成员本色的。
+    /// </remarks>
+    private static Argb LightenUntilVisible(Argb color, Argb carrier, double minRatio)
+    {
+        var start = ColorMath.Measure(color).T;
+        var m0 = ColorMath.Measure(color);
+        Argb? best = null;
+        for (var tone = start; tone <= 100.0; tone += 1.0)
+        {
+            var candidate = ColorMath.FromAlphaHct(0xFF, ColorMath.NormalizeHue(m0.H), m0.C, tone);
+            // 记**最后一个**达标的档 = 最浅的那一支（一达标就返回会停在原档，等于没淡）
+            if (ColorMath.ContrastRatio(candidate, carrier) >= minRatio) best = candidate;
+        }
+        return best ?? color;   // 一档都不达标（承载面极端）：原样返回，不发明颜色
+    }
+
+    /// <summary>
+    /// 容器**沿自己的本色往浅走**，取"容器上的墨读得清"的**第一个**档（= 最深 = 最接近本色的那一档）。
+    /// </summary>
+    /// <remarks>
+    /// 与旧写法的差别：旧写法把不够浅的成员一律提到容器档（T90 上下），于是暮色玫瑰的藕紫
+    /// <c>#907884</c> 被提亮成 <c>#F8DBE8</c> —— 一支配色里根本不存在的甜粉（用户实测："没选粉色，按钮却是粉的"）。
+    /// 这里只在**本色确实压得墨读不出来**时才提亮，且停在刚够用的那一档：色相与彩度始终是本色的，
+    /// 提亮幅度也最小。墨读得清的本色（如抹茶/青提的浅成员）则逐字节不动。
+    /// </remarks>
+    private static Argb LightenUntilInkReadable(Argb container, Argb ink, double minRatio)
+    {
+        var m = ColorMath.Measure(container);
+        for (var tone = m.T; tone <= 100.0; tone += 1.0)
+        {
+            var candidate = ColorMath.FromAlphaHct(0xFF, ColorMath.NormalizeHue(m.H), m.C, tone);
+            if (ColorMath.ContrastRatio(ink, candidate) >= minRatio) return candidate;
+        }
+        return container;
+    }
+
     private static Argb LiftContainerUntilVisible(Argb container, Argb surfaceBase, Argb surfaceHover, double familyChroma)
     {
         var m = ColorMath.Measure(container);
@@ -827,12 +930,13 @@ public static class PaletteSolver
     /// ⚠️ **不把"弱文字 ≥4.5"加进这条走档**：两条阈值在这套配色下互斥——对卡面 ≥1.22 要求 ≤T85.5，
     /// 而弱文字 ≥4.5 要求 ≥T86（选中底越浅字越清楚、与卡面越不开）。加进去会让走档一路落回最深档
     /// （实测：加了就退回 <c>#C0B8D0</c>，弱字反而 3.40 更差）。当前值弱字 4.44、次列 6.40、正文 11.21，
-    /// 弱字这一条由 <c>ThemeContrastTests.对比度矩阵</c> 按实测棘轮（≥4.4）卡住，不让它继续往深滑。
-    /// </para>
-    /// </para>
+    /// 弱字这一条由 <c>ThemeContrastTests.对比度矩阵</c> 按实测棘轮（≥4.4）卡住，不让它继续往深滑
+    /// —— 换表面族色相后最紧的一套是青提（走档由"对卡面悬停 ≥1.06"钉在 T85.5）实测 4.404，
+    /// 棘轮仍取 4.4（余量 0.004：闸门本来就该在这条线上报警）。</para>
     /// <para>
-    /// 种子 = 容器来源（浅且安静的那个成员）；彩度 = 表面族彩度（**只增不减**，与页面底 / 悬停底同族）、
-    /// 上限 = 容器安静档（<c>NeutralVariantChroma × 2</c>）；色相一律取自配色成员。
+    /// 种子 = **强调容器本色，但色相换成表面族色相**（彩度与明度仍取容器种子自己的 ——
+    /// 只有"容器槽与表面槽不同色相"的主题会因此变值）；彩度 = 表面族彩度（**只增不减**，与页面底 /
+    /// 悬停底同族）、上限 = 容器安静档（<c>NeutralVariantChroma × 2</c>）；色相一律取自配色成员。
     /// 悬停底传"**卡面**那一支、且两种模式里更浅的那一个"（调用方给）：选中行与悬停行画在同一块卡上，
     /// 邻居是它；用两种模式里更浅的那个当约束，选中底才在自动 / 直配下算出**同一个色**。
     /// </para>
@@ -879,6 +983,31 @@ public static class PaletteSolver
     /// 有 1.33–1.38，永远不会撞上这一条。
     /// </remarks>
     public const double ContainerMinContrastOnHover = 1.06;
+
+    /// <summary>
+    /// **次按钮底**（<c>App.Surface.Control</c>：TonalButton / SoftPillButton / 计数药丸）对卡面的最低对比度。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么单独立一条</b>：这类面原先用"支撑槽**本色**"（<c>App.Support.Container</c>），
+    /// 本色深浅随配色摆动 ⇒ 实测跨 1.02–1.97 两头都不合格 —— 青提本色 `#EDFFDB` 对卡面 **1.026**
+    /// （ΔRGB 各 3 = 与命令栏胶囊重合，用户："底色与背景重合"）、宇治抹茶本色对页面底 **1.000**
+    /// （逐字节同色）、藕粉灰绿 / 焦糖玫瑰本色对卡面 1.966（用户："四个工具栏按钮全部偏深"）。
+    /// </para>
+    /// <para>
+    /// 1.60（2026-09-26 由 1.50 上调）：1.50 档下对卡面 1.50–1.52、**对页面底/面板仅 1.29–1.31**
+    ///（右侧栏「打开」正画在面板上，这处最紧）—— 实测"按钮和背景差不多"（用户反馈，各主题一致）。
+    /// 抬一档后：对卡面 1.60、对页面底/面板 1.37–1.38，容器字仍 8.3（≥7），离选中底 1.25（反而更分得开）。
+    /// 走档取"**最浅**达标档"⇒ 上界天然锁在阈值附近，不会滑向更深（旧本色那一头）。
+    /// </para>
+    /// </remarks>
+    public const double ControlSurfaceMinContrastOnCard = 1.60;
+
+    /// <summary>
+    /// 次按钮底允许下探的最深档（兜底：配色极端、一路够不到阈值时停在这里）。
+    /// </summary>
+    /// <remarks>实测最深的一支是出厂默认 T79.4 —— 地板 60 只防"永不达标"的死循环，正常取值远在它之上。</remarks>
+    public const double ControlSurfaceToneFloor = 60.0;
 
     /// <summary>
     /// "背景色成员的色点看起来与页面底融合"的**对比度上限**（`SurfaceBaseOf` ② 路径的循环判据）。

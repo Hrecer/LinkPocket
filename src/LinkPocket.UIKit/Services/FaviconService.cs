@@ -86,6 +86,12 @@ public class FaviconService
         if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
 
+        // 内嵌图标（`data:` URI）：字节就在地址里，**本地解码**即可 —— 既不进网络（那是必然失败的），
+        // 也不丢图标。真实压力库里 21 445 条链接的 favicon 是这种形态（占 79%），
+        // 不走这条分支的话整片列表只剩默认图标，且每次刷新会重发 1 976 个必然失败的请求。
+        if (FaviconCache.IsInlineData(resolvedUrl))
+            return DecodeInlineData(resolvedUrl);
+
         if (FaviconCache.TryGetCacheFilePath(resolvedUrl) is not string filePath)
             return null;
 
@@ -104,6 +110,36 @@ public class FaviconService
         catch { return null; }
     }
 
+    /// <summary>
+    /// 内嵌图标（<c>data:[&lt;mime&gt;][;base64],&lt;数据&gt;</c>）本地解码：支持 base64 形态，
+    /// 其它形态（百分号编码的纯文本 data URI）不认、返回 null（走默认图标）。
+    /// </summary>
+    private static BitmapImage? DecodeInlineData(string dataUrl)
+    {
+        try
+        {
+            var comma = dataUrl.IndexOf(',');
+            if (comma < 0) return null;
+            var meta = dataUrl.Substring(5, comma - 5);           // "image/png;base64"
+            if (!meta.Contains("base64", StringComparison.OrdinalIgnoreCase)) return null;
+
+            var bytes = Convert.FromBase64String(dataUrl[(comma + 1)..]);
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.DecodePixelWidth = 48;
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.StreamSource = new MemoryStream(bytes);
+            bmp.EndInit();
+            if (bmp.CanFreeze) bmp.Freeze();
+            Store(dataUrl, bmp);
+            return bmp;
+        }
+        catch
+        {
+            return null;   // 坏数据（截断的 base64 等）只丢这一个图标，不抛
+        }
+    }
+
     /// <summary>确保磁盘缓存就绪并解码入内存（并发/去重/大小上限统一由 <see cref="FaviconCache"/> 保证）。</summary>
     public static async Task PrefetchAndCacheAsync(string? faviconUrl)
     {
@@ -112,6 +148,9 @@ public class FaviconService
         var resolvedUrl = FaviconCache.ResolveFaviconUrl(faviconUrl);
 
         if (_memoryCache.ContainsKey(resolvedUrl)) return;
+
+        // 内嵌图标没有"下载"这回事（解码已在 LoadFromCache 里完成；这里不联网）。
+        if (FaviconCache.IsInlineData(resolvedUrl)) return;
 
         if (!await FaviconCache.EnsureCachedAsync(resolvedUrl)) return;
 
@@ -141,6 +180,10 @@ public class FaviconService
 
         if (_memoryCache.TryGetValue(resolvedUrl, out var cached))
             return cached;
+
+        // 内嵌图标：本地解码（同 LoadFromCache 的理由），解不开才回默认图标。
+        if (FaviconCache.IsInlineData(resolvedUrl))
+            return DecodeInlineData(resolvedUrl) ?? DefaultIcon;
 
         if (FaviconCache.TryGetCacheFilePath(resolvedUrl) is string filePath)
         {

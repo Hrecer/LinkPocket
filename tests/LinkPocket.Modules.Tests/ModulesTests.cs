@@ -10,13 +10,13 @@ namespace LinkPocket.Modules.Tests;
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_60_Commands()
+    public void Describe_Returns_All_62_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(60, manifest.Commands.Count);
-        Assert.Equal(60, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(62, manifest.Commands.Count);
+        Assert.Equal(62, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -24,7 +24,7 @@ public class CatalogTests
     public void Describe_By_Category_Splits_Correctly()
     {
         var (engine, _, _) = TestHost.Create();
-        Assert.Equal(14, engine.Describe("folders").Commands.Count);
+        Assert.Equal(15, engine.Describe("folders").Commands.Count);  // + folders.tree_links（树叶子懒加载的轻量出口）
         Assert.Equal(16, engine.Describe("links").Commands.Count);
         Assert.Equal(9, engine.Describe("trash").Commands.Count);  // + trash.restore_unit（还原）/ trash.overview
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
@@ -108,10 +108,15 @@ public class FoldersModuleTests
         Assert.Equal(tree.Count, overview.Tree!.Count);
         Assert.All(overview.Tree, f => Assert.Contains(tree, t => t.FolderId == f.FolderId));
 
-        // 全量链接快照（树叶子注入数据源）：每链接携带归属目录 list_id，根级/子目录同一 UoW 单快照
-        Assert.Equal(2, overview.TreeLinks!.Count);
-        Assert.Contains(overview.TreeLinks, l => l.Title == "内部链接" && l.ListId == folder.Data!.FolderId);
-        Assert.Contains(overview.TreeLinks, l => l.Title == "根级链接" && l.ListId == null);
+        // 全库链接**不再随 overview 搬运**（每次刷新搬全库是实测的性能黑洞）：
+        // 目录树的叶子改用轻量出口 folders.tree_links（只带 id / 标题 / 地址 / 归属），按节点展开时取
+        Assert.Null(overview.TreeLinks);
+        var leaves = await engine.QueryAsync<List<TreeLinkDto>>("folders.tree_links", new { folder_id = folder.Data!.FolderId });
+        Assert.Single(leaves);
+        Assert.Equal("内部链接", leaves[0].Title);
+        Assert.Equal(folder.Data!.FolderId, leaves[0].ListId);
+        var rootLeaves = await engine.QueryAsync<List<TreeLinkDto>>("folders.tree_links", null);
+        Assert.Contains(rootLeaves, l => l.Title == "根级链接" && l.ListId == null);
 
         // 根级计数与 links.stats.RootLevel 同口径；根分支复用目录页计数
         var stats = await engine.QueryAsync<LinkCountsDto>("links.stats", null);

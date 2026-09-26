@@ -253,6 +253,9 @@ public class BrowserViewModelTests
 
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
+            // 链接叶子**按需加载**（展开才注入）：虚根默认展开 ⇒ 等它加载完再断言
+            await vm.WaitForTreeLinksAsync(root);
+
             // 文件夹组在前（名称升序）、链接组在后（名称升序）——链接绝不骑在文件夹之前
             var children = root.Children;
             Assert.Equal(4, children.Count);
@@ -264,9 +267,12 @@ public class BrowserViewModelTests
             Assert.True(children[2].IsLink && children[2].Id == linkA.LinkId && children[2].ParentId == null);
             Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId && children[3].ParentId == null);
 
-            // 子目录（Delta）的直接链接注入其节点下（名称升序叶子；ParentId = 所属目录）
+            // 子目录（Delta）的直接链接在其**展开时**注入（名称升序叶子；ParentId = 所属目录）
             var deltaNode = children[1];
             Assert.Equal(delta.FolderId, deltaNode.FolderId);
+            Assert.Empty(deltaNode.Children);          // 未展开 = 没有叶子（懒加载）
+            deltaNode.IsExpanded = true;
+            await vm.WaitForTreeLinksAsync(deltaNode);
             var deltaLeaf = Assert.Single(deltaNode.Children);
             Assert.True(deltaLeaf.IsLink && deltaLeaf.Id == bravo.LinkId && deltaLeaf.ParentId == delta.FolderId);
             Assert.Equal("Bravo 子级", deltaLeaf.Name);
@@ -319,6 +325,8 @@ public class BrowserViewModelTests
             await vm.LoadAsync(null);
 
             var aNode = vm.FolderTree[0].Children.Single(c => !c.IsLink);
+            aNode.IsExpanded = true;                       // 叶子按需加载：展开该目录
+            await vm.WaitForTreeLinksAsync(aNode);
             var leaf = Assert.Single(aNode.Children);
             Assert.True(leaf.IsLink && leaf.Id == link.LinkId && leaf.ParentId == a.FolderId);
 

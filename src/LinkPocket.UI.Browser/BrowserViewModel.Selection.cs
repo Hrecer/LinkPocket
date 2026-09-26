@@ -26,15 +26,27 @@ public partial class BrowserViewModel
         SyncMainRowSelection();
         SyncTreeSelection();
         SyncTreeDropTarget();      // 树节点重建后落点高亮同样要重放（行侧是 getter 投影，无需重放）
+        _rowsReplaced = false;     // 本轮"整体替换"的一次性标记到此结束
         NotifySelectionChanged();
     }
 
-    /// <summary>主栏行投影：每行 IsSelected = 其 Id 是否在选中集合（行只读，集合是唯一事实）。
-    /// 行的 IsSelected getter 已直接读 <see cref="IsSelectedId"/>，此处仅为强制刷新绑定。</summary>
+    /// <summary>
+    /// 主栏行投影：每行 IsSelected = 其 Id 是否在选中集合（行只读，集合是唯一事实）。
+    /// 行的 IsSelected getter 已直接读 <see cref="IsSelectedId"/>，此处仅为强制刷新绑定。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 行集合**刚被整体替换**时直接跳过（见 <see cref="_rowsReplaced"/>）：那是全新的行对象，
+    /// 视图侧（虚拟化容器重建 / Recycling 复用换 DataContext）**首次求值就会读宿主集合**，
+    /// 再逐行发一万次属性通知纯属白烧——实测这一步就是"打开大目录"里 UI 线程后半程的主要成本。
+    /// </remarks>
     private void SyncMainRowSelection()
     {
+        if (_rowsReplaced) return;
         foreach (var r in Rows) r.InvalidateIsSelected();
     }
+
+    /// <summary>行集合在本轮刷新里被整体替换过（<see cref="ApplySelectionToView"/> 消费后归零）。</summary>
+    private bool _rowsReplaced;
 
     /// <summary>
     /// 目录树投影：树节点高亮 = 选中集合里真正被选中的实体，**与当前所处目录无关**。
