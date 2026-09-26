@@ -1,41 +1,12 @@
 # LinkPocket
 
-**Your links, in one place that is actually yours — with a built-in AI agent that does the work.** A standalone, local-first personal knowledge base for Windows: import, organize and create your own links, and hand the tedious parts — batch moves, cleanup, dedupe, restructuring — to an agent that operates your library through the same safe, auditable engine the interface uses.
+**Your links, in one place that is actually yours.** A standalone, local-first personal knowledge base for Windows — import, organize and create your own links: fast to navigate, easy to keep tidy, and portable down to the last file. An optional AI assistant can do the tedious parts for you (see [Let an AI assistant do the tedious parts](#let-an-ai-assistant-do-the-tedious-parts-optional)).
 
 ![Version](https://img.shields.io/badge/version-3.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
-![AI Agent](https://img.shields.io/badge/AI-agent%20built--in-8A2BE2)
-![Tools](https://img.shields.io/badge/tools-60%2B%20engine%20commands-2E8B57)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
-
-## The AI agent — ask, approve, undo
-
-LinkPocket ships with an **AI assistant that can actually operate your library**, not just talk about it. You describe the outcome ("move everything loose at the root into a folder called Inbox", "find duplicates and keep the newest one"), and the agent works through the same engine the UI uses — so every step is real, recorded, and reversible.
-
-**What it can do**
-
-- **Organize at scale** — bulk move, copy, rename and retag; restructure a folder tree; split or dissolve folders, all in one instruction.
-- **Clean up** — run duplicate scans, trash the copies you don't want, audit what changed recently.
-- **Report before acting** — dry-run batch scripts first, show a step-by-step impact preview, and only then apply.
-
-**Why it is safe to let it act**
-
-- **Every capability is an engine command.** The agent gets no private back door — it calls the same 60+ commands the interface uses, with the same validation, write-gates and audit trail.
-- **Three-tier approval.** Read-only calls go straight through; reversible writes are audited; destructive or irreversible operations stop and ask — approval cards show exactly what will be touched, with a per-step impact preview before you say yes.
-- **Undo and rewind.** Every batch the agent runs lands on the undo stack. **Rewind a turn** and LinkPocket rolls the data back, trims the conversation to before that turn, and puts your original words back in the composer — the three together are what make a rewind trustworthy.
-- **Honest failure.** If a step cannot run, you get the real reason and how many items it affected — never a silent "ok".
-
-**How you drive it**
-
-- **Multi-session workspace** — keep several conversations, start a draft without polluting the list, and reference another session by its ID (`#s-<id>`) to pull its context in.
-- **Skills and macros** — save a prompt as a reusable skill, save a batch script as a macro the agent can run again.
-- **Streaming with thinking** — reasoning, tool calls and results arrive as they happen, with a context-usage ring that reflects what was actually sent to the model.
-- **Web search, where the provider supports it** — when your model provider offers server-side search, the agent can consult the live web and cite its sources; otherwise it says so instead of pretending.
-- **Bring your own model** — OpenAI-compatible endpoints, OpenAI Responses, or Anthropic Messages; keys are stored locally and encrypted.
-
-**Local-first applies to the agent too.** There is no LinkPocket cloud. The agent runs locally, talks only to the model provider you configure, and every action goes through the same local engine, database and undo journal as your own clicks.
 
 ## Why LinkPocket
 
@@ -79,6 +50,18 @@ LinkPocket ships with an **AI assistant that can actually operate your library**
 - Every edit can be undone — and redone. The history panel shows what is on both stacks.
 - Visit counts and "last visited" times are tracked as you browse, so Smart Lists keep getting smarter.
 - Mark the bookmarks you rely on as favorites.
+
+### Let an AI assistant do the tedious parts (optional)
+
+An optional AI assistant works **through the same engine as the interface** — it can reorganize, batch-move, dedupe and clean up your library by instruction, under the same guarantees as your own clicks:
+
+- **Approval by tier** — read-only calls pass through; reversible writes are audited; destructive or irreversible operations stop and ask, with a per-step impact preview before you approve.
+- **Undo and rewind** — every batch lands on the undo stack; rewinding a turn rolls the data back, trims the conversation to before that turn, and restores your original message to the composer.
+- **Honest failure** — a step that cannot run reports the real reason and how many items it affected, never a silent "ok".
+- **Web search has limits** — server-side web search is used only where your model provider actually supports it; there is **no built-in crawler and no third-party search key**, and when the capability is unavailable the assistant says so instead of pretending.
+- **Your data path** — conversations go only to the model provider you configure (OpenAI-compatible, OpenAI Responses, or Anthropic Messages); history and the action log stay in your library folder.
+
+Configure a provider in **Settings → AI** to enable it.
 
 ### Make it feel like yours
 
