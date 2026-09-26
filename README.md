@@ -1,19 +1,48 @@
 # LinkPocket
 
-**Your links, in one place that is actually yours.** A standalone, local-first personal knowledge base for Windows — import, organize and create your own links: fast to navigate, easy to keep tidy, and portable down to the last file.
+**Your links, in one place that is actually yours — with a built-in AI agent that does the work.** A standalone, local-first personal knowledge base for Windows: import, organize and create your own links, and hand the tedious parts — batch moves, cleanup, dedupe, restructuring — to an agent that operates your library through the same safe, auditable engine the interface uses.
 
-![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Version](https://img.shields.io/badge/version-3.2.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
+![AI Agent](https://img.shields.io/badge/AI-agent%20built--in-8A2BE2)
+![Tools](https://img.shields.io/badge/tools-60%2B%20engine%20commands-2E8B57)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
+
+## The AI agent — ask, approve, undo
+
+LinkPocket ships with an **AI assistant that can actually operate your library**, not just talk about it. You describe the outcome ("move everything loose at the root into a folder called Inbox", "find duplicates and keep the newest one"), and the agent works through the same engine the UI uses — so every step is real, recorded, and reversible.
+
+**What it can do**
+
+- **Organize at scale** — bulk move, copy, rename and retag; restructure a folder tree; split or dissolve folders, all in one instruction.
+- **Clean up** — run duplicate scans, trash the copies you don't want, audit what changed recently.
+- **Report before acting** — dry-run batch scripts first, show a step-by-step impact preview, and only then apply.
+
+**Why it is safe to let it act**
+
+- **Every capability is an engine command.** The agent gets no private back door — it calls the same 60+ commands the interface uses, with the same validation, write-gates and audit trail.
+- **Three-tier approval.** Read-only calls go straight through; reversible writes are audited; destructive or irreversible operations stop and ask — approval cards show exactly what will be touched, with a per-step impact preview before you say yes.
+- **Undo and rewind.** Every batch the agent runs lands on the undo stack. **Rewind a turn** and LinkPocket rolls the data back, trims the conversation to before that turn, and puts your original words back in the composer — the three together are what make a rewind trustworthy.
+- **Honest failure.** If a step cannot run, you get the real reason and how many items it affected — never a silent "ok".
+
+**How you drive it**
+
+- **Multi-session workspace** — keep several conversations, start a draft without polluting the list, and reference another session by its ID (`#s-<id>`) to pull its context in.
+- **Skills and macros** — save a prompt as a reusable skill, save a batch script as a macro the agent can run again.
+- **Streaming with thinking** — reasoning, tool calls and results arrive as they happen, with a context-usage ring that reflects what was actually sent to the model.
+- **Web search, where the provider supports it** — when your model provider offers server-side search, the agent can consult the live web and cite its sources; otherwise it says so instead of pretending.
+- **Bring your own model** — OpenAI-compatible endpoints, OpenAI Responses, or Anthropic Messages; keys are stored locally and encrypted.
+
+**Local-first applies to the agent too.** There is no LinkPocket cloud. The agent runs locally, talks only to the model provider you configure, and every action goes through the same local engine, database and undo journal as your own clicks.
 
 ## Why LinkPocket
 
 - **Standalone, not a browser accessory.** No extension to install and no sync service to trust — your links live in one self-contained library on your machine, whether they came from a browser, an export file, or your own typing.
 - **Local first.** No account, no sync service, no telemetry. Everything lives in a single folder next to the app — copy it to a USB stick and your whole library comes along.
 - **Built for large libraries.** Tens of thousands of bookmarks stay responsive: virtualized lists, instant folder switching, and background work that never blocks the interface.
-- **Nothing destructive happens by accident.** Deleting moves things to a recycle bin, permanent removal and full wipes ask twice, and edits can be undone.
+- **Nothing destructive happens by accident.** Deleting moves things to a recycle bin, permanent removal and full wipes ask twice, and edits can be undone — for you and for the agent.
 
 ## What you can do
 
@@ -65,6 +94,8 @@
 
 There is no installer and nothing to configure. Your library (database, settings, site icons and logs) is created in the folder you extracted, so uninstalling means deleting that folder — and moving your library means moving it.
 
+To use the AI agent, add a model provider in **Settings → AI** (OpenAI-compatible endpoint, OpenAI Responses, or Anthropic Messages) and paste your API key. It is stored locally, encrypted; nothing leaves your machine until you send a message.
+
 **Requirements:** Windows 10 or Windows 11 (64-bit).
 
 ## Your data and your privacy
@@ -72,6 +103,7 @@ There is no installer and nothing to configure. Your library (database, settings
 - Your bookmarks never leave your machine unless you export them yourself.
 - LinkPocket keeps no account and sends no usage data.
 - The app uses the network only to serve you: it fetches the title, description and icon of a page **when you add or open a bookmark's details**, and it can look up a site's icon from a third-party icon provider when the site itself does not offer one. Nothing else is requested, and nothing about your library is ever uploaded.
+- **AI conversations** go only to the model provider you configure, from your machine, with your key. Conversation history and the agent's action log are stored in your library folder like everything else.
 
 ## Interface
 
