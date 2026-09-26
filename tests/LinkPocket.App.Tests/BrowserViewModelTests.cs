@@ -137,6 +137,56 @@ public class BrowserViewModelTests
     }
 
     [Fact]
+    public async Task 后台刷新_原地写回行时_派生展示列也必须发通知_否则那些列永远停在旧值()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://visit.example", title: "V",
+                autoFetchMetadata: false)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            var row = Assert.Single(vm.Rows);
+
+            Assert.Equal(0, row.ViewCount);
+            Assert.Null(row.LastViewedAt);
+            var viewsBefore = row.ViewCountText.Resolve();
+            var lastViewedBefore = row.LastViewedAdaptive.Resolve();
+
+            // 记下本行发出的属性通知名——绑定就是靠"名字对得上"驱动那一格重画的
+            var raised = new List<string>();
+            row.PropertyChanged += (_, e) => raised.Add(e.PropertyName ?? string.Empty);
+
+            // 查看一次：引擎把 LastVisitedAt / VisitCount 落库并推 links.changed
+            await client.LinkVisitRecordAsync(link.LinkId);
+            // 事件链口径的后台刷新（界面侧由 MainViewModel 300ms 防抖触发同一个入口）
+            await vm.RefreshPreservingSelectionAsync();
+
+            // 行序列（Id + 顺序）没变 ⇒ 差分刷新走 ApplyFrom **原地写回**，行对象不换、一次 Reset 都不发
+            Assert.Same(row, vm.Rows[0]);
+            // 值确实变了（否则下面的通知断言就是空转）
+            Assert.Equal(1, row.ViewCount);
+            Assert.NotNull(row.LastViewedAt);
+            Assert.NotEqual(viewsBefore, row.ViewCountText.Resolve());
+            Assert.NotEqual(lastViewedBefore, row.LastViewedAdaptive.Resolve());
+
+            // ⚠️ 回归闸：列表四列绑的是派生投影（{loc:FitValue ModifiedText / LastViewedAdaptive /
+            //    ViewCountText / CreatedText}），不是原始字段。原地写回不换对象、不发 Reset，
+            //    只发原始字段名（ViewCount / LastViewedAt）时绑定收不到通知 ⇒ 列表全部停在旧值，
+            //    而右栏走 LinkGetAsync 重新取数看着是新的——症状正是"只有列表不更新"。
+            Assert.Contains("LastViewedAt", raised);
+            Assert.Contains("LastViewedAdaptive", raised);
+            Assert.Contains("ViewCount", raised);
+            Assert.Contains("ViewCountText", raised);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 跳转导航_进入目标目录并选中目标行_已在该目录不重载()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

@@ -125,7 +125,7 @@ public class AuditReviewFixesTests
             b.MarkUndone(taken!);
             var c = new UndoCoordinator(path);
             Assert.Equal(2, (await c.ListAsync(default)).Count);
-            Assert.Equal(1, (await c.ListRedoAsync(default)).Count);
+            Assert.Single(await c.ListRedoAsync(default));   // 重做栈 1 条（xUnit2013：计数为 1 时用 Single）
         }
         finally
         {

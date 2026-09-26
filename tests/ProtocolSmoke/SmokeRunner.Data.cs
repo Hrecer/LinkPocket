@@ -70,11 +70,20 @@ internal static partial class SmokeRunner
         Asserts.That(overview.Tree!.Count == treeNow.Count
             && overview.Tree.All(f => treeNow.Any(t => t.FolderId == f.FolderId)),
             "overview.Tree 应与 folders.tree 同集合（同一快照）");
-        // 全量链接快照：每文件夹直接链接随 overview 单快照交付（树叶子注入数据源，携带 list_id 归属目录）
-        Asserts.That(overview.TreeLinks != null
-            && overview.TreeLinks.Any(l => l.ListId == folder.FolderId && l.Title == "链接1")
-            && overview.TreeLinks.Any(l => l.ListId == sub.FolderId && l.Title == "子链接"),
-            "overview.TreeLinks 应包含每个文件夹的直接链接");
+        // 树叶子数据源**已从 overview 单快照移出**（口径变更，见 PERF-LARGE-LIBRARY）：原实现每次刷新
+        // 都随单快照搬全库链接——真实库 27k 条 = 响应体 7~13MB / wire 4~7s，而界面一眼只用得到
+        // "展开着的那些节点"。现在 overview.TreeLinks 恒 null，改由 folders.tree_links 按目录**按需取**
+        // （轻量投影 id/标题/地址/归属，不带 favicon 内嵌 data: URI）。
+        Asserts.That(overview.TreeLinks == null,
+            "overview.TreeLinks 应恒为 null（树叶子改由 folders.tree_links 按需取，不再随单快照搬运）");
+        var folderTreeLinks = await client.QueryAsync<List<TreeLinkDto>>("folders.tree_links",
+            new { folder_id = folder.FolderId });
+        var subTreeLinks = await client.QueryAsync<List<TreeLinkDto>>("folders.tree_links",
+            new { folder_id = sub.FolderId });
+        Asserts.That(folderTreeLinks != null && subTreeLinks != null
+            && folderTreeLinks.Any(l => l.ListId == folder.FolderId && l.Title == "链接1")
+            && subTreeLinks.Any(l => l.ListId == sub.FolderId && l.Title == "子链接"),
+            "folders.tree_links 应按目录给出直接链接（轻量投影，携带 list_id 归属）");
         var rootOverview = (await client.QueryAsync<FolderContentsDto>("folders.overview"));
         var rootStats = (await client.LinkStatsAsync());
         Asserts.That(rootOverview.RootLinkCount == rootStats.RootLevel,

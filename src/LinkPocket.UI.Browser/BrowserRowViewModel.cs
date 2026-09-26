@@ -64,11 +64,22 @@ public class BrowserRowViewModel : INotifyPropertyChanged
         internal set { if (_linkCount == value) return; _linkCount = value; OnPropertyChanged(); }
     }
 
+    // ⚠️ 下列原始字段的 setter 必须**连派生的展示投影一起通知**（如 ModifiedAt → ModifiedText）：
+    // 列表列绑定的是 `<c>{loc:FitValue ModifiedText}</c>` 这一族派生属性，不是原始字段；
+    // 差分刷新走 ApplyFrom 原地写回时不换对象、不发 Reset，只靠这里的逐字段通知驱动那一格重画 ——
+    // 只通知原始字段名的话绑定名对不上，单元格永远停在旧值（整表替换那一路因为换新对象才"看起来正常"）。
+
     private DateTime _modifiedAt;
     public DateTime ModifiedAt
     {
         get => _modifiedAt;
-        internal set { if (_modifiedAt == value) return; _modifiedAt = value; OnPropertyChanged(); }
+        internal set
+        {
+            if (_modifiedAt == value) return;
+            _modifiedAt = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ModifiedText));
+        }
     }
 
     private DateTime _createdAt;
@@ -76,7 +87,13 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     public DateTime CreatedAt
     {
         get => _createdAt;
-        internal set { if (_createdAt == value) return; _createdAt = value; OnPropertyChanged(); }
+        internal set
+        {
+            if (_createdAt == value) return;
+            _createdAt = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CreatedText));
+        }
     }
 
     private DateTime? _lastViewedAt;
@@ -84,7 +101,15 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     public DateTime? LastViewedAt
     {
         get => _lastViewedAt;
-        internal set { if (_lastViewedAt == value) return; _lastViewedAt = value; OnPropertyChanged(); }
+        internal set
+        {
+            if (_lastViewedAt == value) return;
+            _lastViewedAt = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LastViewedText));
+            OnPropertyChanged(nameof(LastViewedAdaptive));
+            OnPropertyChanged(nameof(LastViewedCopy));
+        }
     }
 
     private int _viewCount;
@@ -92,7 +117,13 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     public int ViewCount
     {
         get => _viewCount;
-        internal set { if (_viewCount == value) return; _viewCount = value; OnPropertyChanged(); }
+        internal set
+        {
+            if (_viewCount == value) return;
+            _viewCount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ViewCountText));
+        }
     }
 
     /// <summary>
@@ -175,12 +206,17 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     public BitmapImage? Favicon { get; set; }
 
     /// <summary>磁盘缓存补拉完成后更新 favicon 图像（带属性通知）。</summary>
+    /// <remarks>
+    /// ⚠️ 通知名必须**显式给 <c>Favicon</c>**：本方法的 <c>OnPropertyChanged()</c> 走
+    /// <see cref="CallerMemberNameAttribute"/>，不传参就发成方法名 <c>SetFavicon</c>，
+    /// 而模板绑的是 <c>{Binding Favicon}</c> —— 名对不上，短式图标补拉回来永远画不上去。
+    /// </remarks>
     public void SetFavicon(BitmapImage? favicon)
     {
         if (Favicon != favicon)
         {
             Favicon = favicon;
-            OnPropertyChanged();
+            OnPropertyChanged(nameof(Favicon));
         }
     }
 

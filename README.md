@@ -2,7 +2,7 @@
 
 **Your links, in one place that is actually yours.** A standalone, local-first personal knowledge base for Windows — import, organize and create your own links: fast to navigate, easy to keep tidy, and portable down to the last file. An optional AI assistant can do the tedious parts for you (see [Let an AI assistant do the tedious parts](#let-an-ai-assistant-do-the-tedious-parts-optional)).
 
-![Version](https://img.shields.io/badge/version-3.2.0-blue)
+![Version](https://img.shields.io/badge/version-3.2.1-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
