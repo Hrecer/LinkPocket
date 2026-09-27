@@ -1,4 +1,4 @@
-﻿﻿using LinkPocket.Contracts;
+﻿﻿﻿﻿using LinkPocket.Contracts;
 
 namespace LinkPocket.App.Tests;
 

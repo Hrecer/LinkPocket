@@ -161,14 +161,27 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// 时间列的唯一换算口：<b>库里存 UTC，界面画本地</b>（全库同口径，见 <see cref="UiClock"/>——
+    /// 它的入参必须是本地时间，调用方负责 <c>ToLocalTime()</c>）。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 本行**漏掉这一步就是"列表与右栏数据不同步"**：四个时间格直接把库里的 UTC 原值画出来，
+    /// 而右栏详情 / 详情页 / 搜索 / 智能列表 / 回收站 / 去重明细全部走 <c>ToLocalTime()</c>。
+    /// 于是同一时刻在列表里比右栏**慢整整一个时区差**（东八区 = 慢 8 小时，跨日还会连日期一起错），
+    /// 症状看起来像"列表不更新"——其实数据每次都刷新了，只是画的是 UTC。
+    /// 值未设置（0001 年）的哨兵由调用方先判，绝不让它进换算（MinValue 换算是无意义的时刻）。
+    /// </remarks>
+    private static DateTime Local(DateTime utc) => utc.ToLocalTime();
+
+    /// <summary>
     /// 「最后更新」列：未设置时间（默认值）时显示占位符 <c>—</c>，避免出现 0001-01-01。
     /// <b>两个长度形态</b>（<see cref="UiClock.Text"/>）：列宽是冻结几何，英文日期比中文宽约 25%，
     /// 放不下时换短式（去年份）而不是截断——截断的日期是错的日期。
     /// </summary>
-    public LocText ModifiedText => ModifiedAt.Year <= 1 ? Dash : UiClock.Text(ModifiedAt);
+    public LocText ModifiedText => ModifiedAt.Year <= 1 ? Dash : UiClock.Text(Local(ModifiedAt));
 
     /// <summary>「最后查看」列（时间戳；无值时由 <see cref="LastViewedCopy"/> 画「从未」）。</summary>
-    public LocText LastViewedText => LastViewedAt.HasValue ? UiClock.Text(LastViewedAt.Value) : LocText.Empty;
+    public LocText LastViewedText => LastViewedAt.HasValue ? UiClock.Text(Local(LastViewedAt.Value)) : LocText.Empty;
 
     /// <summary>
     /// 「最后查看」列的自适应形态：<b>有值时是时间戳、无值时回落到「从未」</b>。
@@ -179,7 +192,7 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// 原先 XAML 把时间戳与「从未」拆成两套显示机制（自适应 + 静态），
     /// 于是无值的那些行不受自适应管——两种语言下几何可能不一致。
     /// </remarks>
-    public LocText LastViewedAdaptive => LastViewedAt.HasValue ? UiClock.Text(LastViewedAt.Value) : LastViewedCopyText;
+    public LocText LastViewedAdaptive => LastViewedAt.HasValue ? UiClock.Text(Local(LastViewedAt.Value)) : LastViewedCopyText;
 
     /// <summary>「从未」哨兵的 <see cref="LocText"/> 形态（无值的「最后查看」列用；短式由表里有没有 <c>#short</c> 决定）。</summary>
     private static LocText LastViewedCopyText => LocText.Key("clock.never", "clock.never" + Loc.ShortSuffix);
@@ -197,7 +210,7 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     public LocText ViewCountText => LocText.Of(Loc.K("count.viewsN", ViewCount));
 
     /// <summary>「创建时间」列（两个长度形态，同 <see cref="ModifiedText"/>）。</summary>
-    public LocText CreatedText => CreatedAt.Year <= 1 ? Dash : UiClock.Text(CreatedAt);
+    public LocText CreatedText => CreatedAt.Year <= 1 ? Dash : UiClock.Text(Local(CreatedAt));
 
     /// <summary>无时间时的占位符。中文与英文共用（<c>—</c> 不是文字，是符号）。</summary>
     private static LocText Dash => LocText.Of(LocValue.Literal("—"));
