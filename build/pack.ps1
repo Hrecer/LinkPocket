@@ -11,8 +11,10 @@
   and an MCP config example (mcp.example.json).
 
   Published:
-    linkpocket.exe        command-line client (all 81 commands)
-    linkpocket-mcp.exe    MCP gateway over stdio (external agents)
+    LinkPocket.exe        WPF desktop app (only with -IncludeApp). Single file: the whole
+                          framework is inside it, so the folder shows ONE exe, not ~540 dlls.
+    tools\linkpocket.exe      command-line client (all 81 commands)
+    tools\linkpocket-mcp.exe  MCP gateway over stdio (external agents)
     AGENTS.md             pointer page: which exe to run, quick start, library path rule
     TOOL-cli.md           command-line reference
     TOOL-mcp.md           gateway reference
@@ -20,6 +22,13 @@
     COMMANDS.md           generated command catalog (copied if found)
     tools.functions.json  machine-readable capability manifest (copied if found)
     mcp.example.json      ready-to-edit MCP server config
+
+  Layout rule: the CLI and MCP exes live in `tools\` and never in the root. Windows paths are
+  case-insensitive, so `LinkPocket.exe` (app) and `linkpocket.exe` (cli) silently overwrite each
+  other when published side by side.
+
+  The delivery contains no debug symbols (DebugType=none) and only EN + zh-Hans satellite
+  resources; everything else in it is meant to be there.
 
 .NOTES
   This script is intentionally ASCII-only (PowerShell 5.1 parses non-BOM files as ANSI; see
@@ -37,15 +46,21 @@
 .PARAMETER Configuration
   Build configuration. Default: Release
 
+.PARAMETER Zip
+  Also write a .zip of the whole output folder to this exact path. Use it when the delivery is
+  meant to be one file that lands in one place (the folder itself stays behind unless you delete
+  it). The archive holds the folder contents flat, with no extra wrapper directory.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File build\pack.ps1
-  powershell -ExecutionPolicy Bypass -File build\pack.ps1 -SelfContained
+  powershell -ExecutionPolicy Bypass -File build\pack.ps1 -IncludeApp -Zip ..\LinkPocket_v3.2.3.zip
 #>
 [CmdletBinding()]
 param(
     [switch]$SelfContained,
     [switch]$IncludeApp,
     [string]$Output,
+    [string]$Zip,
     [string]$Configuration = "Release"
 )
 
@@ -61,19 +76,39 @@ if (-not $dotnet) { Write-Host "[PACK] dotnet SDK not found" -ForegroundColor Re
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory -Path $out -Force | Out-Null
 
-$publishArgs = @("-c", $Configuration, "--nologo", "-o", $out)
-if ($SelfContained) { $publishArgs += @("-r", "win-x64", "--self-contained", "true") }
-else { $publishArgs += @("--self-contained", "false") }
+# ---- publish ----
+# Everything is published as ONE file per exe. A plain publish drops ~540 loose dlls next to the
+# app, so the exe is impossible to find in the folder; single-file puts them inside the exe.
+#   app    : self-contained (no .NET needed on the target machine), single file -> root
+#   cli/mcp: single file -> tools\  (see "Layout rule" in the header for why not in the root)
+# DebugType=none: no .pdb files. SatelliteResourceLanguages: keep EN + zh-Hans only, drop the
+# other 11 UI languages the framework would otherwise copy in (MSBuild needs %3B for ';').
+$rid = "win-x64"
+$satLang = "en%3Bzh-Hans"
+
+$toolsDir = Join-Path $out "tools"
+New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
+
+# NOTE: cli/mcp are NOT published single-file on purpose. LinkPocket.Mcp references LinkPocket.Cli,
+# and passing -r to a framework-dependent publish of a referenced exe fails with NETSDK1151
+# ("a self-contained executable cannot be referenced by a non self-contained executable").
+# They live in tools\, so their dlls never compete with the app exe for attention anyway.
+$cliArgs = @("-c", $Configuration, "--nologo", "-o", $toolsDir)
+if ($SelfContained) { $cliArgs += @("-r", $rid, "--self-contained", "true") }
+else { $cliArgs += @("--self-contained", "false") }
 
 foreach ($proj in @("src\LinkPocket.Cli", "src\LinkPocket.Mcp")) {
     Write-Host "[PACK] publishing $proj ..." -ForegroundColor Cyan
-    & $dotnet publish (Join-Path $repoRoot $proj) @publishArgs
+    & $dotnet publish (Join-Path $repoRoot $proj) @cliArgs
     if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: $proj" -ForegroundColor Red; exit 1 }
 }
 
 if ($IncludeApp) {
-    Write-Host "[PACK] publishing src\LinkPocket.App (WPF) ..." -ForegroundColor Cyan
-    & $dotnet publish (Join-Path $repoRoot "src\LinkPocket.App") @publishArgs
+    Write-Host "[PACK] publishing src\LinkPocket.App (WPF, self-contained single file) ..." -ForegroundColor Cyan
+    $appArgs = @("-c", $Configuration, "--nologo", "-r", $rid, "--self-contained", "true",
+                 "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+                 "-p:DebugType=none", "-p:SatelliteResourceLanguages=$satLang")
+    & $dotnet publish (Join-Path $repoRoot "src\LinkPocket.App") @appArgs -o $out
     if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: src\LinkPocket.App" -ForegroundColor Red; exit 1 }
 }
 
@@ -115,18 +150,22 @@ You do not need the repository to drive this library. Everything below runs from
 
 ## Entry points
 
-| File                | What it is                                                        |
-|---------------------|-------------------------------------------------------------------|
-| linkpocket.exe      | Command-line client. All 81 engine commands, no UI.               |
-| linkpocket-mcp.exe  | MCP gateway over stdio, for external agents (tools/list, tools/call, resources/read). |
-| LinkPocket.exe      | WPF desktop app (only present when packed with -IncludeApp).       |
+| File                       | What it is                                                        |
+|----------------------------|-------------------------------------------------------------------|
+| LinkPocket.exe             | WPF desktop app (only present when packed with -IncludeApp).       |
+| tools\linkpocket.exe       | Command-line client. All 81 engine commands, no UI.               |
+| tools\linkpocket-mcp.exe   | MCP gateway over stdio, for external agents (tools/list, tools/call, resources/read). |
+
+Each exe is self-contained as a single file: there are no loose dlls to hunt for, and the
+command-line and gateway exes sit in `tools\` so they cannot collide with the desktop app
+(Windows paths are case-insensitive: `LinkPocket.exe` and `linkpocket.exe` are the same name).
 
 ## Discover the capabilities first (do not guess)
 
-    linkpocket.exe help                 # usage
-    linkpocket.exe describe             # every command + its parameters
-    linkpocket.exe docs                 # full markdown reference
-    linkpocket.exe help links.query     # one command in detail
+    tools\linkpocket.exe help                 # usage
+    tools\linkpocket.exe describe             # every command + its parameters
+    tools\linkpocket.exe docs                 # full markdown reference
+    tools\linkpocket.exe help links.query     # one command in detail
 
 Machine-readable output: add --json (the "# library:" prelude goes to stderr, so stdout stays
 parseable). Exit codes: 0 ok / 1 error / 2 usage / 3 destructive command missing --yes.
@@ -140,13 +179,13 @@ parseable). Exit codes: 0 ok / 1 error / 2 usage / 3 destructive command missing
 
 ## Typical commands
 
-    linkpocket.exe links stats
-    linkpocket.exe links list --list_id <folder-id> --per_page 20 --json
-    linkpocket.exe search links --query github --json
-    linkpocket.exe folders create --name "Notes"
-    linkpocket.exe call batch.run --args "{\"script\":{\"name\":\"x\",\"steps\":[{\"command\":\"...\"}]}}"
-    linkpocket.exe undo list            # what is undoable
-    linkpocket.exe undo undo            # undo the most recent batch
+    tools\linkpocket.exe links stats
+    tools\linkpocket.exe links list --list_id <folder-id> --per_page 20 --json
+    tools\linkpocket.exe search links --query github --json
+    tools\linkpocket.exe folders create --name "Notes"
+    tools\linkpocket.exe call batch.run --args "{\"script\":{\"name\":\"x\",\"steps\":[{\"command\":\"...\"}]}}"
+    tools\linkpocket.exe undo list            # what is undoable
+    tools\linkpocket.exe undo undo            # undo the most recent batch
 
 Add --dry-run to any mutation to execute it with zero side effects.
 
@@ -167,7 +206,7 @@ normalized or rewritten; destructive commands need --yes; each process has its o
 Set-Content -LiteralPath (Join-Path $out "AGENTS.md") -Value $agents -Encoding utf8
 
 # ---- MCP config example ----
-$mcpExe = (Join-Path $out "linkpocket-mcp.exe").Replace("\", "\\")
+$mcpExe = (Join-Path $out "tools\linkpocket-mcp.exe").Replace("\", "\\")
 $mcp = @"
 {
   "mcpServers": {
@@ -180,11 +219,18 @@ $mcp = @"
 "@
 Set-Content -LiteralPath (Join-Path $out "mcp.example.json") -Value $mcp -Encoding utf8
 
-$files = Get-ChildItem -LiteralPath $out -File
+# ---- no debug symbols in a delivery (belt and braces: DebugType=none should already do it) ----
+Get-ChildItem -LiteralPath $out -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+$files = Get-ChildItem -LiteralPath $out -Recurse -File
 $size = ($files | Measure-Object -Property Length -Sum).Sum
 Write-Host ""
 Write-Host "[PACK] output: $out"
 Write-Host ("[PACK] {0} files, {1:N1} MB" -f $files.Count, ($size / 1MB))
+foreach ($f in ($files | Sort-Object Length -Descending | Select-Object -First 5)) {
+    Write-Host ("[PACK]   {0,-28} {1,8:N1} MB" -f $f.Name, ($f.Length / 1MB))
+}
 if (-not $SelfContained) {
     Write-Host "[PACK] framework-dependent build: the target machine needs the .NET 8 runtime." -ForegroundColor Yellow
     Write-Host "[PACK] re-run with -SelfContained to bundle it." -ForegroundColor Yellow
@@ -193,4 +239,19 @@ if ($missing.Count -gt 0) {
     Write-Host "[PACK] workspace assets not found (skipped):" -ForegroundColor Yellow
     foreach ($m in $missing) { Write-Host "         $m" -ForegroundColor Yellow }
 }
+
+# ---- optional: one archive, written exactly where the caller asked for it ----
+if ($Zip) {
+    Write-Host "[PACK] zipping -> $Zip ..." -ForegroundColor Cyan
+    $zipParent = Split-Path -Parent $Zip
+    if ($zipParent -and -not (Test-Path -LiteralPath $zipParent)) {
+        New-Item -ItemType Directory -Path $zipParent -Force | Out-Null
+    }
+    if (Test-Path -LiteralPath $Zip) { Remove-Item -LiteralPath $Zip -Force }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $out, $Zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    Write-Host ("[PACK] zip: {0} ({1:N1} MB)" -f $Zip, ((Get-Item -LiteralPath $Zip).Length / 1MB)) -ForegroundColor Green
+}
+
 Write-Host "[PACK] done."
