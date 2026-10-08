@@ -18,7 +18,8 @@ internal sealed class FaviconPrefetchHandler : ICommandHandler
         Description: "Queue links with missing favicons for background prefetch (returns immediately; concurrency 4, deduplicated, backoff on failure)",
         Parameters: [ParamSpec.Opt<IReadOnlyList<string>>("link_ids", "Specific links; default = every link in the database without a favicon")],
         // NetworkOutsideGate：真实下载在写闸外的后台队列里发生（本命令只入队）——干跑必须零副作用（不入队、不下载、不落缓存）
-        Caps: CommandCaps.Mutation | CommandCaps.NetworkOutsideGate);
+        Caps: CommandCaps.Mutation | CommandCaps.NetworkOutsideGate,
+        Client: new("FaviconPrefetchAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

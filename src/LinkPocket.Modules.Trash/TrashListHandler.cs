@@ -17,7 +17,8 @@ internal sealed class TrashListHandler : ICommandHandler
         Parameters: [],
         Caps: CommandCaps.Query,
         // 平铺列表只读回收站两表（回收站页每次刷新都取）
-        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged),
+        Client: new("TrashListAsync", typeof(List<TrashEntryDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -13,7 +13,8 @@ internal sealed class LinkFindByUrlHandler : ICommandHandler
         Category: "links",
         Description: "Find every link with exactly this URL (reuse point for duplicate handling)",
         Parameters: [ParamSpec.Req<string>("url", "Link URL (exact match)")],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("LinkFindByUrlAsync", typeof(List<LinkDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

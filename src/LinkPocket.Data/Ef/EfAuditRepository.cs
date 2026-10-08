@@ -24,9 +24,27 @@ public sealed class EfAuditRepository : IAuditRepository
         "id, at, session_id, caller, command, elapsed_ms, success, error_code, batch_id, correlation_id, " +
         "is_nested, dry_run, args_truncated, NULL, NULL, NULL";
 
-    private readonly LinkPocketDbContext _db;
+    private readonly DbContext _main;
+    private DbContext? _ops;
 
-    public EfAuditRepository(LinkPocketDbContext db) => _db = db;
+    /// <param name="db">主库（用户数据）上下文——本仓储**不用它读写审计**，只用它推出附属库位置；
+    /// 审计表在附属库（<c>&lt;库名&gt;-ops.db</c>，见 <see cref="OpsDbContextFactory"/>），
+    /// 操作记录不进用户数据文件。</param>
+    public EfAuditRepository(DbContext db) => _main = db;
+
+    /// <summary>
+    /// 审计实际所在的上下文：主库同目录的附属库。**惰性**建立——只有真的读审计时才开这个文件。
+    /// 主库没有文件（内存库 / 宿主未落地）时退回主库（那种场景下审计本就不落盘）。
+    /// </summary>
+    private DbContext Connection()
+    {
+        if (_ops is not null) return _ops;
+        var dataSource = _main.Database.GetDbConnection().DataSource;
+        _ops = string.IsNullOrWhiteSpace(dataSource)
+            ? _main
+            : new OpsDbContextFactory(dataSource).CreateDbContext();
+        return _ops;
+    }
 
     public async Task<AuditPage> QueryAsync(
         AuditQueryFilter filter, int skip, int take, bool includePayloads, CancellationToken ct)
@@ -60,7 +78,7 @@ public sealed class EfAuditRepository : IAuditRepository
         }
 
         var whereSql = conditions.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", conditions);
-        var connection = _db.Database.GetDbConnection();
+        var connection = Connection().Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
 
         var total = await ExecuteScalarIntAsync(connection, $"SELECT COUNT(*) FROM audit_log{whereSql}", parameters, ct);
@@ -81,7 +99,7 @@ public sealed class EfAuditRepository : IAuditRepository
 
     public async Task<int> DeleteBeforeAsync(DateTimeOffset before, CancellationToken ct)
     {
-        var connection = _db.Database.GetDbConnection();
+        var connection = Connection().Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
 
         await using var command = connection.CreateCommand();
@@ -90,15 +108,26 @@ public sealed class EfAuditRepository : IAuditRepository
         return await command.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int> CountBeforeAsync(DateTimeOffset before, CancellationToken ct)
+    {
+        var connection = Connection().Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM audit_log WHERE at < @before";
+        AddParameter(command, "before", ToAuditText(before));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+    }
+
     public Task<int> CountAsync(CancellationToken ct)
     {
-        var connection = _db.Database.GetDbConnection();
+        var connection = Connection().Database.GetDbConnection();
         return CountCoreAsync(connection, ct);
     }
 
     public async Task<DateTimeOffset?> OldestAtAsync(CancellationToken ct)
     {
-        var connection = _db.Database.GetDbConnection();
+        var connection = Connection().Database.GetDbConnection();
         if (connection.State != ConnectionState.Open) await connection.OpenAsync(ct);
 
         await using var command = connection.CreateCommand();

@@ -139,10 +139,7 @@ internal static class AiTestHost
     }
 
     internal static void TestEnvCleanup(string dbPath)
-    {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch (IOException) { }
-    }
+        => LinkPocket.Data.OpsDbContextFactory.DeleteDatabaseFiles(dbPath);
 
     internal static async Task<string> ConfigureAsync(Host host, AiMode mode, bool advancedTools = false,
         int contextWindow = 32_000, AiProtocol protocol = AiProtocol.OpenAiChat,

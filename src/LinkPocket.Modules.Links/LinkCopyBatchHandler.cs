@@ -18,7 +18,8 @@ internal sealed class LinkCopyBatchHandler : ICommandHandler
             ParamSpec.Req<IReadOnlyList<string>>("link_ids", "List of link IDs"),
             ParamSpec.Opt<string>("target_list_id", "Target folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("LinkCopyBatchAsync", typeof(LinkBatchResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -22,17 +22,17 @@ public class AuditReviewFixesTests
         var (factory, path) = TestEnv.CreateDb();
         try
         {
-            var writer = new SqlIdempotencyStore(() => factory.CreateDbContext(), window: TimeSpan.FromHours(24));
+            var writer = new SqlIdempotencyStore(TestEnv.OpsFactory(path), window: TimeSpan.FromHours(24));
             writer.Store("expired-key", new CommandResult("首次结果", null, "audit-1"));
             Assert.True(writer.TryGet("expired-key", out _));   // 内存命中（未过期）
 
             // 新实例（内存缓存为空）+ 负窗口 → 走表路径且必然判定过期
-            var expiredWindow = new SqlIdempotencyStore(() => factory.CreateDbContext(), window: TimeSpan.FromSeconds(-1));
+            var expiredWindow = new SqlIdempotencyStore(TestEnv.OpsFactory(path), window: TimeSpan.FromSeconds(-1));
             Assert.False(expiredWindow.TryGet("expired-key", out _));   // 表命中但过期 → 未命中，且不抛（reader 已关闭再 DELETE）
 
             // 过期行应已被清理：表里查不到
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            await using var probe = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+            await using var probe = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={TestEnv.OpsPath(path)}");
             await probe.OpenAsync();
             await using var cmd = probe.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM idempotency WHERE key = 'expired-key'";

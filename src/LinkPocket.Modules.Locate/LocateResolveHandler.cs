@@ -21,7 +21,8 @@ internal sealed class LocateResolveHandler : ICommandHandler
         Category: "locate",
         Description: "Resolve a target location by ID (kind / container folder / path) for locate and jump",
         Parameters: [ParamSpec.Req<string>("id", "Target ID (link or folder)")],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("LocateResolveAsync", typeof(LocateResolveDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

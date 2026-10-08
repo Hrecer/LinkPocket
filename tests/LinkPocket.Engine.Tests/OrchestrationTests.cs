@@ -547,23 +547,23 @@ public class OrchestrationTests
         var (engine, factory, path) = CreateEngine();
         try
         {
-            var sql = new SqlAuditWriter(() => factory.CreateDbContext());
+            var sql = new SqlAuditWriter(TestEnv.OpsFactory(path));
             sql.Write(new AuditEntry(DateTimeOffset.Now, "test.add_folder", "corr-1", CallerRef.Test,
                 5, Success: true, ErrorCode: null, Changes: null, DryRun: false, IsNested: false,
                 StackTrace: null, ArgsJson: "{\"name\":\"甲\"}", BatchId: "batch-1"));
 
-            var idem = new SqlIdempotencyStore(() => factory.CreateDbContext());
+            var idem = new SqlIdempotencyStore(TestEnv.OpsFactory(path));
             idem.Store("key-1", new CommandResult("第一次", null, "audit-1"));
             Assert.True(idem.TryGet("key-1", out var cached));   // 内存命中
             Assert.Equal("第一次", cached.Data);
 
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            await using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}");
+            await using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={TestEnv.OpsPath(path)}");
             await db.OpenAsync();
             Assert.Equal(1, await ScalarAsync(db, "SELECT COUNT(*) FROM audit_log WHERE correlation_id = 'corr-1' AND batch_id = 'batch-1'"));
             Assert.Equal(1, await ScalarAsync(db, "SELECT COUNT(*) FROM idempotency WHERE key = 'key-1'"));
 
-            var fresh = new SqlIdempotencyStore(() => factory.CreateDbContext());
+            var fresh = new SqlIdempotencyStore(TestEnv.OpsFactory(path));
             Assert.True(fresh.TryGet("key-1", out var fromTable));   // 表命中（跨实例，Data 以 JSON 形态还原）
             Assert.Equal("第一次", fromTable.Data?.ToString());
         }
@@ -582,7 +582,7 @@ public class OrchestrationTests
             var registry1 = new CommandRegistry();
             registry1.RegisterAll(new ICommandHandler[] { new CountFoldersHandler(), new AddFolderHandler() });
             var engine1 = new EngineCore(registry1, () => new EfUnitOfWork(factory.CreateDbContext()),
-                idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+                idempotency: new SqlIdempotencyStore(TestEnv.OpsFactory(path)));
             var first = await engine1.ExecuteAsync<string>("test.add_folder", new { name = "甲" },
                 new CallOptions(IdempotencyKey: key));
             Assert.False(string.IsNullOrEmpty(first.Data));
@@ -592,7 +592,7 @@ public class OrchestrationTests
             var registry2 = new CommandRegistry();
             registry2.RegisterAll(new ICommandHandler[] { new CountFoldersHandler(), new AddFolderHandler() });
             var engine2 = new EngineCore(registry2, () => new EfUnitOfWork(factory.CreateDbContext()),
-                idempotency: new SqlIdempotencyStore(() => factory.CreateDbContext()));
+                idempotency: new SqlIdempotencyStore(TestEnv.OpsFactory(path)));
             var second = await engine2.ExecuteAsync<string>("test.add_folder", new { name = "甲" },
                 new CallOptions(IdempotencyKey: key));
             Assert.Equal(first.Data, second.Data);

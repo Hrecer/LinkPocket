@@ -10,7 +10,7 @@ namespace LinkPocket.Services;
 /// 前端端口：AppServices / UiCoordinator / BrowserLocateHost 三个静态定位器
 /// 由本类实例替代，依赖经构造注入流向 ViewModel 与页面。
 /// </summary>
-public sealed class AppHost
+public sealed class AppHost : IDisposable
 {
     /// <summary>引擎客户端门面（分层 API 面）：ViewModel 与页面唯一的数据入口。</summary>
     public EngineClient Client { get; }
@@ -48,17 +48,29 @@ public sealed class AppHost
     public IBrowserLocateHost? LocateHost { get; set; }
 
     /// <summary>
+    /// **外部写入观察者**：轮询跨进程变更探针，发现"CLI / 外部 Agent 写过这个库"时
+    /// **先失效查询缓存、再把变更汇入 <see cref="Hub"/> 的同一条 300ms 防抖通道**。
+    /// 没有它，外部写入既不会被界面感知（要手动刷新），缓存也不会失效（刷新也读到旧值）。
+    /// </summary>
+    public ExternalChangeWatcher ExternalChanges { get; }
+
+    /// <summary>
     /// 前端对象图（容器）：Shell、页面 ViewModel 与共享件一律经它解析
     /// （登记表见 <see cref="AppServiceGraph"/>；容器只在组合根内部使用，不进任何层契约）。
     /// </summary>
     public IServiceProvider Services { get; private set; } = null!;
 
-    private AppHost(EngineClient client, EngineWire wire)
+    private AppHost(EngineClient client, EngineWire wire, string databasePath)
     {
         Client = client;
         Wire = wire;
         Locator = new ContentLocator(client, () => LocateHost);
+        // 外部变更 → 先失效缓存（客户端门面透传）→ 再走枢纽；顺序由 watcher 内部保证。
+        ExternalChanges = new ExternalChangeWatcher(databasePath, client.InvalidateQueryCache, Hub);
     }
+
+    /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）。应用退出时调用。</summary>
+    public void Dispose() => ExternalChanges.Dispose();
 
     /// <summary>
     /// 默认装配：日志管道（观测面）→ 引擎组合根（九模块全量注册 + 编排层；组合由共享 Composition 收敛）
@@ -78,8 +90,9 @@ public sealed class AppHost
         // LinkPocket.Composition.EngineComposer 统一收敛（审计/幂等落库 + 编排 + wire 全量选项）。
         // 数据库路径沿用旧面默认（AppContext.BaseDirectory/linkpocket.db，WAL + schema 版本链
         // 由 LinkPocketDbContextFactory 一次性启好），保证既有用户数据无缝接管（同一文件，零迁移）。
+        var dbPath = System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
         var composed = LinkPocket.Composition.EngineComposer.Compose(
-            System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db"),
+            dbPath,
             new LinkPocket.Composition.ComposeOptions
             {
                 // 撤销栈落盘：关掉应用再打开，"还能撤销"这件事不蒸发（实测用户要求跨进程回溯）
@@ -91,10 +104,11 @@ public sealed class AppHost
         if (composed.Wire is null)
             throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
-        var host = new AppHost(composed.Client, composed.Wire);
+        var host = new AppHost(composed.Client, composed.Wire, dbPath);
         host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
             LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
+        host.ExternalChanges.Start();              // 外部写入（CLI / Agent）：先失效缓存、再入同一条防抖通道
         host.Services = AppServiceGraph.Build(host);   // 前端对象图（Shell/页面 VM/共享件）
         return host;
     }

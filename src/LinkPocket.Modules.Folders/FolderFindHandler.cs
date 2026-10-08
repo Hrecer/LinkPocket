@@ -19,7 +19,8 @@ internal sealed class FolderFindHandler : ICommandHandler
             ParamSpec.Req<string>("name", "Folder name to match"),
             ParamSpec.Opt<bool>("contains", "true = contains match; default = exact match (case-insensitive)"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("FolderFindAsync", typeof(List<FolderDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

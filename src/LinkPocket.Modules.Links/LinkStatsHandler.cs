@@ -18,7 +18,8 @@ internal sealed class LinkStatsHandler : ICommandHandler
         Parameters: [],
         Caps: CommandCaps.Query,
         // 侧栏每次刷新都取（4 次查询：两趟回收站 + 总数 + 根级 + 分组），三类表都可能影响计数
-        Cache: CachePolicy.Counting());
+        Cache: CachePolicy.Counting(),
+        Client: new("LinkStatsAsync", typeof(LinkCountsDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

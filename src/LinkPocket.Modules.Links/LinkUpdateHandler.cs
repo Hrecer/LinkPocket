@@ -27,7 +27,8 @@ internal sealed class LinkUpdateHandler : ICommandHandler
             ParamSpec.Opt<bool>("is_important", "Whether it is important"),
             ParamSpec.Opt<string>("favicon_url", "Favicon URL"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("LinkUpdateAsync", typeof(LinkDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

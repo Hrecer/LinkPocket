@@ -17,7 +17,8 @@ internal sealed class FolderCycleCheckHandler : ICommandHandler
             ParamSpec.Req<string>("folder_id", "Folder ID to move"),
             ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root (never a cycle)"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("FolderCycleCheckAsync", typeof(bool)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

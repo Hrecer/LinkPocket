@@ -29,20 +29,13 @@ internal static class ProbeEnv
     internal static string StagingRootFor(string dbPath)
         => Path.Combine(Path.GetDirectoryName(dbPath)!, $"lpsmoke_staging_{Path.GetFileNameWithoutExtension(dbPath)}");
 
-    /// <summary>尽力清理临时库与其暂存区（连接池句柄滞留会阻止删除，失败不打断流程）。</summary>
+    /// <summary>尽力清理临时库、其附属库（操作记录）与暂存区（连接池句柄滞留会阻止删除，失败不打断流程）。</summary>
     public static void TryDelete(string dbPath)
     {
-        try
-        {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            if (File.Exists(dbPath)) File.Delete(dbPath);
-        }
-        catch
-        {
-            // 临时文件交给系统清理
-        }
+        // 主库 + 附属库 + 各自 WAL/SHM：名字规则归数据层，这里不手抄后缀
+        LinkPocket.Data.OpsDbContextFactory.DeleteDatabaseFiles(dbPath);
 
-        // 暂存区（staging 会往里拷文件）与 WAL 副本一并清掉：测试不得在临时根留垃圾
+        // 暂存区（staging 会往里拷文件）一并清掉：测试不得在临时根留垃圾
         try
         {
             var staging = StagingRootFor(dbPath);

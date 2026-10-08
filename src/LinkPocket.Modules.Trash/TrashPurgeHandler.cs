@@ -22,7 +22,8 @@ internal sealed class TrashPurgeHandler : ICommandHandler
             ParamSpec.Req<bool>("is_folder", "true = trash unit (whole subtree purged); false = a single bookmark snapshot"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive,
-        Impact: ImpactSummary.Link);
+        Impact: ImpactSummary.Link,
+        Client: new("TrashPurgeAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

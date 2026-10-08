@@ -13,7 +13,8 @@ internal sealed class LinkVisitBatchHandler : ICommandHandler
         Category: "links",
         Description: "Record visits in batch (each link count +1 and last visit refreshed; the folder parent chain is refreshed once per deduplicated folder)",
         Parameters: [ParamSpec.Req<IReadOnlyList<string>>("link_ids", "List of link IDs")],
-        Caps: CommandCaps.Mutation);
+        Caps: CommandCaps.Mutation,
+        Client: new("LinkVisitBatchAsync", typeof(LinkBatchResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

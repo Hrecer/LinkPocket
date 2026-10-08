@@ -12,7 +12,8 @@ internal sealed class BookmarksInspectHandler : ICommandHandler
         Category: "bookmarks",
         Description: "Read-only preflight of a Netscape bookmark file: format detection, entry statistics, warnings (shared by pre-import display and post-export validation)",
         Parameters: [ParamSpec.Req<string>("file_path", "Bookmark HTML file path")],
-        Caps: CommandCaps.Query | CommandCaps.FileIo);
+        Caps: CommandCaps.Query | CommandCaps.FileIo,
+        Client: new("BookmarksInspectAsync", typeof(BookmarkFileInspectionDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

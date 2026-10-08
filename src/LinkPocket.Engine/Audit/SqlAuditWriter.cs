@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,9 +19,11 @@ public sealed class SqlAuditWriter : IAuditWriter
     /// <summary>入参快照上限（超长截断并置 args_truncated，防止大参数灌爆审计表）。</summary>
     private const int MaxArgsJsonLength = 4000;
 
-    private readonly Func<LinkPocketDbContext> _dbFactory;
+    private readonly Func<DbContext> _dbFactory;
 
-    public SqlAuditWriter(Func<LinkPocketDbContext> dbFactory)
+    /// <param name="dbFactory">审计落库的连接来源——**附属库**（操作记录库）上下文工厂，而非用户库：
+    /// 审计是运行痕迹，不进用户数据文件。</param>
+    public SqlAuditWriter(Func<DbContext> dbFactory)
         => _dbFactory = dbFactory ?? throw new ArgumentNullException(nameof(dbFactory));
 
     public string Write(AuditEntry entry)

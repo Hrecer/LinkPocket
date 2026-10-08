@@ -13,7 +13,8 @@ internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
         Category: "maintenance",
         Description: "Get the current database schema version",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("MaintenanceSchemaVersionAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
         => CommandResult.Ok(JsonSerializer.SerializeToElement(
@@ -31,7 +32,8 @@ internal sealed class DiagnosticsCollectHandler(Func<EngineRuntimeStats>? runtim
         Category: "maintenance",
         Description: "Collect diagnostics: app version / schema version / per-table counts / cache and event store readings / log and audit readings (redacted)",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("CollectDiagnosticsAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -129,7 +131,8 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
         Parameters: [],
         // 声明支持取消（ClearAllDataAsync 全程响应 ct；中途取消 → 事务回滚，零部分状态）
         Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.SupportsCancellation,
-        Impact: ImpactSummary.Database);
+        Impact: ImpactSummary.Database,
+        Client: new("MaintenanceReinitAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

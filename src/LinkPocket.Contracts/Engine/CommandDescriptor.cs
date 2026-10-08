@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace LinkPocket.Contracts;
 
 /// <summary>命令能力标志（Descriptor.Caps）。</summary>
@@ -82,7 +84,8 @@ public sealed record CommandDescriptor(
     CommandCaps Caps,
     string? UndoInverse = null,
     ImpactSummary? Impact = null,
-    CachePolicy? Cache = null)
+    CachePolicy? Cache = null,
+    [property: JsonIgnore] ClientBinding? Client = null)
 {
     public bool IsQuery => Caps.HasFlag(CommandCaps.Query);
     public bool IsMutation => Caps.HasFlag(CommandCaps.Mutation);
@@ -91,6 +94,16 @@ public sealed record CommandDescriptor(
     /// <summary>本查询是否参与结果缓存（只有声明了依赖与 TTL 的查询才缓存）。</summary>
     public bool IsCacheable => IsQuery && Cache is not null;
 }
+
+/// <summary>
+/// 客户端门面绑定：<see cref="EngineClient"/>「每命令一个强类型方法」那一层的**唯一声明处**。
+/// <paramref name="Method"/> = 方法标识符；<paramref name="Result"/> = 载荷类型
+/// （查询命令 → <c>Task&lt;Result&gt;</c>；变更命令 → <c>Task&lt;CommandResult&lt;Result&gt;&gt;</c>，
+/// 包装形态由 <see cref="CommandCaps"/> 决定）。便捷层由目录**机械生成**：参数名/类型/顺序全部
+/// 派生自 <see cref="CommandDescriptor.Parameters"/>——描述符一改，方法签名自动跟随，
+/// 人工只在描述符上声明"这命令叫什么方法、返回什么类型"这一条机器读不到的信息。
+/// </summary>
+public sealed record ClientBinding(string Method, Type Result);
 
 /// <summary>引擎目录清单（engine.describe 的返回；AI 工具清单/文档的唯一来源）。</summary>
 public sealed record EngineManifest(

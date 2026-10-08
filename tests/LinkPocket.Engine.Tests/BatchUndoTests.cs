@@ -11,6 +11,12 @@ namespace LinkPocket.Engine.Tests;
 /// 一次批 = 一条记录 N 逆向步（归属键合并）、整批回滚 / 干跑绝不入栈、撤销逆序回绕、重做正序重放、
 /// 独立批同组合并、宏同口径、调用方归属键（AI 的工具调用 ID）透传。
 /// </summary>
+/// <remarks>
+/// 与 <see cref="NestedAuditPayloadTests"/> 同属一个 xUnit collection：两个类共用
+/// <see cref="MarkHandler"/> / <see cref="UnmarkHandler"/> 的**静态**账本，而 xUnit 默认让不同测试类并行——
+/// 不串行就会互相打穿（<c>Assert.Empty(MarkHandler.Marks)</c> 被另一类的并发写入命中）。见 <see cref="MarkLedger"/>。
+/// </remarks>
+[Collection(MarkLedger.Collection)]
 public class BatchUndoTests
 {
     private static (EngineCore Engine, LinkPocketDbContextFactory Factory, string Db) Create()
@@ -250,4 +256,14 @@ internal sealed class UnmarkHandler : ICommandHandler
         Log.Add(tag);
         return Task.FromResult(CommandResult.Ok("unmarked", ChangeSet.Of(new EntityRef("test", tag), "test.changed")));
     }
+}
+
+/// <summary>
+/// 共享静态账本（<see cref="MarkHandler"/>.Marks / <see cref="UnmarkHandler"/>.Log）的测试类必须落在**同一个**
+/// xUnit collection 里——collection 之间才并行、同 collection 内串行。
+/// 这里是两个用到该账本的测试类的唯一登记点，改 collection 名时两处一起改。
+/// </summary>
+internal static class MarkLedger
+{
+    public const string Collection = "test.mark static ledger";
 }

@@ -3,6 +3,7 @@ using LinkPocket.Data;
 using LinkPocket.Diagnostics;
 using LinkPocket.Engine;
 using LinkPocket.Kernel;
+using Microsoft.EntityFrameworkCore;
 
 namespace LinkPocket.Composition;
 
@@ -34,6 +35,12 @@ public sealed class ComposeOptions
     /// 正式应用显式传数据目录里的文件名，撤销才能跨进程（关闭重开后仍可回溯）。
     /// </summary>
     public string? UndoJournalPath { get; init; }
+
+    /// <summary>
+    /// 附属库（操作记录库：审计 + 幂等）路径；null = 由主库路径推导（<c>&lt;库名&gt;-ops.db</c>，同目录）。
+    /// 操作记录**不进用户数据文件**——用户库只放书签数据，见 <c>LinkPocket.Data.OpsDbContextFactory</c>。
+    /// </summary>
+    public string? OpsPath { get; init; }
 }
 
 /// <summary>组合根装配结果：引擎本体 + 客户端门面 +（可选）wire + 命令注册表 +（可选）工厂 + 会话管理器。</summary>
@@ -115,15 +122,20 @@ public static class EngineComposer
         if (string.IsNullOrWhiteSpace(dbPath))
             throw new ArgumentException("dbPath must not be empty", nameof(dbPath));
         dbPath = Path.GetFullPath(dbPath);
-        var factory = new LinkPocketDbContextFactory(dbPath);
         options ??= new ComposeOptions();
+
+        // 装配顺序有讲究：**附属库先建**并搬完遗留的操作记录，用户库随后才执行 v8「把审计/幂等表摘掉」——
+        // 反过来做，老库里那批审计正文会在搬迁之前就被删掉。
+        var ops = new OpsDbContextFactory(options.OpsPath ?? dbPath);
+        var factory = new LinkPocketDbContextFactory(dbPath);
         return BuildCore(
             () => new EfUnitOfWork(factory.CreateDbContext()),
             () => factory.CreateDbContext(),
             options,
             options.StagingRoot ?? Path.Combine(Path.GetDirectoryName(dbPath)!,
                 $"linkpocket_staging_{Path.GetFileNameWithoutExtension(dbPath)}"),
-            factory);
+            factory,
+            ops);
     }
 
     /// <summary>不触库入口（目录导出等）：UoW 与宏库工厂必须由调用方提供「调用即抛」的占位实现——
@@ -134,12 +146,13 @@ public static class EngineComposer
     {
         ArgumentNullException.ThrowIfNull(uowFactory);
         ArgumentNullException.ThrowIfNull(dbContextFactory);
-        return BuildCore(uowFactory, dbContextFactory, options ?? new ComposeOptions(), null, null);
+        return BuildCore(uowFactory, dbContextFactory, options ?? new ComposeOptions(), null, null, null);
     }
 
     private static EngineComposition BuildCore(
         Func<IUnitOfWork> uowFactory, Func<LinkPocketDbContext> dbContextFactory,
-        ComposeOptions options, string? fallbackStagingRoot, LinkPocketDbContextFactory? factory)
+        ComposeOptions options, string? fallbackStagingRoot, LinkPocketDbContextFactory? factory,
+        OpsDbContextFactory? ops)
     {
         var registry = new CommandRegistry();
 
@@ -163,11 +176,16 @@ public static class EngineComposer
         // 会话管理器：四宿主共用（AI 代理的限流/只读能力门的唯一执行点）。
         // 未带 SessionId 的调用不受约束，故对既有界面/测试零影响。
         var sessions = new SessionManager();
+        // 操作记录（审计 / 幂等）的落点 = 附属库；不触库的宿主（目录导出）没有附属库，退回既有工厂
+        // （那些宿主 SqlAudit=false，这条分支不会被真正走到）。
+        Func<DbContext> operationRecords = ops is null
+            ? () => dbContextFactory()
+            : () => ops.CreateDbContext();
         var engine = new EngineCore(registry, uowFactory,
             audit: options.SqlAudit
-                ? new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(dbContextFactory))
+                ? new CompositeAuditWriter(new InMemoryAuditWriter(), new SqlAuditWriter(operationRecords))
                 : null,
-            idempotency: options.SqlIdempotency ? new SqlIdempotencyStore(dbContextFactory) : null,
+            idempotency: options.SqlIdempotency ? new SqlIdempotencyStore(operationRecords) : null,
             sessions: sessions);
         engineRef = engine;
 

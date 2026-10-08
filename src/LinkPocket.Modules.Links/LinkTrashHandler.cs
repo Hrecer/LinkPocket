@@ -20,7 +20,8 @@ internal sealed class LinkTrashHandler : ICommandHandler
         Parameters: [ParamSpec.Req<string>("id", "Link ID")],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: null,   // 逆向需旧值（落点 = 删除前位置）→ 由处理器回填，见下方 undo
-        Impact: ImpactSummary.Link);
+        Impact: ImpactSummary.Link,
+        Client: new("LinkTrashAsync", typeof(LinkTrashResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

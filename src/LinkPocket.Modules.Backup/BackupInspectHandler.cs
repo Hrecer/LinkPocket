@@ -12,7 +12,8 @@ internal sealed class BackupInspectHandler : ICommandHandler
         Category: "backup",
         Description: "Read-only inspection of a .lpbackup: version / statistics / integrity result (pre-import assessment, zero side effects)",
         Parameters: [ParamSpec.Req<string>("file_path", "Backup file path")],
-        Caps: CommandCaps.Query | CommandCaps.FileIo);
+        Caps: CommandCaps.Query | CommandCaps.FileIo,
+        Client: new("BackupInspectAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

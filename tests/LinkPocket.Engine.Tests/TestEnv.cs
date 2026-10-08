@@ -55,16 +55,15 @@ internal static class TestEnv
         return engine;
     }
 
-    /// <summary>临时库清理（清连接池 → 删文件；失败交给系统清理）。</summary>
-    public static void Cleanup(string path)
-    {
-        try
-        {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            if (File.Exists(path)) File.Delete(path);
-        }
-        catch { /* 临时文件交给系统清理 */ }
-    }
+    /// <summary>临时库清理（主库 + 附属库 + WAL/SHM 副本，名字规则由数据层拥有；失败交给系统清理）。</summary>
+    public static void Cleanup(string path) => LinkPocket.Data.OpsDbContextFactory.DeleteDatabaseFiles(path);
+
+    /// <summary>操作记录（审计 / 幂等）落点的上下文工厂——**附属库**，不是用户库（v8 起两者分开）。</summary>
+    public static Func<Microsoft.EntityFrameworkCore.DbContext> OpsFactory(string dbPath)
+        => new LinkPocket.Data.OpsDbContextFactory(dbPath).CreateDbContext;
+
+    /// <summary>操作记录库（附属库）的文件路径：直查这两张表的测试要连它，不是主库。</summary>
+    public static string OpsPath(string dbPath) => LinkPocket.Data.OpsDbContextFactory.PathFor(dbPath);
 }
 
 /// <summary>注入式失败审计写入器：Write 必抛（验证"观测面失败不否定已提交事实"与失败路径守卫）。</summary>

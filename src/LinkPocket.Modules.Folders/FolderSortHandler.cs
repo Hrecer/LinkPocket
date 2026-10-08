@@ -17,7 +17,8 @@ internal sealed class FolderSortHandler : ICommandHandler
             ParamSpec.Opt<string>("parent_id", "Parent folder ID; default = root level"),
             ParamSpec.Req<IReadOnlyList<string>>("item_ids", "Folder IDs in the new order"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderSortAsync", typeof(FolderSortResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

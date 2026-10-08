@@ -16,7 +16,8 @@ internal sealed class LinkVisitRecordHandler : ICommandHandler
         Category: "links",
         Description: "Record one visit (link count +1 and last visit refreshed; the folder chain refreshes along the parents)",
         Parameters: [ParamSpec.Req<string>("id", "Link ID")],
-        Caps: CommandCaps.Mutation);
+        Caps: CommandCaps.Mutation,
+        Client: new("LinkVisitRecordAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

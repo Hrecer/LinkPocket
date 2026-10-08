@@ -4,14 +4,15 @@
 
 .DESCRIPTION
   单一入口，任何 CI 提供商（GitHub Actions / Jenkins / 本地预提交）都只需调用本脚本。
-  四道门，任一道不过即非零退出：
+  五道门，任一道不过即非零退出：
 
     1. 清 obj + 全量编译（0 警告 0 错误，-warnaserror 强制）
        · 清 obj 时保留 NuGet restore 资产（project.assets.json / *.nuget.g.props / *.nuget.g.targets
          / *.nuget.dgspec.json / project.nuget.cache）：编译产物在 obj/<config>/ 下照样被清，
          仍然强制全量重编，但省掉每次都重新 restore 全部项目（实测 5~9s）。
+    1.5 生成物漂移校验（tools/LinkPocket.ClientGen --check：EngineClient 便利层必须与命令描述符一致）
     2. 单元测试（Architecture / Engine / Modules / App，逐项目串行）
-    3. 协议冒烟（含 §0~§11 端到端断言）
+    3. 协议冒烟（含 §0~§12 端到端断言）
     4. 10k 性能门槛（Release 构建 + --strict-perf：按标定门槛判定，不享受 Debug 放宽）
 
   收尾：关闭本次门禁起的常驻编译服务器（MSBuild 节点 / VBCSCompiler），并打印分阶段耗时表。
@@ -164,6 +165,23 @@ if (-not $built) {
     exit 1
 }
 Write-Host "[CI] 编译通过" -ForegroundColor Green
+
+# —— 1.5. 生成物漂移校验：EngineClient 便利层由命令描述符机械生成（tools/LinkPocket.ClientGen）。
+#         生成文件与描述符不一致 = "改了描述符忘了重新生成" → 门禁不过，从结构上杜绝手写层漂移。
+Write-Host "[CI] 生成物漂移校验（EngineClient 便利层）..." -ForegroundColor Cyan
+$generatedLog = Join-Path $artifacts "generated.log"
+$swGenerated = [System.Diagnostics.Stopwatch]::StartNew()
+& $dotnet run --project (Join-Path $repoRoot "tools/LinkPocket.ClientGen") -c $Configuration -- --check *> $generatedLog
+$generatedExit = $LASTEXITCODE
+$swGenerated.Stop()
+$timings['②.5 生成物校验'] = $swGenerated.Elapsed.TotalSeconds
+if ($generatedExit -ne 0) {
+    Get-Content -LiteralPath $generatedLog -Tail 8 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "      $_" }
+    Write-Host "[CI] EngineClient.Generated.cs 与命令描述符不一致（exit=$generatedExit），日志：$generatedLog" -ForegroundColor Red
+    Write-TimingSummary
+    exit 1
+}
+Write-Host "[CI] 生成物与描述符一致" -ForegroundColor Green
 
 # —— 2. 单元测试（逐项目串行：`dotnet test` 多项目并行跑会让测试宿主进程崩溃 0xC00000FD/0x80131506，
 #        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，）

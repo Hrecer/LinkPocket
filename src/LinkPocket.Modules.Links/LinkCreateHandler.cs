@@ -28,7 +28,8 @@ internal sealed class LinkCreateHandler : ICommandHandler
             ParamSpec.Opt<bool>("auto_fetch_metadata", "Fetch page metadata automatically (default false; failures are reported in the result warnings)"),
             ParamSpec.Opt<string>("favicon_url", "Explicit favicon URL"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("LinkCreateAsync", typeof(LinkDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

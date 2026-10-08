@@ -248,11 +248,32 @@ public partial class BrowserViewModel
                 StatusText = Loc.K("browser.status.totalWithBreakdown",
                     contents.SubFolders.Count + _directLinkTotal, contents.SubFolders.Count, _directLinkTotal);
             }
+
+            // 详情页若开着：按 id 重查一次（不重复计访问）。
+            // 这是"外部进程（CLI / 外部 Agent）改过这条书签"在界面上的落点——字段就地更新；
+            // 条目已被外部删除/移入回收站则走详情页既有的 EntityNotFound → null 空档处理。
+            await DetailPage.ReloadIfOpenAsync();
         }
         catch (Exception ex)
         {
-            StatusText = Loc.K("status.loadFailed");
-            LpLog.Error("folder view refresh failed", ex);   // 失败必须留痕，不能只有一行状态文案
+            // 「当前目录已被外部删除 / 移入回收站」：引擎报 LP.STATE.001（实体不存在）。
+            // 停在旧目录会让人以为界面卡死——退回**根目录**（目录被删后其旧父 id 已不可解析，
+            // 根是唯一可靠落点）并挂起一次补刷（本方法 finally 消费），最后落一句状态提示。
+            if (ex is EngineException engineError
+                && engineError.Error.Code == EngineErrors.EntityNotFound
+                && Controller.CurrentFolderId is not null)
+            {
+                LpLog.Error($"current folder disappeared (was {Controller.CurrentFolderId}); falling back to root", ex);
+                Controller.NavigateTo(null);
+                CurrentFolderId = Controller.CurrentFolderId;
+                _recoveryNoticeKey = "browser.status.folderGone";
+                _refreshPending = true;
+            }
+            else
+            {
+                StatusText = Loc.K("status.loadFailed");
+                LpLog.Error("folder view refresh failed", ex);   // 失败必须留痕，不能只有一行状态文案
+            }
         }
         finally
         {
@@ -291,6 +312,12 @@ public partial class BrowserViewModel
             else
             {
                 IsNavigating = false;   // 刷新链（含挂起补刷）全部结束 → 收加载遮罩
+                // 「目录已被外部删除」的恢复提示：等整条刷新链（含补刷）落地后再写状态栏，否则会被重刷的统计文案盖掉。
+                if (_recoveryNoticeKey is { } recoveryKey)
+                {
+                    _recoveryNoticeKey = null;
+                    StatusText = Loc.K(recoveryKey);
+                }
                 var wasNavigation = _navigatingInChain;
                 _navigatingInChain = false;
                 RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
@@ -314,6 +341,9 @@ public partial class BrowserViewModel
 
     /// <summary>粘贴完成后的定位目标（滚入视口）；行重建（事件刷新）后被消费一次。</summary>
     private string? _pendingFocusId;
+
+    /// <summary>「当前目录已被外部删除、已退回根目录」的一次性提示键（整条刷新链落地后消费一次）。</summary>
+    private string? _recoveryNoticeKey;
 
     /// <summary>记录刚置入的项（粘贴完成时调用）：同 ID 先移除再追加（后到者排更后）。</summary>
     private void MarkRecentlyPinned(IEnumerable<string> ids)

@@ -119,7 +119,11 @@ internal sealed class AuditPruneHandler : ICommandHandler
                 JsonSerializer.SerializeToElement(new { @param = "keep_days", min = 1 })));
 
         var before = DateTimeOffset.Now.AddDays(-keepDays);
-        var deleted = await ctx.Uow.Audit.DeleteBeforeAsync(before, ctx.Ct);
+        // 干跑：审计在**附属库**（独立连接），DELETE 不随写事务回滚 —— 这一档必须显式只数不删；
+        // "零副作用"不能靠回滚兜底（模块测试 `保留_两阶段确认与越界校验与干跑零副作用` 卡住这条）。
+        var deleted = ctx.DryRun
+            ? await ctx.Uow.Audit.CountBeforeAsync(before, ctx.Ct)
+            : await ctx.Uow.Audit.DeleteBeforeAsync(before, ctx.Ct);
 
         return CommandResult.Ok(
             new AuditPruneResult(deleted, keepDays, before),

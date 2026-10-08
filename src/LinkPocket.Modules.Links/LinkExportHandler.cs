@@ -18,7 +18,8 @@ internal sealed class LinkExportHandler : ICommandHandler
             ParamSpec.Req<string>("file_path", "Export target absolute path"),
             ParamSpec.Opt<string>("format", "json (default) | csv", enumValues: ["json", "csv"]),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.FileIo);
+        Caps: CommandCaps.Mutation | CommandCaps.FileIo,
+        Client: new("LinkExportAsync", typeof(LinkExportResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

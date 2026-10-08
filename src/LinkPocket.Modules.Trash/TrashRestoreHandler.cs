@@ -23,7 +23,8 @@ internal sealed class TrashRestoreHandler : ICommandHandler
                 enumValues: ["origin", "root"]),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
-        UndoInverse: "links.trash");   // 撤销 = 再移入回收站（与落点无关）；重做/落点由处理器回填，见流水线
+        UndoInverse: "links.trash",
+        Client: new("TrashRestoreAsync", typeof(TrashRestoreResult)));   // 撤销 = 再移入回收站（与落点无关）；重做/落点由处理器回填，见流水线
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

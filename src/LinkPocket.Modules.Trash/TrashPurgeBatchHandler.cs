@@ -18,7 +18,8 @@ internal sealed class TrashPurgeBatchHandler : ICommandHandler
             ParamSpec.Opt<IReadOnlyList<string>>("folder_ids", "List of trash unit IDs"),
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Destructive,
-        Impact: ImpactSummary.Link);
+        Impact: ImpactSummary.Link,
+        Client: new("TrashPurgeBatchAsync", typeof(TrashPurgeBatchResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

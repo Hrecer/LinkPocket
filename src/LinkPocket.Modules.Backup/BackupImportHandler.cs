@@ -34,7 +34,8 @@ internal sealed class BackupImportHandler : ICommandHandler
             ParamSpec.Req<string>("file_path", "Backup file path"),
             ParamSpec.Opt<bool>("replace", "true = import after a wipe (full reset); default = append import"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.FileIo | CommandCaps.LongRunning | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.Destructive | CommandCaps.FileIo | CommandCaps.LongRunning | CommandCaps.SupportsCancellation,
+        Client: new("BackupImportAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

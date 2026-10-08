@@ -21,7 +21,8 @@ internal sealed class TrashOverviewHandler : ICommandHandler
         Parameters: [],
         Caps: CommandCaps.Query,
         // 结构快照 = 两表全量（单元 + 链接，与 trash.tree / trash.list 同源）
-        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged),
+        Client: new("TrashOverviewAsync", typeof(TrashOverviewDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

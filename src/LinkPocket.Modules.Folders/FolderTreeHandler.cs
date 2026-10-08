@@ -24,7 +24,8 @@ internal sealed class FolderTreeHandler : ICommandHandler
         ],
         Caps: CommandCaps.Query,
         // 树 = 文件夹全量 + 计数两口径全量重算（树快照缓存 + folders.changed 精确失效）
-        Cache: CachePolicy.Content());
+        Cache: CachePolicy.Content(),
+        Client: new("FolderTreeAsync", typeof(List<FolderDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

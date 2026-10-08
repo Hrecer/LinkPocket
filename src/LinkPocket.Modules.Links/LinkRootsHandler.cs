@@ -20,7 +20,8 @@ internal sealed class LinkRootsHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
             ParamSpec.Opt<int>("per_page", "Cap (default 50)"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("LinkRootsAsync", typeof(List<LinkDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -23,6 +23,7 @@ internal static partial class SmokeRunner
             await SectionPerformance(state);
             await SectionOrchestration(state);
             await SectionCacheAndInvalidation(state);
+            await SectionCliAndGateway(state);
             Console.WriteLine("全部通过");
         }
         finally

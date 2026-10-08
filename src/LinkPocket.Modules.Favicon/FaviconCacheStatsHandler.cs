@@ -12,7 +12,8 @@ internal sealed class FaviconCacheStatsHandler : ICommandHandler
         Category: "favicon",
         Description: "Favicon disk cache statistics (file count, total bytes, cache directory)",
         Parameters: [],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("FaviconCacheStatsAsync", typeof(JsonElement)));
 
     public Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -36,13 +36,15 @@
 
 ## 关于 `maintenance.reinit` 的语义
 
-实现 = **单事务清空业务表**（链接/文件夹/回收站两表；`audit_log` / `idempotency` / `macros` /
-`schema_migrations` 有保留策略，不清），不做"删库文件再建"——因此不需要停连接、不怕句柄占用。
+实现 = **单事务清空业务表**（链接/文件夹/回收站两表；`macros` / `schema_migrations` 有保留策略，不清），
+不做"删库文件再建"——因此不需要停连接、不怕句柄占用。
 整库重置时引擎**同步清空查询缓存与撤销/重做栈**
 （`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，
 留着只会让 `undo.undo` 报 EntityNotFound）。dryRun 下不执行 favicon 清理（文件系统不可回滚，
-必须保持零副作用）。`audit_log` 的保留 = **`audit.prune`**（缺省 90 天，破坏性两阶段确认；**无调度器定时执行**，
-需要时由调用方触发），长期使用需关注审计表增长。
+必须保持零副作用）。
+⚠️ **v8 起 `audit_log` 与 `idempotency` 不在用户库里**（搬去附属库 `linkpocket-ops.db`），
+`maintenance.reinit` 与它们本就无关；审计的保留 = **`audit.prune`**（缺省 90 天，破坏性两阶段确认；
+**无调度器定时执行**，需要时由调用方触发）。附属库可以整个删掉——只丢历史与 24h 去重。
 
 ## 测试
 

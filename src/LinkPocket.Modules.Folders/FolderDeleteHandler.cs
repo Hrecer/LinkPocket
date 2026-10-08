@@ -27,7 +27,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         ],
         Caps: CommandCaps.Mutation | CommandCaps.Reversible,
         UndoInverse: null,   // 逆向参数需计算（且仅 trash_links 可逆）→ 由处理器回填，见下方 undo
-        Impact: ImpactSummary.Folder);
+        Impact: ImpactSummary.Folder,
+        Client: new("FolderDeleteAsync", typeof(FolderDeleteResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

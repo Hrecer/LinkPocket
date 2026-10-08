@@ -36,7 +36,8 @@ internal sealed class MacroSaveHandler(IMacroStore macros, EngineLimits limits) 
         Name: "macro.save", Category: "macro", Description: "Save a named batch script (macro / skill library; invalid scripts are rejected)",
         Parameters: [ParamSpec.Req<string>("name", "Macro name"),
             ParamSpec.Req<JsonElement>("script", "Batch script (BatchScript JSON)", schema: ParamSchemas.BatchScript)],
-        Caps: CommandCaps.Mutation);
+        Caps: CommandCaps.Mutation,
+        Client: new("MacroSaveRawAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -65,7 +66,8 @@ internal sealed class MacroGetHandler(IMacroStore macros) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.get", Category: "macro", Description: "Read the batch script definition of a macro",
-        Parameters: [ParamSpec.Req<string>("name", "Macro name")], Caps: CommandCaps.Query);
+        Parameters: [ParamSpec.Req<string>("name", "Macro name")], Caps: CommandCaps.Query,
+        Client: new("MacroGetAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -80,7 +82,8 @@ internal sealed class MacroListHandler(IMacroStore macros) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.list", Category: "macro", Description: "List all macros (name + updated time, without the script body)",
-        Parameters: [], Caps: CommandCaps.Query);
+        Parameters: [], Caps: CommandCaps.Query,
+        Client: new("MacroListAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -94,7 +97,8 @@ internal sealed class MacroDeleteHandler(IMacroStore macros) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.delete", Category: "macro", Description: "Delete a macro",
-        Parameters: [ParamSpec.Req<string>("name", "Macro name")], Caps: CommandCaps.Mutation);
+        Parameters: [ParamSpec.Req<string>("name", "Macro name")], Caps: CommandCaps.Mutation,
+        Client: new("MacroDeleteAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -122,7 +126,8 @@ internal sealed class MacroRunHandler(IMacroStore macros, EngineLimits limits) :
     public CommandDescriptor Descriptor { get; } = new(
         Name: "macro.run", Category: "macro", Description: "Run a macro with transactional batch semantics (nested step dispatch shares this command's unit of work; abort rolls the whole batch back)",
         Parameters: [ParamSpec.Req<string>("name", "Macro name")],
-        Caps: CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.SupportsCancellation,
+        Client: new("MacroRunAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -190,7 +195,8 @@ internal sealed class UndoListHandler(IUndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "undo.list", Category: "undo", Description: "List the undo stack (newest first, capped at 100 entries)",
-        Parameters: [], Caps: CommandCaps.Query);
+        Parameters: [], Caps: CommandCaps.Query,
+        Client: new("UndoListAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -203,7 +209,8 @@ internal sealed class UndoListRedoHandler(IUndoCoordinator undo) : ICommandHandl
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "undo.list_redo", Category: "undo", Description: "List the redo stack (newest first, capped at 100 entries)",
-        Parameters: [], Caps: CommandCaps.Query);
+        Parameters: [], Caps: CommandCaps.Query,
+        Client: new("UndoListRedoAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -278,7 +285,8 @@ internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "undo.redo", Category: "undo", Description: "Redo: replay the most recently undone action in forward order (a successful replay re-enters the undo stack)",
-        Parameters: [], Caps: CommandCaps.Mutation);
+        Parameters: [], Caps: CommandCaps.Mutation,
+        Client: new("RedoAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -339,7 +347,8 @@ internal sealed class UndoClearHandler(IUndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "undo.clear", Category: "undo", Description: "Clear the undo and redo stacks",
-        Parameters: [], Caps: CommandCaps.Mutation);
+        Parameters: [], Caps: CommandCaps.Mutation,
+        Client: new("UndoClearAsync", typeof(int)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -355,7 +364,8 @@ internal sealed class StagingStageHandler(StagingService staging) : ICommandHand
     public CommandDescriptor Descriptor { get; } = new(
         Name: "staging.stage", Category: "staging", Description: "Copy a file into the AI staging area (registered by SHA-256 fingerprint)",
         Parameters: [ParamSpec.Req<string>("source_path", "Source file absolute path")],
-        Caps: CommandCaps.Mutation | CommandCaps.FileIo);
+        Caps: CommandCaps.Mutation | CommandCaps.FileIo,
+        Client: new("StageAsync", typeof(StagedFile)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -383,7 +393,8 @@ internal sealed class StagingListHandler(StagingService staging) : ICommandHandl
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "staging.list", Category: "staging", Description: "List staged files",
-        Parameters: [], Caps: CommandCaps.Query);
+        Parameters: [], Caps: CommandCaps.Query,
+        Client: new("StagingListAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
@@ -442,7 +453,8 @@ internal sealed class StagingTransformHandler(StagingService staging) : ICommand
     public CommandDescriptor Descriptor { get; } = new(
         Name: "staging.transform", Category: "staging", Description: "Run a pure-function transform pipeline over a staged file (filter_links/rename_folder/map_field/strip_prefix/dedupe/reencode; dry_run returns a preview only)",
         Parameters: [ParamSpec.Req<string>("staging_id", "Staging ID"), ParamSpec.Req<JsonElement>("ops", "Transform operator array [{op, args}]", schema: ParamSchemas.StagingOps), ParamSpec.Opt<bool>("dry_run", "Dry run (default false)")],
-        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation,
+        Client: new("StagingTransformAsync", typeof(StagingTransformReport)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -72,7 +72,9 @@ public class CanonicalPathMigrationTests
         {
             SchemaMigrator.EnsureSchema(seed);
             // 退回 v6 并塞回旧形态：根级 / 多层 / 断链 / 无快照 四种形状都要有
-            Exec(seed, "DELETE FROM schema_migrations WHERE version = 7");
+            // 退回 v6：**必须连 v7/v8 的版本行一起删**——只删 7 的话 MAX(version) 仍是 8，
+            // 迁移器会认为"已是最新"而跳过重放（v8 之前没有这个问题）。
+            Exec(seed, "DELETE FROM schema_migrations WHERE version >= 7");
             Exec(seed, @"INSERT INTO trash_folders (id, name, origin_path, deleted_at) VALUES
                 ('f1', '根级单元', '全部书签', '2026-01-01T00:00:00Z'),
                 ('f2', '多层单元', '全部书签 / 工作 / 前端', '2026-01-01T00:00:00Z'),

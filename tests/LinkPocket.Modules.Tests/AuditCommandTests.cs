@@ -141,11 +141,12 @@ public class AuditCommandTests
     [Fact]
     public async Task 保留_两阶段确认与越界校验与干跑零副作用()
     {
-        var (engine, factory, _) = TestHost.CreateWithAudit();
+        var (engine, factory, dbPath) = TestHost.CreateWithAudit();
         await Run(engine, "folders.create", new { name = "新行" });
 
-        // 造一条 30 天前的旧行（直接经落表写入器，模拟历史数据）
-        new SqlAuditWriter(factory.CreateDbContext).Write(new AuditEntry(
+        // 造一条 30 天前的旧行（直接经落表写入器，模拟历史数据）——写入口 = **附属库**：
+        // audit_log 自 v8 起不在用户库里，落表写入器必须对着附属库写。
+        new SqlAuditWriter(new LinkPocket.Data.OpsDbContextFactory(dbPath).CreateDbContext).Write(new AuditEntry(
             DateTimeOffset.Now.AddDays(-30), "folders.create", "old-corr", CallerRef.Test,
             ElapsedMs: 1, Success: true, ErrorCode: null, Changes: null,
             DryRun: false, IsNested: false, StackTrace: null, ArgsJson: """{"name":"旧行"}"""));

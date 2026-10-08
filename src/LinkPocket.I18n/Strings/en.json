@@ -301,6 +301,7 @@
   "browser.dialog.whatWillBeDeleted": "What this will delete",
   "browser.err.pathSegmentMissing": "Path not found: {0}",
   "browser.status.linkCreated": "New link",
+  "browser.status.folderGone": "That folder was deleted elsewhere \u2014 back at the root",
   "common.newFolder": "New folder",
   "details.noInfo": "No information",
   "editor.title.edit": "Edit link",

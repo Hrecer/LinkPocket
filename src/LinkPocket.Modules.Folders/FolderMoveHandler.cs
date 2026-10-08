@@ -19,7 +19,8 @@ internal sealed class FolderMoveHandler : ICommandHandler
             ParamSpec.Req<string>("folder_id", "Folder ID"),
             ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（见 undo）
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderMoveAsync", typeof(FolderDto)));   // 可撤销；逆向参数由处理器回填（见 undo）
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

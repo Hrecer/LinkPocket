@@ -11,6 +11,13 @@ namespace LinkPocket.Data;
 /// </summary>
 public sealed class LinkPocketDbContextFactory : IDbContextFactory<LinkPocketDbContext>
 {
+    /// <summary>
+    /// 跨进程写争用的**忙等上限（秒）**：SQLite 是单写者——外部进程（CLI / 外部 Agent 经 MCP）
+    /// 提交期间，本进程的写会拿到 <c>SQLITE_BUSY</c>。显式忙等 5s 重试，别依赖隐式默认
+    /// （否则表现为"对方提交的那一瞬间，界面/命令行偶发报锁"）。超过上限就如实失败，不静默兜底。
+    /// </summary>
+    public const int BusyTimeoutSeconds = 5;
+
     private readonly string _connectionString;
 
     public LinkPocketDbContextFactory(string dbPath)
@@ -18,6 +25,7 @@ public sealed class LinkPocketDbContextFactory : IDbContextFactory<LinkPocketDbC
         var builder = new SqliteConnectionStringBuilder($"Data Source={dbPath}")
         {
             ForeignKeys = true,
+            DefaultTimeout = BusyTimeoutSeconds,
         };
         _connectionString = builder.ToString();
         EnableWal(dbPath);

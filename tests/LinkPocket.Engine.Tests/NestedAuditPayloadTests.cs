@@ -12,6 +12,12 @@ namespace LinkPocket.Engine.Tests;
 /// 嵌套步骤经上下文透传 <c>batch_id</c>、独立批步骤经 <c>CallOptions.BatchId</c> 携带——
 /// <c>audit.query {batch_id}</c> 能取齐父条目与每一步（含失败步）。
 /// </summary>
+/// <remarks>
+/// 与 <see cref="BatchUndoTests"/> 同属一个 xUnit collection：两个类共用
+/// <see cref="MarkHandler"/> / <see cref="UnmarkHandler"/> 的**静态**账本，xUnit 默认让不同测试类并行——
+/// 不串行就会互相打穿。见 <see cref="MarkLedger"/>。
+/// </remarks>
+[Collection(MarkLedger.Collection)]
 public class NestedAuditPayloadTests
 {
     private static (EngineCore Engine, InMemoryAuditWriter Audit, string Db) Create()

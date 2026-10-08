@@ -24,7 +24,8 @@ internal sealed class FolderCreateHandler : ICommandHandler
             ParamSpec.Opt<string>("description", "Description"),
             ParamSpec.Opt<string>("parent_id", "Parent folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderCreateAsync", typeof(FolderDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

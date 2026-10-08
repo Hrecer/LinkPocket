@@ -24,7 +24,8 @@ internal sealed class FolderCopyHandler : ICommandHandler
             ParamSpec.Req<string>("folder_id", "Source folder ID"),
             ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderCopyAsync", typeof(FolderCopyResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

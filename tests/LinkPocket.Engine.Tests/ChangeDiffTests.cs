@@ -129,7 +129,7 @@ public class ChangeDiffTests
         var (factory, path) = TestEnv.CreateDb();
         try
         {
-            var writer = new SqlAuditWriter(() => factory.CreateDbContext());
+            var writer = new SqlAuditWriter(TestEnv.OpsFactory(path));
             writer.Write(new AuditEntry(
                 DateTimeOffset.Now, "test.big_diff", "corr-1", new CallerRef(CallerKind.Test, null), 1,
                 Success: true, ErrorCode: null,
@@ -137,7 +137,7 @@ public class ChangeDiffTests
                     Warnings: null, Diff: BigDiffHandler.MakeDiff(2005)),
                 DryRun: false, IsNested: false, StackTrace: null));
 
-            using var conn = new SqliteConnection(new SqliteConnectionStringBuilder($"Data Source={path}").ToString());
+            using var conn = new SqliteConnection(new SqliteConnectionStringBuilder($"Data Source={TestEnv.OpsPath(path)}").ToString());
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT changes_json FROM audit_log WHERE command = 'test.big_diff'";

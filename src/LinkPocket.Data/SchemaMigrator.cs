@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using Microsoft.Data.Sqlite;
 
 namespace LinkPocket.Data;
@@ -60,6 +61,9 @@ public static class SchemaMigrator
                 if (existingVersion is { } version)
                 {
                     ApplyPending(conn, version);
+                    // v8 把操作记录搬出了用户库：DROP 只把页标为空闲，必须 VACUUM 才真正把空间还给文件系统。
+                    // 只在「跨过 v8 的那一次」做（一次性），且 VACUUM 不能在事务内执行（SQLite 要求）。
+                    if (version < OpsMovedInVersion) VacuumDatabase(conn);
                     StampVersionMarkers(conn);
                 }
                 else if (HasUserTables(conn))
@@ -186,6 +190,27 @@ public static class SchemaMigrator
         tx.Commit();
     }
 
+    /// <summary>操作记录移出用户库的那个版本（v8）：跨过它的迁移要 VACUUM 一次，把删表腾出的页归还文件系统。</summary>
+    private const int OpsMovedInVersion = 8;
+
+    /// <summary>
+    /// 重写库文件、回收已删对象占用的页。**不能在事务内执行**（SQLite 要求），故调用点放在迁移提交之后。
+    /// 失败不阻断启动——库本身是完好的（只是空间没归还），但按观测面纪律如实记日志、不静默吞掉。
+    /// </summary>
+    private static void VacuumDatabase(SqliteConnection conn)
+    {
+        try
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "VACUUM;";
+            cmd.ExecuteNonQuery();
+        }
+        catch (SqliteException ex)
+        {
+            LpLog.Warn("VACUUM after moving operation records out of the user database failed", ex, category: "data.schema");
+        }
+    }
+
     /// <summary>版本脚本表（schema_migrations 仅服务 v2 之后的内部常规演进）。</summary>
     private static (int Version, string Sql)[] Scripts =>
     [
@@ -195,6 +220,7 @@ public static class SchemaMigrator
         (5, AdditionsV5 + VersionRow(5)),
         (6, AdditionsV6 + VersionRow(6)),
         (7, CanonicalPathV7 + VersionRow(7)),
+        (8, MoveOpsTablesV8 + VersionRow(8)),
     ];
 
     /// <summary>版本行（applied_at = 执行时刻 UTC）。</summary>
@@ -374,5 +400,20 @@ public static class SchemaMigrator
         ALTER TABLE audit_log ADD COLUMN args_truncated INTEGER NOT NULL DEFAULT 0;
         CREATE INDEX idx_audit_at ON audit_log(at);
         CREATE INDEX idx_audit_correlation ON audit_log(correlation_id);
+        """;
+
+    /// <summary>
+    /// v8：把"操作记录"移出用户库。用户库只放书签数据（folders / links / 回收站两表 / schema_migrations）——
+    /// 审计与幂等是**运行痕迹**而非用户数据，改由附属库承载（<c>&lt;库名&gt;-ops.db</c>，见
+    /// <see cref="OpsDbContextFactory"/>）。
+    /// <para><b>数据在删表之前已经搬走</b>：附属库在主库迁移**之前**建立并搬完遗留行
+    /// （装配顺序见 <c>EngineComposer.Compose</c>），本脚本只负责把表从用户库摘掉。</para>
+    /// <para>DROP TABLE 一并带走该表的索引（<c>idx_audit_at</c> / <c>idx_audit_correlation</c>）；
+    /// 释放出的页由跨过本版本时的一次 <c>VACUUM</c> 真正还给文件系统（见 <see cref="OpsMovedInVersion"/>）。</para>
+    /// </summary>
+    private const string MoveOpsTablesV8 =
+        """
+        DROP TABLE IF EXISTS audit_log;
+        DROP TABLE IF EXISTS idempotency;
         """;
 }

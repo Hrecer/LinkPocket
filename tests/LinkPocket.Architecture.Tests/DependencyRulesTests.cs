@@ -268,6 +268,48 @@ public class DependencyRulesTests
         Assert.Equal(expected, refs);
     }
 
+    /// <summary>
+    /// 命令行客户端与外部 Agent 网关（引擎的消费者，与 App / 内置助手 / 冒烟同级）：
+    /// 只许依赖**契约层**（EngineClient / IEngineCatalog / AiToolCatalog）与**共享组合根**（EngineHost），
+    /// 一切读写经引擎管道——实现不得引用 Engine/Data/Kernel/Modules.*。
+    /// 网关额外允许引用命令行客户端（工具调用进程内复用同一条命令行执行路径，杜绝第二套实现）。
+    /// </summary>
+    [Theory]
+    [InlineData("LinkPocket.Cli")]
+    [InlineData("LinkPocket.Mcp")]
+    public void 命令行与网关_只依赖契约层与组合根(string project)
+    {
+        var refs = ProjectReferences($"src/{project}/{project}.csproj");
+        var allowed = new[] { Contracts, Composition, "LinkPocket.Cli" };
+        Assert.Contains(Contracts, refs);
+        Assert.Contains(Composition, refs);
+        Assert.All(refs, r => Assert.Contains(r, allowed));
+        Assert.DoesNotContain(refs, r => ForbiddenForUi.Contains(r));
+    }
+
+    [Theory]
+    [InlineData("LinkPocket.Cli")]
+    [InlineData("LinkPocket.Mcp")]
+    public void 命令行与网关源码_不得使用引擎实现(string project)
+    {
+        var forbidden = new[] { "LinkPocket.Engine", "LinkPocket.Data", "LinkPocket.Kernel", "LinkPocket.Modules" };
+        var offenders = new List<string>();
+        foreach (var (relative, full) in SourceFiles(project))
+        {
+            var text = StripLineComments(File.ReadAllText(full));
+            foreach (var ns in forbidden)
+            {
+                if (text.Contains($"using {ns}", StringComparison.Ordinal)
+                    || text.Contains($"{ns}.", StringComparison.Ordinal))
+                {
+                    offenders.Add($"{relative} -> {ns}");
+                }
+            }
+        }
+        Assert.True(offenders.Count == 0,
+            "命令行/网关源码越界使用引擎实现（能力只能经契约端口或组合根）：" + string.Join("、", offenders));
+    }
+
     [Fact]
     public void 静态服务定位器_零残留()
     {

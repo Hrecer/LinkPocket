@@ -17,12 +17,14 @@ public sealed class SqlIdempotencyStore : IdempotencyStore
 
     private sealed record CacheEntry(CommandResult Result, DateTimeOffset At);
 
-    private readonly Func<LinkPocketDbContext> _dbFactory;
+    private readonly Func<DbContext> _dbFactory;
     private readonly TimeSpan _window;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new(StringComparer.Ordinal);
     private int _storeCount;
 
-    public SqlIdempotencyStore(Func<LinkPocketDbContext> dbFactory, TimeSpan? window = null)
+    /// <param name="dbFactory">幂等落库的连接来源——**附属库**（操作记录库）上下文工厂，而非用户库：
+    /// 幂等键是运行痕迹，不进用户数据文件。</param>
+    public SqlIdempotencyStore(Func<DbContext> dbFactory, TimeSpan? window = null)
         : base(window)
     {
         _dbFactory = dbFactory ?? throw new ArgumentNullException(nameof(dbFactory));

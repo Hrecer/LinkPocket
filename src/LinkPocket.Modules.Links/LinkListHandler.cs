@@ -30,7 +30,8 @@ internal sealed class LinkListHandler : ICommandHandler
             ParamSpec.Opt<int>("page", "Page number (1-based)"),
             ParamSpec.Opt<int>("per_page", "Page size (default 20)"),
         ],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("LinkListAsync", typeof(PagedLinksDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

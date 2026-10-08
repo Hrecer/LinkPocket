@@ -24,7 +24,8 @@ internal sealed class FolderUpdateHandler : ICommandHandler
             ParamSpec.Opt<string>("name", "New name"),
             ParamSpec.Opt<string>("description", "New description"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderUpdateAsync", typeof(FolderDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

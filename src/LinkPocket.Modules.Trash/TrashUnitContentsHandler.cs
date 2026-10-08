@@ -18,7 +18,8 @@ internal sealed class TrashUnitContentsHandler : ICommandHandler
         Parameters: [ParamSpec.Req<string>("id", "Trash unit ID")],
         Caps: CommandCaps.Query,
         // 单元内容 = 单元全量 + 每子树一趟（N+1），只读回收站两表
-        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged),
+        Client: new("TrashUnitContentsAsync", typeof(List<TrashEntryDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

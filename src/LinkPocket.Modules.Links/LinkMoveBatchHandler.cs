@@ -21,7 +21,8 @@ internal sealed class LinkMoveBatchHandler : ICommandHandler
             ParamSpec.Req<IReadOnlyList<string>>("link_ids", "List of link IDs"),
             ParamSpec.Opt<string>("target_list_id", "Target folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（每项一步）
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("LinkMoveBatchAsync", typeof(LinkBatchResult)));   // 可撤销；逆向参数由处理器回填（每项一步）
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -157,9 +157,9 @@ internal static partial class SmokeRunner
         File.Delete(linksJsonPath);
 
         // —— §10.9 diagnostics.collect（Maintenance 模块）：schema 版本 + 表计数（脱敏）——
-        // 版本 = 完整版本链的最高版本（v2 基线 + v3..v7 演进，v7 = origin_path 改存 canonical）；运行时可观测读数在 §11 校验
+        // 版本 = 完整版本链的最高版本（v2 基线 + v3..v8 演进，v8 = 操作记录移出用户库）；运行时可观测读数在 §11 校验
         var diag = await s.Client.CollectDiagnosticsAsync();
-        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 7, "诊断应报 schema v7（v2 基线 + v3..v7 演进）");
+        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 8, "诊断应报 schema v8（v2 基线 + v3..v8 演进）");
         Asserts.That(diag.TryGetProperty("counts", out _), "诊断应含各表计数");
         // logging 段：冒烟宿主未装配日志管道 → 如实 wired=false（不填假值）；审计段给行数与最旧时刻
         Asserts.That(diag.GetProperty("logging").GetProperty("wired").GetBoolean() == false,
@@ -167,8 +167,10 @@ internal static partial class SmokeRunner
         Asserts.That(diag.GetProperty("audit").GetProperty("rows").GetInt64() > 0, "审计段应报已有审计行数");
 
         // —— §10.10 audit_log / idempotency 落表直查 + audit.query / audit.prune 读侧 ——
+        // v8 起操作记录在**附属库**（用户库只放书签数据）：直查这两张表要连附属库。
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        await using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={s.DbPath}");
+        await using var db = new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={LinkPocket.Data.OpsDbContextFactory.PathFor(s.DbPath)}");
         await db.OpenAsync();
         var auditCount = await ScalarAsync(db, "SELECT COUNT(*) FROM audit_log");
         Asserts.That(auditCount > 0, $"audit_log 表应有落库条目（实际 {auditCount}）");

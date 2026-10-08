@@ -27,7 +27,8 @@ internal sealed class SearchCountHandler : ICommandHandler
         ],
         Caps: CommandCaps.Query,
         // 与 search.links 同一套失效事件；同参重复计数不该重扫
-        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged),
+        Client: new("SearchCountAsync", typeof(int)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

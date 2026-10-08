@@ -19,7 +19,8 @@ internal sealed class FolderGetHandler : ICommandHandler
         Parameters: [ParamSpec.Opt<string>("folder_id", "Folder ID; default = root (the root is not an entity -> LP.STATE.002)")],
         Caps: CommandCaps.Query,
         // 单文件夹读取仍是「全量文件夹 + 全量计数两口径」两趟，按内容类缓存（定位/跳转复用率高）
-        Cache: CachePolicy.Content());
+        Cache: CachePolicy.Content(),
+        Client: new("FolderGetAsync", typeof(FolderDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 开发期工具（不随产品发布）：从命令描述符机械生成 EngineClient 便利层。
+       不在 src/ 下 → 不受分层引用图与 i18n 护栏约束（它是构建期工具，不是产品代码）。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket.ClientGen</RootNamespace>
+    <AssemblyName>linkpocket-clientgen</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LinkPocket.Composition\LinkPocket.Composition.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Engine\LinkPocket.Engine.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Data\LinkPocket.Data.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -23,7 +23,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
         Category: "bookmarks",
         Description: "Import all bookmarks and folders from a Netscape bookmark file (appended to existing data; top-level entries land at root level)",
         Parameters: [ParamSpec.Req<string>("file_path", "Bookmark HTML file path")],
-        Caps: CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.LongRunning | CommandCaps.FileIo | CommandCaps.SupportsCancellation,
+        Client: new("BookmarksImportAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

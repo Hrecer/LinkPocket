@@ -24,7 +24,8 @@ internal sealed class LinkSmartListHandler : ICommandHandler
         ],
         Caps: CommandCaps.Query,
         // 智能列表只查 links 表且结果只受链接表变更影响（recently_* 三键都有索引，缓存省掉重复排序）
-        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged),
+        Client: new("LinkSmartListAsync", typeof(List<LinkDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

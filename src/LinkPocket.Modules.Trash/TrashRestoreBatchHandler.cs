@@ -22,7 +22,8 @@ internal sealed class TrashRestoreBatchHandler : ICommandHandler
             ParamSpec.Opt<string>("to", "origin (default) = pre-deletion location; root = root level",
                 enumValues: ["origin", "root"]),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("TrashRestoreBatchAsync", typeof(TrashRestoreBatchResult)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

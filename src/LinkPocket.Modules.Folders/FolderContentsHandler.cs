@@ -29,7 +29,8 @@ internal sealed class FolderContentsHandler(EngineLimits limits) : ICommandHandl
         Caps: CommandCaps.Query,
         // 目录页 = 4 次查询（文件夹全量 + 计数两口径 + 链接），UI 每次刷新/导航都要；
         // 结果只受「文件夹/链接变更」影响 → 内容类缓存（事件驱动失效）
-        Cache: CachePolicy.Content());
+        Cache: CachePolicy.Content(),
+        Client: new("FolderContentsAsync", typeof(FolderContentsDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

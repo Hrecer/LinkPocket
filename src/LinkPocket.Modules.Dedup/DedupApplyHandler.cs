@@ -25,7 +25,8 @@ internal sealed class DedupApplyHandler : ICommandHandler
             ParamSpec.Opt<JsonElement>("explicit_keep", "Keeper dictionary for keep_explicit; unlisted groups are not handled",
                 schema: ParamSchemas.DedupExplicitKeep),
         ],
-        Caps: CommandCaps.Mutation);
+        Caps: CommandCaps.Mutation,
+        Client: new("DedupApplyAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

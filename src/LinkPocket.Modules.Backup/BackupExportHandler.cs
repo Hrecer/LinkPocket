@@ -19,7 +19,8 @@ internal sealed class BackupExportHandler : ICommandHandler
         Description: $"Export a backup as {BackupIO.FileExtension} (format version {BackupIO.FormatVersion};"
                      + "SHA-256 manifest + temporary key identity model; temp file in the same directory + atomic replace; trash content is not backed up)",
         Parameters: [ParamSpec.Req<string>("output_path", "Backup file absolute path")],
-        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation,
+        Client: new("BackupExportAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

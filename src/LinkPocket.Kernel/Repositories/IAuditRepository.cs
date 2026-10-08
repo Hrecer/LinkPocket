@@ -69,6 +69,13 @@ public interface IAuditRepository
     /// <summary>删除 <paramref name="before"/> 之前的审计行（半开：严格早于）。返回删除行数。</summary>
     Task<int> DeleteBeforeAsync(DateTimeOffset before, CancellationToken ct);
 
+    /// <summary>
+    /// <paramref name="before"/> 之前的审计行数（半开，与 <see cref="DeleteBeforeAsync"/> 同谓词）。
+    /// <para>干跑（DryRun）的预演读数走它：审计表在**附属库**（独立连接），DELETE 不随写事务回滚，
+    /// 所以"零副作用"只能靠"不执行删除"来保证，而不是靠回滚兜底。</para>
+    /// </summary>
+    Task<int> CountBeforeAsync(DateTimeOffset before, CancellationToken ct);
+
     /// <summary>审计行总数。</summary>
     Task<int> CountAsync(CancellationToken ct);
 

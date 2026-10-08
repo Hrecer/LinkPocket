@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- LinkPocket 外部 Agent 网关（MCP over stdio）。
+       定位：把"外部 Agent 的工具调用"翻译成 **LinkPocket.Cli 的同一套命令执行**——
+       工具清单来自契约层的 AiToolCatalog（与内置助手同一份工具定义），
+       工具调用进程内复用 LinkPocket.Cli 的 CliRunner（与人在终端敲命令同一条执行路径）。
+       因此外部 Agent 与界面/内置助手在能力上同层：看得到数据、改得动数据、可空跑，无阉割、无第二套实现。
+       stdout 只承载 MCP 协议帧；日志走 stderr。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket.Mcp</RootNamespace>
+    <AssemblyName>linkpocket-mcp</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Cli\LinkPocket.Cli.csproj" />
+    <ProjectReference Include="..\LinkPocket.Composition\LinkPocket.Composition.csproj" />
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

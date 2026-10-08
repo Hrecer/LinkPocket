@@ -14,7 +14,8 @@ internal sealed class FolderBreadcrumbHandler : ICommandHandler
         Parameters: [ParamSpec.Opt<string>("folder_id", "Folder ID; default = root")],
         Caps: CommandCaps.Query,
         // 每次目录导航都会取面包屑（全量文件夹一遍）；只受文件夹改名/移动影响
-        Cache: CachePolicy.Of(10, DomainEventNames.FoldersChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.FoldersChanged),
+        Client: new("FolderBreadcrumbAsync", typeof(List<string>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

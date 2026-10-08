@@ -15,7 +15,8 @@ internal sealed class BookmarksExportHandler : ICommandHandler
         Category: "bookmarks",
         Description: "Export all bookmarks as a Netscape bookmark file (file_path is the target absolute path; unowned bookmarks land at root level so no data is lost)",
         Parameters: [ParamSpec.Req<string>("file_path", "Export target absolute path")],
-        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Mutation | CommandCaps.FileIo | CommandCaps.SupportsCancellation,
+        Client: new("BookmarksExportAsync", typeof(JsonElement)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

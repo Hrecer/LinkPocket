@@ -71,6 +71,9 @@ public sealed class EngineCore : IEngine
     /// <summary>查询结果缓存（性能加固）：声明了 <see cref="CommandDescriptor.Cache"/> 的查询才参与。</summary>
     public QueryCache Cache => _cache;
 
+    /// <summary>整体失效查询缓存（宿主在探测到"外部进程写过库"后调用；见 <see cref="IEngine.InvalidateQueryCache"/>）。</summary>
+    public void InvalidateQueryCache() => _cache.Clear();
+
     /// <summary>运行时统计快照（诊断面；宿主/Host 接线进 diagnostics.collect）。</summary>
     public EngineRuntimeStats RuntimeStats
     {

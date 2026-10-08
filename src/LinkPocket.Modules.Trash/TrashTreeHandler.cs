@@ -14,7 +14,8 @@ internal sealed class TrashTreeHandler : ICommandHandler
         Parameters: [],
         Caps: CommandCaps.Query,
         // 单元树 = 全量单元 + 全量子树计数（递归拼装），只读回收站两表
-        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged));
+        Cache: CachePolicy.Of(10, DomainEventNames.TrashChanged),
+        Client: new("TrashTreeAsync", typeof(List<TrashFolderDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

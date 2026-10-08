@@ -30,6 +30,13 @@ public sealed class UiEventHub
     public void Attach(IEventBus bus)
         => bus.Subscribe(_ => OnEvent());
 
+    /// <summary>
+    /// **外部进程**（CLI / 外部 Agent 经 MCP）写库后的通知入口：走**同一条** 300ms 防抖通道，
+    /// 与进程内领域事件**完全同权**——刷什么、怎么刷由订阅方按活跃视图自行决定（见 BEHAVIOR-CONTRACT §1.5）。
+    /// 由 <see cref="ExternalChangeWatcher"/> 轮询跨进程变更探针后调用（UI 线程）。
+    /// </summary>
+    public void NotifyExternalChange() => OnEvent();
+
     private void OnEvent()
     {
         if (_timer == null)

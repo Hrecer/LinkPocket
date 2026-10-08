@@ -1,8 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using LinkPocket.Contracts;
 
-namespace LinkPocket.Ai;
+namespace LinkPocket.Contracts;
 
 /// <summary>
 /// 一条命令在本会话的暴露状态（"不可用"的三种原因必须能区分，见 <see cref="AiToolCatalog.ExposureOf"/>）。
@@ -23,8 +22,15 @@ public enum AiToolExposure
 /// 工具目录（模型可见的工具面）：从引擎目录（<c>engine.describe</c>）裁剪 + 描述符元数据。
 /// 三层暴露（功能书 §3.3）：**Tier 1 默认** / **Tier 2 需在设置里显式开启"高级工具"** / **永不暴露**。
 /// schema 质量：复杂参数（查询过滤 / 批脚本 / 暂存算子）的精选 JSON Schema 已进描述符
-/// （<c>ParamSpec.Schema</c> ← <c>ParamSchemas</c> 常量，与 catalog 三件同一事实源）；
+/// （<c>ParamSpec.Schema</c> ← <see cref="ParamSchemas"/> 常量，与 catalog 三件同一事实源）；
 /// 标量枚举（<c>ParamSpec.EnumValues</c>）同样透出——本类只做"裁剪 + 拼装"，不再自持第二份 schema。
+///
+/// <para><b>归属（契约层）</b>：本类是"agent 工具面"的**唯一实现**，被两条驱动通道共用——
+/// 内置助手（<c>LinkPocket.Ai</c> 把它发给模型）与外部 Agent 网关（<c>LinkPocket.Mcp</c> 把它广播成 MCP 工具）。
+/// 它只依赖描述符元数据（<see cref="EngineManifest"/> / <see cref="CommandDescriptor"/> / <see cref="ParamSpec"/>），
+/// 不含任何模型接入或协议依赖，故落契约层——两条通道看到的工具名 / 描述 / 参数 schema 因此逐字同源，不靠人工对齐。
+/// 审批策略（内置助手的 <c>AiPermissionChain</c>）不在此处：那是内置助手"无人值守时替用户把关"的机制，
+/// 外部 Agent 由它自己的宿主把关，故不共用。</para>
 /// </summary>
 public sealed class AiToolCatalog
 {
@@ -179,10 +185,23 @@ public sealed class AiToolCatalog
 
     public CommandDescriptor? Descriptor(string command) => _byName.GetValueOrDefault(command);
 
-    /// <summary>模型可见的工具清单（Tier 1 + 可选 Tier 2）。</summary>
+    /// <summary>模型可见的工具清单（Tier 1 + 可选 Tier 2）——内置助手的暴露面。</summary>
     public IReadOnlyList<AiToolSpec> Build(bool advancedTools)
         => _byName.Values
             .Where(c => IsExposed(c.Name, advancedTools))
+            .OrderBy(c => c.Category, StringComparer.Ordinal)
+            .ThenBy(c => c.Name, StringComparer.Ordinal)
+            .Select(ToSpec)
+            .ToArray();
+
+    /// <summary>
+    /// 全量工具清单（**不做暴露裁剪**）：引擎目录里的每一条命令都在内。
+    /// 外部 Agent 网关用它广播 MCP 工具——用户把网关挂上即代表授权该 Agent 使用完整能力，
+    /// 与"内置助手在应用内无人值守、需要分层设防"的场景不同，故不走 <see cref="Build(bool)"/> 的裁剪。
+    /// 两条通道共用同一个 <see cref="ToSpec"/>（工具名 / 描述 / 参数 schema 逐字同源）。
+    /// </summary>
+    public IReadOnlyList<AiToolSpec> BuildAll()
+        => _byName.Values
             .OrderBy(c => c.Category, StringComparer.Ordinal)
             .ThenBy(c => c.Name, StringComparer.Ordinal)
             .Select(ToSpec)
@@ -195,7 +214,7 @@ public sealed class AiToolCatalog
         return new AiToolSpec(descriptor.Name, description, BuildSchema(descriptor.Parameters));
     }
 
-    /// <summary>按参数元数据组装 JSON Schema：Schema 片段（<c>ParamSchemas</c>）优先，
+    /// <summary>按参数元数据组装 JSON Schema：Schema 片段（<see cref="ParamSchemas"/>）优先，
     /// 标量带 EnumValues 时透出 enum，其余按类型名机械映射（与 catalog 的 MapParameter 同口径）。</summary>
     private static string BuildSchema(IReadOnlyList<ParamSpec> parameters)
     {

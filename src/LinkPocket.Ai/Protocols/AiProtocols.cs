@@ -11,9 +11,6 @@ public sealed record AiChatMessage(string Role, string Text,
 /// <summary>模型要求的一次工具调用（ArgumentsJson = 参数 JSON 原文）。</summary>
 public sealed record AiToolCallRequest(string Id, string Name, string ArgumentsJson);
 
-/// <summary>暴露给模型的工具声明（ParametersJson = JSON Schema 原文）。</summary>
-public sealed record AiToolSpec(string Name, string Description, string ParametersJson);
-
 /// <summary>一次模型请求（中性形态）。</summary>
 public sealed record AiChatRequest(
     string Model, string System, IReadOnlyList<AiChatMessage> Messages,

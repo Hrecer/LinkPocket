@@ -1651,7 +1651,7 @@ public class MaintenanceModuleTests
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
         // 全新建库 = 完整版本链（v2 基线 + v3..v7 演进），版本表落最高版本
         // 加一条迁移脚本必须同时改这里：这是"有人偷偷加了迁移却没人核对"的绊线
-        Assert.Equal(7, version.GetProperty("schema_version").GetInt32());
+        Assert.Equal(8, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

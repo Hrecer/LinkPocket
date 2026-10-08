@@ -36,7 +36,8 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
         ],
         Caps: CommandCaps.Query,
         // 依赖事件 = 目录页与树（folders.changed）+ 根级计数（links.changed）；两路失效与组成命令一致
-        Cache: CachePolicy.Content());
+        Cache: CachePolicy.Content(),
+        Client: new("FoldersOverviewAsync", typeof(FolderContentsDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

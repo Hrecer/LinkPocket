@@ -16,7 +16,8 @@ internal sealed class LinkMetadataFetchHandler : ICommandHandler
         Category: "links",
         Description: "Fetch page metadata (title / og: / description / favicon; 10s timeout, runs outside the write gate)",
         Parameters: [ParamSpec.Req<string>("url", "Page URL (absolute http/https)")],
-        Caps: CommandCaps.Query | CommandCaps.NetworkOutsideGate | CommandCaps.SupportsCancellation);
+        Caps: CommandCaps.Query | CommandCaps.NetworkOutsideGate | CommandCaps.SupportsCancellation,
+        Client: new("LinkMetadataFetchAsync", typeof(MetadataDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

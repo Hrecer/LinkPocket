@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- LinkPocket 命令行客户端（产品本体的一个消费者，非界面）。
+       零引擎改动：复用共享宿主 LinkPocket.Composition.EngineHost（库路径解析 + 组合根装配），
+       经 Contracts 的 EngineClient 调全部命令——与 WPF 界面、内置助手同一路由、同一错误语义。
+       依赖面 = Contracts + Composition（不引 Engine/Data/Modules，与 App/冒烟同一条依赖纪律）。
+       产物 = linkpocket(.exe)：在 PowerShell / bash 里直接调用，不进界面、无窗口。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>LinkPocket.Cli</RootNamespace>
+    <AssemblyName>linkpocket</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <ProjectReference Include="..\LinkPocket.Composition\LinkPocket.Composition.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -23,7 +23,8 @@ internal sealed class FolderMoveBatchHandler : ICommandHandler
             ParamSpec.Req<IReadOnlyList<string>>("folder_ids", "List of folder IDs to move"),
             ParamSpec.Opt<string>("target_parent_id", "Target parent folder ID; default = root level"),
         ],
-        Caps: CommandCaps.Mutation | CommandCaps.Reversible);   // 可撤销；逆向参数由处理器回填（每项一步）
+        Caps: CommandCaps.Mutation | CommandCaps.Reversible,
+        Client: new("FolderMoveBatchAsync", typeof(FolderMoveBatchResult)));   // 可撤销；逆向参数由处理器回填（每项一步）
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {

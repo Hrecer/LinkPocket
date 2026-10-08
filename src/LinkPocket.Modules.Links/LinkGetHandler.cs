@@ -13,7 +13,8 @@ internal sealed class LinkGetHandler : ICommandHandler
         Category: "links",
         Description: "Get one link by ID",
         Parameters: [ParamSpec.Req<string>("id", "Link ID")],
-        Caps: CommandCaps.Query);
+        Caps: CommandCaps.Query,
+        Client: new("LinkGetAsync", typeof(LinkDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
