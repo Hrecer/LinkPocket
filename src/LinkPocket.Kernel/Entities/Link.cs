@@ -25,7 +25,12 @@ public class Link
     [Column("description")]
     public string? Description { get; set; }
 
-    [MaxLength(512)]
+    /// <summary>
+    /// 图标地址：可以是站点 URL（字节存磁盘缓存），也可以是浏览器导出带进来的内嵌 <c>data:</c> URI。
+    /// 上限与 <see cref="LinkPocket.Contracts.FaviconCache.MaxInlineIconLength"/> 对齐（16 KiB）：
+    /// 早先是 512，而真实图标的 base64 普遍超过它，导入侧截断后产出的是**永远解不开**的坏数据。
+    /// </summary>
+    [MaxLength(16384)]
     [Column("favicon_url")]
     public string? FaviconUrl { get; set; }
 

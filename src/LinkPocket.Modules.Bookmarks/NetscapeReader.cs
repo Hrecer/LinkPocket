@@ -20,7 +20,8 @@ internal static class NetscapeReader
     private const int MaxFolderNameLength = 255;
     private const int MaxLinkTitleLength = 255;
     private const int MaxLinkUrlLength = 2048;
-    private const int MaxLinkFaviconLength = 512;
+    // 这里没有 favicon 的长度上限：图标值由 FaviconCache.NormalizeExternalIcon 判定
+    // （"原样可用 or 当它没有"），本解析器只负责原样取出 ICON / ICON_URI 属性值。
     private const int MaxNestingDepth = 64;
 
     /// <summary>外部输入上限：书签 HTML 的字节数（10k 条实测约 2MB，64MB = 30 倍余量）。</summary>

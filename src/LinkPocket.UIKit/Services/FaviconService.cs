@@ -21,6 +21,17 @@ public class FaviconService
 
     private static BitmapImage? _defaultIcon;
 
+    /// <summary>
+    /// 已上报过的坏内嵌图标（键 = 值的短指纹）。
+    /// </summary>
+    /// <remarks>
+    /// 解码失败按值去重上报：真实库里存在上万条被截断的内嵌图标（见
+    /// <see cref="FaviconCache.NormalizeExternalIcon"/> 的注释），列表每刷新一次就会逐个解码失败一次，
+    /// 不去重会瞬间刷出上万条同因日志（历史上单日日志 5.2 MB 就是这类放大）。
+    /// 只留指纹不留存原文：内嵌图标可达 16 KiB，整段进字典等于把整库图标再驻留一份。
+    /// </remarks>
+    private static readonly ConcurrentDictionary<string, bool> _badInlineReported = new(StringComparer.Ordinal);
+
     private static BitmapImage DefaultIcon
     {
         get
@@ -134,10 +145,31 @@ public class FaviconService
             Store(dataUrl, bmp);
             return bmp;
         }
-        catch
+        catch (Exception ex)
         {
-            return null;   // 坏数据（截断的 base64 等）只丢这一个图标，不抛
+            // 坏数据（截断的 base64 等）只丢这一个图标，不抛；但**必须留痕** ——
+            // 这里以前是静默 return null，结果是"库里存着图标、界面永远空白"，且没有任何日志可查，
+            // 一个 512 字符截断的 bug 因此藏了整个会话。
+            ReportBadInlineData(dataUrl, ex);
+            return null;
         }
+    }
+
+    /// <summary>坏内嵌图标按值去重上报一次（同因不同值各报一次，刷屏由去重挡住）。</summary>
+    private static void ReportBadInlineData(string dataUrl, Exception ex)
+    {
+        var comma = dataUrl.IndexOf(',');
+        var payloadLength = comma < 0 ? 0 : dataUrl.Length - comma - 1;
+
+        // 指纹 = 前缀 + 头 48 字符 + 长度：足以区分不同图标，又不驻留整段 16 KiB 载荷
+        var fingerprint = $"{dataUrl[..Math.Min(48, dataUrl.Length)]}|{dataUrl.Length}";
+        if (!_badInlineReported.TryAdd(fingerprint, true)) return;
+
+        LpLog.Warn("inline favicon could not be decoded (dropped; the default icon is shown) - "
+                   + $"value length {dataUrl.Length}, base64 payload length {payloadLength}"
+                   + $"{(payloadLength % 4 != 0 ? $" (payload length % 4 = {payloadLength % 4}; not a valid base64 length - the value was very likely truncated)" : "")}"
+                   + $": {dataUrl[..Math.Min(48, dataUrl.Length)]}…",
+            ex, category: "favicon");
     }
 
     /// <summary>确保磁盘缓存就绪并解码入内存（并发/去重/大小上限统一由 <see cref="FaviconCache"/> 保证）。</summary>

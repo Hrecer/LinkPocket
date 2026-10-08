@@ -13,10 +13,11 @@ namespace LinkPocket.Modules.Bookmarks;
 internal sealed class BookmarksImportHandler : ICommandHandler
 {
     // 数据库列长上限（schema 约束，超出截断——与既有导入器一致）
+    // 注意：**favicon 不在此列**。它是"要么可用、要么没有"的原子值，截断会产出永远解不开的
+    // base64（见 FaviconCache.NormalizeExternalIcon），所以走独立口径，不参与下面的截断。
     private const int MaxFolderNameLength = 255;
     private const int MaxLinkTitleLength = 255;
     private const int MaxLinkUrlLength = 2048;
-    private const int MaxLinkFaviconLength = 512;
 
     public CommandDescriptor Descriptor { get; } = new(
         Name: "bookmarks.import",
@@ -86,7 +87,8 @@ internal sealed class BookmarksImportHandler : ICommandHandler
                     Url = NetscapeReader.Truncate(item.Url, MaxLinkUrlLength) ?? string.Empty,
                     Title = NetscapeReader.Truncate(item.Title, MaxLinkTitleLength),
                     Description = item.Description,
-                    FaviconUrl = NetscapeReader.Truncate(item.IconUrl, MaxLinkFaviconLength),
+                    // 图标走"原样可用 or 当它没有"：截断出来的坏 base64 会让整片列表永远空白
+                    FaviconUrl = FaviconCache.NormalizeExternalIcon(item.IconUrl),
                     ListId = parentFolderId,
                     VisitCount = 0,
                     IsImportant = false,

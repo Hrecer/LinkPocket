@@ -31,7 +31,8 @@ public class TrashedLink
     [Column("description")]
     public string? Description { get; set; }
 
-    [MaxLength(512)]
+    /// <summary>图标地址（快照）：口径与 <see cref="Link.FaviconUrl"/> 一致，上限同样 16 KiB。</summary>
+    [MaxLength(16384)]
     [Column("favicon_url")]
     public string? FaviconUrl { get; set; }
 

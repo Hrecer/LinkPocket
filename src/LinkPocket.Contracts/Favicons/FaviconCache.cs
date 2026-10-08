@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -61,6 +62,68 @@ public static class FaviconCache
     public static bool IsInlineData(string? url)
         => !string.IsNullOrWhiteSpace(url) && url.StartsWith("data:", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 外部来源（浏览器书签导出等）携带的内嵌图标上限（字符）。
+    /// </summary>
+    /// <remarks>
+    /// 真实站点图标 base64 化后通常 1–6 KB，16 KiB 有充分余量；**这不是截断线，是"认不认"的判据**
+    /// （超过即按"没有图标"处理，见 <see cref="NormalizeExternalIcon"/>）。
+    /// </remarks>
+    public const int MaxInlineIconLength = 16 * 1024;
+
+    /// <summary>
+    /// 外部来源 favicon 值的规范化（导入/迁移的**唯一口径**）：要么原样可用、要么当它没有。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么绝不截断</b>：对 <c>data:</c> URI 截断是纯破坏 —— 前缀 <c>data:image/png;base64,</c>
+    /// 占 22 字符，砍到 512 后载荷只剩 490，而 <c>490 % 4 = 2</c>，
+    /// <see cref="Convert.FromBase64String"/> 必然抛 <c>FormatException</c>；解码处又是
+    /// <c>catch { return null }</c>，于是"库里明明存着图标、界面永远画不出来"，且没有一条日志。
+    /// 真实库里 17 745 条就是这么坏的（占全部内联图标的绝大部分）。
+    /// </para>
+    /// <para>
+    /// 普通 URL 同理：半截地址必然 404，截断没有任何意义。所以超限一律判"没有图标"，
+    /// 让界面走网络回落（站点根 <c>/favicon.ico</c> → 聚合源），也不往库里写一条永远解不开的死数据。
+    /// </para>
+    /// </remarks>
+    public static string? NormalizeExternalIcon(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var icon = value.Trim();
+        if (icon.Length > MaxInlineIconLength) return null;
+        if (IsInlineData(icon) && !IsDecodableInlineData(icon)) return null;
+
+        return icon;
+    }
+
+    /// <summary>
+    /// 内嵌图标的载荷是否真能解出字节（<c>base64</c> 长度合法且非空）。
+    /// </summary>
+    /// <remarks>
+    /// 只做"能不能解"的判断，不产出字节（调用方拿到 true 后会各自解码）。
+    /// 判定口径与 <see cref="LinkPocket.Services.FaviconService"/> 的解码口径一致：
+    /// 逗号后必须是 base64，且 <see cref="Convert.FromBase64String"/> 不抛。
+    /// </remarks>
+    public static bool IsDecodableInlineData(string dataUrl)
+    {
+        try
+        {
+            var comma = dataUrl.IndexOf(',');
+            if (comma < 0 || comma + 1 >= dataUrl.Length) return false;
+
+            var meta = dataUrl.Substring(5, comma - 5);
+            if (!meta.Contains("base64", StringComparison.OrdinalIgnoreCase)) return false;
+
+            return Convert.FromBase64String(dataUrl[(comma + 1)..]).Length > 0;
+        }
+        catch
+        {
+            return false;   // 截断的 base64、非法字符等：判"不可用"
+        }
+    }
+
     /// <summary>日志用的地址短写（内嵌图标与超长地址绝不整段进日志：单日 5.2 MB 日志的成因）。</summary>
     private static string ShortUrl(string url)
         => url.Length <= 96 ? url : string.Concat(url.AsSpan(0, 96), "…(", url.Length.ToString(), " chars)");
@@ -70,9 +133,15 @@ public static class FaviconCache
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        // 图标与页面同源，挡在 Cloudflare 后面的站点同样只对 h2 放行、对 HTTP/1.1 直接 403。
+        // 不跟着走 h2，就会出现"页面解析成功、图标却永远下不来"（meoai.net 就是这一例）。
+        client.DefaultRequestVersion = HttpVersion.Version20;
+        client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         // 部分 CDN 对无 UA 请求直接拒绝或返回异常内容
         client.DefaultRequestHeaders.Add("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.Add("Accept", "image/avif,image/webp,image/png,image/*,*/*;q=0.8");
+        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
         return client;
     }
 

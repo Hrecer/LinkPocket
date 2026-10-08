@@ -32,6 +32,35 @@ internal static class MetadataFetcher
 
     private static readonly HttpClient Client = CreateClient();
 
+    /// <summary>
+    /// 系统代理地址；<c>null</c> = 未配代理。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么必须单独认出来</b>：本机代理天然是 <c>127.0.0.1</c> / <c>localhost</c>，而下面
+    /// <see cref="IsAllowed"/> 的 SSRF 守护又正是要挡环回地址 —— 两者撞在一起，结果就是
+    /// <b>只要系统装了代理，元数据抓取就 100% 失败</b>（<c>refused to connect (loopback/link-local)</c>）。
+    /// 浏览器走系统代理一切正常、工具却抓不到，就是这一条。
+    /// </remarks>
+    private static readonly Uri? SystemProxy = ResolveSystemProxy();
+
+    private static Uri? ResolveSystemProxy()
+    {
+        try
+        {
+            var proxy = HttpClient.DefaultProxy;
+            if (proxy is null) return null;
+
+            // 探测用一个不可能被直连的名字：有代理时返回代理地址，无代理时返回探测目标本身。
+            var probe = new Uri("http://linkpocket-proxy-probe.invalid/");
+            var resolved = proxy.GetProxy(probe);
+            return resolved is not null && resolved.Host != probe.Host ? resolved : null;
+        }
+        catch
+        {
+            return null;   // 探测不出代理就当没代理：守护保持最严口径
+        }
+    }
+
     private static HttpClient CreateClient()
     {
         var handler = new SocketsHttpHandler
@@ -42,8 +71,16 @@ internal static class MetadataFetcher
         };
 
         var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+        // 默认是 HTTP/1.1；真实浏览器走 h2。部分站点（Cloudflare 前置的）只对 h2 放行。
+        client.DefaultRequestVersion = HttpVersion.Version20;
+        client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
         client.DefaultRequestHeaders.Add("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        // 补齐浏览器常规请求头：只带 UA 的"裸请求"会被不少站点（含部分 CDN）直接判为机器人。
+        client.DefaultRequestHeaders.Add("Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+        client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        client.DefaultRequestHeaders.Add("Upgrade-Insecure-Requests", "1");
         return client;
     }
 
@@ -156,14 +193,23 @@ internal static class MetadataFetcher
     /// </summary>
     private static async ValueTask<Stream> ConnectPublicAsync(SocketsHttpConnectionContext context, CancellationToken ct)
     {
-        var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct).ConfigureAwait(false);
-        var target = Array.Find(addresses, IsAllowed)
-            ?? throw new IOException($"refused to connect (loopback/link-local address): {context.DnsEndPoint.Host}");
+        var endpoint = context.DnsEndPoint;
+
+        // 配了系统代理时，握手端点就是代理本身：它是用户自己选的出口，不是被抓取的目标，
+        // 不能拿环回判据去挡（挡了等于断网）。目标主机的解析交给代理去做。
+        var toProxy = IsSystemProxy(endpoint);
+        if (!toProxy)
+        {
+            var addresses = await Dns.GetHostAddressesAsync(endpoint.Host, ct).ConfigureAwait(false);
+            var allowed = Array.Find(addresses, IsAllowed)
+                ?? throw new IOException($"refused to connect (loopback/link-local address): {endpoint.Host}");
+            endpoint = new DnsEndPoint(allowed.ToString(), endpoint.Port);
+        }
 
         var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
         try
         {
-            await socket.ConnectAsync(new IPEndPoint(target, context.DnsEndPoint.Port), ct).ConfigureAwait(false);
+            await socket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
             return new NetworkStream(socket, ownsSocket: true);
         }
         catch
@@ -171,6 +217,19 @@ internal static class MetadataFetcher
             socket.Dispose();
             throw;
         }
+    }
+
+    /// <summary>该端点是不是系统代理本身（是则免于环回/链路本地判定）。</summary>
+    private static bool IsSystemProxy(DnsEndPoint endpoint)
+    {
+        if (SystemProxy is null) return false;
+        if (endpoint.Port != SystemProxy.Port) return false;
+
+        if (string.Equals(endpoint.Host, SystemProxy.Host, StringComparison.OrdinalIgnoreCase)) return true;
+
+        // 代理写的是 127.0.0.1、端点拿到 localhost（或反之）：同为环回即视为同一个出口。
+        return IPAddress.TryParse(endpoint.Host, out var a) && IPAddress.IsLoopback(a)
+               && IPAddress.TryParse(SystemProxy.Host, out var b) && IPAddress.IsLoopback(b);
     }
 
     private static bool IsAllowed(IPAddress address)

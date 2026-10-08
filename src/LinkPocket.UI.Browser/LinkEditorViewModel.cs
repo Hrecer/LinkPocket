@@ -180,8 +180,11 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 });
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // 界面文案承诺"详情见日志"，这里就必须真的把详情落下去：
+            // 曾经是个光秃 catch（异常到手即弃），于是日志里空无一物、无从排查（meoai 那次就是这么耗掉的）。
+            LpLog.Error($"metadata auto-parse failed: {Url}", ex);
             Error = Loc.K("editor.err.autoParseFailed");
         }
         finally
