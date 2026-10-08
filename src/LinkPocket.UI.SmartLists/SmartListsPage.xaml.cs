@@ -352,7 +352,7 @@ namespace LinkPocket.Views
                             earthIcon.Visibility = Visibility.Collapsed;
                         });
                     }
-                    catch { }
+                    catch { /* 图标解码/加载失败：保留地球占位符 */ }
                 });
             }
 

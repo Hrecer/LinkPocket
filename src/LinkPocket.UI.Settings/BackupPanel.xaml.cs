@@ -118,7 +118,7 @@ namespace LinkPocket.Views
                 HideOverlay(overlay);
 
                 try { System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{outputPath}\""); }
-                catch { }
+                catch { /* 打开资源管理器失败（如无 explorer）：备份已落盘，不阻断 */ }
 
                 ConfirmDialog.Show(
                     Loc.T("backup.exportSuccessTitle"),

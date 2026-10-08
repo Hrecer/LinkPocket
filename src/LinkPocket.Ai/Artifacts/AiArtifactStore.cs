@@ -1,3 +1,5 @@
+using LinkPocket.Contracts;
+
 namespace LinkPocket.Ai;
 
 /// <summary>

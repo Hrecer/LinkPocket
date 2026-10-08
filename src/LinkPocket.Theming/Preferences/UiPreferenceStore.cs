@@ -176,26 +176,19 @@ public static class UiPreferenceStore
         return failed ? null : prefs.Fonts.Ui;
     }
 
-    /// <summary>保存偏好（原子替换）。失败**抛出**——写不进去必须让调用方知道。</summary>
+    /// <summary>保存偏好（原子替换，**唯一实现 = 契约层 <see cref="AtomicFile"/>**——与 AI 数据文件同一口径）。
+    /// 失败**抛出**——写不进去必须让调用方知道。</summary>
     public static void Save(UiPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         var path = FilePath;
-        var tmp = path + ".tmp";
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            File.WriteAllText(tmp, JsonSerializer.Serialize(preferences, Json));
-
-            if (File.Exists(path))
-                File.Replace(tmp, path, destinationBackupFileName: null);
-            else
-                File.Move(tmp, path);
+            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(preferences, Json));
         }
         catch (Exception ex)
         {
             LpLog.Error($"failed to save UI preferences: {path}", ex, LogCategory);
-            TryDelete(tmp);
             throw;
         }
     }

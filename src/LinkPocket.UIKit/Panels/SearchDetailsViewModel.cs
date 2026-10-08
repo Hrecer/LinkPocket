@@ -74,14 +74,14 @@ public class SearchDetailsViewModel : DetailSidebarModel
     }
 
     public ICommand CopyIdCommand => _copyIdCommand ??= new RelayCommand(
-        () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { } },
+        () => { try { if (!string.IsNullOrEmpty(IdText)) System.Windows.Clipboard.SetText(IdText); } catch { /* 剪贴板被占用：复制失败不阻断 */ } },
         () => IsLink && !string.IsNullOrEmpty(IdText));   // 与 CopyUrlCommand 对齐（单选链接且非空）
     private RelayCommand? _copyIdCommand;
 
     public SearchDetailsViewModel()
     {
         CopyUrlCommand = new RelayCommand(
-            () => { try { if (!string.IsNullOrEmpty(UrlText)) System.Windows.Clipboard.SetText(UrlText); } catch { } },
+            () => { try { if (!string.IsNullOrEmpty(UrlText)) System.Windows.Clipboard.SetText(UrlText); } catch { /* 剪贴板被占用：复制失败不阻断 */ } },
             () => IsLink && !string.IsNullOrEmpty(UrlText));
     }
 
@@ -144,7 +144,7 @@ public class SearchDetailsViewModel : DetailSidebarModel
                         OnPropertyChanged(nameof(HasFavicon));
                     });
                 }
-                catch { }
+                catch { /* 图标解码/加载失败：详情区显示占位符 */ }
             });
         }
     }

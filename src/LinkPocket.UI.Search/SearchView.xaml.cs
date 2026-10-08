@@ -245,7 +245,7 @@ public partial class SearchView : UserControl
                         });
                     }
                 }
-                catch { }
+                catch { /* 图标解码/加载失败：保留地球占位符 */ }
             });
         }
 

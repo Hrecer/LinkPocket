@@ -359,13 +359,14 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                 searchTitle: SearchTitle, searchUrl: SearchUrl,
                 searchDescription: SearchDesc, searchPath: SearchPath);
             await Task.WhenAll(linksTask, countTask);
-            var dtos = linksTask.Result;
+            var dtos = await linksTask;
 
             LastQuery = query;
 
             // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
-            TotalHitCount = countTask.Result;
-            ResultsTruncated = TotalHitCount > dtos.Count;
+            var total = await countTask;
+            TotalHitCount = total;
+            ResultsTruncated = total > dtos.Count;
             var results = dtos.Select(LinkItem.FromDto).ToList();
 
             OnPropertyChanged(nameof(TotalHitCount));
@@ -505,12 +506,14 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             await Task.WhenAll(linksTask, countTask);
             if (gen != _scopeRefreshGen) return; // 已有更新的范围变化，放弃旧结果
 
-            TotalHitCount = countTask.Result;
-            ResultsTruncated = TotalHitCount > linksTask.Result.Count;
+            var total = await countTask;
+            var links = await linksTask;
+            TotalHitCount = total;
+            ResultsTruncated = total > links.Count;
             OnPropertyChanged(nameof(TotalHitCount));
             OnPropertyChanged(nameof(ResultsTruncated));
             OnPropertyChanged(nameof(ResultNotice));
-            var results = linksTask.Result.Select(LinkItem.FromDto).ToList();
+            var results = links.Select(LinkItem.FromDto).ToList();
             Results = results;
 
             // 选中保持（多选亦然）：剔除已不在新结果里的 ID；其余保持（投影自动更新行与右栏）

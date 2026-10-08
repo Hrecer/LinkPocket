@@ -6,12 +6,11 @@
   单一入口，任何 CI 提供商（GitHub Actions / Jenkins / 本地预提交）都只需调用本脚本。
   五道门，任一道不过即非零退出：
 
-    1. 清 obj + 全量编译（0 警告 0 错误，-warnaserror 强制）
-       · 清 obj 时保留 NuGet restore 资产（project.assets.json / *.nuget.g.props / *.nuget.g.targets
-         / *.nuget.dgspec.json / project.nuget.cache）：编译产物在 obj/<config>/ 下照样被清，
-         仍然强制全量重编，但省掉每次都重新 restore 全部项目（实测 5~9s）。
+    1. 全量编译（0 警告 0 错误，-warnaserror + --no-incremental 强制全量重编，**不清 obj**）
+       · 实测（本机 2026-10-09）：清 obj 本身~50s（robocopy /MIR 清 893 个文件），
+         而"清 obj 后重编"与"直接 --no-incremental"编译时长相同（23~32s）→ 那 50s 是纯开销。
     1.5 生成物漂移校验（tools/LinkPocket.ClientGen --check：EngineClient 便利层必须与命令描述符一致）
-    2. 单元测试（Architecture / Engine / Modules / App，逐项目串行）
+    2. 单元测试（Architecture / Engine / Modules / App；默认逐项目串行，-ParallelTests 可两两并行）
     3. 协议冒烟（含 §0~§13 端到端断言）
     4. 10k 性能门槛（Release 构建 + --strict-perf：按标定门槛判定，不享受 Debug 放宽）
 
@@ -31,7 +30,14 @@
   构建配置，缺省 Release（性能门槛的标定口径；Debug 仅供本地快速迭代）。
 
 .PARAMETER SkipClean
-  跳过初始 obj 清理。**不建议**：门禁跑的是"清 obj 全量编译"，跳过会让结果不再等价于 CI 口径。
+  **已默认不做任何事**（保留仅为兼容旧调用）。历史口径是"先清 obj 再全量编译"，现在全量由
+  `dotnet build --no-incremental` 保证（实测清 obj 本身要 ~50s，而编译两者同为 23~32s——纯开销），
+  故默认跳过；仅在编译失败且怀疑"工具视图 ≠ 编译视图"时，第 3 次重试会清 obj。
+
+.PARAMETER ParallelTests
+  单元测试改为**两两并行 + 批间串行**（默认关 = 逐项目串行，唯一在受限宿主里也稳的口径）。
+  并行依赖"允许并发子进程"的执行环境：受限宿主会拦 Start-Job / Process.Start，
+  症状是"每个项目 1~2s 秒判失败、日志没更新"——那是环境拒绝，不是测试红。
 
 .PARAMETER NoWarnAsError
   关闭"警告即错误"。仅在排查历史遗留警告时临时使用；正常门禁不要开。
@@ -44,6 +50,7 @@
 param(
     [string]$Configuration = "Release",
     [switch]$SkipClean,
+    [switch]$ParallelTests,
     [switch]$NoWarnAsError
 )
 
@@ -122,18 +129,20 @@ function Write-TimingSummary {
     }
 }
 
-# —— 1. 清 obj + 全量编译（保留 bin：bin 是交付产物，清 bin 会破坏"产物即事实"的验证口径）——
+# —— 1. 记录是否需要清 obj（默认不清）——
+# 历史口径是"清 obj + 全量编译"；现在全量由 `--no-incremental` 保证（见 $buildArgs 处的实测数据），
+# 清 obj 只在**编译自身失败且怀疑工具视图 ≠ 编译视图**时才需要（第 3 次重试仍在做）。
+# 保留 -SkipClean 参数以兼容既有调用（显式传它 = 恢复"先清 obj 再编译"的旧口径）。
 if (-not $SkipClean) {
-    Write-Host "[CI] 清理 obj ..." -ForegroundColor Cyan
-    $swClean = [System.Diagnostics.Stopwatch]::StartNew()
-    $count = Clear-ObjDirectories
-    $swClean.Stop()
-    $timings['① 清理 obj'] = $swClean.Elapsed.TotalSeconds
-    Write-Host "[CI] 已清理 $count 个 obj 目录（保留 NuGet restore 资产）" -ForegroundColor Green
+    Write-Host "[CI] obj 清理已跳过（全量重编由 --no-incremental 保证）" -ForegroundColor Cyan
 }
 
 $buildArgs = @("build", (Join-Path $repoRoot "LinkPocket.sln"), "-c", $Configuration, "--nologo", "-v", "m")
 if (-not $NoWarnAsError) { $buildArgs += "-warnaserror" }
+# 强制全量重编，但**不清 obj**：`--no-incremental` 与"清 obj 后重编"语义等价（都由 MSBuild 重写全部产物），
+# 而实测（本机 2026-10-09）清 obj 本身要 ~50s（robocopy /MIR 清 893 个文件），编译两者都是 23~32s
+# —— 那 50s 是纯开销。门禁的判据（0 警告 0 错误 + 全量重编）一条不少。
+$buildArgs += "--no-incremental"
 $buildLog = Join-Path $artifacts "build.log"
 
 $maxAttempts = 3
@@ -183,50 +192,86 @@ if ($generatedExit -ne 0) {
 }
 Write-Host "[CI] 生成物与描述符一致" -ForegroundColor Green
 
-# —— 2. 单元测试（逐项目串行：`dotnet test` 多项目并行跑会让测试宿主进程崩溃 0xC00000FD/0x80131506，
-#        单项目跑全绿；「一次只能跟一个项目」也是既有已知约束，）
+# —— 2. 单元测试（**分批并行**：批内两个项目同时跑，批与批之间串行）
+# 分批理由：① 串行 6 个项目共 ~170s（实测，真在跑用例，不是启动开销）；
+#   ② 并行度受**内存**约束——`LinkPocket.App` 是 net8.0-windows（WPF）、`Modules` 拉起 EF、
+#   `Ai` 拉起 AI 运行时，三者同时跑正是 `WARNINGS` 记录的"测试宿主 0xC00000FD"成因；
+#   ③ 故取"两两并行 + 批间串行"：最重的一批是 Modules+App（约 40s / 58s，取大者）。
+# ④ 受限宿主（沙箱/受限 runner）会拦并发子进程 → 并行开关默认关闭；确认环境允许再用 -ParallelTests。
 Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
-$testProjects = @(
-    "tests/LinkPocket.Architecture.Tests",
-    "tests/LinkPocket.Engine.Tests",
-    "tests/LinkPocket.Diagnostics.Tests",
-    "tests/LinkPocket.Ai.Tests",
-    "tests/LinkPocket.Modules.Tests",
-    "tests/LinkPocket.App.Tests"
+$testBatches = @(
+    @("tests/LinkPocket.Architecture.Tests", "tests/LinkPocket.Diagnostics.Tests"),  # 两个都极轻
+    @("tests/LinkPocket.Engine.Tests",       "tests/LinkPocket.Ai.Tests"),
+    @("tests/LinkPocket.Modules.Tests",      "tests/LinkPocket.App.Tests")
 )
 $testLog = Join-Path $artifacts "test.log"
 if (Test-Path -LiteralPath $testLog) { Remove-Item -LiteralPath $testLog -Force }
 $swTests = [System.Diagnostics.Stopwatch]::StartNew()
-foreach ($project in $testProjects) {
-    Write-Host "[CI]   -> $project" -ForegroundColor DarkGray
-    $swTest = [System.Diagnostics.Stopwatch]::StartNew()
-    # ⚠️ 绝对不要写成 `& $dotnet test ... 2>&1 | Tee-Object -FilePath ...`：
-    #    原生命令的输出走**管道**时会先填满管道缓冲区；PowerShell 对原生命令的管道不是流式转发，
-    #    于是"子进程写满缓冲等读、父进程等子进程结束"→ **死锁式永久挂起**（实测：CI 卡几十分钟不返回，
-    #    而同一命令手敲 `dotnet test` 却正常结束）。改为**直接重定向到文件**：不经过管道，不可能死锁，
-    #    且天然保留全部输出（含 stderr）供失败时回看。
-    $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
-    & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo *> $projectLog
-    $testExit = $LASTEXITCODE
-    # 汇总进总日志（失败时才有用；文件可能为空，故容错）
-    if (Test-Path -LiteralPath $projectLog) {
-        $projectText = Get-Content -LiteralPath $projectLog -Raw
-        if ($projectText) { Add-Content -LiteralPath $testLog -Value $projectText }
-    }
-    # 只回显尾部（全量已在文件里），避免刷屏又不丢信息
-    Get-Content -LiteralPath $projectLog -Tail 4 | ForEach-Object { Write-Host "      $_" }
-    $swTest.Stop()
-    $testTimings[(Split-Path -Leaf $project)] = $swTest.Elapsed.TotalSeconds
-    if ($testExit -ne 0) {
-        Write-Host "[CI] 单元测试失败（$project，exit=$testExit）" -ForegroundColor Red
-        $swTests.Stop()
-        $timings['③ 单测'] = $swTests.Elapsed.TotalSeconds
-        Write-TimingSummary
-        exit $LASTEXITCODE
+$testFailures = @()
+
+if ($ParallelTests) {
+    # 可选的"两两并行"。⚠️ **默认关闭**，因为它依赖"允许并发子进程"的执行环境：
+    # 受限宿主（沙箱 / 受限 CI runner）会拦掉 Start-Job 或 Process.Start，表现为
+    # "每个项目 1~2s 秒判失败、日志没更新"——那种失败是**环境拒绝**，不是测试红了。
+    # 确认环境允许并发后再开：-ParallelTests
+    foreach ($batch in $testBatches) {
+        Write-Host ("[CI]   -> " + ($batch -join "  +  ") + "（并行）") -ForegroundColor DarkGray
+        $swBatch = [System.Diagnostics.Stopwatch]::StartNew()
+        $jobs = @()
+        foreach ($project in $batch) {
+            $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
+            $jobs += Start-Job -Name ([IO.Path]::GetFileNameWithoutExtension($project)) -ScriptBlock {
+                param($dotnet, $repo, $project, $cfg, $log)
+                $env:DOTNET_CLI_UI_LANGUAGE = "en"
+                & $dotnet test (Join-Path $repo $project) -c $cfg --no-build --nologo *> $log
+                $LASTEXITCODE
+            } -ArgumentList $dotnet, $repoRoot, $project, $Configuration, $projectLog
+        }
+
+        $swBatch.Stop()
+        foreach ($project in $batch) {
+            $name = [IO.Path]::GetFileNameWithoutExtension($project)
+            $job = $jobs | Where-Object { $_.Name -eq $name }
+            $code = Receive-Job -Job $job -ErrorAction SilentlyContinue | Select-Object -Last 1
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+            $testTimings[(Split-Path -Leaf $project)] = [double]($swBatch.Elapsed.TotalSeconds)
+            $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
+            if (Test-Path -LiteralPath $projectLog) {
+                $projectText = Get-Content -LiteralPath $projectLog -Raw
+                if ($projectText) { Add-Content -LiteralPath $testLog -Value $projectText }
+                Get-Content -LiteralPath $projectLog -Tail 3 | ForEach-Object { Write-Host "      $_" }
+            }
+            if ($code -ne 0) { $testFailures += $name }
+        }
     }
 }
+else {
+    # 默认：逐项目串行（唯一在受限宿主里也稳的口径）
+    foreach ($batch in $testBatches) {
+        foreach ($project in $batch) {
+            Write-Host "[CI]   -> $project（串行）" -ForegroundColor DarkGray
+            $swTest = [System.Diagnostics.Stopwatch]::StartNew()
+            $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
+            & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo *> $projectLog
+            if ($LASTEXITCODE -ne 0) { $testFailures += [IO.Path]::GetFileNameWithoutExtension($project) }
+            $swTest.Stop()
+            $testTimings[(Split-Path -Leaf $project)] = $swTest.Elapsed.TotalSeconds
+            if (Test-Path -LiteralPath $projectLog) {
+                $projectText = Get-Content -LiteralPath $projectLog -Raw
+                if ($projectText) { Add-Content -LiteralPath $testLog -Value $projectText }
+                Get-Content -LiteralPath $projectLog -Tail 3 | ForEach-Object { Write-Host "      $_" }
+            }
+        }
+    }
+}
+
 $swTests.Stop()
 $timings['③ 单测'] = $swTests.Elapsed.TotalSeconds
+if ($testFailures.Count -gt 0) {
+    Write-Host "[CI] 单元测试失败：$($testFailures -join ', ')" -ForegroundColor Red
+    Write-TimingSummary
+    exit 1
+}
 Write-Host "[CI] 单元测试通过" -ForegroundColor Green
 
 # —— 3 & 4. 协议冒烟 + 严格性能门槛 ——

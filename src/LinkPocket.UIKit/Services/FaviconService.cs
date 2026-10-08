@@ -168,7 +168,7 @@ public class FaviconService
             if (bmp.CanFreeze) bmp.Freeze();
             Store(resolvedUrl, bmp);
         }
-        catch { }
+        catch { /* 字节流不是合法图像（坏图/格式不支持）：调用方回落地球占位符 */ }
     }
 
     public async Task<BitmapImage?> GetFaviconAsync(string? faviconUrl, string pageUrl)
@@ -199,7 +199,7 @@ public class FaviconService
                 Store(resolvedUrl, bmp);
                 return bmp;
             }
-            catch { }
+            catch { /* 同上：解码失败即当作没有图标 */ }
         }
 
         if (!await FaviconCache.EnsureCachedAsync(resolvedUrl))

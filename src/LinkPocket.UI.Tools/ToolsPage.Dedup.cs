@@ -251,7 +251,7 @@ public partial class ToolsPage : UserControl
         {
             if (!string.IsNullOrEmpty(VmTools.CurrentGroupUrl))
             {
-                try { Clipboard.SetText(VmTools.CurrentGroupUrl); } catch { }
+                try { Clipboard.SetText(VmTools.CurrentGroupUrl); } catch { /* 剪贴板被占用：复制失败不阻断 */ }
             }
         }
 
@@ -365,7 +365,7 @@ public partial class ToolsPage : UserControl
                             });
                         }
                     }
-                    catch { }
+                    catch { /* 图标解码/加载失败：保留地球占位符 */ }
                 });
             }
 

@@ -146,7 +146,7 @@ public partial class App : Application
         {
             Environment.SetEnvironmentVariable("WER_DISABLE_DIALOGS", "1");
         }
-        catch { }
+        catch { /* 进程级环境变量在某些宿主下不可写；设不上不影响功能，绝不因此中断启动 */ }
     }
 
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
@@ -163,7 +163,7 @@ public partial class App : Application
                     Loc.T("app.err.unhandled", e.Exception.Message),
                     Loc.T("app.err.startupTitle"), "alert-circle-outline");
         }
-        catch { }
+        catch { /* 异常处理路径自身出错时以已落盘的日志为准；再弹一次只会死循环 */ }
         e.Handled = true;
     }
 

@@ -345,7 +345,7 @@ public sealed class UndoCoordinator : IUndoCoordinator, IDisposable
         long total = 0;
         foreach (var name in referenced)
         {
-            try { total += new FileInfo(Path.Combine(_partsDir, name)).Length; } catch { }
+            try { total += new FileInfo(Path.Combine(_partsDir, name)).Length; } catch { /* 统计不出体积就按 0 计：只影响分片回收阈值，不影响撤销正确性 */ }
         }
         if (total <= MaxPartsBytes) return;
 
@@ -357,9 +357,9 @@ public sealed class UndoCoordinator : IUndoCoordinator, IDisposable
             if (total <= MaxPartsBytes) break;
             if (!_readyParts.TryGetValue(entry.Id, out var part)) continue;
             long size = 0;
-            try { size = new FileInfo(Path.Combine(_partsDir, part.Name)).Length; } catch { }
+            try { size = new FileInfo(Path.Combine(_partsDir, part.Name)).Length; } catch { /* 同上：取不到体积按 0 计 */ }
             DropEntry(entry.Id);
-            try { File.Delete(Path.Combine(_partsDir, part.Name)); } catch { }
+            try { File.Delete(Path.Combine(_partsDir, part.Name)); } catch { /* 分片已被删/被占用：回收尽力而为，遗留文件由下次加载重扫 */ }
             _readyParts.Remove(entry.Id);
             total -= size;
             dropped++;

@@ -221,7 +221,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 // async lambda + await，不在 Task.Run 里同步 GetAwaiter().GetResult()（与 FetchMetadataAsync 同构）
                 Favicon = await Task.Run(async () =>
                 {
-                    try { await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl); } catch { }
+                    try { await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl); } catch { /* 图标抓取失败：界面有地球占位符，不影响编辑 */ }
                     return Services.FaviconService.LoadFromCache(favUrl);
                 });
             }

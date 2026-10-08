@@ -93,7 +93,7 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
                     if (File.Exists(candidate)) File.Delete(candidate);
                 }
                 catch (IOException) { /* 连接池句柄滞留：交给系统清理 */ }
-                catch (UnauthorizedAccessException) { }
+                catch (UnauthorizedAccessException) { /* 临时文件被占用/无权限：尽力而为，交由系统清理 */ }
             }
         }
     }

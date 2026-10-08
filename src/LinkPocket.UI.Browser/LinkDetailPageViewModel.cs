@@ -162,7 +162,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
             System.Windows.Clipboard.SetText(Url);
             _host.StatusText = Loc.K("status.linkCopied");   // 复制反馈
         }
-        catch { }
+        catch { /* 剪贴板被占用/会话不可用：复制失败不阻断命令（用户可手动复制） */ }
     }
 
     private void CopyIdValue(string id)
@@ -173,7 +173,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
             System.Windows.Clipboard.SetText(id);
             _host.StatusText = Loc.K("status.idCopied");   // 复制反馈
         }
-        catch { }
+        catch { /* 剪贴板被占用/会话不可用：复制失败不阻断命令（用户可手动复制） */ }
     }
 
     private void Edit()

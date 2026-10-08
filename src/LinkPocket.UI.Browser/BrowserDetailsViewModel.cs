@@ -43,7 +43,8 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                 System.Windows.Clipboard.SetText(IdText);
                 if (_host != null) _host.StatusText = Loc.K("status.idCopied");
             }
-            catch { }
+            // 剪贴板被其它进程占用 / 会话无剪贴板：复制失败不该炸掉整条命令，也不必提示（用户手动复制即可）
+            catch { /* 剪贴板不可用：不阻断命令 */ }
         });
     private RelayCommand? _copyIdCommand;
 
@@ -96,7 +97,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
                     System.Windows.Clipboard.SetText(UrlText);
                     if (_host != null) _host.StatusText = Loc.K("status.linkCopied");
                 }
-                catch { }
+                catch { /* 剪贴板不可用：不阻断命令 */ }
             },
             () => IsLink && !string.IsNullOrEmpty(UrlText));
         // 「跳转」= 把选中项带到眼前（经定位组件：进它所在目录 + 选中该行；**已在同目录时就是"选中并滚入视口"**）。
