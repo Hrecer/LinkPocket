@@ -97,7 +97,7 @@ namespace LinkPocket.ViewModels
             Cards = cards;
         }
 
-        public async void OpenSmartList(string listId)
+        public async void OpenSmartList(string listId, int? days = null)
         {
             IsLoading = true;
             var generation = ++_openGeneration;
@@ -109,7 +109,7 @@ namespace LinkPocket.ViewModels
                 {
                     Subtitle = def.Subtitle,
                 };
-                await resultVm.LoadAsync();
+                await resultVm.LoadAsync(days);
                 // 代次校验：期间用户已返回卡片页或打开了别的列表 → 晚到结果不覆盖
                 if (generation != _openGeneration) return;
                 ResultViewModel = resultVm;

@@ -241,13 +241,17 @@ namespace LinkPocket.ViewModels
             if (item != null) FocusRowRequested?.Invoke(this, item);
         }
 
-        public async Task LoadAsync()
+        /// <summary>
+        /// 装载当前列表的数据。<c>days</c> = 时间窗覆盖（**null = 命令缺省 7 天**，即用户口径）；
+        /// 探针等自动化用大窗口拿到足够样本，才能真正核对"渲染行序 = 排序"（小窗口在旧数据上恒为空）。
+        /// </summary>
+        public async Task LoadAsync(int? days = null)
         {
             IsLoading = true;
             try
             {
                 var limit = _listId == "most_visited" ? 20 : 100;
-                List<LinkDto> links = await _client.LinkSmartListAsync(_listId, limit);
+                List<LinkDto> links = await _client.LinkSmartListAsync(_listId, limit, days: days);
 
                 TotalCount = links.Count;
 
