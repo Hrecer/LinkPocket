@@ -1,6 +1,7 @@
 using System.Text.Json;
 using LinkPocket.Cli;
 using LinkPocket.Composition;
+using LinkPocket.Contracts;
 using LinkPocket.Engine;
 using LinkPocket.Mcp;
 
@@ -131,7 +132,9 @@ internal static partial class SmokeRunner
     {
         var stdout = new StringWriter();
         var stderr = new StringWriter();
-        var exit = await CliRunner.RunAsync(argv, stdout, stderr, host, null);
+        // 与真实命令行入口同一身份（Program 传 CallerRef.ExternalAgent）：否则"外部进程写的"这件事
+        // 在审计里被标成 ui，跨进程变更流就认不出来（§13 用它断言）。
+        var exit = await CliRunner.RunAsync(argv, stdout, stderr, host, CallerRef.ExternalAgent);
         return (exit, stdout.ToString(), stderr.ToString());
     }
 }

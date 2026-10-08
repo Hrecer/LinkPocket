@@ -49,7 +49,8 @@ public sealed class AppHost : IDisposable
 
     /// <summary>
     /// **外部写入观察者**：轮询跨进程变更探针，发现"CLI / 外部 Agent 写过这个库"时
-    /// **先失效查询缓存、再把变更汇入 <see cref="Hub"/> 的同一条 300ms 防抖通道**。
+    /// 读一次**精确变更流**（附属库审计尾）→ **按实际发布的事件名精确失效查询缓存** →
+    /// 再把精确变更汇入 <see cref="Hub"/> 的同一条 300ms 防抖通道。
     /// 没有它，外部写入既不会被界面感知（要手动刷新），缓存也不会失效（刷新也读到旧值）。
     /// </summary>
     public ExternalChangeWatcher ExternalChanges { get; }
@@ -60,13 +61,13 @@ public sealed class AppHost : IDisposable
     /// </summary>
     public IServiceProvider Services { get; private set; } = null!;
 
-    private AppHost(EngineClient client, EngineWire wire, string databasePath)
+    private AppHost(EngineClient client, EngineWire wire, string databasePath, IChangeFeed? changeFeed)
     {
         Client = client;
         Wire = wire;
         Locator = new ContentLocator(client, () => LocateHost);
-        // 外部变更 → 先失效缓存（客户端门面透传）→ 再走枢纽；顺序由 watcher 内部保证。
-        ExternalChanges = new ExternalChangeWatcher(databasePath, client.InvalidateQueryCache, Hub);
+        // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
+        ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
     }
 
     /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）。应用退出时调用。</summary>
@@ -104,7 +105,7 @@ public sealed class AppHost : IDisposable
         if (composed.Wire is null)
             throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
-        var host = new AppHost(composed.Client, composed.Wire, dbPath);
+        var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed);
         host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
             LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新

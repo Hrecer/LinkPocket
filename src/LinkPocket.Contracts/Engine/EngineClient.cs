@@ -103,9 +103,11 @@ public sealed partial class EngineClient(IEngine engine)
     /// <summary>自描述：引擎全部能力（命令目录，AI 工具清单/文档的唯一事实源）。</summary>
     public EngineManifest Describe(string? category = null) => Engine.Describe(category);
 
-    /// <summary>整体失效查询缓存：**外部进程写过库**后由宿主先调用它、再刷新界面
-    /// （外部提交无进程内事件 → 事件驱动失效不触发 → 不失效就只能读到旧值）。见 <see cref="IEngine.InvalidateQueryCache"/>。</summary>
-    public void InvalidateQueryCache() => Engine.InvalidateQueryCache();
+    /// <summary>失效查询缓存：**外部进程写过库**后由宿主先调用它、再刷新界面
+    /// （外部提交无进程内事件 → 事件驱动失效不触发 → 不失效就只能读到旧值）。
+    /// 事件名 = 来自 <see cref="IChangeFeed"/> 的精确失效依据；空 = 整体清空（保守）。
+    /// 见 <see cref="IEngine.InvalidateQueryCache"/>。</summary>
+    public void InvalidateQueryCache(IReadOnlyList<string>? eventNames = null) => Engine.InvalidateQueryCache(eventNames);
 
     /// <summary>订阅引擎领域事件（links.changed / folders.changed / trash.changed / ...）。
     /// ⚠️ 订阅方纪律：处理器内不得同步回派命令（会自锁）——一律异步/防抖消费。</summary>

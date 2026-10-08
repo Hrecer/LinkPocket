@@ -74,4 +74,45 @@ public class UiEventHubTests
         await Task.Delay(400);
         Assert.Equal(0, fires);
     });
+
+    [Fact]
+    public Task 外部变更_精确负载立即投递_刷新仍走同一条防抖() => StaPump.RunAsync(async () =>
+    {
+        var hub = new UiEventHub();
+        var observed = new List<ExternalChange>();
+        hub.ExternalChangesObserved += changes => observed.AddRange(changes);
+        var fires = 0;
+        hub.RefreshRequested += () => fires++;
+
+        hub.NotifyExternalChanges([Change("links.move_batch")]);
+
+        // 精确负载**立即**到达（订阅方要据此做"改了什么"的反应，不能等防抖）；刷新仍走 300ms 尾沿
+        Assert.Single(observed);
+        Assert.Equal("links.move_batch", observed[0].Command);
+        Assert.Equal(0, fires);
+
+        await Task.Delay(400);
+        Assert.Equal(1, fires);
+    });
+
+    [Fact]
+    public Task 拿不到精确变更时_只刷新_不投递负载() => StaPump.RunAsync(async () =>
+    {
+        var hub = new UiEventHub();
+        var observed = 0;
+        hub.ExternalChangesObserved += _ => observed++;
+        var fires = 0;
+        hub.RefreshRequested += () => fires++;
+
+        hub.NotifyExternalChange();   // 退化口径：探针报了提交但变更流拿不到内容
+
+        Assert.Equal(0, observed);    // 没有精确信息 → 不编一条负载
+        await Task.Delay(400);
+        Assert.Equal(1, fires);       // 但刷新照旧（正确性不依赖精确）
+    });
+
+    private static ExternalChange Change(string command) => new(
+        Id: 1, At: DateTimeOffset.Now, Command: command, Caller: CallerRef.ExternalAgent.ToString(),
+        Success: true, DryRun: false, IsNested: false, BatchId: null,
+        Touched: [new EntityRef("link", "L1")], Events: ["links.changed"], HumanSummary: "Moved 1 link(s)");
 }

@@ -12,7 +12,7 @@
          仍然强制全量重编，但省掉每次都重新 restore 全部项目（实测 5~9s）。
     1.5 生成物漂移校验（tools/LinkPocket.ClientGen --check：EngineClient 便利层必须与命令描述符一致）
     2. 单元测试（Architecture / Engine / Modules / App，逐项目串行）
-    3. 协议冒烟（含 §0~§12 端到端断言）
+    3. 协议冒烟（含 §0~§13 端到端断言）
     4. 10k 性能门槛（Release 构建 + --strict-perf：按标定门槛判定，不享受 Debug 放宽）
 
   收尾：关闭本次门禁起的常驻编译服务器（MSBuild 节点 / VBCSCompiler），并打印分阶段耗时表。

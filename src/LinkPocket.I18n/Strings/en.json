@@ -303,6 +303,7 @@
   "browser.status.linkCreated": "New link",
   "browser.status.folderGone": "That folder was deleted elsewhere \u2014 back at the root",
   "browser.status.linkGone": "That bookmark was deleted elsewhere",
+  "browser.status.externalChange": "Applied {0} change(s) made by another process",
   "common.newFolder": "New folder",
   "details.noInfo": "No information",
   "editor.title.edit": "Edit link",

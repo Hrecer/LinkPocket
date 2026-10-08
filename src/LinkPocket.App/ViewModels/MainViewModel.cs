@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -39,6 +40,12 @@ namespace LinkPocket.ViewModels
         /// <c>refresh:</c> 防抖驱动的活跃页刷新、<c>tree:</c> 目录树重载。
         /// </remarks>
         private const string NavLogCategory = "app.nav";
+
+        /// <summary>
+        /// 外部进程（CLI / 外部 Agent）写入的日志分类（观测面）：现场按它取
+        /// "那次整理到底跑了哪些命令、改了多少处"。
+        /// </summary>
+        private const string ExternalLogCategory = "app.external";
 
         /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
         private readonly EngineClient _client;
@@ -85,6 +92,23 @@ namespace LinkPocket.ViewModels
             // 事件推送：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
             // 本 VM 只按当前活跃视图路由刷新（防抖在枢纽内完成）。
             _events.RefreshRequested += OnBackendRefresh;
+            // 外部进程（CLI / 外部 Agent）的**精确变更**：在刷新之外额外走一次"发生了什么"的提示与留痕。
+            _events.ExternalChangesObserved += OnExternalChanges;
+        }
+
+        /// <summary>
+        /// 外部进程刚改过库（精确变更流给出"哪条命令、改了哪些实体"）。
+        /// <para>留痕永远做（观测面）：现场日志能回答"库是谁改的、改了什么"。
+        /// 提示只落在**浏览页**——那是书签数据的所在地，也是唯一承载 MD3 提示条的页面；
+        /// 其它页面不打断用户（它们各自在切入时做入口对齐刷新，见 <see cref="SelectNav"/>）。</para>
+        /// </summary>
+        private void OnExternalChanges(IReadOnlyList<ExternalChange> changes)
+        {
+            var commands = string.Join(", ", changes.Select(c => c.Command).Distinct(StringComparer.Ordinal));
+            LpLog.Info($"external changes applied: {changes.Count} ({commands})", category: ExternalLogCategory);
+
+            if (_currentNavId == NavIds.Browser)
+                BrowserViewModel.ShowNotice(Loc.K("browser.status.externalChange", changes.Count).Resolve());
         }
 
         private void OnBackendRefresh()

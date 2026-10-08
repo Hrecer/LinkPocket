@@ -14,9 +14,11 @@ namespace LinkPocket.Mcp;
 /// </summary>
 internal sealed class McpSurface
 {
-    /// <summary>外部 Agent 的调用方身份：不带 SessionId = 宿主自有调用，零能力门约束（与 CLI 一致）；
-    /// 仅用于审计/日志里把调用方标成 agent。写入冻结（内置助手改数据期间）对它同样生效。</summary>
-    private static readonly CallerRef AgentCaller = new(CallerKind.Agent);
+    /// <summary>外部 Agent 的调用方身份：<see cref="CallerRef.ExternalAgent"/>（agent 类、不带会话）
+    /// ——与命令行入口**同一个身份常量**（不带 SessionId = 宿主自有调用，零能力门约束；
+    /// 仅用于审计/日志里把调用方标成 agent，并让 WPF 宿主的跨进程变更流认得出"这是外部进程写的"）。
+    /// 写入冻结（内置助手改数据期间）对它同样生效。</summary>
+    private static readonly CallerRef AgentCaller = CallerRef.ExternalAgent;
 
     private readonly EngineHost _host;
     private readonly AiToolCatalog _tools;

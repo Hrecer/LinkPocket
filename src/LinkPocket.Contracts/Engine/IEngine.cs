@@ -21,15 +21,17 @@ public interface IEngine
     EngineManifest Describe(string? category = null);
 
     /// <summary>
-    /// 整体失效查询缓存（**纯增量 API，不改变任何命令的行为与返回**）。
+    /// 失效查询缓存（**纯增量 API，不改变任何命令的行为与返回**）。
     /// <para>用途：**外部进程**（CLI / 外部 Agent 经 MCP）写过库之后，由宿主调用。
     /// 查询缓存的常规失效是**事件驱动**的（提交后同步推送领域事件 → 按事件名推进世代戳），
     /// 而**外部进程的提交不产生任何进程内事件** → 事件驱动失效无从触发 → 缓存会一直返回旧值。
     /// 宿主一旦探测到"库被别的连接改过"，就必须先调用本方法再刷新界面，否则刷新读到的仍是旧数据。</para>
-    /// <para>口径：与 <c>maintenance.reinit</c> 的整库清空一致（保守——宁可多失效，不可读到旧值）。
+    /// <para><paramref name="eventNames"/> = 外部变更**实际发布的领域事件名**（来自 <see cref="IChangeFeed"/> 的
+    /// 审计尾载荷）：给了就只推进这些事件名（与进程内写走**同一条**失效机制，代价与影响面都最小）；
+    /// <c>null</c> / 空 = **整体清空**（无法精确时的保守兜底，与 <c>maintenance.reinit</c> 同口径）。
     /// 计数读数见 <see cref="RuntimeStats"/>。</para>
     /// </summary>
-    void InvalidateQueryCache();
+    void InvalidateQueryCache(IReadOnlyList<string>? eventNames = null);
 
     /// <summary>事件总线：提交成功后同步推送领域事件；
     /// ⚠️ 订阅方纪律 = 处理器内不得同步回派命令（会自锁），一律异步/防抖消费。</summary>

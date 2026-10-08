@@ -26,6 +26,13 @@ public sealed class UiEventHub
     /// <summary>防抖后的刷新通知（UI 线程触发）。</summary>
     public event Action? RefreshRequested;
 
+    /// <summary>
+    /// **外部进程**写入的精确变更（<see cref="NotifyExternalChanges"/> 时立即触发，不等防抖）：
+    /// 订阅方据此做"到底改了什么"的精确反应（例如浏览页给一次提示条）。
+    /// ⚠️ 与 <see cref="RefreshRequested"/> 同一条纪律：处理器内不得同步回派命令（会自锁）。
+    /// </summary>
+    public event Action<IReadOnlyList<ExternalChange>>? ExternalChangesObserved;
+
     /// <summary>接入引擎事件源（领域事件总线；枢纽只关心"有变更"，不消费事件负载）。</summary>
     public void Attach(IEventBus bus)
         => bus.Subscribe(_ => OnEvent());
@@ -35,7 +42,26 @@ public sealed class UiEventHub
     /// 与进程内领域事件**完全同权**——刷什么、怎么刷由订阅方按活跃视图自行决定（见 BEHAVIOR-CONTRACT §1.5）。
     /// 由 <see cref="ExternalChangeWatcher"/> 轮询跨进程变更探针后调用（UI 线程）。
     /// </summary>
-    public void NotifyExternalChange() => OnEvent();
+    public void NotifyExternalChange() => NotifyExternalChanges([]);
+
+    /// <summary>
+    /// 带**精确变更**的外部写入通知：先投递 <see cref="ExternalChangesObserved"/>（订阅方可立即做精确反应），
+    /// 再汇入同一条防抖刷新通道。变更列表为空（拿不到精确信息）= 只刷新，与 <see cref="NotifyExternalChange"/> 等价。
+    /// </summary>
+    public void NotifyExternalChanges(IReadOnlyList<ExternalChange> changes)
+    {
+        if (changes.Count > 0 && ExternalChangesObserved is { } observers)
+        {
+            // 与刷新处理器同一隔离口径：一个订阅方抛异常不得让别的订阅方与刷新一起失效
+            foreach (var observer in observers.GetInvocationList())
+            {
+                try { ((Action<IReadOnlyList<ExternalChange>>)observer)(changes); }
+                catch (Exception ex) { LpLog.Error("an external-change observer failed", ex); }
+            }
+        }
+
+        OnEvent();
+    }
 
     private void OnEvent()
     {

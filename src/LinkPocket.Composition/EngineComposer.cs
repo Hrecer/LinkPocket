@@ -56,6 +56,10 @@ public sealed class EngineComposition
     /// 调用方须自行 BeginAsync 并把 SessionId 放进 <c>CallOptions.Caller</c> 才受约束——
     /// 未带 SessionId 的调用是宿主自有调用，零约束（既有口径）。</summary>
     public required ISessionManager Sessions { get; init; }
+
+    /// <summary>跨进程变更流（**外部进程**写库的精确变更，读附属库审计尾）：只有落了库的宿主才有；
+    /// 不触库的宿主（目录导出）为 null——那里的 UoW/上下文工厂本就会抛。</summary>
+    public IChangeFeed? ChangeFeed { get; init; }
 }
 
 /// <summary>
@@ -206,6 +210,9 @@ public static class EngineComposer
             Registry = registry,
             Factory = factory,
             Sessions = sessions,
+            // 跨进程变更流：只认**外部进程**身份（CLI / 网关）的审计行——界面自己的写有进程内事件，
+            // 混进来会让用户自己的操作也弹"外部变更"提示（见 CallerRef.IsExternalProcess）。
+            ChangeFeed = ops is null ? null : new OpsChangeFeed(operationRecords, CallerRef.ExternalAgent.ToString()),
         };
     }
 }

@@ -38,6 +38,10 @@ public sealed class EngineHost : IDisposable
     /// <summary>会话管理器（能力门：只读拒绝写、agent 限流、写入冻结）。未登记会话零约束。</summary>
     public ISessionManager Sessions => Composition.Sessions;
 
+    /// <summary>跨进程变更流（读附属库审计尾）：外部进程写库的**精确变更**（谁、什么命令、改了哪些实体、发了哪些事件）。
+    /// 界面宿主用它做精确失效与精确提示；命令行/网关自身是写入方，一般不用它。</summary>
+    public IChangeFeed? ChangeFeed => Composition.ChangeFeed;
+
     /// <summary>全部能力的自描述清单（79 条：业务 + 编排 + 批）。</summary>
     public EngineManifest Manifest { get; }
 

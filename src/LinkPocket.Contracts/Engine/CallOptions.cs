@@ -16,7 +16,19 @@ public sealed record CallerRef(CallerKind Kind, string? SessionId = null)
     /// <summary>缺省调用方（未显式指定 Caller 时）：桌面界面会话——未登记会话零约束。</summary>
     public static readonly CallerRef Ui = new(CallerKind.Ui, null);
 
+    /// <summary>
+    /// **外部进程**身份（CLI / 外部 Agent 网关）：agent 类但**不带会话**（会话由应用内助手
+    /// <c>Begin</c> 后携带，见 <c>ISessionManager</c>）。两个外部入口都用它，于是
+    /// "这条审计行是不是别的进程写的"有了逐字可判的判据——跨进程变更流（<see cref="IChangeFeed"/>）按它过滤。
+    /// </summary>
+    public static readonly CallerRef ExternalAgent = new(CallerKind.Agent, null);
+
     public static readonly CallerRef Test = new(CallerKind.Test, "test");
+
+    /// <summary>是否**外部进程**身份（CLI / 网关）：界面自己的写是 <see cref="Ui"/>、
+    /// 应用内助手是带会话的 agent，两者都不是外部进程。</summary>
+    public bool IsExternalProcess => Kind == CallerKind.Agent && SessionId is null;
+
     public override string ToString() => $"{Kind.ToString().ToLowerInvariant()}:{SessionId ?? "-"}";
 }
 
