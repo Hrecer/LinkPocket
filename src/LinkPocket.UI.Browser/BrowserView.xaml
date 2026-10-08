@@ -539,6 +539,11 @@
                      **唯一实现** = UIKit 控件 ListBusyOverlay（与回收站/搜索页/智能列表/去重明细共用同一份，
                      原先每页各写一份 Border+CircularProgress）。 -->
             <views:ListBusyOverlay Grid.Row="0" IsBusy="{Binding IsNavigating}"/>
+
+            <!-- 一次性提示条（MD3 形状，UIKit/NoticeBar）：用于"用户需要知道发生了什么"的事件——
+                 例如当前目录被**外部进程**（CLI / 外部 Agent）删除、正在看的书签被外部删除。
+                 不吃点击（IsHitTestVisible=False）；数秒后由 code-behind 计时器调 VM 收起。 -->
+            <views:NoticeBar Grid.Row="0" Text="{Binding NoticeText}" IsOpen="{Binding IsNoticeOpen}"/>
             </Grid>
             </Border>
 

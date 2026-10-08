@@ -78,7 +78,15 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
             LinkDto? link;
             try { link = await _client.LinkGetAsync(linkId); }   // 单点查询；不存在抛 EntityNotFound → 归一 null 走既有空档处理
             catch (EngineException) { link = null; }
-            if (link == null || gen != _generation) { Close(); return; }
+            if (link == null || gen != _generation)
+            {
+                // 重载时才发现"条目已不存在" = **外部进程**（CLI / 外部 Agent）删了它或移入了回收站
+                // → 关页并明确提示（首次打开就查无此条不提示：那是调用方给了个已失效的 id）。
+                if (link == null && !recordVisit)
+                    _host.ShowNotice(Loc.K("browser.status.linkGone").Resolve());
+                Close();
+                return;
+            }
 
             // favicon 磁盘读取+解码移出 UI 线程（与 LinkEditor 同口径；页面渲染不因图标卡顿）
             var faviconUrl = link.FaviconUrl;

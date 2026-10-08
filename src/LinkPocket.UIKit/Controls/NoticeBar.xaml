@@ -1,0 +1,35 @@
+<UserControl x:Class="LinkPocket.Views.NoticeBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             Focusable="False"
+             IsHitTestVisible="False"
+             d:DesignHeight="120" d:DesignWidth="400">
+
+    <!-- 轻量提示条（MD3 Snackbar 形状）：底部居中的圆角浮层。
+         · **为什么需要它**：状态栏文案容易被忽略（"目录突然回到根目录"却不知道原因）；
+           一次性事件（外部进程删了当前目录 / 删了正在看的书签）需要一处**看得见**的提示。
+         · **样式纪律**：颜色一律走 App.* 语义令牌（架构测试卡死界面层颜色字面量）；
+           圆角/间距是数值，不属颜色，可直接写。文字色走 App.Text.Primary。
+         · **不挡操作**：IsHitTestVisible=False（纯提示，不吃点击/拖拽）。
+         · 自动消失由宿主视图驱动（视图持计时器；VM 只暴露"显示什么、是否显示"）。 -->
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource App.Surface.Dialog}"
+            CornerRadius="8"
+            Padding="16,10"
+            Margin="0,0,0,24"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Visibility="{Binding IsOpen, RelativeSource={RelativeSource AncestorType=UserControl},
+                                 Converter={StaticResource BoolToVis}}">
+        <TextBlock Text="{Binding Text, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                   Foreground="{DynamicResource App.Text.Primary}"
+                   TextWrapping="Wrap"
+                   MaxWidth="560"/>
+    </Border>
+</UserControl>

@@ -302,6 +302,7 @@
   "browser.err.pathSegmentMissing": "路径不存在：{0}",
   "browser.status.linkCreated": "新建链接",
   "browser.status.folderGone": "该目录已被外部删除，已退回根目录",
+  "browser.status.linkGone": "该书签已被外部删除",
   "common.newFolder": "新建文件夹",
   "details.noInfo": "未获取到信息",
   "editor.title.edit": "编辑链接",

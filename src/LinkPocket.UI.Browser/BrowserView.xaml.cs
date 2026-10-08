@@ -22,6 +22,38 @@ public partial class BrowserView : UserControl
     /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
 
+    /// <summary>提示条可见时长（秒）。</summary>
+    private const int NoticeSeconds = 4;
+
+    /// <summary>提示条自动收起用的计时器（惰性创建）。</summary>
+    private System.Windows.Threading.DispatcherTimer? _noticeTimer;
+
+    /// <summary>
+    /// 提示条自动收起：VM 侧"出现新提示"（<c>IsNoticeOpen</c> 变真）时重启计时器，到点调 <c>ClearNotice</c>。
+    /// 计时器放**视图**而非 VM —— VM 保持无 Dispatcher 依赖、可单测（同 AiView 的既有做法）。
+    /// </summary>
+    private void OnWiredVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(BrowserViewModel.IsNoticeOpen)) return;
+        if (_wiredVm?.IsNoticeOpen != true) return;
+
+        if (_noticeTimer is null)
+        {
+            _noticeTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(NoticeSeconds),
+            };
+            _noticeTimer.Tick += (_, _) =>
+            {
+                _noticeTimer.Stop();
+                _wiredVm?.ClearNotice();
+            };
+        }
+
+        _noticeTimer.Stop();   // 连续提示顺延（与 UiEventHub 的尾沿防抖同思路）
+        _noticeTimer.Start();
+    }
+
     /// <summary>快捷键宿主（键位表注册 + 栏作用域分发；见 LinkPocket.Input.ShortcutHost）。</summary>
     private ShortcutHost? _shortcutHost;
 
@@ -81,6 +113,7 @@ public partial class BrowserView : UserControl
                 _wiredVm.PaneActivated -= OnPaneActivated;
                 _wiredVm.RefreshCompleted -= OnRefreshCompleted;
                 _wiredVm.ContextMenuRequested -= OnContextMenuRequested;
+                _wiredVm.PropertyChanged -= OnWiredVmPropertyChanged;
             }
             _wiredVm = ViewModel;
 
@@ -88,6 +121,7 @@ public partial class BrowserView : UserControl
             ViewModel.PaneActivated += OnPaneActivated;
             ViewModel.RefreshCompleted += OnRefreshCompleted;
             ViewModel.ContextMenuRequested += OnContextMenuRequested;
+            ViewModel.PropertyChanged += OnWiredVmPropertyChanged;   // 提示条自动收起（见该处理器）
             WireMainTableOnce();
 
             // 快捷键子系统：键位表 = ShortcutCatalog（全站唯一事实源——本页不再声明任何键位，

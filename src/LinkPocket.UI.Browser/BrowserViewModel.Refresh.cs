@@ -266,7 +266,9 @@ public partial class BrowserViewModel
                 LpLog.Error($"current folder disappeared (was {Controller.CurrentFolderId}); falling back to root", ex);
                 Controller.NavigateTo(null);
                 CurrentFolderId = Controller.CurrentFolderId;
-                _recoveryNoticeKey = "browser.status.folderGone";
+                // 一次性提示（MD3 形状提示条，比状态栏文案显眼；宿主视图数秒后自动收起）。
+                // 取已解析文本：提示条是 4s 的瞬时物，不需要跟随语言热切换（状态栏那种常驻文案才需要）。
+                ShowNotice(Loc.K("browser.status.folderGone").Resolve());
                 _refreshPending = true;
             }
             else
@@ -312,12 +314,6 @@ public partial class BrowserViewModel
             else
             {
                 IsNavigating = false;   // 刷新链（含挂起补刷）全部结束 → 收加载遮罩
-                // 「目录已被外部删除」的恢复提示：等整条刷新链（含补刷）落地后再写状态栏，否则会被重刷的统计文案盖掉。
-                if (_recoveryNoticeKey is { } recoveryKey)
-                {
-                    _recoveryNoticeKey = null;
-                    StatusText = Loc.K(recoveryKey);
-                }
                 var wasNavigation = _navigatingInChain;
                 _navigatingInChain = false;
                 RefreshCompleted?.Invoke(this, wasNavigation);   // 链结束只发一次（行入场动画据此判定）
@@ -342,8 +338,36 @@ public partial class BrowserViewModel
     /// <summary>粘贴完成后的定位目标（滚入视口）；行重建（事件刷新）后被消费一次。</summary>
     private string? _pendingFocusId;
 
-    /// <summary>「当前目录已被外部删除、已退回根目录」的一次性提示键（整条刷新链落地后消费一次）。</summary>
-    private string? _recoveryNoticeKey;
+    /// <summary>一次性提示文案（null = 不显示）；由宿主视图在数秒后调 <see cref="ClearNotice"/> 收起。
+    /// 与状态栏（<see cref="StatusText"/>）职责不同：状态栏报"当前有多少项"，提示条报"刚刚发生了什么事"。</summary>
+    private string? _noticeText;
+
+    /// <summary>提示条当前是否可见（绑定用）。</summary>
+    public bool IsNoticeOpen => _noticeText is not null;
+
+    /// <summary>提示条文案（绑定用）。</summary>
+    public string NoticeText => _noticeText ?? string.Empty;
+
+    /// <summary>
+    /// 显示一次性提示（MD3 形状的提示条，由 <c>UIKit/NoticeBar</c> 承载）。
+    /// 用于"用户需要知道发生了什么"的事件：当前目录被外部进程删除、正在看的书签被外部删除等。
+    /// 调用方**取好 i18n 文案**再传入（界面层不拼文案）。
+    /// </summary>
+    public void ShowNotice(string text)
+    {
+        _noticeText = text;
+        OnPropertyChanged(nameof(NoticeText));
+        OnPropertyChanged(nameof(IsNoticeOpen));
+    }
+
+    /// <summary>收起提示（宿主视图的计时器到点调用；重复调用无害）。</summary>
+    public void ClearNotice()
+    {
+        if (_noticeText is null) return;
+        _noticeText = null;
+        OnPropertyChanged(nameof(NoticeText));
+        OnPropertyChanged(nameof(IsNoticeOpen));
+    }
 
     /// <summary>记录刚置入的项（粘贴完成时调用）：同 ID 先移除再追加（后到者排更后）。</summary>
     private void MarkRecentlyPinned(IEnumerable<string> ids)
