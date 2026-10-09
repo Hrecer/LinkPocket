@@ -10,9 +10,9 @@
   guide and the generated command catalog next to them, then writes a pointer page (AGENTS.md)
   and an MCP config example (mcp.example.json).
 
-  Published:
-    LinkPocket.exe        WPF desktop app (only with -IncludeApp). Single file: the whole
-                          framework is inside it, so the folder shows ONE exe, not ~540 dlls.
+  Published (EVERY exe is self-contained single-file -- the .NET 8 runtime is bundled inside,
+  so the delivery runs with zero prerequisites on the target machine):
+    LinkPocket.exe        WPF desktop app (only with -IncludeApp). One file, framework inside.
     tools\linkpocket.exe      command-line client (all 81 commands)
     tools\linkpocket-mcp.exe  MCP gateway over stdio (external agents)
     AGENTS.md             pointer page: which exe to run, quick start, library path rule
@@ -25,7 +25,8 @@
 
   Layout rule: the CLI and MCP exes live in `tools\` and never in the root. Windows paths are
   case-insensitive, so `LinkPocket.exe` (app) and `linkpocket.exe` (cli) silently overwrite each
-  other when published side by side.
+  other when published side by side. Single-file publish also keeps each to one file, so MCP
+  embedding the CLI assembly can never write a colliding loose linkpocket.dll.
 
   The delivery contains no debug symbols (DebugType=none) and only EN + zh-Hans satellite
   resources; everything else in it is meant to be there.
@@ -33,9 +34,6 @@
 .NOTES
   This script is intentionally ASCII-only (PowerShell 5.1 parses non-BOM files as ANSI; see
   WARNINGS #4). Nothing here touches the user database.
-
-.PARAMETER SelfContained
-  Bundle the .NET runtime (much bigger; runs on machines with no .NET 8 installed).
 
 .PARAMETER IncludeApp
   Also publish the WPF desktop app (LinkPocket.exe).
@@ -57,7 +55,6 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$SelfContained,
     [switch]$IncludeApp,
     [string]$Output,
     [string]$Zip,
@@ -79,8 +76,13 @@ New-Item -ItemType Directory -Path $out -Force | Out-Null
 # ---- publish ----
 # Everything is published as ONE file per exe. A plain publish drops ~540 loose dlls next to the
 # app, so the exe is impossible to find in the folder; single-file puts them inside the exe.
-#   app    : self-contained (no .NET needed on the target machine), single file -> root
-#   cli/mcp: single file -> tools\  (see "Layout rule" in the header for why not in the root)
+# AND every exe is SELF-CONTAINED: the .NET 8 runtime is bundled inside each one, so the delivery
+# runs on a machine with NO .NET installed (zero prerequisites for the whole folder).
+#   app    : self-contained single file -> root
+#   cli/mcp: self-contained single file -> tools\  (see "Layout rule" in the header for why
+#            not in the root; single-file also avoids the LinkPocket.Mcp -> LinkPocket.Cli exe
+#            reference collision -- MCP embeds the CLI assembly inside its own bundle, so no
+#            loose linkpocket.dll is ever written and NETSDK1151 cannot trigger)
 # DebugType=none: no .pdb files. SatelliteResourceLanguages: keep EN + zh-Hans only, drop the
 # other 11 UI languages the framework would otherwise copy in (MSBuild needs %3B for ';').
 $rid = "win-x64"
@@ -89,16 +91,14 @@ $satLang = "en%3Bzh-Hans"
 $toolsDir = Join-Path $out "tools"
 New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
 
-# NOTE: cli/mcp are NOT published single-file on purpose. LinkPocket.Mcp references LinkPocket.Cli,
-# and passing -r to a framework-dependent publish of a referenced exe fails with NETSDK1151
-# ("a self-contained executable cannot be referenced by a non self-contained executable").
-# They live in tools\, so their dlls never compete with the app exe for attention anyway.
-$cliArgs = @("-c", $Configuration, "--nologo", "-o", $toolsDir)
-if ($SelfContained) { $cliArgs += @("-r", $rid, "--self-contained", "true") }
-else { $cliArgs += @("--self-contained", "false") }
+# cli/mcp: self-contained single file. The runtime lives inside each exe, so the target machine
+# does not need .NET 8. Single-file keeps each to one file (MCP embeds the CLI assembly).
+$cliArgs = @("-c", $Configuration, "--nologo", "-r", $rid, "--self-contained", "true",
+             "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+             "-p:DebugType=none", "-p:SatelliteResourceLanguages=$satLang", "-o", $toolsDir)
 
 foreach ($proj in @("src\LinkPocket.Cli", "src\LinkPocket.Mcp")) {
-    Write-Host "[PACK] publishing $proj ..." -ForegroundColor Cyan
+    Write-Host "[PACK] publishing $proj (self-contained single file) ..." -ForegroundColor Cyan
     & $dotnet publish (Join-Path $repoRoot $proj) @cliArgs
     if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: $proj" -ForegroundColor Red; exit 1 }
 }
@@ -230,10 +230,6 @@ Write-Host "[PACK] output: $out"
 Write-Host ("[PACK] {0} files, {1:N1} MB" -f $files.Count, ($size / 1MB))
 foreach ($f in ($files | Sort-Object Length -Descending | Select-Object -First 5)) {
     Write-Host ("[PACK]   {0,-28} {1,8:N1} MB" -f $f.Name, ($f.Length / 1MB))
-}
-if (-not $SelfContained) {
-    Write-Host "[PACK] framework-dependent build: the target machine needs the .NET 8 runtime." -ForegroundColor Yellow
-    Write-Host "[PACK] re-run with -SelfContained to bundle it." -ForegroundColor Yellow
 }
 if ($missing.Count -gt 0) {
     Write-Host "[PACK] workspace assets not found (skipped):" -ForegroundColor Yellow
