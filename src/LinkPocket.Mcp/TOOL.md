@@ -3,7 +3,7 @@
 把 LinkPocket 的能力以 **MCP（Model Context Protocol，stdio）** 暴露给外部 Agent（Claude Desktop、Cline、
 WorkBuddy 等）。外部 Agent 由此可以**看数据、改数据、空跑**——与界面、内置助手**同一套命令、同一条引擎管道**。
 
-- 产物：`linkpocket-mcp`（`dotnet src/LinkPocket.Mcp/bin/<cfg>/net8.0/linkpocket-mcp.dll`）
+- 产物：`linkpocket-mcp`（`dotnet src/LinkPocket.Mcp/bin/<cfg>/net10.0/linkpocket-mcp.dll`）
 - 依赖面：`LinkPocket.Contracts` + `LinkPocket.Composition` + `LinkPocket.Cli`
 
 ## 为什么不是"又一套能力"
@@ -19,7 +19,7 @@ WorkBuddy 等）。外部 Agent 由此可以**看数据、改数据、空跑**�
 ## 启动
 
 ```powershell
-dotnet src/LinkPocket.Mcp/bin/Release/net8.0/linkpocket-mcp.dll --db <库路径>
+dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <库路径>
 ```
 
 库路径缺省解析与命令行客户端一致（`--db` → `LINKPOCKET_DB` → 从当前目录上溯找 `linkpocket.db` → 程序目录）。
@@ -68,8 +68,8 @@ dotnet src/LinkPocket.Mcp/bin/Release/net8.0/linkpocket-mcp.dll --db <库路径>
     "linkpocket": {
       "command": "dotnet",
       "args": [
-        "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.Mcp/bin/Release/net8.0/linkpocket-mcp.dll",
-        "--db", "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.App/bin/Debug/net8.0-windows/linkpocket.db"
+        "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll",
+        "--db", "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.App/bin/Debug/net10.0-windows/linkpocket.db"
       ]
     }
   }

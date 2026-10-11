@@ -10,7 +10,7 @@
   guide and the generated command catalog next to them, then writes a pointer page (AGENTS.md)
   and an MCP config example (mcp.example.json).
 
-  Published (EVERY exe is self-contained single-file -- the .NET 8 runtime is bundled inside,
+  Published (EVERY exe is self-contained single-file -- the .NET 10 runtime is bundled inside,
   so the delivery runs with zero prerequisites on the target machine):
     LinkPocket.exe        WPF desktop app (only with -IncludeApp). One file, framework inside.
     tools\linkpocket.exe      command-line client (all 81 commands)
@@ -51,7 +51,8 @@
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File build\pack.ps1
-  powershell -ExecutionPolicy Bypass -File build\pack.ps1 -IncludeApp -Zip ..\LinkPocket_v3.2.3.zip
+  powershell -ExecutionPolicy Bypass -File build\pack.ps1 -IncludeApp -Zip ..\..\LinkPocket_v<version>.zip
+  (run from the repo root; the released zips live in the workspace root, two levels up)
 #>
 [CmdletBinding()]
 param(
@@ -76,7 +77,7 @@ New-Item -ItemType Directory -Path $out -Force | Out-Null
 # ---- publish ----
 # Everything is published as ONE file per exe. A plain publish drops ~540 loose dlls next to the
 # app, so the exe is impossible to find in the folder; single-file puts them inside the exe.
-# AND every exe is SELF-CONTAINED: the .NET 8 runtime is bundled inside each one, so the delivery
+# AND every exe is SELF-CONTAINED: the .NET 10 runtime is bundled inside each one, so the delivery
 # runs on a machine with NO .NET installed (zero prerequisites for the whole folder).
 #   app    : self-contained single file -> root
 #   cli/mcp: self-contained single file -> tools\  (see "Layout rule" in the header for why
@@ -92,7 +93,7 @@ $toolsDir = Join-Path $out "tools"
 New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
 
 # cli/mcp: self-contained single file. The runtime lives inside each exe, so the target machine
-# does not need .NET 8. Single-file keeps each to one file (MCP embeds the CLI assembly).
+# does not need .NET 10. Single-file keeps each to one file (MCP embeds the CLI assembly).
 $cliArgs = @("-c", $Configuration, "--nologo", "-r", $rid, "--self-contained", "true",
              "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
              "-p:DebugType=none", "-p:SatelliteResourceLanguages=$satLang", "-o", $toolsDir)

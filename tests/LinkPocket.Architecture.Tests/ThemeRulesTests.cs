@@ -238,7 +238,7 @@ public class ThemeRulesTests
 
     /// <summary>
     /// **颜色键的权威清单**：从 Theming 的锚定表源码里抽键名（不引产品程序集 ——
-    /// 架构测试的目标框架是 net8.0，引 <c>LinkPocket.Theming</c>（WPF）会把它拖成 windows 专属，
+    /// 架构测试的目标框架是 net10.0，引 <c>LinkPocket.Theming</c>（WPF）会把它拖成 windows 专属，
     /// 而本层其余断言全是 csproj/源码文本扫描，靠的就是"零产品引用"）。
     /// </summary>
     /// <remarks>

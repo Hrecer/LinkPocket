@@ -4,7 +4,7 @@
 它不新增任何能力：一切命令都经共享组合根装配的引擎，走界面与内置助手**同一条管道**
 （校验 → 幂等 → 能力门 → 写闸 → 事务 → 撤销 → 事件 → 审计），因此撤销、审计、事件、写锁对它同样生效。
 
-- 产物：`linkpocket`（`dotnet src/LinkPocket.Cli/bin/<cfg>/net8.0/linkpocket.dll`）
+- 产物：`linkpocket`（`dotnet src/LinkPocket.Cli/bin/<cfg>/net10.0/linkpocket.dll`）
 - 依赖面：`LinkPocket.Contracts` + `LinkPocket.Composition`（不引 Engine / Data / Modules.\*）
 
 ## 用法
