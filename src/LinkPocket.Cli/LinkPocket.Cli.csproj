@@ -7,7 +7,7 @@
        产物 = linkpocket(.exe)：在 PowerShell / bash 里直接调用，不进界面、无窗口。 -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket.Cli</RootNamespace>
     <AssemblyName>linkpocket</AssemblyName>
   </PropertyGroup>

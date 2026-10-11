@@ -1011,7 +1011,7 @@ public sealed class AiChangeRow : INotifyPropertyChanged
         : LocValue.Empty;
 
     public IReadOnlyList<AiFieldRow> Fields
-        => _fields ??= (Change.Fields ?? []).Select(field => new AiFieldRow { Field = field }).ToArray();
+        => _fields ??= (Change.Fields ?? []).Select(f => new AiFieldRow { Field = f }).ToArray();
 
     public bool HasFields => Fields.Count > 0;
     public bool CanExpand => Fields.Count > CollapsedFieldCount;

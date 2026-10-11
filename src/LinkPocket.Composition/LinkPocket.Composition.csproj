@@ -5,7 +5,7 @@
        由 DependencyRulesTests 逐项断言（多引一个引擎实现之外的程序集、少引一个模块都会红）。
        Diagnostics = 观测面实现（日志管道）：只被组合根引用（UI/引擎/模块经 Contracts 的 LpLog 门面写日志）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>

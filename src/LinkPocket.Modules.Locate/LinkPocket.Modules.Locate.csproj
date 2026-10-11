@@ -5,7 +5,7 @@
        界面只负责执行"切到浏览页 + 进入容器目录 + 选中目标"这三个原语，
        无头宿主 / 批处理 / 未来的 AI 可复用同一结果。黑盒封装。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

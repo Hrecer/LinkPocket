@@ -3,7 +3,7 @@
   <!-- 文件夹域模块（第五章）：目录浏览/树/面包屑/增删改移/排序/批量。
        黑盒封装：除模块入口 CreateHandlers 外全部 internal；只依赖 L0 契约。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

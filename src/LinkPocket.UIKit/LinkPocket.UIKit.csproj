@@ -5,7 +5,7 @@
        UI 支撑类型（LinkItem/SelectionManager/ClipboardManager/FaviconStore）自 A1 起归属本层；
        日志自 S1 起统一走 Contracts 的 LpLog 门面（实现 = LinkPocket.Diagnostics，UI 层零新增依赖）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.UIKit</RootNamespace>
   </PropertyGroup>

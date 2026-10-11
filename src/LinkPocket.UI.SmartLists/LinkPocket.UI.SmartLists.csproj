@@ -2,7 +2,7 @@
 
   <!-- UI.SmartLists：智能列表页（入口卡片 → 结果表 + 详情栏）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.UI.SmartLists</RootNamespace>
   </PropertyGroup>

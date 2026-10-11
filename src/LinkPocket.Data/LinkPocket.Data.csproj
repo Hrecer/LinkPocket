@@ -2,7 +2,7 @@
 
   <!-- 数据层：DbContext、WAL/外键 PRAGMA、SQLite。只依赖 Kernel（实体与强类型 ID）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

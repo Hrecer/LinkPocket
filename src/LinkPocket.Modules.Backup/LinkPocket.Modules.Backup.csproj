@@ -3,7 +3,7 @@
   <!-- 备份模块（第五章）：.lpbackup v2 导出/导入/只读检查。
        临时 key 身份模型 + SHA-256 manifest + 拓扑序导入（internal 平移既有实现）；黑盒封装。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

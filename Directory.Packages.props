@@ -9,13 +9,13 @@
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageVersion Include="Material3.Wpf" Version="0.9.0" />
     <PackageVersion Include="MdXaml" Version="1.27.0" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.10" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- 前端组合根：对象图由容器装配（只被 Shell/组合根引用，不进契约层与引擎层） -->
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <!-- AI 运行时：API Key 的 DPAPI 加密落盘（按 Windows 当前用户；官方包，仅 LinkPocket.Ai 引用） -->
-    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
-    <!-- 测试栈 -->
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+    <!-- 测试栈：Test.Sdk 17.x 的 vstest 宿主不认识 net10 测试目标，必须 18.x（vstest 侧要求） -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>

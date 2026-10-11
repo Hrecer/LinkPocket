@@ -3,7 +3,7 @@
   <!-- AI 运行时单测：凭据库（假 cipher + DPAPI 实现）/ 原子写 /（后续）服务商配置、协议适配、会话存储。
        引用 Engine 仅为 TempArea.Resolve()（测试临时目录的唯一入口）；测试库一律临时目录、用完自清。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

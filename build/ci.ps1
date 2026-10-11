@@ -194,7 +194,7 @@ Write-Host "[CI] 生成物与描述符一致" -ForegroundColor Green
 
 # —— 2. 单元测试（**分批并行**：批内两个项目同时跑，批与批之间串行）
 # 分批理由：① 串行 6 个项目共 ~170s（实测，真在跑用例，不是启动开销）；
-#   ② 并行度受**内存**约束——`LinkPocket.App` 是 net8.0-windows（WPF）、`Modules` 拉起 EF、
+#   ② 并行度受**内存**约束——`LinkPocket.App` 是 net10.0-windows（WPF）、`Modules` 拉起 EF、
 #   `Ai` 拉起 AI 运行时，三者同时跑正是 `WARNINGS` 记录的"测试宿主 0xC00000FD"成因；
 #   ③ 故取"两两并行 + 批间串行"：最重的一批是 Modules+App（约 40s / 58s，取大者）。
 # ④ 受限宿主（沙箱/受限 runner）会拦并发子进程 → 并行开关默认关闭；确认环境允许再用 -ParallelTests。

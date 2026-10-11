@@ -2,7 +2,7 @@
 
   <!-- UI.Settings：设置页（存储管理 + 备份与恢复 BackupPanel）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.UI.Settings</RootNamespace>
   </PropertyGroup>

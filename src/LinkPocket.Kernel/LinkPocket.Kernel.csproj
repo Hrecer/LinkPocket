@@ -4,7 +4,7 @@
        依赖仅 Contracts（共享词汇层）；不引用任何 EF 包。实体与 EntityIds 的
        LinkPocket.Data 命名空间暂保留（统一归一）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

@@ -4,7 +4,7 @@
        UI 已模块化为 UIKit + UI.* 六项目（视图注册/路由装配见 Services/ViewRegistry）。 -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <PublishRepositoryUrl>false</PublishRepositoryUrl>
     <EnableSourceLink>false</EnableSourceLink>

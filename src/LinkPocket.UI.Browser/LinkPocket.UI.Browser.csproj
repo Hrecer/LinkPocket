@@ -3,7 +3,7 @@
   <!-- UI.Browser：资源管理器式浏览页 + 链接详情/编辑页 + 浏览历史。
        只依赖 UIKit/Contracts；对外无 internal 之外契约。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.UI.Browser</RootNamespace>
   </PropertyGroup>

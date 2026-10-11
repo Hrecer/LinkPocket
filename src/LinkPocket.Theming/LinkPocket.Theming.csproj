@@ -7,7 +7,7 @@
          · 颜色计算（Hct / TonalPalette / ColorScheme）只允许出现在本程序集（架构测试卡住）。
        需要 UseWPF：发布产物就是 WPF 资源字典里的 SolidColorBrush（且 Material3.Core 的 Argb→Color 桥在 WPF 包里）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.Theming</RootNamespace>
   </PropertyGroup>

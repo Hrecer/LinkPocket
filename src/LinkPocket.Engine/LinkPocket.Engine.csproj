@@ -3,7 +3,7 @@
   <!-- L1 引擎内核：统一调用模型、管道、写闸、幂等、确认令牌、审计、事件总线、目录自描述。
        消费者只见 Contracts.IEngine；处理器契约在 Kernel.Commands；仓储实现经 Data 注入。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

@@ -3,7 +3,7 @@
   <!-- 模块单测（方案 第八章）：九模块全量真实命令经引擎黑盒驱动（内存 SQLite 临时库）。
        每模块断言：正常路径 / 校验错误 / 状态错误 / 嵌套派发 / 事件负载。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

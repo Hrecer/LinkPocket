@@ -3,7 +3,7 @@
   <!-- 日志管道单测（观测面实现）：过滤/溢出丢弃/直写旁路/落点失败计数/轮转/保留/脱敏/JSONL schema。
        引用 Engine 仅为 TempArea.Resolve()（测试临时目录的唯一入口）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

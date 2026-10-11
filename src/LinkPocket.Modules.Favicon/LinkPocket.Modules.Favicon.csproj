@@ -3,7 +3,7 @@
   <!-- 图标缓存模块（第五章）：磁盘缓存统计与后台预取队列。
        WPF 位图解码不在本模块（UIKit.FaviconImageService 的职责）。黑盒封装。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LinkPocket</RootNamespace>
   </PropertyGroup>
 

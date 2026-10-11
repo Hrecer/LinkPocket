@@ -2,7 +2,7 @@
 
   <!-- UI.Search：搜索页（Views/SearchView + SearchViewModel）。 -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>LinkPocket.UI.Search</RootNamespace>
   </PropertyGroup>
