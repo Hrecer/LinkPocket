@@ -180,6 +180,23 @@
                     </StackPanel>
                 </Button>
 
+                <!-- 「删除」= 删除选中项（链接移入回收站，Windows 语义），紧贴「跳转」右侧。
+                     破坏性动作**不设专门视觉**（与次操作共用同一套呈现）= 浏览页命令栏那枚删除钮的同一口径、同一几何
+                     （`TonalButton` + `delete-outline` + `common.delete`，定宽 75 = 中文基线）。
+                     命令 = 本页既有的 `DeleteSelectionCommand`（确认框 + 移入回收站 + 静默刷新结果），
+                     无选中 / 删除在途时禁用。 -->
+                <Button x:Name="SearchDeleteBtn" Command="{Binding DeleteSelectionCommand}"
+                        Style="{StaticResource TonalButton}" VerticalAlignment="Center" Width="75"
+                        Padding="12,5" MinHeight="32" Margin="8,0,0,0"
+                        ToolTip="{loc:Loc btn.delete.tip}">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="delete-outline" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit common.delete}" views:LocFit.Mode="Shrink"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    </StackPanel>
+                </Button>
+
                 <!-- 搜索范围分组：TintCard 近白胶囊容器（圆角 19 = 内距 3 + chip 圆角 16，同心圆角） -->
                 <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19"
                         Padding="3" Margin="12,0,0,0" VerticalAlignment="Center">
