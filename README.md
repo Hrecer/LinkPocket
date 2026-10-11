@@ -1,73 +1,62 @@
 # LinkPocket
 
-**Your links, in one place that is actually yours.** A standalone, local-first personal knowledge base for Windows — import, organize and create your own links: fast to navigate, easy to keep tidy, and portable down to the last file. An optional AI assistant can do the tedious parts for you (see [Let an AI assistant do the tedious parts](#let-an-ai-assistant-do-the-tedious-parts-optional)).
+A local-first bookmark manager for Windows. Your links live in one folder on your machine — no account, no sync service, no telemetry — and everything about them (organizing, searching, cleaning up, backing up) happens in one place.
 
-![Version](https://img.shields.io/badge/version-3.2.3-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)
-![License](https://img.shields.io/badge/license-MIT-green)
+![The browse view: a folder tree on the left, the bookmark list in the middle, and details for the selected bookmark on the right](docs/screenshots/browse.png)
 
----
+## Features
 
-## Why LinkPocket
+**Organize**
 
-- **Standalone, not a browser accessory.** No extension to install and no sync service to trust — your links live in one self-contained library on your machine, whether they came from a browser, an export file, or your own typing.
-- **Local first.** No account, no sync service, no telemetry. Everything lives in a single folder next to the app — copy it to a USB stick and your whole library comes along.
-- **Built for large libraries.** Tens of thousands of bookmarks stay responsive: virtualized lists, instant folder switching, and background work that never blocks the interface.
-- **Nothing destructive happens by accident.** Deleting moves things to a recycle bin, permanent removal and full wipes ask twice, and edits can be undone — for you and for the agent.
+- Folder trees of any depth; drag bookmarks and folders anywhere, and reorder items within a folder.
+- Select many items at once to move, copy, delete or export them in one step.
+- Rename in place, navigate with Back / Forward / Up, and edit the path directly in the address bar.
 
-## What you can do
+**Find**
 
-### Organize
+- Search the title, the address, your notes or the folder path — individually or together; each hit shows which field matched.
+- Smart Lists need no setup: recently added, recently visited, recently edited, most visited.
+- Jump to a bookmark by its ID, or from any list to the folder it belongs to.
 
-- Build a folder tree as deep as you like, drag bookmarks and folders anywhere, and reorder items inside a folder.
-- Select many items at once and move, copy, delete, or export them in one go.
-- Rename in place, jump between recently visited folders with Back / Forward / Up, and edit the path directly from the address bar.
+**Recycle bin**
 
-### Find
+- Deleting a bookmark or a folder moves it to the Recycle Bin together with its original location.
+- Restore an item where it came from, restore a deleted folder as one unit, or place it somewhere else on purpose.
+- If the original folder no longer exists, LinkPocket says so and puts the item at the top level rather than guessing.
 
-- Search the title, the address, your notes, or the folder path — separately or together — and see **which field matched** for every hit.
-- Smart Lists collect what matters without any setup: recently added, recently visited, recently edited, most visited.
-- Jump straight to a bookmark by its ID, or from any list into the folder it lives in.
+**Clean up**
 
-### Keep and restore
+- The duplicate finder groups bookmarks that share the same address and lets you keep the one you want; the others go to the Recycle Bin.
 
-- Deleting a bookmark or a folder sends it to the **Recycle Bin**, together with its original location.
-- Restore an item where it came from; restore a whole deleted folder as one unit, or put it somewhere else on purpose.
-- If the original folder no longer exists, LinkPocket says so and places the item at the top level instead of guessing.
+**Import, export and backup**
 
-### Clean up
+- Import standard bookmark files exported by any browser, and export them back out at any time.
+- Export as JSON or CSV for use elsewhere.
+- Back up the whole library to a single file — descriptions, visit counts, favorites and site icons included; a backup is verified when written and validated before it is restored.
 
-- The **duplicate finder** groups bookmarks that share the same address, shows you each group, and lets you keep the one you want — the rest go to the Recycle Bin, not into the void.
+**Undo**
 
-### Move your data in and out
+- Every edit can be undone and redone.
 
-- Import bookmarks from standard bookmark files exported by any browser; export them back out at any time.
-- Export as JSON or CSV when you want to process your library elsewhere.
-- **Full backup in one file** — including descriptions, visit counts, favorites and site icons. A backup is verified when written and validated before it is restored, and it can be restored by later versions of the app.
+**Large libraries**
 
-### Work without fear
+- Tens of thousands of bookmarks stay responsive.
 
-- Every edit can be undone — and redone. The history panel shows what is on both stacks.
-- Visit counts and "last visited" times are tracked as you browse, so Smart Lists keep getting smarter.
-- Mark the bookmarks you rely on as favorites.
+**Appearance**
 
-### Let an AI assistant do the tedious parts (optional)
+- 11 built-in themes, plus a color studio that derives the interface from a palette of your own.
+- Import your own font files and use them across the app.
+- Simplified Chinese and English, following the display language by default and switchable at any time.
 
-An optional AI assistant works **through the same engine as the interface** — it can reorganize, batch-move, dedupe and clean up your library by instruction, under the same guarantees as your own clicks:
+**AI assistant (optional)**
 
-- **Approval by tier** — read-only calls pass through; reversible writes are audited; destructive or irreversible operations stop and ask, with a per-step impact preview before you approve.
-- **Undo and rewind** — every batch lands on the undo stack; rewinding a turn rolls the data back, trims the conversation to before that turn, and restores your original message to the composer.
-- **Honest failure** — a step that cannot run reports the real reason and how many items it affected, never a silent "ok".
-- **Web search has limits** — server-side web search is used only where your model provider actually supports it; there is **no built-in crawler and no third-party search key**, and when the capability is unavailable the assistant says so instead of pretending.
-- **Your data path** — conversations go only to the model provider you configure (OpenAI-compatible, OpenAI Responses, or Anthropic Messages); history and the action log stay in your library folder.
+- Works through the same operations as the interface, under the same rules: read-only calls pass through, reversible writes are recorded, and destructive steps ask first with a preview of their impact.
+- Batches can be undone like any other edit.
+- Conversations go only to the model provider you configure; history and the action log stay in your library folder.
 
-Configure a provider in **Settings → AI** to enable it.
+**Command line and MCP (optional)**
 
-### Make it feel like yours
-
-- **11 built-in themes**, plus a color studio: give it your own palette and the entire interface — surfaces, text, highlights, borders — is derived from it.
-- Import your own font files and use them across the whole app.
-- **简体中文 and English**, switched instantly from the settings — or leave it on **Automatic**: an English Windows gets English, any other display language gets Simplified Chinese. Switching never touches your bookmarks, folders or paths.
+- A command-line client and an MCP server ship alongside the app, so scripts and external AI tools can read and change the same library.
 
 ## Getting started
 
@@ -75,24 +64,28 @@ Configure a provider in **Settings → AI** to enable it.
 2. Extract the archive anywhere — a normal folder, a USB stick, a synced drive.
 3. Run `LinkPocket.exe`.
 
-There is no installer and nothing to configure. Your library (database, settings, site icons and logs) is created in the folder you extracted, so uninstalling means deleting that folder — and moving your library means moving it.
+There is no installer and nothing to configure. Your library (database, settings, site icons and logs) is created in the folder you extracted, so uninstalling means deleting that folder, and moving your library means moving it.
 
-To use the AI agent, add a model provider in **Settings → AI** (OpenAI-compatible endpoint, OpenAI Responses, or Anthropic Messages) and paste your API key. It is stored locally, encrypted; nothing leaves your machine until you send a message.
+To use the AI assistant, add a model provider in **Settings → AI** (an OpenAI-compatible endpoint, OpenAI Responses, or Anthropic Messages) and paste your API key. It is stored locally, encrypted.
 
 **Requirements:** Windows 10 or Windows 11 (64-bit).
 
-## Your data and your privacy
+## Data and privacy
 
 - Your bookmarks never leave your machine unless you export them yourself.
 - LinkPocket keeps no account and sends no usage data.
-- The app uses the network only to serve you: it fetches the title, description and icon of a page **when you add or open a bookmark's details**, and it can look up a site's icon from a third-party icon provider when the site itself does not offer one. Nothing else is requested, and nothing about your library is ever uploaded.
-- **AI conversations** go only to the model provider you configure, from your machine, with your key. Conversation history and the agent's action log are stored in your library folder like everything else.
+- The app uses the network only to serve you: it fetches the title, description and icon of a page when you add or open a bookmark's details, and it can look up a site's icon from an icon provider when the site itself does not offer one.
+- AI conversations go only to the model provider you configure, from your machine, with your key.
 
-## Interface
+## Building from source
 
-![The browse view: folder tree on the left, the bookmark list in the middle, details for the selected bookmark on the right](docs/screenshots/browse.png)
+Requires the .NET SDK.
 
-*The browse view — your folder tree on the left, the bookmark list in the middle, details for the selected bookmark on the right.*
+```powershell
+dotnet build LinkPocket.sln -c Release
+dotnet run --project src/LinkPocket.App -c Release
+dotnet test LinkPocket.sln -c Release
+```
 
 ## Credits
 
