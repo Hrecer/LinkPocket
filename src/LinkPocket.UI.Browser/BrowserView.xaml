@@ -431,7 +431,10 @@
                                         </Grid>
                                         <!-- 名称文本宽度跟随**名称列实宽**：列变窄时省略号收窄（药丸不会被挤出到相邻列），
                                              列够宽时不再无端截断（见 NameColumnWidthConverter 类型注释） -->
-                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
+                                        <!-- Tag="RowName" = **改名命中区**：慢双击进入改名要求第二击落在这个文本上
+                                             （资源管理器口径——点图标/空白/时间列只做选择，不误触改名）。
+                                             判据在 BrowserView.DragDrop.cs 的 HitChainHasTag。 -->
+                                        <TextBlock Grid.Column="1" Tag="RowName" Text="{Binding Name}" FontSize="14" Margin="10,0,0,0"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding Name}">
                                             <TextBlock.MaxWidth>

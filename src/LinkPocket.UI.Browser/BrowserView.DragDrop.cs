@@ -159,6 +159,16 @@ public partial class BrowserView : UserControl
     /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
     private bool _pressWasSoleSelection;
 
+    /// <summary>按下是否落在**名称文本**上（行模板里 <c>Tag="RowName"</c> 的那个 TextBlock）。
+    ///
+    /// <para>这是"资源管理器几乎不会误触改名"的关键判据：慢双击改名**只认点名称**——
+    /// 点图标、点行内空白、点时间列一律只做选择。缺了这一条时，只要行已选中，
+    /// 在行的任意位置再点一下都会进改名，用户实测"老是误触重命名"。</para></summary>
+    private bool _pressOnName;
+
+    /// <summary>改名命中区的约定 Tag（与 BrowserView.xaml 名称 TextBlock 的 Tag 一致）。</summary>
+    private const string RowNameTag = "RowName";
+
     /// <summary>拖拽数据：本次拖动集合（<see cref="DragItem"/> 快照，与行/树 VM 解耦——
     /// 主栏行与树节点都能构造，放置端按 Id 通用）。</summary>
     public record BrowserDragPayload(IReadOnlyList<DragItem> Items);
@@ -171,6 +181,20 @@ public partial class BrowserView : UserControl
     private static DependencyObject? HitOf(MouseButtonEventArgs e)
         => (e.OriginalSource ?? e.Source) as DependencyObject;
 
+    /// <summary>命中链（自命中元素上溯）里是否经过挂了指定 Tag 的元素。
+    /// 命中元素取自 <see cref="HitOf"/>（真实输入 = InputManager 填的最深命中元素；
+    /// 合成事件 = 探针显式填的 <c>RoutedEventArgs.Source</c>——鼠标按键事件是 Direct 路由，
+    /// <c>RaiseEvent</c> 不上溯祖先，探针须把事件送到行容器、再用 Source 指明命中元素）。</summary>
+    private static bool HitChainHasTag(DependencyObject? source, string tag)
+    {
+        for (var d = source; d != null;
+             d = d is Visual ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
+        {
+            if (d is FrameworkElement fe && tag.Equals(fe.Tag as string)) return true;
+        }
+        return false;
+    }
+
     /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -178,6 +202,7 @@ public partial class BrowserView : UserControl
         _dragStarted = false;
         _pressRow = null;                      // 先清凭据：下面任何早退都不得留下上一次的手势
         _pressWasSoleSelection = false;
+        _pressOnName = false;
         _pressModifiers = Keyboard.Modifiers;
         _pressClickCount = e.ClickCount;
 
@@ -190,6 +215,8 @@ public partial class BrowserView : UserControl
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         // 记下"按下时它已是唯一选中"——抬起据此判定"再次单击同一项"（Windows 慢双击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
+        // 记下"按下是否落在名称文本上"——慢双击改名的第二道判据（资源管理器口径）
+        _pressOnName = HitChainHasTag(HitOf(e), RowNameTag);
         // 快速连击（同一行、间隔 < 系统双击时间）= 用户想双击打开 → 改名让位
         var now = Environment.TickCount64;
         _pressRapidRepeat = ReferenceEquals(_lastPressRow, _pressRow)
