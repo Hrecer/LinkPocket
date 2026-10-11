@@ -135,11 +135,16 @@
                         <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
                                PopupAnimation="Slide" Focusable="False"
                                IsOpen="{TemplateBinding IsDropDownOpen}">
+                            <!-- B1：浮层不画静态细边 —— 悬浮面 + 静止投影分面（描边只留给聚焦/激活等状态）。 -->
                             <Border CornerRadius="12" Margin="0,4,0,0" Padding="4"
                                     MinWidth="{TemplateBinding ActualWidth}"
                                     MaxHeight="{TemplateBinding MaxDropDownHeight}"
                                     Background="{DynamicResource App.Surface.Floating}"
-                                    BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1">
+                                    BorderBrush="Transparent" BorderThickness="1">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18"
+                                                      Color="{DynamicResource App.Color.Shadow}"/>
+                                </Border.Effect>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False"
                                               FocusVisualStyle="{x:Null}">
                                     <ItemsPresenter/>

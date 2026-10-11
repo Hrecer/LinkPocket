@@ -194,7 +194,7 @@
             <Popup x:Name="OverflowPopup" PlacementTarget="{Binding ElementName=OverflowButton}"
                    Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                 <Border Background="{DynamicResource App.Surface.Card}"
-                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                        BorderBrush="Transparent" BorderThickness="1"
                         CornerRadius="12" MaxHeight="260" MinWidth="140" Padding="0,4">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
@@ -231,7 +231,7 @@
                    Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
                    Closed="PathCandidatesPopup_Closed">
                 <Border Background="{DynamicResource App.Surface.Card}"
-                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                        BorderBrush="Transparent" BorderThickness="1"
                         CornerRadius="12" MaxHeight="220" MinWidth="180" Padding="0,4">
                     <Border.Effect>
                         <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>

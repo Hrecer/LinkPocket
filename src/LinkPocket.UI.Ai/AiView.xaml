@@ -413,8 +413,9 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+                <!-- B1（无静态描边）：气泡靠"卡面填充 vs 页面底"分层，不画细边（细边由填充+层级代替）。 -->
                 <Border Background="{DynamicResource App.Surface.Card}" BorderThickness="1"
-                        BorderBrush="{DynamicResource App.Line.Variant}"
+                        BorderBrush="Transparent"
                         CornerRadius="16,16,4,16" Padding="14,10">
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
                 </Border>
@@ -1131,9 +1132,25 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- ===== 左栏：会话（新建行 + 会话清单） ===== -->
-        <Border Grid.Column="0" Background="{DynamicResource App.Surface.Panel}" CornerRadius="24,0,0,24">
-            <DockPanel Margin="10,12,10,12">
+        <!-- ===== 左栏：会话（新建行 + 会话清单） =====
+             真悬浮卡（A1）：四周留白 + 四角同一圆角 + 静止投影，不再"左圆右方"贴边。
+             ⚠️ 底色必须是**卡面** `App.Surface.Card`（对页面底 1.165+），**不能用 `App.Surface.Panel`**：
+             Panel 是**浅带层**（默认主题下与页面底同档、对比度 ~1.004），贴边通栏时够用，
+             但用来做悬浮卡 = 卡本身看不见，只剩投影在"定义"这张卡 —— 投影稍有偏差就整张卡走形
+             （实测症状：左边像没投影、右边一条明显投影，很脏）。
+             留白四边等距（10）：投影是**全向**的（`ShadowDepth=0`），哪一边都得有地方落。
+             投影强度**对齐全站标尺**：这是常驻大面板，不能按浮层（`0.18–0.22`，小而瞬时）取，
+             要按同级的常驻卡 `ComposerCard`（`BlurRadius=10 / Opacity=0.10`，实测谷底 218）取，
+             且**只轻于它**——卡面提亮（241 vs 页面底 225）已经承担了分面，投影只需"点一下"。
+             实测标尺：谷底 225 → 218 才好；`Opacity=0.14` 时谷底 212（= 全站最重的影）明显过头。
+             列宽仍是 200（探针断言），留白从列内吃掉：内容宽 180 → 164，仍在中文预算内。 -->
+        <Border Grid.Column="0" Background="{DynamicResource App.Surface.Card}" CornerRadius="16"
+                Margin="10,10,10,10">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="10" ShadowDepth="0" Opacity="0.06"
+                                  Color="{DynamicResource App.Color.Shadow}"/>
+            </Border.Effect>
+            <DockPanel Margin="8,10,8,10">
                 <Button DockPanel.Dock="Top" x:Name="NewSessionButton" Style="{StaticResource AiRowButton}"
                         Height="34" Padding="8,0" HorizontalContentAlignment="Stretch" Click="OnNewSession">
                     <Grid>
@@ -1163,17 +1180,16 @@
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
-                                        <!-- 一行会话是"浮在面板上的一张卡"：底色比左栏面板亮一档 + 常驻细边 + 阴影，
-                                             这样它不会与面板糊成一片。加深靠的是"卡亮一档"，不是把面板压暗——
-                                             压暗面板会连带把新建入口、分隔线一起拉下去。 -->
-                                        <Border x:Name="Bd" Background="{DynamicResource App.Surface.Card}"
-                                                BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                                        <!-- 一行会话 = **面板这张卡上的一个列表项**（不是"卡中卡"）。
+                                             ⚠️ 左栏面板现在自己就是**卡面**（`App.Surface.Card`），
+                                             所以行不能再铺一层同色卡面 —— 实测行与面板会**逐像素同色**
+                                             （241/241），行的投影又带方向偏移、横向根本不显形 ⇒ 行等于消失。
+                                             正确口径与全站列表行一致：**行继承面板底，悬停/选中各压深一档**
+                                             （`Surface.CardHover` / `Surface.Selected`，两枚都按"承载面 = 卡面"定的档）。
+                                             加深靠的是"状态压深"，不是"卡亮一档"。 -->
+                                        <Border x:Name="Bd" Background="Transparent"
+                                                BorderBrush="Transparent" BorderThickness="1"
                                                 CornerRadius="12" Padding="{TemplateBinding Padding}">
-                                            <Border.Effect>
-                                                <DropShadowEffect BlurRadius="6" ShadowDepth="1"
-                                                                  Opacity="0.12" Direction="270"
-                                                                  Color="{DynamicResource App.Color.Shadow}"/>
-                                            </Border.Effect>
                                             <ContentPresenter/>
                                         </Border>
                                         <ControlTemplate.Triggers>
@@ -1357,7 +1373,7 @@
                             Cursor="Hand" MouseLeftButtonUp="OnRailPreviewClick"
                             MouseEnter="OnRailPreviewEnter" MouseLeave="OnRailPreviewLeave"
                             Background="{DynamicResource App.Surface.Floating}"
-                            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1" CornerRadius="8">
+                            BorderBrush="Transparent" BorderThickness="1" CornerRadius="8">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.2" Direction="270"
                                               Color="{DynamicResource App.Color.Shadow}"/>
@@ -1398,10 +1414,27 @@
                     </Border>
                 </Popup>
 
-            <!-- 输入区：页面底上的一张卡（技能条 / 编辑器 / 提及 / 输入框 / 工具行） -->
+            <!-- 输入区：页面底上的一张卡（技能条 / 编辑器 / 提及 / 输入框 / 工具行）
+                 B1：**静态不画描边** —— 卡面填充 + 静止投影分面；1px 强调边只留给"卡内获得焦点/激活"。
+                 ⚠️ BorderThickness 恒为 1（静态透明 → 聚焦换强调色）：只换画刷不改几何，
+                 卡内控件不会在聚焦时整体跳 1px。 -->
             <Border x:Name="ComposerCard" Grid.Column="1" Grid.Row="2" MaxWidth="928" HorizontalAlignment="Stretch"
-                    Background="{DynamicResource App.Surface.Card}" BorderThickness="1"
-                    BorderBrush="{DynamicResource App.Line.Variant}" CornerRadius="19" Padding="12" Margin="0,8,0,0">
+                    BorderThickness="1" CornerRadius="19" Padding="12" Margin="0,8,0,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="10" ShadowDepth="1" Opacity="0.10" Direction="270"
+                                      Color="{DynamicResource App.Color.Shadow}"/>
+                </Border.Effect>
                 <StackPanel>
                     <!-- 技能条（有技能才出现；点 chip = 运行/填参数） -->
                     <ItemsControl ItemsSource="{Binding Skills}" Margin="0,0,0,6"
@@ -1655,10 +1688,15 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <!-- 提及候选面板（@ 触发；↑↓ 移动、Enter/点击选入、Esc 关闭） -->
+                    <!-- 提及候选面板（@ 触发；↑↓ 移动、Enter/点击选入、Esc 关闭）
+                         浮层同理（B1）：悬浮面 + 投影分面，不画静态细边。 -->
                     <Border Margin="0,0,0,6" Padding="6,4" MaxHeight="200"
                             Background="{DynamicResource App.Surface.Floating}"
-                            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1" CornerRadius="12">
+                            BorderBrush="Transparent" BorderThickness="1" CornerRadius="12">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.18" Direction="270"
+                                              Color="{DynamicResource App.Color.Shadow}"/>
+                        </Border.Effect>
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Visibility" Value="Collapsed"/>
@@ -1679,7 +1717,8 @@
                     <!-- 输入框：多行无边框。**不摆占位提示**——"给 AI 派个活…（Enter 发送，Shift+Enter 换行）"
                          是把显式约定写进界面噪音里：两条键位在快捷键总表里已有归属，空输入框自己就说明"该打字了"。 -->
                     <Grid>
-                        <TextBox x:Name="ComposerBox" MinHeight="56" MaxHeight="200" TextWrapping="Wrap" AcceptsReturn="True"
+                        <!-- 空输入区收窄：56 → 44（空着时少占一截高度；有内容仍按内容长到 200） -->
+                        <TextBox x:Name="ComposerBox" MinHeight="44" MaxHeight="200" TextWrapping="Wrap" AcceptsReturn="True"
                                  Text="{Binding ComposerText, UpdateSourceTrigger=PropertyChanged}"
                                  Background="Transparent" BorderThickness="0" Padding="0,4"
                                  Foreground="{DynamicResource App.Text.Primary}"/>
@@ -1781,7 +1820,7 @@
                                    IsOpen="{Binding IsContextPanelOpen, Mode=OneWay}">
                                 <Border x:Name="ContextUsagePanel" MaxWidth="320" Padding="14,12"
                                         Background="{DynamicResource App.Surface.Dialog}"
-                                        BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                                        BorderBrush="Transparent" BorderThickness="1"
                                         CornerRadius="12">
                                     <Border.Effect>
                                         <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.18"
@@ -1967,8 +2006,22 @@
                             </Button>
                         </StackPanel>
                     </Grid>
+                    <!-- 错误行 = 卡内**尾行**：只在真有错误时出现（Visibility 绑 HasError）。
+                         原先它常驻在工具行下面 → 把"发送 / 选模型"顶在卡中部、白占一截高度；
+                         不占位之后工具行自然**贴到卡底**（卡只剩 Padding=12 的底距）。 -->
                     <TextBlock Text="{loc:LocKey LastErrorKey}" TextWrapping="Wrap" FontSize="12" Margin="0,6,0,0"
-                               Foreground="{DynamicResource App.Line.Invalid}"/>
+                               Foreground="{DynamicResource App.Line.Invalid}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasError}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </StackPanel>
             </Border>
         </Grid>

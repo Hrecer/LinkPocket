@@ -136,7 +136,7 @@
             <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
         </Style>
         <!-- 模板卡（「添加服务商」选择器）：一张卡 = 一个起点；卡面自左排开、右侧一枚箭头，
-             与全站「可进入」的语言一致（悬停换面板底 + 描边加深，不用阴影）。 -->
+             与全站「可进入」的语言一致（B1：卡面 = 填充 + 静止投影，**不画静态细边**；悬停只换底色）。 -->
         <Style x:Key="AiTemplateCard" TargetType="Button">
             <Setter Property="Width" Value="206"/>
             <Setter Property="MinHeight" Value="52"/>
@@ -150,8 +150,12 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Bd" CornerRadius="14" Padding="{TemplateBinding Padding}"
                                 Background="{DynamicResource App.Surface.Hover}"
-                                BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1"
+                                BorderBrush="Transparent" BorderThickness="1"
                                 SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="1" Direction="270" Opacity="0.12"
+                                                  Color="{DynamicResource App.Color.Shadow}"/>
+                            </Border.Effect>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -166,7 +170,6 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Panel}"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource App.Line.Outline}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>

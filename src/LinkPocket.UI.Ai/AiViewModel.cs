@@ -102,8 +102,16 @@ public sealed partial class AiViewModel : INotifyPropertyChanged, IDisposable
     public string? LastErrorKey
     {
         get => _lastErrorKey;
-        private set => Set(ref _lastErrorKey, value, nameof(LastErrorKey));
+        private set
+        {
+            if (!Set(ref _lastErrorKey, value, nameof(LastErrorKey))) return;
+            Raise(nameof(HasError));
+        }
     }
+
+    /// <summary>是否有错误要做展示。卡内尾行的错误文案按它显隐——**空错误不占位**：
+    /// 那个 TextBlock 原先常驻在工具行**下面**，把"发送 / 选模型"顶到卡中部，白占一截高度。</summary>
+    public bool HasError => _lastErrorKey is not null;
 
     public AiMode Mode
     {

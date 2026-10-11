@@ -13,8 +13,9 @@
          `DropShadowEffect.Color`）不吃资源引用 —— 实测在 BAML 加载期抛
          `XamlParseException`（"#FFFFFFFF" 不是属性 "Color" 的有效值）。这三处改由构造函数
          直接取令牌值赋给属性（见 ColorPickerPopup.xaml.cs 的 ApplyTokenColors）；普通 Brush 型属性照常走资源。 -->
+    <!-- B1：弹层不画静态细边 —— 对话框面 + 投影分面（原来那圈 1px 弱描边是"简陋感"的来源）。 -->
     <Border Background="{DynamicResource App.Surface.Dialog}" CornerRadius="20" Padding="16,14"
-            BorderBrush="{DynamicResource App.Line.Variant}" BorderThickness="1">
+            BorderBrush="Transparent" BorderThickness="1">
         <Border.Effect>
             <!-- Color 由 code-behind 赋令牌值（同上：Color 型属性不吃资源引用） -->
             <DropShadowEffect x:Name="ShellShadow" BlurRadius="18" ShadowDepth="3" Direction="270" Opacity="0.22"/>
