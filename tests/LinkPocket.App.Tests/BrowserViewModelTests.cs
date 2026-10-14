@@ -273,6 +273,32 @@ public class BrowserViewModelTests
         }
     }
 
+    [Fact]
+    public async Task 编辑模式打开_带图标的链接_加载完成后可清除图标()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            // 内嵌 data: 图标：解码全在本地（不触网），LoadFromCache 必然命中
+            const string inlineIcon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+            var link = (await client.LinkCreateAsync("https://icon.example/", title: "带图标", autoFetchMetadata: false,
+                faviconUrl: inlineIcon)).Data!;
+
+            var vm = new BrowserViewModel(client);
+            vm.OpenEditorForEdit(link.LinkId);
+
+            // 回归：预填完成（IsLoading 收尾）后清除按钮必须重新评估为可用——
+            // 曾因 IsLoading 不重发 CanClearFavicon 通知，按钮可见性停在加载期的 false（取消再进编辑后按钮消失）。
+            var canClear = await WaitUntilAsync(() => vm.EditorPage is { CanClearFavicon: true }, TimeSpan.FromSeconds(3));
+            Assert.True(canClear, "带图标的链接进入编辑后，清除图标按钮应可用");
+            Assert.True(vm.EditorPage!.HasFavicon);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
     private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

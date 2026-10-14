@@ -29,11 +29,17 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         _createListId = createListId;
         SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !IsLoading && !IsFetching && !HasError);
         CancelCommand = new RelayCommand(() => _host.CloseEditorPage());
-        FetchMetadataCommand = new RelayCommand(() => _ = FetchMetadataAsync(),
-            () => !IsLoading && !IsFetching && !string.IsNullOrWhiteSpace(Url));
+        // 一键解析（补缺）+ 三枚单字段抓取（只覆盖该字段）：共用同一次网络抓取，差别只在"写哪几个字段"
+        FetchMetadataCommand = new RelayCommand(() => _ = FetchFieldAsync(FetchField.All), CanFetch);
+        FetchTitleCommand = new RelayCommand(() => _ = FetchFieldAsync(FetchField.Title), CanFetch);
+        FetchIconCommand = new RelayCommand(() => _ = FetchFieldAsync(FetchField.Icon), CanFetch);
+        FetchDescriptionCommand = new RelayCommand(() => _ = FetchFieldAsync(FetchField.Description), CanFetch);
         ClearFaviconCommand = new RelayCommand(ClearFavicon, () => CanClearFavicon);   // 与属性口径一致（含 IsFetching）
         if (IsEditMode) _ = LoadForEditAsync();
     }
+
+    /// <summary>抓取类命令的共用可用性：加载/解析中禁用，URL 非空才发请求。</summary>
+    private bool CanFetch() => !IsLoading && !IsFetching && !string.IsNullOrWhiteSpace(Url);
 
     /// <summary>新建模式：在浏览模块当前目录创建（null = 根级）。</summary>
     public LinkEditorViewModel(EngineClient client, BrowserViewModel host, string? initialListId)
@@ -88,7 +94,18 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public bool IsLoading
     {
         get => _isLoading;
-        set { if (_isLoading != value) { _isLoading = value; OnPropertyChanged(); CommandRefresh.Request(); } }
+        set
+        {
+            if (_isLoading != value)
+            {
+                _isLoading = value;
+                OnPropertyChanged();
+                // CanClearFavicon 含 !IsLoading：预填时 favicon 在加载中置位（那一刻重评估为 false），
+                // 加载收尾若不重评估，清除按钮的可见性会**永久停在 false**（实测：取消再进编辑后按钮消失）。
+                OnPropertyChanged(nameof(CanClearFavicon));
+                CommandRefresh.Request();
+            }
+        }
     }
 
     private LocValue? _error;
@@ -105,6 +122,9 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
     public ICommand FetchMetadataCommand { get; }
+    public ICommand FetchTitleCommand { get; }
+    public ICommand FetchIconCommand { get; }
+    public ICommand FetchDescriptionCommand { get; }
     public ICommand ClearFaviconCommand { get; }
 
     // —— 图标/元数据 ——
@@ -140,44 +160,83 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         set { if (_isFetching != value) { _isFetching = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanClearFavicon)); CommandRefresh.Request(); } }
     }
 
+    /// <summary>抓取中的字段（"all" / "title" / "icon" / "description"；null = 空闲）——四枚按钮的转圈态据此投影。</summary>
+    private string? _fetchingField;
+
+    /// <summary>正在整页一键解析（URL 卡片按钮转圈）。</summary>
+    public bool IsFetchingAll => _fetchingField == "all";
+    /// <summary>正在单独抓取标题（标题按钮转圈）。</summary>
+    public bool IsFetchingTitle => _fetchingField == "title";
+    /// <summary>正在单独抓取图标（图标徽标按钮转圈）。</summary>
+    public bool IsFetchingIcon => _fetchingField == "icon";
+    /// <summary>正在单独抓取描述（描述按钮转圈）。</summary>
+    public bool IsFetchingDescription => _fetchingField == "description";
+
+    private void SetFetchingField(string? field)
+    {
+        _fetchingField = field;
+        OnPropertyChanged(nameof(IsFetchingAll));
+        OnPropertyChanged(nameof(IsFetchingTitle));
+        OnPropertyChanged(nameof(IsFetchingIcon));
+        OnPropertyChanged(nameof(IsFetchingDescription));
+    }
+
     /// <summary>是否可清除图标：仅编辑模式、当前确实有图标（原链接带图标或已解析出图标）且不在加载/解析中
     /// （无图标时按钮不应出现——"清除不存在的图标"是无意义操作；清除后图标置空，按钮随之隐藏）。</summary>
     public bool CanClearFavicon => IsEditMode && HasFavicon && !IsLoading && !IsFetching;
 
-    /// <summary>自动解析：抓取网站标题/描述/图标，空缺字段自动填充，不覆盖用户已输入内容。</summary>
-    private async Task FetchMetadataAsync()
+    /// <summary>抓取作用域：All = 整页一键解析（只补缺、不覆盖用户输入）；其余 = 单字段抓取（用结果**覆盖**该字段）。</summary>
+    private enum FetchField { All, Title, Icon, Description }
+
+    /// <summary>抓取共用实现（一键补缺 / 单字段覆盖都走这一条）：
+    /// 网络抓取与"URL 快照校验、取消即丢弃"同口径；差别只在写哪几个字段。
+    /// 单字段的语义 = 用户的明确意图（"只更新这一个"）：抓到就**覆盖**（站点标题改了要刷新）；
+    /// 没抓到 → 保持原值 + 错误行说明（绝不因为"没抓到"把用户输入清掉）。</summary>
+    private async Task FetchFieldAsync(FetchField field)
     {
         if (string.IsNullOrWhiteSpace(Url)) return;
         try
         {
             IsFetching = true;
+            SetFetchingField(field switch
+            {
+                FetchField.Title => "title",
+                FetchField.Icon => "icon",
+                FetchField.Description => "description",
+                _ => "all",
+            });
+            Error = null;   // 新一次抓取清掉上一次的错误行
             var url = Url.Trim();   // URL 快照——解析期间 URL 被用户修改则丢弃旧结果（防 A 的结果写进 B）
             var meta = await _client.LinkMetadataFetchAsync(url);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
             if (meta == null) { Error = Loc.K("editor.resolveFailed"); return; }
 
-            if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
-                LinkTitle = meta.Title.Trim();
-            if (!string.IsNullOrWhiteSpace(meta.Description) && string.IsNullOrWhiteSpace(Description))
-                Description = meta.Description.Trim();
-
-            if (!string.IsNullOrWhiteSpace(meta.FaviconUrl))
+            switch (field)
             {
-                _pendingFaviconUrl = meta.FaviconUrl;
-                _clearFavicon = false;
-                // 拉取图标到磁盘缓存并在头部卡片实时预览；失败时回落 /favicon.ico 与聚合源
-                var favUrl = meta.FaviconUrl;
-                Favicon = await Task.Run(async () =>
-                {
-                    try
-                    {
-                        if (!await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl))
-                            LpLog.Error($"favicon download failed (including fallback): {favUrl}", null);
-                        return Services.FaviconService.LoadFromCache(favUrl);
-                    }
-                    catch { return Services.FaviconService.LoadFromCache(favUrl); }
-                });
+                case FetchField.All:
+                    if (!string.IsNullOrWhiteSpace(meta.Title) && string.IsNullOrWhiteSpace(LinkTitle))
+                        LinkTitle = meta.Title.Trim();
+                    if (!string.IsNullOrWhiteSpace(meta.Description) && string.IsNullOrWhiteSpace(Description))
+                        Description = meta.Description.Trim();
+                    if (!string.IsNullOrWhiteSpace(meta.FaviconUrl))
+                        await ApplyFaviconAsync(meta.FaviconUrl);
+                    break;
+
+                case FetchField.Title:
+                    if (!string.IsNullOrWhiteSpace(meta.Title)) LinkTitle = meta.Title.Trim();
+                    else Error = Loc.K("editor.notFound.title");
+                    break;
+
+                case FetchField.Description:
+                    if (!string.IsNullOrWhiteSpace(meta.Description)) Description = meta.Description.Trim();
+                    else Error = Loc.K("editor.notFound.description");
+                    break;
+
+                case FetchField.Icon:
+                    if (!string.IsNullOrWhiteSpace(meta.FaviconUrl)) await ApplyFaviconAsync(meta.FaviconUrl);
+                    else Error = Loc.K("editor.notFound.icon");
+                    break;
             }
         }
         catch (Exception ex)
@@ -190,7 +249,27 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         finally
         {
             IsFetching = false;
+            SetFetchingField(null);
         }
+    }
+
+    /// <summary>把解析出的图标地址设为待写入值、复位「清除」标志，并拉取到磁盘缓存在头部卡片实时预览
+    /// （失败时回落 /favicon.ico 与聚合源）。</summary>
+    private async Task ApplyFaviconAsync(string faviconUrl)
+    {
+        _pendingFaviconUrl = faviconUrl;
+        _clearFavicon = false;
+        var favUrl = faviconUrl;
+        Favicon = await Task.Run(async () =>
+        {
+            try
+            {
+                if (!await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl))
+                    LpLog.Error($"favicon download failed (including fallback): {favUrl}", null);
+                return Services.FaviconService.LoadFromCache(favUrl);
+            }
+            catch { return Services.FaviconService.LoadFromCache(favUrl); }
+        });
     }
 
     /// <summary>清除图标（仅编辑模式）：保存时写入空 favicon 覆盖原图标，头部立即回落默认图标。</summary>

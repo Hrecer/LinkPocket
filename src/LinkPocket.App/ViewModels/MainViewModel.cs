@@ -220,7 +220,7 @@ namespace LinkPocket.ViewModels
         {
             NavigationItems = new ObservableCollection<NavigationItem>
             {
-                new() { Id = NavIds.Browser, LabelKey = "nav.item.browser", IconKind = "folder-open-outline" },
+                new() { Id = NavIds.Browser, LabelKey = "nav.item.browser", IconKind = "folder-outline" },
                 new() { Id = NavIds.Search, LabelKey = "nav.item.search", IconKind = "magnify" },
                 new() { Id = NavIds.SmartLists, LabelKey = "nav.item.smartLists", IconKind = "trending-up" },
                 new() { Id = NavIds.Ai, LabelKey = "nav.item.ai", IconKind = "auto-fix" },

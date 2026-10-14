@@ -113,11 +113,16 @@ public partial class BrowserView : UserControl
     /// <summary>按下时的点击计数：≥2 = 双击手势的第二击，绝不承载选择语义（第二击只作打开）。</summary>
     private int _pressClickCount;
 
-    /// <summary>本次按下是否属于"对同一行的快速连击"：与上一次按下同一行且间隔小于系统双击时间。
+    /// <summary>本次按下是否构成改名「两击对窗口」的第二击：与上一次按下**同一行**、且间隔 ∈ [系统双击时间, <see cref="RenamePairWindowMs"/>]。
+    /// 用户口径（2026-10-14，契约 §1.4）：**单击永不改名**（第一击只"待命"）；快速连击是"双击打开"、不进改名；
+    /// 间隔超窗不构成对（防止"选中很久之后再点一下"直接进改名）。
     /// ⚠️ 不能只信 <see cref="MouseButtonEventArgs.ClickCount"/>：选择/刷新会让行容器被重建，
     /// 重建后 WPF 的 ClickCount 从 1 重新计数 —— 于是"想双击进入文件夹"的第二击被判成单击，
     /// 直接进了改名（用户实测：老是误触重命名、进不去文件夹）。按时间戳判定与元素身份无关。</summary>
-    private bool _pressRapidRepeat;
+    private bool _pressRenamePair;
+
+    /// <summary>改名两击对的间隔上限（毫秒）：第一击"待命"后超过它再点 = 不构成对（需重新起一对）。</summary>
+    private const long RenamePairWindowMs = 5000;
 
     /// <summary>上一次按下的行与时刻（快速连击判定用）。</summary>
     private object? _lastPressRow;
@@ -156,18 +161,8 @@ public partial class BrowserView : UserControl
     /// <summary>本次拖动集合（与浮层/执行同一份快照）——落点候选据此排除"同栏里自己拖动的那几项"。</summary>
     private IReadOnlyList<DragItem> _dragItems = [];
 
-    /// <summary>按下时该行是否**已是唯一选中**（Windows 慢双击改名的判定依据：第一次单击选中，第二次单击改名）。</summary>
+    /// <summary>按下时该行是否**已是唯一选中**（慢两击改名的判定依据：第一击选中/待命，第二击才改名）。</summary>
     private bool _pressWasSoleSelection;
-
-    /// <summary>按下是否落在**名称文本**上（行模板里 <c>Tag="RowName"</c> 的那个 TextBlock）。
-    ///
-    /// <para>这是"资源管理器几乎不会误触改名"的关键判据：慢双击改名**只认点名称**——
-    /// 点图标、点行内空白、点时间列一律只做选择。缺了这一条时，只要行已选中，
-    /// 在行的任意位置再点一下都会进改名，用户实测"老是误触重命名"。</para></summary>
-    private bool _pressOnName;
-
-    /// <summary>改名命中区的约定 Tag（与 BrowserView.xaml 名称 TextBlock 的 Tag 一致）。</summary>
-    private const string RowNameTag = "RowName";
 
     /// <summary>拖拽数据：本次拖动集合（<see cref="DragItem"/> 快照，与行/树 VM 解耦——
     /// 主栏行与树节点都能构造，放置端按 Id 通用）。</summary>
@@ -181,20 +176,6 @@ public partial class BrowserView : UserControl
     private static DependencyObject? HitOf(MouseButtonEventArgs e)
         => (e.OriginalSource ?? e.Source) as DependencyObject;
 
-    /// <summary>命中链（自命中元素上溯）里是否经过挂了指定 Tag 的元素。
-    /// 命中元素取自 <see cref="HitOf"/>（真实输入 = InputManager 填的最深命中元素；
-    /// 合成事件 = 探针显式填的 <c>RoutedEventArgs.Source</c>——鼠标按键事件是 Direct 路由，
-    /// <c>RaiseEvent</c> 不上溯祖先，探针须把事件送到行容器、再用 Source 指明命中元素）。</summary>
-    private static bool HitChainHasTag(DependencyObject? source, string tag)
-    {
-        for (var d = source; d != null;
-             d = d is Visual ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
-        {
-            if (d is FrameworkElement fe && tag.Equals(fe.Tag as string)) return true;
-        }
-        return false;
-    }
-
     /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -202,7 +183,6 @@ public partial class BrowserView : UserControl
         _dragStarted = false;
         _pressRow = null;                      // 先清凭据：下面任何早退都不得留下上一次的手势
         _pressWasSoleSelection = false;
-        _pressOnName = false;
         _pressModifiers = Keyboard.Modifiers;
         _pressClickCount = e.ClickCount;
 
@@ -213,14 +193,13 @@ public partial class BrowserView : UserControl
         _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         if (ViewModel == null || _pressRow == null) return;
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
-        // 记下"按下时它已是唯一选中"——抬起据此判定"再次单击同一项"（Windows 慢双击改名）
+        // 记下"按下时它已是唯一选中"——抬起据此判定"第二击"（慢两击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
-        // 记下"按下是否落在名称文本上"——慢双击改名的第二道判据（资源管理器口径）
-        _pressOnName = HitChainHasTag(HitOf(e), RowNameTag);
-        // 快速连击（同一行、间隔 < 系统双击时间）= 用户想双击打开 → 改名让位
+        // 「两击对窗口」的第二击：同一行、间隔 ∈ [系统双击时间, 5s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
         var now = Environment.TickCount64;
-        _pressRapidRepeat = ReferenceEquals(_lastPressRow, _pressRow)
-            && now - _lastPressTick < GetDoubleClickTime();
+        var gap = now - _lastPressTick;
+        _pressRenamePair = ReferenceEquals(_lastPressRow, _pressRow)
+            && gap >= GetDoubleClickTime() && gap <= RenamePairWindowMs;
         _lastPressRow = _pressRow;
         _lastPressTick = now;
         if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)

@@ -49,7 +49,7 @@ public partial class BrowserViewModel
         // ⚠️ 展开状态**不在这里设**：`IsExpanded=true` 会触发叶子懒加载，而加载在进程内可能**同步**完成
         //    （缓存命中时）——那会把叶子插到"文件夹子节点还没挂上"的位置，树里就出现"链接骑在文件夹之前"。
         //    统一挪到下面"文件夹子节点全部挂好之后"恢复。
-        var root = new FolderNode { IsRoot = true, Name = BookmarkPath.RootToken, IconKind = "folder-open-outline", Host = this };
+        var root = new FolderNode { IsRoot = true, Name = BookmarkPath.RootToken, IconKind = "folder-outline", Host = this };
         var nodes = tree.ToDictionary(
             f => f.FolderId,
             f => new FolderNode

@@ -339,14 +339,14 @@ public partial class BrowserView : UserControl
         if (ViewModel == null || row == null) return;
         if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
 
-        // Windows 口径（慢双击改名）三条，缺一即不改名 —— 用户实测"老是误触改名、进不去文件夹"的根因：
+        // 改名触发（契约 §1.4，2026-10-14 用户口径）：**单击永不改名**——只有构成"两击对窗口"的
+        // **第二击**才进入改名，两条缺一即不改名：
         // ① 按下时它已是唯一选中；
-        // ② **不是对同一行的快速连击**（间隔 < 系统双击时间 = 用户想双击打开 → 改名让位）。第二条与 ClickCount
-        //    无关：选择/刷新会让行容器重建，重建后 WPF 的 ClickCount 会从 1 重新计数，于是"想双击进入"的
-        //    第二击被当成单击，直接进了改名。
-        // ③ **第二击必须落在名称文本上**（`Tag="RowName"`）—— 这是资源管理器"几乎不会误触改名"的关键：
-        //    点图标 / 行内空白 / 时间列只做选择，绝不进改名。真实输入由命中链判定（见 RowNameTag）。
-        if (_pressOnName && _pressWasSoleSelection && !_pressRapidRepeat
+        // ② 本次按下与上一次按下**同一行**、间隔 ∈ [系统双击时间, 5s]（快速连击 = 想双击打开 → 让位；
+        //    超窗不构成对 = 选中很久之后再点一下 → 只"待命"、绝不改名）。判据与 ClickCount 无关：
+        //    选择/刷新会让行容器重建，重建后 WPF 的 ClickCount 会从 1 重新计数，"想双击进入"的第二击被当单击。
+        // ③ 落点不限（行内任何位置等价）——不再要求"点在名称文字上"。
+        if (_pressRenamePair && _pressWasSoleSelection
             && mods == ModifierKeys.None && !ViewModel.IsRenaming)
         {
             ViewModel.BeginRenameRow(row);

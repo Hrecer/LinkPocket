@@ -106,6 +106,33 @@
             </Setter>
         </Style>
 
+        <!-- 图标位上的"单独解析图标"徽标钮（20 圆形）：叠在 44 图标方块右下角，视觉上属于图标本身 -->
+        <Style x:Key="IconBadgeButton" TargetType="Button">
+            <Setter Property="Width" Value="20"/>
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" CornerRadius="10" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource App.Surface.CardHover}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- 多行描述文本域 -->
         <Style x:Key="PageMultilineField" TargetType="TextBox" BasedOn="{StaticResource PageTextField}">
             <Setter Property="Padding" Value="12,10"/>
@@ -169,44 +196,72 @@
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <!-- 图标位：与右侧栏同款（白底圆角方块，非圆形；有 favicon 时替换默认图标） -->
-                        <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True"
-                                VerticalAlignment="Center">
-                            <Grid>
-                                <Image Source="{Binding Favicon}" Stretch="Uniform" Margin="6"
-                                       RenderOptions.BitmapScalingMode="HighQuality"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Image.Style>
-                                        <Style TargetType="Image">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasFavicon}" Value="False">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Image.Style>
-                                </Image>
-                                <!-- 无 favicon 时统一回落小地球（与右侧栏/详情页一致），不用「编辑/新建」符号 -->
-                                <m3:M3Icon Kind="earth" Width="22" Height="22"
-                                           Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.5"
+                        <!-- 图标位：与右侧栏同款（白底圆角方块，非圆形；有 favicon 时替换默认图标）；
+                             右下角叠一枚「单独解析图标」徽标钮（作用域只有图标，与一键解析共用同一枚魔法棒语义） -->
+                        <Grid Width="44" Height="44" VerticalAlignment="Center">
+                            <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True">
+                                <Grid>
+                                    <Image Source="{Binding Favicon}" Stretch="Uniform" Margin="6"
+                                           RenderOptions.BitmapScalingMode="HighQuality"
                                            HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <m3:M3Icon.Style>
-                                        <Style TargetType="m3:M3Icon">
-                                            <Setter Property="Visibility" Value="Collapsed"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding HasFavicon}" Value="False">
-                                                    <Setter Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </m3:M3Icon.Style>
-                                </m3:M3Icon>
-                            </Grid>
-                        </Border>
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    <!-- 无 favicon 时统一回落小地球（与右侧栏/详情页一致），不用「编辑/新建」符号 -->
+                                    <m3:M3Icon Kind="earth" Width="22" Height="22"
+                                               Foreground="{DynamicResource App.Text.Secondary}" Opacity="0.5"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <m3:M3Icon.Style>
+                                            <Style TargetType="m3:M3Icon">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasFavicon}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </m3:M3Icon.Style>
+                                    </m3:M3Icon>
+                                </Grid>
+                            </Border>
+                            <Button Style="{StaticResource IconBadgeButton}" Command="{Binding FetchIconCommand}"
+                                    ToolTip="{loc:Loc editor.fetchIcon.tip}"
+                                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-4,-4">
+                                <Grid>
+                                    <m3:M3Icon Kind="auto-fix" Width="12" Height="12"
+                                               Visibility="{Binding IsFetchingIcon, Converter={StaticResource InvBoolToVis}}"/>
+                                    <m3:CircularProgress IsIndeterminate="True" Width="12" Height="12"
+                                                         Visibility="{Binding IsFetchingIcon, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </Button>
+                        </Grid>
                         <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="{loc:Loc ui.noun.name}" FontSize="12" Opacity="0.55" Margin="2,0,0,2"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <Grid Margin="2,0,0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{loc:Loc ui.noun.name}" FontSize="12" Opacity="0.55"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                                <!-- 单独解析标题（作用域只有标题；「一键解析」保持只补缺，这枚按钮是明确覆盖） -->
+                                <Button Grid.Column="1" Style="{StaticResource MiniIconButton}"
+                                        Command="{Binding FetchTitleCommand}" ToolTip="{loc:Loc editor.fetchTitle.tip}">
+                                    <Grid>
+                                        <m3:M3Icon Kind="auto-fix" Width="14" Height="14"
+                                                   Visibility="{Binding IsFetchingTitle, Converter={StaticResource InvBoolToVis}}"/>
+                                        <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13"
+                                                             Visibility="{Binding IsFetchingTitle, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
+                                </Button>
+                            </Grid>
                             <TextBox Style="{StaticResource HeroTitleField}"
                                      Text="{Binding LinkTitle, UpdateSourceTrigger=PropertyChanged}"/>
                         </StackPanel>
@@ -250,15 +305,16 @@
                                            Foreground="{DynamicResource App.Text.Secondary}"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <!-- 自动解析：抓取标题/描述/图标，空缺字段自动填充 -->
+                                <!-- 一键解析：抓取标题/描述/图标，空缺字段自动填充（不覆盖已填内容）；
+                                     单字段抓取 = 标题/图标/描述三个板块各自那枚按钮 -->
                                 <Button Style="{StaticResource MiniIconButton}" Command="{Binding FetchMetadataCommand}"
                                         ToolTip="{loc:Loc editor.autofetch.tip}">
                                     <Button.Content>
                                         <Grid>
                                             <m3:M3Icon Kind="auto-fix" Width="15" Height="15"
-                                                       Visibility="{Binding IsFetching, Converter={StaticResource InvBoolToVis}}"/>
+                                                       Visibility="{Binding IsFetchingAll, Converter={StaticResource InvBoolToVis}}"/>
                                             <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13"
-                                                                 Visibility="{Binding IsFetching, Converter={StaticResource BoolToVis}}"/>
+                                                                 Visibility="{Binding IsFetchingAll, Converter={StaticResource BoolToVis}}"/>
                                         </Grid>
                                     </Button.Content>
                                 </Button>
@@ -281,12 +337,28 @@
                 <Border Background="{DynamicResource App.Surface.TintCard}"
                         CornerRadius="16" Padding="20,16" Margin="0,14,0,0">
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
-                            <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.6"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBlock Text="{loc:Loc editor.markdown.tip}" FontSize="11" Opacity="0.5" Margin="10,0,0,0"
-                                       VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
-                        </StackPanel>
+                        <Grid Margin="2,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.6"
+                                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                                <TextBlock Text="{loc:Loc editor.markdown.tip}" FontSize="11" Opacity="0.5" Margin="10,0,0,0"
+                                           VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"/>
+                            </StackPanel>
+                            <!-- 单独解析描述（站点 meta description；抓到即覆盖当前描述） -->
+                            <Button Grid.Column="1" Style="{StaticResource MiniIconButton}"
+                                    Command="{Binding FetchDescriptionCommand}" ToolTip="{loc:Loc editor.fetchDescription.tip}">
+                                <Grid>
+                                    <m3:M3Icon Kind="auto-fix" Width="14" Height="14"
+                                               Visibility="{Binding IsFetchingDescription, Converter={StaticResource InvBoolToVis}}"/>
+                                    <m3:CircularProgress IsIndeterminate="True" Width="13" Height="13"
+                                                         Visibility="{Binding IsFetchingDescription, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </Button>
+                        </Grid>
                         <TextBox Style="{StaticResource PageMultilineField}"
                                  Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
