@@ -17,7 +17,7 @@ internal static partial class SmokeRunner
     {
         // 本节点用独立临时库（不扰动前面各节的数据状态），自建自清。
         var dbPath = Path.Combine(TempArea.Resolve(), $"lpsmoke_cli_{Guid.NewGuid():N}.db");
-        var undoJournal = Path.Combine(Path.GetDirectoryName(dbPath)!, "undo-journal.json");
+        var undoJournal = Path.Combine(Path.GetDirectoryName(dbPath)!, "undo-journal.cli.json");
         using var host = new EngineHost(dbPath);
         var server = McpServer.Create(host);
 

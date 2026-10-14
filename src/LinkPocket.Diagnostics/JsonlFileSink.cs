@@ -39,7 +39,7 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
     public JsonlFileSink(LoggingOptions options, TimeProvider? clock = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _directory = options.Directory ?? Path.Combine(AppContext.BaseDirectory, "logs");
+        _directory = options.Directory ?? Path.Combine(AppPaths.DataRoot, "logs");
         _clock = clock ?? TimeProvider.System;
     }
 

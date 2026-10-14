@@ -14,8 +14,8 @@ namespace LinkPocket.Theming.Fonts;
 /// 拉丁用所选字体、CJK 自动落到雅黑。若只写一个族名，中文会显示成方块。
 /// </para>
 /// <para>
-/// <b>导入位置 = <c>{BaseDirectory}/fonts/</c></b>：与 db / favicons / logs 同目录。
-/// 本仓纪律"绝不清理 bin"（用户数据在 bin 里）使这里成为持久位置。
+/// <b>导入位置 = 数据根 <c>data\fonts\</c></b>（<see cref="AppPaths"/>）：与 db / favicons / logs 同一数据区。
+/// 本仓纪律"绝不清理 bin"（开发期数据在 bin 里）使这里成为持久位置。
 /// </para>
 /// <para>
 /// <b>失败必须暴露</b>（观测面纪律）：非字体文件 / 损坏文件 → 明确报错并**不写偏好**，
@@ -52,8 +52,8 @@ public static class FontCatalog
         }
     }
 
-    /// <summary>导入字体的存放目录（与 db/logs 同目录）。</summary>
-    public static string FontDirectory => Path.Combine(AppContext.BaseDirectory, "fonts");
+    /// <summary>导入字体的存放目录（数据根 <c>data\fonts</c>）。</summary>
+    public static string FontDirectory => Path.Combine(AppPaths.DataRoot, "fonts");
 
     private static IReadOnlySet<string>? _systemFamilySet;
     private static readonly object SystemFamilySetLock = new();

@@ -89,15 +89,18 @@ public sealed class AppHost : IDisposable
         // 组合根 = 全仓库唯一允许 new 具体实现的地方。
         // 引擎装配（DB 工厂 → 九模块 → EngineCore → 编排层 → EngineClient/EngineWire）由
         // LinkPocket.Composition.EngineComposer 统一收敛（审计/幂等落库 + 编排 + wire 全量选项）。
-        // 数据库路径沿用旧面默认（AppContext.BaseDirectory/linkpocket.db，WAL + schema 版本链
-        // 由 LinkPocketDbContextFactory 一次性启好），保证既有用户数据无缝接管（同一文件，零迁移）。
-        var dbPath = System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
+        // 数据库路径 = 统一发现规则（AppPaths：--db 无 → 环境变量 LINKPOCKET_DB → 从当前目录回溯
+        // data\linkpocket.db → 程序根 data\linkpocket.db）。4.0.0 起数据区固定 `data\`：程序区更新时
+        // 整体换装、运行期只写数据区（见 内部资产/文档/UPDATE.md §2）；WAL + 版本校验由
+        // LinkPocketDbContextFactory 一次性启好。
+        var dbPath = AppPaths.ResolveDatabasePath(null, out var dbSource);
+        LpLog.Info($"library: {dbPath} ({dbSource})", category: "app.lifecycle");
         var composed = LinkPocket.Composition.EngineComposer.Compose(
             dbPath,
             new LinkPocket.Composition.ComposeOptions
             {
                 // 撤销栈落盘：关掉应用再打开，"还能撤销"这件事不蒸发（实测用户要求跨进程回溯）
-                UndoJournalPath = System.IO.Path.Join(AppContext.BaseDirectory, "undo-journal.json"),
+                UndoJournalPath = System.IO.Path.Join(System.IO.Path.GetDirectoryName(dbPath)!, "undo-journal.json"),
             });
 
         // null-forgiving 必须换显式断言——默认装配必然带 wire（BuildWire 缺省 true），

@@ -175,8 +175,8 @@ parseable). Exit codes: 0 ok / 1 error / 2 usage / 3 destructive command missing
 
     --db <path>              explicit
     LINKPOCKET_DB            environment variable
-    otherwise: the first linkpocket.db found walking up from the current directory,
-    otherwise: linkpocket.db next to the executable.
+    otherwise: the first data\linkpocket.db found walking up from the current directory,
+    otherwise: data\linkpocket.db under the program root.
 
 ## Typical commands
 
@@ -213,7 +213,7 @@ $mcp = @"
   "mcpServers": {
     "linkpocket": {
       "command": "$mcpExe",
-      "args": ["--db", "<absolute path to linkpocket.db>"]
+      "args": ["--db", "<absolute path to data\\linkpocket.db>"]
     }
   }
 }

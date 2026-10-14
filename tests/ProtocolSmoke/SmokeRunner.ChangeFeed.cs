@@ -17,7 +17,7 @@ internal static partial class SmokeRunner
     private static async Task SectionExternalChangeFeed(SmokeState s)
     {
         var dbPath = Path.Combine(TempArea.Resolve(), $"lpsmoke_feed_{Guid.NewGuid():N}.db");
-        var undoJournal = Path.Combine(Path.GetDirectoryName(dbPath)!, "undo-journal-cli.json");
+        var undoJournal = Path.Combine(Path.GetDirectoryName(dbPath)!, "undo-journal.cli.json");
         using var host = new EngineHost(dbPath);
 
         try

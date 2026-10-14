@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,16 +14,16 @@ public class LinkPocketDbContext : DbContext
     {
     }
 
-    /// <summary>允许指定数据库文件路径（测试/数据工具用）；默认取程序运行目录。</summary>
+    /// <summary>允许指定数据库文件路径（测试/数据工具用）；默认 = 数据根 <c>data\linkpocket.db</c>（<see cref="AppPaths"/>）。</summary>
     public LinkPocketDbContext(string? dbPath)
     {
-        DbPath = dbPath ?? System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
+        DbPath = dbPath ?? AppPaths.DefaultDatabasePath;
     }
 
     /// <summary>引擎工厂专用：直接给定连接串（含 WAL 库 + foreign_keys 连接项）。同一程序集内部使用。</summary>
     internal LinkPocketDbContext(string? contextPath, string connectionStringOverride)
     {
-        DbPath = contextPath ?? System.IO.Path.Join(AppContext.BaseDirectory, "linkpocket.db");
+        DbPath = contextPath ?? AppPaths.DefaultDatabasePath;
         _connectionStringOverride = connectionStringOverride;
     }
 

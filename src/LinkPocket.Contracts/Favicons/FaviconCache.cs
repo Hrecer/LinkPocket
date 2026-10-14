@@ -24,8 +24,9 @@ namespace LinkPocket.Contracts;
 /// </remarks>
 public static class FaviconCache
 {
-    /// <summary>缓存目录 = 程序目录/favicons（便携口径：删掉程序目录即清空全部数据）。</summary>
-    public static readonly string CacheDirectory = Path.Combine(AppContext.BaseDirectory, "favicons");
+    /// <summary>缓存目录 = 数据根 <c>data\favicons</c>（随安装走：删掉 <c>data\</c> 即清空全部运行数据）。</summary>
+    /// <remarks>派生自 <see cref="AppPaths"/>（唯一解析实现），绝不在这里手拼 <c>AppContext.BaseDirectory</c>。</remarks>
+    public static string CacheDirectory => Path.Combine(AppPaths.DataRoot, "favicons");
 
     /// <summary>单文件上限：超过即判失败（挡住"服务器把一个大文件当图标返回"）。</summary>
     private const int MaxBytes = 2 * 1024 * 1024;

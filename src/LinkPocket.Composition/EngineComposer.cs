@@ -93,7 +93,7 @@ public static class EngineComposer
 
     /// <summary>
     /// 宿主日志选项的**唯一实现**（环境策略归宿主，但 App 与无头宿主同一套口径 → 收在这里，
-    /// 不再各写一份）：缺省 info + <c>{BaseDirectory}/logs</c>；
+    /// 不再各写一份）：缺省 info + 数据根 <c>data\logs</c>；
     /// <c>LINKPOCKET_LOG_LEVEL</c> = trace|debug|info|warn|error|fatal；<c>LINKPOCKET_LOG_DIR</c> = 目录覆盖。
     /// 级别名称经契约的 <see cref="LogLevels"/> 解析（**全站唯一映射**）；不认识的写法回落 info（缺省口径）。
     /// </summary>

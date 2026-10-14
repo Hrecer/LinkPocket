@@ -22,7 +22,7 @@ WorkBuddy 等）。外部 Agent 由此可以**看数据、改数据、空跑**�
 dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <库路径>
 ```
 
-库路径缺省解析与命令行客户端一致（`--db` → `LINKPOCKET_DB` → 从当前目录上溯找 `linkpocket.db` → 程序目录）。
+库路径缺省解析与命令行客户端一致（`--db` → `LINKPOCKET_DB` → 从当前目录上溯找 `data\linkpocket.db` → 程序根 `data\linkpocket.db`；统一实现 = `LinkPocket.Contracts.AppPaths`）。
 
 ## 协议面
 
@@ -69,7 +69,7 @@ dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <库路径
       "command": "dotnet",
       "args": [
         "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll",
-        "--db", "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.App/bin/Debug/net10.0-windows/linkpocket.db"
+        "--db", "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.App/bin/Debug/net10.0-windows/data/linkpocket.db"
       ]
     }
   }

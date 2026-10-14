@@ -27,7 +27,7 @@ linkpocket help [命令]                      # 帮助
 
 | 选项 | 作用 |
 |---|---|
-| `--db <路径>` | 指定库文件（缺省：从当前目录向上找第一个 `linkpocket.db`，找不到则用程序目录） |
+| `--db <路径>` | 指定库文件（缺省：从当前目录向上找第一个 `data\linkpocket.db`，找不到则用程序根 `data\linkpocket.db`） |
 | `--json` | 结构化 JSON 输出（脚本与外部 Agent 用；表格是人对人的缺省形态） |
 | `--all` | 表格不截断（缺省最多 100 行） |
 | `--dry-run` | 空跑：执行但不提交，返回将发生什么（零副作用，且**不需要确认**） |
@@ -40,8 +40,11 @@ linkpocket help [命令]                      # 帮助
 
 1. 命令行 `--db <路径>`
 2. 环境变量 `LINKPOCKET_DB`
-3. 从当前目录向上回溯，取第一个 `linkpocket.db`
-4. 程序目录 `linkpocket.db`（与 WPF 宿主同一用户数据约定：同一文件无缝接管，零迁移）
+3. 从当前目录向上回溯，取第一个 `<目录>\data\linkpocket.db`（在数据目录树里就地执行时无需传参）
+4. 程序根 `data\linkpocket.db`（程序根 = 向上找最近含 `data\` 子目录或 `LinkPocket.exe` 的目录；CLI 在 `tools\` 里，取上一层）
+
+统一实现 = 契约层 `LinkPocket.Contracts.AppPaths`（应用 / CLI / 网关 / 内部工具同一份）。
+4.0.0 起数据区固定 `data\`；旧的"程序目录平铺 `linkpocket.db`"**不再识别**（不检测、不提示）。
 
 ## 退出码
 

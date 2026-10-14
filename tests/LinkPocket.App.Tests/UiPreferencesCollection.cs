@@ -7,7 +7,7 @@ namespace LinkPocket.App.Tests;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>UiPreferenceStore</c> 读写的是**同一个进程级文件**（<c>{BaseDirectory}/ui-preferences.json</c>），
+/// <c>UiPreferenceStore</c> 读写的是**同一个进程级文件**（<c>程序根\data\ui-preferences.json</c>），
 /// 且保存走"临时文件 + <c>File.Replace</c>"的原子替换。两个测试类并行时：
 /// 一个类刚把文件替换掉/删掉，另一个类正好在 Load —— 于是出现
 /// 「原子写不留tmp」这类**看似随机的失败**，以及文件句柄竞争带来的长时间等待。

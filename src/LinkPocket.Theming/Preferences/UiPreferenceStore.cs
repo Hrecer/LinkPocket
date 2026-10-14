@@ -6,12 +6,12 @@ using LinkPocket.Theming.Themes;
 
 namespace LinkPocket.Theming.Preferences;
 
-/// <summary>用户界面偏好（主题 + 字体）。落 <c>{BaseDirectory}/ui-preferences.json</c>。</summary>
+/// <summary>用户界面偏好（主题 + 字体）。落数据根 <c>data\ui-preferences.json</c>（<see cref="AppPaths"/>）。</summary>
 /// <remarks>
 /// <para>
 /// <b>为什么不进数据库</b>（方案 §6.3）：偏好不是书库内容——不进备份文件、不进 schema、
-/// 不加引擎命令（因此 catalog 不需要重生成）。它与 db / favicons / logs 同目录，
-/// 遵守"绝不清理 bin"的既有纪律。
+/// 不加引擎命令（因此 catalog 不需要重生成）。它与 db / favicons / logs 同一数据区，
+/// 开发期落在 bin 里，遵守"绝不清理 bin"的既有纪律。
 /// </para>
 /// <para>
 /// <b>版本字段</b>：格式演进时用来判定"能不能读"。版本不符 → 当作损坏处理（回退默认 + 如实暴露），
@@ -124,8 +124,8 @@ public static class UiPreferenceStore
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    /// <summary>偏好文件路径（与 db / logs 同目录）。</summary>
-    public static string FilePath => Path.Combine(AppContext.BaseDirectory, FileName);
+    /// <summary>偏好文件路径（数据根 <c>data\</c>；与 db / logs 同一数据区）。</summary>
+    public static string FilePath => Path.Combine(AppPaths.DataRoot, FileName);
 
     /// <summary>读取偏好；文件不存在 = 默认值；损坏 = 默认值 + 记日志（<paramref name="failed"/> 为 true）。</summary>
     /// <param name="failed">true = 读取失败（已回退默认），调用方应提示用户一次。</param>

@@ -9,8 +9,8 @@ namespace LinkPocket.Ai;
 /// </summary>
 public static class AiRuntime
 {
-    /// <summary>缺省数据根：<c>{程序目录}/ai</c>（与 db / 日志 / 界面偏好同目录；不进库、不进备份）。</summary>
-    public static string DefaultDataRoot => Path.Combine(AppContext.BaseDirectory, "ai");
+    /// <summary>缺省数据根 = 数据根下 <c>data\ai</c>（<see cref="AppPaths"/>；与 db / 日志 / 界面偏好同一数据区；不进库、不进备份）。</summary>
+    public static string DefaultDataRoot => Path.Combine(AppPaths.DataRoot, "ai");
 
     /// <param name="dataRoot">AI 数据根（测试传临时目录）。</param>
     /// <param name="client">引擎客户端（AI 只经它读写）。</param>

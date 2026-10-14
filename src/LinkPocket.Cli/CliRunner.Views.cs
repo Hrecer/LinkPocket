@@ -173,7 +173,7 @@ public static partial class CliRunner
           linkpocket help [command]                 help
 
         global options:
-          --db <path>   library file (default: first linkpocket.db found walking up from the current directory)
+          --db <path>   library file (default: first data\linkpocket.db walking up, else <program root>\data\linkpocket.db)
           --json        machine-readable JSON output
           --all         do not truncate tables
           --dry-run     execute without committing (zero side effects, no confirmation needed)

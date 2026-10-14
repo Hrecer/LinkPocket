@@ -12,7 +12,7 @@ namespace LinkPocket.App.Tests;
 /// 字体系统与偏好持久化（方案 §6）：回退链、导入/删除、度量自检、原子写与损坏暴露。
 /// </summary>
 /// <remarks>
-/// 这些用例**不碰用户目录**：导入目标目录由 <c>AppContext.BaseDirectory/fonts</c> 决定，
+/// 这些用例**不碰用户目录**：导入目标目录由数据区（<c>程序根\data\fonts</c>）决定，
 /// 测试只验证"回退链构造"与"坏文件拒绝"这类纯逻辑；真正的文件复制用例放在临时目录里做，
 /// 用完自清（CONVENTIONS §5）。
 /// </remarks>
@@ -40,12 +40,12 @@ public class FontSystemTests : IDisposable
     }
 
     /// <summary>
-    /// **碰不到别的安装**的机器化判据：偏好文件永远只落在**本进程自己的安装目录**里。
+    /// **碰不到别的安装**的机器化判据：偏好文件永远只落在**本进程自己的构建输出目录**（其数据区 `data\`）里。
     /// </summary>
     /// <remarks>
     /// 不变量：测试或渲染检查跑完，进程内主题状态回到出厂默认、偏好文件回到跑前原样，
-    /// 并且**碰不到别的安装**。这条把最后半句变成可执行断言：<c>UiPreferenceStore.FilePath</c>
-    /// 必须由 <see cref="AppContext.BaseDirectory"/> 拼出（= 当前这份安装/构建输出的目录）——
+    /// 并且**碰不到别的安装**。这条把最后半句变成可执行断言：数据区从
+    /// <see cref="AppContext.BaseDirectory"/> 向上解析得到（4.0.0 起 = 程序根 `data\`）——
     /// 一旦有人把它改成"用户目录 / 固定绝对路径 / 上一级目录"，测试与渲染检查就会去改别人（或真实用户）的那份。
     /// </remarks>
     [Fact]
@@ -55,8 +55,9 @@ public class FontSystemTests : IDisposable
         var filePath = Path.GetFullPath(UiPreferenceStore.FilePath);
 
         Assert.True(filePath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase),
-            $"偏好文件必须落在本进程的安装目录里：file={filePath} install={installDir}");
+            $"偏好文件必须落在本进程的构建输出目录里：file={filePath} install={installDir}");
         Assert.Equal("ui-preferences.json", Path.GetFileName(filePath));
+        Assert.Equal(Path.Combine(installDir, "data"), Path.GetDirectoryName(filePath));
     }
 
     [Theory]
@@ -111,7 +112,7 @@ public class FontSystemTests : IDisposable
         FontChoice? imported = null;
         try
         {
-            // ① 真实导入（走 FontCatalog.Import：解析族名 → 复制到 {BaseDirectory}/fonts/）。
+            // ① 真实导入（走 FontCatalog.Import：解析族名 → 复制到数据区 data\fonts\）。
             // ⚠️ 先改成**唯一文件名**再导：直接用 arial.ttf 会让用例在同一目录里反复覆盖，
             //    而 Windows 对"正被 WPF 打开的字体文件"不给覆写（实测 "无法在使用用户映射区域打开的文件上执行"）。
             var staged = Path.Combine(temp, "lp-import-probe-" + Guid.NewGuid().ToString("N")[..8] + Path.GetExtension(source!));

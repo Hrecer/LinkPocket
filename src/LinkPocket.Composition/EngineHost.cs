@@ -48,15 +48,15 @@ public sealed class EngineHost : IDisposable
     /// <summary>按名索引的命令描述符。</summary>
     public IReadOnlyDictionary<string, CommandDescriptor> Commands { get; }
 
-    /// <param name="databasePath">库文件路径；null = 自动解析（见 <see cref="ResolveDatabasePath"/>）。</param>
+    /// <param name="databasePath">库文件路径；null = 按统一发现规则自动解析（见 <see cref="AppPaths.ResolveDatabasePath(string?, out string)"/>）。</param>
     /// <param name="logToStderr">是否装配日志管道（stderr JSONL + 内存环）。缺省 false（LpLog 为空实现，不落盘不刷屏）。</param>
     public EngineHost(string? databasePath = null, bool logToStderr = false)
     {
-        DatabasePath = ResolveDatabasePath(databasePath, out var source);
+        DatabasePath = AppPaths.ResolveDatabasePath(databasePath, out var source);
         DatabaseSource = source;
 
-        var directory = Path.GetDirectoryName(DatabasePath);
-        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        var directory = Path.GetDirectoryName(DatabasePath)!;
+        Directory.CreateDirectory(directory);
 
         if (logToStderr) _log = EngineComposer.ConfigureHeadlessLogging();
 
@@ -68,49 +68,12 @@ public sealed class EngineHost : IDisposable
             //    它下一次保存就把这些条目**抹掉**（表现为"命令行撤过的东西，界面里 Ctrl+Z 又冒出来"）。
             // 因此命令行/网关有**自己的**一条撤销栈：跨 CLI 调用仍可撤（文件持久化），
             // 与界面的 Ctrl+Z 互不干扰（各自撤各自做过的）。见 EXTERNAL-AGENT「并发契约」。
-            UndoJournalPath = Path.Combine(directory ?? AppContext.BaseDirectory, "undo-journal.cli.json"),
+            UndoJournalPath = Path.Combine(directory, "undo-journal.cli.json"),
         });
 
         Catalog = OrchestrationHost.CreateCatalog(Composition.Registry);
         Manifest = Catalog.Manifest();
         Commands = Manifest.Commands.ToDictionary(c => c.Name, StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    /// 库路径解析，优先级由高到低：
-    /// ① 显式参数（命令行 <c>--db</c>）；② 环境变量 <c>LINKPOCKET_DB</c>；
-    /// ③ 从当前目录向上回溯到第一个含 <c>linkpocket.db</c> 的目录（命令在库目录树里就地执行时无需传参）；
-    /// ④ 程序目录 <c>linkpocket.db</c>（与 WPF 宿主同一约定：同目录即同一个库，零迁移）。
-    /// </summary>
-    public static string ResolveDatabasePath(string? explicitPath, out string source)
-    {
-        if (!string.IsNullOrWhiteSpace(explicitPath))
-        {
-            source = "argument";
-            return Path.GetFullPath(explicitPath.Trim());
-        }
-
-        var env = Environment.GetEnvironmentVariable("LINKPOCKET_DB");
-        if (!string.IsNullOrWhiteSpace(env))
-        {
-            source = "env";
-            return Path.GetFullPath(env.Trim());
-        }
-
-        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (dir is not null)
-        {
-            var candidate = Path.Combine(dir.FullName, "linkpocket.db");
-            if (File.Exists(candidate))
-            {
-                source = "search";
-                return candidate;
-            }
-            dir = dir.Parent;
-        }
-
-        source = "default";
-        return Path.Combine(AppContext.BaseDirectory, "linkpocket.db");
     }
 
     public CommandDescriptor? Descriptor(string command) => Commands.GetValueOrDefault(command);
