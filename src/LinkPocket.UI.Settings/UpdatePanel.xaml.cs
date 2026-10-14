@@ -78,6 +78,7 @@ namespace LinkPocket.Views
             UpdateErrorCodes.Release => Loc.K("update.err.release"),
             UpdateErrorCodes.Download => Loc.K("update.err.download"),
             UpdateErrorCodes.Digest => Loc.K("update.err.digest"),
+            UpdateErrorCodes.ZipMissing => Loc.K("update.err.zipMissing"),
             UpdateErrorCodes.Package => Loc.K("update.err.package"),
             UpdateErrorCodes.NotPrepared => Loc.K("update.err.notPrepared"),
             UpdateErrorCodes.Updater => Loc.K("update.err.updater"),

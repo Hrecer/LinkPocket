@@ -624,6 +624,7 @@
   "update.err.release": "更新失败：发布页数据不完整（缺少更新包）。",
   "update.err.download": "更新失败：下载更新包失败。",
   "update.err.digest": "更新失败：更新包校验不通过，已放弃。",
+  "update.err.zipMissing": "更新失败：找不到所选更新包（可能已被移动或删除）。",
   "update.err.package": "更新失败：更新包结构不完整。",
   "update.err.notPrepared": "更新失败：更新包尚未就绪。",
   "update.err.updater": "更新失败：无法启动更新器。",

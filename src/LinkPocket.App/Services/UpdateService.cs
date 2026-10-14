@@ -22,8 +22,12 @@ namespace LinkPocket.Services;
 /// <remarks>
 /// <para><b>更新源覆盖</b>：环境变量 <c>LINKPOCKET_UPDATE_FEED</c>（名字已冻结在 UPDATE.md §6）——
 /// 本机 hosts 把 github 指到环回（加速器遗留），本机联调时指到本地服务即可。</para>
-/// <para><b>HttpClient</b>：单实例 + 固定超时（更新检查频率极低，不存在连接池耗尽的场景；
-/// 架构红线 H4 白名单已登记本文件）。</para>
+/// <para><b>HttpClient</b>：单实例（更新检查频率极低，不存在连接池耗尽的场景；
+/// 架构红线 H4 白名单已登记本文件）。**不用整请求总超时**（170MB 的包在总超时下必然误杀——
+/// 曾用 100s）——改为分段防卡：检查 20s / 取响应头 30s / 正文按"停滞 90s 无数据"判死。</para>
+/// <para><b>下载就位 = 单飞</b>：同一时刻只有一次下载在飞——启动自动预下载与应用内手动「检查更新」
+/// 并发时后者**复用前者**（共享同一下载 / 同一结果 / 同一份进度），绝不两次写同一个 <c>package.zip</c>
+/// （曾因并发写同文件抛 IOException 被映射成"下载更新包失败"，见 WARNINGS 172）。</para>
 /// <para><b>全失败路径都如实返回</b>（不抛给调用方）：更新检查的失败是**正常业务态**（离线 / 无 Release），
 /// 由更新页展示 + 指路；只有"交棒"失败需要调用方留在应用里。</para>
 /// </remarks>
@@ -34,6 +38,15 @@ public sealed class UpdateService : IUpdateService
 
     /// <summary>缺省更新源：GitHub Releases latest。</summary>
     public const string DefaultFeedUrl = "https://api.github.com/repos/Hrecer/LinkPocket/releases/latest";
+
+    /// <summary>检查请求总超时（小 JSON；超时 = 网络不可达，如实上报）。</summary>
+    private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>下载：取响应头（含连接与重定向）的超时——只约束到"拿到头"为止，正文不受它约束（否则大包必被误杀）。</summary>
+    private static readonly TimeSpan DownloadHeadTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>下载：正文**停滞判死**——单次读超过它没有任何数据即失败（弱网但持续有流不误杀）。</summary>
+    private static readonly TimeSpan DownloadStallTimeout = TimeSpan.FromSeconds(90);
 
     private const string PreferencesFileName = "update-preferences.json";
     private const string PackageDirectoryName = "package";
@@ -47,9 +60,15 @@ public sealed class UpdateService : IUpdateService
     private UpdateCheckResult? _lastCheck;
     private UpdatePrepareResult? _lastPrepare;
 
+    /// <summary>在飞的下载就位任务（单飞：并发调用复用同一次下载；完成后复位）。</summary>
+    private Task<UpdatePrepareResult>? _prepareInFlight;
+
+    /// <summary>等待本次下载的所有进度接收方（手动面板 / 自动流程可能同时在等同一份进度）。</summary>
+    private readonly List<IProgress<double>> _prepareProgress = new();
+
     /// <param name="installRoot">安装根（程序根）：暂存区标识与 <c>--install</c> 都用它。</param>
     /// <param name="currentVersion">当前版本（3 段）；组合根从本进程 exe 文件版本读出。</param>
-    /// <param name="http">测试注入；null = 自建单实例（固定超时）。</param>
+    /// <param name="http">测试注入；null = 自建单实例（整请求不设总超时，防卡见类注释）。</param>
     public UpdateService(string installRoot, string currentVersion, HttpClient? http = null)
     {
         _installRoot = installRoot;
@@ -57,7 +76,7 @@ public sealed class UpdateService : IUpdateService
         // 偏好文件挂在**安装的数据区**（缺省解析下即 AppPaths.DataRoot；显式 --db 时跟随安装根，
         // 与暂存区/交棒同一归属）：测试注入临时安装根 = 偏好也落临时区，不碰用户数据区。
         _preferencesPath = Path.Combine(installRoot, "data", PreferencesFileName);
-        _http = http ?? new HttpClient { Timeout = TimeSpan.FromSeconds(100) };
+        _http = http ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         if (!_http.DefaultRequestHeaders.Contains("User-Agent"))
             _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LinkPocket");
         if (!_http.DefaultRequestHeaders.Contains("Accept"))
@@ -121,7 +140,10 @@ public sealed class UpdateService : IUpdateService
         UpdateCheckResult result;
         try
         {
-            using var response = await _http.GetAsync(feedUrl, ct).ConfigureAwait(false);
+            // 整请求总超时只留在"检查"这一档（小 JSON）；下载正文走"停滞判死"（见类注释）
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(CheckTimeout);
+            using var response = await _http.GetAsync(feedUrl, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 LpLog.Warn($"the update feed returned HTTP {(int)response.StatusCode}: {feedUrl}", category: LogCategory);
@@ -158,18 +180,52 @@ public sealed class UpdateService : IUpdateService
 
     public async Task<UpdatePrepareResult> PrepareAsync(IProgress<double>? progress = null, CancellationToken ct = default)
     {
+        Task<UpdatePrepareResult> flight;
+        lock (_gate)
+        {
+            // **单飞**：已有下载在飞 → 复用（并发调用共享同一次下载、同一结果与同一份进度；
+            // 绝不两次 File.Create 同一个 package.zip —— 那会抛 IOException 被映射成"下载失败"，见 WARNINGS 172）
+            flight = _prepareInFlight ??= PrepareOnceAsync(ct);
+            if (progress is not null) _prepareProgress.Add(progress);
+        }
+
+        try
+        {
+            return await flight.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_prepareInFlight, flight))
+                {
+                    _prepareInFlight = null;
+                    _prepareProgress.Clear();
+                }
+            }
+        }
+    }
+
+    /// <summary>一次真实的"下载 → 校验 → 解包就位"（单飞任务的执行体；并发调用方经 <see cref="PrepareAsync"/> 共享它）。</summary>
+    private async Task<UpdatePrepareResult> PrepareOnceAsync(CancellationToken ct)
+    {
         UpdateCheckResult? check;
         lock (_gate) check = _lastCheck;
         if (check is null || check.Status != UpdateCheckStatus.Available || check.DownloadUrl is null)
             return Store(FailedPrepare(UpdateErrorCodes.NotPrepared));
+
+        // 同版本已就位：直接返回（与更新面板同一条跳过口径；服务层兜住所有调用方）
+        if (_lastPrepare is { Status: UpdatePrepareStatus.Ready } ready
+            && string.Equals(ready.PreparedVersion, check.LatestVersion, StringComparison.Ordinal))
+            return ready;
 
         var stagingRoot = UpdateStaging.StagingRootFor(_installRoot);
         var zipPath = Path.Combine(stagingRoot, "package.zip");
         try
         {
             Directory.CreateDirectory(stagingRoot);
-            progress?.Report(0);
-            await DownloadAsync(check.DownloadUrl, zipPath, progress, ct).ConfigureAwait(false);
+            Report(0);
+            await DownloadAsync(check.DownloadUrl, zipPath, ct).ConfigureAwait(false);
             if (!DigestMatches(zipPath, check.Sha256Digest))
                 return Store(FailedPrepare(UpdateErrorCodes.Digest));
         }
@@ -179,7 +235,25 @@ public sealed class UpdateService : IUpdateService
             return Store(FailedPrepare(UpdateErrorCodes.Download));
         }
 
-        return await PrepareCoreAsync(zipPath, progress, ct).ConfigureAwait(false);
+        return await PrepareCoreAsync(zipPath, new FanOutProgress(Report), ct).ConfigureAwait(false);
+    }
+
+    /// <summary>把本次下载的进度分发给所有等待者（手动面板与启动自动流程可能同时在等同一份下载）。</summary>
+    private void Report(double value)
+    {
+        IProgress<double>[] sinks;
+        lock (_gate) sinks = _prepareProgress.ToArray();
+        foreach (var sink in sinks) sink.Report(value);
+    }
+
+    /// <summary>进度扇出（同步转发；向 UI 线程的封送由各接收方自己的 Progress 负责）。</summary>
+    private sealed class FanOutProgress : IProgress<double>
+    {
+        private readonly Action<double> _report;
+
+        public FanOutProgress(Action<double> report) => _report = report;
+
+        public void Report(double value) => _report(value);
     }
 
     public Task<UpdatePrepareResult> PrepareFromZipAsync(string zipPath, IProgress<double>? progress = null, CancellationToken ct = default)
@@ -190,8 +264,10 @@ public sealed class UpdateService : IUpdateService
     {
         if (!File.Exists(zipPath))
         {
+            // 下载通道不会走到这里（下载失败在 PrepareOnceAsync 里已按 Download 码返回）——
+            // 实际入口 = 本地 zip 通道（拣选后文件被移动 / 删除）：给专用的"找不到包"码，不说"下载失败"
             LpLog.Warn($"the zip file does not exist: {zipPath}", category: LogCategory);
-            return Store(FailedPrepare(UpdateErrorCodes.Download));
+            return Store(FailedPrepare(UpdateErrorCodes.ZipMissing));
         }
 
         var stagingRoot = UpdateStaging.StagingRootFor(_installRoot);
@@ -340,22 +416,67 @@ public sealed class UpdateService : IUpdateService
         return new UpdateCheckResult(UpdateCheckStatus.Available, CurrentVersion, versionText, notes, url, sha256, size);
     }
 
-    private async Task DownloadAsync(string url, string destination, IProgress<double>? progress, CancellationToken ct)
+    private async Task DownloadAsync(string url, string destination, CancellationToken ct)
     {
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var total = response.Content.Headers.ContentLength ?? 0;
-
-        await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var target = File.Create(destination);
-        var buffer = new byte[81920];
-        long received = 0;
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        // 取响应头（连接 / 重定向）：限时 30s；**拿到头就释放计时器**——正文的防卡交给"停滞判死"，
+        // 整请求总超时会把 170MB 的包在慢网下必然误杀（见类注释）。
+        HttpResponseMessage response;
+        var head = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        head.CancelAfter(DownloadHeadTimeout);
+        try
         {
-            await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-            received += read;
-            if (total > 0) progress?.Report(Math.Min(60.0, received * 60.0 / total));   // 0–60 = 下载段；60+ = 解包段
+            response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, head.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            head.Dispose();
+        }
+
+        using (response)
+        {
+            response.EnsureSuccessStatusCode();
+            var total = response.Content.Headers.ContentLength ?? 0;
+
+            // 先写 `<包>.part`、完整落盘后原子改名：正式文件名只会是完整包（失败 / 中断不留半截）
+            var partPath = destination + ".part";
+            try
+            {
+                await using (var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+                await using (var target = File.Create(partPath))
+                {
+                    var buffer = new byte[81920];
+                    long received = 0;
+                    while (true)
+                    {
+                        int read;
+                        using (var stall = CancellationTokenSource.CreateLinkedTokenSource(ct))
+                        {
+                            stall.CancelAfter(DownloadStallTimeout);
+                            try
+                            {
+                                read = await source.ReadAsync(buffer, stall.Token).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                            {
+                                throw new IOException($"the download stalled (no data for {DownloadStallTimeout.TotalSeconds:0} seconds)");
+                            }
+                        }
+
+                        if (read <= 0) break;
+                        await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                        received += read;
+                        if (total > 0) Report(Math.Min(60.0, received * 60.0 / total));   // 0–60 = 下载段；60+ = 解包段
+                    }
+                }
+
+                File.Move(partPath, destination, overwrite: true);
+            }
+            catch
+            {
+                try { if (File.Exists(partPath)) File.Delete(partPath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* 尽力而为；下次启动清扫接力 */ }
+                throw;
+            }
         }
     }
 

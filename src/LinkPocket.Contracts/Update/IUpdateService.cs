@@ -60,6 +60,9 @@ public static class UpdateErrorCodes
     /// <summary>包摘要（sha256）校验不通过。</summary>
     public const string Digest = "digest";
 
+    /// <summary>所选更新包文件不存在（本地 zip 通道：拣选后文件被移动 / 删除）。</summary>
+    public const string ZipMissing = "zip-missing";
+
     /// <summary>解包失败 / 包结构不含预期交付件。</summary>
     public const string Package = "package";
 

@@ -624,6 +624,7 @@
   "update.err.release": "Update failed: the release is incomplete (no package asset).",
   "update.err.download": "Update failed: downloading the package failed.",
   "update.err.digest": "Update failed: the package failed the checksum check and was discarded.",
+  "update.err.zipMissing": "Update failed: the selected package file was not found (it may have been moved or deleted).",
   "update.err.package": "Update failed: the package is missing expected files.",
   "update.err.notPrepared": "Update failed: the update is not prepared yet.",
   "update.err.updater": "Update failed: could not start the updater.",

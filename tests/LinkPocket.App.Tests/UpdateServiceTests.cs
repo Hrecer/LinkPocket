@@ -296,6 +296,93 @@ public class UpdateServiceTests
         finally { Cleanup(root); }
     }
 
+    // —— 并发 / 单飞（WARNINGS 172 的回归钉：启动自动预下载 × 手动检查曾并发写同一个 package.zip） ——
+
+    /// <summary>首读前等待闸门的响应内容：把"下载在飞"的窗口变成确定性的（两次调用必然重叠）。</summary>
+    private sealed class GatedContent : HttpContent
+    {
+        private readonly byte[] _data;
+        private readonly Task _gate;
+
+        public GatedContent(byte[] data, Task gate)
+        {
+            _data = data;
+            _gate = gate;
+        }
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            await _gate.ConfigureAwait(false);
+            await stream.WriteAsync(_data).ConfigureAwait(false);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _data.Length;
+            return true;
+        }
+    }
+
+    /// <summary>同步收集进度读数（不走 Progress 的上下文封送，测试里可即读）。</summary>
+    private sealed class CollectingProgress : IProgress<double>
+    {
+        public List<double> Values { get; } = new();
+
+        public void Report(double value)
+        {
+            lock (Values) Values.Add(value);
+        }
+    }
+
+    [Fact]
+    public async Task 并发两次就位_复用同一次下载_均就绪且只下载一次()
+    {
+        var root = NewRoot();
+        var zipPath = CreatePackageZip();
+        try
+        {
+            var zipBytes = File.ReadAllBytes(zipPath);
+            var digest = Convert.ToHexStringLower(SHA256.HashData(zipBytes));
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var assetRequests = 0;
+            var handler = new StubHandler
+            {
+                Respond = request =>
+                {
+                    if (request.RequestUri!.AbsolutePath.EndsWith(".zip", StringComparison.Ordinal))
+                    {
+                        Interlocked.Increment(ref assetRequests);
+                        return new HttpResponseMessage(HttpStatusCode.OK) { Content = new GatedContent(zipBytes, gate.Task) };
+                    }
+
+                    return Json(FeedJson("v4.0.0", false, false, ("LinkPocket_v4.0.0.zip", "https://example.invalid/pkg.zip", "sha256:" + digest)));
+                },
+            };
+            var service = new UpdateService(root, "3.2.4", new HttpClient(handler));
+            await service.CheckAsync();
+
+            var firstProgress = new CollectingProgress();
+            var secondProgress = new CollectingProgress();
+            var first = service.PrepareAsync(firstProgress);
+            for (var i = 0; i < 300 && Volatile.Read(ref assetRequests) == 0; i++) await Task.Delay(10);
+            Assert.True(Volatile.Read(ref assetRequests) >= 1, "第一次下载应已发出资产请求");
+            var second = service.PrepareAsync(secondProgress);   // 下载在飞：复用同一次，而不是再开一次
+            gate.SetResult();
+
+            var results = await Task.WhenAll(first, second);
+
+            Assert.Equal(1, Volatile.Read(ref assetRequests));   // 只发出一次资产请求（旧实现 = 两次 → 抢 package.zip 抛 IOException → "下载失败"）
+            Assert.All(results, r => Assert.Equal(UpdatePrepareStatus.Ready, r.Status));
+            Assert.NotEmpty(firstProgress.Values);
+            Assert.NotEmpty(secondProgress.Values);              // 并行等待者拿到同一份进度（扇出）
+        }
+        finally
+        {
+            try { File.Delete(zipPath); } catch { /* 尽力而为 */ }
+            Cleanup(root);
+        }
+    }
+
     // —— 本地 zip 通道 ——
 
     [Fact]
@@ -343,6 +430,23 @@ public class UpdateServiceTests
             try { File.Delete(zipPath); } catch { /* 尽力而为 */ }
             Cleanup(root);
         }
+    }
+
+    [Fact]
+    public async Task 本地zip不存在_报找不到更新包()
+    {
+        var root = NewRoot();
+        try
+        {
+            var missing = Path.Combine(Path.GetTempPath(), $"lp-update-missing-{Guid.NewGuid():N}.zip");
+            var service = new UpdateService(root, "3.2.4", new HttpClient(new StubHandler()));
+
+            var prepared = await service.PrepareFromZipAsync(missing);
+
+            Assert.Equal(UpdatePrepareStatus.Failed, prepared.Status);
+            Assert.Equal(UpdateErrorCodes.ZipMissing, prepared.Error);   // 曾误报"下载更新包失败"（Download 码）
+        }
+        finally { Cleanup(root); }
     }
 
     // —— 上次更新结果 ——
