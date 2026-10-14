@@ -242,14 +242,6 @@ public sealed partial class EngineClient
 
     // —— trash ——
 
-    /// <summary>Export the recycle bin as .lptrash (format lptrash/1.0;original ids and origin references are preserved; SHA-256 manifest; temp file in the same directory + atomic replace; favicon cache files are not included)</summary>
-    public Task<CommandResult<JsonElement>> TrashExportAsync(string outputPath, CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<JsonElement>("trash.export", new { output_path = outputPath }, o, ct);
-
-    /// <summary>Import recycle bin entries from a .lptrash (the target recycle bin must be empty; original ids are preserved; origin references are resolved id → canonical path → root with honest fallback counts)</summary>
-    public Task<CommandResult<JsonElement>> TrashImportAsync(string filePath, CallOptions? o = null, CancellationToken ct = default)
-        => ExecuteAsync<JsonElement>("trash.import", new { file_path = filePath }, o, ct);
-
     /// <summary>Flat trash list: individually deleted bookmarks + deleted-folder unit roots (newest deletion first)</summary>
     public Task<List<TrashEntryDto>> TrashListAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<TrashEntryDto>>("trash.list", null, o, ct);

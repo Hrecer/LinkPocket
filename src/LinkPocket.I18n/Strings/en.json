@@ -747,8 +747,6 @@
   "ai.action.staging.discard": "Discard the staged file",
   "ai.action.staging.stage": "Stage a file",
   "ai.action.staging.transform": "Transform the staged file",
-  "ai.action.trash.export": "Export the recycle bin",
-  "ai.action.trash.import": "Import the recycle bin",
   "ai.action.trash.purge": "Delete permanently",
   "ai.action.trash.purgeBatch": "Delete permanently in batch",
   "ai.action.trash.restore": "Restore a bookmark",

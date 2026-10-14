@@ -130,7 +130,7 @@ internal static partial class SmokeRunner
 
         // 文件夹整树进回收站 → 平铺 folder 条目 + 树单元（含子树书签计数）→ 永久删除（两阶段确认）
         var child = (await client.FolderCreateAsync("回收子目录", parentId: folder.FolderId)).Data!;
-        var subLink = (await client.LinkCreateAsync("https://trash.example/sub", "子树书签", listId: child.FolderId)).Data!;
+        await client.LinkCreateAsync("https://trash.example/sub", "子树书签", listId: child.FolderId);
         await client.FolderDeleteAsync(folder.FolderId);   // 默认 cascade = trash_links
         Asserts.That(s.Events.Contains("trash.changed"), "文件夹整树入回收站应推 trash.changed");
 
@@ -153,40 +153,6 @@ internal static partial class SmokeRunner
         var unitContents = (await client.TrashUnitContentsAsync(folder.FolderId));
         Asserts.That(unitContents.Any(e => e.EntryType == "link" && e.OriginPath == "@root/回收源目录/回收子目录"),
             "单元内书签快照应带完整 origin_path");
-
-        // lptrash 往返（4.0.0）：导出 → 导入到另一个全新库（空回收站）→ 原 ID 保真 → 还原沿路径落回新树
-        var lptrashPath = System.IO.Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_{Guid.NewGuid():N}.lptrash");
-        var trashDb = System.IO.Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_trash_{Guid.NewGuid():N}.db");
-        try
-        {
-            var exported = await client.ExecuteAsync<System.Text.Json.JsonElement>(
-                "trash.export", new { output_path = lptrashPath });
-            Asserts.That(exported.Data.GetProperty("total_units").GetInt32() == 2
-                         && exported.Data.GetProperty("total_links").GetInt32() == 1,
-                $"trash.export 应报出 2 单元行（单元根 + 内层文件夹）/ 1 书签，实际 {exported.Data.GetProperty("total_units").GetInt32()} / {exported.Data.GetProperty("total_links").GetInt32()}");
-
-            var clientB = ProbeEnv.CreateEngineOn(trashDb);
-            var imported = await clientB.ExecuteAsync<System.Text.Json.JsonElement>(
-                "trash.import", new { file_path = lptrashPath });
-            Asserts.That(imported.Data.GetProperty("total_units").GetInt32() == 2
-                         && imported.Data.GetProperty("total_links").GetInt32() == 1,
-                "trash.import 应导入 2 单元行 / 1 书签");
-            Asserts.That((await clientB.TrashTreeAsync()).Any(f => f.TrashFolderId == folder.FolderId),
-                "导入应保留单元原 ID");
-
-            await clientB.ExecuteAsync<LinkPocket.Modules.Trash.TrashRestoreUnitResult>(
-                "trash.restore_unit", new { unit_id = folder.FolderId });
-            var restoredRoot = await clientB.FolderGetAsync(folder.FolderId);
-            Asserts.That(restoredRoot.FolderId == folder.FolderId && restoredRoot.ParentId == null,
-                "还原单元应落回原位（原在根）并保留原 ID");
-            Asserts.That((await clientB.LinkGetAsync(subLink.LinkId)).ListId == child.FolderId,
-                "单元内书签应随子树还原回原位（镜像层级保真）");
-        }
-        finally
-        {
-            ProbeEnv.TryDelete(trashDb);
-            try { if (System.IO.File.Exists(lptrashPath)) System.IO.File.Delete(lptrashPath); } catch { /* 尽力而为 */ }
-        }
 
         // purge：无令牌 = CONFIRM_REQUIRED（token 在 Details 下发）→ 持令牌重调 → 条目消失
         EngineException confirm;
@@ -212,6 +178,6 @@ internal static partial class SmokeRunner
         Asserts.That(!(await client.TrashListAsync()).Any(e => e.EntryType == "folder" && e.Name == "回收源目录"),
             "永久删除后平铺 folder 条目应消失");
 
-        Console.WriteLine("[OK] §3 回收站闭环：原 ID + origin_path 快照 / 树与平铺 / 还原（origin 缺省 + root 显式）/ purge 两阶段确认 / lptrash 往返");
+        Console.WriteLine("[OK] §3 回收站闭环：原 ID + origin_path 快照 / 树与平铺 / 还原（origin 缺省 + root 显式）/ purge 两阶段确认");
     }
 }

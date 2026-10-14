@@ -747,8 +747,6 @@
   "ai.action.staging.discard": "丢弃暂存文件",
   "ai.action.staging.stage": "暂存文件",
   "ai.action.staging.transform": "转换暂存文件",
-  "ai.action.trash.export": "导出回收站",
-  "ai.action.trash.import": "导入回收站",
   "ai.action.trash.purge": "永久删除",
   "ai.action.trash.purgeBatch": "批量永久删除",
   "ai.action.trash.restore": "还原书签",

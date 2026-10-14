@@ -1,7 +1,7 @@
 namespace LinkPocket.Contracts;
 
 /// <summary>
-/// 「家族/主版本.次版本」格式版本串的**唯一判定实现**（`lpbackup` 与 `lptrash` 同族条款）。
+/// 「家族/主版本.次版本」格式版本串的**唯一判定实现**（`lpbackup` 的版本门条款）。
 ///
 /// <para>判据按**兼容性**分档，而不是"长得像就算"：
 /// <list type="bullet">
@@ -10,8 +10,8 @@ namespace LinkPocket.Contracts;
 /// （拒绝而不是"尽力而为地猜"——猜必然猜错，与零兼容红线一致）。</item>
 /// </list></para>
 ///
-/// <para><b>为什么必须是唯一实现</b>：读取路径的版本口味只许有一处——两个格式（备份 / 回收站）各写一份
-/// "前缀匹配"曾经把 `2abc` / `20.0` / `2.9.9-beta` 这类串放进了导入器，那是缺陷（见
+/// <para><b>为什么必须是唯一实现</b>：读取路径的版本口味只许有一处——各写一份"前缀匹配"曾经把
+/// `2abc` / `20.0` / `2.9.9-beta` 这类串放进了导入器，那是缺陷（见
 /// <c>BackupRobustnessTests</c> 的版本门矩阵）。</para>
 /// </summary>
 public static class FormatVersionGate

@@ -43,8 +43,6 @@ public static class EngineErrors
     /// 绝不返回空结果假装"没有日志"（观测面纪律）。</summary>
     public const string LogUnavailable = "LP.STATE.005";
 
-    /// <summary>导入 / 还原目标非空（如 <c>trash.import</c> 只接受空回收站）——先清空或还原后重试。</summary>
-    public const string TargetNotEmpty = "LP.STATE.006";
     public const string ReadonlySession = "LP.SEC.001";
     public const string PathOutsideSandbox = "LP.SEC.002";
     public const string ConfirmRequired = "LP.SEC.003";

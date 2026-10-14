@@ -48,7 +48,7 @@ internal static class BackupIO
     /// <para>
     /// 与 <see cref="FormatVersion"/> 配对的**唯一**版本判定入口（读取路径只调它，
     /// 绝不在别处再写一遍字符串比较——"版本口味"必须只有一处）。
-    /// 判定算法本体 = 契约层 <see cref="FormatVersionGate"/>（与 <c>lptrash</c> 同族条款共用一份）。
+    /// 判定算法本体 = 契约层 <see cref="FormatVersionGate"/>（版本门条款的单一实现）。
     /// </para>
     /// </remarks>
     public static bool Accepts(string? version)

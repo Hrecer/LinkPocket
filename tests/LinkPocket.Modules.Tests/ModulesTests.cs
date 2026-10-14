@@ -6,7 +6,7 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：60 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：62 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
@@ -15,8 +15,8 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(64, manifest.Commands.Count);
-        Assert.Equal(64, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(62, manifest.Commands.Count);
+        Assert.Equal(62, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -26,7 +26,7 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(15, engine.Describe("folders").Commands.Count);  // + folders.tree_links（树叶子懒加载的轻量出口）
         Assert.Equal(16, engine.Describe("links").Commands.Count);
-        Assert.Equal(11, engine.Describe("trash").Commands.Count);  // + trash.export / trash.import（lptrash 搬运）
+        Assert.Equal(9, engine.Describe("trash").Commands.Count);
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
         Assert.Single(engine.Describe("locate").Commands);
         Assert.Equal(2, engine.Describe("audit").Commands.Count);  // audit.query / audit.prune
