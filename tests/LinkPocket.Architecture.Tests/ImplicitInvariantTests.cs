@@ -116,6 +116,7 @@ public class ImplicitInvariantTests
             "AiHttp.cs",           // AI 提供方传输（统一超时/重试/代理）
             "FaviconCache.cs",     // 图标缓存（带并发闸）
             "MetadataFetcher.cs",  // 链接元数据抓取（短时任务）
+            "UpdateService.cs",    // 更新检查（单实例 + 固定超时；更新检查频率极低，无连接池耗尽场景）
         };
         foreach (var (path, text) in ProductSources())
             if (Regex.IsMatch(text, @"new\s+HttpClient\s*\(") || Regex.IsMatch(text, @"new\s+HttpClientHandler\s*\("))

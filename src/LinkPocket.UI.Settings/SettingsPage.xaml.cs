@@ -20,9 +20,9 @@ namespace LinkPocket.Views
     /// </summary>
     public partial class SettingsPage : UserControl
     {
-        /// <summary>模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托），页面不认识组合根。</summary>
+        /// <summary>模块化：Shell 经 Configure 窄注入（引擎客户端 + 整库重置委托 + 导入后刷新委托 + AI 助手 + 更新服务），页面不认识组合根。</summary>
         public void Configure(EngineClient client, Func<Task> reinitializeAsync, Func<Task> refreshAfterImportAsync,
-        IAiAssistant? assistant = null)
+        IAiAssistant? assistant = null, IUpdateService? updates = null)
         {
             Api = client;
             ReinitializeAsync = reinitializeAsync;
@@ -30,6 +30,7 @@ namespace LinkPocket.Views
             BackupPanelControl.ReinitializeAsync = reinitializeAsync;
             BackupPanelControl.RefreshAfterImportAsync = refreshAfterImportAsync;
             if (assistant is not null) AiPanelControl.Configure(assistant);
+            if (updates is not null) UpdatePanelControl.Configure(updates);
         }
 
         private EngineClient Api { get; set; } = null!;
@@ -78,13 +79,14 @@ namespace LinkPocket.Views
             }
         }
 
-        /// <summary>左栏三项：0 = 外观（决策 6 排第一），1 = 存储管理，2 = 备份与恢复。</summary>
+        /// <summary>左栏五项：0 = 外观（决策 6 排第一），1 = 存储管理，2 = 备份与恢复，3 = AI，4 = 更新。</summary>
         private void SettingListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             AppearancePanelControl.Visibility = Visibility.Collapsed;
             MaintenancePanel.Visibility = Visibility.Collapsed;
             BackupPanelControl.Visibility = Visibility.Collapsed;
             AiPanelControl.Visibility = Visibility.Collapsed;
+            UpdatePanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
             {
@@ -98,6 +100,12 @@ namespace LinkPocket.Views
                 BackupPanelControl.Visibility = Visibility.Visible;
             else if (SettingListBox.SelectedIndex == 3)
                 AiPanelControl.Visibility = Visibility.Visible;
+            else if (SettingListBox.SelectedIndex == 4)
+            {
+                UpdatePanelControl.Visibility = Visibility.Visible;
+                // 入口对齐：消费上次更新结果 + 反映后台自动检查的产物（不重跑检查）
+                UpdatePanelControl.Refresh();
+            }
 
             if (SettingListBox.SelectedIndex != 2)
                 BackupPanelControl.ResetState();

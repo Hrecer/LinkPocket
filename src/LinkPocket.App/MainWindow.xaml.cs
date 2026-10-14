@@ -81,7 +81,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             listId => vm.ResolveLinkPathAsync(listId),
             () => vm.RefreshFolderTreeAndUIAsync());
         SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
-            () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai);
+            () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai, _host.Updates);
         AiPage.Configure(_host.Ai);
         vm.ToolsDataChanged += (_, _) => _ = ToolsView.OnExternalDataChangedAsync();
         // 进入工具页：入口对齐（去重结果可能已被其它页面的变更置于陈旧；页内按视图状态决定重跑）

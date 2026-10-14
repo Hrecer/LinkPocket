@@ -81,6 +81,31 @@ public partial class App : Application
             // ④ 更新残留清扫（UPDATE.md §5.2）：后台尽力而为——删不净只留痕、下次启动再清；
             //    结果文件不在这里处置（更新页取值后自行消费）。
             _ = Task.Run(() => UpdateStaging.SweepOwnStaging(AppPaths.ProgramRoot));
+
+            // ⑤ 更新检查（UPDATE.md §6）：启动延迟自动检查（更新页可关）→ 发现新版自动预下载就位；
+            //    全程后台、失败只留痕（更新页仍可手动重试 / 走本地 zip 兜底）。
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                    if (!host.Updates.AutoCheckOnStartup) return;
+                    var check = await host.Updates.CheckAsync();
+                    if (check.Status == LinkPocket.Contracts.UpdateCheckStatus.Available)
+                    {
+                        var prepared = await host.Updates.PrepareAsync();
+                        LpLog.Info($"update available (v{check.LatestVersion}); prepare = {prepared.Status}", category: "app.lifecycle");
+                    }
+                    else
+                    {
+                        LpLog.Info($"update check: {check.Status}{(check.Error is null ? "" : $" ({check.Error})")}", category: "app.lifecycle");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LpLog.Warn("the automatic update check failed", ex, category: "app.lifecycle");
+                }
+            });
         }
         catch (DatabaseIncompatibleException ex)
         {

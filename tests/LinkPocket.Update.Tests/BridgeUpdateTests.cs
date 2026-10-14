@@ -40,6 +40,7 @@ public class BridgeUpdateTests
         {
             UpdateTestKit.CreateDb(Path.Combine(data, "linkpocket.db"), 8);
             UpdateTestKit.WriteFile(data, "ui-preferences.json", "{\"Version\":1}");
+            UpdateTestKit.WriteFile(data, "update-preferences.json", "{\"version\":1,\"auto_check_on_startup\":false}");
             UpdateTestKit.WriteFile(data, "macros.json", "{\"version\":1,\"macros\":[]}");
             UpdateTestKit.WriteFile(data, "ai/preferences.json", "{\"x\":1}");
             UpdateTestKit.WriteFile(data, "ai/usage.json", "{}");
@@ -86,6 +87,7 @@ public class BridgeUpdateTests
             Assert.Equal("new-app", File.ReadAllText(Path.Combine(install, "LinkPocket.exe")));
             Assert.Equal("fresh-db", File.ReadAllText(Path.Combine(install, "data", "linkpocket.db")));
             Assert.True(File.Exists(Path.Combine(install, "data", "ui-preferences.json")));
+            Assert.True(File.Exists(Path.Combine(install, "data", "update-preferences.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "macros.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "ai", "preferences.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "fonts", "f.ttf")));

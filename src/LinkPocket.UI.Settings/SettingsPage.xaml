@@ -19,7 +19,7 @@
                 <views:SideNavList x:Name="SettingListBox" Style="{StaticResource SideNavListStyle}"
                                    ItemContainerStyle="{StaticResource SideNavItemStyle}"
                                    SelectionChanged="SettingListBox_SelectionChanged">
-                    <!-- 顺序 = 外观 / 存储管理 / 备份与恢复；「外观」排第一（决策 6），
+                    <!-- 顺序 = 外观 / 存储管理 / 备份与恢复 / AI 服务 / 更新；「外观」排第一（决策 6），
                          故"默认选中第一项"的契约落点随之改为外观。 -->
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
@@ -43,6 +43,12 @@
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="auto-fix" Width="17" Height="17" VerticalAlignment="Center"/>
                             <TextBlock Text="{loc:Loc nav.panel.ai}" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="refresh" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc nav.panel.update}" Margin="9,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                 </views:SideNavList>
@@ -121,6 +127,7 @@
             <!-- 备份与恢复界面 -->
             <local:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
             <local:AiPanel x:Name="AiPanelControl" Visibility="Collapsed"/>
+            <local:UpdatePanel x:Name="UpdatePanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->

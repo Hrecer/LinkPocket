@@ -34,6 +34,12 @@ public sealed class AppHost : IDisposable
     /// <summary>UI 端口槽位：MainWindow（Shell）在构造时登记 IDialogService/INavigationService 实现。</summary>
     public UiPortProvider Ports { get; } = new();
 
+    /// <summary>
+    /// 更新服务（UPDATE.md §6）：检查 / 下载就位 / 交棒临时更新器；实现 = <see cref="UpdateService"/>。
+    /// 版本取本进程 exe 的文件版本（与被更新器读的那一个是同一口径）。
+    /// </summary>
+    public IUpdateService Updates { get; }
+
     /// <summary>AI 助手（IAiAssistant 的唯一实现 = LinkPocket.Ai 的运行时；构造不读任何文件）。</summary>
     public IAiAssistant Ai => _ai;
 
@@ -68,6 +74,8 @@ public sealed class AppHost : IDisposable
         Locator = new ContentLocator(client, () => LocateHost);
         // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
         ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
+        Updates = new UpdateService(AppPaths.ProgramRoot,
+            UpdateService.ReadProductVersion(Environment.ProcessPath ?? string.Empty) ?? "0.0.0");
     }
 
     /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）。应用退出时调用。</summary>

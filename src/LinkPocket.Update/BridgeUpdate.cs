@@ -122,6 +122,7 @@ public static class BridgeUpdate
         if (!Directory.Exists(dataDir)) return;
 
         CopyFile("ui-preferences.json");
+        CopyFile("update-preferences.json");
         CopyFile("macros.json");
         CopyDirectory("ai");
         CopyDirectory("fonts");
