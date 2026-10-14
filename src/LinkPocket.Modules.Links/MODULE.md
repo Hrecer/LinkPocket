@@ -18,7 +18,7 @@
 | `links.smart_list` | 查询 | 四预设：`recently_added` / `recently_visited` / `recently_edited` / `most_visited` |
 | `links.query` | 查询 | ★ 结构化查询器：filter 白名单 + sort 下推 + page(size=0 全量) + fields 投影；**AI 用，不接 UI** |
 | `links.find_by_url` | 查询 | ★ 按 URL 精确找全部同址链接（Dedup 复用点） |
-| `links.metadata_fetch` | 查询 | 抓取网页元数据；**闸外执行**（`NetworkOutsideGate`），10s 超时 |
+| `links.metadata_fetch` | 查询 | 抓取网页元数据；**闸外执行**（`NetworkOutsideGate`），10s 超时；反爬拦截（403/503）时用浏览器 TLS/HTTP2 指纹兜底重试一次 |
 | `links.create` / `links.update` | 变更 | 新建（可选自动补全元数据）/ 编辑（仅显式传入字段） |
 | `links.trash` | 变更 | 移入回收站（软删，保留原 ID 与原位置快照） |
 | `links.visit_record` / `links.visit_batch` | 变更 | 记账查看：链接 +1，所在目录父链**去重后各刷新一次** |
@@ -28,7 +28,7 @@
 ## 内部组件
 
 - `LinkSupport`：排序口径、日期解析、父链计数刷新（`RefreshLinkCountAsync`）。
-- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）。
+- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），仅主路径收到 403/503 时对同一地址重试一次（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；触发时写 `links.metadata` 分类日志。
 - `LinkDtos`：模块内结果 DTO（`PagedLinkResult` 等）。
 
 ## 隐藏能力（★ 不接 UI）

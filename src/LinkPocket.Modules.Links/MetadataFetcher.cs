@@ -1,13 +1,17 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using CurlImpersonate.Enums;
+using CurlImpersonate.Http;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
 
 namespace LinkPocket.Modules.Links;
 
 /// <summary>
-/// 元数据网络抓取（internal）：HttpClient 池化 + 10s 超时 + 手动跟随重定向（每跳校验）+ 浏览器 UA。
+/// 元数据网络抓取（internal）：HttpClient 池化 + 10s 超时 + 手动跟随重定向（每跳校验）+ 浏览器 UA；
+/// <b>反爬兜底</b>：目标站按客户端指纹拦截非浏览器请求（403/503）时，同一地址改用 curl-impersonate
+/// 的浏览器 TLS/HTTP2 指纹重试一次（火绒官网这类站点只认指纹、不认请求头——补全 UA 也没用）。
 /// 解析交给 <see cref="RegexMetadataParser"/>（L0 纯函数）；网络命令在引擎里走读池（免写闸）——
 /// 慢站点不阻塞任何数据操作（「网络在闸外」的落点）。
 /// </summary>
@@ -31,6 +35,12 @@ internal static class MetadataFetcher
     private const int MaxRedirects = 5;
 
     private static readonly HttpClient Client = CreateClient();
+
+    /// <summary>
+    /// 反爬兜底客户端（curl-impersonate：真实浏览器 TLS/HTTP2 指纹），懒加载。
+    /// <c>null</c> = 原生库初始化失败（提取/加载失败）——兜底缺位但主路径照常，抓取整体不因兜底陪葬。
+    /// </summary>
+    private static readonly Lazy<HttpClient?> ImpersonatingClient = new(CreateImpersonatingClient);
 
     /// <summary>
     /// 系统代理地址；<c>null</c> = 未配代理。
@@ -84,6 +94,49 @@ internal static class MetadataFetcher
         return client;
     }
 
+    /// <summary>
+    /// 指纹兜底：部分站点（阿里云 WAF / Cloudflare 前置）按客户端指纹拦截脚本类请求——
+    /// 同为浏览器 UA + 完整请求头，Chrome 能过、.NET / curl 一律 503/403（火绒官网即此例，
+    /// 实测 curl-impersonate 的 Chrome 指纹直接 200）。配置与主路径同强度：10s 超时、
+    /// 不自动跟随重定向（仍由 <see cref="DownloadAsync"/> 逐跳校验）。
+    /// </summary>
+    private static HttpClient? CreateImpersonatingClient()
+    {
+        try
+        {
+            var options = new CurlHandlerOptions
+            {
+                // 固定为已实测通过的口径；跟进更新由升级 CurlImpersonate 包完成
+                BrowserProfile = BrowserProfile.Chrome142,
+                AllowAutoRedirect = false,
+                FollowRedirects = false,
+                ConnectTimeout = TimeSpan.FromSeconds(10),
+                Timeout = TimeSpan.FromSeconds(10),
+                MaxResponseBodyBytes = MaxHtmlBytes,
+            };
+
+            if (SystemProxy is { } proxy)
+            {
+                options.UseProxy = true;
+                options.ProxyUri = proxy;
+            }
+            else
+            {
+                // 与主路径对齐：探测不到系统代理就直连，不引入第三套"环境变量代理"口径
+                options.UseProxy = false;
+            }
+
+            return new HttpClient(new CurlHandler(options)) { Timeout = TimeSpan.FromSeconds(10) };
+        }
+        catch (Exception ex)
+        {
+            // 兜底原生资产缺失/加载失败：如实记录后降级为"无兜底"，主路径与整体抓取不受影响
+            LpLog.Warn("curl-impersonate failed to initialize; metadata anti-bot fallback disabled",
+                ex, category: "links.metadata");
+            return null;
+        }
+    }
+
     /// <summary>URL 是否为合法的 http/https 绝对地址（LP.VAL.005 判定口径）。</summary>
     public static bool IsValidUrl(string url)
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
@@ -120,7 +173,7 @@ internal static class MetadataFetcher
 
         for (var hop = 0; hop <= MaxRedirects; hop++)
         {
-            using var response = await Client.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var response = await SendAsync(current, ct).ConfigureAwait(false);
 
             if (IsRedirect(response.StatusCode))
             {
@@ -163,6 +216,33 @@ internal static class MetadataFetcher
             EngineErrors.NetworkError, $"too many redirects (>{MaxRedirects}): {url}", retryable: false));
     }
 
+    /// <summary>
+    /// 发一跳 GET。主路径被反爬墙拦下（403/503）时，同一地址改用浏览器指纹客户端重试<b>一次</b>——
+    /// 其余响应（含重试后的 4xx/5xx）原样交给调用方按既有口径处理。
+    /// </summary>
+    private static async Task<HttpResponseMessage> SendAsync(Uri target, CancellationToken ct)
+    {
+        var response = await Client.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (!IsBotWall(response.StatusCode))
+            return response;
+
+        var fallback = ImpersonatingClient.Value;
+        if (fallback is null)
+            return response;   // 兜底不可用：维持主路径结果，按原口径如实报错
+
+        var blocked = (int)response.StatusCode;
+        response.Dispose();
+
+        // 兜底与主路径同一套 SSRF 判据；配了系统代理时由代理解析（等同主路径 ConnectPublicAsync 的 toProxy 口径）
+        if (SystemProxy is null)
+            await EnsurePublicHostAsync(target, ct).ConfigureAwait(false);
+
+        LpLog.Info($"metadata fetch blocked [{blocked}] (non-browser client?); retrying with browser fingerprint: {target.Host}",
+            category: "links.metadata");
+
+        return await fallback.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+    }
+
     /// <summary>读取正文（带上限）；按响应头里的 charset 解码，与托管实现的取字符口径一致。</summary>
     private static async Task<string> ReadHtmlAsync(HttpContent content, CancellationToken ct)
     {
@@ -186,6 +266,31 @@ internal static class MetadataFetcher
     private static bool IsRedirect(HttpStatusCode status)
         => status is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther
             or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
+
+    /// <summary>反爬墙的两种常见形态：阿里云 WAF 的 503（acw 系，火绒官网即此例）与 Cloudflare / 腾讯云的 403。</summary>
+    private static bool IsBotWall(HttpStatusCode status)
+        => status is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable;
+
+    /// <summary>
+    /// 兜底路径的连接前判据：解析目标主机、要求存在放行地址（与 <see cref="ConnectPublicAsync"/> 同一口径；
+    /// 字面 IP 直接判定）。
+    /// <para><b>已知差异</b>：curl 不暴露"自选连接地址"的钩子，这里只能"请求前校验"，与 curl 自己的解析
+    /// 之间存在极小的 TOCTOU 窗口（DNS 重绑定需先以公网地址通过主路径、再于毫秒级翻转到内网地址——
+    /// 触发条件苛刻，且兜底仅在主路径已被反爬拦截后启动。作为已知代价记录，见 WARNINGS）。</para>
+    /// </summary>
+    private static async Task EnsurePublicHostAsync(Uri target, CancellationToken ct)
+    {
+        if (IPAddress.TryParse(target.Host, out var literal))
+        {
+            if (!IsAllowed(literal))
+                throw new IOException($"refused to connect (loopback/link-local address): {target.Host}");
+            return;
+        }
+
+        var addresses = await Dns.GetHostAddressesAsync(target.Host, ct).ConfigureAwait(false);
+        if (Array.Find(addresses, IsAllowed) is null)
+            throw new IOException($"refused to connect (loopback/link-local address): {target.Host}");
+    }
 
     /// <summary>
     /// 连接前解析目标地址并挡掉环回 / 链路本地（含 IPv6 fe80::、以及 v4-mapped 形式）。

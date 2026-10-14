@@ -9,6 +9,8 @@
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.2.2" />
     <PackageVersion Include="Material3.Wpf" Version="0.9.0" />
     <PackageVersion Include="MdXaml" Version="1.27.0" />
+    <!-- 反爬兜底：curl-impersonate 的 .NET HttpMessageHandler（浏览器 TLS/HTTP2 指纹）——仅 Links 模块的元数据抓取在反爬拦截（403/503）时使用 -->
+    <PackageVersion Include="CurlImpersonate.Http" Version="1.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- 前端组合根：对象图由容器装配（只被 Shell/组合根引用，不进契约层与引擎层） -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />

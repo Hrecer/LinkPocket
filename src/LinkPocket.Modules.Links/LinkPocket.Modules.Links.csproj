@@ -12,4 +12,8 @@
     <ProjectReference Include="..\LinkPocket.Kernel\LinkPocket.Kernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CurlImpersonate.Http" />
+  </ItemGroup>
+
 </Project>
