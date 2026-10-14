@@ -69,7 +69,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public string? CurrentFolderId
     {
         get => _currentFolderId;
-        private set { _currentFolderId = value; OnPropertyChanged(); }
+        private set
+        {
+            _currentFolderId = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsAtRoot));   // 空态占位的显示条件之一
+        }
     }
 
     private LocValue _statusText = Loc.K("status.ready");
@@ -234,7 +239,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 必须先置开页标志再建实例：编辑器 ctor 会 fire-and-forget 预填（编辑模式），
         // 其 await 续体可能同步 inline —— 若开页标志还没设，会被「用户已取消」守卫吞掉 → 字段空白（实测复现）。
         IsEditorPageOpen = true;
-        EditorPage = new LinkEditorViewModel(_client, this, IsAtRoot() ? null : CurrentFolderId);
+        EditorPage = new LinkEditorViewModel(_client, this, IsAtRoot ? null : CurrentFolderId);
     }
 
     /// <summary>编辑链接：整页编辑器预填数据（不改变所属目录）。</summary>
@@ -724,7 +729,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         _pathEdit.Changed += OnPathEditChanged;
         GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
-        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot() && !IsPathEditing && !IsRenaming);
+        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot && !IsPathEditing && !IsRenaming);
         RowClickCommand = new RelayCommand<BrowserRowViewModel?>(SelectRow);
         // 双击打开：改名编辑中让位（编辑框内的双击绝不打开目录/详情）
         RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row), _ => !IsRenaming);
@@ -814,11 +819,16 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>当前目录的父目录 ID；已在根目录时返回 null（根没有父级）。</summary>
     private string? GetParentId(string? folderId)
     {
-        if (IsAtRoot() || folderId == null) return null;
+        if (IsAtRoot || folderId == null) return null;
         return _folderMap.TryGetValue(folderId, out var info) ? info.ParentId : null;
     }
 
-    private bool IsAtRoot() => Controller.CurrentFolderId == null;
+    /// <summary>
+    /// 当前是否在根目录（null = 根）。除了导航判定，它还是空态占位的**显示条件之一**：
+    /// 「在根 + 无行」⇔ 整个书签库为空（任何条目都挂在根下 ⇒ 根视图无行必是全库无内容），
+    /// 进入空的子文件夹不显示占位（见 BrowserView 空态注释）。
+    /// </summary>
+    public bool IsAtRoot => Controller.CurrentFolderId == null;
 
     /// <summary>
     /// Esc 分层语义：

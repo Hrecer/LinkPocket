@@ -90,6 +90,33 @@ public class TrashViewModelTests
     }
 
     [Fact]
+    public Task 树叶子_带站点图标_快照填充()
+    {
+        // 回收站树叶子与主栏行同口径：快照里的 favicon_url 就地解码进节点（无后台预取）。
+        return StaPump.RunAsync(async () =>
+        {
+            var (client, _, dbPath) = AppTestEnv.Create();
+            try
+            {
+                var sample = InlinePng.Sample16x16();
+                var link = (await client.LinkCreateAsync("https://trash-icon.example", title: "带图标",
+                    autoFetchMetadata: false, faviconUrl: sample)).Data!;
+                await client.LinkTrashAsync(link.LinkId);
+
+                var vm = NewVm(client);
+                await vm.LoadAsync();
+                var root = Assert.Single(vm.Tree);
+                var leaf = root.Children.Single(n => n.IsLink && n.Id == link.LinkId);
+                Assert.True(leaf.HasFavicon && leaf.Favicon != null, "回收站树叶子显示站点图标（快照填充）");
+            }
+            finally
+            {
+                AppTestEnv.Delete(dbPath);
+            }
+        });
+    }
+
+    [Fact]
     public async Task 主栏_默认删除时间倒序_进单元只看该层()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
@@ -127,6 +154,62 @@ public class TrashViewModelTests
             vm.ApplySort("name", ascending: true);
             var names = vm.Rows.Select(r => r.Name).ToList();
             Assert.Equal(names.OrderBy(n => n, System.StringComparer.CurrentCulture).ToList(), names);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task 空态条件_仅当整个回收站为空_进入空的已删单元不显示()
+    {
+        // 用户实测回归：进入一个**内容为空的已删单元**曾显示"回收站是空的"——站里明明还有这个单元。
+        // 空态占位的 XAML 判据 = IsAtRoot + Rows.Count == 0（整个回收站为空 ⇔ 根视图无行），
+        // 本用例把两个输入钉死（渲染可见性由探针 trash 套件复核）。
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var vm = NewVm(client);
+
+            // ① 全新库（回收站本就为空）：根视图 + 无行 = 空态成立
+            await vm.LoadAsync();
+            Assert.True(vm.IsAtRoot);
+            Assert.Empty(vm.Rows);
+
+            // ② 造一个内容为空的已删单元：根视图有行（单元就是行）→ 空态不成立
+            var empty = (await client.FolderCreateAsync("空单元")).Data!;
+            await client.FolderDeleteAsync(empty.FolderId);
+            await vm.LoadAsync();
+            Assert.True(vm.IsAtRoot);
+            Assert.Single(vm.Rows);
+
+            // ③ 进入空的已删单元：无行，但**不在根** ⇒ 空态不成立（这就是修掉的误报场景）
+            var raised = new List<string?>();
+            vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+            await vm.NavigateAsync(empty.FolderId);
+            Assert.False(vm.IsAtRoot);
+            Assert.Empty(vm.Rows);
+            Assert.Contains(nameof(TrashViewModel.IsAtRoot), raised);   // XAML 触发器依赖的通知
+
+            // ④ 回根：仍在站内（有那个单元）⇒ 空态仍不成立
+            await vm.NavigateAsync(null);
+            Assert.True(vm.IsAtRoot);
+            Assert.Single(vm.Rows);
+
+            // ⑤ 永久删除该单元（整站清空）→ 回根视图 + 无行 = 空态成立
+            vm.SetSelection(new[] { empty.FolderId });
+            vm.PurgeSelectionCommand.Execute(null);
+            TrashOverviewDto overview = new();
+            for (var i = 0; i < 100; i++)                    // fire-and-forget → 轮询落库
+            {
+                overview = await client.TrashOverviewAsync();
+                if (overview.Folders.Count == 0 && overview.Links.Count == 0) break;
+                await Task.Delay(20);
+            }
+            await vm.LoadAsync();
+            Assert.True(vm.IsAtRoot);
+            Assert.Empty(vm.Rows);
         }
         finally
         {

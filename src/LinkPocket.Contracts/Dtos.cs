@@ -125,8 +125,9 @@ public class FolderContentsDto
 }
 
 /// <summary>
-/// 树叶子用的链接精简投影（仅 <c>folders.overview</c> 的 <c>tree_links</c>）：
-/// 目录树把链接挂成叶子只需要这四个字段；完整字段请用 <see cref="LinkDto"/>（主栏行数据源）。
+/// 树叶子用的链接精简投影（<c>folders.overview</c> 的 <c>tree_links</c> 与 <c>folders.tree_links</c>）：
+/// 目录树把链接挂成叶子只需要这几个字段（含站点图标地址——叶子要画站点头像）；完整字段请用
+/// <see cref="LinkDto"/>（主栏行数据源）。
 /// </summary>
 public class TreeLinkDto
 {
@@ -134,6 +135,8 @@ public class TreeLinkDto
     [JsonPropertyName("title")] public string Title { get; set; } = string.Empty;
     [JsonPropertyName("url")] public string Url { get; set; } = string.Empty;
     [JsonPropertyName("list_id")] public string? ListId { get; set; }
+    /// <summary>站点图标地址（内嵌 data URI 或外部地址；界面层解码/回落，树叶子与主栏行同一套链路）。</summary>
+    [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
 }
 
 public class PagedLinksDto

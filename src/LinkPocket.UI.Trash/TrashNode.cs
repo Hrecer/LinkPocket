@@ -31,6 +31,15 @@ public class TrashNode : INotifyPropertyChanged
     /// <summary>单元子树内书签总数（链接叶子恒 0）。</summary>
     public int LinkCount { get; init; }
 
+    /// <summary>
+    /// 链接叶子的**站点图标**（与主栏行 / 浏览页树同一套解码口径；单元与虚根恒 null）。
+    /// 建节点时从快照的 favicon_url 一次性填入（回收站不做后台预取——图标多半已在缓存里）。
+    /// </summary>
+    public System.Windows.Media.Imaging.BitmapImage? Favicon { get; init; }
+
+    /// <summary>是否有站点图标（共享树模板据此在站点图标与通用链环图标之间切换）。</summary>
+    public bool HasFavicon => Favicon != null;
+
     /// <summary>删除时的原位置路径快照（详情/提示用）。</summary>
     public string? OriginPath { get; init; }
 

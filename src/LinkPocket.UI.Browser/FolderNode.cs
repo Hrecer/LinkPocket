@@ -125,6 +125,28 @@ public class FolderNode : INotifyPropertyChanged
         set { _iconKind = value; OnPropertyChanged(); }
     }
 
+    private System.Windows.Media.Imaging.BitmapImage? _favicon;
+
+    /// <summary>
+    /// 链接叶子的**站点图标**（解码后；磁盘/内存/内嵌一条链路 = <c>FaviconService</c>，
+    /// 与主栏行、回收站行同口径）。文件夹节点与虚根恒 null（画文件夹/书签图标）。
+    /// 懒加载取回时同步填一次；外部地址未缓存时由后台预取回填（置位即通知模板切换图标）。
+    /// </summary>
+    public System.Windows.Media.Imaging.BitmapImage? Favicon
+    {
+        get => _favicon;
+        internal set
+        {
+            if (ReferenceEquals(_favicon, value)) return;
+            _favicon = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasFavicon));
+        }
+    }
+
+    /// <summary>是否有站点图标（模板据此在站点图标与通用链环图标之间切换；相等判据，可在 DataTrigger 里表达）。</summary>
+    public bool HasFavicon => _favicon != null;
+
     private bool _isExpanded;
     public bool IsExpanded
     {

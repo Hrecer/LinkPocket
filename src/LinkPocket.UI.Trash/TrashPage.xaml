@@ -391,14 +391,20 @@
                         </views:SortableDataTable.ItemTemplate>
                     </views:SortableDataTable>
 
-                    <!-- 空状态（独立宿主：绝不与 ItemsSource 混用 Items） -->
-                    <Grid Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- 空状态（独立宿主：绝不与 ItemsSource 混用 Items）。
+                         显示条件 = **整个回收站为空**：IsAtRoot（在回收站根视图）+ Rows.Count = 0 ——
+                         站内任何条目都挂在某个顶层单元/根下 ⇒ 根视图无行必是全站为空（等价条件）。
+                         ⚠️ 进入一个**内容为空的已删单元**时 Rows.Count 同样为 0，那时**不显示**占位——
+                         空文件夹就是空的；少了 IsAtRoot 这一条会误报"回收站是空的"（站里明明还有这个单元，
+                         用户实测）。 -->
+                    <Grid x:Name="TrashEmptyState" Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid.Style>
                             <Style TargetType="Grid">
                                 <Setter Property="Visibility" Value="Collapsed"/>
                                 <Style.Triggers>
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsAtRoot}" Value="True"/>
                                             <Condition Binding="{Binding Rows.Count}" Value="0"/>
                                             <Condition Binding="{Binding IsNavigating}" Value="False"/>
                                         </MultiDataTrigger.Conditions>

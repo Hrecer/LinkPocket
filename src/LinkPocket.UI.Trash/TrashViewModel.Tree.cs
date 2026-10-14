@@ -99,6 +99,7 @@ public partial class TrashViewModel
         Name = string.IsNullOrEmpty(link.Name) ? (link.Url ?? string.Empty) : link.Name,
         IsLink = true,
         Host = this,
+        Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl),   // 站点图标（与主栏行同口径；无则链环图标兜底）
     };
 
     /// <summary>沿 parent 链向上查找：self 是否出现在祖先链中（是 = 成环坏数据）。guard 防不死循环。</summary>

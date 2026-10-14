@@ -21,7 +21,7 @@ public partial class BrowserViewModel
 {
     private IEnumerable<(string Id, string Name)> BuildBreadcrumbIds(string? folderId)
     {
-        if (IsAtRoot()) yield break;
+        if (IsAtRoot) yield break;
 
         var chain = new List<(string Id, string Name)>();
         var current = folderId;
@@ -43,7 +43,7 @@ public partial class BrowserViewModel
     /// </summary>
     public void ExpandTreeToCurrentLocation()
     {
-        if (IsAtRoot()) return;
+        if (IsAtRoot) return;
         var chain = new HashSet<string>(BuildBreadcrumbIds(Controller.CurrentFolderId).Select(c => c.Id),
             StringComparer.Ordinal);
         foreach (var node in AllTreeNodes())

@@ -13,6 +13,43 @@ namespace LinkPocket.App.Tests;
 public class BrowserTreeLeafRefreshTests
 {
     [Fact]
+    public Task 树叶子_显示站点图标_内联图标就地解码_无图标回落链环()
+    {
+        // 用户实测回归：目录树叶子只有通用链环图标（"显示不出来图标"）——
+        // 叶子与主栏行 / 回收站行同一套图标链路：内联 / 已缓存同步解码，外部地址后台预取回填。
+        return StaPump.RunAsync(async () =>
+        {
+            var (client, _, dbPath) = AppTestEnv.Create();
+            try
+            {
+                var sample = InlinePng.Sample16x16();
+                var a = (await client.FolderCreateAsync("A")).Data!;
+                var withIcon = (await client.LinkCreateAsync("https://leaf-icon.example", title: "有图标",
+                    listId: a.FolderId, autoFetchMetadata: false, faviconUrl: sample)).Data!;
+                var noIcon = (await client.LinkCreateAsync("https://leaf-noicon.example", title: "无图标",
+                    listId: a.FolderId, autoFetchMetadata: false)).Data!;
+
+                var vm = new BrowserViewModel(client);
+                await vm.LoadAsync(null);
+
+                var nodeA = vm.FolderTree[0].Children.Single(n => n.FolderId == a.FolderId);
+                nodeA.IsExpanded = true;
+                await vm.WaitForTreeLinksAsync(nodeA);
+
+                var iconLeaf = nodeA.Children.Single(n => n.IsLink && n.Id == withIcon.LinkId);
+                var plainLeaf = nodeA.Children.Single(n => n.IsLink && n.Id == noIcon.LinkId);
+                Assert.True(iconLeaf.HasFavicon && iconLeaf.Favicon != null,
+                    "树叶子应显示站点图标（内联 data URI 本地解码）");
+                Assert.False(plainLeaf.HasFavicon, "无图标的链接回落通用链环图标（HasFavicon=false）");
+            }
+            finally
+            {
+                AppTestEnv.Delete(dbPath);
+            }
+        });
+    }
+
+    [Fact]
     public async Task 树叶子_内容没变的刷新复用旧叶子_目录改动后刷新重取()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

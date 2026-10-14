@@ -25,7 +25,7 @@ public static class Mappings
     };
 
     /// <summary>
-    /// 树叶子专用的精简投影：只带走目录树真正读的四个字段。
+    /// 树叶子专用的精简投影：只带走目录树真正读的字段（id / 标题 / 地址 / 归属 / 站点图标地址）。
     /// 用于"全库链接"这种大集合（<c>folders.overview</c> 的 <c>tree_links</c>）——
     /// 完整 <see cref="Contracts.LinkDto"/> 会连描述、时间戳、访问计数一起搬运，而树一个都不看。
     /// </summary>
@@ -35,6 +35,7 @@ public static class Mappings
         Title = link.Title ?? string.Empty,
         Url = link.Url,
         ListId = link.ListId,
+        FaviconUrl = link.FaviconUrl,
     };
 
     /// <param name="counts">

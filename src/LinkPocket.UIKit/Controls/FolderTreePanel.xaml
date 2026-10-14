@@ -272,29 +272,60 @@
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
-                                <!-- 图标：文件夹实心琥珀；根节点书签；根级链接 link 图标紫；回收站节点灰化 -->
-                                <m3:M3Icon Width="16" Height="16" VerticalAlignment="Center">
-                                    <m3:M3Icon.Style>
-                                        <Style TargetType="m3:M3Icon">
-                                            <Setter Property="Kind" Value="folder"/>
-                                            <Setter Property="Foreground" Value="{DynamicResource App.Type.Folder}"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsRoot}" Value="True">
-                                                    <Setter Property="Kind" Value="bookmark"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsLink}" Value="True">
-                                                    <Setter Property="Kind" Value="link-variant"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsTrashed}" Value="True">
-                                                    <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
-                                                    <Setter Property="Opacity" Value="0.55"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </m3:M3Icon.Style>
-                                </m3:M3Icon>
+                                <!-- 图标格：文件夹实心琥珀 / 虚根书签 / **链接叶子 = 站点图标**（有则画 favicon，
+                                     无则通用链环图标——与主栏行、回收站行的图标三件套同口径）；回收站节点灰化
+                                     （favicon 原色小图、回落图标才灰化，与 TrashPage 行模板一致）。
+                                     Image 与 M3Icon 叠在同一 16×16 格里，用 HasFavicon 的**相等判据**切换
+                                     （DataTrigger 表达不了"非空"，故由节点侧投影出 HasFavicon 布尔）。 -->
+                                <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                    <Image Source="{Binding Favicon}" Stretch="Uniform"
+                                           RenderOptions.BitmapScalingMode="HighQuality">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding IsLink}" Value="True"/>
+                                                            <Condition Binding="{Binding HasFavicon}" Value="True"/>
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </MultiDataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                    <m3:M3Icon Width="16" Height="16" VerticalAlignment="Center">
+                                        <m3:M3Icon.Style>
+                                            <Style TargetType="m3:M3Icon">
+                                                <Setter Property="Kind" Value="folder"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource App.Type.Folder}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                                                        <Setter Property="Kind" Value="bookmark"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsLink}" Value="True">
+                                                        <Setter Property="Kind" Value="link-variant"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource App.Accent.Icon}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsTrashed}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+                                                        <Setter Property="Opacity" Value="0.55"/>
+                                                    </DataTrigger>
+                                                    <!-- 链接叶子有站点图标 → 通用链环图标让位（图标格显示 Image） -->
+                                                    <MultiDataTrigger>
+                                                        <MultiDataTrigger.Conditions>
+                                                            <Condition Binding="{Binding IsLink}" Value="True"/>
+                                                            <Condition Binding="{Binding HasFavicon}" Value="True"/>
+                                                        </MultiDataTrigger.Conditions>
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </MultiDataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </m3:M3Icon.Style>
+                                    </m3:M3Icon>
+                                </Grid>
                                 <Grid Margin="6,0,0,0" VerticalAlignment="Center">
                                     <TextBlock x:Name="NodeName" Text="{loc:Segment Name}" FontSize="13"
                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"

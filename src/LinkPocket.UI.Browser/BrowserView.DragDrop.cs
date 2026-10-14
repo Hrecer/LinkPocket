@@ -118,11 +118,12 @@ public partial class BrowserView : UserControl
     private bool _pressRenamePair;
 
     /// <summary>改名两击对的间隔下限（毫秒）：第二击必须距第一击**至少**这么久才算"刻意的两击"——
-    /// 选中后顺手再点一下（看右侧栏等）绝不误触改名。定稿 1.2 秒（0.5 秒太短会误触、3 秒又太难触发，用户两轮实测）。</summary>
-    private const long RenamePairMinMs = 1200;
+    /// 选中后顺手再点一下（看右侧栏等）绝不误触改名。定稿 0.8 秒（0.5 秒太短会误触；1.2–10 秒档实测后收敛，用户多轮实测）。</summary>
+    private const long RenamePairMinMs = 800;
 
-    /// <summary>改名两击对的间隔上限（毫秒）：第一击"待命"后超过它再点 = 不构成对（需重新起一对）。</summary>
-    private const long RenamePairWindowMs = 10000;
+    /// <summary>改名两击对的间隔上限（毫秒）：第一击"待命"后超过它再点 = 不构成对（需重新起一对）。
+    /// 定稿 5 秒（从 10 秒收窄：两击要像"刻意双击"，等太久再点不该算同一对）。</summary>
+    private const long RenamePairWindowMs = 5000;
 
     /// <summary>上一次按下的行与时刻（快速连击判定用）。</summary>
     private object? _lastPressRow;
@@ -195,7 +196,7 @@ public partial class BrowserView : UserControl
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         // 记下"按下时它已是唯一选中"——抬起据此判定"第二击"（慢两击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
-        // 「两击对窗口」的第二击：同一行、间隔 ∈ [1.2s, 10s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
+        // 「两击对窗口」的第二击：同一行、间隔 ∈ [0.8s, 5s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
         var now = Environment.TickCount64;
         var gap = now - _lastPressTick;
         _pressRenamePair = ReferenceEquals(_lastPressRow, _pressRow)

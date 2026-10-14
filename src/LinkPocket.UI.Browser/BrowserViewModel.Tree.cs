@@ -146,8 +146,9 @@ public partial class BrowserViewModel
 
     /// <summary>
     /// 确保某节点的直接链接叶子已注入（幂等；失败可重试）。
-    /// 只取**名称/地址**投影（树叶子只画名字）：完整 `LinkDto` 会把每条的图标地址（真实库里是
-    /// 500 字符的内嵌 data URI）、描述、时间戳一起搬过来，展开一个 15 000 条的文件夹就是十几 MB。
+    /// 只取**轻量投影**（名称 / 地址 / 图标地址）：完整 `LinkDto` 会连描述、时间戳、访问计数一起搬过来，
+    /// 展开一个 15 000 条的文件夹纯属白付。图标地址必须带上——树叶子要画**站点头像**
+    /// （与主栏行 / 回收站行同一套图标链路；用户实测：叶子只有通用链环图标 = "显示不出来图标"）。
     /// </summary>
     private async Task EnsureNodeLinksLoadedAsync(FolderNode node)
     {
@@ -156,14 +157,18 @@ public partial class BrowserViewModel
 
         try
         {
-            // 轻量出口命令：只带回 id / 标题 / 地址（树叶子只画名称）
+            // 轻量出口命令：只带回 id / 标题 / 地址 / 图标地址（树叶子画名称 + 站点头像）
             var links = await _client.QueryAsync<List<TreeLinkDto>>("folders.tree_links",
                 new { folder_id = node.FolderId });
 
             // 排序口径与树一致（名称升序，中文排序），并挂在文件夹子节点**之后**（Windows 口径）
-            var leaves = (links ?? new List<TreeLinkDto>())
-                .OrderBy(l => string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title, NameOrder.Comparer)
-                .Select(l => new FolderNode
+            var ordered = (links ?? new List<TreeLinkDto>())
+                .OrderBy(l => string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title, NameOrder.Comparer);
+            var leaves = new List<FolderNode>();
+            var faviconPending = new List<(FolderNode Leaf, string Url)>();
+            foreach (var l in ordered)
+            {
+                var leaf = new FolderNode
                 {
                     IsLink = true,
                     Id = l.LinkId,
@@ -171,15 +176,21 @@ public partial class BrowserViewModel
                     Name = string.IsNullOrWhiteSpace(l.Title) ? (l.Url ?? "") : l.Title,
                     Host = this,
                     LinksLoaded = true,                       // 叶子本身没有"下级叶子"
-                    IsSelected = Selection.Contains(l.LinkId)     // 只投影自身（不遍历整表：1 万行 × 每次展开）
-                })
-                .ToList();
+                    IsSelected = Selection.Contains(l.LinkId),    // 只投影自身（不遍历整表：1 万行 × 每次展开）
+                    Favicon = Services.FaviconService.LoadFromCache(l.FaviconUrl),   // 内嵌/已缓存同步解码（与主栏行同口径）
+                };
+                leaves.Add(leaf);
+                // 预取单只收**外部地址**：内嵌 data URI 没有"下载"这回事（解不开 = 劣质数据，重试无意义）
+                if (leaf.Favicon == null && !string.IsNullOrEmpty(l.FaviconUrl) && !FaviconCache.IsInlineData(l.FaviconUrl))
+                    faviconPending.Add((leaf, l.FaviconUrl!));
+            }
 
             // 叶子恒排在文件夹子节点之后：先摘掉既有叶子再追加（幂等，防止重排时出现"链接在文件夹之前"）
             foreach (var stale in node.Children.Where(c => c.IsLink).ToList())
                 node.Children.Remove(stale);
             node.Children.AddRange(leaves);
             node.LinksLoaded = true;
+            StartTreeLeafFaviconPrefetch(faviconPending);
         }
         catch (Exception ex)
         {
@@ -189,6 +200,38 @@ public partial class BrowserViewModel
         {
             node.LinksLoading = false;
         }
+    }
+
+    /// <summary>
+    /// 树叶子图标的后台预取 + 回填（与主栏行 <c>StartFaviconPrefetch</c> 同一套口径）：
+    /// 磁盘缓存没有 → 下载 → 解码 → 经 Dispatcher 回填到**还没图标**的叶子上；失败只丢图标
+    /// （链环图标兜底，下次展开重试）。回填时重查 <c>Favicon == null</c>：预取期间别的路径可能已填过。
+    /// </summary>
+    private void StartTreeLeafFaviconPrefetch(List<(FolderNode Leaf, string Url)> pending)
+    {
+        if (pending.Count == 0) return;
+        var urls = pending.Select(p => p.Url).Distinct(StringComparer.Ordinal).ToList();   // 同地址只下一次
+        _ = Task.Run(async () =>
+        {
+            try { await Task.WhenAll(urls.Select(Services.FaviconService.PrefetchAndCacheAsync)); }
+            catch { /* 网络失败属预期波动：叶子保持链环图标 */ }
+
+            var landed = new List<(FolderNode Leaf, System.Windows.Media.Imaging.BitmapImage Image)>();
+            foreach (var (leaf, url) in pending)
+            {
+                var img = Services.FaviconService.LoadFromCache(url);
+                if (img != null) landed.Add((leaf, img));
+            }
+            if (landed.Count == 0) return;
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null) return;   // 无 UI 环境（单测/无头）：图标停在缓存里，不跨线程写通知
+            _ = dispatcher.BeginInvoke(() =>
+            {
+                foreach (var (leaf, img) in landed)
+                    if (leaf.Favicon == null) leaf.Favicon = img;
+            });
+        });
     }
 
     private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)

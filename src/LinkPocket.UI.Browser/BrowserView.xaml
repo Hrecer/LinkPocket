@@ -493,14 +493,20 @@
                     </views:SortableDataTable.ItemTemplate>
                 </views:SortableDataTable>
 
-            <!-- 空状态（MD3E）：大圆角色块徽章 + 引导性文案，替代生硬的系统提示 -->
-            <Grid Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- 空状态（MD3E）：大圆角色块徽章 + 引导性文案，替代生硬的系统提示。
+                 显示条件 = **整个书签库为空**：IsAtRoot（在根）+ Rows.Count = 0 —— 任何条目都挂在根下
+                 ⇒ 根视图无行必是全库无内容（等价条件，不必另取库总数）。
+                 ⚠️ 进入一个**空的子文件夹**时 Rows.Count 同样为 0，那时**不显示**占位——
+                 空文件夹就是空的（Windows 口径）；少了 IsAtRoot 这一条就会把"只是这一格为空"
+                 误报成"这里还空空如也"（用户实测）。 -->
+            <Grid x:Name="EmptyState" Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <MultiDataTrigger>
                                 <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsAtRoot}" Value="True"/>
                                     <Condition Binding="{Binding Rows.Count}" Value="0"/>
                                     <Condition Binding="{Binding IsNavigating}" Value="False"/>
                                 </MultiDataTrigger.Conditions>

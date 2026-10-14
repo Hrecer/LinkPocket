@@ -85,6 +85,47 @@ public class BrowserViewModelTests
     }
 
     [Fact]
+    public async Task 空态条件_仅当整个书签库为空_进入空子文件夹不显示()
+    {
+        // 用户实测回归：进入一个**空的子文件夹**曾显示"这里还空空如也"——库非空，只是这一格为空。
+        // 空态占位的 XAML 判据 = IsAtRoot + Rows.Count == 0（整个库为空 ⇔ 根视图无行，任何条目都挂在根下），
+        // 本用例把两个输入钉死（渲染可见性由探针 gesture 套件复核）。
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var vm = new BrowserViewModel(client);
+
+            // ① 全新库（还没建过任何东西）：根视图 + 无行 = 空态成立（首次安装的引导态）
+            await vm.LoadAsync(null);
+            Assert.True(vm.IsAtRoot);
+            Assert.Empty(vm.Rows);
+
+            // ② 建一个空文件夹 → 根视图有行 ⇒ 空态不成立
+            var empty = (await client.FolderCreateAsync("空夹")).Data!;
+            await vm.LoadAsync(null);
+            Assert.True(vm.IsAtRoot);
+            Assert.Single(vm.Rows);
+
+            // ③ 进入空文件夹：无行，但**不在根** ⇒ 空态不成立（这就是修掉的误报场景）
+            var raised = new List<string?>();
+            vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+            await vm.LoadAsync(empty.FolderId);
+            Assert.False(vm.IsAtRoot);
+            Assert.Empty(vm.Rows);
+            Assert.Contains(nameof(BrowserViewModel.IsAtRoot), raised);   // XAML 触发器依赖的通知
+
+            // ④ 回根：有行、在根 ⇒ 空态仍不成立
+            await vm.LoadAsync(null);
+            Assert.True(vm.IsAtRoot);
+            Assert.Single(vm.Rows);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 移动链接后_不自行刷新_刷新归事件链_无订阅宿主需显式刷新()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
