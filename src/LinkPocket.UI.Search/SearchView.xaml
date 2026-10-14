@@ -21,10 +21,11 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
 
-        <!-- 跳转按钮的样式 = **UIKit 共享 `JumpPillButton`**（三页共用一份：搜索工具行 / 智能列表结果页头 /
-             查重明细 URL 组）。原页面局部样式 `SearchJumpPillButton` 已删除——
-             它带一条"按压圆角 16→10 形变"的触发器，该效果已删除；
-             同时图标由 `open-in-new`（外部打开语义）改为 `map-marker`（地图图钉 = "它在哪"）。 -->
+        <!-- 「跳转」在本页 = 工具行药丸组里的一枚 **TonalButton 孪生药丸**（与「删除」同款同宽，
+             见下方工具行注释；2026-10-15 按用户口径统一，不再用强调填充的共享 `JumpPillButton`——
+             该样式仍由 **智能列表结果页头 / 查重明细 URL 组** 两页共用）。
+             历史注记：原页面局部样式 `SearchJumpPillButton` 的"按压圆角 16→10 形变"已删除；
+             图标由 `open-in-new`（外部打开语义）定为 `map-marker`（地图图钉 = "它在哪"）。 -->
 
         <!-- 搜索范围筛选 chip（M3E filter chip）：32 高与「跳转」药丸齐平、圆角 16（纯胶囊）。
              ⚠️ **选中 / 未选尺寸完全一致**——不加宽、不做形变，
@@ -142,17 +143,21 @@
                              （Width = 文字宽(中文 13pt) + 内距 28 + 描边 2 + 模板内部件 4（实测））：
                              「搜索」/「取消」各 2 字 = 26px ⇒ 60。英文 `Search` / `Cancel`（13pt 需 43 / 42px）
                              放不下时由 LocFit 缩英文字号让位 —— **绝不为英文把几何放大**（中文是第一体验）。
-                             高度显式 32 + 只留水平内距 = 与全站药丸同一口径（垂直内距 9 会让高度随字体行高漂）。 -->
+                             **高度两枚统一 40、显式钉死（Height + MinHeight 双写）**（2026-10-15 定稿）：
+                             40 = **原「取消」的悬停尺寸**（它适配这枚更大的搜索框；用户实测"压成 32 看着不均衡"），
+                             两枚都按这个尺寸对齐；库 `TextButton` 的 `MinHeight=40` 不再被压（取消不用改）。
+                             40 高下的圆角 = **半高 20**（药丸类模板走 `HalfRadius` 自适应）——两枚都是真胶囊；
+                             ⚠️ 别把圆角写死回 16：40 高下会退成圆角矩形（实测被指"搜索按钮方形"）。 -->
                         <!-- 搜索 = 本页**主操作**：口径 = 主操作走强调填充（深底白字）、次操作走次按钮底（淡而可见）。
                              它曾用「淡底深墨」压低视觉重量（"高频但不该抢戏"），用户实测"太浅，应该深一点" ⇒ 改回强调填充。 -->
-                        <Button Grid.Column="3" Padding="14,0" Height="32" FontSize="13" FontWeight="SemiBold" Width="60"
+                        <Button x:Name="SearchRunBtn" Grid.Column="3" Padding="14,0" Height="40" MinHeight="40" FontSize="13" FontWeight="SemiBold" Width="60"
                                 Style="{StaticResource PrimaryPillButton}"
                                 Command="{Binding SearchCommand}" Focusable="False"
                                 VerticalAlignment="Center" Margin="4,0,4,0">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                        views:LocFit.Text="{loc:Fit nav.item.search}" views:LocFit.Mode="Shrink"/>
                         </Button>
-                        <Button Grid.Column="4" Padding="14,0" Height="32" FontSize="13" Width="60"
+                        <Button x:Name="SearchCancelBtn" Grid.Column="4" Padding="14,0" Height="40" MinHeight="40" FontSize="13" Width="60"
                                 Style="{StaticResource TextButton}" Command="{Binding CancelCommand}" Focusable="False"
                                 VerticalAlignment="Center">
                             <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
@@ -164,24 +169,28 @@
 
             <!-- 筛选工具行（M3E，**左对齐** = 与搜索胶囊左缘对齐）：
                  「跳转」+「删除」收进**一枚白底大药丸容器**（与回收站工具栏 / 浏览页命令栏同形态：
-                 TintCard + 圆角 19 + 内距 3；容器内两钮间距 8）——「跳转」= 药丸（关键动作，AccentBtn 填色锚定注意力）
-                 语义 = **进浏览页对应目录并选中该行**（定位组件 IContentLocator；不是"外部打开"）；
+                 TintCard + 圆角 19 + 内距 3；容器内两钮间距 8）。
+                 **两枚 = 孪生药丸**（2026-10-15 按用户口径统一）：同款 `TonalButton`、同宽 75、同高 32、
+                 同图标尺寸 / 文字外边距 —— 内容同为「两字 + 一图标」的按钮不摆两套样式两种宽度
+                 （原「跳转」= 86 宽的 JumpPillButton 强调填充，与 75 的删除并排时宽度与禁用态都不同款）。
+                 「跳转」语义 = **进浏览页对应目录并选中该行**（定位组件 IContentLocator；不是"外部打开"）；
                  「搜索范围」+ 筛选 chip 归集进**另一枚 TintCard 近白胶囊容器**
                  （容器规格 = 内距 3 + 圆角 19，与工具页分段 / 浏览页命令栏同一语言；caption 与 chip 用细分割线分节）。
-                 chip 32 高与跳转药丸齐平；未选透明、选中 SecondaryContainer + 加宽 + SemiBold，层级由色彩直接区分。 -->
+                 chip 32 高与药丸组齐平；未选透明、选中 SecondaryContainer + 加宽 + SemiBold，层级由色彩直接区分。 -->
             <StackPanel x:Name="SearchToolbar" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Left"
                         Margin="12,0,12,8">
                 <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="19"
                         Padding="3" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <Button x:Name="SearchJumpToLinkBtn" Command="{Binding JumpCommand}" IsEnabled="{Binding JumpEnabled}"
-                                Style="{StaticResource JumpPillButton}" VerticalAlignment="Center" Width="86"
+                                Style="{StaticResource TonalButton}" VerticalAlignment="Center" Width="75"
+                                Padding="12,5" MinHeight="32"
                                 ToolTip="{loc:Loc common.jump}">
                             <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="map-marker" Width="15" Height="15" VerticalAlignment="Center"/>
+                                <m3:M3Icon Kind="map-marker" Width="16" Height="16" VerticalAlignment="Center"/>
                                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                            views:LocFit.Text="{loc:Fit common.jump}" views:LocFit.Mode="Shrink"
-                                           Margin="6,0,0,0" VerticalAlignment="Center"/>
+                                           FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                             </StackPanel>
                         </Button>
 

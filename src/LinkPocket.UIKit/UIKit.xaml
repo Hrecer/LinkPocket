@@ -295,6 +295,12 @@
         </Setter>
     </Style>
 
+    <!-- 半高圆角转换器：**药丸类按钮的圆角 = 高度一半**（TonalButton / PrimaryPillButton / JumpPillButton
+         的模板都用它）——胶囊形随高度自适应：32 高 = 16（原冻结口径，全站标准药丸逐像素不变）、
+         40 高 = 20。写死圆角会在高度变化时退化成圆角矩形（实测：搜索页空态按钮升到 40 高时被指"方形"；
+         同一份转换器也服务智能列表入口卡）。⚠️ 声明必须在消费它的模板之前（StaticResource 前向引用解析失败）。 -->
+    <vm:HalfCornerRadiusConverter x:Key="HalfRadius"/>
+
     <!-- TonalButton：MD3 色调按钮（**次按钮底** `App.Surface.Control` + 容器字）。
          浏览页命令栏浮动胶囊组内使用。注意：模板用 TemplateBinding Padding，
          不落入库 TextButton「Padding 硬编码 14,0」的裁切坑。
@@ -317,9 +323,10 @@
                 <ControlTemplate TargetType="Button">
                     <Grid>
                         <Border x:Name="Bd" Background="{DynamicResource App.Surface.Control}"
-                                CornerRadius="16"/>
+                                CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"/>
                         <Border x:Name="StateLayer" Background="{DynamicResource App.Surface.Control}"
-                                Opacity="0" CornerRadius="16"/>
+                                Opacity="0"
+                                CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
@@ -343,7 +350,8 @@
 
     <!-- PrimaryPillButton：主操作按钮 = 药丸（与 TonalButton 同形状，仅颜色不同：AccentBtn #A18EB0 底白字 vs
          SecondaryContainer 底紫字）。不使用库 FilledButton：它自带 MinHeight=40，成对排放会不等高。
-         三层结构与 TonalButton 相同：底色 / 全幅状态层 / 内容（状态层必须铺满，不许只盖文字区）。 -->
+         三层结构与 TonalButton 相同：底色 / 全幅状态层 / 内容（状态层必须铺满，不许只盖文字区）。
+         圆角 = 高度一半（同 HalfRadius，见上）。 -->
     <Style x:Key="PrimaryPillButton" TargetType="Button">
         <Setter Property="FontFamily" Value="{DynamicResource App.Font.Ui}"/>
         <Setter Property="Foreground" Value="{DynamicResource App.Text.OnAccent}"/>
@@ -358,9 +366,10 @@
                 <ControlTemplate TargetType="Button">
                     <Grid>
                         <Border x:Name="Bd" Background="{DynamicResource App.Accent.Fill}"
-                                CornerRadius="16"/>
+                                CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"/>
                         <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
-                                Opacity="0" CornerRadius="16"/>
+                                Opacity="0"
+                                CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"/>
                         <ContentPresenter Margin="{TemplateBinding Padding}"
                                           HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
@@ -452,11 +461,13 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16"
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"
                             Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
                         <Grid>
                             <Border x:Name="StateLayer" Background="{DynamicResource App.Text.OnAccent}"
-                                    Opacity="0" CornerRadius="16"/>
+                                    Opacity="0"
+                                    CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource HalfRadius}}"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>
                         </Grid>
@@ -712,7 +723,7 @@
     <!-- 布尔可见性转换（浏览页/详情栏/编辑页/智能列表/回收站共用同一键名） -->
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     <vm:InvertedBoolToVisibilityConverter x:Key="InvBoolToVis"/>
-    <vm:HalfCornerRadiusConverter x:Key="HalfRadius"/>
+    <!-- 半高圆角（`HalfRadius`）的声明已**前移**到药丸按钮样式之前（StaticResource 前向引用解析失败） -->
     <!-- 药丸色调 → 药丸样式 / 图标强调色（唯一映射点；样式仍只在 UIKit 定义一份） -->
     <vm:PillToneToStyleConverter x:Key="PillToneStyle"/>
     <vm:PillToneToBrushConverter x:Key="PillToneBrush"/>
