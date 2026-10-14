@@ -145,6 +145,14 @@ public static class FaviconCache
         return client;
     }
 
+    /// <summary>
+    /// 浏览器指纹兜底下载钩子（**组合根装配**：由 Links 模块在装配时接上，与元数据抓取共用同一个 curl-impersonate 客户端）。
+    /// 普通客户端被反爬墙拦下（403/503 / 连接被断）时用它再取一次——有些站点连图标文件都按客户端指纹拦
+    /// （火绒官网即此例：浏览器能看图、HttpClient 拿到的是 503 拦截页）。
+    /// <c>null</c> = 未装配（只有普通路径）；返回 <c>null</c> = 兜底也失败。
+    /// </summary>
+    public static Func<string, CancellationToken, Task<byte[]?>>? ImpersonatedDownloader { get; set; }
+
     /// <summary>SVG 不能直接当图标解码 → 回落站点根 <c>/favicon.ico</c>；地址非法时原样返回。
     /// 内嵌图标（<c>data:</c>）原样返回——它没有"站点根"，回落只会拼出非法地址。</summary>
     public static string ResolveFaviconUrl(string? originalUrl)
@@ -268,7 +276,30 @@ public static class FaviconCache
     private static void MarkFailed(string resolvedUrl)
         => FailedUntil[resolvedUrl] = DateTimeOffset.UtcNow + FailureBackoff;
 
+    /// <summary>下载一个地址的字节。普通路径被反爬墙拦下（403/503 / 连接被断）时，
+    /// 经 <see cref="ImpersonatedDownloader"/>（浏览器指纹，装配于组合根）重试一次。</summary>
     private static async Task<byte[]?> TryDownloadAsync(string url, CancellationToken ct)
+    {
+        var (bytes, botWall) = await TryDownloadPlainAsync(url, ct).ConfigureAwait(false);
+        if (bytes != null) return bytes;
+        if (!botWall || ImpersonatedDownloader is not { } fallback) return null;
+
+        try
+        {
+            var impersonated = await fallback(url, ct).ConfigureAwait(false);
+            if (impersonated is { Length: > 0 and <= MaxBytes }) return impersonated;
+
+            LpLog.Error($"favicon impersonated download failed (empty or over {MaxBytes} bytes): {ShortUrl(url)}", null);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error($"favicon impersonated download threw: {ShortUrl(url)} - {ex.Message}", ex);
+        }
+        return null;
+    }
+
+    /// <summary>普通路径下载。<c>BotWall</c> = 失败形态像反爬墙（403/503 或连接异常）→ 值得交给指纹兜底再试。</summary>
+    private static async Task<(byte[]? Bytes, bool BotWall)> TryDownloadPlainAsync(string url, CancellationToken ct)
     {
         try
         {
@@ -276,13 +307,14 @@ public static class FaviconCache
             if (!response.IsSuccessStatusCode)
             {
                 LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {ShortUrl(url)}", null);
-                return null;
+                var wall = response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable;
+                return (null, wall);
             }
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxBytes)
             {
                 LpLog.Error($"favicon download refused (declared {declared} bytes > {MaxBytes}): {ShortUrl(url)}", null);
-                return null;
+                return (null, false);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -294,17 +326,18 @@ public static class FaviconCache
                 if (buffer.Length + read > MaxBytes)
                 {
                     LpLog.Error($"favicon download refused (body over {MaxBytes} bytes): {ShortUrl(url)}", null);
-                    return null;
+                    return (null, false);
                 }
                 buffer.Write(chunk, 0, read);
             }
 
-            return buffer.Length == 0 ? null : buffer.ToArray();
+            return (buffer.Length == 0 ? null : buffer.ToArray(), false);
         }
         catch (Exception ex)
         {
+            // 连接被断（TLS 握手重置等）也是反爬墙的常见形态 → 交给指纹兜底判定
             LpLog.Error($"favicon download threw: {ShortUrl(url)} - {ex.Message}", ex);
-            return null;
+            return (null, true);
         }
     }
 

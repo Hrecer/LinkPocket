@@ -243,6 +243,52 @@ internal static class MetadataFetcher
         return await fallback.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// favicon 下载的浏览器指纹兜底（装配给 <c>FaviconCache.ImpersonatedDownloader</c>，由 Links 模块在装配时接上）：
+    /// 手动跟随重定向（每跳过环回/链路本地判据）、2 MB 上限、10s 超时；失败返回 <c>null</c>（调用方按原口径处理）。
+    /// </summary>
+    internal static async Task<byte[]?> TryGetBytesImpersonatedAsync(string url, CancellationToken ct)
+    {
+        var fallback = ImpersonatingClient.Value;
+        if (fallback is null || !IsValidUrl(url)) return null;
+
+        var current = new Uri(url);
+        for (var hop = 0; hop <= MaxRedirects; hop++)
+        {
+            if (SystemProxy is null)
+                await EnsurePublicHostAsync(current, ct).ConfigureAwait(false);
+
+            using var response = await fallback.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+
+            if (IsRedirect(response.StatusCode))
+            {
+                var location = response.Headers.Location;
+                if (location is null) return null;
+                var next = location.IsAbsoluteUri ? location : new Uri(current, location);
+                if (!IsValidUrl(next.AbsoluteUri)) return null;
+                current = next;
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode) return null;
+            if (response.Content.Headers.ContentLength is long declared && declared > MaxHtmlBytes) return null;
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
+            {
+                if (buffer.Length + read > MaxHtmlBytes) return null;   // 图标超限：不落半截
+                buffer.Write(chunk, 0, read);
+            }
+
+            return buffer.Length == 0 ? null : buffer.ToArray();
+        }
+
+        return null;
+    }
+
     /// <summary>读取正文（带上限）；按响应头里的 charset 解码，与托管实现的取字符口径一致。</summary>
     private static async Task<string> ReadHtmlAsync(HttpContent content, CancellationToken ct)
     {

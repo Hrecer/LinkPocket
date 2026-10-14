@@ -18,11 +18,11 @@ namespace LinkPocket.Theming.Themes;
 /// </remarks>
 public static class ThemeCatalog
 {
-    /// <summary>出厂默认主题的 id。</summary>
+    /// <summary>出厂默认主题的 id（沿用不换：老偏好的 "factory-default" 直接指向新配色）。</summary>
     public const string DefaultId = "factory-default";
 
     /// <summary>
-    /// 出厂默认主题（保留紫色身份，5 个色全部占槽）。
+    /// 出厂默认主题 = **薄荷气泡水**（2026-10-14 起；旧出厂默认紫罗兰降级为普通预设「紫罗兰」，配色原样保留）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -30,20 +30,22 @@ public static class ThemeCatalog
     /// <b>表面族彩度 = 配色里"浅调成员"的量级</b>（见 `ThemeFamilies.SurfaceChroma`）。
     /// </para>
     /// <para>
-    /// ⚠️ 第 5 色 = 背景色成员：表面族色相与页面底由它推出（见上），改它等于改整页底色与卡面层感。
+    /// <b>为什么是"深 → 浅"的 4 枚梯度</b>（深青 / 气泡青 `#8ED6DE` / 薄荷 `#BCF1E0` / 米白 `#EFFFE0`）：
+    /// ① 薄荷气泡水的设计档原色全为浅色——全浅配色没有"墨"的来源（走"自动加深派生"）、也没有"深色成员"，
+    /// 且按彩度排第 3 的成员会**零出口**（leave-one-out 实测：去掉它界面毫无变化）；
+    /// ② 补一枚**同族深青**（色相取自配色的青槽，不发明色相）把"墨/描边"变成显式成员——两个问题一并消失；
+    /// ③ 设计档第 4 色 `#D7FADF` 与米白 `#EFFFE0` 色相相同、明度只差 3 档（近重复），故按"每枚成员都要有出口"
+    /// 的口径只保留米白；`#BCF1E0` / `#8ED6DE` / `#EFFFE0` 三枚设计档原色原样保留。
     /// </para>
     /// <para>
-    /// 第 4 色（浅调成员）取 <c>#E8D0DE</c>（淡粉，与紫色相邻的粉带、非传统粉）：5 个色原本
-    /// 色相 297°–311° 全在同一紫族（实测"太单调"）——换粉后容器/徽标底多一个色相，主调与页面底不动。
-    /// 彩度刻意保持在 16.6–22.4 之间 ——
-    /// 高于就抢支撑槽（#A18EB0）、低于就抢描边槽（#3F3448），只有落在这段里才"只换它自己"。
+    /// ⚠️ 第 4 色 = 背景色成员（`#EFFFE0`）：表面族色相与页面底由它推出（见上），改它等于改整页底色与卡面层感。
     /// </para>
     /// </remarks>
     public static ThemeDefinition Default { get; } = new()
     {
         Id = DefaultId,
         Source = ThemeSource.FactoryDefault,
-        Palette = Palette(0x3F3448, 0x6E5A80, 0xA18EB0, 0xEFC8DC, 0xE3DDE8),
+        Palette = Palette(0x17434A, 0x8ED6DE, 0xBCF1E0, 0xEFFFE0),
         ChromaCap = ChromaCap.Standard,
     };
 
@@ -68,6 +70,9 @@ public static class ThemeCatalog
     /// </remarks>
     public static IReadOnlyList<ThemeDefinition> Presets { get; } = new[]
     {
+        // 旧出厂默认（紫罗兰）：2026-10-14 出厂默认改薄荷气泡水后**降级为普通预设**（配色原样保留、
+        // 仍可选；「默认」徽标由 Source==FactoryDefault 决定，随新的出厂默认走）。
+        Preset("violet", 0x3F3448, 0x6E5A80, 0xA18EB0, 0xEFC8DC, 0xE3DDE8),
         // 1–4：设计档「5 色配色」（暗 → 浅：暗调 / 主调 / 中间调 / 浅调 / 米白背景色）
         Preset("ochre-rose", 0x4A3322, 0x7E5E40, 0xC09480, 0xDCBFA8, 0xF0E6D6),
         Preset("dusk-rose", 0xC2A0A2, 0xB09295, 0x907884, 0xA3A6B0, 0xE6DEDC),
@@ -82,7 +87,6 @@ public static class ThemeCatalog
         // 界面上完全不可见（实测"青色和天蓝色都没用上"）。提高它的彩度让它占到**强调**槽（青色成为主调）。
         Preset("shine-muscat", 0xA9F0E2, 0xBDF9D8, 0xFDF5DA, 0xEDFFDB) with { EnforceHoverVisibility = true },
         Preset("blueberry-yogurt", 0xF2F6FF, 0xB7CBF4, 0xE2ECFF, 0x88ABF2),
-        Preset("mint-soda", 0xBCF1E0, 0xEFFFE0, 0xD7FADF, 0x8ED6DE),
         Preset("sakura-panna", 0xFEDFE9, 0xEEF6EE, 0xFEE6EC, 0xFFC7D6),
         Preset("green-pear", 0xDEEBB5, 0xF5FAED, 0xF4FEF1, 0xBAC9A7),
     };

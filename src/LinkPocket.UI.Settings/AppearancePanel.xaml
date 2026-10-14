@@ -160,8 +160,10 @@
                                                            FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                            Foreground="{DynamicResource App.Text.Primary}"/>
                                                 <!-- 「默认」徽标只在出厂默认卡上出现（直接绑能力位，不走 code-behind 找元素）。
-                                                     宽度冻在 48（英文 Default 在 10pt 下放得下；中文「默认」留白多一点） -->
-                                                <Border Grid.Column="1" CornerRadius="7" Padding="6,1" Width="48"
+                                                     宽度冻在 44 = 英文 Default @Segoe UI 10pt 实测 31.9px + 内距 + 余量；
+                                                     壳宽在 zh/en 必须逐像素一致（几何不变式），中文侧看着的余白是这条规则
+                                                     的固有代价——不要再放宽，也不要按中文宽度收窄（英文会被迫缩字号）。 -->
+                                                <Border Grid.Column="1" CornerRadius="7" Padding="5,1" Width="44" Margin="6,0,0,0"
                                                         Background="{DynamicResource App.Accent.Container}"
                                                         Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
@@ -295,16 +297,16 @@
                             <!-- 「以当前主题为起点」= **复制**当前主题的颜色进色槽（预设主题本身只读，
                                  复制品作为自选配色方案的起点）。
                                  文案带主题名，样式复用既有 TonalButton，高度显式 32（与本面板其它药丸同高）。
-                                 「清空颜色」= 把整个草稿清回空槽 **并回到出厂默认（紫罗兰）主题**
+                                 「清空颜色」= 把整个草稿清回空槽 **并回到出厂默认（薄荷气泡水）主题**
                                  ——只清草稿不动已应用外观会让"清空"变成界面一点没变的半截动作——
                                  **唯一一条"清空"路径**（取色盘里的单槽「清除」只清那一格，两件事不重叠）。 -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
                                 <!-- 两枚按钮宽度 = 冻结几何，取值 = **中文基线**：壳宽 = 文字宽(中文 12pt) + 内距 28 + 描边 2：
-                                     「以「默认（紫罗兰）」为起点」= 13 字 × 12pt（156px，最长主题名「默认（紫罗兰）」）⇒ 186；
+                                     「以「薄荷气泡水」为起点」= 11 字 × 12pt（132px，最长主题名「薄荷气泡水」）⇒ 162；
                                      「清空颜色」= 4 字 × 12pt（48px）⇒ 78。英文放不下时缩英文字号让位。 -->
                                 <Button x:Name="StartFromThemeBtn"
                                         Style="{StaticResource TonalButton}" Height="32" Padding="14,0"
-                                        Width="186" Cursor="Hand" Click="StartFromThemeBtn_Click"
+                                        Width="162" Cursor="Hand" Click="StartFromThemeBtn_Click"
                                         ToolTip="{loc:Loc appearance.draft.startFrom.tip}">
                                     <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                                views:LocFit.Text="{loc:Value StartFromCurrentThemeLabel}"

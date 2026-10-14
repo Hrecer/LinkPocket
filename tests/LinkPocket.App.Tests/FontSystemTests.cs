@@ -483,10 +483,10 @@ public class ThemeValidatorTests
     }
 
     [Fact]
-    public void 出厂默认主题_身份色为5个_满足用户自选口径()
+    public void 出厂默认主题_身份色为4个_满足用户自选口径()
     {
-        // 出厂默认是"用户可再编辑"的主题（5 个身份色）——它与预设是两条不同路径。
-        Assert.Equal(5, ThemeCatalog.Default.Palette.Count);
+        // 出厂默认是"用户可再编辑"的主题（薄荷气泡水：深青/气泡青/薄荷/米白 4 色梯度）——它与预设是两条不同路径。
+        Assert.Equal(4, ThemeCatalog.Default.Palette.Count);
         Assert.False(ThemeValidator.HasErrors(ThemeValidator.Validate(ThemeCatalog.Default)));
     }
 

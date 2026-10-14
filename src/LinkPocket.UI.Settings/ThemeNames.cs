@@ -19,6 +19,7 @@ internal static class ThemeNames
     public static LocValue Of(string id) => id switch
     {
         "factory-default" => Loc.K("theme.factoryDefault"),
+        "violet" => Loc.K("theme.violet"),
         "ochre-rose" => Loc.K("theme.ochreRose"),
         "dusk-rose" => Loc.K("theme.duskRose"),
         "lotus-sage" => Loc.K("theme.lotusSage"),
@@ -26,7 +27,6 @@ internal static class ThemeNames
         "uji-matcha" => Loc.K("theme.ujiMatcha"),
         "shine-muscat" => Loc.K("theme.shineMuscat"),
         "blueberry-yogurt" => Loc.K("theme.blueberryYogurt"),
-        "mint-soda" => Loc.K("theme.mintSoda"),
         "sakura-panna" => Loc.K("theme.sakuraPanna"),
         "green-pear" => Loc.K("theme.greenPear"),
         CustomId => Loc.K("theme.custom"),

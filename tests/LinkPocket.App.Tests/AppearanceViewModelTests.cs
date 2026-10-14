@@ -89,7 +89,7 @@ public class AppearanceViewModelTests : IDisposable
     public void 主题卡_每张都有身份色圆点与派生示意条()
     {
         // 色点 = 该主题**设计档给的全部颜色**（设计档「配色方案.txt」：第 1–4 套 5 色、第 5–10 套 4 色、
-        // 出厂默认 5 色）——不是"补位凑到 4 个"。逐张对账，少一个都算红。
+        // 出厂默认 4 色（薄荷气泡水）；旧出厂默认紫罗兰降级为 5 色预设「violet」）——不是"补位凑到 4 个"。
         var vm = NewVm();
         var presets = vm.ThemeCards.Where(c => !c.IsCustom).ToList();
         Assert.Equal(11, presets.Count);
@@ -101,12 +101,12 @@ public class AppearanceViewModelTests : IDisposable
         Assert.All(presets, c => Assert.False(c.Summary.IsEmpty, $"{c.Name.Resolve()} 缺派生摘要"));
         Assert.All(presets, c => Assert.False(c.IsEmpty, $"{c.Name.Resolve()} 不该是空态"));
 
-        // 设计档第 1–4 套 = 5 色、第 5–10 套 = 4 色；加上 5 色的出厂默认
-        // → 12 张卡里 5 色 5 张、4 色 6 张（"五色主题"就是这个，不能被压成四色）
+        // 设计档第 1–4 套 = 5 色、第 5–10 套 = 4 色；加 4 色的出厂默认与 5 色的「紫罗兰」预设
+        // → 11 张目录卡里 5 色 5 张（= 全部 5 色预设数，出厂默认不再贡献第 6 张）、4 色 6 张
         Assert.Equal(5, presets.Count(c => c.Swatches.Count == 5));
         Assert.Equal(6, presets.Count(c => c.Swatches.Count == 4));
-        Assert.Equal(5, vm.ThemeCards[0].Swatches.Count);
-        Assert.Equal(ThemeCatalog.Presets.Count(p => p.Palette.Count == 5), presets.Count(c => c.Swatches.Count == 5) - 1);
+        Assert.Equal(4, vm.ThemeCards[0].Swatches.Count);
+        Assert.Equal(ThemeCatalog.Presets.Count(p => p.Palette.Count == 5), presets.Count(c => c.Swatches.Count == 5));
 
         // 自选颜色卡反过来：没有配色时**一个色点都不显示**（占位态），也没有派生示意条
         var custom = vm.ThemeCards[^1];
@@ -153,26 +153,26 @@ public class AppearanceViewModelTests : IDisposable
     [Fact]
     public void 槽数_跟着当前外观的颜色数走_五色主题就是五格()
     {
-        // 回归背景：草稿槽数原先恒为 4（MinSlots），于是 5 色的出厂默认在调色台上被**显示成 4 色**，
+        // 回归背景：草稿槽数原先恒为 4（MinSlots）——当时 5 色的出厂默认在调色台上被**显示成 4 色**，
         // 与主题卡上的 5 个色点自相矛盾。判据 = 草稿槽数 == PaletteSolver.EditableSlots(当前主题).Count。
         ThemeService.ResetForTests();
         try
         {
             var vm = NewVm();
-            Assert.Equal(5, PaletteSolver.EditableSlots(ThemeCatalog.Default).Count);
-            Assert.Equal(5, vm.SlotCount);
-            Assert.Equal(1, vm.SlotCountIndex);          // 分段选中「5 色」
-            Assert.True(vm.ThemeCards[0].IsSelected);
-            Assert.Equal(5, vm.ThemeCards[0].Swatches.Count);   // 卡片与色槽同数（用户看到的是同一件事）
-
-            // 切到 4 格的预设 → 槽数跟着变 4（颜色仍不自动载入）
-            vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Id == "uji-matcha"));
+            Assert.Equal(4, PaletteSolver.EditableSlots(ThemeCatalog.Default).Count);   // 出厂默认 = 薄荷气泡水（4 色）
             Assert.Equal(4, vm.SlotCount);
-            Assert.Equal(0, vm.SlotCountIndex);
+            Assert.Equal(0, vm.SlotCountIndex);          // 分段选中「4 色」
+            Assert.True(vm.ThemeCards[0].IsSelected);
+            Assert.Equal(4, vm.ThemeCards[0].Swatches.Count);   // 卡片与色槽同数（用户看到的是同一件事）
 
-            // 切回出厂默认 → 回 5
-            vm.ApplyThemeCard(vm.ThemeCards[0]);
+            // 切到 5 格的预设（紫罗兰 = 旧出厂默认，5 色）→ 槽数跟着变 5（颜色仍不自动载入）
+            vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Id == "violet"));
             Assert.Equal(5, vm.SlotCount);
+            Assert.Equal(1, vm.SlotCountIndex);
+
+            // 切回出厂默认 → 回 4
+            vm.ApplyThemeCard(vm.ThemeCards[0]);
+            Assert.Equal(4, vm.SlotCount);
             Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "槽数对齐不许顺手把颜色倒进来"));
         }
         finally
@@ -237,8 +237,8 @@ public class AppearanceViewModelTests : IDisposable
         try
         {
             var vm = NewVm();
-            Assert.Equal("以「默认（紫罗兰）」为起点", vm.StartFromCurrentThemeLabel.Resolve());
-            Assert.Contains("默认（紫罗兰）", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
+            Assert.Equal("以「薄荷气泡水」为起点", vm.StartFromCurrentThemeLabel.Resolve());
+            Assert.Contains("薄荷气泡水", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
 
             var changes = new List<string>();
             vm.PropertyChanged += (_, e) => changes.Add(e.PropertyName ?? string.Empty);
@@ -247,7 +247,7 @@ public class AppearanceViewModelTests : IDisposable
 
             Assert.Equal("以「青梨冻冻」为起点", vm.StartFromCurrentThemeLabel.Resolve());
             Assert.Contains("青梨冻冻", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
-            Assert.DoesNotContain("默认（紫罗兰）", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
+            Assert.DoesNotContain("薄荷气泡水", vm.DraftIntro.Resolve(), StringComparison.Ordinal);
             Assert.Contains(nameof(AppearanceViewModel.StartFromCurrentThemeLabel), changes);
             Assert.Contains(nameof(AppearanceViewModel.DraftIntro), changes);
         }
@@ -315,7 +315,7 @@ public class AppearanceViewModelTests : IDisposable
         {
             var vm = NewVm();
             Assert.All(vm.Slots, s => Assert.True(s.IsEmpty));
-            var total = vm.SlotCount;              // 出厂默认 5 色 → 5 格（槽数随当前外观）
+            var total = vm.SlotCount;              // 出厂默认 4 色 → 4 格（槽数随当前外观）
 
             vm.ApplyDraft();
 
@@ -356,7 +356,7 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
-    public void 清空颜色_草稿回空态_回到紫罗兰_自选卡回空心占位_且诊断提示还差几个()
+    public void 清空颜色_草稿回空态_回到薄荷气泡水_自选卡回空心占位_且诊断提示还差几个()
     {
         // 「清空颜色」= 清空全部草稿的唯一路径（单槽「清除」在取色盘里）。
         // 清完必须**重算诊断**——空槽态要显示"还差 N 个颜色"这条中性提示，
@@ -379,17 +379,17 @@ public class AppearanceViewModelTests : IDisposable
             vm.ClearDraft();
 
             Assert.All(vm.Slots, s => Assert.True(s.IsEmpty, "清空后每一格都必须是空槽"));
-            Assert.Equal(5, vm.SlotCount);                     // 出厂默认是 5 色主题 → 槽数跟着它
+            Assert.Equal(4, vm.SlotCount);                     // 出厂默认是 4 色主题（薄荷气泡水）→ 槽数跟着它
             Assert.False(vm.IsCustomActive, "清空必须把归属切回预设");
             Assert.Equal(ThemeCatalog.DefaultId, vm.SelectedThemeId);
             Assert.Equal(ThemeCatalog.Default.Palette.Count, vm.Slots.Count);
-            Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到紫罗兰
-            Assert.Equal(0xE4DBF5u, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
+            Assert.Equal(ThemeCatalog.Default.Id, ThemeService.Current.Id);      // 界面真的回到出厂默认
+            Assert.Equal(0xDBEACCu, (uint)(ThemeService.DerivedTable.Token(AppTokens.SurfaceBase).ToInt() & 0x00FFFFFF));
             Assert.True(vm.ThemeCards.First(c => c.Id == ThemeCatalog.DefaultId).IsSelected, "主题卡高亮回到出厂默认");
             Assert.Empty(vm.ThemeCards[^1].Swatches);
             Assert.True(vm.ThemeCards[^1].IsEmpty, "清空后自选颜色卡必须回空心占位（色点 = 草稿投影）");
             Assert.True(vm.HasDiagnostics);
-            Assert.Contains("还差 5 个颜色", vm.DiagnosticLines.Single().Text.Resolve(), StringComparison.Ordinal);
+            Assert.Contains("还差 4 个颜色", vm.DiagnosticLines.Single().Text.Resolve(), StringComparison.Ordinal);
             Assert.DoesNotContain("✗", string.Join("|", vm.DiagnosticLines.Select(l => l.Marker)), StringComparison.Ordinal);
 
             // 回默认这件事本身要落盘（与「恢复默认外观」的分工：那个连偏好文件一起清）
@@ -995,7 +995,7 @@ public class AppearanceViewModelTests : IDisposable
     {
         ThemeService.ResetForTests();
         var vm = NewVm();
-        vm.SlotCountIndex = 1;                 // 5 槽（出厂默认有 5 个身份色）
+        vm.SlotCountIndex = 0;                 // 4 槽（出厂默认 = 薄荷气泡水，4 个身份色）
         var palette = ThemeCatalog.Default.Palette;
         for (var i = 0; i < vm.SlotCount && i < palette.Count; i++)
         {

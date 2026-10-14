@@ -765,11 +765,11 @@ public sealed partial class AppearanceViewModel : System.ComponentModel.INotifyP
     }
 
     /// <summary>
-    /// 「清空颜色」：草稿清成空槽，并**回到出厂默认（紫罗兰）外观**。
+    /// 「清空颜色」：草稿清成空槽，并**回到出厂默认（薄荷气泡水）外观**。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>清空 = 回到紫罗兰</b>：早期实现只清草稿、**不动已应用的外观** ——
+    /// <b>清空 = 回到出厂默认</b>：早期实现只清草稿、**不动已应用的外观** ——
     /// 按了"清空"界面上还是上一套配色（"清空"名不副实）。现行 = 一并回出厂默认主题：
     /// <see cref="ThemeService.ApplyDefault"/> + 落盘 + "当前外观"那一族投影（名字 / 起点按钮 /
     /// 说明句 / 槽数 / 主题卡高亮）。

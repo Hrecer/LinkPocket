@@ -28,7 +28,7 @@
 ## 内部组件
 
 - `LinkSupport`：排序口径、日期解析、父链计数刷新（`RefreshLinkCountAsync`）。
-- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），仅主路径收到 403/503 时对同一地址重试一次（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；触发时写 `links.metadata` 分类日志。
+- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），仅主路径收到 403/503 时对同一地址重试一次（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；触发时写 `links.metadata` 分类日志；同一指纹客户端经 `TryGetBytesImpersonatedAsync` 在装配时接到 favicon 下载兜底（`LinksModule.CreateHandlers` 挂 `FaviconCache.ImpersonatedDownloader`）。
 - `LinkDtos`：模块内结果 DTO（`PagedLinkResult` 等）。
 
 ## 隐藏能力（★ 不接 UI）

@@ -74,10 +74,6 @@ public partial class BrowserView : UserControl
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out ScreenPoint point);
 
-    /// <summary>系统双击时间（毫秒）：快速连击判定取**系统设置**，不写死常量。</summary>
-    [DllImport("user32.dll")]
-    private static extern int GetDoubleClickTime();
-
     [StructLayout(LayoutKind.Sequential)]
     private struct ScreenPoint
     {
@@ -113,7 +109,7 @@ public partial class BrowserView : UserControl
     /// <summary>按下时的点击计数：≥2 = 双击手势的第二击，绝不承载选择语义（第二击只作打开）。</summary>
     private int _pressClickCount;
 
-    /// <summary>本次按下是否构成改名「两击对窗口」的第二击：与上一次按下**同一行**、且间隔 ∈ [系统双击时间, <see cref="RenamePairWindowMs"/>]。
+    /// <summary>本次按下是否构成改名「两击对窗口」的第二击：与上一次按下**同一行**、且间隔 ∈ [<see cref="RenamePairMinMs"/>, <see cref="RenamePairWindowMs"/>]。
     /// 用户口径（2026-10-14，契约 §1.4）：**单击永不改名**（第一击只"待命"）；快速连击是"双击打开"、不进改名；
     /// 间隔超窗不构成对（防止"选中很久之后再点一下"直接进改名）。
     /// ⚠️ 不能只信 <see cref="MouseButtonEventArgs.ClickCount"/>：选择/刷新会让行容器被重建，
@@ -121,8 +117,12 @@ public partial class BrowserView : UserControl
     /// 直接进了改名（用户实测：老是误触重命名、进不去文件夹）。按时间戳判定与元素身份无关。</summary>
     private bool _pressRenamePair;
 
+    /// <summary>改名两击对的间隔下限（毫秒）：第二击必须距第一击**至少**这么久才算"刻意的两击"——
+    /// 选中后顺手再点一下（看右侧栏等）绝不误触改名。定稿 1.2 秒（0.5 秒太短会误触、3 秒又太难触发，用户两轮实测）。</summary>
+    private const long RenamePairMinMs = 1200;
+
     /// <summary>改名两击对的间隔上限（毫秒）：第一击"待命"后超过它再点 = 不构成对（需重新起一对）。</summary>
-    private const long RenamePairWindowMs = 5000;
+    private const long RenamePairWindowMs = 10000;
 
     /// <summary>上一次按下的行与时刻（快速连击判定用）。</summary>
     private object? _lastPressRow;
@@ -195,11 +195,11 @@ public partial class BrowserView : UserControl
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         // 记下"按下时它已是唯一选中"——抬起据此判定"第二击"（慢两击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
-        // 「两击对窗口」的第二击：同一行、间隔 ∈ [系统双击时间, 5s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
+        // 「两击对窗口」的第二击：同一行、间隔 ∈ [1.2s, 10s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
         var now = Environment.TickCount64;
         var gap = now - _lastPressTick;
         _pressRenamePair = ReferenceEquals(_lastPressRow, _pressRow)
-            && gap >= GetDoubleClickTime() && gap <= RenamePairWindowMs;
+            && gap >= RenamePairMinMs && gap <= RenamePairWindowMs;
         _lastPressRow = _pressRow;
         _lastPressTick = now;
         if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)

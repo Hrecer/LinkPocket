@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Links;
@@ -8,23 +9,31 @@ namespace LinkPocket.Modules.Links;
 /// </summary>
 public static class LinksModule
 {
-    public static IReadOnlyList<ICommandHandler> CreateHandlers() =>
-    [
-        new LinkListHandler(),
-        new LinkGetHandler(),
-        new LinkRootsHandler(),
-        new LinkStatsHandler(),
-        new LinkSmartListHandler(),
-        new LinkMetadataFetchHandler(),
-        new LinkQueryHandler(),
-        new LinkFindByUrlHandler(),
-        new LinkCreateHandler(),
-        new LinkUpdateHandler(),
-        new LinkTrashHandler(),
-        new LinkVisitRecordHandler(),
-        new LinkMoveBatchHandler(),
-        new LinkCopyBatchHandler(),
-        new LinkVisitBatchHandler(),
-        new LinkExportHandler(),
-    ];
+    /// <summary>
+    /// 注册命令处理器；另在装配时把元数据抓取的同款**浏览器指纹客户端**接到 favicon 下载兜底
+    /// （反爬墙站点连图标文件也按客户端指纹拦——浏览器能看图、工具得靠指纹；见 WARNINGS 166）。
+    /// </summary>
+    public static IReadOnlyList<ICommandHandler> CreateHandlers()
+    {
+        FaviconCache.ImpersonatedDownloader = MetadataFetcher.TryGetBytesImpersonatedAsync;
+        return
+        [
+            new LinkListHandler(),
+            new LinkGetHandler(),
+            new LinkRootsHandler(),
+            new LinkStatsHandler(),
+            new LinkSmartListHandler(),
+            new LinkMetadataFetchHandler(),
+            new LinkQueryHandler(),
+            new LinkFindByUrlHandler(),
+            new LinkCreateHandler(),
+            new LinkUpdateHandler(),
+            new LinkTrashHandler(),
+            new LinkVisitRecordHandler(),
+            new LinkMoveBatchHandler(),
+            new LinkCopyBatchHandler(),
+            new LinkVisitBatchHandler(),
+            new LinkExportHandler(),
+        ];
+    }
 }

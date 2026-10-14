@@ -17,7 +17,9 @@
 
 ## 内部组件
 
-- `FaviconCache`：地址解析（相对 URL → 站点 favicon 约定路径）、缓存文件路径（按解析后地址取哈希）、`EnsureCachedAsync`。
+- `FaviconCache`：地址解析（相对 URL → 站点 favicon 约定路径）、缓存文件路径（按解析后地址取哈希）、`EnsureCachedAsync`；
+  **反爬兜底**：普通客户端被拦（403/503 / 连接被断）时经 `FaviconCache.ImpersonatedDownloader`（组合根由 Links 模块
+  装配的浏览器指纹客户端 `MetadataFetcher.TryGetBytesImpersonatedAsync`，与元数据抓取同款）重取一次——有些站点连图标文件也按指纹拦。
 - `PrefetchQueue`：进程内静态队列，并发 4（`SemaphoreSlim`）、**按解析后地址去重**、失败跳过；
   fire-and-forget（异常被吞，图标缺失不阻断任何业务），排水任务空闲自愈。
 
