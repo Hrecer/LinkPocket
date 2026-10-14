@@ -9,7 +9,7 @@ public sealed record LoggingOptions
     /// <summary>最低记录级别（低于它的记录在管道入口被过滤，计入 Filtered）。</summary>
     public LogLevel MinimumLevel { get; init; } = LogLevel.Info;
 
-    /// <summary>日志目录；null = 数据根 <c>data\logs</c>（<see cref="AppPaths.DataRoot"/>）。</summary>
+    /// <summary>日志目录；null = 程序根 <c>logs\</c>（<see cref="AppPaths.ProgramRoot"/>；运行痕迹，不在数据区）。</summary>
     public string? Directory { get; init; }
 
     /// <summary>单文件上限（字节）：达到即轮转（同日追加三位序号后缀，名称升序 = 时间升序）。</summary>

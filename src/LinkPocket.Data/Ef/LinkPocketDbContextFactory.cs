@@ -20,17 +20,21 @@ public sealed class LinkPocketDbContextFactory : IDbContextFactory<LinkPocketDbC
 
     private readonly string _connectionString;
 
+    /// <summary>本工厂服务的库文件绝对路径（唯一来源；消费方按它推导同目录附属物，如 macros.json）。</summary>
+    public string DatabasePath { get; }
+
     public LinkPocketDbContextFactory(string dbPath)
     {
-        var builder = new SqliteConnectionStringBuilder($"Data Source={dbPath}")
+        DatabasePath = Path.GetFullPath(dbPath);
+        var builder = new SqliteConnectionStringBuilder($"Data Source={DatabasePath}")
         {
             ForeignKeys = true,
             DefaultTimeout = BusyTimeoutSeconds,
         };
         _connectionString = builder.ToString();
-        EnableWal(dbPath);
-        // 首次使用直接创建全新 v2 库（零责任，无迁移组件）；已是 v2+ 时幂等快速返回
-        SchemaMigrator.EnsureSchema(dbPath);
+        EnableWal(DatabasePath);
+        // 缺省库 = 空文件 → 建当前纪元基线；异纪元 / 外来库 → 明确拒绝（DatabaseIncompatibleException）
+        SchemaMigrator.EnsureSchema(DatabasePath);
     }
 
     public LinkPocketDbContext CreateDbContext()

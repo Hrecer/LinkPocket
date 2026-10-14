@@ -93,7 +93,7 @@ public static class EngineComposer
 
     /// <summary>
     /// 宿主日志选项的**唯一实现**（环境策略归宿主，但 App 与无头宿主同一套口径 → 收在这里，
-    /// 不再各写一份）：缺省 info + 数据根 <c>data\logs</c>；
+    /// 不再各写一份）：缺省 info + 程序根 <c>logs\</c>（运行痕迹，不在数据区）；
     /// <c>LINKPOCKET_LOG_LEVEL</c> = trace|debug|info|warn|error|fatal；<c>LINKPOCKET_LOG_DIR</c> = 目录覆盖。
     /// 级别名称经契约的 <see cref="LogLevels"/> 解析（**全站唯一映射**）；不认识的写法回落 info（缺省口径）。
     /// </summary>
@@ -128,13 +128,14 @@ public static class EngineComposer
         dbPath = Path.GetFullPath(dbPath);
         options ??= new ComposeOptions();
 
-        // 装配顺序有讲究：**附属库先建**并搬完遗留的操作记录，用户库随后才执行 v8「把审计/幂等表摘掉」——
-        // 反过来做，老库里那批审计正文会在搬迁之前就被删掉。
+        // 装配顺序：附属库（操作记录）先建、用户库随后——两个库在 4.0.0 起各自独立认纪元
+        //（用户库异纪元 = 拒绝；附属库不符 = 重建空库），不再有跨库搬迁，顺序保留只是维持既有装配形状。
         var ops = new OpsDbContextFactory(options.OpsPath ?? dbPath);
         var factory = new LinkPocketDbContextFactory(dbPath);
         return BuildCore(
             () => new EfUnitOfWork(factory.CreateDbContext()),
             () => factory.CreateDbContext(),
+            new FileMacroStore(FileMacroStore.PathFor(dbPath)),   // 宏 = 与库同目录的 macros.json（不在库里）
             options,
             options.StagingRoot ?? Path.Combine(Path.GetDirectoryName(dbPath)!,
                 $"linkpocket_staging_{Path.GetFileNameWithoutExtension(dbPath)}"),
@@ -142,19 +143,34 @@ public static class EngineComposer
             ops);
     }
 
-    /// <summary>不触库入口（目录导出等）：UoW 与宏库工厂必须由调用方提供「调用即抛」的占位实现——
-    /// 导出流程构造不触库，任何真实数据访问都要立刻暴露（零责任红线）。</summary>
+    /// <summary>不触库入口（目录导出等）：UoW 与库上下文工厂必须由调用方提供「调用即抛」的占位实现，
+    /// 宏存储同理走内建占位——导出流程构造不触库，任何真实数据访问都要立刻暴露（零责任红线）。</summary>
     public static EngineComposition Compose(
         Func<IUnitOfWork> uowFactory, Func<LinkPocketDbContext> dbContextFactory,
         ComposeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(uowFactory);
         ArgumentNullException.ThrowIfNull(dbContextFactory);
-        return BuildCore(uowFactory, dbContextFactory, options ?? new ComposeOptions(), null, null, null);
+        return BuildCore(uowFactory, dbContextFactory, UnavailableMacroStore.Instance,
+            options ?? new ComposeOptions(), null, null, null);
+    }
+
+    /// <summary>「不触库」组合下的宏存储占位：任何调用立即抛出（防有人误在导出流程里碰宏）。</summary>
+    private sealed class UnavailableMacroStore : IMacroStore
+    {
+        public static readonly UnavailableMacroStore Instance = new();
+
+        private static InvalidOperationException Unavailable()
+            => new("macro store is unavailable in this composition (the entry point did not provide a database path)");
+
+        public Task SaveAsync(string name, string scriptJson, CancellationToken ct) => throw Unavailable();
+        public Task<string?> GetAsync(string name, CancellationToken ct) => throw Unavailable();
+        public Task<IReadOnlyList<(string Name, string ScriptJson, DateTimeOffset UpdatedAt)>> ListAsync(CancellationToken ct) => throw Unavailable();
+        public Task<bool> DeleteAsync(string name, CancellationToken ct) => throw Unavailable();
     }
 
     private static EngineComposition BuildCore(
-        Func<IUnitOfWork> uowFactory, Func<LinkPocketDbContext> dbContextFactory,
+        Func<IUnitOfWork> uowFactory, Func<LinkPocketDbContext> dbContextFactory, IMacroStore macroStore,
         ComposeOptions options, string? fallbackStagingRoot, LinkPocketDbContextFactory? factory,
         OpsDbContextFactory? ops)
     {
@@ -196,7 +212,7 @@ public static class EngineComposer
         // fallbackStagingRoot 仅在「库路径入口」非空；uowFactory 入口传 null →
         // 由 StagingService 走 TempArea 兜底。选项优先级 = StagingRoot（显式）> fallbackStagingRoot（推导）> TempArea（缺省）。
         if (options.IncludeOrchestration)
-            registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, dbContextFactory,
+            registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, macroStore,
                 options.StagingRoot ?? fallbackStagingRoot,
                 undoJournalPath: options.UndoJournalPath));
 

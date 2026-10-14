@@ -11,4 +11,16 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- 桌面构建不携带 browser-wasm 负载：SQLitePCLRaw.lib.e_sqlite3 的
+       `runtimes\browser-wasm\nativeassets\netX.0\e_sqlite3.a` 只服务 RuntimeIdentifier=browser-wasm，
+       但 NuGet 的 runtimeTargets 机制会把它拷进**每个**构建输出（每 bin 白拷 ~1.3MB，
+       目录名 net8.0/net9.0 还会被误读成旧 TFM 残留）。
+       wasm 构建不受影响：包自带的 buildTransitive 直接引用 NuGet 缓存里的同一份文件。 -->
+  <Target Name="DropBrowserWasmRuntimeTargets" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)"
+          Condition="'%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier)' == 'browser-wasm'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

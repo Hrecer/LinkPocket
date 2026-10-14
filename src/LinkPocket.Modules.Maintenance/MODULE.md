@@ -42,7 +42,7 @@
 （`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，
 留着只会让 `undo.undo` 报 EntityNotFound）。dryRun 下不执行 favicon 清理（文件系统不可回滚，
 必须保持零副作用）。
-⚠️ **v8 起 `audit_log` 与 `idempotency` 不在用户库里**（搬去附属库 `linkpocket-ops.db`），
+⚠️ **`audit_log` 与 `idempotency` 不在用户库里**（4.0.0 起用户库只有书签数据；操作记录在附属库 `linkpocket-ops.db`），
 `maintenance.reinit` 与它们本就无关；审计的保留 = **`audit.prune`**（缺省 90 天，破坏性两阶段确认；
 **无调度器定时执行**，需要时由调用方触发）。附属库可以整个删掉——只丢历史与 24h 去重。
 
@@ -50,7 +50,7 @@
 
 - `ModulesTests.cs` → `MaintenanceModuleTests`（schema 版本 + 诊断 runtime 段接线 / 两阶段重置清空 / 干跑零副作用 / 计数口径）
 - `DataReviewFixesTests.cs`（链式递归计数 / 未知目录路径显示——跨模块引用，Data 层口径）
-- `SchemaMigratorTests.cs` / `IndexPlanTests.cs`（Data 层测试：建库版本链 / 索引计划，非本模块专用）
+- `SchemaMigratorTests.cs` / `IndexPlanTests.cs`（Data 层测试：建库基线 / 旧纪元拒绝 / 索引计划，非本模块专用）
 
 ## 复用点
 

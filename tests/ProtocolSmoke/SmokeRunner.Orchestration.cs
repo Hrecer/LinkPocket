@@ -157,9 +157,9 @@ internal static partial class SmokeRunner
         File.Delete(linksJsonPath);
 
         // —— §10.9 diagnostics.collect（Maintenance 模块）：schema 版本 + 表计数（脱敏）——
-        // 版本 = 完整版本链的最高版本（v2 基线 + v3..v8 演进，v8 = 操作记录移出用户库）；运行时可观测读数在 §11 校验
+        // 版本 = 单一基线的纪元戳（4.0.0 = 9；链式迁移已永不再有）；运行时可观测读数在 §11 校验
         var diag = await s.Client.CollectDiagnosticsAsync();
-        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 8, "诊断应报 schema v8（v2 基线 + v3..v8 演进）");
+        Asserts.That(diag.GetProperty("schema_version").GetInt32() == 9, "诊断应报 schema v9（4.0.0 单一基线纪元）");
         Asserts.That(diag.TryGetProperty("counts", out _), "诊断应含各表计数");
         // logging 段：冒烟宿主未装配日志管道 → 如实 wired=false（不填假值）；审计段给行数与最旧时刻
         Asserts.That(diag.GetProperty("logging").GetProperty("wired").GetBoolean() == false,

@@ -39,7 +39,8 @@ public sealed class JsonlFileSink : ILogSink, ILogFileMaintenance, ILogFileReade
     public JsonlFileSink(LoggingOptions options, TimeProvider? clock = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _directory = options.Directory ?? Path.Combine(AppPaths.DataRoot, "logs");
+        // 日志 = 运行痕迹，**不在数据区**：程序根下独立的 logs\（与 data\ 平级；更新换程序目录时随旧目录淘汰，不携带）
+        _directory = options.Directory ?? Path.Combine(AppPaths.ProgramRoot, "logs");
         _clock = clock ?? TimeProvider.System;
     }
 

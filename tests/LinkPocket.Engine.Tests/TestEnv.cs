@@ -49,14 +49,25 @@ internal static class TestEnv
             audit: audit, sessions: sessions);
         if (withOrchestration)
         {
-            // 编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致）
-            registry.RegisterAll(OrchestrationHost.CreateHandlers(engine, () => factory.CreateDbContext()));
+            // 编排命令入同一目录（Batch/Undo 挂引擎，宿主装配口径与 OrchestrationHost 一致；
+            // 宏 = 与库同目录的 macros.json，4.0.0 起不在库里）
+            registry.RegisterAll(OrchestrationHost.CreateHandlers(engine,
+                new LinkPocket.Engine.FileMacroStore(LinkPocket.Engine.FileMacroStore.PathFor(factory.DatabasePath))));
         }
         return engine;
     }
 
-    /// <summary>临时库清理（主库 + 附属库 + WAL/SHM 副本，名字规则由数据层拥有；失败交给系统清理）。</summary>
-    public static void Cleanup(string path) => LinkPocket.Data.OpsDbContextFactory.DeleteDatabaseFiles(path);
+    /// <summary>临时库清理（主库 + 附属库 + WAL/SHM 副本 + 宏文件，名字规则由数据层/宏存储拥有；失败交给系统清理）。</summary>
+    public static void Cleanup(string path)
+    {
+        LinkPocket.Data.OpsDbContextFactory.DeleteDatabaseFiles(path);
+        try
+        {
+            var macros = LinkPocket.Engine.FileMacroStore.PathFor(path);
+            if (File.Exists(macros)) File.Delete(macros);
+        }
+        catch (IOException) { /* 交给系统清理 */ }
+    }
 
     /// <summary>操作记录（审计 / 幂等）落点的上下文工厂——**附属库**，不是用户库（v8 起两者分开）。</summary>
     public static Func<Microsoft.EntityFrameworkCore.DbContext> OpsFactory(string dbPath)

@@ -5,7 +5,7 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Maintenance;
 
-/// <summary>maintenance.schema_version（Query）：当前库 schema 版本（schema_migrations MAX(version)，v2 全新建库起步）。</summary>
+/// <summary>maintenance.schema_version（Query）：当前库 schema 版本（schema_migrations 的纪元行；单一基线建库时写入）。</summary>
 internal sealed class MaintenanceSchemaVersionHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
@@ -153,7 +153,7 @@ internal sealed class MaintenanceReinitHandler : ICommandHandler
             new ChangeSet(
                 Touched: [new EntityRef("database", "*")],
                 Events: [DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged],
-                // 措辞与实现一致——audit_log/idempotency/macros/schema_migrations 有保留策略，不清
+                // 措辞与实现一致——schema_migrations 有保留策略不清；宏是文件（macros.json）、审计/幂等在附属库，都不在这里
                 HumanSummary: "Business data wiped (bookmarks/folders/trash)"));
     }
 

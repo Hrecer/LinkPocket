@@ -1,3 +1,4 @@
+using LinkPocket.Contracts;
 using LinkPocket.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -6,8 +7,9 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// SchemaMigrator：从零建库（完整版本链）、版本脚本幂等、v2→最新版升级路径、同层唯一名硬约束、旧库零责任拒绝。
-/// 与 v1 无任何关系——不存在迁移路径，只有「全新库」与「拒绝旧库」两种结局。
+/// SchemaMigrator（4.0.0 起 **单一基线 + 纪元戳**）：
+/// 从零建库（一次执行当前完整 DDL）、幂等、整库重建路径、同层唯一名硬约束、
+/// **旧纪元（v8 及更早）/ 外来库 / 未来纪元的明确拒绝**（不迁移、不读取、不转换、不删除）。
 /// EF 实体映射与 DDL 的一致性由 ModulesTests 全量黑盒回归（跑在 SchemaMigrator 建的库上）卡住，
 /// 索引覆盖（查询计划）由 <see cref="IndexPlanTests"/> 卡住。
 /// </summary>
@@ -29,7 +31,7 @@ public class SchemaMigratorTests
         return names.ToArray();
     }
 
-    /// <summary>库头标记：`application_id` = 产品标识、`user_version` = schema 版本。</summary>
+    /// <summary>库头标记：`application_id` = 产品标识、`user_version` = 格式纪元。</summary>
     private static (int AppId, int UserVersion) HeaderMarkers(string dbPath)
     {
         using var conn = new SqliteConnection($"Data Source={dbPath}");
@@ -42,53 +44,53 @@ public class SchemaMigratorTests
     }
 
     [Fact]
-    public void 库头版本标记_产品标识与schema版本都写上_外来库按标记拒绝()
+    public void 库头版本标记_产品标识与纪元戳都写上_外来库按标记拒绝()
     {
         // 备份是用户数据的跨版本迁移通道，库头标记是同一件事的库侧答案：
-        // 不查任何表就能认出"这是哪个版本、哪个产品的库"（任何工具都能读）。
+        // 不查任何表就能认出"这是哪个纪元、哪个产品的库"（任何工具都能读）。
         var dbPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lphdr_{Guid.NewGuid():N}.db");
-        string? upgradedPath = null;
+        string? restampedPath = null;
         string? foreignPath = null;
         try
         {
             SchemaMigrator.EnsureSchema(dbPath);
             var fresh = HeaderMarkers(dbPath);
             Assert.Equal(SchemaMigrator.ApplicationId, fresh.AppId);
-            Assert.Equal(SchemaMigrator.CurrentSchemaVersion, fresh.UserVersion);
+            Assert.Equal(SchemaMigrator.EpochVersion, fresh.UserVersion);
             Assert.True(fresh.UserVersion > 0, "新建库的库头 user_version 必须写上（不许停在 0）");
 
-            // 升级路径（老库缺标记）也要补写：清掉标记后重跑 EnsureSchema（换路径避开"已核验"短路）
+            // 纪元相符但产品标记缺失（边角）：仍接受，并把标记补齐（换路径避开"已核验"短路）
             using (var conn = new SqliteConnection($"Data Source={dbPath}"))
             {
                 conn.Open();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "PRAGMA user_version = 0;";
+                cmd.CommandText = "PRAGMA application_id = 0;";
                 cmd.ExecuteNonQuery();
             }
-            var upgraded = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lphdr2_{Guid.NewGuid():N}.db");
-            File.Copy(dbPath, upgraded);
-            SchemaMigrator.EnsureSchema(upgraded);
-            Assert.Equal(SchemaMigrator.CurrentSchemaVersion, HeaderMarkers(upgraded).UserVersion);
+            restampedPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lphdr2_{Guid.NewGuid():N}.db");
+            File.Copy(dbPath, restampedPath);
+            SchemaMigrator.EnsureSchema(restampedPath);
+            Assert.Equal(SchemaMigrator.ApplicationId, HeaderMarkers(restampedPath).AppId);
 
-            // 带**别的** application_id 的库 = 外来文件 → 拒绝（与"有用户表但无版本表"同一条零责任口径）
-            var foreign = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpforeign_{Guid.NewGuid():N}.db");
-            using (var conn = new SqliteConnection($"Data Source={foreign}"))
+            // 带**别的** application_id 的库 = 外来文件 → 明确拒绝（不触碰文件）
+            foreignPath = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpforeign_{Guid.NewGuid():N}.db");
+            using (var conn = new SqliteConnection($"Data Source={foreignPath}"))
             {
                 conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = "PRAGMA application_id = 0x12345678; CREATE TABLE someone_elses (id INTEGER);";
                 cmd.ExecuteNonQuery();
             }
-            var ex = Assert.Throws<InvalidOperationException>(() => SchemaMigrator.EnsureSchema(foreign));
+            var ex = Assert.Throws<DatabaseIncompatibleException>(() => SchemaMigrator.EnsureSchema(foreignPath));
             Assert.Contains("foreign SQLite database", ex.Message);
-            foreignPath = foreign;
-            upgradedPath = upgraded;
+            Assert.Equal(foreignPath, ex.DatabasePath);
+            Assert.Equal(new[] { "someone_elses" }, UserTables(foreignPath));   // 原样留存
         }
         finally
         {
             // 先清连接池再删文件：池里空闲的物理连接会占住句柄（实测 IOException）
             SqliteConnection.ClearAllPools();
-            foreach (var path in new[] { dbPath, upgradedPath, foreignPath })
+            foreach (var path in new[] { dbPath, restampedPath, foreignPath })
                 if (path != null && File.Exists(path)) File.Delete(path);
         }
     }
@@ -116,32 +118,20 @@ public class SchemaMigratorTests
         return names.ToArray();
     }
 
-    /// <summary>某表的全部列名（排序数组）——表形状可比对的期望（升级库 vs 新建库）。</summary>
-    private static string[] ColumnNames(string dbPath, string table)
-    {
-        using var conn = new SqliteConnection($"Data Source={dbPath}");
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT name FROM pragma_table_info('{table}') ORDER BY name";
-        using var reader = cmd.ExecuteReader();
-        var names = new List<string>();
-        while (reader.Read()) names.Add(reader.GetString(0));
-        return names.ToArray();
-    }
-
     [Fact]
-    public void EnsureSchema_Creates_Baseline_And_Applies_Evolution()
+    public void EnsureSchema_Creates_Epoch_Baseline()
     {
         var dbPath = TempDbPath();
         SchemaMigrator.EnsureSchema(dbPath);
 
         Assert.Equal(
-            new[] { "folders", "links", "macros", "schema_migrations", "trash_folders", "trash_links" },
+            new[] { "folders", "links", "schema_migrations", "trash_folders", "trash_links" },
             UserTables(dbPath));
-        // 全新库跑的是完整版本链（v2 基线 + v3…v8 演进），版本表落最高版本
-        Assert.Equal(8, SchemaVersion(dbPath));
+        // 单一基线：版本表落纪元行（9），不存在版本链
+        Assert.Equal(SchemaMigrator.EpochVersion, SchemaVersion(dbPath));
+        Assert.Equal(9, SchemaVersion(dbPath));
 
-        // v2 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
+        // 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
         using (var conn = new SqliteConnection($"Data Source={dbPath}"))
         {
             conn.Open();
@@ -151,10 +141,19 @@ public class SchemaMigratorTests
             Assert.Equal("id", Scalar(conn, "SELECT name FROM pragma_table_info('trash_folders') WHERE pk = 1"));
             Assert.Equal(0L, Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('folders') WHERE name = 'link_count'"));
             Assert.Equal(11, Convert.ToInt64(Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('links')")));
+
+            // 用户库只放书签数据：操作记录两张表**不得**出现在用户库里（它们住在附属库）
+            Assert.Equal(0L, Scalar(conn,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('audit_log','idempotency')"));
+
+            // 回收站（原位还原 + 快照保真）：trash_folders 共 12 列，六个保真列齐备
+            Assert.Equal(12L, Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('trash_folders')"));
+            Assert.Equal(6L, Scalar(conn,
+                "SELECT COUNT(*) FROM pragma_table_info('trash_folders') WHERE name IN " +
+                "('origin_parent_folder_id','description','sort_order','created_at','last_visited_at','visit_count')"));
         }
 
-        // v3/v4/v5（索引复核 + 同层唯一约束 + 回收站保真列）：新建库与升级库必须同形。
-        // ⚠️ 审计两条索引（v6）不在此列——它们随审计表一起搬去了附属库（v8）。
+        // 索引集合 = 定稿的完整清单（性能索引 + 同层唯一约束 + 回收站排序索引）
         Assert.Equal(
             new[]
             {
@@ -172,104 +171,69 @@ public class SchemaMigratorTests
                 "idx_trash_links_folder",
             },
             IndexNames(dbPath));
-
-        // v5（回收站原位还原 + 快照保真）：trash_folders 共 12 列，6 个新增列齐备（v5 不加索引）
-        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
-        {
-            conn.Open();
-            Assert.Equal(12L, Scalar(conn, "SELECT COUNT(*) FROM pragma_table_info('trash_folders')"));
-            Assert.Equal(6L, Scalar(conn,
-                "SELECT COUNT(*) FROM pragma_table_info('trash_folders') WHERE name IN " +
-                "('origin_parent_folder_id','description','sort_order','created_at','last_visited_at','visit_count')"));
-
-            // v8（用户库只放书签数据）：操作记录两张表**不得**出现在用户库里
-            Assert.Equal(0L, Scalar(conn,
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('audit_log','idempotency')"));
-        }
     }
 
     /// <summary>
-    /// v2 → 最新版升级路径：既有库只补增量脚本，索引集合与表形状必须与新建库逐项一致
-    /// （否则"老用户"永远拿不到性能修复、同层唯一约束与回收站保真列）。
+    /// 旧纪元（v8 及更早）的库文件一律**明确拒绝**：不迁移、不读取、不转换、不删除（处置权归用户）。
+    /// 迁移唯一通道 = 导出/导入（应用不做任何开机兼容）。>9 = 未来纪元（降级打开）同样拒绝。
     /// </summary>
-    [Fact]
-    public void EnsureSchema_Upgrades_V2_Database_To_Latest_Indexes()
+    [Theory]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(8)]
+    [InlineData(10)]
+    public void EnsureSchema_Rejects_NonEpoch_Databases(int userVersion)
     {
-        var source = TempDbPath();
-        SchemaMigrator.EnsureSchema(source);
-        var expected = IndexNames(source);
-        var expectedTrashColumns = ColumnNames(source, "trash_folders");
+        var dbPath = TempDbPath();
+        SchemaMigrator.EnsureSchema(dbPath);
 
-        // 造一个"升级前"的库副本（版本行 = 2、无 v3..v6 演进）：SchemaMigrator 从未见过该路径 → 走完整检查
-        using (var conn = new SqliteConnection($"Data Source={source}"))
+        // 造一个"别的纪元"的库副本：改库头 user_version 后收敛 WAL（否则改动还在 -wal 里，副本不完整）
+        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
         {
             conn.Open();
-            using var checkpoint = conn.CreateCommand();
-            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";   // 数据落主文件，副本才完整
-            checkpoint.ExecuteNonQuery();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"PRAGMA user_version = {userVersion}; PRAGMA wal_checkpoint(TRUNCATE);";
+            cmd.ExecuteNonQuery();
         }
         SqliteConnection.ClearAllPools();
 
-        var legacy = TempDbPath();
-        File.Copy(source, legacy);
-        using (var conn = new SqliteConnection($"Data Source={legacy}"))
+        // ⚠️ 必须换一个新路径打开：EnsureSchema 对**已核验过**的路径直接短路，同路径再跑测不到拒绝
+        var other = TempDbPath();
+        File.Copy(dbPath, other);
+        try
+        {
+            var ex = Assert.Throws<DatabaseIncompatibleException>(() => SchemaMigrator.EnsureSchema(other));
+            Assert.Contains("not compatible", ex.Message);
+            Assert.Equal(other, ex.DatabasePath);
+            // 被拒文件原样留存（零责任：不删除、不触碰）
+            Assert.Equal(5, UserTables(other).Length);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var path in new[] { dbPath, other })
+                if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void EnsureSchema_Rejects_Unstamped_Legacy_Database()
+    {
+        var dbPath = TempDbPath();
+        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
         {
             conn.Open();
-            // v8 已把审计/幂等摘出用户库；要把版本链从 v2 重放一遍，得先按基线形状把它们放回去，
-            // 否则 v6 的「补列」没有对象可补（真实升级路径上 v6 永远先于 v8 执行，故不受影响）。
-            using (var restore = conn.CreateCommand())
-            {
-                restore.CommandText =
-                    """
-                    CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, session_id TEXT NULL,
-                      caller TEXT NOT NULL, command TEXT NOT NULL, args_json TEXT NULL, elapsed_ms INTEGER NOT NULL,
-                      success INTEGER NOT NULL, error_code TEXT NULL, changes_json TEXT NULL, batch_id TEXT NULL,
-                      correlation_id TEXT NOT NULL);
-                    CREATE TABLE idempotency (key TEXT PRIMARY KEY, result_json TEXT NOT NULL, at TEXT NOT NULL);
-                    """;
-                restore.ExecuteNonQuery();
-            }
-
-            foreach (var index in new[]
-                     {
-                         "idx_links_created", "idx_links_url_nocase", "idx_trash_folders_deleted",
-                         "idx_folders_parent_name",
-                     })
-            {
-                using var drop = conn.CreateCommand();
-                drop.CommandText = $"DROP INDEX {index}";
-                drop.ExecuteNonQuery();
-            }
-            // 回退 v5 列（模拟 v5 前进站的库形状）
-            foreach (var column in new[]
-                     {
-                         "origin_parent_folder_id", "description", "sort_order",
-                         "created_at", "last_visited_at", "visit_count",
-                     })
-            {
-                using var drop = conn.CreateCommand();
-                drop.CommandText = $"ALTER TABLE trash_folders DROP COLUMN {column}";
-                drop.ExecuteNonQuery();
-            }
-            using var rollback = conn.CreateCommand();
-            rollback.CommandText = "DELETE FROM schema_migrations WHERE version IN (3, 4, 5, 6, 7, 8)";
-            rollback.ExecuteNonQuery();
+            using var cmd = conn.CreateCommand();
+            // 模拟旧格式库：有用户表、无纪元戳（user_version = 0）
+            cmd.CommandText = "CREATE TABLE lists (folder_id TEXT PRIMARY KEY, Name TEXT NOT NULL)";
+            cmd.ExecuteNonQuery();
         }
 
-        SchemaMigrator.EnsureSchema(legacy);
+        var ex = Assert.Throws<DatabaseIncompatibleException>(() => SchemaMigrator.EnsureSchema(dbPath));
+        Assert.Contains("not compatible", ex.Message);
 
-        Assert.Equal(8, SchemaVersion(legacy));
-        Assert.Equal(expected, IndexNames(legacy));
-        // 升级库与新建库的 trash_folders 列集合逐项一致（v5 ALTER 逐列补齐）
-        Assert.Equal(expectedTrashColumns, ColumnNames(legacy, "trash_folders"));
-
-        // 两条路径的终态都不得留操作记录表：v8 对"重放上来的老库"同样生效
-        using (var conn = new SqliteConnection($"Data Source={legacy}"))
-        {
-            conn.Open();
-            Assert.Equal(0L, Scalar(conn,
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('audit_log','idempotency')"));
-        }
+        // 旧库文件必须原样留存（零责任：不删除、不触碰）
+        Assert.Equal(new[] { "lists" }, UserTables(dbPath));
     }
 
     [Fact]
@@ -292,35 +256,15 @@ public class SchemaMigratorTests
     {
         var dbPath = TempDbPath();
         SchemaMigrator.EnsureSchema(dbPath);
-        // 连接池会保留物理连接句柄（与 LinkPocketApi.ReinitializeDatabaseAsync 的 ClearPool 同因）
+        // 连接池会保留物理连接句柄（与整库重置路径的 ClearPool 同因）
         SqliteConnection.ClearAllPools();
         File.Delete(dbPath);
 
         // 整库重置（删文件重建）路径：文件存在性守卫失效后自动重新建库
         SchemaMigrator.EnsureSchema(dbPath);
-        Assert.Equal(8, SchemaVersion(dbPath));
-        // 用户库只剩书签数据（v8 起审计/幂等不在其中）
-        Assert.Equal(6, UserTables(dbPath).Length);
-    }
-
-    [Fact]
-    public void EnsureSchema_Rejects_Legacy_Database()
-    {
-        var dbPath = TempDbPath();
-        using (var conn = new SqliteConnection($"Data Source={dbPath}"))
-        {
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            // 模拟旧格式库：有用户表、无 schema_migrations 版本表
-            cmd.CommandText = "CREATE TABLE lists (folder_id TEXT PRIMARY KEY, Name TEXT NOT NULL)";
-            cmd.ExecuteNonQuery();
-        }
-
-        var ex = Assert.Throws<InvalidOperationException>(() => SchemaMigrator.EnsureSchema(dbPath));
-        Assert.Contains("does not migrate", ex.Message);
-
-        // 旧库文件必须原样留存（零责任：不删除、不触碰）
-        Assert.Equal(new[] { "lists" }, UserTables(dbPath));
+        Assert.Equal(SchemaMigrator.EpochVersion, SchemaVersion(dbPath));
+        // 用户库只剩书签域数据（审计/幂等在附属库；宏在 macros.json 文件）
+        Assert.Equal(5, UserTables(dbPath).Length);
     }
 
     [Fact]
@@ -343,7 +287,7 @@ public class SchemaMigratorTests
                 Name = "单元",
                 OriginFolderId = "900000000001",
                 OriginParentFolderId = folder.FolderId,
-                OriginPath = "全部书签 / 映射对齐 / 单元",
+                OriginPath = "@root/映射对齐/单元",
                 Description = "快照描述",
                 SortOrder = 3,
                 CreatedAt = created,
@@ -360,9 +304,10 @@ public class SchemaMigratorTests
             Assert.Equal(1, await verify.Links.CountAsync());
             Assert.Equal(1, await verify.TrashedLinks.CountAsync());
             Assert.Equal(1, await verify.TrashedFolders.CountAsync());
-            Assert.Equal(8, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(SchemaMigrator.EpochVersion, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(9, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
 
-            // v5 保真列经 EF 回读逐字段一致（DateTime? 往返按 Ticks 对齐，Kind 不参与比较）
+            // 回收站保真列经 EF 回读逐字段一致（DateTime? 往返按 Ticks 对齐，Kind 不参与比较）
             var unit = await verify.TrashedFolders.SingleAsync();
             Assert.Equal(folder.FolderId, unit.OriginParentFolderId);
             Assert.Equal("快照描述", unit.Description);
@@ -374,7 +319,7 @@ public class SchemaMigratorTests
     }
 
     /// <summary>
-    /// v4 同层唯一名硬约束（表达式唯一索引）：同一父目录内（含根级）不允许重名（大小写不敏感），
+    /// 同层唯一名硬约束（表达式唯一索引）：同一父目录内（含根级）不允许重名（大小写不敏感），
     /// 不同父目录可同名。这是"路径解析不会歧义"的最后防线——绕过引擎编号直接写库也挡得住。
     /// </summary>
     [Fact]

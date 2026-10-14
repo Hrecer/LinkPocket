@@ -92,7 +92,7 @@ public sealed class EfUnitOfWork : IUnitOfWork
 
     public async Task<int> SchemaVersionAsync(CancellationToken ct)
     {
-        // schema_migrations 由 SchemaMigrator 建库时写入（v2 起步）；标量查询列名须为 Value
+        // schema_migrations 由 SchemaMigrator 单一基线建库时写入纪元行；标量查询列名须为 Value
         var row = await _db.Database
             .SqlQuery<int?>($"SELECT COALESCE(MAX(version), 0) AS Value FROM schema_migrations")
             .ToListAsync(ct);

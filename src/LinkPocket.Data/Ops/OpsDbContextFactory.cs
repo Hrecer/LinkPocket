@@ -7,13 +7,10 @@ namespace LinkPocket.Data;
 /// <summary>
 /// 附属库（操作记录库）的建立与打开：<c>&lt;库目录&gt;/&lt;库名&gt;-ops.db</c>。
 ///
-/// <para><b>职责</b>：① 建/开附属库并保证其 schema（<c>audit_log</c> + <c>idempotency</c>）；
-/// ② **一次性**把用户库里遗留的操作记录搬过来（v8 之前审计与幂等存在用户库中）——
-/// 搬迁发生在用户库迁移 **之前**（见 <c>EngineComposer.Compose</c> 的装配顺序），
-/// 因此用户库随后执行 v8 删表时数据已经安全落在附属库。</para>
-///
-/// <para><b>搬迁是版本无关的</b>：按 <c>PRAGMA table_info</c> 取主库实际存在的列再拼 SELECT，
-/// 缺失的列（早期版本的 <c>audit_log</c> 没有 v6 的四列）按默认值补齐——不假设主库一定是最新版本。</para>
+/// <para><b>职责</b>：建/开附属库并保证其 schema（<c>audit_log</c> + <c>idempotency</c> +
+/// <c>ops_schema_migrations</c>）。操作记录是**运行痕迹**而非用户数据——因此版本政策从简：
+/// 库头 <c>user_version</c> / <c>application_id</c> 与当前实现不符 → **重建空库**
+/// （只丢历史与 24h 去重，如实记日志），不做任何迁移（用户库的"纪元戳 + 封死"见 <see cref="SchemaMigrator"/>）。</para>
 ///
 /// <para>附属库带自己的库头标记（<c>application_id = 'LPOP'</c>、<c>user_version</c> = 自己的版本），
 /// 任何工具不查表就能认出"这是 LinkPocket 的操作记录库"。</para>
@@ -23,7 +20,7 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
     /// <summary>`PRAGMA application_id`：附属库的产品标识（4 字符码 <c>'LPOP'</c>）。</summary>
     public const int ApplicationId = 0x4C504F50;
 
-    /// <summary>附属库自身的 schema 版本（与用户库版本链无关）。</summary>
+    /// <summary>附属库自身的 schema 版本（与用户库纪元无关；不符即重建）。</summary>
     public const int SchemaVersion = 1;
 
     private static readonly object Gate = new();
@@ -34,9 +31,6 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
     private readonly string _connectionString;
 
     public string OpsPath { get; }
-
-    /// <summary>本次建库/打开是否搬迁了用户库里的遗留操作记录（供宿主回显与排障）。</summary>
-    public bool MigratedLegacyRows { get; private set; }
 
     public OpsDbContextFactory(string mainDbPath)
     {
@@ -54,11 +48,11 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
         }.ToString();
         lock (Gate)
         {
+            RebuildIfIncompatible();
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
             EnableWal(conn);
             EnsureSchema(conn);
-            MigratedLegacyRows = MoveLegacyRows(conn, mainFull);
             StampVersionMarkers(conn);
         }
         SqliteConnection.ClearPool(new SqliteConnection(_connectionString));
@@ -105,7 +99,45 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>附属库 schema（幂等）：审计表 = 用户库 v6 后的完整形态（含 dry_run / is_nested / stack_trace / args_truncated）。</summary>
+    /// <summary>
+    /// 库头与当前实现不符（版本 / 身份）→ 删文件重建空库；只丢运行痕迹，如实记日志。
+    /// 空文件与尚无表的新文件不在此列（直接走 <see cref="EnsureSchema"/> 建库）。
+    /// </summary>
+    private void RebuildIfIncompatible()
+    {
+        if (!File.Exists(OpsPath)) return;
+
+        int version, appId;
+        bool hasTables;
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            version = ReadUserVersion(conn);
+            appId = ReadApplicationId(conn);
+            if (version == SchemaVersion && (appId == 0 || appId == ApplicationId)) return;
+            hasTables = HasTables(conn);
+        }
+        if (version == 0 && appId == 0 && !hasTables) return;   // 空文件 = 全新
+
+        SqliteConnection.ClearAllPools();
+        foreach (var candidate in new[] { OpsPath, OpsPath + "-wal", OpsPath + "-shm" })
+        {
+            try
+            {
+                if (File.Exists(candidate)) File.Delete(candidate);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 句柄滞留等失败不阻断（下面仍会走建库；失败已由随后的日志暴露）
+            }
+        }
+        LpLog.Warn(
+            $"operation-records database was rebuilt (version/identity mismatch): {OpsPath} "
+            + $"(user_version={version}, application_id=0x{appId:X8})",
+            category: "data.ops");
+    }
+
+    /// <summary>附属库 schema（幂等）。</summary>
     private static void EnsureSchema(SqliteConnection conn)
     {
         using var cmd = conn.CreateCommand();
@@ -138,121 +170,24 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
         cmd.ExecuteNonQuery();
     }
 
-    /// <summary>
-    /// 把用户库里遗留的 <c>audit_log</c> / <c>idempotency</c> 搬到附属库（只在附属库对应表为空时做一次）。
-    /// 用户库不存在 / 没有这两张表（新库、或 v8 之后）→ 什么都不做。
-    /// </summary>
-    private bool MoveLegacyRows(SqliteConnection ops, string mainDbPath)
-    {
-        if (!File.Exists(mainDbPath)) return false;
-        if (CountRows(ops, "audit_log") > 0 || CountRows(ops, "idempotency") > 0) return false;
-
-        var mainConnectionString = new SqliteConnectionStringBuilder($"Data Source={mainDbPath}").ToString();
-        using var main = new SqliteConnection(mainConnectionString);
-        main.Open();
-        if (!TableExists(main, "audit_log") && !TableExists(main, "idempotency")) return false;
-
-        var attached = false;
-        try
-        {
-            using (var attach = main.CreateCommand())
-            {
-                attach.CommandText = $"ATTACH DATABASE '{OpsPath.Replace("'", "''")}' AS ops;";
-                attach.ExecuteNonQuery();
-            }
-            attached = true;
-
-            var moved = false;
-            using (var copy = main.CreateCommand())
-            {
-                copy.CommandText = BuildAuditCopySql(main);
-                if (copy.CommandText.Length > 0 && copy.ExecuteNonQuery() > 0) moved = true;
-            }
-            using (var copy = main.CreateCommand())
-            {
-                copy.CommandText =
-                    "INSERT OR IGNORE INTO ops.idempotency (key, result_json, at) SELECT key, result_json, at FROM main.idempotency;";
-                if (TableExists(main, "idempotency") && copy.ExecuteNonQuery() > 0) moved = true;
-            }
-
-            if (moved)
-            {
-                LpLog.Info($"moved legacy operation records to {OpsPath}", category: "data.ops");
-            }
-            return moved;
-        }
-        catch (SqliteException ex)
-        {
-            // 观测面纪律：搬迁失败必须暴露（如实报日志），但不阻断启动——操作记录不是用户数据
-            LpLog.Warn($"failed to move legacy operation records to {OpsPath}", ex, category: "data.ops");
-            return false;
-        }
-        finally
-        {
-            if (attached)
-            {
-                try
-                {
-                    using var detach = main.CreateCommand();
-                    detach.CommandText = "DETACH DATABASE ops;";
-                    detach.ExecuteNonQuery();
-                }
-                catch (SqliteException) { /* 连接即将释放，DETACH 失败无副作用 */ }
-            }
-        }
-    }
-
-    /// <summary>
-    /// 拼审计搬迁 SQL：目标列固定（附属库定义），来源列按主库**实际存在**的列取——
-    /// 缺失列用与建表默认值一致的字面量补齐（早期 schema 的 audit_log 没有 v6 四列）。
-    /// </summary>
-    private static string BuildAuditCopySql(SqliteConnection main)
-    {
-        if (!TableExists(main, "audit_log")) return string.Empty;
-
-        var present = Columns(main, "audit_log");
-        var defaults = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["dry_run"] = "0", ["is_nested"] = "0", ["stack_trace"] = "NULL", ["args_truncated"] = "0",
-        };
-        string[] target =
-        [
-            "id", "at", "session_id", "caller", "command", "args_json", "elapsed_ms", "success",
-            "error_code", "changes_json", "batch_id", "correlation_id", "dry_run", "is_nested",
-            "stack_trace", "args_truncated",
-        ];
-
-        // id 与几个 NOT NULL 列是 v2 基线就有的；只要缺其中任何一列就整体放弃搬迁（不猜形状）
-        string[] mandatory = ["id", "at", "caller", "command", "elapsed_ms", "success", "correlation_id"];
-        if (mandatory.Any(c => !present.Contains(c))) return string.Empty;
-
-        var select = target.Select(c => present.Contains(c) ? c : defaults.GetValueOrDefault(c, "NULL"));
-        return $"INSERT OR IGNORE INTO ops.audit_log ({string.Join(", ", target)}) "
-             + $"SELECT {string.Join(", ", select)} FROM main.audit_log;";
-    }
-
-    private static bool TableExists(SqliteConnection conn, string table)
+    private static int ReadUserVersion(SqliteConnection conn)
     {
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = @n;";
-        cmd.Parameters.AddWithValue("@n", table);
+        cmd.CommandText = "PRAGMA user_version;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    private static int ReadApplicationId(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA application_id;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    private static bool HasTables(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
         return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
-    }
-
-    private static long CountRows(SqliteConnection conn, string table)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT COUNT(*) FROM {table};";
-        return Convert.ToInt64(cmd.ExecuteScalar());
-    }
-
-    private static HashSet<string> Columns(SqliteConnection conn, string table)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"PRAGMA table_info({table});";
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read()) names.Add(reader.GetString(1));
-        return names;
     }
 }

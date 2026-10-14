@@ -78,6 +78,16 @@ public partial class App : Application
             MainWindow = window; // ShutdownMode=OnMainWindowClose 依赖此引用
             window.Show();
         }
+        catch (DatabaseIncompatibleException ex)
+        {
+            // 库格式被明确拒绝（纪元戳不符 / 外来库）：通用"启动失败"说不清该怎么办，
+            // 这里给专门指引（动作 = 用旧版导出备份、在本版导入；文件原样未动）。
+            LpLog.Error("refused an incompatible database at startup", ex);
+            LpLog.Flush(TimeSpan.FromSeconds(2));
+            MessageBox.Show(Loc.T("startup.dbIncompatible", ex.DatabasePath), "LinkPocket",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+        }
         catch (Exception ex)
         {
             LpLog.Error("application startup failed", ex);

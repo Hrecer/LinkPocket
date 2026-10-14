@@ -83,7 +83,7 @@ public interface IBatchEngine
     BatchStatus? CurrentStatus { get; }
 }
 
-/// <summary>命名批处理（宏/技能库）持久化契约：存 schema v2 的 macros 表。</summary>
+/// <summary>命名批处理（宏/技能库）持久化契约：**文件存储**（4.0.0 起 = 与库同目录的 `macros.json`，唯一实现 <c>FileMacroStore</c>）。</summary>
 public interface IMacroStore
 {
     Task SaveAsync(string name, string scriptJson, CancellationToken ct);

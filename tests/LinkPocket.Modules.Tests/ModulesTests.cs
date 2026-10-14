@@ -15,8 +15,8 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(62, manifest.Commands.Count);
-        Assert.Equal(62, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(64, manifest.Commands.Count);
+        Assert.Equal(64, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -26,7 +26,7 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(15, engine.Describe("folders").Commands.Count);  // + folders.tree_links（树叶子懒加载的轻量出口）
         Assert.Equal(16, engine.Describe("links").Commands.Count);
-        Assert.Equal(9, engine.Describe("trash").Commands.Count);  // + trash.restore_unit（还原）/ trash.overview
+        Assert.Equal(11, engine.Describe("trash").Commands.Count);  // + trash.export / trash.import（lptrash 搬运）
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
         Assert.Single(engine.Describe("locate").Commands);
         Assert.Equal(2, engine.Describe("audit").Commands.Count);  // audit.query / audit.prune
@@ -1649,9 +1649,9 @@ public class MaintenanceModuleTests
     {
         var (engine, _, _) = TestHost.Create();
         var version = await engine.QueryAsync<JsonElement>("maintenance.schema_version", null);
-        // 全新建库 = 完整版本链（v2 基线 + v3..v7 演进），版本表落最高版本
-        // 加一条迁移脚本必须同时改这里：这是"有人偷偷加了迁移却没人核对"的绊线
-        Assert.Equal(8, version.GetProperty("schema_version").GetInt32());
+        // 全新建库 = 单一基线的纪元版本行（4.0.0 = 9；链式迁移已永不再有）
+        // 纪元变更（结构改动 → 抬戳）必须同时改这里：这是"有人动了库格式却没人核对"的绊线
+        Assert.Equal(9, version.GetProperty("schema_version").GetInt32());
 
         await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "A" });
         var diag = await engine.QueryAsync<JsonElement>("diagnostics.collect", null);

@@ -10,7 +10,7 @@ namespace LinkPocket.Modules.Tests;
 ///
 /// <para>SQL 语句镜像仓储层的实际谓词：<c>EfLinkRepository.ApplyFilter / ListAsync</c>、
 /// <c>EfTreeService.RecursiveLinkCountsAsync</c>、<c>EfTrashRepository</c>、<c>EfSortEngine</c> 下推的排序。
-/// 预期值与实测计划逐条对应（见 SchemaMigrator.IndexesV3 的复核说明）。</para>
+/// 预期值与实测计划逐条对应（见 SchemaMigrator.BaselineDdl 的复核说明）。</para>
 ///
 /// <para>负向断言同样重要：<c>title LIKE '%x%'</c>（search.links 的中缀包含）<b>注定</b>全表扫描，
 /// 这正是「10k 库 search.links &lt; 100ms」门槛的依据；把"已知可接受的全扫描"写进测试，
