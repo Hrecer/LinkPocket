@@ -15,6 +15,8 @@
     LinkPocket.exe        WPF desktop app (only with -IncludeApp). One file, framework inside.
     tools\linkpocket.exe      command-line client (all 81 commands)
     tools\linkpocket-mcp.exe  MCP gateway over stdio (external agents)
+    LinkPocket-Update.exe     updater for the in-app update flow (zip root; never installed)
+    update\                   updater internals: steps\ + settings-manifest.json + skip-install.txt
     AGENTS.md             pointer page: which exe to run, quick start, library path rule
     TOOL-cli.md           command-line reference
     TOOL-mcp.md           gateway reference
@@ -104,6 +106,16 @@ foreach ($proj in @("src\LinkPocket.Cli", "src\LinkPocket.Mcp")) {
     if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: $proj" -ForegroundColor Red; exit 1 }
 }
 
+# updater: self-contained single file -> the ZIP ROOT (next to LinkPocket.exe).
+# The app copies it to a temp folder when applying an update; it is never installed
+# (marked in update\skip-install.txt, see UPDATE.md 5.2).
+$updaterArgs = @("-c", $Configuration, "--nologo", "-r", $rid, "--self-contained", "true",
+                 "-p:PublishSingleFile=true", "-p:IncludeNativeLibrariesForSelfExtract=true",
+                 "-p:DebugType=none", "-p:SatelliteResourceLanguages=$satLang", "-o", $out)
+Write-Host "[PACK] publishing src\LinkPocket.Update (self-contained single file) ..." -ForegroundColor Cyan
+& $dotnet publish (Join-Path $repoRoot "src\LinkPocket.Update") @updaterArgs
+if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: src\LinkPocket.Update" -ForegroundColor Red; exit 1 }
+
 if ($IncludeApp) {
     Write-Host "[PACK] publishing src\LinkPocket.App (WPF, self-contained single file) ..." -ForegroundColor Cyan
     $appArgs = @("-c", $Configuration, "--nologo", "-r", $rid, "--self-contained", "true",
@@ -112,6 +124,61 @@ if ($IncludeApp) {
     & $dotnet publish (Join-Path $repoRoot "src\LinkPocket.App") @appArgs -o $out
     if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] publish failed: src\LinkPocket.App" -ForegroundColor Red; exit 1 }
 }
+
+# ---- update\ : updater internals (never installed; skip-install.txt marks them) ----
+$updateDir = Join-Path $out "update"
+New-Item -ItemType Directory -Path (Join-Path $updateDir "steps") -Force | Out-Null
+
+# settings version manifest: generated at pack time from the store constants (single source of truth)
+Write-Host "[PACK] generating update\settings-manifest.json ..." -ForegroundColor Cyan
+& $dotnet run --project (Join-Path $repoRoot "tools\LinkPocket.SettingsManifest") -c $Configuration -- (Join-Path $updateDir "settings-manifest.json")
+if ($LASTEXITCODE -ne 0) { Write-Host "[PACK] settings manifest generation failed" -ForegroundColor Red; exit 1 }
+
+# skip-install list: what the updater must NOT copy into the install folder
+$skipList = @'
+# Paths below are relative to the package root and belong to the updater itself:
+# the app copies them to a temp folder at update time and they must never be
+# installed into the app folder. One entry per line; a trailing backslash marks
+# a directory entry.
+LinkPocket-Update.exe
+update\
+'@
+Set-Content -LiteralPath (Join-Path $updateDir "skip-install.txt") -Value $skipList -Encoding utf8
+
+# steps\: keeps the (currently empty) conversion-step area in the zip; README documents the file format
+$stepsReadme = @'
+LinkPocket update steps live in this folder.
+
+File name: <from>-<to>.json with 3-part app versions, e.g. "3.2.4-4.0.0.json".
+The updater applies every step whose "from" is >= the current version and whose
+"to" is <= the target version, in ascending version order. No file for a version
+pair means "nothing to convert" (pass through). A single malformed step file
+aborts the whole update.
+
+Step file shape:
+{
+  "from": "3.2.4",
+  "to": "4.0.0",
+  "changes": [
+    {
+      "file": "ui-preferences.json",
+      "expect_version": 1,
+      "set_version": 2,
+      "ops": [
+        { "op": "rename", "from": "some.old.path", "to": "some.new.path" },
+        { "op": "remove", "path": "some.obsolete.field" },
+        { "op": "set_default", "path": "language.mode", "value": "auto" }
+      ]
+    }
+  ]
+}
+
+Rules: never write "jump-version" conversions - the chain walks version pairs one
+by one. settings-manifest.json (next to this folder) lists the settings stores and
+the versions the app expects; a settings file whose version the chain cannot carry
+to the expected one is dropped (settings are resettable and never block updates).
+'@
+Set-Content -LiteralPath (Join-Path $updateDir "steps\README.txt") -Value $stepsReadme -Encoding utf8
 
 # ---- entry docs (in-repo, always present) ----
 Copy-Item (Join-Path $repoRoot "src\LinkPocket.Cli\TOOL.md") (Join-Path $out "TOOL-cli.md") -Force
@@ -156,10 +223,15 @@ You do not need the repository to drive this library. Everything below runs from
 | LinkPocket.exe             | WPF desktop app (only present when packed with -IncludeApp).       |
 | tools\linkpocket.exe       | Command-line client. All 81 engine commands, no UI.               |
 | tools\linkpocket-mcp.exe   | MCP gateway over stdio, for external agents (tools/list, tools/call, resources/read). |
+| LinkPocket-Update.exe      | Update helper (launched by the app itself; not for manual use).    |
 
 Each exe is self-contained as a single file: there are no loose dlls to hunt for, and the
 command-line and gateway exes sit in `tools\` so they cannot collide with the desktop app
 (Windows paths are case-insensitive: `LinkPocket.exe` and `linkpocket.exe` are the same name).
+
+`LinkPocket-Update.exe` and the `update\` folder are updater internals: when the user installs
+an update, the desktop app copies them to a temp folder and never installs them into the app
+folder (see `update\skip-install.txt`).
 
 ## Discover the capabilities first (do not guess)
 
@@ -223,6 +295,15 @@ Set-Content -LiteralPath (Join-Path $out "mcp.example.json") -Value $mcp -Encodi
 # ---- no debug symbols in a delivery (belt and braces: DebugType=none should already do it) ----
 Get-ChildItem -LiteralPath $out -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
+
+# ---- safety: the package must NEVER contain data\, logs\ or databases (UPDATE.md 8, packaging rule) ----
+$forbidden = @(Get-ChildItem -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -in @("data", "logs") -or $_.Name -like "*.db" -or $_.Name -like "*.db-wal" -or $_.Name -like "*.db-shm" })
+if ($forbidden.Count -gt 0) {
+    Write-Host "[PACK] REFUSING to package: data/logs/database entries found:" -ForegroundColor Red
+    $forbidden | ForEach-Object { Write-Host ("         " + $_.FullName) -ForegroundColor Red }
+    exit 1
+}
 
 $files = Get-ChildItem -LiteralPath $out -Recurse -File
 $size = ($files | Measure-Object -Property Length -Sum).Sum

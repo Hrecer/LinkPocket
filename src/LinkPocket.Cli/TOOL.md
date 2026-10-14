@@ -1,75 +1,85 @@
-# LinkPocket.Cli · 命令行客户端
+# LinkPocket.Cli - command-line client
 
-在 PowerShell / bash 里直接驱动书签库的**控制台程序**（无窗口、不进界面）。
-它不新增任何能力：一切命令都经共享组合根装配的引擎，走界面与内置助手**同一条管道**
-（校验 → 幂等 → 能力门 → 写闸 → 事务 → 撤销 → 事件 → 审计），因此撤销、审计、事件、写锁对它同样生效。
+A **console program** that drives the LinkPocket library from PowerShell / bash (no window, no UI).
+It adds no capabilities of its own: every command goes through the engine assembled by the shared
+composition root - the **same pipeline** as the UI and the built-in assistant
+(validate → idempotency → capability gate → write gate → transaction → undo → events → audit),
+so undo, audit, events and the write lock apply to it exactly as they do to the UI.
 
-- 产物：`linkpocket`（`dotnet src/LinkPocket.Cli/bin/<cfg>/net10.0/linkpocket.dll`）
-- 依赖面：`LinkPocket.Contracts` + `LinkPocket.Composition`（不引 Engine / Data / Modules.\*）
+- Artifact: `linkpocket` (`dotnet src/LinkPocket.Cli/bin/<cfg>/net10.0/linkpocket.dll`)
+- Dependency face: `LinkPocket.Contracts` + `LinkPocket.Composition` (no Engine / Data / Modules.*)
 
-## 用法
+## Usage
 
 ```powershell
-linkpocket describe [类别]                 # 列出全部命令（业务 + 编排 + 批）
-linkpocket <命令> [--参数 值 ...]           # 直接调用，如 linkpocket links.list --per_page 20
-linkpocket <域> <动作> [--参数 值 ...]      # 两段写法等价（links list == links.list）
-linkpocket call <命令> --args '<JSON>'     # 复杂/嵌套入参走 JSON
-linkpocket docs                            # 命令大全（Markdown，与 catalog/COMMANDS.md 同源）
-linkpocket snapshot [--out 文件]            # 一次取回全量数据视图（树 + 链接 + 回收站 + 统计 + 诊断）
-linkpocket dump --out <目录>                # 导出全部数据（bookmarks.html / links.json / links.csv / .lpbackup）
-linkpocket help [命令]                      # 帮助
+linkpocket describe [category]              # list every command (business + orchestration + batch)
+linkpocket <command> [--param value ...]    # direct call, e.g. linkpocket links.list --per_page 20
+linkpocket <domain> <verb> [--param ...]    # two-segment form is equivalent (links list == links.list)
+linkpocket call <command> --args '<JSON>'   # complex/nested arguments go through JSON
+linkpocket docs                             # full command reference (Markdown, same source as catalog/COMMANDS.md)
+linkpocket snapshot [--out file]            # one-shot full data view (tree + links + trash + stats + diagnostics)
+linkpocket dump --out <dir>                 # export all data (bookmarks.html / links.json / links.csv / .lpbackup)
+linkpocket help [command]                   # help
 ```
 
-参数名 = 命令描述符里的 snake_case 名（`linkpocket describe` 可查）。标量按参数类型自动转换；
-集合参数接受 JSON 数组或逗号分隔（`--ids a,b,c`）；带 Schema 片段的复杂参数按 JSON 传。
+Parameter names = the snake_case names in the command descriptors (check `linkpocket describe`).
+Scalars are converted by the parameter type; collection parameters accept JSON arrays or
+comma-separated lists (`--ids a,b,c`); parameters carrying a Schema fragment are passed as JSON.
 
-## 全局选项
+## Global options
 
-| 选项 | 作用 |
+| Option | Meaning |
 |---|---|
-| `--db <路径>` | 指定库文件（缺省：从当前目录向上找第一个 `data\linkpocket.db`，找不到则用程序根 `data\linkpocket.db`） |
-| `--json` | 结构化 JSON 输出（脚本与外部 Agent 用；表格是人对人的缺省形态） |
-| `--all` | 表格不截断（缺省最多 100 行） |
-| `--dry-run` | 空跑：执行但不提交，返回将发生什么（零副作用，且**不需要确认**） |
-| `--yes` | 破坏性命令的确认（不给则只报影响面并以退出码 3 结束） |
-| `--out <文件>` | 把 JSON 结果写入文件 |
-| `--verbose` | 引擎日志打到 stderr |
-| `--version` | 版本 |
+| `--db <path>` | Database file (default: first `data\linkpocket.db` walking up from the current directory, else `data\linkpocket.db` under the program root) |
+| `--json` | Structured JSON output (for scripts and external agents; tables are the human default) |
+| `--all` | Do not truncate tables (default: at most 100 rows) |
+| `--dry-run` | Dry run: execute without committing, report what would happen (zero side effects, **no confirmation needed**) |
+| `--yes` | Confirmation for destructive commands (without it: impact summary and exit code 3) |
+| `--out <file>` | Write the JSON result to a file |
+| `--verbose` | Engine logs to stderr |
+| `--version` | Version |
 
-## 库路径解析（优先级由高到低）
+## Library path resolution (highest priority first)
 
-1. 命令行 `--db <路径>`
-2. 环境变量 `LINKPOCKET_DB`
-3. 从当前目录向上回溯，取第一个 `<目录>\data\linkpocket.db`（在数据目录树里就地执行时无需传参）
-4. 程序根 `data\linkpocket.db`（程序根 = 向上找最近含 `data\` 子目录或 `LinkPocket.exe` 的目录；CLI 在 `tools\` 里，取上一层）
+1. `--db <path>` on the command line
+2. `LINKPOCKET_DB` environment variable
+3. Walk up from the current directory for the first `<dir>\data\linkpocket.db`
+   (running inside the data directory tree needs no argument)
+4. `data\linkpocket.db` under the program root (program root = nearest directory containing a `data\`
+   subdirectory or `LinkPocket.exe`; the CLI lives in `tools\`, so it takes the level above)
 
-统一实现 = 契约层 `LinkPocket.Contracts.AppPaths`（应用 / CLI / 网关 / 内部工具同一份）。
-4.0.0 起数据区固定 `data\`；旧的"程序目录平铺 `linkpocket.db`"**不再识别**（不检测、不提示）。
+Single implementation = `LinkPocket.Contracts.AppPaths` (app / CLI / gateway / internal tools share it).
+Since 4.0.0 the data area is always `data\`; the old "flat `linkpocket.db` in the program directory"
+is **no longer recognized** (not detected, not reported; migration notes live in the workspace docs).
 
-## 退出码
+## Exit codes
 
-| 码 | 含义 |
+| Code | Meaning |
 |---|---|
-| 0 | 成功 |
-| 1 | 引擎/运行错误（`LP.ENG.*` / `LP.STATE.*` / `LP.SEC.*` 等） |
-| 2 | 用法或校验错误（未知命令、`LP.VAL.*` 类型不符） |
-| 3 | 破坏性命令缺少 `--yes`（尚未执行，可加 `--yes` 重跑） |
+| 0 | Success |
+| 1 | Engine/runtime error (`LP.ENG.*` / `LP.STATE.*` / `LP.SEC.*` ...) |
+| 2 | Usage or validation error (unknown command, `LP.VAL.*` type mismatch) |
+| 3 | Destructive command without `--yes` (nothing has run; re-run with `--yes`) |
 
-## 输出纪律
+## Output discipline
 
-- **stdout 只放结果**（表格或 JSON）；`# library:` 之类的诊断一行与日志一律走 **stderr**——脚本可安全逐行消费 stdout。
-- 查询结果缺省按表格渲染（对象里的数组字段各自成表；不适合表格时自动回退 JSON），`--json` 强制 JSON。
-- 变更结果人读形态 = `ok` + 人类摘要 + 受影响实体数 + 字段变更数；`--json` 给出 `{ok, data, audit_ref, changes}`，
-  其中 `changes` 与 wire / 审计 / 事件**同一份载荷投影**（`ChangeSetPayload`，diff 上限 2000 条 + 截断标记）。
+- **stdout carries results only** (tables or JSON); diagnostics such as `# library:` and logs always go to
+  **stderr** - scripts can safely consume stdout line by line.
+- Query results render as tables by default (array fields get their own tables; falls back to JSON when a
+  table makes no sense); `--json` forces JSON.
+- A mutation result in human form = `ok` + a summary line + affected entity count + field-change count;
+  `--json` gives `{ok, data, audit_ref, changes}` where `changes` is the **same payload projection** as the
+  wire layer / audit / events (`ChangeSetPayload`, diff capped at 2000 entries plus a truncation marker).
 
-## 与外部 Agent 的关系
+## Relation to external agents
 
-命令行执行器 `CliRunner` 是 **public 的进程内 API**：外部 Agent 网关（`LinkPocket.Mcp`）在进程内复用它，
-把每次工具调用翻译成一次命令行执行。因此"外部 Agent 用的命令"与"人在终端敲的命令"是同一条路径，
-不存在第二套实现；接入方式见 [`LinkPocket.Mcp/TOOL.md`](../LinkPocket.Mcp/TOOL.md) 与
-工作区 `内部资产/文档/EXTERNAL-AGENT.md`。
+The `CliRunner` executor is a **public in-process API**: the external-agent gateway (`LinkPocket.Mcp`) reuses
+it in-process and translates every tool call into one CLI execution. So "commands used by external agents"
+and "commands typed by a human" are the same path - there is no second implementation. See
+[`../LinkPocket.Mcp/TOOL.md`](../LinkPocket.Mcp/TOOL.md) and the workspace guide `EXTERNAL-AGENT.md`.
 
-## 组合根
+## Composition root
 
-复用共享 `LinkPocket.Composition.EngineHost`（库路径解析 + `EngineComposer` 全量装配 + 客户端门面 + 目录 +
-会话管理器）。它与 WPF 宿主、无头宿主的唯一差别是输出落点，装配口径完全一致。
+Reuses the shared `LinkPocket.Composition.EngineHost` (library path resolution + full `EngineComposer`
+assembly + client facade + catalog + session manager). Its only difference from the WPF host and the
+headless host is where output goes; the assembly path is identical.

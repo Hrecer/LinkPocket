@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 开发期工具（不随产品发布）：生成 update\settings-manifest.json（更新器的"设置版本清单"）。
+       单一事实源 = 各设置 Store 的 CurrentVersion 常量——本工具直接引用它们；pack.ps1 在打包时调用，
+       所以清单永远不可能与代码漂移（见 UPDATE.md §5.1「防漂移」）。
+       不在 src/ 下 → 不受分层引用图与 i18n 护栏约束（构建期工具，不是产品代码）。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- net10.0-windows + UseWPF：仅为**编译期**引用 LinkPocket.Theming（它按 UI 栈目标 net10.0-windows；
+         本工具只读它的 const，运行期不碰任何 WPF 类型）。 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>LinkPocket.SettingsManifest</RootNamespace>
+    <AssemblyName>linkpocket-settings-manifest</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LinkPocket.Ai\LinkPocket.Ai.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Theming\LinkPocket.Theming.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,66 +1,72 @@
-# LinkPocket.Mcp · 外部 Agent 网关
+# LinkPocket.Mcp - external-agent gateway
 
-把 LinkPocket 的能力以 **MCP（Model Context Protocol，stdio）** 暴露给外部 Agent（Claude Desktop、Cline、
-WorkBuddy 等）。外部 Agent 由此可以**看数据、改数据、空跑**——与界面、内置助手**同一套命令、同一条引擎管道**。
+Exposes LinkPocket capabilities to external agents (Claude Desktop, Cline, WorkBuddy, ...) over
+**MCP (Model Context Protocol, stdio)**. An external agent can thus **read data, change data and dry-run** -
+through **the same commands and the same engine pipeline** as the UI and the built-in assistant.
 
-- 产物：`linkpocket-mcp`（`dotnet src/LinkPocket.Mcp/bin/<cfg>/net10.0/linkpocket-mcp.dll`）
-- 依赖面：`LinkPocket.Contracts` + `LinkPocket.Composition` + `LinkPocket.Cli`
+- Artifact: `linkpocket-mcp` (`dotnet src/LinkPocket.Mcp/bin/<cfg>/net10.0/linkpocket-mcp.dll`)
+- Dependency face: `LinkPocket.Contracts` + `LinkPocket.Composition` + `LinkPocket.Cli`
 
-## 为什么不是"又一套能力"
+## Why this is not "yet another capability layer"
 
-| 关心的 | 实现 |
+| Concern | Implementation |
 |---|---|
-| **工具清单** | 来自契约层 `AiToolCatalog.BuildAll()`——与内置助手发给模型的工具面**逐字同源**（同名、同描述、同参数 schema） |
-| **工具调用** | 进程内复用 `LinkPocket.Cli.CliRunner`——与人在终端敲命令**同一条执行路径**（同参数绑定、同引擎管道、同输出） |
-| **数据/变更语义** | 引擎管道本身（撤销、审计、事件、写锁、破坏性令牌），网关不自持任何策略 |
+| **Tool list** | Comes from the contracts layer `AiToolCatalog.BuildAll()` - **byte-for-byte the same** tool face the built-in assistant sends to its model (same names, descriptions, parameter schemas) |
+| **Tool calls** | Reuses `LinkPocket.Cli.CliRunner` in-process - the **same execution path** as a human typing commands (same argument binding, same engine pipeline, same output) |
+| **Data / change semantics** | The engine pipeline itself (undo, audit, events, write lock, destructive confirmations); the gateway holds no policy of its own |
 
-因此不存在"外部阉割版"：引擎有 81 条命令，网关就暴露 81 条。
+So there is no "external crippled edition": the engine has 81 commands, the gateway exposes 81.
 
-## 启动
+## Starting it
 
 ```powershell
-dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <库路径>
+dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <database path>
 ```
 
-库路径缺省解析与命令行客户端一致（`--db` → `LINKPOCKET_DB` → 从当前目录上溯找 `data\linkpocket.db` → 程序根 `data\linkpocket.db`；统一实现 = `LinkPocket.Contracts.AppPaths`）。
+Default library-path resolution matches the command-line client (`--db` -> `LINKPOCKET_DB` -> walk up from
+the current directory for `data\linkpocket.db` -> `data\linkpocket.db` under the program root; single
+implementation = `LinkPocket.Contracts.AppPaths`).
 
-## 协议面
+## Protocol surface
 
-| 方法 | 说明 |
+| Method | Description |
 |---|---|
-| `initialize` | 回协议版本（`2025-06-18`）、能力（tools / resources）与 serverInfo |
-| `tools/list` | 引擎全部命令（含 `inputSchema` 与 `annotations`：`readOnlyHint` / `destructiveHint` / `openWorldHint`） |
-| `tools/call` | `{name, arguments}` → 一次命令行执行；返回 `content[].text`（JSON），失败带 `isError` |
-| `resources/list` / `resources/read` | 只读数据视图（见下） |
-| `resources/templates/list` | 按 ID 取单个链接 / 目录页 / 回收站单元 |
-| `ping` | 心跳 |
+| `initialize` | Returns protocol version (`2025-06-18`), capabilities (tools / resources) and serverInfo |
+| `tools/list` | All engine commands (with `inputSchema` and `annotations`: `readOnlyHint` / `destructiveHint` / `openWorldHint`) |
+| `tools/call` | `{name, arguments}` -> one CLI execution; returns `content[].text` (JSON), failures carry `isError` |
+| `resources/list` / `resources/read` | Read-only data views (see below) |
+| `resources/templates/list` | Fetch a single link / folder page / trash unit by ID |
+| `ping` | Heartbeat |
 
-**工具参数的两个约定**：
+**Two conventions for tool parameters**:
 
-- 参数名 = 命令描述符的 snake_case 名；数组/对象按 JSON 字面量传。
-- 每条工具都额外接受布尔参数 **`_dry_run`**：空跑，执行但不提交，返回将发生什么（零副作用）。
+- Parameter names = the snake_case names in the command descriptors; arrays/objects are passed as JSON literals.
+- Every tool additionally accepts the boolean parameter **`_dry_run`**: dry-run - execute without committing,
+  report what would happen (zero side effects).
 
-## 确认口径
+## Confirmation policy
 
-网关对每次调用自动带 `--yes`（把网关挂到自己的 Agent 上即代表用户授权），
-破坏性命令由引擎的两阶段令牌在同一次调用内自动完成；需要先看影响面时用 `_dry_run`。
-调用方身份固定为 `agent`（不带会话 ID = 宿主自有调用，零能力门约束；内置助手改数据期间的写入冻结对它同样生效）。
+The gateway automatically passes `--yes` on every call (attaching the gateway to your agent is the user's
+authorization); for destructive commands the engine's two-phase token is completed within the same call.
+Use `_dry_run` when you want to see the impact first.
+The caller identity is fixed to `agent` (no session ID = host-owned call, zero capability-gate constraints;
+the write freeze that applies while the built-in assistant is modifying data applies to it as well).
 
-## 数据资源
+## Data resources
 
-| URI | 内容 |
+| URI | Content |
 |---|---|
-| `linkpocket://docs` | 全部命令的参考文档（Markdown） |
-| `linkpocket://commands` | 机器可读的命令清单（JSON） |
-| `linkpocket://snapshot` | 全量快照：目录树 + 全部链接 + 回收站 + 统计 + 诊断 |
-| `linkpocket://stats` | 统计（按目录计数 / 回收站 / 根级） |
-| `linkpocket://tree` | 目录树 |
-| `linkpocket://links` | 全部链接（含归属目录） |
-| `linkpocket://trash` | 回收站（含原位置） |
-| `linkpocket://diagnostics` | 版本 / 表计数 / 缓存读数 |
-| `linkpocket://link/{id}` · `linkpocket://folder/{id}` · `linkpocket://trash/{id}` | 单个链接 / 目录页 / 回收站单元 |
+| `linkpocket://docs` | Reference documentation for all commands (Markdown) |
+| `linkpocket://commands` | Machine-readable command list (JSON) |
+| `linkpocket://snapshot` | Full snapshot: folder tree + all links + trash + stats + diagnostics |
+| `linkpocket://stats` | Statistics (per-folder counts / trash / root level) |
+| `linkpocket://tree` | Folder tree |
+| `linkpocket://links` | All links (with their folder) |
+| `linkpocket://trash` | Recycle bin (with original locations) |
+| `linkpocket://diagnostics` | Version / table counts / cache readings |
+| `linkpocket://link/{id}` · `linkpocket://folder/{id}` · `linkpocket://trash/{id}` | Single link / folder page / trash unit |
 
-## 客户端配置
+## Client configuration
 
 ```json
 {
@@ -68,19 +74,23 @@ dotnet src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll --db <库路径
     "linkpocket": {
       "command": "dotnet",
       "args": [
-        "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll",
-        "--db", "G:/LinkPocket 网站管理器开发/开发目录/linkpocket/src/LinkPocket.App/bin/Debug/net10.0-windows/data/linkpocket.db"
+        "<repo>/src/LinkPocket.Mcp/bin/Release/net10.0/linkpocket-mcp.dll",
+        "--db", "<data>/linkpocket.db"
       ]
     }
   }
 }
 ```
 
-## 输出纪律
+When installed from a delivery folder, point `command` at the self-contained
+`tools\linkpocket-mcp.exe` instead (no .NET runtime needed; ready-to-edit example: `mcp.example.json`).
 
-**stdout 只承载 MCP 协议帧**；日志走 stderr（`EngineHost(logToStderr: true)`）。stdin 关闭即退出。
+## Output discipline
 
-## 组合根
+**stdout carries MCP protocol frames only**; logs go to stderr (`EngineHost(logToStderr: true)`).
+Closing stdin exits the process.
 
-与命令行客户端共用 `LinkPocket.Composition.EngineHost`；网关自身只做"MCP 帧 ↔ 命令行"的翻译，
-不含任何命令实现与安全策略。
+## Composition root
+
+Shares `LinkPocket.Composition.EngineHost` with the command-line client; the gateway itself only translates
+"MCP frames <-> command line" and contains no command implementations and no security policy.
