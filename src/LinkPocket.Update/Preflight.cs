@@ -148,17 +148,43 @@ internal static class EpochReader
 {
     public static int ReadUserVersion(string dbPath)
     {
-        var connectionString = new SqliteConnectionStringBuilder
+        // 只读打开 WAL 库会顺手创建 -wal/-shm，且只读连接退出时**不回收**（无法 checkpoint）。
+        // 探针保证零残留：只删本次探针自己新建的两件；本来就存在的保持原样（那是上次未净关停的恢复线索）。
+        var walPath = dbPath + "-wal";
+        var shmPath = dbPath + "-shm";
+        var walExisted = File.Exists(walPath);
+        var shmExisted = File.Exists(shmPath);
+        try
         {
-            DataSource = dbPath,
-            Mode = SqliteOpenMode.ReadOnly,
-            // 关池化：连接池会把句柄留到进程退出——接下来 data\ 要整体改名搬移，任何残留句柄都会让搬移门误判"被占用"
-            Pooling = false,
-        }.ToString();
-        using var connection = new SqliteConnection(connectionString);
-        connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "PRAGMA user_version;";
-        return Convert.ToInt32(command.ExecuteScalar());
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadOnly,
+                // 关池化：连接池会把句柄留到进程退出——接下来 data\ 要整体改名搬移，任何残留句柄都会让搬移门误判"被占用"
+                Pooling = false,
+            }.ToString();
+            using var connection = new SqliteConnection(connectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "PRAGMA user_version;";
+            return Convert.ToInt32(command.ExecuteScalar());
+        }
+        finally
+        {
+            if (!walExisted) TryDelete(walPath);
+            if (!shmExisted) TryDelete(shmPath);
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 尽力而为：删不掉就留着（与"直搬不改写"的语义无害），下次更新再试
+        }
     }
 }
