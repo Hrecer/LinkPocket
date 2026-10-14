@@ -308,13 +308,21 @@ public sealed class UpdateService : IUpdateService
 
         try
         {
-            Process.Start(new ProcessStartInfo
+            // 参数逐项给（ArgumentList 负责引号与转义）：手工拼串时尾分隔符会把 \" 转义成字面引号，
+            // 后续 --wait-pid 被吞进安装路径（WARNINGS 173）
+            var startInfo = new ProcessStartInfo
             {
                 FileName = updater,
                 WorkingDirectory = stagingRoot,
                 UseShellExecute = false,
-                Arguments = $"--package \"{package}\" --install \"{_installRoot}\" --wait-pid {Environment.ProcessId}",
-            });
+            };
+            startInfo.ArgumentList.Add("--package");
+            startInfo.ArgumentList.Add(package);
+            startInfo.ArgumentList.Add("--install");
+            startInfo.ArgumentList.Add(_installRoot);
+            startInfo.ArgumentList.Add("--wait-pid");
+            startInfo.ArgumentList.Add(Environment.ProcessId.ToString());
+            Process.Start(startInfo);
             LpLog.Info($"handed off to the updater; the app will now exit: {updater}", category: LogCategory);
             return null;
         }

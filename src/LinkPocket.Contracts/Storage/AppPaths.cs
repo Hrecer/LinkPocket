@@ -33,7 +33,7 @@ public static class AppPaths
     /// <summary>主程序可执行文件名（程序根标记；**按文件名精确大小写**比对，理由见类型注释）。</summary>
     private const string AppExecutableName = "LinkPocket.exe";
 
-    /// <summary>程序根（见类型注释；任何层都不该自己重新推导它）。</summary>
+    /// <summary>程序根（见类型注释；任何层都不该自己重新推导它；返回路径不带尾分隔符）。</summary>
     public static string ProgramRoot { get; } = FindProgramRoot(AppContext.BaseDirectory);
 
     /// <summary>数据根 = 程序根 <c>data\</c>：AI / 字体 / 图标缓存 / 日志 / 界面偏好等运行数据的落点。</summary>
@@ -95,6 +95,8 @@ public static class AppPaths
     /// <summary>
     /// 程序根解析核心（纯函数；生产入口 = <see cref="ProgramRoot"/>）：从 <paramref name="startDirectory"/>
     /// 向上找最近含 <c>data\</c> 子目录或含 <c>LinkPocket.exe</c> 的目录；一路到卷根都没有 → 起点目录本身。
+    /// 返回路径一律去掉尾分隔符（<c>AppContext.BaseDirectory</c> 恒带尾分隔符；尾分隔符进命令行拼参会
+    /// 触发 <c>\"</c> 转义事故——见 WARNINGS 173）。
     /// </summary>
     public static string FindProgramRoot(string startDirectory)
     {
@@ -102,11 +104,13 @@ public static class AppPaths
         var dir = new DirectoryInfo(start);
         while (dir is not null)
         {
-            if (Directory.Exists(Path.Combine(dir.FullName, DataDirectoryName))) return dir.FullName;
-            if (ContainsAppExecutable(dir)) return dir.FullName;
+            if (Directory.Exists(Path.Combine(dir.FullName, DataDirectoryName)))
+                return Path.TrimEndingDirectorySeparator(dir.FullName);
+            if (ContainsAppExecutable(dir))
+                return Path.TrimEndingDirectorySeparator(dir.FullName);
             dir = dir.Parent;
         }
-        return start;
+        return Path.TrimEndingDirectorySeparator(start);
     }
 
     /// <summary>目录里是否恰好有 <c>LinkPocket.exe</c>（精确大小写；权限受限 / 瞬态 IO 的目录按"没有"处理，继续向上）。</summary>

@@ -103,4 +103,18 @@ public class AppPathsTests : IDisposable
 
         Assert.Equal(Path.GetFullPath(start), AppPaths.FindProgramRoot(start));
     }
+
+    [Fact]
+    public void 程序根_返回不带尾分隔符()
+    {
+        // AppContext.BaseDirectory 恒带尾分隔符；尾分隔符曾原样流进交棒命令行拼参，
+        // 触发 \" 转义把 --wait-pid 吞进安装路径（更新器报 install directory does not exist，WARNINGS 173）。
+        var install = Path.Combine(_root, "install");
+        Directory.CreateDirectory(Path.Combine(install, "data"));
+        Assert.Equal(install, AppPaths.FindProgramRoot(install + Path.DirectorySeparatorChar));
+
+        var plain = Path.Combine(_root, "plain");
+        Directory.CreateDirectory(plain);
+        Assert.Equal(Path.GetFullPath(plain), AppPaths.FindProgramRoot(plain + Path.DirectorySeparatorChar));
+    }
 }
