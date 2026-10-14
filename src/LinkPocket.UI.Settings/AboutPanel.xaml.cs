@@ -5,7 +5,7 @@ using LinkPocket.Services;
 namespace LinkPocket.Views;
 
 /// <summary>
-/// 「关于」面板（设置页左栏最末项）：应用名称与版本 + 项目仓库地址。
+/// 「关于」面板（设置页左栏最末项）：应用名称与版本 + 简介 / 主要能力 + 项目仓库地址。
 /// 版本号 = 组合根传入的产品版本（<c>IUpdateService.CurrentVersion</c>，与更新面板同源）；
 /// 未注入时回退本程序集版本。地址行 = 身份字面量（不翻译、不随语言变）；
 /// 「打开仓库」经唯一出口 <see cref="LinkLauncher"/>（只放行 http/https，不自己起进程）。
