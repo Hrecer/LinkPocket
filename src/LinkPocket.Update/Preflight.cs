@@ -46,6 +46,13 @@ public static class Preflight
 
         DetectStaleArtifacts(ctx);
 
+        // 版本闸（§5.3 甲 1）：≤3.2.4 不可就地更新——旧平铺布局没有 data\，直搬会把旧库随旧目录一起静默清掉。
+        var fromVersion = ReadProductVersion(installExe);
+        if (IsTooOldToUpdate(fromVersion))
+            throw new UpdateFailure(
+                $"this installation is version {fromVersion}; versions before 4.0.0 cannot be updated in place - "
+                + "export a backup with the version that created it, install the new version fresh, then import the backup");
+
         var dbPath = Path.Combine(ctx.DataDir, "linkpocket.db");
         var mode = UpdateMode.Direct;
         if (File.Exists(dbPath) && new FileInfo(dbPath).Length >= MinSqliteHeaderBytes)
@@ -87,11 +94,19 @@ public static class Preflight
                 $"not enough disk space on the install volume: need about {Mb(required)}, free {Mb(free)} "
                 + $"(package {Mb(packageBytes)} + current install {Mb(oldBytes)} + 64 MB margin)");
 
-        var fromVersion = ReadProductVersion(installExe);
         var toVersion = ReadProductVersion(packageExe);
         emit($"preflight ok: {Mb(free)} free, package {Mb(packageBytes)}, current install {Mb(oldBytes)}");
         return new PreflightResult(mode, fromVersion, toVersion);
     }
+
+    /// <summary>版本闸判据：版本可读出且 &lt; 4.0.0 = 不可就地更新（读不出 = 不拦；链解析另有拒绝）。</summary>
+    public static bool IsTooOldToUpdate(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return false;
+        return Version.TryParse(version, out var parsed) && parsed < MinUpdateableVersion;
+    }
+
+    private static readonly Version MinUpdateableVersion = new(4, 0, 0);
 
     /// <summary>恢复线索检测：安装目录旁已有 `data.pending-*` / `LinkPocket.old-*` = 上次中断，拒绝 + 指路（不替用户猜）。</summary>
     private static void DetectStaleArtifacts(UpdateContext ctx)

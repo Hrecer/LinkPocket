@@ -22,133 +22,16 @@ param(
     [switch]$Keep
 )
 
-if ($Package -eq '') {
-    $scriptDir = $PSScriptRoot
-    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
-    $Package = Join-Path $scriptDir 'artifacts\dist'
-}
-
 $ErrorActionPreference = 'Stop'
-$script:Passed = 0
-$script:Failed = 0
+. (Join-Path $PSScriptRoot 'drill-common.ps1')
 
-function CheckOk([string]$msg)   { $script:Passed++; Write-Host ("  ok   " + $msg) }
-function CheckFail([string]$msg) { $script:Failed++; Write-Host ("  FAIL " + $msg); }
-function Check([bool]$cond, [string]$msg) { if ($cond) { CheckOk $msg } else { CheckFail $msg } }
-function Section([string]$msg) { Write-Host ''; Write-Host "== $msg" }
-
-function Write-Utf8([string]$path, [string]$text) {
-    $dir = Split-Path -Parent $path
-    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    [IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
-}
-
-function Get-TreeHashes([string]$root) {
-    $result = @{}
-    $full = (Resolve-Path -LiteralPath $root).Path.TrimEnd('\')
-    Get-ChildItem -LiteralPath $full -Recurse -File -Force | ForEach-Object {
-        $rel = $_.FullName.Substring($full.Length + 1).Replace('\', '/')
-        $result[$rel] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
-    }
-    return $result
-}
-
-function Test-Excluded([string]$rel, [string[]]$exclude) {
-    foreach ($e in $exclude) { if ($rel -eq $e -or $rel.StartsWith($e)) { return $true } }
-    return $false
-}
-
-function Compare-Tree([hashtable]$baseline, [string]$root, [string[]]$exclude, [string]$label) {
-    $now = Get-TreeHashes $root
-    $before = $script:Failed
-    foreach ($rel in $baseline.Keys) {
-        if (Test-Excluded $rel $exclude) { continue }
-        if (-not $now.ContainsKey($rel)) { CheckFail "$label : missing '$rel'" }
-        elseif ($now[$rel] -ne $baseline[$rel]) { CheckFail "$label : different bytes in '$rel'" }
-    }
-    foreach ($rel in $now.Keys) {
-        if (Test-Excluded $rel $exclude) { continue }
-        if (-not $baseline.ContainsKey($rel)) { CheckFail "$label : unexpected new file '$rel'" }
-    }
-    if ($script:Failed -eq $before) { CheckOk "$label : byte-identical ($($baseline.Count) baseline files)" }
-}
-
-# Native commands can write to stderr (the CLI writes its "# library:" line there);
-# with ErrorActionPreference=Stop that would throw, so run them with a local preference.
-function Invoke-NativeCapture([string]$exe, [string[]]$arguments, [bool]$mergeStderr) {
-    $old = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        if ($mergeStderr) { $output = & $exe @arguments 2>&1 | Out-String }
-        else { $output = & $exe @arguments 2>$null | Out-String }
-        $code = $LASTEXITCODE
-    } finally { $ErrorActionPreference = $old }
-    return @{ Output = $output; Code = $code }
-}
-
-function Invoke-DrillUpdater {
-    param([string]$Staging, [string]$PackageDir, [string]$InstallDir, [int]$WaitPid = 0)
-    $logPath = Join-Path $Staging 'update.log'
-    $resultPath = Join-Path $Staging 'update-result.json'
-    Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
-    $exe = Join-Path $Staging 'LinkPocket-Update.exe'
-    $cmdArgs = @('--package', $PackageDir, '--install', $InstallDir)
-    if ($WaitPid -gt 0) { $cmdArgs += @('--wait-pid', "$WaitPid") }
-    $captured = Invoke-NativeCapture $exe $cmdArgs $true
-    $exitCode = $captured.Code
-    $output = $captured.Output
-    $log = ''
-    if (Test-Path -LiteralPath $logPath) { $log = Get-Content -LiteralPath $logPath -Raw }
-    $result = $null
-    if (Test-Path -LiteralPath $resultPath) { $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json }
-    return @{ ExitCode = $exitCode; Output = $output; Log = $log; Result = $result; LogPath = $logPath; ResultPath = $resultPath }
-}
-
-# Mirrors LinkPocket.Update.PackageLayout.IsSkipped (dir entries end with '\', everything else is an exact file match).
-function Test-SkipEntry([string]$rel, [string[]]$entries) {
-    $r = $rel.Replace('/', '\')
-    foreach ($e in $entries) {
-        $n = $e.Replace('/', '\')
-        if ($n.EndsWith('\')) {
-            if ($r.StartsWith($n, [StringComparison]::OrdinalIgnoreCase)) { return $true }
-            if ($r -eq $n.Substring(0, $n.Length - 1)) { return $true }
-        }
-        elseif ($r -eq $n) { return $true }
-    }
-    return $false
-}
-
-function Assert-NoSiblings([string]$workDir, [string]$label) {
-    $leftovers = @(Get-ChildItem -LiteralPath $workDir -Force | Where-Object {
-        $_.Name -like 'data.pending-*' -or $_.Name -like '*.old-*' })
-    Check ($leftovers.Count -eq 0) "$label : no data.pending-* / *.old-* left beside the install"
-    foreach ($l in $leftovers) { Write-Host "         left over: $($l.FullName)" }
-}
-
-function Get-FileVersionString([string]$exePath) {
-    $v = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath).FileVersion
-    $p = [version]$v
-    return ("{0}.{1}.{2}" -f $p.Major, $p.Minor, [Math]::Max($p.Build, 0))
-}
-
-function Run-Cli([string]$cli, [string]$db, [string[]]$cliArgs, [bool]$expectJson = $true) {
-    $full = @('--db', $db) + $cliArgs
-    if ($expectJson) { $full += '--json' }
-    $captured = Invoke-NativeCapture $cli $full $false
-    if ($captured.Code -ne 0) { throw "cli failed (exit $($captured.Code)): $($cliArgs -join ' ')" }
-    return $captured.Output
-}
-
-$script:work = if ($WorkDir -ne '') { $WorkDir } else { Join-Path $env:TEMP ("LinkPocket-Drill-" + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
-New-Item -ItemType Directory -Path $script:work -Force | Out-Null
-# expand 8.3 short names ($env:TEMP may be C:\Users\ADMINI~1\...): children FullName must line up with the root string
-$script:work = (Get-Item -LiteralPath $script:work -Force).FullName
+if ($Package -eq '') { $Package = Join-Path $PSScriptRoot 'artifacts\dist' }
+$script:work = New-DrillWorkDir $WorkDir
 
 function Run-Direct {
     $work = $script:work
     if (-not (Test-Path -LiteralPath $Package)) { throw "the package directory does not exist: $Package (run pack.ps1 first)" }
-    $packageSrc = (Get-Item -LiteralPath $Package -Force).FullName.TrimEnd('\')
+    $packageSrc = Resolve-Full $Package
     $installDir = Join-Path $work 'LinkPocket'
     $packageDir = Join-Path $work 'package'
     $stagingDir = Join-Path $work 'staging'
@@ -170,51 +53,20 @@ function Run-Direct {
     Write-Host "  app version: $vOld  (chain: $vOld -> $vNew1 -> $vNew2)"
 
     Section 'build the version-carrying stub (package app executable)'
-    $stubDir = Join-Path $work 'stub'
-    New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
-    $stubProject = @"
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>LinkPocket</AssemblyName>
-    <RootNamespace>LinkPocketDrillStub</RootNamespace>
-    <Version>$vNew2</Version>
-    <DebugType>none</DebugType>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-</Project>
-"@
-    $stubProgram = @'
-using System;
-using System.IO;
-
-var marker = Path.Combine(AppContext.BaseDirectory, "launched.txt");
-File.WriteAllText(marker, "launched " + DateTime.UtcNow.ToString("o") + Environment.NewLine);
-return 0;
-'@
-    Write-Utf8 (Join-Path $stubDir 'stub.csproj') $stubProject
-    Write-Utf8 (Join-Path $stubDir 'Program.cs') $stubProgram
+    Build-LinkPocketStub -Dir (Join-Path $work 'stub') -Version $vNew2 -Out (Join-Path $work 'stub-out')
     $stubOut = Join-Path $work 'stub-out'
-    $stubBuild = Invoke-NativeCapture 'dotnet' @('publish', $stubDir, '-c', 'Release', '-o', $stubOut, '--nologo', '-v:q') $true
-    if ($stubBuild.Code -ne 0) { throw "stub build failed (exit $($stubBuild.Code)): $($stubBuild.Output)" }
     Check ((Get-FileVersionString (Join-Path $stubOut 'LinkPocket.exe')) -eq $vNew2) "stub carries version $vNew2"
 
     Section 'build the throw-away trees (install = current app, package = delivered content)'
-    New-Item -ItemType Directory -Path $work -Force | Out-Null
     # /XF takes full paths here: a bare "LinkPocket.exe" would also exclude tools\linkpocket.exe (name match)
-    $rc = Invoke-NativeCapture 'robocopy' @($packageSrc, $installDir, '/E', '/MT:8', '/XF', (Join-Path $packageSrc 'LinkPocket-Update.exe'), '/XD', 'update', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') $true
-    if ($rc.Code -ge 8) { throw "robocopy failed (exit $($rc.Code)) for the install tree" }
-    $rc = Invoke-NativeCapture 'robocopy' @($packageSrc, $packageDir, '/E', '/MT:8', '/XF', (Join-Path $packageSrc 'LinkPocket.exe'), '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/R:1', '/W:1') $true
-    if ($rc.Code -ge 8) { throw "robocopy failed (exit $($rc.Code)) for the package tree" }
+    Invoke-Robocopy $packageSrc $installDir @('/XF', (Join-Path $packageSrc 'LinkPocket-Update.exe'), '/XD', 'update')
+    Invoke-Robocopy $packageSrc $packageDir @('/XF', (Join-Path $packageSrc 'LinkPocket.exe'))
     New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $packageSrc 'LinkPocket-Update.exe') -Destination $stagingDir -Force
     Copy-Item -Path (Join-Path $stubOut '*') -Destination $packageDir -Force
 
     Check (Test-Path -LiteralPath (Join-Path $installDir 'LinkPocket.exe')) 'install keeps the current app executable'
     Check (Test-Path -LiteralPath (Join-Path $packageDir 'tools\linkpocket.exe')) 'package keeps tools\linkpocket.exe (the root-exe exclusion did not catch it)'
-
     Check ((Get-FileVersionString (Join-Path $installDir 'LinkPocket.exe')) -eq $vOld) "install app carries version $vOld"
     Check ((Get-FileVersionString (Join-Path $packageDir 'LinkPocket.exe')) -eq $vNew2) "package app carries version $vNew2"
     Check (-not (Test-Path -LiteralPath (Join-Path $installDir 'LinkPocket-Update.exe'))) 'install starts without the updater (as installed trees do)'
@@ -399,24 +251,7 @@ return 0;
     while (-not (Test-Path -LiteralPath $markerPath) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
     Check (Test-Path -LiteralPath $markerPath) 'new version launched (launch marker written)'
     if (Test-Path -LiteralPath $markerPath) { Check ((Get-Content -LiteralPath $markerPath -Raw).StartsWith('launched ')) 'launch marker content looks right' }
-    $skipEntries = @()
-    foreach ($line in (Get-Content -LiteralPath (Join-Path $packageDir 'update\skip-install.txt'))) {
-        $t = $line.Trim()
-        if ($t -ne '' -and -not $t.StartsWith('#')) { $skipEntries += $t }
-    }
-    $skipEntries += @('LinkPocket-Update.exe', 'update\')
-    $packageFiles = @(Get-ChildItem -LiteralPath $packageDir -Recurse -File -Force)
-    $expectedPaths = @($packageFiles |
-        ForEach-Object { $_.FullName.Substring($packageDir.Length + 1) } |
-        Where-Object { -not (Test-SkipEntry $_ $skipEntries) }) + @('launched.txt')
-    $installPaths = @(Get-ChildItem -LiteralPath $installDir -Recurse -File -Force |
-        ForEach-Object { $_.FullName.Substring($installDir.Length + 1) } |
-        Where-Object { -not $_.StartsWith('data\') })   # data\ is carried, not part of the program-area mirror
-    $missing = @($expectedPaths | Where-Object { $installPaths -notcontains $_ })
-    $extra = @($installPaths | Where-Object { $expectedPaths -notcontains $_ })
-    Check (($missing.Count -eq 0) -and ($extra.Count -eq 0)) "install file set == package - skipped + launched.txt ($($packageFiles.Count) package files, $($skipEntries.Count) skip entries)"
-    foreach ($m in $missing) { Write-Host "         missing: $m" }
-    foreach ($x in $extra) { Write-Host "         extra  : $x" }
+    Assert-ProgramMirror $packageDir $installDir 'S1'
     Assert-NoSiblings $work 'S1'
 
     Section 'S1: data area (prune, conversion, byte-identity)'
@@ -451,20 +286,7 @@ return 0;
 try {
     Run-Direct
 } catch {
-    Write-Host ''
-    Write-Host "DRILL ABORTED: $_" -ForegroundColor Red
-    Write-Host "work dir kept: $script:work"
-    exit 1
+    Abort-Drill "$_" $script:work
 }
 
-Write-Host ''
-Write-Host ('=' * 60)
-if ($script:Failed -eq 0) {
-    Write-Host "DRILL 1 PASSED: $($script:Passed) checks"
-    if (-not $Keep) { Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue }
-    exit 0
-} else {
-    Write-Host "DRILL 1 FAILED: $($script:Failed) of $($script:Passed + $script:Failed) checks failed" -ForegroundColor Red
-    Write-Host "work dir kept: $script:work"
-    exit 1
-}
+Complete-Drill 'DRILL 1' $script:work $Keep

@@ -140,4 +140,15 @@ public class PreflightTests
         }
         finally { UpdateTestKit.Cleanup(root); }
     }
+
+    [Theory]
+    [InlineData("3.2.4", true)]
+    [InlineData("3.2.10", true)]     // 版本段按数值比较，不是字符串
+    [InlineData("0.9.0", true)]
+    [InlineData("4.0.0", false)]
+    [InlineData("10.0.0", false)]
+    [InlineData(null, false)]        // 读不出不拦（链解析另有拒绝）
+    [InlineData("not-a-version", false)]
+    public void 版本闸判据(string? version, bool tooOld)
+        => Assert.Equal(tooOld, Preflight.IsTooOldToUpdate(version));
 }
