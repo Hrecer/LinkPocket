@@ -200,7 +200,7 @@ Write-Host "[CI] 生成物与描述符一致" -ForegroundColor Green
 # ④ 受限宿主（沙箱/受限 runner）会拦并发子进程 → 并行开关默认关闭；确认环境允许再用 -ParallelTests。
 Write-Host "[CI] 单元测试 ..." -ForegroundColor Cyan
 $testBatches = @(
-    @("tests/LinkPocket.Architecture.Tests", "tests/LinkPocket.Diagnostics.Tests"),  # 两个都极轻
+    @("tests/LinkPocket.Architecture.Tests", "tests/LinkPocket.Diagnostics.Tests", "tests/LinkPocket.Update.Tests"),  # 三个都极轻
     @("tests/LinkPocket.Engine.Tests",       "tests/LinkPocket.Ai.Tests"),
     @("tests/LinkPocket.Modules.Tests",      "tests/LinkPocket.App.Tests")
 )

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 更新器单测（UPDATE.md §8 批次 E）：甲/乙路径 + 设置转换步骤链 + 暂存区清扫——
+       全部在本机临时目录上做真 IO（假 CLI 只在"调外部进程"这一处替换）。 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LinkPocket</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\LinkPocket.Update\LinkPocket.Update.csproj" />
+    <ProjectReference Include="..\..\src\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>

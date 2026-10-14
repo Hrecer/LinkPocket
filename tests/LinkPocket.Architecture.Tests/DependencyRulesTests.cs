@@ -290,6 +290,7 @@ public class DependencyRulesTests
     [Theory]
     [InlineData("LinkPocket.Cli")]
     [InlineData("LinkPocket.Mcp")]
+    [InlineData("LinkPocket.Update")]
     public void 命令行与网关源码_不得使用引擎实现(string project)
     {
         var forbidden = new[] { "LinkPocket.Engine", "LinkPocket.Data", "LinkPocket.Kernel", "LinkPocket.Modules" };
@@ -308,6 +309,15 @@ public class DependencyRulesTests
         }
         Assert.True(offenders.Count == 0,
             "命令行/网关源码越界使用引擎实现（能力只能经契约端口或组合根）：" + string.Join("、", offenders));
+    }
+
+    [Fact]
+    public void 更新器_只依赖契约层()
+    {
+        // 更新器随包发布、长期冻结：依赖面 = Contracts（AppPaths / SchemaEpoch / UpdateStaging）
+        // + Microsoft.Data.Sqlite 包；不引 Composition / 引擎实现 / UI——它必须在一次安装的机器上独立运行。
+        var refs = ProjectReferences("src/LinkPocket.Update/LinkPocket.Update.csproj");
+        Assert.Equal(new[] { Contracts }.OrderBy(n => n), refs);
     }
 
     [Fact]

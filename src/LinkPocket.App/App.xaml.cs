@@ -77,6 +77,10 @@ public partial class App : Application
             var window = host.Services.GetRequiredService<MainWindow>();   // 前端对象图由容器装配（见 AppServiceGraph）
             MainWindow = window; // ShutdownMode=OnMainWindowClose 依赖此引用
             window.Show();
+
+            // ④ 更新残留清扫（UPDATE.md §5.2）：后台尽力而为——删不净只留痕、下次启动再清；
+            //    结果文件不在这里处置（更新页取值后自行消费）。
+            _ = Task.Run(() => UpdateStaging.SweepOwnStaging(AppPaths.ProgramRoot));
         }
         catch (DatabaseIncompatibleException ex)
         {

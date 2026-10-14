@@ -12,7 +12,7 @@ namespace LinkPocket.Data;
 /// 并给库头打标记。<b>不存在任何版本链 / 迁移脚本</b>——历史脚本（v2–v8）已全部删除，永不再有；
 /// 库结构变更由"更新 = 完全重新安装 + 导出/导入"天然吸收（见 内部资产/文档/UPDATE.md）。</para>
 ///
-/// <para><b>纪元戳（封死）</b>：库头 <c>user_version</c> = <see cref="EpochVersion"/>（9）是**纪元标记**——
+/// <para><b>纪元戳（封死）</b>：库头 <c>user_version</c> = <see cref="SchemaEpoch.EpochVersion"/>（9）是**纪元标记**——
 /// 只有本纪元的库被接受；<b>v8 及更早的库文件一律拒绝</b>（含手工直搬），迁移唯一通道 = 导出/导入。
 /// 带别的 <c>application_id</c> 的外来库同样拒绝。拒绝 = 抛 <see cref="DatabaseIncompatibleException"/>，
 /// 不触碰被拒文件（不迁移、不读取、不转换、不删除）。</para>
@@ -29,12 +29,6 @@ public static class SchemaMigrator
 
     /// <summary>`PRAGMA application_id`：LinkPocket 的库头产品标识（4 字符码 <c>'LPPK'</c>）。</summary>
     public const int ApplicationId = 0x4C50504B;
-
-    /// <summary>
-    /// 库格式纪元（`PRAGMA user_version` 的值）。9 = 4.0.0 起：结构 = v8 终态逐字，戳只作**纪元标记**；
-    /// 结构再次变更时随新纪元一起抬（旧纪元的库一律拒绝，跨版本搬运只走导出/导入）。
-    /// </summary>
-    public const int EpochVersion = 9;
 
     /// <summary>确保 dbPath 指向的库处于当前纪元：空库建基线；异纪元 / 外来库抛 <see cref="DatabaseIncompatibleException"/>。</summary>
     public static void EnsureSchema(string dbPath)
@@ -65,7 +59,7 @@ public static class SchemaMigrator
                 }
 
                 var userVersion = ReadUserVersion(conn);
-                if (userVersion == EpochVersion)
+                if (userVersion == SchemaEpoch.EpochVersion)
                 {
                     // 本纪元的库：接受（幂等；标记齐全时零写入）
                     StampVersionMarkers(conn);
@@ -76,7 +70,7 @@ public static class SchemaMigrator
                     // 被拒文件原样留存（零责任：不迁移、不读取、不转换、不删除）。
                     throw new DatabaseIncompatibleException(
                         $"This data file is not compatible with the current LinkPocket database format: '{key}' "
-                        + $"(user_version={userVersion}, current epoch is {EpochVersion}). "
+                        + $"(user_version={userVersion}, current epoch is {SchemaEpoch.EpochVersion}). "
                         + "LinkPocket does not migrate, read or convert it. Export a backup with the version that "
                         + "created it, then import that backup here. The file itself is left untouched.",
                         key);
@@ -106,8 +100,8 @@ public static class SchemaMigrator
     /// </summary>
     public static void StampVersionMarkers(SqliteConnection conn)
     {
-        if (ReadUserVersion(conn) != EpochVersion)
-            ExecutePragma(conn, $"PRAGMA user_version = {EpochVersion};");
+        if (ReadUserVersion(conn) != SchemaEpoch.EpochVersion)
+            ExecutePragma(conn, $"PRAGMA user_version = {SchemaEpoch.EpochVersion};");
         if (ReadApplicationId(conn) != ApplicationId)
             ExecutePragma(conn, $"PRAGMA application_id = {ApplicationId};");
     }
@@ -146,7 +140,7 @@ public static class SchemaMigrator
     /// 空库：单事务执行当前完整 DDL + 纪元版本行——中途失败不留半成品库。
     /// </summary>
     private static void CreateBaseline(SqliteConnection conn)
-        => ExecuteInTransaction(conn, BaselineDdl + VersionRow(EpochVersion));
+        => ExecuteInTransaction(conn, BaselineDdl + VersionRow(SchemaEpoch.EpochVersion));
 
     private static void ExecuteInTransaction(SqliteConnection conn, string sql)
     {

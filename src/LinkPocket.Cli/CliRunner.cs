@@ -11,7 +11,7 @@ namespace LinkPocket.Cli;
 /// 外部 Agent 的每次工具调用都走**与人在终端里敲命令完全相同的一条执行路径**（同样的参数绑定、
 /// 同样的引擎管道、同样的 snake_case 输出），所以不存在"外部阉割版"，也没有第二套命令实现。</para>
 ///
-/// <para><b>能力面</b>：引擎目录里的每一条命令（业务 60 + 编排 16 + 批 3）都可直接调用——
+/// <para><b>能力面</b>：引擎目录里的每一条命令（业务 62 + 编排 16 + 批 3）都可直接调用——
 /// 与界面、内置助手同一条管道（校验 → 幂等 → 能力门 → 写闸 → 事务 → 撤销 → 事件 → 审计），
 /// 因此撤销 / 审计 / 事件 / 确认令牌对命令行调用同样生效。</para>
 /// </summary>
@@ -128,7 +128,7 @@ public static partial class CliRunner
         }
     }
 
-    /// <summary>列出命令目录（engine.describe 的同一份数据：79 条 = 业务 + 编排 + 批）。</summary>
+    /// <summary>列出命令目录（engine.describe 的同一份数据：81 条 = 业务 + 编排 + 批）。</summary>
     private static int Describe(CliArgs parsed, EngineHost host, TextWriter output)
     {
         var rest = parsed.Positional.Skip(1).ToList();

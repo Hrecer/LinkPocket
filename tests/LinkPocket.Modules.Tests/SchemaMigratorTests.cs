@@ -56,7 +56,7 @@ public class SchemaMigratorTests
             SchemaMigrator.EnsureSchema(dbPath);
             var fresh = HeaderMarkers(dbPath);
             Assert.Equal(SchemaMigrator.ApplicationId, fresh.AppId);
-            Assert.Equal(SchemaMigrator.EpochVersion, fresh.UserVersion);
+            Assert.Equal(SchemaEpoch.EpochVersion, fresh.UserVersion);
             Assert.True(fresh.UserVersion > 0, "新建库的库头 user_version 必须写上（不许停在 0）");
 
             // 纪元相符但产品标记缺失（边角）：仍接受，并把标记补齐（换路径避开"已核验"短路）
@@ -128,7 +128,7 @@ public class SchemaMigratorTests
             new[] { "folders", "links", "schema_migrations", "trash_folders", "trash_links" },
             UserTables(dbPath));
         // 单一基线：版本表落纪元行（9），不存在版本链
-        Assert.Equal(SchemaMigrator.EpochVersion, SchemaVersion(dbPath));
+        Assert.Equal(SchemaEpoch.EpochVersion, SchemaVersion(dbPath));
         Assert.Equal(9, SchemaVersion(dbPath));
 
         // 关键形状抽查：主键统一 id、folders 无 link_count、根语义仅 NULL（无哨兵约束项）
@@ -262,7 +262,7 @@ public class SchemaMigratorTests
 
         // 整库重置（删文件重建）路径：文件存在性守卫失效后自动重新建库
         SchemaMigrator.EnsureSchema(dbPath);
-        Assert.Equal(SchemaMigrator.EpochVersion, SchemaVersion(dbPath));
+        Assert.Equal(SchemaEpoch.EpochVersion, SchemaVersion(dbPath));
         // 用户库只剩书签域数据（审计/幂等在附属库；宏在 macros.json 文件）
         Assert.Equal(5, UserTables(dbPath).Length);
     }
@@ -304,7 +304,7 @@ public class SchemaMigratorTests
             Assert.Equal(1, await verify.Links.CountAsync());
             Assert.Equal(1, await verify.TrashedLinks.CountAsync());
             Assert.Equal(1, await verify.TrashedFolders.CountAsync());
-            Assert.Equal(SchemaMigrator.EpochVersion, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
+            Assert.Equal(SchemaEpoch.EpochVersion, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
             Assert.Equal(9, await new EfUnitOfWork(verify).SchemaVersionAsync(default));
 
             // 回收站保真列经 EF 回读逐字段一致（DateTime? 往返按 Ticks 对齐，Kind 不参与比较）

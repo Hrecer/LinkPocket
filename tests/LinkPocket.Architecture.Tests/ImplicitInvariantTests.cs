@@ -34,21 +34,22 @@ public class ImplicitInvariantTests
             .Select(p => (Path: p, Text: File.ReadAllText(p)));
 
     /// <summary>
-    /// H1 临时目录只有一个入口：<c>Path.GetTempPath()</c> / <c>%TEMP%</c> 只许出现在
-    /// <c>LinkPocket.Engine/TempArea.cs</c>（唯一入口，尊重 <c>LP_TEMP_ROOT</c>，临时物不落用户配置目录）。
+    /// H1 临时目录只有两个入口：<c>Path.GetTempPath()</c> / <c>%TEMP%</c> 只许出现在
+    /// <c>LinkPocket.Engine/TempArea.cs</c>（引擎临时物）与 <c>LinkPocket.Contracts/Update/UpdateStaging.cs</c>
+    /// （更新暂存区——更新器是独立进程、不引引擎，在契约层复刻同一条 <c>LP_TEMP_ROOT</c> 口径）。
     /// <para><b>量的是什么</b>：任何模块新写 <c>Path.GetTempPath()</c> 都会把临时文件甩进用户 %TEMP%
     /// （历史事故：一次调试在 %TEMP% 写了 2000+ 个探针文件，累计近百 MB，事后清理成本极高）。</para>
     /// </summary>
     [Fact]
     public void H1_临时目录唯一入口()
     {
-        var entry = "TempArea.cs";
+        var allowed = new[] { "TempArea.cs", "UpdateStaging.cs" };
         foreach (var (path, text) in ProductSources())
             foreach (Match hit in Regex.Matches(text, @"GetTempPath|Environment\.GetEnvironmentVariable\(\s*""TEMP"""))
             {
                 var file = Path.GetFileName(path);
-                Assert.True(file == entry,
-                    $"{file} 直接取系统临时目录：临时物必须经 TempArea（唯一入口，尊重 LP_TEMP_ROOT）。命中：{hit.Value}");
+                Assert.True(allowed.Contains(file, StringComparer.Ordinal),
+                    $"{file} 直接取系统临时目录：临时物必须经 TempArea / UpdateStaging（唯一入口，尊重 LP_TEMP_ROOT）。命中：{hit.Value}");
             }
     }
 
@@ -72,6 +73,7 @@ public class ImplicitInvariantTests
             "LogPipeline.cs",       // 日志泵：append-only 流
             "JsonlFileSink.cs",     // JSONL 落盘：同上
             "CliRunner.Views.cs",   // `--out <文件>`：一次性输出产物（不是配置/数据文件，失败即整条命令失败）
+            "UpdateReport.cs",      // 更新器运行痕迹：update.log 是 append-only 流（同 JsonlFileSink 口径）；结果 JSON 走 AtomicFile
         };
         foreach (var (path, text) in ProductSources())
             // 负向后视：`AtomicFile.WriteAllText(...)` 是**允许**的那一处本身，不能被子串误判成 `File.WriteAllText`

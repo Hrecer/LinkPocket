@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 临时更新器（4.0.0 更新体系 · UPDATE.md §5.2）：随包发布为 LinkPocket-Update.exe，
+       从新包提取到 %TEMP%\LinkPocket-Update\<安装标识>\ 运行，用毕由新版应用首启清扫。
+       依赖面 = Contracts + Microsoft.Data.Sqlite（读库头纪元戳）；不引引擎/UI——
+       它必须在一次安装的机器上独立运行，且长期冻结（"没问题就不动"）。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LinkPocket.Update</RootNamespace>
+    <AssemblyName>LinkPocket-Update</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LinkPocket.Contracts\LinkPocket.Contracts.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+</Project>
