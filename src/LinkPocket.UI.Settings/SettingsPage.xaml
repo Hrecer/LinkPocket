@@ -19,8 +19,8 @@
                 <views:SideNavList x:Name="SettingListBox" Style="{StaticResource SideNavListStyle}"
                                    ItemContainerStyle="{StaticResource SideNavItemStyle}"
                                    SelectionChanged="SettingListBox_SelectionChanged">
-                    <!-- 顺序 = 外观 / 存储管理 / 备份与恢复 / AI 服务 / 更新；「外观」排第一（决策 6），
-                         故"默认选中第一项"的契约落点随之改为外观。 -->
+                    <!-- 顺序 = 外观 / 存储管理 / 备份与恢复 / AI 服务 / 更新 / 关于；「外观」排第一（决策 6），
+                         「关于」收尾（最末项），故"默认选中第一项"的契约落点随之改为外观。 -->
                     <ListBoxItem>
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="palette-outline" Width="17" Height="17" VerticalAlignment="Center"/>
@@ -49,6 +49,12 @@
                         <StackPanel Orientation="Horizontal">
                             <m3:M3Icon Kind="refresh" Width="17" Height="17" VerticalAlignment="Center"/>
                             <TextBlock Text="{loc:Loc nav.panel.update}" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <m3:M3Icon Kind="information-outline" Width="17" Height="17" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc nav.panel.about}" Margin="9,0,0,0" VerticalAlignment="Center"/>
                         </StackPanel>
                     </ListBoxItem>
                 </views:SideNavList>
@@ -128,6 +134,8 @@
             <local:BackupPanel x:Name="BackupPanelControl" Visibility="Collapsed"/>
             <local:AiPanel x:Name="AiPanelControl" Visibility="Collapsed"/>
             <local:UpdatePanel x:Name="UpdatePanelControl" Visibility="Collapsed"/>
+            <!-- 关于（收尾项）：应用名称与版本 + 项目仓库 -->
+            <local:AboutPanel x:Name="AboutPanelControl" Visibility="Collapsed"/>
         </Grid>
 
         <!-- 导出进度遮罩层 -->

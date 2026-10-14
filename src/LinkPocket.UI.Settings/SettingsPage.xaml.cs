@@ -31,6 +31,8 @@ namespace LinkPocket.Views
             BackupPanelControl.RefreshAfterImportAsync = refreshAfterImportAsync;
             if (assistant is not null) AiPanelControl.Configure(assistant);
             if (updates is not null) UpdatePanelControl.Configure(updates);
+            // 「关于」的版本号与更新面板同源（运行中程序的产品版本；未注入时保留程序集版本回退）
+            AboutPanelControl.SetVersion(updates?.CurrentVersion);
         }
 
         private EngineClient Api { get; set; } = null!;
@@ -79,7 +81,7 @@ namespace LinkPocket.Views
             }
         }
 
-        /// <summary>左栏五项：0 = 外观（决策 6 排第一），1 = 存储管理，2 = 备份与恢复，3 = AI，4 = 更新。</summary>
+        /// <summary>左栏六项：0 = 外观（决策 6 排第一），1 = 存储管理，2 = 备份与恢复，3 = AI，4 = 更新，5 = 关于（收尾）。</summary>
         private void SettingListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             AppearancePanelControl.Visibility = Visibility.Collapsed;
@@ -87,6 +89,7 @@ namespace LinkPocket.Views
             BackupPanelControl.Visibility = Visibility.Collapsed;
             AiPanelControl.Visibility = Visibility.Collapsed;
             UpdatePanelControl.Visibility = Visibility.Collapsed;
+            AboutPanelControl.Visibility = Visibility.Collapsed;
 
             if (SettingListBox.SelectedIndex == 0)
             {
@@ -106,6 +109,8 @@ namespace LinkPocket.Views
                 // 入口对齐：消费上次更新结果 + 反映后台自动检查的产物（不重跑检查）
                 UpdatePanelControl.Refresh();
             }
+            else if (SettingListBox.SelectedIndex == 5)
+                AboutPanelControl.Visibility = Visibility.Visible;
 
             if (SettingListBox.SelectedIndex != 2)
                 BackupPanelControl.ResetState();

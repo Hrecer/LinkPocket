@@ -63,9 +63,11 @@ public class ActionSurfaceModel : INotifyPropertyChanged
     public string RestoreIconKind { get; protected set; } = "restore";
     public PillTone RestoreTone { get; protected set; } = PillTone.Primary;
 
-    /// <summary>「还原到根目录」文案 / 提示 / 图标 / 色调。</summary>
-    public LocValue RestoreToRootLabel { get; protected set; } = Loc.K("trash.restoreToRoot");
-    public LocValue RestoreToRootToolTip { get; protected set; } = Loc.K("trash.restoreToRoot");
+    /// <summary>「还原到根目录」文案 / 提示 / 图标 / 色调。
+    /// ⚠️ 文案取**动作名键**（`trash.menu.restoreToRoot`，与工具栏 / 右键菜单同一句「还原到根目录」）——
+    /// 不要用 `trash.restoreToRoot`（那是「到根目录」**片段**，只服务状态句「已还原 N 项到根目录」）。</summary>
+    public LocValue RestoreToRootLabel { get; protected set; } = Loc.K("trash.menu.restoreToRoot");
+    public LocValue RestoreToRootToolTip { get; protected set; } = Loc.K("trash.menu.restoreToRoot");
     public string RestoreToRootIconKind { get; protected set; } = "backup-restore";
     public PillTone RestoreToRootTone { get; protected set; } = PillTone.Tonal;
 
@@ -161,8 +163,8 @@ public class ActionSurfaceModel : INotifyPropertyChanged
         RestoreToolTip = Loc.K("trash.restore.tip");
         RestoreIconKind = "restore";
         RestoreTone = PillTone.Primary;
-        RestoreToRootLabel = Loc.K("trash.restoreToRoot");
-        RestoreToRootToolTip = Loc.K("trash.restoreToRoot");
+        RestoreToRootLabel = Loc.K("trash.menu.restoreToRoot");
+        RestoreToRootToolTip = Loc.K("trash.menu.restoreToRoot");
         RestoreToRootIconKind = "backup-restore";
         RestoreToRootTone = PillTone.Tonal;
         JumpLabel = Loc.K("common.jump");
