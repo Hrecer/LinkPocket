@@ -210,6 +210,32 @@ foreach ($asset in $workspaceAssets) {
     else { $missing += $asset.Pattern }
 }
 
+# ---- openapi-lite.json: stamp the product version at pack time ----
+# The catalog is generated from command descriptors; openapi-lite.json carries the assembly
+# version in info.version, so a catalog generated before a version bump would ship a stale
+# number (this zip ships that file). Stamp it here from Directory.Build.props - the single
+# source of truth for the product version - so a release never depends on regenerating the
+# catalog first. The drift check (LinkPocket.CatalogExport --check) ignores this line for the
+# same reason: version bumps must not read as descriptor drift.
+$openapi = Join-Path $out "openapi-lite.json"
+if (Test-Path -LiteralPath $openapi) {
+    $propsXml = [xml](Get-Content -LiteralPath (Join-Path $repoRoot "Directory.Build.props") -Raw)
+    $versionNode = $propsXml.SelectSingleNode("//Version")
+    $productVersion = if ($versionNode) { [string]$versionNode.InnerText } else { "" }
+    if (-not $productVersion) {
+        Write-Host "[PACK] REFUSING to package: cannot read <Version> from Directory.Build.props" -ForegroundColor Red
+        exit 1
+    }
+    $json = [System.IO.File]::ReadAllText($openapi)
+    $stamped = [regex]::Replace($json, '"version"\s*:\s*"[^"]*"', '"version": "' + $productVersion + '"', 1)
+    if (-not $stamped.Contains('"version": "' + $productVersion + '"')) {
+        Write-Host "[PACK] REFUSING to package: openapi-lite.json info.version not stamped" -ForegroundColor Red
+        exit 1
+    }
+    [System.IO.File]::WriteAllText($openapi, $stamped, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "[PACK] openapi-lite.json info.version -> $productVersion"
+}
+
 # ---- pointer page (ASCII only) ----
 $agents = @'
 # LinkPocket - delivery folder (no source code required)
