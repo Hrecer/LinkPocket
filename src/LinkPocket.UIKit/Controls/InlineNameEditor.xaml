@@ -31,11 +31,16 @@
                                 Background="{DynamicResource App.Surface.Hover}"
                                 BorderThickness="2" BorderBrush="{DynamicResource App.Accent.Fill}"
                                 SnapsToDevicePixels="True">
-                            <ScrollViewer x:Name="PART_ContentHost"
-                                          Margin="{TemplateBinding Padding}"
-                                          VerticalAlignment="Center" Focusable="False"
-                                          HorizontalScrollBarVisibility="Hidden"
-                                          VerticalScrollBarVisibility="Hidden"/>
+                            <!-- ⚠️ 内容默认**顶到内区上沿**：字号 13.5 的 Noto 行盒 ≈19.5px，而盒内区（Height 20 - 描边 4）= 16px，
+                                 行盒被裁到 16 之后文字重心比盒中心低 ~1.8px（用户实测"改名时框里的字往下漂"）。
+                                 这里给内容一个**不参与测量**的 -2px 上移（Grid 负 margin），把文字对回盒中心。 -->
+                            <Grid Margin="0,-2,0,0">
+                                <ScrollViewer x:Name="PART_ContentHost"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center" Focusable="False"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Hidden"/>
+                            </Grid>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>

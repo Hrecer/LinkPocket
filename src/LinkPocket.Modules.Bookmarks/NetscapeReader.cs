@@ -22,7 +22,8 @@ internal static class NetscapeReader
     private const int MaxLinkUrlLength = 2048;
     // 这里没有 favicon 的长度上限：图标值由 FaviconCache.NormalizeExternalIcon 判定
     // （"原样可用 or 当它没有"），本解析器只负责原样取出 ICON / ICON_URI 属性值。
-    private const int MaxNestingDepth = 64;
+    // 嵌套层数**没有上限**（2026-10-15 移除旧 64 层截断）：解析改显式栈迭代（见 ParseEntries），
+    // 唯一的规模边界 = 文件字节上限（MaxFileBytes）。
 
     /// <summary>外部输入上限：书签 HTML 的字节数（10k 条实测约 2MB，64MB = 30 倍余量）。</summary>
     private const long MaxFileBytes = 64L * 1024 * 1024;
@@ -130,41 +131,41 @@ internal static class NetscapeReader
         return doc;
     }
 
-    /// <summary>在 [start,end) 区间内解析 &lt;DT&gt; 条目；文件夹递归进入其子 &lt;DL&gt;。整体复杂度 O(n)。</summary>
+    /// <summary>
+    /// 在 [start,end) 区间内解析 &lt;DT&gt; 条目；文件夹进入其子 &lt;DL&gt;。整体复杂度 O(n)。
+    /// <para><b>显式栈迭代</b>（2026-10-15）：嵌套层数不设上限——旧实现在 64 层直接丢弃更深内容
+    /// （用户实测"层级被截断"）；放开上限后深嵌套文件若仍走方法递归，数万层会把调用栈打爆
+    /// （StackOverflowException 无法 catch，只能靠显式栈防）。帧 = 一段待扫描区间 + 父条目下标 + 层级。</para>
+    /// </summary>
     private static void ParseEntries(string s, int start, int end, int parentIndex, int depth, ParsedDocument doc)
     {
-        if (depth > MaxNestingDepth)
+        var stack = new Stack<ParseFrame>();
+        stack.Push(new ParseFrame(start, end, parentIndex, depth));
+        while (stack.Count > 0)
         {
-            if (!doc.DepthLimitWarned)   // 超出嵌套上限不静默丢弃：告警一次，避免对每个深层条目重复刷屏
-            {
-                doc.Warnings.Add($"folder nesting exceeded the maximum depth {MaxNestingDepth}, the excess was ignored");
-                doc.DepthLimitWarned = true;
-            }
-            return;
-        }
+            var frame = stack.Peek();
+            if (frame.Pos >= frame.End) { stack.Pop(); continue; }
 
-        var pos = start;
-        while (pos < end)
-        {
-            var dt = IndexOfOpenTag(s, "DT", pos, end);
-            if (dt < 0) break;
+            var pos = frame.Pos;
+            var dt = IndexOfOpenTag(s, "DT", pos, frame.End);
+            if (dt < 0) { stack.Pop(); continue; }
 
-            var afterDt = FindTagEnd(s, dt, end);
-            if (afterDt < 0) break;
+            var afterDt = FindTagEnd(s, dt, frame.End);
+            if (afterDt < 0) { stack.Pop(); continue; }
 
-            var p = SkipWhitespace(s, afterDt, end);
-            if (p >= end) break;
+            var p = SkipWhitespace(s, afterDt, frame.End);
+            if (p >= frame.End) { stack.Pop(); continue; }
 
             // —— 文件夹条目：<DT><H3>…</H3> [<DL>…</DL>] ——
-            if (StartsWithTag(s, p, end, "H3"))
+            if (StartsWithTag(s, p, frame.End, "H3"))
             {
-                var openEnd = FindTagEnd(s, p, end);
-                if (openEnd < 0) break;
+                var openEnd = FindTagEnd(s, p, frame.End);
+                if (openEnd < 0) { stack.Pop(); continue; }
 
-                var close = IndexOfCloseTag(s, "H3", openEnd, end);
+                var close = IndexOfCloseTag(s, "H3", openEnd, frame.End);
                 if (close < 0)
                 {
-                    pos = openEnd;
+                    frame.Pos = openEnd;
                     continue;
                 }
                 var closeEnd = close + "</H3>".Length;
@@ -175,8 +176,8 @@ internal static class NetscapeReader
                 {
                     IsFolder = true,
                     Title = string.IsNullOrWhiteSpace(title) ? "Untitled folder" : title.Trim(),
-                    ParentIndex = parentIndex,
-                    Depth = depth + 1,
+                    ParentIndex = frame.ParentIndex,
+                    Depth = frame.Depth + 1,
                     AddDate = ParseUnixSeconds(GetAttr(attrs, "ADD_DATE")),
                     LastModified = ParseUnixSeconds(GetAttr(attrs, "LAST_MODIFIED")),
                 };
@@ -187,31 +188,32 @@ internal static class NetscapeReader
                 if (item.Depth > doc.MaxDepth) doc.MaxDepth = item.Depth;   // 根级文件夹 = 1
 
                 // 子 DL 必须紧跟 </H3>（只允许空白）：否则空文件夹会抢走兄弟的子树
-                var q = SkipWhitespace(s, closeEnd, end);
-                if (StartsWithTag(s, q, end, "DL"))
+                var q = SkipWhitespace(s, closeEnd, frame.End);
+                if (StartsWithTag(s, q, frame.End, "DL"))
                 {
-                    var dlOpenEnd = FindTagEnd(s, q, end);
-                    var dlClose = dlOpenEnd > 0 ? FindMatchingDlClose(s, dlOpenEnd, end) : -1;
+                    var dlOpenEnd = FindTagEnd(s, q, frame.End);
+                    var dlClose = dlOpenEnd > 0 ? FindMatchingDlClose(s, dlOpenEnd, frame.End) : -1;
                     if (dlClose > 0)
                     {
-                        ParseEntries(s, dlOpenEnd, dlClose, myIndex, depth + 1, doc);
-                        pos = SkipParagraphTags(s, dlClose + "</DL>".Length, end);
+                        // 父帧先记下"子树之后的续扫位置"，再把子树压栈（先扫子树，回来续父）
+                        frame.Pos = SkipParagraphTags(s, dlClose + "</DL>".Length, frame.End);
+                        stack.Push(new ParseFrame(dlOpenEnd, dlClose, myIndex, frame.Depth + 1));
                         continue;
                     }
                     doc.Warnings.Add($"the child list of folder '{item.Title}' was never closed, its subtree may be partially parsed");
                 }
 
-                pos = closeEnd;
+                frame.Pos = closeEnd;
                 continue;
             }
 
             // —— 书签条目：<DT><A HREF="…">标题</A> [<DD>描述] ——
-            if (StartsWithTag(s, p, end, "A"))
+            if (StartsWithTag(s, p, frame.End, "A"))
             {
-                var openEnd = FindTagEnd(s, p, end);
-                if (openEnd < 0) break;
+                var openEnd = FindTagEnd(s, p, frame.End);
+                if (openEnd < 0) { stack.Pop(); continue; }
 
-                var close = IndexOfCloseTag(s, "A", openEnd, end);
+                var close = IndexOfCloseTag(s, "A", openEnd, frame.End);
                 var textEnd = close >= 0 ? close : openEnd;
                 var closeEnd = close >= 0 ? close + "</A>".Length : openEnd;
 
@@ -224,18 +226,19 @@ internal static class NetscapeReader
 
                 // <DD> 描述（出现在下一条 <DT> 或 </DL> 之前）
                 string? description = null;
-                var dd = SkipWhitespace(s, pos, end);
-                if (StartsWithTag(s, dd, end, "DD"))
+                var dd = SkipWhitespace(s, pos, frame.End);
+                if (StartsWithTag(s, dd, frame.End, "DD"))
                 {
-                    var ddOpenEnd = FindTagEnd(s, dd, end);
+                    var ddOpenEnd = FindTagEnd(s, dd, frame.End);
                     if (ddOpenEnd > 0)
                     {
-                        var ddEnd = FindNextEntryBoundary(s, ddOpenEnd, end);
+                        var ddEnd = FindNextEntryBoundary(s, ddOpenEnd, frame.End);
                         description = DecodeHtml(StripTags(Slice(s, ddOpenEnd, ddEnd))).Trim();
                         if (description.Length == 0) description = null;
                         pos = ddEnd;
                     }
                 }
+                frame.Pos = pos;
 
                 if (string.IsNullOrWhiteSpace(href) || href.Trim().Equals("about:blank", StringComparison.OrdinalIgnoreCase))
                 {
@@ -250,8 +253,8 @@ internal static class NetscapeReader
                     Url = href.Trim(),
                     Description = description,
                     IconUrl = DecodeOptionalAttr(attrs, "ICON") ?? DecodeOptionalAttr(attrs, "ICON_URI"),
-                    ParentIndex = parentIndex,
-                    Depth = depth + 1,
+                    ParentIndex = frame.ParentIndex,
+                    Depth = frame.Depth + 1,
                     AddDate = ParseUnixSeconds(GetAttr(attrs, "ADD_DATE")),
                     LastModified = ParseUnixSeconds(GetAttr(attrs, "LAST_MODIFIED")),
                 });
@@ -260,8 +263,17 @@ internal static class NetscapeReader
             }
 
             // 其他 <DT> 内容（如 <DT><HR>）→ 跳过该条目继续
-            pos = afterDt;
+            frame.Pos = afterDt;
         }
+    }
+
+    /// <summary>解析帧（显式栈用）：一段待扫描区间 + 父条目下标 + 层级 + 当前扫描位置。</summary>
+    private sealed class ParseFrame(int start, int end, int parentIndex, int depth)
+    {
+        public int Pos = start;
+        public readonly int End = end;
+        public readonly int ParentIndex = parentIndex;
+        public readonly int Depth = depth;
     }
 
     // ============================================================
@@ -585,8 +597,5 @@ internal static class NetscapeReader
         public int LinkCount { get; set; }
         public int SkippedCount { get; set; }
         public int MaxDepth { get; set; }
-
-        /// <summary>超深嵌套告警只投递一次（防止病态深层输入造成大量重复告警）。</summary>
-        internal bool DepthLimitWarned { get; set; }
     }
 }

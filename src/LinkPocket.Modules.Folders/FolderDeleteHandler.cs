@@ -71,6 +71,18 @@ internal sealed class FolderDeleteHandler : ICommandHandler
 
         var trashedLinkCount = 0;
         var diff = new List<FieldChange>();
+        // 子树搬运含 **set-based SQL**（回收站镜像/物理删除；见 TrashLinksOfFoldersAsync）——
+        // raw SQL 没有"待提交"这回事，必须与 EF 登记同属一个显式事务：没有外层事务（干跑/事务批自开）就自建，
+        // 否则 raw SQL 先自动提交、后续 EF 失败会留下"半搬"状态（文件夹还在、链接已清）。
+        var ownsTx = !uow.HasActiveTransaction;
+        ITransactionScope? tx = null;
+        if (ownsTx)
+        {
+            tx = uow.BeginTransaction();
+            await tx.BeginAsync(ct);
+        }
+        try
+        {
         switch (cascade)
         {
             case "delete_all":
@@ -111,6 +123,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             default: // trash_links：整子树镜像进回收站
                 var trashedAt = DateTime.UtcNow;
                 var subtreeIdSet = subtreeFolders.Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
+                var folderPaths = new List<(string FolderId, string OriginPath)>(subtreeFolders.Count);
 
                 foreach (var f in subtreeFolders)
                 {
@@ -126,6 +139,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                             correlationId: ctx.CorrelationId));
 
                     diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));   // 删除 = 原位置与身份快照
+                    var folderPath = await PathOfAsync(new FolderId(f.FolderId));
+                    folderPaths.Add((f.FolderId, folderPath));
                     _ = await uow.Trash.AddFolderAsync(new TrashedFolder
                     {
                         TrashFolderId = f.FolderId,   // 回收站保留原 ID
@@ -133,7 +148,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         Name = f.Name,
                         OriginFolderId = f.FolderId,
                         OriginParentFolderId = f.ParentId,   // v5：原父目录（原位还原的数据依据；NULL = 原在根）
-                        OriginPath = await PathOfAsync(new FolderId(f.FolderId)),
+                        OriginPath = folderPath,
                         Description = f.Description,
                         SortOrder = f.SortOrder,
                         CreatedAt = f.CreatedAt,
@@ -143,29 +158,12 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                     }, ct);
                 }
 
+                // 链接搬运走 set-based SQL（一个目录一条 INSERT..SELECT + 一条 DELETE）：
+                // 万行子树逐行 EF 登记实测 2s+（快照对象 + 跟踪器 + 提交批），本路径只留 SQL 一层；
+                // **快照列逐列一致**（UpdatedAt = 本次删除时刻、OriginPath = 所在目录路径、trash_folder_id = 原目录）。
+                trashedLinkCount = await uow.Trash.TrashLinksOfFoldersAsync(folderPaths, trashedAt, ct);
                 foreach (var link in affectedLinks)
-                {
-                    diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));   // 进回收站 = 原位置与身份快照
-                    _ = await uow.Trash.AddLinkAsync(new TrashedLink
-                    {
-                        LinkId = link.LinkId,
-                        Url = link.Url,
-                        Title = link.Title,
-                        Description = link.Description,
-                        FaviconUrl = link.FaviconUrl,
-                        TrashFolderId = link.ListId,
-                        OriginListId = link.ListId,
-                        OriginPath = await PathOfAsync(link.ListId == null ? null : new FolderId(link.ListId)),
-                        LastVisitedAt = link.LastVisitedAt,
-                        VisitCount = link.VisitCount,
-                        IsImportant = link.IsImportant,
-                        DeletedAt = trashedAt,
-                        CreatedAt = link.CreatedAt,
-                        UpdatedAt = DateTime.UtcNow,
-                    }, ct);
-                    trashedLinkCount++;
-                }
-                await uow.Links.RemoveRangeAsync(affectedLinks, ct);   // 批量登记删除（逐条 RemoveAsync = 每行一条 SELECT）
+                    diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));   // 进回收站 = 原位置与身份快照（审计/撤销台账口径不变）
 
                 await uow.Folders.RemoveRangeAsync(subtreeFolders, ct);
                 break;
@@ -176,6 +174,25 @@ internal sealed class FolderDeleteHandler : ICommandHandler
             folder.ParentId == null ? null : new FolderId(folder.ParentId), ct);
         if (cascade == "move_to_list" && !string.IsNullOrEmpty(targetListId))
             await uow.Trees.TouchModifiedAsync(new FolderId(targetListId), ct);
+
+        if (ownsTx)
+        {
+            await uow.CommitAsync(ct);   // EF 登记（回收站单元行 / 文件夹删除 / 计数触碰）
+            await tx!.CommitAsync(ct);   // 连同 raw SQL 一起提交（同提同滚）
+        }
+        }
+        catch
+        {
+            if (ownsTx && tx != null)
+            {
+                try { await tx.RollbackAsync(ct); } catch { /* 回滚失败不覆盖原始异常 */ }
+            }
+            throw;
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
+        }
 
         var events = new List<string> { LinkPocket.Contracts.DomainEventNames.FoldersChanged, LinkPocket.Contracts.DomainEventNames.LinksChanged };
         if (cascade == "trash_links") events.Add(LinkPocket.Contracts.DomainEventNames.TrashChanged);

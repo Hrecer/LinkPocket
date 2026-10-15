@@ -102,6 +102,8 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public ITransactionScope BeginTransaction()
         => new EfTransactionScope(new Lazy<Task<IDbContextTransaction>>(() => _db.Database.BeginTransactionAsync()));
 
+    public bool HasActiveTransaction => _db.Database.CurrentTransaction is not null;
+
     public ValueTask DisposeAsync() => _db.DisposeAsync();
 }
 

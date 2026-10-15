@@ -153,7 +153,7 @@ public class SchemaMigratorTests
                 "('origin_parent_folder_id','description','sort_order','created_at','last_visited_at','visit_count')"));
         }
 
-        // 索引集合 = 定稿的完整清单（性能索引 + 同层唯一约束 + 回收站排序索引）
+        // 索引集合 = 定稿的完整清单（性能索引 + 同层唯一约束 + 回收站排序索引 + 目录页排序复合索引）
         Assert.Equal(
             new[]
             {
@@ -161,6 +161,12 @@ public class SchemaMigratorTests
                 "idx_folders_parent_name",
                 "idx_links_created",
                 "idx_links_folder",
+                "idx_links_folder_created",
+                "idx_links_folder_lastvisit",
+                "idx_links_folder_lastvisit_desc",
+                "idx_links_folder_title",
+                "idx_links_folder_updated",
+                "idx_links_folder_visits",
                 "idx_links_last_visited",
                 "idx_links_updated",
                 "idx_links_url",
@@ -171,6 +177,56 @@ public class SchemaMigratorTests
                 "idx_trash_links_folder",
             },
             IndexNames(dbPath));
+
+        // 上表**同时**钉住两件事：① 新库（基线 DDL）建出的索引集合 = 定稿清单；
+        // ② 定稿清单里每条热索引都在其中（基线漏一条、或 HotIndexDdl 多一条都会红）。
+        foreach (var hot in SchemaMigrator.HotIndexDdl)
+        {
+            var name = hot.Split(" ON ")[0].Split(' ')[^1];
+            Assert.Contains(name, IndexNames(dbPath));
+        }
+        Assert.Equal(SchemaMigrator.HotIndexDdl.Count, SchemaMigrator.HotIndexDdl.Distinct().Count());
+    }
+
+    [Fact]
+    public void EnsureSchema_OldSameEpoch_Database_Gets_Hot_Indexes()
+    {
+        // 同纪元老库（没有后加的复合索引）开库时由 EnsureHotIndexes **幂等补齐**——不升纪元（索引不改表形状）。
+        // ⚠️ EnsureSchema 有进程内"已核验"快路径：必须把"老库"落成**新路径**再开会走完整检查（同一路径二次调用会被缓存短路）
+        var oldPath = TempDbPath();
+        SchemaMigrator.EnsureSchema(oldPath);
+        using (var conn = new SqliteConnection($"Data Source={oldPath}"))
+        {
+            conn.Open();
+            foreach (var hot in SchemaMigrator.HotIndexDdl)   // 模拟老库：把热索引全部删掉
+            {
+                var name = hot.Split(" ON ")[0].Split(' ')[^1];
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DROP INDEX IF EXISTS {name};";
+                cmd.ExecuteNonQuery();
+            }
+        }
+        SqliteConnection.ClearAllPools();
+
+        var relocated = TempDbPath();   // 换一个路径 = 新开库（不命中进程内快路径）
+        File.Copy(oldPath, relocated, overwrite: true);
+        try
+        {
+            SchemaMigrator.EnsureSchema(relocated);   // 重新开库 = 走 ensure 分支
+
+            var names = IndexNames(relocated);
+            foreach (var hot in SchemaMigrator.HotIndexDdl)
+            {
+                var name = hot.Split(" ON ")[0].Split(' ')[^1];
+                Assert.Contains(name, names);
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(oldPath)) File.Delete(oldPath);
+            if (File.Exists(relocated)) File.Delete(relocated);
+        }
     }
 
     /// <summary>

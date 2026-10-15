@@ -20,7 +20,8 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
 
         // 记忆化递归：原先「每个有直接链接的文件夹都独立沿父链上溯累加」复杂度 O(N×深度)，
         // 链式树形下退化为 O(N²)；这里把递归计数定义为 count(x) = direct[x] + Σ count(子)，
-        // 每个节点恰好计算一次 → 整体 O(N)（文件夹数量级下递归深度受用户建树能力限制，安全）。
+        // 每个节点恰好计算一次 → 整体 O(N)。**用显式栈做后序**（2026-10-15）：
+        // 目录树深度不设上限，方法递归在数万层深树上会打爆调用栈（StackOverflow 无法 catch）。
         var children = parents
             .Where(kv => kv.Value is not null)
             .GroupBy(kv => kv.Value!)
@@ -28,25 +29,39 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
 
         var recursive = new Dictionary<string, int>(StringComparer.Ordinal);
         var memo = new Dictionary<string, int>(StringComparer.Ordinal);
-        var visiting = new HashSet<string>(StringComparer.Ordinal);   // 环保护（坏数据不无限递归，也不把环上重复节点多算一次）
+        var onStack = new HashSet<string>(StringComparer.Ordinal);   // 环保护（坏数据不无限递归，也不把环上重复节点多算一次）
 
-        int CountRecursive(string id)
+        foreach (var rootId in parents.Keys)
         {
-            if (memo.TryGetValue(id, out var cached)) return cached;
-            if (!visiting.Add(id)) return 0;   // 环内重复访问：环上节点的计数值由首次进入的路径累加
-
-            var total = direct.TryGetValue(new FolderId(id), out var dc) ? dc : 0;
-            if (children.TryGetValue(id, out var kids))
-                foreach (var kid in kids)
-                    total += CountRecursive(kid);
-
-            visiting.Remove(id);
-            memo[id] = total;
-            return total;
+            if (memo.ContainsKey(rootId)) continue;
+            var work = new Stack<(string Id, bool Expanded)>();
+            work.Push((rootId, false));
+            while (work.Count > 0)
+            {
+                var (id, expanded) = work.Pop();
+                if (memo.ContainsKey(id)) continue;
+                if (expanded)
+                {
+                    var total = direct.TryGetValue(new FolderId(id), out var dc) ? dc : 0;
+                    if (children.TryGetValue(id, out var kids))
+                        foreach (var kid in kids)
+                            if (memo.TryGetValue(kid, out var kidTotal)) total += kidTotal;   // 在环上未算的子项按 0 计
+                    memo[id] = total;
+                    onStack.Remove(id);
+                    continue;
+                }
+                if (onStack.Contains(id)) continue;   // 回边（环）：不再下行
+                onStack.Add(id);
+                work.Push((id, true));
+                if (children.TryGetValue(id, out var kids2))
+                    foreach (var kid in kids2)
+                        if (!memo.ContainsKey(kid) && !onStack.Contains(kid))
+                            work.Push((kid, false));
+            }
         }
 
         foreach (var id in parents.Keys)
-            recursive[id] = CountRecursive(id);
+            recursive[id] = memo[id];
 
         return new FolderLinkCounts(
             direct,

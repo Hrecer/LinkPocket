@@ -48,12 +48,12 @@ internal static class FolderViewCore
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
             dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
             dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
-            dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            dto.Links = (await ctx.Uow.Links.ListDtosAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { Unfiled = true },
                 Sort = sort,
                 Page = new PageSpec(page, effectivePerPage),
-            }, ct)).Select(l => l.ToDto()).ToList();
+            }, ct)).ToList();
             dto.CurrentPage = page;
             dto.LastPage = perPage > 0
                 ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
@@ -69,12 +69,12 @@ internal static class FolderViewCore
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
             dto.DirectLinkCount = counts.Direct.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
             dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
-            dto.Links = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            dto.Links = (await ctx.Uow.Links.ListDtosAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { FolderId = new FolderId(folderId!) },
                 Sort = sort,
                 Page = new PageSpec(page, effectivePerPage),
-            }, ct)).Select(l => l.ToDto()).ToList();
+            }, ct)).ToList();
             dto.CurrentPage = page;
             // 总页数由直接子链接计数推出（SQL 端 COUNT，无需把全部行拉回来数）
             dto.LastPage = perPage > 0

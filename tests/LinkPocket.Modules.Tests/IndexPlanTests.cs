@@ -55,6 +55,15 @@ public class IndexPlanTests
     // 子树范围取链接（folders.delete / 复合操作的受影响链接；EF 把集合参数翻译成 json_each）——
     // 必须命中 idx_links_folder，绝不能退化成全表扫描
     [InlineData("SELECT id FROM links WHERE folder_id IS NOT NULL AND folder_id IN (SELECT value FROM json_each('[\"F1\",\"F2\"]'))", "idx_links_folder")]
+    // 目录页取一页（folders.contents / overview 的取数形态）：**排序列必须走复合索引**——
+    // 缺匹配索引时 SQLite 要取回整个目录再排序（100K 库 9 万条目录实测 43ms/页，命中后 0.1ms 级）
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY title COLLATE NOCASE, id LIMIT 2000", "idx_links_folder_title")]
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY created_at, id LIMIT 2000", "idx_links_folder_created")]
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY updated_at DESC, id DESC LIMIT 2000", "idx_links_folder_updated")]
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY visit_count DESC, id DESC LIMIT 2000", "idx_links_folder_visits")]
+    // 「为空恒排最后」的判空前置子句（(col IS NULL) ASC 恒在前）→ 正/倒序各一支表达式索引
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY (last_visited_at IS NULL), last_visited_at, id LIMIT 2000", "idx_links_folder_lastvisit")]
+    [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY (last_visited_at IS NULL), last_visited_at DESC, id DESC LIMIT 2000", "idx_links_folder_lastvisit_desc")]
     // 按目录分组计数（links.stats.ByFolder / folders 递归计数）
     [InlineData("SELECT folder_id, COUNT(*) FROM links WHERE folder_id IS NOT NULL GROUP BY folder_id", "idx_links_folder")]
     // 精确 URL（links.find_by_url / dedup 分组）

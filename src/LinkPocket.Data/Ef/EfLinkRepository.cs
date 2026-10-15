@@ -26,18 +26,50 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         return pending is not null && db.Entry(pending).State == EntityState.Added ? pending : null;
     }
 
-    public async Task<IReadOnlyList<Link>> ListAsync(LinkQuerySpec spec, CancellationToken ct)
+    /// <summary>过滤 + 排序（含 ID 兜底）+ 分页 的统一构建（ListAsync / ListDtosAsync 共用，规则只此一份）。</summary>
+    private IQueryable<Link> BuildPageQuery(LinkQuerySpec spec)
     {
         IQueryable<Link> q = db.Links.AsNoTracking();
         q = ApplyFilter(q, spec.Filter);
 
         // 排序经 ISortEngine 白名单下推；缺省 = 名称升序 + ID 兜底
         q = EfSortEngine.Instance.Apply(q, spec.Sort, EfSortEngine.LinkFields);
-        // ID 兜底恒追加：任意非唯一排序字段下 Skip/Take 分页仍稳定（翻页不重不漏）
-        q = ((IOrderedQueryable<Link>)q).ThenBy(l => l.LinkId);
+        // ID 兜底恒追加、**方向随最后一条排序**：任意非唯一排序字段下 Skip/Take 分页仍稳定（翻页不重不漏），
+        // 同时让 `(folder_id, 列, id)` 复合索引**倒序扫**也整段命中排序——
+        // 混合方向（列 DESC, id ASC）没有索引可依，会退化成"取回整个目录再排序"（100K 实测 43ms/页）。
+        var lastDir = spec.Sort.Count > 0 ? spec.Sort[^1].Dir : SortDir.Asc;
+        q = lastDir == SortDir.Desc
+            ? ((IOrderedQueryable<Link>)q).ThenByDescending(l => l.LinkId)
+            : ((IOrderedQueryable<Link>)q).ThenBy(l => l.LinkId);
 
         if (spec.Page.Size > 0)
             q = q.Skip(spec.Page.Skip).Take(spec.Page.Size);
+        return q;
+    }
+
+    /// <summary>分页**直出 DTO**（服务端投影）：与 <c>ToDto()</c> 逐字段同口径，但不物化实体——
+    /// 目录页每帧 2000 行的取数形态；实体物化 + 再映射那份开销在这里省掉（100K 实测省 ~35ms/页）。</summary>
+    public async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDtosAsync(LinkQuerySpec spec, CancellationToken ct)
+        => await BuildPageQuery(spec)
+            .Select(l => new LinkPocket.Contracts.LinkDto
+            {
+                LinkId = l.LinkId,
+                Url = l.Url,
+                Title = l.Title ?? string.Empty,
+                Description = l.Description ?? string.Empty,
+                FaviconUrl = l.FaviconUrl ?? string.Empty,
+                ListId = l.ListId,
+                LastVisitedAt = l.LastVisitedAt,
+                VisitCount = l.VisitCount,
+                IsImportant = l.IsImportant,
+                CreatedAt = l.CreatedAt,
+                UpdatedAt = l.UpdatedAt,
+            })
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Link>> ListAsync(LinkQuerySpec spec, CancellationToken ct)
+    {
+        var q = BuildPageQuery(spec);
 
         return await q.ToListAsync(ct);
     }

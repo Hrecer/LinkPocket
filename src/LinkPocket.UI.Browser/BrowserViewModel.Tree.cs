@@ -116,15 +116,18 @@ public partial class BrowserViewModel
     private static void CollectLoadedLeaves(IEnumerable<FolderNode> nodes,
         List<(string? FolderId, List<FolderNode> Leaves, DateTime Version)> into)
     {
-        foreach (var node in nodes)
+        // 显式栈（深度不设上限：深目录树的方法递归会打爆调用栈）
+        var stack = new Stack<FolderNode>(nodes);
+        while (stack.Count > 0)
         {
+            var node = stack.Pop();
             if (node.IsLink) continue;
             if (node.LinksLoaded)
             {
                 var leaves = node.Children.Where(c => c.IsLink).ToList();
                 if (leaves.Count > 0) into.Add((node.FolderId, leaves, node.LeavesVersion));
             }
-            CollectLoadedLeaves(node.Children, into);
+            foreach (var child in node.Children) stack.Push(child);
         }
     }
 
@@ -236,10 +239,13 @@ public partial class BrowserViewModel
 
     private static void CollectExpandedIds(IEnumerable<FolderNode> nodes, HashSet<string?> ids)
     {
-        foreach (var node in nodes)
+        // 显式栈（同 CollectLoadedLeaves：深树不爆栈）
+        var stack = new Stack<FolderNode>(nodes);
+        while (stack.Count > 0)
         {
+            var node = stack.Pop();
             if (node.IsExpanded && node.FolderId != null) ids.Add(node.FolderId);
-            CollectExpandedIds(node.Children, ids);
+            foreach (var child in node.Children) stack.Push(child);
         }
     }
 

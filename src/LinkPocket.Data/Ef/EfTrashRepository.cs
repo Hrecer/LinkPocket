@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using LinkPocket.Kernel;
 
@@ -72,7 +73,6 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
 
     /// <summary>本上下文是否走过 SQL 命中的 RemoveLink（语义同 <c>EfLinkRepository._removed</c>）。</summary>
     private bool _removedLinks;
-
     /// <summary>本上下文是否走过 SQL 命中的 RemoveFolder（语义同上）。</summary>
     private bool _removedFolders;
 
@@ -132,5 +132,36 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
             db.TrashedFolders.Remove(unit);
             _removedFolders = true;   // 出现同 key 待删实例 → 后续 AddFolderAsync 才需要接管扫描
         }
+    }
+
+    public async Task<int> TrashLinksOfFoldersAsync(IReadOnlyList<(string FolderId, string OriginPath)> folders,
+        DateTime deletedAt, CancellationToken ct)
+    {
+        // set-based 整目录搬运（删除文件夹的整树级联专用）：一个目录 = 一条 INSERT..SELECT + 一条 DELETE。
+        // 快照列与 TrashedLink 的 EF 写入口径**逐列一致**（含 UpdatedAt = 本次删除时刻、OriginPath = 所在目录路径）；
+        // 调用方必须已开事务（本方法不做事务管理——见 IUnitOfWork.HasActiveTransaction 的约定）。
+        var moved = 0;
+        var now = DateTime.UtcNow;
+        foreach (var (folderId, originPath) in folders)
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO trash_links (id, url, title, description, favicon_url, trash_folder_id, origin_folder_id,
+                                         origin_path, last_visited_at, visit_count, is_important, deleted_at, created_at, updated_at)
+                SELECT id, url, title, description, favicon_url, folder_id, folder_id,
+                       @origin_path, last_visited_at, visit_count, is_important, @deleted_at, created_at, @updated_at
+                FROM links WHERE folder_id = @folder_id
+                """,
+                [
+                    new SqliteParameter("@origin_path", (object?)originPath ?? DBNull.Value),
+                    new SqliteParameter("@deleted_at", deletedAt),
+                    new SqliteParameter("@updated_at", now),
+                    new SqliteParameter("@folder_id", folderId),
+                ]);
+            moved += await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM links WHERE folder_id = @folder_id",
+                [new SqliteParameter("@folder_id", folderId)]);
+        }
+        return moved;
     }
 }

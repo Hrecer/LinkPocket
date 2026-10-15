@@ -61,16 +61,19 @@ internal static class FolderSupport
         return ordered.ThenBy(f => f.Name, NameOrder.Comparer).ToList();
     }
 
-    /// <summary>面包屑：「全部书签 / A / B」（与既有 BuildBreadcrumb 逐条等价）。</summary>
+    /// <summary>面包屑：「全部书签 / A / B」（与既有 BuildBreadcrumb 逐条等价）。
+    /// 深度**无上限**（2026-10-15 移除旧 50 层截断——深嵌套目录的面包屑曾在中途静默截断）；
+    /// 环保护 = 访问集（坏数据成环时终止而非死循环）。</summary>
     public static List<string> BuildBreadcrumb(Folder folder, IReadOnlyList<Folder> allFolders)
     {
         var dict = allFolders.ToDictionary(f => f.FolderId);
         var parts = new List<string>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         var currentId = folder.FolderId;
-        for (var i = 0; i < 50 && dict.TryGetValue(currentId, out var f); i++)
+        while (currentId != null && dict.TryGetValue(currentId, out var f) && visited.Add(currentId))
         {
             parts.Insert(0, f.Name);
-            currentId = f.ParentId ?? string.Empty;
+            currentId = f.ParentId;
         }
 
         return new List<string> { FolderIds.RootToken }.Concat(parts).ToList();

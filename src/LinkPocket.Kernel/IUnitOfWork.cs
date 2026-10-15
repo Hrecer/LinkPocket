@@ -41,6 +41,10 @@ public interface IUnitOfWork : IAsyncDisposable
 
     ITransactionScope BeginTransaction();
 
+    /// <summary>当前是否已有活动事务（干跑 / 事务批会自己开）。处理器要在"没有外层事务"时自建事务
+    /// 包住 raw SQL 与 EF 登记（否则 raw SQL 会先自动提交、后续 EF 失败就留下半搬状态）。</summary>
+    bool HasActiveTransaction { get; }
+
     /// <summary>
     /// 清空全部业务数据（链接 / 文件夹 / 回收站两表）——**单语句批量删除**，供整库重置使用。
     /// 10k 库下逐条 DELETE 是一万次往返；这里是常量条 SQL。

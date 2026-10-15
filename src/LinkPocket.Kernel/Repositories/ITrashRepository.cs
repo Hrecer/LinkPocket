@@ -30,6 +30,16 @@ public interface ITrashRepository
     Task<TrashedLink> AddLinkAsync(TrashedLink snapshot, CancellationToken ct);
     Task RemoveLinkAsync(LinkId id, CancellationToken ct);
 
+    /// <summary>
+    /// **整目录批量入站**（删除文件夹的整树级联专用）：对每个 (目录, 原路径) 执行
+    /// <c>INSERT INTO trash_links SELECT … FROM links WHERE folder_id=?</c> + <c>DELETE FROM links WHERE folder_id=?</c>
+    /// ——set-based，一个目录两条语句。逐行 EF 登记在万行子树上实测 2s+（快照对象 + 变更跟踪 + 提交批），
+    /// 本路径把"物理搬运"压到 SQL 一层（调用方仍负责 diff / 撤销载荷 / 事件，语义与逐行路径一致）。
+    /// 返回入站的链接行数；同目录重复调用 = 第二次 0 行（幂等）。
+    /// </summary>
+    Task<int> TrashLinksOfFoldersAsync(IReadOnlyList<(string FolderId, string OriginPath)> folders,
+        DateTime deletedAt, CancellationToken ct);
+
     // —— 文件夹单元 ——
     Task<TrashedFolder?> FindFolderAsync(TrashFolderId id, CancellationToken ct);
 

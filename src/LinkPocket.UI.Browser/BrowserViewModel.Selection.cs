@@ -185,10 +185,16 @@ public partial class BrowserViewModel
 
     private static IEnumerable<FolderNode> EnumerateSelfAndChildren(FolderNode node)
     {
-        yield return node;
-        foreach (var child in node.Children)
-            foreach (var sub in EnumerateSelfAndChildren(child))
-                yield return sub;
+        // 显式栈的深度优先前序（与原递归顺序一致：子节点逆序压栈、弹出即原顺序；深树不爆栈）
+        var stack = new Stack<FolderNode>();
+        stack.Push(node);
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+            yield return current;
+            for (var i = current.Children.Count - 1; i >= 0; i--)
+                stack.Push(current.Children[i]);
+        }
     }
 
     public void ClearSelection()

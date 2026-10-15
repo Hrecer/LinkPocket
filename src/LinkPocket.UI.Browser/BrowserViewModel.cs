@@ -611,7 +611,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
                 StatusText = Loc.K("browser.status.renamed", name);
             }
 
-            // **乐观更新**（引擎已落库，事件刷新稍后对齐）：行与树的名字立即改——
+            // 就地改名（引擎已落库、返回最终名——写命令的返回值就是事实，不是预显示）：
             // 万行目录下"回车 → 等 300ms 防抖 + 整表重建才看到新名字"是实测的第二次等待。
             Rows.FirstOrDefault(r => r.Id == session.Id && r.IsFolder == session.IsFolder)
                 ?.UpdateName(name);
@@ -627,23 +627,21 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>在树里按 ID（文件夹或链接叶子）找节点并乐观改名（找不到 = 不在树里，跳过）。</summary>
+    /// <summary>在树里按 ID（文件夹或链接叶子）找节点并就地改名（找不到 = 不在树里，跳过；显式栈，深树不爆栈）。
+    /// 名字来自引擎返回的**最终名**（已落库事实，不是预显示）。</summary>
     private void UpdateTreeNodeName(string id, string name)
     {
-        bool Walk(IEnumerable<FolderNode> nodes)
+        var stack = new Stack<FolderNode>(FolderTree);
+        while (stack.Count > 0)
         {
-            foreach (var n in nodes)
+            var n = stack.Pop();
+            if ((n.IsLink && n.Id == id) || (!n.IsLink && n.FolderId == id))
             {
-                if ((n.IsLink && n.Id == id) || (!n.IsLink && n.FolderId == id))
-                {
-                    n.Name = name;
-                    return true;
-                }
-                if (Walk(n.Children)) return true;
+                n.Name = name;
+                return;
             }
-            return false;
+            foreach (var child in n.Children) stack.Push(child);
         }
-        Walk(FolderTree);
     }
 
     /// <summary>重命名态投影：行与树节点上的 IsRenaming 全部从会话状态派生（与选中投影同构）。
