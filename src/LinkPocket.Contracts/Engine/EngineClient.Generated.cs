@@ -46,6 +46,10 @@ public sealed partial class EngineClient
 
     // —— favicon ——
 
+    /// <summary>Delete favicon cache files not referenced by any link or trash entry (orphans from deleted links); referenced files and unrecognized files are kept; locked files are reported and retried later</summary>
+    public Task<CommandResult<JsonElement>> FaviconCacheGcAsync(CallOptions? o = null, CancellationToken ct = default)
+        => ExecuteAsync<JsonElement>("favicon.cache_gc", null, o, ct);
+
     /// <summary>Favicon disk cache statistics (file count, total bytes, cache directory)</summary>
     public Task<JsonElement> FaviconCacheStatsAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<JsonElement>("favicon.cache_stats", null, o, ct);

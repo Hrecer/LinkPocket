@@ -82,6 +82,26 @@ public partial class App : Application
             //    结果文件不在这里处置（更新页取值后自行消费）。
             _ = Task.Run(() => UpdateStaging.SweepOwnStaging(AppPaths.ProgramRoot));
 
+            // ⑥ 图标缓存清扫（favicon.cache_gc）：链接被删除后留下的孤儿图标文件在这里清掉——
+            //    引用集 = links ∪ trash_links 的 favicon_url 并集（回收站还引用着的 **不删**，还原后图标还在）；
+            //    正在展示的图标会锁住文件 → 漏删只留痕，下次启动再清。全程后台、绝不阻塞启动。
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var gc = await host.Client.ExecuteAsync<System.Text.Json.JsonElement>("favicon.cache_gc");
+                    var data = gc.Data;
+                    LpLog.Info($"favicon cache gc: deleted={data.GetProperty("deleted").GetInt32()}"
+                               + $" kept={data.GetProperty("kept").GetInt32()}"
+                               + $" failed={data.GetProperty("failed").GetInt32()}"
+                               + $" freed={data.GetProperty("freed_bytes").GetInt64()}B", category: "app.lifecycle");
+                }
+                catch (Exception ex)
+                {
+                    LpLog.Warn("the favicon cache gc failed", ex, category: "app.lifecycle");
+                }
+            });
+
             // ⑤ 更新检查（UPDATE.md §6）：启动延迟自动检查（更新页可关）→ 发现新版自动预下载就位；
             //    全程后台、失败只留痕（更新页仍可手动重试 / 走本地 zip 兜底）。
             _ = Task.Run(async () =>

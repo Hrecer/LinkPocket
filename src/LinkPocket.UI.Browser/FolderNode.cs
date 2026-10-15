@@ -147,6 +147,10 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>是否有站点图标（模板据此在站点图标与通用链环图标之间切换；相等判据，可在 DataTrigger 里表达）。</summary>
     public bool HasFavicon => _favicon != null;
 
+    /// <summary>叶子对应的图标地址（懒加载时记下）：树重建"搬运旧叶子"时用它重新探测缓存——
+    /// 根源级链接没有文件夹实体可当版本（代理是链接数，改名/换图标不改数量），搬运会把旧叶子原样留用。</summary>
+    public string? FaviconUrl { get; internal set; }
+
     private bool _isExpanded;
     public bool IsExpanded
     {

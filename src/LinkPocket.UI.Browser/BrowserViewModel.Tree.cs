@@ -84,6 +84,13 @@ public partial class BrowserViewModel
                 // 虚根（「全部书签」）没有 FolderDto 可依：用根级直挂链接数当版本——
                 // 根级链接的增删/移入移出都会改数量（改名不入撤销栈，且本页改名有乐观改名兜住）。
                 if (rootLinkCount != _lastRootLinkCount) continue;
+                // ⚠️ 数量不变 ≠ 内容不变：改名 / 换图标都不改数量。根源级链接**没有文件夹实体**当版本
+                //（文件夹节点的版本是 UpdatedAt，链接变更会沿父链 Touch 到），所以搬运后对"还没有图标"
+                // 的叶子**重新探测一次缓存**——否则"重新解析图标后侧栏还是通用链环"（用户实测）。
+                // 根级直挂链接通常很少，成本有界。
+                foreach (var leaf in leaves)
+                    if (leaf.Favicon == null && !string.IsNullOrEmpty(leaf.FaviconUrl))
+                        leaf.Favicon = Services.FaviconService.LoadFromCache(leaf.FaviconUrl);
                 root.Children.AddRange(leaves);
                 root.LinksLoaded = true;
                 continue;
@@ -180,6 +187,7 @@ public partial class BrowserViewModel
                     Host = this,
                     LinksLoaded = true,                       // 叶子本身没有"下级叶子"
                     IsSelected = Selection.Contains(l.LinkId),    // 只投影自身（不遍历整表：1 万行 × 每次展开）
+                    FaviconUrl = l.FaviconUrl,
                     Favicon = Services.FaviconService.LoadFromCache(l.FaviconUrl),   // 内嵌/已缓存同步解码（与主栏行同口径）
                 };
                 leaves.Add(leaf);

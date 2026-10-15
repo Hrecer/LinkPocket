@@ -67,6 +67,13 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             })
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct)
+        => await db.Links.AsNoTracking()
+            .Where(l => l.FaviconUrl != null && l.FaviconUrl != "")
+            .Select(l => l.FaviconUrl!)
+            .Distinct()
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<Link>> ListAsync(LinkQuerySpec spec, CancellationToken ct)
     {
         var q = BuildPageQuery(spec);

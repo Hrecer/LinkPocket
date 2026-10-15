@@ -8,6 +8,7 @@ public static class FaviconModule
     public static IReadOnlyList<ICommandHandler> CreateHandlers() =>
     [
         new FaviconCacheStatsHandler(),
+        new FaviconCacheGcHandler(),
         new FaviconPrefetchHandler(),
     ];
 }

@@ -351,6 +351,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                     faviconUrl: _pendingFaviconUrl);
             }
 
+            // 树叶子对齐（引擎已落库的最终值）：根源级链接没有文件夹实体当版本，树重建会留用旧叶子——
+            // 不显式对齐就是"保存完图标/名字在侧栏不更新"（用户实测）。空串 = 清除图标（与保存语义一致）。
+            if (IsEditMode && _editLinkId != null)
+                _host.RefreshTreeLinkLeaf(_editLinkId,
+                    _clearFavicon ? string.Empty : _pendingFaviconUrl,
+                    LinkTitle.Trim());
             IsLoading = false;   // 保存完成即收加载态（页面随后关闭，属性通知变窄窗口）
             _host.CloseEditorPage();
             // 立即真刷新（不等 300ms 事件防抖）：新建/编辑后的行随查询结果落地。

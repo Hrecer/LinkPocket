@@ -27,6 +27,10 @@ public interface ITrashRepository
     /// <summary>各回收站单元的书签快照计数。</summary>
     Task<IReadOnlyDictionary<TrashFolderId, int>> CountLinksByUnitAsync(CancellationToken ct);
 
+    /// <summary>回收站快照引用的全部 favicon 地址（去重、非空）：回收站里的条目仍引用着图标
+    ///（还原后图标还在）——图标缓存清扫的引用集按 links ∪ trash_links 取并集。</summary>
+    Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct);
+
     Task<TrashedLink> AddLinkAsync(TrashedLink snapshot, CancellationToken ct);
     Task RemoveLinkAsync(LinkId id, CancellationToken ct);
 

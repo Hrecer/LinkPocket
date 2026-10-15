@@ -627,6 +627,34 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 把某条链接的树叶子与引擎事实对齐（名称 / 站点图标）——编辑器保存成功后调用。
+    /// 为什么需要：根源级链接**没有文件夹实体**可当版本（搬运判据是"链接数"，改名/换图标都不改数量），
+    /// 树重建时会原样留用旧叶子——用户实测"重新解析图标后侧栏还是画通用链环"。
+    /// 参数语义：<paramref name="faviconUrl"/> null = 图标不动、空串 = 清除、非空 = 取该地址的缓存图标；
+    /// <paramref name="name"/> null/空白 = 名字不动。迭代遍历（深树不爆栈）；叶子尚未加载（节点收起）时无事发生——
+    /// 下次展开自然取新值。名字来自**引擎已落库**的保存结果，不是预显示。
+    /// </summary>
+    public void RefreshTreeLinkLeaf(string linkId, string? faviconUrl, string? name)
+    {
+        if (string.IsNullOrEmpty(linkId)) return;
+        var stack = new Stack<FolderNode>(FolderTree);
+        while (stack.Count > 0)
+        {
+            var node = stack.Pop();
+            if (node.IsLink && string.Equals(node.Id, linkId, StringComparison.Ordinal))
+            {
+                if (faviconUrl != null)
+                {
+                    node.FaviconUrl = faviconUrl.Length == 0 ? null : faviconUrl;
+                    node.Favicon = Services.FaviconService.LoadFromCache(node.FaviconUrl);
+                }
+                if (!string.IsNullOrWhiteSpace(name)) node.Name = name;
+            }
+            foreach (var child in node.Children) stack.Push(child);
+        }
+    }
+
     /// <summary>在树里按 ID（文件夹或链接叶子）找节点并就地改名（找不到 = 不在树里，跳过；显式栈，深树不爆栈）。
     /// 名字来自引擎返回的**最终名**（已落库事实，不是预显示）。</summary>
     private void UpdateTreeNodeName(string id, string name)

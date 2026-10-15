@@ -766,6 +766,7 @@
   "ai.action.bookmarks.export": "导出书签文件",
   "ai.action.bookmarks.import": "导入书签文件",
   "ai.action.dedup.apply": "应用查重处理",
+  "ai.action.favicon.cacheGc": "清理图标缓存",
   "ai.action.favicon.prefetch": "预取图标",
   "ai.action.folders.copy": "复制文件夹",
   "ai.action.folders.create": "新建文件夹",

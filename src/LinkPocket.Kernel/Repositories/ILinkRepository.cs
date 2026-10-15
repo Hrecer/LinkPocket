@@ -17,6 +17,9 @@ public interface ILinkRepository
     /// 不物化实体、不再逐条映射（100K 实测省 ~35ms/页）。</summary>
     Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDtosAsync(LinkQuerySpec spec, CancellationToken ct);
 
+    /// <summary>库内引用的全部 favicon 地址（去重、非空）：图标缓存清扫（favicon.cache_gc）的引用集。</summary>
+    Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct);
+
     Task<int> CountAsync(LinkFilter filter, CancellationToken ct);
 
     /// <summary>按直接归属文件夹统计（不含递归；递归计数走 ITreeService）。</summary>

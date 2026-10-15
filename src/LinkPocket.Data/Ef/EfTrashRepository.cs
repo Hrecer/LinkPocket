@@ -30,6 +30,13 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
     public Task<int> CountStandaloneLinksAsync(CancellationToken ct)
         => db.TrashedLinks.AsNoTracking().CountAsync(l => l.TrashFolderId == null, ct);
 
+    public async Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct)
+        => await db.TrashedLinks.AsNoTracking()
+            .Where(l => l.FaviconUrl != null && l.FaviconUrl != "")
+            .Select(l => l.FaviconUrl!)
+            .Distinct()
+            .ToListAsync(ct);
+
     public async Task<IReadOnlyList<TrashedLink>> ListLinksByUnitAsync(TrashFolderId unit, CancellationToken ct)
         => await db.TrashedLinks.AsNoTracking()
             .Where(l => l.TrashFolderId == unit.Value)

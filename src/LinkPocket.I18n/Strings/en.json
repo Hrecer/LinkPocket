@@ -766,6 +766,7 @@
   "ai.action.bookmarks.export": "Export a bookmark file",
   "ai.action.bookmarks.import": "Import a bookmark file",
   "ai.action.dedup.apply": "Apply duplicate handling",
+  "ai.action.favicon.cacheGc": "Clean up the favicon cache",
   "ai.action.favicon.prefetch": "Prefetch favicons",
   "ai.action.folders.copy": "Copy a folder",
   "ai.action.folders.create": "Create a folder",
