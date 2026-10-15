@@ -331,6 +331,7 @@ if ($Zip) {
     }
     if (Test-Path -LiteralPath $Zip) { Remove-Item -LiteralPath $Zip -Force }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression   # ZipArchiveMode / ZipFileExtensions (FileSystem only carries ZipFile)
     $archive = [System.IO.Compression.ZipFile]::Open($Zip, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
         foreach ($file in (Get-ChildItem -LiteralPath $out -Recurse -File)) {
