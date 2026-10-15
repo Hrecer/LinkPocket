@@ -353,8 +353,9 @@ public class LinkEditorViewModel : INotifyPropertyChanged
 
             IsLoading = false;   // 保存完成即收加载态（页面随后关闭，属性通知变窄窗口）
             _host.CloseEditorPage();
-            // 列表刷新交给后端 links.changed 事件统一驱动（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）。
-            // 这里不再显式 RefreshAsync：内核写操作必然推事件，显式刷新会和事件刷新叠成"外面刷新两次"。
+            // 立即真刷新（不等 300ms 事件防抖）：新建/编辑后的行随查询结果落地。
+            // 不靠事件链"稍后对齐"——用户点保存之后应当立刻在列表里看到结果。
+            await _host.RefreshPreservingSelectionAsync();
             await _host.DetailPage.ReloadIfOpenAsync(); // 详情页若在编辑器下层，同步刷新
         }
         catch (Exception)

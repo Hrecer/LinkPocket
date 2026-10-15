@@ -50,9 +50,24 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         var descendantSet = descendantIds.ToHashSet(StringComparer.Ordinal);
         var subtreeFolders = allFolders.Where(f => descendantSet.Contains(f.FolderId)).ToList();
 
-        // 受影响链接（一次读全量 + 内存过滤——与既有同口径，规模有界）
-        var allLinks = await uow.Links.ListAsync(new LinkQuerySpec(), ct);
-        var affectedLinks = allLinks.Where(l => l.ListId != null && descendantSet.Contains(l.ListId)).ToList();
+        // 受影响链接：**按子树范围下推查询**（idx_links_folder；一次取齐，不再全表读回来内存过滤——
+        // 大库上"删一个文件夹 = 全表物化 2 万+ 链接"是用户实测的删除卡顿主因之一）。
+        var affectedLinks = (await uow.Links.ListAsync(new LinkQuerySpec
+        {
+            Filter = new LinkFilter { FolderIdsIn = descendantIds },
+        }, ct)).ToList();
+
+        // OriginPath 按目录缓存：同目录里的每一条链接路径相同，逐条重算 = 每条一次全目录表读
+        //（万条 subtree 实测把删除拖到几十秒，见 WARNINGS）。
+        var pathCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        async Task<string> PathOfAsync(FolderId? folder)
+        {
+            var key = folder?.Value ?? "\u0000root";   // 空键不代表任何 ID；根（null）单独占一个键
+            if (pathCache.TryGetValue(key, out var cached)) return cached;
+            var path = await uow.Trees.PathCanonicalAsync(folder, ct);
+            pathCache[key] = path;
+            return path;
+        }
 
         var trashedLinkCount = 0;
         var diff = new List<FieldChange>();
@@ -60,15 +75,11 @@ internal sealed class FolderDeleteHandler : ICommandHandler
         {
             case "delete_all":
                 foreach (var link in affectedLinks)
-                {
                     diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));   // 物理删除 = 原值快照
-                    await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
-                }
+                await uow.Links.RemoveRangeAsync(affectedLinks, ct);   // 批量登记删除（逐条 RemoveAsync = 每行一条 SELECT）
                 foreach (var f in subtreeFolders)
-                {
                     diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));
-                    await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
-                }
+                await uow.Folders.RemoveRangeAsync(subtreeFolders, ct);
                 break;
 
             case "move_to_list":
@@ -92,10 +103,8 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                 }
 
                 foreach (var f in subtreeFolders)
-                {
                     diff.AddRange(EntityDiff.Diff(f.FolderId, FolderSnapshot.Of(f), null));
-                    await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
-                }
+                await uow.Folders.RemoveRangeAsync(subtreeFolders, ct);
                 await RefreshLinkCountAsync(uow, targetListId, ct);
                 break;
 
@@ -124,7 +133,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         Name = f.Name,
                         OriginFolderId = f.FolderId,
                         OriginParentFolderId = f.ParentId,   // v5：原父目录（原位还原的数据依据；NULL = 原在根）
-                        OriginPath = await uow.Trees.PathCanonicalAsync(new FolderId(f.FolderId), ct),
+                        OriginPath = await PathOfAsync(new FolderId(f.FolderId)),
                         Description = f.Description,
                         SortOrder = f.SortOrder,
                         CreatedAt = f.CreatedAt,
@@ -146,8 +155,7 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         FaviconUrl = link.FaviconUrl,
                         TrashFolderId = link.ListId,
                         OriginListId = link.ListId,
-                        OriginPath = await uow.Trees.PathCanonicalAsync(
-                            link.ListId == null ? null : new FolderId(link.ListId), ct),
+                        OriginPath = await PathOfAsync(link.ListId == null ? null : new FolderId(link.ListId)),
                         LastVisitedAt = link.LastVisitedAt,
                         VisitCount = link.VisitCount,
                         IsImportant = link.IsImportant,
@@ -155,11 +163,11 @@ internal sealed class FolderDeleteHandler : ICommandHandler
                         CreatedAt = link.CreatedAt,
                         UpdatedAt = DateTime.UtcNow,
                     }, ct);
-                    await uow.Links.RemoveAsync(new LinkId(link.LinkId), ct);
                     trashedLinkCount++;
                 }
+                await uow.Links.RemoveRangeAsync(affectedLinks, ct);   // 批量登记删除（逐条 RemoveAsync = 每行一条 SELECT）
 
-                foreach (var f in subtreeFolders) await uow.Folders.RemoveAsync(new FolderId(f.FolderId), ct);
+                await uow.Folders.RemoveRangeAsync(subtreeFolders, ct);
                 break;
         }
 

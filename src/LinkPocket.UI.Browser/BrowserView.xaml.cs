@@ -34,6 +34,11 @@ public partial class BrowserView : UserControl
     /// </summary>
     private void OnWiredVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(BrowserViewModel.IsRenaming))
+        {
+            RestoreFocusAfterRename();
+            return;
+        }
         if (e.PropertyName != nameof(BrowserViewModel.IsNoticeOpen)) return;
         if (_wiredVm?.IsNoticeOpen != true) return;
 
@@ -52,6 +57,25 @@ public partial class BrowserView : UserControl
 
         _noticeTimer.Stop();   // 连续提示顺延（与 UiEventHub 的尾沿防抖同思路）
         _noticeTimer.Start();
+    }
+
+    /// <summary>
+    /// 改名会话结束时把键盘焦点收回页内：编辑框随会话收起 → 焦点掉给窗口/清空，
+    /// 而页面级快捷键（ShortcutHost）只在"焦点在页内"时分发——不收回来就是
+    /// "回车提交改名后，再按回车进不了那个文件夹，要再按第二下"（用户实测：总共要按三下回车）。
+    /// 只在焦点确实**悬空**（null / 落在窗口本身）时收；点侧栏、菜单、输入框等导致焦点在别处时绝不抢。
+    /// </summary>
+    private void RestoreFocusAfterRename()
+    {
+        if (_wiredVm?.IsRenaming == true) return;   // 只是换了改名目标（旧会话收起→新会话开始）→ 编辑框自己聚焦
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (_wiredVm?.IsRenaming == true) return;
+            var focused = Keyboard.FocusedElement as DependencyObject;
+            if (focused != null && !(focused is Window w && ReferenceEquals(w, Window.GetWindow(this))))
+                return;                              // 焦点在别处（侧栏/菜单/输入框）→ 不抢
+            PageFocus.Restore(this);                 // 页可见 / 窗口激活 / 非文本输入 三条不抢都在 Restore 里
+        }));
     }
 
     /// <summary>快捷键宿主（键位表注册 + 栏作用域分发；见 LinkPocket.Input.ShortcutHost）。</summary>

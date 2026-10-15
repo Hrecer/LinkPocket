@@ -126,7 +126,7 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 移动链接后_不自行刷新_刷新归事件链_无订阅宿主需显式刷新()
+    public async Task 移动链接后_立即真刷新_行随查询结果消失_遮罩与入场动画仍静默()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -142,33 +142,28 @@ public class BrowserViewModelTests
 
             await vm.DropItemsAsync(new[] { new DragItem(link.LinkId, false, "M") }, b.FolderId, TransferMode.Move);
 
-            // 口径（与删除流一致，WARNINGS #18）：写操作**不自行刷新**——界面刷新由后端事件链
-            // （MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）负责；
-            // 显式 + 事件双重刷新就是"移动/粘贴后主栏刷两遍"的根因。
-            Assert.Contains(vm.Rows, r => r.Id == link.LinkId);       // 行仍是旧状态（未被显式刷新）
-
-            // 无事件订阅的宿主（单测/无头）自己调刷新即可取到新状态
-            await vm.RefreshPreservingSelectionAsync();
+            // 口径（2026-10-15 起）：写操作完成后**立即真刷新**（不等 300ms 事件防抖）——
+            // 行随查询结果消失，用户不再等"防抖 + 整链"那一拍。
             Assert.DoesNotContain(vm.Rows, r => r.Id == link.LinkId);  // 已移出目录 A 的行
             Assert.Empty(vm.Rows);                                     // A 目录此刻为空
 
             // 遮罩口径（区分"刷新次数"与"要不要给用户看"两件事）：
-            // 写操作与随后的后台刷新都不亮遮罩；只有"导航加载"亮，且完成即收。
+            // 写操作与随后的刷新都不亮遮罩；只有"导航加载"亮，且完成即收。
             Assert.False(vm.IsNavigating);                             // 移动（写操作）不亮遮罩
             await vm.RefreshPreservingSelectionAsync();
-            Assert.False(vm.IsNavigating);                             // 后台事件口径的刷新也不亮遮罩
+            Assert.False(vm.IsNavigating);                             // 后台口径的刷新也不亮遮罩
 
             // 导航加载（navigating: true）完成后遮罩必须收回——不留僵住的遮罩
             //（引擎在本环境可能同步完成整个加载，故只锁"终态必为收起"，不锁中途瞬时值）
             await vm.RefreshAsync(navigating: true);
             Assert.False(vm.IsNavigating);
 
-            // 行入场动画的触发口径：只有导航加载的那次刷新链才允许播（后台刷新一律静默）——
+            // 行入场动画的触发口径：只有导航加载的那次刷新链才允许播（写后刷新/后台刷新一律静默）——
             // 界面的行错峰入场动画订阅 RefreshCompleted，参数即"是不是导航加载"。
             var refreshEvents = new List<bool>();
             vm.RefreshCompleted += (_, wasNavigation) => refreshEvents.Add(wasNavigation);
             await vm.LoadAsync(null);                        // 打开目录（导航）→ 播
-            await vm.RefreshPreservingSelectionAsync();      // 后台刷新（写操作后的防抖口径）→ 不播
+            await vm.RefreshPreservingSelectionAsync();      // 后台口径的刷新 → 不播
             Assert.Equal(new[] { true, false }, refreshEvents);
         }
         finally
@@ -571,7 +566,7 @@ public class BrowserViewModelTests
             Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已粘贴"), TimeSpan.FromSeconds(5)),
                 $"粘贴未在超时内完成（状态：{vm.StatusText.Resolve()}）");
 
-            // 写操作不显式刷新（WARNINGS #18）：模拟事件链的刷新取新状态
+            // 写操作已由内部立即刷新落地；这里再刷一次（后台事件链同一条链）确认置尾不受影响
             await vm.RefreshPreservingSelectionAsync();
 
             // 置尾（Windows）：新项临时排在末尾（不参与排序），不再紧跟原项。

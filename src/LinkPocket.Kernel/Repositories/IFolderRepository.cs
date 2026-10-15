@@ -19,4 +19,7 @@ public interface IFolderRepository
     Task<Folder> AddAsync(Folder folder, CancellationToken ct);
     Task UpdateAsync(Folder folder, CancellationToken ct);
     Task RemoveAsync(FolderId id, CancellationToken ct);
+
+    /// <summary>批量删除**已读出的实体**（整子树删除；语义与理由同 <see cref="ILinkRepository.RemoveRangeAsync"/>）。</summary>
+    Task RemoveRangeAsync(IReadOnlyList<Folder> folders, CancellationToken ct);
 }

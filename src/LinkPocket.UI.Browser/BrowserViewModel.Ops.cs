@@ -154,9 +154,9 @@ public partial class BrowserViewModel
 
     /// <summary>
     /// 新建文件夹（Windows 口径，**不再弹输入框**）：
-    /// 直接以默认名创建（同层撞名由引擎自动编号），随后**立刻进入就地改名**——
-    /// 新项临时置尾 + 选中 + 滚入视口 + 聚焦编辑框；行要等事件刷新（300ms 防抖）重建后才出现，
-    /// 故改名会话与定位请求先待命，重建时由投影/消费落地（**不做显式刷新**：显式 + 事件双重刷新是"刷两遍"的根因）。
+    /// 直接以默认名创建（同层撞名由引擎自动编号），随后**立即真刷新当前目录**（不等 300ms 事件防抖）——
+    /// 新行由查询结果落地（真数据；置尾 + 选中 + 滚入视口），行就位后再进入就地改名。
+    /// **不自造行**：显示的行必须来自真查询——"没查出来就先显示"是会被当成不安全缓存的（用户口径）。
     /// 参数为空 → 在当前目录新建；参数为目标文件夹 ID（行右键）→ 在该文件夹内新建
     /// （那种情况新文件夹不在当前视图里，只如实报告，不进入不可见的改名态）。
     /// </summary>
@@ -170,31 +170,24 @@ public partial class BrowserViewModel
             var newId = created.Data?.FolderId;
             if (string.IsNullOrEmpty(newId)) return;
             var name = created.Data?.Name ?? DefaultFolderName();
-            StatusText = Loc.K("browser.status.folderCreated", name);
 
             // 新项不在当前视图（在别的文件夹内新建）→ 无可见行可改名，只报告
-            if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId)) return;
-
-            // **乐观插入**（2026-09-26）：不等事件刷新，新行立即置尾出现——
-            // 万行目录下"建夹 170ms + 300ms 防抖 + 整表重建"就是用户实测的"新建要卡半秒甚至一秒"。
-            // 时间戳用引擎返回值（DTO 缺省才落到本机时钟），事件刷新（改名期间被推迟）稍后按真值对齐。
-            var dto = created.Data;
-            Rows.Add(new BrowserRowViewModel(newId, isFolder: true, name)
+            if (NormalizeParentId(target) != NormalizeParentId(Controller.CurrentFolderId))
             {
-                LinkCount = 0,
-                ModifiedAt = dto?.UpdatedAt ?? DateTime.Now,
-                CreatedAt = dto?.CreatedAt ?? DateTime.Now,
-                LastViewedAt = dto?.LastVisitedAt,
-                Host = this,
-            });
+                StatusText = Loc.K("browser.status.folderCreated", name);
+                return;
+            }
 
-            // Windows 口径：新项临时置尾（不参与排序）+ 选中 + 滚入视口，并直接进入就地改名
+            // Windows 口径：新项临时置尾（不参与排序）+ 选中 + 滚入视口（**位置**规则；内容仍取真查询）
             MarkRecentlyPinned(new[] { newId });
             SetSelection(new[] { newId }, newId);
             _pendingFocusId = newId;
-            BeginRename(newId, isFolder: true, name, BrowserPane.Main);
-            // 刷新交给后端事件（300ms 防抖）——写操作后不做显式刷新（WARNINGS #18）；
-            // 改名期间该刷新被推迟（RefreshPreservingSelectionAsync），提交/取消时立即补跑
+            // 立即真刷新：新行随这次查询落地（写操作后的刷新提前到关键路径上，不再等 300ms 防抖）
+            await RefreshPreservingSelectionAsync();
+            StatusText = Loc.K("browser.status.folderCreated", name);
+            // 行已就位（刷新失败/被风暴弃掉时行可能不在——那就不进入"看不见的改名"）
+            if (Rows.Any(r => r.Id == newId))
+                BeginRename(newId, isFolder: true, name, BrowserPane.Main);
         }
         catch (Exception)
         {
@@ -211,9 +204,9 @@ public partial class BrowserViewModel
         try
         {
             await _client.FolderDeleteAsync(node.FolderId, "trash_links");
+            // 立即真刷新（不等 300ms 事件防抖）：树与行随查询结果一起更新
+            await RefreshPreservingSelectionAsync();
             StatusText = Loc.K("browser.status.folderTrashed", node.Name);
-            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync），
-            // 这里不再显式刷新 —— 显式 + 事件双重刷新就是"删完刷两次"的根因。
         }
         catch (Exception)
         {
@@ -285,14 +278,19 @@ public partial class BrowserViewModel
             }
 
             // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
+            if (deleted > 0)
+            {
+                ClearSelection();
+                // 立即真刷新（不等 300ms 事件防抖）：被删的行随查询结果消失。
+                // 放在状态文案之前：刷新链结尾会把状态栏改写成"共 N 项"，那条不该盖掉本次操作的结果。
+                await RefreshPreservingSelectionAsync();
+            }
             StatusText = failed == 0
                 ? Loc.K("browser.status.deletedCount", deleted)
                 : deleted == 0
                     ? Loc.K("browser.status.deleteFailed")
                     : Loc.K("browser.status.deletedWithFailures", deleted, failed);
-            if (deleted > 0) ClearSelection();
-            // 刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）——
-            // 显式 + 事件双重刷新就是"删完刷两次"的根因。失败项留在列表里，下次再删即可。
+            // 失败项留在列表里，下次再删即可。
         }
         finally
         {

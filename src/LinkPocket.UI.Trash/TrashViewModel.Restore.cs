@@ -11,7 +11,7 @@ namespace LinkPocket.ViewModels;
 /// <summary>
 /// 回收站的**还原**（唯一入口）：把选中条目（混合：链接 + 单元）经一条 <c>trash.restore_batch</c> 还原——
 /// 缺省回删除前位置（origin），或显式回根目录；结果如实播报（回落根 / 自动编号 / 同 URL 重复）。
-/// 还原**不需要**确认（非破坏动作）；刷新归引擎事件（300ms 防抖），写操作不显式刷新（与全页同口径）。
+/// 还原**不需要**确认（非破坏动作）；刷新归引擎事件（300ms 防抖）——回收站口径与浏览页不同（浏览页写后立即刷新，见 WARNINGS 177）。
 /// </summary>
 public partial class TrashViewModel
 {

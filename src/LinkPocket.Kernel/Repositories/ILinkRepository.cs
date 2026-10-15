@@ -22,6 +22,14 @@ public interface ILinkRepository
     Task UpdateAsync(Link link, CancellationToken ct);
     Task RemoveAsync(LinkId id, CancellationToken ct);
 
+    /// <summary>
+    /// 批量删除**已读出的实体**（子树级联：调用方手里的那一批刚由查询取回，直接按实体登记删除）——
+    /// 逐条 <see cref="RemoveAsync"/> 会为每一行发一条 SELECT（万行子树 = 万条点查 + 万次身份解析），
+    /// 这是"删除一个大文件夹"实测卡顿的主因之一（见 WARNINGS）。
+    /// 实体必须来自本库（键齐全）；同批重复 ID 无害（第二次起是空操作）。
+    /// </summary>
+    Task RemoveRangeAsync(IReadOnlyList<Link> links, CancellationToken ct);
+
     /// <summary>按 URL 找全部同址链接（Dedup 复用）。</summary>
     Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct);
 

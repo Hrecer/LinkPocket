@@ -78,8 +78,8 @@ public partial class BrowserViewModel
     /// <para>单项失败**不中断整批**（与既有口径一致）：失败项计数 + <c>LpLog.Error</c> 留痕（观测面铁律），
     /// 状态栏如实报「N 项失败」，绝不把部分失败含混成「已完成」。</para>
     ///
-    /// <para>刷新统一交给后端事件（MainViewModel 300ms 防抖 → RefreshPreservingSelectionAsync）：
-    /// 显式刷新 + 事件刷新 = 主栏刷两遍；写操作也不得占用 IsLoading（它是刷新的重入标志）。</para>
+    /// <para>收尾处**立即真刷新**（见 WARNINGS 177）：新项/消失项随真查询落地（后续事件防抖那一拍是原地对齐，
+    /// 不换集合）；写操作不得占用 IsLoading（它是刷新的重入标志）。</para>
     /// </summary>
     private async Task TransferAsync(IReadOnlyList<DragItem> items, string? target, TransferMode mode,
         TransferOrigin origin)
@@ -164,8 +164,13 @@ public partial class BrowserViewModel
             {
                 MarkRecentlyPinned(placed);
                 SetSelection(placed, placed[0]);
-                _pendingFocusId = placed[0];       // 行要等事件刷新重建后才出现 → 定位请求先待命（ConsumePendingFocus）
+                _pendingFocusId = placed[0];       // 行由紧随其后的真刷新落地 → 定位请求在刷新链里被消费
             }
+
+            // —— 收尾 ①b：立即真刷新（不等 300ms 事件防抖）——
+            // 产生可见新项（粘贴/复制）时新行随查询落地并按置尾归位；纯粹移出当前目录时行随查询消失。
+            if (done > 0)
+                await RefreshPreservingSelectionAsync();
 
             // —— 收尾 ②：剪切载荷消费：**只有真的有项被粘贴**才遗忘（Windows 同口径）——
             // 全部被拒/全部失败时必须保留——否则"粘贴进自己的子文件夹被拒"之后，

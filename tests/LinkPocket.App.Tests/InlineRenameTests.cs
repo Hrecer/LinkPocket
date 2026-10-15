@@ -192,19 +192,19 @@ public class InlineRenameTests
             await vm.LoadAsync(null);
 
             vm.NewFolderCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)),
-                $"新建未在超时内完成（状态：{vm.StatusText.Resolve()}）");
+            // 新口径（2026-10-15）：创建后**立即真刷新**（不再自造行等事件链），行落地即进入改名
+            Assert.True(await WaitUntilAsync(() => vm.IsRenaming, TimeSpan.FromSeconds(5)),
+                $"新建未在超时内进入改名（状态：{vm.StatusText.Resolve()}）");
 
-            // 写操作不显式刷新：模拟事件链刷新取新状态
-            await vm.RefreshPreservingSelectionAsync();
-
-            // 临时置尾（Windows：新建/复制项首次显示在末位）+ 选中 + 已进入就地改名
+            // 行来自真查询：临时置尾（Windows：新建/复制项首次显示在末位）+ 选中 + 已进入就地改名
             var created = Assert.Single(vm.SelectedRows);
             Assert.Equal("新建文件夹", created.Name);
             Assert.Equal(created.Id, vm.Rows[^1].Id);
             Assert.True(vm.IsRenaming);
             Assert.True(created.IsRenaming);
             Assert.Equal("新建文件夹", vm.EditingName);
+            // 状态文案在刷新之后落：不被刷新链结尾的"共 N 项"盖掉
+            Assert.StartsWith("已创建文件夹", vm.StatusText.Resolve());
         }
         finally
         {
@@ -223,8 +223,8 @@ public class InlineRenameTests
             await vm.LoadAsync(null);
 
             vm.NewFolderCommand.Execute(null);
-            Assert.True(await WaitUntilAsync(() => vm.StatusText.Resolve().StartsWith("已创建文件夹"), TimeSpan.FromSeconds(5)));
-            await vm.RefreshPreservingSelectionAsync();
+            Assert.True(await WaitUntilAsync(() => vm.IsRenaming, TimeSpan.FromSeconds(5)),
+                $"新建未在超时内进入改名（状态：{vm.StatusText.Resolve()}）");
 
             var created = Assert.Single(vm.SelectedRows);
             Assert.Equal("新建文件夹 (2)", created.Name);

@@ -95,6 +95,32 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         _removed = true;   // 出现同 key 待删实例 → 后续 Add 才需要接管扫描（AddAsync）
     }
 
+    public Task RemoveRangeAsync(IReadOnlyList<Link> links, CancellationToken ct)
+    {
+        // 已读出的实体按实体登记删除（Entry() 走身份映射，O(1)/行；不发 SELECT）——
+        // 逐条 RemoveAsync 会为每行发一条点查（万行子树 = 万条 SELECT + 万次身份解析），
+        // 那是"删一个大文件夹"实测卡顿的主因之一（子树级联统一走本方法）。
+        // ⚠️ 同 EfFolderRepository.RemoveRangeAsync：批/宏内同一实体可能已被跟踪（先移动再删除），
+        // 必须拿被跟踪的实例登记删除；跟踪表惰性建，分离热路径零额外开销。
+        Dictionary<string, Link>? tracked = null;
+        foreach (var link in links)
+        {
+            if (db.Entry(link).State != EntityState.Detached)
+            {
+                db.Entry(link).State = EntityState.Deleted;
+                continue;
+            }
+            tracked ??= db.ChangeTracker.Entries<Link>()
+                .ToDictionary(e => e.Entity.LinkId, e => e.Entity, StringComparer.Ordinal);
+            if (tracked.TryGetValue(link.LinkId, out var existing))
+                db.Entry(existing).State = EntityState.Deleted;  // 同 key 已跟踪（含已删除 → 空操作）
+            else
+                db.Entry(link).State = EntityState.Deleted;
+        }
+        if (links.Count > 0) _removed = true;   // 接管扫描的开启条件与 RemoveAsync 一致（见该字段说明）
+        return Task.CompletedTask;
+    }
+
     public async Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct)
         => await db.Links.AsNoTracking().Where(l => l.Url == url).ToListAsync(ct);
 
@@ -123,6 +149,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
 
         // —— links.query 结构化字段（每条独立下推；字段互斥由模块层保证）——
         if (f.IdIn is { } ids) q = q.Where(l => ids.Contains(l.LinkId));
+        if (f.FolderIdsIn is { } folderIds) q = q.Where(l => l.ListId != null && folderIds.Contains(l.ListId));
         if (f.Unfiled is { } unfiled) q = unfiled ? q.Where(l => l.ListId == null) : q.Where(l => l.ListId != null);
         if (!string.IsNullOrEmpty(f.TitleContains))
         {

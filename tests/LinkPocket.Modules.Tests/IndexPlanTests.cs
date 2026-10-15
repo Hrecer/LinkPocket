@@ -52,6 +52,9 @@ public class IndexPlanTests
     [InlineData("SELECT id, folder_id, url FROM links WHERE folder_id = 'F1'", "idx_links_folder")]
     // 根级书签（folder_id IS NULL；links.query { folder_id, isnull }）
     [InlineData("SELECT id FROM links WHERE folder_id IS NULL", "idx_links_folder")]
+    // 子树范围取链接（folders.delete / 复合操作的受影响链接；EF 把集合参数翻译成 json_each）——
+    // 必须命中 idx_links_folder，绝不能退化成全表扫描
+    [InlineData("SELECT id FROM links WHERE folder_id IS NOT NULL AND folder_id IN (SELECT value FROM json_each('[\"F1\",\"F2\"]'))", "idx_links_folder")]
     // 按目录分组计数（links.stats.ByFolder / folders 递归计数）
     [InlineData("SELECT folder_id, COUNT(*) FROM links WHERE folder_id IS NOT NULL GROUP BY folder_id", "idx_links_folder")]
     // 精确 URL（links.find_by_url / dedup 分组）

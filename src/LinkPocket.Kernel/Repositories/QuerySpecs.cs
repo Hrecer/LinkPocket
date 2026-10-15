@@ -57,6 +57,10 @@ public sealed record LinkFilter
     /// <summary>id eq/in：按 ID 取（启用但空集合 = 无命中；null = 不过滤）。</summary>
     public IReadOnlyList<string>? IdIn { get; init; }
 
+    /// <summary>folder_id in：归属目录 ∈ 集合（**子树范围下推**：删除/复合操作按后代目录一次取链接，
+    /// 取代"全表读回来内存过滤"；启用但空集合 = 无命中；null = 不过滤）。</summary>
+    public IReadOnlyList<string>? FolderIdsIn { get; init; }
+
     /// <summary>folder_id isnull：根级（无归属）书签。</summary>
     public bool? Unfiled { get; init; }
 

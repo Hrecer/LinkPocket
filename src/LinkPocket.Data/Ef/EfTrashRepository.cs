@@ -53,17 +53,28 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
         // 只登记不保存：提交权归工作单元 CommitAsync。
         // 同批"先还原（Remove 本快照）、后又移入回收站（同 ID 重建）"：跟踪器里同 key 待删实例 =
         // 行仍在库 → 新实例接管（待删取消 + 按 UPDATE 提交；直接 Add 会撞 EF 身份冲突）。
-        var tracked = db.TrashedLinks.Local.FirstOrDefault(l => l.LinkId == snapshot.LinkId);
-        if (tracked is not null && db.Entry(tracked).State == EntityState.Deleted)
+        // ⚠️ 接管扫描**只在本上下文走过 Remove 后才做**（_removedLinks）：每加必扫是 O(n²)——子树级联
+        //（一整棵含万条链接的树进回收站）实测因此要跑几十秒，万行时 90% 时间花在这条扫描上（见 WARNINGS）。
+        if (_removedLinks)
         {
-            db.Entry(tracked).State = EntityState.Detached;
-            db.TrashedLinks.Attach(snapshot);
-            db.Entry(snapshot).State = EntityState.Modified;
-            return Task.FromResult(snapshot);
+            var tracked = db.TrashedLinks.Local.FirstOrDefault(l => l.LinkId == snapshot.LinkId);
+            if (tracked is not null && db.Entry(tracked).State == EntityState.Deleted)
+            {
+                db.Entry(tracked).State = EntityState.Detached;
+                db.TrashedLinks.Attach(snapshot);
+                db.Entry(snapshot).State = EntityState.Modified;
+                return Task.FromResult(snapshot);
+            }
         }
         db.TrashedLinks.Add(snapshot);
         return Task.FromResult(snapshot);
     }
+
+    /// <summary>本上下文是否走过 SQL 命中的 RemoveLink（语义同 <c>EfLinkRepository._removed</c>）。</summary>
+    private bool _removedLinks;
+
+    /// <summary>本上下文是否走过 SQL 命中的 RemoveFolder（语义同上）。</summary>
+    private bool _removedFolders;
 
     public async Task RemoveLinkAsync(LinkId id, CancellationToken ct)
     {
@@ -71,7 +82,11 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
         // 本单元未提交的新增快照（Remove 在 Added 实体上 = 取消暂存：同批"入站又出站"净效果为零）。
         var snapshot = await db.TrashedLinks.FirstOrDefaultAsync(l => l.LinkId == id.Value, ct)
                        ?? db.TrashedLinks.Local.FirstOrDefault(l => l.LinkId == id.Value);
-        if (snapshot != null) db.TrashedLinks.Remove(snapshot);
+        if (snapshot != null)
+        {
+            db.TrashedLinks.Remove(snapshot);
+            _removedLinks = true;   // 出现同 key 待删实例 → 后续 AddLinkAsync 才需要接管扫描
+        }
     }
 
     /// <summary>按 ID 点查单元：本单元已 Remove → null；本单元已 Add（未落库）→ 可见。</summary>
@@ -91,14 +106,17 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
 
     public Task<TrashedFolder> AddFolderAsync(TrashedFolder unit, CancellationToken ct)
     {
-        // 只登记不保存：同 key 待删实例由新实例接管（语义同 AddLinkAsync）。
-        var tracked = db.TrashedFolders.Local.FirstOrDefault(f => f.TrashFolderId == unit.TrashFolderId);
-        if (tracked is not null && db.Entry(tracked).State == EntityState.Deleted)
+        // 只登记不保存：同 key 待删实例由新实例接管（语义同 AddLinkAsync；扫描同样只在走过 Remove 后开启）。
+        if (_removedFolders)
         {
-            db.Entry(tracked).State = EntityState.Detached;
-            db.TrashedFolders.Attach(unit);
-            db.Entry(unit).State = EntityState.Modified;
-            return Task.FromResult(unit);
+            var tracked = db.TrashedFolders.Local.FirstOrDefault(f => f.TrashFolderId == unit.TrashFolderId);
+            if (tracked is not null && db.Entry(tracked).State == EntityState.Deleted)
+            {
+                db.Entry(tracked).State = EntityState.Detached;
+                db.TrashedFolders.Attach(unit);
+                db.Entry(unit).State = EntityState.Modified;
+                return Task.FromResult(unit);
+            }
         }
         db.TrashedFolders.Add(unit);
         return Task.FromResult(unit);
@@ -109,6 +127,10 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
         // SQL 优先 + 未提交新增回退（语义同 RemoveLinkAsync）。
         var unit = await db.TrashedFolders.FirstOrDefaultAsync(f => f.TrashFolderId == id.Value, ct)
                    ?? db.TrashedFolders.Local.FirstOrDefault(f => f.TrashFolderId == id.Value);
-        if (unit != null) db.TrashedFolders.Remove(unit);
+        if (unit != null)
+        {
+            db.TrashedFolders.Remove(unit);
+            _removedFolders = true;   // 出现同 key 待删实例 → 后续 AddFolderAsync 才需要接管扫描
+        }
     }
 }

@@ -84,4 +84,30 @@ internal sealed class EfFolderRepository(LinkPocketDbContext db) : IFolderReposi
         db.Folders.Remove(folder);
         _removed = true;   // 出现同 key 待删实例 → 后续 Add 才需要接管扫描（AddAsync）
     }
+
+    public Task RemoveRangeAsync(IReadOnlyList<Folder> folders, CancellationToken ct)
+    {
+        // 已读出的实体按实体登记删除（Entry() 走身份映射，O(1)/行；不发 SELECT）——
+        // 与 RemoveAsync 的关系：同语义，只是跳过"按 ID 重新点查"这一步（调用方手里就是刚读出的那一批）。
+        // ⚠️ 批/宏的嵌套步骤可能已把**同一文件夹**读成跟踪态（先移动再删除）：那种情况下必须拿
+        // **已被跟踪的那个实例**登记删除——附加手里这份分离实例会撞 EF 身份映射（实测 IdentityConflict）。
+        // 跟踪表**惰性**建（全部分离 = 常见热路径，一次都不用枚举；建表本身也只付一次 O(n)）。
+        Dictionary<string, Folder>? tracked = null;
+        foreach (var folder in folders)
+        {
+            if (db.Entry(folder).State != EntityState.Detached)
+            {
+                db.Entry(folder).State = EntityState.Deleted;   // 本实例已在跟踪 → 直接改状态
+                continue;
+            }
+            tracked ??= db.ChangeTracker.Entries<Folder>()
+                .ToDictionary(e => e.Entity.FolderId, e => e.Entity, StringComparer.Ordinal);
+            if (tracked.TryGetValue(folder.FolderId, out var existing))
+                db.Entry(existing).State = EntityState.Deleted;  // 同 key 已跟踪（含已删除 → 空操作）
+            else
+                db.Entry(folder).State = EntityState.Deleted;
+        }
+        if (folders.Count > 0) _removed = true;   // 接管扫描的开启条件与 RemoveAsync 一致
+        return Task.CompletedTask;
+    }
 }
