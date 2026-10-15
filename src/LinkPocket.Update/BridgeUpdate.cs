@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace LinkPocket.Update;
 
 /// <summary>
-/// 乙 · 跨纪元例外路径（§5.3 乙）：**先导出、校验（sha256 + 计数）、后动任何东西**——
-/// 旧版 CLI 导出 → 设置 / 宏 / 字体复制到暂存副本（设置先过步骤链）→ 旧目录留存 → 新装落地 →
+/// 乙 · 跨纪元例外路径（§5.3 乙）：**数据备份（zip 落安装目录旁）→ 先导出、校验（sha256 + 计数）、后动任何东西**——
+/// 旧版 CLI 导出 → 设置 / 宏 / 字体 / 图标缓存复制到暂存副本（设置先过步骤链）→ 旧目录留存 → 新装落地 →
 /// 新版 CLI 导入（**计数对账一致才算过**）→ 设置副本就位 → 删旧、启动。
 /// **不挪 `data.pending`**（旧数据随旧目录；回滚 = 改回旧目录）；失败**保留暂存区**（内含导出件）并指路。
 /// </summary>
@@ -29,6 +29,9 @@ public static class BridgeUpdate
 
         try
         {
+            stage("backup");
+            DataBackup.Create(ctx, emit);
+
             stage("export");
             emit("exporting bookmarks with the old version ...");
             var exportOutput = RunCli(cli, oldCli,
@@ -116,7 +119,7 @@ public static class BridgeUpdate
             emit($"WARNING: manual recovery may be needed: {oldPath}");
     }
 
-    /// <summary>携带集（§4.1）：设置 / 宏 / 字体——**用量与运行痕迹不带**（`ai\usage.json` 剔除）。</summary>
+    /// <summary>携带集（§4.1）：设置 / 宏 / 字体 / 图标缓存——**用量与运行痕迹不带**（`ai\usage.json` 剔除）。</summary>
     private static void CopyCarrySet(string dataDir, string carryDir, Action<string> emit)
     {
         if (!Directory.Exists(dataDir)) return;
@@ -126,6 +129,7 @@ public static class BridgeUpdate
         CopyFile("macros.json");
         CopyDirectory("ai");
         CopyDirectory("fonts");
+        CopyDirectory("favicons");
 
         var usage = Path.Combine(carryDir, "ai", "usage.json");
         if (File.Exists(usage))

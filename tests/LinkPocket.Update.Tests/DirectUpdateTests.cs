@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using LinkPocket.Update;
 using Xunit;
 
@@ -47,11 +48,21 @@ public class DirectUpdateTests
             Assert.True(File.Exists(Path.Combine(install, "data", "macros.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "ai", "preferences.json")));
 
+            // 图标缓存 = 用户数据：随数据区携带、不剔除（4.0.4 起——曾剔除致"更新后图标全灭"）
+            Assert.Equal("png", File.ReadAllText(Path.Combine(install, "data", "favicons", "a.png")));
+
             // 运行痕迹已剔除（§0 清单）
             Assert.False(File.Exists(Path.Combine(install, "data", "ai", "usage.json")));
             Assert.False(File.Exists(Path.Combine(install, "data", "linkpocket-ops.db")));
             Assert.False(File.Exists(Path.Combine(install, "data", "undo-journal.json")));
-            Assert.False(Directory.Exists(Path.Combine(install, "data", "favicons")));
+
+            // 数据备份：安装目录旁生成数据 zip（更新流程不回收；用户确认后自删）
+            var backup = Assert.Single(Directory.GetFiles(root, "*.data-backup-*.zip"));
+            using (var archive = ZipFile.OpenRead(backup))
+            {
+                Assert.Contains(archive.Entries, e => e.FullName == "linkpocket.db");
+                Assert.Contains(archive.Entries, e => e.FullName == "favicons/a.png");
+            }
 
             // 无残留；已启动新版
             Assert.Empty(Directory.GetDirectories(root, "*.old-*"));
@@ -85,6 +96,9 @@ public class DirectUpdateTests
             Assert.Empty(Directory.GetDirectories(root, "*.old-*"));
             Assert.Empty(Directory.GetDirectories(root, "data.pending-*"));
             Assert.Empty(launched);
+
+            // 数据备份在"动任何东西"之前完成——失败回滚也不回收它（用户确认后自删）
+            Assert.Single(Directory.GetFiles(root, "*.data-backup-*.zip"));
         }
         finally { UpdateTestKit.Cleanup(root); }
     }

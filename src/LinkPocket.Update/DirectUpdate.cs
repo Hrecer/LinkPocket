@@ -1,9 +1,9 @@
 namespace LinkPocket.Update;
 
 /// <summary>
-/// 甲 · 同纪元主路径（§5.3 甲；不变量：**数据区只搬不读**）：
-/// 改名暂挪 → 旧目录留存 → 新装落地 → 数据回位 → 转换 + 剔除运行痕迹 → 删旧 → 启动。
-/// 任一步失败 → 回滚到"原样"（先数据、再新装、再旧目录、后数据回位）。
+/// 甲 · 同纪元主路径（§5.3 甲；不变量：**数据区只搬不读**——数据备份为只读字节打包）：
+/// **数据备份（zip 落安装目录旁）** → 改名暂挪 → 旧目录留存 → 新装落地 → 数据回位 → 转换 + 剔除运行痕迹 → 删旧 → 启动。
+/// 任一步失败 → 回滚到"原样"（先数据、再新装、再旧目录、后数据回位）；数据备份不回收（用户确认后自删）。
 /// </summary>
 internal static class DirectUpdate
 {
@@ -16,6 +16,9 @@ internal static class DirectUpdate
 
         try
         {
+            stage("backup");
+            DataBackup.Create(ctx, emit);
+
             stage("move-data");
             if (Directory.Exists(ctx.DataDir))
             {
@@ -123,7 +126,8 @@ internal static class DirectUpdate
             emit($"WARNING: manual recovery may be needed; left-over items: {oldPath ?? pendingPath}");
     }
 
-    /// <summary>§0"运行痕迹"清单：随库直搬后**剔除**这些（审计 / 幂等库、撤销栈、AI 用量、图标缓存）——不携带、缓存重建。</summary>
+    /// <summary>§0"运行痕迹"清单：随库直搬后**剔除**这些（审计 / 幂等库、撤销栈、AI 用量）——不携带。
+    /// <c>favicons\</c> 是**用户数据**：从不剔除、随数据区携带（4.0.4 起——曾剔除致"更新后图标全灭"）。</summary>
     private static void PruneRuntimeTraces(string dataDir, Action<string> emit)
     {
         if (!Directory.Exists(dataDir)) return;
@@ -151,7 +155,7 @@ internal static class DirectUpdate
 
         string[] directories =
         [
-            "undo-journal.json.parts", "undo-journal.cli.json.parts", "favicons",
+            "undo-journal.json.parts", "undo-journal.cli.json.parts",
         ];
         foreach (var relative in directories)
         {

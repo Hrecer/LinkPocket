@@ -45,6 +45,7 @@ public class BridgeUpdateTests
             UpdateTestKit.WriteFile(data, "ai/preferences.json", "{\"x\":1}");
             UpdateTestKit.WriteFile(data, "ai/usage.json", "{}");
             UpdateTestKit.WriteFile(data, "fonts/f.ttf", "font");
+            UpdateTestKit.WriteFile(data, "favicons/i.png", "icon");
         });
         UpdateTestKit.WriteFile(install, "tools/linkpocket.exe", "old-cli");
         return install;
@@ -91,7 +92,11 @@ public class BridgeUpdateTests
             Assert.True(File.Exists(Path.Combine(install, "data", "macros.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "ai", "preferences.json")));
             Assert.True(File.Exists(Path.Combine(install, "data", "fonts", "f.ttf")));
+            Assert.True(File.Exists(Path.Combine(install, "data", "favicons", "i.png")));
             Assert.False(File.Exists(Path.Combine(install, "data", "ai", "usage.json")));
+
+            // 数据备份：安装目录旁生成数据 zip（先于一切；更新流程不回收）
+            Assert.Single(Directory.GetFiles(root, "*.data-backup-*.zip"));
 
             // 暂存区保留导出件（等新版首启清扫）；旧目录已删；已启动
             Assert.Equal("fake-backup-bytes", File.ReadAllText(Path.Combine(staging, "bridge", "bookmarks.lpbackup")));
