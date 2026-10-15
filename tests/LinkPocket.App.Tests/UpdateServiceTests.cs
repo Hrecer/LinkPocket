@@ -406,6 +406,45 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public async Task 本地zip_带单层包装目录_下潜后即就位()
+    {
+        // 发布 zip 从 pack.ps1（4.0.4）起带一层包装目录 `LinkPocket\`（解压即得无版本名的安装目录名）：
+        // 单层子目录 = 包装层，服务侧下潜一层取包根，更新链路不受影响。
+        var root = NewRoot();
+        var zipPath = Path.Combine(Path.GetTempPath(), $"lp-update-wrapped-{Guid.NewGuid():N}.zip");
+        try
+        {
+            using (var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                void Add(string name, string content)
+                {
+                    var entry = zip.CreateEntry(name);
+                    using var writer = new StreamWriter(entry.Open());
+                    writer.Write(content);
+                }
+
+                Add("LinkPocket/LinkPocket.exe", "new-app");
+                Add("LinkPocket/LinkPocket-Update.exe", "updater-binary");
+                Add("LinkPocket/update/skip-install.txt", "");
+            }
+
+            var service = new UpdateService(root, "3.2.4", new HttpClient(new StubHandler()));
+            var prepared = await service.PrepareFromZipAsync(zipPath);
+
+            Assert.Equal(UpdatePrepareStatus.Ready, prepared.Status);
+            var stagingRoot = UpdateStaging.StagingRootFor(root);
+            Assert.True(File.Exists(Path.Combine(stagingRoot, "LinkPocket-Update.exe")));
+            Assert.True(File.Exists(Path.Combine(stagingRoot, "package", "LinkPocket.exe")));
+            Assert.True(Directory.Exists(Path.Combine(stagingRoot, "package", "update")));
+        }
+        finally
+        {
+            try { File.Delete(zipPath); } catch { /* 尽力而为 */ }
+            Cleanup(root);
+        }
+    }
+
+    [Fact]
     public async Task 本地zip_缺更新器即失败()
     {
         var root = NewRoot();

@@ -49,7 +49,7 @@
 .PARAMETER Zip
   Also write a .zip of the whole output folder to this exact path. Use it when the delivery is
   meant to be one file that lands in one place (the folder itself stays behind unless you delete
-  it). The archive holds the folder contents flat, with no extra wrapper directory.
+  it). The archive wraps the contents in a single LinkPocket\ folder (no version in the name).
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File build\pack.ps1
@@ -319,6 +319,10 @@ if ($missing.Count -gt 0) {
 }
 
 # ---- optional: one archive, written exactly where the caller asked for it ----
+# The archive wraps everything in a single LinkPocket\ folder (no version in the name):
+# extracting the zip yields the install folder directly, so the folder name never goes
+# stale across versions. The update path descends one wrapper level when reading a
+# package zip (UpdateService.PrepareCoreAsync), so this wrapper never reaches the updater.
 if ($Zip) {
     Write-Host "[PACK] zipping -> $Zip ..." -ForegroundColor Cyan
     $zipParent = Split-Path -Parent $Zip
@@ -327,8 +331,15 @@ if ($Zip) {
     }
     if (Test-Path -LiteralPath $Zip) { Remove-Item -LiteralPath $Zip -Force }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::CreateFromDirectory(
-        $out, $Zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    $archive = [System.IO.Compression.ZipFile]::Open($Zip, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in (Get-ChildItem -LiteralPath $out -Recurse -File)) {
+            $relative = $file.FullName.Substring($out.Length).TrimStart('\')
+            $entryName = 'LinkPocket/' + ($relative -replace '\\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        }
+    } finally { $archive.Dispose() }
     Write-Host ("[PACK] zip: {0} ({1:N1} MB)" -f $Zip, ((Get-Item -LiteralPath $Zip).Length / 1MB)) -ForegroundColor Green
 }
 

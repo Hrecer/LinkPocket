@@ -280,6 +280,18 @@ public sealed class UpdateService : IUpdateService
             await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, packageDir), ct).ConfigureAwait(false);
             progress?.Report(90);
 
+            // 发布包可带一层包装目录（pack.ps1 的 `LinkPocket\`——解压即得无版本名的安装目录名）：
+            // 只有单层子目录 = 它是包装层——整层上提，包根保持规范路径 `package\`
+            // （交棒、结构校验、更新器复制都只认它，不能让包装层漏进去）
+            var children = Directory.GetFileSystemEntries(packageDir);
+            if (children.Length == 1 && Directory.Exists(children[0]))
+            {
+                var lifted = packageDir + ".lifted";
+                Directory.Move(children[0], lifted);
+                Directory.Delete(packageDir);
+                Directory.Move(lifted, packageDir);
+            }
+
             var validation = ValidatePackage(packageDir);
             if (validation is not null) return Store(FailedPrepare(validation));
 
