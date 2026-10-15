@@ -57,7 +57,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="&#x2022;" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Top"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.1}" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.manage}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Grid>
                         <Grid Margin="0,10,0,0">
@@ -67,7 +67,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="&#x2022;" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Top"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.2}" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.entry}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Grid>
                         <Grid Margin="0,10,0,0">
@@ -77,7 +77,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="&#x2022;" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Top"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.3}" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.backup}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Grid>
                         <Grid Margin="0,10,0,0">
@@ -87,7 +87,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="&#x2022;" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Top"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.4}" FontSize="12" TextWrapping="Wrap"
+                            <TextBlock Grid.Column="1" Text="{loc:Loc about.features.update}" FontSize="12" TextWrapping="Wrap"
                                        Foreground="{DynamicResource App.Text.Secondary}"/>
                         </Grid>
                     </StackPanel>
