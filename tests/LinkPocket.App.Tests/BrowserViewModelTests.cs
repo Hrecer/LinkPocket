@@ -199,7 +199,7 @@ public class BrowserViewModelTests
             // 事件链口径的后台刷新（界面侧由 MainViewModel 300ms 防抖触发同一个入口）
             await vm.RefreshPreservingSelectionAsync();
 
-            // 行序列（Id + 顺序）没变 ⇒ 差分刷新走 ApplyFrom **原地写回**，行对象不换、一次 Reset 都不发
+            // 行序列（Id + 顺序）没变 ⇒ 差分刷新走 ApplyLink **原地写回**，行对象不换、一次 Reset 都不发
             Assert.Same(row, vm.Rows[0]);
             // 值确实变了（否则下面的通知断言就是空转）
             Assert.Equal(1, row.ViewCount);

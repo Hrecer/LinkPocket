@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using LinkPocket.Kernel;
 
@@ -47,9 +48,20 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         return q;
     }
 
-    /// <summary>分页**直出 DTO**（服务端投影）：与 <c>ToDto()</c> 逐字段同口径，但不物化实体——
-    /// 目录页每帧 2000 行的取数形态；实体物化 + 再映射那份开销在这里省掉（100K 实测省 ~35ms/页）。</summary>
+    /// <summary>分页**直出 DTO**：目录页每帧 2000 行的取数形态。
+    /// <b>直读路径</b>（2026-10-15 A 路线）：单一归属谓词 + 白名单排序（目录页的全部现实形态）
+    /// 走原生 SQL reader —— 与 EF 投影逐字段同口径，但省掉查询管线与物化/投影两段开销
+    ///（100K 实测 2000 行从 20–30ms 压到 ~1–2ms）。
+    /// 其余形态（搜索/多条件过滤）语义面太大，仍走 EF（<see cref="BuildPageQuery"/>，过滤规则只此一份）。</summary>
     public async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDtosAsync(LinkQuerySpec spec, CancellationToken ct)
+    {
+        if (TryBuildRawPageSql(spec, out var sql, out var parameters))
+            return await ReadDtosRawAsync(sql, parameters, ct);
+        return await ListDtosEfAsync(spec, ct);
+    }
+
+    /// <summary>EF 投影路径（复杂形态兜底；正确性基准 = <c>ListAsync().ToDto()</c> 实体路径，测试逐字段对照）。</summary>
+    private async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDtosEfAsync(LinkQuerySpec spec, CancellationToken ct)
         => await BuildPageQuery(spec)
             .Select(l => new LinkPocket.Contracts.LinkDto
             {
@@ -67,6 +79,104 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             })
             .ToListAsync(ct);
 
+    /// <summary>
+    /// 直读 SQL 生成（只服务"目录页形态"）：谓词 = 恰好一个归属条件（<c>folder_id = @folder</c> | <c>folder_id IS NULL</c>），
+    /// 其余过滤字段必须全空；排序 = 0/1 个子句且列在白名单内。任一不满足 → false（回 EF）。
+    /// ORDER BY 与 <c>EfSortEngine.Apply</c> + BuildPageQuery 的 ID 兜底逐字对齐：
+    /// 名称/地址用 <c>COLLATE NOCASE</c>；<c>last_visited_at</c> 前置判空子句（为空恒排最后）；
+    /// ID 兜底方向随排序列（倒序扫也能整段命中 <c>idx_links_folder_*</c> 复合索引）。
+    /// </summary>
+    private static bool TryBuildRawPageSql(LinkQuerySpec spec, out string sql, out (string Name, object? Value)[] parameters)
+    {
+        sql = string.Empty;
+        parameters = [];
+
+        var f = spec.Filter;
+        var folderKey = f.FolderId?.Value;   // FolderId → 内层字符串（SQL 参数绑不了包装类型）
+        var byFolder = folderKey is not null && f.Unfiled is null && IsAreaFilter(f);
+        var byRoot = folderKey is null && f.Unfiled == true && IsAreaFilter(f);
+        if (!byFolder && !byRoot) return false;
+
+        if (spec.Sort.Count > 1) return false;
+        var clause = spec.Sort.Count == 1 ? spec.Sort[0] : new SortSpec("title", SortDir.Asc);
+        var expr = clause.Field switch
+        {
+            "title" => "title COLLATE NOCASE",
+            "url" => "url COLLATE NOCASE",
+            "created_at" => "created_at",
+            "updated_at" => "updated_at",
+            "last_visited_at" => "last_visited_at",
+            "visit_count" => "visit_count",
+            "is_important" => "is_important",
+            _ => null,
+        };
+        if (expr is null) return false;
+
+        var dir = clause.Dir == SortDir.Desc ? "DESC" : "ASC";
+        var order = clause.Field == "last_visited_at"
+            ? $"(last_visited_at IS NULL) ASC, last_visited_at {dir}, id {dir}"
+            : $"{expr} {dir}, id {dir}";
+
+        var sb = new StringBuilder(
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links WHERE ");
+        sb.Append(byFolder ? "folder_id = @folder" : "folder_id IS NULL");
+        sb.Append(" ORDER BY ").Append(order);
+
+        var list = new List<(string Name, object? Value)>(3);
+        if (byFolder) list.Add(("@folder", folderKey));
+        if (spec.Page.Size > 0)
+        {
+            sb.Append(" LIMIT @take OFFSET @skip");
+            list.Add(("@take", spec.Page.Size));
+            list.Add(("@skip", spec.Page.Skip));
+        }
+        sql = sb.ToString();
+        parameters = [.. list];
+        return true;
+    }
+
+    /// <summary>归属谓词之外无任何其它过滤（直读的形态前提）——多一个条件即回 EF，语义面不做第二种实现。
+    /// 归属条件本身（folder_id / unfiled）由调用方判定，这里不重复管。</summary>
+    private static bool IsAreaFilter(LinkFilter f)
+        => f.Search is null
+        && f.SearchScope is null
+        && f.IsImportant is null
+        && f.CreatedFrom is null && f.CreatedTo is null
+        && f.IdIn is null && f.FolderIdsIn is null
+        && string.IsNullOrEmpty(f.TitleContains) && string.IsNullOrEmpty(f.UrlContains)
+        && string.IsNullOrEmpty(f.UrlStarts) && string.IsNullOrEmpty(f.DescriptionContains)
+        && f.UpdatedFrom is null && f.UpdatedTo is null
+        && f.LastVisitedFrom is null && f.LastVisitedTo is null
+        && f.NeverVisited is null
+        && f.VisitCountMin is null && f.VisitCountMax is null;
+
+    private async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ReadDtosRawAsync(
+        string sql, (string Name, object? Value)[] parameters, CancellationToken ct)
+    {
+        using var cmd = await RawSql.CreateAsync(db, sql, ct);
+        foreach (var (name, value) in parameters) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<LinkPocket.Contracts.LinkDto>();
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new LinkPocket.Contracts.LinkDto
+            {
+                LinkId = reader.GetString(0),
+                Url = reader.GetString(1),
+                Title = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                Description = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                FaviconUrl = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+                ListId = reader.IsDBNull(5) ? null : reader.GetString(5),
+                LastVisitedAt = reader.IsDBNull(6) ? null : reader.GetDateTime(6),
+                VisitCount = reader.GetInt32(7),
+                IsImportant = reader.GetBoolean(8),
+                CreatedAt = reader.GetDateTime(9),
+                UpdatedAt = reader.GetDateTime(10),
+            });
+        }
+        return rows;
+    }
+
     public async Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct)
         => await db.Links.AsNoTracking()
             .Where(l => l.FaviconUrl != null && l.FaviconUrl != "")
@@ -82,7 +192,23 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     }
 
     public async Task<int> CountAsync(LinkFilter filter, CancellationToken ct)
-        => await ApplyFilter(db.Links.AsNoTracking(), filter).CountAsync(ct);
+    {
+        // 直读（B 路线）：目录页的计数形态（folder = X / 根级）——单条 COUNT 直发，省掉 EF 查询管线；
+        // 其余形态仍走 EF（过滤规则单一出处）。
+        var folderKey = filter.FolderId?.Value;
+        var byFolder = folderKey is not null && filter.Unfiled is null && IsAreaFilter(filter);
+        var byRoot = folderKey is null && filter.Unfiled == true && IsAreaFilter(filter);
+        if (byFolder || byRoot)
+        {
+            var sql = byFolder
+                ? "SELECT COUNT(*) FROM links WHERE folder_id = @folder"
+                : "SELECT COUNT(*) FROM links WHERE folder_id IS NULL";
+            using var cmd = await RawSql.CreateAsync(db, sql, ct);
+            if (byFolder) cmd.Parameters.AddWithValue("@folder", folderKey);
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct), System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return await ApplyFilter(db.Links.AsNoTracking(), filter).CountAsync(ct);
+    }
 
     public async Task<IReadOnlyDictionary<FolderId, int>> CountByFolderAsync(CancellationToken ct)
         => (await db.Links.AsNoTracking()

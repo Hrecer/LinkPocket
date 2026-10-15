@@ -121,19 +121,29 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
 
     // ===== 内部原语 =====
 
-    /// <summary>ID → 父 ID 索引（一次全量查询；文件夹数量有限，遍历一律在内存完成）。</summary>
+    /// <summary>ID → 父 ID 索引（一次全量查询；文件夹数量有限，遍历一律在内存完成）。
+    /// 直读（B 路线，2026-10-15）：刷新固定成本的组成部分，EF 物化匿名行改 reader 逐行映射。</summary>
     private async Task<Dictionary<string, string?>> LoadParentIndexAsync(CancellationToken ct)
-        => await db.Folders.AsNoTracking()
-            .Select(f => new { f.FolderId, f.ParentId })
-            .ToDictionaryAsync(f => f.FolderId, f => f.ParentId, ct);
+    {
+        using var cmd = await RawSql.CreateAsync(db, "SELECT id, parent_id FROM folders", ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var index = new Dictionary<string, string?>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct))
+            index[reader.GetString(0)] = reader.IsDBNull(1) ? null : reader.GetString(1);
+        return index;
+    }
 
     private async Task<Dictionary<string, FolderNode>> LoadNodeIndexAsync(CancellationToken ct)
     {
-        var rows = await db.Folders.AsNoTracking()
-            .Select(f => new { f.FolderId, f.ParentId, f.Name })
-            .ToListAsync(ct);
-        return rows.ToDictionary(
-            r => r.FolderId, r => new FolderNode(r.FolderId, r.ParentId, r.Name), StringComparer.Ordinal);
+        using var cmd = await RawSql.CreateAsync(db, "SELECT id, parent_id, name FROM folders", ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var index = new Dictionary<string, FolderNode>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(ct))
+            index[reader.GetString(0)] = new FolderNode(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.GetString(2));
+        return index;
     }
 
     private static Dictionary<string, string?> ToParentIndex(Dictionary<string, FolderNode> nodes)
@@ -144,12 +154,17 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
     }
 
     private async Task<IReadOnlyDictionary<FolderId, int>> DirectCountsAsync(CancellationToken ct)
-        => (await db.Links.AsNoTracking()
-                .Where(l => l.ListId != null)
-                .GroupBy(l => l.ListId!)
-                .Select(g => new { FolderId = g.Key, Count = g.Count() })
-                .ToListAsync(ct))
-            .ToDictionary(x => new FolderId(x.FolderId), x => x.Count);
+    {
+        // 直读（B 路线）：按目录一条 GROUP BY 直发（命中 idx_links_folder 覆盖列），
+        // 与 CountByFolderAsync 同口径（SQL 端聚合，不把行拉回来）。
+        using var cmd = await RawSql.CreateAsync(db,
+            "SELECT folder_id, COUNT(*) FROM links WHERE folder_id IS NOT NULL GROUP BY folder_id", ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var counts = new Dictionary<FolderId, int>();
+        while (await reader.ReadAsync(ct))
+            counts[new FolderId(reader.GetString(0))] = reader.GetInt32(1);
+        return counts;
+    }
 
     /// <summary>
     /// 父链上溯原语：返回 folderId 自身 + 全部祖先（由近及远）；跟踪态实体（供原地写入）。

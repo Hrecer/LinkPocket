@@ -29,7 +29,31 @@ internal sealed class EfFolderRepository(LinkPocketDbContext db) : IFolderReposi
     }
 
     public async Task<IReadOnlyList<Folder>> ListAllAsync(CancellationToken ct)
-        => await db.Folders.AsNoTracking().ToListAsync(ct);
+    {
+        // 直读（B 路线，2026-10-15）：刷新固定成本的主力查（folders.overview 每次都取全量文件夹）。
+        // reader 逐列映射代替 EF 实体物化；返回**分离实例**——与原 AsNoTracking 语义一致
+        //（调用方要写必须显式 UpdateAsync / RemoveRangeAsync 登记，批内跟踪态接管逻辑照旧）。
+        using var cmd = await RawSql.CreateAsync(db,
+            "SELECT id, parent_id, name, description, sort_order, last_visited_at, visit_count, created_at, updated_at FROM folders", ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<Folder>();
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new Folder
+            {
+                FolderId = reader.GetString(0),
+                ParentId = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Name = reader.GetString(2),
+                Description = reader.IsDBNull(3) ? null : reader.GetString(3),
+                SortOrder = reader.GetInt32(4),
+                LastVisitedAt = reader.IsDBNull(5) ? null : reader.GetDateTime(5),
+                VisitCount = reader.GetInt32(6),
+                CreatedAt = reader.GetDateTime(7),
+                UpdatedAt = reader.GetDateTime(8),
+            });
+        }
+        return rows;
+    }
 
     public Task<int> CountAsync(CancellationToken ct)
         => db.Folders.AsNoTracking().CountAsync(ct);

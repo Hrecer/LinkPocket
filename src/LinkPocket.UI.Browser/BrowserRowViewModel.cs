@@ -42,11 +42,11 @@ public class BrowserRowViewModel : INotifyPropertyChanged
     /// <summary>乐观改名（仅界面投影；数据以引擎为准，事件刷新终会对齐）。</summary>
     public void UpdateName(string name) => Name = name;
 
-    // ── 展示字段：**可原地更新**（差分刷新用）────────────────────────────────
-    // 口径：行序列（Id + 顺序）不变时，刷新走 `ApplyFrom` **原地写回**而不是换新对象 ——
-    // 换新对象要整表 ReplaceAll（一次 Reset ⇒ 视口内行容器连同右键菜单/布局行为全部重建，
+    // ── 展示字段：**可原地更新**（增量刷新用）────────────────────────────────
+    // 口径：行已在集合里时，刷新走 `ApplyFolder` / `ApplyLink` **原地写回**而不是换新对象 ——
+    // 换新对象要整表替换（一次 Reset ⇒ 视口内行容器连同右键菜单/布局行为全部重建，
     // 实测大目录一次 64ms 布局）。所以这些字段必须可写且**逐字段发通知**（只通知真变了的）。
-    // 写入口只有两个：对象初始化器（构造）与 `ApplyFrom`（刷新）—— `internal set` 不对外开放。
+    // 写入口只有两个：对象初始化器（构造）与 Apply*（刷新）—— `internal set` 不对外开放。
 
     private string? _url;
     /// <summary>仅书签行有值。</summary>
@@ -126,39 +126,71 @@ public class BrowserRowViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// **原地更新**：把另一份（同 Id、同位置的）行的展示字段写回本行 —— 只写真的变了的那些，
-    /// 每个变了的值各发一次属性通知（绑它的那一格自己重画，不动集合、不动容器）。
-    /// </summary>
-    /// <remarks>
-    /// 与"整表替换"的分工：本方法**只**用于"行序列（Id + 顺序）完全一致"的刷新；
-    /// 行的增减 / 重排 / 换目录仍走 <c>Rows.ReplaceAll</c>（那时容器的对应关系已经变了，必须重建）。
-    /// </remarks>
-    internal void ApplyFrom(BrowserRowViewModel fresh)
+    // ── 目标值映射（唯一写入口：构造 + 原地写回）─────────────────────────────
+    // 刷新链把"目标行序"（RowPlan：Id/类型/来源 DTO）算好后逐项二选一：
+    // 集合里已有同 Id 的行 → ApplyFolder/ApplyLink **原地写回**（只写变了的字段）；
+    // 新出现的行 → FromFolder/FromLink 建新行（唯一构造口）。映射只此一份，
+    // 不会再出现"建行"与"写回"两套字段口径漂移。
+
+    internal static BrowserRowViewModel FromFolder(FolderDto folder, BrowserViewModel host, bool isCut)
+        => new(folder.FolderId, isFolder: true, folder.Name)
+        {
+            LinkCount = folder.LinkCount,
+            ModifiedAt = folder.UpdatedAt,   // 内核维护：文件夹内容（含子孙）最后变动时间
+            CreatedAt = folder.CreatedAt,    // 内核维护：文件夹创建时间
+            LastViewedAt = folder.LastVisitedAt, // 内核维护：子孙链接被查看时沿父链刷新
+            ViewCount = folder.VisitCount,       // 内核维护：子孙链接被查看时沿父链 +1
+            Host = host,
+            IsCut = isCut,
+        };
+
+    internal static BrowserRowViewModel FromLink(LinkDto link, BrowserViewModel host, bool isCut)
+        => new(link.LinkId, isFolder: false, link.Title)
+        {
+            Url = link.Url,
+            ModifiedAt = link.UpdatedAt,        // 内核维护：内容变动时间（查看不影响）
+            CreatedAt = link.CreatedAt,         // 内核维护：链接创建时间
+            LastViewedAt = link.LastVisitedAt,  // 内核维护：链接最后查看时间
+            ViewCount = link.VisitCount,        // 内核维护：链接查看次数
+            FaviconUrl = link.FaviconUrl,
+            Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl),
+            Host = host,
+            IsCut = isCut,
+        };
+
+    /// <summary>文件夹行的目标值写回（只写变了的字段，每处一次属性通知）。</summary>
+    internal void ApplyFolder(FolderDto folder, bool isCut)
     {
-        Name = fresh.Name;
-        Url = fresh.Url;
-        LinkCount = fresh.LinkCount;
-        ModifiedAt = fresh.ModifiedAt;
-        CreatedAt = fresh.CreatedAt;
-        LastViewedAt = fresh.LastViewedAt;
-        ViewCount = fresh.ViewCount;
-        IsCut = fresh.IsCut;
-        SetFavicon(fresh.Favicon);   // 值相同不发通知（见 SetFavicon）
+        Name = folder.Name;
+        LinkCount = folder.LinkCount;
+        ModifiedAt = folder.UpdatedAt;
+        CreatedAt = folder.CreatedAt;
+        LastViewedAt = folder.LastVisitedAt;
+        ViewCount = folder.VisitCount;
+        IsCut = isCut;
     }
 
-    /// <summary>
-    /// 两个行序列是否**同一批行**（条数、逐项 Id 与类型都一致 = 只有展示字段可能变）——
-    /// 差分刷新的判据：真时走 <see cref="ApplyFrom"/> 原地更新，假时走整表替换。
-    /// </summary>
-    public static bool SameIdentity(IReadOnlyList<BrowserRowViewModel>? a, IReadOnlyList<BrowserRowViewModel>? b)
+    /// <summary>链接行的目标值写回。favicon 按**源地址是否变化**决定要不要重解码：
+    /// 地址没变就保留现有图像（不重解码、不闪）；变了才重取（空串 = 清除 → null）。</summary>
+    internal void ApplyLink(LinkDto link, bool isCut)
     {
-        if (ReferenceEquals(a, b)) return true;
-        if (a == null || b == null || a.Count != b.Count) return false;
-        for (var i = 0; i < a.Count; i++)
-            if (a[i].Id != b[i].Id || a[i].IsFolder != b[i].IsFolder) return false;
-        return true;
+        Name = link.Title;
+        Url = link.Url;
+        ModifiedAt = link.UpdatedAt;
+        CreatedAt = link.CreatedAt;
+        LastViewedAt = link.LastVisitedAt;
+        ViewCount = link.VisitCount;
+        IsCut = isCut;
+        if (!string.Equals(FaviconUrl, link.FaviconUrl, StringComparison.Ordinal))
+        {
+            FaviconUrl = link.FaviconUrl;
+            SetFavicon(Services.FaviconService.LoadFromCache(link.FaviconUrl));
+        }
     }
+
+    /// <summary>本行图标**源地址**（内部记账，不参与绑定）：判断"地址没变 → 不重解码"用。
+    /// 与目录树叶子的 <c>FolderNode.FaviconUrl</c> 同一职责、同一口径。</summary>
+    internal string? FaviconUrl { get; private set; }
 
     /// <summary>
     /// 时间列的唯一换算口：<b>库里存 UTC，界面画本地</b>（全库同口径，见 <see cref="UiClock"/>——
@@ -264,30 +296,6 @@ public class BrowserRowViewModel : INotifyPropertyChanged
 
     /// <summary>落点状态变化后由宿主调用：仅重发本行 IsDropTarget 的绑定通知（值由落点投影）。</summary>
     public void InvalidateIsDropTarget() => OnPropertyChanged(nameof(IsDropTarget));
-
-    /// <summary>
-    /// 两个行序列是否**渲染等价**（ID 序列 + 全部展示字段逐项一致，含顺序；favicon 与剪切态也纳入）。
-    /// 用途：刷新后判断"要不要换掉 Rows"——逐条 Clear/Add 会触发 N 次 CollectionChanged 并让视图整表重建，
-    /// 内容没变时纯属白烧（低性能设备上切页偶发明显卡顿）。
-    /// 口径：**宁可重建不可漏更新**——字段有任何差异即视为需要重建。
-    /// </summary>
-    public static bool SameSequence(IReadOnlyList<BrowserRowViewModel>? a, IReadOnlyList<BrowserRowViewModel>? b)
-    {
-        if (ReferenceEquals(a, b)) return true;
-        if (a == null || b == null) return false;
-        if (a.Count != b.Count) return false;
-        for (var i = 0; i < a.Count; i++)
-        {
-            var x = a[i];
-            var y = b[i];
-            if (x.Id != y.Id || x.IsFolder != y.IsFolder || x.Name != y.Name || x.Url != y.Url
-                || x.LinkCount != y.LinkCount || x.ModifiedAt != y.ModifiedAt
-                || x.CreatedAt != y.CreatedAt || x.LastViewedAt != y.LastViewedAt
-                || x.ViewCount != y.ViewCount || x.IsCut != y.IsCut
-                || !ReferenceEquals(x.Favicon, y.Favicon)) return false;
-        }
-        return true;
-    }
 
     private bool _isCut;
     /// <summary>剪切态视觉（Ctrl+X）：行整体半透明，由绑定驱动。</summary>

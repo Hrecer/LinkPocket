@@ -126,89 +126,68 @@ public partial class BrowserViewModel
             navMarks[1] = navWatch.ElapsedMilliseconds;   // 目录树重建
             // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
-            // ⚠️ 这里**不**先清空 Rows：行集要不要换，等目标行序算完再做等价判定（见下方"内容一致 → 不动集合"）。
+            // ⚠️ 这里**不**先清空 Rows：目标行序先算成"计划"（Id/类型/来源 DTO 三元组），
+            // 再与现有集合做增量对齐（行对象复用 / 最小编辑脚本），见 BrowserViewModel.RowsEdit.cs。
             // Windows 逻辑：升序时文件夹在前，降序时文件夹在后（任何排序维度都如此）
-            var folderRows = new List<BrowserRowViewModel>();
+            var folderPlans = new List<RowPlan>();
             foreach (var folder in contents.SubFolders)
-            {
-                folderRows.Add(new BrowserRowViewModel(folder.FolderId, isFolder: true, folder.Name)
-                {
-                    LinkCount = folder.LinkCount,
-                    ModifiedAt = folder.UpdatedAt, // 内核维护：文件夹内容（含子孙）最后变动时间
-                    CreatedAt = folder.CreatedAt,  // 内核维护：文件夹创建时间
-                    LastViewedAt = folder.LastVisitedAt, // 内核维护：子孙链接被查看时沿父链刷新
-                    ViewCount = folder.VisitCount,       // 内核维护：子孙链接被查看时沿父链 +1
-                    Host = this,
-                    IsCut = _clipboardCtl.IsCutInClipboard(folder.FolderId, true)
-                });
-            }
+                folderPlans.Add(new RowPlan(folder.FolderId, IsFolder: true, folder, null));
 
-            var linkRows = new List<BrowserRowViewModel>();
+            var linkPlans = new List<RowPlan>();
             // Id → 图标地址：行序与来源列表同长，逐个 First(...) 找回来是 O(行 × 链接)
             //（10k 库冷缓存时是千万级字符串比较，且发生在 UI 线程）
             var faviconUrlById = new Dictionary<string, string?>(contents.Links.Count, StringComparer.Ordinal);
             foreach (var link in contents.Links)
             {
                 faviconUrlById[link.LinkId] = link.FaviconUrl;
-                linkRows.Add(new BrowserRowViewModel(link.LinkId, isFolder: false, link.Title)
-                {
-                    Url = link.Url,
-                    ModifiedAt = link.UpdatedAt,        // 内核维护：内容变动时间（查看不影响）
-                    CreatedAt = link.CreatedAt,          // 内核维护：链接创建时间
-                    LastViewedAt = link.LastVisitedAt,   // 内核维护：链接最后查看时间
-                    ViewCount = link.VisitCount,         // 内核维护：链接查看次数
-                    Favicon = Services.FaviconService.LoadFromCache(link.FaviconUrl),
-                    Host = this,
-                    IsCut = _clipboardCtl.IsCutInClipboard(link.LinkId, false)
-                });
+                linkPlans.Add(new RowPlan(link.LinkId, IsFolder: false, null, link));
             }
 
             // 组装顺序：升序 = 文件夹 → 链接；降序 = 链接 → 文件夹（Windows 逻辑）。
             // ⚠️ 行必须先同步就位（favicon 属附属数据，网络预取绝不阻塞行渲染——
             //    曾因「await 预取再建行」在网络慢时把 Rows 长时间留在上一目录，跳转定位读到旧行集 → RowMissing 间歇回归）。
             var ordered = SortOrder == "desc"
-                ? linkRows.Concat(folderRows).ToList()
-                : folderRows.Concat(linkRows).ToList();
+                ? linkPlans.Concat(folderPlans).ToList()
+                : folderPlans.Concat(linkPlans).ToList();
 
             // 临时置尾（Windows）：刚粘贴的项追加到列表末尾（不参与排序），直到真刷新才按排序归位。
             // 只对"属于当前目录且此刻仍在数据里"的 ID 生效——已被移走/删除的置尾项自动跳过。
-            // 目标行序（含置尾）先算好，再决定**要不要换集合**：
-            // 内容完全一致（含顺序）时保持原集合不动——逐条 Clear/Add 会触发 N 次 CollectionChanged，
-            // 视图（模板模式）随之整表重建/重排，是"切页偶发卡顿"的主要来源。
             var pinned = ActivePinnedIds();
-            var nextRows = new List<BrowserRowViewModel>(ordered.Count);
+            var next = new List<RowPlan>(ordered.Count);
             if (pinned.Count == 0)
             {
-                nextRows.AddRange(ordered);
+                next.AddRange(ordered);
             }
             else
             {
                 var pinnedSet = new HashSet<string>(pinned, StringComparer.Ordinal);
-                var byId = ordered.ToDictionary(r => r.Id, StringComparer.Ordinal);
-                foreach (var row in ordered)
-                    if (!pinnedSet.Contains(row.Id)) nextRows.Add(row);
+                var byId = new Dictionary<string, RowPlan>(ordered.Count, StringComparer.Ordinal);
+                foreach (var plan in ordered) byId[plan.Id] = plan;
+                foreach (var plan in ordered)
+                    if (!pinnedSet.Contains(plan.Id)) next.Add(plan);
                 foreach (var id in pinned)
-                    if (byId.TryGetValue(id, out var row)) nextRows.Add(row);
+                    if (byId.TryGetValue(id, out var plan)) next.Add(plan);
             }
 
-            // **差分刷新**：行序列（Id + 顺序 + 类型）没变时**不换集合**，只把变了的展示字段原地写回
-            // （每处各发一次属性通知）—— 一次 Reset 都没有 ⇒ 视口内的行容器（连同右键菜单、布局行为、
-            // 列宽投影）原地保留，只重画真变了的那几格。实测：大目录里"数据刚被批脚本改过再打开/刷新"
-            // 这一下从 64ms 布局降到个位数。行的增减 / 重排 / 换目录仍走下面的整表替换
-            // （那时容器与数据项的对应关系已经变了，必须重建）。
-            if (BrowserRowViewModel.SameIdentity(Rows, nextRows))
+            // ① 同一批行（Id + 顺序不变）→ 原地写回展示字段（favicon 按源地址变化才重解码）；
+            // ② 成员 / 顺序有变 → 增量集合编辑（按位置增删挪，行对象复用，不换集合）；
+            // ③ 变动过大 → 整表替换（一次 Reset；与原行为一致）。
+            if (SameRowIdentity(Rows, next))
             {
-                for (var i = 0; i < nextRows.Count; i++) Rows[i].ApplyFrom(nextRows[i]);
+                for (var i = 0; i < next.Count; i++) ApplyPlan(Rows[i], next[i]);
             }
-            else if (!BrowserRowViewModel.SameSequence(Rows, nextRows))
+            else if (!TryApplyIncrementalEdit(next))
             {
-                // 整体替换 = **一次** Reset 通知（逐条 Add 在 10 001 行时会发 10 001 次，见 BulkObservableCollection）
                 _rowsReplaced = true;   // 新行对象：选中/改名投影不必逐行通知（绑定首次求值即读宿主状态）
-                Rows.ReplaceAll(nextRows);
+                Rows.ReplaceAll(next.Select(p => CreateRow(p)));
                 SetContextRow(null);   // 行对象已重建：右键命中行引用作废（删除文案随之复位）
             }
 
-            // favicon 后台预取 + 回填（与续载共用一条链路，见 StartFaviconPrefetch）
+            // favicon 后台预取 + 回填（与续载共用一条链路，见 StartFaviconPrefetch）。
+            // 只取仍缺图标的链接行：地址没变的行已保留现图（ApplyLink），不会重复入列。
+            var linkRows = new List<BrowserRowViewModel>();
+            foreach (var row in Rows)
+                if (!row.IsFolder) linkRows.Add(row);
             StartFaviconPrefetch(linkRows, faviconUrlById);
             navMarks[2] = navWatch.ElapsedMilliseconds;   // 建行（含 favicon 本地解码）
 
@@ -466,17 +445,9 @@ public partial class BrowserViewModel
                 page: nextPage, perPage: PageChunkSize);
             if (Controller.CurrentFolderId != folderId || dto.CurrentPage != nextPage) return;   // 已切换 → 丢弃
 
-            var rows = dto.Links.Select(l => new BrowserRowViewModel(l.LinkId, isFolder: false, l.Title)
-            {
-                Url = l.Url,
-                ModifiedAt = l.UpdatedAt,
-                CreatedAt = l.CreatedAt,
-                LastViewedAt = l.LastVisitedAt,
-                ViewCount = l.VisitCount,
-                Favicon = Services.FaviconService.LoadFromCache(l.FaviconUrl),
-                Host = this,
-                IsCut = _clipboardCtl.IsCutInClipboard(l.LinkId, false),
-            }).ToList();
+            var rows = dto.Links
+                .Select(l => BrowserRowViewModel.FromLink(l, this, _clipboardCtl.IsCutInClipboard(l.LinkId, false)))
+                .ToList();
 
             if (SortOrder == "desc")
             {

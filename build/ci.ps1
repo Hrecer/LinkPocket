@@ -66,6 +66,22 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifacts = Join-Path $PSScriptRoot "artifacts"
 New-Item -ItemType Directory -Path $artifacts -Force | Out-Null
 
+# ⚠️ PS 5.1 陷阱（实测踩过）：native 命令往 stderr 写字（xUnit 的 [FAIL] 行 / 编译错误行）会被包成
+# ErrorRecord，配上本脚本顶部的 $ErrorActionPreference = "Stop" 直接变成**终止性错误**——门禁在
+# "记录失败、打印耗时表"之前就中止（单测首条失败即整脚本退出，summary/退出码全丢）。
+# native 调用一律经本函数：调用期间 EAP 降级为 Continue，只认 $LASTEXITCODE。
+function Invoke-Native {
+    param([string]$FilePath, [string[]]$Arguments, [string]$LogPath)
+    $saved = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $FilePath @Arguments *> $LogPath
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $saved
+    }
+}
+
 $dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
 if (-not $dotnet) {
     foreach ($candidate in @("$env:ProgramFiles\dotnet\dotnet.exe", "${env:ProgramFiles(x86)}\dotnet\dotnet.exe")) {
@@ -151,8 +167,7 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
     Write-Host "[CI] 全量编译（$Configuration，0 警告 0 错误）第 $attempt/$maxAttempts 次 ..." -ForegroundColor Cyan
     $swAttempt = [System.Diagnostics.Stopwatch]::StartNew()
     # 直接重定向到文件（不经管道）——理由同下方单测段：native 命令走管道 + Tee-Object 会死锁。
-    & $dotnet @buildArgs *> $buildLog
-    $buildExit = $LASTEXITCODE
+    $buildExit = Invoke-Native $dotnet $buildArgs $buildLog
     $swAttempt.Stop()
     $buildAttempts += $swAttempt.Elapsed.TotalSeconds
     if ($buildExit -eq 0) { $built = $true; break }
@@ -180,8 +195,8 @@ Write-Host "[CI] 编译通过" -ForegroundColor Green
 Write-Host "[CI] 生成物漂移校验（EngineClient 便利层）..." -ForegroundColor Cyan
 $generatedLog = Join-Path $artifacts "generated.log"
 $swGenerated = [System.Diagnostics.Stopwatch]::StartNew()
-& $dotnet run --project (Join-Path $repoRoot "tools/LinkPocket.ClientGen") -c $Configuration -- --check *> $generatedLog
-$generatedExit = $LASTEXITCODE
+$generatedExit = Invoke-Native $dotnet @(
+    "run", "--project", (Join-Path $repoRoot "tools/LinkPocket.ClientGen"), "-c", $Configuration, "--", "--check") $generatedLog
 $swGenerated.Stop()
 $timings['②.5 生成物校验'] = $swGenerated.Elapsed.TotalSeconds
 if ($generatedExit -ne 0) {
@@ -252,8 +267,9 @@ else {
             Write-Host "[CI]   -> $project（串行）" -ForegroundColor DarkGray
             $swTest = [System.Diagnostics.Stopwatch]::StartNew()
             $projectLog = Join-Path $artifacts ("test-" + (Split-Path -Leaf $project) + ".log")
-            & $dotnet test (Join-Path $repoRoot $project) -c $Configuration --no-build --nologo *> $projectLog
-            if ($LASTEXITCODE -ne 0) { $testFailures += [IO.Path]::GetFileNameWithoutExtension($project) }
+            $testExit = Invoke-Native $dotnet @(
+                "test", (Join-Path $repoRoot $project), "-c", $Configuration, "--no-build", "--nologo") $projectLog
+            if ($testExit -ne 0) { $testFailures += [IO.Path]::GetFileNameWithoutExtension($project) }
             $swTest.Stop()
             $testTimings[(Split-Path -Leaf $project)] = $swTest.Elapsed.TotalSeconds
             if (Test-Path -LiteralPath $projectLog) {
@@ -279,8 +295,9 @@ Write-Host "[CI] 协议冒烟 + 10k 性能门槛（严格）..." -ForegroundColo
 $swSmoke = [System.Diagnostics.Stopwatch]::StartNew()
 # 直接重定向到文件（不经管道）——理由同单测段：native 命令走管道 + Tee-Object 会死锁。
 $smokeLog = Join-Path $artifacts "smoke.log"
-& $dotnet run --project (Join-Path $repoRoot "tests/ProtocolSmoke") -c $Configuration --no-build -- --strict-perf *> $smokeLog
-$smokeExit = $LASTEXITCODE
+$smokeExit = Invoke-Native $dotnet @(
+    "run", "--project", (Join-Path $repoRoot "tests/ProtocolSmoke"), "-c", $Configuration, "--no-build",
+    "--", "--strict-perf") $smokeLog
 $swSmoke.Stop()
 $timings['④ 冒烟 + 10k 性能'] = $swSmoke.Elapsed.TotalSeconds
 Get-Content -LiteralPath $smokeLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "      $_" }
