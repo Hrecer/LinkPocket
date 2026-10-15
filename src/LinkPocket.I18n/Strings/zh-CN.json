@@ -345,7 +345,7 @@
   "appearance.font.systemHint": "系统已装字体：只读（属于系统，本应用不修改、也删不掉）",
   "appearance.font.customHint": "自定义字体：导入的字体文件存在本应用目录里，可随时删除（不会动系统字体）；还没导入过就是空的",
   "appearance.palette.autoOn": "已开启（缺省）：按明度档位自动重排你的配色",
-  "appearance.palette.autoOff": "已关闭：尽量原样使用你给的颜色（只在某个角色确实缺色时才按本色补一档）",
+  "appearance.palette.autoOff": "已关闭：直接用你给的颜色（颜色实在不够的地方才补算）",
   "appearance.palette.missingSlots": "还有 {0} 个颜色没选（点色槽用取色盘选）",
   "appearance.status.themeAppliedPrefFailed": "主题已应用，但偏好保存失败（详情见日志）",
   "appearance.status.paletteAppliedPrefFailed": "配色已应用，但偏好保存失败（详情见日志）",

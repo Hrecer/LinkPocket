@@ -79,13 +79,13 @@ public class ThemeContrastTests
         ThemeCatalog.All.Select(t => new object[] { t.Id });
 
     [Fact]
-    public void 对比度矩阵_11套主题_两种配色方式全部达标()
+    public void 对比度矩阵_11套主题_自动调色全部达标()
     {
-        // 配色应用方式（「自动调整颜色」开关）**两种都要可读**：
-        // 直配（尽量原样用用户颜色）与自动调色（按档位重排）走不同的取色分支，
-        // 任一支跌破阈值都要在这里红 —— 只测一种模式等于把另一半放空。
+        // 只守**自动调色**（缺省模式）：它按档位表重排，任何一套配色都必须可读。
+        // 直配（Exact）**不参与可读性门槛**——用户口径："直配就是用户选什么颜色就什么颜色，
+        // 必须忠实于用户；颜色实在出不来 / 实在不够，再说"——原色直接上屏，可读性由用户的配色自己负责。
         var failures = new List<string>();
-        foreach (var mode in new[] { PaletteMode.Exact, PaletteMode.Auto })
+        foreach (var mode in new[] { PaletteMode.Auto })
         {
             foreach (var theme in ThemeCatalog.All)
             {
@@ -174,65 +174,63 @@ public class ThemeContrastTests
     [Fact]
     public void 出厂默认主题_令牌等于配色直配的实测值_且已发布到界面()
     {
-        // 口径：界面色 = **用户给的颜色本身**优先 —— 强调 / 支撑 / 描边 / 正文直接取配色成员；
-        // 页面底取"背景色成员"**本色**落到明度档 **87–91**（更浅的压到 91、更深的提到 87，
-        // 见 `页面底_夹在明度档内_且卡面与选中底都看得见`）。
-        // 本用例按 **Exact**（开关关闭）口径核对逐键实测值：那是"最贴近原色"的那一支。
+        // 口径：直配（开关关闭）= **成员色原样上屏**（用户口径："必须忠实于用户"）—— 强调填充 / 强调容器 /
+        // 支撑 / 图标 / 描边弱档直取配色成员原色；**页面底例外**：本色明度夹进 **87–91 深度档**
+        //（用户实测退回：纯原色当背景整页过亮——这档属"颜色实在出不来"的校准面）。
+        // 没有成员的派生面（卡面 / 悬停 / 选中 / 次按钮底 / 浅带层）按本色推档；唯一自适应的是"墨"
+        //（白字 / 本色深墨取更优者 —— 填充、开关滑块都吃它）。本用例按 **Exact** 口径核对逐键实测值。
         // ⚠️ 按**主题定义**求解，不读 `ThemeService.DerivedTable`（进程级共享状态，别的测试类会并行改它）。
-        // 出厂默认 = 薄荷气泡水（2026-10-14 起）：深青 / 气泡青 / 薄荷 / 米白 四枚梯度——
-        // 深青（同族派生）承担"墨"与描边，其余三枚为设计档原色。
+        // 出厂默认 = 薄荷气泡水（2026-10-14 起）：深青 / 气泡青 / 薄荷 / 米白 四枚梯度。
         var t = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
-        Assert.Equal(0x002429u, Rgb(t.Token(AppTokens.TextPrimary)));      // ← 色1 #17434A 深青（最深成员的墨）
+        Assert.Equal(0x002429u, Rgb(t.Token(AppTokens.TextPrimary)));      // ← 色1 #17434A 深青（最深成员的墨，压到正文档）
         Assert.Equal(0x2C4C51u, Rgb(t.Token(AppTokens.TextSecondary)));    // ← 同一个墨提亮到次文档（直配：不换成灰）
         Assert.Equal(0x446369u, Rgb(t.Token(AppTokens.TextMuted)));        // ← 同上，弱文档
-        Assert.Equal(0x146870u, Rgb(t.Token(AppTokens.AccentFill)));       // ← 色2 #8ED6DE（彩度最高）加深到填充档
-        Assert.Equal(0x146870u, Rgb(t.Token(AppTokens.AccentIcon)));
-        Assert.Equal(0x004F56u, Rgb(t.Token(AppTokens.AccentText)));
-        // 强调容器 = 导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip 的**浅色底**
-        //（承载面是页面底与悬停底；判据 = 对页面底 ≥1.08、对悬停底 ≥1.06）。
-        // ⚠️ 它**不**再给列表行 / 树行当选中底 —— 那类面画在卡面上，需要更深的一支（见下一条）。
-        Assert.Equal(0xF0FFE1u, Rgb(t.Token(AppTokens.AccentContainer)));
-        // 选中底 / 落点高亮 = **列表行 / 树行 / 下拉选中项**的底：判据锚在真实承载面（**卡面**）上，
-        // 取**够得开阈值的最浅档**（对卡面 ≥1.22、对卡面悬停 ≥1.06、对页面底 ≥1.08）。
-        // 早先取"允许的最深档"⇒ 同一彩度在更低明度上就是**灰**，选中行读成"压了一块灰块"。
+        // 强调填充 = **色2 #8ED6DE（彩度最高）原样上屏**（不再加深到填充档 —— 直配的核心行为）；
+        // 填充上的墨自适应：原色撑不住白字 → 换**本色深墨**（#8ED6DE 上白字只有 1.5，深墨 9+）。
+        Assert.Equal(0x8ED6DEu, Rgb(t.Token(AppTokens.AccentFill)));
+        Assert.Equal(0x8ED6DEu, Rgb(t.Token(AppTokens.AccentIcon)));       // ← 图标 = 填充原色（一字不改）
+        Assert.Equal(0x8ED6DEu, Rgb(t.Token(AppTokens.TypeLink)));
+        Assert.Equal(0x002B2Eu, Rgb(t.Token(AppTokens.TextOnAccent)));     // ← 本色深墨（T15；开关滑块也用它）
+        Assert.Equal(0x004F55u, Rgb(t.Token(AppTokens.AccentText)));       // ← 强调文字 = 原色色相压到文字档（对卡面 ≥8）
+        // 强调容器 = 色4 #EFFFE0 **原样**（直配连"与页面底分得开"的可见性提亮也不做 —— 忠实优先）。
+        Assert.Equal(0xEFFFE0u, Rgb(t.Token(AppTokens.AccentContainer)));
+        // 选中底 / 落点高亮 = 派生面（没有成员）：锚在真实承载面（**卡面**）上取"够得开阈值的最浅档"。
         Assert.Equal(0xD1E0C4u, Rgb(t.Token(AppTokens.SurfaceSelected)));
-        // 次按钮底（TonalButton / SoftPillButton / 计数药丸）= 表面族色相 + **提高一大档的彩度**（去灰），
-        // 取"对卡面 ≥1.60 的最浅达标档"。旧值（支撑本色）对卡面偏深，用户："偏深"；
-        // 低彩度档用户："发灰 / 和背景差不多" —— 灰的根因是彩度、不是深浅。
+        // 次按钮底（TonalButton / SoftPillButton / 计数药丸）= 表面族色相 + 提高一大档的彩度（去灰），
+        // 取"对卡面 ≥1.60 的最浅达标档"（派生面：颜色不够 → 按本色算）。
         Assert.Equal(0xACCE97u, Rgb(t.Token(AppTokens.SurfaceControl)));
-        // 悬停 = **承载面自己压深一档**（三层各一支；色相与彩度都留在本层那一族 ⇒ 读作"加深"而非"换色"）。
-        // ⚠️ 按 **Auto**（缺省开关）口径钉：悬停档按"弱文字对它 ≥4.5"反推，而弱文字在两模式下取值不同
-        //（直配 / 自动）⇒ 两模式的悬停档可以差一档，逐模式各钉一支才有意义。
+        // 悬停三层 = **承载面自己压深一档**（派生面）。直配的弱文字取值与自动不同（直配 = 本色墨提亮），
+        // 悬停档按"弱文字对它 ≥4.5"反推 ⇒ 与自动可差一档（两层逐支实测钉住）。
+        Assert.Equal(0xCDDCBEu, Rgb(t.Token(AppTokens.SurfaceHover)));
+        Assert.Equal(0xDBEACCu, Rgb(t.Token(AppTokens.SurfaceCardHover)));
+        Assert.Equal(0xC5D8B6u, Rgb(t.Token(AppTokens.SurfaceBandHover)));
+        // 浅带层（表头带 + 侧区面板 / 状态栏 / 徽标底）：派生面（无成员）→ 明度分层（压深 + 彩度补偿）。
+        Assert.Equal(0xD1E4C2u, Rgb(t.Token(AppTokens.SurfaceHeaderBand)));
+        Assert.Equal(0xD1E4C2u, Rgb(t.Token(AppTokens.SurfacePanel)));
+        // 容器字 = 容器底上读得清的深档（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）。
+        Assert.Equal(0x002C23u, Rgb(t.Token(AppTokens.TextOnContainer)));
+        // ← 支撑槽 = 色1 #BCF1E0 **原样**（容器 / 图标 / 文件夹色一字不改 —— 直配不再"够浅才能用"）。
+        Assert.Equal(0xBCF1E0u, Rgb(t.Token(AppTokens.SupportContainer)));
+        Assert.Equal(0xBCF1E0u, Rgb(t.Token(AppTokens.SupportIcon)));
+        Assert.Equal(0xBCF1E0u, Rgb(t.Token(AppTokens.TypeFolder)));
+        // 描边档（取自"最接近中间调"的成员）；描边的"弱"档直配 = 该成员本色（T≥80 不再提亮）。
+        Assert.Equal(0x61A9B1u, Rgb(t.Token(AppTokens.LineOutline)));
+        Assert.Equal(0x8ED6DEu, Rgb(t.Token(AppTokens.LineVariant)));
+        // 页面底 = 本色明度**夹进 87–91 深度档**（两种模式一致——纯原色当背景整页过亮，用户实测退回）；
+        // 主题卡那枚"背景色"色点显示的就是**这个值**（`SurfaceBaseColor` 同源 → 逐字节同色 = 融合）。
+        Assert.Equal(0xDBEACCu, Rgb(t.Token(AppTokens.SurfaceBase)));
+        // 卡面 = 页面底提亮 6 档（档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）。
+        Assert.Equal(0xECFBDDu, Rgb(t.Token(AppTokens.SurfaceCard)));
+
+        // 悬停三层在**自动调色**下的实测值（缺省模式，口径与改动前逐字节一致）：逐模式各钉一支才有意义。
         var ta = PaletteSolver.Solve(ThemeCatalog.Default);
         Assert.Equal(0xD0DFC1u, Rgb(ta.Token(AppTokens.SurfaceHover)));
         Assert.Equal(0xDBEACCu, Rgb(ta.Token(AppTokens.SurfaceCardHover)));
         Assert.Equal(0xC5D8B6u, Rgb(ta.Token(AppTokens.SurfaceBandHover)));
-        // 浅带层（表头带 + 侧区面板 / 状态栏 / 徽标底）：表面 H138.4 ↔ 强调 H205.5，差 67.1° ⇒ **贴不上**
-        // 强调槽 → 走**明度分层**（压深 + 彩度补偿），带/底 ∈ [1.05, 1.15]；只贴不插，不发明配色里没有的色相。
-        // 两枚键是**同一层的两个角色名**（值必然相同）。
-        Assert.Equal(0xD1E4C2u, Rgb(t.Token(AppTokens.SurfaceHeaderBand)));
-        Assert.Equal(0xD1E4C2u, Rgb(t.Token(AppTokens.SurfacePanel)));
-        // 容器字 = 容器底上读得清的深档（唯一真值：`App.Text.OnContainer` 同时服务强调容器与次强调容器）
-        Assert.Equal(0x002C23u, Rgb(t.Token(AppTokens.TextOnContainer)));
-        // ← 色1 #BCF1E0（支撑槽本色，本身够浅）**沿本色提亮到"容器字读得清"的第一档**；
-        //   旧写法一律提到容器档会把不够浅的成员改造成配色里没有的颜色（实测事故："没选粉色，按钮却是粉的"）。
-        //   现在只在**本色压得字读不出来**时才提亮，且停在刚够用那一档 ⇒ 色相/彩度仍是本色。
-        Assert.Equal(0xBCF1E0u, Rgb(t.Token(AppTokens.SupportContainer)));
-        Assert.Equal(0x35675Au, Rgb(t.Token(AppTokens.SupportIcon)));
-        // 文件夹图标 = 支撑图标**沿本色提淡**到"对页面底刚好 3:1"的最浅档：
-        // 钉在填充档时 11/11 套都是同一种黑压压的深度（用户："偏深、太强烈"）。
-        Assert.Equal(0x588B7Cu, Rgb(t.Token(AppTokens.TypeFolder)));
-        Assert.Equal(0x61A9B1u, Rgb(t.Token(AppTokens.LineOutline)));      // ← 描边档（取自"最接近中间调"的成员，色相仍在配色内）
-        // ← 表面族色相 = 背景色成员（色4 #EFFFE0，H138.4）+ 彩度量级 = 浅调成员（封顶 16 → C16.8）：
-        //   明度压到 **87–91 深度档**；
-        //   主题卡那枚色点显示的就是**这个值**（与页面底/卡面底逐字节同色 = 融合）
-        Assert.Equal(0xDBEACCu, Rgb(t.Token(AppTokens.SurfaceBase)));
-        // 卡面 = 页面底提亮 6 档（档距 6 是"卡面对页面底 ≥1.15"实测选定的取值）
-        Assert.Equal(0xECFBDDu, Rgb(t.Token(AppTokens.SurfaceCard)));
     }
 
     [Fact]
-    public void 配色应用方式_缺省是自动调色_直配只改文字两档()
+    public void 配色应用方式_直配原样用成员色_自动按档位重排()
     {
         // 缺省 = 自动调色（开关打开）。
         Assert.Equal(PaletteMode.Auto, ThemeService.DefaultPaletteMode);
@@ -241,37 +239,39 @@ public class ThemeContrastTests
             Id = "t", Source = ThemeSource.UserDefined, Palette = ThemeCatalog.Default.Palette,
         }.PaletteMode);
 
-        var exact = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Exact });
-        var auto = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = PaletteMode.Auto });
+        var theme = ThemeCatalog.Default;
+        var exact = PaletteSolver.Solve(theme with { PaletteMode = PaletteMode.Exact });
+        var auto = PaletteSolver.Solve(theme with { PaletteMode = PaletteMode.Auto });
 
-        // ① 两种模式的**结构色相同**（页面底 / 卡面 / 强调 / 容器 / 描边 / 正文 / 图标…）：
-        //    自动调色不该把用户选的颜色换掉，它只调整文字两级的中性度。
-        //    ⚠️ 例外 = **三层悬停档**（`Surface.Hover` / `Surface.CardHover` / `Surface.BandHover`）：
-        //    它们的档位是**按"弱文字对它 ≥4.5"反推**出来的，而弱文字本身在两种模式下取值不同
-        //    （实测直配 4.47 / 自动 4.51，恰好骑在阈值两侧）→ 两种模式的悬停底可能差一档。这是**有意的**：
-        //    可读性不能为了"结构色逐字节相同"让路；该例外由下方 ③ 的实测断言与 `对比度矩阵`（两种模式逐条）
-        //    共同守住。**选中底不受影响**：它拿"两种模式里更浅的那一支卡面悬停"当邻居约束，逐字节相同。
-        //    ⚠️ 面板层（`Surface.Panel`）已从"= 悬停底"改为**页面底自己的一个档**（浅带层），
-        //    因此它不再跟着悬停底在两种模式间漂 —— 它回到下面这条"结构色逐字节相同"的断言里。
-        var hoverTokens = new[] { AppTokens.SurfaceHover, AppTokens.SurfaceCardHover, AppTokens.SurfaceBandHover };
-        foreach (var token in AppTokens.AllColorTokens
-                     .Except(new[] { AppTokens.TextSecondary, AppTokens.TextMuted })
-                     .Except(hoverTokens))
-            Assert.True(exact.Token(token).ToInt() == auto.Token(token).ToInt(),
-                $"{token} 在两种模式下不同：exact={Rgb(exact.Token(token)):X6} auto={Rgb(auto.Token(token)):X6}");
+        // ① 直配 = **成员色原样上屏**（用户口径："原来的颜色硬拼到每一块上"）：强调填充 = 最彩成员原色，
+        //    一字不改；页面底例外——**两种模式都夹 87–91 明度档**（用户实测退回：纯原色当背景整页过亮，
+        //    这档属"颜色实在出不来"的校准面；只动明度，色相与彩度仍来自配色）。
+        var lightest = theme.Palette.OrderByDescending(c => ColorMath.Measure(c).T).First();
+        var mostChromatic = theme.Palette.OrderByDescending(c => ColorMath.Measure(c).C)
+            .ThenBy(c => ColorMath.Measure(c).T).First();
+        Assert.Equal(mostChromatic.ToInt(), exact.Token(AppTokens.AccentFill).ToInt());
+        Assert.NotEqual(mostChromatic.ToInt(), auto.Token(AppTokens.AccentFill).ToInt());
+        Assert.Equal(exact.Token(AppTokens.SurfaceBase).ToInt(), auto.Token(AppTokens.SurfaceBase).ToInt());
+        Assert.NotEqual(lightest.ToInt(), exact.Token(AppTokens.SurfaceBase).ToInt());   // 背景不是裸原色（明度夹档）
 
-        // ② 差异落在文字两档：直配 = 同一个墨提亮；自动 = 中性灰墨
-        //    （灰墨带一点表面族色相 —— 表面色相 = 薄荷气泡水的 H138.4）
+        // ② 直配的墨跟着填充**自适应**（原色撑不住白字就换本色深墨 —— 颜色不动、墨来适配）；
+        //    自动调色的填充固定撑白字。
+        Assert.True(ColorMath.ContrastRatio(exact.Token(AppTokens.TextOnAccent), exact.Token(AppTokens.AccentFill)) >= 4.5,
+            "直配：填充上的墨必须读得清（白字或本色深墨，二者取其一）");
+        Assert.Equal(0xFFFFFFu, Rgb(auto.Token(AppTokens.TextOnAccent)));
+
+        // ③ 两种模式的文字两档取值不同（直配 = 同一个墨提亮；自动 = 中性灰墨），各自钉住：
+        //    自动侧带一点表面族色相（表面色相 = 薄荷气泡水的 H138.4）；直配侧钉在"直配实测值"用例里。
         Assert.NotEqual(exact.Token(AppTokens.TextSecondary).ToInt(), auto.Token(AppTokens.TextSecondary).ToInt());
         Assert.Equal(0x464742u, Rgb(auto.Token(AppTokens.TextSecondary)));
         Assert.Equal(0x5D5F5Au, Rgb(auto.Token(AppTokens.TextMuted)));
 
-        // ③ 融合在**两种模式下都成立**（开关关闭或打开，主题卡色点都必须能融合）
+        // ④ 融合在**两种模式下都成立**（开关关闭或打开，主题卡色点都必须能融合）
         foreach (var mode in new[] { PaletteMode.Exact, PaletteMode.Auto })
         {
-            var table = PaletteSolver.Solve(ThemeCatalog.Default with { PaletteMode = mode });
+            var table = PaletteSolver.Solve(theme with { PaletteMode = mode });
             var baseColor = table.Token(AppTokens.SurfaceBase);
-            var surface = PaletteSolver.SurfaceBaseColor(ThemeCatalog.Default with { PaletteMode = mode });
+            var surface = PaletteSolver.SurfaceBaseColor(theme with { PaletteMode = mode });
             Assert.Equal(baseColor.ToInt(), surface.ToInt());   // 卡面取材 = 实际页面底
             Assert.True(ColorMath.ContrastRatio(surface, baseColor) <= 1.01,
                 $"[{mode}] 背景色成员与页面底必须同色（融合）");

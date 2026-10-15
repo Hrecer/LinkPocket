@@ -69,24 +69,26 @@ public class FontSystemTests : IDisposable
         // 空 FontFamily 会让 WPF 静默回落默认字体（症状 = "换字体没反应"），属于静默失败。
         var value = FontCatalog.BuildTokenValue(primary);
         Assert.False(string.IsNullOrWhiteSpace(value));
-        Assert.Contains("Microsoft YaHei UI", value, StringComparison.Ordinal);
+        Assert.Contains("Noto Sans SC", value, StringComparison.Ordinal);
         Assert.Contains("Segoe UI", value, StringComparison.Ordinal);
+        Assert.Contains("Microsoft YaHei", value, StringComparison.Ordinal);
     }
 
     [Fact]
     public void 回退链_主族不在链里重复追加()
     {
-        var value = FontCatalog.BuildTokenValue("Microsoft YaHei UI");
-        Assert.Equal("Microsoft YaHei UI, Segoe UI", value);
+        var value = FontCatalog.BuildTokenValue("Noto Sans SC");
+        Assert.Equal("Noto Sans SC, Segoe UI, Microsoft YaHei", value);
     }
 
     [Fact]
     public void 回退链_自定义主族排在首位_CJK兜底在后()
     {
-        // 这是"导入拉丁字体不会让中文变方块"的机制保证：WPF 逐字形回退到雅黑。
+        // 这是"导入拉丁字体不会让中文变方块"的机制保证：WPF 逐字形回退到 Noto / 雅黑。
         var value = FontCatalog.BuildTokenValue("Cascadia Code");
         Assert.StartsWith("Cascadia Code,", value, StringComparison.Ordinal);
-        Assert.Contains("Microsoft YaHei UI", value, StringComparison.Ordinal);
+        Assert.Contains("Noto Sans SC", value, StringComparison.Ordinal);
+        Assert.Contains("Microsoft YaHei", value, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -222,11 +224,9 @@ public class FontSystemTests : IDisposable
     [Fact]
     public void 回退链字体_在真实系统字体集合里可用()
     {
-        // 回退链（雅黑 / Segoe UI）与默认等宽字体必须**一定存在**：
-        // 若机器上真的没有，回退链就是一句空话 —— 用真实枚举把它钉住。
+        // 默认族（Noto Sans SC）与回退链（Noto → Segoe UI → 雅黑）必须**一定存在**：
+        // 若机器上真的没有首族，"与 BookmarkPocket 同单的默认观感"就是一句空话 —— 用真实枚举把它钉住。
         var families = FontCatalog.SystemFontFamilies();
-        // 两种语言的默认族 + 回退链都必须**一定存在**：若机器上真的没有，回退链就是一句空话。
-        // 英文默认族 Segoe UI 也是回退链成员（它同时承担"缺拉丁字形的兜底"）。
         Assert.Contains(FontCatalog.ZhDefaultUiFamily, families);
         Assert.Contains(FontCatalog.EnDefaultUiFamily, families);
         Assert.Contains(FontCatalog.DefaultMonoFamily, families);

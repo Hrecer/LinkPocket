@@ -278,7 +278,7 @@ public static class ThemeService
     }
 
     /// <summary>
-    /// 这个族名是不是"语言默认族"（中文 <c>Microsoft YaHei UI</c> / 英文 <c>Segoe UI</c>）——
+    /// 这个族名是不是**默认族**（<c>Noto Sans SC</c>——两种语言同一条栈，见 <c>FontCatalog</c>）——
     /// 是则偏好里落成"跟随语言"（空），否则原样记下。
     /// </summary>
     /// <remarks>

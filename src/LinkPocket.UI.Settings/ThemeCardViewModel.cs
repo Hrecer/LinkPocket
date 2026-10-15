@@ -51,7 +51,9 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
         // 色点用**身份色**（方案 §4.2：主题卡展示原始身份色，界面用其档位）。
         // 补位规则（预设只有 1–3 个身份色）= Theming 的唯一实现 `PaletteSolver.EditableSlots`，
         // 与外观面板的色槽同一份（否则"卡片 4 个点、色槽 3 格"迟早漂移）。
-        Swatches = new ObservableCollection<Color>(BuildSwatches(definition));
+        // 最浅那枚要按**当前配色应用方式**替换成实际页面底（直配 = 成员原色、自动 = 夹档值），
+        // 否则直配下色点与页面底不同色（融合断掉）。
+        Swatches = new ObservableCollection<Color>(BuildSwatches(WithCurrentMode(definition)));
         _isEmpty = Swatches.Count == 0;
 
         // 派生示意条：强调填充 / 页面底 / 正文 —— 一眼看出"这套主题长什么样"
@@ -120,9 +122,13 @@ public sealed class ThemeCardViewModel : System.ComponentModel.INotifyPropertyCh
     public void RefreshSwatches()
     {
         if (Definition is { } def)
-            SetSwatches(BuildSwatches(def));   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
+            SetSwatches(BuildSwatches(WithCurrentMode(def)));   // 「自选颜色」卡的色点由调色台草稿决定，不在此列
         SetCardBackground(ToMedia(ThemeService.Table.Token(AppTokens.SurfaceBase)));
     }
+
+    /// <summary>把定义钉到**当前配色应用方式**上（色点替换"最浅成员 → 实际页面底"时口径必须与界面一致）。</summary>
+    private static ThemeDefinition WithCurrentMode(ThemeDefinition definition)
+        => definition with { PaletteMode = ThemeService.PaletteMode };
 
     /// <summary>
     /// 卡面底色 = **当前生效主题的页面底**（所有卡统一用它；见下"融合"的解释）。

@@ -345,7 +345,7 @@
   "appearance.font.systemHint": "System fonts: read-only (they belong to the OS; this app neither changes nor deletes them)",
   "appearance.font.customHint": "Custom fonts: imported files live in this app's folder and can be deleted any time (system fonts are untouched); the list is empty until you import one",
   "appearance.palette.autoOn": "On (default): your colours are re-ranked by lightness automatically",
-  "appearance.palette.autoOff": "Off: your colours are used as given (a tone is derived only when a role truly has no colour)",
+  "appearance.palette.autoOff": "Off: your colours are used exactly as given; only missing colours are filled in",
   "appearance.palette.missingSlots": "{0} colour(s) still missing (click a slot to pick one)",
   "appearance.status.themeAppliedPrefFailed": "The theme was applied, but saving preferences failed (see the log)",
   "appearance.status.paletteAppliedPrefFailed": "The palette was applied, but saving preferences failed (see the log)",

@@ -877,6 +877,44 @@ public class AppearanceViewModelTests : IDisposable
     }
 
     [Fact]
+    public void 自动调整颜色开关_反复切换与换主题_直配始终当场生效()
+    {
+        // 用户实测报告："反复切换似乎会出 bug，这时候关闭自动优化色彩就失灵了"。
+        // 本用例把「服务状态 ↔ 实际发布的表 ↔ 开关可见状态」三者的一致性钉死：
+        // 每次切换后都拿"按当前模式重新求解"的表逐键对账，任何一次切换失灵都会在这里红。
+        ThemeService.ResetForTests();
+        try
+        {
+            var vm = NewVm();
+
+            void AssertModeApplied(PaletteMode mode)
+            {
+                Assert.Equal(mode, ThemeService.PaletteMode);
+                var expected = PaletteSolver.Solve(ThemeService.Current with { PaletteMode = mode });
+                Assert.Equal(expected.Token(AppTokens.AccentFill).ToInt(), ThemeService.Table.Token(AppTokens.AccentFill).ToInt());
+                Assert.Equal(mode == PaletteMode.Auto, vm.AutoAdjustColors);
+            }
+
+            for (var i = 0; i < 6; i++)
+            {
+                vm.AutoAdjustColors = false;
+                AssertModeApplied(PaletteMode.Exact);
+                vm.AutoAdjustColors = true;
+                AssertModeApplied(PaletteMode.Auto);
+            }
+
+            // "反复切换"的另一种动作：换主题卡之后再关 —— 也必须当场生效
+            vm.ApplyThemeCard(vm.ThemeCards.First(c => c.Definition?.Source == ThemeSource.BuiltInPreset));
+            vm.AutoAdjustColors = false;
+            AssertModeApplied(PaletteMode.Exact);
+        }
+        finally
+        {
+            ThemeService.ResetForTests();
+        }
+    }
+
+    [Fact]
     public void 主题卡色点_换主题与重进面板都会按当前模式重投影()
     {
         // 色点重投影**不能只在切开关那一条路上**：换主题（`ApplyThemeCard`）/ 重进面板（`SyncFromAppliedTheme`）

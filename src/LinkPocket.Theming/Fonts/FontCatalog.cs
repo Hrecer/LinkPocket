@@ -24,8 +24,11 @@ namespace LinkPocket.Theming.Fonts;
 /// </remarks>
 public static class FontCatalog
 {
-    /// <summary>回退链里永远保留的系统字体（CJK 兜底 + 通用兜底）。</summary>
-    public static readonly IReadOnlyList<string> FallbackChain = new[] { "Microsoft YaHei UI", "Segoe UI" };
+    /// <summary>
+    /// 回退链里永远保留的系统字体：**与 BookmarkPocket 的界面字体栈同单**（Noto Sans SC → Segoe UI → 微软雅黑）。
+    /// Noto 排首是用户定的口径（两份产品的默认观感必须一致）；缺 Noto 的机器逐级下落到本机一定有的一支。
+    /// </summary>
+    public static readonly IReadOnlyList<string> FallbackChain = new[] { "Noto Sans SC", "Segoe UI", "Microsoft YaHei" };
 
     private const string LogCategory = "app.theme";
 
@@ -266,7 +269,7 @@ public static class FontCatalog
     }
 
     /// <summary>
-    /// 构造字体令牌值（回退链）：<c>主族, Microsoft YaHei UI, Segoe UI</c>。
+    /// 构造字体令牌值（回退链）：<c>主族, Noto Sans SC, Segoe UI, Microsoft YaHei</c>。
     /// </summary>
     /// <remarks>
     /// 逐个去重（主族就是雅黑时不再重复追加），且**永不返回空串**——
@@ -319,25 +322,28 @@ public static class FontCatalog
         return false;
     }
 
-    /// <summary>默认界面字体族：<b>中文界面</b>（= 改造前 <c>AppFont</c> 的第一段）。</summary>
-    public const string ZhDefaultUiFamily = "Microsoft YaHei UI";
+    /// <summary>
+    /// 默认界面字体族：**中文界面**。2026-10-15 起 = <c>Noto Sans SC</c>（与 BookmarkPocket 的界面字体同单）——
+    /// 旧值 <c>Microsoft YaHei UI</c> 在 13px 小字号下 hinting 很凶、笔画密的字被压扁（用户点名的观感缺陷）。
+    /// </summary>
+    public const string ZhDefaultUiFamily = "Noto Sans SC";
 
-    /// <summary>默认界面字体族：<b>英文界面</b>。</summary>
-    public const string EnDefaultUiFamily = "Segoe UI";
+    /// <summary>默认界面字体族：**英文界面**。同一条 Noto 栈（拉丁字形与中文界面同源，两份产品观感一致）。</summary>
+    public const string EnDefaultUiFamily = "Noto Sans SC";
 
     /// <summary>
-    /// 按界面语言给默认字体族（决策 5）：中文 = <see cref="ZhDefaultUiFamily"/>、英文 = <see cref="EnDefaultUiFamily"/>。
+    /// 按界面语言给默认字体族（决策 5 的现行形态）：两种语言**共用同一条默认栈**
+    /// （<c>Noto Sans SC</c> → 回退链）；签名保留语言参数是为了不改调用面与偏好归一逻辑。
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>为什么参数是语言码字符串</b>：本层（Theming）不引 <c>LinkPocket.I18n</c>，
     /// 也不该引——语言语义归 I18n，这里只认"哪个默认族"这一个事实。
-    /// 取值域见 <c>Contracts.LocalePreference.CodeZh</c> / <c>CodeEn</c>；
-    /// 认不出来（<c>null</c> / 未知码）走中文，与"出厂缺省 = 简体中文"同一条口径。
+    /// 取值域见 <c>Contracts.LocalePreference.CodeZh</c> / <c>CodeEn</c>。
     /// </para>
     /// <para>
-    /// <b>回退链两个方向都兜得住</b>（<see cref="BuildTokenValue"/>）：主族是 Segoe UI 时，
-    /// 缺 CJK 字形仍会落到链上的雅黑；主族是雅黑时，缺的拉丁字形本来就由系统兜底。
+    /// <b>回退链兜得住</b>（<see cref="BuildTokenValue"/>）：主族缺 CJK / 缺拉丁都会按链逐级下落
+    /// （Noto → Segoe UI → Microsoft YaHei），不会变方块。
     /// </para>
     /// </remarks>
     public static string DefaultUiFamily(string? languageCode)

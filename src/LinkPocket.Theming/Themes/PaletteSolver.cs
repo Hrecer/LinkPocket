@@ -213,6 +213,7 @@ public static class PaletteSolver
     public static Argb SurfaceBaseColor(ThemeDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
+        // 页面底两种模式一致（本色明度夹 87–91），因此本方法不吃 PaletteMode —— 色点与页面底在两种模式下都融合。
         return SurfaceBaseOf(SolveFamilies(definition));
     }
 
@@ -508,6 +509,8 @@ public static class PaletteSolver
         // 表面三层之外，**选中底与次按钮底也锚在它上面**（见下方两处），这样"选中行 / 次按钮"
         // 与它们所在的页面 / 卡面天然同色调，不会读成"跳了一块别的颜色"。
         var surfaceHue = families.SurfaceSource is { } surfSrc ? ColorMath.Measure(surfSrc).H : families.NeutralHue;
+        // 页面底：**本色明度夹进 87–91 深度档**（两种模式一致）——直配下"纯原色当背景"会把整页照得过亮
+        // （用户实测退回）；这档属"颜色实在出不来"的校准面：只动明度，色相与彩度量级仍全部来自配色。
         var surfaceBase = SurfaceBaseOf(families);
         var surfaceBaseTone = ColorMath.Measure(surfaceBase).T;
         var surfaceCard = LightenTo(surfaceBase, Math.Min(surfaceBaseTone + SurfaceCardLift, SurfaceCardMaxTone));
@@ -623,15 +626,29 @@ public static class PaletteSolver
                 : LightenTo(oSrc2, Math.Max(ColorMath.Measure(oSrc2).T, ToneScale.LineVariant)))
             : At(families.NeutralVariantHue, NeutralVariantChroma, ToneScale.LineVariant);
 
-        // ── 强调族：**优先用配色原色**（深到能撑白字就直接用；太浅才按本色压到填充档）──
+        // ── 强调族：**优先用配色原色** ──
+        // 直配（Exact）：**原色直接上屏、一字不改**（用户口径："必须忠实于用户，不用管那些"）——
+        // 不做可读性护栏与档位改造；唯一自适应的是"墨"（白字 / 本色深墨取更优者，颜色本身不动）。
+        var white = Argb.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
         var accentSource = families.AccentSource;
         var accentFill = accentSource is { } aSrc
             ? Direct(aSrc, c => ColorMath.Measure(c).T <= ToneScale.AccentFill, ToneScale.AccentFill)
             : At(families.AccentHue, families.AccentChroma, ToneScale.AccentFill);
+        var accentInk = white;
+        if (exact && accentSource is { } aRaw)
+        {
+            accentFill = aRaw;
+            var deepInk = DarkenTo(aRaw, ToneScale.AccentOnContainer);   // 本色深墨（T15）
+            accentInk = ColorMath.ContrastRatio(white, aRaw) >= ColorMath.ContrastRatio(deepInk, aRaw)
+                ? white
+                : deepInk;
+        }
         var accentText = DarkenTo(accentFill, ToneScale.AccentText);
+        // 强调容器：自动调色 = 本色先夹到容器档再走可见性提亮；直配 = **成员原色一字不改**（可见性同样不管）
         var accentContainer = families.ContainerSource is { } containerSrc
             ? Direct(containerSrc, c => ColorMath.Measure(c).T >= ContainerSourceMinTone, ToneScale.AccentContainer)
             : LightenTo(accentFill, ToneScale.AccentContainer);
+        if (exact && families.ContainerSource is { } cRaw) accentContainer = cRaw;
         // 列表行 / 树行的**选中底与拖拽落点高亮** = 画在**卡面**上（卡面比页面底还亮 6 档），
         // 判据锚在卡面上（对卡面 ≥1.22，见 `SelectedSurfaceUntilVisible`）—— 因此它比强调容器深一大截。
         // **两个令牌、两条判据**：一个令牌服务两种承载面时，浅了行看不出选中、深了指示器/徽标发灰（WARNINGS 118）。
@@ -665,8 +682,9 @@ public static class PaletteSolver
         // 强调容器（导航 / 分段 / 分段指示器 / 面包屑当前段 / 徽标 / chip 的浅色底）= 承载面是**页面底与悬停底**，
         // 判据 = 对页面底 ≥1.08、对悬停底 ≥1.06 —— 沿浅色方向抬（`LiftContainerUntilVisible`）。
         // ⚠️ 直接取浅成员当容器时实测 8/11 套与页面底**完全同色**（1.000 —— 最浅成员往往既是页面底
-        //    又是容器来源），故必须有这一步。
-        accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover, families.SurfaceChroma);
+        //    又是容器来源），故必须有这一步；直配 = 成员原色一字不改，跳过提亮。
+        if (!exact)
+            accentContainer = LiftContainerUntilVisible(accentContainer, surfaceBase, surfaceHover, families.SurfaceChroma);
         // 容器字跟随**容器自己的色相**（否则浅色容器上会浮出一层别的颜色的墨）
         var accentOnContainer = At(ColorMath.Measure(accentContainer).H,
             Math.Max(ColorMath.Measure(accentContainer).C, NeutralChroma), ToneScale.AccentOnContainer);
@@ -683,10 +701,12 @@ public static class PaletteSolver
             ? LightenUntilInkReadable(supportSrc, inkOnSupport, ToneScale.MinInkOnContainer)
             : LightenTo(accentFill, ToneScale.SupportContainer);
         var supportOnContainer = DarkenTo(supportContainer, ToneScale.SupportOnContainer);
-        // 支撑图标：够深就直接用，浅了压到填充档（与强调图标同一口径）。
-        var supportIcon = ColorMath.Measure(supportIconSource).T <= ToneScale.AccentFill
+        // 支撑图标：直配 = **成员原色一字不改**（忠实于用户）；自动调色 = 够深直接用、浅了压到填充档（原行为）。
+        var supportIcon = exact
             ? supportIconSource
-            : DarkenTo(supportIconSource, ToneScale.AccentFill);
+            : ColorMath.Measure(supportIconSource).T <= ToneScale.AccentFill
+                ? supportIconSource
+                : DarkenTo(supportIconSource, ToneScale.AccentFill);
         // **文件夹图标 = 这一支再提淡**：钉在填充档（T40 上下）时，每一套主题里的文件夹图标都
         // 黑压压一片（实测 11/11 套 —— 用户："偏深、太强烈"）。改成沿**本色的色相与彩度**往浅走，
         // 取"对页面底刚好还看得见"的最浅档 = 浅浅深了一层的那种淡（判据 3:1，WCAG 非文本图形）。
@@ -696,8 +716,6 @@ public static class PaletteSolver
         var anchored = new Dictionary<string, Argb>(StringComparer.Ordinal);
         foreach (var anchor in SurfaceAnchors.All)
             anchored[anchor.Key] = Resolve(anchor, rot);
-
-        var white = Argb.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
 
         // 过渡期需要"今天的 OnSurface"（覆写前的锚定值）——必须在下面覆写**之前**取。
         var anchoredOnSurface = anchored["OnSurface"];
@@ -711,7 +729,7 @@ public static class PaletteSolver
 
         anchored["Primary"] = accentFill;
         anchored["SurfaceTint"] = accentFill;
-        anchored["OnPrimary"] = white;
+        anchored["OnPrimary"] = accentInk;
         anchored["PrimaryContainer"] = accentContainer;
         anchored["OnPrimaryContainer"] = accentOnContainer;
         anchored["Secondary"] = At(families.SupportHue, families.SupportChroma, ToneScale.AccentFill);
@@ -739,7 +757,7 @@ public static class PaletteSolver
             [AppTokens.TextPrimary] = textPrimary,
             [AppTokens.TextSecondary] = textSecondary,
             [AppTokens.TextMuted] = textMuted,
-            [AppTokens.TextOnAccent] = white,
+            [AppTokens.TextOnAccent] = accentInk,
             // 容器字 = 支撑族 T15。界面上这个令牌落在**两种**容器上（强调容器 / 次强调容器），
             // 而两族的容器字本来就是同一档（T15）、对各自容器的对比度都 ≥11.7 —— 故只有一个真值
             // （`App.*.OnContainer` 这一族已删除：它们与文字族同值，留着就是"同一语义两个键"）。
