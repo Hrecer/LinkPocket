@@ -903,8 +903,12 @@
     </Style>
 
     <!-- ===== 详情行模板（侧栏信息卡 / 详情页信息卡**共用同一份视觉**，绝不复制） =====
-         DataType = ViewModels.DetailSidebarRow：图标 / 标签 / 值 三列严格对齐（16/62/*）+ 可选复制按钮；
-         强调（IsAccent）与等宽（IsMono）由行配置驱动。 -->
+         DataType = ViewModels.DetailSidebarRow：图标 + 标签 + 值 三列对齐（图标起 1.5 / 标签起 16 / 值起 78）
+         + 可选复制按钮；强调（IsAccent）与等宽（IsMono）由行配置驱动。
+         ⚠️ 图标必须挂在「文字行」里取垂直居中——M3Icon 的墨迹在它自己的 13×13 盒内居中，
+         若图标 Top 对齐，它会比同一行文字的墨迹中心高 ~3px（探针 1:1 实测 iconCtr 356 / labelCtr 359），
+         六行同病 = 整列读成"图标飘在文字上方"。图标+标签合成横向 StackPanel 后：面板高 = 标签行实测高
+         （随字体/DPI 走，不写死几何），图标在其中居中 ⇒ 墨迹中心与文字行心相差 ≤0.5px。 -->
     <DataTemplate x:Key="InfoRowTemplate" DataType="{x:Type vm:DetailSidebarRow}">
         <Grid Margin="0,2,0,8">
             <Grid.ColumnDefinitions>
@@ -913,10 +917,15 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <m3:M3Icon Kind="{Binding IconKind}" Width="13" Height="13" Opacity="0.55"
-                       Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Top"/>
-            <TextBlock Grid.Column="1" Text="{loc:LocKey LabelKey}" FontSize="12" Opacity="0.6"
-                       Foreground="{DynamicResource App.Text.Secondary}" VerticalAlignment="Top"/>
+            <StackPanel Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal"
+                        VerticalAlignment="Top">
+                <m3:M3Icon Kind="{Binding IconKind}" Width="13" Height="13" Opacity="0.55"
+                           Margin="1.5,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+                <TextBlock Text="{loc:LocKey LabelKey}" FontSize="12" Opacity="0.6"
+                           Margin="1.5,0,0,0"
+                           Foreground="{DynamicResource App.Text.Secondary}"/>
+            </StackPanel>
             <!-- 值 = 可鼠标拖选的展示型文本（唯一实现 Views.SelectableText）；**数据与文案各一个元素**，
                  各自为空就什么都不画（生产点保证两者互斥）。
                  ⚠️ 基态视觉值必须写在 Style.Setters：本地值优先级高于触发器 -->
@@ -940,6 +949,9 @@
                                     <!-- ⚠️ TextBox 没有 TextTrimming（整行不换行，靠观感与 ID 长度兜住） -->
                                     <Setter Property="TextWrapping" Value="NoWrap"/>
                                     <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+                                    <!-- ⚠️ 等宽值比标签小一档（11 vs 12），顶对齐时墨迹比标签行心高 ~2.5px
+                                         （探针 1:1 实测 valueCtr 493.5 / labelCtr 496）——前缀下压修正回同一中线 -->
+                                    <Setter Property="Margin" Value="0,2.5,0,0"/>
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>

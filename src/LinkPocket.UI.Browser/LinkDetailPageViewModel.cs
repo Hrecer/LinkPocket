@@ -114,7 +114,7 @@ public class LinkDetailPageViewModel : LinkDetailPaneModel
         new() { IconKind = "history", LabelKey = "ui.noun.lastVisited",
                 ValueData = link.LastVisitedAt is null ? "" : UiClock.Format(link.LastVisitedAt.Value.ToLocalTime()),
                 ValueCopy = link.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty },
-        new() { IconKind = "chart-line", LabelKey = "ui.noun.viewTotal", ValueCopy = Loc.K("count.viewsN", link.VisitCount) },
+        new() { IconKind = "trending-up", LabelKey = "ui.noun.viewTotal", ValueCopy = Loc.K("count.viewsN", link.VisitCount) },
         new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = Fmt(link.CreatedAt) },
         new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = link.LinkId, IsMono = true,
                 CopyCommand = new RelayCommand(() => CopyIdValue(link.LinkId)), CopyToolTip = Loc.K("common.copyId") },
