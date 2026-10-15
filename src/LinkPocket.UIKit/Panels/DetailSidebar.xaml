@@ -328,11 +328,15 @@
                     </Grid>
 
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <!-- 标题：选中项自己的名字（用户数据）或「已选中 N 项」（文案），两者互斥 -->
-                        <TextBlock Text="{Binding DisplayNameData}" FontSize="15" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                        <!-- 标题：选中项自己的名字（用户数据，**可拖选**）或「已选中 N 项」（文案），两者互斥。
+                             空的一枚必须 Collapsed：空 SelectableText 照样吃鼠标命中（透明底也参与命中测试） -->
+                        <views:SelectableText Text="{Binding DisplayNameData, Mode=OneWay}" FontSize="15" FontWeight="SemiBold"
+                                              TextWrapping="Wrap" VerticalAlignment="Center"
+                                              Visibility="{Binding HasDisplayNameData, Converter={StaticResource BoolToVis}}"
+                                              Foreground="{DynamicResource App.Text.Primary}"/>
                         <TextBlock Text="{loc:Value DisplayNameCopy}" FontSize="15" FontWeight="SemiBold"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                                   TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"
+                                   Visibility="{Binding HasDisplayNameCopy, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -354,9 +358,10 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <!-- 网址 = 可拖选的展示型文本（唯一实现 Views.SelectableText） -->
+                    <!-- 网址 = 可拖选的展示型文本（唯一实现 Views.SelectableText）；字体与详情页一致（正文族）——
+                         等宽字体在窄栏里又碎又不好读（用户实测点名） -->
                     <views:SelectableText Grid.Column="0" Text="{Binding UrlText, Mode=OneWay}" FontSize="12"
-                                          FontFamily="{DynamicResource App.Font.Mono}" TextWrapping="Wrap" VerticalAlignment="Center"
+                                          TextWrapping="Wrap" VerticalAlignment="Center"
                                           Foreground="{DynamicResource App.Text.Secondary}"/>
                     <Button Grid.Column="1" Style="{StaticResource NavIconButton}" Tag="{loc:Loc common.copyLink}"
                             Width="26" Height="24" Padding="4" Margin="6,0,0,0" VerticalAlignment="Center"

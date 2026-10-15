@@ -38,10 +38,16 @@ public class DetailSidebarRow : INotifyPropertyChanged
             {
                 _valueCopy = LocValue.Empty;
                 OnPropertyChanged(nameof(ValueCopy));
+                OnPropertyChanged(nameof(HasValueCopy));
             }
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasValueData));
         }
     }
+
+    /// <summary>数据侧是否非空。模板据此**显隐**：两枚叠放的 SelectableText 里，空的那枚照样吃鼠标命中
+    /// （透明底也参与命中测试），把下面那枚的可拖选挡住 —— 实测症状 = "标题/行值根本选不中"。</summary>
+    public bool HasValueData => !string.IsNullOrEmpty(_valueData);
 
     private LocValue _valueCopy;
 
@@ -58,10 +64,15 @@ public class DetailSidebarRow : INotifyPropertyChanged
             {
                 _valueData = "";
                 OnPropertyChanged(nameof(ValueData));
+                OnPropertyChanged(nameof(HasValueData));
             }
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasValueCopy));
         }
     }
+
+    /// <summary>文案侧是否非空（显隐口径同 <see cref="HasValueData"/>）。</summary>
+    public bool HasValueCopy => !_valueCopy.IsEmpty;
 
     /// <summary>强调值（如「11 个链接」→ Primary + SemiBold）。</summary>
     public bool IsAccent { get; init; }
@@ -123,8 +134,12 @@ public class DetailSidebarModel : ActionSurfaceModel
             if (_displayName == value) return;
             _displayName = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDisplayNameData));
         }
     }
+
+    /// <summary>标题数据侧是否非空（模板据此显隐 —— 空 SelectableText 也吃鼠标命中）。</summary>
+    public bool HasDisplayNameData => !string.IsNullOrEmpty(_displayName);
 
     private LocValue _displayNameCopy;
 
@@ -137,8 +152,12 @@ public class DetailSidebarModel : ActionSurfaceModel
             if (_displayNameCopy.Equals(value)) return;
             _displayNameCopy = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDisplayNameCopy));
         }
     }
+
+    /// <summary>标题文案侧是否非空（显隐口径同 <see cref="HasDisplayNameData"/>）。</summary>
+    public bool HasDisplayNameCopy => !_displayNameCopy.IsEmpty;
     public string IdText { get; protected set; } = "";
     public BitmapImage? Favicon { get; protected set; }
     public bool HasFavicon => Favicon != null;
@@ -229,7 +248,9 @@ public class DetailSidebarModel : ActionSurfaceModel
         OnPropertyChanged(nameof(IsReadOnly));
         OnPropertyChanged(nameof(UseTrashedIconTone));
         OnPropertyChanged(nameof(DisplayNameData));
+        OnPropertyChanged(nameof(HasDisplayNameData));
         OnPropertyChanged(nameof(DisplayNameCopy));
+        OnPropertyChanged(nameof(HasDisplayNameCopy));
         OnPropertyChanged(nameof(IdText));
         OnPropertyChanged(nameof(Favicon));
         OnPropertyChanged(nameof(HasFavicon));

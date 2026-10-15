@@ -17,8 +17,15 @@ public class LinkDetailPaneModel : ActionSurfaceModel
     /// <summary>标题<b>用户数据</b>（书签标题 / 文件夹名）。</summary>
     public string TitleData { get; protected set; } = "";
 
+    /// <summary>标题数据侧是否非空。模板据此**显隐**：两枚叠放的 SelectableText 里，空的那枚照样吃鼠标
+    /// 命中（透明底也参与命中测试），会把数据侧的可拖选整个挡住 —— 实测症状 = "详情页标题选不中"。</summary>
+    public bool HasTitleData => !string.IsNullOrEmpty(TitleData);
+
     /// <summary>标题<b>文案</b>（数据缺失时的中性兜底，如「无名称」）。</summary>
     public LocValue TitleCopy { get; protected set; }
+
+    /// <summary>标题文案侧是否非空（显隐口径同 <see cref="HasTitleData"/>）。</summary>
+    public bool HasTitleCopy => !TitleCopy.IsEmpty;
     public string Url { get; protected set; } = string.Empty;
     public BitmapImage? Favicon { get; protected set; }
     public bool HasFavicon => Favicon != null;
@@ -47,7 +54,9 @@ public class LinkDetailPaneModel : ActionSurfaceModel
         Description = description ?? string.Empty;
         Rows = rows ?? Array.Empty<DetailSidebarRow>();
         OnPropertyChanged(nameof(TitleData));
+        OnPropertyChanged(nameof(HasTitleData));
         OnPropertyChanged(nameof(TitleCopy));
+        OnPropertyChanged(nameof(HasTitleCopy));
         OnPropertyChanged(nameof(Url));
         OnPropertyChanged(nameof(Favicon));
         OnPropertyChanged(nameof(HasFavicon));

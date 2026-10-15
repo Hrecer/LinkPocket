@@ -64,12 +64,16 @@
                             </Border>
                             <!-- 标题 = 可拖选的展示型文本（标题长时同样可拖选复制局部） -->
                             <Grid>
-                                <!-- 标题：用户数据（书签标题 / 文件夹名）或「无名称」兜底，两者互斥 -->
+                                <!-- 标题：用户数据（书签标题 / 文件夹名）或「无名称」兜底，两者互斥。
+                                     空的一枚必须 Collapsed：空 SelectableText 照样吃鼠标命中（透明底也参与
+                                     命中测试），会把另一枚的可拖选整个挡住（实测 = "详情页标题选不中"） -->
                                 <views:SelectableText Text="{Binding TitleData, Mode=OneWay}" FontSize="20" FontWeight="SemiBold"
                                                       VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                      Visibility="{Binding HasTitleData, Converter={StaticResource BoolToVis}}"
                                                       Foreground="{DynamicResource App.Text.Primary}"/>
                                 <views:SelectableText Text="{loc:Value TitleCopy}" FontSize="20" FontWeight="SemiBold"
                                                       VerticalAlignment="Center" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                      Visibility="{Binding HasTitleCopy, Converter={StaticResource BoolToVis}}"
                                                       Foreground="{DynamicResource App.Text.Primary}"/>
                             </Grid>
                         </StackPanel>

@@ -21,7 +21,7 @@
                 <Border Background="{DynamicResource App.Surface.Card}" CornerRadius="24" Padding="22,20">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal">
-                            <Border Width="44" Height="44" CornerRadius="22"
+                            <Border Width="44" Height="44" CornerRadius="15"
                                     Background="{DynamicResource App.Accent.Container}">
                                 <m3:M3Icon Kind="link-variant" Width="22" Height="22"
                                            Foreground="{DynamicResource App.Text.OnContainer}"
