@@ -27,6 +27,10 @@ public class LinkDetailPaneModel : ActionSurfaceModel
     /// <summary>标题文案侧是否非空（显隐口径同 <see cref="HasTitleData"/>）。</summary>
     public bool HasTitleCopy => !TitleCopy.IsEmpty;
     public string Url { get; protected set; } = string.Empty;
+
+    /// <summary>是否有 URL（URL 卡显隐的唯一判据）：文件夹没有 URL 卡，操作卡因此直接跟在 hero 后面。</summary>
+    public bool HasUrl => !string.IsNullOrEmpty(Url);
+
     public BitmapImage? Favicon { get; protected set; }
     public bool HasFavicon => Favicon != null;
 
@@ -58,6 +62,7 @@ public class LinkDetailPaneModel : ActionSurfaceModel
         OnPropertyChanged(nameof(TitleCopy));
         OnPropertyChanged(nameof(HasTitleCopy));
         OnPropertyChanged(nameof(Url));
+        OnPropertyChanged(nameof(HasUrl));
         OnPropertyChanged(nameof(Favicon));
         OnPropertyChanged(nameof(HasFavicon));
         OnPropertyChanged(nameof(Description));

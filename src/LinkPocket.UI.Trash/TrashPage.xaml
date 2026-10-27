@@ -233,7 +233,7 @@
                             <DataTemplate>
                                 <!-- 外层 Border：事件/右键菜单/列宽对齐；内层 RowSkin：共享行皮肤（与浏览页同款） -->
                                 <Border x:Name="RowBorder" Tag="TrashRow" Cursor="Hand"
-                                        MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                        Width="{Binding RowWidth, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"
                                         PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
                                         MouseLeftButtonUp="RowBorder_MouseLeftButtonUp"
                                         ContextMenuOpening="RowBorder_ContextMenuOpening">
@@ -452,7 +452,9 @@
             <Grid>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{loc:Value StatusText}" FontSize="12" Foreground="{DynamicResource App.Text.Secondary}"/>
-                    <Border CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
+                    <!-- 选中信息 = 与浏览页状态栏**同一口径**：只报「已选中 N 项」，不把单项名字塞进药丸
+                         （名字已在右栏标题卡/主栏行里；状态栏保持"数量摘要"的职责，两页一致） -->
+                    <Border x:Name="StatusSelectionPill" CornerRadius="9" Background="{DynamicResource App.Accent.Container}"
                             Padding="10,2" Margin="12,0,0,0" VerticalAlignment="Center">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -464,24 +466,9 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <Grid>
-                            <TextBlock FontSize="11.5" FontWeight="SemiBold" Text="{loc:Value SelectionInfoText}"
-                                       Foreground="{DynamicResource App.Text.OnContainer}">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Style.Triggers>
-                                            <!-- 单选有名字时画名字（用户数据），项数句让位 -->
-                                            <DataTrigger Binding="{Binding ShowsSelectionName}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Text="{Binding SelectionInfoName}" FontSize="11.5" FontWeight="SemiBold"
-                                       Visibility="{Binding ShowsSelectionName, Converter={StaticResource BoolToVis}}"
-                                       Foreground="{DynamicResource App.Text.OnContainer}"/>
-                        </Grid>
+                        <TextBlock x:Name="StatusSelectionText" Text="{loc:Value SelectionInfoText}"
+                                   FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </Border>
                 </StackPanel>
                 <!-- 状态栏脚注：面板层上的文字取 `Text.Secondary`（弱档 Muted 对面板只有 3.67，达不到 4.5） -->

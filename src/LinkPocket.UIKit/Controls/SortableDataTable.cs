@@ -93,6 +93,22 @@ public class SortableDataTable : Grid
         nameof(HeaderBandMargin), typeof(Thickness), typeof(SortableDataTable),
         new PropertyMetadata(new Thickness(8, 0, 8, 0)));
 
+    /// <summary>
+    /// 行容器统一内容宽度（模板模式下由行根元素绑定）：NaN = 尚未布局。
+    /// 纵向滚动条出现/消失会改变行区视口宽——若让每一行各自去读 ScrollViewer.ViewportWidth，
+    /// 已实现/缓存中的行可能停在旧宽度，表头也只能对齐其中一行（大库实测：表头 816 / 行 798.7，
+    /// 差一条滚动条宽，文件夹行与链接行各偏各的）。这里由表头对齐时一次算出，所有行共用同一个值。
+    /// </summary>
+    public static readonly DependencyProperty RowWidthProperty = DependencyProperty.Register(
+        nameof(RowWidth), typeof(double), typeof(SortableDataTable),
+        new PropertyMetadata(double.NaN));
+
+    public double RowWidth
+    {
+        get => (double)GetValue(RowWidthProperty);
+        private set => SetValue(RowWidthProperty, value);
+    }
+
     /// <summary>行选中开关（默认开）。两种模式：
     /// · 开启 = 控件内部绘制（点击行 → SelectItem 单选自绘）；
     /// · 关闭 = **外部托管**：点击行不绘制，页面用 <see cref="ApplySelection"/> 把
@@ -185,6 +201,8 @@ public class SortableDataTable : Grid
     /// 而那个结构正是**虚拟化失效**的原因，见 <see cref="BuildRowsTemplate"/>）。
     /// </summary>
     private ScrollViewer? _rowsScroller;
+    /// <summary>行区视口宽的上次读数：纵向滚动条出现/消失会改变它（表头与行宽必须跟着重对齐）。</summary>
+    private double _lastViewportWidth = double.NaN;
     /// <summary>空态承载器（独立 ContentControl，绝不与 ItemsSource 混用 Items —— 混用会抛
     /// "在使用 ItemsSource 之前，项集合必须为空"，搜索结果因此永远渲染不出来）。</summary>
     private readonly ContentControl _emptyHost;
@@ -267,8 +285,9 @@ public class SortableDataTable : Grid
 
         // 表头列区与行内容区对齐：行区宽度会随「纵向滚动条出现/消失」「窗口缩放」变化，
         // 也必须等布局结束后才能实测（行容器是布局期生成的）。
-        _rowsList.SizeChanged += (_, _) => ScheduleHeaderAlignment();
-        Loaded += (_, _) => ScheduleHeaderAlignment();
+        // 取一次 RowsScroller 才能挂上 ScrollChanged（视口宽变化 = 纵向滚动条出现/消失的唯一信号）。
+        _rowsList.SizeChanged += (_, _) => { _ = RowsScroller; ScheduleHeaderAlignment(); };
+        Loaded += (_, _) => { _ = RowsScroller; ScheduleHeaderAlignment(); };
 
         // 容器**被实现**（滚进视口）时重投影一次选中底色。
         // ⚠️ 为什么需要：虚拟化生效后，行容器是"用到才挂进可视树"的——工厂模式（搜索/回收站/智能列表）
@@ -348,9 +367,19 @@ public class SortableDataTable : Grid
                 _rowsScroller = FindVisualChild<ScrollViewer>(_rowsList);
                 if (_rowsScroller != null)
                 {
+                    _lastViewportWidth = _rowsScroller.ViewportWidth;
                     double lastFiredOffset = -1;
                     _rowsScroller.ScrollChanged += (_, e) =>
                     {
+                        // 纵向滚动条出现/消失 = 视口宽变化：行宽与表头必须按新宽度重对齐
+                        //（否则表头停在大库之前的那一档，与所有行差一条滚动条的宽度）。
+                        if (!double.IsNaN(e.ViewportWidth)
+                            && (double.IsNaN(_lastViewportWidth) || Math.Abs(e.ViewportWidth - _lastViewportWidth) > 0.5))
+                        {
+                            _lastViewportWidth = e.ViewportWidth;
+                            ScheduleHeaderAlignment();
+                        }
+
                         if (e.ExtentHeight <= 0 || e.ViewportHeight <= 0) return;
                         // 只在**向下滚过上次触发点**时发信号：续载追加 → Reset 重建 → 编辑框重聚焦
                         // 会把视口拉回底部（实测把 7 页一口气拉完），必须用"偏移在增长"斩断这条环。
@@ -640,6 +669,18 @@ public class SortableDataTable : Grid
 
         try
         {
+            // 行宽先收口到一个共享值：模板模式的行根元素绑定 RowWidth，避免"有的行停在旧视口宽、
+            // 有的行已跟随新视口宽"（大库滚动条出现时实测到的行间错位）。
+            // 取**行区视口宽**而不是内部列 Grid 的宽（后者已扣掉行内距，拿它当根元素宽会把行整体缩进一圈）。
+            var rowWidthChanged = false;
+            var viewportWidth = RowsScroller?.ViewportWidth ?? 0;
+            if (viewportWidth > 0
+                && (double.IsNaN(RowWidth) || Math.Abs(RowWidth - viewportWidth) > 0.5))
+            {
+                RowWidth = viewportWidth;
+                rowWidthChanged = true;
+            }
+
             var rowLeft = rowGrid.TransformToAncestor(this).Transform(new Point(0, 0)).X;
             var headLeft = _headerGrid.TransformToAncestor(this).Transform(new Point(0, 0)).X;
             var shift = Math.Max(0, _headerGrid.Margin.Left + (rowLeft - headLeft));
@@ -648,6 +689,9 @@ public class SortableDataTable : Grid
             _headerGrid.Width = rowGrid.ActualWidth;
             if (Math.Abs(_headerGrid.Margin.Left - shift) > 0.5)
                 _headerGrid.Margin = new Thickness(Math.Round(shift, 1), 0, 0, 0);
+
+            // 行宽刚变 ⇒ 行内 Grid 的实宽要下一轮布局才更新，届时再对齐一次表头。
+            if (rowWidthChanged) ScheduleHeaderAlignment();
         }
         catch (InvalidOperationException)
         {

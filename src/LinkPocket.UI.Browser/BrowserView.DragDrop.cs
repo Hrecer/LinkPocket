@@ -129,6 +129,19 @@ public partial class BrowserView : UserControl
     private object? _lastPressRow;
     private long _lastPressTick;
 
+    /// <summary>
+    /// 作废改名「两击对」：一对必须由**连续两次无修饰键的普通单击**构成。
+    /// 双击的第二击（ClickCount≥2）、拖拽、右键、打开详情/编辑器页、导航加载等任何其它手势
+    /// 都不得充当下一对的第一击——否则"双击打开链接详情 → 返回后单击一下"会拿双击的第二击当下一对的第一击，
+    /// 直接误入改名（用户实测）。
+    /// </summary>
+    private void ClearRenamePair()
+    {
+        _pressRenamePair = false;
+        _lastPressRow = null;
+        _lastPressTick = 0;
+    }
+
     /// <summary>本次手势是否已进入拖拽（拖拽结束的抬起不得再补做选择收敛）。</summary>
     private bool _dragStarted;
 
@@ -197,12 +210,21 @@ public partial class BrowserView : UserControl
         // 记下"按下时它已是唯一选中"——抬起据此判定"第二击"（慢两击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
         // 「两击对窗口」的第二击：同一行、间隔 ∈ [0.8s, 5s]（快击 = 双击打开、超窗 = 重新起对，都不改名）
-        var now = Environment.TickCount64;
-        var gap = now - _lastPressTick;
-        _pressRenamePair = ReferenceEquals(_lastPressRow, _pressRow)
-            && gap >= RenamePairMinMs && gap <= RenamePairWindowMs;
-        _lastPressRow = _pressRow;
-        _lastPressTick = now;
+        // 只有**无修饰键的普通单击**能起一对：双击的第二击（ClickCount≥2）与 Ctrl/Shift 点选都不是"待命"，
+        // 更不能成为下一对的第一击（否则双击打开详情、返回后单击一次就会被判成第二击）。
+        if (_pressClickCount > 1 || _pressModifiers != ModifierKeys.None)
+        {
+            ClearRenamePair();
+        }
+        else
+        {
+            var now = Environment.TickCount64;
+            var gap = now - _lastPressTick;
+            _pressRenamePair = ReferenceEquals(_lastPressRow, _pressRow)
+                && gap >= RenamePairMinMs && gap <= RenamePairWindowMs;
+            _lastPressRow = _pressRow;
+            _lastPressTick = now;
+        }
         if (_pressModifiers == ModifierKeys.None && !_pressRow.IsSelected)
             ViewModel.SelectRowWithModifiers(_pressRow, ModifierKeys.None);
     }
@@ -219,6 +241,7 @@ public partial class BrowserView : UserControl
             : (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         _rightDragGesture = false;   // 新手势开始：上一次的抑制窗口到此为止
         _rightDragMenu = null;
+        ClearRenamePair();           // 右键是另一种手势，不能夹在"两击对"之间
     }
 
     /// <summary>
@@ -242,6 +265,7 @@ public partial class BrowserView : UserControl
         if (_pressRow == null) return;   // 按下不在行主体（如落在改名编辑框内）→ 不进入行拖拽
         if (!DragSupport.BeyondThreshold(e.GetPosition(this), _rowDragStart)) return;
         _dragStarted = true;             // 拖拽结束的抬起不得再补做选择收敛
+        ClearRenamePair();               // 拖拽不是单击：这一下绝不能成为改名两击对的第一击
         StartRowDrag((DependencyObject)sender, _pressRow, rightButton: false);
     }
 

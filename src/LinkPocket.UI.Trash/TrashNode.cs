@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace LinkPocket.ViewModels;
@@ -30,6 +31,9 @@ public class TrashNode : INotifyPropertyChanged
 
     /// <summary>单元子树内书签总数（链接叶子恒 0）。</summary>
     public int LinkCount { get; init; }
+
+    /// <summary>是否显示展开箭头：链接叶子与**真正空的单元**都不显示（位置留空，不画灰色箭头）。</summary>
+    public bool ShowExpander => !IsLink && (LinkCount > 0 || Children.Any(c => !c.IsLink));
 
     /// <summary>
     /// 链接叶子的**站点图标**（与主栏行 / 浏览页树同一套解码口径；单元与虚根恒 null）。

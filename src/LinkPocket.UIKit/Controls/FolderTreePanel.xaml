@@ -97,7 +97,10 @@
             <!-- 聚焦禁描边（UI-SPEC）：树本体不带原生焦点视觉（默认模板的虚线框） -->
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Padding" Value="4"/>
-            <!-- 层级缩进后深层内容会伸出视口：水平滚动 Auto（Windows 资源管理器语义），垂直滚动 Auto -->
+            <!-- 层级缩进后深层内容会伸出视口：横向滚动 Auto（Windows 资源管理器语义），垂直滚动 Auto。
+                 行宽 = 最宽行 − 本行缩进，WPF 对整行做 BringIntoView 时会滚到行尾（chevron 被裁、横条错位）；
+                 由 FolderTreeItem_RequestBringIntoView 改为横向落到本行缩进位（根 = 0，每深一级右移一格），
+                 纵向仍由 WPF 滚动。 -->
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
@@ -210,15 +213,14 @@
                             <Trigger Property="IsExpanded" Value="False">
                                 <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed"/>
                             </Trigger>
-                            <!-- chevron 只服务展开/收起：链接叶子无子级不显示 chevron；
-                                 空文件夹保留 hollow chevron（降透明度）= Windows 资源管理器语义（所有文件夹可展开/收起）。
+                            <!-- chevron 只服务展开/收起：链接叶子与**真正空的文件夹**都不画箭头
+                                 （不是灰色不可用，而是直接不显示；固定 20px 列仍留空位，名称列不左右跳）。
+                                 不能只看 HasItems：直接链接是展开后才懒加载的，有链接但未展开的文件夹
+                                 HasItems 仍为 false；ShowExpander 由链接数 + 子文件夹共同判定。
                                  选中/进入由行主体 MouseLeftButtonUp 显式转发，与 chevron 物理分离 -->
-                            <DataTrigger Binding="{Binding IsLink}" Value="True">
-                                <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                            <DataTrigger Binding="{Binding ShowExpander}" Value="False">
+                                <Setter TargetName="Expander" Property="Visibility" Value="Collapsed"/>
                             </DataTrigger>
-                            <Trigger Property="HasItems" Value="False">
-                                <Setter TargetName="Expander" Property="Opacity" Value="0.4"/>
-                            </Trigger>
                             <!-- 选中高亮已由数据驱动（见上方 RowCard 派生样式 DataTrigger），此处无需容器 IsSelected 触发器 -->
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -227,6 +229,8 @@
             <EventSetter Event="DragOver" Handler="FolderTreeItem_DragOver"/>
             <EventSetter Event="DragLeave" Handler="FolderTreeItem_DragLeave"/>
             <EventSetter Event="Drop" Handler="FolderTreeItem_Drop"/>
+            <!-- 行聚焦/选中触发的自动滚动：纵向跟随 WPF，横向落到该节点自己的缩进位（见处理器注释） -->
+            <EventSetter Event="RequestBringIntoView" Handler="FolderTreeItem_RequestBringIntoView"/>
         </Style>
     </UserControl.Resources>
 

@@ -36,7 +36,14 @@ public partial class BrowserView : UserControl
     {
         if (e.PropertyName == nameof(BrowserViewModel.IsRenaming))
         {
+            ClearRenamePair();   // F2 / 右键改名 / 改名收尾都算插入动作，不得留下"下一击进改名"的待命
             RestoreFocusAfterRename();
+            return;
+        }
+        if (e.PropertyName == nameof(BrowserViewModel.IsListContextActive))
+        {
+            // 详情页 / 编辑器页开合是插入动作：双击打开链接详情后返回，链接仍选中，但下一次单击只能重新"待命"。
+            ClearRenamePair();
             return;
         }
         if (e.PropertyName != nameof(BrowserViewModel.IsNoticeOpen)) return;
@@ -330,7 +337,11 @@ public partial class BrowserView : UserControl
     /// <summary>刷新链结束：只有导航加载才播行入场动画；并守住"焦点在页内"不变式。</summary>
     private void OnRefreshCompleted(object? sender, bool wasNavigation)
     {
-        if (wasNavigation) RowEntrance.Play(MainTable.RowsList);
+        if (wasNavigation)
+        {
+            ClearRenamePair();   // 导航（打开目录 / 后退 / F5）打断两击对：返回后的第一击只能重新待命
+            RowEntrance.Play(MainTable.RowsList);
+        }
         // 刷新会重建树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
         // 延到布局之后执行（容器重建完成再判焦点归属），保证"进入文件夹后 Ctrl+V 立即可用"。
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => PageFocus.Restore(this)));
@@ -360,8 +371,17 @@ public partial class BrowserView : UserControl
         var clicks = _pressClickCount;
         _pressRow = null;
 
-        if (ViewModel == null || row == null) return;
-        if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1) return;
+        if (ViewModel == null || row == null)
+        {
+            ClearRenamePair();
+            return;
+        }
+        if (!ReferenceEquals(row, pressed) || _dragStarted || clicks > 1)
+        {
+            // 不是"按下并抬起在同一行"的普通单击（双击第二击 / 拖拽 / 行已重建）：不构成待命。
+            ClearRenamePair();
+            return;
+        }
 
         // 改名触发（契约 §1.4，2026-10-14 用户口径）：**单击永不改名**——只有构成"两击对窗口"的
         // **第二击**才进入改名，两条缺一即不改名：
@@ -373,6 +393,7 @@ public partial class BrowserView : UserControl
         if (_pressRenamePair && _pressWasSoleSelection
             && mods == ModifierKeys.None && !ViewModel.IsRenaming)
         {
+            ClearRenamePair();   // 一对只消费一次；改名收尾后单击必须重新起对
             ViewModel.BeginRenameRow(row);
             return;
         }

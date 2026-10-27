@@ -9,8 +9,9 @@
          浏览页详情页 与 回收站只读详情页 **共用同一份界面与同一份模型**：
          DataContext = ViewModels.LinkDetailPaneModel（或其子类）——各页只填数据（标题 / URL / 图标 /
          信息行 / 描述）并在动作面上声明自己的入口，绝不复制界面或逻辑。
-         结构：hero 头部卡 → URL 卡（只读文本 + 复制）→ 信息卡（Rows + 共享 InfoRowTemplate）
-               → Markdown 描述卡（空描述隐藏）→ 操作卡（能力位驱动）→ 左上浮动返回钮。
+         结构：hero 头部卡 → URL 卡（只读文本 + 复制；无 URL 的文件夹整卡隐藏）
+               → 操作卡（能力位驱动）→ Markdown 描述卡（空描述隐藏）
+               → 信息卡（Rows + 共享 InfoRowTemplate）→ 左上浮动返回钮。
          ⚠️ 悬浮层（返回钮）必须声明在 ScrollViewer **之后**：Material3.Wpf 的 ScrollViewer 模板铺了
             不透明底色，悬浮层在它下面会被吃掉全部鼠标命中（见 UI-SPEC 已知陷阱）。 -->
 
@@ -27,7 +28,7 @@
                 <StackPanel>
 
                     <!-- hero 头部卡：favicon + 标题 -->
-                    <Border Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20" Padding="20,18">
+                    <Border x:Name="HeroCard" Background="{DynamicResource App.Surface.TintCard}" CornerRadius="20" Padding="20,18">
                         <StackPanel Orientation="Horizontal">
                             <Border Width="44" Height="44" CornerRadius="10" Background="White" ClipToBounds="True"
                                     VerticalAlignment="Center">
@@ -79,9 +80,19 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- URL 卡：只读文本（可横向滚动）+ 复制 -->
-                    <Border Background="{DynamicResource App.Surface.TintCard}"
+                    <!-- URL 卡：只读文本（可横向滚动）+ 复制；没有 URL（文件夹）时整卡不占位 -->
+                    <Border x:Name="UrlCard" Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasUrl}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -105,38 +116,9 @@
                         </Grid>
                     </Border>
 
-                    <!-- 信息卡：Rows 数据驱动（模板 = UIKit 共享 InfoRowTemplate，与侧栏同一视觉） -->
-                    <Border Background="{DynamicResource App.Surface.TintCard}"
-                            CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock Text="{loc:Loc common.info}" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 描述卡（Markdown 渲染；空描述整卡隐藏） -->
-                    <Border x:Name="DescriptionCard" Background="{DynamicResource App.Surface.TintCard}"
-                            CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Visibility" Value="Visible"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasDescription}" Value="False">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <StackPanel>
-                            <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
-                                       Foreground="{DynamicResource App.Text.Secondary}"/>
-                            <!-- 渲染口径（字体/前景/链接出口/图片不抓取）全在共享控件里，见 views:MarkdownText -->
-                            <views:MarkdownText Markdown="{Binding Description}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 操作卡（能力位驱动：主按钮 + 编辑/重命名 + 删除；各页只声明"有哪些动作"） -->
+                    <!-- 操作卡（排在 URL 卡之后：链接 = 标题 → URL → 操作；没有 URL 的文件夹
+                         URL 卡整卡 Collapsed ⇒ 操作卡自然紧跟标题卡。能力位驱动：主按钮 + 编辑/重命名 +
+                         删除；各页只声明"有哪些动作"） -->
                     <Border x:Name="ActionCard" Background="{DynamicResource App.Surface.TintCard}"
                             CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
                         <Border.Style>
@@ -211,6 +193,37 @@
                                                Foreground="{DynamicResource App.Text.OnContainer}"/>
                                 </Button>
                             </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 描述卡（Markdown 渲染；空描述整卡隐藏） -->
+                    <Border x:Name="DescriptionCard" Background="{DynamicResource App.Surface.TintCard}"
+                            CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasDescription}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc ui.noun.description}" FontSize="12" Opacity="0.55" Margin="2,0,0,6"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <!-- 渲染口径（字体/前景/链接出口/图片不抓取）全在共享控件里，见 views:MarkdownText -->
+                            <views:MarkdownText Markdown="{Binding Description}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 信息卡（排在描述之后）：Rows 数据驱动，模板 = UIKit 共享 InfoRowTemplate（与侧栏同一视觉） -->
+                    <Border x:Name="InfoCard" Background="{DynamicResource App.Surface.TintCard}"
+                            CornerRadius="20" Padding="20,16" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc common.info}" FontSize="12" Opacity="0.55" Margin="2,0,0,10"
+                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                            <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"/>
                         </StackPanel>
                     </Border>
 

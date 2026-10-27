@@ -237,6 +237,53 @@ namespace LinkPocket.Views
             NodeSelected?.Invoke(this, node);
         }
 
+        // 行 BringIntoView 的横向落点（点击「全部书签」/任一文件夹都会由 WPF 对聚焦行发起）。
+        // 行宽 = 最宽行 − 本行缩进，整行右缘永远不可见 ⇒ WPF 会向右滚到行尾，把本行（以及祖先）的
+        // chevron 推出视口，横条停在不对应的位置。这里纵向仍交给 WPF（含虚拟化），横向改为
+        // **落到本行自己的缩进位**：根 = 最左（0），每深一级右移一格（20×层级）。
+        // 这样点击哪一级，横条就停到那一级对应的位置，本行 chevron 恰好贴着左侧留白。
+        private bool _bringingRowIntoView;
+
+        private void FolderTreeItem_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+        {
+            if (_bringingRowIntoView || sender is not TreeViewItem item) return;
+            _bringingRowIntoView = true;
+            try
+            {
+                e.Handled = true;
+                // 零宽矩形贴行左缘 + 整行高：只保留 WPF 的纵向滚动（横向下面显式覆盖）。
+                item.BringIntoView(new Rect(0, 0, 0, item.ActualHeight));
+                var scroller = FindTreeScroller();
+                if (scroller != null)
+                {
+                    // 变换差值与当前横向偏移无关（两者同减 offset）⇒ 得到本行相对根行的缩进量。
+                    var root = FolderTreeControl.ItemContainerGenerator.ContainerFromIndex(0) as TreeViewItem;
+                    var rootX = root?.TransformToAncestor(FolderTreeControl).Transform(new Point(0, 0)).X ?? 0;
+                    var itemX = item.TransformToAncestor(FolderTreeControl).Transform(new Point(0, 0)).X;
+                    scroller.ScrollToHorizontalOffset(Math.Max(0, itemX - rootX));
+                }
+            }
+            finally
+            {
+                _bringingRowIntoView = false;
+            }
+        }
+
+        private ScrollViewer? FindTreeScroller()
+        {
+            static ScrollViewer? Find(DependencyObject root)
+            {
+                for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+                {
+                    var child = VisualTreeHelper.GetChild(root, i);
+                    if (child is ScrollViewer sv) return sv;
+                    if (Find(child) is { } nested) return nested;
+                }
+                return null;
+            }
+            return Find(FolderTreeControl);
+        }
+
         private void FolderTreeItem_DragOver(object sender, DragEventArgs e)
         {
             var args = new TreeItemDragEventArgs { Args = e, Node = (sender as TreeViewItem)?.DataContext };

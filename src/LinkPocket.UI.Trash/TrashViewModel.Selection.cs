@@ -29,16 +29,8 @@ public partial class TrashViewModel
     public int SelectionCount => Selection.Count;
     public bool HasSelection => Selection.HasAny;
 
-    /// <summary>选中提示的项数句（多选，或单选但该项没有名字时画它）。</summary>
+    /// <summary>选中提示的项数句（与浏览页状态栏同一口径：只报数量，不画单项名字）。</summary>
     public LocValue SelectionInfoText => Loc.K("count.selectedItems", SelectionCount);
-
-    /// <summary>单选时选中项<b>自己的名字</b>（用户数据，永不翻译；见 <see cref="ShowsSelectionName"/>）。</summary>
-    public string SelectionInfoName => SelectionCount == 1
-        ? Rows.FirstOrDefault(r => Selection.Contains(r.Id))?.Name ?? string.Empty
-        : string.Empty;
-
-    /// <summary>药丸画名字还是画项数：单选且有名字才画名字。</summary>
-    public bool ShowsSelectionName => SelectionInfoName.Length > 0;
 
     /// <summary>当前选中行（主栏视角；顺序 = 行序）。</summary>
     public IEnumerable<TrashRowViewModel> SelectedRows => Rows.Where(r => Selection.Contains(r.Id));
@@ -51,8 +43,6 @@ public partial class TrashViewModel
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectionCount));
         OnPropertyChanged(nameof(SelectionInfoText));
-        OnPropertyChanged(nameof(SelectionInfoName));
-        OnPropertyChanged(nameof(ShowsSelectionName));
         ProjectDetails();
         CommandRefresh.Request();
     }

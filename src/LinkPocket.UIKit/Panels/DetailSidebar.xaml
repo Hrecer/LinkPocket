@@ -13,7 +13,9 @@
          DataContext = ViewModels.DetailSidebarModel（或其子类）。
          信息卡内容按 Rows 集合渲染 —— 行由使用方按选中对象构建，
          控件不含任何「链接/文件夹」字段硬编码。样式自带（SideCard/SideLabel/SideChip），
-         放进任何页面都成立，不依赖宿主资源。 -->
+         放进任何页面都成立，不依赖宿主资源。
+         卡片顺序：标题卡 → URL（仅链接）→ **操作卡** → 描述卡 → 信息卡 → 多选统计。
+         文件夹没有 URL 卡（整卡 Collapsed）⇒ 操作卡自然紧跟标题卡。 -->
 
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -240,7 +242,7 @@
             </StackPanel>
 
             <!-- ===== 单选：头部卡片（图标 + 名称） ===== -->
-            <Border>
+            <Border x:Name="HeaderCard">
                 <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -342,7 +344,7 @@
             </Border>
 
             <!-- ===== 单选书签：URL 卡片 ===== -->
-            <Border>
+            <Border x:Name="UrlCard">
                 <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -371,51 +373,13 @@
                 </Grid>
             </Border>
 
-            <!-- ===== 单选：信息卡片（行 = Rows 集合，数据驱动） ===== -->
-            <Border>
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsSingle}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc common.info}" Style="{StaticResource SideLabel}"/>
-                    <!-- 行模板 = UIKit 共享资源（与详情页同一份视觉，绝不复制） -->
-                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"
-                                  FocusVisualStyle="{x:Null}"/>
-                </StackPanel>
-            </Border>
-
-            <!-- ===== 单选书签：描述卡片（置于信息卡之后） ===== -->
-            <Border>
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding HasDescription}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc ui.noun.description}" Style="{StaticResource SideLabel}"/>
-                    <!-- 描述 = 可拖选的展示型文本（TextBox 无 LineHeight，行距按字体默认，比原 TextBlock 略紧） -->
-                    <views:SelectableText Text="{Binding DescriptionText, Mode=OneWay}" FontSize="12.5"
-                                          TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
-                </StackPanel>
-            </Border>
-
-            <!-- ===== 单选：快捷操作 =====
-                 动作面 = 模型**显式能力位**（ShowOpenAction / ShowOpenWebsite / ShowEditAction / ShowDeleteAction）：
+            <!-- ===== 单选：快捷操作（排在 URL 卡之后）=====
+                 链接 = 标题 → URL → **操作** → 描述 → 信息；文件夹没有 URL 卡（整卡 Collapsed）
+                 ⇒ 操作卡自然紧跟标题卡。动作面 = 模型**显式能力位**
+                 （ShowOpenAction / ShowOpenWebsite / ShowEditAction / ShowDeleteAction）：
                  各页在共享框架内声明"有哪些动作"（浏览页全开；回收站只开 打开/详情 + 永久删除），
                  界面与命令都复用本控件，绝不另写第二套详情栏 -->
-            <Border>
+            <Border x:Name="ActionCard">
                 <Border.Style>
                     <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -450,6 +414,46 @@
                                         FocusVisualStyle="{x:Null}"
                                         ContentTemplate="{StaticResource SidebarActionIcons}"/>
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ===== 单选书签：描述卡片（排在信息卡之前） ===== -->
+            <Border x:Name="DescriptionCard">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasDescription}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc ui.noun.description}" Style="{StaticResource SideLabel}"/>
+                    <!-- 描述 = 可拖选的展示型文本（TextBox 无 LineHeight，行距按字体默认，比原 TextBlock 略紧） -->
+                    <views:SelectableText Text="{Binding DescriptionText, Mode=OneWay}" FontSize="12.5"
+                                          TextWrapping="Wrap" Foreground="{DynamicResource App.Text.Primary}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ===== 单选：信息卡片（行 = Rows 集合，数据驱动） ===== -->
+            <Border x:Name="InfoCard">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource SideCard}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSingle}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc common.info}" Style="{StaticResource SideLabel}"/>
+                    <!-- 行模板 = UIKit 共享资源（与详情页同一份视觉，绝不复制） -->
+                    <ItemsControl ItemsSource="{Binding Rows}" ItemTemplate="{StaticResource InfoRowTemplate}"
+                                  FocusVisualStyle="{x:Null}"/>
                 </StackPanel>
             </Border>
 

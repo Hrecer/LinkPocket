@@ -323,7 +323,7 @@
                             <!-- 外层 Border：承载事件/右键菜单/列宽对齐，透明无底色（宽度=视口，不产生横向溢出）；
                                  内层 RowSkin：MD3E 悬浮行容器 —— 大圆角 12 + 左右外距 10，hover/选中底色都在它上面 -->
                             <Border x:Name="RowBorder" Tag="BrowserRow" Cursor="Hand"
-                                    MinWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
+                                    Width="{Binding RowWidth, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"
                                     PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
                                     PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"
                                     MouseMove="RowBorder_MouseMove"

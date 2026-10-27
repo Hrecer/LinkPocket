@@ -91,8 +91,15 @@ public class FolderNode : INotifyPropertyChanged
     public int LinkCount
     {
         get => _linkCount;
-        set { _linkCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalLinkCount)); OnPropertyChanged(nameof(DeleteMenuHeader)); }
+        set { _linkCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalLinkCount)); OnPropertyChanged(nameof(DeleteMenuHeader)); OnPropertyChanged(nameof(ShowExpander)); }
     }
+
+    /// <summary>
+    /// 是否显示展开箭头：链接叶子不显示；**真正空的文件夹也不显示**（位置留空，不画灰色箭头）。
+    /// 不能只看 <see cref="Children"/>——直接链接是展开后才懒加载的，未展开时有链接的文件夹 Children 仍为空；
+    /// 链接数按子树递归计，> 0 即表示下面有内容。
+    /// </summary>
+    public bool ShowExpander => !IsLink && (LinkCount > 0 || Children.Any(c => !c.IsLink));
 
     /// <summary>
     /// 右键菜单「删除」文案：与列表行一致 —— 文件夹内链接数（递归）> 0 才报数，
@@ -205,6 +212,7 @@ public class FolderNode : INotifyPropertyChanged
             _children = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(TotalLinkCount));   // 整体换集合 ⇒ 递归计数可能变化，必须通知
+            OnPropertyChanged(nameof(ShowExpander));     // 子文件夹有无同样决定箭头显隐
         }
     }
 
