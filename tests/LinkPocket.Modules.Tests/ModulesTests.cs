@@ -109,7 +109,7 @@ public class FoldersModuleTests
         Assert.All(overview.Tree, f => Assert.Contains(tree, t => t.FolderId == f.FolderId));
 
         // 全库链接**不再随 overview 搬运**（每次刷新搬全库是实测的性能黑洞）：
-        // 目录树的叶子改用轻量出口 folders.tree_links（只带 id / 标题 / 地址 / 归属），按节点展开时取
+        // 轻量出口 folders.tree_links 仍在（只带 id / 标题 / 地址 / 归属）；浏览页左栏已改为只显示文件夹，界面不再消费它
         Assert.Null(overview.TreeLinks);
         var leaves = await engine.QueryAsync<List<TreeLinkDto>>("folders.tree_links", new { folder_id = folder.Data!.FolderId });
         Assert.Single(leaves);

@@ -38,7 +38,7 @@ public partial class BrowserViewModel
     // —— 面包屑内联路径编辑 ——
 
     /// <summary>
-    /// Ctrl+Shift+E：把左栏树展开到当前所在位置（只展开、**不选中**——位置 ≠ 选中）。
+    /// Ctrl+Shift+E：把左栏树展开到当前所在位置（只展开、**不改选中**——当前位置的高亮本来就由树位置投影表达）。
     /// 展开链 = 当前目录的祖先链（含自身），让当前目录在树里可见；根目录无需展开（虚根恒展开）。
     /// </summary>
     public void ExpandTreeToCurrentLocation()
@@ -131,7 +131,7 @@ public partial class BrowserViewModel
         var target = flat[next];
         _treeNavNode = target;   // 下一次移动从当前落点继续（游标独立于选中/位置）
 
-        // 落点语义 = 与鼠标点击树行**完全同一条路径**（文件夹 = 选中 + 进入；链接叶子 = 定位；虚根 = 进根不选中）——
+        // 落点语义 = 与鼠标点击树行**完全同一条路径**（文件夹 = 进入；虚根 = 进根不选中）——
         // 键盘绝不另造一套"只移选中"的语义（那会让"点树"与"按树"行为分叉）。
         _ = SelectTreeNodeAsync(target);
     }
@@ -171,10 +171,11 @@ public partial class BrowserViewModel
     }
 
     /// <summary>
-    /// 当前聚焦的树节点，优先级：键盘移动游标（<see cref="_treeNavId"/>，连续 ↓/↑ 的落点）→
-    /// 选中实体在树里的节点 → 当前所在目录节点（根目录 = 虚根）→ null（由调用方取顶/底）。
+    /// 当前聚焦的树节点，优先级：键盘移动游标（<see cref="_treeNavNode"/>，连续 ↓/↑ 的落点）→
+    /// 当前所在目录节点（根目录 = 虚根）→ null（由调用方取顶/底）。
     /// ⚠️ 虚根必须参与：它的 Id 为空，只能按 <see cref="FolderNode.IsRoot"/> 匹配——
     /// 否则"在根目录按 ↓"每次都会重新从顶开始（落点永远停在虚根，走不动）。
+    /// ⚠️ 左栏只显示文件夹：没有链接叶子那一档，文件夹行的归属 = **当前位置**。
     /// </summary>
     private FolderNode? CurrentFocusedTreeNode()
     {
@@ -183,14 +184,7 @@ public partial class BrowserViewModel
         // ① 键盘游标（仍在当前树里才有效；树重建后旧引用自然落空 → 回退）
         if (_treeNavNode != null && all.Contains(_treeNavNode)) return _treeNavNode;
 
-        // ② 选中实体（鼠标点树 / 上一次键盘落子写下的选中）
-        foreach (var node in all)
-        {
-            if (node.IsLink && Selection.Contains(node.Id)) return node;
-            if (node.FolderId != null && Selection.Contains(node.FolderId)) return node;
-        }
-
-        // ③ 当前所在目录（根目录 → 虚根行）
+        // ② 当前所在目录（根目录 → 虚根行）
         var currentId = Controller.CurrentFolderId;
         foreach (var node in all)
             if (currentId == null ? node.IsRoot : node.FolderId == currentId) return node;
@@ -200,11 +194,49 @@ public partial class BrowserViewModel
     /// <summary>视图请求：为当前选中行弹右键菜单（Shift+F10 / 菜单键；视图订阅后聚焦并 open 行 ContextMenu）。</summary>
     public event EventHandler? ContextMenuRequested;
 
-    /// <summary>左栏 ←/→：折叠 / 展开当前树节点（链接叶子 / 虚根无操作）。</summary>
+    /// <summary>
+    /// 「退出文件夹」的选中收尾：从 <paramref name="from"/> 退到某个祖先目录后，把**刚退出的那一层子文件夹**
+    /// 写入选中集合（Windows 资源管理器口径：按返回上级 / 后退 / 点面包屑祖先段，父目录里选中你刚离开的那个文件夹）。
+    /// <para>
+    /// 唯一事实来源 = **导航前后的目录关系**，绝不读当前选中集合——在子目录里点空白清选中、或打开过链接
+    /// （选中被链接占住），都不能让这个"来源"丢失。<paramref name="from"/> 已不存在（外部删除）→ 什么都不选。
+    /// 只有目标确实是祖先时才成立：平级跳转 / 进入子目录 / 同目录重载都返回 null，不动选中。
+    /// </para>
+    /// </summary>
+    private void SelectExitedChildOnNavigate(string? from)
+    {
+        var child = DirectChildOnPath(from, Controller.CurrentFolderId);
+        if (child == null) return;
+        SetSelection(new[] { child }, child);
+        var row = Rows.FirstOrDefault(r => r.Id == child);
+        if (row != null) FocusRowRequested?.Invoke(this, row);   // 滚入视口（来源文件夹可能不在首屏）
+    }
+
+    /// <summary>
+    /// 从 <paramref name="from"/> 沿父链上溯，返回「落在 <paramref name="ancestor"/> 名下时」那一层的直接子节点 ID；
+    /// 不是祖先关系（平级 / 目标在子级）或来源已不存在 → null。环保护：坏数据成环时终止。
+    /// </summary>
+    private string? DirectChildOnPath(string? from, string? ancestor)
+    {
+        if (from == null || !_folderMap.ContainsKey(from)) return null;   // 来源已消失（外部删除）→ 不做假选中
+        string? child = null, current = from;
+        for (var guard = 0; guard < 512; guard++)
+        {
+            if (string.Equals(current, ancestor, StringComparison.Ordinal)) return child;
+            if (current == null) return null;   // 上溯到头也没碰到目标 = 不是祖先关系
+            child = current;
+            current = _folderMap.TryGetValue(current, out var info) ? info.ParentId : null;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 左栏 ←/→：折叠 / 展开当前树节点（虚根无操作）。
+    /// </summary>
     private void ToggleFocusedTreeExpand()
     {
         var node = CurrentFocusedTreeNode();
-        if (node == null || node.IsLink || node.IsRoot) return;
+        if (node == null || node.IsRoot) return;
         node.IsExpanded = !node.IsExpanded;
     }
 

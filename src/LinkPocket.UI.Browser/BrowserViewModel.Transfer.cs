@@ -279,14 +279,14 @@ public partial class BrowserViewModel
         return items;
     }
 
-    /// <summary>把一个实体 ID 解析成载荷项（主栏行优先，其次目录树）；解析不到 = null（绝不猜类型）。</summary>
+    /// <summary>把一个实体 ID 解析成载荷项（主栏行优先，其次目录树里的文件夹）；解析不到 = null（绝不猜类型）。</summary>
     private DragItem? ResolveDragItem(string id)
     {
         var row = Rows.FirstOrDefault(r => r.Id == id);
         if (row != null) return new DragItem(row.Id, row.IsFolder, row.Name);
 
-        var node = AllTreeNodes().FirstOrDefault(n => n.IsLink ? n.Id == id : n.FolderId == id);
-        return node != null ? new DragItem(id, !node.IsLink, node.Name) : null;
+        var node = AllTreeNodes().FirstOrDefault(n => n.FolderId == id);
+        return node != null ? new DragItem(id, true, node.Name) : null;
     }
 
     /// <summary>
@@ -302,13 +302,13 @@ public partial class BrowserViewModel
 
     /// <summary>
     /// 树节点拖拽起点：语义与主栏**完全一致**（未选中 → 先单选该节点；已选中 → 拖动整个选中集合）。
-    /// 实体 ID：文件夹 = <c>FolderId</c>、链接叶子 = <c>Id</c>；「全部书签」虚根不是实体 → 空载荷（不可拖）。
+    /// 左栏只有文件夹可拖；「全部书签」虚根不是实体 → 空载荷（不可拖）。
     /// 选中仍只经 <see cref="SetSelection"/>（唯一写入入口）落盘，不在此旁路写节点状态。
     /// </summary>
     public IReadOnlyList<DragItem> PrepareDragFromNode(FolderNode? node)
     {
         if (node == null) return [];
-        var id = node.IsLink ? node.Id : node.FolderId;
+        var id = node.FolderId;
         if (string.IsNullOrEmpty(id)) return [];
         if (!Selection.Contains(id)) Selection.SelectSingle(id);
         return BuildDragItems(id);

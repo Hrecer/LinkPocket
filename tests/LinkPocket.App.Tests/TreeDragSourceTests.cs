@@ -76,14 +76,12 @@ public class TreeDragSourceTests
     }
 
     [Fact]
-    public async Task 树节点拖拽_虚根不是实体不可拖_链接叶子可拖()
+    public async Task 树节点拖拽_虚根不是实体不可拖()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            var a = (await client.FolderCreateAsync("A")).Data!;
-            var link = (await client.LinkCreateAsync("https://x.example", title: "X",
-                listId: a.FolderId, autoFetchMetadata: false)).Data!;
+            await client.FolderCreateAsync("A");
 
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
@@ -92,17 +90,6 @@ public class TreeDragSourceTests
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
             Assert.Empty(vm.PrepareDragFromNode(root));
-
-            // 链接叶子也是拖拽源（载荷 IsFolder=false；落点仍是文件夹）。
-            // 叶子按需加载：先展开该目录（懒加载 = 展开才注入）
-            var aNode = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
-            aNode.IsExpanded = true;
-            await vm.WaitForTreeLinksAsync(aNode);
-            var leaf = aNode.Children.Single(c => c.Id == link.LinkId);
-            var item = Assert.Single(vm.PrepareDragFromNode(leaf));
-            Assert.Equal(link.LinkId, item.Id);
-            Assert.False(item.IsFolder);
-            Assert.Equal("X", item.Name);
         }
         finally
         {

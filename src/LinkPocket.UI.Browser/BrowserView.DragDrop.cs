@@ -421,7 +421,7 @@ public partial class BrowserView : UserControl
     /// </summary>
     private bool IsDropPositionCandidate(object? dataContext, BrowserPane candidatePane)
     {
-        if (dataContext is not (BrowserRowViewModel { IsFolder: true } or FolderNode { IsLink: false }))
+        if (dataContext is not (BrowserRowViewModel { IsFolder: true } or FolderNode))
             return false;
 
         var id = dataContext switch
@@ -581,8 +581,8 @@ public partial class BrowserView : UserControl
     }
 
     /// <summary>点击树节点行主体统一交给 VM（数据驱动选中）：
-    /// 文件夹 → 选中并进入；链接叶子 → 主区定位选中该行；「全部书签」虚拟根 → 进入根目录（不写选中）。
-    /// 树高亮由 FolderNode.IsSelected 从 VM 唯一选中集合派生，无需在此记录目标或操作容器。</summary>
+    /// 文件夹 → 进入该目录（树高亮 = 当前位置）；链接叶子 → 主区定位选中该行；「全部书签」虚拟根 → 进入根目录（不写选中）。
+    /// 视图不操作任何容器：行/树高亮全部由 VM 的事实来源（导航位置 + 选中集合）投影。</summary>
     private void FolderTreePanel_NodeSelected(object? sender, object? node)
     {
         if (ViewModel == null || node is not FolderNode fn) return;

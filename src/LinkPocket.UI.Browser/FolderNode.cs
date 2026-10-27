@@ -35,16 +35,17 @@ public class FolderNode : INotifyPropertyChanged
     public bool IsRoot { get; set; }
 
     /// <summary>
-    /// 是否为树中的根级链接叶子节点（「全部书签」节点下、文件夹之前的直挂链接）。
-    /// 链接叶子：Id = 链接 ID、FolderId 恒 null、LinkCount 恒 0（右侧不显示计数）、
-    /// 无子节点（chevron 自动隐藏）、无右键菜单、不可作为拖放目标（只能被定位/选中）。
+    /// 是否为链接叶子。**浏览页左栏只显示文件夹，不再产生链接叶子**（Windows 导航窗格口径）；
+    /// 该属性恒 false，仅为与回收站树共用同一套树面板模板而保留绑定面（模板按它决定叶子样式）。
     /// </summary>
     public bool IsLink { get; set; }
 
     /// <summary>回收站树模式：被删文件夹单元（灰化图标 + 无右键菜单）。浏览页恒为 false。</summary>
     public bool IsTrashed { get; set; }
 
-    /// <summary>树选中态（数据驱动，VM 唯一事实来源）：与主栏 BrowserRowViewModel.IsSelected 同构，容器重建不影响高亮。</summary>
+    /// <summary>树行高亮（数据驱动，VM 唯一事实来源，容器重建不影响）：
+    /// 链接叶子 = 该链接在选中集合中；文件夹行（含虚根「全部书签」）= **当前所在目录**（位置投影）。
+    /// 两者语义不同：文件夹行回答"我在哪"，主栏点空白清选中不会让它熄灭。</summary>
     private bool _isSelected;
     public bool IsSelected
     {
@@ -95,11 +96,10 @@ public class FolderNode : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// 是否显示展开箭头：链接叶子不显示；**真正空的文件夹也不显示**（位置留空，不画灰色箭头）。
-    /// 不能只看 <see cref="Children"/>——直接链接是展开后才懒加载的，未展开时有链接的文件夹 Children 仍为空；
-    /// 链接数按子树递归计，> 0 即表示下面有内容。
+    /// 是否显示展开箭头：只看有没有子文件夹（Windows 导航窗格：没有下级文件夹就不画箭头）。
+    /// 文件夹的链接数不决定箭头——链接不入树，点开也没有东西可看。
     /// </summary>
-    public bool ShowExpander => !IsLink && (LinkCount > 0 || Children.Any(c => !c.IsLink));
+    public bool ShowExpander => Children.Count > 0;
 
     /// <summary>
     /// 右键菜单「删除」文案：与列表行一致 —— 文件夹内链接数（递归）> 0 才报数，
@@ -135,9 +135,8 @@ public class FolderNode : INotifyPropertyChanged
     private System.Windows.Media.Imaging.BitmapImage? _favicon;
 
     /// <summary>
-    /// 链接叶子的**站点图标**（解码后；磁盘/内存/内嵌一条链路 = <c>FaviconService</c>，
-    /// 与主栏行、回收站行同口径）。文件夹节点与虚根恒 null（画文件夹/书签图标）。
-    /// 懒加载取回时同步填一次；外部地址未缓存时由后台预取回填（置位即通知模板切换图标）。
+    /// 站点图标。**浏览页左栏只显示文件夹，恒为 null**（文件夹画文件夹图标）；
+    /// 保留该属性仅为与回收站树共用同一套模板的绑定面（模板按 <see cref="HasFavicon"/> 切换图标）。
     /// </summary>
     public System.Windows.Media.Imaging.BitmapImage? Favicon
     {
@@ -154,8 +153,7 @@ public class FolderNode : INotifyPropertyChanged
     /// <summary>是否有站点图标（模板据此在站点图标与通用链环图标之间切换；相等判据，可在 DataTrigger 里表达）。</summary>
     public bool HasFavicon => _favicon != null;
 
-    /// <summary>叶子对应的图标地址（懒加载时记下）：树重建"搬运旧叶子"时用它重新探测缓存——
-    /// 根源级链接没有文件夹实体可当版本（代理是链接数，改名/换图标不改数量），搬运会把旧叶子原样留用。</summary>
+    /// <summary>图标地址（浏览页恒 null；仅为共用模板的绑定面保留，见 <see cref="Favicon"/>）。</summary>
     public string? FaviconUrl { get; internal set; }
 
     private bool _isExpanded;
@@ -167,42 +165,13 @@ public class FolderNode : INotifyPropertyChanged
             if (_isExpanded == value) return;
             _isExpanded = value;
             OnPropertyChanged();
-            // 展开 = 懒加载直接链接叶子的**唯一触发点**（宿主自己做去重、查询与投影）。
-            // 展开状态是双向绑定的（TreeViewItem.IsExpanded ↔ 本属性），所以点 chevron、键盘 →
-            // 以及"重建树时按上次展开状态恢复"（对象初始化器里 Host 先于 IsExpanded 赋值）都会走到这里。
-            if (value) Host?.OnTreeNodeExpanded(this);
         }
     }
-
-    /// <summary>
-    /// 该节点的**直接链接叶子是否已注入**（懒加载状态：不作通知，纯内部标记）。
-    /// </summary>
-    /// <remarks>
-    /// 为什么叶子要懒加载：树的叶子 = 全库每一条链接，而"注入"意味着为每条链接造一个节点对象、
-    /// 往子集合里加一次（各发一次集合通知）。真实库 27 064 条链接时，**每次刷新**都要重建 27 070 个节点
-    /// （实测 40 ms 建对象 + 27 070 次集合通知）；十万级时这条成本会线性放大到不可接受。
-    /// 改成"展开才注入"后，成本只与"用户实际展开的节点"成正比，且与主栏一样天然受虚拟化保护。
-    /// 语义不变：展开某文件夹即见其直接书签（Windows 资源管理器同样如此）。
-    /// </remarks>
-    public bool LinksLoaded { get; set; }
-
-    /// <summary>该节点的叶子**正在加载**中（防重入：一次展开可能连来多个触发）。</summary>
-    public bool LinksLoading { get; set; }
-
-    /// <summary>
-    /// 已注入叶子的**目录内容版本**（建节点时取自 <c>FolderDto.UpdatedAt</c>；内核在内容变动
-    /// ——新增/删除/改名/移入移出，含撤销回退——时沿父链刷新它，**查看不算**）。
-    /// 刷新重建时与快照里的新版本比对：相等 ⇒ 叶子内容必然没变，原样搬运（省掉一次查询）；
-    /// 不等 ⇒ 叶子可能陈旧（实测：回溯把链接挪回去后，已展开节点下的叶子还是旧的），
-    /// 不再搬运并标记未加载——已展开的在恢复展开态时自动重取，未展开的等下次展开。
-    /// </summary>
-    public DateTime LeavesVersion { get; set; }
 
     /// <summary>所属 VM：树节点右键菜单经此绑定命令（ContextMenu 不在可视树）。</summary>
     public LinkPocket.ViewModels.BrowserViewModel? Host { get; set; }
 
-    /// <summary>子节点集合。类型是**批量集合**：懒加载一批叶子（可能上万条）只发一次通知，
-    /// 而不是每片叶子各发一次（`TreeView` 的订阅者要逐次处理）。</summary>
+    /// <summary>子节点集合（只有子文件夹）。类型仍是批量集合：与回收站树共用同一套模板/集合契约。</summary>
     public BulkObservableCollection<FolderNode> Children
     {
         get => _children;

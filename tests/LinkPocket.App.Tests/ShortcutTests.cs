@@ -292,9 +292,10 @@ public class ShortcutTests
             Assert.True(aNode.IsExpanded);
             Assert.True(a1Node.IsExpanded);
 
-            // 只展开、不选中：选中集合仍为空（位置 ≠ 选中）
+            // 只展开、不改选中：选中集合仍为空；当前位置的高亮由树位置投影表达（不是选中）
             Assert.False(vm.HasSelection);
-            Assert.False(a1Node.IsSelected);
+            Assert.True(a1Node.IsSelected);
+            Assert.False(aNode.IsSelected);
         }
         finally
         {

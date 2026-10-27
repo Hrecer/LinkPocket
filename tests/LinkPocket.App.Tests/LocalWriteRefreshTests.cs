@@ -135,39 +135,6 @@ public class LocalWriteRefreshTests
         }
     }
 
-    /// <summary>
-    /// 编辑器保存路径的树叶子对齐：根源级链接没有文件夹实体可当版本（搬运判据是链接数，改名/换图标不改数量），
-    /// 树重建会原样留用旧叶子——保存成功后必须按**引擎已落库**的名称/图标把叶子对齐（用户实测"重新解析后侧栏还是通用链环"）。
-    /// </summary>
-    [Fact]
-    public async Task 保存后_树叶子按引擎事实刷新_图标与名称都更新()
-    {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var link = (await client.LinkCreateAsync("https://leaf.example", title: "旧名", autoFetchMetadata: false)).Data!;
-            var vm = NewVm(client);
-            await vm.LoadAsync(null);
-            var root = vm.FolderTree[0];
-            root.IsExpanded = true;                        // 触发虚根叶子懒加载
-            await vm.WaitForTreeLinksAsync(root);
-            var leaf = Assert.Single(root.Children, n => n.IsLink && n.Id == link.LinkId);
-            Assert.False(leaf.HasFavicon);
-
-            // 内嵌图标（data: URI）：本地解码，不依赖磁盘缓存文件
-            const string icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-            await client.LinkUpdateAsync(link.LinkId, title: "新名", faviconUrl: icon);
-            vm.RefreshTreeLinkLeaf(link.LinkId, icon, "新名");   // 编辑器保存成功后的对齐调用
-
-            Assert.Equal("新名", leaf.Name);
-            Assert.True(leaf.HasFavicon);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
-    }
-
     private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

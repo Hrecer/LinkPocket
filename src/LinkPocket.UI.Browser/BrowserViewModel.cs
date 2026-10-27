@@ -453,14 +453,11 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>目录树落点投影（节点侧是推送式，与 IsSelected 同构）：只有指针所在栏是树、
-    /// 且节点实体 ID 等于当前落点时才高亮；链接叶子与虚根永不作落点。</summary>
+    /// 且文件夹 ID 等于当前落点时才高亮；虚根没有实体身份，永不作落点。</summary>
     private void SyncTreeDropTarget()
     {
         foreach (var node in AllTreeNodes())
-        {
-            string? entityId = node.IsLink ? node.Id : node.FolderId;
-            node.IsDropTarget = !node.IsLink && DropState.IsNodeTarget(entityId);
-        }
+            node.IsDropTarget = !node.IsRoot && DropState.IsNodeTarget(node.FolderId);
     }
 
     /// <summary>
@@ -511,7 +508,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public void BeginRenameNode(FolderNode? node)
     {
         if (node == null || node.IsRoot) return;
-        BeginRename(node.IsLink ? node.Id : node.FolderId, !node.IsLink, node.Name, BrowserPane.Tree);
+        BeginRename(node.FolderId, isFolder: true, node.Name, BrowserPane.Tree);
     }
 
     private void BeginRename(string? id, bool isFolder, string? name, BrowserPane surface)
@@ -627,35 +624,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>
-    /// 把某条链接的树叶子与引擎事实对齐（名称 / 站点图标）——编辑器保存成功后调用。
-    /// 为什么需要：根源级链接**没有文件夹实体**可当版本（搬运判据是"链接数"，改名/换图标都不改数量），
-    /// 树重建时会原样留用旧叶子——用户实测"重新解析图标后侧栏还是画通用链环"。
-    /// 参数语义：<paramref name="faviconUrl"/> null = 图标不动、空串 = 清除、非空 = 取该地址的缓存图标；
-    /// <paramref name="name"/> null/空白 = 名字不动。迭代遍历（深树不爆栈）；叶子尚未加载（节点收起）时无事发生——
-    /// 下次展开自然取新值。名字来自**引擎已落库**的保存结果，不是预显示。
-    /// </summary>
-    public void RefreshTreeLinkLeaf(string linkId, string? faviconUrl, string? name)
-    {
-        if (string.IsNullOrEmpty(linkId)) return;
-        var stack = new Stack<FolderNode>(FolderTree);
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            if (node.IsLink && string.Equals(node.Id, linkId, StringComparison.Ordinal))
-            {
-                if (faviconUrl != null)
-                {
-                    node.FaviconUrl = faviconUrl.Length == 0 ? null : faviconUrl;
-                    node.Favicon = Services.FaviconService.LoadFromCache(node.FaviconUrl);
-                }
-                if (!string.IsNullOrWhiteSpace(name)) node.Name = name;
-            }
-            foreach (var child in node.Children) stack.Push(child);
-        }
-    }
-
-    /// <summary>在树里按 ID（文件夹或链接叶子）找节点并就地改名（找不到 = 不在树里，跳过；显式栈，深树不爆栈）。
+    /// <summary>在树里按文件夹 ID 找节点并就地改名（找不到 = 不在树里，跳过；显式栈，深树不爆栈）。
     /// 名字来自引擎返回的**最终名**（已落库事实，不是预显示）。</summary>
     private void UpdateTreeNodeName(string id, string name)
     {
@@ -663,7 +632,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         while (stack.Count > 0)
         {
             var n = stack.Pop();
-            if ((n.IsLink && n.Id == id) || (!n.IsLink && n.FolderId == id))
+            if (n.FolderId == id)
             {
                 n.Name = name;
                 return;
@@ -679,7 +648,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         if (!_rowsReplaced)
             foreach (var r in Rows) r.InvalidateIsRenaming();
         foreach (var node in AllTreeNodes())
-            node.IsRenaming = IsRenamingId(node.IsLink ? node.Id : node.FolderId, BrowserPane.Tree);
+            node.IsRenaming = IsRenamingId(node.FolderId, BrowserPane.Tree);
     }
 
     // —— 剪贴板（Ctrl+X / C / V，载荷见 ClipboardManager.BrowserClipboardPayload）——
@@ -753,13 +722,15 @@ public partial class BrowserViewModel : INotifyPropertyChanged
             folderId => _ = LoadAsync(folderId),
             msg => StatusText = msg);
         _pathEdit.Changed += OnPathEditChanged;
-        GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack()), () => Controller.CanGoBack);
+        // 「退出文件夹」的三个入口都带上 selectExitedChild：返回上级 / 后退 / 点面包屑祖先段，
+        // 导航落地后选中刚退出的那一层子文件夹（见 LoadAsync 注释）。前进是"跳转"，选中不动。
+        GoBackCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoBack(), selectExitedChild: true), () => Controller.CanGoBack);
         GoForwardCommand = new RelayCommand(() => _ = LoadAsync(Controller.GoForward()), () => Controller.CanGoForward);
-        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId)), () => !IsAtRoot && !IsPathEditing && !IsRenaming);
+        GoUpCommand = new RelayCommand(() => _ = LoadAsync(GetParentId(Controller.CurrentFolderId), selectExitedChild: true), () => !IsAtRoot && !IsPathEditing && !IsRenaming);
         RowClickCommand = new RelayCommand<BrowserRowViewModel?>(SelectRow);
         // 双击打开：改名编辑中让位（编辑框内的双击绝不打开目录/详情）
         RowOpenCommand = new RelayCommand<BrowserRowViewModel?>(row => _ = OpenRowAsync(row), _ => !IsRenaming);
-        CrumbClickCommand = new RelayCommand<BrowserCrumbViewModel?>(crumb => _ = LoadAsync(crumb?.FolderId));
+        CrumbClickCommand = new RelayCommand<BrowserCrumbViewModel?>(crumb => _ = LoadAsync(crumb?.FolderId, selectExitedChild: true));
         CopyUrlCommand = new RelayCommand<BrowserRowViewModel?>(CopyUrl);
         // 重命名 = **就地编辑**（Windows 口径）：行/树右键菜单与 F2 都只是"进入编辑"，不再弹输入框
         RenameRowCommand = new RelayCommand<BrowserRowViewModel?>(BeginRenameRow);

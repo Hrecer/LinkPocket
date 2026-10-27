@@ -17,10 +17,10 @@ namespace LinkPocket.ViewModels;
 /// </summary>
 public partial class BrowserViewModel
 {
-    /// <summary>把两个唯一事实来源（选中集合 <see cref="Selection"/> + 拖拽落点 <see cref="_dropTargetId"/>）
-    /// 投影到主栏行 + 目录树，并刷新派生状态。
+    /// <summary>把唯一事实来源（选中集合 <see cref="Selection"/> + 拖拽落点 <see cref="_dropTargetId"/>）
+    /// 投影到主栏行 + 目录树，并刷新派生状态（树文件夹行另吃导航位置，见 <see cref="SyncTreeSelection"/>）。
     /// 在选中写入（<see cref="SetSelection"/>）、落点写入（<see cref="SetDropTarget"/>）与 Rows/Tree 重建后（RefreshAsync）调用；
-    /// 行与树都是这两个集合的只读投影，无任何独立状态。</summary>
+    /// 行与树都不持独立状态，全部按事实来源重放。</summary>
     private void ApplySelectionToView()
     {
         SyncMainRowSelection();
@@ -49,19 +49,19 @@ public partial class BrowserViewModel
     private bool _rowsReplaced;
 
     /// <summary>
-    /// 目录树投影：树节点高亮 = 选中集合里真正被选中的实体，**与当前所处目录无关**。
-    /// 「位于某文件夹 / 根目录」是导航位置，由面包屑表达，绝不转换为树高亮——
-    /// 进入某个文件夹不代表该文件夹"被选中"（位置 ≠ 选中）。
-    /// 树不持久任何选中状态，全部由唯一事实来源 <see cref="Selection"/>（共享 ListSelection）派生：
-    /// 链接叶子高亮 = 该链接在集合；文件夹节点高亮 = 其 FolderId 在集合（当且仅当该文件夹实体在选中集合中）。
+    /// 目录树投影：**文件夹行（含虚根）= 当前所在位置**。浏览页左栏只显示文件夹（Windows 导航窗格口径），
+    /// 因此这里的"选中态"只有一种含义——回答"我在哪个文件夹"，任何时刻恰好一个文件夹行亮着
+    /// （在根目录时就是虚根「全部书签」），主栏点空白清选中不会把它抹掉。
+    /// 树不持久任何状态：位置来自 <see cref="Controller"/>.CurrentFolderId，纯投影，容器重建不影响。
     /// </summary>
     private void SyncTreeSelection()
     {
+        var currentFolderId = Controller.CurrentFolderId;
         foreach (var node in AllTreeNodes())
         {
-            // 虚拟根「全部书签」不是实体：不因位于根目录而高亮；仅当真实实体（链接叶子或文件夹）被选中才高亮
-            string? entityId = node.IsLink ? node.Id : node.FolderId;
-            node.IsSelected = entityId != null && Selection.Contains(entityId);
+            node.IsSelected = currentFolderId == null
+                ? node.IsRoot
+                : string.Equals(node.FolderId, currentFolderId, StringComparison.Ordinal);
         }
     }
 
@@ -144,33 +144,21 @@ public partial class BrowserViewModel
     }
 
     /// <summary>
-    /// 点击树节点统一入口（展开 ≠ 选中 ≠ 进入，三者物理分离）：
-    /// chevron 只负责展开/收起（模板内独立控件，绝不进入此方法）；行主体单击才到此。
-    /// 只有两类行、两个动词，零特例：
-    /// · **位置行**（文件夹 / 虚根「全部书签」）= 进入目录：无条件 `LoadAsync`——
-    ///   点是当前位置同样重载刷新一次（Windows 口径：点当前文件夹、已在根点「全部书签」都刷新）；
-    ///   重复导航不污染历史（<see cref="BrowserHistory.NavigateTo"/> 对同目录直接忽略）；
-    ///   重载也不动选中（选中是独立集合，重载后按 ID 重新投影）。
-    ///   两类位置行唯一差异 = 有没有实体身份：文件夹把自己写入选中集合（单击 = 选中该文件夹 + 进入）；
-    ///   虚根 <c>FolderId == null</c>（不是实体、没有可高亮的身份）→ 只进入、不写选中。
-    /// · **实体行**（链接叶子）= 定位：进入其所属目录（已在目标目录则免重载——行本来就在，无谓重建只会闪烁）
-    ///   并把该链接写入选中集合。
-    /// 树自身不持有持久选中状态：高亮完全由 <see cref="SyncTreeSelection"/> 从 <see cref="Selection"/>
-    /// 派生，与主栏行选中同一唯一事实来源，二者天然一致。
+    /// 点击树节点统一入口（展开 ≠ 进入）：chevron 只负责展开/收起，行主体单击才到此。
+    /// 左栏只有两类位置行（虚根「全部书签」与文件夹），两个动词：
+    /// 无条件 `LoadAsync` 进入该目录（点是当前位置同样重载刷新一次，Windows 口径；
+    /// 重复导航不污染历史）。文件夹有实体身份，同时把自己写入选中集合（沿用右键/拖拽语义）；
+    /// 虚根 <c>FolderId == null</c> → 只进入、不写选中。
+    /// 树自身不持有状态：文件夹行高亮 = **当前位置**（<see cref="SyncTreeSelection"/> 直接投影导航位置）。
     /// </summary>
     public async Task SelectTreeNodeAsync(FolderNode node)
     {
-        if (node.IsLink)
+        if (node.IsRoot)
         {
-            // 实体行：把链接 ID 写入选中集合（唯一事实），主栏与树同时投影高亮；
-            // 即使该行尚未出现在 Rows（分页），也先记录选中，由导航/刷新投影补齐。
-            SetSelection(new[] { node.Id }, node.Id);
-            await NavigateAndSelectAsync(node.ParentId, node.Id);
+            await LoadAsync(null);
             return;
         }
 
-        // 位置行：进入目录（无条件重载 = 点是当前位置也刷新）；只有真实文件夹有实体身份，虚根不写选中。
-        // 树高亮由 Selection 派生，与"进入"本身无关：位置仍由面包屑表达（位置 ≠ 选中）。
         if (node.FolderId != null) SetSelection(new[] { node.FolderId }, node.FolderId);
         await LoadAsync(node.FolderId);
     }

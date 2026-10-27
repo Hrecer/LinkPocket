@@ -85,6 +85,48 @@ public class BrowserViewModelTests
     }
 
     [Fact]
+    public async Task 退出子目录_清过选中或选中过链接_返回上级仍选中刚退出的文件夹()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var a = (await client.FolderCreateAsync("A")).Data!;
+            await client.LinkCreateAsync("https://a.example/1", title: "One", listId: a.FolderId, autoFetchMetadata: false);
+
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            await vm.LoadAsync(a.FolderId);
+
+            // ① 在子目录里点空白清选中（与 Esc 同一语义）→ 点面包屑「全部书签」退出
+            vm.ClearSelection();
+            Assert.False(vm.HasSelection);
+            vm.CrumbClickCommand.Execute(vm.Breadcrumbs[0]);
+            var exited = await WaitUntilAsync(() => vm.HasSelection, TimeSpan.FromSeconds(5));
+            Assert.True(exited, "返回上级后应选中刚退出的文件夹");
+            Assert.Equal(a.FolderId, Assert.Single(vm.SelectedRows).Id);
+            Assert.True(vm.IsSelectedId(a.FolderId));
+
+            // 侧栏高亮 = 当前位置（根）；主栏选中的来源文件夹不改变树高亮（两者语义不同）
+            var root = Assert.Single(vm.FolderTree);
+            Assert.True(root.IsSelected);
+            Assert.False(root.Children.Single().IsSelected);
+
+            // ② 在子目录里选中过链接（选中集合被链接占住），退出后来源文件夹仍被选中
+            await vm.LoadAsync(a.FolderId);
+            var linkRow = Assert.Single(vm.Rows, r => !r.IsFolder);
+            vm.SelectRowWithModifiers(linkRow, ModifierKeys.None);
+            Assert.Equal(linkRow.Id, Assert.Single(vm.SelectedRows).Id);
+
+            await vm.LoadAsync(null, selectExitedChild: true);   // 等价于返回上级 / 后退 / 点面包屑祖先段
+            Assert.Equal(a.FolderId, Assert.Single(vm.SelectedRows).Id);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 空态条件_仅当整个书签库为空_进入空子文件夹不显示()
     {
         // 用户实测回归：进入一个**空的子文件夹**曾显示"这里还空空如也"——库非空，只是这一格为空。
@@ -347,47 +389,39 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_全量链接叶子_文件夹在前链接在后各自名称升序_子目录链接注入其下()
+    public async Task 目录树_只显示文件夹_展开也不注入链接叶子()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
         {
-            // 纯 ASCII 名称：CurrentCulture 升序结果确定；验证树与主区同口径（升序：文件夹组在前、链接组在后）
-            var linkA = (await client.LinkCreateAsync("https://a-root.example", title: "Alpha 根级", autoFetchMetadata: false)).Data!;
-            var linkZ = (await client.LinkCreateAsync("https://z-root.example", title: "Zulu 根级", autoFetchMetadata: false)).Data!;
+            await client.LinkCreateAsync("https://a-root.example", title: "Alpha 根级", autoFetchMetadata: false);
+            await client.LinkCreateAsync("https://z-root.example", title: "Zulu 根级", autoFetchMetadata: false);
             await client.FolderCreateAsync("Charlie 文件夹");
             var delta = (await client.FolderCreateAsync("Delta 文件夹")).Data!;
-            var bravo = (await client.LinkCreateAsync("https://sub.example", title: "Bravo 子级",
-                listId: delta.FolderId, autoFetchMetadata: false)).Data!;
+            await client.LinkCreateAsync("https://sub.example", title: "Bravo 子级",
+                listId: delta.FolderId, autoFetchMetadata: false);
 
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
 
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
-            // 链接叶子**按需加载**（展开才注入）：虚根默认展开 ⇒ 等它加载完再断言
-            await vm.WaitForTreeLinksAsync(root);
+            // 左栏 = Windows 导航窗格口径：只列文件夹，根级直挂链接不入树
+            Assert.Equal(new[] { "Charlie 文件夹", "Delta 文件夹" },
+                root.Children.Select(c => c.Name).ToArray());
+            Assert.All(root.Children, c => Assert.False(c.IsLink));
 
-            // 文件夹组在前（名称升序）、链接组在后（名称升序）——链接绝不骑在文件夹之前
-            var children = root.Children;
-            Assert.Equal(4, children.Count);
-            Assert.Equal(new[] { "Charlie 文件夹", "Delta 文件夹", "Alpha 根级", "Zulu 根级" },
-                children.Select(c => c.Name).ToArray());
-            Assert.False(children[0].IsLink);
-            Assert.False(children[1].IsLink);
-            // 根级链接叶子：ParentId = null（所属目录 = 根）
-            Assert.True(children[2].IsLink && children[2].Id == linkA.LinkId && children[2].ParentId == null);
-            Assert.True(children[3].IsLink && children[3].Id == linkZ.LinkId && children[3].ParentId == null);
-
-            // 子目录（Delta）的直接链接在其**展开时**注入（名称升序叶子；ParentId = 所属目录）
-            var deltaNode = children[1];
-            Assert.Equal(delta.FolderId, deltaNode.FolderId);
-            Assert.Empty(deltaNode.Children);          // 未展开 = 没有叶子（懒加载）
+            // 展开文件夹也不注入链接（没有懒加载叶子这回事了）；Delta 没有子文件夹 → 无展开箭头
+            var deltaNode = root.Children.Single(c => c.FolderId == delta.FolderId);
+            Assert.False(deltaNode.ShowExpander);
             deltaNode.IsExpanded = true;
-            await vm.WaitForTreeLinksAsync(deltaNode);
-            var deltaLeaf = Assert.Single(deltaNode.Children);
-            Assert.True(deltaLeaf.IsLink && deltaLeaf.Id == bravo.LinkId && deltaLeaf.ParentId == delta.FolderId);
-            Assert.Equal("Bravo 子级", deltaLeaf.Name);
+            Assert.Empty(deltaNode.Children);
+
+            // 刷新后依旧只有文件夹（展开态照旧保留）
+            await vm.LoadAsync(null);
+            var rootNow = Assert.Single(vm.FolderTree);
+            Assert.All(rootNow.Children, c => Assert.False(c.IsLink));
+            Assert.Empty(rootNow.Children.Single(c => c.FolderId == delta.FolderId).Children);
         }
         finally
         {
@@ -406,15 +440,15 @@ public class BrowserViewModelTests
 
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
-            var node = Assert.Single(vm.FolderTree[0].Children, c => !c.IsLink);
+            var node = Assert.Single(vm.FolderTree[0].Children);
             Assert.Equal(a.FolderId, node.FolderId);
 
             await vm.SelectTreeNodeAsync(node);
 
             Assert.Equal(a.FolderId, vm.CurrentFolderId);                 // 已进入该目录
-            Assert.True(vm.IsSelectedId(a.FolderId));                     // 该文件夹进入选中集合（树高亮唯一事实源）
+            Assert.True(vm.IsSelectedId(a.FolderId));                     // 该文件夹写入选中集合（沿用右键/拖拽语义）
             var nodeNow = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
-            Assert.True(nodeNow.IsSelected);                              // 树节点投影高亮（重建后仍成立）
+            Assert.True(nodeNow.IsSelected);                              // 树行高亮 = 当前位置（重建后仍成立）
             Assert.Equal("One", Assert.Single(vm.Rows).Name);             // 主栏显示该目录内容
         }
         finally
@@ -424,38 +458,7 @@ public class BrowserViewModelTests
     }
 
     [Fact]
-    public async Task 目录树_链接叶子单击_定位到父目录并选中该行()
-    {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var a = (await client.FolderCreateAsync("A")).Data!;
-            var link = (await client.LinkCreateAsync("https://a.example/1", title: "One",
-                listId: a.FolderId, autoFetchMetadata: false)).Data!;
-
-            var vm = new BrowserViewModel(client);
-            await vm.LoadAsync(null);
-
-            var aNode = vm.FolderTree[0].Children.Single(c => !c.IsLink);
-            aNode.IsExpanded = true;                       // 叶子按需加载：展开该目录
-            await vm.WaitForTreeLinksAsync(aNode);
-            var leaf = Assert.Single(aNode.Children);
-            Assert.True(leaf.IsLink && leaf.Id == link.LinkId && leaf.ParentId == a.FolderId);
-
-            await vm.SelectTreeNodeAsync(leaf);
-
-            Assert.Equal(a.FolderId, vm.CurrentFolderId);     // 进入链接所在父目录
-            Assert.True(vm.IsSelectedId(link.LinkId));        // 该链接进入选中集合（主栏 + 树叶子同时投影）
-            Assert.Equal(link.LinkId, Assert.Single(vm.SelectedRows).Id);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
-    }
-
-    [Fact]
-    public async Task 目录树_根节点单击_进入根目录且虚根永不选中()
+    public async Task 目录树_根节点恒显当前位置_虚根永不进选中集合()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
         try
@@ -466,9 +469,13 @@ public class BrowserViewModelTests
             var vm = new BrowserViewModel(client);
             await vm.LoadAsync(null);
 
-            // 已在根：单击「全部书签」= 重载根目录（点"当前所在位置"同样刷新，Windows 口径），虚根永不写选中
+            // 在根：根节点 = 当前所在目录 → 恒高亮；但虚根不是实体，永不写入选中集合
             var root = Assert.Single(vm.FolderTree);
             Assert.True(root.IsRoot);
+            Assert.True(root.IsSelected);
+            Assert.False(vm.IsSelectedId(root.Id));
+
+            // 已在根：单击「全部书签」= 重载根目录（点"当前所在位置"同样刷新，Windows 口径）
             var rowBefore = vm.Rows.First();
             await vm.SelectTreeNodeAsync(root);
             Assert.Null(vm.CurrentFolderId);                    // 仍在根目录
@@ -477,18 +484,22 @@ public class BrowserViewModelTests
             var rootAfterReload = Assert.Single(vm.FolderTree);
             Assert.NotSame(root, rootAfterReload);
             Assert.Equal(rowBefore.Id, vm.Rows.First().Id);
-            Assert.False(rootAfterReload.IsSelected);            // 虚根不显示选中（重建后的新节点同样如此）
+            Assert.True(rootAfterReload.IsSelected);             // 位置仍在根 → 根行仍高亮
             Assert.False(vm.IsSelectedId(rootAfterReload.Id));   // 虚根无身份可选中（Id 为空，永不入集合）
 
-            // 先进入子目录，再单击「全部书签」= 回根目录（导航；位置由面包屑表达，不产生选中高亮）
-            var aNode = vm.FolderTree[0].Children.Single(c => !c.IsLink);
+            // 进入子目录：高亮转移到当前目录（根行熄灭）
+            var aNode = vm.FolderTree[0].Children.Single();
             await vm.SelectTreeNodeAsync(aNode);
             Assert.Equal(a.FolderId, vm.CurrentFolderId);
+            var rootInA = Assert.Single(vm.FolderTree);
+            Assert.False(rootInA.IsSelected);
+            Assert.True(rootInA.Children.Single().IsSelected);
 
+            // 再单击「全部书签」= 回根目录：高亮回到根行
             var rootNow = Assert.Single(vm.FolderTree);
             await vm.SelectTreeNodeAsync(rootNow);
-            Assert.Null(vm.CurrentFolderId);                      // 已回到根目录
-            Assert.False(Assert.Single(vm.FolderTree).IsSelected); // 虚根仍不显示选中（重建后的新节点）
+            Assert.Null(vm.CurrentFolderId);
+            Assert.True(Assert.Single(vm.FolderTree).IsSelected);
         }
         finally
         {

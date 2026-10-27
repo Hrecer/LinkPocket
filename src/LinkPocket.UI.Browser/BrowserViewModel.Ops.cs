@@ -308,7 +308,7 @@ public partial class BrowserViewModel
         if (row == null) return;
         if (ActivePane == BrowserPane.Tree)
         {
-            var node = AllTreeNodes().FirstOrDefault(n => (n.IsLink ? n.Id : n.FolderId) == row.Id);
+            var node = AllTreeNodes().FirstOrDefault(n => n.FolderId == row.Id);
             if (node != null) { BeginRenameNode(node); return; }
         }
         BeginRenameRow(row);

@@ -37,13 +37,23 @@ public partial class BrowserViewModel
 
     /// <summary>进入指定目录（null = 根）。首次显示页面时调用 LoadAsync(null)。
     /// 这是"用户发起的导航"（树行点击/面包屑/后退前进/返回上级/F5）→ 带加载遮罩（真刷新，
-    /// 在 <see cref="RefreshAsync"/> 里归位置尾）；导航即作废未消费的粘贴定位请求。</summary>
-    public async Task LoadAsync(string? folderId)
+    /// 在 <see cref="RefreshAsync"/> 里归位置尾）；导航即作废未消费的粘贴定位请求。
+    /// <para>
+    /// <paramref name="selectExitedChild"/> = 「退出文件夹」语义（返回上级 / 后退 / 面包屑点祖先段）：
+    /// 导航落地后把**刚退出的那一层子文件夹**写入选中集合，让用户一眼看出自己是从哪个文件夹出来的。
+    /// 它只依赖导航前后的目录关系（<see cref="SelectExitedChildOnNavigate"/>），与当前选中集合无关——
+    /// 在子目录里点空白清选中、或打开过链接（选中被链接占住），退出时都不会丢掉这个"来源"。
+    /// 树行点击 / 跳转定位 / 前进 / 地址栏直达不传（它们是"跳转"，不是"退出"，选中由调用方自己决定）。
+    /// </para></summary>
+    public async Task LoadAsync(string? folderId, bool selectExitedChild = false)
     {
         _pendingFocusId = null;
+        var from = Controller.CurrentFolderId;
         Controller.NavigateTo(folderId);
         CurrentFolderId = Controller.CurrentFolderId;
         await RefreshAsync(navigating: true);
+        if (selectExitedChild)
+            SelectExitedChildOnNavigate(from);
     }
 
     /// <summary>

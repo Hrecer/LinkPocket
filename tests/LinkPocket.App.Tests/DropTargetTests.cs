@@ -79,33 +79,6 @@ public class DropTargetTests
         }
     }
 
-    /// <summary>链接叶子（书签）不是落点：即便给它写落点，树侧投影也必须拒绝高亮。</summary>
-    [Fact]
-    public async Task 链接叶子永不高亮为落点()
-    {
-        var (client, _, dbPath) = AppTestEnv.Create();
-        try
-        {
-            var a = (await client.FolderCreateAsync("A")).Data!;
-            var link = (await client.LinkCreateAsync("https://x.example", title: "X",
-                listId: a.FolderId, autoFetchMetadata: false)).Data!;
-            var vm = new BrowserViewModel(client);
-            await vm.LoadAsync(null);
-
-            var aNode = vm.FolderTree[0].Children.Single(c => c.FolderId == a.FolderId);
-            aNode.IsExpanded = true;                     // 叶子按需加载：展开该目录
-            await vm.WaitForTreeLinksAsync(aNode);
-            var leaf = aNode.Children.Single(c => c.Id == link.LinkId);
-            vm.SetDropTarget(new BrowserDropTarget(link.LinkId, BrowserPane.Tree, "X"));
-
-            Assert.False(leaf.IsDropTarget);
-        }
-        finally
-        {
-            AppTestEnv.Delete(dbPath);
-        }
-    }
-
     /// <summary>
     /// 「落在根目录」（列表空白 = 根）**不是**「没有落点」：对象非 null 但 FolderId 为 null。
     /// 前者要显示「移动到「全部书签」」，后者要整条熄灭——两者混为一谈就会在根目录里丢掉落点提示。
