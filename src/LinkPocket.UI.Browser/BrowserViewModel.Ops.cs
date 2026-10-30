@@ -314,6 +314,20 @@ public partial class BrowserViewModel
         BeginRenameRow(row);
     }
 
+    /// <summary>
+    /// 编辑选中项 = 打开整页编辑器。让位条件与「重命名」同源（唯一选中 + 不在路径编辑 / 就地改名中 +
+    /// 列表上下文有效），另加「正在删除」：那一项马上就不在列表里，编辑一个正在消失的链接只会得到空页。
+    /// </summary>
+    private void EditSelection()
+    {
+        // 命令可用性已在按钮上拦过，但 Execute **不受 CanExecute 约束**（双击重入 / 探针 / 自动化都直接调），
+        // 所以每条前提在这里再判一次：漏掉 IsEditorPageOpen，连点两下就会开第二个编辑器把没保存的输入顶掉。
+        if (IsEditorPageOpen || SelectionCount != 1) return;
+        var row = SelectedRows.FirstOrDefault();
+        if (row is null || row.IsFolder) return;
+        OpenEditorForEdit(row.Id);
+    }
+
     private async Task OpenSelectedAsync()
     {
         var row = SelectedRows.FirstOrDefault();

@@ -78,8 +78,26 @@ public sealed class AppHost : IDisposable
             UpdateService.ReadProductVersion(Environment.ProcessPath ?? string.Empty) ?? "0.0.0");
     }
 
-    /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）。应用退出时调用。</summary>
-    public void Dispose() => ExternalChanges.Dispose();
+    /// <summary>
+    /// 页面渲染兜底（WebView2）：装配给 <see cref="PageRenderHook"/>，引擎侧只在"HTTP 拿不到可用元数据"
+    /// 时调它。**只有 WPF 宿主有浏览器内核**，CLI / MCP 两个无界面宿主的钩子保持 <c>null</c>。
+    /// 懒建：启动不碰 WebView2，第一次真正需要时才起渲染进程。
+    /// </summary>
+    private PageRenderer? _pageRenderer;
+
+    private void AttachPageRenderer()
+    {
+        _pageRenderer = new PageRenderer();
+        PageRenderHook.Renderer = _pageRenderer.RenderAsync;
+    }
+
+    /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）与渲染器。应用退出时调用。</summary>
+    public void Dispose()
+    {
+        PageRenderHook.Renderer = null;
+        _pageRenderer?.Dispose();
+        ExternalChanges.Dispose();
+    }
 
     /// <summary>
     /// 默认装配：日志管道（观测面）→ 引擎组合根（九模块全量注册 + 编排层；组合由共享 Composition 收敛）
@@ -119,6 +137,7 @@ public sealed class AppHost : IDisposable
         var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed);
         host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
             LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
+        host.AttachPageRenderer();                 // 元数据抓取的浏览器渲染兜底（WebView2，懒建）
         host.Hub.Attach(composed.Engine.Events);   // 新引擎事件源：ChangeSet 增量 + 300ms 防抖刷新
         host.ExternalChanges.Start();              // 外部写入（CLI / Agent）：先失效缓存、再入同一条防抖通道
         host.Services = AppServiceGraph.Build(host);   // 前端对象图（Shell/页面 VM/共享件）

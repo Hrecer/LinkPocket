@@ -219,6 +219,11 @@ public class MetadataDto
     [JsonPropertyName("title")] public string? Title { get; set; }
     [JsonPropertyName("description")] public string? Description { get; set; }
     [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
+
+    /// <summary>标题与描述都拿不到，且原因 = 站点返回的是反爬/人机校验中间页
+    /// （所有可用路径——含浏览器指纹与浏览器内核渲染——都没越过它）。
+    /// 调用方据此把"没解析到"说成真实原因，而不是泛泛的"页面没写"。</summary>
+    [JsonPropertyName("blocked_by_verification")] public bool BlockedByVerification { get; set; }
 }
 
 public class LinkCountsDto

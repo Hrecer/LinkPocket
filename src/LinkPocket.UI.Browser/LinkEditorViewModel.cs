@@ -221,6 +221,19 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                         Description = meta.Description.Trim();
                     if (!string.IsNullOrWhiteSpace(meta.FaviconUrl))
                         await ApplyFaviconAsync(meta.FaviconUrl);
+
+                    // 一键解析只补缺、不覆盖用户输入，但**补完仍空着的就不能装作成功**：
+                    // 只有图标解析出来、标题描述空着且不吭声，用户会读成"解析坏了"。
+                    // 判据 = 补完后的实际状态（用户自己填过的字段不算失败）；只有描述为空不报——
+                    // 页面没写 description 是常态，不该每次都弹一条错误。
+                    var noTitle = string.IsNullOrWhiteSpace(LinkTitle);
+                    var noDescription = string.IsNullOrWhiteSpace(Description);
+                    if (noTitle && noDescription)
+                        Error = meta.BlockedByVerification
+                            ? Loc.K("editor.verificationRequired")
+                            : Loc.K("editor.notFound.titleDescription");
+                    else if (noTitle)
+                        Error = Loc.K("editor.notFound.title");
                     break;
 
                 case FetchField.Title:

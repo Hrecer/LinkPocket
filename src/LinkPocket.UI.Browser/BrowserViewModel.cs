@@ -279,6 +279,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public ICommand ClearPageSelectionCommand { get; }
     public ICommand DeleteSelectionCommand { get; }
     public ICommand RenameSelectionCommand { get; }
+    /// <summary>编辑选中项（整页编辑器）：**只有链接**能编辑，且必须恰好选中一个。</summary>
+    public ICommand EditSelectionCommand { get; }
     public ICommand OpenSelectionCommand { get; }
     /// <summary>Alt+D / 点地址栏空白：聚焦地址栏（进编辑态，由视图聚焦并全选）。</summary>
     public ICommand EnterPathEditCommand { get; }
@@ -323,6 +325,13 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public int SelectionCount => Rows.Count(r => Selection.Contains(r.Id));
     public bool HasSelection => SelectionCount > 0;
     public bool HasMultipleSelection => SelectionCount > 1;
+
+    /// <summary>
+    /// 选中集合恰好是**一个链接**：整页编辑的唯一可用前提。
+    /// 多选没有"要编辑的那一项"（与重命名的「多选不可用」同口径）；文件夹没有整页编辑语义
+    /// （名称走就地改名、位置走拖拽 / 右键菜单）。行不在 <see cref="Rows"/> 里（刷新后的陈旧选中）自然为假。
+    /// </summary>
+    private bool IsSingleLinkSelected => SelectionCount == 1 && SelectedRows.FirstOrDefault() is { IsFolder: false };
     public LocValue SelectionInfoText => HasSelection ? Loc.K("count.selectedItems", SelectionCount) : LocValue.Empty;
 
     /// <summary>
@@ -757,6 +766,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         ClearPageSelectionCommand = new RelayCommand(ClearPageSelection);
         DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectedAsync(), () => HasSelection && !IsPathEditing && !IsRenaming && IsListContextActive && !IsDeleting);
         RenameSelectionCommand = new RelayCommand(BeginRenameSelection, () => SelectionCount == 1 && !IsPathEditing && !IsRenaming && IsListContextActive);
+        // 编辑 = 整页编辑器（URL / 标题 / 描述 / 图标）：与「重命名」同一套让位条件，另外两条独有前提——
+        // 只有链接有编辑语义（文件夹灰掉）、且正在删除时让位（那一项马上就不在列表里了）
+        EditSelectionCommand = new RelayCommand(EditSelection,
+            () => IsSingleLinkSelected && !IsPathEditing && !IsRenaming && IsListContextActive && !IsDeleting);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
         // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态
         CommitRenameCommand = new RelayCommand(() => _ = CommitRenameAsync());

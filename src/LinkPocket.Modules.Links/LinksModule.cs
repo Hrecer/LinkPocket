@@ -15,7 +15,7 @@ public static class LinksModule
     /// </summary>
     public static IReadOnlyList<ICommandHandler> CreateHandlers()
     {
-        FaviconCache.ImpersonatedDownloader = MetadataFetcher.TryGetBytesImpersonatedAsync;
+        FaviconCache.ImpersonatedDownloader = MetadataTransport.TryGetBytesImpersonatedAsync;
         return
         [
             new LinkListHandler(),

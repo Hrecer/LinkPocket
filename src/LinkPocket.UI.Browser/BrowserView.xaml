@@ -145,12 +145,14 @@
                     CornerRadius="19" Padding="3" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
                 <!-- 新建：Win11 命令栏首个命令，带 + 图标 + 文字。
-                     ⚠️ **命令栏四枚药丸的宽度是冻结几何**（Width 逐枚钉死）：内容自适应宽度会把整条命令栏
+                     ⚠️ **命令栏五枚药丸的宽度是冻结几何**（Width 逐枚钉死）：内容自适应宽度会把整条命令栏
                       撑宽，连带把后面的药丸一起推走。
                      取值口径 = **中文基线**（几何按中文定稿；英文放不下时缩英文字号让位，绝不为英文放大几何）：
                        壳宽 = 文字宽(中文 13pt) + 内距 24 + 描边 2 + 图标 16 + 文字外边距 7：
                          新建文件夹「新建文件夹」需 65px ⇒ 114；新建链接「新建链接」需 52px ⇒ 101；
-                         重命名「重命名」需 39px ⇒ 88；删除「删除」需 26px ⇒ 75。
+                         重命名「重命名」需 39px ⇒ 88；编辑「编辑」需 26px ⇒ 75；删除「删除」需 26px ⇒ 75。
+                     五枚合计 453 + 枚间距 32（4 段 × 8）+ 内衬 6 = 491；命令栏占**整窗宽**（最小窗宽 1024，
+                     扣左右外距 24）⇒ 1000 可用，放得下。
                      中文永不缩字号（`Loc.AllowsFontShrink` 只对英文为真）：中文放不下 = 这一格宽度定错了，
                      逐条加宽；英文放不下时由 LocFit 缩英文字号（只缩字号、绝不截断）。 -->
                 <Button Command="{Binding NewFolderCommand}" Cursor="Hand" Width="114"
@@ -181,6 +183,21 @@
                         <m3:M3Icon Kind="pencil" Width="16" Height="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
                                    views:LocFit.Text="{loc:Fit common.rename}" views:LocFit.Mode="Shrink"
+                                   FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <!-- 编辑：整页编辑器（URL / 标题 / 描述 / 图标），**只有链接**有这一层语义。
+                     可用性 = 恰好选中一个链接（文件夹灰掉——名称走就地改名、位置走拖拽；多选同样灰掉，
+                     与「重命名」多选不可用同口径）+ 不在路径编辑 / 就地改名 / 删除中 + 列表上下文有效。
+                     图标取 outline 而非 重命名 那支实心铅笔：同一排并排两枚实心铅笔会读成重复
+                     （侧栏那对是图标钮、靠 tooltip 区分；这里两枚都带文字，用描边区分更清楚）。 -->
+                <Button Command="{Binding EditSelectionCommand}" Cursor="Hand" Width="75"
+                        Style="{StaticResource TonalButton}" Padding="12,5" MinHeight="32" Margin="8,0,0,0"
+                        ToolTip="{loc:Loc btn.edit.tip}">
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="pencil-outline" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
+                                   views:LocFit.Text="{loc:Fit common.edit}" views:LocFit.Mode="Shrink"
                                    FontSize="13" VerticalAlignment="Center" Margin="7,0,0,0"/>
                     </StackPanel>
                 </Button>

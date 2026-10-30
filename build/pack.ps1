@@ -322,6 +322,11 @@ Set-Content -LiteralPath (Join-Path $out "mcp.example.json") -Value $mcp -Encodi
 Get-ChildItem -LiteralPath $out -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
+# ---- WebView2 的 XML 文档不进交付（引用自带的 doc 文件会随输出拷进根目录；运行时不需要，
+#      WebView2Loader.dll 已由 IncludeNativeLibrariesForSelfExtract 内嵌进 exe）----
+Get-ChildItem -LiteralPath $out -Filter "Microsoft.Web.WebView2*.xml" -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
 # ---- safety: the package must NEVER contain data\, logs\ or databases (UPDATE.md 8, packaging rule) ----
 $forbidden = @(Get-ChildItem -LiteralPath $out -Recurse -Force -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -in @("data", "logs") -or $_.Name -like "*.db" -or $_.Name -like "*.db-wal" -or $_.Name -like "*.db-shm" })

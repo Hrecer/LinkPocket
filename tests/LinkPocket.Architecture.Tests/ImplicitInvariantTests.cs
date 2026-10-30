@@ -103,20 +103,20 @@ public class ImplicitInvariantTests
     }
 
     /// <summary>
-    /// H4 HTTP 客户端不得在调用点随手 <c>new</c>：<c>new HttpClient</c> 只许出现在已审的三个文件里
-    /// （AI 传输 / favicon 缓存 / 链接元数据抓取）。<para><b>量的是什么</b>：每次 new 都是新的
+    /// H4 HTTP 客户端不得在调用点随手 <c>new</c>：<c>new HttpClient</c> 只许出现在已审的文件里
+    /// （AI 传输 / favicon 缓存 / 链接元数据抓取的网络层 / 更新检查）。<para><b>量的是什么</b>：每次 new 都是新的
     /// 连接池与 socket TIME_WAIT 累积，高频调用下端口耗尽（经典的 HttpClient 陷阱）；
-    /// 这三处都自己管 <c>Handler</c> 复用与超时，改第四处就要重新论证一次。</para>
+    /// 这几处都自己管 <c>Handler</c> 复用与超时，再加一处就要重新论证一次。</para>
     /// </summary>
     [Fact]
     public void H4_HttpClient只在已审文件创建()
     {
         var allowed = new[]
         {
-            "AiHttp.cs",           // AI 提供方传输（统一超时/重试/代理）
-            "FaviconCache.cs",     // 图标缓存（带并发闸）
-            "MetadataFetcher.cs",  // 链接元数据抓取（短时任务）
-            "UpdateService.cs",    // 更新检查（单实例 + 固定超时；更新检查频率极低，无连接池耗尽场景）
+            "AiHttp.cs",              // AI 提供方传输（统一超时/重试/代理）
+            "FaviconCache.cs",        // 图标缓存（带并发闸）
+            "MetadataTransport.cs",   // 链接元数据抓取的网络层（池化 + 指纹兜底两个客户端，短时任务）
+            "UpdateService.cs",       // 更新检查（单实例 + 固定超时；更新检查频率极低，无连接池耗尽场景）
         };
         foreach (var (path, text) in ProductSources())
             if (Regex.IsMatch(text, @"new\s+HttpClient\s*\(") || Regex.IsMatch(text, @"new\s+HttpClientHandler\s*\("))

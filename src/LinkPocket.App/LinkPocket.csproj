@@ -32,6 +32,8 @@
     <PackageReference Include="Material3.Wpf" />
     <PackageReference Include="MdXaml" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- 元数据抓取的浏览器渲染兜底（PageRenderer）：JS 人机校验页只有真浏览器内核能过 -->
+    <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
 
 </Project>

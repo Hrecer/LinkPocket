@@ -28,6 +28,7 @@ internal sealed class LinkMetadataFetchHandler : ICommandHandler
             Title = metadata.Title,
             Description = metadata.Description,
             FaviconUrl = metadata.FaviconUrl,
+            BlockedByVerification = metadata.BlockedByVerification,
         });
     }
 }

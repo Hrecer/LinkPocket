@@ -11,6 +11,8 @@
     <PackageVersion Include="MdXaml" Version="1.27.0" />
     <!-- 反爬兜底：curl-impersonate 的 .NET HttpMessageHandler（浏览器 TLS/HTTP2 指纹）——仅 Links 模块的元数据抓取在反爬拦截（403/503）时使用 -->
     <PackageVersion Include="CurlImpersonate.Http" Version="1.0.0" />
+    <!-- 元数据抓取的浏览器渲染兜底（系统 Edge 内核）：JS 人机校验页只有真浏览器能过，仅 Shell 装配 -->
+    <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- 更新器直读库头纪元戳（user_version）用；版本与 EF Sqlite 同源 -->
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />

@@ -60,7 +60,8 @@ internal sealed class LinkCreateHandler : ICommandHandler
         {
             try
             {
-                var metadata = await MetadataFetcher.FetchAsync(link.Url, ct);
+                // 写闸内不许起浏览器进程：渲染兜底（最坏 15 s）只服务闸外的 links.metadata_fetch
+                var metadata = await MetadataFetcher.FetchAsync(link.Url, ct, allowBrowserRender: false);
                 link.Title ??= string.IsNullOrEmpty(metadata.Title) ? null : metadata.Title;
                 link.Description ??= string.IsNullOrEmpty(metadata.Description) ? null : metadata.Description;
                 link.FaviconUrl ??= string.IsNullOrEmpty(metadata.FaviconUrl) ? null : metadata.FaviconUrl;
