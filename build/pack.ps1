@@ -355,6 +355,12 @@ if ($missing.Count -gt 0) {
 # stale across versions. The update path descends one wrapper level when reading a
 # package zip (UpdateService.PrepareCoreAsync), so this wrapper never reaches the updater.
 if ($Zip) {
+    # 相对路径必须先钉成绝对路径：`ZipFile.Open()` 与 `Get-Item` 用的是**进程工作目录**，
+    # 而 PowerShell 的 `Set-Location` 不会改它——文档里那条 `-Zip ..\..\LinkPocket_vX.Y.Z.zip`
+    # 会因此把包写到盘符根（实测：G:\LinkPocket_v4.2.2.zip），随后 Get-Item 又报"文件不存在"。
+    if (-not [System.IO.Path]::IsPathRooted($Zip)) {
+        $Zip = Join-Path (Get-Location).ProviderPath $Zip
+    }
     Write-Host "[PACK] zipping -> $Zip ..." -ForegroundColor Cyan
     $zipParent = Split-Path -Parent $Zip
     if ($zipParent -and -not (Test-Path -LiteralPath $zipParent)) {
