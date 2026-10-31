@@ -275,7 +275,7 @@
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasError}" Value="True">
+                                <DataTrigger Binding="{Binding HasBanner}" Value="True">
                                     <Setter Property="Visibility" Value="Visible"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -284,7 +284,7 @@
                     <StackPanel Orientation="Horizontal">
                         <m3:M3Icon Kind="alert-circle-outline" Width="16" Height="16" VerticalAlignment="Center"
                                    Foreground="{DynamicResource App.Text.OnContainer}"/>
-                        <TextBlock Text="{loc:Value Error}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
+                        <TextBlock Text="{loc:Value Banner}" FontSize="13" Margin="8,0,0,0" VerticalAlignment="Center"
                                    TextWrapping="Wrap" Foreground="{DynamicResource App.Text.OnContainer}"/>
                     </StackPanel>
                 </Border>

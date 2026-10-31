@@ -27,7 +27,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         _host = host;
         _editLinkId = editLinkId;
         _createListId = createListId;
-        SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !IsLoading && !IsFetching && !HasError);
+        // 保存可用性只由「正在加载 / 正在抓取」决定：校验在点保存时做（SaveAsync 里逐条判），
+        // 不拿"有没有错误行"当开关——那样任何一次失败（抓不到描述、保存本身失败）都会把按钮
+        // 永久灰住，用户改对了也点不了。
+        SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !IsLoading && !IsFetching);
         CancelCommand = new RelayCommand(() => _host.CloseEditorPage());
         // 一键解析（补缺）+ 三枚单字段抓取（只覆盖该字段）：共用同一次网络抓取，差别只在"写哪几个字段"
         FetchMetadataCommand = new RelayCommand(() => _ = FetchFieldAsync(FetchField.All), CanFetch);
@@ -66,6 +69,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 _url = value;
                 OnPropertyChanged();
                 ClearError();
+                ClearNotice();
                 // URL 变更 = 目标站点变化：旧解析的 favicon 与「清除」标志一并作废（防张冠李戴写错图标）
                 _pendingFaviconUrl = null;
                 _clearFavicon = false;
@@ -80,14 +84,14 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     public string LinkTitle
     {
         get => _linkTitle;
-        set { if (_linkTitle != value) { _linkTitle = value; OnPropertyChanged(); ClearError(); } }
+        set { if (_linkTitle != value) { _linkTitle = value; OnPropertyChanged(); ClearError(); ClearNotice(); } }
     }
 
     private string _description = string.Empty;
     public string Description
     {
         get => _description;
-        set { if (_description != value) { _description = value; OnPropertyChanged(); ClearError(); } }
+        set { if (_description != value) { _description = value; OnPropertyChanged(); ClearError(); ClearNotice(); } }
     }
 
     private bool _isLoading;
@@ -110,14 +114,53 @@ public class LinkEditorViewModel : INotifyPropertyChanged
 
     private LocValue? _error;
 
-    /// <summary>校验/加载失败的错误行（键 + 参数；引擎原文只进日志，不上屏）。</summary>
+    /// <summary>**阻断性**错误行（校验不过 / 加载失败 / 保存失败）：它挡保存，因为这时候提交出去的东西是错的。</summary>
     public LocValue? Error
     {
         get => _error;
-        set { if (!Equals(_error, value)) { _error = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); CommandRefresh.Request(); } }
+        set
+        {
+            if (Equals(_error, value)) return;
+            _error = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasError));
+            OnPropertyChanged(nameof(Banner));
+            OnPropertyChanged(nameof(HasBanner));
+            CommandRefresh.Request();
+        }
     }
+
     public bool HasError => Error is { IsEmpty: false };
+
+    private LocValue? _notice;
+
+    /// <summary>
+    /// **非阻断**提示行（抓取没拿到标题 / 描述 / 图标，或站点要求安全验证）。
+    /// 它说的是"这一项没弄到，你可以自己填"，不是"表单有问题"——所以**不参与保存可用性**：
+    /// 页面本来就没写描述时，把它当成错误会让保存按钮永远灰着（用户既没写错也点不了）。
+    /// </summary>
+    public LocValue? Notice
+    {
+        get => _notice;
+        set
+        {
+            if (Equals(_notice, value)) return;
+            _notice = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasNotice));
+            OnPropertyChanged(nameof(Banner));
+            OnPropertyChanged(nameof(HasBanner));
+        }
+    }
+
+    public bool HasNotice => Notice is { IsEmpty: false };
+
+    /// <summary>横幅实际显示的那一行：阻断性错误优先（它更需要被看见），否则显示提示。</summary>
+    public LocValue? Banner => HasError ? Error : Notice;
+    public bool HasBanner => HasError || HasNotice;
+
     private void ClearError() { if (HasError) Error = null; }
+    private void ClearNotice() { if (HasNotice) Notice = null; }
 
     public ICommand SaveCommand { get; }
     public ICommand CancelCommand { get; }
@@ -191,7 +234,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     /// <summary>抓取共用实现（一键补缺 / 单字段覆盖都走这一条）：
     /// 网络抓取与"URL 快照校验、取消即丢弃"同口径；差别只在写哪几个字段。
     /// 单字段的语义 = 用户的明确意图（"只更新这一个"）：抓到就**覆盖**（站点标题改了要刷新）；
-    /// 没抓到 → 保持原值 + 错误行说明（绝不因为"没抓到"把用户输入清掉）。</summary>
+    /// 没抓到 → 保持原值 + **非阻断提示行**说明（绝不因为"没抓到"把用户输入清掉，也不因此挡住保存）。</summary>
     private async Task FetchFieldAsync(FetchField field)
     {
         if (string.IsNullOrWhiteSpace(Url)) return;
@@ -205,12 +248,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 FetchField.Description => "description",
                 _ => "all",
             });
-            Error = null;   // 新一次抓取清掉上一次的错误行
+            ClearNotice();   // 新一次抓取清掉上一次的提示行（阻断性错误不在此清：它归校验管）
             var url = Url.Trim();   // URL 快照——解析期间 URL 被用户修改则丢弃旧结果（防 A 的结果写进 B）
             var meta = await _client.LinkMetadataFetchAsync(url);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
-            if (meta == null) { Error = Loc.K("editor.resolveFailed"); return; }
+            if (meta == null) { Notice = Loc.K("editor.resolveFailed"); return; }
 
             switch (field)
             {
@@ -229,26 +272,26 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                     var noTitle = string.IsNullOrWhiteSpace(LinkTitle);
                     var noDescription = string.IsNullOrWhiteSpace(Description);
                     if (noTitle && noDescription)
-                        Error = meta.BlockedByVerification
+                        Notice = meta.BlockedByVerification
                             ? Loc.K("editor.verificationRequired")
                             : Loc.K("editor.notFound.titleDescription");
                     else if (noTitle)
-                        Error = Loc.K("editor.notFound.title");
+                        Notice = Loc.K("editor.notFound.title");
                     break;
 
                 case FetchField.Title:
                     if (!string.IsNullOrWhiteSpace(meta.Title)) LinkTitle = meta.Title.Trim();
-                    else Error = Loc.K("editor.notFound.title");
+                    else Notice = Loc.K("editor.notFound.title");
                     break;
 
                 case FetchField.Description:
                     if (!string.IsNullOrWhiteSpace(meta.Description)) Description = meta.Description.Trim();
-                    else Error = Loc.K("editor.notFound.description");
+                    else Notice = Loc.K("editor.notFound.description");
                     break;
 
                 case FetchField.Icon:
                     if (!string.IsNullOrWhiteSpace(meta.FaviconUrl)) await ApplyFaviconAsync(meta.FaviconUrl);
-                    else Error = Loc.K("editor.notFound.icon");
+                    else Notice = Loc.K("editor.notFound.icon");
                     break;
             }
         }
@@ -257,7 +300,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             // 界面文案承诺"详情见日志"，这里就必须真的把详情落下去：
             // 曾经是个光秃 catch（异常到手即弃），于是日志里空无一物、无从排查（meoai 那次就是这么耗掉的）。
             LpLog.Error($"metadata auto-parse failed: {Url}", ex);
-            Error = Loc.K("editor.err.autoParseFailed");
+            Notice = Loc.K("editor.err.autoParseFailed");
         }
         finally
         {
