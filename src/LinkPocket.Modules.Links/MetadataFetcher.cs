@@ -43,16 +43,16 @@ internal static class MetadataFetcher
 
         try
         {
-            var (html, finalUri) = await MetadataTransport.DownloadAsync(url, ct).ConfigureAwait(false);
-            var interstitial = AntiBotInterstitial.Detect(html);
-            var metadata = RegexMetadataParser.Instance.Parse(html, finalUri);
-
-            if (!HasUsableText(metadata))
-                metadata = await RecoverAsync(finalUri, metadata, interstitial, allowBrowserRender, ct)
-                    .ConfigureAwait(false);
-
-            // 走到这里还是只有空壳 ⇒ 如实带出"被验证页挡住了"这一事实（界面据此说真话）
-            return metadata with { BlockedByVerification = interstitial && !HasUsableText(metadata) };
+            return await FetchCoreAsync(url, ct, allowBrowserRender).ConfigureAwait(false);
+        }
+        catch (EngineException ex) when (allowBrowserRender && IsTransportRefusal(ex))
+        {
+            // 传输层被拒（非 2xx / 连接被断）时**不能就此报错**：有一类站点对任何无界面客户端都回 403，
+            // 真页面靠"首次响应下发的 cookie + 页内脚本自行重载"才给出——浏览器拿得到，我们拿不到。
+            // 所以先把最后一档交给浏览器内核，渲染也拿不到才按原口径报错。
+            var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
+            if (recovered is not null) return recovered;
+            throw;
         }
         catch (EngineException)
         {
@@ -65,6 +65,62 @@ internal static class MetadataFetcher
                 $"page metadata fetch failed: {ex.Message}",
                 retryable: true));
         }
+    }
+
+    /// <summary>
+    /// 传输层失败里"值得再让浏览器试一次"的那一类：网络/状态码层面的拒绝。
+    /// <b>不含</b> <see cref="EngineErrors.InvalidUrl"/>——地址非法、重定向跑出 http/https 属于判据拒绝，
+    /// 换谁来访问都不该放行。
+    /// </summary>
+    private static bool IsTransportRefusal(EngineException ex)
+        => ex.Error.Code == EngineErrors.NetworkError;
+
+    private static async Task<PageMetadata> FetchCoreAsync(string url, CancellationToken ct, bool allowBrowserRender)
+    {
+        var (html, finalUri) = await MetadataTransport.DownloadAsync(url, ct).ConfigureAwait(false);
+        var interstitial = AntiBotInterstitial.Detect(html);
+        var metadata = RegexMetadataParser.Instance.Parse(html, finalUri);
+
+        if (!HasUsableText(metadata))
+            metadata = await RecoverAsync(finalUri, metadata, interstitial, allowBrowserRender, ct)
+                .ConfigureAwait(false);
+
+        // 走到这里还是只有空壳 ⇒ 如实带出"被验证页挡住了"这一事实（界面据此说真话）
+        return metadata with { BlockedByVerification = interstitial && !HasUsableText(metadata) };
+    }
+
+    /// <summary>
+    /// 传输层被拒后的最后一档：交浏览器内核渲染。失败返回 <c>null</c>（调用方按原口径报错）。
+    /// <para>
+    /// 图标按站点根回落（<c>/favicon.ico</c>）：这条路径没有正文可解析，与"页面没有 link 标签"同一口径。
+    /// </para>
+    /// </summary>
+    private static async Task<PageMetadata?> RenderInsteadAsync(Uri target, CancellationToken ct)
+    {
+        if (PageRenderHook.Renderer is not { } renderer) return null;
+
+        try
+        {
+            // 与网络路径同一套连接前判据：渲染也不能成为绕过环回 / 链路本地拒绝的后门
+            await MetadataTransport.EnsureRenderTargetAsync(target, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"browser render refused by address policy: {target.Host}", ex, category: "links.metadata");
+            return null;
+        }
+
+        var rendered = await TryRenderAsync(renderer, target, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(rendered?.Title) && string.IsNullOrWhiteSpace(rendered?.Description))
+            return null;
+
+        var metadata = RegexMetadataParser.Instance.Parse(string.Empty, target);
+        return metadata with
+        {
+            Title = string.IsNullOrWhiteSpace(rendered!.Title) ? null : rendered.Title.Trim(),
+            Description = string.IsNullOrWhiteSpace(rendered.Description) ? null : rendered.Description.Trim(),
+            BlockedByVerification = false,
+        };
     }
 
     /// <summary>这份结果里有没有"够用"的文字：标题或描述任一非空即可（只有 favicon 不算）。</summary>

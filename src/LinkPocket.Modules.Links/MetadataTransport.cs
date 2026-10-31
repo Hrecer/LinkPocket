@@ -327,6 +327,16 @@ internal static class MetadataTransport
     /// 之间存在极小的 TOCTOU 窗口（DNS 重绑定需先以公网地址通过主路径、再于毫秒级翻转到内网地址——
     /// 触发条件苛刻，且兜底仅在主路径已被反爬拦截后启动。作为已知代价记录，见 WARNINGS）。</para>
     /// </summary>
+    /// <summary>
+    /// 渲染兜底前的连接前判据（与指纹兜底同一口径：配了系统代理就交由代理解析，
+    /// 否则解析目标主机并要求存在放行地址）。**渲染同样不能成为绕过环回 / 链路本地拒绝的后门。**
+    /// </summary>
+    internal static async Task EnsureRenderTargetAsync(Uri target, CancellationToken ct)
+    {
+        if (SystemProxy is null)
+            await EnsurePublicHostAsync(target, ct).ConfigureAwait(false);
+    }
+
     private static async Task EnsurePublicHostAsync(Uri target, CancellationToken ct)
     {
         if (IPAddress.TryParse(target.Host, out var literal))

@@ -20,6 +20,12 @@ namespace LinkPocket.Services;
 /// curl-impersonate 拿回的都是 25 KB 挑战页；本渲染器 1.4 s 就拿到真实标题。
 /// </para>
 /// <para>
+/// <b>认标题的判据不是"有字就算"</b>：主框架最近一次导航必须是 2xx。有一类站点先回一条错误/自举响应
+/// （这层壳同样有标题），再由页内脚本自行重载给出正文——按"标题非空"就收工，
+/// 拿回来的正是那层壳的标题。所以这里同时看 <c>HttpStatusCode</c>：导航没成功就继续等到超时，
+/// 宁可返回"没拿到"（调用方按原口径报错），也不把壳的标题当成站点名称。
+/// </para>
+/// <para>
 /// <b>代价与纪律</b>：起一个 Chromium 渲染进程（约 1 s 冷启动、几十 MB 常驻），所以
 /// <b>只在兜底路径使用</b>、<b>全局串行</b>（浏览器实例不可并发）、<b>用完即销毁</b>；
 /// profile 目录复用，放行 cookie 留着，同一站点第二次通常不再挑战。
@@ -119,6 +125,14 @@ internal sealed class PageRenderer : IDisposable
             core.Settings.IsZoomControlEnabled = false;
             core.Settings.AreBrowserAcceleratorKeysEnabled = false;
 
+            // 主框架最近一次导航是否**真的拿到了页面**（2xx）。首屏经常不是真页面：
+            // 有的站点先用一条错误/自举响应对付脚本客户端，再靠页内脚本自行重载给出正文——
+            // 那页也是有标题的，只按"标题非空"就收工，拿回来的是"I'm a teapot"那类壳的标题。
+            var navigationOk = false;
+            core.NavigationCompleted += (_, e) =>
+                navigationOk = e.IsSuccess
+                               && (e.HttpStatusCode == 0 || (e.HttpStatusCode >= 200 && e.HttpStatusCode < 400));
+
             core.Navigate(url);
 
             var deadline = DateTime.UtcNow + RenderBudget;
@@ -128,6 +142,7 @@ internal sealed class PageRenderer : IDisposable
                 var reading = await ReadAsync(core).ConfigureAwait(true);
                 if (reading is null || string.IsNullOrWhiteSpace(reading.Title)) continue;
                 if (IsChallengeTitle(reading.Title)) continue;   // 还没放行：继续等它重载
+                if (!navigationOk) continue;                     // 首屏不是真页面：等它自己重载
                 return reading;
             }
 
