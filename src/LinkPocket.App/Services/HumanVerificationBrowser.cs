@@ -205,7 +205,7 @@ internal sealed class HumanVerificationBrowser
     private static async Task<string?> GetTargetListAsync(int port, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(3));
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
         try
         {
             using var tcp = new TcpClient();
@@ -215,10 +215,43 @@ internal sealed class HumanVerificationBrowser
             var request = $"GET /json/list HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n";
             await stream.WriteAsync(Encoding.ASCII.GetBytes(request), timeout.Token).ConfigureAwait(false);
 
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var raw = await reader.ReadToEndAsync(timeout.Token).ConfigureAwait(false);
-            var split = raw.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-            return split < 0 ? null : raw[(split + 4)..];
+            // **按 Content-Length 读满就停**：调试端口发完响应不会关连接（`Connection: close` 也不关），
+            // 用 ReadToEnd 会一直挂到超时，于是每一轮都拿不到目标列表——窗口就一直开着、也抓不到东西。
+            var buffer = new MemoryStream();
+            var chunk = new byte[8192];
+            var bodyStart = -1;
+            var contentLength = -1;
+            while (true)
+            {
+                int read;
+                try { read = await stream.ReadAsync(chunk, timeout.Token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { break; }   // 读到够用的那一刻超时也无妨
+                if (read <= 0) break;
+                buffer.Write(chunk, 0, read);
+
+                if (bodyStart >= 0)
+                {
+                    if (contentLength >= 0 && buffer.Length - bodyStart >= contentLength) break;
+                    continue;
+                }
+
+                var head = Encoding.ASCII.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
+                var split = head.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                if (split < 0) continue;
+
+                bodyStart = split + 4;
+                foreach (var line in head[..split].Split("\r\n"))
+                {
+                    if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase)
+                        && int.TryParse(line[15..].Trim(), out var declared))
+                    {
+                        contentLength = declared;
+                    }
+                }
+            }
+
+            if (bodyStart < 0 || buffer.Length <= bodyStart) return null;
+            return Encoding.UTF8.GetString(buffer.GetBuffer(), bodyStart, (int)buffer.Length - bodyStart);
         }
         catch (Exception ex)
         {
