@@ -18,11 +18,15 @@ namespace LinkPocket;
 /// 页面职责全部在各自 View + ViewModel：搜索页 = Views/SearchView + SearchViewModel，
 /// 其余页各自持有 ViewModel；本窗口只做装配与端口转发，不持有任何页面业务逻辑。
 /// </summary>
-public partial class MainWindow : Window, Services.IDialogService, Services.INavigationService, Services.IBrowserLocateHost
+public partial class MainWindow : Window, Services.IDialogService, Services.INavigationService, Services.IBrowserLocateHost,
+    Services.IBrowseEditState, Services.IUiNoticeService
 {
     private readonly Services.AppHost _host;
 
     private readonly IServiceScope _scope;
+
+    /// <summary>Shell 级提示条的自动收起计时器（所有页面共用这一枚）。</summary>
+    private System.Windows.Threading.DispatcherTimer? _shellNoticeTimer;
 
     private readonly Services.ViewRegistry _regions = new();
 
@@ -41,6 +45,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 组合根持有槽位实例，ViewModel 经构造注入消费——不再经过任何静态注册点。
         _host.Ports.Dialogs = this;
         _host.Ports.Navigation = this;
+        _host.Ports.BrowseEdit = this;
+        _host.Ports.Notices = this;
         _host.LocateHost = this;
 
         // ===== 区域视图注册 / 路由装配：navId → 页面的专一装配登记点 =====
@@ -79,7 +85,8 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         var locator = _scope.ServiceProvider.GetRequiredService<IContentLocator>();
         ToolsView.Configure(client, locator, this,
             listId => vm.ResolveLinkPathAsync(listId),
-            () => vm.RefreshFolderTreeAndUIAsync());
+            () => vm.RefreshFolderTreeAndUIAsync(),
+            _host.Ports.BrowseEdit, _host.Ports.Notices);
         SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai, _host.Updates);
         AiPage.Configure(_host.Ai);
@@ -103,7 +110,42 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 选中项经 TwoWay 绑定同步，本窗口零导航动画代码。
     }
 
-    #region 端口实现（IDialogService / INavigationService / IBrowserLocateHost，供 ViewModel 解耦调用）
+    #region 端口实现（IDialogService / INavigationService / IBrowserLocateHost / IBrowseEditState / IUiNoticeService，供 ViewModel 解耦调用）
+
+    // —— IBrowseEditState（编辑优先闸）——
+    bool Services.IBrowseEditState.IsEditing
+        => DataContext is MainViewModel vm && vm.BrowserViewModel.IsEditingInProgress;
+
+    string? Services.IBrowseEditState.EditingEntityId
+        => DataContext is MainViewModel vm ? vm.BrowserViewModel.EditingEntityId : null;
+
+    bool Services.IBrowseEditState.IsEditingEntity(string id)
+        => DataContext is MainViewModel vm && vm.BrowserViewModel.IsEditingEntity(id);
+
+    // —— IUiNoticeService（全站共用的一次性提示条）——
+    void Services.IUiNoticeService.Show(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        ShellNotice.Text = text;
+        ShellNotice.IsOpen = true;
+
+        if (_shellNoticeTimer is null)
+        {
+            _shellNoticeTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(4),
+            };
+            _shellNoticeTimer.Tick += (_, _) =>
+            {
+                _shellNoticeTimer!.Stop();
+                ShellNotice.IsOpen = false;
+            };
+        }
+
+        _shellNoticeTimer.Stop();   // 连续提示顺延（与浏览页原提示条同一口径）
+        _shellNoticeTimer.Start();
+    }
+
     void Services.INavigationService.OpenLinkInBrowser(string linkId) => OpenLinkInBrowserPage(linkId);
 
     void Services.INavigationService.OpenFolderInBrowser(string folderId)
@@ -123,6 +165,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     // —— IBrowserLocateHost（「跳转」= 进入目标目录并选中目标行）——
     // 本窗口只提供两个原语：切页 + 委托浏览页执行"进入目录并选中一行"。
     // 目标类型判别、容器目录推导等算法全部在 Services/ContentLocator（组件），窗口不参与。
+
+    bool Services.IBrowserLocateHost.IsEditingInProgress
+        => DataContext is MainViewModel vm && vm.BrowserViewModel.IsEditingInProgress;
 
     void Services.IBrowserLocateHost.ShowBrowser()
     {
@@ -263,6 +308,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)
     {
+        _shellNoticeTimer?.Stop();
         _scope.Dispose();
         base.OnClosed(e);
     }

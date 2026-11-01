@@ -38,6 +38,8 @@ namespace LinkPocket.Views
         private INavigationService? _navigation;
         private Func<string?, Task<LocValue>> _resolveLinkPath = _ => Task.FromResult(Loc.K("tools.pathRoot"));
         private Func<Task> _refreshFolderTree = () => Task.CompletedTask;
+        private IBrowseEditState? _browseEdit;
+        private IUiNoticeService? _notices;
 
         /// <summary>
         /// Shell 在构造时注入：引擎客户端、定位组件、导航端口（打开浏览页详情页）、路径解析与目录树刷新委托。
@@ -46,13 +48,16 @@ namespace LinkPocket.Views
         /// 走 <see cref="IContentLocator"/>（ID 跳转工具 + 明细顶部/右栏入口），两者互不替代。
         /// </summary>
         public void Configure(EngineClient api, IContentLocator? locator, INavigationService? navigation,
-            Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree)
+            Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree,
+            IBrowseEditState? browseEdit = null, IUiNoticeService? notices = null)
         {
             _api = api;
             _locator = locator;
             _navigation = navigation;
             _resolveLinkPath = resolveLinkPath;
             _refreshFolderTree = refreshFolderTree;
+            _browseEdit = browseEdit;
+            _notices = notices;
 
             // ⚠️ 明细选中/右栏接线必须在这里（Configure 之后）——构造函数里访问 VmTools 会
             // 用 null 的 _api 提前创建 VM（懒建只建一次），之后所有引擎调用都会 NRE。
@@ -99,7 +104,8 @@ namespace LinkPocket.Views
             get
             {
                 if (_toolsVm != null) return _toolsVm;
-                return _toolsVm = new ToolsViewModel(_api, _locator, _resolveLinkPath, _refreshFolderTree);
+                return _toolsVm = new ToolsViewModel(_api, _locator, _resolveLinkPath, _refreshFolderTree,
+                    _browseEdit, _notices);
             }
         }
 
@@ -331,7 +337,7 @@ namespace LinkPocket.Views
             if (string.IsNullOrEmpty(id)) return;
 
             var result = await VmTools.JumpAsync(id);
-            if (result.IsSuccess) return;
+            if (result.IsSuccess || result.UserNotified) return;   // 阻断类提示已由共享 NoticeBar 给出
 
             ConfirmDialog.Show(Loc.T("common.jump"), (result.Message ?? result.Status switch
             {

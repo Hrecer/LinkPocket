@@ -26,6 +26,9 @@ public sealed class BrowserRenameController
     /// <summary>是否正在就地改名（页面级动作一律让位：编辑语义优先）。</summary>
     public bool IsActive => _id != null;
 
+    /// <summary>正在改名的实体 ID（未在会话 → null）。跨页删除等动作的"编辑优先"闸用。</summary>
+    public string? ActiveId => _id;
+
     /// <summary>某实体此刻是否显示改名编辑框（投影判据：目标一致 + 编辑面一致）。</summary>
     public bool IsRenamingId(string? id, BrowserPane surface)
         => id != null && _id != null && _surface == surface

@@ -256,6 +256,12 @@ public partial class BrowserViewModel
     private async Task DeleteItemsAsync(IReadOnlyList<BrowserRowViewModel> items)
     {
         if (IsDeleting) return;   // 命令可用性已拦，键盘/拖拽等不等 CanExecute 的路径在这里挡住
+        // 编辑优先：直接调命令 Execute / 自动化绕过 CanExecute 时，也不得删掉正在编辑的实体或其父文件夹。
+        if (IsEditingInProgress && TouchesEditingEntity(items.Select(r => (r.Id, r.IsFolder))))
+        {
+            ShowEditBlockedNotice();
+            return;
+        }
         IsDeleting = true;
         try
         {

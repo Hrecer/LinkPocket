@@ -32,15 +32,20 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private readonly IDialogService _dialogs;
     private readonly IContentLocator? _locator;
     private readonly Func<string?, LocValue> _resolveFolderPath;
+    private readonly IBrowseEditState? _editState;
+    private readonly IUiNoticeService? _notices;
 
     public SearchViewModel(EngineClient api, INavigationService navigation, IDialogService dialogs,
-        Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null)
+        Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null,
+        IBrowseEditState? editState = null, IUiNoticeService? notices = null)
     {
         _api = api;
         _navigation = navigation;
         _dialogs = dialogs;
         _resolveFolderPath = resolveFolderPath;
         _locator = locator;
+        _editState = editState;
+        _notices = notices;
 
         Selection.Changed += OnSelectionChanged;
 
@@ -540,7 +545,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
 
         var result = await _locator.LocateLinkAsync(item.LinkId);
-        if (result.IsSuccess) return;
+        if (result.IsSuccess || result.UserNotified) return;   // 阻断类提示已由共享 NoticeBar 给出
 
         _dialogs.Alert(Loc.T("common.jump"), (result.Message ?? result.Status switch
         {
@@ -572,6 +577,14 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (IsDeleting) return;   // 命令可用性已拦，这里再挡一次（键盘路径等不经 CanExecute 时）
         var victims = SelectedItems;
         if (victims.Count == 0) return;
+
+        // 编辑优先：正在就地改名 / 整页编辑的那一条不能被跨页删除（整批拒绝，避免半删）。
+        // 提示与跳转闸共用 Shell 的 NoticeBar（MD3 Snackbar），不弹确认框。
+        if (_editState != null && victims.Any(v => _editState.IsEditingEntity(v.LinkId)))
+        {
+            _notices?.Show(Loc.T("browser.edit.blockedByEditing"));
+            return;
+        }
 
         var message = victims.Count == 1
             ? Loc.T("browser.confirm.linkToTrash", (string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title))

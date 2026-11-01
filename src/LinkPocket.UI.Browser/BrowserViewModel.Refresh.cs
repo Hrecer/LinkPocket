@@ -349,6 +349,31 @@ public partial class BrowserViewModel
         OnPropertyChanged(nameof(IsNoticeOpen));
     }
 
+    /// <summary>编辑优先阻断提示：有 Shell 级共享提示条就走它（全站同一视觉），否则退回本页提示条。</summary>
+    private void ShowEditBlockedNotice()
+    {
+        var text = Loc.T("browser.edit.blockedByEditing");
+        if (_ports?.Notices is { } notices) notices.Show(text);
+        else ShowNotice(text);
+    }
+
+    /// <summary>
+    /// 待处置集合是否命中正在编辑的实体（含"移动/删除父文件夹会连带编辑中的子项"）。
+    /// 跨页删除的直连 ID 由调用方先查；本方法补上本页批量/拖拽路径的祖先关系。
+    /// </summary>
+    private bool TouchesEditingEntity(IEnumerable<(string Id, bool IsFolder)> items)
+    {
+        var editingId = EditingEntityId;
+        if (string.IsNullOrEmpty(editingId)) return false;
+
+        foreach (var (id, isFolder) in items)
+        {
+            if (string.Equals(id, editingId, StringComparison.Ordinal)) return true;
+            if (isFolder && IsSelfOrDescendant(id, editingId)) return true;
+        }
+        return false;
+    }
+
     /// <summary>收起提示（宿主视图的计时器到点调用；重复调用无害）。</summary>
     public void ClearNotice()
     {

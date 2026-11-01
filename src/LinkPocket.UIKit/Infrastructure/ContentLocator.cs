@@ -25,6 +25,8 @@ public enum LocateStatus
     NoHost,
     /// <summary>目标存在但所在目录里找不到对应行（数据竞态：刚被移走/删除）。</summary>
     RowMissing,
+    /// <summary>浏览页正在编辑（就地改名 / 整页编辑器打开）：跳转被拒绝，编辑保持不变。</summary>
+    EditingInProgress,
     /// <summary>执行过程中出错（数据服务异常等）。</summary>
     Failed,
 }
@@ -37,7 +39,8 @@ public readonly record struct LocateResult(
     ContentKind? Kind,
     string? ContainerFolderId,
     string? TargetId,
-    LocValue? Message)
+    LocValue? Message,
+    bool UserNotified = false)
 {
     public bool IsSuccess => Status == LocateStatus.Success;
 
@@ -56,6 +59,13 @@ public readonly record struct LocateResult(
 /// </summary>
 public interface IBrowserLocateHost
 {
+    /// <summary>
+    /// 浏览页是否正在编辑（就地改名 / 整页编辑器打开）。
+    /// **编辑优先**：编辑期间的跳转不得改目录、改选中或收起编辑——调用方据此返回
+    /// <see cref="LocateStatus.EditingInProgress"/>，由用户先完成或取消编辑。
+    /// </summary>
+    bool IsEditingInProgress { get; }
+
     /// <summary>切到浏览页（纯导航，不涉及定位细节）。</summary>
     void ShowBrowser();
 
@@ -97,11 +107,13 @@ public sealed class ContentLocator : IContentLocator
 {
     private readonly EngineClient _client;
     private readonly Func<IBrowserLocateHost?> _hostProvider;
+    private readonly UiPortProvider? _ports;
 
-    public ContentLocator(EngineClient client, Func<IBrowserLocateHost?> hostProvider)
+    public ContentLocator(EngineClient client, Func<IBrowserLocateHost?> hostProvider, UiPortProvider? ports = null)
     {
         _client = client;
         _hostProvider = hostProvider;
+        _ports = ports;
     }
 
     public async Task<LocateResult> LocateAsync(string id, ContentKind? kindHint = null)
@@ -117,6 +129,18 @@ public sealed class ContentLocator : IContentLocator
             var host = _hostProvider();
             if (host == null)
                 return new LocateResult(LocateStatus.NoHost, kind, resolved.ContainerFolderId, resolved.Id, Loc.K("locate.hostUnavailable"));
+
+            // 编辑优先：正在就地改名 / 整页编辑器打开时，跳转不得改目录与选中。
+            // 检查在 ShowBrowser 之前——页面不切走，编辑现场与用户输入原样保留。
+            if (host.IsEditingInProgress)
+            {
+                // 阻断类提示统一走 Shell 的共享 NoticeBar（MD3 Snackbar），不各页各弹。
+                // 有提示端口时标记 UserNotified，调用方据此不再追加自己的错误面。
+                var message = Loc.K("browser.edit.blockedByEditing");
+                _ports?.Notices?.Show(message.Resolve());
+                return new LocateResult(LocateStatus.EditingInProgress, kind, resolved.ContainerFolderId, resolved.Id,
+                    message, UserNotified: _ports?.Notices != null);
+            }
 
             host.ShowBrowser();
 

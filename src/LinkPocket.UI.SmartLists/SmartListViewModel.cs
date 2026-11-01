@@ -105,7 +105,8 @@ namespace LinkPocket.ViewModels
             {
                 var def = Definition(listId);
                 var resultVm = new SmartListResultViewModel(_api, listId, def.Title,
-                    _ports.Navigation, _ports.Dialogs, _resolveFolderPath, _locator)
+                    _ports.Navigation, _ports.Dialogs, _resolveFolderPath, _locator,
+                    _ports.BrowseEdit, _ports.Notices)
                 {
                     Subtitle = def.Subtitle,
                 };

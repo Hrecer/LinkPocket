@@ -442,6 +442,9 @@ public partial class ToolsPage : UserControl
         {
             if (VmTools.CheckedIds.Count == 0) return;
 
+            // 编辑优先：勾选里含正在编辑的链接 → 直接提示，不弹确认框（避免"确认了却删不掉"）。
+            if (VmTools.BlockDestructiveIfEditing(VmTools.CheckedIds)) return;
+
             var count = VmTools.CheckedIds.Count;
             if (!ConfirmDialog.Show(Loc.T("tools.dedup.deleteTitle"), Loc.T("tools.dedup.deleteConfirm", count), Loc.T("common.delete"), "delete-outline"))
                 return;
@@ -516,7 +519,7 @@ public partial class ToolsPage : UserControl
         private async Task<LocateResult> JumpToIdAsync(string id)
         {
             var result = await VmTools.JumpAsync(id);
-            if (!result.IsSuccess && DetailPanel.Visibility != Visibility.Visible)
+            if (!result.IsSuccess && !result.UserNotified && DetailPanel.Visibility != Visibility.Visible)
             {
                 ShowJumpHint(result.Message ?? result.Status switch
                 {

@@ -190,6 +190,11 @@
         <uisettings:SettingsPage Grid.Row="1" x:Name="SettingsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
         </uisettings:SettingsPage>
 
+        <!-- 全站共用的一次性提示条（UIKit/NoticeBar，MD3 Snackbar 形状）：
+             阻断类提示（编辑期间拒绝跳转/删除）与一次性事件都在这一处显示——
+             所有页面共用同一实例、同一计时器、同一视觉，不再各页各弹各的。 -->
+        <views:NoticeBar x:Name="ShellNotice" Grid.RowSpan="2" Panel.ZIndex="100"/>
+
             </Grid>
         </Border>
     </Grid>

@@ -324,6 +324,7 @@
   "locate.rowMissing": "The row is not visible in its folder (it may have just moved or been deleted)",
   "locate.failedRetry": "Could not locate it; try again shortly",
   "locate.incomplete": "Locating did not finish",
+  "browser.edit.blockedByEditing": "Finish or cancel the current edit first",
   "locate.hostUnavailable": "The UI host is unavailable",
   "locate.rowMissingShort": "The row is not visible in its folder",
   "locate.notFoundId": "No matching ID",

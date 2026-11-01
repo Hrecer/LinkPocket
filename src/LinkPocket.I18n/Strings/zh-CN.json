@@ -324,6 +324,7 @@
   "locate.rowMissing": "目标行未出现在所在目录（可能刚被移动或删除）",
   "locate.failedRetry": "定位失败，请稍后重试",
   "locate.incomplete": "定位未完成",
+  "browser.edit.blockedByEditing": "正在编辑，请先完成或取消编辑",
   "locate.hostUnavailable": "界面宿主不可用",
   "locate.rowMissingShort": "目标行未出现在所在目录",
   "locate.notFoundId": "未找到匹配的 ID",

@@ -125,7 +125,7 @@ public class BrowserDetailsViewModel : DetailSidebarModel
         }
 
         var result = await _locator.LocateAsync(row.Id);
-        if (result.IsSuccess) return;
+        if (result.IsSuccess || result.UserNotified) return;   // 阻断类提示已由共享 NoticeBar 给出
 
             host.StatusText = result.Message ?? result.Status switch
         {

@@ -71,7 +71,7 @@ public sealed class AppHost : IDisposable
     {
         Client = client;
         Wire = wire;
-        Locator = new ContentLocator(client, () => LocateHost);
+        Locator = new ContentLocator(client, () => LocateHost, Ports);
         // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
         ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
         Updates = new UpdateService(AppPaths.ProgramRoot,

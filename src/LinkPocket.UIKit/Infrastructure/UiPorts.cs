@@ -26,6 +26,34 @@ public interface IDialogService
 }
 
 /// <summary>
+/// 浏览页编辑态端口：跨页动作在**执行前**询问"这个实体是不是正在被编辑"。
+/// **编辑优先**：正在就地改名 / 整页编辑的实体，任何 UI 入口都不得删除或挪动它；
+/// 编辑本身保持不变，由调用方给出一次性提示。只读详情覆盖层不算编辑。
+/// </summary>
+public interface IBrowseEditState
+{
+    /// <summary>浏览页是否有编辑面打开（就地改名 / 整页编辑器）。</summary>
+    bool IsEditing { get; }
+
+    /// <summary>正在编辑的实体 ID（文件夹或链接）；新建链接（尚无实体）时为 null。</summary>
+    string? EditingEntityId { get; }
+
+    /// <summary>指定实体是否正在被编辑。</summary>
+    bool IsEditingEntity(string id);
+}
+
+/// <summary>
+/// 一次性提示端口：**全站共用的 MD3 Snackbar 形状提示条**（底部居中、数秒自动收起、不挡操作）。
+/// 阻断类提示（编辑期间拒绝跳转/删除）与一次性事件（外部变更、目录消失）都走这一条；
+/// 校验错误与真正失败仍走各页既有错误面（横幅 / 状态行 / 确认弹窗）。
+/// </summary>
+public interface IUiNoticeService
+{
+    /// <summary>显示一条已取好词的提示（调用方负责 i18n；空串不显示）。</summary>
+    void Show(string text);
+}
+
+/// <summary>
 /// 导航端口：ViewModel 通过它切页/开详情/刷新回收站，不直接依赖 MainWindow 类型。
 /// 当前由 MainWindow 实现；未来更换 UI 时由新窗口重新实现，逻辑层无需改动。
 /// 原 IUiCoordinator 的导航职责（拆分）。
@@ -58,4 +86,10 @@ public sealed class UiPortProvider
     public IDialogService? Dialogs { get; set; }
 
     public INavigationService? Navigation { get; set; }
+
+    /// <summary>浏览页编辑态（跨页破坏性动作的编辑优先闸）。</summary>
+    public IBrowseEditState? BrowseEdit { get; set; }
+
+    /// <summary>全站共用的一次性提示条（Shell 单实例）。</summary>
+    public IUiNoticeService? Notices { get; set; }
 }

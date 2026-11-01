@@ -86,6 +86,15 @@ public partial class BrowserViewModel
     {
         if (items.Count == 0) return;
 
+        // 编辑优先：移动（不是复制）正在编辑的实体或其父文件夹 = 会把编辑目标搬走。
+        // UI 的拖拽/粘贴入口已被 CanExecute 挡住；这里兜住直接调用与自动化。
+        if (mode == TransferMode.Move && IsEditingInProgress
+            && TouchesEditingEntity(items.Select(i => (i.Id, i.IsFolder))))
+        {
+            ShowEditBlockedNotice();
+            return;
+        }
+
         var renamedNotes = new List<LocValue>();
         var blocked = new List<string>();   // 成环（自身 / 自己的子文件夹）→ 明确反馈，绝不静默（Explorer 同样拒绝并弹窗）
         var placed = new List<string>();    // 真正落到目标目录的实体 ID（复制 = 新 ID；移动 = 原 ID）

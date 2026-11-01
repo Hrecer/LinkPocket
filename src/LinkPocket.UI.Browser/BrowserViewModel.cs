@@ -166,6 +166,21 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsListContextActive => !IsDetailPageOpen && !IsEditorPageOpen;
 
+    /// <summary>
+    /// 浏览页是否有**编辑面**打开（就地改名 / 整页编辑器）。
+    /// 跳转等外部导航必须先过这道闸：编辑期间改目录或改选中会让编辑会话与当前页脱节
+    /// （编辑框无处可画、`IsRenaming` 却仍为真，页面动作全部让位）。只读详情覆盖层不算编辑。
+    /// </summary>
+    public bool IsEditingInProgress => IsRenaming || IsEditorPageOpen;
+
+    /// <summary>正在编辑的实体 ID（就地改名目标 / 整页编辑器里的链接；新建链接 = null）。</summary>
+    public string? EditingEntityId => IsRenaming ? _rename.ActiveId : EditorPage?.EditingLinkId;
+
+    /// <summary>指定实体是否正在被编辑（跨页破坏性动作的编辑优先闸）。</summary>
+    public bool IsEditingEntity(string? id)
+        => !string.IsNullOrEmpty(id)
+           && string.Equals(EditingEntityId, id, StringComparison.Ordinal);
+
     // —— 链接详情页（全页覆盖层，参考链接页书签详情） ——
 
     public LinkDetailPageViewModel DetailPage { get; }
@@ -764,7 +779,10 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         SelectAllCommand = new RelayCommand(SelectAllRows, () => !IsPathEditing && !IsRenaming);
         // Esc 在路径编辑态里归属「取消路径编辑」；改名编辑态里归编辑框自己（控件级编辑语义）；本命令两处都让位。
         // 分层语义：有剪切态 → 先取消剪切（应用级剪贴板状态，与所在目录无关）；无剪切态 → 清空选中。
-        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsRenaming && !IsEditorPageOpen);
+        // Esc = 分层出口：路径编辑 → 详情页 → 就地改名（取消）→ 剪切态 → 清选中。
+        // 改名编辑框有焦点时由控件自身的 Esc 让位；焦点不在编辑框（例如行已随刷新消失的幽灵会话）时，
+        // 这条命令必须仍可执行——否则页面会被一个画不出来的编辑会话永久锁住。
+        EscapeCommand = new RelayCommand(HandleEscape, () => !IsPathEditing && !IsEditorPageOpen);
         // 点空白清选中（唯一实现 = UIKit BlankClick 附加行为，XAML 按区域挂载）：
         // 列表卡空白 = 主栏获得键盘语义归属；页面其它空白 = 保持当前归属（清选中 + 焦点收回页内）。
         ClearMainPaneSelectionCommand = new RelayCommand(ClearMainPaneSelection);
@@ -862,6 +880,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         if (IsDetailPageOpen && DetailPage?.BackCommand is { } back && back.CanExecute(null))
         {
             back.Execute(null);
+            return;
+        }
+        // 就地改名：Esc = 取消（还原原名、不写库）。编辑框未渲染/未获焦时这里是唯一出口。
+        if (IsRenaming)
+        {
+            CancelRename();
             return;
         }
         if (_clipboardCtl.HasCutPayload)

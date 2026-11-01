@@ -104,8 +104,16 @@ public partial class BrowserViewModel
         else if (!string.IsNullOrEmpty(anchor)) Selection.Mutate(_ => { }, anchor);
     }
 
-    /// <summary>把指定 ID 纳入选中集合（不清空其他选中）并投影两栏——用于从详情页返回等"还原选中"语义。</summary>
-    public void RestoreSelection(string id) => Selection.Restore(id);
+    /// <summary>
+    /// 详情页返回：把该链接设为**唯一选中**并投影两栏。
+    /// 覆盖式而非累加——详情打开期间若发生过跳转，累加会把旧链接留进集合，
+    /// 形成"集合里两个 ID、当前页一个都不在"（右栏显示 0 项已选中）。
+    /// </summary>
+    public void RestoreSelection(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        Selection.Set(new[] { id }, id);
+    }
 
     /// <summary>
     /// 视图应把某一行滚入视口（定位/跳转后保证选中项可见）。
@@ -131,11 +139,23 @@ public partial class BrowserViewModel
     {
         if (string.IsNullOrEmpty(rowId)) return false;
 
+        // 编辑优先（与定位组件同一判据）：就地改名 / 整页编辑器打开时，跳转不得改目录与选中。
+        // 入口已经先返回 EditingInProgress 提示；这里再挡一次直接调用（测试 / 未来新入口）。
+        if (IsEditingInProgress) return false;
+
+        // 只读详情覆盖层不是编辑面：跳转要落在它下面，必须先收起。
+        // 走 Close() 而不是 BackAsync()——后者的"返回时恢复选中"会把旧链接累加回选中集合。
+        if (IsDetailPageOpen) DetailPage.Close();
+
         // 已在目标目录时不必重载（避免无谓的列表重建与闪烁）
         // 注意：链接叶子定位=进根（folderId null）、CurrentFolderId 已是 null 时也直接下单选集，
         // 无需重载，避免异步重建导致"主栏闪一下"。
         if (Controller.CurrentFolderId != folderId)
             await LoadAsync(folderId);
+
+        // 目标目录的行真正落地后再写选中：RefreshAsync 碰到在途刷新只会挂起补刷就返回，
+        // 先写选中会让集合里有 ID、当前页一个都没有（右栏显示「0 项已选中」）。
+        await WaitForIdleAsync();
 
         SetSelection(new[] { rowId }, rowId);
         var row = Rows.FirstOrDefault(r => r.Id == rowId);

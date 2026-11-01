@@ -62,6 +62,9 @@ public class LinkEditorViewModel : INotifyPropertyChanged
         => new(client, host, linkId, null);
 
     public bool IsEditMode => _editLinkId != null;
+
+    /// <summary>正在编辑的链接 ID（新建模式 = null，尚无实体）。跨页删除的"编辑优先"闸用。</summary>
+    public string? EditingLinkId => _editLinkId;
     public LocValue TitleText => IsEditMode ? Loc.K("editor.title.edit") : Loc.K("editor.title.create");
     public string TitleIcon => IsEditMode ? "pencil-outline" : "link-plus";
 

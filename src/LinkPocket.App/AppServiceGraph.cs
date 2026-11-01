@@ -68,7 +68,8 @@ internal static class AppServiceGraph
             // 端口在 Shell 构造期登记（MainWindow 实现 IDialogService/INavigationService），
             // 本 VM 只在窗口构造中被解析 —— 那时端口必然已就位。
             return new SearchViewModel(h.Client, h.Ports.Navigation!, h.Ports.Dialogs!,
-                folderId => shell.FolderPathValue(folderId), h.Locator);
+                folderId => shell.FolderPathValue(folderId), h.Locator,
+                h.Ports.BrowseEdit, h.Ports.Notices);
         });
 
         services.AddTransient<MainWindow>();

@@ -59,14 +59,30 @@ public sealed class ToolsViewModel
     private readonly IContentLocator? _locator;
     private readonly Func<string?, Task<LocValue>> _resolveLinkPath;
     private readonly Func<Task> _refreshFolderTree;
+    private readonly IBrowseEditState? _editState;
+    private readonly IUiNoticeService? _notices;
 
     public ToolsViewModel(EngineClient api, IContentLocator? locator,
-        Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree)
+        Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree,
+        IBrowseEditState? editState = null, IUiNoticeService? notices = null)
     {
         _api = api;
         _locator = locator;
         _resolveLinkPath = resolveLinkPath;
         _refreshFolderTree = refreshFolderTree;
+        _editState = editState;
+        _notices = notices;
+    }
+
+    /// <summary>
+    /// 编辑优先闸：待处置集合里只要有正在编辑的实体就整批拒绝（不删一半），
+    /// 并走全站共享的 NoticeBar 提示。返回 true = 已阻断。
+    /// </summary>
+    public bool BlockDestructiveIfEditing(IEnumerable<string> ids)
+    {
+        if (_editState == null || !ids.Any(_editState.IsEditingEntity)) return false;
+        _notices?.Show(Loc.T("browser.edit.blockedByEditing"));
+        return true;
     }
 
     // ============================================================
@@ -196,6 +212,9 @@ public sealed class ToolsViewModel
     public async Task<List<LinkDto>?> DeleteCheckedAsync()
     {
         if (CheckedIds.Count == 0) return CurrentGroupLinks;
+
+        // 编辑优先：正在就地改名 / 整页编辑的那一条不能被去重删除（整批拒绝，避免半删）。
+        if (BlockDestructiveIfEditing(CheckedIds)) return CurrentGroupLinks;
 
         foreach (var linkId in CheckedIds.ToList())
             await _api.LinkTrashAsync(linkId);

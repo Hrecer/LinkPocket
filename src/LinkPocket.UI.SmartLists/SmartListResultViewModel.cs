@@ -30,6 +30,8 @@ namespace LinkPocket.ViewModels
         private readonly IDialogService? _dialogs;
         private readonly IContentLocator? _locator;
         private readonly Func<string?, LocValue> _resolveFolderPath;
+        private readonly IBrowseEditState? _editState;
+        private readonly IUiNoticeService? _notices;
         private bool _isDeleting;
 
         /// <summary>删除进行中：命令可用性与防重入共用同一开关（删除过程中禁用再次触发）。</summary>
@@ -149,7 +151,7 @@ namespace LinkPocket.ViewModels
 
         public SmartListResultViewModel(EngineClient client, string listId, LocValue title,
             INavigationService? navigation, IDialogService? dialogs, Func<string?, LocValue> resolveFolderPath,
-            IContentLocator? locator = null)
+            IContentLocator? locator = null, IBrowseEditState? editState = null, IUiNoticeService? notices = null)
         {
             _client = client;
             _listId = listId;
@@ -158,6 +160,8 @@ namespace LinkPocket.ViewModels
             _dialogs = dialogs;
             _resolveFolderPath = resolveFolderPath;
             _locator = locator;
+            _editState = editState;
+            _notices = notices;
 
             Selection.Changed += OnSelectionChanged;
 
@@ -344,7 +348,7 @@ namespace LinkPocket.ViewModels
             }
 
             var result = await _locator.LocateLinkAsync(item.LinkId);
-            if (result.IsSuccess) return;
+            if (result.IsSuccess || result.UserNotified) return;   // 阻断类提示已由共享 NoticeBar 给出
 
             _dialogs?.Alert(Loc.T("common.jump"), (result.Message ?? result.Status switch
             {
@@ -380,6 +384,13 @@ namespace LinkPocket.ViewModels
             if (IsDeleting) return;   // 命令可用性已拦，这里双保险（键盘路径等不经 CanExecute 时）
             var item = PrimarySelected;
             if (item == null) return;
+
+            // 编辑优先：正在改名的/整页编辑的那一条不能被跨页删除；提示走共享 NoticeBar。
+            if (_editState?.IsEditingEntity(item.LinkId) == true)
+            {
+                _notices?.Show(Loc.T("browser.edit.blockedByEditing"));
+                return;
+            }
 
             var name = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
             if (_dialogs == null || !_dialogs.Confirm(Loc.T("common.title.deleteLink"), Loc.T("browser.confirm.linkToTrash", name))) return;
