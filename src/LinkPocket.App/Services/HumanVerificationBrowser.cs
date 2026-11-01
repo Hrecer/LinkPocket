@@ -324,18 +324,49 @@ internal sealed class HumanVerificationBrowser
     {
         const string template = """
             (async () => {
+              const b64 = (u8) => {
+                let s = '';
+                for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+                return btoa(s);
+              };
+
+              // 取一张图并统一成 PNG 的 base64：
+              // 位图直接转；SVG 用同源 blob 画进 canvas（不会污染画布，也不需要额外进程），WPF 才有得解。
               const grab = async (u) => {
                 try {
                   if (!u) return '';
                   const res = await fetch(u, { credentials: 'include' });
                   if (!res.ok) return '';
+                  const type = (res.headers.get('content-type') || '').toLowerCase();
                   const buf = new Uint8Array(await res.arrayBuffer());
                   if (buf.length === 0 || buf.length > 262144) return '';
-                  let bin = '';
-                  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-                  return btoa(bin);
+
+                  const looksSvg = type.includes('svg') || buf[0] === 0x3C;   // '<'
+                  if (!looksSvg) return b64(buf);   // 已经是位图
+
+                  const blob = new Blob([buf], { type: 'image/svg+xml' });
+                  const objectUrl = URL.createObjectURL(blob);
+                  try {
+                    const img = await new Promise((ok, no) => {
+                      const i = new Image();
+                      i.onload = () => ok(i);
+                      i.onerror = no;
+                      i.src = objectUrl;
+                    });
+                    const size = 128;
+                    const c = document.createElement('canvas');
+                    c.width = size; c.height = size;
+                    const g = c.getContext('2d');
+                    const k = Math.min(size / img.width, size / img.height);
+                    const w = img.width * k, h = img.height * k;
+                    g.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+                    return c.toDataURL('image/png').split(',')[1] || '';
+                  } finally {
+                    URL.revokeObjectURL(objectUrl);
+                  }
                 } catch (e) { return ''; }
               };
+
               const first = await grab(%ICON%);
               if (first) return JSON.stringify({ u: %ICON%, d: first });
               const root = location.origin + '/favicon.ico';
