@@ -119,8 +119,9 @@ internal sealed class HumanVerificationBrowser
 
             return null;
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // 用户关掉了编辑器 / 主动取消：不是失败，静默收摊（finally 会杀掉浏览器进程）
             return null;
         }
         catch (Exception ex)

@@ -105,6 +105,12 @@ internal static class MetadataFetcher
         {
             throw;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 用户取消（关闭编辑器 / 点了取消）原样上抛：别包装成"网络失败"，
+            // 否则界面会为一次主动取消留一条错误，日志里也变成一次"抓取失败"。
+            throw;
+        }
         catch (Exception ex)
         {
             throw new EngineException(EngineErrors.Of(

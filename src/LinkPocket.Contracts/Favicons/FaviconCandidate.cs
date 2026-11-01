@@ -18,13 +18,17 @@ public sealed record FaviconCandidate(string Url, string? Type = null, string? S
 /// （浏览器自己的图标库里存的正是 <c>/images/favicon.ico</c> 的 16/32 位图）。
 /// </para>
 /// <para>
-/// <b>排序口径</b>（从高到低）：
-/// ① 声明了标签页尺寸（16–64）的位图 —— 浏览器标签页要的就是这一档；
-/// ② 更大的位图（128/180 之类）—— 清晰，但不是标签页那张；
-/// ③ 没说尺寸的 <c>.ico</c> —— 容器里通常就带 16/32；
-/// ④ 没说尺寸的其他位图；
-/// ⑤ 矢量（SVG / <c>sizes="any"</c>）—— 任何尺寸都画得出来，但常常是简化版或占位图。
-/// 同分保持声明顺序（浏览器对同规格的多条也是按文档顺序）。
+/// <b>排序口径照抄 Chromium</b>（<c>favicon_handler.cc</c> 的 <c>FaviconCandidate::FromFaviconURL</c> +
+/// <c>select_favicon_frames.cc</c> 的 <c>GetCandidateIndexWithBestScore</c>）：
+/// ① 声明了标签页尺寸（16–64）的位图 —— 精确命中，最高；
+/// ② <c>.ico</c> —— 多尺寸容器，能直接供 16/32（实测浏览器标签页用的常是它）；
+/// ③ 矢量（SVG / <c>sizes="any"</c>）与没写 sizes 的位图 —— 源码里都是满分 1.0
+/// （"桌面端：无尺寸信息的往高了算"）；
+/// ④ 声明了更大但 &lt; 8×16=128 的位图；
+/// ⑤ <b>声明 ≥ 128 的位图垫底</b> —— 源码原话："大尺寸的 favicon 位图往往有完全不同的视觉风格，
+/// 要避开它们"（<c>kHugeEdgeSize = desired_size * 8</c>）。
+/// 实测某站同时声明 512 的 SVG 占位、192 的方形图与 <c>.ico</c>，浏览器标签页用的是 <c>.ico</c> ——
+/// 与这条规则一致。同分保持声明顺序。
 /// </para>
 /// </remarks>
 public static class FaviconCandidatePicker
@@ -70,14 +74,16 @@ public static class FaviconCandidatePicker
                   || sizes.Contains("any", StringComparison.Ordinal)
                   || candidate.Url.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
 
-        if (svg) return 60;
-
         var declared = LargestSize(sizes);
-        if (declared is >= 16 and <= 64) return 100 + declared;
-        if (declared > 64) return 90;
-        if (candidate.Url.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) return 80;
 
-        return 70;
+        if (!svg && declared is >= 16 and <= 64) return 120 + declared;   // 精确命中标签页尺寸
+        if (candidate.Url.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) return 110;
+
+        if (svg || declared == 0) return 100;                             // "any" / 没写 sizes：源码给满分
+        if (declared >= 128) return 40;                                   // kHugeEdgeSize：刻意避开的大图
+        if (declared > 64) return 90;
+
+        return 80;
     }
 
     /// <summary>从 <c>sizes</c> 里取最大的那条边长（形如 <c>16x16 32x32</c>；没有则 0）。</summary>

@@ -250,7 +250,12 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     }
 
     /// <summary>关闭编辑器页（由编辑器 VM 回调）。</summary>
-    public void CloseEditorPage() => IsEditorPageOpen = false;
+    public void CloseEditorPage()
+    {
+        // 关掉编辑器就不再需要那次抓取：立刻中止，别让人机验证窗口留在桌面上
+        EditorPage?.CancelFetching();
+        IsEditorPageOpen = false;
+    }
 
     public ICommand GoBackCommand { get; }
     public ICommand GoForwardCommand { get; }

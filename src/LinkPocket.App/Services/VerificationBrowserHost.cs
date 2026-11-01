@@ -81,13 +81,128 @@ internal static class VerificationBrowserHost
                             + $"--app=\"{target.AbsoluteUri}\" {Arguments}",
             };
 
-            return Process.Start(psi);
+            var process = Process.Start(psi);
+            if (process is not null) AssignToKillOnCloseJob(process);
+            return process;
         }
         catch (Exception ex)
         {
             LpLog.Warn($"starting the verification browser failed: {target.Host}", ex, category: "links.metadata");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 把浏览器进程放进一个"作业对象"，并设置 <c>KILL_ON_JOB_CLOSE</c>：
+    /// 本进程无论正常退出、被杀、还是崩溃，**系统都会把这个浏览器连同它的子进程一起收掉**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 为什么需要它：只靠 <c>finally</c> 里的 <c>Kill</c> 只能覆盖"我们还有机会跑代码"的情况。
+    /// 进程被任务管理器结束、或我们自己崩在某个 finally 之前，那个验证窗口就会留在桌面上没人管
+    /// （实测踩过：一个窗口挂在屏幕上，关掉主程序它还在）。
+    /// </para>
+    /// <para>
+    /// 作业对象由内核维护：句柄关闭即触发，不依赖我们的托管代码。子进程（Edge 的渲染进程）
+    /// 默认继承作业，所以整棵进程树都会被回收。分配失败不算错——<c>finally</c> 那条路仍然有效。
+    /// </para>
+    /// </remarks>
+    private static void AssignToKillOnCloseJob(Process process)
+    {
+        try
+        {
+            var job = _jobHandle ??= CreateJob();
+            if (job == IntPtr.Zero) return;
+
+            if (!AssignProcessToJobObject(job, process.Handle))
+            {
+                LpLog.Debug($"assigning the verification browser to a job failed: {Marshal.GetLastWin32Error()}",
+                    "links.metadata");
+            }
+        }
+        catch (Exception ex)
+        {
+            // 作业分配只是"崩溃也能回收"的加固，失败不影响本次验证
+            LpLog.Debug($"job assignment skipped: {ex.GetType().Name}", "links.metadata");
+        }
+    }
+
+    private static IntPtr? _jobHandle;
+
+    private static IntPtr CreateJob()
+    {
+        var job = CreateJobObject(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) return IntPtr.Zero;
+
+        var info = new JobObjectExtendedLimitInformation
+        {
+            BasicLimitInformation = new JobObjectBasicLimitInformation { LimitFlags = JobObjectLimitKillOnJobClose },
+        };
+
+        var size = Marshal.SizeOf<JobObjectExtendedLimitInformation>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(info, buffer, fDeleteOld: false);
+            if (!SetInformationJobObject(job, JobObjectExtendedLimitInformationClass, buffer, (uint)size))
+            {
+                LpLog.Debug($"configuring the verification job failed: {Marshal.GetLastWin32Error()}", "links.metadata");
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+
+        return job;
+    }
+
+    private const uint JobObjectLimitKillOnJobClose = 0x2000;
+    private const int JobObjectExtendedLimitInformationClass = 9;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateJobObject(IntPtr securityAttributes, string? name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectExtendedLimitInformation
+    {
+        public JobObjectBasicLimitInformation BasicLimitInformation;
+        public IoCounters IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
     }
 
     /// <summary>

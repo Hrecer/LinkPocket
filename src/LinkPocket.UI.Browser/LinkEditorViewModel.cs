@@ -17,6 +17,15 @@ namespace LinkPocket.ViewModels;
 public class LinkEditorViewModel : INotifyPropertyChanged
 {
     private readonly BrowserViewModel _host;
+
+    /// <summary>
+    /// 正在进行的抓取。关闭编辑器 / 再次抓取时取消——抓取可能弹一个人机验证窗口，
+    /// 不取消的话用户关掉编辑器之后那个窗口会一直挂在桌面上（实测踩过）。
+    /// </summary>
+    private CancellationTokenSource? _fetchCts;
+
+    /// <summary>中止正在进行的抓取（编辑器关闭、应用退出时调用；可重复调用）。</summary>
+    public void CancelFetching() => Interlocked.Exchange(ref _fetchCts, null)?.Cancel();
     private readonly string? _editLinkId;
     private readonly string? _createListId;
     private readonly EngineClient _client;
@@ -250,7 +259,12 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             });
             ClearNotice();   // 新一次抓取清掉上一次的提示行（阻断性错误不在此清：它归校验管）
             var url = Url.Trim();   // URL 快照——解析期间 URL 被用户修改则丢弃旧结果（防 A 的结果写进 B）
-            var meta = await _client.LinkMetadataFetchAsync(url);
+            // 这次抓取挂一个可取消的令牌：关闭编辑器 / 再点一次解析都要立刻中止旧请求。
+            // 抓取可能弹一个人机验证窗口——不取消的话，用户关掉编辑器之后那个窗口还挂在桌面上。
+            var cts = new CancellationTokenSource();
+            Interlocked.Exchange(ref _fetchCts, cts)?.Cancel();
+
+            var meta = await _client.LinkMetadataFetchAsync(url, ct: cts.Token);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
             if (meta == null) { Notice = Loc.K("editor.resolveFailed"); return; }
@@ -294,6 +308,11 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                     else Notice = Loc.K("editor.notFound.icon");
                     break;
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // 用户取消 / 关闭编辑器：这不是失败，不该留错误行（那个 VM 也已经不在界面上了）
+            return;
         }
         catch (Exception ex)
         {

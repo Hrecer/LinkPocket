@@ -51,6 +51,32 @@ public class FaviconCandidateTests
     }
 
     [Fact]
+    public void 大图不压过ico_浏览器标签页用的是ico()
+    {
+        // 同一站点的实测：同时声明 svg（纯圆占位）、192×192 方形图 与 .ico（真正的标志），
+        // 浏览器图标库里存的是 .ico 的 16/32 —— 所以 192 的大图不能排在 .ico 前面
+        var html = """
+            <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+            <link rel="icon" type="image/png" sizes="192x192" href="/images/android-chrome-192x192.png">
+            <link rel="icon" href="/images/favicon.ico">
+            """;
+
+        Assert.Equal("https://example.com/images/favicon.ico", FaviconOf(html));
+    }
+
+    [Fact]
+    public void 超大声明垫底_与源码的kHugeEdgeSize一致()
+    {
+        // select_favicon_frames.cc：大尺寸位图"往往有完全不同的视觉风格"，刻意避开（kHugeEdgeSize = 期望*8）
+        var html = """
+            <link rel="icon" sizes="512x512" href="/icon-512.png">
+            <link rel="icon" href="/plain.png">
+            """;
+
+        Assert.Equal("https://example.com/plain.png", FaviconOf(html));
+    }
+
+    [Fact]
     public void 同为标签页尺寸时取声明更大的那条()
     {
         var html = """
