@@ -53,4 +53,31 @@ public static class AtomicFile
             }
         }
     }
+
+    /// <summary>二进制版的原子替换写（图标缓存等）：步骤与 <see cref="WriteAllText"/> 完全一致。</summary>
+    public static void WriteAllBytes(string path, byte[] bytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        var tmp = path + ".tmp";
+        File.WriteAllBytes(tmp, bytes);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                    File.Replace(tmp, path, destinationBackupFileName: null);
+                else
+                    File.Move(tmp, path);
+                return;
+            }
+            catch (IOException) when (attempt < ReplaceAttempts)
+            {
+                if (!File.Exists(tmp)) File.WriteAllBytes(tmp, bytes);
+                Thread.Sleep(20 * attempt);
+            }
+        }
+    }
 }

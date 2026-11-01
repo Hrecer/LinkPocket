@@ -194,6 +194,32 @@ public static class FaviconCache
         }
     }
 
+    /// <summary>
+    /// 把**已经在别处取到的**图标字节直接写进缓存（成功返回 <c>true</c>）。
+    /// <para>
+    /// 用途：反爬站点把图标资源也一起拦住，普通 HTTP 拿不到，但在**已完成校验的浏览器页面**里
+    /// <c>fetch(iconUrl)</c> 是通的——那边取到的是站点真正声明的那张图，比任何猜法都确定。
+    /// 写入前同样过"是不是真图片"的校验，避免把错误页当图标存下来。
+    /// </para>
+    /// </summary>
+    public static bool StoreBytes(string faviconUrl, byte[]? bytes)
+    {
+        if (string.IsNullOrWhiteSpace(faviconUrl)) return false;
+        if (AcceptImage(bytes, faviconUrl) is not { } image) return false;
+
+        try
+        {
+            var path = GetCacheFilePath(ResolveFaviconUrl(faviconUrl));
+            AtomicFile.WriteAllBytes(path, image);   // 原子写：半截图标文件比没图标更难查
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"favicon store failed: {ShortUrl(faviconUrl)} - {ex.Message}", ex);
+            return false;
+        }
+    }
+
     /// <summary>缓存文件路径 = 目录 + SHA256(地址) + 扩展名（同一地址恒定同名）。</summary>
     public static string GetCacheFilePath(string faviconUrl)
     {
@@ -207,7 +233,27 @@ public static class FaviconCache
     {
         if (string.IsNullOrWhiteSpace(faviconUrl)) return null;
         var path = GetCacheFilePath(ResolveFaviconUrl(faviconUrl));
-        return File.Exists(path) ? path : null;
+        if (!File.Exists(path)) return null;
+
+        // 旧版本可能把错误页 / 乱码当图标落过盘：读一眼文件头，不是图片就删掉当未缓存（触发重新下载）
+        try
+        {
+            Span<byte> head = stackalloc byte[8];
+            using var stream = File.OpenRead(path);
+            var read = stream.Read(head);
+            if (!LooksLikeImage(head[..read]))
+            {
+                stream.Dispose();
+                File.Delete(path);
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"favicon cache probe failed: {ex.Message}", ex);
+        }
+
+        return path;
     }
 
     /// <summary>
@@ -251,22 +297,13 @@ public static class FaviconCache
                     bytes = await TryDownloadAsync(resolvedUrl, ct).ConfigureAwait(false);
 
                 if (bytes is { Length: > 0 } && LooksLikeSvg(bytes)) bytes = null;
+                bytes = AcceptImage(bytes, resolvedUrl);
 
                 if (bytes == null)
                 {
                     var root = BuildDefaultFaviconUrl(resolvedUrl);
                     if (root.Length > 0 && root != resolvedUrl)
-                        bytes = await TryDownloadAsync(root, ct).ConfigureAwait(false);
-                }
-
-                if (bytes == null)
-                {
-                    // 聚合源（按域名取图标）是最后的兜底：站点根也没有图标时才把域名发出去
-                    if (BuildDefaultFaviconUrl(resolvedUrl) is { Length: > 0 } fallback)
-                    {
-                        var host = new Uri(fallback).Host;
-                        bytes = await TryDownloadAsync($"https://api.iowen.cn/favicon/{host}.png", ct).ConfigureAwait(false);
-                    }
+                        bytes = AcceptImage(await TryDownloadAsync(root, ct).ConfigureAwait(false), root);
                 }
 
                 if (bytes == null)
@@ -373,6 +410,37 @@ public static class FaviconCache
     /// <summary>这个地址是不是 SVG 图标（要光栅化才能当位图用）。</summary>
     private static bool IsSvgUrl(string url)
         => GetExtensionFromUrl(url).Equals(".svg", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>按文件头认 PNG / JPEG / GIF / BMP / ICO / CUR / WEBP。</summary>
+    private static bool LooksLikeImage(ReadOnlySpan<byte> head) => head switch
+    {
+        [0x89, 0x50, 0x4E, 0x47, ..] => true,                       // PNG
+        [0xFF, 0xD8, 0xFF, ..] => true,                             // JPEG
+        [0x47, 0x49, 0x46, 0x38, ..] => true,                       // GIF8
+        [0x42, 0x4D, ..] => true,                                   // BMP
+        [0x00, 0x00, 0x01, 0x00, ..] => true,                       // ICO
+        [0x00, 0x00, 0x02, 0x00, ..] => true,                       // CUR
+        [0x52, 0x49, 0x46, 0x46, ..] => true,                       // RIFF（WEBP 容器）
+        _ => false,
+    };
+
+    /// <summary>
+    /// 只收"真图片"：按文件头认 PNG / JPEG / GIF / BMP / ICO / WEBP。
+    /// <para>
+    /// 反爬站点对静态资源也回 403 的 HTML，或者返回一段占位脚本；这些东西一旦被当成图标落盘，
+    /// 界面上就是一张"解码失败的破图"——比没有图标更难查。所以每个来源拿到字节都先过这一关，
+    /// 不合格就当没拿到，继续走回落链。
+    /// </para>
+    /// </summary>
+    private static byte[]? AcceptImage(byte[]? bytes, string source)
+    {
+        if (bytes is not { Length: >= 8 }) return null;
+        if (LooksLikeSvg(bytes)) return null;   // 原文不能当位图；SVG 应经光栅化再进来
+        if (LooksLikeImage(bytes)) return bytes;
+
+        LpLog.Warn($"favicon rejected (not an image, {bytes.Length} bytes): {ShortUrl(source)}", null);
+        return null;
+    }
 
     /// <summary>字节看起来是不是 SVG 原文（光栅化失败时别把它当位图落盘）。</summary>
     private static bool LooksLikeSvg(byte[] bytes)

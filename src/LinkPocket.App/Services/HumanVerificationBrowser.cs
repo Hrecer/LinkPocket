@@ -50,8 +50,12 @@ internal sealed class HumanVerificationBrowser
     /// 固定小窗尺寸并给一个偏上的位置，避免遮住整个桌面；<b>不加任何置顶参数</b>。
     /// </summary>
     private const string BrowserArguments =
-        "--no-first-run --no-default-browser-check --disable-features=Translate,MediaRouter "
-        + "--remote-allow-origins=* --window-size=900,700 --window-position=240,120";
+        "--no-first-run --no-default-browser-check --disable-sync --disable-translate --disable-extensions "
+        + "--remote-allow-origins=* --window-size=900,700 --window-position=240,120 "
+        // 关掉浏览器自带的浮层：账号同步提示（会露出本机微软账号）、翻译气泡、身份浮标——
+        // 它们会盖住验证框，且与"只用来过验证"的用途无关
+        + "--disable-features=Translate,TranslateUI,msEdgeTranslate,EdgeTranslate,MediaRouter,"
+        + "msEdgeSyncPromo,EdgeSyncPromo,msEdgeIdentityFloatingButton";
 
     /// <summary>挑战页自带的标题：读到它说明用户还没点完，继续等。</summary>
     private static readonly string[] ChallengeTitles =
@@ -100,6 +104,16 @@ internal sealed class HumanVerificationBrowser
                     {
                         LpLog.Info($"human verification passed ({reading!.Title}): {target.Host}",
                             category: "links.metadata");
+                        // 页面内取到的图标直接落进缓存：这条路径上的站点点连静态资源都拦，上层拿不到
+                        if (!string.IsNullOrWhiteSpace(reading.Icon) && !string.IsNullOrWhiteSpace(reading.IconData))
+                        {
+                            try { FaviconCache.StoreBytes(reading.Icon, Convert.FromBase64String(reading.IconData)); }
+                            catch (Exception ex)
+                            {
+                                LpLog.Debug($"storing the page icon failed: {ex.GetType().Name}", "links.metadata");
+                            }
+                        }
+
                         return new RenderedPageMetadata(
                             reading.Title,
                             reading.Description,
@@ -265,22 +279,47 @@ internal sealed class HumanVerificationBrowser
     }
 
     /// <summary>读标题与描述（与 <c>PageRenderer.ReadAsync</c> 同一段脚本，口径一致）。</summary>
-    private sealed record PageReading(string Title, string Description, string Icon, string Url, string Ready);
+    private sealed record PageReading(
+        string Title, string Description, string Icon, string IconData, string Url, string Ready);
 
     private static async Task<PageReading?> ReadPageAsync(string wsUrl, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(wsUrl)) return null;
 
         const string script = """
-            (() => {
+            (async () => {
               const meta = s => { const e = document.querySelector(s); return e ? (e.content || '') : ''; };
-              const icon = document.querySelector('link[rel~="icon"]');
+              // 图标不猜：按文档顺序取**第一个声明**的 icon（浏览器解析图标的起点就是它），
+              // 没有声明就让上层回落站点根 /favicon.ico。这里不做"挑最大 / 挑矢量"的推断——
+              // 那会把 apple-touch-icon 之类并非站点图标的东西选出来。
               let href = '';
-              try { href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : ''; } catch (e) { href = ''; }
+              try {
+                const icon = document.querySelector('link[rel~="icon"]');
+                href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : '';
+              } catch (e) { href = ''; }
+
+              // 图标在页面内取：带着这次校验换来的 cookie，拿到的就是窗口里显示的那一张。
+              // 普通 HTTP 拿不到它（这类站点连静态资源一起拦），所以只能在这里取。
+              let data = '';
+              if (href) {
+                try {
+                  const res = await fetch(href, { credentials: 'include' });
+                  if (res.ok) {
+                    const buf = new Uint8Array(await res.arrayBuffer());
+                    if (buf.length > 0 && buf.length <= 262144) {
+                      let bin = '';
+                      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+                      data = btoa(bin);
+                    }
+                  }
+                } catch (e) { data = ''; }
+              }
+
               return JSON.stringify({
                 t: document.title || '',
                 d: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
                 i: href,
+                x: data,
                 h: location.href || '',
                 r: document.readyState || ''
               });
@@ -288,7 +327,7 @@ internal sealed class HumanVerificationBrowser
             """;
 
         var request = "{\"id\":1,\"method\":\"Runtime.evaluate\",\"params\":{\"expression\":"
-                      + JsonSerializer.Serialize(script) + ",\"returnByValue\":true}}";
+                      + JsonSerializer.Serialize(script) + ",\"returnByValue\":true,\"awaitPromise\":true}}";
 
         using var ws = new ClientWebSocket();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -299,7 +338,7 @@ internal sealed class HumanVerificationBrowser
             await ws.SendAsync(Encoding.UTF8.GetBytes(request), WebSocketMessageType.Text, true, timeout.Token)
                 .ConfigureAwait(false);
 
-            var buffer = new byte[64 * 1024];
+            var buffer = new byte[512 * 1024];
             while (!timeout.IsCancellationRequested)
             {
                 var result = await ws.ReceiveAsync(buffer, timeout.Token).ConfigureAwait(false);
@@ -319,6 +358,7 @@ internal sealed class HumanVerificationBrowser
                     inner.RootElement.GetProperty("t").GetString() ?? string.Empty,
                     inner.RootElement.GetProperty("d").GetString() ?? string.Empty,
                     inner.RootElement.GetProperty("i").GetString() ?? string.Empty,
+                    inner.RootElement.GetProperty("x").GetString() ?? string.Empty,
                     inner.RootElement.GetProperty("h").GetString() ?? string.Empty,
                     inner.RootElement.GetProperty("r").GetString() ?? string.Empty);
             }

@@ -179,9 +179,14 @@ internal sealed class PageRenderer : IDisposable
         const string script = """
             (() => {
               const meta = s => { const e = document.querySelector(s); return e ? (e.content || '') : ''; };
-              const icon = document.querySelector('link[rel~="icon"]');
+              // 图标不猜：按文档顺序取**第一个声明**的 icon（浏览器解析图标的起点就是它），
+              // 没有声明就让上层回落站点根 /favicon.ico。这里不做"挑最大 / 挑矢量"的推断——
+              // 那会把 apple-touch-icon 之类并非站点图标的东西选出来。
               let href = '';
-              try { href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : ''; } catch (e) { href = ''; }
+              try {
+                const icon = document.querySelector('link[rel~="icon"]');
+                href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : '';
+              } catch (e) { href = ''; }
               return JSON.stringify({
                 t: document.title || '',
                 d: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
