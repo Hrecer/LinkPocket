@@ -317,7 +317,7 @@
   "editor.notFound.description": "未解析到描述",
   "editor.notFound.icon": "未解析到图标",
   "editor.notFound.titleDescription": "未解析到标题与描述",
-  "editor.verificationRequired": "站点要求浏览器验证，未能解析标题与描述",
+  "editor.verificationRequired": "站点拒绝自动抓取，未能解析标题与描述，可手动填写",
   "detailpage.err.load": "读取链接数据出错，请返回列表重试。",
   "locate.notFoundItem": "未找到该项 ID",
   "locate.notFoundLink": "未找到该链接 ID",

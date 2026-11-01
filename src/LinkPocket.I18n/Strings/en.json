@@ -317,7 +317,7 @@
   "editor.notFound.description": "No description found on the page",
   "editor.notFound.icon": "No icon found for the site",
   "editor.notFound.titleDescription": "No title or description found on the page",
-  "editor.verificationRequired": "The site requires a browser check; no title or description could be read",
+  "editor.verificationRequired": "The site refuses automatic fetching; no title or description could be read — you can type them in",
   "detailpage.err.load": "The link could not be read; go back to the list and try again.",
   "locate.notFoundItem": "No item with this ID",
   "locate.notFoundLink": "No link with this ID",
