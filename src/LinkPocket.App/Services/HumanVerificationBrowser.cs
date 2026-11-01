@@ -334,15 +334,15 @@ internal sealed class HumanVerificationBrowser
               // 位图直接转；SVG 用同源 blob 画进 canvas（不会污染画布，也不需要额外进程），WPF 才有得解。
               const grab = async (u) => {
                 try {
-                  if (!u) return '';
+                  if (!u) return null;
                   const res = await fetch(u, { credentials: 'include' });
-                  if (!res.ok) return '';
+                  if (!res.ok) return { status: String(res.status) };
                   const type = (res.headers.get('content-type') || '').toLowerCase();
                   const buf = new Uint8Array(await res.arrayBuffer());
-                  if (buf.length === 0 || buf.length > 262144) return '';
+                  if (buf.length === 0 || buf.length > 262144) return { status: 'empty-or-large' };
 
                   const looksSvg = type.includes('svg') || buf[0] === 0x3C;   // '<'
-                  if (!looksSvg) return b64(buf);   // 已经是位图
+                  if (!looksSvg) return { status: String(res.status), png: b64(buf) };   // 已经是位图
 
                   const blob = new Blob([buf], { type: 'image/svg+xml' });
                   const objectUrl = URL.createObjectURL(blob);
@@ -357,26 +357,63 @@ internal sealed class HumanVerificationBrowser
                     const c = document.createElement('canvas');
                     c.width = size; c.height = size;
                     const g = c.getContext('2d');
-                    const k = Math.min(size / img.width, size / img.height);
-                    const w = img.width * k, h = img.height * k;
-                    g.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-                    return c.toDataURL('image/png').split(',')[1] || '';
+
+                    // SVG 常常只给 viewBox、没有 width/height，此时 img.width 为 0——
+                    // 直接按 128×128 铺满，别拿 0 去做比例计算（会算出 Infinity，画布一片空白）。
+                    const iw = img.width || 0, ih = img.height || 0;
+                    if (iw > 0 && ih > 0) {
+                      const k = Math.min(size / iw, size / ih);
+                      const w = iw * k, h = ih * k;
+                      g.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+                    } else {
+                      g.drawImage(img, 0, 0, size, size);
+                    }
+
+                    // 全透明等于没画出来：这种情况交给宿主侧光栅化，而不是存一张空白图
+                    const pixels = g.getImageData(0, 0, size, size).data;
+                    let painted = false;
+                    for (let i = 3; i < pixels.length; i += 4) { if (pixels[i] !== 0) { painted = true; break; } }
+                    if (!painted) return { status: 'canvas-blank', raw: b64(buf), svg: true };
+
+                    const png = c.toDataURL('image/png').split(',')[1] || '';
+                    return png ? { status: String(res.status), png: png }
+                               : { status: 'canvas-empty', raw: b64(buf), svg: true };
                   } finally {
                     URL.revokeObjectURL(objectUrl);
                   }
-                } catch (e) { return ''; }
+                } catch (e) {
+                  return { status: 'ERR:' + (e && e.name ? e.name : 'unknown') };
+                }
+              };
+
+              // 诊断：每一步都带状态回来，失败时能说清是 403、被 CSP 挡、还是解码失败
+              const probe = async (u) => {
+                try {
+                  if (!u) return 'empty-url';
+                  const res = await fetch(u, { credentials: 'include' });
+                  return String(res.status);
+                } catch (e) { return 'ERR:' + (e && e.name ? e.name : 'unknown'); }
               };
 
               const first = await grab(%ICON%);
-              if (first) return JSON.stringify({ u: %ICON%, d: first });
+              if (first && first.png) return JSON.stringify({ u: %ICON%, d: first.png, why: 'ok' });
+              if (first && first.raw) return JSON.stringify({ u: %ICON%, d: '', raw: first.raw, svg: true, why: 'canvas-failed' });
+
               const root = location.origin + '/favicon.ico';
               const second = await grab(root);
-              return JSON.stringify({ u: second ? root : '', d: second });
+              if (second && second.png) return JSON.stringify({ u: root, d: second.png, why: 'ok-root' });
+
+              return JSON.stringify({
+                u: '', d: '', why: 'none',
+                declared: %ICON%,
+                declaredStatus: (first && first.status) || await probe(%ICON%),
+                rootStatus: (second && second.status) || await probe(root)
+              });
             })()
             """;
 
         var script = template.Replace("%ICON%", JsonSerializer.Serialize(iconUrl));
-        var encoded = await EvaluateAsync(wsUrl, script, TimeSpan.FromSeconds(6), ct).ConfigureAwait(false);
+        var encoded = await EvaluateAsync(wsUrl, script, TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
         return encoded ?? string.Empty;
     }
 
@@ -395,7 +432,35 @@ internal sealed class HumanVerificationBrowser
             using var doc = JsonDocument.Parse(payload);
             var url = doc.RootElement.GetProperty("u").GetString() ?? string.Empty;
             var data = doc.RootElement.GetProperty("d").GetString() ?? string.Empty;
-            if (url.Length == 0 || data.Length == 0) return null;
+
+            // 页面内 canvas 画不出来时，原始 SVG 字节走宿主光栅化（两条路任意一条通就出图标）
+            if (data.Length == 0 && url.Length > 0
+                && doc.RootElement.TryGetProperty("raw", out var rawNode)
+                && rawNode.GetString() is { Length: > 0 } raw)
+            {
+                var svgBytes = Convert.FromBase64String(raw);
+                if (await FaviconCache.StoreBytesAsync(url, svgBytes, ct).ConfigureAwait(false))
+                {
+                    LpLog.Info($"icon captured via host rasterizer ({svgBytes.Length} bytes): {target.Host}",
+                        category: "links.metadata");
+                    return url;
+                }
+                LpLog.Warn($"host rasterizer could not turn the icon into a bitmap ({svgBytes.Length} bytes): {target.Host}",
+                    null, category: "links.metadata");
+            }
+
+            if (url.Length == 0 || data.Length == 0)
+            {
+                var why = doc.RootElement.TryGetProperty("why", out var w) ? w.GetString() : "?";
+                var declared = doc.RootElement.TryGetProperty("declared", out var dc) ? dc.GetString() : "?";
+                var s1 = doc.RootElement.TryGetProperty("declaredStatus", out var a) ? a.GetString() : "?";
+                var s2 = doc.RootElement.TryGetProperty("rootStatus", out var b) ? b.GetString() : "?";
+                LpLog.Warn(
+                    $"icon fetch inside the page returned nothing ({why}) at {target.Host}: "
+                    + $"declared={declared} [{s1}], root [/favicon.ico] [{s2}]",
+                    null, category: "links.metadata");
+                return null;
+            }
 
             var bytes = Convert.FromBase64String(data);
             if (!await FaviconCache.StoreBytesAsync(url, bytes, ct).ConfigureAwait(false))
