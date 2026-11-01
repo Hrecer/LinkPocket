@@ -45,14 +45,36 @@ internal static class MetadataFetcher
         {
             return await FetchCoreAsync(url, ct, allowBrowserRender).ConfigureAwait(false);
         }
+        catch (TransportStatusException refused) when (allowBrowserRender)
+        {
+            // 站点**明确拒绝了这次请求**（拿到了响应，只是状态码不是 2xx）。这类拒绝常常只是"它在挑客户端"，
+            // 真页面要靠浏览器跑一遍才给——所以先把最后一档交给浏览器内核。
+            var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
+            if (recovered is not null) return recovered;
+
+            // 浏览器也进不去：如果这个状态码本身就在拒绝访问（401/403/5xx…），就不要给用户一句
+            // "解析失败（详情见日志）"——那既没说清原因，也像是我们坏了。如实说"站点要求浏览器验证"，
+            // 并让这一条**不阻断保存**（编辑器把它显示成提示行）。
+            if (IsAccessRefusal(refused.StatusCode))
+            {
+                LpLog.Info($"metadata blocked by the site [{refused.StatusCode}], browser render did not pass either",
+                    category: "links.metadata");
+                return BlockedMetadata(new Uri(url));
+            }
+
+            throw ToEngineException(refused);
+        }
         catch (EngineException ex) when (allowBrowserRender && IsTransportRefusal(ex))
         {
-            // 传输层被拒（非 2xx / 连接被断）时**不能就此报错**：有一类站点对任何无界面客户端都回 403，
-            // 真页面靠"首次响应下发的 cookie + 页内脚本自行重载"才给出——浏览器拿得到，我们拿不到。
-            // 所以先把最后一档交给浏览器内核，渲染也拿不到才按原口径报错。
+            // 连接层面的失败（DNS / 超时 / TLS / 跳转超限）：浏览器也许能过，先试一次；
+            // 仍然不行就**如实报错**——那不是"站点不让拿"，而是真的连不上。
             var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
             if (recovered is not null) return recovered;
             throw;
+        }
+        catch (TransportStatusException refused)
+        {
+            throw ToEngineException(refused);   // 写路径（不启渲染）：维持既有口径
         }
         catch (EngineException)
         {
@@ -74,6 +96,21 @@ internal static class MetadataFetcher
     /// </summary>
     private static bool IsTransportRefusal(EngineException ex)
         => ex.Error.Code == EngineErrors.NetworkError;
+
+    /// <summary>这个状态码是不是"拒绝为你服务"（而不是"没有这个页面"）：前者可以降级成提示，后者要如实报错。</summary>
+    private static bool IsAccessRefusal(int statusCode)
+        => statusCode is 401 or 403 or 405 or 406 or 451 || statusCode >= 500;
+
+    /// <summary>把状态码拒绝还原成引擎错误（对外口径不变：仍是 LP.ENG.002）。</summary>
+    private static EngineException ToEngineException(TransportStatusException refused)
+        => new(EngineErrors.Of(EngineErrors.NetworkError, refused.Message, retryable: true));
+
+    /// <summary>
+    /// "站点拒绝、浏览器也没过"时的结果：标题/描述皆空 + 拦截标记（编辑器据此显示提示行），
+    /// 图标按站点根回落——与"页面没有 link 标签"同一口径。
+    /// </summary>
+    private static PageMetadata BlockedMetadata(Uri target)
+        => RegexMetadataParser.Instance.Parse(string.Empty, target) with { BlockedByVerification = true };
 
     private static async Task<PageMetadata> FetchCoreAsync(string url, CancellationToken ct, bool allowBrowserRender)
     {

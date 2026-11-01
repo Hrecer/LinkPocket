@@ -43,6 +43,9 @@ internal sealed class PageRenderer : IDisposable
     /// <summary>渲染预算（在 <c>MetadataFetcher</c> 的 15 s 外层预算之内，留出销毁时间）。</summary>
     private static readonly TimeSpan RenderBudget = TimeSpan.FromSeconds(12);
 
+    /// <summary>主框架被明确拒绝后还等多久就收手：会自举的拦截页通常 1–2 s 内就发起下一次导航。</summary>
+    private static readonly TimeSpan GiveUpAfterRefusal = TimeSpan.FromSeconds(4);
+
     /// <summary>
     /// 挑战页自带的标题（还没放行时读到的就是它，不能当成页面标题）。
     /// <para>
@@ -129,9 +132,14 @@ internal sealed class PageRenderer : IDisposable
             // 有的站点先用一条错误/自举响应对付脚本客户端，再靠页内脚本自行重载给出正文——
             // 那页也是有标题的，只按"标题非空"就收工，拿回来的是"I'm a teapot"那类壳的标题。
             var navigationOk = false;
+            DateTime? refusedAt = null;   // 主框架被明确拒绝（>=400）的时刻：用来提前收手，别干等满预算
+            core.NavigationStarting += (_, _) => refusedAt = null;
             core.NavigationCompleted += (_, e) =>
-                navigationOk = e.IsSuccess
-                               && (e.HttpStatusCode == 0 || (e.HttpStatusCode >= 200 && e.HttpStatusCode < 400));
+            {
+                var status = e.HttpStatusCode;
+                navigationOk = e.IsSuccess && (status == 0 || (status >= 200 && status < 400));
+                if (!navigationOk && status >= 400) refusedAt = DateTime.UtcNow;
+            };
 
             core.Navigate(url);
 
@@ -140,9 +148,18 @@ internal sealed class PageRenderer : IDisposable
             {
                 await Task.Delay(PollInterval, ct);
                 var reading = await ReadAsync(core).ConfigureAwait(true);
+                if (!navigationOk)
+                {
+                    // 首屏不是真页面：等它自己重载。但"明确被拒绝且几秒内都没有新导航"就别等满预算了——
+                    // 那类拦截页不会自举（实测：等满 12 s 标题也没变），用户的等待纯属干耗。
+                    // 判据放在标题检查**之前**：被拒绝的页面未必有可读 DOM（脚本取不到标题），
+                    // 那种情况也必须能收手，否则一样干等到超时。
+                    if (refusedAt is { } since && DateTime.UtcNow - since > GiveUpAfterRefusal) return null;
+                    continue;
+                }
+
                 if (reading is null || string.IsNullOrWhiteSpace(reading.Title)) continue;
                 if (IsChallengeTitle(reading.Title)) continue;   // 还没放行：继续等它重载
-                if (!navigationOk) continue;                     // 首屏不是真页面：等它自己重载
                 return reading;
             }
 

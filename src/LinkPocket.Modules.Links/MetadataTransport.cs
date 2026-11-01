@@ -25,6 +25,20 @@ namespace LinkPocket.Modules.Links;
 /// 正文有上限（只解析 &lt;head&gt; 元数据，2 MB 足够）：挡住"服务器把大文件或无限流当页面返回"。
 /// </para>
 /// </remarks>
+/// <summary>
+/// 传输层"拿到了响应、但状态码不是 2xx"：与"连不上"分开表达。
+/// 前者可能是站点在挑客户端（拒绝自动化访问），后者才是真的网络故障——
+/// 调用方对两者的处置完全不同（前者可以降级成"站点要求验证"，后者必须如实报错）。
+/// </summary>
+internal sealed class TransportStatusException : Exception
+{
+    public TransportStatusException(int statusCode, Uri target)
+        : base($"page metadata fetch failed [{statusCode}]: {target}") => StatusCode = statusCode;
+
+    /// <summary>HTTP 状态码。</summary>
+    public int StatusCode { get; }
+}
+
 internal static class MetadataTransport
 {
     /// <summary>正文上限（字节）。</summary>
@@ -169,10 +183,9 @@ internal static class MetadataTransport
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new EngineException(EngineErrors.Of(
-                    EngineErrors.NetworkError,
-                    $"page metadata fetch failed [{(int)response.StatusCode}]: {current}",
-                    retryable: true));
+                // 抛"拿到了响应但状态码不行"这一支：调用方要能区分"站点拒绝了"（有救的说法）
+                // 与"根本连不上"（DNS/超时/TLS，如实报错），别让两者都退化成一个 LP.ENG.002。
+                throw new TransportStatusException((int)response.StatusCode, current);
             }
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxHtmlBytes)
