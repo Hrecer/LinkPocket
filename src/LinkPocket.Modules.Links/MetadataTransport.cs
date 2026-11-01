@@ -216,6 +216,18 @@ internal static class MetadataTransport
             EngineErrors.NetworkError, $"too many redirects (>{MaxRedirects}): {url}", retryable: false));
     }
 
+    /// <summary>响应头里有没有 Cloudflare 的"这是挑战页"标记（最干净、不必读正文）。</summary>
+    private static bool HasChallengeHeader(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("cf-mitigated", out var values)) return false;
+
+        foreach (var value in values)
+            if (value.Contains("challenge", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+        return false;
+    }
+
     /// <summary>
     /// 这次非 2xx 响应背后是不是"厂商在等人点一下"（Cloudflare Turnstile 一族）。
     /// <para>
@@ -225,12 +237,7 @@ internal static class MetadataTransport
     /// </summary>
     private static async Task<bool> LooksLikeHumanChallengeAsync(HttpResponseMessage response)
     {
-        if (response.Headers.TryGetValues("cf-mitigated", out var mitigated))
-        {
-            foreach (var value in mitigated)
-                if (value.Contains("challenge", StringComparison.OrdinalIgnoreCase))
-                    return true;
-        }
+        if (HasChallengeHeader(response)) return true;
 
         try
         {
@@ -262,6 +269,11 @@ internal static class MetadataTransport
     {
         var response = await Client.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!IsBotWall(response.StatusCode))
+            return response;
+
+        // Cloudflare 的托管挑战：换 TLS 指纹一样过不去（挑战要跑页内 JS，甚至要人点），
+        // 再发一次只是白等一个来回；原样交给上层，直接走"真实浏览器"那一档。
+        if (HasChallengeHeader(response))
             return response;
 
         var fallback = ImpersonatingClient.Value;

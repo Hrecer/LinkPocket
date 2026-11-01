@@ -23,7 +23,7 @@ namespace LinkPocket.Services;
 /// </para>
 /// <para>
 /// <b>隐私边界（三条硬约束）</b>：
-/// ① 用<b>专用 profile</b>（<c>%LOCALAPPDATA%\LinkPocket\verify-profile</c>），与用户日常浏览器完全隔离；
+/// ① 用<b>临时 profile</b>（<c>%TEMP%\LinkPocket-verify-&lt;guid&gt;</c>，验证完立即删除），与用户日常浏览器完全隔离、也不在本机留下任何站点凭证；旧版本留下的固定目录 <c>%LOCALAPPDATA%\LinkPocket\verify-profile</c> 会在首次使用时清掉；
 /// ② <b>不读取</b>用户浏览器的 cookie、历史、密码、扩展——我们启动的是新实例，它没有任何既有登录态；
 /// ③ 窗口以 <c>--app</c> 打开：无地址栏、无标签页、无扩展按钮，只有站点自己的页面 + 那个勾选框；
 /// 用户点出来的放行凭证只落在这个专用 profile 里，随"清除数据"一并删除，不外发、不经第三方。
@@ -43,6 +43,7 @@ internal sealed class HumanVerificationBrowser
 
     /// <summary>调试协议就绪的最长等待：浏览器冷启动一般 1–2 s，给足 20 s。</summary>
     private static readonly TimeSpan StartupTimeout = TimeSpan.FromSeconds(20);
+
 
     /// <summary>
     /// 浏览器启动参数：<c>--app</c> 让它成为一个"只有页面"的独立窗口（无地址栏 / 无标签页）；
@@ -74,11 +75,12 @@ internal sealed class HumanVerificationBrowser
         }
 
         var port = FreePort();
-        var profile = ProfileDirectory;
-        Directory.CreateDirectory(profile);
+        CleanupPreviousProfiles();
+        var profile = CreateEphemeralProfile();
 
         using var process = Start(exe, profile, port, target);
         if (process is null) return null;
+
         Retitle(process);
 
         try
@@ -92,7 +94,7 @@ internal sealed class HumanVerificationBrowser
                 var page = await FindPageAsync(port, ct).ConfigureAwait(false);
                 if (page is not null)
                 {
-                    // 一次往返同时拿标题、描述、地址与 readyState：判"到没到真站点"只需要这一趟
+                    // 一次往返同时拿标题、描述、图标、地址与 readyState
                     var reading = await ReadPageAsync(page.WebSocketDebuggerUrl, ct).ConfigureAwait(false);
                     if (IsRealPage(reading, target))
                     {
@@ -105,7 +107,7 @@ internal sealed class HumanVerificationBrowser
                     }
                 }
 
-                // 站点会在标题变化时改写窗口标题，这里持续压回我们自己的名字（窗口最多活几分钟，代价可忽略）
+                // 站点会在标题变化时改写窗口标题，这里持续压回我们自己的名字
                 Retitle(process);
                 await Task.Delay(PollInterval, ct).ConfigureAwait(false);
             }
@@ -123,9 +125,10 @@ internal sealed class HumanVerificationBrowser
         }
         finally
         {
-            // 点完就关：不留一个后台浏览器，也不让用户自己收拾
+            // 点完就关 + 删掉临时 profile：不留后台浏览器，也不在磁盘上留站点凭证
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
             catch (Exception ex) { LpLog.Debug($"closing verification browser failed: {ex.GetType().Name}", "links.metadata"); }
+            DeleteProfile(profile);
         }
     }
 
@@ -347,6 +350,7 @@ internal sealed class HumanVerificationBrowser
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetWindowText(IntPtr hWnd, string text);
 
+
     /// <summary>
     /// 把窗口标题压成我们自己的名字。
     /// <para>
@@ -400,7 +404,82 @@ internal sealed class HumanVerificationBrowser
         return port;
     }
 
-    /// <summary>专用 profile：与用户日常浏览器隔离；放行凭证留在这里，下次少点一次。</summary>
-    private static string ProfileDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LinkPocket", "verify-profile");
+    /// <summary>
+    /// 一次性 profile 的落点（应用自己的本地目录，不往系统临时目录堆）。
+    /// 取系统临时目录要走引擎的 <c>TempArea</c> 唯一入口，而 App 不直接引引擎——这里用自家目录更直白，
+    /// 且"用完即删"的语义与临时目录一致。
+    /// </summary>
+    private static string ProfileRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LinkPocket");
+
+    private static bool _cleaned;
+
+    /// <summary>
+    /// 清掉历史残留：① 上次进程崩溃留下的临时 profile（正常路径会自己删）；
+    /// ② 旧版本用的固定目录 <c>%LOCALAPPDATA%\LinkPocket\verify-profile</c>——那一版会把站点凭证
+    /// 长期留在本机，与现在的隐私口径不符，发现就删。只做一次。
+    /// </summary>
+    private static void CleanupPreviousProfiles()
+    {
+        if (_cleaned) return;
+        _cleaned = true;
+
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(ProfileRoot, "verify-*"))
+                TryDelete(dir);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Debug($"scanning stale verification profiles failed: {ex.GetType().Name}", "links.metadata");
+        }
+
+        TryDelete(Path.Combine(ProfileRoot, "verify-profile"));
+    }
+
+    private static void TryDelete(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Debug($"deleting a stale verification profile failed: {ex.GetType().Name}", "links.metadata");
+        }
+    }
+
+    /// <summary>
+    /// 每次验证一个**一次性 profile**：验证完就删，磁盘上不留站点凭证。
+    /// <para>
+    /// 这取代了原先"固定目录复用凭证"的做法——固定目录会在本机长期保存站点的放行 cookie，
+    /// 与"不留痕迹"的隐私口径冲突。代价说清楚：**没有可复用的凭证，每个站点每次都要重新过一遍挑战**，
+    /// 站点要求人点时每次都得点一次。
+    /// </para>
+    /// </summary>
+    private static string CreateEphemeralProfile()
+    {
+        var dir = Path.Combine(ProfileRoot, "verify-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>删掉临时 profile（浏览器刚退出时文件可能还被占用，重试几次）。</summary>
+    private static void DeleteProfile(string directory)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+                return;
+            }
+            catch (Exception ex)
+            {
+                LpLog.Debug($"deleting verification profile failed (attempt {attempt + 1}): {ex.GetType().Name}",
+                    "links.metadata");
+                Thread.Sleep(200);
+            }
+        }
+    }
 }
