@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using LinkPocket.Contracts;
 
 namespace LinkPocket.Kernel;
 
@@ -66,7 +67,7 @@ public sealed class RegexMetadataParser : IMetadataParser
     {
         var baseUrl = $"{pageUri.Scheme}://{pageUri.Host}";
 
-        var faviconPath = FindIconHref(html);
+        var faviconPath = FindIconHref(html, pageUri);
         if (!string.IsNullOrWhiteSpace(faviconPath))
         {
             // 相对/根路径按页面 URL 解析（HTML 规范）：子目录页面的相对 favicon 落在该目录下，而非站点根
@@ -108,26 +109,52 @@ public sealed class RegexMetadataParser : IMetadataParser
     /// 判据：rel 含 icon 且不是 apple-touch-icon；优先标准形态（<c>rel=icon</c> / <c>rel="shortcut icon"</c>），
     /// 其余含 icon 的写法（<c>mask-icon</c> / <c>fluid-icon</c>）仅在没有标准形态时兜底。
     /// </remarks>
-    private static string? FindIconHref(string html)
+    private static string? FindIconHref(string html, Uri pageUri)
     {
-        string? fallback = null;
+        var standard = new List<FaviconCandidate>();
+        var loose = new List<FaviconCandidate>();
+
         foreach (Match link in LinkTagPattern.Matches(html))
         {
             var tag = link.Value;
             var rel = AttributeValue(tag, "rel");
             if (string.IsNullOrEmpty(rel) || !rel.Contains("icon", StringComparison.OrdinalIgnoreCase)) continue;
+
+            // 触屏图标（apple-touch-icon）不是标签页图标，也不参与这里的选择（既有约定，见 MetadataParseTests）
             if (rel.Contains("apple-touch-icon", StringComparison.OrdinalIgnoreCase)) continue;
 
             var href = AttributeValue(tag, "href");
             if (string.IsNullOrWhiteSpace(href)) continue;
 
+            var candidate = new FaviconCandidate(
+                Resolve(href, pageUri),
+                AttributeValue(tag, "type"),
+                AttributeValue(tag, "sizes"));
+
+            // rel=icon / rel="shortcut icon" 是标准形态；mask-icon、apple-touch-icon 之类只在没有标准形态时兜底
             var tokens = rel.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (Array.Exists(tokens, t => t.Equals("icon", StringComparison.OrdinalIgnoreCase)))
-                return href;          // rel=icon / rel="shortcut icon"：最标准，命中即用
-            fallback ??= href;        // mask-icon / fluid-icon 之类：仅作兜底
+                standard.Add(candidate);
+            else
+                loose.Add(candidate);
         }
-        return fallback;
+
+        // 标准形态里按浏览器口径排序（标签页尺寸的位图优先于矢量占位图），同分保持文档顺序
+        var ranked = FaviconCandidatePicker.Rank(standard);
+        if (ranked.Count > 0) return ranked[0];
+
+        var fallback = FaviconCandidatePicker.Rank(loose);
+        return fallback.Count > 0 ? fallback[0] : null;
     }
+
+    /// <summary>把声明里的地址解析成绝对地址（HTML 规范：相对地址按页面 URL 解析）。</summary>
+    private static string Resolve(string href, Uri pageUri) => href switch
+    {
+        _ when href.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || href.StartsWith("https://", StringComparison.OrdinalIgnoreCase) => href,
+        _ when href.StartsWith("//") => $"https:{href}",
+        _ => new Uri(pageUri, href).ToString(),
+    };
 
     /// <summary>读标签属性值：双引号 / 单引号 / **裸值**（HTML5 无引号）三种都认；与属性顺序无关。</summary>
     private static string? AttributeValue(string tag, string name)

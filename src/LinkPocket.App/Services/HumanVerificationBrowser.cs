@@ -245,18 +245,24 @@ internal sealed class HumanVerificationBrowser
         const string script = """
             (() => {
               const out = [];
-              const links = document.querySelectorAll('link[rel~="icon"],link[rel="apple-touch-icon"]');
+              const links = document.querySelectorAll('link[rel~="icon"]');   // 触屏图标不是标签页图标
               for (const l of links) {
                 const raw = (l.getAttribute('href') || '').trim();
                 if (!raw || raw.startsWith('data:')) continue;
                 // 拼不出绝对地址就跳过这一条声明：候选列表少一条不影响别的，也不该让整段失败
-                try { out.push(new URL(raw, location.href).href); } catch (e) { /* 跳过这一条 */ }
+                try {
+                  out.push({
+                    h: new URL(raw, location.href).href,
+                    t: l.getAttribute('type') || '',
+                    s: l.getAttribute('sizes') || ''
+                  });
+                } catch (e) { /* 跳过这一条 */ }
               }
               return JSON.stringify(out);
             })()
             """;
 
-        var candidates = new List<string>();
+        var declared = new List<FaviconCandidate>();
         var encoded = await session.EvaluateAsync(script, TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(encoded))
         {
@@ -265,15 +271,19 @@ internal sealed class HumanVerificationBrowser
             {
                 foreach (var item in doc.RootElement.EnumerateArray())
                 {
-                    var href = item.GetString();
-                    if (href is not null && href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                        candidates.Add(href);
+                    var href = item.GetProperty("h").GetString();
+                    if (href is null || !href.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    declared.Add(new FaviconCandidate(
+                        href,
+                        item.TryGetProperty("t", out var type) ? type.GetString() : null,
+                        item.TryGetProperty("s", out var sizes) ? sizes.GetString() : null));
                 }
             }
         }
 
-        candidates.Add(new Uri(target, "/favicon.ico").AbsoluteUri);
-        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        // 交给统一口径排序（不是"取第一个声明"）：见 FaviconCandidatePicker 的注释
+        return FaviconCandidatePicker.Rank(declared, target.AbsoluteUri).ToList();
     }
 
     /// <summary>拿到的字节像不像一张图（SVG 源码或常见位图文件头）——像才有必要交给落盘那一步。</summary>

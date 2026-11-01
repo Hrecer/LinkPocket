@@ -111,6 +111,12 @@ internal sealed class SvgIconRasterizer : IDisposable
                 "document.documentElement.style.margin='0';document.documentElement.style.overflow='hidden';")
                 .ConfigureAwait(true);
 
+            // **按固有尺寸适配缩放**：SVG 文档被直接打开时按它自己的 width/height 排版
+            // （常见 256 / 512），而截图视口只有 128 —— 不缩放就只截到图形的一角
+            // （实测症状：拿回来的"图标"是一个被放大的黑圆的一段弧）。
+            if (await FitIntoViewportAsync(view, core).ConfigureAwait(true))
+                await Task.Delay(120).ConfigureAwait(true);   // 等浏览器按新缩放重绘一帧
+
             using var png = new MemoryStream();
             await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
             return png.Length > 0 ? png.ToArray() : null;
@@ -123,6 +129,58 @@ internal sealed class SvgIconRasterizer : IDisposable
         {
             try { view?.Dispose(); } catch { /* 实例已关闭时再释放会抛，与结果无关 */ }
             try { window?.Close(); } catch { /* 窗口已关闭时再关会抛，与结果无关 */ }
+        }
+    }
+
+    /// <summary>
+    /// 把页面缩放到"整张图刚好塞进 <see cref="CanvasSize"/> 见方"的比例；已经合适就不动。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// SVG 作为文档被打开时，排版宽高取它自己的 <c>width</c>/<c>height</c>（没有就按 <c>viewBox</c>，
+    /// 再没有就是 300×150 的缺省）。而截图视口固定 <see cref="CanvasSize"/>，两者不等就会截偏：
+    /// 图比视口大 → 只截到左上角；图比视口小 → 周围一大片空白。
+    /// </para>
+    /// <para>
+    /// 用 <c>ZoomFactor</c> 而不是改窗口大小：缩放是浏览器的渲染变换，矢量图仍然按目标尺寸精确绘制，
+    /// 也不会因为窗口尺寸变化而在屏幕上闪一下。上下限都夹住 —— 太小的小图标放大到 4 倍就够，
+    /// 再大只是糊；太大的图缩到 0.02 已经远超实际。
+    /// </para>
+    /// </remarks>
+    private static async Task<bool> FitIntoViewportAsync(WebView2 view, CoreWebView2 core)
+    {
+        const string script = """
+            (() => {
+              const r = document.documentElement.getBoundingClientRect();
+              return JSON.stringify({ w: Math.round(r.width), h: Math.round(r.height) });
+            })()
+            """;
+
+        try
+        {
+            var raw = await core.ExecuteScriptAsync(script).ConfigureAwait(true);
+            if (string.IsNullOrEmpty(raw)) return false;
+
+            // ExecuteScriptAsync 把结果再 JSON 编码一次，所以先解一层拿到内层字符串
+            var json = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
+            if (string.IsNullOrEmpty(json)) return false;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var w = doc.RootElement.GetProperty("w").GetDouble();
+            var h = doc.RootElement.GetProperty("h").GetDouble();
+            if (w <= 0 || h <= 0) return false;
+
+            var zoom = Math.Clamp(Math.Min(CanvasSize / w, CanvasSize / h), 0.02, 4.0);
+            if (Math.Abs(zoom - 1.0) < 0.01) return false;
+
+            view.ZoomFactor = zoom;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // 缩放只是"截得完整"的修饰：拿不到尺寸就按原样截，总比不给图标好
+            LpLog.Debug($"svg fit-to-viewport failed: {ex.GetType().Name}", "app.favicon");
+            return false;
         }
     }
 
