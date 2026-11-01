@@ -154,19 +154,31 @@ public static class FaviconCache
     /// </summary>
     public static Func<string, CancellationToken, Task<byte[]?>>? ImpersonatedDownloader { get; set; }
 
-    /// <summary>SVG 不能直接当图标解码 → 回落站点根 <c>/favicon.ico</c>；地址非法时原样返回。
+    /// <summary>
+    /// SVG 图标光栅化钩子（**组合根装配**）：<c>url → PNG 字节</c>，失败返回 <c>null</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么需要它</b>：现代文档站/组件库站大量只声明 <c>&lt;link rel="icon" type="image/svg+xml"&gt;</c>
+    /// （WPF 的 <c>BitmapImage</c> 解不了 SVG）。以前的做法是"SVG 一律回落站点根 <c>/favicon.ico</c>"——
+    /// 可很多站点的根目录根本没有 <c>favicon.ico</c>，于是图标直接消失。
+    /// </para>
+    /// <para>
+    /// <b>实现在宿主侧</b>：只有 WPF 宿主有浏览器内核（用它把 SVG 画成 PNG）。CLI / MCP 没有渲染能力，
+    /// 钩子为 <c>null</c> 时退回旧口径（回落站点根）。
+    /// </para>
+    /// </remarks>
+    public static Func<string, CancellationToken, Task<byte[]?>>? SvgRasterizer { get; set; }
+
+    /// <summary>原样返回图标地址；地址非法时返回空串。
+    /// <para>
+    /// <b>SVG 不再降级成站点根</b>：以前"SVG 解不了 → 回落 <c>/favicon.ico</c>"，可不少站点根目录根本没有这个文件，
+    /// 结果是图标凭空消失。现在 SVG 地址原样保留，由 <see cref="SvgRasterizer"/> 在落盘前画成 PNG；
+    /// 没有渲染能力时——或光栅化失败时——再由下载那条链退回站点根。
+    /// </para>
     /// 内嵌图标（<c>data:</c>）原样返回——它没有"站点根"，回落只会拼出非法地址。</summary>
     public static string ResolveFaviconUrl(string? originalUrl)
-    {
-        if (string.IsNullOrWhiteSpace(originalUrl)) return string.Empty;
-
-        if (IsInlineData(originalUrl)) return originalUrl;
-
-        if (GetExtensionFromUrl(originalUrl).Equals(".svg", StringComparison.OrdinalIgnoreCase))
-            return BuildDefaultFaviconUrl(originalUrl);
-
-        return originalUrl;
-    }
+        => string.IsNullOrWhiteSpace(originalUrl) ? string.Empty : originalUrl;
 
     /// <summary>站点根 <c>/favicon.ico</c>；地址非法返回空串。</summary>
     public static string BuildDefaultFaviconUrl(string url)
@@ -186,7 +198,8 @@ public static class FaviconCache
     public static string GetCacheFilePath(string faviconUrl)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(faviconUrl)));
-        return Path.Combine(CacheDirectory, $"{hash}{GetExtensionFromUrl(faviconUrl)}");
+        // SVG 位子上落盘的是光栅化后的 PNG，文件扩展名跟着内容走（BitmapImage 按内容解码，但名字要对得上）
+        return Path.Combine(CacheDirectory, $"{hash}{CacheExtension(faviconUrl)}");
     }
 
     /// <summary>已缓存 → 磁盘路径；未缓存 → null。读方（UI 解码、备份搬运）用这一条。</summary>
@@ -226,7 +239,18 @@ public static class FaviconCache
             await Gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                var bytes = await TryDownloadAsync(resolvedUrl, ct).ConfigureAwait(false);
+                byte[]? bytes = null;
+
+                // SVG 图标：先让宿主把它画成 PNG（WPF 解不了 SVG）。
+                // 光栅化拿不到 → 下面按原链路回落站点根 / 聚合源，且**绝不把 SVG 原文当位图落盘**。
+                if (IsSvgUrl(resolvedUrl))
+                    bytes = SvgRasterizer is { } rasterize
+                        ? await rasterize(resolvedUrl, ct).ConfigureAwait(false)
+                        : null;
+                else
+                    bytes = await TryDownloadAsync(resolvedUrl, ct).ConfigureAwait(false);
+
+                if (bytes is { Length: > 0 } && LooksLikeSvg(bytes)) bytes = null;
 
                 if (bytes == null)
                 {
@@ -340,6 +364,22 @@ public static class FaviconCache
             LpLog.Error($"favicon download threw: {ShortUrl(url)} - {ex.Message}", ex);
             return (null, true);
         }
+    }
+
+    /// <summary>缓存文件扩展名：SVG 位子上落盘的是光栅化后的 PNG，所以按 <c>.png</c> 记名。</summary>
+    private static string CacheExtension(string url)
+        => GetExtensionFromUrl(url).Equals(".svg", StringComparison.OrdinalIgnoreCase) ? ".png" : GetExtensionFromUrl(url);
+
+    /// <summary>这个地址是不是 SVG 图标（要光栅化才能当位图用）。</summary>
+    private static bool IsSvgUrl(string url)
+        => GetExtensionFromUrl(url).Equals(".svg", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>字节看起来是不是 SVG 原文（光栅化失败时别把它当位图落盘）。</summary>
+    private static bool LooksLikeSvg(byte[] bytes)
+    {
+        var head = Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 512));
+        return head.Contains("<svg", StringComparison.OrdinalIgnoreCase)
+               || head.Contains("<!doctype svg", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetExtensionFromUrl(string url)

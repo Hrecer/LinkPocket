@@ -85,10 +85,19 @@ public sealed class AppHost : IDisposable
     /// </summary>
     private PageRenderer? _pageRenderer;
 
+    /// <summary>
+    /// SVG 图标光栅化（WebView2）：装配给 <see cref="LinkPocket.Contracts.FaviconCache.SvgRasterizer"/>。
+    /// 只在"站点只声明 SVG 图标"时才用到——WPF 解不了 SVG，没有它那些站点的图标会整个消失。
+    /// </summary>
+    private SvgIconRasterizer? _svgIcons;
+
     private void AttachPageRenderer()
     {
         _pageRenderer = new PageRenderer();
         PageRenderHook.Renderer = _pageRenderer.RenderAsync;
+
+        _svgIcons = new SvgIconRasterizer();
+        LinkPocket.Contracts.FaviconCache.SvgRasterizer = _svgIcons.RasterizeAsync;
     }
 
     /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）与渲染器。应用退出时调用。</summary>
@@ -96,6 +105,8 @@ public sealed class AppHost : IDisposable
     {
         PageRenderHook.Renderer = null;
         _pageRenderer?.Dispose();
+        LinkPocket.Contracts.FaviconCache.SvgRasterizer = null;
+        _svgIcons?.Dispose();
         ExternalChanges.Dispose();
     }
 
