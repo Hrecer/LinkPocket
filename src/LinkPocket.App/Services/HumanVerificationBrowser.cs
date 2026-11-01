@@ -104,20 +104,11 @@ internal sealed class HumanVerificationBrowser
                     {
                         LpLog.Info($"human verification passed ({reading!.Title}): {target.Host}",
                             category: "links.metadata");
-                        // 页面内取到的图标直接落进缓存：这条路径上的站点点连静态资源都拦，上层拿不到
-                        if (!string.IsNullOrWhiteSpace(reading.Icon) && !string.IsNullOrWhiteSpace(reading.IconData))
-                        {
-                            try { FaviconCache.StoreBytes(reading.Icon, Convert.FromBase64String(reading.IconData)); }
-                            catch (Exception ex)
-                            {
-                                LpLog.Debug($"storing the page icon failed: {ex.GetType().Name}", "links.metadata");
-                            }
-                        }
 
-                        return new RenderedPageMetadata(
-                            reading.Title,
-                            reading.Description,
-                            string.IsNullOrWhiteSpace(reading.Icon) ? null : reading.Icon);
+                        // 文字先定下来，图标单独取一次：它失败不该影响标题/描述，更不该拖住关窗
+                        var icon = await GrabIconAsync(page.WebSocketDebuggerUrl, reading.Icon, target, ct)
+                            .ConfigureAwait(false);
+                        return new RenderedPageMetadata(reading.Title, reading.Description, icon);
                     }
                 }
 
@@ -279,63 +270,135 @@ internal sealed class HumanVerificationBrowser
     }
 
     /// <summary>读标题与描述（与 <c>PageRenderer.ReadAsync</c> 同一段脚本，口径一致）。</summary>
-    private sealed record PageReading(
-        string Title, string Description, string Icon, string IconData, string Url, string Ready);
+    private sealed record PageReading(string Title, string Description, string Icon, string Url, string Ready);
 
+    /// <summary>
+    /// 每轮只回答"到没到真站点"：**不夹带任何网络请求**，保证轮询是毫秒级。
+    /// 之前把图标下载塞进这段脚本，导致页面早就变成真站点了、窗口却还在等那次 fetch。
+    /// </summary>
     private static async Task<PageReading?> ReadPageAsync(string wsUrl, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(wsUrl)) return null;
-
         const string script = """
-            (async () => {
+            (() => {
               const meta = s => { const e = document.querySelector(s); return e ? (e.content || '') : ''; };
-              // 图标不猜：按文档顺序取**第一个声明**的 icon（浏览器解析图标的起点就是它），
-              // 没有声明就让上层回落站点根 /favicon.ico。这里不做"挑最大 / 挑矢量"的推断——
-              // 那会把 apple-touch-icon 之类并非站点图标的东西选出来。
               let href = '';
               try {
                 const icon = document.querySelector('link[rel~="icon"]');
                 const raw = icon ? (icon.getAttribute('href') || '').trim() : '';
-                // 空 href 不能回落到"当前页面地址"——那等于把页面当图标去截
                 href = raw ? new URL(raw, location.href).href : '';
               } catch (e) { href = ''; }
-
-              // 图标在页面内取：带着这次校验换来的 cookie，拿到的就是窗口里显示的那一张。
-              // 普通 HTTP 拿不到它（这类站点连静态资源一起拦），所以只能在这里取。
-              let data = '';
-              if (href) {
-                try {
-                  const res = await fetch(href, { credentials: 'include' });
-                  if (res.ok) {
-                    const buf = new Uint8Array(await res.arrayBuffer());
-                    if (buf.length > 0 && buf.length <= 262144) {
-                      let bin = '';
-                      for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-                      data = btoa(bin);
-                    }
-                  }
-                } catch (e) { data = ''; }
-              }
-
               return JSON.stringify({
                 t: document.title || '',
                 d: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
                 i: href,
-                x: data,
                 h: location.href || '',
                 r: document.readyState || ''
               });
             })()
             """;
 
+        var encoded = await EvaluateAsync(wsUrl, script, TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(encoded)) return null;
+
+        using var inner = JsonDocument.Parse(encoded);
+        return new PageReading(
+            inner.RootElement.GetProperty("t").GetString() ?? string.Empty,
+            inner.RootElement.GetProperty("d").GetString() ?? string.Empty,
+            inner.RootElement.GetProperty("i").GetString() ?? string.Empty,
+            inner.RootElement.GetProperty("h").GetString() ?? string.Empty,
+            inner.RootElement.GetProperty("r").GetString() ?? string.Empty);
+    }
+
+    /// <summary>
+    /// 在**已通过校验的页面**里把图标取回来（base64；失败返回空串）。只在"确认到真站点"之后调一次。
+    /// <para>
+    /// 为什么必须在这里取：这类站点连图标资源也按通行凭证拦，普通 HTTP 只能拿到 403；
+    /// 而页面内 <c>fetch</c> 带着这次校验换来的 cookie，拿到的就是窗口里显示的那一张。
+    /// </para>
+    /// <para>
+    /// 声明的图标取不到时再试站点根 <c>/favicon.ico</c>（同样在页面内、同样带 cookie）。
+    /// 独立超时：图标失败只影响图标，不该拖慢或拖垮标题/描述。
+    /// </para>
+    /// </summary>
+    private static async Task<string> ReadIconAsync(string wsUrl, string iconUrl, CancellationToken ct)
+    {
+        const string template = """
+            (async () => {
+              const grab = async (u) => {
+                try {
+                  if (!u) return '';
+                  const res = await fetch(u, { credentials: 'include' });
+                  if (!res.ok) return '';
+                  const buf = new Uint8Array(await res.arrayBuffer());
+                  if (buf.length === 0 || buf.length > 262144) return '';
+                  let bin = '';
+                  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+                  return btoa(bin);
+                } catch (e) { return ''; }
+              };
+              const first = await grab(%ICON%);
+              if (first) return JSON.stringify({ u: %ICON%, d: first });
+              const root = location.origin + '/favicon.ico';
+              const second = await grab(root);
+              return JSON.stringify({ u: second ? root : '', d: second });
+            })()
+            """;
+
+        var script = template.Replace("%ICON%", JsonSerializer.Serialize(iconUrl));
+        var encoded = await EvaluateAsync(wsUrl, script, TimeSpan.FromSeconds(6), ct).ConfigureAwait(false);
+        return encoded ?? string.Empty;
+    }
+
+    /// <summary>
+    /// 取图标并落进缓存，返回可写进链接的图标地址（取不到返回 <c>null</c>）。
+    /// 页面内取到的字节就是窗口里显示的那张；缓存键用页面声明的地址（没有则站点根 /favicon.ico）。
+    /// </summary>
+    private static async Task<string?> GrabIconAsync(
+        string wsUrl, string declaredUrl, Uri target, CancellationToken ct)
+    {
+        try
+        {
+            var payload = await ReadIconAsync(wsUrl, declaredUrl, ct).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(payload)) return null;
+
+            using var doc = JsonDocument.Parse(payload);
+            var url = doc.RootElement.GetProperty("u").GetString() ?? string.Empty;
+            var data = doc.RootElement.GetProperty("d").GetString() ?? string.Empty;
+            if (url.Length == 0 || data.Length == 0) return null;
+
+            var bytes = Convert.FromBase64String(data);
+            if (!FaviconCache.StoreBytes(url, bytes))
+            {
+                LpLog.Warn($"icon bytes from the page were rejected ({bytes.Length} bytes): {target.Host}",
+                    null, category: "links.metadata");
+                return null;
+            }
+
+            LpLog.Info($"icon captured inside the verified page ({bytes.Length} bytes): {target.Host}",
+                category: "links.metadata");
+            return url;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"icon capture inside the verified page failed: {target.Host}", ex, category: "links.metadata");
+            return null;
+        }
+    }
+
+    /// <summary>发一次 Runtime.evaluate（<c>awaitPromise</c>），返回脚本结果字符串；失败一律 null。</summary>
+    private static async Task<string?> EvaluateAsync(
+        string wsUrl, string script, TimeSpan budget, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(wsUrl)) return null;
+
         var request = "{\"id\":1,\"method\":\"Runtime.evaluate\",\"params\":{\"expression\":"
                       + JsonSerializer.Serialize(script) + ",\"returnByValue\":true,\"awaitPromise\":true}}";
 
-        using var ws = new ClientWebSocket();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(2));
         try
         {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(budget);
+            using var ws = new ClientWebSocket();
             await ws.ConnectAsync(new Uri(wsUrl), timeout.Token).ConfigureAwait(false);
             await ws.SendAsync(Encoding.UTF8.GetBytes(request), WebSocketMessageType.Text, true, timeout.Token)
                 .ConfigureAwait(false);
@@ -352,22 +415,12 @@ internal sealed class HumanVerificationBrowser
                 if (!doc.RootElement.TryGetProperty("result", out var res)) return null;
                 if (!res.TryGetProperty("result", out var value)) return null;
 
-                var encoded = value.TryGetProperty("value", out var v) ? v.GetString() : null;
-                if (string.IsNullOrEmpty(encoded)) return null;
-
-                using var inner = JsonDocument.Parse(encoded);
-                return new PageReading(
-                    inner.RootElement.GetProperty("t").GetString() ?? string.Empty,
-                    inner.RootElement.GetProperty("d").GetString() ?? string.Empty,
-                    inner.RootElement.GetProperty("i").GetString() ?? string.Empty,
-                    inner.RootElement.GetProperty("x").GetString() ?? string.Empty,
-                    inner.RootElement.GetProperty("h").GetString() ?? string.Empty,
-                    inner.RootElement.GetProperty("r").GetString() ?? string.Empty);
+                return value.TryGetProperty("value", out var v) ? v.GetString() : null;
             }
         }
         catch (Exception ex)
         {
-            LpLog.Debug($"reading metadata over CDP failed: {ex.GetType().Name}", "links.metadata");
+            LpLog.Debug($"CDP evaluate failed: {ex.GetType().Name}", "links.metadata");
         }
 
         return null;
