@@ -195,17 +195,42 @@ public static class FaviconCache
     }
 
     /// <summary>
-    /// 把**已经在别处取到的**图标字节直接写进缓存（成功返回 <c>true</c>）。
+    /// 把**已经在别处取到的**图标字节写进缓存（成功返回 <c>true</c>）。
+    /// 字节是 SVG 时先交给宿主光栅化成 PNG（WPF 解不了 SVG）。
     /// <para>
     /// 用途：反爬站点把图标资源也一起拦住，普通 HTTP 拿不到，但在**已完成校验的浏览器页面**里
     /// <c>fetch(iconUrl)</c> 是通的——那边取到的是站点真正声明的那张图，比任何猜法都确定。
     /// 写入前同样过"是不是真图片"的校验，避免把错误页当图标存下来。
     /// </para>
     /// </summary>
-    public static bool StoreBytes(string faviconUrl, byte[]? bytes)
+    public static async Task<bool> StoreBytesAsync(string faviconUrl, byte[]? bytes, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(faviconUrl)) return false;
-        if (AcceptImage(bytes, faviconUrl) is not { } image) return false;
+        if (string.IsNullOrWhiteSpace(faviconUrl) || bytes is not { Length: > 0 }) return false;
+
+        var image = AcceptImage(bytes, faviconUrl);
+
+        // 页面声明的图标是 SVG（这类站点常见）：位图校验会拒掉，但 WPF 也画不了 SVG——
+        // 先落到同目录的临时 .svg，交给宿主光栅化成 PNG，再当图标存。
+        if (image is null && LooksLikeSvg(bytes) && SvgRasterizer is { } rasterize)
+        {
+            var tmp = Path.Combine(CacheDirectory, "raster-" + Guid.NewGuid().ToString("N") + ".svg");
+            try
+            {
+                Directory.CreateDirectory(CacheDirectory);
+                AtomicFile.WriteAllBytes(tmp, bytes);
+                image = AcceptImage(await rasterize(new Uri(tmp).AbsoluteUri, ct).ConfigureAwait(false), faviconUrl);
+            }
+            catch (Exception ex)
+            {
+                LpLog.Warn($"favicon svg rasterize failed: {ShortUrl(faviconUrl)} - {ex.Message}", ex);
+            }
+            finally
+            {
+                try { File.Delete(tmp); } catch { /* 临时文件删不掉不影响结果，下次覆盖 */ }
+            }
+        }
+
+        if (image is null) return false;
 
         try
         {

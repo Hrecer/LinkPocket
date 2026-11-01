@@ -367,7 +367,7 @@ internal sealed class HumanVerificationBrowser
             if (url.Length == 0 || data.Length == 0) return null;
 
             var bytes = Convert.FromBase64String(data);
-            if (!FaviconCache.StoreBytes(url, bytes))
+            if (!await FaviconCache.StoreBytesAsync(url, bytes, ct).ConfigureAwait(false))
             {
                 LpLog.Warn($"icon bytes from the page were rejected ({bytes.Length} bytes): {target.Host}",
                     null, category: "links.metadata");
