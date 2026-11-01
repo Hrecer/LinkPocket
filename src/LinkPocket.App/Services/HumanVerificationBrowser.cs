@@ -188,7 +188,10 @@ internal sealed class HumanVerificationBrowser
                 return null;
             }
 
-            LpLog.Info($"icon captured through the browser network stack ({icon.Bytes.Length} bytes): {target.Host}",
+            // 把选中的那条地址也记下来：图标"看着不对"时，第一件事就是确认取的是哪一张
+            LpLog.Info(
+                $"icon captured through the browser network stack ({icon.Bytes.Length} bytes, {ShortPath(icon.Url)}): "
+                + target.Host,
                 category: "links.metadata");
             return icon.Url;
         }
