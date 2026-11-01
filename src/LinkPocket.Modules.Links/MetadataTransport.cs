@@ -32,11 +32,21 @@ namespace LinkPocket.Modules.Links;
 /// </summary>
 internal sealed class TransportStatusException : Exception
 {
-    public TransportStatusException(int statusCode, Uri target)
-        : base($"page metadata fetch failed [{statusCode}]: {target}") => StatusCode = statusCode;
+    public TransportStatusException(int statusCode, Uri target, bool isHumanChallenge = false)
+        : base($"page metadata fetch failed [{statusCode}]: {target}")
+    {
+        StatusCode = statusCode;
+        IsHumanChallenge = isHumanChallenge;
+    }
 
     /// <summary>HTTP 状态码。</summary>
     public int StatusCode { get; }
+
+    /// <summary>
+    /// 这次拒绝是不是"厂商在等人点一下"（Cloudflare Turnstile 一族）。
+    /// <c>true</c> 才值得开窗口请用户点：静态封禁页点了也没用，开窗只会白打扰。
+    /// </summary>
+    public bool IsHumanChallenge { get; }
 }
 
 internal static class MetadataTransport
@@ -185,7 +195,9 @@ internal static class MetadataTransport
             {
                 // 抛"拿到了响应但状态码不行"这一支：调用方要能区分"站点拒绝了"（有救的说法）
                 // 与"根本连不上"（DNS/超时/TLS，如实报错），别让两者都退化成一个 LP.ENG.002。
-                throw new TransportStatusException((int)response.StatusCode, current);
+                // 顺带判一次"是不是在等人点一下"——那决定后面要不要开窗口，而不是白跑一次离屏渲染。
+                var humanChallenge = await LooksLikeHumanChallengeAsync(response).ConfigureAwait(false);
+                throw new TransportStatusException((int)response.StatusCode, current, humanChallenge);
             }
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxHtmlBytes)
@@ -202,6 +214,44 @@ internal static class MetadataTransport
 
         throw new EngineException(EngineErrors.Of(
             EngineErrors.NetworkError, $"too many redirects (>{MaxRedirects}): {url}", retryable: false));
+    }
+
+    /// <summary>
+    /// 这次非 2xx 响应背后是不是"厂商在等人点一下"（Cloudflare Turnstile 一族）。
+    /// <para>
+    /// 先看头：托管挑战会带 <c>cf-mitigated: challenge</c>，这是最干净的信号；再看正文指纹。
+    /// 两者都不中就当静态拒绝——那类页面点了也没用，不该开窗口白打扰用户。
+    /// </para>
+    /// </summary>
+    private static async Task<bool> LooksLikeHumanChallengeAsync(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("cf-mitigated", out var mitigated))
+        {
+            foreach (var value in mitigated)
+                if (value.Contains("challenge", StringComparison.OrdinalIgnoreCase))
+                    return true;
+        }
+
+        try
+        {
+            return AntiBotInterstitial.IsHumanChallenge(await ReadExcerptAsync(response.Content).ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            // 探测失败只影响"要不要开窗口"这一个判断，不改变错误本身的结论
+            LpLog.Debug($"challenge probe failed: {ex.GetType().Name}", "links.metadata");
+            return false;
+        }
+    }
+
+    /// <summary>只读一小段正文做指纹匹配（挑战页都在几万字节内，16 KB 足够，不必读满 2 MB）。</summary>
+    private static async Task<string> ReadExcerptAsync(HttpContent content)
+    {
+        const int probeBytes = 16 * 1024;
+        await using var stream = await content.ReadAsStreamAsync(CancellationToken.None).ConfigureAwait(false);
+        var buffer = new byte[probeBytes];
+        var read = await stream.ReadAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+        return Encoding.UTF8.GetString(buffer, 0, read);
     }
 
     /// <summary>

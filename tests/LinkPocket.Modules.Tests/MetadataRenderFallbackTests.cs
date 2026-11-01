@@ -43,6 +43,34 @@ public class MetadataRenderFallbackTests
         }
     }
 
+    /// <summary>
+    /// 人机验证窗口只许在"站点确实在等人点"时弹：普通网络失败、地址非法都不许弹。
+    /// 钉的是最容易被写错的一条——把"抓不到"一律当成"请用户点一下"，用户会被窗口淹掉。
+    /// </summary>
+    [Fact]
+    public async Task 普通网络失败_不弹人机验证窗口()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var calls = 0;
+        try
+        {
+            PageRenderHook.InteractiveRenderer = (_, _) =>
+            {
+                calls++;
+                return Task.FromResult<RenderedPageMetadata?>(new RenderedPageMetadata("不该出现的标题", null));
+            };
+
+            await Assert.ThrowsAsync<EngineException>(
+                () => engine.QueryAsync<MetadataDto>("links.metadata_fetch", new { url = "http://127.0.0.1:9/" }));
+
+            Assert.Equal(0, calls);
+        }
+        finally
+        {
+            PageRenderHook.InteractiveRenderer = null;
+        }
+    }
+
     [Fact]
     public async Task 非http地址_按非法地址拒绝_不走渲染兜底()
     {

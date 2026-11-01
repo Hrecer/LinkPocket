@@ -28,7 +28,7 @@
 ## 内部组件
 
 - `LinkSupport`：排序口径、日期解析、父链计数刷新（`RefreshLinkCountAsync`）。
-- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），主路径被拦（403/503，或 `Kernel.AntiBotInterstitial` 判为拦截页）时对同一地址重试一次（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；①② 都拿不到可用文字时调 `PageRenderHook.Renderer`（WPF 宿主 = `PageRenderer`，WebView2 渲染，独立 15s 预算、串行、用完即销毁），未装配即跳过；**写路径例外**：`links.create(auto_fetch_metadata=true)` 传 `allowBrowserRender: false`，只跑 ①②（写闸内不起浏览器进程）；触发时写 `links.metadata` 分类日志；同一指纹客户端经 `TryGetBytesImpersonatedAsync` 在装配时接到 favicon 下载兜底（`LinksModule.CreateHandlers` 挂 `FaviconCache.ImpersonatedDownloader`）。
+- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），主路径被拦（403/503，或 `Kernel.AntiBotInterstitial` 判为拦截页）时对同一地址重试一次（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；①② 都拿不到可用文字时调 `PageRenderHook.Renderer`（WPF 宿主 = `PageRenderer`，WebView2 渲染，独立 15s 预算、串行、用完即销毁），未装配即跳过；**写路径例外**：`links.create(auto_fetch_metadata=true)` 传 `allowBrowserRender: false`，只跑 ①②（写闸内不起浏览器进程）。**人机型挑战（Cloudflare Turnstile）另走 `PageRenderHook.InteractiveRenderer`**：开一个真实浏览器的独立小窗（专用 profile、`--app`、不置顶）请用户点一下，判据（标题真 + `readyState=complete` + 地址回到原站）成立即读标题/描述/图标并关窗；只在 `links.metadata_fetch` 上启用，批量与写路径一律不弹窗；触发时写 `links.metadata` 分类日志；同一指纹客户端经 `TryGetBytesImpersonatedAsync` 在装配时接到 favicon 下载兜底（`LinksModule.CreateHandlers` 挂 `FaviconCache.ImpersonatedDownloader`）。
 - `LinkDtos`：模块内结果 DTO（`PagedLinkResult` 等）。
 
 ## 隐藏能力（★ 不接 UI）

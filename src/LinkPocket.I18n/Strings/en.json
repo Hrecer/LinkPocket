@@ -604,6 +604,8 @@
   "nav.panel.ai": "AI service",
   "nav.panel.update": "Updates",
   "nav.panel.about": "About",
+  // Human-verification window (a separate real-browser window): keep our own caption
+  "verify.window.title": "LinkPocket - complete the human check",
   "update.panel.desc": "Check for new versions and upgrade - only the program files change; your bookmarks and settings stay untouched in the data directory.",
   "update.current.title": "Current version",
   "update.check.button": "Check for updates",

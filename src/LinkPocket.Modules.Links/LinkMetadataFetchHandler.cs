@@ -22,7 +22,9 @@ internal sealed class LinkMetadataFetchHandler : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var url = CommandArgs.RequireString(args, "url");
-        var metadata = await MetadataFetcher.FetchAsync(url, ctx.Ct);
+        // 这条命令本身就是"用户在看某个链接、按了解析"——所以允许在必须真人放行时开一个专用窗口请他点一下。
+        // 批量导入走 links.create(auto_fetch_metadata=true)，那条路径连渲染都不启用，更不会弹窗。
+        var metadata = await MetadataFetcher.FetchAsync(url, ctx.Ct, allowHumanVerification: true);
         return CommandResult.Ok(new MetadataDto
         {
             Title = metadata.Title,

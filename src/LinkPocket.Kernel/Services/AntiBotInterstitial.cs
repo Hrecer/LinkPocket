@@ -52,8 +52,36 @@ public static class AntiBotInterstitial
         "Enable JavaScript and cookies to continue",
     ];
 
+    /// <summary>
+    /// "可以让人点一下过"的挑战页指纹（Cloudflare Turnstile / 托管挑战）。
+    /// <para>
+    /// 与 <see cref="Detect"/> 的区别是<b>要不要靠人</b>：火山引擎那类靠页内脚本自证，浏览器内核跑一遍就过；
+    /// 这一族会摆一个需要**人点**的勾选框（或干脆对自动化客户端不给勾选框），只有人能放行。
+    /// 识别出来才有意义去开一个窗口请用户点——认不出就只能停在"抓不到"。
+    /// </para>
+    /// </summary>
+    private static readonly string[] HumanChallengeMarkers =
+    [
+        "cf_chl_opt",
+        "cdn-cgi/challenge-platform",
+        "challenges.cloudflare.com",
+        "__cf_chl",
+    ];
+
     private static readonly Regex TitlePattern = new(@"<title[^>]*>(.*?)</title>",
         RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+    /// <summary>这份 HTML 是不是"必须由人点一下才能放行"的厂商挑战页（目前只认 Cloudflare 一族）。</summary>
+    public static bool IsHumanChallenge(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return false;
+
+        foreach (var marker in HumanChallengeMarkers)
+            if (html.Contains(marker, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+        return false;
+    }
 
     /// <summary>这份 HTML 是否为反爬 / 人机校验的中间页。</summary>
     public static bool Detect(string? html)

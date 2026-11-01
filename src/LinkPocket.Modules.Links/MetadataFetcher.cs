@@ -29,13 +29,25 @@ internal static class MetadataFetcher
     /// </summary>
     private static readonly TimeSpan RenderTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// 人工校验的等待预算：窗口摆出来之后由用户决定什么时候点，不能按"机器等待"的 15 s 掐死。
+    /// 超时只是不再等，不影响用户重新点一次解析。
+    /// </summary>
+    private static readonly TimeSpan HumanVerificationTimeout = TimeSpan.FromSeconds(180);
+
     /// <summary>抓取并解析页面元数据；网络/解析失败抛 <see cref="EngineException"/>（NETWORK_ERROR，可重试）。</summary>
     /// <param name="allowBrowserRender">
     /// 是否允许最后一档（浏览器内核渲染）。**写路径必须传 <c>false</c>**：<c>links.create(auto_fetch_metadata=true)</c>
     /// 的抓取发生在写闸内，起一个浏览器进程最坏能把全局写闸按住 15 s —— "网络在闸外"这条口径不能靠兜底绕过去。
     /// 渲染只服务闸外的查询（<c>links.metadata_fetch</c>）。
     /// </param>
-    public static async Task<PageMetadata> FetchAsync(string url, CancellationToken ct, bool allowBrowserRender = true)
+    /// <param name="allowHumanVerification">
+    /// 是否允许"开一个专用窗口请用户点一下"（Cloudflare Turnstile 这类必须真人放行的墙）。
+    /// **只许用户主动发起的抓取传 <c>true</c>**（编辑器里点"解析"）；批量导入、后台预取一律 <c>false</c>
+    /// —— 没人看着的时候弹窗不是帮忙，是打扰。无界面宿主（CLI / MCP）没有这个钩子，传了也不会弹。
+    /// </param>
+    public static async Task<PageMetadata> FetchAsync(
+        string url, CancellationToken ct, bool allowBrowserRender = true, bool allowHumanVerification = false)
     {
         if (!MetadataTransport.IsValidUrl(url))
             throw new EngineException(EngineErrors.Of(
@@ -43,10 +55,23 @@ internal static class MetadataFetcher
 
         try
         {
-            return await FetchCoreAsync(url, ct, allowBrowserRender).ConfigureAwait(false);
+            return await FetchCoreAsync(url, ct, allowBrowserRender, allowHumanVerification).ConfigureAwait(false);
         }
         catch (TransportStatusException refused) when (allowBrowserRender)
         {
+            // 站点在等"人点一下"（Cloudflare Turnstile 一族）：离屏渲染只会停在挑战页干等到超时，
+            // 直接把窗口摆到用户面前——他点完那一下，这一页就是真页面。
+            if (refused.IsHumanChallenge && allowHumanVerification)
+            {
+                var verified = await VerifyWithUserAsync(new Uri(url), ct).ConfigureAwait(false);
+                if (verified is not null) return verified;
+
+                // 用户关掉窗口 / 超时 / 点了还是不放行：按"站点拒绝"如实说，不报错、不挡保存
+                LpLog.Info($"human verification not completed [{refused.StatusCode}]: {new Uri(url).Host}",
+                    category: "links.metadata");
+                return BlockedMetadata(new Uri(url));
+            }
+
             // 站点**明确拒绝了这次请求**（拿到了响应，只是状态码不是 2xx）。这类拒绝常常只是"它在挑客户端"，
             // 真页面要靠浏览器跑一遍才给——所以先把最后一档交给浏览器内核。
             var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
@@ -112,14 +137,18 @@ internal static class MetadataFetcher
     private static PageMetadata BlockedMetadata(Uri target)
         => RegexMetadataParser.Instance.Parse(string.Empty, target) with { BlockedByVerification = true };
 
-    private static async Task<PageMetadata> FetchCoreAsync(string url, CancellationToken ct, bool allowBrowserRender)
+    private static async Task<PageMetadata> FetchCoreAsync(
+        string url, CancellationToken ct, bool allowBrowserRender, bool allowHumanVerification)
     {
         var (html, finalUri) = await MetadataTransport.DownloadAsync(url, ct).ConfigureAwait(false);
         var interstitial = AntiBotInterstitial.Detect(html);
+        // 200 也可能是"请你点一下"的挑战页（部分站点把托管挑战当正文下发）
+        var humanChallenge = interstitial && AntiBotInterstitial.IsHumanChallenge(html);
         var metadata = RegexMetadataParser.Instance.Parse(html, finalUri);
 
         if (!HasUsableText(metadata))
-            metadata = await RecoverAsync(finalUri, metadata, interstitial, allowBrowserRender, ct)
+            metadata = await RecoverAsync(
+                    finalUri, metadata, interstitial, humanChallenge, allowBrowserRender, allowHumanVerification, ct)
                 .ConfigureAwait(false);
 
         // 走到这里还是只有空壳 ⇒ 如实带出"被验证页挡住了"这一事实（界面据此说真话）
@@ -151,14 +180,72 @@ internal static class MetadataFetcher
         if (string.IsNullOrWhiteSpace(rendered?.Title) && string.IsNullOrWhiteSpace(rendered?.Description))
             return null;
 
-        var metadata = RegexMetadataParser.Instance.Parse(string.Empty, target);
-        return metadata with
+        return FromRendered(rendered!, target);
+    }
+
+    /// <summary>
+    /// 把页面摆到用户面前，等他完成人机校验，再读标题与描述。
+    /// <para>
+    /// <b>这条路不是"兜底失败后的安慰"</b>：对 Cloudflare Turnstile 这类墙，它是**唯一**能拿到页面的方式——
+    /// 指纹客户端与离屏渲染实测都只会停在挑战页。用户点完那一下，页面就是真的了。
+    /// </para>
+    /// </summary>
+    private static async Task<PageMetadata?> VerifyWithUserAsync(Uri target, CancellationToken ct)
+    {
+        if (PageRenderHook.InteractiveRenderer is not { } renderer) return null;
+
+        try
         {
-            Title = string.IsNullOrWhiteSpace(rendered!.Title) ? null : rendered.Title.Trim(),
+            // 开窗之前照样过判据：窗口也是浏览器，不能成为访问本机 / 内网端点的旁路
+            await MetadataTransport.EnsureRenderTargetAsync(target, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"human verification refused by address policy: {target.Host}", ex, category: "links.metadata");
+            return null;
+        }
+
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(HumanVerificationTimeout);
+        try
+        {
+            var rendered = await renderer(target.AbsoluteUri, budget.Token).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(rendered?.Title) && string.IsNullOrWhiteSpace(rendered?.Description))
+                return null;
+
+            LpLog.Info($"human verification passed; metadata read from the verified page: {target.Host}",
+                category: "links.metadata");
+            return FromRendered(rendered!, target);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            LpLog.Info($"human verification timed out after {HumanVerificationTimeout.TotalSeconds:0}s: {target.Host}",
+                category: "links.metadata");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn($"human verification failed: {target.Host}", ex, category: "links.metadata");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 渲染结果 → 元数据：标题 / 描述取渲染值，图标按站点根回落（这条路径没有正文可解析，
+    /// 与"页面没有 link 标签"同一口径）。
+    /// </summary>
+    private static PageMetadata FromRendered(RenderedPageMetadata rendered, Uri target)
+        => RegexMetadataParser.Instance.Parse(string.Empty, target) with
+        {
+            Title = string.IsNullOrWhiteSpace(rendered.Title) ? null : rendered.Title.Trim(),
             Description = string.IsNullOrWhiteSpace(rendered.Description) ? null : rendered.Description.Trim(),
+            // 图标优先用页面上声明的那个（渲染后才看得到）：被墙站点的 /favicon.ico 往往一起被拦，
+            // 只按站点根回落到头来会是一张空白；页面没声明时才回落到站点根（Parse 已经给了）
+            FaviconUrl = string.IsNullOrWhiteSpace(rendered.FaviconUrl)
+                ? RegexMetadataParser.Instance.Parse(string.Empty, target).FaviconUrl
+                : rendered.FaviconUrl,
             BlockedByVerification = false,
         };
-    }
 
     /// <summary>这份结果里有没有"够用"的文字：标题或描述任一非空即可（只有 favicon 不算）。</summary>
     private static bool HasUsableText(PageMetadata metadata)
@@ -169,8 +256,16 @@ internal static class MetadataFetcher
     /// ② 仍没有可用文字 → 交宿主的浏览器内核渲染一次（JS 校验页与 CSR 空壳页都靠它）。
     /// </summary>
     private static async Task<PageMetadata> RecoverAsync(
-        Uri finalUri, PageMetadata metadata, bool interstitial, bool allowBrowserRender, CancellationToken ct)
+        Uri finalUri, PageMetadata metadata, bool interstitial, bool humanChallenge,
+        bool allowBrowserRender, bool allowHumanVerification, CancellationToken ct)
     {
+        // 人机型挑战：指纹与离屏渲染都过不去（实测），别浪费那十几秒，直接请用户点
+        if (humanChallenge && allowHumanVerification)
+        {
+            var verified = await VerifyWithUserAsync(finalUri, ct).ConfigureAwait(false);
+            return verified ?? metadata;
+        }
+
         if (interstitial
             && await MetadataTransport.TryGetImpersonatedHtmlAsync(finalUri, ct).ConfigureAwait(false) is { } retried
             && !AntiBotInterstitial.Detect(retried))

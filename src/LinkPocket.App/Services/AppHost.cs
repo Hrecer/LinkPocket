@@ -86,6 +86,12 @@ public sealed class AppHost : IDisposable
     private PageRenderer? _pageRenderer;
 
     /// <summary>
+    /// 人机验证窗口（真实浏览器独立小窗）：只服务用户主动发起的抓取。
+    /// 它不持有需要释放的资源——每次用完就把浏览器进程连同子进程关掉。
+    /// </summary>
+    private readonly HumanVerificationBrowser _humanVerify = new();
+
+    /// <summary>
     /// SVG 图标光栅化（WebView2）：装配给 <see cref="LinkPocket.Contracts.FaviconCache.SvgRasterizer"/>。
     /// 只在"站点只声明 SVG 图标"时才用到——WPF 解不了 SVG，没有它那些站点的图标会整个消失。
     /// </summary>
@@ -95,6 +101,9 @@ public sealed class AppHost : IDisposable
     {
         _pageRenderer = new PageRenderer();
         PageRenderHook.Renderer = _pageRenderer.RenderAsync;
+        // 人机型挑战（Cloudflare Turnstile）只能靠人点一下放行：本机真实浏览器的独立小窗
+        //（应用内嵌 WebView2 在这个场景里连勾选框都拿不到，实测点了也不放行）
+        PageRenderHook.InteractiveRenderer = _humanVerify.VerifyAsync;
 
         _svgIcons = new SvgIconRasterizer();
         LinkPocket.Contracts.FaviconCache.SvgRasterizer = _svgIcons.RasterizeAsync;
@@ -104,6 +113,7 @@ public sealed class AppHost : IDisposable
     public void Dispose()
     {
         PageRenderHook.Renderer = null;
+        PageRenderHook.InteractiveRenderer = null;
         _pageRenderer?.Dispose();
         LinkPocket.Contracts.FaviconCache.SvgRasterizer = null;
         _svgIcons?.Dispose();

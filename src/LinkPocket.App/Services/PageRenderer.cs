@@ -179,9 +179,13 @@ internal sealed class PageRenderer : IDisposable
         const string script = """
             (() => {
               const meta = s => { const e = document.querySelector(s); return e ? (e.content || '') : ''; };
+              const icon = document.querySelector('link[rel~="icon"]');
+              let href = '';
+              try { href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : ''; } catch (e) { href = ''; }
               return JSON.stringify({
                 t: document.title || '',
-                d: meta('meta[name="description"]') || meta('meta[property="og:description"]')
+                d: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
+                i: href
               });
             })()
             """;
@@ -195,7 +199,9 @@ internal sealed class PageRenderer : IDisposable
         using var doc = JsonDocument.Parse(payload);
         var title = doc.RootElement.GetProperty("t").GetString();
         var description = doc.RootElement.GetProperty("d").GetString();
-        return new RenderedPageMetadata(title, description);
+        var icon = doc.RootElement.TryGetProperty("i", out var i) ? i.GetString() : null;
+        return new RenderedPageMetadata(
+            title, description, string.IsNullOrWhiteSpace(icon) ? null : icon);
     }
 
     private static bool IsChallengeTitle(string title)

@@ -604,6 +604,8 @@
   "nav.panel.ai": "AI 服务",
   "nav.panel.update": "更新",
   "nav.panel.about": "关于",
+  // 人机验证窗口（真实浏览器独立小窗）：标题归我们自己，不让它冒充站点自己的窗口
+  "verify.window.title": "LinkPocket · 完成人机验证",
   "update.panel.desc": "检查新版本并升级——更新只更换程序文件，书签与设置在数据目录里原样保留。",
   "update.current.title": "当前版本",
   "update.check.button": "检查更新",

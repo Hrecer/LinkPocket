@@ -24,6 +24,43 @@ public class AntiBotInterstitialTests
         </section></main></body></html>
         """;
 
+    /// <summary>Cloudflare 托管挑战页实测样本的裁剪（真站点 403 正文里就是这些指纹）。</summary>
+    private const string CloudflareChallenge = """
+        <!DOCTYPE html><html lang="zh-CN"><head><title>请稍候…</title>
+        <script>window._cf_chl_opt={cvId:'3',cType:'managed',cRay:'a4f1c9e2',cZone:'example.com'};</script>
+        <script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=a4f1c9e2"></script>
+        </head><body><div id="challenge-stage"></div></body></html>
+        """;
+
+    [Fact]
+    public void Cloudflare挑战页识别为可人工放行()
+    {
+        Assert.True(AntiBotInterstitial.Detect(CloudflareChallenge));
+        Assert.True(AntiBotInterstitial.IsHumanChallenge(CloudflareChallenge));
+    }
+
+    [Fact]
+    public void 嵌了Cloudflare挑战iframe的页面也算()
+        => Assert.True(AntiBotInterstitial.IsHumanChallenge(
+            """<html><body><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/turnstile/f/av0"></iframe></body></html>"""));
+
+    [Fact]
+    public void 火山引擎挑战不需要人点_不算人机型()
+    {
+        // 分清楚这两种才敢决定"要不要开窗口"：开错就是白打扰用户
+        Assert.True(AntiBotInterstitial.Detect(VolcengineChallenge));
+        Assert.False(AntiBotInterstitial.IsHumanChallenge(VolcengineChallenge));
+    }
+
+    [Fact]
+    public void 普通页面不算人机型挑战()
+        => Assert.False(AntiBotInterstitial.IsHumanChallenge(
+            "<html><head><title>示例站点</title><meta name=\"description\" content=\"正常页面\"></head><body>hi</body></html>"));
+
+    [Fact]
+    public void 空正文不算人机型挑战()
+        => Assert.False(AntiBotInterstitial.IsHumanChallenge(null));
+
     [Fact]
     public void 火山引擎挑战页识别为拦截页()
         => Assert.True(AntiBotInterstitial.Detect(VolcengineChallenge));
