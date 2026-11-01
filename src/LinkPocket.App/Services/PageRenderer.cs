@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -179,20 +180,28 @@ internal sealed class PageRenderer : IDisposable
         const string script = """
             (() => {
               const meta = s => { const e = document.querySelector(s); return e ? (e.content || '') : ''; };
-              // 图标不猜：按文档顺序取**第一个声明**的 icon（浏览器解析图标的起点就是它），
-              // 没有声明就让上层回落站点根 /favicon.ico。这里不做"挑最大 / 挑矢量"的推断——
-              // 那会把 apple-touch-icon 之类并非站点图标的东西选出来。
-              let href = '';
+              // 图标候选：页面声明的全部 link[rel~="icon"]（跳过空 href 与 data: 占位），
+              // 交给统一口径排序（FaviconCandidatePicker），不在 JS 里猜"最大 / 矢量"。
+              // 触屏图标不是标签页图标；没有声明时上层回落站点根 /favicon.ico。
+              const icons = [];
               try {
-                const icon = document.querySelector('link[rel~="icon"]');
-                const raw = icon ? (icon.getAttribute('href') || '').trim() : '';
-                // 空 href 不能回落到"当前页面地址"——那等于把页面当图标去截
-                href = raw ? new URL(raw, location.href).href : '';
-              } catch (e) { href = ''; }
+                for (const link of document.querySelectorAll('link[rel~="icon"]')) {
+                  const raw = (link.getAttribute('href') || '').trim();
+                  if (!raw || raw.startsWith('data:')) continue;
+                  try {
+                    // 空 href 不能回落到"当前页面地址"——那等于把页面当图标去截
+                    icons.push({
+                      h: new URL(raw, location.href).href,
+                      t: link.getAttribute('type') || '',
+                      s: link.getAttribute('sizes') || ''
+                    });
+                  } catch (e) { /* 跳过这一条 */ }
+                }
+              } catch (e) { /* 取不到声明 -> 空候选，交由站点根兜底 */ }
               return JSON.stringify({
                 t: document.title || '',
                 d: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
-                i: href
+                icons
               });
             })()
             """;
@@ -206,9 +215,25 @@ internal sealed class PageRenderer : IDisposable
         using var doc = JsonDocument.Parse(payload);
         var title = doc.RootElement.GetProperty("t").GetString();
         var description = doc.RootElement.GetProperty("d").GetString();
-        var icon = doc.RootElement.TryGetProperty("i", out var i) ? i.GetString() : null;
-        return new RenderedPageMetadata(
-            title, description, string.IsNullOrWhiteSpace(icon) ? null : icon);
+
+        var declared = new List<FaviconCandidate>();
+        if (doc.RootElement.TryGetProperty("icons", out var icons) && icons.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in icons.EnumerateArray())
+            {
+                var href = item.TryGetProperty("h", out var h) ? h.GetString() : null;
+                if (string.IsNullOrWhiteSpace(href) || !href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                declared.Add(new FaviconCandidate(href,
+                    item.TryGetProperty("t", out var type) ? type.GetString() : null,
+                    item.TryGetProperty("s", out var sizes) ? sizes.GetString() : null));
+            }
+        }
+
+        // 与 HTTP 解析 / 人机验证浏览器同一条排序：位图标签页尺寸 > .ico > 矢量/未标尺寸 > 大图。
+        var ranked = FaviconCandidatePicker.Rank(declared);
+        var icon = ranked.Count > 0 ? ranked[0] : null;
+        return new RenderedPageMetadata(title, description, icon);
     }
 
     private static bool IsChallengeTitle(string title)
