@@ -295,7 +295,9 @@ internal sealed class HumanVerificationBrowser
               let href = '';
               try {
                 const icon = document.querySelector('link[rel~="icon"]');
-                href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : '';
+                const raw = icon ? (icon.getAttribute('href') || '').trim() : '';
+                // 空 href 不能回落到"当前页面地址"——那等于把页面当图标去截
+                href = raw ? new URL(raw, location.href).href : '';
               } catch (e) { href = ''; }
 
               // 图标在页面内取：带着这次校验换来的 cookie，拿到的就是窗口里显示的那一张。

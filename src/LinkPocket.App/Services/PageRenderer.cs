@@ -185,7 +185,9 @@ internal sealed class PageRenderer : IDisposable
               let href = '';
               try {
                 const icon = document.querySelector('link[rel~="icon"]');
-                href = icon ? new URL(icon.getAttribute('href') || '', location.href).href : '';
+                const raw = icon ? (icon.getAttribute('href') || '').trim() : '';
+                // 空 href 不能回落到"当前页面地址"——那等于把页面当图标去截
+                href = raw ? new URL(raw, location.href).href : '';
               } catch (e) { href = ''; }
               return JSON.stringify({
                 t: document.title || '',

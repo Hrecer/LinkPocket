@@ -98,7 +98,18 @@ internal sealed class SvgIconRasterizer : IDisposable
             core.NavigationCompleted += (_, e) => loaded.TrySetResult(e.IsSuccess);
             core.Navigate(url);
 
-            await loaded.Task.WaitAsync(Budget, ct).ConfigureAwait(true);
+            // 导航失败（站点把 .svg 也按反爬拦掉、回一张错误页）就不能截：
+            // 否则截到的是"错误页的整屏"，界面上就是一张带滚动条的黑色方块。
+            if (!await loaded.Task.WaitAsync(Budget, ct).ConfigureAwait(true)) return null;
+
+            // 再确认一次根元素真的是 <svg>：错误页 / 登录页的根是 <html>，一律不算图标
+            var tag = await core.ExecuteScriptAsync("document.documentElement.tagName").ConfigureAwait(true);
+            if (!tag.Contains("svg", StringComparison.OrdinalIgnoreCase)) return null;
+
+            // 视图里不留滚动条与边距：只截图形本身
+            await core.ExecuteScriptAsync(
+                "document.documentElement.style.margin='0';document.documentElement.style.overflow='hidden';")
+                .ConfigureAwait(true);
 
             using var png = new MemoryStream();
             await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
