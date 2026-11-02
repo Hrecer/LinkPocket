@@ -6,30 +6,57 @@
              mc:Ignorable="d"
              Focusable="False"
              IsHitTestVisible="False"
+             Unloaded="NoticeBar_Unloaded"
              d:DesignHeight="120" d:DesignWidth="400">
 
-    <!-- 轻量提示条（MD3 Snackbar 形状）：底部居中的圆角浮层。
-         · **为什么需要它**：状态栏文案容易被忽略（"目录突然回到根目录"却不知道原因）；
-           一次性事件（外部进程删了当前目录 / 删了正在看的书签）需要一处**看得见**的提示。
-         · **样式纪律**：颜色一律走 App.* 语义令牌（架构测试卡死界面层颜色字面量）；
-           圆角/间距是数值，不属颜色，可直接写。文字色走 App.Text.Primary。
+    <!-- 全站共用的 Toast（轻提示）栈：底部居中、多条纵向堆叠、每条自动消失。
+         · **样式来源**：照搬抹茶泡芙 desktop/src/components/ui/toast.ts 的 toast 规格——
+           底部 24px、条间距 8px、全圆角药丸、6px 主色圆点、浮层底 + 细边框 + 大阴影、
+           中等字重；停留 1.8 秒后 200ms 淡出（"快速消失"）。字号按 LinkPocket 的正文字号放大到 16。
+         · **多条**：新条目在底部、旧条目向上让位，形成从上到下的药丸列；同文重复只顺延，不堆重复条。
          · **不挡操作**：IsHitTestVisible=False（纯提示，不吃点击/拖拽）。
-         · 自动消失由宿主视图驱动（视图持计时器；VM 只暴露"显示什么、是否显示"）。 -->
-    <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-    </UserControl.Resources>
+         · 计时与淡出都由控件自持（视图可持计时器，VM 保持可单测）。 -->
 
-    <Border Background="{DynamicResource App.Surface.Dialog}"
-            CornerRadius="8"
-            Padding="16,10"
-            Margin="0,0,0,24"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Bottom"
-            Visibility="{Binding IsOpen, RelativeSource={RelativeSource AncestorType=UserControl},
-                                 Converter={StaticResource BoolToVis}}">
-        <TextBlock Text="{Binding Text, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                   Foreground="{DynamicResource App.Text.Primary}"
-                   TextWrapping="Wrap"
-                   MaxWidth="560"/>
-    </Border>
+    <ItemsControl x:Name="ItemsHost"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Bottom"
+                  Margin="32,0,32,24"
+                  Focusable="False">
+        <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+                <StackPanel Orientation="Vertical"/>
+            </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+            <DataTemplate>
+                <Border x:Name="Card"
+                        Background="{DynamicResource App.Surface.Floating}"
+                        BorderBrush="{DynamicResource App.Line.Outline}"
+                        BorderThickness="1"
+                        CornerRadius="18"
+                        Padding="14,8"
+                        Margin="0,8,0,0"
+                        MaxWidth="620"
+                        HorizontalAlignment="Center"
+                        Loaded="Card_Loaded"
+                        Unloaded="Card_Unloaded">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="18" ShadowDepth="2" Direction="270" Opacity="0.18"
+                                          Color="{DynamicResource App.Color.Shadow}"/>
+                    </Border.Effect>
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                 Fill="{DynamicResource App.Accent.Fill}"/>
+                        <TextBlock Text="{Binding Text}"
+                                   Margin="8,0,0,0"
+                                   MaxWidth="560"
+                                   FontSize="16"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource App.Text.Primary}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
 </UserControl>

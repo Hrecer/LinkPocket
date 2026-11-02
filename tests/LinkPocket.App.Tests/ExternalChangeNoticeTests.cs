@@ -8,10 +8,11 @@ namespace LinkPocket.App.Tests;
 
 /// <summary>
 /// 外部进程写入 → Shell 的**精确提示**（行为契约 §1.5.1）：变更流把精确变更交给枢纽后，
-/// Shell 要做两件可观测的事——① 观测面留痕一行；② 在**浏览页**给一次 MD3 提示条。
+/// Shell 要做两件可观测的事——① 观测面留痕一行；② 在**浏览页**触发一次共享通知栈提示。
 ///
-/// <para>为什么只在浏览页：那是书签数据的所在地，也是唯一承载提示条的页面；其它页面不打断用户
-/// （它们各自在切入时做入口对齐刷新）。默认页就是浏览页，所以用缺省构造即可覆盖。</para>
+/// <para>为什么只在浏览页触发：那是书签数据的所在地，也是提示的语义落点；其它页面不打断用户
+/// （它们各自在切入时做入口对齐刷新）。提示的视觉与计时由 Shell 的 <c>NoticeBar</c> 自持，
+/// 这里只断言 VM 在没有 UI 端口时暴露的兜底状态。</para>
 /// </summary>
 public class ExternalChangeNoticeTests
 {
@@ -31,7 +32,8 @@ public class ExternalChangeNoticeTests
             Assert.True(vm.BrowserViewModel.IsNoticeOpen);
             Assert.Equal(Loc.K("browser.status.externalChange", 2).Resolve(), vm.BrowserViewModel.NoticeText);
 
-            // 提示条数秒后由**视图**计时器收起（VM 不引 Dispatcher，保持可单测）——此处只断言 VM 暴露的那一半
+            // 提示的计时/动画由 Shell 的 NoticeBar 自持；这里的 UiPortProvider 没有 UI 端口，
+            // 只断言 VM 暴露的兜底状态（有端口时文案直接进共享通知栈）。
             hub.NotifyExternalChanges([]);
             await Task.Yield();
         }

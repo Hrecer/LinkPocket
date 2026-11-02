@@ -563,10 +563,8 @@
                      原先每页各写一份 Border+CircularProgress）。 -->
             <views:ListBusyOverlay Grid.Row="0" IsBusy="{Binding IsNavigating}"/>
 
-            <!-- 一次性提示条（MD3 形状，UIKit/NoticeBar）：用于"用户需要知道发生了什么"的事件——
-                 例如当前目录被**外部进程**（CLI / 外部 Agent）删除、正在看的书签被外部删除。
-                 不吃点击（IsHitTestVisible=False）；数秒后由 code-behind 计时器调 VM 收起。 -->
-            <views:NoticeBar Grid.Row="0" Text="{Binding NoticeText}" IsOpen="{Binding IsNoticeOpen}"/>
+            <!-- 一次性提示不在本页画：统一由 Shell 的共享通知栈（UIKit/NoticeBar）承载，
+                 全站只有这一处视觉与计时，本页不再持第二份实例。 -->
             </Grid>
             </Border>
 

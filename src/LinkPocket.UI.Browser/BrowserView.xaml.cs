@@ -22,15 +22,9 @@ public partial class BrowserView : UserControl
     /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
 
-    /// <summary>提示条可见时长（秒）。</summary>
-    private const int NoticeSeconds = 4;
-
-    /// <summary>提示条自动收起用的计时器（惰性创建）。</summary>
-    private System.Windows.Threading.DispatcherTimer? _noticeTimer;
-
     /// <summary>
-    /// 提示条自动收起：VM 侧"出现新提示"（<c>IsNoticeOpen</c> 变真）时重启计时器，到点调 <c>ClearNotice</c>。
-    /// 计时器放**视图**而非 VM —— VM 保持无 Dispatcher 依赖、可单测（同 AiView 的既有做法）。
+    /// VM 属性变化后的视图侧收尾：改名会话开合、详情/编辑器开合、选中归属等。
+    /// 提示条不在这里——它由 Shell 的共享通知栈承载（<c>IUiNoticeService</c>），本页不再持计时器。
     /// </summary>
     private void OnWiredVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -44,26 +38,7 @@ public partial class BrowserView : UserControl
         {
             // 详情页 / 编辑器页开合是插入动作：双击打开链接详情后返回，链接仍选中，但下一次单击只能重新"待命"。
             ClearRenamePair();
-            return;
         }
-        if (e.PropertyName != nameof(BrowserViewModel.IsNoticeOpen)) return;
-        if (_wiredVm?.IsNoticeOpen != true) return;
-
-        if (_noticeTimer is null)
-        {
-            _noticeTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(NoticeSeconds),
-            };
-            _noticeTimer.Tick += (_, _) =>
-            {
-                _noticeTimer.Stop();
-                _wiredVm?.ClearNotice();
-            };
-        }
-
-        _noticeTimer.Stop();   // 连续提示顺延（与 UiEventHub 的尾沿防抖同思路）
-        _noticeTimer.Start();
     }
 
     /// <summary>
@@ -152,7 +127,7 @@ public partial class BrowserView : UserControl
             ViewModel.PaneActivated += OnPaneActivated;
             ViewModel.RefreshCompleted += OnRefreshCompleted;
             ViewModel.ContextMenuRequested += OnContextMenuRequested;
-            ViewModel.PropertyChanged += OnWiredVmPropertyChanged;   // 提示条自动收起（见该处理器）
+            ViewModel.PropertyChanged += OnWiredVmPropertyChanged;   // 改名/详情开合的视图侧收尾（见该处理器）
             WireMainTableOnce();
 
             // 快捷键子系统：键位表 = ShortcutCatalog（全站唯一事实源——本页不再声明任何键位，

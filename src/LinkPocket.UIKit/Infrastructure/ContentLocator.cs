@@ -134,7 +134,7 @@ public sealed class ContentLocator : IContentLocator
             // 检查在 ShowBrowser 之前——页面不切走，编辑现场与用户输入原样保留。
             if (host.IsEditingInProgress)
             {
-                // 阻断类提示统一走 Shell 的共享 NoticeBar（MD3 Snackbar），不各页各弹。
+                // 阻断类提示统一走 Shell 的共享 NoticeBar 通知栈，不各页各弹。
                 // 有提示端口时标记 UserNotified，调用方据此不再追加自己的错误面。
                 var message = Loc.K("browser.edit.blockedByEditing");
                 _ports?.Notices?.Show(message.Resolve());

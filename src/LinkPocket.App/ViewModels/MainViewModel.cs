@@ -99,8 +99,9 @@ namespace LinkPocket.ViewModels
         /// <summary>
         /// 外部进程刚改过库（精确变更流给出"哪条命令、改了哪些实体"）。
         /// <para>留痕永远做（观测面）：现场日志能回答"库是谁改的、改了什么"。
-        /// 提示只落在**浏览页**——那是书签数据的所在地，也是唯一承载 MD3 提示条的页面；
-        /// 其它页面不打断用户（它们各自在切入时做入口对齐刷新，见 <see cref="SelectNav"/>）。</para>
+        /// 提示只在**浏览页**触发——那是书签数据的所在地，切到别的页面不打断用户
+        /// （它们各自在切入时做入口对齐刷新，见 <see cref="SelectNav"/>）；
+        /// 文案交给 Shell 的共享通知栈显示，全站同一视觉。</para>
         /// </summary>
         private void OnExternalChanges(IReadOnlyList<ExternalChange> changes)
         {

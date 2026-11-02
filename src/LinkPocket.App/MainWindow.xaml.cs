@@ -25,9 +25,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     private readonly IServiceScope _scope;
 
-    /// <summary>Shell 级提示条的自动收起计时器（所有页面共用这一枚）。</summary>
-    private System.Windows.Threading.DispatcherTimer? _shellNoticeTimer;
-
     private readonly Services.ViewRegistry _regions = new();
 
     private readonly SearchViewModel _searchVm;
@@ -122,29 +119,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     bool Services.IBrowseEditState.IsEditingEntity(string id)
         => DataContext is MainViewModel vm && vm.BrowserViewModel.IsEditingEntity(id);
 
-    // —— IUiNoticeService（全站共用的一次性提示条）——
-    void Services.IUiNoticeService.Show(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        ShellNotice.Text = text;
-        ShellNotice.IsOpen = true;
-
-        if (_shellNoticeTimer is null)
-        {
-            _shellNoticeTimer = new System.Windows.Threading.DispatcherTimer
-            {
-                Interval = TimeSpan.FromSeconds(4),
-            };
-            _shellNoticeTimer.Tick += (_, _) =>
-            {
-                _shellNoticeTimer!.Stop();
-                ShellNotice.IsOpen = false;
-            };
-        }
-
-        _shellNoticeTimer.Stop();   // 连续提示顺延（与浏览页原提示条同一口径）
-        _shellNoticeTimer.Start();
-    }
+    // —— IUiNoticeService（全站共用的 Toast 栈）——
+    // 计时与淡出由 NoticeBar 自持；这里只把文案交给唯一实例。
+    void Services.IUiNoticeService.Show(string text) => ShellNotice.Show(text);
 
     void Services.INavigationService.OpenLinkInBrowser(string linkId) => OpenLinkInBrowserPage(linkId);
 
@@ -308,7 +285,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)
     {
-        _shellNoticeTimer?.Stop();
         _scope.Dispose();
         base.OnClosed(e);
     }

@@ -579,7 +579,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         if (victims.Count == 0) return;
 
         // 编辑优先：正在就地改名 / 整页编辑的那一条不能被跨页删除（整批拒绝，避免半删）。
-        // 提示与跳转闸共用 Shell 的 NoticeBar（MD3 Snackbar），不弹确认框。
+        // 提示与跳转闸共用 Shell 的 NoticeBar 通知栈，不弹确认框。
         if (_editState != null && victims.Any(v => _editState.IsEditingEntity(v.LinkId)))
         {
             _notices?.Show(Loc.T("browser.edit.blockedByEditing"));

@@ -28,7 +28,7 @@ public sealed class UiEventHub
 
     /// <summary>
     /// **外部进程**写入的精确变更（<see cref="NotifyExternalChanges"/> 时立即触发，不等防抖）：
-    /// 订阅方据此做"到底改了什么"的精确反应（例如浏览页给一次提示条）。
+    /// 订阅方据此做"到底改了什么"的精确反应（例如给一次全站共享的通知栈提示）。
     /// ⚠️ 与 <see cref="RefreshRequested"/> 同一条纪律：处理器内不得同步回派命令（会自锁）。
     /// </summary>
     public event Action<IReadOnlyList<ExternalChange>>? ExternalChangesObserved;
