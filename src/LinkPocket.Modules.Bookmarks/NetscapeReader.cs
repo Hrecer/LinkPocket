@@ -46,9 +46,9 @@ internal static class NetscapeReader
     public static async Task<ParsedDocument> ParseFileAsync(string filePath, CancellationToken ct = default)
     {
         var preWarnings = new List<string>();
-        string html;
         try
         {
+            string html;
             try
             {
                 using var strict = new StreamReader(filePath,
@@ -63,20 +63,21 @@ internal static class NetscapeReader
                 preWarnings.Add("the file is not valid UTF-8; titles may contain garbled characters"
                                 + " (re-export the bookmarks as UTF-8 to avoid this)");
             }
+
+            ct.ThrowIfCancellationRequested();
+            var doc = Parse(html);
+            doc.Warnings.InsertRange(0, preWarnings);
+            return doc;
         }
         catch (OutOfMemoryException)
         {
+            // 读取与解析都可能吃内存（10 万条级）：失败时如实说是资源不足，绝不说成"文件不合法"。
             return new ParsedDocument
             {
                 Error = "the bookmark file does not fit in memory on this machine; close other applications and retry"
                         + " (the file was not rejected for its size)",
             };
         }
-
-        ct.ThrowIfCancellationRequested();
-        var doc = Parse(html);
-        doc.Warnings.InsertRange(0, preWarnings);
-        return doc;
     }
 
     // ============================================================
