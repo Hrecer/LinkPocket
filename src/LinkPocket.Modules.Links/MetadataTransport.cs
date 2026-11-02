@@ -204,8 +204,13 @@ internal static class MetadataTransport
                 throw new TransportStatusException((int)response.StatusCode, current, humanChallenge);
             }
 
-            // 不按 Content-Length 拒绝：大页面照样要能抓元数据，读端只取前 2MB（head 足够）。
+            // 不按 Content-Length 拒绝：大页面照样要能抓元数据；读端到 </head> 就停（找不到才读到 2MB）。
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             var html = await ReadHtmlAsync(response.Content, ct).ConfigureAwait(false);
+            sw.Stop();
+            // 快路径的可观测面：正常站点只该看到这一条（debug 级，缺省不刷屏）；兜底另有 Info 日志。
+            LpLog.Debug($"metadata http {sw.ElapsedMilliseconds} ms ({html.Length} chars): {current.Host}",
+                category: "links.metadata");
             return (html, current);
         }
 
@@ -375,7 +380,13 @@ internal static class MetadataTransport
         return null;
     }
 
-    /// <summary>读取正文（读到上限即停，超出部分不读）；按响应头里的 charset 解码，与托管实现的取字符口径一致。</summary>
+    /// <summary>
+    /// 读取正文；**读到 <c>&lt;/head&gt;</c> 就停**（元数据全在 head 里），找不到 head 才读到 2MB 上限。
+    /// 按响应头里的 charset 解码，与托管实现的取字符口径一致。
+    /// <para>为什么提前停：正文可能有几百 KB～数 MB，而标题/描述/图标声明都在 head。
+    /// 慢网络上把整页读完会让"解析"多等好几秒（实测百度首页 ~739 KB，其中 &lt;/head&gt; 在 ~289 KB）；
+    /// 停止读取后剩余正文随响应一起丢弃，不占带宽也不进解析器。</para>
+    /// </summary>
     private static async Task<string> ReadHtmlAsync(HttpContent content, CancellationToken ct)
     {
         await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -384,8 +395,10 @@ internal static class MetadataTransport
         int read;
         while ((read = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
         {
-            if (buffer.Length + read > MaxHtmlBytes) break;   // 只解析 <head>：超限就按已有内容解析
+            if (buffer.Length + read > MaxHtmlBytes) break;   // 找不到 head：按 2MB 读取预算截断
+            var writtenBefore = buffer.Length;
             buffer.Write(chunk, 0, read);
+            if (ContainsHeadEnd(buffer.GetBuffer(), writtenBefore, (int)buffer.Length)) break;
         }
 
         buffer.Position = 0;
@@ -393,6 +406,32 @@ internal static class MetadataTransport
         if (content.Headers.ContentType is { } contentType)
             bounded.Headers.ContentType = contentType;
         return await bounded.ReadAsStringAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 在本次新增的字节区间（带 6 字节重叠，防 <c>&lt;/head&gt;</c> 跨块）里找 ASCII 的 <c>&lt;/head&gt;</c>
+    /// （大小写不敏感；HTML 标记与编码无关，逐字节比较即可）。
+    /// </summary>
+    private static bool ContainsHeadEnd(byte[] buffer, long writtenBefore, int length)
+    {
+        const string headEnd = "</head>";
+        var from = Math.Max(0, (int)writtenBefore - (headEnd.Length - 1));
+        for (var i = from; i + headEnd.Length <= length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < headEnd.Length; j++)
+            {
+                var b = buffer[i + j];
+                if (b is >= (byte)'A' and <= (byte)'Z') b = (byte)(b + 32);
+                if (b != (byte)headEnd[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
     }
 
     private static bool IsRedirect(HttpStatusCode status)

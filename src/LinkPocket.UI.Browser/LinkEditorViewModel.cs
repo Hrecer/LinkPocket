@@ -82,9 +82,11 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                 OnPropertyChanged();
                 ClearError();
                 ClearNotice();
-                // URL 变更 = 目标站点变化：旧解析的 favicon 与「清除」标志一并作废（防张冠李戴写错图标）
+                // URL 变更 = 目标站点变化：旧解析的 favicon 与「清除」标志一并作废（防张冠李戴写错图标）；
+                // 同时作废还在后台加载的旧预览（它回来时 URL 已经不是那个站了）。
                 _pendingFaviconUrl = null;
                 _clearFavicon = false;
+                _faviconPreviewToken++;
                 // CanExecute 只依赖「空/非空」布尔；无错误时 ClearError 不触发通知 →
                 // 空↔非空翻转必须显式重评估命令（否则按钮可用态不刷新）
                 if (prevEmpty != nextEmpty) CommandRefresh.Request();
@@ -187,6 +189,8 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     private string? _pendingFaviconUrl;
     /// <summary>编辑模式标记「清除图标」：保存时写入空 favicon。</summary>
     private bool _clearFavicon;
+    /// <summary>后台图标预览的代际：URL 变更 / 清除 / 新一次解析都会作废旧预览，避免晚到的图覆盖新状态。</summary>
+    private int _faviconPreviewToken;
 
     private System.Windows.Media.Imaging.BitmapImage? _favicon;
     /// <summary>头部卡片展示的图标：编辑模式为已有 favicon，解析后为预览图，清除后回落默认图标。</summary>
@@ -279,8 +283,10 @@ public class LinkEditorViewModel : INotifyPropertyChanged
                         LinkTitle = meta.Title.Trim();
                     if (!string.IsNullOrWhiteSpace(meta.Description) && string.IsNullOrWhiteSpace(Description))
                         Description = meta.Description.Trim();
+                    // 图标只影响预览，不进「解析完成」的判据：地址先记下（保存照常写入），预览后台加载——
+                    // 不让一张 16 KB 图标的下载把标题/描述的落地拖住（慢站点的图标下载常常比整页元数据还久）。
                     if (!string.IsNullOrWhiteSpace(meta.FaviconUrl))
-                        await ApplyFaviconAsync(meta.FaviconUrl);
+                        ApplyFaviconInBackground(meta.FaviconUrl);
 
                     // 一键解析只补缺、不覆盖用户输入，但**补完仍空着的就不能装作成功**：
                     // 只有图标解析出来、标题描述空着且不吭声，用户会读成"解析坏了"。
@@ -332,29 +338,52 @@ public class LinkEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>把解析出的图标地址设为待写入值、复位「清除」标志，并拉取到磁盘缓存在头部卡片实时预览
-    /// （失败时回落 /favicon.ico 与聚合源）。</summary>
+    /// （失败时按站点根 /favicon.ico 回落；不走第三方聚合源）。</summary>
     private async Task ApplyFaviconAsync(string faviconUrl)
+    {
+        var token = BeginFaviconPreview(faviconUrl);
+        var preview = await LoadFaviconPreviewAsync(faviconUrl);
+        if (token == _faviconPreviewToken) Favicon = preview;
+    }
+
+    /// <summary>一键解析用：图标地址立即记下（保存要用），预览在后台加载，不阻塞标题/描述落地。</summary>
+    private void ApplyFaviconInBackground(string faviconUrl)
+    {
+        var token = BeginFaviconPreview(faviconUrl);
+        _ = ApplyFaviconPreviewAsync(faviconUrl, token);
+    }
+
+    private int BeginFaviconPreview(string faviconUrl)
     {
         _pendingFaviconUrl = faviconUrl;
         _clearFavicon = false;
-        var favUrl = faviconUrl;
-        Favicon = await Task.Run(async () =>
+        return ++_faviconPreviewToken;
+    }
+
+    private async Task ApplyFaviconPreviewAsync(string faviconUrl, int token)
+    {
+        var preview = await LoadFaviconPreviewAsync(faviconUrl);
+        if (token == _faviconPreviewToken) Favicon = preview;   // 晚到的旧图不得覆盖新状态
+    }
+
+    private static Task<System.Windows.Media.Imaging.BitmapImage?> LoadFaviconPreviewAsync(string faviconUrl)
+        => Task.Run<System.Windows.Media.Imaging.BitmapImage?>(async () =>
         {
             try
             {
-                if (!await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl))
-                    LpLog.Error($"favicon download failed (including fallback): {favUrl}", null);
-                return Services.FaviconService.LoadFromCache(favUrl);
+                if (!await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(faviconUrl))
+                    LpLog.Error($"favicon download failed (including fallback): {faviconUrl}", null);
+                return Services.FaviconService.LoadFromCache(faviconUrl);
             }
-            catch { return Services.FaviconService.LoadFromCache(favUrl); }
+            catch { return Services.FaviconService.LoadFromCache(faviconUrl); }
         });
-    }
 
     /// <summary>清除图标（仅编辑模式）：保存时写入空 favicon 覆盖原图标，头部立即回落默认图标。</summary>
     private void ClearFavicon()
     {
         _clearFavicon = true;
         _pendingFaviconUrl = null;
+        _faviconPreviewToken++;   // 作废还在后台加载的预览，别让它把"已清除"又画回来
         Favicon = null;
     }
 
@@ -373,18 +402,9 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             if (string.IsNullOrEmpty(Url)) Url = link.Url;
             if (string.IsNullOrWhiteSpace(LinkTitle)) LinkTitle = link.Title;
             if (string.IsNullOrEmpty(Description)) Description = link.Description ?? "";
-            // 已有 favicon 时头部直接展示真实图标（与详情页一致）
+            // 已有 favicon 时头部直接展示真实图标（与详情页一致；与解析共用同一条带代际的预览链路）
             if (!string.IsNullOrEmpty(link.FaviconUrl))
-            {
-                _pendingFaviconUrl = link.FaviconUrl;
-                var favUrl = link.FaviconUrl;
-                // async lambda + await，不在 Task.Run 里同步 GetAwaiter().GetResult()（与 FetchMetadataAsync 同构）
-                Favicon = await Task.Run(async () =>
-                {
-                    try { await LinkPocket.Contracts.FaviconCache.EnsureCachedAsync(favUrl); } catch { /* 图标抓取失败：界面有地球占位符，不影响编辑 */ }
-                    return Services.FaviconService.LoadFromCache(favUrl);
-                });
-            }
+                await ApplyFaviconAsync(link.FaviconUrl);
         }
         catch (Exception)
         {
