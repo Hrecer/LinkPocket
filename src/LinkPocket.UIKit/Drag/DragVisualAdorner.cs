@@ -38,7 +38,7 @@ namespace LinkPocket.Views;
 ///    指针每移动一次就换来一次**全窗重排 + 浮层（含两处投影模糊）整体重绘**，这才是掉帧的真身。
 /// 现在：指针位移 = 一次渲染级变换（不测量、不排列），内容层再套 <see cref="BitmapCache"/>
 /// （移动复用已光栅化的位图、不重跑模糊）；只有**内容变化**（换名称 / 换提示 / 多选项数）才经
-/// <see cref="RefreshLayer"/> 重排装饰层——拖拽期间每秒至多数次。
+/// <see cref="RefreshOwnLayout"/> 重排装饰器自身——拖拽期间每秒至多数次。
 /// 采样口径同属"逐帧开销"的一部分：宿主在**每个合成帧**读一次光标，而不是按 OLE 消息节奏——
 /// 后者与渲染帧不同步、消息还会被合并，会在渲染帧之间留下没有新样本的空档（阶梯感）。</para>
 ///
@@ -95,7 +95,7 @@ public sealed class DragVisualAdorner : Adorner
     public void Show(IReadOnlyList<DragItem> items, Point grabFraction)
     {
         _content.Show(items);
-        RefreshLayer();   // 内容与尺寸都变了 → 让装饰层重新量一次
+        RefreshOwnLayout();   // 内容与尺寸都变了 → 让装饰器自己重新量一次
         // 量一次才拿得到卡片的真实宽高；只量不排（排列仍由装饰层统一做），目的是算抓取锚点。
         _content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         _grabAnchor = _content.AnchorFor(grabFraction);
@@ -103,11 +103,11 @@ public sealed class DragVisualAdorner : Adorner
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。
     /// **内容没变就不重排**：拖拽悬停在同一落点上时 <c>DragOver</c> 会按鼠标移动频率反复调用，
-    /// 每次都重排装饰层纯属白烧——掉帧的主要来源就在这条逐帧路径上。</summary>
+    /// 每次都重排装饰器纯属白烧——掉帧的主要来源就在这条逐帧路径上。</summary>
     public void UpdateHint(string hintText)
     {
         if (!_content.UpdateHint(hintText)) return;
-        RefreshLayer();
+        RefreshOwnLayout();
     }
 
     /// <summary>更新位置（宿主给的坐标须相对被装饰元素）：**只改内容层的本地变换**，绝不碰装饰层——
@@ -120,12 +120,14 @@ public sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>
-    /// 内容/尺寸变化后通知装饰层重排（**只有内容变化走这里**，指针位移不走——见 <see cref="UpdatePosition"/>）。
-    /// ⚠️ 只调 <see cref="UIElement.InvalidateArrange"/> **不够**：装饰层在 <c>AdornerLayer.Update</c> 里
-    /// 清掉缓存的变换并 invalidate measure，尺寸才会真的按新值落地（渲染检查实测：不 Update 会冻在初次布局处）。</summary>
-    private void RefreshLayer()
+    /// 内容/尺寸变化后让装饰器自己重新量/排（**只有内容变化走这里**，指针位移不走——见 <see cref="UpdatePosition"/>）。
+    /// <para><b>不再调 <c>AdornerLayer.Update(AdornedElement)</c></b>：它会 invalidate 宿主（整个浏览页）的 measure——
+    /// 拖拽中每换一次落点/提示文案就全窗重排一次，表现为提示条一变、浮层就"顿一下/漂一下"。
+    /// 位移挂在内容层上，装饰器的基准变换在拖拽期间不变，尺寸变化只需要装饰器自身重新测量。</para>
+    /// </summary>
+    private void RefreshOwnLayout()
     {
-        if (Parent is AdornerLayer layer) layer.Update(AdornedElement);
+        InvalidateMeasure();
         InvalidateArrange();
     }
 
@@ -278,7 +280,7 @@ public sealed class DragVisualAdorner : Adorner
             InvalidateArrange();
         }
 
-        /// <summary>更新「移动到 X」提示；返回是否真的变了（未变 = 宿主无需重排装饰层）。</summary>
+        /// <summary>更新「移动到 X」提示；返回是否真的变了（未变 = 宿主无需重排装饰器）。</summary>
         internal bool UpdateHint(string hintText)
         {
             var show = !string.IsNullOrEmpty(hintText);
