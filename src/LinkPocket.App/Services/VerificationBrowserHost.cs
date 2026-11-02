@@ -23,12 +23,11 @@ internal static class VerificationBrowserHost
     /// <summary>
     /// 浏览器启动参数：<c>--app</c> 让它成为一个"只有页面"的独立窗口（无地址栏 / 无标签页）；
     /// 固定小窗尺寸并给一个偏上的位置，避免遮住整个桌面；<b>不加任何置顶参数</b>。
-    /// 窗口越小，验证框占页面的比例越大、越聚焦；520×390 比原 800×600 宽/高各小约 35%，
-    /// 仍容得下挑战页的居中布局（Turnstile 框本身约 300×65）。
+    /// 700×500：验证框本身是固定尺寸，这个窗口足够容纳挑战页又不会遮满桌面。
     /// </summary>
     private const string Arguments =
         "--no-first-run --no-default-browser-check --disable-sync --disable-translate --disable-extensions "
-        + "--remote-allow-origins=* --window-size=520,390 --window-position=240,120 "
+        + "--remote-allow-origins=* --window-size=700,500 --window-position=240,120 "
         // 关掉浏览器自带的浮层：账号同步提示（会露出本机微软账号）、翻译气泡、身份浮标——
         // 它们会盖住验证框，且与"只用来过验证"的用途无关
         + "--disable-features=Translate,TranslateUI,msEdgeTranslate,EdgeTranslate,MediaRouter,"
