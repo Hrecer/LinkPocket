@@ -7,7 +7,10 @@ namespace LinkPocket.Modules.Tests;
 /// <summary>
 /// favicon.cache_gc：图标缓存只按"库里的引用"清理——链接被彻底删掉后留下的孤儿图标会被删；
 /// 活链接与**回收站条目**引用着的、名字认不出是缓存文件的（用户的杂物）都不动。
+/// <para><b>串行</b>：缓存目录是进程级共享路径；<c>maintenance.reinit</c> 会整目录删除，
+/// 与其它图标用例并发时"刚建好的文件凭空消失"（实测 DirectoryNotFoundException / 保留文件被删）。</para>
 /// </summary>
+[Collection("favicon-cache")]
 public class FaviconCacheGcTests
 {
     [Fact]

@@ -11,6 +11,7 @@ namespace LinkPocket.Modules.Tests;
 /// 界面上就没有图标；而普通 HTTP 又拿不到那张图（被一起拦）。
 /// </para>
 /// </summary>
+[Collection("favicon-cache")]
 public class FaviconStoreTests
 {
     /// <summary>1×1 透明 PNG（最小合法位图）。</summary>

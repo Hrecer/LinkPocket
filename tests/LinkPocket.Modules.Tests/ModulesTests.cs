@@ -1642,6 +1642,7 @@ public class BackupRobustnessTests
     }
 }
 
+[Collection("favicon-cache")]
 public class MaintenanceModuleTests
 {
     [Fact]
@@ -1723,6 +1724,7 @@ public class MaintenanceModuleTests
     }
 }
 
+[Collection("favicon-cache")]
 public class FaviconModuleTests
 {
     [Fact]
