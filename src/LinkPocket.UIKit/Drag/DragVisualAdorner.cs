@@ -27,7 +27,8 @@ namespace LinkPocket.Views;
 /// 主栏 / 左栏树 / 跨栏拖拽天然是**同一套实现**（这正是本功能要的一致性）。</para>
 ///
 /// <para>⚠️ 必须 <c>IsHitTestVisible = false</c>：否则浮层会吃掉指针下方的 DragOver/Drop，
-/// 落点判定与光标会全部失效。位置更新走宿主在 <c>GiveFeedback</c> 里读屏幕坐标（拖拽期间 WPF 不再派发 MouseMove）。</para>
+/// 落点判定与光标会全部失效。位置更新由宿主在**每个渲染帧**读系统光标（拖拽期间 WPF 不再派发 MouseMove）；
+/// 不能只挂 OLE 的 <c>GiveFeedback</c>——它按落点处理节奏派发、与合成帧不同步，浮层会呈"停两帧、跳一格"的阶梯感。</para>
 ///
 /// <para><b>逐帧开销</b>：位移**不落在本装饰器自己的变换上**，
 /// 而是挂在内部内容层的 <see cref="UIElement.RenderTransform"/> 上。两条理由：
@@ -37,7 +38,9 @@ namespace LinkPocket.Views;
 ///    指针每移动一次就换来一次**全窗重排 + 浮层（含两处投影模糊）整体重绘**，这才是掉帧的真身。
 /// 现在：指针位移 = 一次渲染级变换（不测量、不排列），内容层再套 <see cref="BitmapCache"/>
 /// （移动复用已光栅化的位图、不重跑模糊）；只有**内容变化**（换名称 / 换提示 / 多选项数）才经
-/// <see cref="RefreshLayer"/> 重排装饰层——拖拽期间每秒至多数次。</para>
+/// <see cref="RefreshLayer"/> 重排装饰层——拖拽期间每秒至多数次。
+/// 采样口径同属"逐帧开销"的一部分：宿主在**每个合成帧**读一次光标，而不是按 OLE 消息节奏——
+/// 后者与渲染帧不同步、消息还会被合并，会在渲染帧之间留下没有新样本的空档（阶梯感）。</para>
 ///
 /// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站
 /// 两页共用同一份浮层实现（public——页面程序集都要用；内部可见性后门是架构红线，不开）。</para>
@@ -108,7 +111,7 @@ public sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>更新位置（宿主给的坐标须相对被装饰元素）：**只改内容层的本地变换**，绝不碰装饰层——
-    /// 本方法在拖拽期间按指针移动频率（每帧）被 <c>GiveFeedback</c> 调用，见类注释的逐帧开销说明。
+    /// 本方法在拖拽期间由宿主在**每个渲染帧**调用（采样口径见类注释），只做一次渲染级变换。
     /// 指针 = 快照里的抓取点（不是快照右上角 + 固定偏移），看起来才是"捏着这一行在拖"。</summary>
     public void UpdatePosition(Point ownerPoint)
     {

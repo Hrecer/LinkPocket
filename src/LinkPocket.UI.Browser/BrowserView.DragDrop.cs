@@ -24,8 +24,8 @@ public partial class BrowserView : UserControl
     /// **取消不是失败**：收尾时据此跳过成环判定，绝不弹窗。</summary>
     private bool _dragCancelledByEscape;
 
-    /// <summary>挂出浮层并开始跟踪指针位置（<c>GiveFeedback</c> 在拖拽期间持续触发——
-    /// 拖拽时 WPF 不再派发 MouseMove，只能这样跟手）。</summary>
+    /// <summary>挂出浮层并记录抓取点（拖拽时 WPF 不再派发 MouseMove；位置由
+    /// <see cref="TrackDragPointer"/> 在渲染帧上采样）。</summary>
     /// <param name="source">抓在手里的行 / 树节点：浮层按"按下时指针在它内部的相对位置"跟随指针，
     /// 而不是固定挂在指针右下角（像真把这一行提起来）。</param>
     private void ShowDragVisual(IReadOnlyList<DragItem> items, DependencyObject source)
@@ -72,6 +72,7 @@ public partial class BrowserView : UserControl
     /// <summary>摘除浮层（拖拽结束 / 拖拽被取消）。</summary>
     private void HideDragVisual()
     {
+        StopDragPointerFrameTracking();   // 静态事件订阅绝不留到拖拽之后
         if (_dragVisual == null) return;
         RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         RemoveHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
@@ -79,9 +80,43 @@ public partial class BrowserView : UserControl
         _dragVisual = null;
     }
 
-    private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
+    /// <summary>逐帧指针采样是否已挂（真实拖拽期间为 true）。</summary>
+    private bool _dragPointerFrameTracking;
+
+    /// <summary>
+    /// 开始按**渲染帧**采样指针。浮层位移不能只靠 <c>GiveFeedback</c>：它由 OLE 拖拽循环按落点处理节奏派发，
+    /// **与合成帧不同步、鼠标消息还会被合并**——渲染帧之间没有新样本，浮层就会"停两帧、跳一格"，
+    /// 看着是一帧帧在跳而不是贴着指针走（用户实测的掉帧感就是这么来的）。
+    /// 这里挂在 <see cref="CompositionTarget.Rendering"/> 上，每个合成帧读一次**系统光标当前位置**
+    /// （<c>GetCursorPos</c> 取的是光标瞬时位置，与 WPF 是否派发 MouseMove 无关），位移正好落在同一帧里。
+    /// 只在真实拖拽（提交给 OLE 循环之前）挂；探针的静态预览仍由显式 <see cref="DragVisualAdorner.UpdatePosition"/> 驱动。
+    /// </summary>
+    private void StartDragPointerFrameTracking()
     {
-        if (_dragVisual == null || !GetCursorPos(out var screen)) return;
+        if (_dragPointerFrameTracking) return;
+        CompositionTarget.Rendering += OnDragPointerFrame;
+        _dragPointerFrameTracking = true;
+    }
+
+    /// <summary>结束逐帧采样（拖拽收尾必调）。</summary>
+    private void StopDragPointerFrameTracking()
+    {
+        if (!_dragPointerFrameTracking) return;
+        CompositionTarget.Rendering -= OnDragPointerFrame;
+        _dragPointerFrameTracking = false;
+    }
+
+    private void OnDragPointerFrame(object? sender, EventArgs e) => TrackDragPointer();
+
+    // GiveFeedback 仍保留：它是 OLE 拖拽循环内的同步回调，渲染帧被系统节流时（如窗口被遮挡）
+    // 仍能把最后一次指针位置补上。
+    private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e) => TrackDragPointer();
+
+    /// <summary>把浮层摆到**当前**指针位置（渲染帧与 GiveFeedback 共用这一条实现）。</summary>
+    private void TrackDragPointer()
+    {
+        if (_dragVisual == null || !IsLoaded) return;
+        if (!GetCursorPos(out var screen)) return;
         // 屏幕物理像素 → 本页坐标（PointFromScreen 已处理 DPI 缩放）
         _dragVisual.UpdatePosition(PointFromScreen(new Point(screen.X, screen.Y)));
     }
@@ -343,6 +378,7 @@ public partial class BrowserView : UserControl
         _dragSourcePane = sourcePane;
         _dragItems = items;
         ShowDragVisual(items, source);
+        if (_dragVisual != null) StartDragPointerFrameTracking();
         DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move | DragDropEffects.Copy);
         HideDragVisual();
