@@ -594,16 +594,49 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         IsDeleting = true;
         try
         {
+            // 引擎只有单条 links.trash：逐条执行并逐条记账。中途失败时已成功的项**确实已进回收站**，
+            // 必须继续刷新结果，否则它会留在搜索结果里，看起来像"原链接没删、回收站却有"。
+            var deleted = 0;
+            var failed = 0;
             foreach (var v in victims)
-                await _api.LinkTrashAsync(v.LinkId);
-            Selection.Clear();
+            {
+                try
+                {
+                    await _api.LinkTrashAsync(v.LinkId);
+                    deleted++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    LpLog.Error($"search delete failed for link {v.LinkId}", ex);
+                }
+            }
 
-            // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
-            if (!string.IsNullOrWhiteSpace(LastQuery))
-                await RefreshResultsAsync();
+            if (deleted > 0)
+            {
+                Selection.Clear();
+
+                // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
+                if (!string.IsNullOrWhiteSpace(LastQuery))
+                    await RefreshResultsAsync();
+            }
+
+            if (failed == 0) return;
+
+            if (deleted > 0)
+            {
+                // 部分成功：如实报"删了几条、几条失败"，失败项仍留在结果里可重试
+                _notices?.Show(Loc.T("browser.status.deletedWithFailures", deleted, failed));
+            }
+            else
+            {
+                EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
+                    Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            LpLog.Error("search delete refresh failed", ex);
             EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
                 Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
         }

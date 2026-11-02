@@ -173,12 +173,19 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsEditingInProgress => IsRenaming || IsEditorPageOpen;
 
-    /// <summary>正在编辑的实体 ID（就地改名目标 / 整页编辑器里的链接；新建链接 = null）。</summary>
-    public string? EditingEntityId => IsRenaming ? _rename.ActiveId : EditorPage?.EditingLinkId;
+    /// <summary>正在编辑的实体 ID（就地改名目标 / 整页编辑器里的链接；新建链接 = null）。
+    /// ⚠️ 只在编辑**进行中**才有值：关闭编辑器后旧 <see cref="EditorPage"/> 可能还保留着对象，
+    /// 不能再从它读取 ID——否则取消编辑后跨页删除仍会被误判成"正在编辑"。</summary>
+    public string? EditingEntityId
+        => IsRenaming ? _rename.ActiveId
+         : IsEditorPageOpen ? EditorPage?.EditingLinkId
+         : null;
 
-    /// <summary>指定实体是否正在被编辑（跨页破坏性动作的编辑优先闸）。</summary>
+    /// <summary>指定实体是否正在被编辑（跨页破坏性动作的编辑优先闸）。
+    /// 先判"确实有编辑面"再比 ID：编辑已取消时，任何残留对象都不得继续阻断删除。</summary>
     public bool IsEditingEntity(string? id)
-        => !string.IsNullOrEmpty(id)
+        => IsEditingInProgress
+           && !string.IsNullOrEmpty(id)
            && string.Equals(EditingEntityId, id, StringComparison.Ordinal);
 
     // —— 链接详情页（全页覆盖层，参考链接页书签详情） ——
@@ -270,6 +277,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 关掉编辑器就不再需要那次抓取：立刻中止，别让人机验证窗口留在桌面上
         EditorPage?.CancelFetching();
         IsEditorPageOpen = false;
+        EditorPage = null;   // 旧编辑页对象必须释放：留着会让编辑态查询读到已取消的会话
     }
 
     public ICommand GoBackCommand { get; }

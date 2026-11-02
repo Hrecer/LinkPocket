@@ -87,6 +87,35 @@ public class JumpEditingGuardTests
     }
 
     [Fact]
+    public async Task 取消整页编辑后_编辑态归零_同一链接不再被判定为正在编辑()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://a.example", title: "A",
+                autoFetchMetadata: false)).Data!;
+            var vm = new BrowserViewModel(client);
+            await vm.LoadAsync(null);
+            vm.OpenEditorForEdit(link.LinkId);
+
+            Assert.True(vm.IsEditingInProgress);
+            Assert.Equal(link.LinkId, vm.EditingEntityId);
+            Assert.True(vm.IsEditingEntity(link.LinkId));
+
+            vm.CloseEditorPage();
+
+            Assert.False(vm.IsEditingInProgress);
+            Assert.Null(vm.EditorPage);                // 旧编辑页对象必须释放
+            Assert.Null(vm.EditingEntityId);           // 不得再从旧对象泄漏 ID
+            Assert.False(vm.IsEditingEntity(link.LinkId));   // 取消后跨页删除不再被误阻
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 跳转_详情覆盖层打开_先关详情再选中目标且不累加旧链接()
     {
         var (client, _, dbPath) = AppTestEnv.Create();
