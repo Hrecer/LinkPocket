@@ -61,7 +61,12 @@ public partial class BrowserViewModel
                 return OpOutcome.Failed;
             }
             if (NormalizeParentId(link.ListId) == target) return OpOutcome.Skipped;
-            await _client.LinkUpdateAsync(linkId, listId: target, o: o);
+            // ⚠️ `links.update` 的 list_id **缺省 = 归属不变**，传 null 表达不了"移到根级"（命令会成功但什么都不改）；
+            // 根级移动必须走 `links.move_batch`（target_list_id 缺省 = 根）——两条命令的 null 语义相反。
+            if (target == null)
+                await _client.LinkMoveBatchAsync([linkId], o: o);
+            else
+                await _client.LinkUpdateAsync(linkId, listId: target, o: o);
             return OpOutcome.Done;
         }
         catch (Exception ex)
