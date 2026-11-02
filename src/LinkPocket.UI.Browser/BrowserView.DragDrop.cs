@@ -26,16 +26,47 @@ public partial class BrowserView : UserControl
 
     /// <summary>挂出浮层并开始跟踪指针位置（<c>GiveFeedback</c> 在拖拽期间持续触发——
     /// 拖拽时 WPF 不再派发 MouseMove，只能这样跟手）。</summary>
-    private void ShowDragVisual(IReadOnlyList<DragItem> items)
+    /// <param name="source">抓在手里的行 / 树节点：浮层按"按下时指针在它内部的相对位置"跟随指针，
+    /// 而不是固定挂在指针右下角（像真把这一行提起来）。</param>
+    private void ShowDragVisual(IReadOnlyList<DragItem> items, DependencyObject source)
     {
         _dragVisual = DragVisualAdorner.Attach(this);
         _dragCancelledByEscape = false;
         if (_dragVisual == null) return;
-        _dragVisual.Show(items);
+        _dragVisual.Show(items, GrabFraction(source));
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+        // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会在页面左上角闪一帧再被拖走）。
+        _dragVisual.UpdatePosition(Mouse.GetPosition(this));
         // 拖拽源在本页内 → GiveFeedback / QueryContinueDrag 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
         AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
+    }
+
+    /// <summary>
+    /// 按下时指针在源元素里的相对位置（0..1）：浮层以同一比例被"捏住"。
+    /// 源元素不可测量时退回中心——总比把浮层甩到指针右下角再自称"抓住了"诚实。
+    /// </summary>
+    private Point GrabFraction(DependencyObject source)
+    {
+        var centered = new Point(0.5, 0.5);
+        if (source is not UIElement element) return centered;
+
+        try
+        {
+            var origin = element.TransformToAncestor(this).Transform(new Point(0, 0));
+            var size = element.RenderSize;
+            if (size.Width <= 0 || size.Height <= 0) return centered;
+
+            var pointer = Mouse.GetPosition(this);
+            return new Point(
+                Math.Clamp((pointer.X - origin.X) / size.Width, 0, 1),
+                Math.Clamp((pointer.Y - origin.Y) / size.Height, 0, 1));
+        }
+        catch (InvalidOperationException)
+        {
+            // 源元素尚未接入本页可视树（例如页面正在重建）：没有可靠坐标，退回中心。
+            return centered;
+        }
     }
 
     /// <summary>摘除浮层（拖拽结束 / 拖拽被取消）。</summary>
@@ -311,7 +342,7 @@ public partial class BrowserView : UserControl
         _pendingDrop = null;
         _dragSourcePane = sourcePane;
         _dragItems = items;
-        ShowDragVisual(items);
+        ShowDragVisual(items, source);
         DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
             DragDropEffects.Move | DragDropEffects.Copy);
         HideDragVisual();

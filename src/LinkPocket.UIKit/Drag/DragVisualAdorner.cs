@@ -17,7 +17,9 @@ namespace LinkPocket.Views;
 /// 拖拽浮层（复刻 Windows 11 资源管理器的拖拽手感）：
 /// <list type="bullet">
 /// <item>跟随指针的**半透明行快照**（图标 + 名称）；多选时下方叠出"多层"观感并挂「N 个项目」计数徽标；</item>
-/// <item>指针右下方的「移动到「X」」提示（内容随落点实时变化；无落点/非法落点时整条隐藏）。</item>
+/// <item>浮层被指针**按抓取点捏住**（抓在行左侧 = 指针落在快照左侧，抓在中间 = 指针落在快照中间），
+/// 不是固定挂在指针右下角——像把这一行真的提起来，而不是给指针配一条标注；</item>
+/// <item>浮层下方的「移动到「X」」提示（内容随落点实时变化；无落点/非法落点时整条隐藏）。</item>
 /// </list>
 ///
 /// <para>为什么自绘而不是调 OLE 原生拖拽图像：原生图像需要 shell <c>IDataObject</c> + <c>IDragSourceHelper</c>
@@ -42,15 +44,17 @@ namespace LinkPocket.Views;
 /// </summary>
 public sealed class DragVisualAdorner : Adorner
 {
-    /// <summary>浮层相对指针的偏移（与 Windows 的手感一致：图像落在指针右下，不遮住指针本身）。</summary>
-    private const double PointerOffsetX = 12;
-    private const double PointerOffsetY = 14;
-
     /// <summary>浮层视觉（卡片 + 堆叠背板 + 计数徽标 + 提示条）：指针位移也挂在它身上，见类注释。</summary>
     private readonly DragVisualContent _content;
 
     /// <summary>指针位移的载体（内容层的本地变换）：拖拽期间每次移动只改它，不触发任何测量/排列。</summary>
     private readonly TranslateTransform _position = new();
+
+    /// <summary>
+    /// 抓取点在浮层内容里的位置（内容坐标）：来源元素里按下时指针落在哪个相对比例，
+    /// 这里就取快照里的同一比例。指针位移 = 指针坐标 − 它，于是"抓哪儿、快照的哪儿就在指针下"。
+    /// </summary>
+    private Point _grabAnchor = new(4, 4);
 
     private DragVisualAdorner(FrameworkElement owner) : base(owner)
     {
@@ -81,10 +85,17 @@ public sealed class DragVisualAdorner : Adorner
     /// 计数口径 = 拖动集合里的实体数（文件夹 / 链接各算一项，**不含**文件夹里的子项），与选中统计一致。</item>
     /// </list>
     /// </summary>
-    public void Show(IReadOnlyList<DragItem> items)
+    /// <param name="grabFraction">
+    /// 抓取点在源元素里的相对位置（0..1，宿主按按下时刻的指针坐标算好）：
+    /// 浮层按同一比例被指针"捏住"。来源尺寸不可得时传 (0.5, 0.5)（指针落在快照中心）。
+    /// </param>
+    public void Show(IReadOnlyList<DragItem> items, Point grabFraction)
     {
         _content.Show(items);
         RefreshLayer();   // 内容与尺寸都变了 → 让装饰层重新量一次
+        // 量一次才拿得到卡片的真实宽高；只量不排（排列仍由装饰层统一做），目的是算抓取锚点。
+        _content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _grabAnchor = _content.AnchorFor(grabFraction);
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。
@@ -97,11 +108,12 @@ public sealed class DragVisualAdorner : Adorner
     }
 
     /// <summary>更新位置（宿主给的坐标须相对被装饰元素）：**只改内容层的本地变换**，绝不碰装饰层——
-    /// 本方法在拖拽期间按指针移动频率（每帧）被 <c>GiveFeedback</c> 调用，见类注释的逐帧开销说明。</summary>
+    /// 本方法在拖拽期间按指针移动频率（每帧）被 <c>GiveFeedback</c> 调用，见类注释的逐帧开销说明。
+    /// 指针 = 快照里的抓取点（不是快照右上角 + 固定偏移），看起来才是"捏着这一行在拖"。</summary>
     public void UpdatePosition(Point ownerPoint)
     {
-        _position.X = ownerPoint.X + PointerOffsetX;
-        _position.Y = ownerPoint.Y + PointerOffsetY;
+        _position.X = ownerPoint.X - _grabAnchor.X;
+        _position.Y = ownerPoint.Y - _grabAnchor.Y;
     }
 
     /// <summary>
@@ -145,6 +157,10 @@ public sealed class DragVisualAdorner : Adorner
     {
         /// <summary>名称列最大宽度（超出省略号；浮层不该盖住半个屏幕）。</summary>
         private const double MaxNameWidth = 220;
+
+        /// <summary>卡片在内容层里的落点（与 <see cref="ArrangeOverride"/> 共用，锚点计算必须读同一组值）。</summary>
+        private const double CardLeft = 4;
+        private const double CardTop = 4;
 
         private readonly Border _card;
         private readonly TextBlock _name;
@@ -270,6 +286,18 @@ public sealed class DragVisualAdorner : Adorner
             return true;
         }
 
+        /// <summary>
+        /// 抓取比例 → 内容坐标：指针按同一比例落在卡片上（抓在行左侧 = 落在快照左侧）。
+        /// 卡片宽度/高度来自最近一次测量；比例为 0..1，宿主已保证来源尺寸有效。
+        /// </summary>
+        internal Point AnchorFor(Point fraction)
+        {
+            var card = _card.DesiredSize;
+            return new Point(
+                CardLeft + Math.Clamp(fraction.X, 0, 1) * card.Width,
+                CardTop + Math.Clamp(fraction.Y, 0, 1) * card.Height);
+        }
+
         protected override Size MeasureOverride(Size constraint)
         {
             _card.Measure(constraint);
@@ -281,11 +309,12 @@ public sealed class DragVisualAdorner : Adorner
 
         protected override Size ArrangeOverride(Size finalSize)
         {
-            // 浮层左上角 = 指针 + 偏移（由宿主的本地变换施加）；堆叠背板向左上各让 2/4px；提示条在浮层正下方
-            _stackBack2.Arrange(new Rect(4, 0, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            // 卡片在内容层的位置由抓取锚点反推（宿主把"锚点"摆到指针下）；堆叠背板向左上各让 2/4px；
+            // 提示条贴在卡片正下方。
+            _stackBack2.Arrange(new Rect(CardLeft, 0, _card.DesiredSize.Width, _card.DesiredSize.Height));
             _stackBack1.Arrange(new Rect(2, 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            _card.Arrange(new Rect(4, 4, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            var hintTop = 4 + _card.DesiredSize.Height + 4;
+            _card.Arrange(new Rect(CardLeft, CardTop, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            var hintTop = CardTop + _card.DesiredSize.Height + 4;
             _hint.Arrange(new Rect(6, hintTop, Math.Max(_hint.DesiredSize.Width, 0), _hint.DesiredSize.Height));
             return finalSize;
         }
