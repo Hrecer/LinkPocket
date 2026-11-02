@@ -27,6 +27,8 @@ namespace LinkPocket.Views
         public DragEventArgs Args { get; init; } = null!;
         /// <summary>命中段的 DataContext（BreadcrumbSegment / BrowserCrumbViewModel 等段类型）。</summary>
         public object? Segment { get; init; }
+        /// <summary>命中段的可视元素（段按钮）：宿主判断"指针是否还在这一段里"用（离开时不能误清落点）。</summary>
+        public FrameworkElement? Source { get; init; }
     }
 
     /// <summary>
@@ -253,21 +255,21 @@ namespace LinkPocket.Views
         private void Crumb_DragOver(object sender, DragEventArgs e)
         {
             if (sender is FrameworkElement fe)
-                CrumbDragOver?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext });
+                CrumbDragOver?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
             e.Handled = true;
         }
 
         private void Crumb_DragLeave(object sender, DragEventArgs e)
         {
             if (sender is FrameworkElement fe)
-                CrumbDragLeave?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext });
+                CrumbDragLeave?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
             e.Handled = true;
         }
 
         private void Crumb_Drop(object sender, DragEventArgs e)
         {
             if (sender is FrameworkElement fe)
-                CrumbDrop?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext });
+                CrumbDrop?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
             e.Handled = true;
         }
 

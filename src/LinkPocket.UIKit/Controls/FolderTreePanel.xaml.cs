@@ -13,6 +13,8 @@ namespace LinkPocket.Views
         public DragEventArgs Args { get; init; } = null!;
         /// <summary>命中节点的 DataContext（FolderNode / TrashFolderNode）。</summary>
         public object? Node { get; init; }
+        /// <summary>命中节点的可视元素（TreeViewItem）：宿主判断"指针是否还在这个节点里"用（离开时不能误清落点）。</summary>
+        public FrameworkElement? Source { get; init; }
     }
 
     /// <summary>
@@ -286,7 +288,10 @@ namespace LinkPocket.Views
 
         private void FolderTreeItem_DragOver(object sender, DragEventArgs e)
         {
-            var args = new TreeItemDragEventArgs { Args = e, Node = (sender as TreeViewItem)?.DataContext };
+            var args = new TreeItemDragEventArgs
+            {
+                Args = e, Node = (sender as TreeViewItem)?.DataContext, Source = sender as FrameworkElement,
+            };
             NodeDragOver?.Invoke(this, args);
         }
 
@@ -296,12 +301,16 @@ namespace LinkPocket.Views
             {
                 Args = e,
                 Node = (sender as TreeViewItem)?.DataContext,
+                Source = sender as FrameworkElement,
             });
         }
 
         private void FolderTreeItem_Drop(object sender, DragEventArgs e)
         {
-            var args = new TreeItemDragEventArgs { Args = e, Node = (sender as TreeViewItem)?.DataContext };
+            var args = new TreeItemDragEventArgs
+            {
+                Args = e, Node = (sender as TreeViewItem)?.DataContext, Source = sender as FrameworkElement,
+            };
             NodeDrop?.Invoke(this, args);
         }
 

@@ -150,6 +150,9 @@ public partial class BrowserView : UserControl
     /// <summary>写入落点（视图侧唯一出口）：VM 负责高亮投影，浮层负责提示文案——两者永远同步。</summary>
     private void ApplyDropTarget(BrowserDropTarget? target)
     {
+        // 每个 DragOver 都算一次"落点被覆盖"——目标没变也要算：它证明指针还在这条落点上，
+        // 让先前 DragLeave 排下的延迟清空作废（行内子元素之间移动 = Leave + Over 成对出现）。
+        _dropTargetGeneration++;
         ViewModel?.SetDropTarget(target);
         _dragVisual?.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
     }
@@ -160,6 +163,54 @@ public partial class BrowserView : UserControl
         ViewModel?.ClearDropTarget();
         _dragVisual?.UpdateHint(string.Empty);
         Breadcrumb.SetDropHighlight(null);   // 面包屑段高亮一并熄灭（没拖拽经过时是安全的空操作）
+    }
+
+    /// <summary>延迟清空落点的序号（见 <see cref="ClearDropTargetOnLeave"/>）。</summary>
+    private long _dropTargetGeneration;
+
+    /// <summary>
+    /// 拖拽离开落点时的**唯一清空入口**（主栏行 / 列表卡 / 树节点 / 面包屑段共用）：
+    /// <list type="bullet">
+    /// <item><b>指针还在这个落点里 = 子元素之间移动，什么都不做</b>。WPF 的 drop target 是最深命中元素，
+    /// 行内每个图标 / 文字都继承 <c>AllowDrop</c>——在行内上下移动会反复发 DragLeave(旧子元素) + DragOver(新子元素)。
+    /// 若在 DragLeave 里立即清空，行高亮、提示条与光标每跨一个边界就闪一次（用户实测："在行里上下拖一直闪"）。</item>
+    /// <item><b>真的离开了才延迟清空</b>：离开与进入相邻落点可能同批到达、顺序不定；
+    /// 延迟到本批拖拽消息之后（Render 级）再判——若期间已有新的 DragOver（<see cref="_dropTargetGeneration"/> 变了），
+    /// 说明落点已被新状态覆盖，这次"离开"作废——相邻行 / 列表空白切换不会出现一帧空落点。</item>
+    /// </list>
+    /// <param name="region">被离开的落点元素（null = 拿不到具体区域，只做 generation 保护）。</param>
+    /// </summary>
+    private void ClearDropTargetOnLeave(FrameworkElement? region)
+    {
+        if (region != null && CursorInside(region)) return;
+        var generation = _dropTargetGeneration;
+        // 优先级用 Render 而不是 Background：拖拽期间逐帧渲染（CompositionTarget.Rendering 持续在跑）
+        // 会把 Background 级饿住，清空要等到拖拽结束才落地 = 高亮/提示残留。同一批 DragLeave/DragOver
+        // 是同步派发的，Render 级的这次回调一定排在新 DragOver 之后，generation 保护照常生效。
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        {
+            if (generation != _dropTargetGeneration) return;      // 已有新的 DragOver 覆盖落点
+            if (region != null && CursorInside(region)) return;   // 又回来了（极端时序兜底）
+            ClearDropTarget();
+        }));
+    }
+
+    /// <summary>系统光标是否落在元素边界内（拖拽期间 WPF 不派发 MouseMove，只能读系统光标位置）。</summary>
+    private bool CursorInside(FrameworkElement region)
+    {
+        if (!region.IsLoaded) return false;
+        if (!GetCursorPos(out var screen)) return false;
+        try
+        {
+            var point = region.PointFromScreen(new Point(screen.X, screen.Y));
+            return point.X >= 0 && point.Y >= 0
+                   && point.X <= region.ActualWidth && point.Y <= region.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            // 元素已脱离可视树（页面正在卸载）：按"不在里面"处理，让延迟清空正常收尾
+            return false;
+        }
     }
 
     // —— 行拖拽（参考 Windows 资源管理器：按下 → 移动超过阈值 → 进入拖拽）——
@@ -524,9 +575,17 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>拖拽离开行：熄灭落点高亮。落点是**覆盖式**状态（铁律 9），离开必须清零；
-    /// 随即 DragOver 会重设真正的新落点，所以行间移动只会看到高亮"跟着指针走"。</summary>
-    private void RowBorder_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
+    /// <summary>拖拽离开行：只有**真的离开这一行**才熄灭落点（行内子元素之间移动不清，见
+    /// <see cref="ClearDropTargetOnLeave"/>）。离开瞬间把本行原本的效果写回，光标不在切换时闪成 no-drop。</summary>
+    private void RowBorder_DragLeave(object sender, DragEventArgs e)
+    {
+        var row = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
+        e.Effects = IsDropPositionCandidate(row, BrowserPane.Main)
+            ? DragSupport.EffectFor(CurrentDropMode())
+            : DragDropEffects.None;
+        e.Handled = true;   // 归属本行：不再冒泡到列表卡重复清空
+        ClearDropTargetOnLeave(sender as FrameworkElement);
+    }
 
     /// <summary>落在行上：**只记意图不执行**（执行在 <see cref="StartDrag"/> 里、拖拽循环退出之后）。</summary>
     private void RowBorder_Drop(object sender, DragEventArgs e)
@@ -567,8 +626,14 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>拖拽离开列表卡：熄灭落点提示（覆盖式状态，离开清零）。</summary>
-    private void ListCard_DragLeave(object sender, DragEventArgs e) => ClearDropTarget();
+    /// <summary>拖拽离开列表卡：指针进入卡内行时**不算离开**（行是卡的后代），只有真的出了卡片才熄灭
+    /// 落点提示（见 <see cref="ClearDropTargetOnLeave"/>）；离开瞬间回写"当前文件夹"的效果，光标不闪。</summary>
+    private void ListCard_DragLeave(object sender, DragEventArgs e)
+    {
+        e.Effects = DragSupport.EffectFor(CurrentDropMode());   // 列表卡本身始终是"当前文件夹"合法落点
+        e.Handled = true;
+        ClearDropTargetOnLeave(sender as FrameworkElement);
+    }
 
     /// <summary>
     /// 落在列表空白 = 落进**当前所在文件夹**（Windows 口径）。按住 Ctrl 时就是"在本页做一个副本"：
@@ -627,8 +692,16 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>拖拽离开树节点：熄灭落点高亮（覆盖式状态，离开清零；新落点由随后的 DragOver 覆盖写入）。</summary>
-    private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e) => ClearDropTarget();
+    /// <summary>拖拽离开树节点：同主栏行口径——节点内子元素之间移动不清，真的离开才延迟熄灭；
+    /// 离开瞬间回写本节点的效果，光标不在节点间切换时闪。</summary>
+    private void FolderTreePanel_NodeDragLeave(object? sender, TreeItemDragEventArgs e)
+    {
+        e.Args.Effects = IsDropPositionCandidate(e.Node as FolderNode, BrowserPane.Tree)
+            ? DragSupport.EffectFor(CurrentDropMode())
+            : DragDropEffects.None;
+        e.Args.Handled = true;
+        ClearDropTargetOnLeave(e.Source);   // 源节点元素（TreeViewItem）：判断指针是否还在这个节点里
+    }
 
     /// <summary>落在树节点：**只记意图不执行**（执行在 <see cref="StartDrag"/> 里、拖拽循环退出之后）。
     /// 模式取自落点状态（Ctrl = 复制），与提示条说的是同一个值。</summary>

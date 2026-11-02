@@ -428,9 +428,14 @@ public partial class BrowserView : UserControl
             }
         }
 
-        /// <summary>拖拽离开面包屑段：熄灭落点高亮与提示（覆盖式状态，离开清零）。</summary>
+        /// <summary>拖拽离开面包屑段：段内子元素之间移动不清（见 <see cref="ClearDropTargetOnLeave"/>）；
+        /// 离开瞬间回写"移动到/复制到"的效果，光标不在段间切换时闪。</summary>
         private void Breadcrumb_CrumbDragLeave(object? sender, CrumbDragEventArgs e)
-            => ClearDropTarget();
+        {
+            e.Args.Effects = DragSupport.EffectFor(CurrentDropMode());   // 段都是文件夹 = 合法落点
+            e.Args.Handled = true;
+            ClearDropTargetOnLeave(e.Source);   // 段按钮：判断指针是否还在这一段里
+        }
 
         /// <summary>落到面包屑段上：**只记"待执行意图"**（Drop 回调在 OLE 拖拽循环内，执行在
         /// <c>DoDragDrop</c> 返回之后由 <see cref="StartDrag"/> 统一做——与主栏行 / 树节点同一条收尾）。</summary>
