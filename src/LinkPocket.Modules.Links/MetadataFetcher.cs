@@ -59,8 +59,9 @@ internal static class MetadataFetcher
         }
         catch (TransportStatusException refused) when (allowBrowserRender)
         {
-            // 站点在等"人点一下"（Cloudflare Turnstile 一族）：离屏渲染只会停在挑战页干等到超时，
-            // 直接把窗口摆到用户面前——他点完那一下，这一页就是真页面。
+            // 站点在等"人点一下"（Cloudflare Turnstile 一族）：传输层已先让浏览器指纹客户端
+            // 试过一次；仍被挑战才把窗口摆到用户面前——他点完那一下，这一页就是真页面。
+            // 离屏 WebView2 对这类挑战连勾选框都不下发，不浪费那 15 秒。
             if (refused.IsHumanChallenge && allowHumanVerification)
             {
                 var verified = await VerifyWithUserAsync(new Uri(url), ct).ConfigureAwait(false);
@@ -265,9 +266,20 @@ internal static class MetadataFetcher
         Uri finalUri, PageMetadata metadata, bool interstitial, bool humanChallenge,
         bool allowBrowserRender, bool allowHumanVerification, CancellationToken ct)
     {
-        // 人机型挑战：指纹与离屏渲染都过不去（实测），别浪费那十几秒，直接请用户点
+        // 人机型挑战：传输层已先让浏览器指纹客户端试过一次（403/503 那一支），
+        // 200 挑战页这里也先试一次；仍被挑战才把窗口摆到用户面前。
+        // 离屏 WebView2 对 Cloudflare 挑战连勾选框都不下发，不浪费那 15 秒。
         if (humanChallenge && allowHumanVerification)
         {
+            if (await MetadataTransport.TryGetImpersonatedHtmlAsync(finalUri, ct).ConfigureAwait(false) is { } fingerprinted
+                && !AntiBotInterstitial.Detect(fingerprinted)
+                && !AntiBotInterstitial.IsHumanChallenge(fingerprinted))
+            {
+                LpLog.Info($"human challenge cleared by browser fingerprint: {finalUri.Host}", category: "links.metadata");
+                metadata = RegexMetadataParser.Instance.Parse(fingerprinted, finalUri);
+                if (HasUsableText(metadata)) return metadata;
+            }
+
             var verified = await VerifyWithUserAsync(finalUri, ct).ConfigureAwait(false);
             return verified ?? metadata;
         }

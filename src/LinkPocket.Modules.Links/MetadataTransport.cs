@@ -196,7 +196,9 @@ internal static class MetadataTransport
                 // 抛"拿到了响应但状态码不行"这一支：调用方要能区分"站点拒绝了"（有救的说法）
                 // 与"根本连不上"（DNS/超时/TLS，如实报错），别让两者都退化成一个 LP.ENG.002。
                 // 顺带判一次"是不是在等人点一下"——那决定后面要不要开窗口，而不是白跑一次离屏渲染。
-                var humanChallenge = await LooksLikeHumanChallengeAsync(response).ConfigureAwait(false);
+                // 404/410 这类"没有这个页面"不参与判定：页面不存在时不该弹人机窗口。
+                var humanChallenge = CanBeHumanChallenge(response.StatusCode)
+                    && await LooksLikeHumanChallengeAsync(response).ConfigureAwait(false);
                 throw new TransportStatusException((int)response.StatusCode, current, humanChallenge);
             }
 
@@ -232,7 +234,8 @@ internal static class MetadataTransport
     /// 这次非 2xx 响应背后是不是"厂商在等人点一下"（Cloudflare Turnstile 一族）。
     /// <para>
     /// 先看头：托管挑战会带 <c>cf-mitigated: challenge</c>，这是最干净的信号；再看正文指纹。
-    /// 两者都不中就当静态拒绝——那类页面点了也没用，不该开窗口白打扰用户。
+    /// 正文必须**同时**是"挑战页壳"且带人机指纹——只在普通页面里引用一句
+    /// <c>challenges.cloudflare.com</c>（例如登录组件）不算，开窗就是白打扰用户。
     /// </para>
     /// </summary>
     private static async Task<bool> LooksLikeHumanChallengeAsync(HttpResponseMessage response)
@@ -241,7 +244,8 @@ internal static class MetadataTransport
 
         try
         {
-            return AntiBotInterstitial.IsHumanChallenge(await ReadExcerptAsync(response.Content).ConfigureAwait(false));
+            var html = await ReadExcerptAsync(response.Content).ConfigureAwait(false);
+            return AntiBotInterstitial.Detect(html) && AntiBotInterstitial.IsHumanChallenge(html);
         }
         catch (Exception ex)
         {
@@ -250,6 +254,15 @@ internal static class MetadataTransport
             return false;
         }
     }
+
+    /// <summary>
+    /// 状态码本身是否属于"可能被挑战"的拒绝：404/410 这类"没有这个页面"不参与人机判定，
+    /// 否则一个碰巧带 Cloudflare 字样的错误页也会弹窗。
+    /// </summary>
+    private static bool CanBeHumanChallenge(HttpStatusCode status)
+        => status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.MethodNotAllowed
+            or HttpStatusCode.NotAcceptable or HttpStatusCode.UnavailableForLegalReasons
+            || (int)status >= 500;
 
     /// <summary>只读一小段正文做指纹匹配（挑战页都在几万字节内，16 KB 足够，不必读满 2 MB）。</summary>
     private static async Task<string> ReadExcerptAsync(HttpContent content)
@@ -271,11 +284,10 @@ internal static class MetadataTransport
         if (!IsBotWall(response.StatusCode))
             return response;
 
-        // Cloudflare 的托管挑战：换 TLS 指纹一样过不去（挑战要跑页内 JS，甚至要人点），
-        // 再发一次只是白等一个来回；原样交给上层，直接走"真实浏览器"那一档。
-        if (HasChallengeHeader(response))
-            return response;
-
+        // 反爬墙（含 Cloudflare 托管挑战）先让浏览器指纹客户端试一次：一次请求通常 <1s，
+        // 而真实浏览器窗口要用户亲手点，是最低效的一档。部分站点只挑 TLS/HTTP2 指纹，
+        // 指纹客户端能直接拿到真页面；只有指纹仍被挑战时才升级到人机窗口
+        // （判据在 DownloadAsync，窗口在 MetadataFetcher）。
         var fallback = ImpersonatingClient.Value;
         if (fallback is null)
             return response;   // 兜底不可用：维持主路径结果，按原口径如实报错
