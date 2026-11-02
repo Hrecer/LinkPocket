@@ -9,13 +9,14 @@
              Unloaded="NoticeBar_Unloaded"
              d:DesignHeight="120" d:DesignWidth="400">
 
-    <!-- 全站共用的 Toast（轻提示）栈：底部居中、多条纵向堆叠、每条自动消失。
+    <!-- 全站共用的 Toast（轻提示）栈：底部居中、每次调用新增一条、各自自动消失。
          · **样式来源**：照搬抹茶泡芙 desktop/src/components/ui/toast.ts 的 toast 规格——
-           底部 24px、条间距 8px、全圆角药丸、6px 主色圆点、浮层底 + 细边框 + 大阴影、
-           中等字重；停留 1.8 秒后 200ms 淡出（"快速消失"）。字号按 LinkPocket 的正文字号放大到 16。
-         · **多条**：新条目在底部、旧条目向上让位，形成从上到下的药丸列；同文重复只顺延，不堆重复条。
-         · **不挡操作**：IsHitTestVisible=False（纯提示，不吃点击/拖拽）。
-         · 计时与淡出都由控件自持（视图可持计时器，VM 保持可单测）。 -->
+           底部 24px、条间距 8px、全圆角药丸、6px 主色圆点、13px 中等字重、内距 14,8、
+           浮层底 + 细边框 + 大阴影；停留 1.8 秒后 200ms 淡出。
+         · **药丸**：圆角由 HalfCornerRadiusConverter 按实际高度取一半，内容变高也保持胶囊形。
+         · **堆叠**：不合并同文；每调一次 Show 就新增一条，旧条目向上让位、各自计时；
+           最多保留 3 条，超出时淘汰最旧的一条。
+         · **不挡操作**：IsHitTestVisible=False（纯提示，不吃点击/拖拽）。 -->
 
     <ItemsControl x:Name="ItemsHost"
                   HorizontalAlignment="Center"
@@ -33,7 +34,7 @@
                         Background="{DynamicResource App.Surface.Floating}"
                         BorderBrush="{DynamicResource App.Line.Outline}"
                         BorderThickness="1"
-                        CornerRadius="18"
+                        CornerRadius="{Binding ActualHeight, RelativeSource={RelativeSource Self}, Converter={StaticResource HalfRadius}}"
                         Padding="14,8"
                         Margin="0,8,0,0"
                         MaxWidth="620"
@@ -50,7 +51,7 @@
                         <TextBlock Text="{Binding Text}"
                                    Margin="8,0,0,0"
                                    MaxWidth="560"
-                                   FontSize="16"
+                                   FontSize="13"
                                    FontWeight="Medium"
                                    Foreground="{DynamicResource App.Text.Primary}"
                                    TextWrapping="Wrap"/>
