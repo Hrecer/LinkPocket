@@ -22,11 +22,10 @@ internal static class NetscapeReader
     private const int MaxLinkUrlLength = 2048;
     // 这里没有 favicon 的长度上限：图标值由 FaviconCache.NormalizeExternalIcon 判定
     // （"原样可用 or 当它没有"），本解析器只负责原样取出 ICON / ICON_URI 属性值。
-    // 嵌套层数**没有上限**（2026-10-15 移除旧 64 层截断）：解析改显式栈迭代（见 ParseEntries），
-    // 唯一的规模边界 = 文件字节上限（MaxFileBytes）。
-
-    /// <summary>外部输入上限：书签 HTML 的字节数（10k 条实测约 2MB，64MB = 30 倍余量）。</summary>
-    private const long MaxFileBytes = 64L * 1024 * 1024;
+    // 嵌套层数**没有上限**（2026-10-15 移除旧 64 层截断）：解析改显式栈迭代（见 ParseEntries）。
+    // **文件字节数也没有上限（2026-11-02 移除旧 64MB 拒绝）**：浏览器导出 10 万条时可能远超它
+    // （ICON 内嵌 data URI 尤其大），按大小拒绝会把合法数据挡在门外。读取仍是一次性读入，
+    // 内存不足时返回明确错误——那是资源事实，不是"文件不合法"。
 
     // ============================================================
     // —— 对外入口 ——
@@ -36,8 +35,9 @@ internal static class NetscapeReader
     /// <remarks>
     /// <para><b>外部输入的两道门</b>（与备份包同一口径）：</para>
     /// <list type="bullet">
-    /// <item><b>大小上限</b>：读取端把整个文件读进内存，一个误选的大文件（视频 / 镜像 / 巨型 HTML）
-    /// 不该把进程拖垮 —— 超限**直接拒绝**（10k 条实测约 2MB，64MB 留 30 倍余量）。</item>
+    /// <item><b>不按大小拒绝</b>：合法的浏览器导出可能很大（10 万条 + 内嵌图标可远超 64MB），
+    /// 以文件字节数作为"不像书签文件"的判据会误伤真实数据。读取端仍一次性读入，
+    /// 内存不足时返回明确的资源错误（不伪装成文件损坏）。</item>
     /// <item><b>编码</b>：现代浏览器导出一律 UTF-8。先按**严格 UTF-8** 解码，不是就回落到容错解码
     /// 并把"文件不是合法 UTF-8、标题可能乱码"作为**告警**上报 —— 旧写法用容错解码一路静默，
     /// 非 UTF-8 文件（旧版浏览器 / GBK 导出）会被导成一堆替换字符而没有任何提示。</item>
@@ -45,31 +45,32 @@ internal static class NetscapeReader
     /// </remarks>
     public static async Task<ParsedDocument> ParseFileAsync(string filePath, CancellationToken ct = default)
     {
-        var info = new FileInfo(filePath);
-        if (info.Length > MaxFileBytes)
-        {
-            return new ParsedDocument
-            {
-                Error = $"the file is too large to be a bookmark file: {info.Length / (1024.0 * 1024):F0}MB"
-                        + $" (limit {MaxFileBytes / (1024 * 1024)}MB)",
-            };
-        }
-
         var preWarnings = new List<string>();
         string html;
         try
         {
-            using var strict = new StreamReader(filePath,
-                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
-                detectEncodingFromByteOrderMarks: true);
-            html = await strict.ReadToEndAsync(ct);
+            try
+            {
+                using var strict = new StreamReader(filePath,
+                    new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                    detectEncodingFromByteOrderMarks: true);
+                html = await strict.ReadToEndAsync(ct);
+            }
+            catch (DecoderFallbackException)
+            {
+                using var tolerant = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                html = await tolerant.ReadToEndAsync(ct);
+                preWarnings.Add("the file is not valid UTF-8; titles may contain garbled characters"
+                                + " (re-export the bookmarks as UTF-8 to avoid this)");
+            }
         }
-        catch (DecoderFallbackException)
+        catch (OutOfMemoryException)
         {
-            using var tolerant = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            html = await tolerant.ReadToEndAsync(ct);
-            preWarnings.Add("the file is not valid UTF-8; titles may contain garbled characters"
-                            + " (re-export the bookmarks as UTF-8 to avoid this)");
+            return new ParsedDocument
+            {
+                Error = "the bookmark file does not fit in memory on this machine; close other applications and retry"
+                        + " (the file was not rejected for its size)",
+            };
         }
 
         ct.ThrowIfCancellationRequested();

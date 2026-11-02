@@ -22,7 +22,8 @@ namespace LinkPocket.Modules.Links;
 /// 自家路由器、NAS、内部站点，一刀切会把用户自己的页面挡在门外。
 /// </para>
 /// <para>
-/// 正文有上限（只解析 &lt;head&gt; 元数据，2 MB 足够）：挡住"服务器把大文件或无限流当页面返回"。
+/// 正文只读到 2 MB（解析 &lt;head&gt; 元数据足够）：超出的部分**直接不读、按已有内容解析**，
+/// 不因页面大而拒绝抓取（大页面也要能拿到标题与描述）；这个上限是读取预算，不是准入限制。
 /// </para>
 /// </remarks>
 /// <summary>
@@ -51,7 +52,7 @@ internal sealed class TransportStatusException : Exception
 
 internal static class MetadataTransport
 {
-    /// <summary>正文上限（字节）。</summary>
+    /// <summary>正文读取上限（字节）：**截断预算，不是拒绝门槛**（够解析 &lt;head&gt; 即可）。</summary>
     internal const int MaxHtmlBytes = 2 * 1024 * 1024;
 
     /// <summary>重定向跳数上限（手动跟随：每跳都要重新校验）。</summary>
@@ -165,7 +166,8 @@ internal static class MetadataTransport
         => Uri.TryCreate(url, UriKind.Absolute, out var uri)
            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
-    /// <summary>抓取 HTML（逐跳校验重定向）；非 2xx / 超限 / 网络错误一律抛 <see cref="EngineException"/>。</summary>
+    /// <summary>抓取 HTML（逐跳校验重定向）；非 2xx / 网络错误一律抛 <see cref="EngineException"/>。
+    /// 页面正文过大**不抛错**：只读前 <see cref="MaxHtmlBytes"/> 字节（解析 head 足够）。</summary>
     internal static async Task<(string Html, Uri FinalUri)> DownloadAsync(string url, CancellationToken ct)
     {
         var current = new Uri(url);
@@ -202,14 +204,7 @@ internal static class MetadataTransport
                 throw new TransportStatusException((int)response.StatusCode, current, humanChallenge);
             }
 
-            if (response.Content.Headers.ContentLength is long declared && declared > MaxHtmlBytes)
-            {
-                throw new EngineException(EngineErrors.Of(
-                    EngineErrors.NetworkError,
-                    $"page body too large (declared {declared} bytes): {current}",
-                    retryable: false));
-            }
-
+            // 不按 Content-Length 拒绝：大页面照样要能抓元数据，读端只取前 2MB（head 足够）。
             var html = await ReadHtmlAsync(response.Content, ct).ConfigureAwait(false);
             return (html, current);
         }
@@ -307,7 +302,7 @@ internal static class MetadataTransport
 
     /// <summary>
     /// 同一地址改用浏览器指纹客户端再读一次 HTML；失败一律返回 <c>null</c>（兜底不成不影响主路径结论）。
-    /// 与主路径同一套判据：连接前环回 / 链路本地校验、2 MB 上限、10 s 超时。
+    /// 与主路径同一套判据：连接前环回 / 链路本地校验、2 MB 读取上限（超出截断、不拒绝）、10 s 超时。
     /// </summary>
     internal static async Task<string?> TryGetImpersonatedHtmlAsync(Uri target, CancellationToken ct)
     {
@@ -335,7 +330,8 @@ internal static class MetadataTransport
 
     /// <summary>
     /// favicon 下载的浏览器指纹兜底（装配给 <c>FaviconCache.ImpersonatedDownloader</c>，由 Links 模块在装配时接上）：
-    /// 手动跟随重定向（每跳过环回/链路本地判据）、2 MB 上限、10s 超时；失败返回 <c>null</c>（调用方按原口径处理）。
+    /// 手动跟随重定向（每跳过环回/链路本地判据）、2 MB 图标资源上限、10s 超时；失败返回 <c>null</c>（调用方按原口径处理）。
+    /// 这里的 2 MB 是**图标文件**的护栏（不是页面上限）：超过它按下载失败处理，绝不落半截。
     /// </summary>
     internal static async Task<byte[]?> TryGetBytesImpersonatedAsync(string url, CancellationToken ct)
     {
@@ -379,7 +375,7 @@ internal static class MetadataTransport
         return null;
     }
 
-    /// <summary>读取正文（带上限）；按响应头里的 charset 解码，与托管实现的取字符口径一致。</summary>
+    /// <summary>读取正文（读到上限即停，超出部分不读）；按响应头里的 charset 解码，与托管实现的取字符口径一致。</summary>
     private static async Task<string> ReadHtmlAsync(HttpContent content, CancellationToken ct)
     {
         await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);

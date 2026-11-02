@@ -279,14 +279,14 @@ internal static class BackupIO
         public bool Valid => Errors.Count == 0;
     }
 
-    // —— 外部输入的规模上限（**必须先看 zip 头声明的解压后大小，再决定要不要读**）——
+    // —— 外部输入的护栏 ——
     //
-    // 备份文件是**外部输入**，没有上限就等于把进程的内存
-    // 交给文件说话 —— 一个几 MB 的包可以声明解压出几个 GB（zip 炸弹），`CopyToAsync(MemoryStream)`
-    // 会一路吃内存直到 OOM。上限取"本应用的库不可能超过的量级"：10 万条书签的 data.json 约 30–40MB，
-    // 512MB 是 10 倍余量；图标单文件 8MB（远超任何真实 favicon）、条目 4096（远超真实引用数）。
-    private const long MaxDataJsonBytes = 512L * 1024 * 1024;
-    private const int MaxFaviconEntries = 4096;
+    // **不再按库规模设上限（2026-11-02）**：data.json 的字节数、图标条目数都随书签库线性增长——
+    // 10 万条书签的库带几千个域名图标很正常，旧上限（512MB / 4096 个）会把合法大库误判成
+    // "异常备份"整包拒绝。现在这两项**没有固定上限**；读取受机器内存约束，内存不足时由下面的
+    // OutOfMemoryException 分支如实上报，不伪装成文件损坏。
+    // 仍然保留的是**单条目异常输入**护栏（与库规模无关）：manifest 只是元数据、单个图标也远不该
+    // 超过 8MB——它们挡的是"条目声明了一个荒谬的尺寸"，不是"库很大"。
     private const long MaxFaviconBytes = 8L * 1024 * 1024;
     private const long MaxManifestBytes = 1024 * 1024;
 
@@ -313,26 +313,17 @@ internal static class BackupIO
                 return file;
             }
 
-            // 先看声明尺寸（zip 头里的 UncompressedLength），超限**直接拒绝、一个字节都不读**
+            // 单条目异常输入护栏（不是库规模上限）：manifest 声明超过 1MB、或单个图标声明超过 8MB，
+            // 都说明这个条目不像本应用写出的备份 —— 直接拒绝，不必先读进内存。
             if (manifestEntry.Length > MaxManifestBytes)
             {
                 file.Errors.Add($"abnormal backup file: manifest.json declares {manifestEntry.Length} bytes (limit {MaxManifestBytes})");
-                return file;
-            }
-            if (dataEntry.Length > MaxDataJsonBytes)
-            {
-                file.Errors.Add($"backup file too large: data.json declares {dataEntry.Length / (1024 * 1024)}MB (limit {MaxDataJsonBytes / (1024 * 1024)}MB)");
                 return file;
             }
 
             var faviconEntries = archive.Entries
                 .Where(e => e.FullName.StartsWith("favicons/") && !e.FullName.EndsWith("/"))
                 .ToList();
-            if (faviconEntries.Count > MaxFaviconEntries)
-            {
-                file.Errors.Add($"abnormal backup file: {faviconEntries.Count} favicon entries (limit {MaxFaviconEntries})");
-                return file;
-            }
             var oversizedFavicon = faviconEntries.FirstOrDefault(e => e.Length > MaxFaviconBytes);
             if (oversizedFavicon != null)
             {
