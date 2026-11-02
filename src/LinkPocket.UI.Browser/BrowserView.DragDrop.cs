@@ -17,8 +17,8 @@ public partial class BrowserView : UserControl
 {
     // —— 拖拽浮层 + 落点提示（Windows 11 手感）——
 
-    /// <summary>本次拖拽的浮层（半透明行快照 + 移动/复制提示）；拖拽期间存在，结束即摘除。</summary>
-    private DragVisualAdorner? _dragVisual;
+    /// <summary>本次拖拽的浮层（半透明行快照 + 移动/复制提示）；拖拽期间存在，结束即关闭。</summary>
+    private DragVisualOverlay? _dragVisual;
 
     /// <summary>本次拖拽是否以 Esc 取消（OLE 在 <c>QueryContinueDrag</c> 里如实告知）。
     /// **取消不是失败**：收尾时据此跳过成环判定，绝不弹窗。</summary>
@@ -30,12 +30,12 @@ public partial class BrowserView : UserControl
     /// 而不是固定挂在指针右下角（像真把这一行提起来）。</param>
     private void ShowDragVisual(IReadOnlyList<DragItem> items, DependencyObject source)
     {
-        _dragVisual = DragVisualAdorner.Attach(this);
+        _dragVisual = DragVisualOverlay.Attach(this);
         _dragCancelledByEscape = false;
         if (_dragVisual == null) return;
         _dragVisual.Show(items, GrabFraction(source));
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
-        // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会在页面左上角闪一帧再被拖走）。
+        // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会先闪在屏幕角落再被拖走）。
         _dragVisual.UpdatePosition(Mouse.GetPosition(this));
         // 拖拽源在本页内 → GiveFeedback / QueryContinueDrag 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
         AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
@@ -83,18 +83,29 @@ public partial class BrowserView : UserControl
     /// <summary>逐帧指针采样是否已挂（真实拖拽期间为 true）。</summary>
     private bool _dragPointerFrameTracking;
 
+    /// <summary>拖拽期间的定时采样器：浮层小窗移动不产生 WPF 渲染失效，不能只等合成帧。</summary>
+    private DispatcherTimer? _dragPointerTimer;
+
     /// <summary>
     /// 开始按**渲染帧**采样指针。浮层位移不能只靠 <c>GiveFeedback</c>：它由 OLE 拖拽循环按落点处理节奏派发，
     /// **与合成帧不同步、鼠标消息还会被合并**——渲染帧之间没有新样本，浮层就会"停两帧、跳一格"，
     /// 看着是一帧帧在跳而不是贴着指针走（用户实测的掉帧感就是这么来的）。
-    /// 这里挂在 <see cref="CompositionTarget.Rendering"/> 上，每个合成帧读一次**系统光标当前位置**
-    /// （<c>GetCursorPos</c> 取的是光标瞬时位置，与 WPF 是否派发 MouseMove 无关），位移正好落在同一帧里。
-    /// 只在真实拖拽（提交给 OLE 循环之前）挂；探针的静态预览仍由显式 <see cref="DragVisualAdorner.UpdatePosition"/> 驱动。
+    /// 这里同时挂 <see cref="CompositionTarget.Rendering"/> 与一个 4ms 定时器，每个节拍读一次**系统光标当前位置**
+    /// （<c>GetCursorPos</c> 取的是光标瞬时位置，与 WPF 是否派发 MouseMove 无关）：
+    /// 后者保证浮层改由独立小窗承载后、主窗口没有渲染失效时仍能持续采样窗口位置。
+    /// 只在真实拖拽（提交给 OLE 循环之前）挂；探针的静态预览仍由显式 <see cref="DragVisualOverlay.UpdatePosition"/> 驱动。
     /// </summary>
     private void StartDragPointerFrameTracking()
     {
         if (_dragPointerFrameTracking) return;
         CompositionTarget.Rendering += OnDragPointerFrame;
+        _dragPointerTimer ??= new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(4),
+        };
+        _dragPointerTimer.Tick -= OnDragPointerTimer;
+        _dragPointerTimer.Tick += OnDragPointerTimer;
+        _dragPointerTimer.Start();
         _dragPointerFrameTracking = true;
     }
 
@@ -103,16 +114,23 @@ public partial class BrowserView : UserControl
     {
         if (!_dragPointerFrameTracking) return;
         CompositionTarget.Rendering -= OnDragPointerFrame;
+        if (_dragPointerTimer != null)
+        {
+            _dragPointerTimer.Stop();
+            _dragPointerTimer.Tick -= OnDragPointerTimer;
+        }
         _dragPointerFrameTracking = false;
     }
 
     private void OnDragPointerFrame(object? sender, EventArgs e) => TrackDragPointer();
 
-    // GiveFeedback 仍保留：它是 OLE 拖拽循环内的同步回调，渲染帧被系统节流时（如窗口被遮挡）
+    private void OnDragPointerTimer(object? sender, EventArgs e) => TrackDragPointer();
+
+    // GiveFeedback 仍保留：它是 OLE 拖拽循环内的同步回调，渲染帧/定时器被系统节流时
     // 仍能把最后一次指针位置补上。
     private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e) => TrackDragPointer();
 
-    /// <summary>把浮层摆到**当前**指针位置（渲染帧与 GiveFeedback 共用这一条实现）。</summary>
+    /// <summary>把浮层摆到**当前**指针位置（渲染帧 / 4ms 定时器 / GiveFeedback 共用这一条实现）。</summary>
     private void TrackDragPointer()
     {
         if (_dragVisual == null || !IsLoaded) return;
