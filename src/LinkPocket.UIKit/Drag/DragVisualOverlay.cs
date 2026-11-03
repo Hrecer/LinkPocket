@@ -26,15 +26,15 @@ namespace LinkPocket.Views;
 ///
 /// <para><b>为什么用独立小窗，而不是挂在页面的装饰层上</b>：主窗口为了圆角/阴影开启了
 /// <c>AllowsTransparency</c>，整窗走软件合成；把浮层画在主窗口里时，指针已经移动、浮层画面却要等
-/// 主窗口的合成帧——屏幕实测滞后 2–9px（150% DPI，运动方向上稳定落后、静止归零，位移算法本身零偏差）。
-/// 改成独立小窗后，拖动只移动窗口、不重绘主窗口，DWM 直接移动窗口：同一套屏幕取点实测滞后 0px。
+/// 主窗口的合成帧——浮层会稳定落后指针数像素（运动方向上落后、静止归零，位移算法本身零偏差）。
+/// 改成独立小窗后，拖动只移动窗口、不重绘主窗口，DWM 直接移动窗口：屏幕取点不再有整窗合成滞后。
 /// 必须 <c>WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW</c>：窗口永远在指针下方，
 /// 不穿透就会挡住真实拖拽的落点命中；同时不进 Alt-Tab、不抢焦点。</para>
 ///
 /// <para><b>位置口径</b>：宿主给的是**被装饰视图坐标**（<c>ownerPoint</c>），这里换算成屏幕物理像素，
 /// 由专用线程按系统光标驱动 visual offset（不做 WPF 布局/变换）。抓取锚点 = 指针在来源行里的相对比例
-/// 映射到快照卡片的同一点，于是"抓哪儿、快照的哪儿就在指针下"。真实拖拽时系统光标由浮层接管：
-/// 光标位图画在同一张缓冲里，UI 线程隐藏系统光标；拖拽结束（<see cref="Detach"/>）恢复。</para>
+/// 映射到快照卡片的同一点，于是"抓哪儿、快照的哪儿就在指针下"。指针由系统光标平面绘制，
+/// 浮层只追随位置，不接管光标。</para>
 ///
 /// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站两页共用同一份浮层实现（public——页面程序集都要用；
 /// 内部可见性后门是架构红线，不开）。</para>
@@ -58,15 +58,6 @@ public sealed class DragVisualOverlay
 
     /// <summary>本次拖拽是否已经显示（隐藏后为 false）。</summary>
     private bool _shown;
-
-    /// <summary>系统光标是否由浮层隐藏（只在 UI 线程上读写：ShowCursor 的显示计数是每线程的）。</summary>
-    private static bool _systemCursorHidden;
-
-    /// <summary>TEMP-DRAG-DEBUG（验收后删除）：最近一次 ShowCursor 返回的显示计数。</summary>
-    private static int _systemCursorCount;
-
-    [DllImport("user32.dll")]
-    private static extern int ShowCursor(bool show);
 
     private DragVisualOverlay(FrameworkElement owner)
     {
@@ -114,12 +105,14 @@ public sealed class DragVisualOverlay
         try
         {
             _content.Show(items);
-            // 卡片位图整段拖拽只上传一次：DComp surface 在本机第二次换内容时不会重新合成，
+            // 卡片位图整段拖拽只上传一次：部分设备上 DComp surface 可见后换内容不会重新合成，
             // 提示条若还画在卡片位图里，每次换字都会把整张卡片一起带成空白。
             _content.UpdateHint(string.Empty);
             ArrangeContent();
             _grabAnchor = _content.AnchorFor(grabFraction);
-            _content.DebugSetMarker(_grabAnchor);   // TEMP-DRAG-DEBUG（验收后删除）
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+            _content.DebugSetMarker(_grabAnchor, DebugMarkerColor);
+#endif
             var dpi = VisualTreeHelper.GetDpi(_owner);
             var bitmap = RenderContent(dpi);
             if (bitmap == null) return;
@@ -130,31 +123,11 @@ public sealed class DragVisualOverlay
                 _grabAnchor.Y * dpi.DpiScaleY,
                 autoFollow);
             _shown = true;
-            // 浮层已把系统光标画进同一张缓冲 → 隐藏系统光标，屏幕上只剩这一个指针。
-            // Show 返回时首帧已上屏（IsCursorPainted 为 false 时说明没接管，绝不能藏）。
-            if (autoFollow && GhostWindowHost.Shared.IsCursorPainted) HideSystemCursor();
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             _shown = false;
-            RestoreSystemCursor();
         }
-    }
-
-    /// <summary>隐藏系统光标（每线程计数，必须在 UI 线程调用；与恢复严格配对一次）。</summary>
-    private static void HideSystemCursor()
-    {
-        if (_systemCursorHidden) return;
-        _systemCursorHidden = true;
-        _systemCursorCount = ShowCursor(false);
-    }
-
-    /// <summary>恢复系统光标（拖拽结束/浮层摘除必须调用）。</summary>
-    private static void RestoreSystemCursor()
-    {
-        if (!_systemCursorHidden) return;
-        _systemCursorHidden = false;
-        _systemCursorCount = ShowCursor(true);
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。</summary>
@@ -174,14 +147,17 @@ public sealed class DragVisualOverlay
             }
 
             ArrangeContent();
-            _content.DebugSetHintMarker();   // TEMP-DRAG-DEBUG（验收后删除）
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+            _content.DebugSetHintMarker(DebugMarkerColor);
+#endif
             var dpi = VisualTreeHelper.GetDpi(_owner);
             var full = RenderContent(dpi);
             if (full == null) return;
             var hint = CropHint(full, dpi, out var offsetX, out var offsetY);
+#if LINKPOCKET_DRAG_DIAGNOSTICS
             if (hint != null)
             {
-                // TEMP-DRAG-DEBUG（验收后删除）：确认裁剪位图本身不是空的。
+                // 确认裁剪位图本身不是空的。
                 var probePixels = new byte[hint.PixelWidth * hint.PixelHeight * 4];
                 hint.CopyPixels(probePixels, hint.PixelWidth * 4, 0);
                 var opaque = 0;
@@ -195,6 +171,7 @@ public sealed class DragVisualOverlay
                 DebugHintMarkerPixels = magenta;
                 DebugHintBitmapSize = new Size(hint.PixelWidth, hint.PixelHeight);
             }
+#endif
             var hintPixels = hint == null ? null : GhostBitmap.From(hint);
             GhostWindowHost.Shared.SetHint(hintPixels, offsetX, offsetY);
         }
@@ -266,16 +243,30 @@ public sealed class DragVisualOverlay
     /// <summary>开启/关闭浮层线程的自动跟随（真实拖拽开启；探针静态预览关闭后用显式摆位）。</summary>
     public void SetAutoFollow(bool enabled) => GhostWindowHost.Shared.SetAutoFollow(enabled);
 
-    // TEMP-DRAG-DEBUG（验收后删除）：自检用显式摆位（屏幕物理像素）。
-    public void DebugSetPosition(int x, int y) => GhostWindowHost.Shared.SetExplicitPosition(x, y);
+    /// <summary>浮层当前是否显示（程序集内自检读取）。</summary>
+    public bool IsShown => GhostWindowHost.Shared.IsVisible;
 
-    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口、恢复系统光标，保留专用线程给下一次拖拽复用。</summary>
+    /// <summary>浮层窗口句柄（程序集内自检读取）。</summary>
+    public IntPtr HostWindowHandle => GhostWindowHost.Shared.Hwnd;
+
+    /// <summary>浮层最后应用的卡片屏幕坐标（自检读取）。</summary>
+    public int WindowX => GhostWindowHost.Shared.LastX;
+    public int WindowY => GhostWindowHost.Shared.LastY;
+
+    /// <summary>浮层是否处于自动跟随（真实拖拽期间）。</summary>
+    public bool IsAutoFollowing => GhostWindowHost.Shared.IsAutoFollowing;
+
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+    /// <summary>自检用显式摆位（屏幕物理像素）。</summary>
+    public void DebugSetPosition(int x, int y) => GhostWindowHost.Shared.SetExplicitPosition(x, y);
+#endif
+
+    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。</summary>
     public void Detach()
     {
         _shown = false;
         _bitmap = null;
         GhostWindowHost.Shared.Hide();
-        RestoreSystemCursor();
     }
 
     /// <summary>把内容量好、排好，供离屏位图渲染（不依赖窗口/演示源）。</summary>
@@ -313,7 +304,8 @@ public sealed class DragVisualOverlay
         return bitmap;
     }
 
-    // TEMP-DRAG-DEBUG（验收后删除）：只读观测面，不改变任何行为。
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+    // 只读观测面：供内部资产 LinkPocket.DragDiagnostics 套件取数，不改变任何行为。
     public IntPtr DebugHwnd => GhostWindowHost.Shared.Hwnd;
     public Point DebugAnchor => _grabAnchor;
     public Size DebugWindowSize => _content.DesiredSize;
@@ -345,22 +337,13 @@ public sealed class DragVisualOverlay
     public int DebugHintWidth => GhostWindowHost.Shared.DebugHintWidth;
     public int DebugHintHeight => GhostWindowHost.Shared.DebugHintHeight;
     public bool DebugIsAutoFollowing => GhostWindowHost.Shared.IsAutoFollowing;
-    public bool DebugCursorPainted => GhostWindowHost.Shared.IsCursorPainted;
-    public bool DebugSystemCursorHidden => _systemCursorHidden;
-    public int DebugSystemCursorCount => _systemCursorCount;
-    public int DebugCursorWidth => GhostWindowHost.Shared.DebugCursorWidth;
-    public int DebugCursorHeight => GhostWindowHost.Shared.DebugCursorHeight;
-    public int DebugCursorHotspotX => GhostWindowHost.Shared.DebugCursorHotspotX;
-    public int DebugCursorHotspotY => GhostWindowHost.Shared.DebugCursorHotspotY;
-    public int DebugCursorScreenX => GhostWindowHost.Shared.DebugCursorScreenX;
-    public int DebugCursorScreenY => GhostWindowHost.Shared.DebugCursorScreenY;
     public bool DebugNoGcActive => GhostWindowHost.Shared.DebugNoGcActive;
     public int DebugTargetX => GhostWindowHost.Shared.DebugTargetX;
     public int DebugTargetY => GhostWindowHost.Shared.DebugTargetY;
-    /// <summary>TEMP-DRAG-DEBUG（验收后删除）：屏幕采样标记的精确颜色（避免蓝色正文/图标污染质心）。</summary>
-    public System.Windows.Media.Color DebugMarkerColor => System.Windows.Media.Colors.Magenta;
+    /// <summary>屏幕采样标记的精确颜色（测量用原色，不参与主题）。</summary>
+    public System.Windows.Media.Color DebugMarkerColor => new() { A = 255, R = 255, G = 0, B = 255 };
 
-    // TEMP-DRAG-DEBUG（验收后删除）：host 线程按 QPC 回查“该帧的光标/已落位窗口位置”。
+    /// <summary>host 线程按 QPC 回查“该帧的光标/已落位窗口位置”。</summary>
     public bool DebugTryGetHostSampleAt(long qpc,
         out int cursorX, out int cursorY, out bool hasCursor,
         out int appliedX, out int appliedY, out long appliedSinceQpc)
@@ -368,10 +351,11 @@ public sealed class DragVisualOverlay
             out cursorX, out cursorY, out hasCursor,
             out appliedX, out appliedY, out appliedSinceQpc);
 
-    // TEMP-DRAG-DEBUG（验收后删除）：宿主线程逐拍轨迹开关（每拍写内存，拖拽结束一次性落盘）。
+    /// <summary>宿主线程逐拍轨迹开关（每拍写内存，拖拽结束一次性落盘）。</summary>
     public void StartHostTrace(string path, long sessionStartQpc)
         => GhostWindowHost.Shared.StartHostTrace(path, sessionStartQpc);
     public void StopHostTrace() => GhostWindowHost.Shared.StopHostTrace();
+#endif
 
     /// <summary>
     /// 浮层视觉（卡片 + 堆叠背板 + 计数徽标 + 提示条）：自带 <c>Measure</c>/<c>Arrange</c>，尺寸由内容量出。
@@ -395,9 +379,11 @@ public sealed class DragVisualOverlay
         /// <summary>提示条最近一次排布的位置（内容坐标 DIP），供独立提示小窗裁剪/定位。</summary>
         internal Rect HintRect { get; private set; }
 
-        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：抓取点屏幕采样标记。</summary>
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+        /// <summary>抓取点屏幕采样标记。</summary>
         private readonly DrawingVisual _debugMarker = new();
         private readonly DrawingVisual _debugHintMarker = new();
+#endif
 
         /// <summary>投影留白（DIP）：窗口四边都要留够，否则卡片/提示条的 DropShadowEffect 会被窗口边界裁断
         /// （用户截图可见提示条底部阴影是一条直线）。取 16 &gt; 卡片 BlurRadius 12 + ShadowDepth 2。</summary>
@@ -507,8 +493,10 @@ public sealed class DragVisualOverlay
             AddVisualChild(_stackBack1);
             AddVisualChild(_card);
             AddVisualChild(_hint);
+#if LINKPOCKET_DRAG_DIAGNOSTICS
             AddVisualChild(_debugMarker);
             AddVisualChild(_debugHintMarker);
+#endif
         }
 
         /// <summary>设置本次拖动的内容（单项 = 图标 + 名称；多选 = 仅项数徽标 + 叠层）。</summary>
@@ -548,8 +536,10 @@ public sealed class DragVisualOverlay
             return true;
         }
 
-        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：当前可见的提示文案，空串 = 提示条隐藏。</summary>
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+        /// <summary>当前可见的提示文案，空串 = 提示条隐藏。</summary>
         internal string DebugHintText => _hint.Visibility == Visibility.Visible ? _hintText.Text : string.Empty;
+#endif
 
         /// <summary>
         /// 抓取比例 → 内容坐标：指针按同一比例落在卡片上（抓在行左侧 = 落在快照左侧）。
@@ -607,7 +597,9 @@ public sealed class DragVisualOverlay
         }
 
         protected override Visual GetVisualChild(int index)
-            => index switch
+        {
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+            return index switch
             {
                 0 => _stackBack2,
                 1 => _stackBack1,
@@ -616,27 +608,50 @@ public sealed class DragVisualOverlay
                 4 => _debugMarker,
                 _ => _debugHintMarker,
             };
-
-        protected override int VisualChildrenCount => 6;
-
-        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：在抓取点画一个洋红方块，供屏幕采样定位。</summary>
-        internal void DebugSetMarker(Point anchor)
-        {
-            using var dc = _debugMarker.RenderOpen();
-            dc.DrawRectangle(System.Windows.Media.Brushes.Magenta, null, new Rect(anchor.X - 2, anchor.Y - 2, 4, 4));
+#else
+            return index switch
+            {
+                0 => _stackBack2,
+                1 => _stackBack1,
+                2 => _card,
+                _ => _hint,
+            };
+#endif
         }
 
-        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：提示条左上角内的洋红标记，供屏幕采样定位。</summary>
-        internal void DebugSetHintMarker()
+        protected override int VisualChildrenCount
+        {
+            get
+            {
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+                return 6;
+#else
+                return 4;
+#endif
+            }
+        }
+
+#if LINKPOCKET_DRAG_DIAGNOSTICS
+        /// <summary>在抓取点画一个标记方块，供屏幕采样定位。</summary>
+        internal void DebugSetMarker(Point anchor, System.Windows.Media.Color color)
+        {
+            using var dc = _debugMarker.RenderOpen();
+            dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(color), null,
+                new Rect(anchor.X - 2, anchor.Y - 2, 4, 4));
+        }
+
+        /// <summary>提示条左上角内的标记，供屏幕采样定位。</summary>
+        internal void DebugSetHintMarker(System.Windows.Media.Color color)
         {
             using var dc = _debugHintMarker.RenderOpen();
             if (_hint.Visibility == Visibility.Visible)
             {
                 var hint = HintRect;
-                dc.DrawRectangle(System.Windows.Media.Brushes.Magenta, null,
+                dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(color), null,
                     new Rect(hint.Left + 4, hint.Top + 4, 4, 4));
             }
         }
+#endif
 
         private static Border StackLayer(Brush background, double inset) => new()
         {

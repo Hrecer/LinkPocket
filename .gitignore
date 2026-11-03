@@ -19,3 +19,6 @@ tests/**/TestResults/
 
 # WPF 编译临时项目（编译中断的残留，绝不入档）
 *_wpftmp.csproj
+
+# 内部资产拖拽诊断套件构建时临时复制的探针源码
+src/LinkPocket.UI.Browser/Diagnostics/

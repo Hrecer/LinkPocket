@@ -9,6 +9,9 @@
     <Version>4.2.3</Version>
     <!-- 不要给信息版本追加 "+<commit>" 后缀：备份字段与展示处一律要干净的语义化版本号 -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- 拖拽诊断（内部资产 LinkPocket.DragDiagnostics 套件）：只有显式传
+         -p:LinkPocketDragDiagnostics=true 才编译探针；发行构建默认零诊断。 -->
+    <DefineConstants Condition="'$(LinkPocketDragDiagnostics)' == 'true'">$(DefineConstants);LINKPOCKET_DRAG_DIAGNOSTICS</DefineConstants>
   </PropertyGroup>
 
   <!-- 桌面构建不携带 browser-wasm 负载：SQLitePCLRaw.lib.e_sqlite3 的
