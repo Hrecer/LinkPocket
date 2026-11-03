@@ -26,19 +26,22 @@ namespace LinkPocket.Views;
 /// <summary>
 /// 拖拽浮层的**独立原生承载窗口**：窗口、设备与整帧渲染都在专用 Win32 线程上，完全不经过 WPF。
 ///
-/// <para><b>为什么不用 DComp visual offset 搬卡片</b>：本机 DComp 只合成窗口首次上屏时的
-/// visual 树——后加 visual、对可见 visual 换内容都不合成（实测）。卡片与提示条没法在同一窗口里
-/// 用两个 visual 原子更新；两台设备各 Commit 又会被 vblank 拆帧，产生提示条 ±1px 相对抖动。</para>
+/// <para><b>位置与内容分两条通路</b>：位置走 <c>IDCompositionVisual.SetOffset + Commit</c>
+/// （合成时读取，提交截止在 vblank 前约 0.05ms）；内容（卡片 + 提示条 + 指针）画进
+/// **同一张交换链**，只在内容变化时 Present——三者在物理上就是同一帧，不可能再差一帧。
+/// 内容直接画在交换链的离屏场景里，再整块拷到当前后台缓冲（本机 D2D 只能绑 0 号缓冲）。</para>
 ///
-/// <para><b>现在的做法</b>：一张<b>合成交换链</b>铺满虚拟屏幕，每帧把卡片与提示条画进
-/// **同一张后台缓冲**，一次 Present 上屏——两者在物理上就是同一帧，不可能再差一帧。
-/// 视觉（位图、尺寸、位置、对齐、阴影）与之前完全一致。</para>
+/// <para><b>真实拖拽时接管系统光标</b>：把系统光标位图按热点画在抓取锚点上（同一张缓冲），
+/// 并在 UI 线程（每线程计数）隐藏系统光标。屏幕上指针与卡片来自同一次合成，
+/// 相对位置恒为 0——消除了“卡片比硬件光标晚一次采样”的固有抖动。指针离开本进程窗口
+/// （拖到别的应用上）时交还系统光标，避免双指针。</para>
 /// </summary>
 internal sealed class GhostWindowHost
 {
     public static GhostWindowHost Shared { get; } = new();
 
     private readonly object _gate = new();
+    private readonly object _commitGate = new();   // 宿主循环与 vblank 前的晚锁存共用 DComp 提交
     private readonly ManualResetEventSlim _ready = new(false);
 
     private Thread? _thread;
@@ -72,9 +75,34 @@ internal sealed class GhostWindowHost
     private int _debugHintStage;
     private int _debugHintError;
 
+    // 系统光标：真实拖拽时把系统光标画进同一张场景（与卡片/提示条同帧），UI 线程同时隐藏系统光标。
+    // 屏幕上指针与卡片来自同一张缓冲，任何时刻相对位置都精确为零——这是消除“卡片追指针”的唯一零采样差路线。
+    private volatile bool _dragCursorMode;
+    private volatile bool _cursorPainted;
+    private bool _cursorModeLocked;
+    private GhostCursor? _cursor;
+    private volatile bool _pointerOverOwn;
+    private volatile bool _systemCursorPresent;
+    private uint _ownProcessId;
+    private IntPtr _cursorShape;
+    private ID2D1Bitmap? _cursorBitmap;
+    private bool _cursorBitmapDirty;
+    private bool _cursorGeometryDirty;
+    private ID2D1Effect? _cursorShadow;
+    private int _scenePadLeft;
+    private int _scenePadTop;
+
     private ManualResetEventSlim? _showCompletion;
     private int _noGcActive;
     private long _loopCount;
+
+    // vblank 节拍：内容更新（换提示/换光标形状/重建场景）只放在 vblank 后的安全窗口里做，
+    // 避免 1ms 级的上传+渲染把位置提交挤过合成截止（那一拍整组卡片+指针会冻一帧再追平）。
+    private Thread? _vblankThread;
+    private volatile bool _vblankStop;
+    private long _lastVBlankQpc;
+    private long _vblankPeriodQpc;
+    private int _lastContentPhaseUs;
 
     // TEMP-DRAG-DEBUG（验收后删除）：宿主线程逐拍环形轨迹。
     private readonly object _traceGate = new();
@@ -89,6 +117,8 @@ internal sealed class GhostWindowHost
     private long _rawInputCount;
     private int _lastSetPosUs;
     private int _lastBitmapUs;
+    private int _lastRenderUs;
+    private int _lastHintUploadUs;
     private bool _lastBitmapApplied;
 
     // 图形：全部只在专用线程上用。
@@ -121,6 +151,16 @@ internal sealed class GhostWindowHost
 
     private GhostWindowHost()
     {
+        _ownProcessId = (uint)Environment.ProcessId;
+    }
+
+    /// <summary>指针下的窗口是否属于本进程（拖到别的应用上时光标交还系统线程显示）。</summary>
+    private bool IsOwnWindowAt(int x, int y)
+    {
+        var hwnd = WindowFromPoint(new NativePoint { X = x, Y = y });
+        if (hwnd == IntPtr.Zero) return false;
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return pid == _ownProcessId;
     }
 
     /// <summary>当前浮层 HWND（尚未创建/已隐藏时为 0）。跨线程读取。</summary>
@@ -163,6 +203,20 @@ internal sealed class GhostWindowHost
     public int DebugHintContentUs => Volatile.Read(ref _debugHintContentUs);
     public int DebugHintStage => Volatile.Read(ref _debugHintStage);
     public int DebugHintError => Volatile.Read(ref _debugHintError);
+
+    /// <summary>本次拖拽是否已把系统光标画进场景（UI 线程据此决定隐藏系统光标）。</summary>
+    public bool IsCursorPainted => _cursorPainted && _cursorBitmap != null && _firstFramePresented;
+
+    public int DebugCursorWidth => _cursor?.Width ?? 0;
+    public int DebugCursorHeight => _cursor?.Height ?? 0;
+    public int DebugCursorHotspotX => _cursor?.HotspotX ?? 0;
+    public int DebugCursorHotspotY => _cursor?.HotspotY ?? 0;
+
+    /// <summary>画进场景的光标热点在屏幕上的位置（= 卡片位置 + 抓取锚点 − 热点）。</summary>
+    public int DebugCursorScreenX => Volatile.Read(ref _lastX) +
+        (_cursor == null ? 0 : (int)Math.Round(_anchorX - _cursor.HotspotX));
+    public int DebugCursorScreenY => Volatile.Read(ref _lastY) +
+        (_cursor == null ? 0 : (int)Math.Round(_anchorY - _cursor.HotspotY));
 
     public bool TryGetHostSampleAt(long qpc,
         out int cursorX, out int cursorY, out bool hasCursor,
@@ -241,7 +295,7 @@ internal sealed class GhostWindowHost
         try
         {
             using var writer = new StreamWriter(path, false, new UTF8Encoding(false)) { NewLine = "\r\n" };
-            writer.WriteLine("# tMs,curX,curY,tgtX,tgtY,actX,actY,gapUs,setUs,bitmapUs,flags");
+            writer.WriteLine("# tMs,curX,curY,tgtX,tgtY,actX,actY,gapUs,setUs,bitmapUs,renderUs,hintUs,shape,vbPhaseUs,flags");
             for (var i = 0; i < count; i++)
             {
                 var e = entries[(start + i) % entries.Length];
@@ -256,6 +310,10 @@ internal sealed class GhostWindowHost
                 writer.Write(e.LoopGapUs); writer.Write(',');
                 writer.Write(e.SetPosUs); writer.Write(',');
                 writer.Write(e.BitmapUs); writer.Write(',');
+                writer.Write(e.RenderUs); writer.Write(',');
+                writer.Write(e.HintUs); writer.Write(',');
+                writer.Write(e.ShapeHash); writer.Write(',');
+                writer.Write(e.ContentPhaseUs); writer.Write(',');
                 writer.WriteLine(e.Flags);
             }
         }
@@ -302,6 +360,7 @@ internal sealed class GhostWindowHost
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
             CreateWindow();
             InitGraphics();
+            StartVBlankThread();
             _ready.Set();
             RunLoop();
         }
@@ -338,13 +397,19 @@ internal sealed class GhostWindowHost
         _virtualWidth = Math.Max(1, GetSystemMetrics(SmCxVirtualScreen));
         _virtualHeight = Math.Max(1, GetSystemMetrics(SmCyVirtualScreen));
 
-        // 交换链由 DComp 合成，窗口不再需要 WS_EX_LAYERED（分层窗口与交换链不兼容）。
+        // 必须同时带 WS_EX_LAYERED：本机实测 WindowFromPoint 会命中非分层的全屏 DComp 窗口，
+        // 而 OLE 拖拽就是用它找落点目标——浮层没有 IDropTarget，整块屏幕的落点会全部失效。
+        // 分层属性让 WindowFromPoint 跳过这个窗口，DComp 内容仍照常合成（alpha 保持 255）。
+        // LINKPOCKET_NO_LAYERED=1 仅用于对照实验（此时落点会失效）。
+        var layered = Environment.GetEnvironmentVariable("LINKPOCKET_NO_LAYERED") != "1";
+        var exStyle = WsExNoRedirectionBitmap | WsExTransparent | WsExNoActivate | WsExToolWindow | WsExTopmost;
+        if (layered) exStyle |= WsExLayered;
         _hwnd = CreateWindowEx(
-            WsExNoRedirectionBitmap | WsExTransparent | WsExNoActivate | WsExToolWindow | WsExTopmost,
-            WindowClassName, string.Empty, WsPopup,
+            exStyle, WindowClassName, string.Empty, WsPopup,
             _virtualLeft, _virtualTop, _virtualWidth, _virtualHeight,
             IntPtr.Zero, IntPtr.Zero, instance, IntPtr.Zero);
         if (_hwnd == IntPtr.Zero) throw new InvalidOperationException("CreateWindowEx failed");
+        if (layered) SetLayeredWindowAttributes(_hwnd, 0, 255, LwaAlpha);
 
         var device = new RawInputDevice
         {
@@ -397,14 +462,27 @@ internal sealed class GhostWindowHost
         _dcomp.Commit().CheckError();
     }
 
+    /// <summary>光标投影/模糊留白（物理像素）：集合区域与场景边缘之间要留够，否则指针阴影被裁成直线。</summary>
+    private const int CursorShadowPad = 8;
+
+    /// <summary>光标场景的固定对称预留（物理像素）：指针始终在抓取锚点上，四周留够一个光标 + 阴影，
+    /// 拖拽中在“移动/禁止投放”等形状之间切换就不必重建交换链（重建会多花 1–3ms，还可能闪一帧）。</summary>
+    private const int CursorReserve = 64;
+
     /// <summary>
-    /// 按卡片位图尺寸建/换交换链与离屏场景。只在窗口隐藏时调用（换内容发生在 ShowWindow 之前），
-    /// 换完必须再 Present 一帧内容才会出现在合成器里。
+    /// 按内容位图 + 光标占位重建场景。场景原点 = 卡片位图原点向左上扩展 (padLeft, padTop)；
+    /// visual offset 相应减去同一组留白，卡片在屏幕上的落点不变。
+    /// 返回是否真的重建（重建后位置 offset 必须重新提交）。
     /// </summary>
-    private bool EnsureScene(int width, int height)
+    private bool EnsureScene(int contentWidth, int contentHeight,
+        int padLeft, int padTop, int padRight, int padBottom)
     {
+        var width = contentWidth + padLeft + padRight;
+        var height = contentHeight + padTop + padBottom;
         if (width <= 0 || height <= 0) return false;
-        if (_swapchain != null && _sceneWidth == width && _sceneHeight == height) return true;
+        if (_swapchain != null && _sceneWidth == width && _sceneHeight == height &&
+            _scenePadLeft == padLeft && _scenePadTop == padTop)
+            return false;
         if (_d3dDevice == null || _d2dContext == null || _d3dContext == null ||
             _contentVisual == null || _dcomp == null) return false;
 
@@ -462,8 +540,11 @@ internal sealed class GhostWindowHost
                 new Box(0, 0, 0, width, height, 1));
         }
 
-        _contentVisual.SetContent(swapchain).CheckError();
-        _dcomp.Commit().CheckError();
+        lock (_commitGate)
+        {
+            _contentVisual.SetContent(swapchain).CheckError();
+            _dcomp.Commit().CheckError();
+        }
 
         _sceneTarget?.Dispose();
         _sceneTexture?.Dispose();
@@ -475,9 +556,52 @@ internal sealed class GhostWindowHost
         _swapchain = swapchain;
         _sceneWidth = width;
         _sceneHeight = height;
+        _scenePadLeft = padLeft;
+        _scenePadTop = padTop;
         _contentDirty = true;
         _firstFramePresented = false;
         return true;
+    }
+
+    /// <summary>
+    /// 计算光标在内容坐标里的占位，并据此重建场景。指针始终画在抓取锚点上，
+    /// 四周按“一个光标 + 阴影”固定对称预留：形状切换不再改场景尺寸，也就不会在拖拽中重建交换链。
+    /// </summary>
+    private bool UpdateScene()
+    {
+        if (_cardWidth <= 0 || _cardHeight <= 0) return false;
+        var padLeft = 0;
+        var padTop = 0;
+        var padRight = 0;
+        var padBottom = 0;
+        if (_dragCursorMode && _cursor != null)
+        {
+            var reserve = Math.Max(CursorReserve,
+                Math.Max(_cursor.Width, _cursor.Height) + CursorShadowPad * 2);
+            padLeft = padTop = padRight = padBottom = reserve;
+        }
+        return EnsureScene(_cardWidth, _cardHeight, padLeft, padTop, padRight, padBottom);
+    }
+
+    /// <summary>
+    /// 跟随系统光标形状（拖拽中 OLE 会把指针切换成移动/禁止投放）：句柄变了就立刻捕获像素。
+    /// 必须在每拍“清空硬件光标”之前读——SetCursor(NULL) 之后 GetCursorInfo 就只剩 0 了。
+    /// 像素捕获只是 CPU 工作；场景几何/重绘留到 vblank 后的内容窗口。
+    /// </summary>
+    private void TrackCursorShape()
+    {
+        if (!_dragCursorMode) return;
+        if (!TryGetCursorInfo(out var info)) return;
+        // 系统又设置过光标（OLE 换形状/窗口 WM_SETCURSOR）：记下来，宿主节拍据此再清一次。
+        _systemCursorPresent = info.hCursor != IntPtr.Zero;
+        if (info.hCursor == IntPtr.Zero || info.hCursor == _cursorShape) return;
+        var captured = GhostCursor.Capture(info.hCursor);
+        if (captured == null) return;
+        _cursorShape = info.hCursor;
+        _cursor = captured;
+        _cursorBitmapDirty = true;
+        _cursorGeometryDirty = true;
+        _contentDirty = true;
     }
 
     public void Show(BitmapSource bitmap, double anchorX, double anchorY, bool autoFollow = false)
@@ -487,6 +611,12 @@ internal sealed class GhostWindowHost
         _anchorX = anchorX;
         _anchorY = anchorY;
         _autoFollow = autoFollow;
+        // 2026-11-03 回退：软件光标（与卡片同缓冲）能保证指针/卡片完全一体，但 DWM 合成粒度会带来
+        // 偶发单帧 1px 级停顿，用户选择回退硬件光标——指针由系统独立平面绘制，卡片继续用 visual offset 追随。
+        _dragCursorMode = false;
+        _cursorPainted = false;
+        _cursorModeLocked = false;
+        _pointerOverOwn = autoFollow;   // 起手在应用内；首拍用 WindowFromPoint 校正
         BeginNoGcRegion();
 
         if (GetCursorPos(out var cursor))
@@ -586,6 +716,109 @@ internal sealed class GhostWindowHost
         if (hwnd != IntPtr.Zero) PostMessage(hwnd, WmAppWake, IntPtr.Zero, IntPtr.Zero);
     }
 
+    /// <summary>跟踪 DWM 合成节拍（DwmFlush 每帧唤醒），给内容更新提供“vblank 后多久”的相位。</summary>
+    private void StartVBlankThread()
+    {
+        if (_vblankThread != null) return;
+        var thread = new Thread(VBlankLoop)
+        {
+            IsBackground = true,
+            Name = "LinkPocket.DragVBlank",
+            Priority = ThreadPriority.AboveNormal,
+        };
+        _vblankThread = thread;
+        thread.Start();
+    }
+
+    private void VBlankLoop()
+    {
+        var last = 0L;
+        while (!_vblankStop)
+        {
+            if (DwmFlush() != 0)
+            {
+                Thread.Sleep(2);   // DWM 未开/不可用：退化成轮询
+                continue;
+            }
+            var now = Stopwatch.GetTimestamp();
+            var period = 0L;
+            if (last != 0)
+            {
+                var delta = now - last;
+                if (delta > 0)
+                {
+                    Volatile.Write(ref _vblankPeriodQpc, delta);
+                    period = delta;
+                }
+            }
+            last = now;
+            Volatile.Write(ref _lastVBlankQpc, now);
+
+            if (!_visible || !_firstFramePresented || period <= 0) continue;
+
+            // 位置每帧只提交一次，固定在 vblank 之后：这次事务到下一个合成截止还有整整一帧余量，
+            // 不会像“贴着截止抢帧”那样偶发错过、整帧停在原地再跳（快速横移时最明显）。
+            // 代价是卡片稳定晚一帧——正是独立小窗 SetWindowPos 版的手感（2538779）。
+            LatchPosition();
+        }
+    }
+
+    /// <summary>
+    /// 每帧固定相位的位置提交：vblank 后读一次系统光标并提交 visual offset（与宿主循环串行化提交）。
+    /// </summary>
+    private void LatchPosition()
+    {
+        // 只服务真实拖拽的自动跟随；显式摆位（探针/自检）不能被系统光标覆盖。
+        if (_vblankStop || !_visible || !_firstFramePresented || !_autoFollow) return;
+        // 每帧最后一个可能的上屏点：如果系统又设置过光标，再清一次，避免这一帧看到它。
+        if (_cursorPainted && _pointerOverOwn && _systemCursorPresent)
+        {
+            SetCursor(IntPtr.Zero);
+            _systemCursorPresent = false;
+        }
+        if (!GetCursorPos(out var cursor)) return;
+        var sampleQpc = Stopwatch.GetTimestamp();
+        var x = (int)Math.Round(cursor.X - _anchorX);
+        var y = (int)Math.Round(cursor.Y - _anchorY);
+        Volatile.Write(ref _targetX, x);
+        Volatile.Write(ref _targetY, y);
+        lock (_commitGate)
+        {
+            if (_vblankStop || !_visible || !_firstFramePresented || _dcomp == null || _contentVisual == null) return;
+            ApplyOffset(x, y);
+            _dcomp.Commit().CheckError();
+            Volatile.Write(ref _lastX, x);
+            Volatile.Write(ref _lastY, y);
+            _lastAppliedChangeQpc = sampleQpc;
+        }
+    }
+
+    /// <summary>
+    /// 内容更新（提示条/光标形状/场景重建）只允许在 vblank 后的一段窗口内做：
+    /// 这段工作有 0.3–1.5ms，放在帧首还能在下一个合成截止前完成；放在帧尾会把位置提交挤过去，
+    /// 整组卡片+指针就会冻一帧再追平（用户看到的一次性抖动）。
+    /// </summary>
+    private bool ContentWindowOpen()
+    {
+        var last = Volatile.Read(ref _lastVBlankQpc);
+        if (last == 0) return true;   // 相位未知（刚启动）：不阻塞首帧
+        var since = Stopwatch.GetTimestamp() - last;
+        if (since < 0) return false;
+        var phaseUs = since * 1_000_000L / Stopwatch.Frequency;
+        var period = Volatile.Read(ref _vblankPeriodQpc);
+        var periodUs = period > 0 ? period * 1_000_000L / Stopwatch.Frequency : 4167;
+        var windowUs = Math.Clamp(periodUs / 3, 300, 1500);
+        return phaseUs <= windowUs;
+    }
+
+    private int CurrentContentPhaseUs()
+    {
+        var last = Volatile.Read(ref _lastVBlankQpc);
+        if (last == 0) return -1;
+        var since = Stopwatch.GetTimestamp() - last;
+        return since < 0 ? -1 : (int)Math.Min(int.MaxValue, since * 1_000_000L / Stopwatch.Frequency);
+    }
+
     private void OnRawInput()
     {
         if (!_visible || !_autoFollow) return;
@@ -648,6 +881,9 @@ internal sealed class GhostWindowHost
                 {
                     _lastSetPosUs = 0;
                     _lastBitmapUs = 0;
+                    _lastRenderUs = 0;
+                    _lastHintUploadUs = 0;
+                    _lastContentPhaseUs = -1;
                     _lastBitmapApplied = false;
                     var traceCursorX = 0;
                     var traceCursorY = 0;
@@ -660,7 +896,28 @@ internal sealed class GhostWindowHost
                         traceHasCursor = true;
                         Volatile.Write(ref _targetX, (int)Math.Round(cursor.X - _anchorX));
                         Volatile.Write(ref _targetY, (int)Math.Round(cursor.Y - _anchorY));
+                        // 指针在自己窗口上时由我们接管；拖到其它应用的窗口上时光标由那个线程显示，
+                        // 再画一个就是双指针——此时交还系统光标。
+                        // 每 25ms 查一次即可：WindowFromPoint 会跨线程给窗口发 WM_NCHITTEST，
+                        // 按 0.5ms 的节拍查等于给拖拽主线程灌 2000 次/秒的命中测试（会拖慢甚至干扰 OLE 落点判定）。
+                        if ((_loopCount & 0x3F) == 0)
+                        {
+                            var overOwn = IsOwnWindowAt(cursor.X, cursor.Y);
+                            if (overOwn != _pointerOverOwn)
+                            {
+                                _pointerOverOwn = overOwn;
+                                _contentDirty = true;
+                            }
+                        }
                     }
+
+                    // 内容工作（光标形状、提示条、场景重建、Present）只在 vblank 后的安全窗口里做：
+                    // 位置提交每拍照常，绝不因为 1ms 级的位图上传/渲染而错过合成截止。
+                    var contentWindow = ContentWindowOpen();
+                    if (contentWindow) _lastContentPhaseUs = CurrentContentPhaseUs();
+                    // 每拍读一次光标句柄：必须发生在“清空硬件光标”之前，否则 GetCursorInfo 只剩 0。
+                    TrackCursorShape();
+                    var sceneRebuilt = false;
 
                     if (_forceTopmost)
                     {
@@ -672,66 +929,83 @@ internal sealed class GhostWindowHost
                     var x = Volatile.Read(ref _targetX);
                     var y = Volatile.Read(ref _targetY);
 
-                    // 位置走 visual offset：合成器在合成时读取，和硬件光标同一帧；
-                    // 内容走交换链 Present，卡片与提示条始终在同一张缓冲里。
-                    // 先把位置提交掉再碰位图：换字上传（CreateBitmap 可能 1–2ms）不挡位置。
-                    var cardMoved = _forcePosition ||
-                        x != Volatile.Read(ref _lastX) || y != Volatile.Read(ref _lastY);
-                    if (cardMoved)
+                    // 常规跟随由 VBlank 线程每帧固定提交一次；宿主这里只处理显式摆位（首帧/场景重建）。
+                    if (_forcePosition) CommitPosition(x, y);
+
+                    if (contentWindow)
                     {
-                        var moveStart = Stopwatch.GetTimestamp();
-                        _forcePosition = false;
-                        ApplyOffset(x, y);
-                        _dcomp?.Commit().CheckError();
-                        _lastSetPosUs = (int)Math.Min(int.MaxValue,
-                            (Stopwatch.GetTimestamp() - moveStart) * 1_000_000L / Stopwatch.Frequency);
-                        _lastAppliedChangeQpc = Stopwatch.GetTimestamp();
-                        Volatile.Write(ref _lastX, x);
-                        Volatile.Write(ref _lastY, y);
+                        // 光标形状可能变了：重建场景留白（多数形状同尺寸，复用现有交换链）。
+                        if (_cursorGeometryDirty)
+                        {
+                            _cursorGeometryDirty = false;
+                            if (UpdateScene()) sceneRebuilt = true;
+                        }
+
+                        GhostBitmap? pending;
+                        GhostBitmap? pendingHint;
+                        bool hintHide;
+                        int hintOffX, hintOffY;
+                        lock (_gate)
+                        {
+                            pending = _pendingBitmap;
+                            _pendingBitmap = null;
+                            pendingHint = _pendingHint;
+                            _pendingHint = null;
+                            hintOffX = _pendingHintOffsetX;
+                            hintOffY = _pendingHintOffsetY;
+                            hintHide = _pendingHintHide;
+                        }
+                        if (pending != null)
+                        {
+                            if (UploadCard(pending)) sceneRebuilt = true;
+                            _lastBitmapApplied = true;
+                        }
+                        if (pendingHint != null && !hintHide)
+                        {
+                            var start = Stopwatch.GetTimestamp();
+                            UploadHint(pendingHint);
+                            _lastHintUploadUs = (int)Math.Min(int.MaxValue,
+                                (Stopwatch.GetTimestamp() - start) * 1_000_000L / Stopwatch.Frequency);
+                            Volatile.Write(ref _hintOffsetX, hintOffX);
+                            Volatile.Write(ref _hintOffsetY, hintOffY);
+                            _hintVisible = true;
+                            Volatile.Write(ref _debugHintContentUs,
+                                (int)Math.Min(int.MaxValue,
+                                    (Stopwatch.GetTimestamp() - start) * 1_000_000L / Stopwatch.Frequency));
+                            Volatile.Write(ref _debugHintStage, 6);
+                            Volatile.Write(ref _debugHintError, 0);
+                        }
+                        else if (hintHide && _hintVisible)
+                        {
+                            _hintVisible = false;
+                            _contentDirty = true;
+                        }
+
+                        // 场景重建改了视觉原点（卡片在场景里的落白），offset 必须在同一拍按新留白重算。
+                        if (sceneRebuilt) CommitPosition(x, y);
+
+                        // 首帧锁存“本次拖拽由浮层接管光标”：之后系统光标已被隐藏，
+                        // 中途捕获状态变化也不能切换（否则可能两个指针同时出现或一个都没有）。
+                        if (!_cursorModeLocked) _cursorPainted = _dragCursorMode && _cursor != null;
+                        var renderStart = Stopwatch.GetTimestamp();
+                        var rendered = (_contentDirty || !_firstFramePresented) && RenderScene();
+                        _lastRenderUs = (int)Math.Min(int.MaxValue,
+                            (Stopwatch.GetTimestamp() - renderStart) * 1_000_000L / Stopwatch.Frequency);
+                        if (rendered)
+                        {
+                            _contentDirty = false;
+                            _firstFramePresented = true;
+                            _cursorModeLocked = true;
+                        }
                     }
 
-                    GhostBitmap? pending;
-                    GhostBitmap? pendingHint;
-                    bool hintHide;
-                    int hintOffX, hintOffY;
-                    lock (_gate)
+                    // ShowCursor 的每线程计数在这台机器上不生效（硬件指针实测仍可见）；
+                    // 用 SetCursor(NULL) 直接清空硬件光标——只在本进程窗口上、且已经画出替代指针之后。
+                    // 只在系统真的重新设置过光标时清（避免每秒上千次冗余 SetCursor 干扰合成）。
+                    if (_cursorPainted && _firstFramePresented && _pointerOverOwn && _systemCursorPresent)
                     {
-                        pending = _pendingBitmap;
-                        _pendingBitmap = null;
-                        pendingHint = _pendingHint;
-                        _pendingHint = null;
-                        hintOffX = _pendingHintOffsetX;
-                        hintOffY = _pendingHintOffsetY;
-                        hintHide = _pendingHintHide;
-                    }
-                    if (pending != null)
-                    {
-                        UploadCard(pending);
-                        _lastBitmapApplied = true;
-                    }
-                    if (pendingHint != null && !hintHide)
-                    {
-                        var start = Stopwatch.GetTimestamp();
-                        UploadHint(pendingHint);
-                        Volatile.Write(ref _hintOffsetX, hintOffX);
-                        Volatile.Write(ref _hintOffsetY, hintOffY);
-                        _hintVisible = true;
-                        Volatile.Write(ref _debugHintContentUs,
-                            (int)Math.Min(int.MaxValue,
-                                (Stopwatch.GetTimestamp() - start) * 1_000_000L / Stopwatch.Frequency));
-                        Volatile.Write(ref _debugHintStage, 6);
-                        Volatile.Write(ref _debugHintError, 0);
-                    }
-                    else if (hintHide && _hintVisible)
-                    {
-                        _hintVisible = false;
-                        _contentDirty = true;
-                    }
-
-                    if ((_contentDirty || !_firstFramePresented) && RenderScene())
-                    {
-                        _contentDirty = false;
-                        _firstFramePresented = true;
+                        SetCursor(IntPtr.Zero);
+                        _systemCursorPresent = false;
                     }
 
                     if (!_windowShown && _firstFramePresented)
@@ -749,8 +1023,12 @@ internal sealed class GhostWindowHost
                     {
                         ShowWindow(_hwnd, SwHide);
                         _windowShown = false;
+                        // 拖拽结束恢复系统光标；之后鼠标一移动，各窗口的 WM_SETCURSOR 会换回正确形状。
+                        if (_dragCursorMode) SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
                     }
                     _firstFramePresented = false;
+                    _cursorPainted = false;
+                    _cursorModeLocked = false;
                     _contentDirty = true;
                     lock (_gate)
                     {
@@ -764,23 +1042,26 @@ internal sealed class GhostWindowHost
         }
         finally
         {
+            _vblankStop = true;
+            if (_cursorPainted) SetCursor(LoadCursor(IntPtr.Zero, IdcArrow));
             if (highResolutionTimer != IntPtr.Zero) CloseHandle(highResolutionTimer);
             DisposeGraphics();
         }
     }
 
-    private void UploadCard(GhostBitmap pending)
+    private bool UploadCard(GhostBitmap pending)
     {
-        if (_d2dContext == null) return;
+        if (_d2dContext == null) return false;
         var start = Stopwatch.GetTimestamp();
         _cardBitmap?.Dispose();
         _cardBitmap = CreateBitmap(_d2dContext, pending);
         Volatile.Write(ref _cardWidth, pending.Width);
         Volatile.Write(ref _cardHeight, pending.Height);
-        EnsureScene(pending.Width, pending.Height);
+        var rebuilt = UpdateScene();
         _contentDirty = true;
         _lastBitmapUs = (int)Math.Min(int.MaxValue,
             (Stopwatch.GetTimestamp() - start) * 1_000_000L / Stopwatch.Frequency);
+        return rebuilt;
     }
 
     private void UploadHint(GhostBitmap pending)
@@ -812,14 +1093,31 @@ internal sealed class GhostWindowHost
         }
     }
 
+    /// <summary>提交一次卡片位置（卡片屏幕坐标）：offset = 卡片位置 − 场景留白 − 虚拟屏原点。</summary>
+    private void CommitPosition(int x, int y)
+    {
+        var moveStart = Stopwatch.GetTimestamp();
+        _forcePosition = false;
+        lock (_commitGate)
+        {
+            ApplyOffset(x, y);
+            _dcomp?.Commit().CheckError();
+            Volatile.Write(ref _lastX, x);
+            Volatile.Write(ref _lastY, y);
+            _lastAppliedChangeQpc = Stopwatch.GetTimestamp();
+        }
+        _lastSetPosUs = (int)Math.Min(int.MaxValue,
+            (Stopwatch.GetTimestamp() - moveStart) * 1_000_000L / Stopwatch.Frequency);
+    }
+
     /// <summary>
     /// 卡片在屏幕上的落点 = 内容 visual 的 offset。offset 是“合成时读取”的属性：
-    /// 宿主每 0.5ms 更新一次，合成器拿到的就是同一帧里最新的指针位置（与硬件光标同帧）。
+    /// 宿主每 0.5ms 更新一次，合成器拿到的就是同一帧里最新的指针位置（与画进场景的指针同帧）。
     /// </summary>
     private void ApplyOffset(int cardX, int cardY)
     {
-        _contentVisual?.SetOffsetX(cardX - _virtualLeft);
-        _contentVisual?.SetOffsetY(cardY - _virtualTop);
+        _contentVisual?.SetOffsetX(cardX - _scenePadLeft - _virtualLeft);
+        _contentVisual?.SetOffsetY(cardY - _scenePadTop - _virtualTop);
     }
 
     /// <summary>
@@ -837,13 +1135,18 @@ internal sealed class GhostWindowHost
         _d2dContext.BeginDraw();
         _d2dContext.Target = _sceneTarget;
         _d2dContext.Clear(new Color4(0, 0, 0, 0));
-        DrawAt(_cardBitmap, 0, 0, _cardWidth, _cardHeight);
+        DrawAt(_cardBitmap, _scenePadLeft, _scenePadTop, _cardWidth, _cardHeight);
         if (_hintVisible && _hintBitmap != null)
         {
             DrawAt(_hintBitmap,
-                Volatile.Read(ref _hintOffsetX),
-                Volatile.Read(ref _hintOffsetY),
+                _scenePadLeft + Volatile.Read(ref _hintOffsetX),
+                _scenePadTop + Volatile.Read(ref _hintOffsetY),
                 _hintWidth, _hintHeight);
+        }
+        if (_cursorPainted && _dragCursorMode && _pointerOverOwn && _cursor != null)
+        {
+            EnsureCursorBitmap();
+            if (_cursorBitmap != null) DrawCursor();
         }
         _d2dContext.EndDraw().CheckError();
 
@@ -872,12 +1175,59 @@ internal sealed class GhostWindowHost
             null);
     }
 
+    /// <summary>把捕获的像素做成 D2D 位图（形状变化时才重建）。</summary>
+    private void EnsureCursorBitmap()
+    {
+        if (_cursorBitmap != null && !_cursorBitmapDirty) return;
+        if (_cursor == null || _d2dContext == null) return;
+        _cursorBitmap?.Dispose();
+        _cursorBitmap = CreateBitmap(_d2dContext,
+            GhostBitmap.Create(_cursor.Width, _cursor.Height, _cursor.Pixels));
+        _cursorBitmapDirty = false;
+        _cursorShadow?.Dispose();   // 阴影效果持有旧位图输入
+        _cursorShadow = null;
+    }
+
+    /// <summary>
+    /// 画指针：热点落在抓取锚点上，与卡片/提示条同一张缓冲。
+    /// 系统指针的投影是 DWM 画的、不在光标位图里，这里用模糊阴影近似（偏移/模糊随光标尺寸缩放）。
+    /// </summary>
+    private void DrawCursor()
+    {
+        if (_cursor == null || _cursorBitmap == null || _d2dContext == null) return;
+        var x = _scenePadLeft + (int)Math.Round(_anchorX - _cursor.HotspotX);
+        var y = _scenePadTop + (int)Math.Round(_anchorY - _cursor.HotspotY);
+
+        _cursorShadow ??= new Vortice.Direct2D1.Effects.Shadow(_d2dContext)
+        {
+            BlurStandardDeviation = Math.Max(1f, _cursor.Width * 0.03f),
+            Color = new System.Numerics.Vector4(0, 0, 0, 0.45f),
+        };
+        _cursorShadow.SetInput(0, _cursorBitmap, false);
+        var offset = Math.Max(1f, _cursor.Width / 32f * 1.2f);
+        _d2dContext.DrawImage(_cursorShadow, new System.Numerics.Vector2(x + offset, y + offset),
+            Vortice.Direct2D1.InterpolationMode.Linear,
+            Vortice.Direct2D1.CompositeMode.SourceOver);
+
+        _d2dContext.DrawBitmap(_cursorBitmap,
+            new RawRectF(x, y, x + _cursor.Width, y + _cursor.Height),
+            1f,
+            Vortice.Direct2D1.InterpolationMode.NearestNeighbor,
+            new RawRectF(0, 0, _cursor.Width, _cursor.Height),
+            null);
+    }
+
     private void DisposeGraphics()
     {
+        _vblankStop = true;
         _cardBitmap?.Dispose();
         _cardBitmap = null;
         _hintBitmap?.Dispose();
         _hintBitmap = null;
+        _cursorBitmap?.Dispose();
+        _cursorBitmap = null;
+        _cursorShadow?.Dispose();
+        _cursorShadow = null;
         _sceneTarget?.Dispose();
         _sceneTarget = null;
         _sceneTexture?.Dispose();
@@ -889,14 +1239,17 @@ internal sealed class GhostWindowHost
         _swapchain = null;
         _d2dContext?.Dispose();
         _d2dContext = null;
-        _contentVisual?.Dispose();
-        _contentVisual = null;
-        _rootVisual?.Dispose();
-        _rootVisual = null;
-        _target?.Dispose();
-        _target = null;
-        _dcomp?.Dispose();
-        _dcomp = null;
+        lock (_commitGate)
+        {
+            _contentVisual?.Dispose();
+            _contentVisual = null;
+            _rootVisual?.Dispose();
+            _rootVisual = null;
+            _target?.Dispose();
+            _target = null;
+            _dcomp?.Dispose();
+            _dcomp = null;
+        }
         _d2dDevice?.Dispose();
         _d2dDevice = null;
         _d2dFactory?.Dispose();
@@ -932,6 +1285,10 @@ internal sealed class GhostWindowHost
                 LoopGapUs = gapUs,
                 SetPosUs = _lastSetPosUs,
                 BitmapUs = _lastBitmapUs,
+                RenderUs = _lastRenderUs,
+                HintUs = _lastHintUploadUs,
+                ShapeHash = (int)(_cursorShape.ToInt64() & 0xFFFF),
+                ContentPhaseUs = _lastContentPhaseUs,
                 Flags = (byte)((hasCursor ? 1 : 0) | (_autoFollow ? 2 : 0) | (_lastBitmapApplied ? 4 : 0) | 8),
             };
             if (_traceCount < entries.Length)
@@ -947,6 +1304,8 @@ internal sealed class GhostWindowHost
         }
         _lastSetPosUs = 0;
         _lastBitmapUs = 0;
+        _lastRenderUs = 0;
+        _lastHintUploadUs = 0;
         _lastBitmapApplied = false;
     }
 
@@ -967,6 +1326,8 @@ internal sealed class GhostWindowHost
     private const int WsExTopmost = 0x00000008;
     private const int WsExNoRedirectionBitmap = 0x00200000;
     private const int WsExNoActivate = 0x08000000;
+    private const int WsExLayered = 0x00080000;
+    private const uint LwaAlpha = 0x00000002;
     private const int SmXVirtualScreen = 76;
     private const int SmYVirtualScreen = 77;
     private const int SmCxVirtualScreen = 78;
@@ -995,6 +1356,10 @@ internal sealed class GhostWindowHost
         public int LoopGapUs;
         public int SetPosUs;
         public int BitmapUs;
+        public int RenderUs;
+        public int HintUs;
+        public int ShapeHash;
+        public int ContentPhaseUs;
         public byte Flags;
     }
 
@@ -1084,6 +1449,9 @@ internal sealed class GhostWindowHost
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr GetModuleHandle(string? moduleName);
 
@@ -1097,8 +1465,48 @@ internal sealed class GhostWindowHost
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, uint flags);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetCursor(IntPtr cursor);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr LoadCursor(IntPtr instance, IntPtr name);
+
+    private static readonly IntPtr IdcArrow = new(32512);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    /// <summary>CURSORINFO 必须先填 cbSize；包装一层避免忘记初始化。</summary>
+    private static bool TryGetCursorInfo(out CursorInfo info)
+    {
+        info = new CursorInfo { Size = Marshal.SizeOf<CursorInfo>() };
+        return GetCursorInfoNative(out info);
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetCursorInfo", SetLastError = true)]
+    private static extern bool GetCursorInfoNative(out CursorInfo info);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorInfo
+    {
+        public int Size;
+        public int Flags;
+        public IntPtr hCursor;
+        public int X;
+        public int Y;
+    }
 
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
@@ -1131,4 +1539,207 @@ internal sealed class GhostBitmap
         bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
         return new GhostBitmap(bitmap.PixelWidth, bitmap.PixelHeight, pixels);
     }
+
+    public static GhostBitmap Create(int width, int height, byte[] pixels)
+        => new(width, height, pixels);
+}
+
+/// <summary>
+/// 一份系统光标快照（预乘 BGRA，物理像素大小）与热点。拖拽时画进浮层场景，
+/// 使屏幕上的指针与卡片来自同一张后台缓冲。
+/// </summary>
+internal sealed class GhostCursor
+{
+    public int Width { get; }
+    public int Height { get; }
+    public int HotspotX { get; }
+    public int HotspotY { get; }
+    public byte[] Pixels { get; }
+
+    private GhostCursor(int width, int height, int hotspotX, int hotspotY, byte[] pixels)
+    {
+        Width = width;
+        Height = height;
+        HotspotX = hotspotX;
+        HotspotY = hotspotY;
+        Pixels = pixels;
+    }
+
+    /// <summary>抓取光标像素：优先用 32 位 alpha；没有 alpha 的旧式光标退回 AND 掩码/单色掩码。</summary>
+    public static GhostCursor? Capture(IntPtr hcursor)
+    {
+        if (!GetIconInfo(hcursor, out var info)) return null;
+        try
+        {
+            var hasColor = info.hbmColor != IntPtr.Zero;
+            var color = default(NativeBitmap);
+            var mask = default(NativeBitmap);
+            if (hasColor && GetObject(info.hbmColor, Marshal.SizeOf<NativeBitmap>(), ref color) == 0) return null;
+            if (GetObject(info.hbmMask, Marshal.SizeOf<NativeBitmap>(), ref mask) == 0) return null;
+
+            var monochrome = !hasColor;
+            var width = hasColor ? color.Width : mask.Width;
+            var height = hasColor ? color.Height : mask.Height / 2;
+            if (width <= 0 || height <= 0 || width > 512 || height > 512) return null;
+
+            var hdc = GetDC(IntPtr.Zero);
+            if (hdc == IntPtr.Zero) return null;
+            try
+            {
+                var colorBits = new byte[width * height * 4];
+                if (hasColor)
+                {
+                    var bmi = new BitmapInfo { Header = Header(width, -height, 32) };
+                    if (GetDIBits(hdc, info.hbmColor, 0, (uint)height, colorBits, ref bmi, 0) == 0) return null;
+                }
+
+                var maskRows = monochrome ? height * 2 : height;
+                var maskStride = (width + 31) / 32 * 4;
+                var maskBits = new byte[maskStride * maskRows];
+                var maskBmi = new BitmapInfo { Header = Header(width, -maskRows, 1) };
+                if (GetDIBits(hdc, info.hbmMask, 0, (uint)maskRows, maskBits, ref maskBmi, 0) == 0) return null;
+
+                var anyAlpha = false;
+                if (hasColor)
+                {
+                    for (var i = 3; i < colorBits.Length; i += 4)
+                    {
+                        if (colorBits[i] == 0) continue;
+                        anyAlpha = true;
+                        break;
+                    }
+                }
+
+                var pixels = new byte[width * height * 4];
+                var xorRow = height * maskStride;
+                for (var y = 0; y < height; y++)
+                {
+                    var maskRow = y * maskStride;
+                    for (var x = 0; x < width; x++)
+                    {
+                        byte b, g, r, a;
+                        var bit = maskBits[maskRow + (x >> 3)] & (0x80 >> (x & 7));
+                        if (hasColor)
+                        {
+                            var si = (y * width + x) * 4;
+                            b = colorBits[si];
+                            g = colorBits[si + 1];
+                            r = colorBits[si + 2];
+                            a = anyAlpha ? colorBits[si + 3] : bit != 0 ? (byte)0 : (byte)255;
+                        }
+                        else
+                        {
+                            var xorBit = maskBits[xorRow + maskRow + (x >> 3)] & (0x80 >> (x & 7));
+                            if (bit != 0 && xorBit == 0) { b = g = r = a = 0; }
+                            else if (bit == 0 && xorBit == 0) { b = g = r = 0; a = 255; }
+                            else if (bit == 0 && xorBit != 0) { b = g = r = 255; a = 255; }
+                            else { b = g = r = a = 0; }
+                        }
+                        if (a == 0) continue;
+                        var di = (y * width + x) * 4;
+                        pixels[di] = (byte)(b * a / 255);
+                        pixels[di + 1] = (byte)(g * a / 255);
+                        pixels[di + 2] = (byte)(r * a / 255);
+                        pixels[di + 3] = a;
+                    }
+                }
+
+                return new GhostCursor(width, height, (int)info.HotspotX, (int)info.HotspotY, pixels);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, hdc);
+            }
+        }
+        finally
+        {
+            if (info.hbmColor != IntPtr.Zero) DeleteObject(info.hbmColor);
+            if (info.hbmMask != IntPtr.Zero) DeleteObject(info.hbmMask);
+        }
+    }
+
+    private static BitmapInfoHeader Header(int width, int height, short bitCount) => new()
+    {
+        Size = 40,
+        Width = width,
+        Height = height,
+        Planes = 1,
+        BitCount = bitCount,
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IconInfo
+    {
+        public int IsIcon;
+        public uint HotspotX;
+        public uint HotspotY;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeBitmap
+    {
+        public int Type;
+        public int Width;
+        public int Height;
+        public int WidthBytes;
+        public ushort Planes;
+        public ushort BitsPixel;
+        public IntPtr Bits;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfoHeader
+    {
+        public int Size;
+        public int Width;
+        public int Height;
+        public short Planes;
+        public short BitCount;
+        public int Compression;
+        public int SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public int ClrUsed;
+        public int ClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RgbQuad
+    {
+        public byte Blue;
+        public byte Green;
+        public byte Red;
+        public byte Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfo
+    {
+        public BitmapInfoHeader Header;
+        public RgbQuad C0;
+        public RgbQuad C1;
+        public RgbQuad C2;
+        public RgbQuad C3;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetIconInfo(IntPtr hIcon, out IconInfo info);
+
+    [DllImport("gdi32.dll", EntryPoint = "GetObjectW", CharSet = CharSet.Unicode)]
+    private static extern int GetObject(IntPtr handle, int size, ref NativeBitmap bitmap);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(IntPtr hdc, IntPtr bitmap, uint start, uint lines,
+        byte[] bits, ref BitmapInfo info, uint usage);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr handle);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
 }

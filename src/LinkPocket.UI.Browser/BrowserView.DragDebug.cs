@@ -32,6 +32,11 @@ internal static class DragDiagnostics
     /// <summary>本次拖拽是否正在记录（调用点据此跳过字符串拼接）。</summary>
     public static bool IsActive => _current != null;
 
+    /// <summary>重探针（每帧 BitBlt 3–5ms + 桌面复制）默认关闭：它们自己会抢占 CPU/GPU，
+    /// 在验收拖拽手感的场景里必须先排除测量干扰。设 LINKPOCKET_DRAG_PROBES=1 才启用。
+    /// 轻量宿主轨迹始终保留（内存环形缓冲，拖拽结束落盘）。</summary>
+    public static bool FullProbes => Environment.GetEnvironmentVariable("LINKPOCKET_DRAG_PROBES") == "1";
+
     public static void Begin(IReadOnlyList<DragItem> items, DragVisualOverlay overlay, FrameworkElement view)
     {
         End();
@@ -231,7 +236,8 @@ internal static class DragDiagnostics
             // 先开 host 轨迹，再开屏幕探针：探针每帧都要按 QPC 回查 host 的光标/落位记录。
             try { overlay.StartHostTrace(Path.Combine(folder, stem + ".host.csv"), _startTick); }
             catch (Exception ex) { Debug.WriteLine($"drag host trace unavailable: {ex}"); }
-            _present = new DragPresentProbe(folder, stem, _startTick, overlay, overlay.DebugMarkerColor);
+            if (FullProbes)
+                _present = new DragPresentProbe(folder, stem, _startTick, overlay, overlay.DebugMarkerColor);
         }
 
         public static Session Start(IReadOnlyList<DragItem> items, DragVisualOverlay overlay, FrameworkElement view)

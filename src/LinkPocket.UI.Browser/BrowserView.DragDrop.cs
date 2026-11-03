@@ -38,7 +38,8 @@ public partial class BrowserView : UserControl
         // 消掉「浮层已显示、跟随还没开」这一小段的首帧落后（起手第一拍补正）。
         _dragVisual.Show(items, GrabFraction(source), autoFollow: true);
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
-        // 系统光标保持可见：拖拽期间浮层在专用线程上跟随系统光标，不改变用户看到的指针与 OLE 的默认拖拽反馈。
+        // 真实拖拽由浮层接管系统光标：光标位图与卡片画在同一张缓冲里（UI 线程隐藏系统光标，
+        // 摘除浮层时恢复），屏幕上不存在“卡片追光标”的采样差；OLE 的光标形状变化仍由浮层跟随重画。
         // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会先闪在屏幕角落再被拖走）。
         // 取**系统光标**而非 Mouse.GetPosition：拖拽启动期间 WPF 的鼠标位置来自最后一次输入消息，
         // 浮层构建这一小段里指针已经继续移动——用缓存位置会让首帧偏几像素，第一拍再"啪"地补正（用户可见的起手抖动）。
@@ -48,7 +49,16 @@ public partial class BrowserView : UserControl
         // 拖拽源在本页内 → GiveFeedback / QueryContinueDrag 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
         AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
+        // TEMP-重绘实验：拖拽期间冻结主窗口的命中/悬停重绘（落点会失效，仅用于判断整帧顿挫是否由主窗重绘触发）。
+        if (Environment.GetEnvironmentVariable("LINKPOCKET_FREEZE_UI") == "1")
+        {
+            _uiFrozenForDrag = true;
+            IsHitTestVisible = false;
+        }
     }
+
+    /// <summary>TEMP-重绘实验：拖拽期间是否冻结了本页的命中/悬停。</summary>
+    private bool _uiFrozenForDrag;
 
     /// <summary>
     /// 按下时指针在源元素里的相对位置（0..1）：浮层以同一比例被"捏住"。
@@ -95,6 +105,11 @@ public partial class BrowserView : UserControl
     /// <summary>摘除浮层（拖拽结束 / 拖拽被取消）。</summary>
     private void HideDragVisual()
     {
+        if (_uiFrozenForDrag)
+        {
+            _uiFrozenForDrag = false;
+            IsHitTestVisible = true;
+        }
         DragDiagnostics.Sample("X", 0);   // TEMP-DRAG-DEBUG（验收后删除）
         DragDiagnostics.End();            // TEMP-DRAG-DEBUG（验收后删除）
         StopDragPointerFrameTracking();   // 静态事件订阅绝不留到拖拽之后

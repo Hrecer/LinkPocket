@@ -32,9 +32,9 @@ namespace LinkPocket.Views;
 /// 不穿透就会挡住真实拖拽的落点命中；同时不进 Alt-Tab、不抢焦点。</para>
 ///
 /// <para><b>位置口径</b>：宿主给的是**被装饰视图坐标**（<c>ownerPoint</c>），这里换算成屏幕物理像素，
-/// 再用 <see cref="SetWindowPos"/> 直接摆窗口（不做 WPF 布局/变换）。抓取锚点 = 指针在来源行里的相对比例
-/// 映射到快照卡片的同一点，于是"抓哪儿、快照的哪儿就在指针下"。内容变化（提示条显隐）只改小窗尺寸并
-/// 按上次指针重新钉住左上角，卡片不位移。</para>
+/// 由专用线程按系统光标驱动 visual offset（不做 WPF 布局/变换）。抓取锚点 = 指针在来源行里的相对比例
+/// 映射到快照卡片的同一点，于是"抓哪儿、快照的哪儿就在指针下"。真实拖拽时系统光标由浮层接管：
+/// 光标位图画在同一张缓冲里，UI 线程隐藏系统光标；拖拽结束（<see cref="Detach"/>）恢复。</para>
 ///
 /// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站两页共用同一份浮层实现（public——页面程序集都要用；
 /// 内部可见性后门是架构红线，不开）。</para>
@@ -58,6 +58,15 @@ public sealed class DragVisualOverlay
 
     /// <summary>本次拖拽是否已经显示（隐藏后为 false）。</summary>
     private bool _shown;
+
+    /// <summary>系统光标是否由浮层隐藏（只在 UI 线程上读写：ShowCursor 的显示计数是每线程的）。</summary>
+    private static bool _systemCursorHidden;
+
+    /// <summary>TEMP-DRAG-DEBUG（验收后删除）：最近一次 ShowCursor 返回的显示计数。</summary>
+    private static int _systemCursorCount;
+
+    [DllImport("user32.dll")]
+    private static extern int ShowCursor(bool show);
 
     private DragVisualOverlay(FrameworkElement owner)
     {
@@ -121,11 +130,31 @@ public sealed class DragVisualOverlay
                 _grabAnchor.Y * dpi.DpiScaleY,
                 autoFollow);
             _shown = true;
+            // 浮层已把系统光标画进同一张缓冲 → 隐藏系统光标，屏幕上只剩这一个指针。
+            // Show 返回时首帧已上屏（IsCursorPainted 为 false 时说明没接管，绝不能藏）。
+            if (autoFollow && GhostWindowHost.Shared.IsCursorPainted) HideSystemCursor();
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
             _shown = false;
+            RestoreSystemCursor();
         }
+    }
+
+    /// <summary>隐藏系统光标（每线程计数，必须在 UI 线程调用；与恢复严格配对一次）。</summary>
+    private static void HideSystemCursor()
+    {
+        if (_systemCursorHidden) return;
+        _systemCursorHidden = true;
+        _systemCursorCount = ShowCursor(false);
+    }
+
+    /// <summary>恢复系统光标（拖拽结束/浮层摘除必须调用）。</summary>
+    private static void RestoreSystemCursor()
+    {
+        if (!_systemCursorHidden) return;
+        _systemCursorHidden = false;
+        _systemCursorCount = ShowCursor(true);
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。</summary>
@@ -240,12 +269,13 @@ public sealed class DragVisualOverlay
     // TEMP-DRAG-DEBUG（验收后删除）：自检用显式摆位（屏幕物理像素）。
     public void DebugSetPosition(int x, int y) => GhostWindowHost.Shared.SetExplicitPosition(x, y);
 
-    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。</summary>
+    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口、恢复系统光标，保留专用线程给下一次拖拽复用。</summary>
     public void Detach()
     {
         _shown = false;
         _bitmap = null;
         GhostWindowHost.Shared.Hide();
+        RestoreSystemCursor();
     }
 
     /// <summary>把内容量好、排好，供离屏位图渲染（不依赖窗口/演示源）。</summary>
@@ -315,12 +345,20 @@ public sealed class DragVisualOverlay
     public int DebugHintWidth => GhostWindowHost.Shared.DebugHintWidth;
     public int DebugHintHeight => GhostWindowHost.Shared.DebugHintHeight;
     public bool DebugIsAutoFollowing => GhostWindowHost.Shared.IsAutoFollowing;
+    public bool DebugCursorPainted => GhostWindowHost.Shared.IsCursorPainted;
+    public bool DebugSystemCursorHidden => _systemCursorHidden;
+    public int DebugSystemCursorCount => _systemCursorCount;
+    public int DebugCursorWidth => GhostWindowHost.Shared.DebugCursorWidth;
+    public int DebugCursorHeight => GhostWindowHost.Shared.DebugCursorHeight;
+    public int DebugCursorHotspotX => GhostWindowHost.Shared.DebugCursorHotspotX;
+    public int DebugCursorHotspotY => GhostWindowHost.Shared.DebugCursorHotspotY;
+    public int DebugCursorScreenX => GhostWindowHost.Shared.DebugCursorScreenX;
+    public int DebugCursorScreenY => GhostWindowHost.Shared.DebugCursorScreenY;
     public bool DebugNoGcActive => GhostWindowHost.Shared.DebugNoGcActive;
     public int DebugTargetX => GhostWindowHost.Shared.DebugTargetX;
     public int DebugTargetY => GhostWindowHost.Shared.DebugTargetY;
     /// <summary>TEMP-DRAG-DEBUG（验收后删除）：屏幕采样标记的精确颜色（避免蓝色正文/图标污染质心）。</summary>
-    public System.Windows.Media.Color DebugMarkerColor
-        => (SystemColors.HighlightBrush as SolidColorBrush)?.Color ?? SystemColors.HighlightColor;
+    public System.Windows.Media.Color DebugMarkerColor => System.Windows.Media.Colors.Magenta;
 
     // TEMP-DRAG-DEBUG（验收后删除）：host 线程按 QPC 回查“该帧的光标/已落位窗口位置”。
     public bool DebugTryGetHostSampleAt(long qpc,
@@ -585,7 +623,7 @@ public sealed class DragVisualOverlay
         internal void DebugSetMarker(Point anchor)
         {
             using var dc = _debugMarker.RenderOpen();
-            dc.DrawRectangle(SystemColors.HighlightBrush, null, new Rect(anchor.X - 2, anchor.Y - 2, 4, 4));
+            dc.DrawRectangle(System.Windows.Media.Brushes.Magenta, null, new Rect(anchor.X - 2, anchor.Y - 2, 4, 4));
         }
 
         /// <summary>TEMP-DRAG-DEBUG（验收后删除）：提示条左上角内的洋红标记，供屏幕采样定位。</summary>
