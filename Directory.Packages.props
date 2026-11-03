@@ -22,6 +22,11 @@
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
     <!-- 测试栈：Test.Sdk 17.x 的 vstest 宿主不认识 net10 测试目标，必须 18.x（vstest 侧要求） -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <!-- 拖拽浮层：DirectComposition 承载（visual offset 合成截止比 SetWindowPos 晚约 2ms） -->
+    <PackageVersion Include="Vortice.Direct2D1" Version="3.8.3" />
+    <PackageVersion Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageVersion Include="Vortice.DirectComposition" Version="3.8.3" />
+    <PackageVersion Include="Vortice.DXGI" Version="3.8.3" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>

@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using LinkPocket.I18n;
 using LinkPocket.UIKit;
 using LinkPocket.ViewModels;
@@ -40,28 +41,23 @@ namespace LinkPocket.Views;
 /// </summary>
 public sealed class DragVisualOverlay
 {
-    /// <summary>浮层内容（卡片 + 堆叠背板 + 计数徽标 + 提示条），承载在独立小窗里。</summary>
+    /// <summary>浮层内容（卡片 + 堆叠背板 + 计数徽标 + 提示条），在主线程渲染成位图后交给专用线程承载。</summary>
     private readonly DragVisualContent _content;
 
     /// <summary>被装饰视图：用于把视图坐标换算成屏幕物理像素。</summary>
     private readonly FrameworkElement _owner;
 
-    /// <summary>承载内容的小窗（拖拽期间存在，结束即关闭）。</summary>
-    private Window? _overlay;
-
     /// <summary>
     /// 抓取点在内容里的位置（内容坐标）：来源元素里按下时指针落在哪个相对比例，
     /// 这里就取快照里的同一比例。窗口左上角 = 屏幕指针 − 它，于是"抓哪儿、快照的哪儿就在指针下"。
     /// </summary>
-    private Point _grabAnchor = new(4, 4);
+    private Point _grabAnchor = new(16, 16);
 
-    /// <summary>最近一次指针位置（视图坐标）：提示条显隐改尺寸后，按它重新钉住窗口。</summary>
-    private Point _lastOwnerPoint;
-    private bool _hasLastOwnerPoint;
+    /// <summary>本次提交给专用线程的位图（保留引用，便于诊断/生命周期）。</summary>
+    private System.Windows.Media.Imaging.RenderTargetBitmap? _bitmap;
 
-    /// <summary>最近一次窗口位置（屏幕物理像素）：同一点不重复调窗口 API。</summary>
-    private int _lastWindowX = int.MinValue;
-    private int _lastWindowY = int.MinValue;
+    /// <summary>本次拖拽是否已经显示（隐藏后为 false）。</summary>
+    private bool _shown;
 
     private DragVisualOverlay(FrameworkElement owner)
     {
@@ -69,52 +65,26 @@ public sealed class DragVisualOverlay
         _content = new DragVisualContent(owner);
     }
 
-    /// <summary>为宿主挂一个浮层（同一宿主只挂一个）。建不出小窗时返回 null，拖拽本身不受影响。</summary>
+    /// <summary>为宿主挂一个浮层（同一宿主只挂一个）。建不出内容时返回 null，拖拽本身不受影响。</summary>
     public static DragVisualOverlay? Attach(FrameworkElement owner)
-    {
-        var overlay = new DragVisualOverlay(owner);
-        return overlay.OpenOverlay() ? overlay : null;
-    }
-
-    /// <summary>
-    /// 建独立小窗并把内容移进去（先不显示：等 <see cref="Show"/> 量好尺寸、宿主紧接着摆位后再显示）。
-    /// </summary>
-    private bool OpenOverlay()
     {
         try
         {
-            var window = new Window
-            {
-                WindowStyle = WindowStyle.None,
-                AllowsTransparency = true,
-                Background = Brushes.Transparent,
-                ShowInTaskbar = false,
-                ShowActivated = false,
-                Focusable = false,
-                Topmost = true,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStartupLocation = WindowStartupLocation.Manual,
-                Content = _content,
-                IsHitTestVisible = false,
-                Left = -20000,
-                Top = -20000,
-                Width = 1,
-                Height = 1,
-            };
-            window.SourceInitialized += (_, _) =>
-            {
-                var hwnd = new WindowInteropHelper(window).Handle;
-                var exStyle = GetWindowLong(hwnd, GwlExStyle);
-                SetWindowLong(hwnd, GwlExStyle, exStyle | WsExTransparent | WsExNoActivate | WsExToolWindow);
-            };
-            _overlay = window;
-            return true;
+            var overlay = new DragVisualOverlay(owner);
+            GhostWindowHost.Shared.Prewarm();   // 后台预热点：线程冷启动不落在首次拖拽路径上
+            return overlay;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
-            // 无窗口系统 / 窗口创建被拒：如实降级为"没有浮层"，不影响拖拽本身
-            return false;
+            // 主题令牌缺失/无窗口系统：如实降级为"没有浮层"，不影响拖拽本身
+            return null;
         }
+    }
+
+    /// <summary>提前启动浮层专用线程（页面加载时调用，避免第一次拖拽等待冷启动）。</summary>
+    public static void Prewarm()
+    {
+        GhostWindowHost.Shared.Prewarm();
     }
 
     /// <summary>
@@ -130,33 +100,123 @@ public sealed class DragVisualOverlay
     /// 抓取点在源元素里的相对位置（0..1，宿主按按下时刻的指针坐标算好）：
     /// 浮层按同一比例被指针"捏住"。来源尺寸不可得时传 (0.5, 0.5)（指针落在快照中心）。
     /// </param>
-    public void Show(IReadOnlyList<DragItem> items, Point grabFraction)
+    public void Show(IReadOnlyList<DragItem> items, Point grabFraction, bool autoFollow = false)
     {
-        _content.Show(items);
-        // 量一次才拿得到卡片的真实宽高；只量不排，目的是算抓取锚点与小窗尺寸。
-        _content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        _grabAnchor = _content.AnchorFor(grabFraction);
-        ResizeOverlay();
-        _overlay?.Show();   // 随后的 UpdatePosition 在同一条调用链里就位，首帧不会闪
+        try
+        {
+            _content.Show(items);
+            // 卡片位图整段拖拽只上传一次：DComp surface 在本机第二次换内容时不会重新合成，
+            // 提示条若还画在卡片位图里，每次换字都会把整张卡片一起带成空白。
+            _content.UpdateHint(string.Empty);
+            ArrangeContent();
+            _grabAnchor = _content.AnchorFor(grabFraction);
+            _content.DebugSetMarker(_grabAnchor);   // TEMP-DRAG-DEBUG（验收后删除）
+            var dpi = VisualTreeHelper.GetDpi(_owner);
+            var bitmap = RenderContent(dpi);
+            if (bitmap == null) return;
+
+            _bitmap = bitmap;
+            GhostWindowHost.Shared.Show(bitmap,
+                _grabAnchor.X * dpi.DpiScaleX,
+                _grabAnchor.Y * dpi.DpiScaleY,
+                autoFollow);
+            _shown = true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            _shown = false;
+        }
     }
 
     /// <summary>更新「移动到 X」提示（空串 = 隐藏整条）。</summary>
     public void UpdateHint(string hintText)
     {
+        // 提示条是独立的分层小窗，只裁它自己那一块位图；卡片位图在整段拖拽里保持不动，
+        // 因此提示换字不会触发 DComp 内容替换，也就不会把卡片一起带成空白。
         if (!_content.UpdateHint(hintText)) return;
-        ResizeOverlay();
-        // 提示条显隐会改变小窗尺寸；立刻按上次指针重新钉住左上角，卡片相对指针不位移。
-        if (_hasLastOwnerPoint) UpdatePosition(_lastOwnerPoint);
+        if (!_shown) return;
+
+        try
+        {
+            if (string.IsNullOrEmpty(hintText))
+            {
+                GhostWindowHost.Shared.HideHint();
+                return;
+            }
+
+            ArrangeContent();
+            _content.DebugSetHintMarker();   // TEMP-DRAG-DEBUG（验收后删除）
+            var dpi = VisualTreeHelper.GetDpi(_owner);
+            var full = RenderContent(dpi);
+            if (full == null) return;
+            var hint = CropHint(full, dpi, out var offsetX, out var offsetY);
+            if (hint != null)
+            {
+                // TEMP-DRAG-DEBUG（验收后删除）：确认裁剪位图本身不是空的。
+                var probePixels = new byte[hint.PixelWidth * hint.PixelHeight * 4];
+                hint.CopyPixels(probePixels, hint.PixelWidth * 4, 0);
+                var opaque = 0;
+                var magenta = 0;
+                for (var i = 3; i < probePixels.Length; i += 4)
+                {
+                    if (probePixels[i] != 0) opaque++;
+                    if (probePixels[i] > 180 && probePixels[i + 1] > 180 && probePixels[i + 2] < 90) magenta++;
+                }
+                DebugHintOpaque = opaque;
+                DebugHintMarkerPixels = magenta;
+                DebugHintBitmapSize = new Size(hint.PixelWidth, hint.PixelHeight);
+            }
+            var hintPixels = hint == null ? null : GhostBitmap.From(hint);
+            GhostWindowHost.Shared.SetHint(hintPixels, offsetX, offsetY);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+        }
     }
 
-    /// <summary>更新位置（宿主给的坐标须相对被装饰视图）：换算成屏幕物理像素后直接移动小窗。</summary>
+    /// <summary>提示条投影留白（DIP）：BlurRadius 10 + ShadowDepth 2，再留 2px 余量。</summary>
+    private const double HintShadowMargin = 14;
+
+    /// <summary>
+    /// 从整张内容位图里裁出提示条（含投影）那一块。偏移 = 裁剪块左上角相对内容原点的物理像素，
+    /// 宿主用它把提示小窗贴到卡片下方。
+    /// </summary>
+    private System.Windows.Media.Imaging.BitmapSource? CropHint(
+        System.Windows.Media.Imaging.RenderTargetBitmap full, DpiScale dpi,
+        out int offsetX, out int offsetY)
+    {
+        offsetX = 0;
+        offsetY = 0;
+        var hint = _content.HintRect;
+        if (hint.Width <= 0 || hint.Height <= 0) return null;
+
+        var size = _content.DesiredSize;
+        var left = Math.Max(0, hint.Left - HintShadowMargin);
+        var top = Math.Max(0, hint.Top - HintShadowMargin);
+        var right = Math.Min(size.Width, hint.Right + HintShadowMargin);
+        var bottom = Math.Min(size.Height, hint.Bottom + HintShadowMargin);
+        if (right <= left || bottom <= top) return null;
+
+        var x = (int)Math.Floor(left * dpi.DpiScaleX);
+        var y = (int)Math.Floor(top * dpi.DpiScaleY);
+        var width = Math.Min(full.PixelWidth - x, (int)Math.Ceiling((right - left) * dpi.DpiScaleX));
+        var height = Math.Min(full.PixelHeight - y, (int)Math.Ceiling((bottom - top) * dpi.DpiScaleY));
+        if (width <= 0 || height <= 0) return null;
+
+        var cropped = new System.Windows.Media.Imaging.CroppedBitmap(
+            full, new Int32Rect(x, y, width, height));
+        cropped.Freeze();
+        offsetX = x;
+        offsetY = y;
+        return cropped;
+    }
+
+    /// <summary>更新位置（宿主给的坐标须相对被装饰视图）：换算成屏幕物理像素后交给浮层线程。</summary>
     public void UpdatePosition(Point ownerPoint)
     {
-        _lastOwnerPoint = ownerPoint;
-        _hasLastOwnerPoint = true;
-        if (_overlay == null || !_owner.IsLoaded) return;
-        var hwnd = new WindowInteropHelper(_overlay).Handle;
-        if (hwnd == IntPtr.Zero) return;
+        if (!_shown) return;
+        // 自动跟随时窗口由专用线程按系统光标驱动：主线程再摆位只会与专用线程抢方向。
+        if (GhostWindowHost.Shared.IsAutoFollowing) return;
 
         Point screen;
         try
@@ -171,49 +231,109 @@ public sealed class DragVisualOverlay
         var dpi = VisualTreeHelper.GetDpi(_owner);
         var x = (int)Math.Round(screen.X - _grabAnchor.X * dpi.DpiScaleX);
         var y = (int)Math.Round(screen.Y - _grabAnchor.Y * dpi.DpiScaleY);
-        if (x == _lastWindowX && y == _lastWindowY) return;   // 同一点不重复调窗口 API
-        _lastWindowX = x;
-        _lastWindowY = y;
-        SetWindowPos(hwnd, HwndTopmost, x, y, 0, 0, SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder);
+        GhostWindowHost.Shared.SetExplicitPosition(x, y);
     }
 
-    /// <summary>按内容尺寸调整小窗（提示条显隐只改下方的提示区，卡片仍在内容原点 + 抓取锚点）。</summary>
-    private void ResizeOverlay()
-    {
-        _content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        if (_overlay == null) return;
-        var size = _content.DesiredSize;
-        _overlay.Width = Math.Max(1, size.Width);
-        _overlay.Height = Math.Max(1, size.Height);
-        _overlay.UpdateLayout();
-    }
+    /// <summary>开启/关闭浮层线程的自动跟随（真实拖拽开启；探针静态预览关闭后用显式摆位）。</summary>
+    public void SetAutoFollow(bool enabled) => GhostWindowHost.Shared.SetAutoFollow(enabled);
 
-    /// <summary>关闭浮层小窗（拖拽结束 / 页面卸载）。</summary>
+    // TEMP-DRAG-DEBUG（验收后删除）：自检用显式摆位（屏幕物理像素）。
+    public void DebugSetPosition(int x, int y) => GhostWindowHost.Shared.SetExplicitPosition(x, y);
+
+    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。</summary>
     public void Detach()
     {
-        try { _overlay?.Close(); }
-        catch (InvalidOperationException) { /* 窗口已关闭：收尾幂等 */ }
-        _overlay = null;
+        _shown = false;
+        _bitmap = null;
+        GhostWindowHost.Shared.Hide();
     }
 
-    private const int GwlExStyle = -20;
-    private const int WsExTransparent = 0x00000020;
-    private const int WsExToolWindow = 0x00000080;
-    private const int WsExNoActivate = 0x08000000;
-    private const uint SwpNoSize = 0x0001;
-    private const uint SwpNoActivate = 0x0010;
-    private const uint SwpNoOwnerZOrder = 0x0200;
-    private static readonly IntPtr HwndTopmost = new(-1);
+    /// <summary>把内容量好、排好，供离屏位图渲染（不依赖窗口/演示源）。</summary>
+    private void ArrangeContent()
+    {
+        // 内容不在可视树里：父子之间的 measure 失效不会自动向上传播，换提示文字后必须显式强制重排，
+        // 否则 Border 会复用“空提示”的缓存宽度（实测只剩 18px 内边距，位图里提示文字是空的）。
+        _content.InvalidateMeasure();
+        _content.InvalidateArrange();
+        _content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _content.Arrange(new Rect(_content.DesiredSize));
+    }
 
-    [DllImport("user32.dll")]
-    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    /// <summary>
+    /// 把内容渲染成冻结位图（含投影/圆角；Pbgra32 预乘 alpha 正好贴合分层窗口）。
+    /// 位图按被装饰视图的 DPI 渲染，物理尺寸 = DIP × DPI；抓取锚点也按同一比例换算成物理像素。
+    /// </summary>
+    private System.Windows.Media.Imaging.RenderTargetBitmap? RenderContent(DpiScale dpi)
+    {
+        var size = _content.DesiredSize;
+        if (size.Width <= 0 || size.Height <= 0) return null;
 
-    [DllImport("user32.dll")]
-    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+        var width = Math.Max(1, (int)Math.Ceiling(size.Width * dpi.DpiScaleX));
+        var height = Math.Max(1, (int)Math.Ceiling(size.Height * dpi.DpiScaleY));
+        // 离屏内容第一次 Render 只负责把子可视（图标模板 / 刚显形的提示条）实现出来，
+        // 直接把它当结果会得到“缺图标、空提示”的位图；先用一张丢弃的热身位图触发实现，再渲染正式位图。
+        var warm = new System.Windows.Media.Imaging.RenderTargetBitmap(
+            width, height, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        warm.Render(_content);
 
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
-        int x, int y, int cx, int cy, uint flags);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+            width, height, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        bitmap.Render(_content);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    // TEMP-DRAG-DEBUG（验收后删除）：只读观测面，不改变任何行为。
+    public IntPtr DebugHwnd => GhostWindowHost.Shared.Hwnd;
+    public Point DebugAnchor => _grabAnchor;
+    public Size DebugWindowSize => _content.DesiredSize;
+    public string DebugHintText => _content.DebugHintText;
+    public int DebugWindowX => GhostWindowHost.Shared.LastX;
+    public int DebugWindowY => GhostWindowHost.Shared.LastY;
+    public bool DebugIsVisible => GhostWindowHost.Shared.IsVisible;
+    public long DebugHostLoopCount => GhostWindowHost.Shared.DebugLoopCount;
+    public double DebugAnchorScreenX => GhostWindowHost.Shared.AnchorX;
+    public double DebugAnchorScreenY => GhostWindowHost.Shared.AnchorY;
+    public int DebugBitmapWidth => GhostWindowHost.Shared.DebugBitmapWidth;
+    public int DebugBitmapHeight => GhostWindowHost.Shared.DebugBitmapHeight;
+    public long DebugRawInputCount => GhostWindowHost.Shared.DebugRawInputCount;
+    public bool DebugHintVisible => GhostWindowHost.Shared.DebugHintVisible;
+    public bool DebugHintWindowShown => GhostWindowHost.Shared.DebugHintWindowShown;
+    public IntPtr DebugHintHwnd => GhostWindowHost.Shared.DebugHintHwnd;
+    public int DebugHintOpaque { get; private set; }
+    public int DebugHintMarkerPixels { get; private set; }
+    public Size DebugHintBitmapSize { get; private set; }
+    public int DebugHintSetupUs => GhostWindowHost.Shared.DebugHintSetupUs;
+    public int DebugHintWindowUs => GhostWindowHost.Shared.DebugHintWindowUs;
+    public int DebugHintDeviceUs => GhostWindowHost.Shared.DebugHintDeviceUs;
+    public int DebugHintTargetUs => GhostWindowHost.Shared.DebugHintTargetUs;
+    public int DebugHintContentUs => GhostWindowHost.Shared.DebugHintContentUs;
+    public int DebugHintStage => GhostWindowHost.Shared.DebugHintStage;
+    public int DebugHintError => GhostWindowHost.Shared.DebugHintError;
+    public int DebugHintScreenX => GhostWindowHost.Shared.DebugHintScreenX;
+    public int DebugHintScreenY => GhostWindowHost.Shared.DebugHintScreenY;
+    public int DebugHintWidth => GhostWindowHost.Shared.DebugHintWidth;
+    public int DebugHintHeight => GhostWindowHost.Shared.DebugHintHeight;
+    public bool DebugIsAutoFollowing => GhostWindowHost.Shared.IsAutoFollowing;
+    public bool DebugNoGcActive => GhostWindowHost.Shared.DebugNoGcActive;
+    public int DebugTargetX => GhostWindowHost.Shared.DebugTargetX;
+    public int DebugTargetY => GhostWindowHost.Shared.DebugTargetY;
+    /// <summary>TEMP-DRAG-DEBUG（验收后删除）：屏幕采样标记的精确颜色（避免蓝色正文/图标污染质心）。</summary>
+    public System.Windows.Media.Color DebugMarkerColor
+        => (SystemColors.HighlightBrush as SolidColorBrush)?.Color ?? SystemColors.HighlightColor;
+
+    // TEMP-DRAG-DEBUG（验收后删除）：host 线程按 QPC 回查“该帧的光标/已落位窗口位置”。
+    public bool DebugTryGetHostSampleAt(long qpc,
+        out int cursorX, out int cursorY, out bool hasCursor,
+        out int appliedX, out int appliedY, out long appliedSinceQpc)
+        => GhostWindowHost.Shared.TryGetHostSampleAt(qpc,
+            out cursorX, out cursorY, out hasCursor,
+            out appliedX, out appliedY, out appliedSinceQpc);
+
+    // TEMP-DRAG-DEBUG（验收后删除）：宿主线程逐拍轨迹开关（每拍写内存，拖拽结束一次性落盘）。
+    public void StartHostTrace(string path, long sessionStartQpc)
+        => GhostWindowHost.Shared.StartHostTrace(path, sessionStartQpc);
+    public void StopHostTrace() => GhostWindowHost.Shared.StopHostTrace();
 
     /// <summary>
     /// 浮层视觉（卡片 + 堆叠背板 + 计数徽标 + 提示条）：自带 <c>Measure</c>/<c>Arrange</c>，尺寸由内容量出。
@@ -224,9 +344,30 @@ public sealed class DragVisualOverlay
         /// <summary>名称列最大宽度（超出省略号；浮层不该盖住半个屏幕）。</summary>
         private const double MaxNameWidth = 220;
 
+        /// <summary>提示条预留宽度（DIP）：拖拽开始就按这个宽度预留，之后换提示文字不再改窗口尺寸。
+        /// 实测提示条 129–141 DIP；留足余量，超长名称用省略号收尾（浮层不该随落点名抖动/撑大）。</summary>
+        private const double MaxHintWidth = 240;
+
+        /// <summary>提示条预留高度（DIP）：首次测量空提示得到，之后固定不变。</summary>
+        private double _hintReserveHeight;
+
+        /// <summary>提示条当前可见宽度（DIP）：**只增不减**——拖拽中换目标只换文字，药丸不左右伸缩。</summary>
+        private double _hintBarWidth;
+
+        /// <summary>提示条最近一次排布的位置（内容坐标 DIP），供独立提示小窗裁剪/定位。</summary>
+        internal Rect HintRect { get; private set; }
+
+        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：抓取点屏幕采样标记。</summary>
+        private readonly DrawingVisual _debugMarker = new();
+        private readonly DrawingVisual _debugHintMarker = new();
+
+        /// <summary>投影留白（DIP）：窗口四边都要留够，否则卡片/提示条的 DropShadowEffect 会被窗口边界裁断
+        /// （用户截图可见提示条底部阴影是一条直线）。取 16 &gt; 卡片 BlurRadius 12 + ShadowDepth 2。</summary>
+        private const double ShadowPad = 16;
+
         /// <summary>卡片在内容层里的落点（与 <see cref="ArrangeOverride"/> 共用，锚点计算必须读同一组值）。</summary>
-        private const double CardLeft = 4;
-        private const double CardTop = 4;
+        private const double CardLeft = ShadowPad;
+        private const double CardTop = ShadowPad;
 
         private readonly Border _card;
         private readonly TextBlock _name;
@@ -300,7 +441,16 @@ public sealed class DragVisualOverlay
             };
 
             // —— 「移动到「X」」提示（独立小条，落在浮层下方）——
-            _hintText = new TextBlock { FontSize = 11.5, Foreground = onSurface, VerticalAlignment = VerticalAlignment.Center };
+            // MaxWidth/省略号：提示条的可见宽度仍随文字走，但被预留区上限约束——窗口尺寸不变。
+            _hintText = new TextBlock
+            {
+                FontSize = 11.5,
+                Foreground = onSurface,
+                VerticalAlignment = VerticalAlignment.Center,
+                MaxWidth = MaxHintWidth - 18,   // 减边框 2 + 左右内边距 16
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
             _hint = new Border
             {
                 Background = surface,
@@ -319,11 +469,14 @@ public sealed class DragVisualOverlay
             AddVisualChild(_stackBack1);
             AddVisualChild(_card);
             AddVisualChild(_hint);
+            AddVisualChild(_debugMarker);
+            AddVisualChild(_debugHintMarker);
         }
 
         /// <summary>设置本次拖动的内容（单项 = 图标 + 名称；多选 = 仅项数徽标 + 叠层）。</summary>
         internal void Show(IReadOnlyList<DragItem> items)
         {
+            _hintBarWidth = 0;
             var first = items.FirstOrDefault();
             if (first == null) return;
 
@@ -349,8 +502,16 @@ public sealed class DragVisualOverlay
             if (shown == show && (!show || _hintText.Text == hintText)) return false;
             if (show) _hintText.Text = hintText;
             _hint.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            // 离屏内容没有布局根传播失效：显式让提示条/内容重测，避免沿用空提示的缓存宽度。
+            _hintText.InvalidateMeasure();
+            _hint.InvalidateMeasure();
+            InvalidateMeasure();
+            InvalidateArrange();
             return true;
         }
+
+        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：当前可见的提示文案，空串 = 提示条隐藏。</summary>
+        internal string DebugHintText => _hint.Visibility == Visibility.Visible ? _hintText.Text : string.Empty;
 
         /// <summary>
         /// 抓取比例 → 内容坐标：指针按同一比例落在卡片上（抓在行左侧 = 落在快照左侧）。
@@ -367,21 +528,43 @@ public sealed class DragVisualOverlay
         protected override Size MeasureOverride(Size constraint)
         {
             _card.Measure(constraint);
-            _hint.Measure(constraint);
-            var w = Math.Max(_card.DesiredSize.Width, _hint.DesiredSize.Width) + 8;
-            var h = _card.DesiredSize.Height + _hint.DesiredSize.Height + 6;
+            _hint.Measure(new Size(MaxHintWidth, double.PositiveInfinity));
+            if (_hint.Visibility == Visibility.Visible && _hint.DesiredSize.Width > _hintBarWidth)
+                _hintBarWidth = _hint.DesiredSize.Width;   // 只增不减：换目标不缩回
+            // 尺寸只由卡片与**固定预留**的提示区决定，与当前提示文字无关：
+            // 显隐/换字不会触发窗口 resize（拖拽中的 resize 会卡住 OLE 循环）。
+            // 宽高 = 卡片/提示区 + 四周投影留白（左右/上下各 ShadowPad）
+            var w = Math.Max(_card.DesiredSize.Width, MaxHintWidth + 2) + ShadowPad * 2;
+            var h = _card.DesiredSize.Height + HintReserveHeight() + 4 + ShadowPad * 2;
             return new Size(w, h);
+        }
+
+        /// <summary>提示条高度（与当前是否显示提示无关）：临时显形量一次空提示，再恢复可见性。</summary>
+        private double HintReserveHeight()
+        {
+            if (_hintReserveHeight > 0) return _hintReserveHeight;
+            var visibility = _hint.Visibility;
+            _hint.Visibility = Visibility.Visible;
+            _hint.Measure(new Size(MaxHintWidth, double.PositiveInfinity));
+            _hintReserveHeight = _hint.DesiredSize.Height;
+            _hint.Visibility = visibility;
+            _hint.InvalidateMeasure();   // 空提示的测量结果只用于取高度，不能留给后续复用
+            return _hintReserveHeight;
         }
 
         protected override Size ArrangeOverride(Size finalSize)
         {
             // 卡片在内容层的位置由抓取锚点反推（宿主把"锚点"摆到指针下）；堆叠背板向左上各让 2/4px；
             // 提示条贴在卡片正下方。
-            _stackBack2.Arrange(new Rect(CardLeft, 0, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            _stackBack1.Arrange(new Rect(2, 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            _stackBack2.Arrange(new Rect(CardLeft, ShadowPad - 4, _card.DesiredSize.Width, _card.DesiredSize.Height));
+            _stackBack1.Arrange(new Rect(ShadowPad - 2, ShadowPad - 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
             _card.Arrange(new Rect(CardLeft, CardTop, _card.DesiredSize.Width, _card.DesiredSize.Height));
             var hintTop = CardTop + _card.DesiredSize.Height + 4;
-            _hint.Arrange(new Rect(6, hintTop, Math.Max(_hint.DesiredSize.Width, 0), _hint.DesiredSize.Height));
+            // 宽度只增不减：目标名变短时药丸保持宽度，避免跨行时左右伸缩。
+            // 左边与卡片左边缘对齐（不额外右移），提示条和卡片共用同一条视觉基线。
+            var hintWidth = Math.Max(_hintBarWidth, _hint.DesiredSize.Width);
+            HintRect = new Rect(CardLeft, hintTop, hintWidth, _hint.DesiredSize.Height);
+            _hint.Arrange(HintRect);
             return finalSize;
         }
 
@@ -391,10 +574,31 @@ public sealed class DragVisualOverlay
                 0 => _stackBack2,
                 1 => _stackBack1,
                 2 => _card,
-                _ => _hint,
+                3 => _hint,
+                4 => _debugMarker,
+                _ => _debugHintMarker,
             };
 
-        protected override int VisualChildrenCount => 4;
+        protected override int VisualChildrenCount => 6;
+
+        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：在抓取点画一个洋红方块，供屏幕采样定位。</summary>
+        internal void DebugSetMarker(Point anchor)
+        {
+            using var dc = _debugMarker.RenderOpen();
+            dc.DrawRectangle(SystemColors.HighlightBrush, null, new Rect(anchor.X - 2, anchor.Y - 2, 4, 4));
+        }
+
+        /// <summary>TEMP-DRAG-DEBUG（验收后删除）：提示条左上角内的洋红标记，供屏幕采样定位。</summary>
+        internal void DebugSetHintMarker()
+        {
+            using var dc = _debugHintMarker.RenderOpen();
+            if (_hint.Visibility == Visibility.Visible)
+            {
+                var hint = HintRect;
+                dc.DrawRectangle(System.Windows.Media.Brushes.Magenta, null,
+                    new Rect(hint.Left + 4, hint.Top + 4, 4, 4));
+            }
+        }
 
         private static Border StackLayer(Brush background, double inset) => new()
         {

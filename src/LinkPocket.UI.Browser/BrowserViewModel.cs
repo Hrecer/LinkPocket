@@ -481,12 +481,37 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>拖拽结束（松手 / Esc 取消 / 拖出可落点）统一清空落点：绝不留残留高亮。</summary>
     public void ClearDropTarget() => DropState.Clear();
 
-    /// <summary>落点状态变化 → 投影：行高亮（拉刷）+ 树高亮（推送）+ 提示文案属性。</summary>
+    /// <summary>上一次向行投影的落点（用于只失效**旧/新目标行**）。</summary>
+    private BrowserDropTarget? _projectedDropTarget;
+
+    /// <summary>落点状态变化 → 投影：行高亮（只失效旧/新目标行）+ 树高亮（推送）+ 提示文案属性。</summary>
     private void OnDropStateChanged()
     {
-        foreach (var r in Rows) r.InvalidateIsDropTarget();
+        // 只失效旧/新目标行：全量失效会让整张列表重绑定/重绘；主窗口是软件合成的分层窗口，
+        // 任何一次全窗重绘都会把拖拽循环卡住数毫秒（跨行时表现为浮层被定格后补正）。
+        var current = DropState.Target;
+        if (!Equals(_projectedDropTarget, current))
+        {
+            InvalidateDropTargetRow(_projectedDropTarget);
+            InvalidateDropTargetRow(current);
+            _projectedDropTarget = current;
+        }
         SyncTreeDropTarget();
         OnPropertyChanged(nameof(DropTargetHintText));
+    }
+
+    /// <summary>只对该落点对应的那一行重发 <c>IsDropTarget</c> 通知（找不到行 = 当前文件夹空白落点）。</summary>
+    private void InvalidateDropTargetRow(BrowserDropTarget? target)
+    {
+        if (target is not { Pane: BrowserPane.Main } || target.FolderId == null) return;
+        foreach (var row in Rows)
+        {
+            if (string.Equals(row.Id, target.FolderId, StringComparison.Ordinal))
+            {
+                row.InvalidateIsDropTarget();
+                return;
+            }
+        }
     }
 
     /// <summary>目录树落点投影（节点侧是推送式，与 IsSelected 同构）：只有指针所在栏是树、

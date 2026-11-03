@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -33,10 +34,17 @@ public partial class BrowserView : UserControl
         _dragVisual = DragVisualOverlay.Attach(this);
         _dragCancelledByEscape = false;
         if (_dragVisual == null) return;
-        _dragVisual.Show(items, GrabFraction(source));
+        // 真实拖拽：自动跟随从 Show 内部就开启——首帧提交前宿主会再采一次系统光标，
+        // 消掉「浮层已显示、跟随还没开」这一小段的首帧落后（起手第一拍补正）。
+        _dragVisual.Show(items, GrabFraction(source), autoFollow: true);
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+        // 系统光标保持可见：拖拽期间浮层在专用线程上跟随系统光标，不改变用户看到的指针与 OLE 的默认拖拽反馈。
         // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会先闪在屏幕角落再被拖走）。
-        _dragVisual.UpdatePosition(Mouse.GetPosition(this));
+        // 取**系统光标**而非 Mouse.GetPosition：拖拽启动期间 WPF 的鼠标位置来自最后一次输入消息，
+        // 浮层构建这一小段里指针已经继续移动——用缓存位置会让首帧偏几像素，第一拍再"啪"地补正（用户可见的起手抖动）。
+        _dragVisual.UpdatePosition(SystemCursorInView());
+        DragDiagnostics.Begin(items, _dragVisual, this);   // TEMP-DRAG-DEBUG（验收后删除）
+        TrackDragPointer("S");                             // TEMP-DRAG-DEBUG（验收后删除）
         // 拖拽源在本页内 → GiveFeedback / QueryContinueDrag 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
         AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
@@ -57,7 +65,7 @@ public partial class BrowserView : UserControl
             var size = element.RenderSize;
             if (size.Width <= 0 || size.Height <= 0) return centered;
 
-            var pointer = Mouse.GetPosition(this);
+            var pointer = SystemCursorInView();
             return new Point(
                 Math.Clamp((pointer.X - origin.X) / size.Width, 0, 1),
                 Math.Clamp((pointer.Y - origin.Y) / size.Height, 0, 1));
@@ -69,9 +77,26 @@ public partial class BrowserView : UserControl
         }
     }
 
+    /// <summary>系统光标在页内的坐标：拖拽期间 WPF 的 <c>Mouse.GetPosition</c> 可能滞后（OLE 循环不驱动 WPF 鼠标消息），
+    /// 起手摆位与抓取比例都读系统光标，保证"浮层第一次出现就与指针同点"。</summary>
+    private Point SystemCursorInView()
+    {
+        if (!GetCursorPos(out var screen)) return Mouse.GetPosition(this);
+        try
+        {
+            return PointFromScreen(new Point(screen.X, screen.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return Mouse.GetPosition(this);   // 视图尚未接入可视树：退回 WPF 缓存位置
+        }
+    }
+
     /// <summary>摘除浮层（拖拽结束 / 拖拽被取消）。</summary>
     private void HideDragVisual()
     {
+        DragDiagnostics.Sample("X", 0);   // TEMP-DRAG-DEBUG（验收后删除）
+        DragDiagnostics.End();            // TEMP-DRAG-DEBUG（验收后删除）
         StopDragPointerFrameTracking();   // 静态事件订阅绝不留到拖拽之后
         if (_dragVisual == null) return;
         RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
@@ -86,19 +111,21 @@ public partial class BrowserView : UserControl
     /// <summary>拖拽期间的定时采样器：浮层小窗移动不产生 WPF 渲染失效，不能只等合成帧。</summary>
     private DispatcherTimer? _dragPointerTimer;
 
+    /// <summary>已排队的延迟摆位：OLE 的 GiveFeedback 回调里不直接调 SetWindowPos（见 <see cref="PostDragPointerMove"/>）。</summary>
+    private bool _dragMovePosted;
+
     /// <summary>
-    /// 开始按**渲染帧**采样指针。浮层位移不能只靠 <c>GiveFeedback</c>：它由 OLE 拖拽循环按落点处理节奏派发，
-    /// **与合成帧不同步、鼠标消息还会被合并**——渲染帧之间没有新样本，浮层就会"停两帧、跳一格"，
-    /// 看着是一帧帧在跳而不是贴着指针走（用户实测的掉帧感就是这么来的）。
-    /// 这里同时挂 <see cref="CompositionTarget.Rendering"/> 与一个 4ms 定时器，每个节拍读一次**系统光标当前位置**
-    /// （<c>GetCursorPos</c> 取的是光标瞬时位置，与 WPF 是否派发 MouseMove 无关）：
-    /// 后者保证浮层改由独立小窗承载后、主窗口没有渲染失效时仍能持续采样窗口位置。
+    /// 开始采样指针：定时器兜底 + OLE 反馈（<see cref="PostDragPointerMove"/> 延迟摆位）。
+    /// <para><b>为什么不订阅 <see cref="CompositionTarget.Rendering"/></b>：它会让主窗口（AllowsTransparency 的
+    /// 软件合成窗口）持续参与渲染帧，增加 GC/重绘压力；而落点高亮变化后的整窗重绘本来就会卡住 UI 线程
+    /// 8–14ms，持续渲染只会放大这种停顿。日志实测 OLE 延迟反馈本身有 ~280 次/秒的采样，240Hz 屏足够跟手，
+    /// 定时器负责反馈稀疏时兜底。</para>
     /// 只在真实拖拽（提交给 OLE 循环之前）挂；探针的静态预览仍由显式 <see cref="DragVisualOverlay.UpdatePosition"/> 驱动。
     /// </summary>
     private void StartDragPointerFrameTracking()
     {
         if (_dragPointerFrameTracking) return;
-        CompositionTarget.Rendering += OnDragPointerFrame;
+        _dragMovePosted = false;
         _dragPointerTimer ??= new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
         {
             Interval = TimeSpan.FromMilliseconds(4),
@@ -107,13 +134,15 @@ public partial class BrowserView : UserControl
         _dragPointerTimer.Tick += OnDragPointerTimer;
         _dragPointerTimer.Start();
         _dragPointerFrameTracking = true;
+        // 浮层窗口在专用线程上按系统光标自行跟随；主线程的定时/反馈采样只用于诊断与兜底。
+        _dragVisual?.SetAutoFollow(true);
     }
 
     /// <summary>结束逐帧采样（拖拽收尾必调）。</summary>
     private void StopDragPointerFrameTracking()
     {
         if (!_dragPointerFrameTracking) return;
-        CompositionTarget.Rendering -= OnDragPointerFrame;
+        _dragVisual?.SetAutoFollow(false);
         if (_dragPointerTimer != null)
         {
             _dragPointerTimer.Stop();
@@ -122,21 +151,44 @@ public partial class BrowserView : UserControl
         _dragPointerFrameTracking = false;
     }
 
-    private void OnDragPointerFrame(object? sender, EventArgs e) => TrackDragPointer();
-
-    private void OnDragPointerTimer(object? sender, EventArgs e) => TrackDragPointer();
+    // 采样来源在诊断里如实记录（T = 定时器 / D = OLE 反馈的延迟摆位）
+    private void OnDragPointerTimer(object? sender, EventArgs e) => TrackDragPointer("T");
 
     // GiveFeedback 仍保留：它是 OLE 拖拽循环内的同步回调，渲染帧/定时器被系统节流时
-    // 仍能把最后一次指针位置补上。
-    private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e) => TrackDragPointer();
+    // 仍能把最后一次指针位置补上——但**只排一次延迟摆位**，不在这里直接调窗口 API。
+    private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
+    {
+        PostDragPointerMove();
+    }
+
+    /// <summary>
+    /// 把 GiveFeedback 触发的摆位投递到调度器（普通优先级）：
+    /// 实测所有 &gt;1.5ms 的慢摆位（最坏 14.6ms）都发生在 GiveFeedback 的同步回调里——
+    /// 在 OLE 模态循环内部直接 <c>SetWindowPos</c> 会被拖拽/合成内部状态阻塞，期间采样全停，
+    /// 指针继续移动，下一拍浮层一次性补上（可见抖动）。同一拍内多次反馈只排一次。
+    /// </summary>
+    private void PostDragPointerMove()
+    {
+        if (_dragMovePosted) return;
+        _dragMovePosted = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(() =>
+        {
+            _dragMovePosted = false;
+            if (!_dragPointerFrameTracking) return;   // 拖拽已结束：丢弃迟到的摆位
+            TrackDragPointer("D");
+        }));
+    }
 
     /// <summary>把浮层摆到**当前**指针位置（渲染帧 / 4ms 定时器 / GiveFeedback 共用这一条实现）。</summary>
-    private void TrackDragPointer()
+    private void TrackDragPointer(string source)
     {
         if (_dragVisual == null || !IsLoaded) return;
         if (!GetCursorPos(out var screen)) return;
         // 屏幕物理像素 → 本页坐标（PointFromScreen 已处理 DPI 缩放）
+        var callStart = Stopwatch.GetTimestamp();   // TEMP-DRAG-DEBUG（验收后删除）
         _dragVisual.UpdatePosition(PointFromScreen(new Point(screen.X, screen.Y)));
+        // 诊断记录**这一次**读到的光标（摆位用的就是它）；摆位后再读一次会在快速移动时制造“目标落后”的假象。
+        DragDiagnostics.Sample(source, Stopwatch.GetTimestamp() - callStart, screen.X, screen.Y);   // TEMP-DRAG-DEBUG（验收后删除）
     }
 
     /// <summary>
@@ -151,8 +203,11 @@ public partial class BrowserView : UserControl
     private void OnQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
     {
         if (e.EscapePressed) _dragCancelledByEscape = true;
+        var beforeMode = DragDiagnostics.IsActive ? ViewModel?.DropTargetMode : null;   // TEMP-DRAG-DEBUG（验收后删除）
         ViewModel?.SetDropTargetMode(
             BrowserViewModel.ResolveDropMode((e.KeyStates & DragDropKeyStates.ControlKey) != 0));
+        if (beforeMode != ViewModel?.DropTargetMode)   // TEMP-DRAG-DEBUG（验收后删除）
+            DragDiagnostics.Event("mode", $"{beforeMode}->{ViewModel?.DropTargetMode}");   // TEMP-DRAG-DEBUG（验收后删除）
     }
 
     [DllImport("user32.dll")]
@@ -171,16 +226,84 @@ public partial class BrowserView : UserControl
         // 每个 DragOver 都算一次"落点被覆盖"——目标没变也要算：它证明指针还在这条落点上，
         // 让先前 DragLeave 排下的延迟清空作废（行内子元素之间移动 = Leave + Over 成对出现）。
         _dropTargetGeneration++;
+
+        // TEMP-DRAG-DEBUG（验收后删除）：落点切换会连带全量行/树投影 + 提示条重排，逐次计时。
+        var debug = DragDiagnostics.IsActive;
+        BrowserDropTarget? debugBefore = null;
+        var debugHintBefore = string.Empty;
+        var debugSizeBefore = default(Size);
+        var debugRectBefore = "none";
+        var debugSetStart = 0L;
+        var debugSetEnd = 0L;
+        if (debug)
+        {
+            debugBefore = ViewModel?.DropTarget;
+            debugHintBefore = _dragVisual?.DebugHintText ?? string.Empty;
+            debugSizeBefore = _dragVisual?.DebugWindowSize ?? default;
+            debugRectBefore = DragDiagnostics.Describe(_dragVisual);
+            debugSetStart = Stopwatch.GetTimestamp();
+        }
+
         ViewModel?.SetDropTarget(target);
+        if (debug) debugSetEnd = Stopwatch.GetTimestamp();
         _dragVisual?.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
+
+        if (debug)
+        {
+            var hintEnd = Stopwatch.GetTimestamp();
+            var after = ViewModel?.DropTarget;
+            var hintAfter = _dragVisual?.DebugHintText ?? string.Empty;
+            if (!Equals(debugBefore, after) || debugHintBefore != hintAfter)
+            {
+                DragDiagnostics.HintChanged(_dragVisual,
+                    (debugSetEnd - debugSetStart) * 1000.0 / Stopwatch.Frequency,
+                    (hintEnd - debugSetEnd) * 1000.0 / Stopwatch.Frequency,
+                    hintAfter, debugSizeBefore, _dragVisual?.DebugWindowSize ?? default,
+                    debugRectBefore, debugBefore?.Name ?? "-", after?.Name);
+                DragDiagnostics.Sample("E", 0);
+            }
+        }
     }
 
     /// <summary>清空落点（视图侧唯一出口）：离开可落点 / 拖拽结束时调用，避免残留高亮与残留提示。</summary>
     private void ClearDropTarget()
     {
+        // TEMP-DRAG-DEBUG（验收后删除）
+        var debug = DragDiagnostics.IsActive;
+        BrowserDropTarget? debugBefore = null;
+        var debugHintBefore = string.Empty;
+        var debugSizeBefore = default(Size);
+        var debugRectBefore = "none";
+        var debugClearStart = 0L;
+        var debugClearEnd = 0L;
+        if (debug)
+        {
+            debugBefore = ViewModel?.DropTarget;
+            debugHintBefore = _dragVisual?.DebugHintText ?? string.Empty;
+            debugSizeBefore = _dragVisual?.DebugWindowSize ?? default;
+            debugRectBefore = DragDiagnostics.Describe(_dragVisual);
+            debugClearStart = Stopwatch.GetTimestamp();
+        }
+
         ViewModel?.ClearDropTarget();
+        if (debug) debugClearEnd = Stopwatch.GetTimestamp();
         _dragVisual?.UpdateHint(string.Empty);
         Breadcrumb.SetDropHighlight(null);   // 面包屑段高亮一并熄灭（没拖拽经过时是安全的空操作）
+
+        if (debug)
+        {
+            var end = Stopwatch.GetTimestamp();
+            var hintAfter = _dragVisual?.DebugHintText ?? string.Empty;
+            if (debugBefore != null || debugHintBefore.Length > 0)
+            {
+                DragDiagnostics.HintChanged(_dragVisual,
+                    (debugClearEnd - debugClearStart) * 1000.0 / Stopwatch.Frequency,
+                    (end - debugClearEnd) * 1000.0 / Stopwatch.Frequency,
+                    hintAfter, debugSizeBefore, _dragVisual?.DebugWindowSize ?? default,
+                    debugRectBefore, debugBefore?.Name ?? "-", null);
+                DragDiagnostics.Sample("C", 0);
+            }
+        }
     }
 
     /// <summary>延迟清空落点的序号（见 <see cref="ClearDropTargetOnLeave"/>）。</summary>
@@ -448,9 +571,19 @@ public partial class BrowserView : UserControl
         _dragItems = items;
         ShowDragVisual(items, source);
         if (_dragVisual != null) StartDragPointerFrameTracking();
-        DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
-            DragDropEffects.Move | DragDropEffects.Copy);
-        HideDragVisual();
+        var debugLoopStart = DragDiagnostics.IsActive ? Stopwatch.GetTimestamp() : 0L;   // TEMP-DRAG-DEBUG（验收后删除）
+        try
+        {
+            DragDrop.DoDragDrop(source, new DataObject(new BrowserDragPayload(items)),
+                DragDropEffects.Move | DragDropEffects.Copy);
+            if (debugLoopStart != 0)   // TEMP-DRAG-DEBUG（验收后删除）
+                DragDiagnostics.Event("loop-end", // TEMP-DRAG-DEBUG（验收后删除）
+                    $"ms={(Stopwatch.GetTimestamp() - debugLoopStart) * 1000.0 / Stopwatch.Frequency:F1}");   // TEMP-DRAG-DEBUG（验收后删除）
+        }
+        finally
+        {
+            HideDragVisual();   // 任何异常/取消路径都必须结束采样并摘除浮层
+        }
 
         // 落点状态（含模式）在清空**之前**读走：它就是"松手时呈现的那个动作"的唯一事实来源
         //（模式由 DragOver 与 QueryContinueDrag 共同维护，这里绝不第二次判定 Ctrl）。

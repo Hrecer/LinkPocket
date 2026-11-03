@@ -104,6 +104,8 @@ public partial class BrowserView : UserControl
     public BrowserView()
     {
         InitializeComponent();
+        // 预热拖拽浮层的专用承载线程（首次拖拽不等待线程/窗口冷启动；失败静默降级）。
+        DragVisualOverlay.Prewarm();
         DataContextChanged += (_, _) =>
         {
             // ⚠️ MainWindow 先设自身 DataContext（MainViewModel）→ 继承级联会先触发本事件，

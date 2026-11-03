@@ -19,6 +19,10 @@
   <ItemGroup>
     <PackageReference Include="Material3.Wpf" />
     <PackageReference Include="MdXaml" />
+    <PackageReference Include="Vortice.Direct2D1" />
+    <PackageReference Include="Vortice.Direct3D11" />
+    <PackageReference Include="Vortice.DirectComposition" />
+    <PackageReference Include="Vortice.DXGI" />
   </ItemGroup>
 
 </Project>
