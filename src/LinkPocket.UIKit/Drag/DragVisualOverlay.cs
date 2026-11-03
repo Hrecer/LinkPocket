@@ -25,9 +25,8 @@ namespace LinkPocket.Views;
 /// </list>
 ///
 /// <para><b>为什么用独立小窗，而不是挂在页面的装饰层上</b>：主窗口为了圆角/阴影开启了
-/// <c>AllowsTransparency</c>，整窗走软件合成；把浮层画在主窗口里时，指针已经移动、浮层画面却要等
-/// 主窗口的合成帧——浮层会稳定落后指针数像素（运动方向上落后、静止归零，位移算法本身零偏差）。
-/// 改成独立小窗后，拖动只移动窗口、不重绘主窗口，DWM 直接移动窗口：屏幕取点不再有整窗合成滞后。
+/// <c>AllowsTransparency</c>，整窗走软件合成；浮层若画在主窗口里，位置会依赖整窗的合成节奏。
+/// 改成独立小窗后，拖动只移动窗口、不重绘主窗口，DWM 直接移动窗口。
 /// 必须 <c>WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW</c>：窗口永远在指针下方，
 /// 不穿透就会挡住真实拖拽的落点命中；同时不进 Alt-Tab、不抢焦点。</para>
 ///
@@ -367,7 +366,7 @@ public sealed class DragVisualOverlay
         private const double MaxNameWidth = 220;
 
         /// <summary>提示条预留宽度（DIP）：拖拽开始就按这个宽度预留，之后换提示文字不再改窗口尺寸。
-        /// 实测提示条 129–141 DIP；留足余量，超长名称用省略号收尾（浮层不该随落点名抖动/撑大）。</summary>
+        /// 实测提示条 129–141 DIP；留足余量，超长名称用省略号收尾（浮层不该随落点名伸缩/撑大）。</summary>
         private const double MaxHintWidth = 240;
 
         /// <summary>提示条预留高度（DIP）：首次测量空提示得到，之后固定不变。</summary>

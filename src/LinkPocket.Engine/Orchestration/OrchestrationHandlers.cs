@@ -191,6 +191,59 @@ internal sealed class MacroRunHandler(IMacroStore macros, EngineLimits limits) :
 
 // ===== undo.* =====
 
+/// <summary>
+/// 撤销/重做命令的结果数据：全部步骤失败时嵌套结果为空，
+/// 直接交给 <c>CommandResult&lt;JsonElement&gt;</c> 会把 null 强转成 JsonElement → NullReferenceException，
+/// 把"失败并跳过"报成内部错误。空结果统一给 <c>{}</c>（形状稳定、可安全反序列化）。
+/// </summary>
+internal static class UndoResultData
+{
+    internal static JsonElement Safe(object? data)
+        => BatchEngine.ToElement(data) ?? JsonSerializer.Deserialize<JsonElement>("{}");
+
+    /// <summary>
+    /// 整条记录（撤销的逆向步骤 / 重做的显式动作）是否都是"把链接还原到原位置"；
+    /// 是则返回去重后的链接 ID（批量还原可以合并为一次 restore_batch）。
+    /// 任何一步不是 <c>trash.restore</c> / 非 origin 落点 → null（走逐步派发的通用路径）。
+    /// </summary>
+    internal static List<string>? TryCollectLinkRestores(IEnumerable<(string Command, JsonElement Args)> actions)
+    {
+        var ids = new List<string>();
+        foreach (var (command, args) in actions)
+        {
+            if (!string.Equals(command, "trash.restore", StringComparison.Ordinal)) return null;
+            if (args.ValueKind != JsonValueKind.Object) return null;
+            if (args.TryGetProperty("to", out var to)
+                && to.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                && !string.Equals(to.GetString(), "origin", StringComparison.Ordinal)) return null;
+            if (!args.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(id.GetString())) return null;
+            ids.Add(id.GetString()!);
+        }
+        var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
+        return distinct.Count > 1 ? distinct : null;
+    }
+
+    /// <summary>
+    /// 整条记录是否都是"把单条链接移入回收站"（<c>links.trash</c>）；
+    /// 是则返回去重后的链接 ID（可合并为一次 links.trash_batch）。
+    /// </summary>
+    internal static List<string>? TryCollectLinkTrashes(IEnumerable<(string Command, JsonElement Args)> actions)
+    {
+        var ids = new List<string>();
+        foreach (var (command, args) in actions)
+        {
+            if (!string.Equals(command, "links.trash", StringComparison.Ordinal)) return null;
+            if (args.ValueKind != JsonValueKind.Object) return null;
+            if (!args.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String
+                || string.IsNullOrEmpty(id.GetString())) return null;
+            ids.Add(id.GetString()!);
+        }
+        var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
+        return distinct.Count > 1 ? distinct : null;
+    }
+}
+
 internal sealed class UndoListHandler(IUndoCoordinator undo) : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
@@ -246,33 +299,107 @@ internal sealed class UndoUndoHandler(UndoCoordinator undo) : ICommandHandler
         // 逆序回退：一次动作的多步（如一次粘贴多项）按**相反顺序**撤销，避免中途引用已消失的目标。
         // 单项失败不中断整批（与 UI 侧批量语义一致）：失败项如实记录并跳过，整条最终被消费
         // ——"报错并跳过"是定稿口径（绝不静默卡在同一条上让 Ctrl+Z 永远失败）。
+        // 嵌套审计先缓冲，提交后由引擎统一批量落库（逐步独立连接写 = 大条目撤销的线性开销之一）。
+        var ctxImpl = (CommandContextImpl)ctx;
+        ctxImpl.NestedAuditBuffer = [];
         var failures = new List<string>();
         ChangeSet? lastChanges = null;
         object? lastData = null;
-        for (var i = entry.Steps.Count - 1; i >= 0; i--)
+        var undoPhase = LpLog.IsEnabled(LogLevel.Debug) ? Stopwatch.StartNew() : null;
+        var undoPhaseLast = 0L;
+        void UndoPhase(string name)
         {
-            var step = entry.Steps[i];
+            if (undoPhase is null) return;
+            var now = undoPhase.ElapsedMilliseconds;
+            LpLog.Write(LogLevel.Debug, "engine.undo", $"undo phase={name} dt={now - undoPhaseLast}ms total={now}ms steps={entry.Steps.Count}");
+            undoPhaseLast = now;
+        }
+
+        // 快速路径：整条记录都是"把链接还原到原位置"（批量删除的撤销）→ 合并为一次 restore_batch。
+        // 200 步逐步派的往返开销（每步参数快照/审计/查询）是秒级卡顿的主因，合并后约降一个数量级；
+        // 预检失败（快照丢失/主表冲突，写入前发生）回退逐条，保住"失败项跳过"的契约。
+        var mergedRestoreIds = UndoResultData.TryCollectLinkRestores(
+            entry.Steps.Select(s => (s.InverseCommand, s.InverseArgs)));
+        var usedBatch = false;
+        if (mergedRestoreIds is { Count: > 1 })
+        {
             try
             {
-                var result = await ctx.DispatchNestedAsync(step.InverseCommand, step.InverseArgs, ctx.Ct);
+                var result = await ctx.DispatchNestedAsync("trash.restore_batch",
+                    new { link_ids = mergedRestoreIds, to = "origin" }, ctx.Ct);
                 lastChanges = result.Changes;
                 lastData = result.Data;
+                usedBatch = true;
+            }
+            catch (EngineException ex) when (ex.Error.Code is EngineErrors.EntityNotFound or EngineErrors.DbError)
+            {
+                // 预检失败（某条快照已丢失 / 主表同 ID 冲突）发生在**任何写入之前**：
+                // 回退逐条，保住"失败项跳过、其余照常还原"的既有契约（快速路径不能把整批拖下水）。
             }
             catch (Exception ex)
             {
-                failures.Add($"{step.InverseCommand}: {ex.Message}");
+                failures.Add($"trash.restore_batch: {ex.Message}");
+                usedBatch = true;   // 非预检失败：不重试（可能已有部分 EF 登记）
             }
         }
 
-        // 部分失败不转入重做栈（重做会重放整条原始命令，对已成功回退的步骤会二次施加 → 状态错乱）
-        var taken = await undo.TakeUndoAsync(entry.Id, ctx.Ct);
-        if (taken != null && failures.Count == 0) undo.MarkUndone(taken);
+        if (!usedBatch && failures.Count == 0)
+        {
+            var mergedTrashIds = UndoResultData.TryCollectLinkTrashes(
+                entry.Steps.Select(s => (s.InverseCommand, s.InverseArgs)));
+            if (mergedTrashIds is { Count: > 1 })
+            {
+                try
+                {
+                    var result = await ctx.DispatchNestedAsync("links.trash_batch",
+                        new { link_ids = mergedTrashIds }, ctx.Ct);
+                    lastChanges = result.Changes;
+                    lastData = result.Data;
+                    usedBatch = true;
+                }
+                catch (EngineException ex) when (ex.Error.Code is EngineErrors.EntityNotFound or EngineErrors.DbError)
+                {
+                    // 预检失败（某条链接已不存在）发生在写入前 → 回退逐条（失败项跳过）
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"links.trash_batch: {ex.Message}");
+                    usedBatch = true;
+                }
+            }
+        }
 
+        if (!usedBatch && failures.Count == 0)
+        {
+            for (var i = entry.Steps.Count - 1; i >= 0; i--)
+            {
+                var step = entry.Steps[i];
+                try
+                {
+                    var result = await ctx.DispatchNestedAsync(step.InverseCommand, step.InverseArgs, ctx.Ct);
+                    lastChanges = result.Changes;
+                    lastData = result.Data;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{step.InverseCommand}: {ex.Message}");
+                }
+            }
+        }
+
+        UndoPhase("steps");
+        // 部分失败不转入重做栈（重放整条原始命令，对已成功回退的步骤会二次施加 → 状态错乱）
+        if (failures.Count == 0)
+            await undo.CompleteUndoAsync(entry.Id, ctx.Ct);          // 弹出 + 转重做 + 一次落盘
+        else
+            await undo.TakeUndoAsync(entry.Id, ctx.Ct);              // 失败项跳过，条目消费但不进重做栈
+
+        UndoPhase("stack-persist");
         var summary = failures.Count == 0
             ? $"Undid {entry.Steps.Count} step(s)"
             : $"Undid {entry.Steps.Count - failures.Count} step(s), {failures.Count} failed (skipped)";
         return CommandResult.Ok(
-            BatchEngine.ToElement(lastData),
+            UndoResultData.Safe(lastData),
             new ChangeSet(
                 lastChanges?.Touched ?? [],
                 lastChanges?.Events ?? [],
@@ -299,47 +426,102 @@ internal sealed class UndoRedoHandler(UndoCoordinator undo) : ICommandHandler
             throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound,
                 "the redo record's steps are unavailable (journal payload missing)"));
 
+
         // 正序重放（撤销时是逆序，重做对称回来）。重做动作 = 步骤显式给出者优先
         //（创建类必须显式：重放 links.create 会生成**新 ID**，原 ID 丢失且回收站留旧快照），否则重放原命令原参数。
+        // 嵌套审计先缓冲（同 undo.undo）：提交后统一批量落库。
+        ((CommandContextImpl)ctx).NestedAuditBuffer = [];
         var failures = new List<string>();
         ChangeSet? lastChanges = null;
         object? lastData = null;
-        foreach (var step in entry.Steps)
+
+        // 快速路径（与 undo.undo 对称）：整条记录重做 = 批量还原链接 → 合并为一次 restore_batch。
+        // 300 步逐条重做实测 ~0.7s；合并后与批量撤销同一量级。预检失败同样回退逐条。
+        var mergedRestoreIds = UndoResultData.TryCollectLinkRestores(
+            entry.Steps.Select(s => (s.RedoAction.Command, s.RedoAction.Args)));
+        var usedBatch = false;
+        if (mergedRestoreIds is { Count: > 1 })
         {
-            var action = step.RedoAction;
             try
             {
-                var result = await ctx.DispatchNestedAsync(action.Command, action.Args, ctx.Ct);
+                var result = await ctx.DispatchNestedAsync("trash.restore_batch",
+                    new { link_ids = mergedRestoreIds, to = "origin" }, ctx.Ct);
                 lastChanges = result.Changes;
                 lastData = result.Data;
+                usedBatch = true;
+            }
+            catch (EngineException ex) when (ex.Error.Code is EngineErrors.EntityNotFound or EngineErrors.DbError)
+            {
+                // 预检失败（快照缺失 / 主表冲突）发生在写入前 → 回退逐条（失败项跳过）
             }
             catch (Exception ex)
             {
-                failures.Add($"{action.Command}: {ex.Message}");
+                failures.Add($"trash.restore_batch: {ex.Message}");
+                usedBatch = true;
             }
         }
 
-        var taken = await undo.TakeRedoAsync(ctx.Ct);
-        if (taken == null || failures.Count > 0)
+        if (!usedBatch && failures.Count == 0)
         {
-            // 部分失败：不重新入撤销栈（否则会留下"半重放"的可撤销记录，语义混乱）
-            return CommandResult.Ok(BatchEngine.ToElement(lastData),
+            var mergedTrashIds = UndoResultData.TryCollectLinkTrashes(
+                entry.Steps.Select(s => (s.RedoAction.Command, s.RedoAction.Args)));
+            if (mergedTrashIds is { Count: > 1 })
+            {
+                try
+                {
+                    var result = await ctx.DispatchNestedAsync("links.trash_batch",
+                        new { link_ids = mergedTrashIds }, ctx.Ct);
+                    lastChanges = result.Changes;
+                    lastData = result.Data;
+                    usedBatch = true;
+                }
+                catch (EngineException ex) when (ex.Error.Code is EngineErrors.EntityNotFound or EngineErrors.DbError)
+                {
+                    // 预检失败（某条链接已不存在）发生在写入前 → 回退逐条（失败项跳过）
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"links.trash_batch: {ex.Message}");
+                    usedBatch = true;
+                }
+            }
+        }
+
+        if (!usedBatch && failures.Count == 0)
+        {
+            foreach (var step in entry.Steps)
+            {
+                var action = step.RedoAction;
+                try
+                {
+                    var result = await ctx.DispatchNestedAsync(action.Command, action.Args, ctx.Ct);
+                    lastChanges = result.Changes;
+                    lastData = result.Data;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{action.Command}: {ex.Message}");
+                }
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            // 部分失败：消费条目但不重新入撤销栈（否则会留下"半重放"的可撤销记录，语义混乱）
+            await undo.TakeRedoAsync(ctx.Ct);
+            return CommandResult.Ok(UndoResultData.Safe(lastData),
                 new ChangeSet(lastChanges?.Touched ?? [], lastChanges?.Events ?? [],
-                    failures.Count == 0 ? null : $"Redo failed for {failures.Count} step(s) (skipped)",
-                    failures.Count > 0 ? failures : null));
+                    $"Redo failed for {failures.Count} step(s) (skipped)",
+                    failures));
         }
 
-        // 重新入撤销栈：逆向步骤直接复用原记录（重做重放的是同一动作，其逆向不变），
-        // 无需再读一次旧值；分组 ID 沿用，保证"撤销→重做→再撤销"的批量语义一致。
-        foreach (var step in taken.Steps)
-        {
-            var handler = ((CommandContextImpl)ctx).Engine.Registry.Resolve(step.Command);
-            if (handler == null) continue;
-            undo.Record(handler.Descriptor, step.Args, ctx.Caller,
-                [new UndoInverseStep(step.InverseCommand, step.InverseArgs, step.Redo)], taken.GroupId);
-        }
+        // 重新入撤销栈：直接复用原步骤（重做重放的是同一动作，其逆向不变），
+        // 保留剩余重做链，且整条**只落盘一次**（原实现逐步 Record = 每条重做多次整索引写盘 + 清空剩余重做链）。
+        var taken = await undo.CompleteRedoAsync(ctx.Caller, ctx.Ct);
+        if (taken == null)
+            throw new EngineException(EngineErrors.Of(EngineErrors.EntityNotFound, "nothing to redo"));
 
-        return CommandResult.Ok(BatchEngine.ToElement(lastData), lastChanges);
+        return CommandResult.Ok(UndoResultData.Safe(lastData), lastChanges);
     }
 }
 

@@ -449,18 +449,43 @@ public sealed class UndoCoordinator : IUndoCoordinator, IDisposable
     /// <summary>取（不弹）最近一条撤销记录，步骤按需水合（见 <see cref="IUndoCoordinator.PeekUndoAsync"/>）。</summary>
     public Task<UndoEntry?> PeekUndoAsync(string? id, CancellationToken ct)
     {
-        var entries = _undo.ToArray();   // 栈顶在前
-        var entry = id is null
-            ? entries.FirstOrDefault()
-            : entries.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal));
-        return Task.FromResult(Hydrate(entry));
+        lock (_lock)
+        {
+            var entries = _undo.ToArray();   // 栈顶在前
+            var index = id is null
+                ? (entries.Length > 0 ? 0 : -1)
+                : Array.FindIndex(entries, e => string.Equals(e.Id, id, StringComparison.Ordinal));
+            if (index < 0) return Task.FromResult<UndoEntry?>(null);
+            var entry = entries[index];
+            var hydrated = Hydrate(entry);
+            if (hydrated is not null && entry.Steps.Count == 0)
+            {
+                // 水合结果**写回栈**：执行/重做时不再重复读分片（大条目撤销→重做原来每步都读一次 gzip）
+                _undo.Clear();
+                for (var i = entries.Length - 1; i >= 0; i--)
+                    _undo.Push(i == index ? hydrated : entries[i]);
+            }
+            return Task.FromResult(hydrated);
+        }
     }
 
-    /// <summary>取（不弹）最近一条重做记录，步骤按需水合。</summary>
+    /// <summary>取（不弹）最近一条重做记录，步骤按需水合（同样写回栈）。</summary>
     public Task<UndoEntry?> PeekRedoAsync(CancellationToken ct)
     {
-        var entries = _redo.ToArray();
-        return Task.FromResult(Hydrate(entries.FirstOrDefault()));
+        lock (_lock)
+        {
+            var entries = _redo.ToArray();
+            if (entries.Length == 0) return Task.FromResult<UndoEntry?>(null);
+            var entry = entries[0];
+            var hydrated = Hydrate(entry);
+            if (hydrated is not null && entry.Steps.Count == 0)
+            {
+                _redo.Clear();
+                for (var i = entries.Length - 1; i >= 0; i--)
+                    _redo.Push(i == 0 ? hydrated : entries[i]);
+            }
+            return Task.FromResult(hydrated);
+        }
     }
 
     public Task<UndoEntry?> TakeUndoAsync(string? id, CancellationToken ct)
@@ -503,6 +528,52 @@ public sealed class UndoCoordinator : IUndoCoordinator, IDisposable
         }
     }
 
+    /// <summary>撤销成功后的原子收尾：弹出 + 转入重做栈 + **一次**落盘（见接口注释）。</summary>
+    public Task<UndoEntry?> CompleteUndoAsync(string id, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            var items = _undo.ToArray();   // 栈顶在前
+            var index = Array.FindIndex(items, e => string.Equals(e.Id, id, StringComparison.Ordinal));
+            if (index < 0) return Task.FromResult<UndoEntry?>(null);
+            var popped = items[index];
+            // ⚠️ 先水合、后落盘：清理只保留两个栈里还引用的分片（同 TakeUndoAsync）
+            var hydrated = Hydrate(popped);
+            _undo.Clear();
+            for (var i = items.Length - 1; i >= 0; i--)
+                if (i != index) _undo.Push(items[i]);
+            // 水合失败（分片丢失/损坏）= 该条不可重做：与旧 Take+Mark 语义一致，不往重做栈塞不可用条目；
+            // 成功则把**带步骤的条目**推进重做栈（重做不再读一次分片）
+            if (hydrated is not null) _redo.Push(hydrated);
+            Persist();
+            return Task.FromResult(hydrated);
+        }
+    }
+
+    /// <summary>重做成功后的原子收尾：弹重做 + 步骤压回撤销栈 + **一次**落盘；剩余重做链保留。</summary>
+    public Task<UndoEntry?> CompleteRedoAsync(CallerRef caller, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            var entry = _redo.TryPop(out var e) ? e : null;
+            if (entry is null) return Task.FromResult<UndoEntry?>(null);
+            var hydrated = Hydrate(entry);
+            if (hydrated is not null)
+            {
+                // 复用原步骤（撤销↔重做对称）：不再逐步 Record（每步一次整索引写盘）
+                _undo.Push(new UndoEntry(
+                    Id: Guid.NewGuid().ToString("N"),
+                    At: DateTimeOffset.Now,
+                    Steps: hydrated.Steps,
+                    Caller: caller,
+                    GroupId: hydrated.GroupId));
+                TrimToCapacity();
+            }
+            Persist();
+            return Task.FromResult(hydrated);
+        }
+    }
+
     /// <summary>
     /// 登记一条（或合并进一条）可撤销记录。
     /// 逆向步骤来源：① 处理器回填的 <paramref name="inverse"/>（能带旧值，重命名/移动靠它）；
@@ -512,52 +583,85 @@ public sealed class UndoCoordinator : IUndoCoordinator, IDisposable
     /// </summary>
     public void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller,
         IReadOnlyList<UndoInverseStep>? inverse = null, string? groupId = null)
+        => RecordMany([new UndoRegistration(descriptor, args, inverse, groupId)], caller);
+
+    /// <summary>
+    /// 批量登记（批/宏一次提交的 N 个成功步骤）：合并/入栈完成后**只落盘一次**。
+    /// 原实现每步 <see cref="Record"/> 都整索引写盘（200 步的批 = 200 次 gzip 写），是批量撤销前
+    /// 与批量动作本身卡顿的来源之一。
+    /// </summary>
+    public void RecordMany(IReadOnlyList<UndoRegistration> registrations, CallerRef caller)
     {
-        if (!descriptor.IsMutation) return;
-
-        var steps = BuildSteps(descriptor, args, inverse);
-        if (steps.Count == 0) return;
-
+        if (registrations.Count == 0) return;
+        var registered = new List<(string Command, int Steps, string Group)>(registrations.Count);
         lock (_lock)
         {
-            _redo.Clear();   // 新撤销使重做链失效（标准 redo 语义）
-
-            // 分组：与栈顶同组 → 合并进同一条（不进新条，容量不变）
-            if (groupId is { Length: > 0 } && _undo.TryPeek(out var top)
-                && string.Equals(top.GroupId, groupId, StringComparison.Ordinal))
+            var changed = false;
+            foreach (var reg in registrations)
             {
-                _undo.TryPop(out _);
-                var merged = top with { Steps = [.. top.Steps, .. steps] };
-                _undo.Push(merged);
-                if (top.Steps.Count <= MaxStepsPerEntry && merged.Steps.Count > MaxStepsPerEntry)
+                var descriptor = reg.Descriptor;
+                if (!descriptor.IsMutation) continue;
+                var steps = BuildSteps(descriptor, reg.Args, reg.Inverse);
+                if (steps.Count == 0) continue;
+
+                _redo.Clear();   // 新撤销使重做链失效（标准 redo 语义）
+
+                // 分组：与栈顶同组 → 合并进同一条（不进新条，容量不变）
+                if (reg.GroupId is { Length: > 0 } groupId && _undo.TryPeek(out var top)
+                    && string.Equals(top.GroupId, groupId, StringComparison.Ordinal))
                 {
-                    // ② 跨过硬上限：这一条从此只在本会话可撤销（如实留痕一次，不是每次落盘都刷）
-                    LpLog.Warn($"undo entry exceeded {MaxStepsPerEntry} steps — kept in memory only "
-                               + "(it will not survive a restart)", null, "engine.undo");
+                    _undo.TryPop(out _);
+                    var merged = top with { Steps = [.. top.Steps, .. steps] };
+                    _undo.Push(merged);
+                    if (top.Steps.Count <= MaxStepsPerEntry && merged.Steps.Count > MaxStepsPerEntry)
+                    {
+                        // ② 跨过硬上限：这一条从此只在本会话可撤销（如实留痕一次，不是每次落盘都刷）
+                        LpLog.Warn($"undo entry exceeded {MaxStepsPerEntry} steps — kept in memory only "
+                                   + "(it will not survive a restart)", null, "engine.undo");
+                    }
                 }
-                Persist();
-                return;
+                else
+                {
+                    _undo.Push(new UndoEntry(
+                        Id: Guid.NewGuid().ToString("N"),
+                        At: DateTimeOffset.Now,
+                        Steps: steps,
+                        Caller: caller,
+                        GroupId: reg.GroupId));
+                }
+
+                changed = true;
+                registered.Add((descriptor.Name, steps.Count, reg.GroupId ?? string.Empty));
             }
 
-            _undo.Push(new UndoEntry(
-                Id: Guid.NewGuid().ToString("N"),
-                At: DateTimeOffset.Now,
-                Steps: steps,
-                Caller: caller,
-                GroupId: groupId));
-
-            while (_undo.Count > Capacity) _undo.TryPop(out _);
+            if (changed)
+            {
+                TrimToCapacity();
+                Persist();
+            }
         }
-        Persist();
 
         // 里程碑（Debug）：撤销栈变化——「本次用户动作留下了什么可回退的东西」
-        if (LpLog.IsEnabled(LogLevel.Debug))
-            LpLog.Write(LogLevel.Debug, "engine.undo", $"Undo registered: {descriptor.Name}", props: new Dictionary<string, object?>
+        if (!LpLog.IsEnabled(LogLevel.Debug)) return;
+        foreach (var (command, steps, group) in registered)
+            LpLog.Write(LogLevel.Debug, "engine.undo", $"Undo registered: {command}", props: new Dictionary<string, object?>
             {
                 // cmd / caller / corr 由**调用上下文**落到记录首类字段（不在 props 里再抄一份）
-                ["steps"] = steps.Count,
-                ["group"] = groupId ?? string.Empty,
+                ["steps"] = steps,
+                ["group"] = group,
             });
+    }
+
+    /// <summary>
+    /// 栈超过上限时**淘汰最旧**（栈底）。原实现 `while (Count &gt; Capacity) TryPop()` 弹的是栈顶——
+    /// 每条新动作刚压入就被弹掉：满 100 条后所有新动作都不可撤销，Ctrl+Z 会去撤一条很旧的记录。
+    /// </summary>
+    private void TrimToCapacity()
+    {
+        if (_undo.Count <= Capacity) return;
+        var keep = _undo.Take(Capacity).ToArray();   // 枚举顺序 = 栈顶在前（最新优先保留）
+        _undo.Clear();
+        for (var i = keep.Length - 1; i >= 0; i--) _undo.Push(keep[i]);
     }
 
     /// <summary>构造本次调用的可撤销步骤（处理器回填优先；否则退回描述符 + 原参数）。</summary>

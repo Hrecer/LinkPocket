@@ -251,6 +251,142 @@ internal static partial class SmokeRunner
             ProbeEnv.TryDelete(perfDb);
         }
 
+        // 撤销门槛用独立库（带撤销日志落盘 = 正式应用的形态）：单条不卡手、200 步批量仍可用
+        await MeasureUndoPerformance();
+
         GC.KeepAlive(s);
     }
+
+    /// <summary>
+    /// 撤销性能门槛（撤销日志 + 审计落库都与正式应用同形）：
+    /// ① 单条撤销的 UI 线程成本要低到"按下去就见效"；② 200 步批量撤销/重做仍在线性可接受区间。
+    /// 门槛按 Release 标定（Debug ×5 放松，见 Asserts.Within）。
+    /// </summary>
+    private static async Task MeasureUndoPerformance()
+    {
+        var undoDb = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_undo_{Guid.NewGuid():N}.db");
+        var journal = undoDb + ".undo-journal.json";
+        try
+        {
+            var client = LinkPocket.Composition.EngineComposer.Compose(undoDb, new LinkPocket.Composition.ComposeOptions
+            {
+                UndoJournalPath = journal,
+                StagingRoot = ProbeEnv.StagingRootFor(undoDb),
+                BuildWire = false,
+            }).Client;
+
+            // —— ① 单条撤销（新建 → Ctrl+Z）——
+            var folder = (await client.FolderCreateAsync("撤销性能")).Data!;
+            var single = new List<long>();
+            for (var i = 0; i < 15; i++)
+            {
+                var link = (await client.LinkCreateAsync($"https://undo-perf.example/{i}", $"U{i}",
+                    listId: folder.FolderId)).Data!;
+                var sw = Stopwatch.StartNew();
+                await client.UndoAsync();
+                sw.Stop();
+                if (i >= 5) single.Add(sw.ElapsedMilliseconds);
+                await client.RedoAsync();   // 保持栈形态稳定
+                GC.KeepAlive(link);
+            }
+            single.Sort();
+            Asserts.Within(single[single.Count / 2], 30, "单条撤销（含撤销日志落盘）");
+
+            // —— ② 200 步批量撤销 / 重做（一次批量删除 = 一条记录 200 步）——
+            const int Bulk = 200;
+            var bulkFolder = (await client.FolderCreateAsync("批量撤销")).Data!;
+            var ids = new List<string>(Bulk);
+            for (var i = 0; i < Bulk; i++)
+                ids.Add((await client.LinkCreateAsync($"https://undo-bulk.example/{i}", $"B{i}",
+                    listId: bulkFolder.FolderId)).Data!.LinkId);
+
+            var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+            var steps = ids.Select((id, i) => new BatchStep(
+                "s" + i, "links.trash", JsonSerializer.SerializeToElement(new { id }, json))).ToArray();
+            var run = await client.RunBatchAsync(new BatchScript("undo-perf-bulk", steps));
+            Asserts.That(run.Ok, "200 步批量删除应整体成功");
+
+            var swBulk = Stopwatch.StartNew();
+            await client.UndoAsync();
+            swBulk.Stop();
+            Asserts.Within(swBulk.ElapsedMilliseconds, 200, "200 步批量撤销");
+            var restored = await client.FolderContentsAsync(bulkFolder.FolderId);
+            Asserts.That(restored.Links.Count == Bulk,
+                $"批量撤销后应还原 {Bulk} 条，实际 {restored.Links.Count}");
+
+            swBulk.Restart();
+            await client.RedoAsync();
+            swBulk.Stop();
+            Asserts.Within(swBulk.ElapsedMilliseconds, 200, "200 步批量重做");
+            var afterRedo = await client.FolderContentsAsync(bulkFolder.FolderId);
+            Asserts.That(afterRedo.Links.Count == 0,
+                $"批量重做后目录应为空，实际 {afterRedo.Links.Count}");
+
+            // —— ③ 30 层嵌套 + 90 条链接：删整树 → 撤销（restore_unit 深链还原）——
+            const int DeepLevels = 30;
+            var deepChain = new List<string>(DeepLevels);
+            string? parent = null;
+            for (var i = 0; i < DeepLevels; i++)
+            {
+                parent = (await client.FolderCreateAsync($"撤销深树 {i}", parentId: parent)).Data!.FolderId;
+                deepChain.Add(parent!);
+            }
+            for (var i = 0; i < 90; i++)
+                await client.LinkCreateAsync($"https://undo-deep.example/{i}", $"深 {i}",
+                    listId: deepChain[i % DeepLevels]);
+
+            await client.FolderDeleteAsync(deepChain[0], "trash_links");
+            var swDeep = Stopwatch.StartNew();
+            await client.UndoAsync();
+            swDeep.Stop();
+            Asserts.Within(swDeep.ElapsedMilliseconds, 150, "30 层嵌套 / 90 条链接的整树撤销");
+
+            var treeIds = (await client.FolderTreeAsync()).Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
+            Asserts.That(deepChain.All(treeIds.Contains), "深树撤销后 30 层文件夹应全部回到主表");
+            var deepLinks = (await client.LinkListAsync(perPage: 0)).Links
+                .Count(l => l.Url.StartsWith("https://undo-deep.example/", StringComparison.Ordinal));
+            Asserts.That(deepLinks == 90, $"深树撤销后应有 90 条链接，实际 {deepLinks}");
+
+            // —— ④ 100 步批量创建：撤销走 links.trash_batch，重做走 restore_batch ——
+            const int CreateBulk = 100;
+            var createFolder = (await client.FolderCreateAsync("批量创建撤销")).Data!;
+            var createSteps = Enumerable.Range(0, CreateBulk).Select(i => new BatchStep(
+                "c" + i, "links.create", JsonSerializer.SerializeToElement(new
+                {
+                    url = $"https://undo-create.example/{i}",
+                    title = $"C{i}",
+                    list_id = createFolder.FolderId,
+                }, json))).ToArray();
+            var createRun = await client.RunBatchAsync(new BatchScript("undo-perf-create", createSteps));
+            Asserts.That(createRun.Ok, "100 步批量创建应整体成功");
+
+            var swCreate = Stopwatch.StartNew();
+            await client.UndoAsync();
+            swCreate.Stop();
+            Asserts.Within(swCreate.ElapsedMilliseconds, 200, "100 步批量创建撤销");
+            Asserts.That((await client.FolderContentsAsync(createFolder.FolderId)).Links.Count == 0,
+                "批量创建撤销后目录应为空");
+
+            swCreate.Restart();
+            await client.RedoAsync();
+            swCreate.Stop();
+            Asserts.Within(swCreate.ElapsedMilliseconds, 200, "100 步批量创建重做");
+            Asserts.That((await client.FolderContentsAsync(createFolder.FolderId)).Links.Count == CreateBulk,
+                $"批量创建重做后应恢复 {CreateBulk} 条");
+
+            Console.WriteLine("[OK] §9 撤销门槛：单条/200 步批量/30 层深树/100 步批量创建撤销重做全部达标");
+        }
+        finally
+        {
+            ProbeEnv.TryDelete(undoDb);
+            try { if (File.Exists(journal)) File.Delete(journal); } catch { /* 清理尽力而为 */ }
+            try
+            {
+                var parts = journal + ".parts";
+                if (Directory.Exists(parts)) Directory.Delete(parts, recursive: true);
+            }
+            catch { /* 同上 */ }
+        }
+    }
+
 }

@@ -145,6 +145,7 @@ public sealed class EngineCore : IEngine
         var sw = Stopwatch.StartNew();
         bool gateOwned = false;
         CommandContextImpl? ctx = null;   // 提升到 catch 可见：失败审计要带 BatchId（宏处理器运行期间会登记）
+        List<AuditEntry>? nestedAudit = null;   // 成功路径与顶层审计合并成一次写（少一次连接/提交）
         try
         {
             await _writeGate.WaitAsync(ct);
@@ -174,7 +175,11 @@ public sealed class EngineCore : IEngine
                 }
                 else
                 {
+                    var commitWatch = Stopwatch.StartNew();
                     await uow.CommitAsync(ct);
+                    if (LpLog.IsEnabled(LogLevel.Debug))
+                        LpLog.Write(LogLevel.Debug, "engine.pipeline", $"Commit completed: {command}",
+                            elapsedMs: commitWatch.ElapsedMilliseconds);
                 }
             }
             finally
@@ -182,7 +187,8 @@ public sealed class EngineCore : IEngine
                 if (tx != null) await tx.DisposeAsync();
                 // 嵌套审计缓冲（批/宏在持写事务期间挂上）：事务收口（提交/回滚）后再落 SQL——
                 // SqlAuditWriter 是独立短连接，持锁期间写会撞 SQLite 写锁（busy 超时/步）。
-                FlushNestedAudit(ctx?.NestedAuditBuffer);
+                // 成功路径**不在这里写**：与顶层审计合并成一次 WriteMany（少一次连接/事务）。
+                nestedAudit = ctx?.NestedAuditBuffer;
                 if (ctx != null) ctx.NestedAuditBuffer = null;
             }
 
@@ -238,10 +244,14 @@ public sealed class EngineCore : IEngine
             string? auditRef;
             try
             {
-                auditRef = _audit.Write(new AuditEntry(
+                var top = new AuditEntry(
                     DateTimeOffset.Now, command, correlationId, caller, sw.ElapsedMilliseconds,
                     Success: true, ErrorCode: null, result.Changes, DryRun: dryRun, IsNested: false, StackTrace: null,
-                    ArgsJson: argsSnapshot.Json, BatchId: ctx?.BatchId, ArgsTruncated: argsSnapshot.Truncated));
+                    ArgsJson: argsSnapshot.Json, BatchId: ctx?.BatchId, ArgsTruncated: argsSnapshot.Truncated);
+                auditRef = nestedAudit is { Count: > 0 }
+                    ? _audit.WriteMany([.. nestedAudit, top])
+                    : _audit.Write(top);
+                nestedAudit = null;
             }
             catch (Exception auditEx)
             {
@@ -261,12 +271,16 @@ public sealed class EngineCore : IEngine
         }
         catch (EngineException ex)
         {
+            FlushNestedAudit(nestedAudit);
+            nestedAudit = null;
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, ex.Error.Code, ex.StackTrace?.ToString(), argsSnapshot, ctx?.BatchId);
             LpLog.Warn($"Command failed: {command} ({ex.Error.Code})", ex, category: "engine.pipeline");
             throw;
         }
         catch (OperationCanceledException)
         {
+            FlushNestedAudit(nestedAudit);
+            nestedAudit = null;
             // 取消也落审计（观测面：所有调用可追溯，取消不例外）
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, EngineErrors.Cancelled, null, argsSnapshot, ctx?.BatchId);
             LpLog.Warn($"Command cancelled: {command}", category: "engine.pipeline");
@@ -274,6 +288,8 @@ public sealed class EngineCore : IEngine
         }
         catch (Exception ex)
         {
+            FlushNestedAudit(nestedAudit);
+            nestedAudit = null;
             var wrapped = new EngineException(EngineErrors.Of(
                 EngineErrors.Internal, ex.Message, correlationId: correlationId));
             WriteFailureAudit(command, correlationId, caller, sw, dryRun, wrapped.Error.Code, ex.StackTrace?.ToString(), argsSnapshot, ctx?.BatchId);
@@ -516,16 +532,16 @@ public sealed class EngineCore : IEngine
     internal void FlushPendingUndo(CommandContextImpl ctx, CallerRef caller)
     {
         if (Undo is null) return;
-        foreach (var pending in ctx.TakePendingUndo())
+        var pending = ctx.TakePendingUndo();
+        if (pending.Count == 0) return;
+        try
         {
-            try
-            {
-                Undo.Record(pending.Descriptor, pending.Args, caller, pending.Inverse, pending.GroupId);
-            }
-            catch (Exception undoEx)
-            {
-                RegisterObservationFailure("batch step undo registration failed", undoEx);
-            }
+            // 一次性登记（合并 + 一次落盘）：逐步 Record 会让 200 步的批写 200 次 gzip 索引
+            Undo.RecordMany([.. pending.Select(p => new UndoRegistration(p.Descriptor, p.Args, p.Inverse, p.GroupId))], caller);
+        }
+        catch (Exception undoEx)
+        {
+            RegisterObservationFailure("batch step undo registration failed", undoEx);
         }
     }
 
@@ -613,10 +629,13 @@ public sealed class EngineCore : IEngine
         if (buffer is null or { Count: 0 }) return;
         var pending = buffer.ToArray();
         buffer.Clear();   // 先清后写：写失败不重试（不无限重试、不否定事实）
-        foreach (var entry in pending)
+        try
         {
-            try { _audit.Write(entry); }
-            catch (Exception auditEx) { RegisterObservationFailure("buffered nested audit write failed", auditEx); }
+            _audit.WriteMany(pending);   // 单连接 + 单事务（N 条嵌套审计不再 N 次连接/提交）
+        }
+        catch (Exception auditEx)
+        {
+            RegisterObservationFailure("buffered nested audit write failed", auditEx);
         }
     }
 

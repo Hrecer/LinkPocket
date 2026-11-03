@@ -39,7 +39,7 @@ internal sealed class GhostWindowHost
     public static GhostWindowHost Shared { get; } = new();
 
     private readonly object _gate = new();
-    private readonly object _commitGate = new();   // 宿主循环与 vblank 前的晚锁存共用 DComp 提交
+    private readonly object _commitGate = new();   // 宿主循环与 vblank 线程共用 DComp 提交
     private readonly ManualResetEventSlim _ready = new(false);
 
     private Thread? _thread;
@@ -81,7 +81,7 @@ internal sealed class GhostWindowHost
     private long _loopCount;
 
     // vblank 节拍：内容更新（换提示/换光标形状/重建场景）只放在 vblank 后的安全窗口里做，
-    // 避免 1ms 级的上传+渲染把位置提交挤过合成截止（那一拍整组卡片+指针会冻一帧再追平）。
+    // 避免上传 + 渲染挤占位置提交的时间窗口。
     private Thread? _vblankThread;
     private volatile bool _vblankStop;
     private long _lastVBlankQpc;
@@ -677,9 +677,7 @@ internal sealed class GhostWindowHost
 
             if (!_visible || !_firstFramePresented || period <= 0) continue;
 
-            // 位置每帧只提交一次，固定在 vblank 之后：这次事务到下一个合成截止还有整整一帧余量，
-            // 不会像“贴着截止抢帧”那样偶发错过、整帧停在原地再跳（快速横移时最明显）。
-            // 代价是卡片稳定晚一帧——正是独立小窗 SetWindowPos 版的手感（2538779）。
+            // 位置每帧只提交一次，固定在 vblank 之后：这次提交到下一个合成截止还有整整一帧余量。
             LatchPosition();
         }
     }
@@ -710,8 +708,7 @@ internal sealed class GhostWindowHost
 
     /// <summary>
     /// 内容更新（提示条/光标形状/场景重建）只允许在 vblank 后的一段窗口内做：
-    /// 这段工作有 0.3–1.5ms，放在帧首还能在下一个合成截止前完成；放在帧尾会把位置提交挤过去，
-    /// 整组卡片+指针就会冻一帧再追平（用户看到的一次性抖动）。
+    /// 这段工作有 0.3–1.5ms，放在帧首能在下一个合成截止前完成。
     /// </summary>
     private bool ContentWindowOpen()
     {
@@ -823,7 +820,7 @@ internal sealed class GhostWindowHost
                     }
 
                     // 内容工作（提示条、场景重建、Present）只在 vblank 后的安全窗口里做：
-                    // 位置提交每拍照常，绝不因为 1ms 级的位图上传/渲染而错过合成截止。
+                    // 位置提交每拍照常，与位图上传/渲染互不阻塞。
                     var contentWindow = ContentWindowOpen();
                     if (contentWindow) _lastContentPhaseUs = CurrentContentPhaseUs();
                     var sceneRebuilt = false;
@@ -1000,7 +997,7 @@ internal sealed class GhostWindowHost
 
     /// <summary>
     /// 卡片在屏幕上的落点 = 内容 visual 的 offset。offset 是“合成时读取”的属性：
-    /// 宿主每 0.5ms 更新一次，合成器拿到的就是同一帧里最新的指针位置（与画进场景的指针同帧）。
+    /// 位置由 vblank 线程每帧提交一次，合成器读取当拍位置。
     /// </summary>
     private void ApplyOffset(int cardX, int cardY)
     {

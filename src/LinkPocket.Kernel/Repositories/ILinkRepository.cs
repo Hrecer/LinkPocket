@@ -37,6 +37,13 @@ public interface ILinkRepository
     /// </summary>
     Task RemoveRangeAsync(IReadOnlyList<Link> links, CancellationToken ct);
 
+    /// <summary>集合中存在的主表链接 ID（`id in (...)` 分块直读）：批量还原/撤销的冲突预检专用。</summary>
+    Task<IReadOnlyList<string>> ListExistingIdsAsync(IReadOnlyList<string> ids, CancellationToken ct);
+
+    /// <summary>集合中已存在的 (归属目录, URL) 对（`url in (...)` 分块直读）：批量还原的重复检查专用。</summary>
+    Task<IReadOnlyList<(string? ListId, string Url)>> ListLandingUrlPairsAsync(
+        IReadOnlyList<string> urls, CancellationToken ct);
+
     /// <summary>按 URL 找全部同址链接（Dedup 复用）。</summary>
     Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct);
 

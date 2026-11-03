@@ -208,6 +208,18 @@ public interface IUndoCoordinator
     Task<UndoEntry?> TakeRedoAsync(CancellationToken ct);
 
     /// <summary>
+    /// 撤销成功后的**原子收尾**：弹出条目并转入重做栈，只落盘一次
+    /// （取代 TakeUndoAsync + MarkUndone 的两次整索引写盘）。条目不在栈里返回 null。
+    /// </summary>
+    Task<UndoEntry?> CompleteUndoAsync(string id, CancellationToken ct);
+
+    /// <summary>
+    /// 重做成功后的**原子收尾**：弹出重做条目、把其步骤重新压回撤销栈，只落盘一次。
+    /// **保留重做栈剩余条目**（连续 Ctrl+Y 仍可用）；返回值用于调用方记录结果。
+    /// </summary>
+    Task<UndoEntry?> CompleteRedoAsync(CallerRef caller, CancellationToken ct);
+
+    /// <summary>
     /// 引擎在顶层可撤销命令成功后登记。
     /// <paramref name="inverse"/> = 处理器回填的逆向步骤（可多步，如批量移动每项一步）；
     /// 为 null 时退回"描述符声明的 UndoInverse + 原参数"（对称对 links.trash↔trash.restore 走这条）。
@@ -215,7 +227,17 @@ public interface IUndoCoordinator
     /// </summary>
     void Record(CommandDescriptor descriptor, JsonElement args, CallerRef caller,
         IReadOnlyList<UndoInverseStep>? inverse = null, string? groupId = null);
+
+    /// <summary>批量登记（批/宏一次提交的 N 个成功步骤）：全部合并/入栈后**只落盘一次**。</summary>
+    void RecordMany(IReadOnlyList<UndoRegistration> registrations, CallerRef caller);
 }
+
+/// <summary>一次撤销登记请求（批量登记用；字段语义同 <see cref="IUndoCoordinator.Record"/>）。</summary>
+public sealed record UndoRegistration(
+    CommandDescriptor Descriptor,
+    JsonElement Args,
+    IReadOnlyList<UndoInverseStep>? Inverse,
+    string? GroupId);
 
 // ============================================================
 // L4 会话 / 系统 API

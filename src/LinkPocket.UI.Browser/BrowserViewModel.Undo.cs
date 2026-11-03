@@ -38,7 +38,10 @@ public partial class BrowserViewModel
             // 实体 ID 从变更集的 Touched 取（引擎已把逆向命令的受影响实体聚合上来），
             // 复用既有「跳转」语义（进目录 + 选中该行 + 滚入视口），不另造一套导航。
             await RefreshUndoStateAsync();
-            await LocateAfterUndoAsync(result.Changes);
+            var needsRefresh = await LocateAfterUndoAsync(result.Changes);
+            // 立即把结果反映到列表：跨目录定位时上面已经加载过一次；同目录（或目标已不存在）时
+            // 事件防抖要等 300ms，这里补一次原地刷新，Ctrl+Z 才"按下去就见效"。
+            if (needsRefresh) await RefreshPreservingSelectionAsync();
         }
         catch (Exception)
         {
@@ -49,30 +52,47 @@ public partial class BrowserViewModel
     /// <summary>
     /// 撤销/重做后定位到受影响实体：取变更集里第一个链接/文件夹，进其所在目录并选中该行。
     /// 无受影响实体（或引擎未回报）时什么都不做——绝不猜测位置。
+    /// 返回是否需要调用方补一次原地刷新（目标目录已加载过 = 不需要；同目录未加载 / 目标已不存在 = 需要）。
     /// </summary>
-    private async Task LocateAfterUndoAsync(LinkPocket.Contracts.ChangeSet? changes)
+    private async Task<bool> LocateAfterUndoAsync(LinkPocket.Contracts.ChangeSet? changes)
     {
         var touched = changes?.Touched;
-        if (touched == null || touched.Count == 0) return;
+        if (touched == null || touched.Count == 0) return true;
 
         foreach (var entity in touched)
         {
             if (entity.Type == "link")
             {
-                var link = await _client.LinkGetAsync(entity.Id);
-                if (link == null) continue;   // 已被撤销掉（如撤销"新建链接"）→ 试下一个
+                LinkDto link;
+                try
+                {
+                    link = await _client.LinkGetAsync(entity.Id);
+                }
+                catch (EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
+                {
+                    continue;   // 已被撤销掉（如撤销"新建链接"）→ 试下一个
+                }
+                var navigates = Controller.CurrentFolderId != link.ListId;
                 await NavigateAndSelectAsync(link.ListId, entity.Id);
-                return;
+                return !navigates;   // 跨目录时 Navigate 已加载；同目录只需原地刷新
             }
             if (entity.Type == "folder")
             {
-                var tree = await _client.FolderTreeAsync();
-                var folder = tree.FirstOrDefault(f => f.FolderId == entity.Id);
-                if (folder == null) continue;   // 已进回收站（撤销"新建文件夹"）→ 试下一个
+                FolderDto folder;
+                try
+                {
+                    folder = await _client.FolderGetAsync(entity.Id);   // 单行查询，不拉整棵树
+                }
+                catch (EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound)
+                {
+                    continue;   // 已进回收站（撤销"新建文件夹"）→ 试下一个
+                }
+                var navigates = Controller.CurrentFolderId != folder.ParentId;
                 await NavigateAndSelectAsync(folder.ParentId, entity.Id);
-                return;
+                return !navigates;
             }
         }
+        return true;   // 没有可定位的实体：仍需让撤销结果（行消失/字段变化）立刻可见
     }
 
     /// <summary>

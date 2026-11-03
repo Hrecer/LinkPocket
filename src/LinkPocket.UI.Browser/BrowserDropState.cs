@@ -45,7 +45,7 @@ public sealed class BrowserDropState
     /// <summary>
     /// 落点**不变、只换动作**（拖拽中按下/松开 Ctrl）：鼠标没动时 OLE 不会再派发 DragOver，
     /// 但 `QueryContinueDrag` 每次修饰键变化都会触发 → 由此把模式补进落点状态，保证
-    /// **松手时执行的动作与提示条说的一致**（光标由 OLE 决定，可能滞后一次，见 WARNINGS）。
+    /// **松手时执行的动作与提示条说的一致**。
     /// </summary>
     public void SetMode(TransferMode mode)
     {

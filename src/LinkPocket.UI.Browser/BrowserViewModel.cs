@@ -474,7 +474,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     /// <summary>
     /// 落点**不变、只换动作**（拖拽中按下/松开 Ctrl）：鼠标没动时 OLE 不会再派发 DragOver，
     /// 但 `QueryContinueDrag` 每次修饰键变化都会触发 → 由此把模式补进落点状态，保证
-    /// **松手时执行的动作与提示条说的一致**（光标由 OLE 决定，可能滞后一次，见 WARNINGS）。
+    /// **松手时执行的动作与提示条说的一致**。
     /// </summary>
     public void SetDropTargetMode(TransferMode mode) => DropState.SetMode(mode);
 
@@ -488,7 +488,7 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     private void OnDropStateChanged()
     {
         // 只失效旧/新目标行：全量失效会让整张列表重绑定/重绘；主窗口是软件合成的分层窗口，
-        // 任何一次全窗重绘都会把拖拽循环卡住数毫秒（跨行时表现为浮层被定格后补正）。
+        // 每次全窗重绘都会占用拖拽循环的时间。
         var current = DropState.Target;
         if (!Equals(_projectedDropTarget, current))
         {

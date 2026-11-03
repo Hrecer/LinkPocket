@@ -788,6 +788,7 @@
   "ai.action.links.export": "导出全部链接",
   "ai.action.links.moveBatch": "批量移动书签",
   "ai.action.links.trash": "把书签移入回收站",
+  "ai.action.links.trashBatch": "批量移入回收站",
   "ai.action.links.update": "修改书签",
   "ai.action.links.visitBatch": "批量记录访问",
   "ai.action.links.visitRecord": "记录一次访问",

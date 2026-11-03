@@ -29,6 +29,15 @@ public interface IAuditWriter
 {
     /// <summary>写入并返回审计引用（correlationId 即引用锚点）。</summary>
     string Write(AuditEntry entry);
+
+    /// <summary>批量写入（嵌套步骤的事务收口后统一落库）：默认逐条委托；
+    /// 落库实现覆盖为**单连接 + 单事务**，避免 N 步撤销/批处理时 N 次连接开销。</summary>
+    string? WriteMany(IReadOnlyList<AuditEntry> entries)
+    {
+        string? last = null;
+        foreach (var entry in entries) last = Write(entry);
+        return last;
+    }
 }
 
 /// <summary>组合审计写入器：每条目写全部下游（内存快照 + 落库），返回第一个引用。</summary>
@@ -43,6 +52,14 @@ public sealed class CompositeAuditWriter : IAuditWriter
     {
         var reference = _writers[0].Write(entry);
         foreach (var w in _writers.Skip(1)) w.Write(entry);
+        return reference;
+    }
+
+    public string? WriteMany(IReadOnlyList<AuditEntry> entries)
+    {
+        if (entries.Count == 0) return null;
+        var reference = _writers[0].WriteMany(entries);
+        foreach (var w in _writers.Skip(1)) w.WriteMany(entries);
         return reference;
     }
 }

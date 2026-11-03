@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using LinkPocket.Kernel;
@@ -42,6 +44,115 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
             .Where(l => l.TrashFolderId == unit.Value)
             .OrderByDescending(l => l.DeletedAt)
             .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<TrashedLink>> ListLinksByUnitsAsync(
+        IReadOnlyList<TrashFolderId> units, CancellationToken ct)
+    {
+        if (units.Count == 0) return [];
+        var wanted = units.Select(u => u.Value).ToHashSet(StringComparer.Ordinal);
+        var rows = new List<TrashedLink>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var chunk in wanted.Chunk(500))
+        {
+            var names = string.Join(", ", chunk.Select((_, i) => "@u" + i));
+            using var cmd = await RawSql.CreateAsync(db,
+                SnapshotSelect + " WHERE trash_folder_id IN (" + names + ") ORDER BY deleted_at DESC", ct);
+            for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue("@u" + i, chunk[i]);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var row = ReadTrashedLink(reader);
+                if (seen.Add(row.LinkId)) rows.Add(row);
+            }
+        }
+        MergeLocalLinksByUnits(rows, seen, wanted);
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<TrashedLink>> ListLinksByIdsAsync(
+        IReadOnlyList<LinkId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var wanted = ids.Select(i => i.Value).ToHashSet(StringComparer.Ordinal);
+        var rows = new List<TrashedLink>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var chunk in wanted.Chunk(500))
+        {
+            // reader 逐列直读（批量撤销/重做的预检热路径）：不为几百行付 EF 实体物化/映射成本
+            var names = string.Join(", ", chunk.Select((_, i) => "@id" + i));
+            using var cmd = await RawSql.CreateAsync(db,
+                SnapshotSelect + " WHERE id IN (" + names + ")", ct);
+            for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue("@id" + i, chunk[i]);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var row = ReadTrashedLink(reader);
+                if (seen.Add(row.LinkId)) rows.Add(row);
+            }
+        }
+        MergeLocalLinks(rows, seen, wanted);
+        return rows;
+    }
+
+    private const string SnapshotSelect =
+        "SELECT id, url, title, description, favicon_url, trash_folder_id, origin_folder_id, origin_path, "
+        + "last_visited_at, visit_count, is_important, deleted_at, created_at, updated_at FROM trash_links";
+
+    private static TrashedLink ReadTrashedLink(SqliteDataReader reader) => new()
+    {
+        LinkId = reader.GetString(0),
+        Url = reader.GetString(1),
+        Title = reader.IsDBNull(2) ? null : reader.GetString(2),
+        Description = reader.IsDBNull(3) ? null : reader.GetString(3),
+        FaviconUrl = reader.IsDBNull(4) ? null : reader.GetString(4),
+        TrashFolderId = reader.IsDBNull(5) ? null : reader.GetString(5),
+        OriginListId = reader.IsDBNull(6) ? null : reader.GetString(6),
+        OriginPath = reader.IsDBNull(7) ? null : reader.GetString(7),
+        LastVisitedAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
+        VisitCount = reader.GetInt32(9),
+        IsImportant = reader.GetBoolean(10),
+        DeletedAt = reader.GetDateTime(11),
+        CreatedAt = reader.GetDateTime(12),
+        UpdatedAt = reader.GetDateTime(13),
+    };
+
+    /// <summary>按单元集合的读己之写合并（未提交新增可见、已删不可见）。</summary>
+    private void MergeLocalLinksByUnits(List<TrashedLink> rows, HashSet<string> seen, HashSet<string> wantedUnits)
+    {
+        foreach (var local in db.TrashedLinks.Local)
+        {
+            if (local.TrashFolderId == null || !wantedUnits.Contains(local.TrashFolderId)) continue;
+            var state = db.Entry(local).State;
+            if (state == EntityState.Deleted)
+            {
+                rows.RemoveAll(r => r.LinkId == local.LinkId);
+                seen.Remove(local.LinkId);
+            }
+            else if (state == EntityState.Added && seen.Add(local.LinkId))
+            {
+                rows.Add(local);
+            }
+        }
+    }
+
+    /// <summary>读己之写合并（列表批量读专用）：本单元新增可见、已删不可见。</summary>
+    private void MergeLocalLinks(List<TrashedLink> rows, HashSet<string> seen, HashSet<string> wanted)
+    {
+        foreach (var local in db.TrashedLinks.Local)
+        {
+            if (!wanted.Contains(local.LinkId)) continue;
+            var state = db.Entry(local).State;
+            if (state == EntityState.Deleted)
+            {
+                rows.RemoveAll(r => r.LinkId == local.LinkId);
+                seen.Remove(local.LinkId);
+            }
+            else if (state == EntityState.Added && seen.Add(local.LinkId))
+            {
+                rows.Add(local);
+            }
+        }
+    }
 
     public async Task<IReadOnlyList<TrashedLink>> ListAllLinksAsync(CancellationToken ct)
         => await db.TrashedLinks.AsNoTracking()
@@ -106,7 +217,32 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
     }
 
     public async Task<IReadOnlyList<TrashedFolder>> ListFoldersAsync(CancellationToken ct)
-        => await db.TrashedFolders.AsNoTracking().OrderByDescending(f => f.DeletedAt).ToListAsync(ct);
+    {
+        // reader 直读（同 ListAllLinks 口径）：单元还原的入口查询，不为恢复整树付 EF 物化
+        using var cmd = await RawSql.CreateAsync(db,
+            "SELECT id, parent_id, name, origin_folder_id, origin_parent_folder_id, origin_path, description, "
+            + "sort_order, created_at, last_visited_at, visit_count, deleted_at "
+            + "FROM trash_folders ORDER BY deleted_at DESC", ct);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<TrashedFolder>();
+        while (await reader.ReadAsync(ct))
+            rows.Add(new TrashedFolder
+            {
+                TrashFolderId = reader.GetString(0),
+                ParentTrashFolderId = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Name = reader.GetString(2),
+                OriginFolderId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                OriginParentFolderId = reader.IsDBNull(4) ? null : reader.GetString(4),
+                OriginPath = reader.IsDBNull(5) ? null : reader.GetString(5),
+                Description = reader.IsDBNull(6) ? null : reader.GetString(6),
+                SortOrder = reader.GetInt32(7),
+                CreatedAt = reader.IsDBNull(8) ? null : reader.GetDateTime(8),
+                LastVisitedAt = reader.IsDBNull(9) ? null : reader.GetDateTime(9),
+                VisitCount = reader.GetInt32(10),
+                DeletedAt = reader.GetDateTime(11),
+            });
+        return rows;
+    }
 
     public Task<int> CountFoldersAsync(CancellationToken ct)
         => db.TrashedFolders.AsNoTracking().CountAsync(ct);
@@ -139,6 +275,114 @@ internal sealed class EfTrashRepository(LinkPocketDbContext db) : ITrashReposito
             db.TrashedFolders.Remove(unit);
             _removedFolders = true;   // 出现同 key 待删实例 → 后续 AddFolderAsync 才需要接管扫描
         }
+    }
+
+    public async Task<int> TrashLinksOfFolderSelectionAsync(string? folderId, string originPath,
+        IReadOnlyList<string> linkIds, DateTime deletedAt, CancellationToken ct)
+    {
+        if (linkIds.Count == 0) return 0;
+        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture);
+        var deleted = deletedAt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture);
+        var moved = 0;
+        foreach (var chunk in linkIds.Chunk(500))
+        {
+            var names = string.Join(", ", chunk.Select((_, i) => "@id" + i));
+            var parameters = new List<object>
+            {
+                new SqliteParameter("@folder_id", (object?)folderId ?? DBNull.Value),
+                new SqliteParameter("@origin_path", originPath),
+                new SqliteParameter("@deleted_at", deleted),
+                new SqliteParameter("@updated_at", now),
+            };
+            for (var i = 0; i < chunk.Length; i++)
+                parameters.Add(new SqliteParameter("@id" + i, chunk[i]));
+
+            // 占位符表由代码生成（@id0..@idN），值全部走 SqliteParameter——不存在用户输入拼接
+            var insertSql =
+                """
+                INSERT INTO trash_links (id, url, title, description, favicon_url, trash_folder_id, origin_folder_id,
+                                         origin_path, last_visited_at, visit_count, is_important, deleted_at, created_at, updated_at)
+                SELECT id, url, title, description, favicon_url, NULL, folder_id,
+                       @origin_path, last_visited_at, visit_count, is_important, @deleted_at, created_at, @updated_at
+                FROM links
+                WHERE folder_id IS @folder_id AND id IN (
+                """ + names + ")";
+            moved += await db.Database.ExecuteSqlRawAsync(insertSql, parameters, ct);
+
+            var deleteSql = "DELETE FROM links WHERE folder_id IS @folder_id AND id IN (" + names + ")";
+            await db.Database.ExecuteSqlRawAsync(deleteSql, parameters, ct);
+        }
+        return moved;
+    }
+
+    public async Task<int> RestoreLinksAsync(
+        IReadOnlyList<(string LinkId, string? Landing)> links, CancellationToken ct)
+    {
+        if (links.Count == 0) return 0;
+        var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture);
+        var inserted = 0;
+        foreach (var chunk in links.Chunk(500))
+        {
+            var payload = JsonSerializer.Serialize(chunk.Select(l => new { id = l.LinkId, landing = l.Landing }));
+            inserted += await db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO links (id, folder_id, url, title, description, favicon_url,
+                                   is_important, visit_count, last_visited_at, created_at, updated_at)
+                SELECT t.id, json_extract(j.value, '$.landing'), t.url, t.title, t.description, t.favicon_url,
+                       t.is_important, t.visit_count, t.last_visited_at, t.created_at, @updated_at
+                FROM trash_links t
+                JOIN json_each(@map) j ON json_extract(j.value, '$.id') = t.id
+                """,
+                new object[] { new SqliteParameter("@map", payload), new SqliteParameter("@updated_at", now) },
+                ct);
+
+            // 回收站行同样按 JSON 映射批量删（避免 EF ExecuteDelete 的每次查询编译/参数化开销）
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM trash_links WHERE id IN (SELECT json_extract(j.value, '$.id') FROM json_each(@map) j)",
+                new object[] { new SqliteParameter("@map", payload) }, ct);
+        }
+        return inserted;
+    }
+
+    public async Task<int> RestoreFoldersAsync(IReadOnlyList<Folder> folders, CancellationToken ct)
+    {
+        if (folders.Count == 0) return 0;
+        // 自引用外键（父行先于子行）在事务内推迟到提交点校验——json_each 的顺序不必承担拓扑保证
+        await db.Database.ExecuteSqlRawAsync("PRAGMA defer_foreign_keys = ON;", ct);
+        var inserted = 0;
+        foreach (var chunk in folders.Chunk(200))
+        {
+            var payload = JsonSerializer.Serialize(chunk.Select(f => new
+            {
+                id = f.FolderId,
+                parent_id = f.ParentId,
+                name = f.Name,
+                description = f.Description,
+                sort_order = f.SortOrder,
+                created_at = f.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture),
+                updated_at = f.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture),
+                last_visited_at = f.LastVisitedAt?.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture),
+                visit_count = f.VisitCount,
+            }));
+            inserted += await db.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO folders (id, parent_id, name, description, sort_order, created_at, updated_at,
+                                     last_visited_at, visit_count)
+                SELECT json_extract(j.value, '$.id'), json_extract(j.value, '$.parent_id'),
+                       json_extract(j.value, '$.name'), json_extract(j.value, '$.description'),
+                       json_extract(j.value, '$.sort_order'), json_extract(j.value, '$.created_at'),
+                       json_extract(j.value, '$.updated_at'), json_extract(j.value, '$.last_visited_at'),
+                       json_extract(j.value, '$.visit_count')
+                FROM json_each(@json) j
+                """,
+                new object[] { new SqliteParameter("@json", payload) },
+                ct);
+
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM trash_folders WHERE id IN (SELECT json_extract(j.value, '$.id') FROM json_each(@json) j)",
+                new object[] { new SqliteParameter("@json", payload) }, ct);
+        }
+        return inserted;
     }
 
     public async Task<int> TrashLinksOfFoldersAsync(IReadOnlyList<(string FolderId, string OriginPath)> folders,

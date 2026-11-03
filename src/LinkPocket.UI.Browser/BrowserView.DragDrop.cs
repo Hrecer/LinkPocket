@@ -34,14 +34,12 @@ public partial class BrowserView : UserControl
         _dragVisual = DragVisualOverlay.Attach(this);
         _dragCancelledByEscape = false;
         if (_dragVisual == null) return;
-        // 真实拖拽：自动跟随从 Show 内部就开启——首帧提交前宿主会再采一次系统光标，
-        // 消掉「浮层已显示、跟随还没开」这一小段的首帧落后（起手第一拍补正）。
+        // 真实拖拽：自动跟随从 Show 内部就开启——首帧提交前宿主会再采一次系统光标。
         _dragVisual.Show(items, GrabFraction(source), autoFollow: true);
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
         // 拖拽期间由浮层独立线程跟随系统光标；OLE 的光标形状由系统照常绘制。
-        // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下（否则浮层会先闪在屏幕角落再被拖走）。
-        // 取**系统光标**而非 Mouse.GetPosition：拖拽启动期间 WPF 的鼠标位置来自最后一次输入消息，
-        // 浮层构建这一小段里指针已经继续移动——用缓存位置会让首帧偏几像素，第一拍再"啪"地补正（用户可见的起手抖动）。
+        // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下。
+        // 取**系统光标**而非 Mouse.GetPosition：拖拽启动期间 WPF 的鼠标位置来自最后一次输入消息。
         _dragVisual.UpdatePosition(SystemCursorInView());
 #if LINKPOCKET_DRAG_DIAGNOSTICS
         DragDiagnostics.Begin(items, _dragVisual, this);
@@ -79,7 +77,7 @@ public partial class BrowserView : UserControl
         }
     }
 
-    /// <summary>系统光标在页内的坐标：拖拽期间 WPF 的 <c>Mouse.GetPosition</c> 可能滞后（OLE 循环不驱动 WPF 鼠标消息），
+    /// <summary>系统光标在页内的坐标：拖拽期间 WPF 的 <c>Mouse.GetPosition</c> 不由 OLE 循环驱动，
     /// 起手摆位与抓取比例都读系统光标，保证"浮层第一次出现就与指针同点"。</summary>
     private Point SystemCursorInView()
     {
@@ -121,8 +119,8 @@ public partial class BrowserView : UserControl
     /// <summary>
     /// 开始采样指针：定时器兜底 + OLE 反馈（<see cref="PostDragPointerMove"/> 延迟摆位）。
     /// <para><b>为什么不订阅 <see cref="CompositionTarget.Rendering"/></b>：它会让主窗口（AllowsTransparency 的
-    /// 软件合成窗口）持续参与渲染帧，增加 GC/重绘压力；而落点高亮变化后的整窗重绘本来就会卡住 UI 线程
-    /// 8–14ms，持续渲染只会放大这种停顿。日志实测 OLE 延迟反馈本身有 ~280 次/秒的采样，高刷新率屏足够跟手，
+    /// 软件合成窗口）持续参与渲染帧，增加 GC/重绘压力；而落点高亮变化后的整窗重绘本身会占用 UI 线程时间，
+    /// 持续渲染只会增加这部分开销。日志实测 OLE 延迟反馈本身有 ~280 次/秒的采样，高刷新率屏足够跟手，
     /// 定时器负责反馈稀疏时兜底。</para>
     /// 只在真实拖拽（提交给 OLE 循环之前）挂；探针的静态预览仍由显式 <see cref="DragVisualOverlay.UpdatePosition"/> 驱动。
     /// </summary>
@@ -167,9 +165,8 @@ public partial class BrowserView : UserControl
 
     /// <summary>
     /// 把 GiveFeedback 触发的摆位投递到调度器（普通优先级）：
-    /// 实测所有 &gt;1.5ms 的慢摆位（最坏 14.6ms）都发生在 GiveFeedback 的同步回调里——
-    /// 在 OLE 模态循环内部直接 <c>SetWindowPos</c> 会被拖拽/合成内部状态阻塞，期间采样全停，
-    /// 指针继续移动，下一拍浮层一次性补上（可见抖动）。同一拍内多次反馈只排一次。
+    /// 在 OLE 模态循环内部直接调用窗口 API 会受拖拽/合成内部状态影响；
+    /// 摆位在调度器上执行。同一拍内多次反馈只排一次。
     /// </summary>
     private void PostDragPointerMove()
     {
@@ -204,8 +201,7 @@ public partial class BrowserView : UserControl
     /// 这里是唯一能拿到"Ctrl 刚被按下/松开"的时机）：
     /// <list type="bullet">
     /// <item>记下 Esc 取消（收尾据此不弹成环窗）；</item>
-    /// <item>把当前修饰键映射成落点模式写回 VM 的落点状态——**松手执行的动作与提示条说的永远一致**。
-    /// （光标由 OLE 在 DragOver 时按同一规则设置，纯改键不成动鼠标时可能滞后一次，见 WARNINGS。）</item>
+    /// <item>把当前修饰键映射成落点模式写回 VM 的落点状态——**松手执行的动作与提示条说的永远一致**。</item>
     /// </list>
     /// </summary>
     private void OnQueryContinueDrag(object sender, QueryContinueDragEventArgs e)

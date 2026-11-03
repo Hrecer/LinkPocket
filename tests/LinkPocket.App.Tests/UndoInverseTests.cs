@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using LinkPocket.Contracts;
+using LinkPocket.Services;
+using LinkPocket.ViewModels;
 using Xunit;
 
 namespace LinkPocket.App.Tests;
@@ -378,7 +380,263 @@ public class UndoInverseTests
         finally { AppTestEnv.Delete(dbPath); }
     }
 
+    [Fact]
+    public async Task 超过撤销栈容量后_新动作仍可撤销()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            // 铺满 100 条历史（再多的动作应淘汰最旧的，而不是把新动作弹掉）
+            for (var i = 0; i < 105; i++) await client.FolderCreateAsync($"容量 {i}");
+            var before = (await client.FolderTreeAsync()).Count;
+
+            await client.UndoAsync();
+
+            var names = (await client.FolderTreeAsync()).Select(f => f.Name).ToHashSet();
+            Assert.DoesNotContain("容量 104", names);   // 撤销的必须是**最新**动作
+            Assert.Contains("容量 0", names);           // 最旧的动作仍在（只是被容量淘汰出栈）
+            Assert.Equal(before - 1, names.Count);
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 超过容量后_分组批量删除仍可整体撤销()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            for (var i = 0; i < 105; i++) await client.FolderCreateAsync($"历史 {i}");
+            var folder = (await client.FolderCreateAsync("批量目标")).Data!;
+            var ids = new List<string>();
+            for (var i = 0; i < 5; i++)
+                ids.Add((await client.LinkCreateAsync($"https://bulk{i}.example", title: $"B{i}",
+                    listId: folder.FolderId, autoFetchMetadata: false)).Data!.LinkId);
+
+            // 一次批量删除 = 同组多步 → 一条撤销记录（撤销时合并为 restore_batch）
+            var group = Guid.NewGuid().ToString("N");
+            foreach (var id in ids) await client.LinkTrashAsync(id, new CallOptions(UndoGroupId: group));
+            var entry = (await UndoEntries(client))[0];
+            Assert.Equal(5, entry.Steps.Count);
+
+            await client.UndoAsync();
+
+            foreach (var id in ids)
+            {
+                var link = await client.LinkGetAsync(id);
+                Assert.NotNull(link);                       // 全部还原（不再是"撤销一条很旧的动作"）
+                Assert.Equal(folder.FolderId, link.ListId);
+            }
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 批量删除命令_一次撤销全部还原_重做全部再删()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("批量删")).Data!;
+            var ids = new List<string>();
+            for (var i = 0; i < 5; i++)
+                ids.Add((await client.LinkCreateAsync($"https://batch-trash-undo.example/{i}", title: $"T{i}",
+                    listId: folder.FolderId, autoFetchMetadata: false)).Data!.LinkId);
+
+            var result = await client.LinkTrashBatchAsync(ids);
+            Assert.Equal(5, result.Data!.Affected);
+            foreach (var id in ids) Assert.Null(await TryLinkAsync(client, id));
+
+            var undo = await client.UndoAsync();   // 一条撤销记录 → 一次 restore_batch
+            Assert.True(undo.Ok);
+            foreach (var id in ids)
+            {
+                var link = await TryLinkAsync(client, id);
+                Assert.NotNull(link);
+                Assert.Equal(folder.FolderId, link!.ListId);   // 保留原位置
+            }
+
+            var redo = await client.RedoAsync();   // 一条重做动作 → 一次 links.trash_batch
+            Assert.True(redo.Ok);
+            foreach (var id in ids) Assert.Null(await TryLinkAsync(client, id));
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 批量创建_撤销走批量删除_重做全部按原ID恢复()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("批量建")).Data!;
+            var group = Guid.NewGuid().ToString("N");
+            var ids = new List<string>();
+            for (var i = 0; i < 10; i++)
+                ids.Add((await client.LinkCreateAsync($"https://batch-create-undo.example/{i}", title: $"C{i}",
+                    listId: folder.FolderId, autoFetchMetadata: false,
+                    o: new CallOptions(UndoGroupId: group))).Data!.LinkId);
+
+            await client.UndoAsync();   // 10 步 links.trash → 合并为一次 trash_batch
+            Assert.Empty((await client.FolderContentsAsync(folder.FolderId)).Links);
+
+            await client.RedoAsync();   // 10 步 trash.restore → 合并为一次 restore_batch
+            var restored = (await client.FolderContentsAsync(folder.FolderId)).Links;
+            Assert.Equal(10, restored.Count);
+            Assert.Equal(ids.OrderBy(x => x), restored.Select(x => x.LinkId).OrderBy(x => x));
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 批量撤销_部分回收站快照丢失_其余仍还原并如实告警()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("部分丢失")).Data!;
+            var ids = new List<string>();
+            for (var i = 0; i < 3; i++)
+                ids.Add((await client.LinkCreateAsync($"https://partial-undo.example/{i}", title: $"P{i}",
+                    listId: folder.FolderId, autoFetchMetadata: false)).Data!.LinkId);
+
+            var group = Guid.NewGuid().ToString("N");
+            foreach (var id in ids) await client.LinkTrashAsync(id, new CallOptions(UndoGroupId: group));
+
+            // 模拟一条回收站快照已被外部永久清理（批量还原的预检必须失败）
+            using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Pooling=False"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM trash_links WHERE id = $id";
+                cmd.Parameters.AddWithValue("$id", ids[0]);
+                cmd.ExecuteNonQuery();
+            }
+
+            var result = await client.UndoAsync();
+
+            Assert.True(result.Ok);
+            Assert.NotEmpty(result.Changes!.Warnings!);          // 失败项如实上报，不静默
+            Assert.Null(await TryLinkAsync(client, ids[0]));     // 快照丢失的那条不伪造恢复
+            foreach (var id in ids.Skip(1))
+            {
+                var link = await TryLinkAsync(client, id);
+                Assert.NotNull(link);                            // 其余照常还原（不是整批失败）
+                Assert.Equal(folder.FolderId, link!.ListId);
+            }
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 批量重做_部分回收站快照丢失_其余仍还原并如实告警()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var folder = (await client.FolderCreateAsync("重做部分丢失")).Data!;
+            var ids = new List<string>();
+            var group = Guid.NewGuid().ToString("N");
+            for (var i = 0; i < 3; i++)
+                ids.Add((await client.LinkCreateAsync($"https://partial-redo.example/{i}", title: $"R{i}",
+                    listId: folder.FolderId, autoFetchMetadata: false,
+                    o: new CallOptions(UndoGroupId: group))).Data!.LinkId);
+
+            await client.UndoAsync();   // 批量撤销新建 → 3 条进回收站；重做 = 从回收站还原
+            Assert.Null(await TryLinkAsync(client, ids[0]));   // 已在回收站（主表没有）
+
+            using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Pooling=False"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM trash_links WHERE id = $id";
+                cmd.Parameters.AddWithValue("$id", ids[0]);
+                cmd.ExecuteNonQuery();
+            }
+
+            var result = await client.RedoAsync();
+
+            Assert.True(result.Ok);
+            Assert.NotEmpty(result.Changes!.Warnings!);
+            Assert.Null(await TryLinkAsync(client, ids[0]));
+            foreach (var id in ids.Skip(1)) Assert.NotNull(await TryLinkAsync(client, id));
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 撤销步骤全部失败_返回可解析结果_不变成内部错误()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var link = (await client.LinkCreateAsync("https://undofail.example", title: "F",
+                autoFetchMetadata: false)).Data!;
+            await client.LinkTrashAsync(link.LinkId);   // 先移入回收站 → 再撤销"新建链接"（逆向 = links.trash）必失败
+
+            var createEntry = (await UndoEntries(client)).First(e => e.Command == "links.create");
+            var result = await client.UndoAsync(createEntry.Id);   // 曾因 lastData=null 强转 JsonElement 抛 NRE
+
+            Assert.True(result.Ok);
+            Assert.NotNull(result.Changes?.Warnings);
+            Assert.NotEmpty(result.Changes!.Warnings!);
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
+    [Fact]
+    public async Task 撤销新建链接_定位不误报失败_且列表立即移除()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var dialogs = new RecordingDialogs();
+            var vm = new BrowserViewModel(client, new UiPortProvider { Dialogs = dialogs });
+            await vm.LoadAsync(null);
+            var link = (await client.LinkCreateAsync("https://undo-locate.example", title: "定位",
+                autoFetchMetadata: false)).Data!;
+            await vm.LoadAsync(null);
+            await vm.RefreshUndoStateAsync();
+            vm.SelectRowWithModifiers(vm.Rows.Single(r => r.Id == link.LinkId),
+                System.Windows.Input.ModifierKeys.None);
+            Assert.True(vm.UndoCommand.CanExecute(null));
+
+            vm.UndoCommand.Execute(null);   // 撤销"新建链接"：目标已不存在，定位不得抛 EntityNotFound
+
+            Assert.True(await WaitUntilAsync(() => vm.Rows.All(r => r.Id != link.LinkId), TimeSpan.FromSeconds(5)),
+                "撤销后列表应立即移除该行（不是等 300ms 防抖）");
+            Assert.Empty(dialogs.Alerts);   // 曾被 LinkGetAsync 的 EntityNotFound 误报成"撤销失败"
+            Assert.True(vm.CanRedo);
+        }
+        finally { AppTestEnv.Delete(dbPath); }
+    }
+
     // —— 工具 ——
+
+    private sealed class RecordingDialogs : IDialogService
+    {
+        public List<(string Title, string Message)> Alerts { get; } = new();
+        public bool ConfirmDeleteFolder(string folderName) => true;
+        public bool Confirm(string title, string message, string? confirmText = null, string iconKind = "delete-outline") => true;
+        public void Alert(string title, string message) => Alerts.Add((title, message));
+    }
+
+    private static async Task<LinkDto?> TryLinkAsync(EngineClient client, string id)
+    {
+        try { return await client.LinkGetAsync(id); }
+        catch (EngineException ex) when (ex.Error.Code == EngineErrors.EntityNotFound) { return null; }
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition()) return true;
+            await Task.Delay(25);
+        }
+        return condition();
+    }
 
     private static async Task<string?> ParentOf(EngineClient client, string folderId)
         => (await client.FolderTreeAsync()).FirstOrDefault(f => f.FolderId == folderId)?.ParentId;

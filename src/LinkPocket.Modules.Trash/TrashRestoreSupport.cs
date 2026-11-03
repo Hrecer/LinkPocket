@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using LinkPocket.Contracts;
 using LinkPocket.Data;
@@ -51,17 +52,79 @@ internal static class TrashRestoreSupport
         CancellationToken ct)
     {
         var uow = ctx.Uow;
+        // 批/干跑：复用外层事务（批引擎负责提交/回滚）
+        if (uow.HasActiveTransaction)
+            return await RestoreCoreAsync(ctx, linkIds, folderIds, to, explicitParent, ct);
 
-        // —— 0. 预检（硬失败 → 整批回滚 + 指明失败 id；坏数据绝不覆盖既有实体）——
-        foreach (var id in linkIds)
+        // 单命令 / 撤销步骤：自建事务，让集合化 SQL 与 EF 登记同提同滚
+        var tx = uow.BeginTransaction();
+        await tx.BeginAsync(ct);
+        try
         {
-            if (await uow.Trash.FindLinkAsync(new LinkId(id), ct) == null)
-                throw NotFound($"bookmark {id} is not in the trash", ctx);
-            if (await uow.Links.FindAsync(new LinkId(id), ct) != null)
-                throw Conflict($"bookmark {id} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
+            var outcome = await RestoreCoreAsync(ctx, linkIds, folderIds, to, explicitParent, ct);
+            await uow.CommitAsync(ct);   // EF 侧收尾（TouchModified 等）
+            await tx.CommitAsync(ct);
+            return outcome;
+        }
+        catch
+        {
+            try { await tx.RollbackAsync(ct); } catch { /* 回滚失败不覆盖原始异常 */ }
+            throw;
+        }
+        finally
+        {
+            await tx.DisposeAsync();
+        }
+    }
+
+    private static async Task<TrashRestoreOutcome> RestoreCoreAsync(
+        ICommandContext ctx,
+        IReadOnlyList<string> linkIds,
+        IReadOnlyList<string> folderIds,
+        string to,
+        string? explicitParent,
+        CancellationToken ct)
+    {
+        var uow = ctx.Uow;
+        // 阶段计时（Debug 才开）：复杂撤销"到底贵在哪一段"的取证入口；正式级别零开销。
+        var phaseWatch = LpLog.IsEnabled(LogLevel.Debug) ? Stopwatch.StartNew() : null;
+        var phaseLast = 0L;
+        void Phase(string name)
+        {
+            if (phaseWatch is null) return;
+            var now = phaseWatch.ElapsedMilliseconds;
+            LpLog.Write(LogLevel.Debug, "engine.trash",
+                $"restore phase={name} dt={now - phaseLast}ms total={now}ms links={linkIds.Count} units={folderIds.Count}");
+            phaseLast = now;
         }
 
-        var allUnits = await uow.Trash.ListFoldersAsync(ct);
+        // —— 0. 预检（硬失败 → 整批回滚 + 指明失败 id；坏数据绝不覆盖既有实体）——
+        // 快照留在本地复用：还原阶段不再对同一条链接二次查库（大条目撤销/批量还原的单步成本）。
+        var loadedSnapshots = await uow.Trash.ListLinksByIdsAsync(
+            linkIds.Select(id => new LinkId(id)).ToArray(), ct);
+        var loadedById = loadedSnapshots.ToDictionary(s => s.LinkId, StringComparer.Ordinal);
+        var linkSnapshots = new Dictionary<string, TrashedLink>(linkIds.Count, StringComparer.Ordinal);
+        foreach (var id in linkIds)
+        {
+            if (!loadedById.TryGetValue(id, out var snapshot))
+                throw NotFound($"bookmark {id} is not in the trash", ctx);
+            linkSnapshots[id] = snapshot;
+        }
+        // 主表同 ID 冲突检查：一次 `id in (...)`（原实现每条一次 FindAsync——批量还原/重做时是线性点查）
+        if (linkSnapshots.Count > 0)
+        {
+            var existingIds = await uow.Links.ListExistingIdsAsync(linkIds, ct);   // 原生 reader 直读，免 EF 编译/物化
+            if (existingIds.Count > 0)
+            {
+                var conflictSet = existingIds.ToHashSet(StringComparer.Ordinal);
+                var conflictId = linkIds.FirstOrDefault(conflictSet.Contains) ?? existingIds[0];
+                throw Conflict($"bookmark {conflictId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
+            }
+        }
+        Phase("precheck");
+
+        // 纯链接还原（撤销 links.trash / 批量还原链接）不碰单元：整张回收站文件夹表读回来纯属浪费。
+        var allUnits = folderIds.Count > 0 ? await uow.Trash.ListFoldersAsync(ct) : [];
         var unitById = allUnits.ToDictionary(u => u.TrashFolderId, StringComparer.Ordinal);
         foreach (var id in folderIds)
         {
@@ -78,6 +141,9 @@ internal static class TrashRestoreSupport
         var restoredFolderIdSet = new HashSet<string>(StringComparer.Ordinal);
         var restoredLinkIds = new HashSet<string>(StringComparer.Ordinal);
         var restoredLinks = new List<RestoredLinkInfo>();
+        // 批内重复判据（落点 + URL）：原实现对每条链接扫已还原清单（O(n²)），400 条尚可、
+        // 上千条就是纯浪费；改用集合判重，语义不变。
+        var restoredKeys = new HashSet<(string? Landing, string Url)>();
         var restoredUnits = new List<RestoredUnitInfo>();
         var fellBackToRoot = new List<string>();
         var renamed = new List<TrashRestoreRename>();
@@ -87,6 +153,7 @@ internal static class TrashRestoreSupport
         var diff = new List<FieldChange>();   // 字段级 diff：还原 = 实体重新回到主表（Before 为"不适用"，After 为落点后的现值）
 
         // —— 1. 先单元（选择顺序；父子同选 → 子被父覆盖）——
+        HashSet<string>? mainFolderIds = null;   // 大单元：一次全量读替代逐文件夹点查（懒加载、跨单元复用）
         foreach (var unitId in SelectEffectiveUnits(allUnits, folderIds))
         {
             var root = unitById[unitId];
@@ -101,7 +168,7 @@ internal static class TrashRestoreSupport
             }
             else
             {
-                (landing, fellBack) = await ResolveLandingAsync(uow, to, root.OriginParentFolderId, restoredFolderIdSet, ct);
+                (landing, fellBack) = await ResolveLandingAsync(uow, to, root.OriginParentFolderId, restoredFolderIdSet, null, ct);
             }
 
             if (fellBack) fellBackToRoot.Add(root.Name);
@@ -111,7 +178,14 @@ internal static class TrashRestoreSupport
             if (!namingTables.TryGetValue(tableKey, out var naming))
                 naming = namingTables[tableKey] = await uow.Naming.CreateTableAsync(landing, ct);
 
-            foreach (var member in OrderByHierarchy(allUnits, root, subtreeSet))
+            var members = OrderByHierarchy(allUnits, root, subtreeSet);
+            if (members.Count >= 20)
+                mainFolderIds ??= (await uow.Folders.FindManyAsync(
+                        members.Select(m => new FolderId(m.TrashFolderId)).ToArray(), ct))
+                    .Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
+
+            var folderRows = new List<Folder>(members.Count);
+            foreach (var member in members)
             {
                 if (restoredFolderIdSet.Contains(member.TrashFolderId)) continue;   // 防御：批内已还原（正常不可达）
                 var isRoot = string.Equals(member.TrashFolderId, unitId, StringComparison.Ordinal);
@@ -121,10 +195,13 @@ internal static class TrashRestoreSupport
                 if (!string.Equals(name, member.Name, StringComparison.Ordinal))
                     renamed.Add(new TrashRestoreRename(member.Name, name));
 
-                if (await uow.Folders.FindAsync(new FolderId(member.TrashFolderId), ct) != null)
+                var folderExists = mainFolderIds is null
+                    ? await uow.Folders.FindAsync(new FolderId(member.TrashFolderId), ct) != null
+                    : !mainFolderIds.Add(member.TrashFolderId);   // Add=false = 已存在（顺带占位给后续成员）
+                if (folderExists)
                     throw Conflict($"folder {member.TrashFolderId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
 
-                _ = await uow.Folders.AddAsync(new Folder
+                folderRows.Add(new Folder
                 {
                     FolderId = member.TrashFolderId,   // 保留原 ID
                     Name = name,
@@ -136,47 +213,58 @@ internal static class TrashRestoreSupport
                     LastVisitedAt = member.LastVisitedAt,
                     VisitCount = member.VisitCount,
                     UpdatedAt = DateTime.UtcNow,
-                }, ct);
+                });
                 diff.AddRange(EntityDiff.Diff(member.TrashFolderId, null,
                     new FolderSnapshot(name, member.Description, isRoot ? landing : member.ParentTrashFolderId)));
                 restoredFolderIds.Add(member.TrashFolderId);
                 restoredFolderIdSet.Add(member.TrashFolderId);
             }
+            if (folderRows.Count > 0)
+                await uow.Trash.RestoreFoldersAsync(folderRows, ct);   // 集合化插入 + 清回收站行
+
+            Phase("unit-folders");
 
             // 单元内链接：按 TrashFolderId 镜像回填（保留原 ID/全字段，不逐条评估 origin——origin 只决定单元根落点）
-            foreach (var subId in subtreeIds)
-            {
-                foreach (var snapshot in await uow.Trash.ListLinksByUnitAsync(new TrashFolderId(subId), ct))
-                {
-                    if (restoredLinkIds.Contains(snapshot.LinkId)) continue;   // 防御（正常不可达）
-                    if (await uow.Links.FindAsync(new LinkId(snapshot.LinkId), ct) != null)
-                        throw Conflict($"bookmark {snapshot.LinkId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
-                    var duplicate = await DuplicatedAtAsync(uow, restoredLinks, snapshot.TrashFolderId, snapshot.Url, ct);
-                    var restored = new Link
-                    {
-                        LinkId = snapshot.LinkId,      // 保留原 ID
-                        Url = snapshot.Url,
-                        Title = snapshot.Title,
-                        Description = snapshot.Description,
-                        FaviconUrl = snapshot.FaviconUrl,
-                        ListId = snapshot.TrashFolderId,
-                        LastVisitedAt = snapshot.LastVisitedAt,
-                        VisitCount = snapshot.VisitCount,
-                        IsImportant = snapshot.IsImportant,
-                        CreatedAt = snapshot.CreatedAt,
-                        UpdatedAt = DateTime.UtcNow,
-                    };
-                    _ = await uow.Links.AddAsync(restored, ct);
-                    diff.AddRange(EntityDiff.Diff(snapshot.LinkId, null, LinkSnapshot.Of(restored)));
-                    await uow.Trash.RemoveLinkAsync(new LinkId(snapshot.LinkId), ct);
-                    restoredLinks.Add(new RestoredLinkInfo(
-                        snapshot.LinkId, snapshot.Url, snapshot.Title, snapshot.TrashFolderId, false, duplicate));
-                    restoredLinkIds.Add(snapshot.LinkId);
-                }
-            }
+            var unitLinkSnapshots = await uow.Trash.ListLinksByUnitsAsync(
+                subtreeIds.Select(id => new TrashFolderId(id)).ToArray(), ct);
+            var unitRestoreMap = new List<(string LinkId, string? Landing)>(unitLinkSnapshots.Count);
 
-            foreach (var id in subtreeIds)
-                await uow.Trash.RemoveFolderAsync(new TrashFolderId(id), ct);
+            // 主表同 ID 冲突检查：一次 `id in (...)` 下推（原实现每条一次 FindAsync——400 条链接 = 400 次点查，
+            // 大子树还原实测 1.1s 的主因）
+            var conflictIds = new HashSet<string>(StringComparer.Ordinal);
+            if (unitLinkSnapshots.Count > 0)
+                conflictIds.UnionWith(await uow.Links.ListExistingIdsAsync(
+                    unitLinkSnapshots.Select(s => s.LinkId).ToArray(), ct));
+            foreach (var snapshot in unitLinkSnapshots)
+            {
+                if (restoredLinkIds.Contains(snapshot.LinkId)) continue;   // 防御（正常不可达）
+                if (conflictIds.Contains(snapshot.LinkId))
+                    throw Conflict($"bookmark {snapshot.LinkId} already exists in the main table (corrupt-data conflict), refusing to overwrite", ctx);
+                // 单元内落点 = 刚还原的目录（其 ID 在回收站期间不可能被主表占用）→ 只判批内重复，免一次按 URL 的库查询
+                var duplicate = !restoredKeys.Add((snapshot.TrashFolderId, snapshot.Url));
+                var restored = new Link
+                {
+                    LinkId = snapshot.LinkId,      // 保留原 ID
+                    Url = snapshot.Url,
+                    Title = snapshot.Title,
+                    Description = snapshot.Description,
+                    FaviconUrl = snapshot.FaviconUrl,
+                    ListId = snapshot.TrashFolderId,
+                    LastVisitedAt = snapshot.LastVisitedAt,
+                    VisitCount = snapshot.VisitCount,
+                    IsImportant = snapshot.IsImportant,
+                    CreatedAt = snapshot.CreatedAt,
+                    UpdatedAt = DateTime.UtcNow,
+                };
+                diff.AddRange(EntityDiff.Diff(snapshot.LinkId, null, LinkSnapshot.Of(restored)));
+                unitRestoreMap.Add((snapshot.LinkId, snapshot.TrashFolderId));
+                restoredLinks.Add(new RestoredLinkInfo(
+                    snapshot.LinkId, snapshot.Url, snapshot.Title, snapshot.TrashFolderId, false, duplicate));
+                restoredLinkIds.Add(snapshot.LinkId);
+            }
+            if (unitRestoreMap.Count > 0)
+                await uow.Trash.RestoreLinksAsync(unitRestoreMap, ct);
+            Phase("unit-links");
             restoredUnits.Add(new RestoredUnitInfo(unitId, landing, fellBack));
             if (landing != null) touched.Add(landing);
 
@@ -194,16 +282,50 @@ internal static class TrashRestoreSupport
         }
 
         // —— 2. 后链接（此时再评估 origin：原目录若是同批刚还原的单元，按 ID 落回）——
+        // 落点存在性用**一次**文件夹全表读取建集合，替代每条链接一次 Folders.FindAsync
+        // （批量还原/重做几百条时这是线性点查的主要来源之一；文件夹数量有限，一次读更划算）。
+        HashSet<string>? existingFolderIds = null;
+        if (linkIds.Count >= 20)
+        {
+            // 只查这批链接的 origin 目录（`id in (...)`），不为一两条读全表、也不逐条点查
+            var originIds = linkIds
+                .Select(id => linkSnapshots[id].OriginListId)
+                .Where(id => id != null)
+                .Distinct(StringComparer.Ordinal)
+                .Select(id => new FolderId(id!))
+                .ToArray();
+            if (originIds.Length > 0)
+                existingFolderIds = (await uow.Folders.FindManyAsync(originIds, ct))
+                    .Select(f => f.FolderId).ToHashSet(StringComparer.Ordinal);
+        }
+
+        // 重复 URL 的库内判定批量下推（只查这批链接的 URL；逐条 FindByUrlAsync 在 300 条时是 300 次点查）
+        HashSet<(string? ListId, string Url)>? existingUrlKeys = null;
+        if (linkIds.Count >= 20)
+        {
+            existingUrlKeys = new HashSet<(string?, string)>();
+            var urls = linkIds.Select(id => linkSnapshots[id].Url)
+                .Distinct(StringComparer.Ordinal).ToArray();
+            foreach (var chunk in urls.Chunk(500))
+                foreach (var pair in await uow.Links.ListLandingUrlPairsAsync(chunk, ct))
+                    existingUrlKeys.Add(pair);
+        }
+
+        var linkRestoreMap = new List<(string LinkId, string? Landing)>(linkIds.Count);
         foreach (var id in linkIds)
         {
             if (restoredLinkIds.Contains(id)) continue;   // 随同批单元一并还原 → 去重
-            var snapshot = await uow.Trash.FindLinkAsync(new LinkId(id), ct)
-                ?? throw NotFound($"bookmark {id} is not in the trash", ctx);   // 预检已保证；防御
+            var snapshot = linkSnapshots[id];   // 预检快照复用（不再二次查库）
 
-            var (landing, fellBack) = await ResolveLandingAsync(uow, to, snapshot.OriginListId, restoredFolderIdSet, ct);
+            var (landing, fellBack) = await ResolveLandingAsync(uow, to, snapshot.OriginListId,
+                restoredFolderIdSet, existingFolderIds, ct);
             if (fellBack) fellBackToRoot.Add(snapshot.Title ?? snapshot.Url);
 
-            var duplicate = await DuplicatedAtAsync(uow, restoredLinks, landing, snapshot.Url, ct);
+            // 批内重复用集合判（O(1)）；批外用已下推的 URL 集合，少量链接才走点查
+            var duplicate = !restoredKeys.Add((landing, snapshot.Url));
+            if (!duplicate)
+                duplicate = existingUrlKeys?.Contains((landing, snapshot.Url))
+                            ?? await HasExistingAtAsync(uow, landing, snapshot.Url, ct);
             var restoredLink = new Link
             {
                 LinkId = snapshot.LinkId,      // 保留原 ID
@@ -218,9 +340,8 @@ internal static class TrashRestoreSupport
                 CreatedAt = snapshot.CreatedAt,
                 UpdatedAt = DateTime.UtcNow,
             };
-            _ = await uow.Links.AddAsync(restoredLink, ct);
             diff.AddRange(EntityDiff.Diff(snapshot.LinkId, null, LinkSnapshot.Of(restoredLink)));
-            await uow.Trash.RemoveLinkAsync(new LinkId(id), ct);
+            linkRestoreMap.Add((snapshot.LinkId, landing));
             restoredLinks.Add(new RestoredLinkInfo(snapshot.LinkId, snapshot.Url, snapshot.Title, landing, fellBack, duplicate));
             restoredLinkIds.Add(id);
             if (landing != null) touched.Add(landing);
@@ -236,20 +357,17 @@ internal static class TrashRestoreSupport
                         JsonSerializer.SerializeToElement(new { id, to = ToOrigin }))));
             }
         }
+        if (linkRestoreMap.Count > 0)
+            await uow.Trash.RestoreLinksAsync(linkRestoreMap, ct);
+        Phase("links");
 
-        // —— 3. 收尾：落点 Touch（同目录只一次）+ 计数回填 ——
+        // —— 3. 收尾：落点 Touch（同目录只一次）——
+        // 不再回填 LinkCount：它是 [NotMapped] 的内存语义，还原出的 Folder 实体不会返回给任何调用方，
+        // 而这段"CountByFolderAsync + 逐文件夹 FindAsync"在 100 层单元还原上实测白付 304ms。
         foreach (var landing in touched)
             await uow.Trees.TouchModifiedAsync(new FolderId(landing), ct);
-        if (restoredFolderIds.Count > 0)
-        {
-            var counts = await uow.Links.CountByFolderAsync(ct);
-            foreach (var id in restoredFolderIds)
-            {
-                var folder = await uow.Folders.FindAsync(new FolderId(id), ct);
-                if (folder != null) folder.LinkCount = counts.GetValueOrDefault(new FolderId(id));
-            }
-        }
 
+        Phase("tail");
         return new TrashRestoreOutcome(restoredLinks, restoredUnits, restoredFolderIds, fellBackToRoot, renamed, undoSteps, diff);
     }
 
@@ -302,25 +420,23 @@ internal static class TrashRestoreSupport
 
     /// <summary>落点解析（唯一算法）：root → 根；origin → 快照原位置（NULL = 原在根；缺失 → 落根 + 回落标记）。</summary>
     private static async Task<(string? Landing, bool FellBack)> ResolveLandingAsync(
-        IUnitOfWork uow, string to, string? originParentId, HashSet<string> batchRestoredFolders, CancellationToken ct)
+        IUnitOfWork uow, string to, string? originParentId, HashSet<string> batchRestoredFolders,
+        HashSet<string>? existingFolderIds, CancellationToken ct)
     {
         if (to == ToRoot) return (null, false);
         if (originParentId == null) return (null, false);   // 原在根（正常路径；最极端兜底同此语义）
         if (batchRestoredFolders.Contains(originParentId)) return (originParentId, false);   // 同批刚还原（批内不可查库）
+        if (existingFolderIds is not null)
+            return existingFolderIds.Contains(originParentId) ? (originParentId, false) : (null, true);
         if (await uow.Folders.FindAsync(new FolderId(originParentId), ct) != null) return (originParentId, false);
         return (null, true);   // 原位置已不存在 → 落根 + 如实回报
     }
 
-    /// <summary>落点处是否已有同 URL 的其他链接（信息性计数，D7）——含同批先还原的（批内不可查库）。</summary>
-    private static async Task<bool> DuplicatedAtAsync(
-        IUnitOfWork uow, IReadOnlyList<RestoredLinkInfo> batchRestored, string? landing, string url, CancellationToken ct)
-    {
-        if (batchRestored.Any(l => string.Equals(l.Landing, landing, StringComparison.Ordinal)
-                                   && string.Equals(l.Url, url, StringComparison.Ordinal)))
-            return true;
-        return (await uow.Links.FindByUrlAsync(url, ct))
+    /// <summary>落点处是否已有同 URL 的其他链接（信息性计数，D7）。</summary>
+    private static async Task<bool> HasExistingAtAsync(
+        IUnitOfWork uow, string? landing, string url, CancellationToken ct)
+        => (await uow.Links.FindByUrlAsync(url, ct))
             .Any(l => string.Equals(l.ListId, landing, StringComparison.Ordinal));
-    }
 
     private static EngineException NotFound(string message, ICommandContext ctx)
         => new(EngineErrors.Of(EngineErrors.EntityNotFound, message, correlationId: ctx.CorrelationId));

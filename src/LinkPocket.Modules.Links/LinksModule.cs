@@ -29,6 +29,7 @@ public static class LinksModule
             new LinkCreateHandler(),
             new LinkUpdateHandler(),
             new LinkTrashHandler(),
+            new LinkTrashBatchHandler(),
             new LinkVisitRecordHandler(),
             new LinkMoveBatchHandler(),
             new LinkCopyBatchHandler(),

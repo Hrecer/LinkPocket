@@ -55,15 +55,75 @@ internal sealed class EfFolderRepository(LinkPocketDbContext db) : IFolderReposi
         return rows;
     }
 
+    public async Task<IReadOnlyList<Folder>> FindManyAsync(IReadOnlyList<FolderId> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var result = new List<Folder>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+        // 分块（500/批）：SQLite 参数上限之内，库再大也不会把 SQL 撑爆。
+        // reader 直读（与 ListAllAsync 同口径）：避免批量预检每次付 EF 查询编译 + 实体物化。
+        foreach (var chunk in ids.Chunk(500))
+        {
+            var names = string.Join(", ", chunk.Select((_, i) => "@id" + i));
+            using var cmd = await RawSql.CreateAsync(db,
+                "SELECT id, parent_id, name, description, sort_order, last_visited_at, visit_count, created_at, updated_at "
+                + "FROM folders WHERE id IN (" + names + ")", ct);
+            for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue("@id" + i, chunk[i].Value);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var folder = new Folder
+                {
+                    FolderId = reader.GetString(0),
+                    ParentId = reader.IsDBNull(1) ? null : reader.GetString(1),
+                    Name = reader.GetString(2),
+                    Description = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    SortOrder = reader.GetInt32(4),
+                    LastVisitedAt = reader.IsDBNull(5) ? null : reader.GetDateTime(5),
+                    VisitCount = reader.GetInt32(6),
+                    CreatedAt = reader.GetDateTime(7),
+                    UpdatedAt = reader.GetDateTime(8),
+                };
+                if (seenIds.Add(folder.FolderId)) result.Add(folder);
+            }
+        }
+
+        // 读己之写（与 FindAsync 对齐）：本单元未提交的新增要算存在、已删的不算
+        foreach (var tracked in db.Folders.Local)
+        {
+            var state = db.Entry(tracked).State;
+            if (state == EntityState.Added && seenIds.Add(tracked.FolderId)) result.Add(tracked);
+            else if (state == EntityState.Deleted) result.RemoveAll(f => f.FolderId == tracked.FolderId);
+        }
+        return result;
+    }
+
     public Task<int> CountAsync(CancellationToken ct)
         => db.Folders.AsNoTracking().CountAsync(ct);
 
     public async Task<IReadOnlyList<Folder>> ChildrenOfAsync(FolderId? parent, CancellationToken ct)
     {
-        var query = db.Folders.AsNoTracking();
-        return parent is { } p
-            ? await query.Where(f => f.ParentId == p.Value).ToListAsync(ct)
-            : await query.Where(f => f.ParentId == null).ToListAsync(ct);
+        // reader 直读（同 ListAllAsync）：命名服务在还原/导入热路径上反复取同层兄弟
+        using var cmd = await RawSql.CreateAsync(db,
+            "SELECT id, parent_id, name, description, sort_order, last_visited_at, visit_count, created_at, updated_at "
+            + "FROM folders WHERE parent_id IS @p", ct);
+        cmd.Parameters.AddWithValue("@p", parent is { } p ? p.Value : (object)DBNull.Value);
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<Folder>();
+        while (await reader.ReadAsync(ct))
+            rows.Add(new Folder
+            {
+                FolderId = reader.GetString(0),
+                ParentId = reader.IsDBNull(1) ? null : reader.GetString(1),
+                Name = reader.GetString(2),
+                Description = reader.IsDBNull(3) ? null : reader.GetString(3),
+                SortOrder = reader.GetInt32(4),
+                LastVisitedAt = reader.IsDBNull(5) ? null : reader.GetDateTime(5),
+                VisitCount = reader.GetInt32(6),
+                CreatedAt = reader.GetDateTime(7),
+                UpdatedAt = reader.GetDateTime(8),
+            });
+        return rows;
     }
 
     public Task<Folder> AddAsync(Folder folder, CancellationToken ct)

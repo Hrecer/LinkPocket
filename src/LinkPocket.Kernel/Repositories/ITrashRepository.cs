@@ -19,6 +19,16 @@ public interface ITrashRepository
     Task<IReadOnlyList<TrashedLink>> ListLinksByUnitAsync(TrashFolderId unit, CancellationToken ct);
 
     /// <summary>
+    /// 多个单元的直接书签快照（`trash_folder_id in (...)`，分块）：子树还原时一次性取回，
+    /// 取代"每个子目录查一次"的 N+1（100 层单元 = 100 次点查）。
+    /// 语义与 <see cref="FindLinkAsync"/> 的读己之写对齐（本单元新增可见、已删不可见）。
+    /// </summary>
+    Task<IReadOnlyList<TrashedLink>> ListLinksByUnitsAsync(IReadOnlyList<TrashFolderId> units, CancellationToken ct);
+
+    /// <summary>按 ID 集合批量取快照（分块；语义同上，批量还原/撤销的预检专用）。</summary>
+    Task<IReadOnlyList<TrashedLink>> ListLinksByIdsAsync(IReadOnlyList<LinkId> ids, CancellationToken ct);
+
+    /// <summary>
     /// 全部书签快照（含归属单元），按删除时间倒序。
     /// 组合读取（trash.overview）用这一条替掉"每个单元查一次"的循环 —— 单元数一多就是 N+1 次查询。
     /// </summary>
@@ -34,6 +44,7 @@ public interface ITrashRepository
     Task<TrashedLink> AddLinkAsync(TrashedLink snapshot, CancellationToken ct);
     Task RemoveLinkAsync(LinkId id, CancellationToken ct);
 
+
     /// <summary>
     /// **整目录批量入站**（删除文件夹的整树级联专用）：对每个 (目录, 原路径) 执行
     /// <c>INSERT INTO trash_links SELECT … FROM links WHERE folder_id=?</c> + <c>DELETE FROM links WHERE folder_id=?</c>
@@ -43,6 +54,27 @@ public interface ITrashRepository
     /// </summary>
     Task<int> TrashLinksOfFoldersAsync(IReadOnlyList<(string FolderId, string OriginPath)> folders,
         DateTime deletedAt, CancellationToken ct);
+
+    /// <summary>
+    /// **集合化批量入站**（批量删除链接专用）：把一个目录下选中的 N 条链接用
+    /// <c>INSERT..SELECT</c>（一个目录两三条语句）搬进回收站，取代逐条 EF 登记。
+    /// 调用方必须已有活动事务；<paramref name="folderId"/> 为 null = 根级链接。
+    /// </summary>
+    Task<int> TrashLinksOfFolderSelectionAsync(string? folderId, string originPath,
+        IReadOnlyList<string> linkIds, DateTime deletedAt, CancellationToken ct);
+
+    /// <summary>
+    /// **集合化还原链接**（撤销/还原的主写入路径）：从 trash_links 按给定落点批量 INSERT 进 links，
+    /// 再批量删除对应快照。调用方必须已有活动事务（本方法不管理事务）。
+    /// 落点逐条给出（origin 缺失可落根）——用 json_each 映射，不按目录/逐行发语句。
+    /// </summary>
+    Task<int> RestoreLinksAsync(IReadOnlyList<(string LinkId, string? Landing)> links, CancellationToken ct);
+
+    /// <summary>
+    /// **集合化还原文件夹**（单元还原）：把已算出名称/父级的 Folder 行批量 INSERT 进 folders，
+    /// 再批量删除对应 trash_folders。调用方必须已有活动事务（本方法不管理事务；内部 defer 自引用 FK）。
+    /// </summary>
+    Task<int> RestoreFoldersAsync(IReadOnlyList<Folder> folders, CancellationToken ct);
 
     // —— 文件夹单元 ——
     Task<TrashedFolder?> FindFolderAsync(TrashFolderId id, CancellationToken ct);
@@ -55,4 +87,5 @@ public interface ITrashRepository
 
     Task<TrashedFolder> AddFolderAsync(TrashedFolder unit, CancellationToken ct);
     Task RemoveFolderAsync(TrashFolderId id, CancellationToken ct);
+
 }

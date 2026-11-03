@@ -286,6 +286,40 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         return Task.CompletedTask;
     }
 
+    public async Task<IReadOnlyList<string>> ListExistingIdsAsync(
+        IReadOnlyList<string> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0) return [];
+        var found = new List<string>();
+        foreach (var chunk in ids.Distinct(StringComparer.Ordinal).Chunk(500))
+        {
+            var names = string.Join(", ", chunk.Select((_, i) => "@id" + i));
+            using var cmd = await RawSql.CreateAsync(db, "SELECT id FROM links WHERE id IN (" + names + ")", ct);
+            for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue("@id" + i, chunk[i]);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) found.Add(reader.GetString(0));
+        }
+        return found;
+    }
+
+    public async Task<IReadOnlyList<(string? ListId, string Url)>> ListLandingUrlPairsAsync(
+        IReadOnlyList<string> urls, CancellationToken ct)
+    {
+        if (urls.Count == 0) return [];
+        var pairs = new List<(string? ListId, string Url)>();
+        foreach (var chunk in urls.Distinct(StringComparer.Ordinal).Chunk(500))
+        {
+            var names = string.Join(", ", chunk.Select((_, i) => "@u" + i));
+            using var cmd = await RawSql.CreateAsync(db,
+                "SELECT folder_id, url FROM links WHERE url IN (" + names + ")", ct);
+            for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue("@u" + i, chunk[i]);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+                pairs.Add((reader.IsDBNull(0) ? null : reader.GetString(0), reader.GetString(1)));
+        }
+        return pairs;
+    }
+
     public async Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct)
         => await db.Links.AsNoTracking().Where(l => l.Url == url).ToListAsync(ct);
 

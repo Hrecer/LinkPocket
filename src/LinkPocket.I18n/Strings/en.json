@@ -788,6 +788,7 @@
   "ai.action.links.export": "Export all links",
   "ai.action.links.moveBatch": "Move bookmarks in batch",
   "ai.action.links.trash": "Move a bookmark to trash",
+  "ai.action.links.trashBatch": "Move bookmarks to trash in batch",
   "ai.action.links.update": "Edit a bookmark",
   "ai.action.links.visitBatch": "Record visits in batch",
   "ai.action.links.visitRecord": "Record a visit",

@@ -166,6 +166,10 @@ public sealed partial class EngineClient
     public Task<CommandResult<LinkTrashResult>> LinkTrashAsync(string id, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<LinkTrashResult>("links.trash", new { id }, o, ct);
 
+    /// <summary>Move links to the trash in batch (one atomic transaction; keeps original IDs and locations)</summary>
+    public Task<CommandResult<LinkBatchResult>> LinkTrashBatchAsync(IReadOnlyList<string> linkIds, CallOptions? o = null, CancellationToken ct = default)
+        => ExecuteAsync<LinkBatchResult>("links.trash_batch", new { link_ids = linkIds }, o, ct);
+
     /// <summary>Edit a link (only explicitly provided fields change)</summary>
     public Task<CommandResult<LinkDto>> LinkUpdateAsync(string id, string? url = null, string? title = null, string? description = null, string? listId = null, bool? isImportant = null, string? faviconUrl = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<LinkDto>("links.update", new { id, url, title, description, list_id = listId, is_important = isImportant, favicon_url = faviconUrl }, o, ct);
