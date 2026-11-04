@@ -213,6 +213,14 @@
                 </Border>
             </Popup>
 
+            <!-- 导航首帧的占位：固定一个省略号（始终在布局里、默认透明），切到新路径时只切 Opacity，
+                 不触发布局、不生成面包屑容器；精确折叠在首帧之后落地并隐藏。 -->
+            <TextBlock x:Name="CrumbSplash" Text="…" Opacity="0" Panel.ZIndex="2"
+                       FontSize="13" FontWeight="SemiBold" Margin="12,0"
+                       VerticalAlignment="Center" TextOptions.TextFormattingMode="Display"
+                       Foreground="{DynamicResource App.Text.Primary}"
+                       IsHitTestVisible="False"/>
+
             <!-- 路径编辑态：输入框 + 同级候选 Popup -->
             <TextBox x:Name="PathEditBox" Style="{StaticResource PathEditField}"
                      Text="{Binding PathEditText, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"

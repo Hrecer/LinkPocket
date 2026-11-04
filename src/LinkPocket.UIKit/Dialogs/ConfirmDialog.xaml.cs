@@ -36,7 +36,8 @@ public partial class ConfirmDialog : Window
     /// 呈现——破坏性动作不设专门警示色），信息/成功传 "TintPanel"。
     /// </summary>
     public static bool Show(string title, string message, string? confirmText = null,
-        string iconKind = "delete-outline", string chipBrushKey = Theming.Tokens.AppTokens.SupportContainer)
+        string iconKind = "delete-outline", string chipBrushKey = Theming.Tokens.AppTokens.SupportContainer,
+        bool centerOnScreen = false)
     {
         var dlg = new ConfirmDialog
         {
@@ -50,9 +51,21 @@ public partial class ConfirmDialog : Window
         // 取不到键也不静默兜一个 Transparent（那会把"主题未装配"伪装成"正常但不着色"）。
         dlg.ChipBorder.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, chipBrushKey);
 
-        var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
-                    ?? Application.Current?.MainWindow;
-        if (owner != null && owner != dlg) dlg.Owner = owner;
+        if (centerOnScreen)
+        {
+            // 能力宿主没有真正的主窗口；离屏渲染窗可能被 WPF 自动设成 MainWindow，
+            // 挂上去会把确认框带到屏幕外。
+            dlg.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
+        else
+        {
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                        ?? Application.Current?.MainWindow;
+            if (owner != null && owner != dlg)
+                dlg.Owner = owner;
+            else
+                dlg.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
 
         return dlg.ShowDialog() == true;
     }

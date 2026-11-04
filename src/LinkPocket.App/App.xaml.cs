@@ -18,8 +18,14 @@ public partial class App : Application
         DisableWerDumps();
     }
 
+    private CapabilityHostRunner? _capabilityHost;
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 按需能力宿主模式：只借浏览器能力，没有主窗口、不装配引擎、不打开数据库。
+        var capabilityHost = e.Args.Contains("--capability-host", StringComparer.OrdinalIgnoreCase);
+        if (capabilityHost) ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         // 启动序（三条，顺序是硬约束）：
         // ① 语言先定 —— 偏好的语言模式/固定码由 I18n 解释成具体语言（auto 的判据在 I18n），
         //    并登记给 ThemeService：**默认界面字体族按语言给**（决策 5），而它在 ② 里就要用。
@@ -55,12 +61,30 @@ public partial class App : Application
         {
             var text = string.Join("\n\n", notices);
             LpLog.Warn($"startup fallback: {text}", category: ThemeService.LogCategory);
+            if (!capabilityHost)
+            {
+                try
+                {
+                    MessageBox.Show(text + Loc.T("startup.fallbackNote"), "LinkPocket",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                catch { /* 提示失败不阻断启动；日志已留痕 */ }
+            }
+        }
+
+        if (capabilityHost)
+        {
             try
             {
-                MessageBox.Show(text + Loc.T("startup.fallbackNote"), "LinkPocket",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                StartCapabilityHost(e.Args);
             }
-            catch { /* 提示失败不阻断启动；日志已留痕 */ }
+            catch (Exception ex)
+            {
+                LpLog.Error("capability host startup failed", ex, category: "app.capability");
+                LpLog.Flush(TimeSpan.FromSeconds(1));
+                Shutdown(1);
+            }
+            return;
         }
 
         // 组合根装配：主题应用之后创建主窗口（与原 StartupUri 的实例化时机一致）。
@@ -146,6 +170,42 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// 按需能力宿主：只配置日志与能力桥，不建主窗口、不装配引擎、不打开数据库。
+    /// 库路径仍由统一发现规则解析（CLI 启动时已把绝对路径写进 LINKPOCKET_DB）。
+    /// </summary>
+    private void StartCapabilityHost(string[] args)
+    {
+        LinkPocket.Composition.EngineComposer.ConfigureLogging(
+            LinkPocket.Composition.EngineComposer.HostLoggingOptions());
+
+        var dbPath = AppPaths.ResolveDatabasePath(null, out var dbSource);
+        LpLog.Info($"capability host starting: {dbPath} ({dbSource})", category: "app.capability");
+
+        _capabilityHost = new CapabilityHostRunner(dbPath, ParseParentPid(args));
+        if (_capabilityHost.Start()) return;
+
+        // 另一个提供者已经在服务；本次启动没有存在的必要。
+        LpLog.Info("capability host exited: another provider is active", category: "app.capability");
+        _capabilityHost.Dispose();
+        _capabilityHost = null;
+        Shutdown(0);
+    }
+
+    private static int? ParseParentPid(string[] args)
+    {
+        for (var i = 0; i + 1 < args.Length; i++)
+        {
+            if (string.Equals(args[i], "--parent-pid", StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(args[i + 1], out var pid))
+            {
+                return pid;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>语言切换的宿主级副作用（唯一一处）：登记新语言码 + 写回偏好。</summary>
     /// <remarks>
     /// <para>
@@ -187,6 +247,8 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         LpLog.Info("application exiting, forcing process termination");
+        _capabilityHost?.Dispose();
+        _capabilityHost = null;
         //（两阶段）：
         // ① 先把 SQLite 连接池全部断开——池化连接持有的 WAL 文件句柄会阻止 checkpoint，
         //    显式清池触发 SQLite 把 WAL 收拢回主库文件（否则强杀后日志/WAL 可能丢尾）；

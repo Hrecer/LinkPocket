@@ -2,10 +2,11 @@ using System.Diagnostics;
 using System.Text.Json;
 using LinkPocket.Contracts;
 using LinkPocket.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace ProtocolSmoke;
 
-/// <summary>§6 引擎能力（links.query/batch/幂等/干跑）+ §7 并发压测 + §8 错误模型 + §9 10k 性能门槛。</summary>
+/// <summary>§6 引擎能力（links.query/batch/幂等/干跑）+ §7 并发压测 + §8 错误模型 + §9 10k/100k 性能门槛。</summary>
 internal static partial class SmokeRunner
 {
     private static async Task SectionEngineAbilities(SmokeState s)
@@ -162,7 +163,7 @@ internal static partial class SmokeRunner
         throw new Exception("应抛 EngineException");
     }
 
-    // —— §9 10k 性能门槛（DEBUG 构建放宽 ×5，见 Asserts.Within）——
+    // —— §9 10k + 100k 性能门槛（DEBUG 构建放宽 ×5，见 Asserts.Within）——
     private static async Task SectionPerformance(SmokeState s)
     {
         var perfDb = Path.Combine(LinkPocket.Engine.TempArea.Resolve(), $"lpsmoke_perf_{Guid.NewGuid():N}.db");
@@ -243,8 +244,102 @@ internal static partial class SmokeRunner
             // 缓存命中路径：同一个 10k 库上冷查询 vs 命中
             await MeasureCacheLatency(client);
 
+            // —— 100k 搜索门槛（同一库扩到 10 万条；覆盖默认分页、全量上限、count 同谓词与 explain）——
+            await using (var ctx = new LinkPocketDbContext(perfDb))
+            {
+                for (var chunk = 0; chunk < 8; chunk++)
+                {
+                    for (var i = 0; i < 10_000; i++)
+                    {
+                        var n = chunk * 10_000 + i;
+                        ctx.Links.Add(new Link
+                        {
+                            Url = $"https://large.example.com/page/{n}",
+                            Title = $"十万页面 #{n:D6}",
+                            Description = "100k 搜索压力样本",
+                            ListId = folderIds[0],
+                        });
+                    }
+                    await ctx.SaveChangesAsync();
+                    ctx.ChangeTracker.Clear();   // 80k 实体不在跟踪器里堆积
+                }
+            }
+
+            var expectedTotal = 100_000;
+
+            sw = Stopwatch.StartNew();
+            var largeCount = await client.QueryAsync<int>("search.count", new
+            {
+                query = "页面", search_title = true, search_url = true,
+                search_description = true, search_path = true,
+            });
+            sw.Stop();
+            Asserts.That(largeCount == expectedTotal, $"100k 宽命中应为 {expectedTotal}，实际 {largeCount}");
+            Asserts.Within(sw.ElapsedMilliseconds, 600, "100k 库 search.count(四范围)");
+
+            sw = Stopwatch.StartNew();
+            var largePage = await client.QueryAsync<List<LinkDto>>("search.links", new
+            {
+                query = "页面", search_title = true, search_url = true,
+                search_description = true, search_path = true,
+            });
+            sw.Stop();
+            Asserts.That(largePage.Count == expectedTotal, $"search.links 默认应全量 {expectedTotal}，实际 {largePage.Count}");
+            Asserts.Within(sw.ElapsedMilliseconds, 10_000, "100k 库 search.links(默认全量)");
+
+            sw = Stopwatch.StartNew();
+            var largeMissing = await client.QueryAsync<List<LinkDto>>("search.links", new
+            {
+                query = "zzzz-no-hit", search_title = true, search_url = true,
+                search_description = true, search_path = true,
+            });
+            sw.Stop();
+            Asserts.That(largeMissing.Count == 0, "100k 无命中搜索应为空");
+            Asserts.Within(sw.ElapsedMilliseconds, 500, "100k 库 search.links(无命中)");
+
+            sw = Stopwatch.StartNew();
+            var explain = await client.QueryAsync<SearchExplanation>("search.explain", new
+            {
+                query = "页面", search_title = true, search_url = true,
+                search_description = true, search_path = true,
+            });
+            sw.Stop();
+            Asserts.That(explain.Hits.Count == expectedTotal && explain.Total == expectedTotal && !explain.Truncated,
+                $"100k explain 默认应全量：hits={explain.Hits.Count} total={explain.Total} truncated={explain.Truncated}");
+            Asserts.Within(sw.ElapsedMilliseconds, 10_000, "100k 库 search.explain(默认全量)");
+
+            sw = Stopwatch.StartNew();
+            var largeFull = await client.QueryAsync<List<LinkDto>>("search.links", new
+            {
+                query = "页面", per_page = 0, search_title = true, search_url = true,
+                search_description = true, search_path = true,
+            });
+            sw.Stop();
+            Asserts.That(largeFull.Count == expectedTotal, $"per_page=0 应返回全量 {expectedTotal}，实际 {largeFull.Count}");
+            Asserts.Within(sw.ElapsedMilliseconds, 10_000, "100k 库 search.links(per_page=0 全量)");
+
+            // —— 批量入站（3000 条）：多选删除 = 1 条命令，不再逐条过协议 ——
+            List<string> trashBatchIds;
+            await using (var ctx = new LinkPocketDbContext(perfDb))
+            {
+                trashBatchIds = ctx.Links.AsNoTracking()
+                    .Where(l => l.ListId == folderIds[0])
+                    .OrderBy(l => l.LinkId)
+                    .Select(l => l.LinkId)
+                    .Take(3_000)
+                    .ToList();
+            }
+            sw.Restart();
+            var trashedBatch = await client.LinkTrashBatchAsync(trashBatchIds);
+            sw.Stop();
+            Asserts.That(trashedBatch.Data!.Affected == trashBatchIds.Count,
+                $"批量入站应搬 {trashBatchIds.Count} 条，实际 {trashedBatch.Data.Affected}");
+            Asserts.Within(sw.ElapsedMilliseconds, 3_000, "100k 库 links.trash_batch(3000)");
+            Console.WriteLine($"[perf] links.trash_batch({trashBatchIds.Count}) = {sw.ElapsedMilliseconds}ms");
+
             File.Delete(htmlPath);
-            Console.WriteLine("[OK] §9 10k 性能门槛：contents / search / move_batch(10) / import(10k) / 缓存命中 全部达标");
+            Console.WriteLine("[OK] §9 10k 性能门槛：contents / search / move_batch(10) / import(10k) / 缓存命中 / trash_batch(3000) 全部达标");
+            Console.WriteLine("[OK] §9b 100k 搜索门槛：count / 默认全量 / 无命中 / explain 全量 / per_page=0 全量 全部达标");
         }
         finally
         {

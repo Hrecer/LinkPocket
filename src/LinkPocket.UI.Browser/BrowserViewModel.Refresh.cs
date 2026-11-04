@@ -110,6 +110,7 @@ public partial class BrowserViewModel
         // 真刷新（导航加载 = 进入目录 / 点当前位置重载 / F5）同时让"刚置入项临时置尾"归位（Windows 口径）。
         if (navigating) { IsNavigating = true; _navigatingInChain = true; ClearRecentlyPinned(); }
         IsLoading = true;
+        RowsReplacedInLastRefresh = false;
         // 阶段耗时留痕（cat=app.nav）：切页/防抖刷新"到底贵在哪一段"的取证入口。
         // 只读 Stopwatch，不改变任何时序；marks = 各阶段结束时的累计毫秒（日志里换算成每段增量）。
         var navWatch = Stopwatch.StartNew();
@@ -122,7 +123,7 @@ public partial class BrowserViewModel
             // （RequestNextPageAsync）。10 000 条全量 = 引擎 432ms + 万行 VM 115ms，冷开 680ms 里的大头；
             // 十万级下"一次全量"根本不可行。文件夹不参与分页（引擎整页返回）。
             var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder,
-                perPage: PageChunkSize);
+                perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false);
             _loadedPage = contents.CurrentPage;
             _lastPage = contents.PerPage > 0 ? Math.Max(contents.LastPage, 1) : 1;
             _directLinkTotal = contents.DirectLinkCount;
@@ -189,6 +190,7 @@ public partial class BrowserViewModel
             else if (!TryApplyIncrementalEdit(next))
             {
                 _rowsReplaced = true;   // 新行对象：选中/改名投影不必逐行通知（绑定首次求值即读宿主状态）
+                RowsReplacedInLastRefresh = true;
                 Rows.ReplaceAll(next.Select(p => CreateRow(p)));
                 SetContextRow(null);   // 行对象已重建：右键命中行引用作废（删除文案随之复位）
             }
@@ -211,17 +213,21 @@ public partial class BrowserViewModel
             ConsumePendingFocus();
             navMarks[3] = navWatch.ElapsedMilliseconds;   // 侧栏/选中/改名投影 + 定位
 
-            // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）
-            Breadcrumbs.Clear();
+            // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）。
+            // ReplaceAll = 一次 Reset；深路径首帧由 BreadcrumbBar 用固定占位（省略号），首帧后精确折叠。
             var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
-            Breadcrumbs.Add(new BrowserCrumbViewModel(null, BookmarkPath.RootToken) { IsLast = chain.Count == 0 });
+            var crumbs = new List<BrowserCrumbViewModel>(chain.Count + 1)
+            {
+                new(null, BookmarkPath.RootToken) { IsLast = chain.Count == 0 },
+            };
             for (int i = 0; i < chain.Count; i++)
             {
-                Breadcrumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)
+                crumbs.Add(new BrowserCrumbViewModel(chain[i].Id, chain[i].Name)
                 {
                     IsLast = i == chain.Count - 1
                 });
             }
+            Breadcrumbs.ReplaceAll(crumbs);
 
             navMarks[4] = navWatch.ElapsedMilliseconds;   // 面包屑
 
@@ -445,6 +451,12 @@ public partial class BrowserViewModel
     private int _directLinkTotal;
     private bool _pageLoadInFlight;
 
+    /// <summary>最近一次刷新是否整体替换了行对象（导航换目录时为真）。
+    /// 视图据此决定是否用"紧凑首帧模板"：只有新行对象才需要重新实例化全部行容器。</summary>
+    public bool RowsReplacedInLastRefresh { get; private set; }
+
+
+
     /// <summary>还有未加载的链接页（状态栏"已加载前 N 项"与续载触发的判据）。</summary>
     public bool HasMorePages => _loadedPage < _lastPage;
 
@@ -469,7 +481,7 @@ public partial class BrowserViewModel
         try
         {
             var dto = await _client.FoldersOverviewAsync(folderId, sortBy: SortBy, sortOrder: SortOrder,
-                page: nextPage, perPage: PageChunkSize);
+                page: nextPage, perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false);
             if (Controller.CurrentFolderId != folderId || dto.CurrentPage != nextPage) return;   // 已切换 → 丢弃
 
             var rows = dto.Links

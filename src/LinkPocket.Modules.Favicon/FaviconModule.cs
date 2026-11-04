@@ -10,5 +10,6 @@ public static class FaviconModule
         new FaviconCacheStatsHandler(),
         new FaviconCacheGcHandler(),
         new FaviconPrefetchHandler(),
+        new FaviconFetchHandler(),
     ];
 }

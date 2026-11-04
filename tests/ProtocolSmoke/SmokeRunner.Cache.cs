@@ -39,6 +39,15 @@ internal static partial class SmokeRunner
                 && afterUncached2.CacheMisses == afterUncached.CacheMisses,
             "未声明 CachePolicy 的查询（links.query）不得进出缓存");
 
+        // —— 外部进程调用方绕过查询缓存：CLI/MCP 看不到桌面进程内的事件，缓存会造成最长 10 秒陈旧 ——
+        var externalBefore = engine.RuntimeStats;
+        await client.QueryAsync<List<FolderDto>>("folders.tree", null,
+            new CallOptions(Caller: CallerRef.ExternalAgent));
+        var externalAfter = engine.RuntimeStats;
+        Asserts.That(externalAfter.CacheHits == externalBefore.CacheHits
+                && externalAfter.CacheMisses == externalBefore.CacheMisses,
+            "外部调用方必须绕过查询缓存（准确优先，直接读库）");
+
         var manifest = client.Describe();
         var cacheable = manifest.Commands.Where(c => c.IsCacheable).ToList();
         Asserts.That(cacheable.Count is > 0 and < 20,

@@ -65,9 +65,9 @@ public partial class TrashViewModel
         var chain = new List<TrashCrumbViewModel> { new(null, BookmarkPath.TrashToken) };
         foreach (var (id, name) in BuildPathChain()) chain.Add(new TrashCrumbViewModel(id, name));
 
-        Breadcrumbs.Clear();
         for (var i = 0; i < chain.Count; i++)
-            Breadcrumbs.Add(new TrashCrumbViewModel(chain[i].UnitId, chain[i].Name) { IsLast = i == chain.Count - 1 });
+            chain[i] = new TrashCrumbViewModel(chain[i].UnitId, chain[i].Name) { IsLast = i == chain.Count - 1 };
+        Breadcrumbs.ReplaceAll(chain);
 
         OnPropertyChanged(nameof(IsInUnit));
         OnPropertyChanged(nameof(IsAtRoot));

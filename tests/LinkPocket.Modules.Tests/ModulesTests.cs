@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：64 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：69 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_64_Commands()
+    public void Describe_Returns_All_69_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(64, manifest.Commands.Count);
-        Assert.Equal(64, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(69, manifest.Commands.Count);
+        Assert.Equal(69, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -25,9 +25,11 @@ public class CatalogTests
     {
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(15, engine.Describe("folders").Commands.Count);  // + folders.tree_links（树叶子懒加载的轻量出口）
-        Assert.Equal(17, engine.Describe("links").Commands.Count);
+        Assert.Equal(18, engine.Describe("links").Commands.Count);
         Assert.Equal(9, engine.Describe("trash").Commands.Count);
+        Assert.Equal(4, engine.Describe("favicon").Commands.Count);
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
+        Assert.Equal(6, engine.Describe("search").Commands.Count);   // + session_open/page/close
         Assert.Single(engine.Describe("locate").Commands);
         Assert.Equal(2, engine.Describe("audit").Commands.Count);  // audit.query / audit.prune
         Assert.Equal(2, engine.Describe("logs").Commands.Count);   // logs.query / logs.level
@@ -108,9 +110,13 @@ public class FoldersModuleTests
         Assert.Equal(tree.Count, overview.Tree!.Count);
         Assert.All(overview.Tree, f => Assert.Contains(tree, t => t.FolderId == f.FolderId));
 
-        // 全库链接**不再随 overview 搬运**（每次刷新搬全库是实测的性能黑洞）：
-        // 轻量出口 folders.tree_links 仍在（只带 id / 标题 / 地址 / 归属）；浏览页左栏已改为只显示文件夹，界面不再消费它
-        Assert.Null(overview.TreeLinks);
+        // 外部 overview 默认携带全库 tree_links（准确优先）；界面显式 include_tree_links=false 才关闭。
+        Assert.NotNull(overview.TreeLinks);
+        Assert.Contains(overview.TreeLinks!, l => l.Title == "内部链接" && l.ListId == folder.Data!.FolderId);
+        Assert.Contains(overview.TreeLinks!, l => l.Title == "根级链接" && l.ListId == null);
+        var slimOverview = await engine.QueryAsync<FolderContentsDto>(
+            "folders.overview", new { folder_id = folder.Data!.FolderId, include_tree_links = false });
+        Assert.Null(slimOverview.TreeLinks);
         var leaves = await engine.QueryAsync<List<TreeLinkDto>>("folders.tree_links", new { folder_id = folder.Data!.FolderId });
         Assert.Single(leaves);
         Assert.Equal("内部链接", leaves[0].Title);
@@ -189,7 +195,7 @@ public class FoldersModuleTests
     }
 
     [Fact]
-    public async Task Contents_Truncation_Is_Visible_Not_Silent()
+    public async Task Contents_Default_Is_All_And_Explicit_Page_Is_Caller_Choice()
     {
         var (engine, _, _) = TestHost.Create();
         var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "F" });
@@ -198,18 +204,28 @@ public class FoldersModuleTests
         await engine.ExecuteAsync<LinkDto>("links.create",
             new { url = "https://x.example/2", title = "2", list_id = folder.Data!.FolderId });
 
-        // 显式 per_page ≤ 上限：分页是调用方自己的选择，不算截断
+        // 外部默认 = 全量：不传 per_page 不再被引擎上限截断
+        var all = await engine.QueryAsync<FolderContentsDto>("folders.contents",
+            new { folder_id = folder.Data!.FolderId });
+        Assert.Equal(2, all.Links.Count);
+        Assert.Equal(0, all.PerPage);
+        Assert.Equal(1, all.LastPage);
+        Assert.False(all.Truncated);
+
+        // 显式 per_page：分页是调用方自己的选择，不算截断；页数仍如实报告
         var paged = await engine.QueryAsync<FolderContentsDto>("folders.contents",
             new { folder_id = folder.Data!.FolderId, per_page = 1 });
         Assert.False(paged.Truncated);
         Assert.Single(paged.Links);
         Assert.Equal(2, paged.DirectLinkCount);
+        Assert.Equal(2, paged.LastPage);
 
-        // 显式 per_page 超上限：夹到上限，且 truncated 必须为 true
-        var capped = await engine.QueryAsync<FolderContentsDto>("folders.contents",
+        // 显式超大 per_page 也不再夹到 10000 / 不再误报截断
+        var large = await engine.QueryAsync<FolderContentsDto>("folders.contents",
             new { folder_id = folder.Data!.FolderId, per_page = int.MaxValue });
-        Assert.True(capped.Truncated);
-        Assert.Equal(10_000, capped.PerPage);
+        Assert.False(large.Truncated);
+        Assert.Equal(int.MaxValue, large.PerPage);
+        Assert.Equal(2, large.Links.Count);
     }
 
     [Fact]
@@ -968,7 +984,7 @@ public class SearchModuleTests
         Assert.Single(byPath);
 
         // explain：命中字段说明（关掉标题范围才能拿到纯 url 命中）
-        var explain = await engine.QueryAsync<Modules.Search.SearchExplanation>("search.explain",
+        var explain = await engine.QueryAsync<SearchExplanation>("search.explain",
             new { query = "github", search_title = false, search_url = true });
         var hit = Assert.Single(explain.Hits);
         Assert.Equal(new[] { "url" }, hit.Matched);
@@ -1003,6 +1019,275 @@ public class SearchModuleTests
 
         var desc = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "工具", sort_order = "desc" });
         Assert.Equal(new[] { "beta 工具", "Alpha 工具" }, desc.Select(l => l.Title));
+    }
+
+    [Fact]
+    public async Task Search_Default_Is_All_And_Explain_Reports_Exact_Total()
+    {
+        // 外部命令默认全量；显式 per_page 才分页。explain 全量时 Total = 返回条数、Truncated = false。
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            for (var i = 0; i < 501; i++)
+                db.Links.Add(new LinkPocket.Data.Link
+                {
+                    LinkId = $"PAG{i:D13}",
+                    Url = $"https://page.example/{i}",
+                    Title = $"默认页 {i:D3}",
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var count = await engine.QueryAsync<int>("search.count", new { query = "默认页" });
+        Assert.Equal(501, count);
+
+        var all = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "默认页" });
+        Assert.Equal(501, all.Count);
+        Assert.Equal(501, all.Select(l => l.LinkId).Distinct().Count());
+
+        // 显式分页仍可用：页 1 = 500、页 2 = 1，不重不漏
+        var first = await engine.QueryAsync<List<LinkDto>>("search.links",
+            new { query = "默认页", page = 1, per_page = 500 });
+        var second = await engine.QueryAsync<List<LinkDto>>("search.links",
+            new { query = "默认页", page = 2, per_page = 500 });
+        Assert.Equal(500, first.Count);
+        Assert.Single(second);
+        Assert.Equal(501, first.Concat(second).Select(l => l.LinkId).Distinct().Count());
+
+        var explain = await engine.QueryAsync<SearchExplanation>(
+            "search.explain", new { query = "默认页" });
+        Assert.Equal(501, explain.Hits.Count);
+        Assert.Equal(501, explain.Total);
+        Assert.False(explain.Truncated);
+        Assert.Equal(1, explain.Page);
+        Assert.Equal(501, explain.PerPage);
+
+        var explainPage1 = await engine.QueryAsync<SearchExplanation>(
+            "search.explain", new { query = "默认页", page = 1, per_page = 500 });
+        Assert.Equal(500, explainPage1.Hits.Count);
+        Assert.Equal(501, explainPage1.Total);
+        Assert.True(explainPage1.Truncated);
+        var explainPage2 = await engine.QueryAsync<SearchExplanation>(
+            "search.explain", new { query = "默认页", page = 2, per_page = 500 });
+        Assert.Single(explainPage2.Hits);
+        Assert.Equal(501, explainPage2.Total);
+        Assert.False(explainPage2.Truncated);
+    }
+
+    [Fact]
+    public async Task Search_Full_Mode_Returns_Every_Hit()
+    {
+        // 0 / 不传 = 全量（没有 10000 条上限）；10 001 条命中必须全部返回。
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            for (var i = 0; i < 10_001; i++)
+                db.Links.Add(new LinkPocket.Data.Link
+                {
+                    LinkId = $"CAP{i:D13}",
+                    Url = $"https://cap.example/{i}",
+                    Title = $"上限页 {i:D5}",
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var count = await engine.QueryAsync<int>("search.count", new { query = "上限页" });
+        Assert.Equal(10_001, count);
+
+        var defaultPage = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "上限页" });
+        Assert.Equal(10_001, defaultPage.Count);
+
+        var full = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "上限页", per_page = 0 });
+        Assert.Equal(10_001, full.Count);
+        Assert.Equal(10_001, full.Select(l => l.LinkId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Search_Count_Matches_Paged_Links_For_Every_Scope()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            db.Folders.AddRange(
+                new LinkPocket.Data.Folder { FolderId = "770000000001", Name = "范围根" },
+                new LinkPocket.Data.Folder { FolderId = "770000000002", Name = "范围子", ParentId = "770000000001" });
+            db.Links.AddRange(
+                new LinkPocket.Data.Link { LinkId = "SCOPE00000000001", Url = "https://scope.example/a", Title = "范围标题", Description = "普通", ListId = "770000000001" },
+                new LinkPocket.Data.Link { LinkId = "SCOPE00000000002", Url = "https://scope.example/b", Title = "普通 B", Description = "范围描述", ListId = "770000000001" },
+                new LinkPocket.Data.Link { LinkId = "SCOPE00000000003", Url = "https://scope.example/c", Title = "普通 C", ListId = "770000000002" });
+            await db.SaveChangesAsync();
+        }
+
+        async Task AssertScope(object args, int expected)
+        {
+            var count = await engine.QueryAsync<int>("search.count", args);
+            Assert.Equal(expected, count);
+
+            var all = await engine.QueryAsync<List<LinkDto>>("search.links", args);
+            Assert.Equal(count, all.Count);
+
+            var paged = new List<LinkDto>();
+            for (var page = 1; page <= (count + 1) / 2; page++)
+                paged.AddRange(await engine.QueryAsync<List<LinkDto>>("search.links",
+                    Merge(args, new { page, per_page = 2 })));
+            Assert.Equal(count, paged.Count);
+            Assert.Equal(count, paged.Select(l => l.LinkId).Distinct().Count());
+        }
+
+        await AssertScope(new { query = "范围标题" }, 1);
+        await AssertScope(new { query = "scope.example", search_title = false, search_url = true }, 3);
+        await AssertScope(new { query = "范围描述", search_title = false, search_description = true }, 1);
+        await AssertScope(new { query = "范围根", search_title = false, search_url = false, search_description = false, search_path = true }, 3);
+        await AssertScope(new { query = "范围", search_title = true, search_url = true, search_description = true, search_path = true }, 3);
+        await AssertScope(new { query = "范围", search_title = true, search_url = true, search_description = true, search_path = true, per_page = 0 }, 3);
+
+        static object Merge(object args, object extra)
+        {
+            var bag = new Dictionary<string, object?>();
+            foreach (var p in args.GetType().GetProperties()) bag[p.Name] = p.GetValue(args);
+            foreach (var p in extra.GetType().GetProperties()) bag[p.Name] = p.GetValue(extra);
+            return bag;
+        }
+    }
+
+    [Fact]
+    public async Task Search_Session_Is_One_Snapshot_Across_Pages()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            db.Links.AddRange(
+                new LinkPocket.Data.Link { LinkId = "SNAP000000000001", Url = "https://snap.example/a", Title = "快照 A" },
+                new LinkPocket.Data.Link { LinkId = "SNAP000000000002", Url = "https://snap.example/b", Title = "快照 B" },
+                new LinkPocket.Data.Link { LinkId = "SNAP000000000003", Url = "https://snap.example/c", Title = "快照 C" });
+            await db.SaveChangesAsync();
+        }
+
+        var open = await engine.QueryAsync<SearchSessionOpenResult>(
+            "search.session_open", new
+            {
+                query = "快照",
+                sort_by = "title",
+                sort_order = "asc",
+                first_page_size = 2,
+            });
+        Assert.Equal(3, open.Total);
+        Assert.False(string.IsNullOrWhiteSpace(open.SessionId));
+        Assert.Equal(new[] { "快照 A", "快照 B" }, open.FirstPage.Select(l => l.Title));
+
+        try
+        {
+            var first = await engine.QueryAsync<List<LinkDto>>("search.session_page",
+                new { session_id = open.SessionId, page = 1, per_page = 2 });
+            Assert.Equal(new[] { "快照 A", "快照 B" }, first.Select(l => l.Title));
+
+            // 会话已建立快照后再写入：新行不得出现在后续页，总数也不得漂移。
+            await engine.ExecuteAsync<LinkDto>("links.create",
+                new { url = "https://snap.example/d", title = "快照 D" });
+
+            var second = await engine.QueryAsync<List<LinkDto>>("search.session_page",
+                new { session_id = open.SessionId, page = 2, per_page = 2 });
+            Assert.Single(second);
+            Assert.Equal("快照 C", second[0].Title);
+            Assert.DoesNotContain(second, l => l.Title == "快照 D");
+
+            // 写后普通查询能看到新行，证明写入确实提交了；差异来自会话快照而不是写失败。
+            Assert.Equal(4, await engine.QueryAsync<int>("search.count", new { query = "快照" }));
+        }
+        finally
+        {
+            Assert.True(await engine.QueryAsync<bool>("search.session_close", new { session_id = open.SessionId }));
+        }
+
+        await Assert.ThrowsAsync<EngineException>(() => engine.QueryAsync<List<LinkDto>>(
+            "search.session_page", new { session_id = open.SessionId, page = 1, per_page = 10 }));
+    }
+
+    [Fact]
+    public async Task Search_Session_Cap_Evicts_Oldest_Idle()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            db.Links.Add(new LinkPocket.Data.Link
+            {
+                LinkId = "CAP000000000001", Url = "https://cap.example/a", Title = "容量 A",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var ids = new List<string>();
+        try
+        {
+            for (var i = 0; i < 16; i++)
+            {
+                var open = await engine.QueryAsync<SearchSessionOpenResult>(
+                    "search.session_open", new { query = "容量" });
+                ids.Add(open.SessionId);
+            }
+
+            // 第 17 个会话：上限 16 → 淘汰最久未用的空闲会话（不是拒绝新会话）。
+            var over = await engine.QueryAsync<SearchSessionOpenResult>(
+                "search.session_open", new { query = "容量" });
+            ids.Add(over.SessionId);
+
+            await Assert.ThrowsAsync<EngineException>(() => engine.QueryAsync<List<LinkDto>>(
+                "search.session_page", new { session_id = ids[0], page = 1, per_page = 10 }));
+            var rows = await engine.QueryAsync<List<LinkDto>>(
+                "search.session_page", new { session_id = over.SessionId, page = 1, per_page = 10 });
+            Assert.Single(rows);
+        }
+        finally
+        {
+            foreach (var id in ids)
+                try { await engine.QueryAsync<bool>("search.session_close", new { session_id = id }); }
+                catch { /* 已被上限淘汰 */ }
+        }
+    }
+
+    [Fact]
+    public async Task Search_Session_PathScope_FirstPageMatchesTotal()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        var parent = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "会话路径" });
+        var child = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "子层", parent_id = parent.Data!.FolderId });
+        foreach (var title in new[] { "Path A", "Path B", "Path C" })
+            await engine.ExecuteAsync<LinkDto>("links.create", new
+            {
+                url = $"https://path-session.example/{title.Replace(" ", "-")}",
+                title,
+                list_id = child.Data!.FolderId,
+            });
+        // 子树外的同标题链接不得计入 path 范围。
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://path-session.example/outside", title = "Path D" });
+
+        var open = await engine.QueryAsync<SearchSessionOpenResult>("search.session_open", new
+        {
+            query = "会话路径",
+            search_title = false,
+            search_url = false,
+            search_description = false,
+            search_path = true,
+            sort_by = "title",
+            sort_order = "desc",
+            first_page_size = 2,
+        });
+        Assert.Equal(3, open.Total);
+        Assert.Equal(new[] { "Path C", "Path B" }, open.FirstPage.Select(l => l.Title));
+
+        try
+        {
+            var second = await engine.QueryAsync<List<LinkDto>>("search.session_page",
+                new { session_id = open.SessionId, page = 2, per_page = 2 });
+            Assert.Single(second);
+            Assert.Equal("Path A", second[0].Title);
+        }
+        finally
+        {
+            await engine.QueryAsync<bool>("search.session_close", new { session_id = open.SessionId });
+        }
     }
 }
 

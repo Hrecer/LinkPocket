@@ -25,8 +25,10 @@ public sealed record RenderedPageMetadata(string? Title, string? Description, st
 /// 只有<b>真正的浏览器内核</b>能过——所以兜底必须是宿主自己的浏览器实例，而不是又一个 HTTP 客户端。
 /// </para>
 /// <para>
-/// <b>为什么是钩子而不是普通依赖</b>：只有 WPF 宿主有浏览器内核（以及 UI 线程）。引擎另有两个无界面
-/// 宿主（CLI / MCP），它们拿不到渲染能力，此时钩子为 <c>null</c>，抓取退回"仅 HTTP"的既有行为。
+/// <b>为什么是钩子而不是普通依赖</b>：浏览器内核与真实浏览器窗口都在有 UI 线程的宿主里。引擎另有
+/// CLI / MCP 两个无头宿主：它们经能力桥复用同一份实现（同库同管道、当前用户）；没有桌面宿主时，
+/// 由同一个 <c>LinkPocket.exe --capability-host</c> 按需提供。桥不可用时钩子为 <c>null</c>，
+/// 抓取退回"仅 HTTP + 指纹"，并由结果字段如实说明能力不可用。
 /// </para>
 /// <para>
 /// <b>纪律</b>：实现方必须自带硬超时并<b>串行</b>（浏览器实例不可并发），失败一律返回 <c>null</c>
@@ -60,4 +62,39 @@ public static class PageRenderHook
     /// </para>
     /// </remarks>
     public static Func<string, CancellationToken, Task<RenderedPageMetadata?>>? InteractiveRenderer { get; set; }
+
+    /// <summary>
+    /// 按需装配能力（**无头宿主专用**）：真正需要渲染 / SVG / 验证时，由组合根启动能力宿主并接上钩子。
+    /// <c>null</c> = 本进程没有可用的装配入口（桌面宿主自己就有本地实现）。
+    /// </summary>
+    public static Func<CancellationToken, Task<bool>>? EnsureProvider { get; set; }
+
+    /// <summary>
+    /// 在真正使用浏览器能力之前调用一次：已有任一钩子 → 直接可用；否则请组合根按需装配。
+    /// 返回 <c>true</c> 只表示"某个能力已接上"，具体能力是否可用仍由调用方检查对应钩子。
+    /// </summary>
+    public static async Task<bool> EnsureAsync(CancellationToken ct)
+    {
+        // 桌面宿主、已连接的能力桥、以及测试里的手工钩子都走这一条快路径。
+        if (Renderer is not null || InteractiveRenderer is not null || FaviconCache.SvgRasterizer is not null)
+            return true;
+
+        var ensure = EnsureProvider;
+        if (ensure is null) return false;
+
+        try
+        {
+            if (!await ensure(ct).ConfigureAwait(false)) return false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
+
+        return Renderer is not null || InteractiveRenderer is not null || FaviconCache.SvgRasterizer is not null;
+    }
 }

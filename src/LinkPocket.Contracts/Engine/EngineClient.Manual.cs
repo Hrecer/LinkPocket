@@ -58,6 +58,36 @@ public sealed partial class EngineClient
         return page.Links;
     }
 
+    // —— search 快照会话（手写：三条命令共享一个生命周期语义，生成层只描述单命令直通）——
+
+    /// <summary>开一个搜索快照会话：count 与后续全部分页同一 SQLite 读事务。用完必须 close。</summary>
+    public Task<SearchSessionOpenResult> SearchSessionOpenAsync(string query,
+        bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null,
+        string? sortBy = null, string? sortOrder = null, int? firstPageSize = null,
+        CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<SearchSessionOpenResult>("search.session_open",
+            new
+            {
+                query,
+                search_title = searchTitle,
+                search_url = searchUrl,
+                search_description = searchDescription,
+                search_path = searchPath,
+                sort_by = sortBy,
+                sort_order = sortOrder,
+                first_page_size = firstPageSize,
+            }, o, ct);
+
+    /// <summary>从快照会话取一页（页码从 1 开始；per_page=0 = 引擎单页上限）。</summary>
+    public Task<List<LinkDto>> SearchSessionPageAsync(string sessionId, int? page = null, int? perPage = null,
+        CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<List<LinkDto>>("search.session_page",
+            new { session_id = sessionId, page, per_page = perPage }, o, ct);
+
+    /// <summary>关闭快照会话（幂等；不存在返回 false）。</summary>
+    public Task<bool> SearchSessionCloseAsync(string sessionId, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<bool>("search.session_close", new { session_id = sessionId }, o, ct);
+
     /// <summary>Client 侧序列化口径（与 wire 层一致：snake_case + 枚举字符串）。</summary>
     private static readonly JsonSerializerOptions EngineOptions = new()
     {

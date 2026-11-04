@@ -16,6 +16,7 @@ namespace LinkPocket.Modules.Tests;
 /// 由交付前的端到端手验承担，这里不造网络依赖。
 /// </para>
 /// </summary>
+[Collection("favicon-cache")]   // 与 FaviconStoreTests 共用 PageRenderHook / SvgRasterizer 静态钩子，串行执行
 public class MetadataRenderFallbackTests
 {
     [Fact]

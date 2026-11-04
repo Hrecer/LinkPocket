@@ -63,6 +63,43 @@ public class FaviconStoreTests
     }
 
     [Fact]
+    public async Task SVG字节_无光栅化器时先按需装配()
+    {
+        var url = UniqueUrl(".svg");
+        var svg = Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1 1\"></svg>");
+        var rasterized = 0;
+
+        PageRenderHook.Renderer = null;
+        PageRenderHook.InteractiveRenderer = null;
+        FaviconCache.SvgRasterizer = null;
+        PageRenderHook.EnsureProvider = _ =>
+        {
+            FaviconCache.SvgRasterizer = (_, _) =>
+            {
+                rasterized++;
+                return Task.FromResult<byte[]?>(OnePixelPng);
+            };
+            return Task.FromResult(true);
+        };
+
+        try
+        {
+            Assert.True(await FaviconCache.StoreBytesAsync(url, svg, CancellationToken.None));
+            Assert.Equal(1, rasterized);
+
+            var path = FaviconCache.TryGetCacheFilePath(url);
+            Assert.NotNull(path);
+            Assert.EndsWith(".png", path, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(OnePixelPng, await File.ReadAllBytesAsync(path!));
+        }
+        finally
+        {
+            PageRenderHook.EnsureProvider = null;
+            FaviconCache.SvgRasterizer = null;
+        }
+    }
+
+    [Fact]
     public async Task 非图片字节_一律不入库()
     {
         var url = UniqueUrl(".png");

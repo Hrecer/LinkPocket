@@ -41,6 +41,13 @@ public interface IUnitOfWork : IAsyncDisposable
 
     ITransactionScope BeginTransaction();
 
+    /// <summary>
+    /// 开启**延迟只读快照事务**（SQLite `BEGIN` 而非 `BEGIN IMMEDIATE`）：
+    /// 第一次读取建立快照，之后同一事务内的所有分页稳定；WAL 写者不被这个长读事务阻塞。
+    /// 仅供搜索快照会话这类“多请求共享同一快照”的读路径使用；普通查询继续用短 UoW。
+    /// </summary>
+    ITransactionScope BeginReadTransaction();
+
     /// <summary>当前是否已有活动事务（干跑 / 事务批会自己开）。处理器要在"没有外层事务"时自建事务
     /// 包住 raw SQL 与 EF 登记（否则 raw SQL 会先自动提交、后续 EF 失败就留下半搬状态）。</summary>
     bool HasActiveTransaction { get; }

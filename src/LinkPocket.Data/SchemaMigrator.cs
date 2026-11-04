@@ -148,6 +148,11 @@ public static class SchemaMigrator
         "CREATE INDEX IF NOT EXISTS idx_links_folder_lastvisit ON links(folder_id, last_visited_at IS NULL, last_visited_at, id);",
         // last_visited 倒序时「为空恒排最后」的前置判空子句仍是 ASC → 方向混合，正向索引服务不了，另建一支
         "CREATE INDEX IF NOT EXISTS idx_links_folder_lastvisit_desc ON links(folder_id, last_visited_at IS NULL, last_visited_at DESC, id DESC);",
+        // 搜索的**过滤 + 排序覆盖索引**：`(title COLLATE NOCASE, id)` 让
+        // `ORDER BY title COLLATE NOCASE, id LIMIT 500` 沿索引走、命中前 500 条即停；
+        // 追加 url/description/folder_id 后谓词也能在索引内判定（不用为每一行回表）——
+        // 稀疏命中/无命中不再退化成"全索引 + 10 万次随机回表"（100K 实测 300ms → 40ms）。
+        "CREATE INDEX IF NOT EXISTS idx_links_search ON links(title COLLATE NOCASE, id, folder_id, url, description);",
     ];
 
     /// <summary>补齐热索引（幂等；同纪元老库开库时调用，见 <see cref="HotIndexDdl"/>）。</summary>
@@ -226,6 +231,7 @@ public static class SchemaMigrator
         CREATE INDEX idx_links_updated ON links(updated_at);
         CREATE INDEX idx_links_created ON links(created_at);
         CREATE INDEX idx_links_url_nocase ON links(url COLLATE NOCASE);
+        CREATE INDEX idx_links_search ON links(title COLLATE NOCASE, id, folder_id, url, description);
         CREATE INDEX idx_links_folder_title ON links(folder_id, title COLLATE NOCASE, id);
         CREATE INDEX idx_links_folder_created ON links(folder_id, created_at, id);
         CREATE INDEX idx_links_folder_updated ON links(folder_id, updated_at, id);

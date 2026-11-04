@@ -15,7 +15,28 @@ through **the same commands and the same engine pipeline** as the UI and the bui
 | **Tool calls** | Reuses `LinkPocket.Cli.CliRunner` in-process - the **same execution path** as a human typing commands (same argument binding, same engine pipeline, same output) |
 | **Data / change semantics** | The engine pipeline itself (undo, audit, events, write lock, destructive confirmations); the gateway holds no policy of its own |
 
-So there is no "external crippled edition": the engine has 81 commands, the gateway exposes 81.
+So there is no "external crippled edition": the engine exposes 85 external commands
+(66 business + 16 orchestration + 3 batch), and the gateway exposes all 85. The desktop host
+additionally registers 3 **UI-only** search snapshot-session commands (88 in the in-app catalog);
+they are stateful renderer internals and are deliberately not part of the external tool surface.
+External reads are full by default: `search.links` / `search.explain` return all hits when
+`per_page` is omitted, and `folders.overview` includes `tree_links`.
+
+**Browser capabilities** (metadata render / SVG rasterization / human verification) come from a
+local named-pipe bridge (same library path, current user only). The provider is the running desktop
+app when available; otherwise the gateway starts the same `LinkPocket.exe` with `--capability-host`
+on the first fetch that actually needs it (no main window, no database access, one provider per
+library, own WebView2 profiles, exits when idle or when the gateway exits). Ordinary queries never
+start it. If no provider can serve, metadata results report `human_verification_available=false` /
+`browser_render_available=false` instead of pretending a window was shown.
+Batch metadata (`links.metadata_fetch_batch`) never opens a window; retry only the items marked
+`needs_human_verification` with `links.metadata_fetch interactive=true`.
+
+External queries are optimized for **accuracy, not latency**: no query cache is used for
+external callers, so results always reflect the latest committed database state. `search.links`
+and `search.explain` default to all hits; pass `page` / `per_page` only when you deliberately
+want a page. `folders.overview` defaults to `include_tree_links=true`; pass
+`include_tree_links=false` for the lean projection.
 
 ## Starting it
 

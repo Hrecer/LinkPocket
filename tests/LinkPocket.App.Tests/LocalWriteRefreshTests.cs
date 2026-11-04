@@ -110,6 +110,42 @@ public class LocalWriteRefreshTests
     }
 
     [Fact]
+    public async Task 多选删除链接_一次批量命令_撤销一次全部还原()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            var ids = new string[3];
+            for (var i = 0; i < ids.Length; i++)
+                ids[i] = (await client.LinkCreateAsync($"https://batch-ui.example/{i}", title: $"B{i}",
+                    autoFetchMetadata: false)).Data!.LinkId;
+
+            var vm = NewVm(client);
+            await vm.LoadAsync(null);
+            Assert.Equal(3, vm.Rows.Count);
+            vm.SelectAllCommand.Execute(null);
+            Assert.Equal(3, vm.SelectionCount);
+
+            vm.DeleteSelectionCommand.Execute(null);
+            Assert.True(await WaitUntilAsync(
+                    () => vm.Rows.Count == 0 && vm.StatusText.Resolve().StartsWith("已删除 3 项"),
+                    TimeSpan.FromSeconds(5)),
+                $"多选删除后行/状态未落地（状态：{vm.StatusText.Resolve()}）");
+            Assert.Equal(3, (await client.TrashListAsync()).Count);
+
+            // 一条撤销记录 → 一次 restore_batch：三条全部还原，证明删除确实走了批量命令
+            var undo = await client.UndoAsync();
+            Assert.True(undo.Ok);
+            var all = await client.LinkListAsync(perPage: 0);
+            Assert.Equal(3, all.Links.Count(l => ids.Contains(l.LinkId)));
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 编辑器保存_新链接立即出现在列表_不等防抖()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

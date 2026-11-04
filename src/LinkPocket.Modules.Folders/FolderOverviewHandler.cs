@@ -18,12 +18,12 @@ namespace LinkPocket.Modules.Folders;
 /// wire 墙钟 4.3～6.6 s，而其中界面一眼用到的只有展开着的那些节点。
 /// 十万级数据上这条成本还会线性放大。
 /// </remarks>
-internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandler
+internal sealed class FolderOverviewHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.overview",
         Category: "folders",
-        Description: "A snapshot matching the browser main view: folder page (contents) + full folder tree + root link count (parameters as folders.contents)",
+        Description: "A full snapshot: folder page (contents) + full folder tree + all tree links + root link count",
         Parameters:
         [
             ParamSpec.Opt<string>("folder_id", "Folder ID; default = root (the root is not an entity and has no ID)"),
@@ -31,17 +31,21 @@ internal sealed class FolderOverviewHandler(EngineLimits limits) : ICommandHandl
             ParamSpec.Opt<string>("sort_by", "Sort field: title | url | created_at | updated_at | last_visited_at | visit_count | is_important (links) / name | sort_order | created_at | updated_at | last_visited_at | visit_count (child folders)",
                 enumValues: [.. QueryParsing.LinkSortFieldNames, .. FolderSupport.SortFieldNames]),
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
-            ParamSpec.Opt<int>("page", "Page number (1-based)"),
-            ParamSpec.Opt<int>("per_page", "Links per page; 0 = everything (bounded by the engine cap, truncated = true when capped)"),
+            ParamSpec.Opt<int>("page", "Page number (1-based; ignored when per_page is 0)"),
+            ParamSpec.Opt<int>("per_page", "Links per page; default 0 = all direct links; positive = page size"),
+            ParamSpec.Opt<bool>("include_tree_links", "Include all tree links (default true; the desktop browser explicitly disables it)"),
+            ParamSpec.Opt<bool>("include_breadcrumb", "Include the breadcrumb path (default true; the desktop browser builds it from the tree)"),
         ],
         Caps: CommandCaps.Query,
-        // 依赖事件 = 目录页与树（folders.changed）+ 根级计数（links.changed）；两路失效与组成命令一致
+        // 界面刷新会走缓存；外部调用方在 QueryAsync 侧绕过缓存（准确优先）。
         Cache: CachePolicy.Content(),
         Client: new("FoldersOverviewAsync", typeof(FolderContentsDto)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var dto = await FolderViewCore.BuildAsync(ctx, args, limits);
+        var withTreeLinks = CommandArgs.OptionalBool(args, "include_tree_links", true);
+        var withBreadcrumb = CommandArgs.OptionalBool(args, "include_breadcrumb", true);
+        var dto = await FolderViewCore.BuildAsync(ctx, args, withTreeLinks, withBreadcrumb);
         return CommandResult.Ok(dto);
     }
 }

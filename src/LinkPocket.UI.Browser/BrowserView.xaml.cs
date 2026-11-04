@@ -22,6 +22,12 @@ public partial class BrowserView : UserControl
     /// <summary>已装配的 VM（DataContext 换绑时先解绑旧的——`-=` 只能解当前绑定的实例）。</summary>
     private BrowserViewModel? _wiredVm;
 
+    /// <summary>首帧紧凑行模板 / 完整行模板（导航换行集时短暂切换，见 OnRefreshCompleted）。</summary>
+    private DataTemplate? _compactRowTemplate;
+    private DataTemplate? _fullRowTemplate;
+    private int _rowTemplateGen;
+    private double _fullRowCacheLength = 1.0;
+
     /// <summary>
     /// VM 属性变化后的视图侧收尾：改名会话开合、详情/编辑器开合、选中归属等。
     /// 提示条不在这里——它由 Shell 的共享通知栈承载（<c>IUiNoticeService</c>），本页不再持计时器。
@@ -104,6 +110,19 @@ public partial class BrowserView : UserControl
     public BrowserView()
     {
         InitializeComponent();
+        _compactRowTemplate = Resources["BrowserRowCompactTemplate"] as DataTemplate;
+
+        // 紧凑首帧模板不挂每行交互（ContextMenu / InputBinding / 拖放处理器会把首帧布局成本加回来）；
+        // 交互由表级适配器转发到现有行处理器——点击、双击、右键、拖拽、落点全部与完整模板同一实现。
+        MainTable.PreviewMouseLeftButtonDown += CompactRows_PreviewMouseLeftButtonDown;
+        MainTable.PreviewMouseRightButtonDown += CompactRows_PreviewMouseRightButtonDown;
+        MainTable.MouseMove += CompactRows_MouseMove;
+        MainTable.MouseLeftButtonUp += CompactRows_MouseLeftButtonUp;
+        MainTable.AllowDrop = true;
+        MainTable.DragOver += CompactRows_DragOver;
+        MainTable.DragLeave += CompactRows_DragLeave;
+        MainTable.Drop += CompactRows_Drop;
+
         // 预热拖拽浮层的专用承载线程（首次拖拽不等待线程/窗口冷启动；失败静默降级）。
         DragVisualOverlay.Prewarm();
         DataContextChanged += (_, _) =>
@@ -317,11 +336,101 @@ public partial class BrowserView : UserControl
         if (wasNavigation)
         {
             ClearRenamePair();   // 导航（打开目录 / 后退 / F5）打断两击对：返回后的第一击只能重新待命
-            RowEntrance.Play(MainTable.RowsList);
+            // 换行集的首帧只实例化"名称"（完整模板的图标 + 四列 LocFit 日期在下一帧补全）：
+            // 实测 20 行完整模板 ≈50ms、紧凑模板 ≈15ms，冷开目录的同步段直接减半。
+            if (!UseCompactFirstFrame())
+            {
+                RowEntrance.Play(MainTable.RowsList);
+            }
         }
         // 刷新会重建树/面包屑/列表：被聚焦的容器可能已被销毁、焦点掉到窗口（页外）。
         // 延到布局之后执行（容器重建完成再判焦点归属），保证"进入文件夹后 Ctrl+V 立即可用"。
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => PageFocus.Restore(this)));
+    }
+
+    /// <summary>导航换行集时先挂紧凑行模板，让"第一帧"只建名称文本；下一帧恢复完整模板并播入场动画。
+    /// 返回 false = 本次不需要/不能切换（沿用原来的整帧完整模板 + 入场动画）。</summary>
+    private bool UseCompactFirstFrame()
+    {
+        if (_compactRowTemplate is null || ViewModel?.RowsReplacedInLastRefresh != true) return false;
+        _fullRowTemplate ??= MainTable.ItemTemplate;
+        if (_fullRowTemplate is null || ReferenceEquals(MainTable.ItemTemplate, _compactRowTemplate)) return false;
+
+        var gen = ++_rowTemplateGen;
+        // 首帧只实现视口行（缓存 0 页）；完整模板恢复时再把缓存页还回去。
+        // 20 行紧凑行 ≈ 10 行视口行的布局量，首帧再省一截，滚动范围不变。
+        if (MainTable.RowCacheLength > 0) _fullRowCacheLength = MainTable.RowCacheLength;
+        MainTable.RowCacheLength = 0;
+        MainTable.ItemTemplate = _compactRowTemplate;
+        RestoreFullTemplateAfterFirstFrame(gen);
+        return true;
+    }
+
+    /// <summary>等**真的渲染出一帧**（CompositionTarget.Rendering）后再换回完整模板：
+    /// 挂 Loaded/Background 都可能抢在首帧之前（实测首帧仍付完整模板的 100ms+ 布局）。
+    /// 兜底 = 250ms 定时器（窗口不可见/不渲染时也要恢复，绝不让紧凑模板长期留着）。</summary>
+    private void RestoreFullTemplateAfterFirstFrame(int gen)
+    {
+        var restored = false;
+        var compactLaidOut = false;
+        EventHandler? onRendered = null;
+        EventHandler? onLayout = null;
+        DispatcherTimer? fallback = null;
+
+        void Restore()
+        {
+            if (restored) return;
+            restored = true;
+            if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
+            if (onLayout is not null) MainTable.LayoutUpdated -= onLayout;
+            fallback?.Stop();
+            if (gen != _rowTemplateGen || _fullRowTemplate is null) return;
+            MainTable.RowCacheLength = _fullRowCacheLength;
+            MainTable.ItemTemplate = _fullRowTemplate;
+            // 完整行在下一轮布局落地后再播（容器是布局期生成的，必须等它们就位）。
+            RowEntrance.Play(MainTable.RowsList);
+        }
+
+        // 先确认**紧凑行真的已经布局出来**（表内出现 Tag=BrowserRowCompact 的容器）：
+        // Rendering 在"本帧即将渲染"时派发，若紧凑行还没布局（布局仍在排队），这一帧不能算数——
+        // 否则会把完整模板换回来、让首帧又背上完整模板的布局（实测同一路径 34ms / 74ms 两档跳）。
+        // 只看一次 LayoutUpdated 不够：树/状态栏的布局也会触发它，可能早于行容器落地。
+        onLayout = (_, _) =>
+        {
+            if (!HasCompactRow(MainTable)) return;
+            compactLaidOut = true;
+            if (onLayout is not null) MainTable.LayoutUpdated -= onLayout;
+        };
+        MainTable.LayoutUpdated += onLayout;
+
+        onRendered = (_, _) =>
+        {
+            if (!compactLaidOut) return;     // 这一帧还不含紧凑行 → 等下一帧
+            CompositionTarget.Rendering -= onRendered;
+            fallback?.Stop();
+            // Rendering 是"本帧即将渲染"：此刻换模板会算进同一帧的布局，
+            // 先退订再排到 Background，等这一帧真正画完再换。
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(Restore));
+        };
+        CompositionTarget.Rendering += onRendered;
+        fallback = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(250),
+        };
+        fallback.Tick += (_, _) => Restore();
+        fallback.Start();
+    }
+
+    /// <summary>表内是否已有紧凑行容器（Tag=BrowserRowCompact；只扫已实现的行，代价 O(行容器数)）。</summary>
+    private static bool HasCompactRow(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is FrameworkElement { Tag: "BrowserRowCompact" }) return true;
+            if (HasCompactRow(child)) return true;
+        }
+        return false;
     }
 
     // （列头与列宽拖拽已由共享数据表控件 SortableDataTable 内部驱动：

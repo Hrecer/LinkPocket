@@ -4,6 +4,8 @@ using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace LinkPocket.Views
 {
@@ -53,14 +55,26 @@ namespace LinkPocket.Views
         /// <summary>VM/宿主塞进来的全部段（顺序 = 路径序）。</summary>
         private IReadOnlyList<object> _all = Array.Empty<object>();
 
+        /// <summary>段集合版本：每次源集合变化 +1（同一版本 + 同一折叠数时跳过重建）。</summary>
+        private int _allVersion;
+
+        /// <summary>当前已应用的折叠结果（与 <see cref="_allVersion"/> 一起作为幂等判据）。</summary>
+        private int _appliedFoldCount = -1;
+        private int _appliedVersion = -1;
+
+        /// <summary>首轮探针段数：从当前段往回只物化这么多，放得下再翻倍。</summary>
+        private const int InitialProbeCount = 8;
+
         /// <summary>INotifyCollectionChanged 订阅的当前源（换源退订；Unloaded 退订）。</summary>
         private INotifyCollectionChanged? _observedSource;
 
         public BreadcrumbBar()
         {
             InitializeComponent();
-            Loaded += (_, _) => RelayoutCrumbs();
-            SizeChanged += (_, _) => RelayoutCrumbs();
+            // 折叠是"量出来再收"的后置工作，一律排到 Background：绝不在布局/渲染回合里
+            // 反向调用 UpdateLayout（那会把导航首帧的渲染挡在面包屑重排之后）。
+            Loaded += (_, _) => { ApplyEstimatedFold(); RequestRelayout(); };
+            SizeChanged += (_, _) => { ApplyEstimatedFold(); RequestRelayout(); };
             Unloaded += (_, _) => StopObservingSource();
 
             // 进入编辑态 = 输入框就绪（**可输入**）：聚焦全选挂在"编辑框真的变可见"这个事件上，
@@ -334,20 +348,25 @@ namespace LinkPocket.Views
             var bar = (BreadcrumbBar)d;
             bar.StopObservingSource();
             bar._all = ToSegmentList(e.NewValue as System.Collections.IEnumerable);
+            bar._allVersion++;
             if (e.NewValue is INotifyCollectionChanged incc)
             {
                 incc.CollectionChanged += bar.OnSourceCollectionChanged;
                 bar._observedSource = incc;
             }
+            bar.ApplyEstimatedFold();
             bar.RequestRelayout();
         }
 
         private static void OnIsPathEditingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             var bar = (BreadcrumbBar)d;
-            if ((bool)e.NewValue) return;                      // 进编辑态：面包屑行隐藏，无需量测
-            bar.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
-                new Action(bar.RelayoutCrumbs));               // 退编辑态：行恢复显示后重算折叠
+            if ((bool)e.NewValue)
+            {
+                bar.HideCrumbSplash();
+                return;                                        // 进编辑态：面包屑行隐藏，无需量测
+            }
+            bar.RequestRelayout();                             // 退编辑态：行恢复显示后重算折叠
         }
 
         private static System.Collections.Generic.List<object> ToSegmentList(System.Collections.IEnumerable? source)
@@ -372,19 +391,59 @@ namespace LinkPocket.Views
             // ⚠️ 必须先把集合当前内容同步进 _all 再重算：VM 加载是对已绑定集合做 Clear+Add（原地变更），
             // 不同时步这里，可见集合会永远停在绑定那一刻的空快照上（整片空白、拖放无目标）。
             _all = ToSegmentList(_observedSource as System.Collections.IEnumerable);
+            _allVersion++;
+            // 导航/批量替换：先用**不触发布局**的估算折法把新路径放上首帧（不会停在旧路径），
+            // 精确折叠仍由 RequestRelayout 在首帧之后收敛。
+            ApplyEstimatedFold();
             RequestRelayout();
         }
 
         /// <summary>合并同一帧内的多次段集合变化（VM 刷新 = Clear + N 次 Add）。</summary>
+        /// <remarks>
+        /// 尺寸变化后的补算排到下一帧：<see cref="RelayoutCrumbs"/> 只布局面包屑子树，
+        /// 但尺寸变化本身来自窗口布局，等一帧再算可避免在布局回合里反向触发布局。
+        /// 实现 = 等一次 CompositionTarget.Rendering（可见窗口必到）→ 再 Background 执行；
+        /// 窗口不可见时 Rendering 可能不来，用 150ms 定时器兜底。
+        /// </remarks>
         private void RequestRelayout()
         {
             if (_relayoutPending) return;
             _relayoutPending = true;
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+
+            EventHandler? onRendered = null;
+            DispatcherTimer? fallback = null;
+            void Run()
             {
-                _relayoutPending = false;
-                RelayoutCrumbs();
-            }));
+                if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
+                fallback?.Stop();
+                // 再等 30ms 才做精确折叠：Rendering 只是“帧即将开始”，Background 仍可能赶在
+                // 这一帧真正上屏之前；用计时器把精确布局明确排到首帧之后（尾随 ≤150ms）。
+                var settle = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(30),
+                };
+                settle.Tick += (_, _) =>
+                {
+                    settle.Stop();
+                    _relayoutPending = false;
+                    RelayoutCrumbs();
+                };
+                settle.Start();
+            }
+
+            var frames = 0;
+            onRendered = (_, _) =>
+            {
+                if (++frames < 2) return;   // 首帧先让紧凑行/路径占位真正画出来，精确折叠等第二帧
+                Run();
+            };
+            CompositionTarget.Rendering += onRendered;
+            fallback = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(150),
+            };
+            fallback.Tick += (_, _) => Run();
+            fallback.Start();
         }
 
         /// <summary>
@@ -414,65 +473,236 @@ namespace LinkPocket.Views
         }
 
         /// <summary>
-        /// 量测并应用折叠：先全显量总宽（放得下就全显、« 隐藏）；放不下则按
-        /// <see cref="ComputeFoldCount"/> 折叠左侧段。个别段名极长导致一轮不准时再迭代一轮兜底。
+        /// 首帧折叠：**不碰布局系统**，用 FormattedText 估算每段宽度后套同一个装箱函数。
+        /// 目的 = 导航后的第一帧就显示新路径（绝不停在旧路径），同时不把主表/树的布局提前到渲染之前；
+        /// 首帧之后 <see cref="RequestRelayout"/> 再用真实容器宽度精确收敛（估算通常已经同值，直接跳过重建）。
         /// </summary>
-        private void RelayoutCrumbs()
+        private void ApplyEstimatedFold()
         {
-            if (IsPathEditing || CrumbRow.ActualWidth <= 0 || _all.Count == 0)
+            HideCrumbSplash();
+            if (_all.Count == 0)
             {
                 ApplyFold(0);
                 return;
             }
-
-            var available = CrumbRow.ActualWidth;
-            for (var pass = 0; pass < 3; pass++)        // « 占位可能改变需求宽 → 最多迭代 3 轮收敛
+            if (!IsLoaded || CrumbRow.ActualWidth <= 0)
             {
-                var reserve = OverflowButton.Visibility == Visibility.Visible ? OverflowButtonWidth : 0;
-                var widths = MeasureSegmentWidths();
-                var fold = ComputeFoldCount(widths, available, reserve);
-                if (fold == 0 && reserve == 0)
-                {
-                    ApplyFold(0);
-                    return;
-                }
-                var before = fold;
-                ApplyFold(fold);
-                UpdateLayout();
-                if (CrumbItems.DesiredSize.Width <= available || fold == before) return;
+                ApplyFold(_all.Count - 1);
+                return;
             }
+
+            // 深路径首帧用一条纯文本路径遮住旧内容：不生成任何面包屑容器，也不把旧路径留在首帧；
+            // 精确折叠在首帧后落地（RelayoutCrumbs 隐藏占位）。
+            if (_all.Count > 8)
+            {
+                ShowCrumbSplash();
+                return;
+            }
+
+            var widths = EstimateSegmentWidths();
+            ApplyFold(ComputeFoldCount(widths, CrumbRow.ActualWidth, OverflowButtonWidth));
         }
 
-        /// <summary>全显状态下量每段容器宽（UpdateLayout 后容器 ActualWidth 即真实宽）。</summary>
-        private double[] MeasureSegmentWidths()
+        /// <summary>已知段的真实容器宽（精确折叠后回填）：后续导航优先用它，避免重复估算。</summary>
+        private readonly Dictionary<(string Name, bool IsRoot, bool IsLast), double> _segmentWidths = new();
+
+        private void ShowCrumbSplash()
         {
-            ApplyFold(0);
-            UpdateLayout();
+            // 首帧只切透明度：固定省略号已在布局里，不为新路径生成任何面包屑容器。
+            CrumbSplash.Opacity = 1;
+            CrumbItems.Opacity = 0;          // 旧段被遮住且不参与命中的视觉层
+            OverflowButton.Opacity = 0;
+        }
+
+        private void HideCrumbSplash()
+        {
+            CrumbSplash.Opacity = 0;
+            CrumbItems.Opacity = 1;
+            OverflowButton.Opacity = 1;
+        }
+
+        private double[] EstimateSegmentWidths()
+        {
             var widths = new double[_all.Count];
             for (var i = 0; i < _all.Count; i++)
-            {
-                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement fe)
-                    widths[i] = fe.ActualWidth;
-            }
+                widths[i] = EstimateSegmentWidth(i, i == _all.Count - 1);
             return widths;
         }
 
-        /// <summary>应用折叠：左侧 <paramref name="count"/> 段收进 «（清单同步），其余照常显示。</summary>
+        private double EstimateSegmentWidth(int index, bool isLast)
+        {
+            var item = _all[index];
+            var name = SegmentName(item);
+            var isRoot = SegmentIsRoot(item);
+            var rootWidth = RootSegmentWidth;
+            if (isRoot && !double.IsNaN(rootWidth) && rootWidth > 0)
+                return rootWidth + (isLast ? SeparatorWidth : 0);
+
+            if (_segmentWidths.TryGetValue((name, isRoot, isLast), out var measured))
+                return measured;
+
+            return EstimateTextWidth(name, isLast) + 24 + (isLast ? 0 : SeparatorWidth);
+        }
+
+        /// <summary>13pt 下的保守字宽估算（CJK 13 / 大写 8.6 / 数字 7.4 / 其余 7.2）。
+        /// 只用于首帧前的**无布局**折叠；偏差由首帧后的精确折叠与 <see cref="_segmentWidths"/> 回填收敛。</summary>
+        private static double EstimateTextWidth(string text, bool bold)
+        {
+            double width = 0;
+            foreach (var ch in text)
+            {
+                if (char.IsWhiteSpace(ch)) width += 4;
+                else if (ch >= 0x2E80) width += 13;      // CJK / 全角
+                else if (char.IsUpper(ch)) width += 8.6;
+                else if (char.IsDigit(ch)) width += 7.4;
+                else width += 7.2;
+            }
+            return (width + 1) * (bold ? 1.04 : 1.0);
+        }
+
+        /// <summary>「›」+ 左右各 2px 的估算占宽（与 XAML Margin=2,0 对齐）。</summary>
+        private const double SeparatorWidth = 8;
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> NameProps = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> RootProps = new();
+
+        private static string SegmentName(object item)
+        {
+            var prop = NameProps.GetOrAdd(item.GetType(), t => t.GetProperty("Name"));
+            return prop?.GetValue(item) as string ?? item.ToString() ?? string.Empty;
+        }
+
+        private static bool SegmentIsRoot(object item)
+        {
+            var prop = RootProps.GetOrAdd(item.GetType(), t => t.GetProperty("IsRoot"));
+            return prop?.GetValue(item) is true;
+        }
+
+        /// <summary>
+        /// 量测并应用折叠：**只从右端（当前段）开始物化**，放不下就减少、放得下就翻倍 ——
+        /// 绝不为了量总宽把整条深路径（实测 100 层 = 102 段）全部塞进 ItemsControl。
+        /// 旧实现先全显再折叠，首帧要为 102 个段容器做两次布局（实测 136–193ms 的同步阻塞）；
+        /// 现在常驻只物化「能放下的那几段」，深路径折叠耗时降到个位数毫秒。
+        /// </summary>
+        private void RelayoutCrumbs()
+        {
+            HideCrumbSplash();
+            if (IsPathEditing || _all.Count == 0)
+            {
+                ApplyFold(0);
+                return;
+            }
+            if (CrumbRow.ActualWidth <= 0)
+            {
+                // 尚未完成首轮布局：先只保留当前段（不把整条路径塞进 ItemsControl），Loaded 后再精确收敛。
+                ApplyFold(_all.Count - 1);
+                return;
+            }
+
+            var available = CrumbRow.ActualWidth;
+            var keep = Math.Min(_all.Count, InitialProbeCount);
+            var lastGood = -1;
+            while (true)
+            {
+                ApplyFold(_all.Count - keep);
+                MeasureCrumbs();
+                var reserve = OverflowButton.Visibility == Visibility.Visible ? OverflowButtonWidth : 0;
+                if (CrumbItems.DesiredSize.Width + reserve <= available)
+                {
+                    lastGood = keep;
+                    if (keep >= _all.Count) return;                 // 全部放得下
+                    keep = Math.Min(_all.Count, keep * 2);          // 放得下 → 试着多留几段
+                    continue;
+                }
+                break;
+            }
+
+            if (lastGood < 0)
+            {
+                // 起始探针就放不下：从 keep-1 往回找（最多 7 轮，每轮只有个位数段）。
+                for (var k = keep - 1; k >= 1; k--)
+                {
+                    ApplyFold(_all.Count - k);
+                    MeasureCrumbs();
+                    if (CrumbItems.DesiredSize.Width + OverflowButtonWidth <= available)
+                    {
+                        lastGood = k;
+                        break;
+                    }
+                }
+                if (lastGood < 0) lastGood = 1;   // 至少保留当前段（哪怕它自己超宽）
+            }
+            else
+            {
+                // 在「放得下」与「放不下」之间二分收敛。
+                var lo = lastGood;
+                var hi = keep;
+                while (hi - lo > 1)
+                {
+                    var mid = (lo + hi) / 2;
+                    ApplyFold(_all.Count - mid);
+                    MeasureCrumbs();
+                    if (CrumbItems.DesiredSize.Width + OverflowButtonWidth <= available) lo = mid;
+                    else hi = mid;
+                }
+                lastGood = lo;
+            }
+
+            ApplyFold(_all.Count - lastGood);
+            MeasureCrumbs();
+            CacheMeasuredWidths();
+        }
+
+        /// <summary>精确折叠后把可见行的真实容器宽存起来：下一次导航的首帧估算直接命中。</summary>
+        private void CacheMeasuredWidths()
+        {
+            for (var i = 0; i < CrumbItems.Items.Count; i++)
+            {
+                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container) continue;
+                var item = CrumbItems.Items[i];
+                _segmentWidths[(SegmentName(item), SegmentIsRoot(item), i == CrumbItems.Items.Count - 1)]
+                    = container.ActualWidth;
+            }
+        }
+
+        /// <summary>
+        /// 只布局面包屑子树（**不**对整个 UserControl 调 UpdateLayout）：导航首帧前得到精确折数，
+        /// 同时不会把主表/树的布局提前到渲染之前。条目数 = 探针段数（8/16/…），代价与路径深度无关。
+        /// </summary>
+        private void MeasureCrumbs()
+        {
+            if (!IsLoaded) return;
+            CrumbItems.UpdateLayout();
+        }
+
+        /// <summary>应用折叠：左侧 <paramref name="count"/> 段收进 «（清单同步），其余照常显示。
+        /// 同一段集合版本 + 同一折叠数 = 已是不该动的状态（跳过 ItemsSource 重建）。</summary>
         private void ApplyFold(int count)
         {
+            count = Math.Clamp(count, 0, _all.Count);
+            if (_appliedVersion == _allVersion && _appliedFoldCount == count) return;
+            _appliedVersion = _allVersion;
+            _appliedFoldCount = count;
+
             var folded = new List<object>();
             var visible = new List<object>();
             for (var i = 0; i < _all.Count; i++)
                 (i < count ? folded : visible).Add(_all[i]);
 
             CrumbItems.ItemsSource = visible;
-            FoldedCrumbs = folded;
-            OverflowButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            _foldedCrumbs = folded;
+            // « 清单只在弹层真正打开时绑定：首帧不把深层祖先列表灌给隐藏的 ListBox。
             if (count == 0) OverflowPopup.IsOpen = false;
+            OverflowButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        private List<object> _foldedCrumbs = [];
+
         private void OverflowButton_Click(object sender, RoutedEventArgs e)
-            => OverflowPopup.IsOpen = !OverflowPopup.IsOpen;
+        {
+            if (!OverflowPopup.IsOpen) FoldedCrumbs = _foldedCrumbs;
+            OverflowPopup.IsOpen = !OverflowPopup.IsOpen;
+        }
 
         /// <summary>点 « 清单里的折叠段 = 直达该层级（复用宿主的 CrumbClickCommand，与可见段同一条导航路径）。</summary>
         private void OverflowList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)

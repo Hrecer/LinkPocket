@@ -32,8 +32,13 @@ internal sealed class SvgIconRasterizer : IDisposable
     private static readonly TimeSpan Budget = TimeSpan.FromSeconds(8);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly string _profileDirectory;
     private Task<CoreWebView2Environment?>? _environment;
     private bool _unavailable;
+
+    /// <summary>完整桌面宿主用默认 profile；按需能力宿主传自己的目录，两个提供者不会抢同一个 user-data。</summary>
+    public SvgIconRasterizer(string? profileDirectory = null)
+        => _profileDirectory = profileDirectory ?? DefaultProfileDirectory;
 
     public async Task<byte[]?> RasterizeAsync(string url, CancellationToken ct)
     {
@@ -202,7 +207,7 @@ internal sealed class SvgIconRasterizer : IDisposable
 
         try
         {
-            return await CoreWebView2Environment.CreateAsync(null, ProfileDirectory).ConfigureAwait(true);
+            return await CoreWebView2Environment.CreateAsync(null, _profileDirectory).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -213,7 +218,7 @@ internal sealed class SvgIconRasterizer : IDisposable
     }
 
     /// <summary>独立 profile：不与元数据渲染共用（同一 user-data 目录开两个环境会抢锁）。</summary>
-    private static string ProfileDirectory => Path.Combine(
+    private static string DefaultProfileDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LinkPocket", "icon-profile");
 
     private static string Short(string url) => url.Length > 90 ? url[..90] : url;

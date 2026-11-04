@@ -8,18 +8,21 @@
 - **不做**：**解码与显示**——`BitmapImage` 等 WPF 类型属 `UIKit.FaviconImageService`，引擎侧永不出现界面类型。
   也不做真正的联网调度策略（并发/退避在队列内固定为并发 4、失败跳过下次再试）。
 
-## 对外命令（2）
+## 对外命令（4）
 
 | 命令 | 类型 | 要点 |
 |---|---|---|
 | `favicon.cache_stats` | 查询 | 缓存文件数 / 总字节 / 缓存目录 |
+| `favicon.cache_gc` | 变更 | 清掉没有任何行引用的缓存文件（回收站引用保留） |
 | `favicon.prefetch` | 变更 | 把缺失图标入队（`link_ids` 缺省 = 全库缺图标者）；**立即返回入队数**，写闸只持入队瞬间 |
+| `favicon.fetch` | 查询 | **等待**一批图标缓存就绪，逐项返回 `cached / inline_data / not_found / blocked / svg_rasterizer_unavailable / timeout / ...`；与预取、界面回填共用同一条 `FaviconCache` 管线 |
 
 ## 内部组件
 
-- `FaviconCache`：地址解析（相对 URL → 站点 favicon 约定路径）、缓存文件路径（按解析后地址取哈希）、`EnsureCachedAsync`；
-  **反爬兜底**：普通客户端被拦（403/503 / 连接被断）时经 `FaviconCache.ImpersonatedDownloader`（组合根由 Links 模块
+- `FaviconCache`：地址解析（相对 URL → 站点 favicon 约定路径）、缓存文件路径（按解析后地址取哈希）、`EnsureCachedAsync` /
+  `EnsureCachedDetailedAsync`（逐项原因）；**反爬兜底**：普通客户端被拦（403/503 / 连接被断）时经 `FaviconCache.ImpersonatedDownloader`（组合根由 Links 模块
   装配的浏览器指纹客户端 `MetadataFetcher.TryGetBytesImpersonatedAsync`，与元数据抓取同款）重取一次——有些站点连图标文件也按指纹拦。
+  **SVG 光栅化**经 `FaviconCache.SvgRasterizer`（桌面宿主实现；CLI / MCP 经能力桥复用同一实例——桌面宿主开着就直连，否则真正遇到 SVG 时才按需启动 `LinkPocket.exe --capability-host`）。
 - `PrefetchQueue`：进程内静态队列，并发 4（`SemaphoreSlim`）、**按解析后地址去重**、失败跳过；
   fire-and-forget（异常被吞，图标缺失不阻断任何业务），排水任务空闲自愈。
 
@@ -32,6 +35,7 @@
 ## 测试
 
 - `ModulesTests.cs` → `FaviconModuleTests`（缓存统计）
+- `MetadataBatchAndFaviconFetchTests.cs`（内嵌 / 非法 / 环回地址逐项原因、重复地址去重）
 - `CommandCoverageTests.cs` → `FaviconCoverageTests`（指定链接入队 / 无图标地址入队 0 / 未知链接报错 / 全库入队 + 变更集）
   —— 用 `http://127.0.0.1:1/...` 制造"必然失败且无 DNS 依赖"的预取目标，测试不留网络副作用。
 

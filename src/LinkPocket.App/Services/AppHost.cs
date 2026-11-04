@@ -71,6 +71,7 @@ public sealed class AppHost : IDisposable
     {
         Client = client;
         Wire = wire;
+        _databasePath = databasePath;
         Locator = new ContentLocator(client, () => LocateHost, Ports);
         // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
         ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
@@ -80,7 +81,8 @@ public sealed class AppHost : IDisposable
 
     /// <summary>
     /// 页面渲染兜底（WebView2）：装配给 <see cref="PageRenderHook"/>，引擎侧只在"HTTP 拿不到可用元数据"
-    /// 时调它。**只有 WPF 宿主有浏览器内核**，CLI / MCP 两个无界面宿主的钩子保持 <c>null</c>。
+    /// 时调它。**浏览器内核在带 UI 线程的宿主**（完整桌面应用或按需能力宿主）；CLI / MCP 经能力桥
+    /// 复用这同一实例（不可用时钩子为 null）。
     /// 懒建：启动不碰 WebView2，第一次真正需要时才起渲染进程。
     /// </summary>
     private PageRenderer? _pageRenderer;
@@ -91,6 +93,11 @@ public sealed class AppHost : IDisposable
     /// </summary>
     private readonly HumanVerificationBrowser _humanVerify = new();
 
+    private readonly string _databasePath;
+
+    /// <summary>能力桥服务端：把本进程已有的浏览器能力借给 CLI / MCP（同一数据库 = 同一条管道）。</summary>
+    private CapabilityBridgeServer? _capabilityBridge;
+
     /// <summary>
     /// SVG 图标光栅化（WebView2）：装配给 <see cref="LinkPocket.Contracts.FaviconCache.SvgRasterizer"/>。
     /// 只在"站点只声明 SVG 图标"时才用到——WPF 解不了 SVG，没有它那些站点的图标会整个消失。
@@ -100,18 +107,50 @@ public sealed class AppHost : IDisposable
     private void AttachPageRenderer()
     {
         _pageRenderer = new PageRenderer();
-        PageRenderHook.Renderer = _pageRenderer.RenderAsync;
+        _svgIcons = new SvgIconRasterizer();
+
+        // 钩子只在**真实可用**时装配：缺 WebView2 运行时 / 缺真实浏览器时保持 null，
+        // 命令结果就不会虚报 browser_render_available / human_verification_available。
+        if (PageRenderer.IsRuntimeAvailable())
+        {
+            PageRenderHook.Renderer = _pageRenderer.RenderAsync;
+            LinkPocket.Contracts.FaviconCache.SvgRasterizer = _svgIcons.RasterizeAsync;
+        }
+
         // 人机型挑战（Cloudflare Turnstile）只能靠人点一下放行：本机真实浏览器的独立小窗
         //（应用内嵌 WebView2 在这个场景里连勾选框都拿不到，实测点了也不放行）
-        PageRenderHook.InteractiveRenderer = _humanVerify.VerifyAsync;
+        if (VerificationBrowserHost.FindBrowser() is not null)
+            PageRenderHook.InteractiveRenderer = _humanVerify.VerifyAsync;
+        else
+            LpLog.Info("no Edge/Chrome found; human-verification window disabled", category: "app.capability");
 
-        _svgIcons = new SvgIconRasterizer();
-        LinkPocket.Contracts.FaviconCache.SvgRasterizer = _svgIcons.RasterizeAsync;
+        // 外部宿主（CLI / MCP）经本机命名管道复用同一份能力；人机验证必须先经用户确认。
+        // 每库只允许一个提供者：另一个能力宿主已在服务时，本次让位（外部调用仍然有同一份能力）。
+        _capabilityBridge = new CapabilityBridgeServer(
+            _databasePath, _pageRenderer, _humanVerify, _svgIcons, url => ConfirmExternalVerification(url));
+        if (!_capabilityBridge.Start())
+            LpLog.Info("capability bridge not started: another provider is active", category: "app.capability");
+    }
+
+    /// <summary>外部 Agent 请求打开人机验证窗口：必须在界面里得到用户明确同意。</summary>
+    internal static bool ConfirmExternalVerification(string url, bool centerOnScreen = false)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished)
+            return false;
+
+        var host = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
+        return dispatcher.Invoke(() => LinkPocket.Views.ConfirmDialog.Show(
+            LinkPocket.I18n.Loc.T("capability.verify.title"),
+            LinkPocket.I18n.Loc.T("capability.verify.message", host),
+            LinkPocket.I18n.Loc.T("capability.verify.open"),
+            "fingerprint", centerOnScreen: centerOnScreen));
     }
 
     /// <summary>释放宿主持有的长连接（外部写入观察者的库连接）与渲染器。应用退出时调用。</summary>
     public void Dispose()
     {
+        _capabilityBridge?.Dispose();
         PageRenderHook.Renderer = null;
         PageRenderHook.InteractiveRenderer = null;
         _pageRenderer?.Dispose();

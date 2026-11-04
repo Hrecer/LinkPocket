@@ -270,28 +270,47 @@ public partial class BrowserViewModel
         IsDeleting = true;
         try
         {
-            // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报
+            // 单项失败不中断整批（与 Move/Paste 口径一致）；失败项留痕，成功数如实报。
+            // 链接一次批量入站（单命令单事务）：多选 N 条只发 1 条命令，不再逐条过协议；
+            // 文件夹仍逐条走 folders.delete——它自带整树级联，一条命令已经覆盖整棵子树。
             var deleted = 0;
             var failed = 0;
-            foreach (var item in items)
+            var linkIds = items.Where(r => !r.IsFolder)
+                .Select(r => r.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (linkIds.Count > 0)
             {
                 try
                 {
-                    if (item.IsFolder) await _client.FolderDeleteAsync(item.Id, "trash_links");
-                    else await _client.LinkTrashAsync(item.Id);
+                    var result = await _client.LinkTrashBatchAsync(linkIds);
+                    deleted += result.Data?.Affected ?? linkIds.Count;
+                }
+                catch (Exception ex)
+                {
+                    failed += linkIds.Count;
+                    LpLog.Error($"failed to trash {linkIds.Count} selected link(s) in one batch", ex);
+                }
+            }
+            foreach (var item in items.Where(r => r.IsFolder))
+            {
+                try
+                {
+                    await _client.FolderDeleteAsync(item.Id, "trash_links");
                     deleted++;
                 }
                 catch (Exception ex)
                 {
                     failed++;
-                    LpLog.Error($"failed to delete '{item.Name}' (Retry skips this item)", ex);   // 观测面铁律：失败必须暴露
+                    LpLog.Error($"failed to delete folder '{item.Name}' (Retry skips this item)", ex);   // 观测面铁律：失败必须暴露
                 }
             }
 
-            // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）
-            if (deleted > 0)
+            // 文案按实际结果分派 —— 全部成功 / 全部失败 / 部分成功（原 failed>=deleted 会掩盖"部分成功"）。
+            // 有失败也刷新：选中项可能已在别处被删/移动（批量预检会整体拒绝），刷新把陈旧行清掉，用户重试即可。
+            if (deleted > 0 || failed > 0)
             {
-                ClearSelection();
+                if (deleted > 0) ClearSelection();
                 // 立即真刷新（不等 300ms 事件防抖）：被删的行随查询结果消失。
                 // 放在状态文案之前：刷新链结尾会把状态栏改写成"共 N 项"，那条不该盖掉本次操作的结果。
                 await RefreshPreservingSelectionAsync();

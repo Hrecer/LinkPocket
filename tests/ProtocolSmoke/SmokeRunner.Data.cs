@@ -70,12 +70,15 @@ internal static partial class SmokeRunner
         Asserts.That(overview.Tree!.Count == treeNow.Count
             && overview.Tree.All(f => treeNow.Any(t => t.FolderId == f.FolderId)),
             "overview.Tree 应与 folders.tree 同集合（同一快照）");
-        // 树叶子数据源**已从 overview 单快照移出**（口径变更，见 PERF-LARGE-LIBRARY）：原实现每次刷新
-        // 都随单快照搬全库链接——真实库 27k 条 = 响应体 7~13MB / wire 4~7s，而界面一眼只用得到
-        // "展开着的那些节点"。现在 overview.TreeLinks 恒 null，改由 folders.tree_links 按目录**按需取**
-        // （轻量投影 id/标题/地址/归属，不带 favicon 内嵌 data: URI）。
-        Asserts.That(overview.TreeLinks == null,
-            "overview.TreeLinks 应恒为 null（树叶子改由 folders.tree_links 按需取，不再随单快照搬运）");
+        // 外部 overview 默认携带全库 tree_links（准确优先）；界面显式 include_tree_links=false 才关闭。
+        Asserts.That(overview.TreeLinks != null
+            && overview.TreeLinks.Any(l => l.ListId == folder.FolderId && l.Title == "链接1")
+            && overview.TreeLinks.Any(l => l.ListId == sub.FolderId && l.Title == "子链接"),
+            "overview.TreeLinks 默认应携带全库树叶子（外部命令完整数据）");
+        var slimOverview = await client.QueryAsync<FolderContentsDto>("folders.overview",
+            new { folder_id = folder.FolderId, include_tree_links = false });
+        Asserts.That(slimOverview.TreeLinks == null,
+            "include_tree_links=false 时 overview 不应携带 tree_links（界面专用瘦身）");
         var folderTreeLinks = await client.QueryAsync<List<TreeLinkDto>>("folders.tree_links",
             new { folder_id = folder.FolderId });
         var subTreeLinks = await client.QueryAsync<List<TreeLinkDto>>("folders.tree_links",

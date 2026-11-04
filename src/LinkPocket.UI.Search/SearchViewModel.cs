@@ -1,15 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using System.Windows.Threading;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.Views;
 
 namespace LinkPocket.ViewModels;
 
@@ -18,7 +18,7 @@ public sealed record SearchEmptyState(string IconKind, LocValue Title, LocValue?
     string ContainerBrush, string OnContainerBrush);
 
 /// <summary>
-/// 搜索页 ViewModel（MVVM）：查询执行、范围守卫与防抖、选中态（**完整多选**）、
+/// 搜索页 ViewModel（MVVM）：查询执行、范围守卫与立即刷新、选中态（**完整多选**）、
 /// 页面动作命令（搜索/取消/跳转/打开网站/删除所选/移动选中/全选/清选中）全部在此；
 /// 视图（Views/SearchView）只负责表格装配、单元格与空态渲染、关键词高亮、把"当前视觉顺序"注入本类。
 /// 数据口径：结果 = 后端 search 协议（默认排序 名称升序，与主栏一致）；
@@ -53,16 +53,21 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         CancelCommand = new RelayCommand(Cancel);
         // **「跳转」= 进浏览页对应目录并选中该行**（经定位组件 IContentLocator，与 ID 跳转工具同一套语义）；
         // **仅单选可用**：多选时没有"某一个目标"。绝不展开详情页。
-        JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => Selection.Count == 1);
+        JumpCommand = new RelayCommand(() => _ = JumpAsync(), () => SelectionCount == 1);
         // **「详情」= 打开浏览页的链接详情页**（INavigationService）——与「跳转」是两条互不替代的语义：
         // 顶部跳转药丸 / 右栏跳转钮走前者，`Enter` / 双击 / 右栏「详情」/ 铅笔槽走后者。
         OpenDetailCommand = new RelayCommand(
             () => { if (PrimarySelected is { } item) _navigation.OpenLinkInBrowser(item.LinkId); },
-            () => Selection.HasAny);
-        OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => Selection.Count == 1);
-        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectionAsync(), () => Selection.HasAny && !IsDeleting);
-        SelectAllCommand = new RelayCommand(() => Selection.SelectAll(CurrentOrder()));
-        ClearSelectionCommand = new RelayCommand(() => Selection.Clear());
+            () => SelectionCount > 0);
+        OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => SelectionCount == 1);
+        DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectionAsync(), () => SelectionCount > 0 && !IsDeleting);
+        SelectAllCommand = new RelayCommand(SelectAll);
+        ClearSelectionCommand = new RelayCommand(() =>
+        {
+            _selectAllAfterLoad = false;
+            _selectLastAfterLoad = false;
+            Selection.Clear();
+        });
         MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
         SelectLastCommand = new RelayCommand(SelectLast);
         EscapeCommand = new RelayCommand(Escape);
@@ -109,46 +114,55 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
     // —— 结果与选中 ——
 
-    private IReadOnlyList<LinkItem>? _results;
-    /// <summary>结果集（null = 无行，视图据此清空 ItemsSource 只留空态）。
-    /// **渲染等价则不通知**：视图收到通知会整体替换 ItemsSource → 整表行容器重建
-    ///（工厂模式 N 行 × 单元格，同步主线程）——切页进入的静默刷新常拿到内容完全相同的新结果，
-    /// 此时重建纯属白烧（低性能设备上切到搜索页偶发明显卡顿）。</summary>
-    public IReadOnlyList<LinkItem>? Results
+    /// <summary>首屏预取行数（视口 × 2，下限 64；不是渲染上限，也不是结果边界）。</summary>
+    private const int MinimumPrefetchRows = 64;
+    private int _prefetchRows = MinimumPrefetchRows;
+
+    /// <summary>首屏预取行数（视图按实际视口调用；不允许把首屏预取当成结果总数）。</summary>
+    public int PrefetchRows
     {
-        get => _results;
+        get => _prefetchRows;
+        set => _prefetchRows = Math.Max(MinimumPrefetchRows, value);
+    }
+
+    /// <summary>后台补齐的单次取数：引擎单页上限 10 000（见 EngineLimits.MaxPageSize）。</summary>
+    private const int RemainingLoadSize = 10_000;
+
+    /// <summary>**全部命中**的连续结果集：行数从第一帧起就等于 <see cref="TotalHitCount"/>；
+    /// 未加载的位置是同高占位行，后台按页**原位填充**，不替换集合、不重建行。</summary>
+    public BulkObservableCollection<LinkItem> Results { get; } = new();
+
+    /// <summary>本条查询的全部命中数（来自快照会话的 count；从首帧起就是真实总数）。</summary>
+    public int TotalHitCount { get; private set; }
+
+    private int _loadedCount;
+    /// <summary>已经填入真实数据的行数（占位行不计）；补全后等于 <see cref="TotalHitCount"/>。</summary>
+    public int LoadedCount => _loadedCount;
+
+    private bool _isLoadingAll;
+    private bool _loadFailed;
+
+    /// <summary>后台正在补齐剩余命中（不是截断：结果集行数始终等于 TotalHitCount）。</summary>
+    public bool IsLoadingAll
+    {
+        get => _isLoadingAll;
         private set
         {
-            if (LinkItem.SameSequence(_results, value)) return;   // 渲染等价 → 不通知（视图不重建行）
-            _results = value;
+            if (_isLoadingAll == value) return;
+            _isLoadingAll = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(LoadingNotice));
         }
     }
 
-    /// <summary>
-    /// 结果区**最多渲染多少行**。
-    /// </summary>
-    /// <remarks>
-    /// 搜索结果表用的是共享数据表的**工厂模式**（`BuildRow` 直接生成控件、不做容器化）⇒
-    /// 行数 = 实例化的控件数，实测约 **2.3 ms/行**。真实库上搜一个常见字母命中 24 953 条时，
-    /// 一次搜索要让 UI 线程停摆 **57 秒**（引擎侧只占 325 ms，其余全是行实例化与布局）。
-    /// 引擎命令 `search.links` 目前**没有分页参数**，所以上限只能先落在界面这一侧：
-    /// 渲染前 N 条 + **把截断如实写出来**（绝不静默截断）。
-    /// 引擎侧分页 + 结果区续载见 `PERF-LARGE-LIBRARY.md` 的 P0-3 / P1-2。
-    /// </remarks>
-    public const int MaxRenderedResults = 500;
-
-    /// <summary>本次搜索的全部命中数（未被截断时等于结果行数）。</summary>
-    public int TotalHitCount { get; private set; }
-
-    /// <summary>本次搜索是否发生了截断（命中数超过 <see cref="MaxRenderedResults"/>）。</summary>
-    public bool ResultsTruncated { get; private set; }
-
-    /// <summary>结果区提示（只在截断时出词；其余时候是空值、不占视觉）。
-    /// 类型是 <see cref="LocText"/>（自适应通道的解析器只认它；<see cref="LocValue"/> 会一个字都画不出）。</summary>
-    public LocText ResultNotice => ResultsTruncated
-        ? LocText.Of(Loc.K("search.result.truncated", TotalHitCount, MaxRenderedResults))
-        : LocText.Empty;
+    /// <summary>补全提示（加载完毕即空）。类型必须是 <see cref="LocText"/>（自适应通道只认它）。</summary>
+    public LocText LoadingNotice => _loadFailed
+        ? LocText.Of(Loc.K("search.result.loadFailed", LoadedCount))
+        : IsLoadingAll
+            ? (LoadedCount < TotalHitCount
+                ? LocText.Of(Loc.K("search.result.loadingAll", LoadedCount, TotalHitCount))
+                : LocText.Of(Loc.K("search.result.loading")))
+            : LocText.Empty;
 
     private SearchEmptyState? _emptyState;
     /// <summary>当前空态（加载/引导/无结果/错误），视图监听后渲染。</summary>
@@ -167,29 +181,128 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// <summary>把某行滚入视口（移动选中后由视图订阅执行）。</summary>
     public event EventHandler<LinkItem>? FocusRowRequested;
 
-    /// <summary>当前选中行（按结果集顺序；多选时为全部）。</summary>
-    public IReadOnlyList<LinkItem> SelectedItems =>
-        _results == null ? Array.Empty<LinkItem>() : _results.Where(r => Selection.Contains(r.LinkId)).ToList();
+    /// <summary>当前选中行（只含已填充真实行；缓存一次，避免绑定重复遍历十万条）。</summary>
+    private IReadOnlyList<LinkItem> _selectedItems = Array.Empty<LinkItem>();
+    public IReadOnlyList<LinkItem> SelectedItems => _selectedItems;
 
-    public int SelectionCount => SelectedItems.Count;
+    public int SelectionCount { get; private set; }
     public bool HasSelection => SelectionCount > 0;
-    private LinkItem? PrimarySelected => SelectedItems.FirstOrDefault();
+    private LinkItem? PrimarySelected => _selectedItems.FirstOrDefault();
 
-    /// <summary>「跳转」可用性 = **恰选中一项**（多选无跳转目标；顶部药丸与右栏图标钮同源）。</summary>
-    public bool JumpEnabled => Selection.Count == 1;
+    /// <summary>「跳转」可用性 = **恰选中一项真实行**（多选/占位/未加载无跳转目标）。</summary>
+    public bool JumpEnabled => SelectionCount == 1;
 
-    /// <summary>选中的**唯一投影点**：集合 → 属性通知 + 右栏（空占位 / 单选详情 / 多选计数三态）。</summary>
+    /// <summary>ID → 结果项（十万条时箭头/滚入视口不能每次线性找）。只登记已填充真实行。</summary>
+    private readonly Dictionary<string, LinkItem> _itemsById = new(StringComparer.Ordinal);
+    private readonly List<string> _orderedIds = new();
+
+    /// <summary>当前视觉顺序（已填充的真实行；补全后就是全部命中）：↑/↓ 与 Ctrl+A 直接复用。</summary>
+    public IReadOnlyList<string> OrderedLinkIds => _orderedIds;
+
+    /// <summary>行位置 → 已填充行的 ID（未填充 = null）。视口优先让页乱序到达时，
+    /// 导航顺序仍按行序重建——↑/↓、Shift 区间、Ctrl+A、End 都依赖它。</summary>
+    private string?[] _idsByRow = Array.Empty<string?>();
+
+    /// <summary>当前快照会话（空 = 无进行中的搜索）。关闭由 CancelSession/LoadRemaining 收尾。</summary>
+    private string? _sessionId;
+    private CancellationTokenSource? _loadCts;
+    private int _searchGen;
+    private bool _selectAllAfterLoad;
+    private bool _selectLastAfterLoad;
+
+    /// <summary>补页记账：已加载页位图 + 顺序游标 + 视口请求页（同一快照内的调度状态）。</summary>
+    private int _pageCount;
+    private bool[]? _pageLoaded;
+    private int _nextSequentialPage;
+    private int _priorityPage;
+
+    /// <summary>新结果集落地后，只登记已填充前缀（绝不遍历十万个占位行）。</summary>
+    private void ResetLoadedMaps(int loadedCount)
+    {
+        _itemsById.Clear();
+        _idsByRow = new string?[Results.Count];
+        for (var i = 0; i < loadedCount && i < Results.Count; i++)
+            RegisterLoaded(Results[i], i);
+        RebuildOrderedIds();
+    }
+
+    private bool RegisterLoaded(LinkItem item, int rowIndex)
+    {
+        if (string.IsNullOrEmpty(item.LinkId)) return false;
+        if (!_itemsById.TryAdd(item.LinkId, item)) return false;
+        _idsByRow[rowIndex] = item.LinkId;
+        return true;
+    }
+
+    private void RebuildOrderedIds()
+    {
+        _orderedIds.Clear();
+        foreach (var id in _idsByRow)
+            if (id is not null) _orderedIds.Add(id);
+    }
+
+    /// <summary>
+    /// 视图在滚动时调用：把包含该行号的页提到补页队列最前（仍取自同一快照）。
+    /// 快速滑到末尾时不必等前面所有页顺序到达；同页已加载则忽略。
+    /// </summary>
+    public void RequestVisibleRow(int rowIndex)
+    {
+        if (rowIndex < 0 || TotalHitCount <= 0) return;
+        if (rowIndex >= TotalHitCount) rowIndex = TotalHitCount - 1;
+        var page = rowIndex / RemainingLoadSize + 1;
+        var loaded = _pageLoaded;
+        if (loaded is null || page > loaded.Length || loaded[page - 1]) return;
+        _priorityPage = page;
+    }
+
+    /// <summary>视图用：按 ID 取结果项（选中投影 / 滚入视口）。</summary>
+    public LinkItem? FindItem(string? linkId)
+        => linkId != null && _itemsById.TryGetValue(linkId, out var item) ? item : null;
+
+    /// <summary>选中的**唯一投影点**：集合 → 属性通知 + 右栏（空占位 / 单选详情 / 多选计数三态）。
+    /// 只查已填充行；不再每次点选遍历十万条结果。</summary>
     private void OnSelectionChanged()
     {
+        var sel = new List<LinkItem>(Selection.Count);
+        foreach (var id in Selection.Ids)
+        {
+            if (_itemsById.TryGetValue(id, out var item)
+                && item is not SearchResultRow { IsPlaceholder: true })
+                sel.Add(item);
+        }
+        _selectedItems = sel;
+        SelectionCount = sel.Count;
         OnPropertyChanged(nameof(SelectedItems));
         OnPropertyChanged(nameof(SelectionCount));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(JumpEnabled));
-        var sel = SelectedItems;
         if (sel.Count == 0) Details.UpdateFrom(null, LocValue.Empty);
         else if (sel.Count == 1) Details.UpdateFrom(sel[0], _resolveFolderPath(sel[0].ListId));
         else Details.ShowMulti(sel);
         CommandRefresh.Request();
+    }
+
+    private void SelectAll()
+    {
+        if (IsLoadingAll)
+        {
+            _selectAllAfterLoad = true;
+            return;
+        }
+        Selection.SelectAll(_orderedIds);
+    }
+
+    private void SelectLast()
+    {
+        if (IsLoadingAll)
+        {
+            // End 的语义 = 去最后一条：先请求末页（视口优先），末行落地即可选中。
+            RequestVisibleRow(TotalHitCount - 1);
+            _selectLastAfterLoad = true;
+            return;
+        }
+        var target = Selection.SelectLast(_orderedIds);
+        FocusOn(target);
     }
 
     /// <summary>搜索页右侧详情栏（与浏览页同一 DetailSidebar 控件数据契约）。</summary>
@@ -213,17 +326,45 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     public ICommand RefreshCommand { get; }
 
     /// <summary>视图在用户点击行时调用（带修饰键路由：Ctrl 翻转 / Shift 区间 / 无修饰 = 单选）。</summary>
-    public void ClickItem(LinkItem item, ModifierKeys mods)
-        => Selection.Click(item.LinkId,
+    public void ClickItem(LinkItem item, ModifierKeys mods)    {
+        if (item is SearchResultRow { IsPlaceholder: true }) return;
+        Selection.Click(item.LinkId,
             mods.HasFlag(ModifierKeys.Control), mods.HasFlag(ModifierKeys.Shift), CurrentOrder());
+    }
 
     private IReadOnlyList<string> CurrentOrder() => OrderProvider?.Invoke() ?? Array.Empty<string>();
 
     /// <summary>视图在取消/重置后获得焦点用（VM 不碰键盘焦点）。</summary>
     public event EventHandler? ResetRequested;
 
+    /// <summary>结果集刚整批挂上表格：视图先挂**紧凑行模板**保证首帧快，下一帧再恢复完整模板。</summary>
+    public event EventHandler? ResultSetReplaced;
+
+    /// <summary>下一次整批替换是否保留当前阅读位置：刷新/F5 保留；**新查询**回到顶部。</summary>
+    public bool PreserveScrollOnNextResultReplace { get; private set; }
+
     /// <summary>「位置」列与详情栏共用的路径解析（组合根注入）。</summary>
     public LocValue ResolveFolderPath(string? listId) => _resolveFolderPath(listId);
+
+    /// <summary>位置列单行显示的字符上限：整条百层路径排版会把首帧布局拖到几十毫秒，
+    /// 而列宽只放得下约 30–70 字（TextTrimming 也只呈现这一截）。超出部分与截断后不可见的部分等价。</summary>
+    private const int MaxPathDisplayChars = 200;
+
+    private readonly Dictionary<string, (int Version, string Text)> _pathTextCache = new(StringComparer.Ordinal);
+
+    /// <summary>位置列文本：按（目录, 语言版本）缓存并限长；只服务显示，不改变路径语义/复制/详情栏。</summary>
+    public string ResolveFolderPathText(string? listId, int languageVersion)
+    {
+        var key = listId ?? string.Empty;
+        if (_pathTextCache.TryGetValue(key, out var hit) && hit.Version == languageVersion)
+            return hit.Text;
+
+        var text = ResolveFolderPath(string.IsNullOrEmpty(listId) ? null : listId).Resolve();
+        if (text.Length > MaxPathDisplayChars)
+            text = string.Concat(text.AsSpan(0, MaxPathDisplayChars), "…");
+        _pathTextCache[key] = (languageVersion, text);
+        return text;
+    }
 
     // —— 导航生命周期（MainViewModel 的 search 路由事件转发到这里） ——
 
@@ -231,12 +372,34 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// 有已执行查询时静默刷新保最新（入口对齐，与浏览页/工具页同一模式）；随后把焦点收回搜索框。</summary>
     public void OnNavigatedTo()
     {
+        // 进入页面就把搜索命令/SQLite 读路径走热一次（查询本身不命中任何数据）：
+        // 首次用户搜索不必再付 JIT + 连接池预热，首屏延迟更稳定。
+        WarmUpSearchEngine();
+
         // 「进入保内容」的**唯一入口**（低性能设备上切到搜索页偶发明显卡顿，故不做重建）：
         // 只对**已执行的查询**做静默刷新；绝不看输入框里尚未执行的文本——那会走 SearchAsync
         // 清空结果 + 亮"正在搜索…"加载态（每次切回都重置一遍：既闪一下、又要整表重建）。
         // 未执行过的文本属于"回车 / 搜索按钮"的语义，不由切页触发。
         _ = RefreshSilentlyAsync();
         ResetRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private int _warmStarted;
+
+    private void WarmUpSearchEngine()
+    {
+        if (Interlocked.Exchange(ref _warmStarted, 1) != 0) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var warm = await _api.SearchSessionOpenAsync("\u0001warmup",
+                    searchTitle: true, searchUrl: true, searchDescription: true, searchPath: true,
+                    sortBy: "title", sortOrder: "asc", firstPageSize: 1);
+                await _api.SearchSessionCloseAsync(warm.SessionId);
+            }
+            catch { /* 预热失败不影响真实搜索 */ }
+        });
     }
 
     /// <summary>静默刷新最新（切页进入的入口对齐）：已执行过查询才重跑；保留结果与选中、不闪加载态。
@@ -257,7 +420,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     {
         var query = Query.Trim();
         if (string.IsNullOrWhiteSpace(query)) return Task.CompletedTask;
-        if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync();
+        // 数据变更事件必须以新快照重载全部命中；不能拿“首 64 行相同”跳过（变化可能在后段）。
+        if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync(forceReplace: true);
         return SearchAsync();
     }
 
@@ -294,6 +458,24 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         private set { if (_isNavigating == value) return; _isNavigating = value; OnPropertyChanged(); }
     }
 
+    private int _searching;
+
+    /// <summary>搜索/静默刷新在途（并发计数）。量具与测试据此等"结果真的落地"，
+    /// 不靠固定 Pump 时间猜；计数避免范围防抖与 F5 交叠时提前变 false。</summary>
+    public bool IsSearching => System.Threading.Volatile.Read(ref _searching) > 0;
+
+    private void BeginSearching()
+    {
+        System.Threading.Interlocked.Increment(ref _searching);
+        OnPropertyChanged(nameof(IsSearching));
+    }
+
+    private void EndSearching()
+    {
+        System.Threading.Interlocked.Decrement(ref _searching);
+        OnPropertyChanged(nameof(IsSearching));
+    }
+
     /// <summary>一次**用户发起**的刷新（F5）结束：视图据此播行入场动画并收回焦点。</summary>
     public event EventHandler? RefreshCompleted;
 
@@ -309,7 +491,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         IsNavigating = true;
         try
         {
-            await RefreshResultsAsync();
+            await RefreshResultsAsync(forceReplace: true);
         }
         finally
         {
@@ -330,55 +512,61 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
 
         // 范围守卫：四个范围全部取消勾选时没有可搜字段，直接给引导空态
-        // （原行为会无视范围全量返回，与"搜索范围"语义矛盾）
         if (HasNoScope)
         {
+            CancelSession();
+            _searchGen++;
             Selection.Clear();
+            ResetResultState();
             ShowNoScopeState();
-            Results = null;
             return;
         }
 
-        // 加载态：清空数据 + 加载占位（截断提示一并复位，绝不把上一次的读数留在屏上）
+        CancelSession();
+        _loadFailed = false;
+        var gen = ++_searchGen;
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
+        BeginSearching();
         Selection.Clear();
         EmptyState = new SearchEmptyState("magnify", Loc.K("search.state.searching"), null,
             "SecondaryContainer", "OnSecondaryContainer");
-        Results = null;
-        TotalHitCount = 0;
-        ResultsTruncated = false;
-        OnPropertyChanged(nameof(TotalHitCount));
-        OnPropertyChanged(nameof(ResultsTruncated));
-        OnPropertyChanged(nameof(ResultNotice));
+        ResetResultState();
 
         try
         {
-            // **引擎侧分页**（2026-09-26）：只搬要渲染的一页（SQL LIMIT），命中总数用同谓词的
-            // search.count 并行取——原先把 24 981 条命中（约 12MB JSON）全量物化过管道，
-            // 界面只用前 500 条：实测 ~950ms 里引擎只占 160ms，其余全是搬运。
-            var linksTask = _api.SearchLinksAsync(query,
-                searchTitle: SearchTitle, searchUrl: SearchUrl,
-                searchDescription: SearchDesc, searchPath: SearchPath,
-                sortBy: "title", sortOrder: "asc",
-                page: 1, perPage: MaxRenderedResults);
-            var countTask = _api.SearchCountAsync(query,
-                searchTitle: SearchTitle, searchUrl: SearchUrl,
-                searchDescription: SearchDesc, searchPath: SearchPath);
-            await Task.WhenAll(linksTask, countTask);
-            var dtos = await linksTask;
+            // 快照会话：count 与后续每一页来自同一 SQLite 读事务；首屏预取只取视口×2（下限64）。
+            var snapshot = await OpenSnapshotAsync(query, PrefetchRows, cts.Token);
+            if (gen != _searchGen || cts.IsCancellationRequested)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                return;
+            }
 
+            _sessionId = snapshot.SessionId;
             LastQuery = query;
-
-            // 无结果：空态占位显示"没有找到"；有结果：数据驱动渲染（排序状态保持）
-            var total = await countTask;
-            TotalHitCount = total;
-            ResultsTruncated = total > dtos.Count;
-            var results = dtos.Select(LinkItem.FromDto).ToList();
-
+            OnPropertyChanged(nameof(LastQuery));
+            TotalHitCount = snapshot.Total;
             OnPropertyChanged(nameof(TotalHitCount));
-            OnPropertyChanged(nameof(ResultsTruncated));
-            OnPropertyChanged(nameof(ResultNotice));
 
-            EmptyState = results.Count == 0
+            var loadingText = Loc.T("search.result.rowLoading");
+            var initial = await BuildInitialRowsAsync(
+                snapshot.Total, snapshot.Prefetch, query, loadingText, cts.Token);
+            if (gen != _searchGen || cts.IsCancellationRequested)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                return;
+            }
+
+            _loadedCount = Math.Min(snapshot.Total, snapshot.Prefetch.Count);
+            PreserveScrollOnNextResultReplace = false;
+            Results.ReplaceAll(initial);
+            ResultSetReplaced?.Invoke(this, EventArgs.Empty);
+            ResetLoadedMaps(_loadedCount);
+            OnPropertyChanged(nameof(LoadedCount));
+            OnPropertyChanged(nameof(LoadingNotice));
+
+            EmptyState = snapshot.Total == 0
                 ? new SearchEmptyState("emoticon-sad-outline",
                     Loc.K("search.state.noResults", query),
                     Loc.K("search.state.noResultsHint"),
@@ -386,36 +574,90 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                 : new SearchEmptyState("magnify", Loc.K("search.state.prompt"),
                     Loc.K("search.state.promptHint"),
                     "PrimaryContainer", "OnPrimaryContainer");
-            Results = results;
+
+            if (snapshot.Total == 0)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                _sessionId = null;
+                IsLoadingAll = false;
+                return;
+            }
+
+            StartLoadingRemaining(gen, query, snapshot.Total, cts);
         }
-        catch (Exception)
+        catch (OperationCanceledException)
         {
-            EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.failed"),
-                Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
-            Results = null;
+            await CloseSessionQuietlyAsync(_sessionId);
+            _sessionId = null;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("search: opening the result snapshot failed", ex);
+            if (gen == _searchGen)
+            {
+                EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.failed"),
+                    Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
+                ResetResultState();
+            }
+            await CloseSessionQuietlyAsync(_sessionId);
+            _sessionId = null;
+        }
+        finally
+        {
+            EndSearching();
+            if (!IsLoadingAll)
+            {
+                if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
+                cts.Dispose();
+            }
         }
     }
 
     private void ResetToEmpty()
     {
-        _scopeDebounce?.Stop();
+        CancelSession();
+        _searchGen++;
         Query = "";
         LastQuery = "";
         Selection.Clear();
-        Results = null;
+        ResetResultState();
         ShowGuideState();
         ResetRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private void Cancel()
     {
-        _scopeDebounce?.Stop();
+        CancelSession();
+        _searchGen++;
         Query = "";
         LastQuery = "";
         Selection.Clear();
-        Results = null;
+        ResetResultState();
         ShowGuideState();
         ResetRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>清空结果状态（不动查询/选中；调用方决定是否清选中）。</summary>
+    private void ResetResultState()
+    {
+        PreserveScrollOnNextResultReplace = false;
+        Results.ReplaceAll(Array.Empty<LinkItem>());
+        _itemsById.Clear();
+        _orderedIds.Clear();
+        _idsByRow = Array.Empty<string?>();
+        _pathTextCache.Clear();
+        _pageCount = 0;
+        _pageLoaded = null;
+        _nextSequentialPage = 0;
+        _priorityPage = 0;
+        _loadedCount = 0;
+        TotalHitCount = 0;
+        _selectAllAfterLoad = false;
+        _selectLastAfterLoad = false;
+        IsLoadingAll = false;
+        OnPropertyChanged(nameof(LoadedCount));
+        OnPropertyChanged(nameof(TotalHitCount));
+        OnPropertyChanged(nameof(LoadingNotice));
     }
 
     // —— 选中移动 / Esc（与浏览页主栏同一套共享语义；顺序由视图注入） ——
@@ -433,17 +675,9 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         FocusOn(target);
     }
 
-    private void SelectLast()
-    {
-        var target = Selection.SelectLast(CurrentOrder());
-        FocusOn(target);
-    }
-
     private void FocusOn(string? linkId)
     {
-        if (linkId == null) return;
-        var item = _results?.FirstOrDefault(r => r.LinkId == linkId);
-        if (item != null) FocusRowRequested?.Invoke(this, item);
+        if (FindItem(linkId) is { } item) FocusRowRequested?.Invoke(this, item);
     }
 
     /// <summary>Esc 分层（与浏览页同口径）：有选中 → 清选中；否则清空（=「取消」）。</summary>
@@ -457,74 +691,418 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         Cancel();
     }
 
-    // —— 范围变化 → 静默刷新（非全量）：防抖 300ms 后只替换行集合，
-    //    不出现「正在搜索…」加载态、不重置排序/表头，原选中项若仍在结果中则保持选中 ——
+    // —— 范围/排序变化 → 新快照刷新；后台原位补齐全部命中（无分页边界、无截断） ——
 
-    private DispatcherTimer? _scopeDebounce;
-    private int _scopeRefreshGen;
+    private string _sortField = "title";
+    private bool _sortAscending = true;
 
     private void OnScopeChanged()
     {
-        _scopeDebounce ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-        _scopeDebounce.Stop();
-        _scopeDebounce.Tick -= ScopeDebounce_Tick;
-        _scopeDebounce.Tick += ScopeDebounce_Tick;
-        _scopeDebounce.Start();
-    }
-
-    private void ScopeDebounce_Tick(object? sender, EventArgs e)
-    {
-        _scopeDebounce?.Stop();
+        // 范围 chip 是**用户的一次明确点击**，不是连续输入：立即刷新（代际守卫丢弃旧结果）。
         if (!string.IsNullOrWhiteSpace(LastQuery))
-            _ = RefreshResultsAsync();
+            _ = RefreshResultsAsync(forceReplace: true);
     }
 
-    /// <summary>
-    /// 范围变化后的就地刷新：拿新范围的结果直接替换（跳过加载占位与清空闪烁）；
-    /// 代次计数防止连续切换时旧结果覆盖新结果。范围全空时给引导空态（与搜索守卫同一口径）。
-    /// </summary>
-    private async Task RefreshResultsAsync()
+    /// <summary>表头排序：交给引擎重算（新快照会话），首屏返回后同样在后台原位补齐全部命中。</summary>
+    public Task SortAsync(string field, bool ascending)
     {
-        var query = LastQuery;
-        if (string.IsNullOrWhiteSpace(query)) return;
+        if (string.Equals(field, _sortField, StringComparison.Ordinal) && ascending == _sortAscending)
+            return Task.CompletedTask;
+        _sortField = field;
+        _sortAscending = ascending;
+        return string.IsNullOrWhiteSpace(LastQuery) ? Task.CompletedTask : RefreshResultsAsync(forceReplace: true);
+    }
 
-        int gen = ++_scopeRefreshGen;
+    /// <summary>取消旧代次并关闭其快照会话；不修改结果/选中的最终状态（调用方决定清空或保留）。</summary>
+    private void CancelSession()
+    {
+        _loadCts?.Cancel();
+        _loadCts = null;
+        var sessionId = _sessionId;
+        _sessionId = null;
+        if (!string.IsNullOrEmpty(sessionId))
+            _ = CloseSessionQuietlyAsync(sessionId);
 
-        if (HasNoScope)
+        _loadFailed = false;
+        IsLoadingAll = false;
+        _selectAllAfterLoad = false;
+        _selectLastAfterLoad = false;
+        OnPropertyChanged(nameof(LoadingNotice));
+    }
+
+    private void StartLoadingRemaining(int gen, string query, int total, CancellationTokenSource cts)
+    {
+        if (_loadedCount >= total)
         {
-            Selection.Clear();
-            ShowNoScopeState();
-            Results = null;
+            var sessionId = _sessionId;
+            _sessionId = null;
+            if (!string.IsNullOrEmpty(sessionId))
+                _ = CloseSessionQuietlyAsync(sessionId);
+            CompleteLoad();
+            cts.Dispose();
+            return;
+        }
+
+        _pageCount = (total + RemainingLoadSize - 1) / RemainingLoadSize;
+        _pageLoaded = new bool[_pageCount];
+        _nextSequentialPage = 1;
+        _priorityPage = 0;
+        IsLoadingAll = true;
+        _ = LoadRemainingAsync(gen, query, total, cts, cts.Token);
+    }
+
+    private async Task<(string SessionId, int Total, List<LinkDto> Prefetch)> OpenSnapshotAsync(
+        string query, int prefetchRows, CancellationToken ct)
+    {
+        var title = SearchTitle;
+        var url = SearchUrl;
+        var desc = SearchDesc;
+        var path = SearchPath;
+        var sortBy = _sortField;
+        var sortOrder = _sortAscending ? "asc" : "desc";
+
+        var open = await Task.Run(() => _api.SearchSessionOpenAsync(query,
+            searchTitle: title, searchUrl: url,
+            searchDescription: desc, searchPath: path,
+            sortBy: sortBy, sortOrder: sortOrder, firstPageSize: prefetchRows, ct: ct), ct);
+
+        return (open.SessionId, open.Total, open.FirstPage?.ToList() ?? []);
+    }
+
+    /// <summary>后台取一页（快照会话；不取 count，排序/范围由会话固定）。</summary>
+    private async Task<List<LinkDto>> QuerySessionPageAsync(
+        string sessionId, int page, int perPage, CancellationToken ct)
+        => await Task.Run(() => _api.SearchSessionPageAsync(
+            sessionId, page: page, perPage: perPage, ct: ct), ct);
+
+    /// <summary>首屏：总数条占位行 + 前 prefetch 行真实数据；一次 Reset 挂进表格，绝不再整批替换。</summary>
+    private static Task<List<LinkItem>> BuildInitialRowsAsync(
+        int total, IReadOnlyList<LinkDto> prefetch, string query, string loadingText, CancellationToken ct)
+        => Task.Run(() =>
+        {
+            var rows = new List<LinkItem>(total);
+            for (var i = 0; i < total; i++)
+                rows.Add(new SearchResultRow { Title = loadingText, Url = "\u00A0" });
+
+            var filled = Math.Min(total, prefetch.Count);
+            for (var i = 0; i < filled; i++)
+            {
+                var row = new SearchResultRow();
+                row.Fill(prefetch[i], query);
+                rows[i] = row;
+            }
+            ct.ThrowIfCancellationRequested();
+            return rows;
+        }, ct);
+
+    /// <summary>原位填充一页：只改占位行字段，不替换集合、不重建容器、不移动滚动位置。
+    /// 页可以乱序到达（视口优先），因此只按行号写；返回本次真正填入的行数。</summary>
+    private int ApplyPage(IReadOnlyList<LinkDto> rows, int page, string query)
+    {
+        var offset = (page - 1) * RemainingLoadSize;
+        var filled = 0;
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var index = offset + i;
+            if (index >= Results.Count) break;
+            if (Results[index] is not SearchResultRow row || !row.IsPlaceholder) continue;
+
+            row.Fill(rows[i], query);
+            if (!RegisterLoaded(row, index))
+                throw new InvalidOperationException($"duplicate link id in search snapshot: {rows[i].LinkId}");
+            filled++;
+        }
+
+        if (filled > 0) RebuildOrderedIds();
+        _loadedCount += filled;
+        OnPropertyChanged(nameof(LoadedCount));
+        OnPropertyChanged(nameof(LoadingNotice));
+        if (Selection.HasAny) OnSelectionChanged();
+
+        // End 在加载中按下：末行一落地就完成“选中 + 滚入视口”，不等其余页。
+        if (_selectLastAfterLoad && _idsByRow.Length > 0 && _idsByRow[^1] is not null)
+        {
+            _selectLastAfterLoad = false;
+            FocusOn(Selection.SelectLast(_orderedIds));
+        }
+        return filled;
+    }
+
+    /// <summary>取下一页：视口请求页优先，其后按顺序推进；两者都取自同一快照会话。</summary>
+    private int NextPageToLoad()
+    {
+        var loaded = _pageLoaded;
+        if (loaded is null) return 0;
+
+        var priority = _priorityPage;
+        if (priority > 0 && priority <= _pageCount && !loaded[priority - 1])
+        {
+            _priorityPage = 0;
+            return priority;
+        }
+
+        while (_nextSequentialPage <= _pageCount && loaded[_nextSequentialPage - 1])
+            _nextSequentialPage++;
+        return _nextSequentialPage <= _pageCount ? _nextSequentialPage : 0;
+    }
+
+    private async Task LoadRemainingAsync(
+        int gen, string query, int total, CancellationTokenSource cts, CancellationToken ct)
+    {
+        var sessionId = _sessionId;
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            cts.Dispose();
             return;
         }
 
         try
         {
-            var linksTask = _api.SearchLinksAsync(query,
-                searchTitle: SearchTitle, searchUrl: SearchUrl,
-                searchDescription: SearchDesc, searchPath: SearchPath,
-                sortBy: "title", sortOrder: "asc",
-                page: 1, perPage: MaxRenderedResults);
-            var countTask = _api.SearchCountAsync(query,
-                searchTitle: SearchTitle, searchUrl: SearchUrl,
-                searchDescription: SearchDesc, searchPath: SearchPath);
-            await Task.WhenAll(linksTask, countTask);
-            if (gen != _scopeRefreshGen) return; // 已有更新的范围变化，放弃旧结果
+            // 先给首屏一个完整渲染帧，再开始后台补页——首屏延迟不背后续页。
+            await Task.Delay(150, ct);
+            if (ct.IsCancellationRequested || gen != _searchGen) return;
 
-            var total = await countTask;
-            var links = await linksTask;
-            TotalHitCount = total;
-            ResultsTruncated = total > links.Count;
-            OnPropertyChanged(nameof(TotalHitCount));
-            OnPropertyChanged(nameof(ResultsTruncated));
-            OnPropertyChanged(nameof(ResultNotice));
-            var results = links.Select(LinkItem.FromDto).ToList();
-            Results = results;
+            var loadedPages = 0;
+            while (!ct.IsCancellationRequested && gen == _searchGen && loadedPages < _pageCount)
+            {
+                var page = NextPageToLoad();
+                if (page == 0) break;
 
-            // 选中保持（多选亦然）：剔除已不在新结果里的 ID；其余保持（投影自动更新行与右栏）
-            Selection.RemoveMissing(id => results.Any(r => r.LinkId == id));
+                var rows = await QuerySessionPageWithRetryAsync(sessionId, page, RemainingLoadSize, ct);
+                if (ct.IsCancellationRequested || gen != _searchGen) return;
+
+                _pageLoaded![page - 1] = true;
+                loadedPages++;
+                if (rows.Count == 0)
+                {
+                    // 总数来自同一快照：非末页读到空页 = 快照读取异常，继续只会无限空转。
+                    if (page < _pageCount)
+                        throw new InvalidOperationException(
+                            $"search snapshot page {page}/{_pageCount} returned no rows");
+                    continue;
+                }
+
+                ApplyPage(rows, page, query);
+                if (_loadedCount >= total) break;
+            }
+
+            if (ct.IsCancellationRequested || gen != _searchGen) return;
+            if (_loadedCount >= total) CompleteLoad();
+            else MarkLoadFailed($"snapshot returned {_loadedCount}/{total} rows");
         }
-        catch { /* 静默刷新失败时保留旧列表 */ }
+        catch (OperationCanceledException) { /* 新查询接管 */ }
+        catch (Exception ex)
+        {
+            LpLog.Error("search: loading remaining snapshot pages failed", ex);
+            if (gen == _searchGen) MarkLoadFailed("snapshot page read failed");
+        }
+        finally
+        {
+            await CloseSessionQuietlyAsync(sessionId);
+            if (string.Equals(_sessionId, sessionId, StringComparison.Ordinal)) _sessionId = null;
+            if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
+            cts.Dispose();
+        }
+    }
+
+    /// <summary>单页最多尝试 3 次（初次 + 2 次重试）；取消不重试。快照读事务仍有效，重读同一页是安全的。</summary>
+    private async Task<List<LinkDto>> QuerySessionPageWithRetryAsync(
+        string sessionId, int page, int perPage, CancellationToken ct)
+    {
+        const int attempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await QuerySessionPageAsync(sessionId, page, perPage, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (attempt < attempts)
+            {
+                LpLog.Warn($"search: snapshot page {page} failed (attempt {attempt}/{attempts}), retrying",
+                    ex, category: "search");
+                await Task.Delay(TimeSpan.FromMilliseconds(80 * attempt), ct);
+            }
+        }
+    }
+
+    private void CompleteLoad()
+    {
+        _loadFailed = false;
+        IsLoadingAll = false;
+        var changed = Selection.RemoveMissing(id => _itemsById.ContainsKey(id));
+        if (!changed) OnSelectionChanged();
+        OnPropertyChanged(nameof(LoadingNotice));
+
+        var selectAll = _selectAllAfterLoad;
+        var selectLast = _selectLastAfterLoad;
+        _selectAllAfterLoad = false;
+        _selectLastAfterLoad = false;
+        if (selectAll) Selection.SelectAll(_orderedIds);
+        else if (selectLast) FocusOn(Selection.SelectLast(_orderedIds));
+    }
+
+    private void MarkLoadFailed(string reason)
+    {
+        _loadFailed = true;
+        IsLoadingAll = false;
+        _selectAllAfterLoad = false;
+        _selectLastAfterLoad = false;
+        OnPropertyChanged(nameof(LoadingNotice));
+        LpLog.Warn($"search: partial result set ({LoadedCount}/{TotalHitCount}): {reason}", category: "search");
+    }
+
+    private async Task CloseSessionQuietlyAsync(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return;
+        try { await _api.SearchSessionCloseAsync(sessionId); }
+        catch (Exception ex) { LpLog.Warn("search: closing snapshot session failed", ex, category: "search"); }
+    }
+
+    private static bool SamePrefix(IReadOnlyList<LinkItem> current, IReadOnlyList<LinkDto> dtos, int count)
+    {
+        if (count > current.Count || count > dtos.Count) return false;
+        for (var i = 0; i < count; i++)
+        {
+            var c = current[i];
+            var d = dtos[i];
+            if (!string.Equals(c.LinkId, d.LinkId, StringComparison.Ordinal)
+                || !string.Equals(c.Url, d.Url ?? string.Empty, StringComparison.Ordinal)
+                || !string.Equals(c.Title, d.Title ?? string.Empty, StringComparison.Ordinal)
+                || !string.Equals(c.Description, d.Description ?? string.Empty, StringComparison.Ordinal)
+                || !string.Equals(c.FaviconUrl, d.FaviconUrl ?? string.Empty, StringComparison.Ordinal)
+                || !string.Equals(c.ListId, d.ListId, StringComparison.Ordinal)
+                || c.LastVisitedAt != d.LastVisitedAt || c.VisitCount != d.VisitCount
+                || c.IsImportant != d.IsImportant || c.CreatedAt != d.CreatedAt
+                || c.UpdatedAt != d.UpdatedAt) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 静默刷新：新快照会话；结果等价且已全量时整段跳过（切页入口对齐不重建行）。
+    /// 数据变化时重建“总数占位 + 首屏真实行”，随后后台原位补齐。
+    /// </summary>
+    private async Task RefreshResultsAsync(bool forceReplace = false)
+    {
+        var query = LastQuery;
+        if (string.IsNullOrWhiteSpace(query)) return;
+
+        // 旧结果只有在“真正补全且未失败”时才可以走等价跳过；否则占位行不是完整结果。
+        var wasComplete = !_loadFailed && _loadedCount == TotalHitCount && Results.Count == TotalHitCount;
+        CancelSession();
+        _pathTextCache.Clear();
+        _loadFailed = false;
+        int gen = ++_searchGen;
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
+
+        if (HasNoScope)
+        {
+            Selection.Clear();
+            ResetResultState();
+            ShowNoScopeState();
+            cts.Dispose();
+            return;
+        }
+
+        BeginSearching();
+        try
+        {
+            var snapshot = await OpenSnapshotAsync(query, PrefetchRows, cts.Token);
+            if (gen != _searchGen || cts.IsCancellationRequested)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                return;
+            }
+
+            var prefetchCount = Math.Min(snapshot.Total, snapshot.Prefetch.Count);
+            var unchanged = !forceReplace
+                && wasComplete
+                && !IsLoadingAll
+                && Results.Count == TotalHitCount
+                && TotalHitCount == snapshot.Total
+                && prefetchCount <= Results.Count
+                && SamePrefix(Results, snapshot.Prefetch, prefetchCount);
+            if (unchanged)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                return;
+            }
+
+            // 会话一接手就记为当前会话：占位构建失败/取消时 catch 才能把它关掉（否则要等 TTL 兜底）。
+            _sessionId = snapshot.SessionId;
+            var loadingText = Loc.T("search.result.rowLoading");
+            var initial = await BuildInitialRowsAsync(
+                snapshot.Total, snapshot.Prefetch, query, loadingText, cts.Token);
+            if (gen != _searchGen || cts.IsCancellationRequested)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                _sessionId = null;
+                return;
+            }
+
+            var hadSelection = Selection.HasAny;
+            TotalHitCount = snapshot.Total;
+            _loadedCount = prefetchCount;
+            PreserveScrollOnNextResultReplace = true;
+            Results.ReplaceAll(initial);
+            ResultSetReplaced?.Invoke(this, EventArgs.Empty);
+            ResetLoadedMaps(_loadedCount);
+            if (TotalHitCount == 0) Selection.Clear();
+            else if (hadSelection) OnSelectionChanged();
+            OnPropertyChanged(nameof(TotalHitCount));
+            OnPropertyChanged(nameof(LoadedCount));
+            OnPropertyChanged(nameof(LoadingNotice));
+
+            EmptyState = snapshot.Total == 0
+                ? new SearchEmptyState("emoticon-sad-outline",
+                    Loc.K("search.state.noResults", query),
+                    Loc.K("search.state.noResultsHint"),
+                    "SecondaryContainer", "OnSecondaryContainer")
+                : new SearchEmptyState("magnify", Loc.K("search.state.prompt"),
+                    Loc.K("search.state.promptHint"),
+                    "PrimaryContainer", "OnPrimaryContainer");
+
+            if (snapshot.Total == 0)
+            {
+                await CloseSessionQuietlyAsync(snapshot.SessionId);
+                _sessionId = null;
+                IsLoadingAll = false;
+                return;
+            }
+
+            StartLoadingRemaining(gen, query, snapshot.Total, cts);
+        }
+        catch (OperationCanceledException)
+        {
+            await CloseSessionQuietlyAsync(_sessionId);
+            _sessionId = null;
+        }
+        catch (Exception ex)
+        {
+            LpLog.Error("search: refreshing the result snapshot failed", ex);
+            if (gen == _searchGen)
+            {
+                _loadFailed = true;
+                IsLoadingAll = false;
+                OnPropertyChanged(nameof(LoadingNotice));
+                if (Results.Count == 0)
+                    EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.failed"),
+                        Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
+            }
+            await CloseSessionQuietlyAsync(_sessionId);
+            _sessionId = null;
+        }
+        finally
+        {
+            EndSearching();
+            if (!IsLoadingAll)
+            {
+                if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
+                cts.Dispose();
+            }
+        }
     }
 
     // —— 页面动作 ——
@@ -594,27 +1172,29 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         IsDeleting = true;
         try
         {
-            // 引擎只有单条 links.trash：逐条执行并逐条记账。中途失败时已成功的项**确实已进回收站**，
-            // 必须继续刷新结果，否则它会留在搜索结果里，看起来像"原链接没删、回收站却有"。
+            // 链接批量入站（单命令单事务）：全选 N 条只发 1 条命令。
+            // 批量预检是原子的：任一选中项已不存在 → 整批拒绝、零写入；失败后同样刷新，
+            // 把陈旧行从结果集清掉，用户重试即可（不会出现"看着删了、库里却还在"）。
             var deleted = 0;
             var failed = 0;
-            foreach (var v in victims)
+            var ids = victims.Select(v => v.LinkId).Distinct(StringComparer.Ordinal).ToList();
+            if (ids.Count > 0)
             {
                 try
                 {
-                    await _api.LinkTrashAsync(v.LinkId);
-                    deleted++;
+                    var result = await _api.LinkTrashBatchAsync(ids);
+                    deleted = result.Data?.Affected ?? ids.Count;
                 }
                 catch (Exception ex)
                 {
-                    failed++;
-                    LpLog.Error($"search delete failed for link {v.LinkId}", ex);
+                    failed = ids.Count;
+                    LpLog.Error($"search batch delete failed for {ids.Count} link(s)", ex);
                 }
             }
 
-            if (deleted > 0)
+            if (deleted > 0 || failed > 0)
             {
-                Selection.Clear();
+                if (deleted > 0) Selection.Clear();
 
                 // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
                 if (!string.IsNullOrWhiteSpace(LastQuery))
@@ -632,6 +1212,9 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             {
                 EmptyState = new SearchEmptyState("alert-outline", Loc.K("search.state.deleteFailed"),
                     Loc.K("err.unexpected"), "SurfaceContainerHighest", "OnSurface");
+                // 结果集非空时 EmptyState 不可见：批量失败（含选中项已在别处被删的整批拒绝）
+                // 必须再给一条提示，否则用户只看到"没删掉"却没有任何原因。
+                _notices?.Show(Loc.T("search.state.deleteFailed"));
             }
         }
         catch (Exception ex)

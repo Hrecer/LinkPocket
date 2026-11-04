@@ -57,6 +57,10 @@ public class IndexPlanTests
     [InlineData("SELECT id FROM links WHERE folder_id IS NOT NULL AND folder_id IN (SELECT value FROM json_each('[\"F1\",\"F2\"]'))", "idx_links_folder")]
     // 目录页取一页（folders.contents / overview 的取数形态）：**排序列必须走复合索引**——
     // 缺匹配索引时 SQLite 要取回整个目录再排序（100K 库 9 万条目录实测 43ms/页，命中后 0.1ms 级）
+    // 搜索页的过滤 + 排序（search.links 缺省 title 升序）：排序沿覆盖索引走到前 500 条；
+    // 谓词列（url/description/folder_id）也在索引里，稀疏命中/无命中不用逐行回表。
+    [InlineData("SELECT id FROM links WHERE (title LIKE '%git%' ESCAPE '\\' OR url LIKE '%git%' ESCAPE '\\') ORDER BY title COLLATE NOCASE, id LIMIT 500", "idx_links_search")]
+    [InlineData("SELECT COUNT(*) FROM links WHERE (title LIKE '%git%' ESCAPE '\\' OR url LIKE '%git%' ESCAPE '\\')", "idx_links_search")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY title COLLATE NOCASE, id LIMIT 2000", "idx_links_folder_title")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY created_at, id LIMIT 2000", "idx_links_folder_created")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY updated_at DESC, id DESC LIMIT 2000", "idx_links_folder_updated")]

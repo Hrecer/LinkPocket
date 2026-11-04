@@ -102,9 +102,68 @@ public sealed class EfUnitOfWork : IUnitOfWork
     public ITransactionScope BeginTransaction()
         => new EfTransactionScope(new Lazy<Task<IDbContextTransaction>>(() => _db.Database.BeginTransactionAsync()));
 
+    /// <summary>
+    /// 延迟只读快照：必须用 `BEGIN`（deferred）而不是 EF 默认的立即事务。
+    /// 立即事务会拿写锁，长读会话期间所有写入都会 `database is locked`（实测）；
+    /// 这里直接开 Sqlite 延迟事务并挂到 EF 上，让 RawSql/EF 查询共用同一连接与快照。
+    /// </summary>
+    public ITransactionScope BeginReadTransaction() => new EfReadTransactionScope(_db);
+
     public bool HasActiveTransaction => _db.Database.CurrentTransaction is not null;
 
     public ValueTask DisposeAsync() => _db.DisposeAsync();
+}
+
+/// <summary>
+/// 延迟只读快照作用域：SqliteConnection.BeginTransaction(deferred:true) → 挂到 EF 的 CurrentTransaction。
+/// 多页查询共享同一连接与快照；Dispose 时回滚并摘掉 EF 事务、关闭连接。
+/// </summary>
+internal sealed class EfReadTransactionScope(LinkPocketDbContext db) : ITransactionScope
+{
+    private SqliteTransaction? _tx;
+    private bool _completed;
+
+    public async Task BeginAsync(CancellationToken ct)
+    {
+        await db.Database.OpenConnectionAsync(ct);
+        var connection = (SqliteConnection)db.Database.GetDbConnection();
+        _tx = connection.BeginTransaction(deferred: true);
+        db.Database.UseTransaction(_tx);
+    }
+
+    public async Task CommitAsync(CancellationToken ct)
+    {
+        if (_tx is null) throw new InvalidOperationException("read snapshot transaction is not started");
+        await _tx.CommitAsync(ct);
+        _completed = true;
+    }
+
+    public async Task RollbackAsync(CancellationToken ct)
+    {
+        if (_tx is null) return;
+        await _tx.RollbackAsync(ct);
+        _completed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (!_completed && _tx is not null)
+            {
+                try { await _tx.RollbackAsync(); }
+                catch { /* 丢弃阶段连接可能已不可用——回滚尽力而为 */ }
+            }
+            if (_tx is not null) await _tx.DisposeAsync();
+        }
+        finally
+        {
+            // 摘掉 EF 侧的事务引用，避免 UoW 复用该上下文时继续拿着已释放的事务。
+            try { db.Database.UseTransaction(null); } catch { /* 上下文已释放 */ }
+            try { await db.Database.CloseConnectionAsync(); } catch { /* 上下文已释放 */ }
+            _tx = null;
+        }
+    }
 }
 
 /// <summary>显式事务作用域：Commit 提交；Dispose 时未提交/未回滚即回滚（干跑的丢弃也走这里）。</summary>

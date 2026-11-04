@@ -20,14 +20,14 @@ namespace LinkPocket.Modules.Folders;
 /// <para>
 /// <b>favicon_url 在投影里</b>：树叶子要画**站点头像**（与主栏行/回收站行同一套图标链路）——
 /// 内嵌 <c>data:</c> URI 形态的数据就在地址里，不给这个字段就没法解码；真实库里它可能很长，
-/// 但单次返回受引擎页上限约束（<see cref="EngineLimits.MaxPageSize"/>），不做全库搬运。
+/// 因此只用轻量投影，不搬完整 LinkDto。
 /// </para>
 /// <para>
 /// <b>缓存口径</b>与 <c>folders.tree</c> 一致（内容型：文件夹 / 链接变更即失效）。
-/// 单次返回上限 = 引擎页上限（<see cref="EngineLimits.MaxPageSize"/>）。
+/// <b>外部默认全量</b>（不传 / 0 = 全部直接链接）；显式正数才限制行数。
 /// </para>
 /// </remarks>
-internal sealed class FolderTreeLinksHandler(EngineLimits limits) : ICommandHandler
+internal sealed class FolderTreeLinksHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "folders.tree_links",
@@ -36,7 +36,7 @@ internal sealed class FolderTreeLinksHandler(EngineLimits limits) : ICommandHand
         Parameters:
         [
             ParamSpec.Opt<string>("folder_id", "Folder ID; default = root level (the root is not an entity and has no ID)"),
-            ParamSpec.Opt<int>("per_page", "Max rows; 0 = everything (bounded by the engine cap)"),
+            ParamSpec.Opt<int>("per_page", "Max rows; default 0 = all direct links; positive = page size"),
         ],
         Caps: CommandCaps.Query,
         Cache: CachePolicy.Content());
@@ -45,7 +45,6 @@ internal sealed class FolderTreeLinksHandler(EngineLimits limits) : ICommandHand
     {
         var folderId = CommandArgs.OptionalString(args, "folder_id");
         var perPage = Math.Max(0, CommandArgs.OptionalInt(args, "per_page", 0));
-        var effectivePerPage = perPage == 0 ? limits.MaxPageSize : Math.Min(perPage, limits.MaxPageSize);
 
         var filter = FolderIds.IsRoot(folderId)
             ? new LinkFilter { Unfiled = true }
@@ -55,7 +54,7 @@ internal sealed class FolderTreeLinksHandler(EngineLimits limits) : ICommandHand
         {
             Filter = filter,
             Sort = new[] { new SortSpec("title", SortDir.Asc) },
-            Page = new PageSpec(1, effectivePerPage),
+            Page = new PageSpec(1, perPage),
         }, ctx.Ct);
 
         return CommandResult.Ok(links.Select(l => l.ToTreeDto()).ToList());

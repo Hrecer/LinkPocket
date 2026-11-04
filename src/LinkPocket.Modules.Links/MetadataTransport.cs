@@ -518,22 +518,5 @@ internal static class MetadataTransport
                && IPAddress.TryParse(SystemProxy.Host, out var b) && IPAddress.IsLoopback(b);
     }
 
-    private static bool IsAllowed(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address)) return false;
-        if (address.IsIPv6LinkLocal || address.IsIPv6Multicast) return false;
-
-        if (address.IsIPv4MappedToIPv6)
-            address = address.MapToIPv4();
-
-        var bytes = address.GetAddressBytes();
-        if (bytes.Length == 4)
-        {
-            // 169.254.0.0/16（链路本地：含 169.254.169.254 元数据端点）、224.0.0.0/4（组播）
-            if (bytes[0] == 169 && bytes[1] == 254) return false;
-            if (bytes[0] >= 224) return false;
-        }
-
-        return true;
-    }
+    private static bool IsAllowed(IPAddress address) => TargetGuard.IsAllowed(address);
 }

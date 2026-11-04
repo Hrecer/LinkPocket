@@ -27,6 +27,13 @@ public sealed class ComposeOptions
     /// 模块单测宿主关闭该选项：它只管 58 条业务命令，编排语义归 Engine.Tests。</summary>
     public bool IncludeOrchestration { get; init; } = true;
 
+    /// <summary>
+    /// 是否注册界面专用的搜索快照会话命令（search.session_open/page/close）。
+    /// 默认 true（桌面宿主/测试）；CLI/MCP 等外部宿主置 false——外部命令默认全量，
+    /// 不需要把有状态的 UI 内部会话暴露到外部工具面。
+    /// </summary>
+    public bool IncludeSearchSessions { get; init; } = true;
+
     /// <summary>暂存区根（staging.transform 文件准备区）；null = 由库路径推导 linkpocket_staging_*。</summary>
     public string? StagingRoot { get; init; }
 
@@ -184,7 +191,8 @@ public static class EngineComposer
         registry.RegisterAll(LinkPocket.Modules.Folders.FoldersModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Links.LinksModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Trash.TrashModule.CreateHandlers());
-        registry.RegisterAll(LinkPocket.Modules.Search.SearchModule.CreateHandlers());
+        registry.RegisterAll(LinkPocket.Modules.Search.SearchModule.CreateHandlers(
+            null, options.IncludeSearchSessions ? uowFactory : null));
         registry.RegisterAll(LinkPocket.Modules.Bookmarks.BookmarksModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Backup.BackupModule.CreateHandlers());
         registry.RegisterAll(LinkPocket.Modules.Dedup.DedupModule.CreateHandlers());

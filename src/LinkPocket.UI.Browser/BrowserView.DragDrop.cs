@@ -467,6 +467,61 @@ public partial class BrowserView : UserControl
     private static DependencyObject? HitOf(MouseButtonEventArgs e)
         => (e.OriginalSource ?? e.Source) as DependencyObject;
 
+    /// <summary>命中链里最近的紧凑首帧行（Tag=BrowserRowCompact）；完整行返回 null。</summary>
+    private static FrameworkElement? CompactRowUnder(DependencyObject? hit)
+    {
+        while (hit != null)
+        {
+            if (hit is FrameworkElement { Tag: "BrowserRowCompact" } row) return row;
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+        return null;
+    }
+
+    // 表级适配器：紧凑首帧行没有逐行事件，事件冒泡到这里后转交给同一批行处理器。
+    // 完整行有自己的处理器，这里命中链上没有紧凑行 → 直接放行，不会重复处理。
+    private void CompactRows_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_PreviewMouseLeftButtonDown(row, e);
+    }
+
+    private void CompactRows_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_PreviewMouseRightButtonDown(row, e);
+    }
+
+    private void CompactRows_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_MouseMove(row, e);
+    }
+
+    private void CompactRows_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_MouseLeftButtonUp(row, e);
+    }
+
+    private void CompactRows_DragOver(object sender, DragEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_DragOver(row, e);
+    }
+
+    private void CompactRows_DragLeave(object sender, DragEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_DragLeave(row, e);
+    }
+
+    private void CompactRows_Drop(object sender, DragEventArgs e)
+    {
+        if (CompactRowUnder(e.OriginalSource as DependencyObject ?? e.Source as DependencyObject) is { } row)
+            RowBorder_Drop(row, e);
+    }
+
     /// <summary>按下：记下手势凭据；无修饰键按未选中行 = 立即单选（Windows 按下即反馈）。</summary>
     private void RowBorder_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -483,6 +538,16 @@ public partial class BrowserView : UserControl
 
         _pressRow = (sender as FrameworkElement)?.DataContext as BrowserRowViewModel;
         if (ViewModel == null || _pressRow == null) return;
+
+        // 首帧紧凑模板（Tag=BrowserRowCompact）没有 InputBinding：双击在本处理器里补一次打开，
+        // 与完整模板的 LeftDoubleClick 同一命令、同一行对象。
+        if (e.ClickCount == 2 && sender is FrameworkElement { Tag: "BrowserRowCompact" })
+        {
+            if (ViewModel.RowOpenCommand.CanExecute(_pressRow)) ViewModel.RowOpenCommand.Execute(_pressRow);
+            e.Handled = true;
+            return;
+        }
+
         ViewModel.ActivatePane(BrowserPane.Main);   // 点主栏 = 该栏获得键盘语义归属（焦点随之收进页面）
         // 记下"按下时它已是唯一选中"——抬起据此判定"第二击"（慢两击改名）
         _pressWasSoleSelection = _pressRow.IsSelected && ViewModel.SelectionCount == 1;
@@ -519,6 +584,15 @@ public partial class BrowserView : UserControl
         _rightDragGesture = false;   // 新手势开始：上一次的抑制窗口到此为止
         _rightDragMenu = null;
         ClearRenamePair();           // 右键是另一种手势，不能夹在"两击对"之间
+
+        // 首帧紧凑模板按需挂共享菜单：不在行模板里给每行实例化 ContextMenu / InputBinding，
+        // 避免把首帧布局成本加回去；第一次右键时挂上，之后菜单打开路径与完整模板完全一致。
+        if (_rightPressRow != null && sender is FrameworkElement { Tag: "BrowserRowCompact" } compactRow
+            && compactRow.ContextMenu is null)
+        {
+            compactRow.ContextMenu = (ContextMenu)FindResource("BrowserRowMenu");
+            compactRow.ContextMenuOpening += RowBorder_ContextMenuOpening;
+        }
     }
 
     /// <summary>

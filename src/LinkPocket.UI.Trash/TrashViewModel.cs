@@ -162,7 +162,7 @@ public partial class TrashViewModel : INotifyPropertyChanged
     public ObservableCollection<TrashRowViewModel> Rows { get; } = new();
 
     /// <summary>面包屑（根「回收站」+ 逐级单元）。</summary>
-    public ObservableCollection<TrashCrumbViewModel> Breadcrumbs { get; } = new();
+    public BulkObservableCollection<TrashCrumbViewModel> Breadcrumbs { get; } = new();
 
     /// <summary>当前所在单元（null = 回收站根）。</summary>
     public string? CurrentUnitId => Controller.CurrentFolderId;

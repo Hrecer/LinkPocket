@@ -40,23 +40,9 @@ internal sealed class LinkTrashBatchHandler : ICommandHandler
         var uow = ctx.Uow;
         var ct = ctx.Ct;
 
-        // 预检：一次性取回 + 按输入顺序核对缺失（硬失败 → 整批不写）
-        var links = new List<Link>(linkIds.Count);
-        foreach (var chunk in linkIds.Chunk(500))
-            links.AddRange(await uow.Links.ListAsync(new LinkQuerySpec
-            {
-                Filter = new LinkFilter { IdIn = chunk },
-            }, ct));
-        var byId = links.ToDictionary(l => l.LinkId, StringComparer.Ordinal);
-        var ordered = new List<Link>(linkIds.Count);
-        foreach (var id in linkIds)
-        {
-            if (!byId.TryGetValue(id, out var link))
-                throw new EngineException(EngineErrors.Of(
-                    EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
-            ordered.Add(link);
-        }
-
+        // raw SQL 搬运必须与 EF 父链触碰共用一个显式事务；事务从**预检之前**开始：
+        // 预检与搬运读同一份已提交快照，避免"预检后到开事务之间被并发删除"时
+        // 仍把整批报成成功（实际一行都没搬进回收站）的假入站。
         var ownsTx = !uow.HasActiveTransaction;
         ITransactionScope? tx = null;
         if (ownsTx)
@@ -66,18 +52,45 @@ internal sealed class LinkTrashBatchHandler : ICommandHandler
         }
         try
         {
+            // 预检：一次性取回 + 按输入顺序核对缺失（硬失败 → 整批不写）
+            var links = new List<Link>(linkIds.Count);
+            foreach (var chunk in linkIds.Chunk(500))
+                links.AddRange(await uow.Links.ListAsync(new LinkQuerySpec
+                {
+                    Filter = new LinkFilter { IdIn = chunk },
+                }, ct));
+            var byId = links.ToDictionary(l => l.LinkId, StringComparer.Ordinal);
+            var ordered = new List<Link>(linkIds.Count);
+            foreach (var id in linkIds)
+            {
+                if (!byId.TryGetValue(id, out var link))
+                    throw new EngineException(EngineErrors.Of(
+                        EngineErrors.EntityNotFound, $"link {id} does not exist", correlationId: ctx.CorrelationId));
+                ordered.Add(link);
+            }
+
             var trashedAt = DateTime.UtcNow;
+            var moved = 0;
             var diff = new List<FieldChange>(ordered.Count);
             var groups = ordered.GroupBy(l => l.ListId).ToList();
             foreach (var group in groups)
             {
                 var originPath = await uow.Trees.PathCanonicalAsync(
                     group.Key == null ? null : new FolderId(group.Key), ct);
-                await uow.Trash.TrashLinksOfFolderSelectionAsync(
+                moved += await uow.Trash.TrashLinksOfFolderSelectionAsync(
                     group.Key, originPath, group.Select(l => l.LinkId).ToArray(), trashedAt, ct);
                 foreach (var link in group)
                     diff.AddRange(EntityDiff.Diff(link.LinkId, LinkSnapshot.Of(link), null));
             }
+
+            // 集合搬运按 (目录, 选中 ID) 限定；行数对不上说明链接在事务快照之外被移动/删除，
+            // 此时继续提交会漏快照（原链接没了、回收站也没有）。硬失败回滚，绝不静默吞项。
+            if (moved != ordered.Count)
+                throw new EngineException(EngineErrors.Of(
+                    EngineErrors.BatchAborted,
+                    $"batch trash aborted: expected {ordered.Count} link(s) but moved {moved}; the library changed concurrently",
+                    correlationId: ctx.CorrelationId));
+
             foreach (var group in groups)
                 await uow.Trees.TouchModifiedAsync(group.Key == null ? null : new FolderId(group.Key), ct);
 
@@ -89,11 +102,11 @@ internal sealed class LinkTrashBatchHandler : ICommandHandler
 
             var undoArgs = JsonSerializer.SerializeToElement(new { link_ids = linkIds });
             return CommandResult.Ok(
-                new LinkBatchResult("trash", linkIds.Count),
+                new LinkBatchResult("trash", ordered.Count),
                 new ChangeSet(
                     Touched: ordered.Select(l => new EntityRef("link", l.LinkId)).ToArray(),
                     Events: [DomainEventNames.LinksChanged, DomainEventNames.TrashChanged],
-                    HumanSummary: $"{linkIds.Count} bookmark(s) moved to trash",
+                    HumanSummary: $"{ordered.Count} bookmark(s) moved to trash",
                     Diff: diff.Count > 0 ? diff : null),
                 [new UndoInverseStep(
                     "trash.restore_batch",

@@ -1,4 +1,3 @@
-using LinkPocket.Kernel;
 using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Folders;
@@ -9,13 +8,12 @@ namespace LinkPocket.Modules.Folders;
 /// </summary>
 public static class FoldersModule
 {
-    /// <param name="limits">引擎资源上限（组合根可配置；缺省 = <see cref="EngineLimits.Default"/>）。</param>
-    public static IReadOnlyList<ICommandHandler> CreateHandlers(EngineLimits? limits = null) =>
+    public static IReadOnlyList<ICommandHandler> CreateHandlers() =>
     [ 
-        new FolderContentsHandler(limits ?? EngineLimits.Default),
-        new FolderOverviewHandler(limits ?? EngineLimits.Default),
+        new FolderContentsHandler(),
+        new FolderOverviewHandler(),
         new FolderTreeHandler(),
-        new FolderTreeLinksHandler(limits ?? EngineLimits.Default),
+        new FolderTreeLinksHandler(),
         new FolderGetHandler(),
         new FolderBreadcrumbHandler(),
         new FolderCycleCheckHandler(),

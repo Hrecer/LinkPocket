@@ -50,6 +50,8 @@ namespace LinkPocket.Models
         }
 
         public string LinkId { get; set; } = string.Empty;
+        /// <summary>本行创建时的搜索关键词（标题/URL 高亮用）。搜索结果每次落地都会重设。</summary>
+        public string HighlightQuery { get; set; } = string.Empty;
         public string Url { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
@@ -82,6 +84,23 @@ namespace LinkPocket.Models
 
         // UI辅助属性
         public string DisplayTitle => !string.IsNullOrEmpty(Title) ? Title : Url;
+        // 搜索结果模板模式（虚拟化只实例化视口行）直接绑定这些文案值：
+        // 数据是"时刻 / 键"，取词发生在渲染边界；搜索表格的列宽是冻结几何，不需要 LocFit
+        // 为每个单元格做宽度探测（那是首帧布局的主要成本之一）。
+        // 日期列的宽度是冻结几何：英文直接用短式（中文短式=全长），不做逐单元格 LocFit 宽度探测，
+        // 也绝不把日期截断成错的日期。
+        private static bool ShortDates => Loc.Table.Locale == LinkPocket.I18n.AppLocale.En;
+        public LinkPocket.I18n.LocValue UpdatedValue => LinkPocket.I18n.LocValue.Clock(UpdatedAt.ToLocalTime(), ShortDates);
+        public LinkPocket.I18n.LocValue UpdatedShortValue => LinkPocket.I18n.LocValue.Clock(UpdatedAt.ToLocalTime(), @short: true);
+        public LinkPocket.I18n.LocValue LastVisitedValue => LastVisitedAt is { } visited
+            ? LinkPocket.I18n.LocValue.Clock(visited.ToLocalTime(), ShortDates)
+            : Loc.K("clock.never");
+        public LinkPocket.I18n.LocValue LastVisitedShortValue => LastVisitedAt is { } visited
+            ? LinkPocket.I18n.LocValue.Clock(visited.ToLocalTime(), @short: true)
+            : Loc.K("clock.never");
+        public LinkPocket.I18n.LocValue VisitCountValue => Loc.K("count.viewsN", VisitCount);
+        public LinkPocket.I18n.LocValue CreatedValue => LinkPocket.I18n.LocValue.Clock(CreatedAt.ToLocalTime(), ShortDates);
+        public LinkPocket.I18n.LocValue CreatedShortValue => LinkPocket.I18n.LocValue.Clock(CreatedAt.ToLocalTime(), @short: true);
         public string DisplayUrl => Url.Length > 50 ? Url.Substring(0, 47) + "..." : Url;
         public string TitleLetter
         {

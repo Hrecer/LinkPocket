@@ -7,20 +7,22 @@
 - **做**：链接 CRUD、软删除、查看记账、批量移动/复制/记账、智能列表、全库统计、结构化查询、导入导出、元数据抓取。
 - **不做**：目录层级与路径（→ `Modules.Folders`）、回收站表读写（→ `Modules.Trash`）、查重策略（→ `Modules.Dedup`）。
 
-## 对外命令（16）
+## 对外命令（18）
 
 | 命令 | 类型 | 要点 |
 |---|---|---|
 | `links.list` | 查询 | 分页查询（目录/关键词/重要/日期过滤；缺省 `created_at desc`） |
 | `links.get` | 查询 | 单条；不存在 → `LP.STATE.001` |
-| `links.roots` | 查询 | 根级（未归类）书签，缺省 `created_at desc`，上限 `per_page=50` |
+| `links.roots` | 查询 | 根级（未归类）书签，缺省 `created_at desc`；默认 `per_page=0` = 全部，显式正数才限制 |
 | `links.stats` | 查询 | 全库统计（总数 / 回收站项数 / 根级数 / 按目录计数）；声明缓存（Counting） |
 | `links.smart_list` | 查询 | 四预设：`recently_added` / `recently_visited` / `recently_edited` / `most_visited` |
 | `links.query` | 查询 | ★ 结构化查询器：filter 白名单 + sort 下推 + page(size=0 全量) + fields 投影；**AI 用，不接 UI** |
 | `links.find_by_url` | 查询 | ★ 按 URL 精确找全部同址链接（Dedup 复用点） |
-| `links.metadata_fetch` | 查询 | 抓取网页元数据；**闸外执行**（`NetworkOutsideGate`），10s 超时；反爬兜底 = 三级阶梯：拦截页（403/503 或 200 + 人机校验页）**先**走浏览器指纹重试；普通拦截页仍空则交宿主的**浏览器内核渲染**（`PageRenderHook`）；Cloudflare 人机挑战在指纹仍被挑战时才开真实浏览器小窗（WebView2 对 CF 不下发勾选框，跳过）；结果带 `blocked_by_verification` 说明「站点不让拿」 |
+| `links.metadata_fetch` | 查询 | 抓取网页元数据；**闸外执行**（`NetworkOutsideGate`）；HTTP 10s 超时，浏览器渲染 / 人工验证另有预算，结果用 `elapsed_ms` 如实报告；反爬兜底 = 三级阶梯：拦截页（403/503 或 200 + 人机校验页）**先**走浏览器指纹重试；普通拦截页仍空则交宿主的**浏览器内核渲染**（`PageRenderHook`）；Cloudflare 人机挑战在指纹仍被挑战时才考虑人工；结果带 `resolution` / `needs_human_verification` / `human_verification_available` / `elapsed_ms`。**`interactive=true` 才允许开真实浏览器窗口**（仅用户主动发起；默认 false，遇到挑战立即返回需要人工的标记） |
+| `links.metadata_fetch_batch` | 查询 | 批量抓取（并发默认 4、上限 8；逐项结果 + 汇总）；**永不弹人机验证窗口**，需要人工的项标 `needs_human_verification`，调用方只对这些项再调用 `links.metadata_fetch interactive=true` |
 | `links.create` / `links.update` | 变更 | 新建（可选自动补全元数据）/ 编辑（仅显式传入字段） |
 | `links.trash` | 变更 | 移入回收站（软删，保留原 ID 与原位置快照） |
+| `links.trash_batch` | 变更 | 批量移入回收站（单命令单事务、集合化搬运；任一 ID 缺失/并发变化 → 整批回滚；逆向 = `trash.restore_batch`）；**UI 多选删除（浏览页/搜索页）只用它**，不再逐条 `links.trash` |
 | `links.visit_record` / `links.visit_batch` | 变更 | 记账查看：链接 +1，所在目录父链**去重后各刷新一次** |
 | `links.move_batch` / `links.copy_batch` | 变更 | 批量原子移动 / 复制（单命令单事务，避免 N× 往返） |
 | `links.export` | 变更 | 导出 JSON / CSV（`FileIo`） |
@@ -28,7 +30,7 @@
 ## 内部组件
 
 - `LinkSupport`：排序口径、日期解析、父链计数刷新（`RefreshLinkCountAsync`）。
-- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），主路径被拦（403/503，或 `Kernel.AntiBotInterstitial` 判为拦截页）时对同一地址重试一次（Cloudflare challenge 也先重试一次，不再判到即开窗）（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；①② 都拿不到可用文字时调 `PageRenderHook.Renderer`（WPF 宿主 = `PageRenderer`，WebView2 渲染，独立 15s 预算、串行、用完即销毁），未装配即跳过；**写路径例外**：`links.create(auto_fetch_metadata=true)` 传 `allowBrowserRender: false`，只跑 ①②（写闸内不起浏览器进程）。**人机型挑战（Cloudflare Turnstile）另走 `PageRenderHook.InteractiveRenderer`**：指纹重试后仍被挑战才开一个真实浏览器的独立小窗（专用 profile、`--app`、不置顶）请用户点一下，判据（标题真 + `readyState=complete` + 地址回到原站）成立即读标题/描述/图标并关窗；只在 `links.metadata_fetch` 上启用，批量与写路径一律不弹窗；触发时写 `links.metadata` 分类日志；同一指纹客户端经 `TryGetBytesImpersonatedAsync` 在装配时接到 favicon 下载兜底（`LinksModule.CreateHandlers` 挂 `FaviconCache.ImpersonatedDownloader`）。
+- `MetadataFetcher`：HttpClient 池化 + 超时 + 正则解析（`Kernel.IMetadataParser` 实现为 `RegexMetadataParser`）；反爬兜底 = curl-impersonate（`CurlImpersonate.Http`，Chrome 指纹），主路径被拦（403/503，或 `Kernel.AntiBotInterstitial` 判为拦截页）时对同一地址重试一次（Cloudflare challenge 也先重试一次，不再判到即开窗）（逐跳校验、SSRF 判据、正文上限、超时一律不豁免）；①② 都拿不到可用文字时调 `PageRenderHook.Renderer`（WPF 宿主 = `PageRenderer`，WebView2 渲染，独立 15s 预算、串行、用完即销毁）；无头宿主在真正需要这一档时才经 `PageRenderHook.EnsureAsync` 按需连接/拉起能力宿主，仍没有才跳过；**写路径例外**：`links.create(auto_fetch_metadata=true)` 传 `allowBrowserRender: false`，只跑 ①②（写闸内不起浏览器进程）。**人机型挑战（Cloudflare Turnstile）另走 `PageRenderHook.InteractiveRenderer`**：只有 `links.metadata_fetch` 的 `interactive=true` 才启用；指纹重试后仍被挑战才开一个真实浏览器的独立小窗（专用 profile、`--app`、不置顶）请用户点一下，判据（标题真 + `readyState=complete` + 地址回到原站）成立即读标题/描述/图标并关窗；默认调用、批量与写路径一律不弹窗；触发时写 `links.metadata` 分类日志；同一指纹客户端经 `TryGetBytesImpersonatedAsync` 在装配时接到 favicon 下载兜底（`LinksModule.CreateHandlers` 挂 `FaviconCache.ImpersonatedDownloader`）。
 - `LinkDtos`：模块内结果 DTO（`PagedLinkResult` 等）。
 
 ## 隐藏能力（★ 不接 UI）
@@ -39,6 +41,7 @@
 ## 测试
 
 - `ModulesTests.cs` → `LinksModuleTests`（生命周期/软删还原/父链刷新/四预设/结构化查询/批量/导出/幂等）
+- `MetadataBatchAndFaviconFetchTests.cs`（批量逐项失败不拖垮整批、重复地址去重、参数类型错）
 - `CommandCoverageTests.cs` → `LinksQueryCoverageTests`（find_by_url/roots/visit_batch 去重口径）
 - 端到端：`ProtocolSmoke` §2（数据流）、§6（links.query 白名单防注入 / batch / 幂等 / 干跑）、§9（10k 性能）
 

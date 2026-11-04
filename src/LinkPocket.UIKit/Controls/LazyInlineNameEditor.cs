@@ -13,7 +13,7 @@ namespace LinkPocket.Views;
 /// <para>
 /// <b>为什么需要它</b>：行模板里给每一行都常驻一个改名编辑框（UserControl + TextBox + 模板 +
 /// 5 条绑定 + KeyBinding）是万级列表滚动卡顿的最大单项——实测在 10 001 行上，
-/// 单是这一项就让"跳一次滚动"多花 16 ms（`PERF-LARGE-LIBRARY.md` §2.2）。
+/// 单是这一项就让"跳一次滚动"多花 16 ms（`PERFORMANCE.md` §3）。
 /// 而一屏里同一时刻**至多一行**在改名，没有理由为每一行预先造一个编辑框。
 /// </para>
 /// <para>

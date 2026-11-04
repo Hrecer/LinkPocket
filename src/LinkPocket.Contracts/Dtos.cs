@@ -224,6 +224,118 @@ public class MetadataDto
     /// （所有可用路径——含浏览器指纹与浏览器内核渲染——都没越过它）。
     /// 调用方据此把"没解析到"说成真实原因，而不是泛泛的"页面没写"。</summary>
     [JsonPropertyName("blocked_by_verification")] public bool BlockedByVerification { get; set; }
+
+    /// <summary>结果由哪一档取得：http / fingerprint / browser_render / human_verification / blocked。
+    /// 让调用方说得清"为什么慢"（浏览器渲染档会慢几秒），而不是把慢一律当成卡死。</summary>
+    [JsonPropertyName("resolution")] public string? Resolution { get; set; }
+
+    /// <summary>站点的人机挑战仍在等人点：标题/描述为空，但完成一次人工验证后可以重试成功。
+    /// 与 <see cref="BlockedByVerification"/> 的区别 = "有人点一下就能过" vs "这条路径就是被拒绝"。</summary>
+    [JsonPropertyName("needs_human_verification")] public bool NeedsHumanVerification { get; set; }
+
+    /// <summary>当前宿主是否具备打开人工验证窗口的能力（桌面宿主 / 已连接桌面能力桥 = true；
+    /// 纯无头宿主 = false）。调用方据此决定"请用户点一下"还是"换有界面的入口"。</summary>
+    [JsonPropertyName("human_verification_available")] public bool HumanVerificationAvailable { get; set; }
+
+    /// <summary>当前宿主是否有浏览器渲染兜底（桌面宿主 / 已连接桌面能力桥 = true）。</summary>
+    [JsonPropertyName("browser_render_available")] public bool BrowserRenderAvailable { get; set; }
+
+    /// <summary>本次抓取耗时（毫秒，含所有兜底档）。</summary>
+    [JsonPropertyName("elapsed_ms")] public long ElapsedMs { get; set; }
+}
+
+/// <summary>metadata 结果的取得档（机器面字符串；新增档只能追加，不能改名）。</summary>
+public static class MetadataResolutions
+{
+    public const string Http = "http";
+    public const string Fingerprint = "fingerprint";
+    public const string BrowserRender = "browser_render";
+    public const string HumanVerification = "human_verification";
+    public const string Blocked = "blocked";
+}
+
+/// <summary>批量元数据抓取的逐项结果：批处理**永不弹人机验证窗口**，需要人工的项按
+/// <see cref="NeedsHumanVerification"/> 标出，由调用方对这些项单独调用
+/// <c>links.metadata_fetch</c>（interactive=true）。大批量里只有一两项需要弹窗时，不会打断整批。</summary>
+public class MetadataBatchItemDto
+{
+    [JsonPropertyName("url")] public string Url { get; set; } = string.Empty;
+    [JsonPropertyName("ok")] public bool Ok { get; set; }
+    [JsonPropertyName("title")] public string? Title { get; set; }
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("favicon_url")] public string? FaviconUrl { get; set; }
+    [JsonPropertyName("resolution")] public string? Resolution { get; set; }
+    [JsonPropertyName("needs_human_verification")] public bool NeedsHumanVerification { get; set; }
+    [JsonPropertyName("human_verification_available")] public bool HumanVerificationAvailable { get; set; }
+    [JsonPropertyName("blocked_by_verification")] public bool BlockedByVerification { get; set; }
+    [JsonPropertyName("error_code")] public string? ErrorCode { get; set; }
+    [JsonPropertyName("error_message")] public string? ErrorMessage { get; set; }
+    [JsonPropertyName("retryable")] public bool Retryable { get; set; }
+    [JsonPropertyName("elapsed_ms")] public long ElapsedMs { get; set; }
+}
+
+public class MetadataBatchSummaryDto
+{
+    [JsonPropertyName("total")] public int Total { get; set; }
+    [JsonPropertyName("ok")] public int Ok { get; set; }
+    [JsonPropertyName("empty")] public int Empty { get; set; }
+    [JsonPropertyName("needs_human_verification")] public int NeedsHumanVerification { get; set; }
+    [JsonPropertyName("blocked")] public int Blocked { get; set; }
+    [JsonPropertyName("failed")] public int Failed { get; set; }
+    [JsonPropertyName("elapsed_ms")] public long ElapsedMs { get; set; }
+    [JsonPropertyName("browser_render_available")] public bool BrowserRenderAvailable { get; set; }
+    [JsonPropertyName("human_verification_available")] public bool HumanVerificationAvailable { get; set; }
+}
+
+public class MetadataBatchDto
+{
+    [JsonPropertyName("items")] public List<MetadataBatchItemDto> Items { get; set; } = new();
+    [JsonPropertyName("summary")] public MetadataBatchSummaryDto Summary { get; set; } = new();
+}
+
+/// <summary>favicon.fetch 的逐项结果：**等待缓存就绪**（同一 <c>FaviconCache</c> 管线，不另算一遍），
+/// 用 <see cref="Reason"/> 说明为什么没有图（内嵌 / 站点没给 / 被反爬 / 宿主不能画 SVG …）。</summary>
+public class FaviconFetchItemDto
+{
+    [JsonPropertyName("favicon_url")] public string FaviconUrl { get; set; } = string.Empty;
+    [JsonPropertyName("cached")] public bool Cached { get; set; }
+    [JsonPropertyName("cache_path")] public string? CachePath { get; set; }
+    [JsonPropertyName("reason")] public string Reason { get; set; } = string.Empty;
+    [JsonPropertyName("elapsed_ms")] public long ElapsedMs { get; set; }
+}
+
+public class FaviconFetchSummaryDto
+{
+    [JsonPropertyName("total")] public int Total { get; set; }
+    [JsonPropertyName("cached")] public int Cached { get; set; }
+    [JsonPropertyName("failed")] public int Failed { get; set; }
+    [JsonPropertyName("elapsed_ms")] public long ElapsedMs { get; set; }
+    /// <summary>当前宿主是否能光栅化 SVG（桌面宿主 / 已连接能力桥 = true）。</summary>
+    [JsonPropertyName("svg_rasterizer_available")] public bool SvgRasterizerAvailable { get; set; }
+}
+
+public class FaviconFetchDto
+{
+    [JsonPropertyName("items")] public List<FaviconFetchItemDto> Items { get; set; } = new();
+    [JsonPropertyName("summary")] public FaviconFetchSummaryDto Summary { get; set; } = new();
+}
+
+/// <summary>favicon.fetch 的失败原因（机器面字符串；追加式）。</summary>
+public static class FaviconFetchReasons
+{
+    public const string Cached = "cached";
+    public const string Empty = "empty";
+    public const string InlineData = "inline_data";
+    public const string InvalidUrl = "invalid_url";
+    public const string InvalidTarget = "invalid_target";
+    public const string NotFound = "not_found";
+    public const string Blocked = "blocked";
+    public const string TooLarge = "too_large";
+    public const string SvgRasterizerUnavailable = "svg_rasterizer_unavailable";
+    public const string Backoff = "backoff";
+    public const string Timeout = "timeout";
+    public const string Cancelled = "cancelled";
+    public const string Failed = "failed";
 }
 
 public class LinkCountsDto

@@ -22,6 +22,15 @@ public interface ILinkRepository
 
     Task<int> CountAsync(LinkFilter filter, CancellationToken ct);
 
+    /// <summary>
+    /// 搜索快照首屏：一次取到命中总数与前 N 行（仅 title 排序）。
+    /// 纯文本范围先取首页（不满一页 = 已拿全，稀疏命中只扫一遍），满页再补 count；
+    /// path 范围沿有序索引一次扫描同时计数 + 收首页 ID（避免对稀疏子树做两遍全扫）。
+    /// 两段结果在同一读事务内取得，供会话快照使用。
+    /// </summary>
+    Task<(int Total, IReadOnlyList<LinkPocket.Contracts.LinkDto> FirstPage)> CountAndFirstPageAsync(
+        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, CancellationToken ct);
+
     /// <summary>按直接归属文件夹统计（不含递归；递归计数走 ITreeService）。</summary>
     Task<IReadOnlyDictionary<FolderId, int>> CountByFolderAsync(CancellationToken ct);
 

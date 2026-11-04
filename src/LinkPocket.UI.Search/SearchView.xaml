@@ -4,12 +4,50 @@
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             xmlns:local="clr-namespace:LinkPocket.Views"
              Background="{DynamicResource App.Surface.Base}"
              Focusable="True" FocusVisualStyle="{x:Null}">
 
     <!-- ===== 搜索页：视图只负责装配与渲染，逻辑在 SearchViewModel ===== -->
 
     <UserControl.Resources>
+        <!-- 位置列：ListId → 目录路径（解析器由 SearchViewModel 注入） -->
+        <local:SearchPathConverter x:Key="SearchPathText"/>
+
+        <!-- 占位行：日期 / 访问次数 / 图标是“尚未加载”，不是真实数据——隐藏但保留占位 -->
+        <Style x:Key="SearchPlaceholderHidden" TargetType="FrameworkElement">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                    <Setter Property="Visibility" Value="Hidden"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 首帧紧凑行：只画标题/URL（真实数据），与完整行同高。
+             十万级结果集的首帧如果直接实例化完整行模板（地理路径 + 4 个日期 + 图标 + 高亮），
+             WPF 首帧布局要 50–70ms；先付 10ms 把"真实标题 + 正确滚动范围"放上屏，
+             下一帧再换回完整模板补全列——首屏可见时间与列完整时间分开计量。 -->
+        <DataTemplate x:Key="SearchRowCompactTemplate">
+            <Border x:Name="SearchRowCompact" Tag="DataRow" Cursor="Hand" HorizontalAlignment="Stretch" Height="57.9"
+                    Margin="8,1" Padding="16,9" Background="Transparent" SnapsToDevicePixels="True"
+                    PreviewMouseLeftButtonDown="SearchRow_PreviewMouseLeftButtonDown">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <!-- 只解析名称列宽：标题/URL 停在真实列内，下一帧补全其它列时不横向跳动 -->
+                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="28,0,0,0">
+                        <TextBlock Text="{Binding DisplayTitle}" FontSize="14" FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Url}" FontSize="11.5" Margin="0,3,0,0"
+                                   Foreground="{DynamicResource App.Text.Secondary}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <!-- 胶囊搜索栏内的透明输入框：视觉由外层 SearchBarShell 承担 -->
         <Style x:Key="SearchCapsuleBox" TargetType="TextBox">
             <Setter Property="Background" Value="Transparent"/>
@@ -245,21 +283,116 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 截断提示（只在命中数超过渲染上限时出词）：**段落级说明文本**——宽度内容自适应、不钉宽，
-                     走 LocFit 自适应通道（放不下缩字号，绝不截断）；上限 380 保证窄窗口下也不撑破工具行。
-                     ⚠️ 这类"数据读数"必须写出来：静默截断比卡顿更难被发现（用户会以为"库里就这么点"）。 -->
+                <!-- 后台补全进度（只说明“还在加载剩余命中”，不是截断）：加载完毕即空。
+                     ⚠️ 绝不能在这里写“仅显示前 N 条”——全部命中都在同一张虚拟化表里，只是数据分块到达。 -->
                 <TextBlock Text="{Binding Path=(views:LocFit.Chosen), RelativeSource={RelativeSource Self}}"
-                           views:LocFit.Text="{loc:FitValue ResultNotice}" views:LocFit.Mode="Shrink"
+                           views:LocFit.Text="{loc:FitValue LoadingNotice}" views:LocFit.Mode="Shrink"
                            MaxWidth="380" FontSize="12.5" VerticalAlignment="Center" Margin="14,0,0,0"
                            Foreground="{DynamicResource App.Text.Secondary}"/>
             </StackPanel>
 
-            <!-- 结果区：完全可复用、数据驱动的 SortableDataTable（表头排序/表格化行/空态一体）；
-                 列定义/行交互/空态渲染由 code-behind 按 SearchViewModel 装配。
-                 SelectionEnabled=False = **外部托管**：选中由 VM 的 ListSelection 承载，
-                 绘制经 ApplySelectionPaint 投影（多选 Ctrl/Shift 由 code-behind 按修饰键路由）。 -->
+            <!-- 结果区：共享 SortableDataTable，**模板模式**（与浏览页同一种行虚拟化）：
+                 结果集从首帧起就是**全部命中**（十万级也是一条连续列表）：总数条占位 + 视口预取真实行，
+                 其余后台原位填充；视口只实例化约 11 个行容器（缓存 0 页），不存在“只显示前 N 条”。
+                 列定义/表头/列宽仍由 code-behind 装配；选中由 VM 的 ListSelection 承载，
+                 行底色绑定 LinkItem.IsSelected（覆盖式投影，多选 Ctrl/Shift 由 code-behind 路由）。 -->
             <views:SortableDataTable x:Name="ResultsTable" Grid.Row="2" Margin="12,0,12,8"
-                                     SelectionEnabled="False"/>
+                                     SelectionEnabled="False" RowCacheLength="0">
+                <views:SortableDataTable.ItemTemplate>
+                    <DataTemplate>
+                        <!-- 行容器约定：Tag="DataRow" 供销测量与"点行不算点空白"识别；
+                             固定高 57.9 + 上下 Margin 1 = 行距 59.9：extent 从首帧到全量恒定，
+                             也避免 10 万行下内容驱动的逐行测量（首帧布局的成本大头在行模板实例化）。 -->
+                        <Border Tag="DataRow" Cursor="Hand" HorizontalAlignment="Stretch" Height="57.9"
+                                PreviewMouseLeftButtonDown="SearchRow_PreviewMouseLeftButtonDown">
+                            <Border.Style>
+                                <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                    <Setter Property="Margin" Value="8,1"/>
+                                    <Setter Property="Padding" Value="16,9"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                    <Style.Triggers>
+                                        <!-- 派生触发器优先于基样式悬停：选中行悬停不换色 -->
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Grid VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[3], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[4], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[5], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- 名称：favicon（缓存命中直接画、未命中异步补）+ 标题 + URL 副行；
+                                     标题/URL 的高亮区间与引擎同源（TextMatch）。 -->
+                                <Grid Grid.Column="0" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <local:SearchFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
+                                                              Width="18" Height="18" Margin="0,0,10,0"
+                                                              VerticalAlignment="Center"
+                                                              Style="{StaticResource SearchPlaceholderHidden}"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <local:HighlightTextBlock RowText="{Binding DisplayTitle}"
+                                                                  HighlightQuery="{Binding HighlightQuery}"
+                                                                  FontSize="14" FontWeight="SemiBold"
+                                                                  TextTrimming="CharacterEllipsis"/>
+                                        <local:HighlightTextBlock RowText="{Binding Url}"
+                                                                  HighlightQuery="{Binding HighlightQuery}"
+                                                                  NormalBrushKey="App.Text.Secondary"
+                                                                  FontSize="11.5" Margin="0,3,0,0"
+                                                                  TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 位置：目录路径（用户数据，不翻译；根 token 随语言变） -->
+                                <TextBlock Grid.Column="1" FontSize="12.5" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource App.Text.Secondary}">
+                                    <TextBlock.Text>
+                                        <MultiBinding Converter="{StaticResource SearchPathText}">
+                                            <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                            <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                            <Binding Path="ListId"/>
+                                            <Binding Path="IsPlaceholder"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+
+                                <!-- 时间/次数列：轻量文案单元格（日期英文已用短式，不做宽度探测、不截断） -->
+                                <local:LocalizedTextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12.5"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          Foreground="{DynamicResource App.Text.Secondary}"
+                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          TextValue="{Binding UpdatedValue}"/>
+                                <local:LocalizedTextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="12.5"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          Foreground="{DynamicResource App.Text.Secondary}"
+                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          TextValue="{Binding LastVisitedValue}"/>
+                                <local:LocalizedTextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="12.5"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          Foreground="{DynamicResource App.Text.Secondary}"
+                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          TextValue="{Binding VisitCountValue}"/>
+                                <local:LocalizedTextBlock Grid.Column="5" VerticalAlignment="Center" FontSize="12.5"
+                                                          TextTrimming="CharacterEllipsis"
+                                                          Foreground="{DynamicResource App.Text.Secondary}"
+                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          TextValue="{Binding CreatedValue}"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </views:SortableDataTable.ItemTemplate>
+            </views:SortableDataTable>
 
             <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的刷新时亮；
                  事件驱动的静默刷新不亮。放在表格之后 = z 序在上。 -->

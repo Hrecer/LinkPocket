@@ -14,7 +14,8 @@ namespace LinkPocket.Modules.Folders;
 /// </summary>
 internal static class FolderViewCore
 {
-    public static async Task<FolderContentsDto> BuildAsync(ICommandContext ctx, JsonElement args, EngineLimits limits)
+    public static async Task<FolderContentsDto> BuildAsync(
+        ICommandContext ctx, JsonElement args, bool withTreeLinks = false, bool withBreadcrumb = true)
     {
         var folderId = CommandArgs.OptionalString(args, "folder_id");
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "title";
@@ -23,11 +24,10 @@ internal static class FolderViewCore
         var perPage = Math.Max(0, CommandArgs.OptionalInt(args, "per_page", 0));
         var ct = ctx.Ct;
 
-        // 页大小：0 = 调用方要全量 → 按引擎上限取；显式值超上限 → 夹到上限。
-        // 两种情况都必须在响应里可见（truncated），绝不静默截断。
-        var wantsAll = perPage == 0;
-        var effectivePerPage = wantsAll ? limits.MaxPageSize : Math.Min(perPage, limits.MaxPageSize);
-        var exceedsLimit = !wantsAll && perPage > limits.MaxPageSize;
+        // 外部目录命令默认全量：0 = 全部（PageSpec.Size 0 → SQL 无 LIMIT）；
+        // 显式正数 = 调用方主动分页。引擎不再用 MaxPageSize 静默截断，准确优先。
+        var effectivePerPage = perPage;
+        var effectivePage = effectivePerPage == 0 ? 1 : page;
 
         var isRoot = FolderIds.IsRoot(folderId);
         // 全量文件夹 + 计数两口径 + 链接：同一 UoW，读者见提交边界的一致快照
@@ -47,18 +47,17 @@ internal static class FolderViewCore
             dto.FolderName = FolderIds.RootToken;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == null));
             dto.DirectLinkCount = await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
-            dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
             dto.Links = (await ctx.Uow.Links.ListDtosAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { Unfiled = true },
                 Sort = sort,
-                Page = new PageSpec(page, effectivePerPage),
+                Page = new PageSpec(effectivePage, effectivePerPage),
             }, ct)).ToList();
-            dto.CurrentPage = page;
-            dto.LastPage = perPage > 0
-                ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
+            dto.CurrentPage = effectivePage;
+            dto.LastPage = effectivePerPage > 0
+                ? Math.Max(1, (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage))
                 : 1;
-            dto.Breadcrumb = [FolderIds.RootToken];
+            if (withBreadcrumb) dto.Breadcrumb = [FolderIds.RootToken];
         }
         else
         {
@@ -68,19 +67,18 @@ internal static class FolderViewCore
             dto.FolderName = folder.Name;
             dto.SubFolders = SortFolders(allFolders.Where(f => f.ParentId == folderId));
             dto.DirectLinkCount = counts.Direct.TryGetValue(new FolderId(folderId!), out var direct) ? direct : 0;
-            dto.Truncated = exceedsLimit || (wantsAll && dto.DirectLinkCount > effectivePerPage);
             dto.Links = (await ctx.Uow.Links.ListDtosAsync(new LinkQuerySpec
             {
                 Filter = new LinkFilter { FolderId = new FolderId(folderId!) },
                 Sort = sort,
-                Page = new PageSpec(page, effectivePerPage),
+                Page = new PageSpec(effectivePage, effectivePerPage),
             }, ct)).ToList();
-            dto.CurrentPage = page;
+            dto.CurrentPage = effectivePage;
             // 总页数由直接子链接计数推出（SQL 端 COUNT，无需把全部行拉回来数）
-            dto.LastPage = perPage > 0
-                ? (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage)
+            dto.LastPage = effectivePerPage > 0
+                ? Math.Max(1, (int)Math.Ceiling(dto.DirectLinkCount / (double)effectivePerPage))
                 : 1;
-            dto.Breadcrumb = FolderSupport.BuildBreadcrumb(folder, allFolders);
+            if (withBreadcrumb) dto.Breadcrumb = FolderSupport.BuildBreadcrumb(folder, allFolders);
         }
 
         // —— overview 附加数据（同一 UoW，单快照）——
@@ -90,10 +88,18 @@ internal static class FolderViewCore
             ? dto.DirectLinkCount                                // 根分支已算过根级数，直接复用
             : await ctx.Uow.Links.CountAsync(new LinkFilter { Unfiled = true }, ct);
 
-        // 目录树的链接叶子**不再由本命令搬运**（`TreeLinks` 恒为 null）：它已改为界面侧
-        // "节点展开时按需加载"（消费方用 `links.query` 取单个目录的直接链接，且只要名称/地址投影）。
-        // 原实现每次刷新都搬全库链接：真实库 27 064 条 → 响应体 7.18～13.5 MB、wire 4.3～6.6 s，
-        // 而界面一眼用到的只有"展开着的那些节点"（见 PERF-LARGE-LIBRARY.md）。
+        // 外部 folders.overview 默认携带全库活动链接（树叶子数据源）；界面显式传
+        // include_tree_links=false —— 浏览页左栏只显示文件夹，不再为每次刷新搬全库链接。
+        // 这一项是外部命令的完整数据面，不能因为界面不用就删掉（准确优先）。
+        if (withTreeLinks)
+        {
+            dto.TreeLinks = (await ctx.Uow.Links.ListAsync(new LinkQuerySpec
+            {
+                Filter = new LinkFilter(),
+                Sort = [new SortSpec("title", SortDir.Asc)],
+                Page = new PageSpec(1, 0),
+            }, ct)).Select(l => l.ToTreeDto()).ToList();
+        }
 
         return dto;
     }

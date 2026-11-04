@@ -6,6 +6,9 @@ using System.Text;
 
 namespace LinkPocket.Contracts;
 
+/// <summary>favicon 缓存结果：<see cref="Cached"/> = 磁盘已有可用图标；否则 <see cref="Reason"/> 说明原因。</summary>
+public sealed record FaviconFetchOutcome(bool Cached, string Reason);
+
 /// <summary>
 /// favicon 磁盘缓存的**唯一实现**：目录约定、文件名（SHA-256 + 扩展名白名单）、SVG 回落口径、
 /// 下载降级链（原地址 → 站点根 <c>/favicon.ico</c> → 聚合源）全在这一处。
@@ -37,7 +40,7 @@ public static class FaviconCache
     private static readonly SemaphoreSlim Gate = new(MaxConcurrent, MaxConcurrent);
 
     /// <summary>同地址在飞去重：键 = 解析后地址。</summary>
-    private static readonly ConcurrentDictionary<string, Task<bool>> InFlight = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Task<FaviconFetchOutcome>> InFlight = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 失败负面缓存（进程内）：键 = 解析后地址，值 = 在此之前不再重试的时刻。
@@ -164,8 +167,9 @@ public static class FaviconCache
     /// 可很多站点的根目录根本没有 <c>favicon.ico</c>，于是图标直接消失。
     /// </para>
     /// <para>
-    /// <b>实现在宿主侧</b>：只有 WPF 宿主有浏览器内核（用它把 SVG 画成 PNG）。CLI / MCP 没有渲染能力，
-    /// 钩子为 <c>null</c> 时退回旧口径（回落站点根）。
+    /// <b>实现在宿主侧</b>：有 UI 线程的宿主有浏览器内核（用它把 SVG 画成 PNG）；CLI / MCP 经能力桥
+    /// 复用同一实例——桌面宿主开着就直连，否则真正遇到 SVG 时才按需启动能力宿主；仍不可用时钩子为
+    /// <c>null</c>，退回旧口径（回落站点根）。
     /// </para>
     /// </remarks>
     public static Func<string, CancellationToken, Task<byte[]?>>? SvgRasterizer { get; set; }
@@ -211,6 +215,9 @@ public static class FaviconCache
 
         // 页面声明的图标是 SVG（这类站点常见）：位图校验会拒掉，但 WPF 也画不了 SVG——
         // 先落到同目录的临时 .svg，交给宿主光栅化成 PNG，再当图标存。
+        if (image is null && LooksLikeSvg(bytes) && SvgRasterizer is null)
+            await PageRenderHook.EnsureAsync(ct).ConfigureAwait(false);
+
         if (image is null && LooksLikeSvg(bytes) && SvgRasterizer is { } rasterize)
         {
             var tmp = Path.Combine(CacheDirectory, "raster-" + Guid.NewGuid().ToString("N") + ".svg");
@@ -285,73 +292,120 @@ public static class FaviconCache
     /// 确保已缓存：已存在 → true；否则按降级链下载并写入（成功都写"解析后地址"的缓存路径，
     /// 与读方命中口径一致）。同地址并发调用共享同一次下载。
     /// </summary>
-    public static Task<bool> EnsureCachedAsync(string? faviconUrl, CancellationToken ct = default)
+    public static async Task<bool> EnsureCachedAsync(string? faviconUrl, CancellationToken ct = default)
+        => (await EnsureCachedDetailedAsync(faviconUrl, ct).ConfigureAwait(false)).Cached;
+
+    /// <summary>
+    /// 与 <see cref="EnsureCachedAsync"/> 同一条管线；额外返回**为什么没有图**，供
+    /// <c>favicon.fetch</c> 逐项如实上报（内嵌 / 站内没有 / 被反爬 / 宿主不能画 SVG …）。
+    /// </summary>
+    public static Task<FaviconFetchOutcome> EnsureCachedDetailedAsync(
+        string? faviconUrl, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(faviconUrl)) return Task.FromResult(false);
+        if (string.IsNullOrWhiteSpace(faviconUrl))
+            return Task.FromResult(new FaviconFetchOutcome(false, FaviconFetchReasons.Empty));
 
         // 内嵌图标：字节就在地址里，没有可下载的东西（界面自己解码），一个包都不发。
-        if (IsInlineData(faviconUrl)) return Task.FromResult(false);
+        if (IsInlineData(faviconUrl))
+            return Task.FromResult(new FaviconFetchOutcome(false, FaviconFetchReasons.InlineData));
 
         var resolvedUrl = ResolveFaviconUrl(faviconUrl);
+        if (!IsHttpUrl(resolvedUrl))
+            return Task.FromResult(new FaviconFetchOutcome(false, FaviconFetchReasons.InvalidUrl));
+
         var cachePath = GetCacheFilePath(resolvedUrl);
-        if (File.Exists(cachePath)) return Task.FromResult(true);
+        if (File.Exists(cachePath))
+            return Task.FromResult(new FaviconFetchOutcome(true, FaviconFetchReasons.Cached));
 
         // 退避窗口内不再重试（失败多为"该站点没有图标"，每次刷新重发一遍纯属白烧）。
         if (FailedUntil.TryGetValue(resolvedUrl, out var until) && until > DateTimeOffset.UtcNow)
-            return Task.FromResult(false);
+            return Task.FromResult(new FaviconFetchOutcome(false, FaviconFetchReasons.Backoff));
 
         return InFlight.GetOrAdd(resolvedUrl, key => DownloadAndCacheAsync(key, cachePath, ct));
     }
 
-    private static async Task<bool> DownloadAndCacheAsync(string resolvedUrl, string cachePath, CancellationToken ct)
+    private static bool IsHttpUrl(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static async Task<FaviconFetchOutcome> DownloadAndCacheAsync(
+        string resolvedUrl, string cachePath, CancellationToken ct)
     {
         try
         {
+            // 与元数据抓取同一道连接前判据：favicon 下载也不能成为访问本机 / 链路本地的后门。
+            if (!await TargetGuard.IsAllowedAsync(new Uri(resolvedUrl), ct).ConfigureAwait(false))
+                return new FaviconFetchOutcome(false, FaviconFetchReasons.InvalidTarget);
+
+            // SVG 需要浏览器内核：无头宿主在这里按需装配（装配失败就按原口径回落站点根）。
+            if (IsSvgUrl(resolvedUrl) && SvgRasterizer is null)
+                await PageRenderHook.EnsureAsync(ct).ConfigureAwait(false);
+
             await Gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
                 byte[]? bytes = null;
+                var reason = FaviconFetchReasons.Failed;
+                var svgUnavailable = false;
 
                 // SVG 图标：先让宿主把它画成 PNG（WPF 解不了 SVG）。
                 // 光栅化拿不到 → 下面按原链路回落站点根 / 聚合源，且**绝不把 SVG 原文当位图落盘**。
                 if (IsSvgUrl(resolvedUrl))
-                    bytes = SvgRasterizer is { } rasterize
-                        ? await rasterize(resolvedUrl, ct).ConfigureAwait(false)
-                        : null;
+                {
+                    if (SvgRasterizer is { } rasterize)
+                        bytes = await rasterize(resolvedUrl, ct).ConfigureAwait(false);
+                    else
+                        svgUnavailable = true;
+
+                    if (bytes is not { Length: > 0 }) reason = FaviconFetchReasons.SvgRasterizerUnavailable;
+                }
                 else
-                    bytes = await TryDownloadAsync(resolvedUrl, ct).ConfigureAwait(false);
+                {
+                    (bytes, reason) = await TryDownloadAsync(resolvedUrl, ct).ConfigureAwait(false);
+                }
 
                 if (bytes is { Length: > 0 } && LooksLikeSvg(bytes)) bytes = null;
                 bytes = AcceptImage(bytes, resolvedUrl);
+                if (bytes is null && reason == FaviconFetchReasons.Cached)
+                    reason = FaviconFetchReasons.Failed;   // 防御：原始下载成功但内容不是图片
 
                 if (bytes == null)
                 {
                     var root = BuildDefaultFaviconUrl(resolvedUrl);
                     if (root.Length > 0 && root != resolvedUrl)
-                        bytes = AcceptImage(await TryDownloadAsync(root, ct).ConfigureAwait(false), root);
+                    {
+                        var (fallback, fallbackReason) = await TryDownloadAsync(root, ct).ConfigureAwait(false);
+                        bytes = AcceptImage(fallback, root);
+                        if (bytes is null) reason = fallbackReason;
+                    }
                 }
 
                 if (bytes == null)
                 {
                     MarkFailed(resolvedUrl);
-                    return false;
+                    if (svgUnavailable) reason = FaviconFetchReasons.SvgRasterizerUnavailable;
+                    return new FaviconFetchOutcome(false, reason);
                 }
 
                 Directory.CreateDirectory(CacheDirectory);
                 await File.WriteAllBytesAsync(cachePath, bytes, ct).ConfigureAwait(false);
                 FailedUntil.TryRemove(resolvedUrl, out _);   // 成功即解除退避
-                return true;
+                return new FaviconFetchOutcome(true, FaviconFetchReasons.Cached);
             }
             finally
             {
                 Gate.Release();
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return new FaviconFetchOutcome(false, FaviconFetchReasons.Cancelled);
+        }
         catch (Exception ex)
         {
             MarkFailed(resolvedUrl);
             LpLog.Error($"favicon cache write failed: {ShortUrl(resolvedUrl)} - {ex.Message}", ex);
-            return false;
+            return new FaviconFetchOutcome(false, FaviconFetchReasons.Failed);
         }
         finally
         {
@@ -364,17 +418,18 @@ public static class FaviconCache
         => FailedUntil[resolvedUrl] = DateTimeOffset.UtcNow + FailureBackoff;
 
     /// <summary>下载一个地址的字节。普通路径被反爬墙拦下（403/503 / 连接被断）时，
-    /// 经 <see cref="ImpersonatedDownloader"/>（浏览器指纹，装配于组合根）重试一次。</summary>
-    private static async Task<byte[]?> TryDownloadAsync(string url, CancellationToken ct)
+    /// 经 <see cref="ImpersonatedDownloader"/>（浏览器指纹，装配于组合根）重试一次。
+    /// 返回的 reason 只在失败时有意义（成功固定为 <see cref="FaviconFetchReasons.Cached"/>）。</summary>
+    private static async Task<(byte[]? Bytes, string Reason)> TryDownloadAsync(string url, CancellationToken ct)
     {
-        var (bytes, botWall) = await TryDownloadPlainAsync(url, ct).ConfigureAwait(false);
-        if (bytes != null) return bytes;
-        if (!botWall || ImpersonatedDownloader is not { } fallback) return null;
+        var (bytes, botWall, reason) = await TryDownloadPlainAsync(url, ct).ConfigureAwait(false);
+        if (bytes != null) return (bytes, FaviconFetchReasons.Cached);
+        if (!botWall || ImpersonatedDownloader is not { } fallback) return (null, reason);
 
         try
         {
             var impersonated = await fallback(url, ct).ConfigureAwait(false);
-            if (impersonated is { Length: > 0 and <= MaxBytes }) return impersonated;
+            if (impersonated is { Length: > 0 and <= MaxBytes }) return (impersonated, FaviconFetchReasons.Cached);
 
             LpLog.Error($"favicon impersonated download failed (empty or over {MaxBytes} bytes): {ShortUrl(url)}", null);
         }
@@ -382,11 +437,12 @@ public static class FaviconCache
         {
             LpLog.Error($"favicon impersonated download threw: {ShortUrl(url)} - {ex.Message}", ex);
         }
-        return null;
+        return (null, reason);
     }
 
     /// <summary>普通路径下载。<c>BotWall</c> = 失败形态像反爬墙（403/503 或连接异常）→ 值得交给指纹兜底再试。</summary>
-    private static async Task<(byte[]? Bytes, bool BotWall)> TryDownloadPlainAsync(string url, CancellationToken ct)
+    private static async Task<(byte[]? Bytes, bool BotWall, string Reason)> TryDownloadPlainAsync(
+        string url, CancellationToken ct)
     {
         try
         {
@@ -395,13 +451,19 @@ public static class FaviconCache
             {
                 LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {ShortUrl(url)}", null);
                 var wall = response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable;
-                return (null, wall);
+                var status = (int)response.StatusCode;
+                var reason = response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone
+                    ? FaviconFetchReasons.NotFound
+                    : status is 401 or 403 or 405 or 406 or 451 || status >= 500
+                        ? FaviconFetchReasons.Blocked
+                        : FaviconFetchReasons.Failed;
+                return (null, wall, reason);
             }
 
             if (response.Content.Headers.ContentLength is long declared && declared > MaxBytes)
             {
                 LpLog.Error($"favicon download refused (declared {declared} bytes > {MaxBytes}): {ShortUrl(url)}", null);
-                return (null, false);
+                return (null, false, FaviconFetchReasons.TooLarge);
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -413,18 +475,23 @@ public static class FaviconCache
                 if (buffer.Length + read > MaxBytes)
                 {
                     LpLog.Error($"favicon download refused (body over {MaxBytes} bytes): {ShortUrl(url)}", null);
-                    return (null, false);
+                    return (null, false, FaviconFetchReasons.TooLarge);
                 }
                 buffer.Write(chunk, 0, read);
             }
 
-            return (buffer.Length == 0 ? null : buffer.ToArray(), false);
+            return (buffer.Length == 0 ? null : buffer.ToArray(), false,
+                buffer.Length == 0 ? FaviconFetchReasons.NotFound : FaviconFetchReasons.Cached);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return (null, false, FaviconFetchReasons.Cancelled);
         }
         catch (Exception ex)
         {
             // 连接被断（TLS 握手重置等）也是反爬墙的常见形态 → 交给指纹兜底判定
             LpLog.Error($"favicon download threw: {ShortUrl(url)} - {ex.Message}", ex);
-            return (null, true);
+            return (null, true, FaviconFetchReasons.Blocked);
         }
     }
 

@@ -55,6 +55,8 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     /// 其余形态（搜索/多条件过滤）语义面太大，仍走 EF（<see cref="BuildPageQuery"/>，过滤规则只此一份）。</summary>
     public async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDtosAsync(LinkQuerySpec spec, CancellationToken ct)
     {
+        if (TryBuildRawSearchSql(spec, out var searchSql, out var searchParameters))
+            return await ReadDtosRawAsync(searchSql, searchParameters, ct);
         if (TryBuildRawPageSql(spec, out var sql, out var parameters))
             return await ReadDtosRawAsync(sql, parameters, ct);
         return await ListDtosEfAsync(spec, ct);
@@ -78,6 +80,69 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
                 UpdatedAt = l.UpdatedAt,
             })
             .ToListAsync(ct);
+
+    /// <summary>
+    /// 搜索页直读：谓词 = <see cref="LinkSearchScope"/>（title/url/description LIKE ∪ folder_id IN），
+    /// 排序 = title COLLATE NOCASE [DESC], id [DESC]，只服务 UI/explain 的缺省排序形态；
+    /// 其它排序字段或混入其它过滤 → false（回 EF，语义面不做第二套实现）。
+    /// 原生 reader 省掉 EF 查询编译/投影；覆盖索引 `idx_links_search` 让排序沿索引走。
+    /// </summary>
+    private static bool TryBuildRawSearchSql(
+        LinkQuerySpec spec, out string sql, out (string Name, object? Value)[] parameters)
+    {
+        sql = string.Empty;
+        parameters = [];
+
+        var f = spec.Filter;
+        if (f.SearchScope is not { } scope) return false;
+        if (!IsAreaFilter(f with { SearchScope = null })) return false;
+        if (spec.Page.Size <= 0) return false;
+
+        if (spec.Sort.Count > 1) return false;
+        var clause = spec.Sort.Count == 1 ? spec.Sort[0] : new SortSpec("title", SortDir.Asc);
+        if (clause.Field != "title") return false;
+
+        if (!TryBuildSearchWhereSql(scope, out var whereSql, out var searchParameters)) return false;
+
+        var dir = clause.Dir == SortDir.Desc ? "DESC" : "ASC";
+        var sb = new StringBuilder(
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links WHERE ");
+        sb.Append('(').Append(whereSql).Append(')');
+        sb.Append($" ORDER BY title COLLATE NOCASE {dir}, id {dir} LIMIT @take OFFSET @skip");
+
+        var list = new List<(string Name, object? Value)>(searchParameters.Length + 2);
+        list.AddRange(searchParameters);
+        list.Add(("@take", spec.Page.Size));
+        list.Add(("@skip", spec.Page.Skip));
+        sql = sb.ToString();
+        parameters = [.. list];
+        return true;
+    }
+
+    /// <summary>搜索谓词的唯一 SQL 构造（计数与取页共用；用户输入只经参数绑定）。</summary>
+    private static bool TryBuildSearchWhereSql(
+        LinkSearchScope scope, out string where, out (string Name, object? Value)[] parameters)
+    {
+        where = string.Empty;
+        parameters = [];
+        var conditions = new List<string>(4);
+        if (scope.Title) conditions.Add("title LIKE @q ESCAPE '\\'");
+        if (scope.Url) conditions.Add("url LIKE @q ESCAPE '\\'");
+        if (scope.Description) conditions.Add("description LIKE @q ESCAPE '\\'");
+        var folders = scope.Folders.Select(x => x.Value).ToArray();
+        if (folders.Length > 0)
+            conditions.Add("folder_id IN (" + string.Join(",", folders.Select((_, i) => "@f" + i)) + ")");
+        if (conditions.Count == 0) return false;
+
+        var list = new List<(string Name, object? Value)>(folders.Length + 1)
+        {
+            ("@q", $"%{EscapeLike(scope.Query)}%"),
+        };
+        for (var i = 0; i < folders.Length; i++) list.Add(("@f" + i, folders[i]));
+        where = string.Join(" OR ", conditions);
+        parameters = [.. list];
+        return true;
+    }
 
     /// <summary>
     /// 直读 SQL 生成（只服务"目录页形态"）：谓词 = 恰好一个归属条件（<c>folder_id = @folder</c> | <c>folder_id IS NULL</c>），
@@ -158,24 +223,25 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         using var reader = await cmd.ExecuteReaderAsync(ct);
         var rows = new List<LinkPocket.Contracts.LinkDto>();
         while (await reader.ReadAsync(ct))
-        {
-            rows.Add(new LinkPocket.Contracts.LinkDto
-            {
-                LinkId = reader.GetString(0),
-                Url = reader.GetString(1),
-                Title = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-                Description = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-                FaviconUrl = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
-                ListId = reader.IsDBNull(5) ? null : reader.GetString(5),
-                LastVisitedAt = reader.IsDBNull(6) ? null : reader.GetDateTime(6),
-                VisitCount = reader.GetInt32(7),
-                IsImportant = reader.GetBoolean(8),
-                CreatedAt = reader.GetDateTime(9),
-                UpdatedAt = reader.GetDateTime(10),
-            });
-        }
+            rows.Add(ReadDto(reader));
         return rows;
     }
+
+    private static LinkPocket.Contracts.LinkDto ReadDto(Microsoft.Data.Sqlite.SqliteDataReader reader)
+        => new()
+        {
+            LinkId = reader.GetString(0),
+            Url = reader.GetString(1),
+            Title = reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+            Description = reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+            FaviconUrl = reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            ListId = reader.IsDBNull(5) ? null : reader.GetString(5),
+            LastVisitedAt = reader.IsDBNull(6) ? null : reader.GetDateTime(6),
+            VisitCount = reader.GetInt32(7),
+            IsImportant = reader.GetBoolean(8),
+            CreatedAt = reader.GetDateTime(9),
+            UpdatedAt = reader.GetDateTime(10),
+        };
 
     public async Task<IReadOnlyList<string>> ListFaviconUrlsAsync(CancellationToken ct)
         => await db.Links.AsNoTracking()
@@ -191,10 +257,107 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         return await q.ToListAsync(ct);
     }
 
-    public async Task<int> CountAsync(LinkFilter filter, CancellationToken ct)
+    /// <summary>
+    /// 首屏快路径：
+    /// <list type="bullet">
+    /// <item>纯文本范围：**先取首页**——不满一页说明已经拿全（总数 = 首页行数，稀疏命中只扫一遍）；
+    /// 满页再补一次 count（密集命中首页沿索引只走几行，count 是唯一必付的全扫）。</item>
+    /// <item>path 范围（目录子树）：沿有序索引**一次扫描**同时计数 + 收集首页 ID；
+    /// 稀疏子树不必为 count 和首页各扫一遍。</item>
+    /// </list>
+    /// 两种路径都在同一读事务内完成。
+    /// </summary>
+    public async Task<(int Total, IReadOnlyList<LinkPocket.Contracts.LinkDto> FirstPage)> CountAndFirstPageAsync(
+        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, CancellationToken ct)
     {
-        // 直读（B 路线）：目录页的计数形态（folder = X / 根级）——单条 COUNT 直发，省掉 EF 查询管线；
+        if (!scope.Any) return (0, []);
+        var size = Math.Max(0, pageSize);
+        var desc = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
+
+        // 只有 title 排序有对应的原生有序索引；其它排序沿用既有 count + page 语义。
+        if (!string.IsNullOrEmpty(sortBy) && !string.Equals(sortBy, "title", StringComparison.OrdinalIgnoreCase))
+            return await CountAndPageAsync(scope, sortBy, sortOrder, size, ct);
+        if (!TryBuildSearchWhereSql(scope, out var where, out var parameters))
+            return (0, []);
+
+        if (size == 0)
+            return (await CountAsync(new LinkFilter { SearchScope = scope }, ct), []);
+        if (scope.Folders.Count == 0)
+        {
+            var page = await ListDtosAsync(new LinkQuerySpec
+            {
+                Filter = new LinkFilter { SearchScope = scope },
+                Sort = [new SortSpec("title", desc ? SortDir.Desc : SortDir.Asc)],
+                Page = new PageSpec(1, size),
+            }, ct);
+            if (page.Count < size) return (page.Count, page);   // 不满一页 = 没有下一页
+            var total = await CountAsync(new LinkFilter { SearchScope = scope }, ct);
+            return (total, page);
+        }
+
+        // path 范围：一次有序扫描，读到全部命中以计数，只保留首页 ID。
+        var dir = desc ? "DESC" : "ASC";
+        var scanSql = "SELECT id FROM links WHERE (" + where + ")"
+            + $" ORDER BY title COLLATE NOCASE {dir}, id {dir}";
+        var wanted = new List<string>(Math.Min(size, 4096));
+        var count = 0;
+        using (var scan = await RawSql.CreateAsync(db, scanSql, ct))
+        {
+            foreach (var (name, value) in parameters) scan.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            using var reader = await scan.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                count++;
+                if (wanted.Count < size) wanted.Add(reader.GetString(0));
+            }
+        }
+
+        if (count == 0) return (0, []);
+        var names = string.Join(",", wanted.Select((_, i) => "@id" + i));
+        var pageRows = await ReadDtosRawAsync(
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count,"
+            + " is_important, created_at, updated_at FROM links WHERE id IN (" + names + ")",
+            wanted.Select((id, i) => ("@id" + i, (object?)id)).ToArray(), ct);
+
+        var byId = pageRows.ToDictionary(r => r.LinkId, StringComparer.Ordinal);
+        var ordered = new List<LinkPocket.Contracts.LinkDto>(wanted.Count);
+        foreach (var id in wanted)
+            if (byId.TryGetValue(id, out var dto)) ordered.Add(dto);
+        return (count, ordered);
+    }
+
+    private async Task<(int Total, IReadOnlyList<LinkPocket.Contracts.LinkDto> FirstPage)> CountAndPageAsync(
+        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, CancellationToken ct)
+    {
+        var filter = new LinkFilter { SearchScope = scope };
+        var total = await CountAsync(filter, ct);
+        if (total == 0 || pageSize <= 0) return (total, []);
+        var page = await ListDtosAsync(new LinkQuerySpec
+        {
+            Filter = filter,
+            Sort = [new SortSpec(sortBy, string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase)
+                ? SortDir.Desc : SortDir.Asc)],
+            Page = new PageSpec(1, pageSize),
+        }, ct);
+        return (total, page);
+    }
+
+    public async Task<int> CountAsync(LinkFilter filter, CancellationToken ct)
+    {        // 直读（B 路线）：目录页的计数形态（folder = X / 根级）——单条 COUNT 直发，省掉 EF 查询管线；
         // 其余形态仍走 EF（过滤规则单一出处）。
+        // 搜索计数也直读：与取页共用同一谓词构造，避免 EF COUNT 的查询管线开销。
+        if (filter.SearchScope is { } scope
+            && IsAreaFilter(filter with { SearchScope = null })
+            && TryBuildSearchWhereSql(scope, out var searchWhere, out var searchParameters))
+        {
+            using var searchCmd = await RawSql.CreateAsync(db,
+                "SELECT COUNT(*) FROM links WHERE (" + searchWhere + ")", ct);
+            foreach (var (name, value) in searchParameters)
+                searchCmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            return Convert.ToInt32(await searchCmd.ExecuteScalarAsync(ct),
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         var folderKey = filter.FolderId?.Value;
         var byFolder = folderKey is not null && filter.Unfiled is null && IsAreaFilter(filter);
         var byRoot = folderKey is null && filter.Unfiled == true && IsAreaFilter(filter);

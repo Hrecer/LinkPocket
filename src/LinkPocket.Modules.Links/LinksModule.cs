@@ -24,6 +24,7 @@ public static class LinksModule
             new LinkStatsHandler(),
             new LinkSmartListHandler(),
             new LinkMetadataFetchHandler(),
+            new LinkMetadataFetchBatchHandler(),
             new LinkQueryHandler(),
             new LinkFindByUrlHandler(),
             new LinkCreateHandler(),

@@ -54,6 +54,10 @@ public sealed partial class EngineClient
     public Task<JsonElement> FaviconCacheStatsAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<JsonElement>("favicon.cache_stats", null, o, ct);
 
+    /// <summary>Wait for favicon cache availability for many URLs and return per-item status (cached / inline_data / not_found / blocked / svg_rasterizer_unavailable / timeout / ...); uses the same cache pipeline as prefetch and the UI</summary>
+    public Task<FaviconFetchDto> FaviconFetchAsync(IReadOnlyList<string> faviconUrls, int? timeoutMs = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<FaviconFetchDto>("favicon.fetch", new { favicon_urls = faviconUrls, timeout_ms = timeoutMs }, o, ct);
+
     /// <summary>Queue links with missing favicons for background prefetch (returns immediately; concurrency 4, deduplicated, backoff on failure)</summary>
     public Task<CommandResult<JsonElement>> FaviconPrefetchAsync(IReadOnlyList<string>? linkIds = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<JsonElement>("favicon.prefetch", new { link_ids = linkIds }, o, ct);
@@ -100,9 +104,9 @@ public sealed partial class EngineClient
     public Task<CommandResult<FolderMoveBatchResult>> FolderMoveBatchAsync(IReadOnlyList<string> folderIds, string? targetParentId = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<FolderMoveBatchResult>("folders.move_batch", new { folder_ids = folderIds, target_parent_id = targetParentId }, o, ct);
 
-    /// <summary>A snapshot matching the browser main view: folder page (contents) + full folder tree + root link count (parameters as folders.contents)</summary>
-    public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, CallOptions? o = null, CancellationToken ct = default)
-        => QueryAsync<FolderContentsDto>("folders.overview", new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
+    /// <summary>A full snapshot: folder page (contents) + full folder tree + all tree links + root link count</summary>
+    public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, bool? includeTreeLinks = null, bool? includeBreadcrumb = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<FolderContentsDto>("folders.overview", new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage, include_tree_links = includeTreeLinks, include_breadcrumb = includeBreadcrumb }, o, ct);
 
     /// <summary>Reorder folders under a parent (the order of item_ids is the new order; parent_id default = root level)</summary>
     public Task<CommandResult<FolderSortResult>> FolderSortAsync(IReadOnlyList<string> itemIds, string? parentId = null, CallOptions? o = null, CancellationToken ct = default)
@@ -142,15 +146,19 @@ public sealed partial class EngineClient
     public Task<PagedLinksDto> LinkListAsync(string? listId = null, string? search = null, bool? isImportant = null, string? dateFrom = null, string? dateTo = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<PagedLinksDto>("links.list", new { list_id = listId, search, is_important = isImportant, date_from = dateFrom, date_to = dateTo, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage }, o, ct);
 
-    /// <summary>Fetch page metadata (title / og: / description / favicon; 10s timeout, runs outside the write gate)</summary>
-    public Task<MetadataDto> LinkMetadataFetchAsync(string url, CallOptions? o = null, CancellationToken ct = default)
-        => QueryAsync<MetadataDto>("links.metadata_fetch", new { url }, o, ct);
+    /// <summary>Fetch page metadata (title / og: / description / favicon; HTTP has a 10s timeout and runs outside the write gate; optional browser-render / interactive verification tiers take longer and report elapsed_ms). interactive=true may open a real browser window for human verification (user-initiated only); the result reports resolution / needs_human_verification / human_verification_available / elapsed_ms</summary>
+    public Task<MetadataDto> LinkMetadataFetchAsync(string url, bool? interactive = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<MetadataDto>("links.metadata_fetch", new { url, interactive }, o, ct);
+
+    /// <summary>Fetch page metadata for many URLs (HTTP -&gt; browser fingerprint -&gt; optional browser render). Never opens a human-verification window: items that need a human are marked needs_human_verification, and the caller can retry just those with links.metadata_fetch interactive=true. Returns per-item status + summary</summary>
+    public Task<MetadataBatchDto> LinkMetadataFetchBatchAsync(IReadOnlyList<string> urls, int? concurrency = null, bool? render = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<MetadataBatchDto>("links.metadata_fetch_batch", new { urls, concurrency, render }, o, ct);
 
     /// <summary>Move links to a target folder in batch (one atomic transaction; target_list_id default = root level)</summary>
     public Task<CommandResult<LinkBatchResult>> LinkMoveBatchAsync(IReadOnlyList<string> linkIds, string? targetListId = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<LinkBatchResult>("links.move_batch", new { link_ids = linkIds, target_list_id = targetListId }, o, ct);
 
-    /// <summary>Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; capped at per_page=50)</summary>
+    /// <summary>Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; default per_page=0 returns all)</summary>
     public Task<List<LinkDto>> LinkRootsAsync(string? sortBy = null, string? sortOrder = null, int? perPage = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<LinkDto>>("links.roots", new { sort_by = sortBy, sort_order = sortOrder, per_page = perPage }, o, ct);
 
@@ -229,6 +237,10 @@ public sealed partial class EngineClient
     /// <summary>Count links matching the search predicate (same scopes as search.links: title/url/description/path)</summary>
     public Task<int> SearchCountAsync(string query, bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<int>("search.count", new { query, search_title = searchTitle, search_url = searchUrl, search_description = searchDescription, search_path = searchPath }, o, ct);
+
+    /// <summary>Explain search hits (matched fields per link; default all results, total included)</summary>
+    public Task<SearchExplanation> SearchExplainAsync(string query, bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null, int? page = null, int? perPage = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<SearchExplanation>("search.explain", new { query, search_title = searchTitle, search_url = searchUrl, search_description = searchDescription, search_path = searchPath, page, per_page = perPage }, o, ct);
 
     /// <summary>Search links (four scopes: title/url/description/path; default sort title ascending)</summary>
     public Task<List<LinkDto>> SearchLinksAsync(string query, bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, CallOptions? o = null, CancellationToken ct = default)

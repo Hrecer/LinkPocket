@@ -1,7 +1,19 @@
+using System.Diagnostics;
 using LinkPocket.Contracts;
 using LinkPocket.Kernel;
 
 namespace LinkPocket.Modules.Links;
+
+/// <summary>
+/// 元数据抓取的完整结果：页面数据 + **由哪一档取得** + 是否还需要人工点一下 + 宿主能否提供人工窗口。
+/// 命令层把后三项如实带给调用方（界面、内置 Agent、CLI、MCP 说的是同一件事）。
+/// </summary>
+internal sealed record MetadataFetchOutcome(
+    PageMetadata Metadata,
+    string Resolution,
+    bool NeedsHumanVerification,
+    bool HumanVerificationAvailable,
+    long ElapsedMs);
 
 /// <summary>
 /// 元数据抓取<b>编排</b>（internal）：HTTP → 浏览器指纹 → 浏览器内核渲染，三级阶梯；
@@ -44,18 +56,39 @@ internal static class MetadataFetcher
     /// <param name="allowHumanVerification">
     /// 是否允许"开一个专用窗口请用户点一下"（Cloudflare Turnstile 这类必须真人放行的墙）。
     /// **只许用户主动发起的抓取传 <c>true</c>**（编辑器里点"解析"）；批量导入、后台预取一律 <c>false</c>
-    /// —— 没人看着的时候弹窗不是帮忙，是打扰。无界面宿主（CLI / MCP）没有这个钩子，传了也不会弹。
+    /// —— 没人看着的时候弹窗不是帮忙，是打扰。无头宿主（CLI / MCP）经桌面能力桥复用同一窗口；
+    /// 桥未连接时传了也不会弹，结果里的 <c>human_verification_available</c> 会如实为 false。
     /// </param>
     public static async Task<PageMetadata> FetchAsync(
         string url, CancellationToken ct, bool allowBrowserRender = true, bool allowHumanVerification = false)
+        => (await FetchDetailedAsync(url, ct, allowBrowserRender, allowHumanVerification).ConfigureAwait(false)).Metadata;
+
+    /// <summary>
+    /// 抓取并解析页面元数据（完整结果）。失败抛 <see cref="EngineException"/>（NETWORK_ERROR，可重试）。
+    /// </summary>
+    /// <param name="allowBrowserRender">
+    /// 是否允许最后一档（浏览器内核渲染）。**写路径必须传 <c>false</c>**：<c>links.create(auto_fetch_metadata=true)</c>
+    /// 的抓取发生在写闸内，起一个浏览器进程最坏能把全局写闸按住 15 s —— "网络在闸外"这条口径不能靠兜底绕过去。
+    /// 渲染只服务闸外的查询（<c>links.metadata_fetch</c>）。
+    /// </param>
+    /// <param name="allowHumanVerification">
+    /// 是否允许"开一个专用窗口请用户点一下"（Cloudflare Turnstile 这类必须真人放行的墙）。
+    /// **只许用户主动发起的抓取传 <c>true</c>**；批量一律 <c>false</c>，由结果里的
+    /// <see cref="MetadataFetchOutcome.NeedsHumanVerification"/> 标出、再由调用方逐项决定是否重试。
+    /// </param>
+    public static async Task<MetadataFetchOutcome> FetchDetailedAsync(
+        string url, CancellationToken ct, bool allowBrowserRender = true, bool allowHumanVerification = false)
     {
+        var started = Stopwatch.GetTimestamp();
+
         if (!MetadataTransport.IsValidUrl(url))
             throw new EngineException(EngineErrors.Of(
                 EngineErrors.InvalidUrl, $"URL is not a valid absolute http/https address: {url}"));
 
         try
         {
-            return await FetchCoreAsync(url, ct, allowBrowserRender, allowHumanVerification).ConfigureAwait(false);
+            return await FetchCoreAsync(url, ct, allowBrowserRender, allowHumanVerification,
+                started).ConfigureAwait(false);
         }
         catch (TransportStatusException refused) when (allowBrowserRender)
         {
@@ -65,18 +98,24 @@ internal static class MetadataFetcher
             if (refused.IsHumanChallenge && allowHumanVerification)
             {
                 var verified = await VerifyWithUserAsync(new Uri(url), ct).ConfigureAwait(false);
-                if (verified is not null) return verified;
+                if (verified is not null)
+                    return new MetadataFetchOutcome(verified, MetadataResolutions.HumanVerification,
+                        false, HumanAvailable(), ElapsedMs(started));
 
-                // 用户关掉窗口 / 超时 / 点了还是不放行：按"站点拒绝"如实说，不报错、不挡保存
+                // 用户关掉窗口 / 超时 / 点了还是不放行：按"站点拒绝"如实说，不报错、不挡保存；
+                // 同时把"需要人点一下"带出去，调用方才能解释为什么没拿到。
                 LpLog.Info($"human verification not completed [{refused.StatusCode}]: {new Uri(url).Host}",
                     category: "links.metadata");
-                return BlockedMetadata(new Uri(url));
+                return new MetadataFetchOutcome(BlockedMetadata(new Uri(url)), MetadataResolutions.Blocked,
+                    true, HumanAvailable(), ElapsedMs(started));
             }
 
             // 站点**明确拒绝了这次请求**（拿到了响应，只是状态码不是 2xx）。这类拒绝常常只是"它在挑客户端"，
             // 真页面要靠浏览器跑一遍才给——所以先把最后一档交给浏览器内核。
             var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
-            if (recovered is not null) return recovered;
+            if (recovered is not null)
+                return new MetadataFetchOutcome(recovered, MetadataResolutions.BrowserRender,
+                    false, HumanAvailable(), ElapsedMs(started));
 
             // 浏览器也进不去：如果这个状态码本身就在拒绝访问（401/403/5xx…），就不要给用户一句
             // "解析失败（详情见日志）"——那既没说清原因，也像是我们坏了。如实说"站点要求浏览器验证"，
@@ -85,7 +124,8 @@ internal static class MetadataFetcher
             {
                 LpLog.Info($"metadata blocked by the site [{refused.StatusCode}], browser render did not pass either",
                     category: "links.metadata");
-                return BlockedMetadata(new Uri(url));
+                return new MetadataFetchOutcome(BlockedMetadata(new Uri(url)), MetadataResolutions.Blocked,
+                    refused.IsHumanChallenge, HumanAvailable(), ElapsedMs(started));
             }
 
             throw ToEngineException(refused);
@@ -95,7 +135,9 @@ internal static class MetadataFetcher
             // 连接层面的失败（DNS / 超时 / TLS / 跳转超限）：浏览器也许能过，先试一次；
             // 仍然不行就**如实报错**——那不是"站点不让拿"，而是真的连不上。
             var recovered = await RenderInsteadAsync(new Uri(url), ct).ConfigureAwait(false);
-            if (recovered is not null) return recovered;
+            if (recovered is not null)
+                return new MetadataFetchOutcome(recovered, MetadataResolutions.BrowserRender,
+                    false, HumanAvailable(), ElapsedMs(started));
             throw;
         }
         catch (TransportStatusException refused)
@@ -121,6 +163,13 @@ internal static class MetadataFetcher
         }
     }
 
+    private static long ElapsedMs(long started)
+        => (long)Math.Min(long.MaxValue,
+            (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency);
+
+    /// <summary>结果里的"能否请人点一下"取**当前**装配状态：按需装配可能刚刚才把窗口能力接上。</summary>
+    private static bool HumanAvailable() => PageRenderHook.InteractiveRenderer is not null;
+
     /// <summary>
     /// 传输层失败里"值得再让浏览器试一次"的那一类：网络/状态码层面的拒绝。
     /// <b>不含</b> <see cref="EngineErrors.InvalidUrl"/>——地址非法、重定向跑出 http/https 属于判据拒绝，
@@ -144,8 +193,9 @@ internal static class MetadataFetcher
     private static PageMetadata BlockedMetadata(Uri target)
         => RegexMetadataParser.Instance.Parse(string.Empty, target) with { BlockedByVerification = true };
 
-    private static async Task<PageMetadata> FetchCoreAsync(
-        string url, CancellationToken ct, bool allowBrowserRender, bool allowHumanVerification)
+    private static async Task<MetadataFetchOutcome> FetchCoreAsync(
+        string url, CancellationToken ct, bool allowBrowserRender, bool allowHumanVerification,
+        long started)
     {
         var (html, finalUri) = await MetadataTransport.DownloadAsync(url, ct).ConfigureAwait(false);
         var interstitial = AntiBotInterstitial.Detect(html);
@@ -153,13 +203,27 @@ internal static class MetadataFetcher
         var humanChallenge = interstitial && AntiBotInterstitial.IsHumanChallenge(html);
         var metadata = RegexMetadataParser.Instance.Parse(html, finalUri);
 
+        var resolution = MetadataResolutions.Http;
+        var needsHuman = false;
+
         if (!HasUsableText(metadata))
-            metadata = await RecoverAsync(
+        {
+            var recovered = await RecoverAsync(
                     finalUri, metadata, interstitial, humanChallenge, allowBrowserRender, allowHumanVerification, ct)
                 .ConfigureAwait(false);
+            metadata = recovered.Metadata;
+            resolution = recovered.Resolution;
+            needsHuman = recovered.NeedsHumanVerification;
+        }
 
         // 走到这里还是只有空壳 ⇒ 如实带出"被验证页挡住了"这一事实（界面据此说真话）
-        return metadata with { BlockedByVerification = interstitial && !HasUsableText(metadata) };
+        var blocked = interstitial && !HasUsableText(metadata);
+        if (blocked) resolution = MetadataResolutions.Blocked;
+        if (humanChallenge && !HasUsableText(metadata)) needsHuman = true;
+
+        return new MetadataFetchOutcome(
+            metadata with { BlockedByVerification = blocked },
+            resolution, needsHuman, HumanAvailable(), ElapsedMs(started));
     }
 
     /// <summary>
@@ -170,6 +234,8 @@ internal static class MetadataFetcher
     /// </summary>
     private static async Task<PageMetadata?> RenderInsteadAsync(Uri target, CancellationToken ct)
     {
+        // 无头宿主：真正要渲染时才按需启动能力宿主（普通 HTTP 成功不会走到这里）。
+        await PageRenderHook.EnsureAsync(ct).ConfigureAwait(false);
         if (PageRenderHook.Renderer is not { } renderer) return null;
 
         try
@@ -199,6 +265,8 @@ internal static class MetadataFetcher
     /// </summary>
     private static async Task<PageMetadata?> VerifyWithUserAsync(Uri target, CancellationToken ct)
     {
+        // 只有用户显式要求开窗（interactive=true）才会走到这里；按需装配后再判断窗口能力。
+        await PageRenderHook.EnsureAsync(ct).ConfigureAwait(false);
         if (PageRenderHook.InteractiveRenderer is not { } renderer) return null;
 
         try
@@ -261,15 +329,16 @@ internal static class MetadataFetcher
     /// <summary>
     /// 两级兜底：① 拦截页改用浏览器指纹再读一次（纯指纹墙这一下就过）；
     /// ② 仍没有可用文字 → 交宿主的浏览器内核渲染一次（JS 校验页与 CSR 空壳页都靠它）。
+    /// 返回值同时说明"到达了哪一档"以及"是否还差用户点一下"。
     /// </summary>
-    private static async Task<PageMetadata> RecoverAsync(
+    private static async Task<(PageMetadata Metadata, string Resolution, bool NeedsHumanVerification)> RecoverAsync(
         Uri finalUri, PageMetadata metadata, bool interstitial, bool humanChallenge,
         bool allowBrowserRender, bool allowHumanVerification, CancellationToken ct)
     {
         // 人机型挑战：传输层已先让浏览器指纹客户端试过一次（403/503 那一支），
         // 200 挑战页这里也先试一次；仍被挑战才把窗口摆到用户面前。
         // 离屏 WebView2 对 Cloudflare 挑战连勾选框都不下发，不浪费那 15 秒。
-        if (humanChallenge && allowHumanVerification)
+        if (humanChallenge)
         {
             if (await MetadataTransport.TryGetImpersonatedHtmlAsync(finalUri, ct).ConfigureAwait(false) is { } fingerprinted
                 && !AntiBotInterstitial.Detect(fingerprinted)
@@ -277,11 +346,21 @@ internal static class MetadataFetcher
             {
                 LpLog.Info($"human challenge cleared by browser fingerprint: {finalUri.Host}", category: "links.metadata");
                 metadata = RegexMetadataParser.Instance.Parse(fingerprinted, finalUri);
-                if (HasUsableText(metadata)) return metadata;
+                if (HasUsableText(metadata))
+                    return (metadata, MetadataResolutions.Fingerprint, false);
             }
 
-            var verified = await VerifyWithUserAsync(finalUri, ct).ConfigureAwait(false);
-            return verified ?? metadata;
+            if (allowHumanVerification)
+            {
+                var verified = await VerifyWithUserAsync(finalUri, ct).ConfigureAwait(false);
+                return verified is not null
+                    ? (verified, MetadataResolutions.HumanVerification, false)
+                    : (metadata, MetadataResolutions.Blocked, true);
+            }
+
+            // 不弹窗的入口（批量 / 无界面宿主 / 外部 Agent 默认）：把"需要人点一下"作为结果带出去，
+            // 由调用方决定是否对该项单独重试；绝不在批处理中开一堆窗口。
+            return (metadata, MetadataResolutions.Blocked, true);
         }
 
         if (interstitial
@@ -290,24 +369,29 @@ internal static class MetadataFetcher
         {
             LpLog.Info($"anti-bot page cleared by browser fingerprint: {finalUri.Host}", category: "links.metadata");
             metadata = RegexMetadataParser.Instance.Parse(retried, finalUri);
-            if (HasUsableText(metadata)) return metadata;
+            if (HasUsableText(metadata))
+                return (metadata, MetadataResolutions.Fingerprint, false);
         }
 
-        // 写路径不启用：见 FetchAsync 的 allowBrowserRender
-        if (!allowBrowserRender || PageRenderHook.Renderer is not { } renderer)
-            return metadata;   // 无界面宿主（CLI / MCP）同样停在这里：仅 HTTP 的既有口径
+        // 写路径不启用（见 allowBrowserRender）：仅 HTTP 的既有口径
+        if (!allowBrowserRender)
+            return (metadata, interstitial ? MetadataResolutions.Blocked : MetadataResolutions.Http, false);
+
+        await PageRenderHook.EnsureAsync(ct).ConfigureAwait(false);
+        if (PageRenderHook.Renderer is not { } renderer)
+            return (metadata, interstitial ? MetadataResolutions.Blocked : MetadataResolutions.Http, false);
 
         var rendered = await TryRenderAsync(renderer, finalUri, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(rendered?.Title) && string.IsNullOrWhiteSpace(rendered?.Description))
-            return metadata;
+            return (metadata, interstitial ? MetadataResolutions.Blocked : MetadataResolutions.Http, false);
 
-        return metadata with
+        return (metadata with
         {
             Title = string.IsNullOrWhiteSpace(rendered!.Title) ? metadata.Title : rendered.Title.Trim(),
             Description = string.IsNullOrWhiteSpace(rendered.Description)
                 ? metadata.Description
                 : rendered.Description.Trim(),
-        };
+        }, MetadataResolutions.BrowserRender, false);
     }
 
     /// <summary>

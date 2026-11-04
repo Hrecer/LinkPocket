@@ -38,6 +38,10 @@ public sealed class AiToolCatalog
     private static readonly HashSet<string> NeverExposed = new(StringComparer.Ordinal)
     {
         "maintenance.reinit",
+        // 界面内部快照会话（有状态、由 SearchView 成对 open/close）；外部 AI 一律用全量的 search.links/count。
+        "search.session_open",
+        "search.session_page",
+        "search.session_close",
     };
 
     /// <summary>

@@ -47,6 +47,28 @@ public class BrowserViewModelTests
     }
 
     [Fact]
+    public async Task 换目录整表替换标记_原地刷新不再标记()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await client.FolderCreateAsync("文件夹");
+            await client.LinkCreateAsync("https://a.example", title: "链接", autoFetchMetadata: false);
+            var vm = new BrowserViewModel(client);
+
+            await vm.LoadAsync(null);
+            Assert.True(vm.RowsReplacedInLastRefresh);   // 首开：行对象整体替换（视图据此走紧凑首帧）
+
+            await vm.RefreshPreservingSelectionAsync();
+            Assert.False(vm.RowsReplacedInLastRefresh);  // 同一批行对象：原地写回，不应再换模板
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task 进入子目录_面包屑与父链_返回根恢复()
     {
         var (client, _, dbPath) = AppTestEnv.Create();

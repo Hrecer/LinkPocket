@@ -42,11 +42,20 @@ public sealed class EngineHost : IDisposable
     /// 界面宿主用它做精确失效与精确提示；命令行/网关自身是写入方，一般不用它。</summary>
     public IChangeFeed? ChangeFeed => Composition.ChangeFeed;
 
-    /// <summary>全部能力的自描述清单（79 条：业务 + 编排 + 批）。</summary>
+    /// <summary>外部宿主可见的自描述清单（85 条：66 业务 + 16 编排 + 3 批；不含 3 条 UI 专用 search.session_*）。</summary>
     public EngineManifest Manifest { get; }
 
     /// <summary>按名索引的命令描述符。</summary>
     public IReadOnlyDictionary<string, CommandDescriptor> Commands { get; }
+
+    /// <summary>能力桥客户端：桌面宿主开着就直连；没开则真正需要浏览器能力时按需拉起能力宿主。</summary>
+    private readonly CapabilityBridgeClient _capabilityBridge;
+    private readonly object _hookGate = new();
+    private bool _hooksSaved;
+    private Func<string, CancellationToken, Task<RenderedPageMetadata?>>? _previousRenderer;
+    private Func<string, CancellationToken, Task<RenderedPageMetadata?>>? _previousInteractive;
+    private Func<string, CancellationToken, Task<byte[]?>>? _previousSvg;
+    private Func<CancellationToken, Task<bool>>? _previousEnsure;
 
     /// <param name="databasePath">库文件路径；null = 按统一发现规则自动解析（见 <see cref="AppPaths.ResolveDatabasePath(string?, out string)"/>）。</param>
     /// <param name="logToStderr">是否装配日志管道（stderr JSONL + 内存环）。缺省 false（LpLog 为空实现，不落盘不刷屏）。</param>
@@ -62,6 +71,9 @@ public sealed class EngineHost : IDisposable
 
         Composition = EngineComposer.Compose(DatabasePath, new ComposeOptions
         {
+            // 外部宿主（CLI / MCP）不注册界面专用的搜索快照会话：外部命令默认全量，
+            // search.session_* 是有状态 UI 内部实现，不进入外部工具面。
+            IncludeSearchSessions = false,
             // ⚠️ **不与 WPF 宿主共用撤销日志**：共用会有两个真问题——
             // ① 两个进程并发写同一个文件会互相覆盖（丢更新）；
             // ② WPF 宿主启动时把日志载入内存后，本进程追加的条目它看不见，
@@ -74,9 +86,78 @@ public sealed class EngineHost : IDisposable
         Catalog = OrchestrationHost.CreateCatalog(Composition.Registry);
         Manifest = Catalog.Manifest();
         Commands = Manifest.Commands.ToDictionary(c => c.Name, StringComparer.Ordinal);
+
+        // 无头宿主复用同一份浏览器能力（同一数据库 = 同一条管道）。
+        // 桌面宿主开着 → 启动时直接接上；没开 → 先把"按需装配"入口交出去，
+        // 真正走到渲染 / SVG / 人机验证时再启动能力宿主。装配失败就保持钩子为空，
+        // 命令结果会如实上报能力不可用，绝不假装窗口已经弹过。
+        _capabilityBridge = new CapabilityBridgeClient(DatabasePath);
+        _previousEnsure = PageRenderHook.EnsureProvider;
+        PageRenderHook.EnsureProvider = EnsureCapabilitiesAsync;
+
+        if (_capabilityBridge.TryConnectNow())
+        {
+            AttachCapabilityHooks();
+            LpLog.Info(
+                $"capability bridge attached (render={_capabilityBridge.RenderAvailable}, " +
+                $"verify={_capabilityBridge.VerifyAvailable}, svg={_capabilityBridge.SvgAvailable})",
+                category: "host.capability");
+        }
+        else
+        {
+            LpLog.Debug("no capability provider at startup; attach on demand", "host.capability");
+        }
+    }
+
+    private async Task<bool> EnsureCapabilitiesAsync(CancellationToken ct)
+    {
+        if (!await _capabilityBridge.EnsureAsync(ct).ConfigureAwait(false)) return false;
+        AttachCapabilityHooks();
+        return true;
+    }
+
+    /// <summary>按**当前**握手结果挂载可用能力；缺失的能力恢复原钩子（重连后能力可能变少）。</summary>
+    private void AttachCapabilityHooks()
+    {
+        lock (_hookGate)
+        {
+            if (!_hooksSaved)
+            {
+                _previousRenderer = PageRenderHook.Renderer;
+                _previousInteractive = PageRenderHook.InteractiveRenderer;
+                _previousSvg = FaviconCache.SvgRasterizer;
+                _hooksSaved = true;
+            }
+
+            PageRenderHook.Renderer = _capabilityBridge.RenderAvailable
+                ? _capabilityBridge.RenderAsync
+                : _previousRenderer;
+            PageRenderHook.InteractiveRenderer = _capabilityBridge.VerifyAvailable
+                ? _capabilityBridge.VerifyAsync
+                : _previousInteractive;
+            FaviconCache.SvgRasterizer = _capabilityBridge.SvgAvailable
+                ? _capabilityBridge.RasterizeAsync
+                : _previousSvg;
+        }
     }
 
     public CommandDescriptor? Descriptor(string command) => Commands.GetValueOrDefault(command);
 
-    public void Dispose() => _log?.Dispose();
+    public void Dispose()
+    {
+        // 恢复原钩子（同一进程多宿主 / 测试串联时不留全局污染）。
+        lock (_hookGate)
+        {
+            if (_hooksSaved)
+            {
+                PageRenderHook.Renderer = _previousRenderer;
+                PageRenderHook.InteractiveRenderer = _previousInteractive;
+                FaviconCache.SvgRasterizer = _previousSvg;
+                _hooksSaved = false;
+            }
+        }
+        PageRenderHook.EnsureProvider = _previousEnsure;
+        _capabilityBridge.Dispose();
+        _log?.Dispose();
+    }
 }

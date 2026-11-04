@@ -24,16 +24,13 @@ internal sealed class SearchLinksHandler : ICommandHandler
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
                 enumValues: QueryParsing.LinkSortFieldNames),
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
-            // 分页（可选；per_page 缺省 0 = 全量，向后兼容）。命中总数用 search.count（同谓词 COUNT，
-            // 不物化实体不过管道），界面"命中 N 条 / 截断提示"由它供数。
-            ParamSpec.Opt<int>("page", "Page index (1-based, default 1)"),
-            ParamSpec.Opt<int>("per_page", "Items per page (0 = all, default 0)"),
+            // 外部命令默认全量：不传 / 0 / 负数 = 全量；显式正数 = 调用方主动分页。
+            // 界面走 search.session_* 的有界快照会话，不依赖本命令的分页。
+            ParamSpec.Opt<int>("page", "Page index (1-based, default 1; ignored when per_page is 0)"),
+            ParamSpec.Opt<int>("per_page", "Items per page (default 0 = all results; positive = page size)"),
         ],
         Caps: CommandCaps.Query,
-        // 四个范围都是 `LIKE '%…%'`（子串匹配，索引帮不上忙，只能全表扫）——这条查询在界面上
-        // 会被反复触发（范围热切换、事件刷新、防抖补跑），同一次数据状态下的重复调用不该各扫一遍。
-        // 缓存键含参数；依赖事件 = 链接/文件夹/回收站变化，写操作照旧立即失效（不牺牲"不展示过期结果"）。
-        Cache: CachePolicy.Of(10, DomainEventNames.LinksChanged, DomainEventNames.FoldersChanged, DomainEventNames.TrashChanged),
+        // 默认全量会产生很大的结果，且外部调用方要求准确优先——不做进程内缓存。
         Client: new("SearchLinksAsync", typeof(List<LinkDto>)));
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
@@ -44,6 +41,9 @@ internal sealed class SearchLinksHandler : ICommandHandler
         //（此前 `sort_by: ""` 会绕过 ?? 落到 ParseSort 的 created_at，与文档「缺省 title 升序」相悖）
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? string.Empty;
         var sortOrder = CommandArgs.OptionalString(args, "sort_order");
+        var (page, perPage) = SearchSupport.ResolveExternalPage(
+            CommandArgs.OptionalInt(args, "page", 1),
+            CommandArgs.OptionalInt(args, "per_page", 0));
 
         var hits = await SearchSupport.SearchAsync(
             ctx.Uow, query,
@@ -54,9 +54,9 @@ internal sealed class SearchLinksHandler : ICommandHandler
             sortBy,
             QueryParsing.NormalizeOrder(sortOrder),
             ctx.Ct,
-            CommandArgs.OptionalInt(args, "page", 1),
-            CommandArgs.OptionalInt(args, "per_page", 0));
+            page,
+            perPage);
 
-        return CommandResult.Ok(hits.Select(h => h.Link.ToDto()).ToList());
+        return CommandResult.Ok(hits.Select(h => h.Link).ToList());
     }
 }

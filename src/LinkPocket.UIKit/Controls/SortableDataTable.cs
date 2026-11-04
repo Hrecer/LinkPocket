@@ -109,6 +109,26 @@ public class SortableDataTable : Grid
         private set => SetValue(RowWidthProperty, value);
     }
 
+    /// <summary>
+    /// 行虚拟化缓存页数（默认 1 页；搜索页用 0 = 只实例化视口内行）。
+    /// 实测 `CacheLength` 必须落在 ItemsControl 上才会被面板读出（模板里的那份会被覆盖）。
+    /// </summary>
+    public static readonly DependencyProperty RowCacheLengthProperty = DependencyProperty.Register(
+        nameof(RowCacheLength), typeof(double), typeof(SortableDataTable),
+        new PropertyMetadata(1.0, (d, _) => ((SortableDataTable)d).ApplyRowCacheLength()));
+
+    public double RowCacheLength
+    {
+        get => (double)GetValue(RowCacheLengthProperty);
+        set => SetValue(RowCacheLengthProperty, value);
+    }
+
+    private void ApplyRowCacheLength()
+    {
+        VirtualizingPanel.SetCacheLength(_rowsList, new VirtualizationCacheLength(Math.Max(0, RowCacheLength)));
+        VirtualizingPanel.SetCacheLengthUnit(_rowsList, VirtualizationCacheLengthUnit.Page);
+    }
+
     /// <summary>行选中开关（默认开）。两种模式：
     /// · 开启 = 控件内部绘制（点击行 → SelectItem 单选自绘）；
     /// · 关闭 = **外部托管**：点击行不绘制，页面用 <see cref="ApplySelection"/> 把
@@ -273,8 +293,7 @@ public class SortableDataTable : Grid
         VirtualizingPanel.SetIsVirtualizing(_rowsList, true);
         VirtualizingPanel.SetVirtualizationMode(_rowsList, VirtualizationMode.Recycling);
         VirtualizingPanel.SetScrollUnit(_rowsList, ScrollUnit.Pixel);
-        VirtualizingPanel.SetCacheLength(_rowsList, new VirtualizationCacheLength(1));
-        VirtualizingPanel.SetCacheLengthUnit(_rowsList, VirtualizationCacheLengthUnit.Page);
+        ApplyRowCacheLength();
 
         // 空态与行列表同容器叠放（空态是覆盖层、不参与命中）。
         var rowsArea = new Grid();
@@ -290,7 +309,7 @@ public class SortableDataTable : Grid
         Loaded += (_, _) => { _ = RowsScroller; ScheduleHeaderAlignment(); };
 
         // 容器**被实现**（滚进视口）时重投影一次选中底色。
-        // ⚠️ 为什么需要：虚拟化生效后，行容器是"用到才挂进可视树"的——工厂模式（搜索/回收站/智能列表）
+        // ⚠️ 为什么需要：虚拟化生效后，行容器是"用到才挂进可视树"的——工厂模式（回收站/智能列表）
         //    的行底色是**画在容器上**的（`_rowMap` + SetResourceReference），
         //    而 `ApplySelection` 只在调用的那一刻给当时**已实现**的行上色 ⇒
         //    滚动到之前没实现过的选中行时底色会缺一块（"选中丢了"的假象）。
@@ -307,19 +326,21 @@ public class SortableDataTable : Grid
     /// 而 <c>VirtualizationMode</c> / <c>ScrollUnit</c> / <c>CacheLength</c> **不是**继承属性——
     /// 写在 ItemsControl 上时，实测面板读回的仍是默认值（`Mode=Standard`、`ScrollUnit=Item`）。
     /// 写在面板标签上才是"这条设置真的到了它该在的地方"。
-    /// <para>⚠️ 1.1 如实说明：虚拟化只对【模板模式】（ItemsSource=数据对象 + ItemTemplate）生效；
-    /// 【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），Panel 直接挂进可视树、
-    /// 不做容器化 → 行数 = 实例化的控件数（万级数据下实测约 2.3 ms/行，见 `PERF-LARGE-LIBRARY.md`）。
-    /// 工厂模式用于搜索/智能列表/回收站，它们的规模必须由**调用方**保证（搜索无上限是已知缺陷）。</para>
+    /// <para>⚠️ 1.1 如实说明：【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），
+    /// 行对象会按数据量**一次性创建**；模板模式则只实例化视口附近的容器（搜索 100 000 数据行实测
+    /// **11** 个容器，`RowCacheLength=0`；浏览页默认 1 页缓存 ≈21–33）。不要按"行数 = 可视控件数"
+    /// 估 UI 成本。工厂模式仍用于智能列表/回收站：智能列表上限 20/100；回收站仍整页全量（已知待做）；
+    /// 搜索已改模板模式并支持十万级连续结果集。</para>
     /// </remarks>
-    private static ItemsPanelTemplate BuildRowsPanel()
+    private static ItemsPanelTemplate BuildRowsPanel(double cachePages = 1)
     {
-        const string xaml =
+        var cache = cachePages.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var xaml =
             "<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>" +
             "<VirtualizingStackPanel VirtualizingPanel.IsVirtualizing='True' " +
             "VirtualizingPanel.VirtualizationMode='Recycling' " +
             "VirtualizingPanel.ScrollUnit='Pixel' " +
-            "VirtualizingPanel.CacheLength='1' VirtualizingPanel.CacheLengthUnit='Page'/>" +
+            $"VirtualizingPanel.CacheLength='{cache}' VirtualizingPanel.CacheLengthUnit='Page'/>" +
             "</ItemsPanelTemplate>";
         return (ItemsPanelTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
     }
@@ -353,6 +374,21 @@ public class SortableDataTable : Grid
     }
 
     /// <summary>行区滚动宿主（模板生成，惰性取）。模板未应用时返回 null——调用方必须容忍。</summary>
+    /// <summary>行区当前纵向偏移（整批替换前后保留阅读位置用）。</summary>
+    public double VerticalOffset => RowsScroller?.VerticalOffset ?? 0;
+
+    /// <summary>行区可滚动总高度（像素；视口优先补页据此把偏移换算成行号）。</summary>
+    public double ExtentHeight => RowsScroller?.ExtentHeight ?? 0;
+
+    /// <summary>行区视口高度（像素）。</summary>
+    public double ViewportHeight => RowsScroller?.ViewportHeight ?? 0;
+
+    /// <summary>把行区滚到指定纵向偏移（模板/工厂两种模式都有效）。</summary>
+    public void ScrollToVerticalOffset(double offset) => RowsScroller?.ScrollToVerticalOffset(offset);
+
+    /// <summary>行区滚动（原始事件，供页面在整批替换时记位）。</summary>
+    public event EventHandler<double>? VerticalOffsetChanged;
+
     /// <summary>行区滚动**接近底部**（余量不足两屏）：分页续载的触发信号——
     /// 万行目录不再一次全量搬运（引擎按 per_page 切片，界面滚到底自动追加下一页）。
     /// 少行表（Extent 没超出两屏）也会触发，由订阅方用"还有没有下一页"自行短路。</summary>
@@ -371,6 +407,7 @@ public class SortableDataTable : Grid
                     double lastFiredOffset = -1;
                     _rowsScroller.ScrollChanged += (_, e) =>
                     {
+                        VerticalOffsetChanged?.Invoke(this, e.VerticalOffset);
                         // 纵向滚动条出现/消失 = 视口宽变化：行宽与表头必须按新宽度重对齐
                         //（否则表头停在大库之前的那一档，与所有行差一条滚动条的宽度）。
                         if (!double.IsNaN(e.ViewportWidth)
@@ -711,11 +748,13 @@ public class SortableDataTable : Grid
         _rowMap.Clear();
         if (IsTemplateMode)
         {
-            // 模板模式：ItemsSource 直通（外部集合变化自动增删行），行视觉/交互归模板
+            // 模板模式：ItemsSource 直通（外部集合变化自动增删行），行视觉/交互归模板。
+            // 空态仍由本控件承载：模板模式 ItemsSource 为空时 _emptyHost 显示 EmptyContent
+            //（浏览页/搜索页都靠它显示"正在搜索 / 没有找到 / 库为空"）。
             _rowsList.ItemTemplate = ItemTemplate;
             _rowsList.SetBinding(ItemsControl.ItemsSourceProperty,
                 new Binding(nameof(ItemsSource)) { Source = this });
-            _emptyHost.Visibility = Visibility.Collapsed;
+            RenderRows();
         }
         else
         {
@@ -772,7 +811,34 @@ public class SortableDataTable : Grid
 
     private void RenderRows(bool preserveView = false)
     {
-        if (IsTemplateMode) return; // 模板模式行由 ItemsSource 直通驱动
+        if (IsTemplateMode)
+        {
+            // 模板模式行由 ItemsSource 直通驱动，但空态仍要跟着 ItemsSource/EmptyContent 切换。
+            // 不能像工厂模式那样把 _emptyHost 永久折叠（否则"正在搜索 / 没有找到"永远不出现）。
+            var hasItems = false;
+            if (ItemsSource is ICollection collection)
+                hasItems = collection.Count > 0;
+            else if (ItemsSource != null)
+            {
+                foreach (var _ in ItemsSource) { hasItems = true; break; }
+            }
+
+            if (!hasItems && EmptyContent != null)
+            {
+                EmptyContent.HorizontalAlignment = HorizontalAlignment.Center;
+                EmptyContent.VerticalAlignment = VerticalAlignment.Center;
+                EmptyContent.Margin = new Thickness(0, 56, 0, 0);
+                _emptyHost.Content = EmptyContent;
+                _emptyHost.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _emptyHost.Content = null;
+                _emptyHost.Visibility = Visibility.Collapsed;
+            }
+            ScheduleHeaderAlignment();
+            return;
+        }
 
         // 排序只是重排同一批数据：应保留选中行与滚动位置（否则"点一下表头，选中没了、详情栏还在"）
         var previousSelection = preserveView ? _paintedSelection.ToList() : null;

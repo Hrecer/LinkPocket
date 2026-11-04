@@ -327,7 +327,9 @@ public sealed class EngineCore : IEngine
 
         // 缓存路径（读流）：先取依赖世代快照，再触库；条目按快照存回。
         // 快照必须在读取之前取 —— 读取期间发生的写会推进世代戳，使本次条目立即失配（冷启动宁多回填一次，绝不留陈旧值）。
-        if (policy is not null)
+        // ⚠️ 外部进程（CLI / MCP）**一律绕过查询缓存**：它们看不到桌面进程内的写事件，
+        //    缓存只能靠 TTL 兜底，会出现最长 10 秒的陈旧结果。外部命令以准确为先，直接读库。
+        if (policy is not null && !caller.IsExternalProcess)
         {
             var key = QueryCache.BuildKey(query, argsJson);
             var stamp = _cache.Snapshot(policy.DependsOn);
@@ -359,7 +361,7 @@ public sealed class EngineCore : IEngine
     /// 自描述（<c>engine.describe</c>；文档与 **AI 工具清单**的唯一来源）。
     /// 批三命令不进注册表（wire 直路由 <see cref="IBatchEngine"/>），但**只要批引擎已装配就并入**——
     /// 否则进程内消费者（AI / <c>EngineClient</c>）的工具清单会缺掉 <c>batch.*</c>，
-    /// 而它们正是"多步操作的唯一正确形态"（AI-ASSISTANT §3.3 的 79 条口径）。
+    /// 而它们正是"多步操作的唯一正确形态"（AI-ASSISTANT §3.3 的 88 条口径）。
     /// 与目录导出（<see cref="EngineCatalog"/>）同口径；批未装配时原样返回注册表内容。
     /// </summary>
     public EngineManifest Describe(string? category = null)

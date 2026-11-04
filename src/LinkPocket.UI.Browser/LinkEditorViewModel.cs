@@ -271,7 +271,7 @@ public class LinkEditorViewModel : INotifyPropertyChanged
             var cts = new CancellationTokenSource();
             Interlocked.Exchange(ref _fetchCts, cts)?.Cancel();
 
-            var meta = await _client.LinkMetadataFetchAsync(url, ct: cts.Token);
+            var meta = await _client.LinkMetadataFetchAsync(url, interactive: true, ct: cts.Token);
             if (!_host.IsEditorPageOpen) return;   // 解析耗时期间用户已取消：丢弃结果，不写已废弃的 VM（并发覆盖）
             if (!string.Equals(url, Url.Trim(), StringComparison.Ordinal)) return;   // URL 已改 → 旧解析结果作废
             if (meta == null) { Notice = Loc.K("editor.resolveFailed"); return; }

@@ -5,20 +5,20 @@ using LinkPocket.Kernel.Commands;
 
 namespace LinkPocket.Modules.Links;
 
-/// <summary>links.roots（Query）：根级（无归属）书签列表（缺省 created_at 降序，上限 per_page=50）。</summary>
+/// <summary>links.roots（Query）：根级（无归属）书签列表（缺省 created_at 降序；默认全量，显式 per_page 才分页）。</summary>
 internal sealed class LinkRootsHandler : ICommandHandler
 {
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.roots",
         Category: "links",
-        Description: "Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; capped at per_page=50)",
+        Description: "Get root-level (unfiled) bookmarks (sort_by default created_at, sort_order default desc; default per_page=0 returns all)",
         Parameters:
         [
             // 枚举 = QueryParsing.LinkSortFieldNames（SQL 下推白名单，7 字段；描述与白名单同源）
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important",
                 enumValues: QueryParsing.LinkSortFieldNames),
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
-            ParamSpec.Opt<int>("per_page", "Cap (default 50)"),
+            ParamSpec.Opt<int>("per_page", "Max rows (default 0 = all; positive = cap)"),
         ],
         Caps: CommandCaps.Query,
         Client: new("LinkRootsAsync", typeof(List<LinkDto>)));
@@ -27,7 +27,7 @@ internal sealed class LinkRootsHandler : ICommandHandler
     {
         var sortBy = CommandArgs.OptionalString(args, "sort_by") ?? "created_at";
         var sortOrder = CommandArgs.OptionalString(args, "sort_order") ?? "desc";
-        var perPage = Math.Max(1, CommandArgs.OptionalInt(args, "per_page", 50));
+        var perPage = Math.Max(0, CommandArgs.OptionalInt(args, "per_page", 0));
 
         var sort = QueryParsing.ParseSort(
             sortBy, QueryParsing.NormalizeOrder(sortOrder), QueryParsing.LinkSortFields, "created_at");

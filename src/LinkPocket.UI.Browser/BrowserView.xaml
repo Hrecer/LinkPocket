@@ -126,6 +126,35 @@
             </MenuItem>
             <MenuItem Header="{loc:Value Host.DeleteMenuHeader}" Command="{Binding Host.DeleteRowCommand}" CommandParameter="{Binding}"/>
         </ContextMenu>
+
+        <!-- 首帧紧凑行模板（导航换行集时短暂使用，等首帧真的渲染后再恢复完整模板）：
+             只画名称（左缩进与完整行的图标列对齐），行宽走 RowWidth、行高固定 36.3（= 完整行实测容器高），
+             恢复模板不会改变滚动范围/行位置。目的 = 把首帧从"20 行 × 完整模板
+             （图标 + 四列 LocFit 日期）≈ 50ms"降到"20 行 × 一个 TextBlock ≈ 15ms"。
+             交互面（右键/拖拽/双击/选中/落点）由表级适配器转发到完整行同一批处理器，首帧不存在能力空窗。 -->
+        <DataTemplate x:Key="BrowserRowCompactTemplate">
+            <TextBlock Tag="BrowserRowCompact" Cursor="Hand" Height="36.3"
+                       Background="Transparent" Padding="46,9,16,9" Margin="0,1"
+                       FontSize="14" TextOptions.TextFormattingMode="Display"
+                       Text="{Binding Name}"
+                       Width="{Binding RowWidth, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsCut}" Value="True">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </DataTemplate>
     </UserControl.Resources>
 
     <!-- 三段式：导航栏 / 内容区 / 状态栏 -->

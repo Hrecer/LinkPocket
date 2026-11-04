@@ -67,16 +67,46 @@ internal sealed class PageRenderer : IDisposable
         + "--disable-backgrounding-occluded-windows --disable-features=CalculateNativeWinOcclusion";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly string _profileDirectory;
     private Task<CoreWebView2Environment?>? _environment;
     private bool _unavailable;
 
-    /// <summary>渲染一个地址；未装运行时、正忙、超时、脚本报错一律返回 <c>null</c>（兜底失败不影响主路径）。</summary>
+    /// <summary>完整桌面宿主用默认 profile；按需能力宿主传自己的目录，两个提供者不会抢同一个 user-data。</summary>
+    public PageRenderer(string? profileDirectory = null)
+        => _profileDirectory = profileDirectory ?? DefaultProfileDirectory;
+
+    private static int _runtimeState;   // 0 = 未探测，1 = 有，2 = 没有
+
+    /// <summary>WebView2 运行时是否可用（缓存一次；能力握手的 render / svg 报价以此为准）。</summary>
+    public static bool IsRuntimeAvailable()
+    {
+        var state = Volatile.Read(ref _runtimeState);
+        if (state != 0) return state == 1;
+
+        try
+        {
+            _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            state = 1;
+        }
+        catch (Exception ex)
+        {
+            state = 2;
+            LpLog.Warn("WebView2 runtime not found; browser render / SVG rasterization disabled", ex,
+                category: "app.capability");
+        }
+        Volatile.Write(ref _runtimeState, state);
+        return state == 1;
+    }
+
+    /// <summary>渲染一个地址；未装运行时、超时、脚本报错一律返回 <c>null</c>（兜底失败不影响主路径）。
+    /// 浏览器实例全局串行：正忙时按调用方取消令牌排队，等不到预算就随取消返回。</summary>
     public async Task<RenderedPageMetadata?> RenderAsync(string url, CancellationToken ct)
     {
         if (_unavailable || !Uri.TryCreate(url, UriKind.Absolute, out _)) return null;
 
-        // 串行：一个 UI 线程同时只能伺候一个浏览器实例。正忙就直接放弃（不排队堆积）
-        if (!await _gate.WaitAsync(TimeSpan.Zero, ct).ConfigureAwait(false)) return null;
+        // 串行：一个 UI 线程同时只能伺候一个浏览器实例。按调用方预算排队（外层 15s 超时），
+        // 不再"正忙直接放弃"——批量解析里多条同时需要渲染时，后者应当等到轮次，而不是被误判成拿不到。
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             var dispatcher = Application.Current?.Dispatcher;
@@ -259,7 +289,7 @@ internal sealed class PageRenderer : IDisposable
         try
         {
             var options = new CoreWebView2EnvironmentOptions(BrowserArguments);
-            return await CoreWebView2Environment.CreateAsync(null, ProfileDirectory, options).ConfigureAwait(true);
+            return await CoreWebView2Environment.CreateAsync(null, _profileDirectory, options).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -271,7 +301,7 @@ internal sealed class PageRenderer : IDisposable
     }
 
     /// <summary>浏览器 profile 目录：放行 cookie 需要跨进程留着，但它是运行痕迹，不进数据区。</summary>
-    private static string ProfileDirectory => Path.Combine(
+    private static string DefaultProfileDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LinkPocket", "page-profile");
 
     public void Dispose() => _gate.Dispose();

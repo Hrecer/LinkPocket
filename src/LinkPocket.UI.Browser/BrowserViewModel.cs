@@ -56,10 +56,11 @@ public partial class BrowserViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// 主栏行集合。类型是**批量集合**：刷新时整体替换只发一次通知——逐条 Add 会让 10 001 行发出
-    /// 10 001 次 <c>CollectionChanged</c>，那是"打开大目录"里 UI 侧的主要成本（见 `PERF-LARGE-LIBRARY.md`）。
+    /// 10 001 次 <c>CollectionChanged</c>，那是"打开大目录"里 UI 侧的主要成本（见 `PERFORMANCE.md`）。
     /// </summary>
     public BulkObservableCollection<BrowserRowViewModel> Rows { get; } = new();
-    public ObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
+    /// <summary>面包屑段：整体替换（一次 Reset）——导航首帧前地址栏一次收敛，不经历 Clear+Add 的中间态。</summary>
+    public BulkObservableCollection<BrowserCrumbViewModel> Breadcrumbs { get; } = new();
 
     /// <summary>左侧文件夹树：虚拟根节点"全部书签"（IsRoot，无 FolderId）+ 各级子文件夹。</summary>
     public ObservableCollection<FolderNode> FolderTree { get; } = new();
