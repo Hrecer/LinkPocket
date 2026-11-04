@@ -68,6 +68,41 @@ internal sealed class EfTreeService(LinkPocketDbContext db) : ITreeService
             recursive.ToDictionary(kv => new FolderId(kv.Key), kv => kv.Value));
     }
 
+    /// <summary>
+    /// 定向计数：递归 CTE 只从「当前目录的子目录」出发，不遍历整棵树。
+    /// 十万目录下这是 overview 快速路径能避开 O(全库) 的关键。
+    /// </summary>
+    public async Task<FolderLinkCounts> LinkCountsForChildrenAsync(FolderId? parent, CancellationToken ct)
+    {
+        var p = parent is { } id ? (object)id.Value : DBNull.Value;
+
+        // 直接子链接数
+        var direct = new Dictionary<FolderId, int>();
+        using (var cmd = await RawSql.CreateAsync(db,
+            "SELECT l.folder_id, COUNT(*) FROM links l " +
+            "JOIN folders f ON f.id = l.folder_id WHERE f.parent_id IS @p GROUP BY l.folder_id", ct))
+        {
+            cmd.Parameters.AddWithValue("@p", p);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) direct[new FolderId(reader.GetString(0))] = reader.GetInt32(1);
+        }
+
+        // 递归：每个子目录向下展开，按根分组累加（UNION 去重，坏数据成环时靠行重复终止）
+        var recursive = new Dictionary<FolderId, int>();
+        using (var cmd = await RawSql.CreateAsync(db,
+            "WITH RECURSIVE sub(root, id) AS (" +
+            "SELECT id, id FROM folders WHERE parent_id IS @p " +
+            "UNION SELECT s.root, f.id FROM folders f JOIN sub s ON f.parent_id = s.id) " +
+            "SELECT s.root, COUNT(l.id) FROM sub s LEFT JOIN links l ON l.folder_id = s.id GROUP BY s.root", ct))
+        {
+            cmd.Parameters.AddWithValue("@p", p);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) recursive[new FolderId(reader.GetString(0))] = reader.GetInt32(1);
+        }
+
+        return new FolderLinkCounts(direct, recursive);
+    }
+
     public async Task<IReadOnlyList<FolderId>> AncestorsAsync(FolderId id, bool includeSelf, CancellationToken ct)
     {
         var parents = await LoadParentIndexAsync(ct);

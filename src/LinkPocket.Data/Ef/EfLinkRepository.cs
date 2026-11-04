@@ -133,7 +133,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (scope.Title) conditions.Add("title LIKE @q ESCAPE '\\'");
         if (scope.Url) conditions.Add("url LIKE @q ESCAPE '\\'");
         if (scope.Description) conditions.Add("description LIKE @q ESCAPE '\\'");
-        var folders = scope.Folders.Select(x => x.Value).ToArray();
+        var folders = scope.FolderIdValues;
         var list = new List<(string Name, object? Value)>(Math.Min(folders.Length, MaxInlineFolderIds) + 2)
         {
             ("@q", $"%{EscapeLike(scope.Query)}%"),
@@ -153,7 +153,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             else
             {
                 conditions.Add("folder_id IN (SELECT value FROM json_each(@fjson))");
-                list.Add(("@fjson", JsonSerializer.Serialize(folders)));
+                list.Add(("@fjson", scope.FolderIdJson));
             }
         }
         if (conditions.Count == 0) return false;
@@ -287,21 +287,22 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     /// 两种路径都在同一读事务内完成。
     /// </summary>
     public async Task<(int Total, IReadOnlyList<LinkPocket.Contracts.LinkDto> FirstPage)> CountAndFirstPageAsync(
-        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, CancellationToken ct)
+        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, int skip, CancellationToken ct)
     {
         if (!scope.Any) return (0, []);
         var size = Math.Max(0, pageSize);
+        var offset = Math.Max(0, skip);
         var desc = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
 
         // 只有 title 排序有对应的原生有序索引；其它排序沿用既有 count + page 语义。
         if (!string.IsNullOrEmpty(sortBy) && !string.Equals(sortBy, "title", StringComparison.OrdinalIgnoreCase))
-            return await CountAndPageAsync(scope, sortBy, sortOrder, size, ct);
+            return await CountAndPageAsync(scope, sortBy, sortOrder, size, offset, ct);
         if (!TryBuildSearchWhereSql(scope, out var where, out var parameters))
             return (0, []);
 
         if (size == 0)
             return (await CountAsync(new LinkFilter { SearchScope = scope }, ct), []);
-        if (scope.Folders.Count == 0)
+        if (scope.Folders.Count == 0 && offset == 0)
         {
             var page = await ListDtosAsync(new LinkQuerySpec
             {
@@ -314,7 +315,8 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             return (total, page);
         }
 
-        // path 范围：一次有序扫描，读到全部命中以计数，只保留首页 ID。
+        // 一次有序扫描：读到全部命中以计数，只保留 [offset, offset+size) 的 ID。
+        // path 范围与「文件夹块之后的链接段」共用这条单扫（后者不再 count + 取页各扫一遍）。
         var dir = desc ? "DESC" : "ASC";
         var scanSql = "SELECT id FROM links WHERE (" + where + ")"
             + $" ORDER BY title COLLATE NOCASE {dir}, id {dir}";
@@ -326,12 +328,12 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             using var reader = await scan.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
+                if (count >= offset && wanted.Count < size) wanted.Add(reader.GetString(0));
                 count++;
-                if (wanted.Count < size) wanted.Add(reader.GetString(0));
             }
         }
 
-        if (count == 0) return (0, []);
+        if (count == 0 || wanted.Count == 0) return (count, []);
         var names = string.Join(",", wanted.Select((_, i) => "@id" + i));
         var pageRows = await ReadDtosRawAsync(
             "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count,"
@@ -346,7 +348,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     }
 
     private async Task<(int Total, IReadOnlyList<LinkPocket.Contracts.LinkDto> FirstPage)> CountAndPageAsync(
-        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, CancellationToken ct)
+        LinkSearchScope scope, string sortBy, string sortOrder, int pageSize, int skip, CancellationToken ct)
     {
         var filter = new LinkFilter { SearchScope = scope };
         var total = await CountAsync(filter, ct);
@@ -356,7 +358,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             Filter = filter,
             Sort = [new SortSpec(sortBy, string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase)
                 ? SortDir.Desc : SortDir.Asc)],
-            Page = new PageSpec(1, pageSize),
+            Page = new PageSpec(Size: pageSize, SkipOverride: skip),
         }, ct);
         return (total, page);
     }
@@ -369,6 +371,19 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             && IsAreaFilter(filter with { SearchScope = null })
             && TryBuildSearchWhereSql(scope, out var searchWhere, out var searchParameters))
         {
+            // 位置范围**独占**且目录集合很大（深树 5 万个）：`JOIN json_each` 比
+            // `folder_id IN (SELECT value FROM json_each(...))` 快一倍（实测 45ms → 22ms）。
+            // 混合范围仍走 OR 谓词，不能改写成 JOIN（同一条链接可能同时命中文本与目录）。
+            if (!scope.Title && !scope.Url && !scope.Description
+                && scope.Folders.Count > MaxInlineFolderIds)
+            {
+                using var joinCmd = await RawSql.CreateAsync(db,
+                    "SELECT COUNT(*) FROM links l JOIN json_each(@fjson) j ON l.folder_id = j.value", ct);
+                joinCmd.Parameters.AddWithValue("@fjson", scope.FolderIdJson);
+                return Convert.ToInt32(await joinCmd.ExecuteScalarAsync(ct),
+                    System.Globalization.CultureInfo.InvariantCulture);
+            }
+
             using var searchCmd = await RawSql.CreateAsync(db,
                 "SELECT COUNT(*) FROM links WHERE (" + searchWhere + ")", ct);
             foreach (var (name, value) in searchParameters)
@@ -669,7 +684,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     private static IQueryable<Link> ApplySearchScope(IQueryable<Link> q, LinkSearchScope scope)
     {
         var like = $"%{EscapeLike(scope.Query)}%";
-        var folderIds = scope.Folders.Select(x => x.Value).ToArray();
+        var folderIds = scope.FolderIdValues;
         var hasFolderRange = folderIds.Length > 0;
 
         if (!scope.Title && !scope.Url && !scope.Description && !hasFolderRange)

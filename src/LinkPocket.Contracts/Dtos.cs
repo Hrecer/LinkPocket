@@ -106,13 +106,15 @@ public class FolderContentsDto
 
     /// <summary>
     /// 全量文件夹平铺（与 folders.tree 同构；层级由调用方组装）。仅 <c>folders.overview</c> 填充：
-    /// 浏览页主视图一次的「目录页 + 树 + 统计」一致快照。<c>folders.contents</c> 恒为 null。
+    /// 浏览页主视图一次的「目录页 + 树 + 统计」一致快照；显式 <c>include_tree=false</c>（界面已有树）时为 null。
+    /// <c>folders.contents</c> 恒为 null。
     /// </summary>
     [JsonPropertyName("tree"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<FolderDto>? Tree { get; set; }
 
     /// <summary>
-    /// 根级直接书签数（与 links.stats.RootLevel 同口径）。仅 <c>folders.overview</c> 填充；<c>folders.contents</c> 恒为 null。
+    /// 根级直接书签数（与 links.stats.RootLevel 同口径）。仅 <c>folders.overview</c> 填充；
+    /// <c>include_tree=false</c> 与 <c>folders.contents</c> 恒为 null。
     /// </summary>
     [JsonPropertyName("root_link_count"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? RootLinkCount { get; set; }

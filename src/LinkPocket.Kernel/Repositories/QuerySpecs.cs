@@ -38,6 +38,18 @@ public sealed record LinkSearchScope
     /// <summary>path 范围：归属目录 ∈ 集合（启用但空集合 = 该范围无命中）。</summary>
     public IReadOnlyList<FolderId> Folders { get; init; } = [];
 
+    private string[]? _folderIdValues;
+    private string? _folderIdJson;
+
+    /// <summary>目录集合的裸 ID 数组（**一次投影、整条会话复用**）：谓词构造与 JSON 参数共用。</summary>
+    public string[] FolderIdValues => _folderIdValues ??= Folders.Select(f => f.Value).ToArray();
+
+    /// <summary>
+    /// 大目录集合（深树可达 5 万个）的 `json_each` 参数，**一次序列化、整条会话复用**：
+    /// count + 首页 + 每个补页都要用，逐次 `JsonSerializer.Serialize` 是白付的 1MB 级工作。
+    /// </summary>
+    public string FolderIdJson => _folderIdJson ??= System.Text.Json.JsonSerializer.Serialize(FolderIdValues);
+
     /// <summary>是否至少启用了一个范围（全未启用 = 无命中，由调用方决定是否直接短路）。</summary>
     public bool Any => Title || Url || Description || Folders.Count > 0;
 }
@@ -108,13 +120,23 @@ public sealed record LinkQuerySpec
 }
 
 /// <summary>
+/// 目录名搜索命中行（**只够排序与身份**）：`Id + Name` 恒有；
+/// 非名称排序时另带一个排序键——日期走 <see cref="SortText"/>（库里的 ISO 字符串，字典序即时间序），
+/// `visit_count` 走 <see cref="SortNumber"/>。描述 / 父目录 / 真实日期等到**取页**时按 ID 定向补水。
+/// 十万目录下这是把 5 万行命中从「读全列 190ms」压到「读 id+name 140ms」的关键（见 WARNINGS 247）。
+/// </summary>
+public readonly record struct FolderSearchHit(
+    string Id, string Name, string? SortText, int SortNumber);
+
+/// <summary>
 /// 目录名搜索结果：<see cref="Matches"/> = 名称命中，<see cref="Descendants"/> = 命中目录的
 /// **严格后代**（已排除命中的那些自身）。
 /// </summary>
-public sealed record FolderNameSearch(IReadOnlyList<Folder> Matches, IReadOnlyList<Folder> Descendants)
+public sealed record FolderNameSearch(
+    IReadOnlyList<FolderSearchHit> Matches, IReadOnlyList<FolderSearchHit> Descendants)
 {
     public static readonly FolderNameSearch Empty = new([], []);
 
     /// <summary>位置范围的目录集合 = 名称命中 ∪ 后代。</summary>
-    public IEnumerable<Folder> All => Matches.Concat(Descendants);
+    public IEnumerable<FolderSearchHit> All => Matches.Concat(Descendants);
 }

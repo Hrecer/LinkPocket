@@ -116,6 +116,7 @@ public class TreeDragSourceTests
             var items = vm.PrepareDragFromNode(subNode);
 
             await vm.DropItemsAsync(items, b.FolderId, TransferMode.Move);
+            vm.MarkTreeDirty();   // 真实链路里由 folders.changed 事件置脏；单测没有事件枢纽，手动补
             await vm.RefreshPreservingSelectionAsync();
 
             var bNode = vm.FolderTree[0].Children.Single(c => c.FolderId == b.FolderId);

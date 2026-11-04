@@ -109,8 +109,8 @@ public sealed partial class EngineClient
         => ExecuteAsync<FolderMoveBatchResult>("folders.move_batch", new { folder_ids = folderIds, target_parent_id = targetParentId }, o, ct);
 
     /// <summary>A full snapshot: folder page (contents) + full folder tree + all tree links + root link count</summary>
-    public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, bool? includeTreeLinks = null, bool? includeBreadcrumb = null, CallOptions? o = null, CancellationToken ct = default)
-        => QueryAsync<FolderContentsDto>("folders.overview", new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage, include_tree_links = includeTreeLinks, include_breadcrumb = includeBreadcrumb }, o, ct);
+    public Task<FolderContentsDto> FoldersOverviewAsync(string? folderId = null, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, bool? includeTreeLinks = null, bool? includeBreadcrumb = null, bool? includeTree = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<FolderContentsDto>("folders.overview", new { folder_id = folderId, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage, include_tree_links = includeTreeLinks, include_breadcrumb = includeBreadcrumb, include_tree = includeTree }, o, ct);
 
     /// <summary>Reorder folders under a parent (the order of item_ids is the new order; parent_id default = root level)</summary>
     public Task<CommandResult<FolderSortResult>> FolderSortAsync(IReadOnlyList<string> itemIds, string? parentId = null, CallOptions? o = null, CancellationToken ct = default)

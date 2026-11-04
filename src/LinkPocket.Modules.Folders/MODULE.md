@@ -13,7 +13,7 @@
 | 命令 | 类型 | 要点 |
 |---|---|---|
 | `folders.contents` | 查询 | 目录页 = 直接子目录 + 直接子链接 + 面包屑；`folder_id` 缺省 = 根；`per_page` 缺省 **0 = 全部直接链接**，显式正数才分页；声明缓存（内容类） |
-| `folders.overview` | 查询 | 浏览页主视图一致快照：目录页 + 全量树 + 根级链接数 + **全量 `tree_links`**（外部默认 `include_tree_links=true`）；一次命令内同一 UoW（跨命令漂移消除）。界面显式传 `include_tree_links=false` / `include_breadcrumb=false` 保持导航首帧轻量；`per_page` 缺省 **0 = 全部直接链接**。声明缓存（界面走缓存，外部调用方绕过缓存） |
+| `folders.overview` | 查询 | 浏览页主视图一致快照：目录页 + 全量树 + 根级链接数 + **全量 `tree_links`**（外部默认 `include_tree_links=true` / `include_breadcrumb=true` / `include_tree=true`）；一次命令内同一 UoW（跨命令漂移消除）。界面在**树已新鲜**时传 `include_tree=false`（配合 `include_tree_links=false` / `include_breadcrumb=false`）：不读全量目录表，只取当前目录 + 直接子目录 + 本层计数，响应里 `tree` / `root_link_count` 为 null——十万目录下这条路径 0–3ms；树由 `folders.changed` / `links.changed` 置脏后再取。`per_page` 缺省 **0 = 全部直接链接**。声明缓存（界面走缓存，外部调用方绕过缓存） |
 | `folders.tree_links` | 查询 | 某目录的直接链接轻量投影；`per_page` 缺省 **0 = 全部**，显式正数才截断；声明缓存（内容类） |
 | `folders.tree` | 查询 | 全部目录平铺（`link_count` = 递归子链接数）；声明缓存 |
 | `folders.get` | 查询 | 单目录；参数缺省（向根寻址）→ `LP.STATE.002 ROOT_NOT_ENTITY`，未知 ID → `LP.STATE.001` |

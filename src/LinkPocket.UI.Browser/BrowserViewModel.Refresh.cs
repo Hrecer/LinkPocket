@@ -117,13 +117,16 @@ public partial class BrowserViewModel
         var navMarks = new long[5];
         try
         {
-            // 单快照：folders.overview 一次返回 目录页+全量树+根级计数，
+            // 单快照：folders.overview 一次返回 目录页+（需要时的）全量树+根级计数，
             // 三个数据源在引擎同一读池 UoW 内（不再跨命令漂移；原三连查 FolderContents/Tree/Stats 已收敛为一条）。
+            // 树只在 _treeDirty（启动 / 后端变更事件）时随快照取；纯导航复用现有树（include_tree=false）。
             // **首页分页**（2026-09-26）：只取前 PageChunkSize 条链接（SQL LIMIT），滚动接近底部自动续载
             // （RequestNextPageAsync）。10 000 条全量 = 引擎 432ms + 万行 VM 115ms，冷开 680ms 里的大头；
             // 十万级下"一次全量"根本不可行。文件夹不参与分页（引擎整页返回）。
+            var wantTree = _treeDirty;
             var contents = await _client.FoldersOverviewAsync(Controller.CurrentFolderId, sortBy: SortBy, sortOrder: SortOrder,
-                perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false);
+                perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false,
+                includeTree: wantTree);
             _loadedPage = contents.CurrentPage;
             _lastPage = contents.PerPage > 0 ? Math.Max(contents.LastPage, 1) : 1;
             _directLinkTotal = contents.DirectLinkCount;
@@ -131,10 +134,15 @@ public partial class BrowserViewModel
 
             // 文件夹映射：面包屑 + 返回上级需要父链；同时重建左侧文件夹树（只建文件夹节点——
             // 链接叶子改为"节点展开时按需加载"，见 BrowserViewModel.Tree.cs 的懒加载注释）
-            var tree = contents.Tree ?? new List<FolderDto>();
-            _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
-            RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
-            navMarks[1] = navWatch.ElapsedMilliseconds;   // 目录树重建
+            if (wantTree)
+            {
+                var tree = contents.Tree ?? new List<FolderDto>();
+                _folderMap = tree.ToDictionary(f => f.FolderId, f => (f.ParentId, f.Name));
+                RebuildFolderTree(tree, contents.RootLinkCount ?? 0);
+                _treeDirty = false;
+            }
+            // 树未过期时 `_folderMap` / `FolderTree` 原样复用：目录结构没变，面包屑与上级按钮仍正确。
+            navMarks[1] = navWatch.ElapsedMilliseconds;   // 目录树重建（未过期时 ≈0）
             // 树已重建：选中态由 Selection（唯一事实）派生重放，无需容器时序
 
             // ⚠️ 这里**不**先清空 Rows：目标行序先算成"计划"（Id/类型/来源 DTO 三元组），
@@ -451,6 +459,16 @@ public partial class BrowserViewModel
     private int _directLinkTotal;
     private bool _pageLoadInFlight;
 
+    /// <summary>
+    /// 左侧目录树是否需要在下一次刷新里重取。初始 true（启动要建树）；
+    /// 之后由**后端变更事件**（`MainViewModel.OnBackendRefresh` 的防抖通道，含外部进程写入）置脏——
+    /// 十万目录时搬整棵树 + 重建 10 万节点 ≈0.6s，纯导航不该重复付。
+    /// </summary>
+    private bool _treeDirty = true;
+
+    /// <summary>目录树已过期：下一次刷新要带 `include_tree=true`，之后重新标净。</summary>
+    public void MarkTreeDirty() => _treeDirty = true;
+
     /// <summary>最近一次刷新是否整体替换了行对象（导航换目录时为真）。
     /// 视图据此决定是否用"紧凑首帧模板"：只有新行对象才需要重新实例化全部行容器。</summary>
     public bool RowsReplacedInLastRefresh { get; private set; }
@@ -481,7 +499,8 @@ public partial class BrowserViewModel
         try
         {
             var dto = await _client.FoldersOverviewAsync(folderId, sortBy: SortBy, sortOrder: SortOrder,
-                page: nextPage, perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false);
+                page: nextPage, perPage: PageChunkSize, includeTreeLinks: false, includeBreadcrumb: false,
+                includeTree: false);
             if (Controller.CurrentFolderId != folderId || dto.CurrentPage != nextPage) return;   // 已切换 → 丢弃
 
             var rows = dto.Links

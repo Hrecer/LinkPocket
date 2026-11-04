@@ -247,7 +247,7 @@ public class JumpEditingGuardTests
             vm.SearchCommand.Execute(null);
             Assert.True(await WaitUntilAsync(() => vm.Results is { Count: > 0 }, TimeSpan.FromSeconds(5)),
                 "搜索结果未在超时内出现");
-            vm.Selection.SelectSingle(link.LinkId);
+            vm.Selection.SelectSingle(vm.Results[0].Key);   // 结果集身份键 = l:<id>（跨类型不撞车）
 
             vm.DeleteSelectionCommand.Execute(null);
 

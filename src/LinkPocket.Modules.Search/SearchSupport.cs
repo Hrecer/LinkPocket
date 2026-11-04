@@ -101,82 +101,100 @@ internal static class SearchSupport
     public const string FolderKind = "folder";
 
     /// <summary>
-    /// 命中的文件夹行（`Kind=folder`）：**只认「标题（名称）」与「位置（祖先名）」两档**——
-    /// URL / 描述对文件夹没有意义，那两档单独选中时文件夹不命中。
-    /// 虚根「全部书签」不落库、没有 ID，天然不会出现在这里；空 id / 空名再挡一次。
+    /// 选进结果流的文件夹命中行：标题档取「名称命中」，位置档取「严格后代」。
+    /// **只收集轻量命中行**（id/name/排序键），完整 DTO 推迟到 <see cref="BuildPageAsync"/> 按页补水。
     /// </summary>
-    /// <remarks>
-    /// 目录命中在 **SQL 侧**算完（`IFolderRepository.SearchByNameAsync`）：十万目录时全量物化 ≈410ms，
-    /// 只取命中行是 20–200ms。调用方（会话）通常已经有 <paramref name="hits"/>——与位置范围的子树展开共用同一次查询。
-    /// </remarks>
-    public static async Task<List<LinkDto>> FindMatchingFoldersAsync(
-        Kernel.IUnitOfWork uow, string query, bool searchTitle, bool searchPath, CancellationToken ct,
-        FolderNameSearch? hits = null)
+    public static List<FolderSearchHit> BuildFolderRows(FolderNameSearch hits, bool searchTitle, bool searchPath)
     {
-        if (string.IsNullOrWhiteSpace(query) || (!searchTitle && !searchPath)) return [];
-        var found = hits ?? await uow.Folders.SearchByNameAsync(query, searchPath, ct);
-        return BuildFolderRows(found, searchTitle, searchPath);
-    }
-
-    /// <summary>由目录命中构造文件夹结果行：标题档取「名称命中」，位置档取「严格后代」。</summary>
-    public static List<LinkDto> BuildFolderRows(FolderNameSearch hits, bool searchTitle, bool searchPath)
-    {
-        var rows = new List<LinkDto>(hits.Matches.Count + hits.Descendants.Count);
+        var rows = new List<FolderSearchHit>(hits.Matches.Count + hits.Descendants.Count);
         if (searchTitle)
-            foreach (var folder in hits.Matches) AddFolderRow(rows, folder);
+            foreach (var hit in hits.Matches)
+                if (!string.IsNullOrEmpty(hit.Id) && !string.IsNullOrWhiteSpace(hit.Name)) rows.Add(hit);
         if (searchPath)
-            foreach (var folder in hits.Descendants) AddFolderRow(rows, folder);
+            foreach (var hit in hits.Descendants)
+                if (!string.IsNullOrEmpty(hit.Id) && !string.IsNullOrWhiteSpace(hit.Name)) rows.Add(hit);
         return rows;
     }
 
-    private static void AddFolderRow(List<LinkDto> rows, Folder folder)
-    {
-        if (string.IsNullOrEmpty(folder.FolderId) || string.IsNullOrWhiteSpace(folder.Name)) return;
-        rows.Add(new LinkDto
-        {
-            Kind = FolderKind,
-            LinkId = folder.FolderId,
-            Title = folder.Name,
-            Url = string.Empty,
-            Description = folder.Description ?? string.Empty,
-            ListId = folder.ParentId,          // 位置列 = 父路径（与链接行的"所在目录"同义）
-            VisitCount = folder.VisitCount,
-            LastVisitedAt = folder.LastVisitedAt,
-            CreatedAt = folder.CreatedAt,
-            UpdatedAt = folder.UpdatedAt,
-        });
-    }
-
-    /// <summary>文件夹块排序：与链接同名的排序键各取自己的字段；`url`/`is_important` 对文件夹恒等 → 退化为按名称。</summary>
-    public static void SortFolders(List<LinkDto> folders, string sortBy, string sortOrder)
+    /// <summary>
+    /// 文件夹块排序：名称走 OrdinalIgnoreCase（与链接 SQL 的 `COLLATE NOCASE` 同口径）；
+    /// 日期是 ISO 字符串（字典序即时间序），「最后查看」为空恒排最后（与排序引擎一致，**不随升降序翻转**）。
+    /// </summary>
+    public static void SortFolderHits(List<FolderSearchHit> folders, string sortBy, string sortOrder)
     {
         var desc = string.Equals(sortOrder, "desc", StringComparison.OrdinalIgnoreCase);
-        Comparison<LinkDto> key = sortBy switch
+        Comparison<FolderSearchHit> key = sortBy switch
         {
-            "created_at" => (a, b) => a.CreatedAt.CompareTo(b.CreatedAt),
-            "updated_at" => (a, b) => a.UpdatedAt.CompareTo(b.UpdatedAt),
-            "last_visited_at" => (a, b) => Nullable.Compare(a.LastVisitedAt, b.LastVisitedAt),
-            "visit_count" => (a, b) => a.VisitCount.CompareTo(b.VisitCount),
-            "url" or "is_important" => (a, b) => string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase),
-            _ => (a, b) => string.Compare(a.Title, b.Title, StringComparison.OrdinalIgnoreCase),
+            "created_at" or "updated_at" => (a, b) =>
+                string.CompareOrdinal(a.SortText ?? string.Empty, b.SortText ?? string.Empty),
+            "last_visited_at" => (a, b) => CompareNullsLast(a.SortText, b.SortText),
+            "visit_count" => (a, b) => a.SortNumber.CompareTo(b.SortNumber),
+            // url / is_important 对文件夹恒等 → 退化为按名称
+            _ => (a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase),
         };
-
         folders.Sort((a, b) =>
         {
             var result = key(a, b);
-            if (result == 0) result = string.CompareOrdinal(a.LinkId, b.LinkId);   // 稳定 tie-breaker：翻页不重不漏
-            return desc ? -result : result;
+            // 「最后查看」为空的行恒在末尾：只在两侧都有值时应用方向。
+            if (sortBy == "last_visited_at" && (a.SortText is null || b.SortText is null))
+                result = CompareNullsLast(a.SortText, b.SortText);
+            else if (desc) result = -result;
+            if (result == 0) result = desc
+                ? -string.CompareOrdinal(a.Id, b.Id)    // 稳定 tie-breaker：翻页不重不漏
+                : string.CompareOrdinal(a.Id, b.Id);
+            return result;
         });
+    }
+
+    private static int CompareNullsLast(string? a, string? b)
+    {
+        if (a is null) return b is null ? 0 : 1;
+        if (b is null) return -1;
+        return string.CompareOrdinal(a, b);
+    }
+
+    /// <summary>按页补水目录完整字段（描述 / 父目录 / 日期 / 次数）：命中行只带 id+name+排序键。</summary>
+    private static async Task<List<LinkDto>> FolderHitsToDtosAsync(
+        Kernel.IUnitOfWork uow, IReadOnlyList<FolderSearchHit> hits, CancellationToken ct)
+    {
+        if (hits.Count == 0) return [];
+        var folders = await uow.Folders.FindManyAsync(
+            hits.Select(h => new FolderId(h.Id)).ToList(), ct);
+        var byId = folders.ToDictionary(f => f.FolderId, StringComparer.Ordinal);
+        var rows = new List<LinkDto>(hits.Count);
+        foreach (var hit in hits)
+        {
+            // 会话是同一读事务快照：正常不可能缺行。真缺了也保留结果行（计数与翻页不漂移），
+            // 只是展示字段退化为名称（脏数据如实暴露，不静默吞掉一行）。
+            byId.TryGetValue(hit.Id, out var folder);
+            rows.Add(new LinkDto
+            {
+                Kind = FolderKind,
+                LinkId = hit.Id,
+                Title = folder?.Name ?? hit.Name,
+                Url = string.Empty,
+                Description = folder?.Description ?? string.Empty,
+                ListId = folder?.ParentId,          // 位置列 = 父路径（与链接行的"所在目录"同义）
+                VisitCount = folder?.VisitCount ?? 0,
+                LastVisitedAt = folder?.LastVisitedAt,
+                CreatedAt = folder?.CreatedAt ?? default,
+                UpdatedAt = folder?.UpdatedAt ?? default,
+            });
+        }
+        return rows;
     }
 
     /// <summary>
     /// 取一页（文件夹块 + 链接块拼成全局有序窗口）：
     /// 全局偏移按页首算；文件夹块占 <c>[0, F)</c>，链接块从 <c>F</c> 起。
-    /// 链接段用**精确偏移**取（<see cref="PageSpec.SkipOverride"/>），不会为了对齐页边界多取整页。
+    /// 链接段用**精确偏移**取（<see cref="PageSpec.SkipOverride"/>），不会为了对齐页边界多取整页；
+    /// 且**一次有序扫描同时计数 + 收窗口**（<paramref name="needLinkTotal"/> = true 时），
+    /// 不再为"总数"和"首页链接"各扫一遍（见 WARNINGS 247）。
+    /// 返回值 = 链接命中总数（不含文件夹；<paramref name="needLinkTotal"/> = false 时为 0）+ 本页行。
     /// </summary>
-    public static async Task<IReadOnlyList<LinkDto>> BuildPageAsync(
-        Kernel.IUnitOfWork uow, LinkSearchScope scope, IReadOnlyList<LinkDto> folders,
-        string sortBy, string sortOrder, int page, int perPage, CancellationToken ct)
+    public static async Task<(int LinkTotal, List<LinkDto> Rows)> BuildPageAsync(
+        Kernel.IUnitOfWork uow, LinkSearchScope scope, IReadOnlyList<FolderSearchHit> folders,
+        string sortBy, string sortOrder, int page, int perPage, bool needLinkTotal, CancellationToken ct)
     {
         var offset = Math.Max(0, (Math.Max(1, page) - 1) * perPage);
         var rows = new List<LinkDto>(perPage);
@@ -185,21 +203,26 @@ internal static class SearchSupport
         if (offset < folderCount)
         {
             var end = Math.Min(folderCount, offset + perPage);
-            for (var i = offset; i < end; i++) rows.Add(folders[i]);
+            var pageHits = new List<FolderSearchHit>(end - offset);
+            for (var i = offset; i < end; i++) pageHits.Add(folders[i]);
+            rows.AddRange(await FolderHitsToDtosAsync(uow, pageHits, ct));
         }
 
         var remaining = perPage - rows.Count;
-        if (remaining <= 0) return rows;
+        if (remaining <= 0)
+        {
+            // 文件夹块已经填满这一页：仍可能要为"总数"数一次链接（首页），后续页不需要。
+            var total = needLinkTotal
+                ? (await uow.Links.CountAndFirstPageAsync(scope, sortBy, sortOrder, 0, 0, ct)).Total
+                : 0;
+            return (total, rows);
+        }
 
         var linkSkip = Math.Max(0, offset - folderCount);
-        var links = await uow.Links.ListDtosAsync(new LinkQuerySpec
-        {
-            Filter = new LinkFilter { SearchScope = scope },
-            Sort = QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, "title"),
-            Page = new PageSpec(Size: remaining, SkipOverride: linkSkip),
-        }, ct);
-        rows.AddRange(links);
-        return rows;
+        var links = await uow.Links.CountAndFirstPageAsync(
+            scope, sortBy, sortOrder, remaining, linkSkip, ct);
+        rows.AddRange(links.FirstPage);
+        return (links.Total, rows);
     }
 
     /// <summary>由目录命中构造作用域（同步：与文件夹结果行共用同一次 SQL 查询）。</summary>
@@ -214,7 +237,7 @@ internal static class SearchSupport
             Description = searchDescription,
             // 位置范围 = 名称命中 ∪ 全部后代（同一份命中结果，不再二次展开）
             Folders = searchPath && hits is not null
-                ? hits.All.Select(f => new FolderId(f.FolderId)).ToList()
+                ? hits.All.Select(f => new FolderId(f.Id)).ToList()
                 : [],
         };
 
@@ -225,7 +248,7 @@ internal static class SearchSupport
         CancellationToken ct)
     {
         var hits = searchPath && !string.IsNullOrWhiteSpace(query)
-            ? await uow.Folders.SearchByNameAsync(query, includeDescendants: true, ct)
+            ? await uow.Folders.SearchByNameAsync(query, includeDescendants: true, sortBy: null, ct)
             : null;
         return BuildScope(query, searchTitle, searchUrl, searchDescription, searchPath, hits);
     }

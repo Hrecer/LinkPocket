@@ -138,6 +138,66 @@ public class FoldersModuleTests
     }
 
     [Fact]
+    public async Task Overview_IncludeTreeFalse_OnlyLoadsCurrentLayer_WithCorrectDirectCount()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "快速层 A", description = "A 的描述" });
+        var b = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "快速层 B", parent_id = a.Data!.FolderId });
+        var c = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "快速层 C", parent_id = b.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://fast.example/a", title = "A 链接", list_id = a.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://fast.example/b", title = "B 链接", list_id = b.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://fast.example/c", title = "C 链接", list_id = c.Data!.FolderId });
+        await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://fast.example/root", title = "根链接" });
+
+        // 快速路径：不交付树、不读全量目录，只取当前目录 + 子目录 + 本层计数。
+        var fast = await engine.QueryAsync<FolderContentsDto>("folders.overview", new
+        {
+            folder_id = a.Data!.FolderId,
+            include_tree = false,
+            include_tree_links = false,
+            include_breadcrumb = false,
+        });
+        Assert.Null(fast.Tree);
+        Assert.Null(fast.RootLinkCount);
+        Assert.Equal("快速层 A", fast.FolderName);
+        Assert.Equal(1, fast.DirectLinkCount);                 // A 自己的直接链接（旧快速路径漏算成 0）
+        Assert.Single(fast.Links);                              // 只返回本层链接
+        var bDto = Assert.Single(fast.SubFolders);
+        Assert.Equal("快速层 B", bDto.Name);
+        Assert.Equal(1, bDto.DirectLinkCount);                  // B 的直接链接
+        Assert.Equal(2, bDto.LinkCount);                         // B 子树（B + C）
+
+        // 全量路径作 oracle：子目录计数两口径与本层直链数必须一致。
+        var full = await engine.QueryAsync<FolderContentsDto>(
+            "folders.overview", new { folder_id = a.Data!.FolderId });
+        Assert.NotNull(full.Tree);
+        Assert.Equal(full.DirectLinkCount, fast.DirectLinkCount);
+        Assert.Equal(full.Links.Count, fast.Links.Count);
+        Assert.Equal(full.SubFolders.Single().DirectLinkCount, bDto.DirectLinkCount);
+        Assert.Equal(full.SubFolders.Single().LinkCount, bDto.LinkCount);
+
+        // 根目录快速路径：根级链接（unfiled）仍按自己那一档计数。
+        var rootFast = await engine.QueryAsync<FolderContentsDto>("folders.overview", new
+        {
+            include_tree = false,
+            include_tree_links = false,
+            include_breadcrumb = false,
+        });
+        Assert.Null(rootFast.Tree);
+        Assert.Equal(1, rootFast.DirectLinkCount);
+        Assert.Single(rootFast.Links);
+        Assert.Single(rootFast.SubFolders);                     // 根层只有 A
+        Assert.Equal(3, rootFast.SubFolders[0].LinkCount);      // A 子树三条链接
+    }
+
+    [Fact]
     public async Task Create_With_Missing_Parent_Fails()
     {
         var (engine, _, _) = TestHost.Create();
@@ -1288,6 +1348,90 @@ public class SearchModuleTests
         {
             await engine.QueryAsync<bool>("search.session_close", new { session_id = open.SessionId });
         }
+    }
+
+    [Fact]
+    public async Task Search_Session_FolderRows_AreHydratedFromSnapshot()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var parent = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "补全父层", description = "父层描述" });
+        await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "补全子层", parent_id = parent.Data!.FolderId, description = "子层描述" });
+        await engine.ExecuteAsync<LinkDto>("links.create", new
+        {
+            url = "https://hydrate.example/1",
+            title = "补全子层链接",
+            list_id = parent.Data!.FolderId,
+        });
+
+        var open = await engine.QueryAsync<SearchSessionOpenResult>("search.session_open", new
+        {
+            query = "补全",
+            search_title = true,
+            search_path = false,
+            include_folders = true,
+            sort_by = "title",
+            sort_order = "asc",
+            first_page_size = 10,
+        });
+        try
+        {
+            var folderRows = open.FirstPage.Where(l => l.Kind == "folder").ToList();
+            Assert.Equal(2, folderRows.Count);                       // 父层 + 子层（标题档只取名称命中）
+            var parentRow = Assert.Single(folderRows, l => l.Title == "补全父层");
+            Assert.Equal("父层描述", parentRow.Description);          // 取页时才补的描述
+            Assert.Null(parentRow.ListId);                            // 根级文件夹 = 无父路径
+            Assert.NotEqual(default, parentRow.CreatedAt);
+            var childRow = Assert.Single(folderRows, l => l.Title == "补全子层");
+            Assert.Equal(parent.Data!.FolderId, childRow.ListId);     // 位置列 = 父目录
+            Assert.Equal("子层描述", childRow.Description);
+        }
+        finally
+        {
+            await engine.QueryAsync<bool>("search.session_close", new { session_id = open.SessionId });
+        }
+    }
+
+    [Fact]
+    public async Task Search_Session_FolderRows_LastVisited_Sort_PutsNeverVisited_Last_Both_Ways()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var visited = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "排序夹 已看" });
+        var never = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "排序夹 未看" });
+        var link = await engine.ExecuteAsync<LinkDto>("links.create", new
+        {
+            url = "https://sortfold.example/1",
+            title = "排序夹 链接",
+            list_id = visited.Data!.FolderId,
+        });
+        await engine.ExecuteAsync<object>("links.visit_record", new { id = link.Data!.LinkId });
+        _ = never;
+
+        async Task<List<string>> FolderTitles(string order)
+        {
+            var open = await engine.QueryAsync<SearchSessionOpenResult>("search.session_open", new
+            {
+                query = "排序夹",
+                search_title = true,
+                search_path = false,
+                include_folders = true,
+                sort_by = "last_visited_at",
+                sort_order = order,
+                first_page_size = 10,
+            });
+            try
+            {
+                return open.FirstPage.Where(l => l.Kind == "folder").Select(l => l.Title).ToList();
+            }
+            finally
+            {
+                await engine.QueryAsync<bool>("search.session_close", new { session_id = open.SessionId });
+            }
+        }
+
+        Assert.Equal(new[] { "排序夹 已看", "排序夹 未看" }, await FolderTitles("asc"));
+        Assert.Equal(new[] { "排序夹 已看", "排序夹 未看" }, await FolderTitles("desc"));   // 空值恒排最后
     }
 }
 

@@ -141,6 +141,9 @@ public static class SchemaMigrator
     /// </summary>
     public static readonly IReadOnlyList<string> HotIndexDdl =
     [
+        // 目录名搜索的**覆盖扫描**：`name LIKE '%x%'` 无索引可用，但覆盖索引让全表扫描只读
+        // (name, id) 两列、不再为每行回表取描述等大字段——10 万目录实测 22ms → 13.5ms（WARNINGS 247）。
+        "CREATE INDEX IF NOT EXISTS idx_folders_name ON folders(name COLLATE NOCASE, id);",
         "CREATE INDEX IF NOT EXISTS idx_links_folder_title ON links(folder_id, title COLLATE NOCASE, id);",
         "CREATE INDEX IF NOT EXISTS idx_links_folder_created ON links(folder_id, created_at, id);",
         "CREATE INDEX IF NOT EXISTS idx_links_folder_updated ON links(folder_id, updated_at, id);",
@@ -219,6 +222,7 @@ public static class SchemaMigrator
           last_visited_at TEXT NULL, visit_count INTEGER NOT NULL DEFAULT 0);
         CREATE INDEX idx_folders_parent ON folders(parent_id);
         CREATE UNIQUE INDEX idx_folders_parent_name ON folders(COALESCE(parent_id, ''), name COLLATE NOCASE);
+        CREATE INDEX idx_folders_name ON folders(name COLLATE NOCASE, id);
 
         CREATE TABLE links (
           id TEXT PRIMARY KEY, folder_id TEXT NULL REFERENCES folders(id) ON DELETE SET NULL,

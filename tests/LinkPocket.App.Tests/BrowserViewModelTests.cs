@@ -499,12 +499,15 @@ public class BrowserViewModelTests
 
             // 已在根：单击「全部书签」= 重载根目录（点"当前所在位置"同样刷新，Windows 口径）
             var rowBefore = vm.Rows.First();
+            var refreshCompleted = 0;
+            vm.RefreshCompleted += (_, _) => refreshCompleted++;
             await vm.SelectTreeNodeAsync(root);
             Assert.Null(vm.CurrentFolderId);                    // 仍在根目录
-            // "刷新发生过"的证据 = **树确实重建**（新节点实例）；**不能**再用"行实例不同"当代理——
-            // 内容一致的刷新会**保留行集**（避免整表重建的等价跳过，见 BrowserViewModel.Refresh）。
+            Assert.Equal(1, refreshCompleted);                  // 重载确实发生了一次
+            // 纯导航不再搬整棵树（include_tree=false）：树节点**原样复用**；
+            // 目录变更由 folders.changed / links.changed 置脏后再取树（见 BrowserTreeRefreshTests）。
             var rootAfterReload = Assert.Single(vm.FolderTree);
-            Assert.NotSame(root, rootAfterReload);
+            Assert.Same(root, rootAfterReload);
             Assert.Equal(rowBefore.Id, vm.Rows.First().Id);
             Assert.True(rootAfterReload.IsSelected);             // 位置仍在根 → 根行仍高亮
             Assert.False(vm.IsSelectedId(rootAfterReload.Id));   // 虚根无身份可选中（Id 为空，永不入集合）

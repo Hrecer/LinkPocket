@@ -35,6 +35,7 @@ internal sealed class FolderOverviewHandler : ICommandHandler
             ParamSpec.Opt<int>("per_page", "Links per page; default 0 = all direct links; positive = page size"),
             ParamSpec.Opt<bool>("include_tree_links", "Include all tree links (default true; the desktop browser explicitly disables it)"),
             ParamSpec.Opt<bool>("include_breadcrumb", "Include the breadcrumb path (default true; the desktop browser builds it from the tree)"),
+            ParamSpec.Opt<bool>("include_tree", "Include the full folder tree (default true; the desktop browser disables it once its tree is fresh, and re-enables it after folders.changed / links.changed)"),
         ],
         Caps: CommandCaps.Query,
         // 界面刷新会走缓存；外部调用方在 QueryAsync 侧绕过缓存（准确优先）。
@@ -45,7 +46,8 @@ internal sealed class FolderOverviewHandler : ICommandHandler
     {
         var withTreeLinks = CommandArgs.OptionalBool(args, "include_tree_links", true);
         var withBreadcrumb = CommandArgs.OptionalBool(args, "include_breadcrumb", true);
-        var dto = await FolderViewCore.BuildAsync(ctx, args, withTreeLinks, withBreadcrumb);
+        var withTree = CommandArgs.OptionalBool(args, "include_tree", true);
+        var dto = await FolderViewCore.BuildAsync(ctx, args, withTreeLinks, withBreadcrumb, withTree);
         return CommandResult.Ok(dto);
     }
 }

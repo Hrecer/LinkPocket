@@ -19,8 +19,11 @@ public interface IFolderRepository
     /// 位置范围 = 两组之和；文件夹结果行 = 名称命中（标题档）∪ 后代（位置档）。
     /// <paramref name="includeDescendants"/> = false 时只查名称命中（标题档不需要后代）。
     /// 匹配口径 = SQL `LIKE`（与链接搜索一致，ASCII 大小写不敏感；中文无大小写）。
+    /// <paramref name="sortBy"/> 决定多带哪一个排序键（见 <see cref="FolderSearchHit"/>）：
+    /// null / "title" 等只需 Id+Name；日期列取 ISO 字符串，`visit_count` 取整数。完整展示字段在取页时补水。
     /// </remarks>
-    Task<FolderNameSearch> SearchByNameAsync(string query, bool includeDescendants, CancellationToken ct);
+    Task<FolderNameSearch> SearchByNameAsync(
+        string query, bool includeDescendants, string? sortBy, CancellationToken ct);
 
     /// <summary>
     /// 按 ID 集合批量取（`id in (...)`，分块下推）：批量还原/批量操作的冲突预检用——

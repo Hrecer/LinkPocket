@@ -157,6 +157,7 @@ public class SchemaMigratorTests
         Assert.Equal(
             new[]
             {
+                "idx_folders_name",
                 "idx_folders_parent",
                 "idx_folders_parent_name",
                 "idx_links_created",

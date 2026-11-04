@@ -14,15 +14,18 @@
 | `search.links` | 查询 | 四范围组合；**空查询 = `LP.VAL.001`**（引导空态是界面职责）；排序缺省 `title` 升序；**外部缺省全量**（不传 / `0` / 负数 = 全部命中），显式正数才分页；总数走 `search.count` |
 | `search.count` | 查询 | 与 `search.links` **同谓词**的 COUNT（不物化实体）；外部调用与兼容路径使用 |
 | `search.explain` | 查询 | ★ 返回每条命中的命中字段列表（title/url/description/path）——给 AI 自校验与"为什么命中"展示用；**外部缺省全量**，显式正数才分页；返回 `total/truncated/page/per_page` |
-| `search.session_open` | 查询 | **UI 专用**（外部宿主不注册）：开一个单一快照会话：同一 SQLite 读事务内 count + 首屏（`first_page_size`，0 = 不取首屏）；返回 `SessionId / Total / FirstPage`。首屏走 `ILinkRepository.CountAndFirstPageAsync` 快路径（纯文本 page-first / path 单扫）。用完必须 close |
+| `search.session_open` | 查询 | **UI 专用**（外部宿主不注册）：开一个单一快照会话：同一 SQLite 读事务内 count + 首屏（`first_page_size`，0 = 不取首屏）；返回 `SessionId / Total / FirstPage`。纯链接首屏走 `ILinkRepository.CountAndFirstPageAsync` 快路径（纯文本 page-first / path 单扫）；含文件夹时走「目录命中 + count + 拼接页」，首页文件夹行按页补水。用完必须 close |
 | `search.session_page` | 查询 | **UI 专用**：从会话取一页；缺省 500，`0` = 引擎单页上限 10000；排序/范围由 open 固定 |
 | `search.session_close` | 查询 | **UI 专用**：幂等关闭会话；不存在返回 false |
 
 ## 内部组件
 
 - `SearchSupport.BuildScopeAsync`：组装多范围谓词（`LinkSearchScope`）交仓储 **SQL 下推**；
-  `search_path` 命中目录名时**展开整棵子树**（内存 BFS，目录数量有限），目录集合经 `folder_id IN (...)` 下推。
-  会话在 open 时**只展开一次**，后续页复用同一 scope。
+  `search_path` 命中目录名时由目录仓储用**递归 CTE** 一次算出「名称命中 + 严格后代」，
+  目录集合经 `folder_id IN (...)`（>512 时 `json_each` 单参数）下推。会话在 open 时**只展开一次**，后续页复用同一 scope。
+- **目录命中行只取 id/name/排序键**（`SearchSupport.BuildFolderRows`）：5 万后代不必在 open 时读全列；
+  取页时 `FindManyAsync` 按页 IDs 补水描述/父目录/日期/次数（同一读事务快照）。排序键随 `sort_by` 选择，
+  「最后查看」为空恒排最后（与链接排序同口径）。
 - `SearchSupport.SearchAsync` / `CountAsync`：过滤与排序全部 SQL 下推；`SearchWithTotal` 已移除，
   首屏总数由会话在同一事务内取得（`CountAndFirstPageAsync`），避免跨快照拼接。
 - `ILinkRepository.CountAndFirstPageAsync`（Data 层实现）：**纯文本范围先取首页**——不满一页即总数，

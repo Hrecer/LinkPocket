@@ -19,6 +19,12 @@ public interface ITreeService
     /// <summary>全库链接计数两口径（文件夹树列计数；配合缓存/事件失效由上层管理）。</summary>
     Task<FolderLinkCounts> LinkCountsAsync(CancellationToken ct);
 
+    /// <summary>
+    /// **只算某一层的子目录**的链接计数两口径（直接 + 递归），不遍历整棵树。
+    /// 目录树已由界面缓存、每次导航不必重搬时，目录页只需这一层的计数（见 folders.overview 的 include_tree=false）。
+    /// </summary>
+    Task<FolderLinkCounts> LinkCountsForChildrenAsync(FolderId? parent, CancellationToken ct);
+
     /// <summary>祖先链（includeSelf = true 时含自身，自底向上）。</summary>
     Task<IReadOnlyList<FolderId>> AncestorsAsync(FolderId id, bool includeSelf, CancellationToken ct);
 

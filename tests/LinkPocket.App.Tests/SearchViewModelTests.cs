@@ -177,8 +177,8 @@ public class SearchViewModelTests
                 TimeSpan.FromSeconds(30)));
             Assert.Equal(10_001, vm.OrderedLinkIds.Count);
             for (var i = 0; i < vm.Results.Count; i += 997)
-                Assert.Equal(vm.Results[i].LinkId, vm.OrderedLinkIds[i]);
-            Assert.Equal(vm.Results[^1].LinkId, vm.OrderedLinkIds[^1]);
+                Assert.Equal(vm.Results[i].Key, vm.OrderedLinkIds[i]);   // 顺序表按跨类型身份键索引
+            Assert.Equal(vm.Results[^1].Key, vm.OrderedLinkIds[^1]);
         }
         finally
         {
