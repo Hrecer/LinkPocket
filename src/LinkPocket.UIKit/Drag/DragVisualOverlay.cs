@@ -388,9 +388,6 @@ public sealed class DragVisualOverlay
         /// <summary>提示条预留高度（DIP）：首次测量空提示得到，之后固定不变。</summary>
         private double _hintReserveHeight;
 
-        /// <summary>提示条当前可见宽度（DIP）：**只增不减**——拖拽中换目标只换文字，药丸不左右伸缩。</summary>
-        private double _hintBarWidth;
-
         /// <summary>提示条最近一次排布的位置（内容坐标 DIP），供独立提示小窗裁剪/定位。</summary>
         internal Rect HintRect { get; private set; }
 
@@ -480,15 +477,18 @@ public sealed class DragVisualOverlay
             };
 
             // —— 「移动到「X」」提示（独立小条，落在浮层下方）——
-            // MaxWidth/省略号：提示条的可见宽度仍随文字走，但被预留区上限约束——窗口尺寸不变。
+            // 宽度 = 当前提示文字的 DesiredSize（上限 MaxHintWidth），每次换字重新量；
+            // 窗口/场景仍按 MaxHintWidth 预留，透明区不参与绘制，因此不会触发窗口 resize。
+            // 文字水平左对齐（垂直居中）：提示从同一基线开始，不再因居中出现两侧空白。
             _hintText = new TextBlock
             {
                 FontSize = 11.5,
                 Foreground = onSurface,
                 VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                TextAlignment = TextAlignment.Left,
                 MaxWidth = MaxHintWidth - 18,   // 减边框 2 + 左右内边距 16
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                HorizontalAlignment = HorizontalAlignment.Center,
             };
             _hint = new Border
             {
@@ -517,7 +517,6 @@ public sealed class DragVisualOverlay
         /// <summary>设置本次拖动的内容（单项 = 图标 + 名称；多选 = 仅项数徽标 + 叠层）。</summary>
         internal void Show(IReadOnlyList<DragItem> items)
         {
-            _hintBarWidth = 0;
             var first = items.FirstOrDefault();
             if (first == null) return;
 
@@ -572,10 +571,9 @@ public sealed class DragVisualOverlay
         {
             _card.Measure(constraint);
             _hint.Measure(new Size(MaxHintWidth, double.PositiveInfinity));
-            if (_hint.Visibility == Visibility.Visible && _hint.DesiredSize.Width > _hintBarWidth)
-                _hintBarWidth = _hint.DesiredSize.Width;   // 只增不减：换目标不缩回
-            // 尺寸只由卡片与**固定预留**的提示区决定，与当前提示文字无关：
-            // 显隐/换字不会触发窗口 resize（拖拽中的 resize 会卡住 OLE 循环）。
+            // 提示条自身宽度只取当前文字的 DesiredSize（Arrange 时再读）；这里仍按
+            // MaxHintWidth 预留场景宽度——显隐/换字不会触发窗口 resize（拖拽中的 resize 会卡住 OLE 循环），
+            // 但药丸的可见背景会随文字缩短/增长。
             // 宽高 = 卡片/提示区 + 四周投影留白（左右/上下各 ShadowPad）
             var w = Math.Max(_card.DesiredSize.Width, MaxHintWidth + 2) + ShadowPad * 2;
             var h = _card.DesiredSize.Height + HintReserveHeight() + 4 + ShadowPad * 2;
@@ -603,9 +601,9 @@ public sealed class DragVisualOverlay
             _stackBack1.Arrange(new Rect(ShadowPad - 2, ShadowPad - 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
             _card.Arrange(new Rect(CardLeft, CardTop, _card.DesiredSize.Width, _card.DesiredSize.Height));
             var hintTop = CardTop + _card.DesiredSize.Height + 4;
-            // 宽度只增不减：目标名变短时药丸保持宽度，避免跨行时左右伸缩。
+            // 宽度跟当前文字走（上限由测量约束），短目标不再继承上一次长目标的宽度。
             // 左边与卡片左边缘对齐（不额外右移），提示条和卡片共用同一条视觉基线。
-            var hintWidth = Math.Max(_hintBarWidth, _hint.DesiredSize.Width);
+            var hintWidth = _hint.DesiredSize.Width;
             HintRect = new Rect(CardLeft, hintTop, hintWidth, _hint.DesiredSize.Height);
             _hint.Arrange(HintRect);
             return finalSize;
