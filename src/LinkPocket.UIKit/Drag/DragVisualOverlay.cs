@@ -55,7 +55,12 @@ public sealed class DragVisualOverlay
     /// <summary>本次提交给专用线程的位图（保留引用，便于诊断/生命周期）。</summary>
     private System.Windows.Media.Imaging.RenderTargetBitmap? _bitmap;
 
-    /// <summary>本次拖拽是否已经显示（隐藏后为 false）。</summary>
+    /// <summary>
+    /// 本次拖拽是否已把内容提交给浮层宿主（**最佳努力，不代表窗口真的可见**）。
+    /// 宿主初始化失败时 <c>Show</c> 会在内部直接返回；这里仍为 true，以便后续 hint/position
+    /// 调用保持同一条代码路径（宿主的写入口会在 <c>_failed</c> 时 no-op）。
+    /// 真正的可见性只由 <see cref="IsShown"/> 读取宿主状态。
+    /// </summary>
     private bool _shown;
 
     private DragVisualOverlay(FrameworkElement owner)
@@ -125,6 +130,8 @@ public sealed class DragVisualOverlay
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
+            // 内容构造/资源解析失败 = 本次拖拽没有浮层，不是拖拽失败；落点、OLE 与数据传输完全不受影响。
+            // 宿主线程的初始化失败在 GhostWindowHost 内部自行降级（no-op），不会以异常形式传到这里。
             _shown = false;
         }
     }
@@ -233,6 +240,9 @@ public sealed class DragVisualOverlay
             return;   // 宿主已脱离可视树（页面正在卸载）：本轮拖拽不再摆位
         }
 
+        // PointToScreen 与宿主线程的 GetCursorPos 都是屏幕物理像素；锚点乘以同一个宿主 DPI，
+        // 因此落位公式始终是“指针物理像素 − 卡片锚点物理像素”。DPI 在起手时固定，
+        // 拖过不同显示器不会中途重建/缩放卡片（坐标仍逐像素对齐，见 GhostWindowHost 类头说明）。
         var dpi = VisualTreeHelper.GetDpi(_owner);
         var x = (int)Math.Round(screen.X - _grabAnchor.X * dpi.DpiScaleX);
         var y = (int)Math.Round(screen.Y - _grabAnchor.Y * dpi.DpiScaleY);
@@ -260,7 +270,11 @@ public sealed class DragVisualOverlay
     public void DebugSetPosition(int x, int y) => GhostWindowHost.Shared.SetExplicitPosition(x, y);
 #endif
 
-    /// <summary>关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。</summary>
+    /// <summary>
+    /// 关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。
+    /// 即使本次 <c>Show</c> 早退（宿主失败/无位图），也照样走 <c>Hide</c> 收尾；宿主侧因此
+    /// 可能出现“End 多于 Begin”的降级路径，正常拖拽路径仍严格一次 Begin/一次 End。
+    /// </summary>
     public void Detach()
     {
         _shown = false;
@@ -282,6 +296,8 @@ public sealed class DragVisualOverlay
     /// <summary>
     /// 把内容渲染成冻结位图（含投影/圆角；Pbgra32 预乘 alpha 正好贴合分层窗口）。
     /// 位图按被装饰视图的 DPI 渲染，物理尺寸 = DIP × DPI；抓取锚点也按同一比例换算成物理像素。
+    /// 产出的 <c>RenderTargetBitmap.PixelWidth/PixelHeight</c> 已经是物理像素，宿主按 1:1 贴图；
+    /// 它不需要也不解读 DPI 元数据（Pbgra32、每行 <c>PixelWidth * 4</c> 字节）。
     /// </summary>
     private System.Windows.Media.Imaging.RenderTargetBitmap? RenderContent(DpiScale dpi)
     {

@@ -33,9 +33,33 @@ namespace LinkPocket.Views;
 ///
 /// <para><b>指针</b>：由系统光标平面独立绘制；浮层只按系统光标驱动 visual offset，
 /// 不接管、不隐藏系统光标。</para>
+///
+/// <para><b>设计边界（以下均为刻意取舍，不是未处理的正常路径缺陷）</b></para>
+/// <list type="bullet">
+/// <item><b>进程级单例、一次初始化</b>：所有页面共用 <see cref="Shared"/> 的同一窗口/线程/设备，
+/// 同一时刻只支持一个拖拽浮层；<c>WndProc</c> 必须是静态的并路由回单例。CreateWindow/InitGraphics/
+/// ThreadMain 任一失败会置 <c>_failed</c>，本进程不再重试——浮层是可选视觉能力，拖拽与落点不依赖它；
+/// 重试会在每次拖拽重复付初始化/等待成本，失败环境通常也不会自愈。</item>
+/// <item><b>物理像素管线</b>：UI 线程交付的位图是<b>已经按宿主 DPI 渲染好的物理像素</b>（Pbgra32，
+/// 宽 × 4 即 stride）；本类只处理 <c>PixelWidth/PixelHeight</c> 与 <c>GetCursorPos</c> 的屏幕物理坐标，
+/// 不再解释 DIP/DPI 元数据。跨显示器拖拽时卡片保持起手时的 DPI 比例（不做拖拽中重建/缩放），
+/// 坐标锚点仍逐像素对齐；逐显示器重新缩放不是当前需求。</item>
+/// <item><b>定时器与优先级</b>：正常路径一次拖拽 = <c>Show</c> 一次 Begin、<c>Hide</c> 一次 End；
+/// Begin 放在失败检查与位图物化之后，失败路径不会抬高进程定时器精度。Windows 10 2004+ 的
+/// <c>timeBeginPeriod</c> 是进程级而非全局，不会影响其他应用。宿主线程的 Highest 只用于短时拖拽的
+/// 唤醒及时性：循环在 waitable timer / MsgWait 上等待，不是忙等；vblank 线程保持 AboveNormal。</item>
+/// <item><b>宽 catch 是降级边界</b>：硬件 D3D→WARP、Raw Input→定时唤醒、NoGC→普通 GC、
+/// 高精度定时器→MsgWait、可选浮层预热→无浮层，均为明确降级；不吞业务异常。
+/// <see cref="ThreadMain"/> 的失败在 Release 只写调试输出，排查浮层缺失时需要调试器或诊断构建。</item>
+/// <item><b>待显示位图与首帧</b>：<c>Show</c> 先放 <c>_pendingBitmap</c> 再置可见；隐藏分支必须保留它，
+/// 否则快速 Show/Hide 会丢首帧。首帧等待 1.5s 是“拖拽启动不被浮层卡死”的上限，不是成功判定；
+/// 超时后宿主仍可能稍后补出，永久失败由 <c>_failed</c>/窗口状态决定，拖拽本身照常继续。</item>
+/// </list>
 /// </summary>
 internal sealed class GhostWindowHost
 {
+    /// <summary>进程级唯一宿主：所有页面共用同一原生窗口、线程与图形设备；同一时刻只支持一个拖拽浮层。
+    /// 需要并行拖拽/多浮层时应重建一套宿主模型，而不是在这里加第二个实例。</summary>
     public static GhostWindowHost Shared { get; } = new();
 
     private readonly object _gate = new();
@@ -294,7 +318,9 @@ internal sealed class GhostWindowHost
         try { EnsureThreadStarted(); }
         catch (Exception)
         {
-            /* 预热失败不影响拖拽：首次 Show 时会再建一次线程 */
+            /* 预热失败不影响拖拽：浮层只是可选视觉能力，拖拽与落点仍走原路径。
+               注意：这里**不是**“首次 Show 时再建一次线程”——_thread 一旦创建就保留；
+               CreateWindow/InitGraphics/ThreadMain 失败会置 _failed，本进程不再尝试（见类头边界说明）。 */
         }
     }
 
@@ -306,6 +332,8 @@ internal sealed class GhostWindowHost
 
     private void EnsureThreadStarted()
     {
+        // _thread 是“已尝试过”标记，不是“仍存活”标记：线程退出/初始化失败后也不清空。
+        // 这是刻意的单次初始化（避免每次拖拽重复 3s 等待与失败初始化）；失败后 _failed 会让 Show 立即返回。
         if (_thread != null) return;
         lock (_gate)
         {
@@ -324,6 +352,9 @@ internal sealed class GhostWindowHost
     {
         try
         {
+            // Highest 是拖拽手感的一部分：宿主只做每帧一次 offset 提交与按需 Present，
+            // 且循环在 waitable timer/MsgWait 上等待（不是忙等）。未经新的 UiBench/诊断对比，
+            // 不要为了“看起来更温和”降到 AboveNormal——唤醒及时性会变，拖拽跟手性基线也会变。
             Thread.CurrentThread.Priority = ThreadPriority.Highest;
             CreateWindow();
             InitGraphics();
@@ -333,6 +364,9 @@ internal sealed class GhostWindowHost
         }
         catch (Exception ex)
         {
+            // 宽 catch 是可选浮层的最后降级边界：窗口/图形/窗口循环任一初始化失败，
+            // 只关闭浮层，绝不把拖拽或主窗口带崩。失败一次性，不重试（见 EnsureThreadStarted）。
+            // Release 下 Debug.WriteLine 通常不可见；排查“浮层不见了”请用调试器或诊断构建。
             _failed = true;
             _ready.Set();
             Debug.WriteLine($"drag ghost host unavailable: {ex}");
@@ -389,7 +423,8 @@ internal sealed class GhostWindowHost
         }
         catch (Exception)
         {
-            /* Raw Input 只用于唤醒；注册失败时高精度定时器仍按 0.5ms 驱动宿主循环 */
+            // Raw Input 只用于唤醒，不是拖拽/落点的前置条件；注册失败时高精度定时器仍按 0.5ms
+            // 驱动宿主循环。宽 catch 覆盖 P/Invoke 可用性差异（缺 DLL/入口点等），不影响拖拽本身。
         }
     }
 
@@ -403,6 +438,8 @@ internal sealed class GhostWindowHost
         }
         catch (Exception)
         {
+            // 硬件 D3D 不可用 → 有意的 WARP 软件回退。两次都失败时异常交给 ThreadMain 的
+            // 降级边界：只关闭浮层，拖拽/落点继续走 WPF/OLE 原路径。
             _d3dDevice = D3D11Api.D3D11CreateDevice(
                 DriverType.Warp, DeviceCreationFlags.BgraSupport,
                 new[] { Vortice.Direct3D.FeatureLevel.Level_11_0, Vortice.Direct3D.FeatureLevel.Level_10_1, Vortice.Direct3D.FeatureLevel.Level_10_0 });
@@ -554,11 +591,19 @@ internal sealed class GhostWindowHost
         _firstFramePresented = false;
         _contentDirty = true;
 
+        // 1.5s 是“拖拽启动不被可选浮层卡死”的上限，不是成功判定：超时只表示首帧没在期限内出现，
+        // 宿主稍后补出仍有效；永久失败由 _failed/窗口状态决定。调用方不等待浮层真正可见，
+        // 拖拽/落点不依赖它（_shown 仍为 true，后续 hint/position 在失败宿主上是无害 no-op）。
         var completion = new ManualResetEventSlim(false);
         _showCompletion = completion;
         _visible = true;
         _forcePosition = true;
         _forceTopmost = true;
+
+        // 正常路径一次拖拽 = Show 一次 Begin、Hide 一次 End，严格配对。
+        // Begin 放在 _failed/位图检查之后：这些失败路径不会抬高进程定时器精度。
+        // Begin 到 Wait 之间没有预期抛异常的操作；若异常路径漏掉 Hide，定时器精度会保持到进程退出
+        // （Windows 10 2004+ 是进程级，不影响其他应用）。如需彻底幂等，应新增引用计数，不能只加 try/catch。
         TimeBeginPeriod(1);
         PostWake();
         completion.Wait(1500);
@@ -605,6 +650,8 @@ internal sealed class GhostWindowHost
         _autoFollow = false;
         _visible = false;
         _forcePosition = true;
+        // 与 Show 的 Begin 配对；Show 早退（_failed/无位图）时这里可能多一次 End，
+        // 正常拖拽路径不受影响。不能把 End 放进 Show 的 finally：定时器精度必须覆盖整个拖拽。
         TimeEndPeriod(1);
         EndNoGcRegion();
         PostWake();
@@ -619,6 +666,7 @@ internal sealed class GhostWindowHost
         }
         catch (Exception)
         {
+            // NoGC 只是降低拖拽期间 GC 停顿的可选项；进入失败就退回普通 GC，不影响拖拽/落点。
             Volatile.Write(ref _noGcActive, 0);
         }
     }
@@ -744,6 +792,11 @@ internal sealed class GhostWindowHost
         }
     }
 
+    /// <summary>
+    /// 窗口类回调必须是静态方法，并由静态委托长期持有（RegisterClassEx 不接管托管回调的生命周期）。
+    /// 进程只有一个 <see cref="Shared"/> 宿主，因此直接路由到它的原始输入处理；
+    /// 多浮层/并行拖拽不在当前模型内——那需要每个宿主独立建窗并拥有自己的回调上下文。
+    /// </summary>
     private static IntPtr RawInputWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         if (msg == WmInput)
@@ -765,7 +818,7 @@ internal sealed class GhostWindowHost
         }
         catch (Exception)
         {
-            /* 拿不到高精度定时器时退化为 MsgWait 超时，拖拽仍可用 */
+            // 拿不到高精度 waitable timer 时退化为带超时的 MsgWait；拖拽仍可用，只是唤醒精度下降。
         }
 
         try
@@ -922,7 +975,10 @@ internal sealed class GhostWindowHost
                         _pendingHintHide = true;
                         _hintVisible = false;
                     }
-                    // 注意：_pendingBitmap 不能丢（Show 的顺序是“放位图 → 置 visible”）。
+                    // _pendingBitmap 的生命周期是隐式的：Show 在锁内先放位图、再把 _visible 置真；
+                    // 本分支可能在两者之间执行，清掉 pending 会让紧接着的 Show 丢首帧。
+                    // 若重构 Show/隐藏路径，必须保留这个顺序（或引入显式“待显示”状态），
+                    // 否则表现为偶发无浮层/首帧空白。提示条状态可以清，卡片位图不能丢。
                 }
             }
         }
@@ -1320,7 +1376,15 @@ internal sealed class GhostWindowHost
     private static extern uint TimeEndPeriod(uint period);
 }
 
-/// <summary>UI 线程渲染好的冻结位图（Pbgra32 像素，物理尺寸）。</summary>
+/// <summary>
+/// UI 线程渲染好的冻结位图（Pbgra32 像素，**物理尺寸**）。
+/// <para>
+/// 这里是整个浮层唯一的位图入口，调用方固定是 <c>DragVisualOverlay.RenderContent</c>：
+/// 它用 <c>RenderTargetBitmap</c> 按宿主 DPI 把 DIP 内容渲成物理像素，因此本类只读
+/// <c>PixelWidth/PixelHeight</c>，不再看 DPI 元数据；<c>PixelWidth * 4</c> 是 32bpp
+/// 位图每行的字节 stride（不是像素数）。显示侧 DComp 按 1:1 物理像素贴图，不做缩放。
+/// </para>
+/// </summary>
 internal sealed class GhostBitmap
 {
     public int Width { get; }
@@ -1337,6 +1401,8 @@ internal sealed class GhostBitmap
     public static GhostBitmap? From(System.Windows.Media.Imaging.BitmapSource bitmap)
     {
         if (bitmap.PixelWidth <= 0 || bitmap.PixelHeight <= 0) return null;
+        // 固定 Pbgra32 + 32bpp：stride = 宽 × 4 字节。调用方不是公共 API，别把任意格式
+        // 的 BitmapSource 直接传进来（灰阶/16bpp 会得到错误步长）。
         var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
         bitmap.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
         return new GhostBitmap(bitmap.PixelWidth, bitmap.PixelHeight, pixels);
