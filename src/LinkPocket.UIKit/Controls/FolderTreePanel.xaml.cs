@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using LinkPocket.I18n;
 
 namespace LinkPocket.Views
@@ -46,6 +47,244 @@ namespace LinkPocket.Views
             // 缺省节点菜单 = 本控件内置的浏览页菜单（重命名/删除，绑节点的 Host.*）；
             // 消费方可在 XAML 里设 NodeMenu 换掉（回收站用「打开/永久删除」）。
             NodeMenu ??= FindResource("TreeContextMenu") as ContextMenu;
+
+            // 拖拽悬停到树上下边缘 → 纵向自动滚；滚动后按指针重新命中节点（宿主据此更新落点）。
+            Loaded += (_, _) =>
+            {
+                if (_dragAutoScroll != null) return;
+                _dragAutoScroll = DragAutoScroll.Attach(FolderTreeControl, FindTreeScroller);
+                _dragAutoScroll.Scrolled += (_, _) => RefreshAutoScrollTarget();
+            };
+
+            // 横向自动滚只在左右贴边（14px）且停留 300ms 后启动：防误触；
+            // 纵向由 DragAutoScroll（上下 40px）负责，两者互不替代。
+            FolderTreeControl.AddHandler(UIElement.DragOverEvent,
+                new DragEventHandler(FolderTree_DragOver), true);
+            FolderTreeControl.AddHandler(UIElement.DropEvent,
+                new DragEventHandler(FolderTree_DragEnd), true);
+            Unloaded += (_, _) => StopDragHorizontal();
+        }
+
+        private DragAutoScroll? _dragAutoScroll;
+        private object? _autoScrollTarget;
+        private bool _autoScrollTargetValid;
+
+        private const double DragHorizontalEdgeZone = 14;
+        private const double DragHorizontalHoldMs = 300;
+        // 树的横向可滚范围通常只有一两百像素：慢速下限 + 低速上限，避免一碰就掠过。
+        private const double DragHorizontalMaxSpeed = 240;
+        private const double DragHorizontalMinSpeed = 60;
+
+        private DispatcherTimer? _dragHTimer;
+        private DateTime _dragHEligible;
+        private DateTime _dragHLast;
+        private int _dragHDir;
+        private double _dragHSpeed;
+
+        private void FolderTree_DragOver(object sender, DragEventArgs e)
+        {
+            var scroller = FindTreeScroller();
+            if (scroller == null || scroller.ScrollableWidth <= 0.5)
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            var width = FolderTreeControl.ActualWidth;
+            var x = e.GetPosition(FolderTreeControl).X;
+            var dir = x < DragHorizontalEdgeZone ? -1
+                : x > width - DragHorizontalEdgeZone ? 1 : 0;
+            if (dir == 0)
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            if (dir != _dragHDir || _dragHTimer == null)
+            {
+                _dragHEligible = DateTime.UtcNow.AddMilliseconds(DragHorizontalHoldMs);
+                _dragHLast = DateTime.UtcNow;
+            }
+            _dragHDir = dir;
+            _dragHSpeed = HorizontalSpeedAt(x, width);
+
+            if (_dragHTimer == null)
+            {
+                _dragHTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+                {
+                    Interval = TimeSpan.FromMilliseconds(16),
+                };
+                _dragHTimer.Tick += DragHorizontalTick;
+            }
+            if (!_dragHTimer.IsEnabled) _dragHTimer.Start();
+        }
+
+        private static double HorizontalSpeedAt(double x, double width)
+        {
+            var strength = x < DragHorizontalEdgeZone
+                ? (DragHorizontalEdgeZone - x) / DragHorizontalEdgeZone
+                : (x - (width - DragHorizontalEdgeZone)) / DragHorizontalEdgeZone;
+            return DragHorizontalMinSpeed
+                + Math.Clamp(strength, 0, 1) * (DragHorizontalMaxSpeed - DragHorizontalMinSpeed);
+        }
+
+        private void DragHorizontalTick(object? sender, EventArgs e)
+        {
+            if (_dragHDir == 0 || !IsAnyDragButtonDown())
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            var scroller = FindTreeScroller();
+            if (scroller == null || !GetCursorPos(out var screen))
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            Point point;
+            try
+            {
+                point = FolderTreeControl.PointFromScreen(new Point(screen.X, screen.Y));
+            }
+            catch (InvalidOperationException)
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            var width = FolderTreeControl.ActualWidth;
+            if (point.X < 0 || point.X > width
+                || point.Y < 0 || point.Y > FolderTreeControl.ActualHeight
+                || scroller.ScrollableWidth <= 0.5)
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            var dir = point.X < DragHorizontalEdgeZone ? -1
+                : point.X > width - DragHorizontalEdgeZone ? 1 : 0;
+            if (dir == 0)
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            if (dir != _dragHDir)
+            {
+                _dragHDir = dir;
+                _dragHEligible = now.AddMilliseconds(DragHorizontalHoldMs);
+            }
+            _dragHSpeed = HorizontalSpeedAt(point.X, width);
+            if (now < _dragHEligible)
+            {
+                _dragHLast = now;
+                return;
+            }
+
+            var dt = Math.Min(0.05, Math.Max(0.001, (now - _dragHLast).TotalSeconds));
+            _dragHLast = now;
+            var before = scroller.HorizontalOffset;
+            if ((dir < 0 && before <= 0.5)
+                || (dir > 0 && before >= scroller.ScrollableWidth - 0.5))
+            {
+                StopDragHorizontal();
+                return;
+            }
+
+            scroller.ScrollToHorizontalOffset(before + dir * _dragHSpeed * dt);
+            _autoScrollTargetValid = false;
+            RefreshAutoScrollTarget();
+        }
+
+        private void FolderTree_DragEnd(object sender, DragEventArgs e) => StopDragHorizontal();
+
+        private void StopDragHorizontal()
+        {
+            _dragHDir = 0;
+            _dragHSpeed = 0;
+            if (_dragHTimer == null) return;
+            _dragHTimer.Stop();
+            _dragHTimer.Tick -= DragHorizontalTick;
+            _dragHTimer = null;
+        }
+
+        private static bool IsAnyDragButtonDown()
+            => (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0;
+
+        /// <summary>拖拽自动滚后指针下的节点变了（没有新的 OLE DragOver 也要更新落点）。</summary>
+        public event EventHandler<object?>? DragScrollTargetChanged;
+
+        /// <summary>拖拽期间来自 Raw Input 的滚轮：树只做纵向滚动，滚完按指针刷新落点。</summary>
+        public void ScrollByWheel(int delta)
+        {
+            if (delta == 0) return;
+            var scroller = FindTreeScroller();
+            if (scroller == null || scroller.ScrollableHeight <= 0.5) return;
+            if (scroller.CanContentScroll)
+            {
+                var steps = Math.Max(1, Math.Abs(delta) / 120 * 3);
+                for (var i = 0; i < steps; i++)
+                {
+                    if (delta > 0) scroller.LineUp();
+                    else scroller.LineDown();
+                }
+            }
+            else
+            {
+                scroller.ScrollToVerticalOffset(scroller.VerticalOffset - delta * 0.4);
+            }
+            _autoScrollTargetValid = false;
+            RefreshAutoScrollTarget();
+        }
+
+        /// <summary>滚轮只服务纵向：没有上下可滚时不把滚轮让给横向。</summary>
+        private void FolderTree_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            var scroller = FindTreeScroller();
+            if (scroller == null) return;
+            if (scroller.ScrollableHeight > 0.5) return;   // 有上下 → 走默认竖向滚
+            e.Handled = true;                              // 没有上下 → 滚轮不滚左右
+        }
+
+        private void RefreshAutoScrollTarget()
+        {
+            if (!GetCursorPos(out var screen))
+            {
+                SetAutoScrollTarget(_autoScrollTarget);
+                return;
+            }
+
+            Point point;
+            try
+            {
+                point = FolderTreeControl.PointFromScreen(new Point(screen.X, screen.Y));
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+
+            if (point.X < 0 || point.X > FolderTreeControl.ActualWidth
+                || point.Y < 0 || point.Y > FolderTreeControl.ActualHeight)
+            {
+                SetAutoScrollTarget(null);
+                return;
+            }
+
+            var hit = FolderTreeControl.InputHitTest(point) as DependencyObject;
+            while (hit != null && hit is not TreeViewItem) hit = VisualTreeHelper.GetParent(hit);
+            SetAutoScrollTarget((hit as TreeViewItem)?.DataContext);
+        }
+
+        private void SetAutoScrollTarget(object? node)
+        {
+            if (_autoScrollTargetValid && Equals(node, _autoScrollTarget)) return;
+            _autoScrollTarget = node;
+            _autoScrollTargetValid = true;
+            DragScrollTargetChanged?.Invoke(this, node);
         }
 
         public static readonly DependencyProperty NodeMenuProperty = DependencyProperty.Register(
@@ -288,6 +527,7 @@ namespace LinkPocket.Views
 
         private void FolderTreeItem_DragOver(object sender, DragEventArgs e)
         {
+            _autoScrollTargetValid = false;   // 正常拖拽事件已更新落点，自动滚后再按指针重算
             var args = new TreeItemDragEventArgs
             {
                 Args = e, Node = (sender as TreeViewItem)?.DataContext, Source = sender as FrameworkElement,
@@ -297,6 +537,7 @@ namespace LinkPocket.Views
 
         private void FolderTreeItem_DragLeave(object sender, DragEventArgs e)
         {
+            _autoScrollTargetValid = false;
             NodeDragLeave?.Invoke(this, new TreeItemDragEventArgs
             {
                 Args = e,
@@ -314,6 +555,17 @@ namespace LinkPocket.Views
             NodeDrop?.Invoke(this, args);
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out ScreenPoint point);
 
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int virtualKey);
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct ScreenPoint
+        {
+            public int X;
+            public int Y;
+        }
     }
 }

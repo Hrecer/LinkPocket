@@ -10,6 +10,14 @@
                 <ResourceDictionary Source="pack://application:,,,/LinkPocket.UIKit;component/UIKit.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- 系统焦点虚线框全站退场：键盘焦点/部分鼠标焦点路径会在控件外圈画黑色虚线方框
+                 （拖动源、树/表容器、工具栏按钮都可能是来源）。这里把系统 FocusVisualStyle
+                 的模板置空；焦点语义仍由选中态 / 当前段等业务视觉表达。
+                 ⚠️ 必须放在合并字典之后的本字典里，才能覆盖库带入的默认样式。 -->
+            <Style x:Key="{x:Static SystemParameters.FocusVisualStyleKey}">
+                <Setter Property="Control.Template" Value="{x:Null}"/>
+            </Style>
+
             <!-- 页面专属资源仍在各页（随页面迁往 UI.* 项目） -->
         </ResourceDictionary>
     </Application.Resources>

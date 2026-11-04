@@ -5,13 +5,17 @@
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              x:Name="Root">
     <!-- 可复用面包屑地址栏（数据驱动，浏览页/回收站共用）：
-         - 浏览页：Breadcrumbs = 路径段集合；CrumbClickCommand 点段导航；编辑态（IsPathEditing）= 
+         - 浏览页：Breadcrumbs = 路径段集合；CrumbClickCommand 点段导航；编辑态（IsPathEditing）=
            路径输入框 + 候选 Popup（键盘上下选候选经 CandidateMoveRequested 转发宿主 VM）。
          - 回收站：只塞一个「回收站」段，IsPathEditing 恒 false → 纯展示。
-         ⚠️ 胶囊基态值必须写在 Style.Setters（本地值优先级高于样式触发器）。 -->
 
+         版式（2026-11-04 定稿，严格按 44 / 32 / 6 做）：
+         44 外壳 = 2 描边 + 4 上内距 + 32 内容 + 4 下内距 + 2 描边。
+         轨道命中带 6px 只借用底部「4 内距 + 2 描边」，可见拇指恒 3px；
+         悬停/拖动只改颜色，绝不改高/宽，不进入 32px 内容带。
+         ⚠️ 背景/描边是独立一层，内容与轨道各有自己的固定层；不能再把轨道塞回内容 Grid。 -->
     <UserControl.Resources>
-        <!-- 路径编辑框：Windows 11 口径——**胶囊自己就是输入框**（胶囊 DataTrigger 出 Primary 描边），
+        <!-- 路径编辑框：Windows 11 口径——胶囊自己就是输入框（胶囊 DataTrigger 出 Primary 描边），
              文本直接躺在胶囊里：编辑框背景透明、无边框，不内嵌第二个"白框"。高度 32 与面包屑按钮一致。 -->
         <Style x:Key="PathEditField" TargetType="TextBox">
             <Setter Property="FontSize" Value="13"/>
@@ -53,59 +57,136 @@
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- 路径段药丸的状态层级（2026-11-04 用户定稿）：
+             ① 普通段：透明底；悬停 = 强调色 12% 叠层（比旧 8% 明显一档）；
+             ② **当前所在段** = `App.Surface.Selected` 药丸 + 10% 强调叠层（看得清、不过深）；
+             ③ 悬停当前段 = 叠层再深一点（**不加描边**）；
+             ④ 拖拽落点 = 半透明强调色（20%），**不实心、不反白**（不抢戏，动作由浮层提示说明）。
+             几何不变：32 高、圆角 16、左右内距 14（与库 TextButton 的实际内距一致）。 -->
+        <Style x:Key="CrumbButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="16" SnapsToDevicePixels="True">
+                            <Grid>
+                                <!-- 当前所在段的加深层：在选中药丸底上再压一层强调色（比普通悬停明显更深）。 -->
+                                <Border x:Name="CurrentTint" Background="{DynamicResource App.Accent.Fill}"
+                                        Opacity="0" CornerRadius="16" IsHitTestVisible="False"/>
+                                <!-- 悬停/按压/落点叠层：铺满整颗药丸（含内距），不参与命中。 -->
+                                <Border x:Name="StateLayer" Background="{DynamicResource App.Accent.Fill}"
+                                        Opacity="0" CornerRadius="16" IsHitTestVisible="False"/>
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- 当前所在段：常驻一层轻加深（10% 强调色叠在 Surface.Selected 上）。 -->
+                            <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                <Setter TargetName="CurrentTint" Property="Opacity" Value="0.10"/>
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.12"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.20"/>
+                            </Trigger>
+                            <!-- 悬停**当前段**：只再加深一点，不画描边。 -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsLast}" Value="True"/>
+                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.08"/>
+                            </MultiDataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsLast}" Value="True"/>
+                                    <Condition Binding="{Binding IsPressed, RelativeSource={RelativeSource TemplatedParent}}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.14"/>
+                            </MultiDataTrigger>
+                            <!-- 拖拽落点：半透明强调色（由 SetDropHighlight 写 Tag=DropTarget），浅而清楚，不实心。 -->
+                            <Trigger Property="Tag" Value="DropTarget">
+                                <Setter TargetName="StateLayer" Property="Opacity" Value="0.20"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsLast}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+                <!-- 根段（`@root`/`@trash`）的宽度 = **冻结几何**（页面给的 RootSegmentWidth，定稿口径
+                     = 中文基线）。根名随语言换（全部书签 ⇄ Bookmarks）⇒ 不定宽就会把地址栏撑宽、
+                     把后面的段整排推走（实测 80→97.18）。
+                     ⚠️ 模式是 `Shrink`（**只缩字号、绝不截断**）：实测 `ShrinkThenEllipsis` 在这枚
+                     80px 的壳里把 Bookmarks 画成了 `Bookma…` —— 截断的路径名是**错的名字**
+                     （与"截断的日期是错的日期"同一条产品判断）。 -->
+                <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                    <Setter Property="Width" Value="{Binding RootSegmentWidth, ElementName=Root}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
     </UserControl.Resources>
 
-    <!-- 胶囊外壳：44 高恒定，编辑态只做颜色/描边形变，圆角保持 22（44 的全圆）。
+    <!-- 胶囊外壳：44 高恒定。背景/描边独立层，内容/轨道各自固定高度；
          点空白 = 请求进入路径编辑（Windows 11 口径：无需任何按钮；段点击被 Button 吃掉不会到这）。
-         ⚠️ 本地值优先级高于样式触发器 —— 基态值必须写在 Style.Setters。
-         ⚠️ **44 这个数是算出来的，不是随手取的**：壳体内容高度 = 44 − 描边 2×2 − 内距 2×4 = 32，
-         正好等于段药丸声明的高度（32）。曾用 40：内容区只有 40 − 4 − 8 = 28 < 32 ⇒
-         整颗药丸被布局压成 28 高（圆角 14 的胶囊被压扁，悬停底看着"底下被切掉一条"）。
-         改这个数之前先跑「仅 i18nvisual 套件」（它逐段量"药丸实得高度 == 声明高度"）。 -->
-    <Border x:Name="CapsuleShell" Height="44" BorderThickness="2" VerticalAlignment="Center"
-            local:BlankClick.IsInteractive="True"
-            MouseLeftButtonDown="CrumbHost_MouseLeftButtonDown">
-        <Border.Style>
-            <Style TargetType="Border">
-                <Setter Property="Padding" Value="8,4"/>
-                <Setter Property="CornerRadius" Value="22"/>
-                <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
-                <Setter Property="BorderBrush" Value="Transparent"/>
-                <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
-                        <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
-                        <Setter Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
-        </Border.Style>
-        <Grid VerticalAlignment="Center">
-            <!-- 面包屑行（Windows 11 口径的溢出折叠）：空间不足时**从左折叠**进 « 按钮、
-                 当前段（最右）永远可见；窗口拉宽自动还原。« 点击列出被折叠的祖先层级。
-                 ⚠️ ItemsSource 由 code-behind 维护（_visible 投影），折叠算法见 RelayoutCrumbs。 -->
-            <DockPanel x:Name="CrumbRow" VerticalAlignment="Center" LastChildFill="True">
-                <Button x:Name="OverflowButton" DockPanel.Dock="Left" Visibility="Collapsed"
-                        Command="{Binding CrumbClickCommand, ElementName=Root}" FontSize="13"
-                        Background="Transparent" BorderThickness="0" Cursor="Hand"
-                        Padding="8,0" MinHeight="32" Height="32" Click="OverflowButton_Click">
-                    <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
-                        </Style>
-                    </Button.Style>
-                    <TextBlock Text="«" FontSize="14"/>
-                </Button>
-                <ItemsControl x:Name="CrumbItems" VerticalAlignment="Center">
-                    <ItemsControl.Style>
-                        <Style TargetType="ItemsControl">
-                            <Setter Property="Visibility" Value="Visible"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ItemsControl.Style>
+         ⚠️ **44 这个数是算出来的**：壳体内容高度 = 44 − 描边 2×2 − 内距 2×4 = 32，
+         正好等于段药丸声明的高度（32）。改这个数之前先跑「仅 i18nvisual 套件」。 -->
+    <Grid x:Name="CapsuleShell" Height="44" VerticalAlignment="Center" Background="Transparent"
+          local:BlankClick.IsInteractive="True"
+          AllowDrop="{Binding CrumbDropEnabled, ElementName=Root}"
+          MouseLeftButtonDown="CrumbHost_MouseLeftButtonDown"
+          PreviewMouseWheel="Capsule_MouseWheel"
+          DragOver="Capsule_DragOver"
+          DragLeave="Capsule_DragLeave"
+          Drop="Capsule_Drop">
+        <!-- 背景 + 描边层：不参与命中，圆角只负责视觉。 -->
+        <Border x:Name="CapsuleChrome" IsHitTestVisible="False" SnapsToDevicePixels="True">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="{DynamicResource App.Surface.Card}"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                    <Setter Property="CornerRadius" Value="22"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsPathEditing, ElementName=Root}" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
+                            <Setter Property="BorderBrush" Value="{DynamicResource App.Accent.Fill}"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        </Border>
+
+        <!-- 内容层铺到胶囊内缘（只让出 2px 描边），并用**与内胶囊一致的圆角**裁剪：
+             滚动时左缘的祖先段是被真正的药丸轮廓切掉，而不是在内部再切一条直边
+             （这就是“沉浸式”:内容滑进胶囊圆头里）。上下同样让出 2px 描边，
+             32px 药丸仍居中在原来的 y=6..38 位置。 -->
+        <Grid x:Name="CrumbContent" Margin="2" ClipToBounds="True">
+            <ScrollViewer x:Name="CrumbViewport" ClipToBounds="True" Background="Transparent"
+                          HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
+                          CanContentScroll="False" Focusable="False" PanningMode="None">
+                <!-- 窗口化路径段：只物化“可见段 + 缓冲”，由 code-behind 维护 ItemsSource。 -->
+                <ItemsControl x:Name="CrumbItems" HorizontalAlignment="Left" VerticalAlignment="Center">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal"/>
@@ -116,34 +197,8 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button Command="{Binding CrumbClickCommand, ElementName=Root}"
                                         CommandParameter="{Binding}"
-                                        Background="Transparent" BorderThickness="0"
-                                        FontSize="13" Cursor="Hand"
-                                        AllowDrop="{Binding CrumbDropEnabled, ElementName=Root}"
-                                        DragOver="Crumb_DragOver" DragLeave="Crumb_DragLeave" Drop="Crumb_Drop">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource TextButton}">
-                                            <Setter Property="Foreground" Value="{DynamicResource App.Text.Secondary}"/>
-                                            <Setter Property="Padding" Value="12,0"/>
-                                            <Setter Property="MinHeight" Value="32"/>
-                                            <Setter Property="Height" Value="32"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsLast}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource App.Accent.Container}"/>
-                                                    <Setter Property="Foreground" Value="{DynamicResource App.Text.OnContainer}"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                </DataTrigger>
-                                                <!-- 根段（`@root`/`@trash`）的宽度 = **冻结几何**（页面给的 RootSegmentWidth，定稿口径
-                                                     = 中文基线）。根名随语言换（全部书签 ⇄ Bookmarks）⇒ 不定宽就会把地址栏撑宽、
-                                                     把后面的段整排推走（实测 80→97.18）。
-                                                     ⚠️ 模式是 `Shrink`（**只缩字号、绝不截断**）：实测 `ShrinkThenEllipsis` 在这枚
-                                                     80px 的壳里把 Bookmarks 画成了 `Bookma…` —— 截断的路径名是**错的名字**
-                                                     （与"截断的日期是错的日期"同一条产品判断）。 -->
-                                                <DataTrigger Binding="{Binding IsRoot}" Value="True">
-                                                    <Setter Property="Width" Value="{Binding RootSegmentWidth, ElementName=Root}"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
+                                        FontSize="13"
+                                        Style="{StaticResource CrumbButtonStyle}">
                                     <TextBlock>
                                         <!-- 根段走自适应通道（宽度已冻结 ⇒ 字号是唯一让位的维度）；用户段原样画、绝不缩字号。 -->
                                         <TextBlock.Style>
@@ -155,16 +210,8 @@
                                                                 Value="{Binding Path=(local:LocFit.Chosen), RelativeSource={RelativeSource Self}}"/>
                                                         <Setter Property="local:LocFit.Text" Value="{loc:Segment Name}"/>
                                                         <Setter Property="local:LocFit.Mode" Value="Shrink"/>
-                                                        <!-- ⚠️ `MaxWidth`（不是 `Width`）是**这条通道能不能工作**的前提：
-                                                             文字若按内容取宽，`LocFit` 读到的"可用宽"就是它自己需要的宽，
-                                                             于是永远判定"放得下"、字号一个都不缩，最后由壳把文字**裁掉**
-                                                             （实测屏幕上是 `Bookma`；实测读数 `[Bookmarks] 想占 97.7px、壳只有 80px`）。
-                                                             ⚠️ 取的是**本段按钮的内容宽**（`RootSegmentWidth − 段内距 24`），不是写死的 56：
-                                                             浏览页根段 80、回收站 67，写死 56 会让回收站那侧（内容宽只有 43）
-                                                             把 `Trash` 的第一个字母裁掉（实测英文界面画出 `rash`）。
-                                                             用 `MaxWidth` 而不是 `Width`：不写死数字，段宽改了一处就够。 -->
                                                         <Setter Property="MaxWidth"
-                                                                Value="{Binding Width, RelativeSource={RelativeSource AncestorType=Button}, Converter={StaticResource ShellContentWidth}, ConverterParameter=24}"/>
+                                                                Value="{Binding Width, RelativeSource={RelativeSource AncestorType=Button}, Converter={StaticResource ShellContentWidth}, ConverterParameter=28}"/>
                                                         <Setter Property="HorizontalAlignment" Value="Center"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
@@ -188,43 +235,12 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-            </DockPanel>
-
-            <!-- « 折叠段清单：点 « 弹出被折叠的祖先层级，点击经 CrumbClickCommand 直达 -->
-            <Popup x:Name="OverflowPopup" PlacementTarget="{Binding ElementName=OverflowButton}"
-                   Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
-                <Border Background="{DynamicResource App.Surface.Card}"
-                        BorderBrush="Transparent" BorderThickness="1"
-                        CornerRadius="12" MaxHeight="260" MinWidth="140" Padding="0,4">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.18" Color="{DynamicResource App.Color.Shadow}"/>
-                    </Border.Effect>
-                    <ListBox x:Name="OverflowList" Focusable="False" BorderThickness="0" Background="Transparent"
-                             ItemsSource="{Binding FoldedCrumbs, ElementName=Root}"
-                             PreviewMouseLeftButtonUp="OverflowList_PreviewMouseLeftButtonUp">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{loc:Segment Name}" FontSize="13" Height="28" Margin="12,0"
-                                           VerticalAlignment="Center" Cursor="Hand"
-                                           Foreground="{DynamicResource App.Text.Primary}"/>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Border>
-            </Popup>
-
-            <!-- 导航首帧的占位：固定一个省略号（始终在布局里、默认透明），切到新路径时只切 Opacity，
-                 不触发布局、不生成面包屑容器；精确折叠在首帧之后落地并隐藏。 -->
-            <TextBlock x:Name="CrumbSplash" Text="…" Opacity="0" Panel.ZIndex="2"
-                       FontSize="13" FontWeight="SemiBold" Margin="12,0"
-                       VerticalAlignment="Center" TextOptions.TextFormattingMode="Display"
-                       Foreground="{DynamicResource App.Text.Primary}"
-                       IsHitTestVisible="False"/>
+            </ScrollViewer>
 
             <!-- 路径编辑态：输入框 + 同级候选 Popup -->
             <TextBox x:Name="PathEditBox" Style="{StaticResource PathEditField}"
                      Text="{Binding PathEditText, ElementName=Root, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                     VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                     Margin="8,0" VerticalAlignment="Center" HorizontalAlignment="Stretch"
                      PreviewKeyDown="PathEditBox_PreviewKeyDown"
                      LostFocus="PathEditBox_LostFocus">
                 <TextBox.InputBindings>
@@ -260,5 +276,26 @@
                 </Border>
             </Popup>
         </Grid>
-    </Border>
+
+        <!-- 6px 轨道命中带：视觉拇指恒 3px；悬停/拖动只变颜色；整个带在胶囊底边内。 -->
+        <Grid x:Name="RailLayer" Height="6" VerticalAlignment="Bottom" Margin="14,0,14,0"
+              Background="Transparent" Visibility="Collapsed" Cursor="Arrow"
+              Panel.ZIndex="8" local:BlankClick.IsInteractive="True"
+              MouseLeftButtonDown="RailLayer_MouseLeftButtonDown"
+              MouseMove="RailLayer_MouseMove"
+              MouseLeftButtonUp="RailLayer_MouseLeftButtonUp"
+              MouseEnter="RailLayer_MouseEnter"
+              MouseLeave="RailLayer_MouseLeave">
+            <Border x:Name="RailTrack" Height="2" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                    Background="{DynamicResource App.Surface.Hover}" Opacity="0.55"
+                    CornerRadius="1" IsHitTestVisible="False"/>
+            <Border x:Name="RailThumb" Height="3" Width="36" VerticalAlignment="Bottom" Margin="0,0,0,2"
+                    Background="{DynamicResource App.Text.Muted}" Opacity="0.78"
+                    CornerRadius="1.5" HorizontalAlignment="Left" IsHitTestVisible="False">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="RailThumbTranslate"/>
+                </Border.RenderTransform>
+            </Border>
+        </Grid>
+    </Grid>
 </UserControl>

@@ -317,6 +317,9 @@ public class SortableDataTable : Grid
         _rowsList.ItemContainerGenerator.StatusChanged += (_, _) => RepaintSelectionOnRealizedContainers();
     }
 
+    /// <summary>拖拽滚轮滚动发生了一次（宿主据此重算指针下的落点/高亮）。</summary>
+    public event EventHandler? RowsAutoScrolled;
+
     /// <summary>
     /// 行列表面板：<see cref="VirtualizingStackPanel"/>，**虚拟化属性直接写在面板上**。
     /// </summary>
@@ -385,6 +388,15 @@ public class SortableDataTable : Grid
 
     /// <summary>把行区滚到指定纵向偏移（模板/工厂两种模式都有效）。</summary>
     public void ScrollToVerticalOffset(double offset) => RowsScroller?.ScrollToVerticalOffset(offset);
+
+    /// <summary>拖拽期间来自 Raw Input 的滚轮：纵向滚动行区，并让宿主重算指针下的落点。</summary>
+    public void ScrollRowsByWheel(int delta)
+    {
+        var scroller = RowsScroller;
+        if (scroller == null || delta == 0) return;
+        scroller.ScrollToVerticalOffset(scroller.VerticalOffset - delta * 0.4);
+        RowsAutoScrolled?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>行区滚动（原始事件，供页面在整批替换时记位）。</summary>
     public event EventHandler<double>? VerticalOffsetChanged;

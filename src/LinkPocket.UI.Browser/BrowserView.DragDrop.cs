@@ -25,17 +25,17 @@ public partial class BrowserView : UserControl
     /// **取消不是失败**：收尾时据此跳过成环判定，绝不弹窗。</summary>
     private bool _dragCancelledByEscape;
 
-    /// <summary>挂出浮层并记录抓取点（拖拽时 WPF 不再派发 MouseMove；位置由
-    /// <see cref="TrackDragPointer"/> 在渲染帧上采样）。</summary>
-    /// <param name="source">抓在手里的行 / 树节点：浮层按"按下时指针在它内部的相对位置"跟随指针，
-    /// 而不是固定挂在指针右下角（像真把这一行提起来）。</param>
-    private void ShowDragVisual(IReadOnlyList<DragItem> items, DependencyObject source)
+    /// <summary>挂出浮层（拖拽时 WPF 不再派发 MouseMove；位置由
+    /// <see cref="TrackDragPointer"/> 在渲染帧上采样）。光标固定落在浮层下缘中点，
+    /// 与按在行/节点的哪个位置无关（资源管理器口径）。</summary>
+    private void ShowDragVisual(IReadOnlyList<DragItem> items)
     {
         _dragVisual = DragVisualOverlay.Attach(this);
         _dragCancelledByEscape = false;
         if (_dragVisual == null) return;
         // 真实拖拽：自动跟随从 Show 内部就开启——首帧提交前宿主会再采一次系统光标。
-        _dragVisual.Show(items, GrabFraction(source), autoFollow: true);
+        _dragVisual.Show(items, autoFollow: true);
+        _dragVisual.WheelDelta += OnDragWheelDelta;
         _dragVisual.UpdateHint(ViewModel?.DropTargetHintText ?? string.Empty);
         // 拖拽期间由浮层独立线程跟随系统光标；OLE 的光标形状由系统照常绘制。
         // 起手即就位：第一次 GiveFeedback 之前就先摆到指针下。
@@ -48,33 +48,6 @@ public partial class BrowserView : UserControl
         // 拖拽源在本页内 → GiveFeedback / QueryContinueDrag 会冒泡到本页；处理器按方法组注册，成对移除（同一实例语义）
         AddHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         AddHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
-    }
-
-    /// <summary>
-    /// 按下时指针在源元素里的相对位置（0..1）：浮层以同一比例被"捏住"。
-    /// 源元素不可测量时退回中心——总比把浮层甩到指针右下角再自称"抓住了"诚实。
-    /// </summary>
-    private Point GrabFraction(DependencyObject source)
-    {
-        var centered = new Point(0.5, 0.5);
-        if (source is not UIElement element) return centered;
-
-        try
-        {
-            var origin = element.TransformToAncestor(this).Transform(new Point(0, 0));
-            var size = element.RenderSize;
-            if (size.Width <= 0 || size.Height <= 0) return centered;
-
-            var pointer = SystemCursorInView();
-            return new Point(
-                Math.Clamp((pointer.X - origin.X) / size.Width, 0, 1),
-                Math.Clamp((pointer.Y - origin.Y) / size.Height, 0, 1));
-        }
-        catch (InvalidOperationException)
-        {
-            // 源元素尚未接入本页可视树（例如页面正在重建）：没有可靠坐标，退回中心。
-            return centered;
-        }
     }
 
     /// <summary>系统光标在页内的坐标：拖拽期间 WPF 的 <c>Mouse.GetPosition</c> 不由 OLE 循环驱动，
@@ -101,6 +74,7 @@ public partial class BrowserView : UserControl
 #endif
         StopDragPointerFrameTracking();   // 静态事件订阅绝不留到拖拽之后
         if (_dragVisual == null) return;
+        _dragVisual.WheelDelta -= OnDragWheelDelta;
         RemoveHandler(DragDrop.GiveFeedbackEvent, new GiveFeedbackEventHandler(OnGiveFeedback));
         RemoveHandler(DragDrop.QueryContinueDragEvent, new QueryContinueDragEventHandler(OnQueryContinueDrag));
         _dragVisual.Detach();
@@ -158,9 +132,41 @@ public partial class BrowserView : UserControl
 
     // GiveFeedback 仍保留：它是 OLE 拖拽循环内的同步回调，渲染帧/定时器被系统节流时
     // 仍能把最后一次指针位置补上——但**只排一次延迟摆位**，不在这里直接调窗口 API。
+    //
+    // 同时控制拖拽光标（资源管理器口径）：应用内一律**普通箭头**（系统的移动光标自带一个
+    // 小虚线方框，用户明确不要）；拖出应用窗口后交回系统，由系统显示禁止/目标应用的光标。
     private void OnGiveFeedback(object sender, GiveFeedbackEventArgs e)
     {
+        if (IsCursorInsideApp())
+        {
+            e.UseDefaultCursors = false;
+            Mouse.SetCursor(Cursors.Arrow);
+        }
+        else
+        {
+            e.UseDefaultCursors = true;
+        }
+        e.Handled = true;
         PostDragPointerMove();
+    }
+
+    /// <summary>系统光标是否还在本应用的主窗口内（屏幕物理像素，含标题栏/非客户区）。</summary>
+    private bool IsCursorInsideApp()
+    {
+        if (!GetCursorPos(out var screen)) return true;   // 读不到就按应用内处理：绝不闪“禁止”
+        var window = Window.GetWindow(this);
+        if (window == null) return true;
+        try
+        {
+            var topLeft = window.PointToScreen(new Point(0, 0));
+            var bottomRight = window.PointToScreen(new Point(window.ActualWidth, window.ActualHeight));
+            return screen.X >= topLeft.X && screen.X < bottomRight.X
+                && screen.Y >= topLeft.Y && screen.Y < bottomRight.Y;
+        }
+        catch (InvalidOperationException)
+        {
+            return true;
+        }
     }
 
     /// <summary>
@@ -662,7 +668,7 @@ public partial class BrowserView : UserControl
         _pendingDrop = null;
         _dragSourcePane = sourcePane;
         _dragItems = items;
-        ShowDragVisual(items, source);
+        ShowDragVisual(items);
         if (_dragVisual != null) StartDragPointerFrameTracking();
 #if LINKPOCKET_DRAG_DIAGNOSTICS
         var debugLoopStart = DragDiagnostics.IsActive ? Stopwatch.GetTimestamp() : 0L;
@@ -801,6 +807,107 @@ public partial class BrowserView : UserControl
         foreach (var item in _dragItems)
             if (string.Equals(item.Id, id, StringComparison.Ordinal)) return false;
         return true;
+    }
+
+    /// <summary>
+    /// 拖拽期间的滚轮（Raw Input 转发）：按指针下的区域滚动——列表/右栏/树纵向，
+    /// 面包屑横向（与它平时的滚轮同口径）。OLE 拖拽循环不会把 WPF 的 MouseWheel 送到落点。
+    /// </summary>
+    private void OnDragWheelDelta(object? sender, int delta)
+    {
+        if (delta == 0 || _dragVisual == null) return;
+        if (!GetCursorPos(out var screen)) return;
+
+        Point point;
+        try
+        {
+            point = PointFromScreen(new Point(screen.X, screen.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        if (point.X < 0 || point.X > ActualWidth || point.Y < 0 || point.Y > ActualHeight) return;
+
+        var hit = InputHitTest(point) as DependencyObject;
+        while (hit != null)
+        {
+            switch (hit)
+            {
+                case BreadcrumbBar breadcrumb:
+                    breadcrumb.ScrollByWheel(delta);
+                    return;
+                case SortableDataTable table:
+                    table.ScrollRowsByWheel(delta);
+                    return;
+                case FolderTreePanel tree:
+                    tree.ScrollByWheel(delta);
+                    return;
+                case DetailSidebar sidebar:
+                    sidebar.ScrollByWheel(delta);
+                    return;
+            }
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+    }
+
+    /// <summary>行区拖拽自动滚后按指针重新命中：行 → 该文件夹；空白 → 当前文件夹。</summary>
+    private void MainTable_RowsAutoScrolled(object? sender, EventArgs e)
+    {
+        if (_dragVisual == null || _dragSourcePane == null || ViewModel == null) return;
+        if (!GetCursorPos(out var screen)) return;
+
+        Point point;
+        try
+        {
+            point = MainTable.PointFromScreen(new Point(screen.X, screen.Y));
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+        if (point.X < 0 || point.X > MainTable.ActualWidth
+            || point.Y < 0 || point.Y > MainTable.ActualHeight)
+            return;
+
+        var hit = MainTable.InputHitTest(point) as DependencyObject;
+        BrowserRowViewModel? row = null;
+        while (hit != null)
+        {
+            if (hit is FrameworkElement element && element.DataContext is BrowserRowViewModel candidate)
+            {
+                row = candidate;
+                break;
+            }
+            hit = VisualTreeHelper.GetParent(hit);
+        }
+
+        var mode = CurrentDropMode();
+        if (row != null)
+        {
+            var ok = IsDropPositionCandidate(row, BrowserPane.Main);
+            ApplyDropTarget(ok ? new BrowserDropTarget(row.Id, BrowserPane.Main, row.Name, mode) : null);
+            return;
+        }
+
+        // 指针在行区空白：落点 = 当前所在文件夹（与 ListCard_DragOver 同口径）。
+        ApplyDropTarget(new BrowserDropTarget(
+            ViewModel.CurrentFolderId, BrowserPane.Main, ViewModel.CurrentFolderDisplayName, mode));
+    }
+
+    /// <summary>树自动滚后指针下的节点变了：按与节点 DragOver 相同的规则更新落点。</summary>
+    private void FolderTree_DragScrollTargetChanged(object? sender, object? node)
+    {
+        if (_dragVisual == null || _dragSourcePane == null) return;
+        if (node is not FolderNode folder)
+        {
+            ClearDropTarget();
+            return;
+        }
+        var ok = IsDropPositionCandidate(folder, BrowserPane.Tree);
+        ApplyDropTarget(ok
+            ? new BrowserDropTarget(folder.FolderId, BrowserPane.Tree, folder.Name, CurrentDropMode())
+            : null);
     }
 
     private void RowBorder_DragOver(object sender, DragEventArgs e)

@@ -29,7 +29,7 @@
             <Setter Property="Padding" Value="10,0"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Foreground" Value="{DynamicResource App.Text.Primary}"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="MenuItem">
@@ -110,7 +110,7 @@
             <Setter Property="Width" Value="20"/>
             <Setter Property="Height" Value="20"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Cursor" Value="Arrow"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -160,7 +160,7 @@
                          子级整体缩进一格（20 = chevron 列宽）→ chevron 对齐父文本，Windows 资源管理器式层级 -->
                     <ControlTemplate TargetType="TreeViewItem">
                         <StackPanel>
-                            <Border x:Name="RowCard" Padding="8,3" Cursor="Hand"
+                            <Border x:Name="RowCard" Padding="8,3" Cursor="Arrow"
                                     PreviewMouseLeftButtonDown="FolderTreeItem_PreviewMouseLeftButtonDown"
                                     PreviewMouseRightButtonDown="FolderTreeItem_PreviewMouseRightButtonDown"
                                     MouseMove="FolderTreeItem_MouseMove"
@@ -252,6 +252,7 @@
                  行主体单击由模板层 RowCard 的 MouseLeftButtonUp 显式转发（FolderTreeItem_MouseLeftButtonUp），
                  chevron 展开由 ToggleButton 自捕获鼠标、绝不触发行选择 —— 展开 ≠ 选中 ≠ 进入 物理分离 -->
             <TreeView Grid.Row="1" x:Name="FolderTreeControl"
+                      PreviewMouseWheel="FolderTree_PreviewMouseWheel"
                       Style="{StaticResource FolderTreeStyle}"
                       ItemContainerStyle="{StaticResource FolderTreeItemStyle}"
                       ItemsSource="{Binding ItemsSource, ElementName=Root}"

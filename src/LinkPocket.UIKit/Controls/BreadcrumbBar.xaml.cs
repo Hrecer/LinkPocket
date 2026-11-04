@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Runtime.InteropServices;
 using System.Windows;
+using LinkPocket.Theming.Fonts;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,8 +31,14 @@ namespace LinkPocket.Views
         public DragEventArgs Args { get; init; } = null!;
         /// <summary>命中段的 DataContext（BreadcrumbSegment / BrowserCrumbViewModel 等段类型）。</summary>
         public object? Segment { get; init; }
-        /// <summary>命中段的可视元素（段按钮）：宿主判断"指针是否还在这一段里"用（离开时不能误清落点）。</summary>
+        /// <summary>命中区域（条级拖放后 = 整个胶囊外壳）：宿主判断“指针是否还在这一区”用。</summary>
         public FrameworkElement? Source { get; init; }
+    }
+
+    /// <summary>拖拽窗口滚动后，指针下方的目标段发生变化（没有新的 OLE DragOver 也要更新落点）。</summary>
+    public class CrumbTargetChangedEventArgs : EventArgs
+    {
+        public object? Segment { get; init; }
     }
 
     /// <summary>
@@ -38,32 +46,64 @@ namespace LinkPocket.Views
     /// 浏览页绑定 VM 的面包屑/路径编辑态属性与命令（编辑、候选弹窗、键盘导航全部内聚在本控件），
     /// 回收站只塞一个静态段、不进编辑态。
     /// 事件：EditRequested（点胶囊空白请求进入路径编辑）/ CandidateMoveRequested（键盘上下选候选）/
-    /// EditFocusLost / EditPopupClosed（宿主取消编辑）/ CandidateChosen（点选候选）。
+    /// EditFocusLost / EditPopupClosed（宿主取消编辑）/ CandidateChosen（点选候选）/ CrumbDrag*（条级拖放）。
     ///
-    /// <para>**溢出折叠（Windows 11 口径）**：胶囊宽度不足以放下全部段时，**从左折叠**进 « 按钮、
-    /// 当前段（最右）永远可见；点 « 列出被折叠的祖先层级；窗口拉宽自动还原。
-    /// 折叠由量测驱动（<see cref="RelayoutCrumbs"/>），装箱算法抽成纯函数 <see cref="ComputeFoldCount"/> 可单测。</para>
+    /// <para>**横向滚动（2026-11-04 方案 B）**：路径不再折叠——全部段都留在一条虚拟轨道里，
+    /// 只物化“可见窗口 + 左右各 2 段”；底部 6px 命中带里的 3px 拇指只改颜色不改粗细；
+    /// 当前段在导航/尺寸变化后自动回到右端；向左滚开即可回看祖先（不隐内容、无占位动画）。</para>
     /// </summary>
     public partial class BreadcrumbBar : UserControl
     {
-        /// <summary>« 折叠按钮的估算占宽（与 XAML 的 Padding/字号一致；偏大一点更安全，避免首算放不下）。</summary>
-        private const double OverflowButtonWidth = 44;
+        private const int WindowBuffer = 4;
+        private const double RailInset = 14;
+        private const double RailThumbMinWidth = 36;
+        private const double RailEdgeZone = 28;
+        private const double RailHoldDelayMs = 120;
+        /// <summary>内容裁剪半径 = 胶囊圆角 22 − 描边 2（裁剪的是胶囊内腔的真实圆头）。</summary>
+        private const double ContentClipRadius = 20;
 
-        /// <summary>折叠重算合并标志：同一帧内的多次 CollectionChanged 只重算一次。</summary>
-        private bool _relayoutPending;
+        private enum RailDragMode { None, Thumb, Track, End }
 
         /// <summary>VM/宿主塞进来的全部段（顺序 = 路径序）。</summary>
         private IReadOnlyList<object> _all = Array.Empty<object>();
 
-        /// <summary>段集合版本：每次源集合变化 +1（同一版本 + 同一折叠数时跳过重建）。</summary>
+        /// <summary>段集合版本：每次源集合变化 +1（仅用于诊断/幂等判断）。</summary>
         private int _allVersion;
 
-        /// <summary>当前已应用的折叠结果（与 <see cref="_allVersion"/> 一起作为幂等判据）。</summary>
-        private int _appliedFoldCount = -1;
-        private int _appliedVersion = -1;
+        /// <summary>当前物化的可见窗口（ItemsSource）。</summary>
+        private List<object> _visibleItems = new();
 
-        /// <summary>首轮探针段数：从当前段往回只物化这么多，放得下再翻倍。</summary>
-        private const int InitialProbeCount = 8;
+        /// <summary>估算/实测宽度（含尾分隔符）；索引 = _all 的下标。</summary>
+        private double[] _widths = Array.Empty<double>();
+
+        /// <summary>已知段的真实容器宽（精确窗口后回填）：后续导航优先用它，避免重复估算。</summary>
+        private readonly Dictionary<(string Name, bool IsRoot, bool IsLast), double> _segmentWidths = new();
+
+        /// <summary>TextWidthProbe 的文本宽缓存（与真实排版同源；按名称 + 是否当前段）。</summary>
+        private readonly Dictionary<(string Text, bool Bold), double> _textWidths = new();
+
+        private double _offset;
+        private double _viewportWidth;
+        /// <summary>当前物化窗口在 <c>_all</c> 里的起始下标（等值刷新后显示实例可能仍是旧的）。</summary>
+        private int _windowStart;
+        private bool _pinToEnd = true;
+        private bool _relayoutPending;
+
+        private double _railTrackWidth;
+        private double _thumbLeft;
+        private double _thumbWidth;
+
+        private RailDragMode _railDragMode;
+        private Point _railDragStart;
+        private double _railStartOffset;
+
+        private DispatcherTimer? _railAutoTimer;
+        private DateTime _railAutoEligible;
+        private DateTime _railAutoLast;
+        private bool _railAutoRight;
+
+        private object? _lastDragTarget;
+        private bool _dragOverBar;
 
         /// <summary>INotifyCollectionChanged 订阅的当前源（换源退订；Unloaded 退订）。</summary>
         private INotifyCollectionChanged? _observedSource;
@@ -71,16 +111,36 @@ namespace LinkPocket.Views
         public BreadcrumbBar()
         {
             InitializeComponent();
-            // 折叠是"量出来再收"的后置工作，一律排到 Background：绝不在布局/渲染回合里
-            // 反向调用 UpdateLayout（那会把导航首帧的渲染挡在面包屑重排之后）。
-            Loaded += (_, _) => { ApplyEstimatedFold(); RequestRelayout(); };
-            SizeChanged += (_, _) => { ApplyEstimatedFold(); RequestRelayout(); };
-            Unloaded += (_, _) => StopObservingSource();
+
+            // 换路径时在当次消息里同步收敛（只量这一段 ItemsControl，不量整页）：落帧即完成态，
+            // 不隐内容、不闪占位；尺寸变化仍排到首帧之后再精确校正。
+            Loaded += (_, _) =>
+            {
+                UpdateContentClip();
+                _viewportWidth = CrumbViewport.ActualWidth;
+                ApplySource(revealEnd: _pinToEnd);
+            };
+            CrumbContent.SizeChanged += (_, _) => UpdateContentClip();
+            SizeChanged += (_, _) =>
+            {
+                if (!IsLoaded) return;
+                var wasAtEnd = _pinToEnd || _offset >= MaxScroll - 2;
+                _viewportWidth = CrumbViewport.ActualWidth;
+                _pinToEnd = wasAtEnd;
+                if (wasAtEnd) _offset = MaxScroll;
+                else _offset = Math.Clamp(_offset, 0, MaxScroll);
+                UpdateWindow();
+                RequestRelayout();
+            };
+            Unloaded += (_, _) =>
+            {
+                StopObservingSource();
+                StopRailAuto();
+            };
 
             // 进入编辑态 = 输入框就绪（**可输入**）：聚焦全选挂在"编辑框真的变可见"这个事件上，
             // 绝不挂在宿主的属性通知上——通知链里可视状态由绑定/触发器稍后才落地，
             // 聚焦动作会打在还没可见的编辑框上**静默失败**（实测：点一下只出现地址栏外观、要点第二下才能输入）。
-            // 与 InlineNameEditor 同一做法（谁拥有编辑框，谁负责"一显示就聚焦"）。
             PathEditBox.IsVisibleChanged += (_, _) =>
             {
                 if (PathEditBox.IsVisible && IsPathEditing) FocusEditBox();
@@ -94,13 +154,22 @@ namespace LinkPocket.Views
             PathEditBox.SelectAll();
         }
 
+        /// <summary>
+        /// 内容层按**胶囊内腔的真实圆头**裁剪：滚动时左侧祖先段是被药丸轮廓切掉，
+        /// 而不是在内容视口处再切一条直边（“左边一条粗边框”的根因）。
+        /// </summary>
+        private void UpdateContentClip()
+        {
+            var width = CrumbContent.ActualWidth;
+            var height = CrumbContent.ActualHeight;
+            CrumbContent.Clip = width > 0 && height > 0
+                ? new RectangleGeometry(new Rect(0, 0, width, height), ContentClipRadius, ContentClipRadius)
+                : null;
+        }
+
         public static readonly DependencyProperty BreadcrumbsProperty = DependencyProperty.Register(
             nameof(Breadcrumbs), typeof(System.Collections.IEnumerable), typeof(BreadcrumbBar),
             new PropertyMetadata(null, OnBreadcrumbsChanged));
-
-        public static readonly DependencyProperty FoldedCrumbsProperty = DependencyProperty.Register(
-            nameof(FoldedCrumbs), typeof(System.Collections.IEnumerable), typeof(BreadcrumbBar),
-            new PropertyMetadata(null));
 
         public static readonly DependencyProperty IsPathEditingProperty = DependencyProperty.Register(
             nameof(IsPathEditing), typeof(bool), typeof(BreadcrumbBar),
@@ -136,17 +205,16 @@ namespace LinkPocket.Views
         public static readonly DependencyProperty CompletePathCommandProperty = DependencyProperty.Register(
             nameof(CompletePathCommand), typeof(ICommand), typeof(BreadcrumbBar), new PropertyMetadata(null));
 
+        public static readonly DependencyProperty CrumbDropEnabledProperty = DependencyProperty.Register(
+            nameof(CrumbDropEnabled), typeof(bool), typeof(BreadcrumbBar), new PropertyMetadata(true));
+
+        public static readonly DependencyProperty RootSegmentWidthProperty = DependencyProperty.Register(
+            nameof(RootSegmentWidth), typeof(double), typeof(BreadcrumbBar), new PropertyMetadata(double.NaN));
+
         public System.Collections.IEnumerable? Breadcrumbs
         {
             get => (System.Collections.IEnumerable?)GetValue(BreadcrumbsProperty);
             set => SetValue(BreadcrumbsProperty, value);
-        }
-
-        /// <summary>被折叠进 « 的段（供清单 Popup 绑定）。</summary>
-        public System.Collections.IEnumerable? FoldedCrumbs
-        {
-            get => (System.Collections.IEnumerable?)GetValue(FoldedCrumbsProperty);
-            private set => SetValue(FoldedCrumbsProperty, value);
         }
 
         public bool IsPathEditing
@@ -209,30 +277,17 @@ namespace LinkPocket.Views
             set => SetValue(CompletePathCommandProperty, value);
         }
 
-        public static readonly DependencyProperty CrumbDropEnabledProperty = DependencyProperty.Register(
-            nameof(CrumbDropEnabled), typeof(bool), typeof(BreadcrumbBar), new PropertyMetadata(true));
-
-        /// <summary>段落点使能（缺省 true = 浏览页现役）。false = 只读页（回收站）：段不接拖放
-        /// （XAML 把段 AllowDrop 绑到本属性；CrumbDragOver/Leave/Drop 事件保留给浏览页）。</summary>
+        /// <summary>段落点使能（缺省 true = 浏览页现役）。false = 只读页（回收站）：整条不接拖放。</summary>
         public bool CrumbDropEnabled
         {
             get => (bool)GetValue(CrumbDropEnabledProperty);
             set => SetValue(CrumbDropEnabledProperty, value);
         }
 
-        public static readonly DependencyProperty RootSegmentWidthProperty = DependencyProperty.Register(
-            nameof(RootSegmentWidth), typeof(double), typeof(BreadcrumbBar), new PropertyMetadata(double.NaN));
-
         /// <summary>
         /// 根段（`@root` / `@trash`，显示为本地化根名）的**冻结宽度**；<c>NaN</c>（缺省）= 按内容自适应。
+        /// 值由各页显式给（浏览页 84 / 回收站 71），不放进共享模板做统一约束。
         /// </summary>
-        /// <remarks>
-        /// 根名是**会随语言换的界面文案**（全部书签 ⇄ Bookmarks），内容自适应会让英文把地址栏撑宽、
-        /// 把后面的段整体推走（实测浏览页 80→97.18）。按定稿口径：**宽度冻在中文基线**，
-        /// 英文放不下时由 <c>LocFit</c> 缩字号（几何一寸不动，让位的一律是字）。
-        /// 其余段是用户文件夹名（用户数据）——它们不随语言变，保持内容自适应、永不缩字号。
-        /// 值由各页显式给（浏览页 80 / 回收站 67），不放进共享模板做统一约束。
-        /// </remarks>
         public double RootSegmentWidth
         {
             get => (double)GetValue(RootSegmentWidthProperty);
@@ -255,107 +310,38 @@ namespace LinkPocket.Views
         /// 段是 Button（自己吃掉 MouseLeftButtonDown）不会误触发；编辑态由宿主命令的 CanExecute 挡重复进入。</summary>
         public event EventHandler? EditRequested;
 
-        /// <summary>拖拽经过段（宿主决定 Effects：合法段 = 落点候选）。</summary>
+        /// <summary>拖拽经过条（宿主决定 Effects：合法段 = 落点候选）。</summary>
         public event EventHandler<CrumbDragEventArgs>? CrumbDragOver;
 
-        /// <summary>拖拽离开段（宿主清落点高亮）。</summary>
+        /// <summary>拖拽离开条（宿主清落点高亮）。</summary>
         public event EventHandler<CrumbDragEventArgs>? CrumbDragLeave;
 
-        /// <summary>落到段上（宿主只记"待执行意图"，执行在 OLE 循环退出后）。</summary>
+        /// <summary>落到段上（宿主只记“待执行意图”，执行在 OLE 循环退出后）。</summary>
         public event EventHandler<CrumbDragEventArgs>? CrumbDrop;
 
-        // 段拖放转发：控件不构造业务数据，只把"哪个段 + 原始参数"交给宿主（与 FolderTreePanel 同一原则）。
-
-        private void Crumb_DragOver(object sender, DragEventArgs e)
-        {
-            if (sender is FrameworkElement fe)
-                CrumbDragOver?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
-            e.Handled = true;
-        }
-
-        private void Crumb_DragLeave(object sender, DragEventArgs e)
-        {
-            if (sender is FrameworkElement fe)
-                CrumbDragLeave?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
-            e.Handled = true;
-        }
-
-        private void Crumb_Drop(object sender, DragEventArgs e)
-        {
-            if (sender is FrameworkElement fe)
-                CrumbDrop?.Invoke(this, new CrumbDragEventArgs { Args = e, Segment = fe.DataContext, Source = fe });
-            e.Handled = true;
-        }
-
-        /// <summary>拖拽悬停段的本地高亮（Windows 口径：落点段整体高亮）。
-        /// 传 null = 熄灭。用本地值覆盖样式、清值还原触发器（IsLast 段本就同色，视觉天然不打架）。</summary>
-        public void SetDropHighlight(object? segment)
-        {
-            if (_dropHighlighted != null)
-            {
-                _dropHighlighted.ClearValue(BackgroundProperty);
-                _dropHighlighted.ClearValue(ForegroundProperty);
-                _dropHighlighted = null;
-            }
-            if (segment == null) return;
-
-            for (var i = 0; i < CrumbItems.Items.Count; i++)
-            {
-                if (!Equals(CrumbItems.Items[i], segment)) continue;
-                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is ContentPresenter cp)
-                {
-                    var btn = FindVisualChild<Button>(cp);
-                    if (btn != null)
-                    {
-                        // 落点高亮走**资源引用**：一次性取画刷赋值会把当前主题固化成本地值，
-                        // 换主题后仍然亮着旧主题的色（与表头底色同一根因）。
-                        // 熄灭仍走 ClearValue —— 资源引用也是本地值，整条摘掉即回落到样式触发器。
-                        btn.SetResourceReference(Control.BackgroundProperty, "PrimaryContainer");
-                        btn.SetResourceReference(Control.ForegroundProperty, "OnPrimaryContainer");
-                        _dropHighlighted = btn;
-                    }
-                }
-                break;
-            }
-        }
-
-        private FrameworkElement? _dropHighlighted;
-
-        private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
-        {
-            var count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
-            for (var i = 0; i < count; i++)
-            {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
-                if (child is T hit) return hit;
-                var sub = FindVisualChild<T>(child);
-                if (sub != null) return sub;
-            }
-            return null;
-        }
-
-        private void CrumbHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (IsPathEditing) return;   // 编辑态点击归 TextBox / 失焦路径，不再请求进入
-            EditRequested?.Invoke(this, EventArgs.Empty);
-            e.Handled = true;
-        }
-
-        // —— 溢出折叠（量测驱动） ——
+        /// <summary>拖拽自动滚后指针下方的段变了（没有新的 OLE DragOver 也要更新落点）。</summary>
+        public event EventHandler<CrumbTargetChangedEventArgs>? CrumbDragTargetChanged;
 
         private static void OnBreadcrumbsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             var bar = (BreadcrumbBar)d;
             bar.StopObservingSource();
-            bar._all = ToSegmentList(e.NewValue as System.Collections.IEnumerable);
+            var next = ToSegmentList(e.NewValue as System.Collections.IEnumerable);
+            var samePath = bar.HasSamePath(next);
+            bar._all = next;
             bar._allVersion++;
+            bar._pinToEnd = true;
             if (e.NewValue is INotifyCollectionChanged incc)
             {
                 incc.CollectionChanged += bar.OnSourceCollectionChanged;
                 bar._observedSource = incc;
             }
-            bar.ApplyEstimatedFold();
-            bar.RequestRelayout();
+            if (samePath)
+            {
+                bar.AdoptSamePath();
+                return;
+            }
+            bar.ApplySource(revealEnd: true);
         }
 
         private static void OnIsPathEditingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -363,10 +349,13 @@ namespace LinkPocket.Views
             var bar = (BreadcrumbBar)d;
             if ((bool)e.NewValue)
             {
-                bar.HideCrumbSplash();
-                return;                                        // 进编辑态：面包屑行隐藏，无需量测
+                bar.StopRailDrag();
+                bar.CrumbViewport.Visibility = Visibility.Collapsed;
+                bar.UpdateChrome();
+                return;
             }
-            bar.RequestRelayout();                             // 退编辑态：行恢复显示后重算折叠
+            bar.CrumbViewport.Visibility = Visibility.Visible;
+            bar.RequestRelayout();
         }
 
         private static System.Collections.Generic.List<object> ToSegmentList(System.Collections.IEnumerable? source)
@@ -390,21 +379,326 @@ namespace LinkPocket.Views
         {
             // ⚠️ 必须先把集合当前内容同步进 _all 再重算：VM 加载是对已绑定集合做 Clear+Add（原地变更），
             // 不同时步这里，可见集合会永远停在绑定那一刻的空快照上（整片空白、拖放无目标）。
-            _all = ToSegmentList(_observedSource as System.Collections.IEnumerable);
+            var next = ToSegmentList(_observedSource as System.Collections.IEnumerable);
+            if (HasSamePath(next))
+            {
+                // 路径没变（移动/删除后引擎会连刷新多次，每次都 ReplaceAll 新实例）：
+                // 只换实例、不重排——否则每一次后台刷新都会先隐掉整条路径再显示（用户实测的“闪两次”）。
+                _all = next;
+                _allVersion++;
+                AdoptSamePath();
+                return;
+            }
+            _all = next;
             _allVersion++;
-            // 导航/批量替换：先用**不触发布局**的估算折法把新路径放上首帧（不会停在旧路径），
-            // 精确折叠仍由 RequestRelayout 在首帧之后收敛。
-            ApplyEstimatedFold();
-            RequestRelayout();
+            _pinToEnd = true;
+            ApplySource(revealEnd: true);
         }
 
-        /// <summary>合并同一帧内的多次段集合变化（VM 刷新 = Clear + N 次 Add）。</summary>
-        /// <remarks>
-        /// 尺寸变化后的补算排到下一帧：<see cref="RelayoutCrumbs"/> 只布局面包屑子树，
-        /// 但尺寸变化本身来自窗口布局，等一帧再算可避免在布局回合里反向触发布局。
-        /// 实现 = 等一次 CompositionTarget.Rendering（可见窗口必到）→ 再 Background 执行；
-        /// 窗口不可见时 Rendering 可能不来，用 150ms 定时器兜底。
-        /// </remarks>
+        /// <summary>新集合与当前路径**逐段等值**（名称 / 层级身份 / 是否当前段）：刷新换了实例但路径没变。</summary>
+        private bool HasSamePath(IReadOnlyList<object> next) => SamePath(_all, next);
+
+        /// <summary>两条段序列是否代表同一路径（按值比较；刷新产生的新 VM 实例不算变化）。</summary>
+        public static bool SamePath(IReadOnlyList<object> current, IReadOnlyList<object> next)
+        {
+            if (current.Count == 0 || next.Count != current.Count) return false;
+            for (var i = 0; i < next.Count; i++)
+                if (!SameSegment(current[i], next[i])) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// 路径等值刷新：保持现有可见窗口与偏移不动（不重排、不把滚开查看祖先的人拉回末端）。
+        /// 只有在窗口还没物化（首次绑定/尚未布局）时才补一次窗口计算。
+        /// </summary>
+        private void AdoptSamePath()
+        {
+            if (_visibleItems.Count == 0 && _all.Count > 0 && IsLoaded && _viewportWidth > 0)
+            {
+                UpdateWindow();
+                return;
+            }
+            if (_visibleItems.Count > 0) UpdateChrome();
+        }
+
+        /// <summary>
+        /// 新路径落到控件：估算窗口 → 同一次消息里实测收敛（不隐藏内容、不闪占位）。
+        /// 不把 100 段塞进 ItemsControl（WARNINGS 225）：窗口只物化“可见 + 缓冲”。
+        /// </summary>
+        private void ApplySource(bool revealEnd)
+        {
+            StopRailDrag();
+            RebuildWidths();
+            if (revealEnd) _offset = MaxScroll;
+            else _offset = Math.Clamp(_offset, 0, MaxScroll);
+            _pinToEnd = revealEnd || _offset >= MaxScroll - 2;
+
+            if (_all.Count == 0)
+            {
+                _visibleItems.Clear();
+                CrumbItems.ItemsSource = null;
+                UpdateChrome();
+                return;
+            }
+
+            if (_viewportWidth <= 0)
+            {
+                _visibleItems.Clear();
+                CrumbItems.ItemsSource = null;
+                UpdateChrome();
+                RequestRelayout();
+                return;
+            }
+
+            // 估算窗口先物化，紧接着**同一次消息里**用实测宽收敛到最终位置：
+            // Windows 的地址栏换目录从不隐内容/不闪省略号，落帧就是完成态。
+            UpdateWindow();
+            if (IsLoaded) RelayoutNow();
+        }
+
+        public static (int Start, int Count, double OffsetWithinWindow) ComputeWindow(
+            IReadOnlyList<double> widths, double offset, double viewport, int buffer)
+        {
+            if (widths.Count == 0) return (0, 0, 0);
+            var total = 0d;
+            for (var i = 0; i < widths.Count; i++) total += widths[i];
+            if (total <= viewport) return (0, widths.Count, 0);
+
+            var maxOffset = Math.Max(0, total - viewport);
+            offset = Math.Clamp(offset, 0, maxOffset);
+
+            var prefix = new double[widths.Count + 1];
+            for (var i = 0; i < widths.Count; i++) prefix[i + 1] = prefix[i] + widths[i];
+
+            var rawStart = 0;
+            for (var i = 0; i < widths.Count; i++)
+            {
+                if (prefix[i] <= offset + 0.01) rawStart = i;
+                else break;
+            }
+            var rawEnd = rawStart;
+            while (rawEnd < widths.Count && prefix[rawEnd] < offset + viewport - 0.01) rawEnd++;
+
+            var start = Math.Max(0, rawStart - Math.Max(0, buffer));
+            var end = Math.Min(widths.Count, rawEnd + Math.Max(0, buffer));
+            if (end <= start) end = Math.Min(widths.Count, start + 1);
+            var inside = Math.Max(0, offset - prefix[start]);
+            return (start, end - start, inside);
+        }
+
+        public static (double Width, double Left) ComputeThumb(
+            double offset, double viewport, double total, double track)
+        {
+            if (track <= 0 || total <= 0 || viewport <= 0) return (0, 0);
+            var width = Math.Max(RailThumbMinWidth, track * Math.Min(1, viewport / total));
+            width = Math.Min(track, width);
+            var maxOffset = Math.Max(0, total - viewport);
+            var left = maxOffset <= 0
+                ? 0
+                : (track - width) * Math.Clamp(offset / maxOffset, 0, 1);
+            return (width, left);
+        }
+
+        public static double EdgeScrollSpeed(double distanceFromEdge, double edgeZone, double maxSpeed)
+        {
+            if (edgeZone <= 0) return maxSpeed;
+            var strength = Math.Clamp(distanceFromEdge / edgeZone, 0, 1);
+            return 220 + strength * Math.Max(0, maxSpeed - 220);
+        }
+
+        private double TotalWidth
+        {
+            get
+            {
+                var total = 0d;
+                for (var i = 0; i < _widths.Length; i++) total += _widths[i];
+                return total;
+            }
+        }
+
+        private double MaxScroll => Math.Max(0, TotalWidth - _viewportWidth);
+
+        private void RebuildWidths()
+        {
+            _widths = new double[_all.Count];
+            for (var i = 0; i < _all.Count; i++)
+                _widths[i] = EstimateSegmentWidth(i, SegmentIsLast(_all[i]));
+        }
+
+        private double EstimateSegmentWidth(int index, bool isLast)
+        {
+            var item = _all[index];
+            var name = SegmentName(item);
+            var isRoot = SegmentIsRoot(item);
+            var separator = isLast ? 0 : MeasureTextWidth("›", bold: false) + 4;
+            var rootWidth = RootSegmentWidth;
+            if (isRoot && !double.IsNaN(rootWidth) && rootWidth > 0)
+                return rootWidth + separator;
+
+            if (_segmentWidths.TryGetValue((name, isRoot, isLast), out var measured))
+                return measured;
+
+            return MeasureTextWidth(name, isLast) + 28 + separator + 1;
+        }
+
+        /// <summary>
+        /// 与真实排版同源的字宽：用 <see cref="TextWidthProbe"/> 量，而不是按字符猜。
+        /// 猜宽的误差会在长路径上累加，末尾就会出现“只剩一段空白”的假视口。
+        /// </summary>
+        private double MeasureTextWidth(string text, bool bold)
+        {
+            if (_textWidths.TryGetValue((text, bold), out var cached)) return cached;
+            double width;
+            try
+            {
+                var family = FontFamily?.Source;
+                if (string.IsNullOrWhiteSpace(family)) family = "Segoe UI";
+                width = TextWidthProbe.Width(new TextWidthProbe.MetricsRequest(
+                    text, family, FontSize <= 0 ? 13 : FontSize,
+                    bold ? FontWeights.SemiBold : FontWeights.Normal,
+                    FontStretches.Normal,
+                    VisualTreeHelper.GetDpi(this).PixelsPerDip));
+            }
+            catch
+            {
+                width = EstimateTextWidthFallback(text, bold);
+            }
+            _textWidths[(text, bold)] = width;
+            return width;
+        }
+
+        /// <summary>FormattedText 不可用时的最后兜底（只在极早初始化/无 DPI 时命中）。</summary>
+        private static double EstimateTextWidthFallback(string text, bool bold)
+        {
+            double width = 0;
+            foreach (var ch in text)
+            {
+                if (char.IsWhiteSpace(ch)) width += 4;
+                else if (ch >= 0x2E80) width += 13;
+                else if (char.IsUpper(ch)) width += 8.6;
+                else if (char.IsDigit(ch)) width += 7.4;
+                else width += 7.2;
+            }
+            return (width + 1) * (bold ? 1.04 : 1.0);
+        }
+
+        /// <summary>
+        /// 只布局面包屑条（**不**对整个 UserControl 调 UpdateLayout）：精确窗口不把主表/树的布局提前。
+        /// </summary>
+        private void RelayoutNow()
+        {
+            if (!IsLoaded) return;
+            var actual = CrumbViewport.ActualWidth;
+            if (actual > 0) _viewportWidth = actual;
+            if (_viewportWidth <= 0) return;
+
+            if (_visibleItems.Count == 0 && _all.Count > 0) UpdateWindow();
+            if (_visibleItems.Count > 0)
+            {
+                CrumbItems.UpdateLayout();
+                CacheMeasuredWidths();
+                RebuildWidths();
+            }
+
+            if (_pinToEnd) _offset = MaxScroll;
+            else _offset = Math.Clamp(_offset, 0, MaxScroll);
+            UpdateWindow();
+            CrumbItems.UpdateLayout();
+            AlignTailIfNeeded();
+            CrumbViewport.UpdateLayout();   // 让末尾对齐的偏移在本次消息里真正落到视口（落帧即完成态）
+        }
+
+        /// <summary>在路径末端把窗口右缘贴到视口右缘：估算/实测宽度有差时不留下右侧空白。</summary>
+        private void AlignTailIfNeeded()
+        {
+            if (MaxScroll <= 0.5 || _offset < MaxScroll - 1 || _visibleItems.Count == 0
+                || _windowStart + _visibleItems.Count < _all.Count)
+                return;
+            if (CrumbItems.ActualWidth <= _viewportWidth + 0.5) return;
+            CrumbViewport.ScrollToHorizontalOffset(CrumbItems.ActualWidth - _viewportWidth);
+        }
+
+        /// <summary>精确窗口后把可见行的真实容器宽存起来：下一次导航的首帧估算直接命中。</summary>
+        private void CacheMeasuredWidths()
+        {
+            for (var i = 0; i < CrumbItems.Items.Count; i++)
+            {
+                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container) continue;
+                var item = CrumbItems.Items[i];
+                _segmentWidths[(SegmentName(item), SegmentIsRoot(item), SegmentIsLast(item))]
+                    = container.ActualWidth;
+            }
+        }
+
+        private void UpdateWindow()
+        {
+            if (_all.Count == 0)
+            {
+                _visibleItems.Clear();
+                CrumbItems.ItemsSource = null;
+                UpdateChrome();
+                return;
+            }
+            var actualViewport = CrumbViewport.ActualWidth;
+            if (actualViewport > 0 && Math.Abs(actualViewport - _viewportWidth) > 0.5)
+            {
+                var wasAtEnd = _pinToEnd || _offset >= MaxScroll - 2;
+                _viewportWidth = actualViewport;
+                _pinToEnd = wasAtEnd;
+            }
+            if (_viewportWidth <= 0) return;
+
+            // 视口/总量变化后先夹住偏移：否则“旧窗口宽度对应的 offset”会把窗口算在半路，
+            // 右侧就出现一段没有段落的空白（用户实测的尾部空缺）。
+            if (_pinToEnd) _offset = MaxScroll;
+            else _offset = Math.Clamp(_offset, 0, MaxScroll);
+
+            var total = TotalWidth;
+            int start;
+            int count;
+            double inside;
+            if (total <= _viewportWidth + 0.5)
+            {
+                start = 0;
+                count = _all.Count;
+                inside = 0;
+            }
+            else
+            {
+                (start, count, inside) = ComputeWindow(_widths, _offset, _viewportWidth, WindowBuffer);
+
+                // 防御性补齐：窗口右缘必须真的填满视口（缓冲/估算偏差都不许留下空白）。
+                var used = -inside;
+                for (var i = start; i < start + count && i < _all.Count; i++) used += _widths[i];
+                while (used < _viewportWidth - 0.5 && start + count < _all.Count)
+                {
+                    used += _widths[start + count];
+                    count++;
+                }
+            }
+
+            var next = new List<object>(count);
+            for (var i = start; i < start + count && i < _all.Count; i++) next.Add(_all[i]);
+
+            _windowStart = start;
+            if (!SameSequence(_visibleItems, next))
+            {
+                _visibleItems = next;
+                CrumbItems.ItemsSource = next;
+            }
+            CrumbViewport.ScrollToHorizontalOffset(inside);
+            UpdateChrome();
+        }
+
+        private static bool SameSequence(IReadOnlyList<object> a, IReadOnlyList<object> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (var i = 0; i < a.Count; i++)
+                if (!ReferenceEquals(a[i], b[i])) return false;
+            return true;
+        }
+
+        /// <summary>窗口/尺寸变化后的精确收敛：等首帧真正画出来再量。</summary>
         private void RequestRelayout()
         {
             if (_relayoutPending) return;
@@ -416,7 +710,7 @@ namespace LinkPocket.Views
             {
                 if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
                 fallback?.Stop();
-                // 再等 30ms 才做精确折叠：Rendering 只是“帧即将开始”，Background 仍可能赶在
+                // 再等 30ms 才做精确窗口：Rendering 只是“帧即将开始”，Background 仍可能赶在
                 // 这一帧真正上屏之前；用计时器把精确布局明确排到首帧之后（尾随 ≤150ms）。
                 var settle = new DispatcherTimer(DispatcherPriority.Background)
                 {
@@ -426,7 +720,7 @@ namespace LinkPocket.Views
                 {
                     settle.Stop();
                     _relayoutPending = false;
-                    RelayoutCrumbs();
+                    RelayoutNow();
                 };
                 settle.Start();
             }
@@ -434,7 +728,7 @@ namespace LinkPocket.Views
             var frames = 0;
             onRendered = (_, _) =>
             {
-                if (++frames < 2) return;   // 首帧先让紧凑行/路径占位真正画出来，精确折叠等第二帧
+                if (++frames < 2) return;   // 等这一帧真正上屏，再量实测宽
                 Run();
             };
             CompositionTarget.Rendering += onRendered;
@@ -446,279 +740,326 @@ namespace LinkPocket.Views
             fallback.Start();
         }
 
-        /// <summary>
-        /// 折叠装箱（**纯函数，可单测**）：宽度从左到右给出；空间不足时**从左折叠**，
-        /// 右侧尽可能多保留（<paramref name="reserved"/> 为 « 按钮预留占宽）；至少保留最后一段（当前段）。
-        /// 返回应折叠的段数（0 = 放得下、无折叠）。
-        /// </summary>
-        public static int ComputeFoldCount(IReadOnlyList<double> widths, double available, double reserved)
+        private void UpdateChrome()
         {
-            if (widths.Count == 0) return 0;
-            double total = 0;
-            foreach (var w in widths) total += w;
-            if (total <= available) return 0;
+            var overflow = !IsPathEditing && _viewportWidth > 0
+                           && _all.Count > 0 && TotalWidth > _viewportWidth + 0.5;
 
-            var budget = available - reserved;
-            double acc = 0;
-            var keepFrom = widths.Count;
-            for (var i = widths.Count - 1; i >= 0; i--)
-            {
-                acc += widths[i];
-                if (acc > budget) break;
-                keepFrom = i;
-            }
-            var fold = keepFrom;
-            if (fold > widths.Count - 1) fold = widths.Count - 1;   // 至少保留当前段（哪怕它自己超宽）
-            return Math.Max(fold, 0);
+            RailLayer.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+
+            if (!overflow) return;
+
+            var track = RailLayer.ActualWidth;
+            if (track <= 1) track = Math.Max(1, CapsuleShell.ActualWidth - RailInset * 2);
+            _railTrackWidth = track;
+            var (width, left) = ComputeThumb(_offset, _viewportWidth, TotalWidth, track);
+            _thumbWidth = width;
+            _thumbLeft = left;
+            RailThumb.Width = width;
+            RailThumbTranslate.X = left;
         }
 
-        /// <summary>
-        /// 首帧折叠：**不碰布局系统**，用 FormattedText 估算每段宽度后套同一个装箱函数。
-        /// 目的 = 导航后的第一帧就显示新路径（绝不停在旧路径），同时不把主表/树的布局提前到渲染之前；
-        /// 首帧之后 <see cref="RequestRelayout"/> 再用真实容器宽度精确收敛（估算通常已经同值，直接跳过重建）。
-        /// </summary>
-        private void ApplyEstimatedFold()
+        private void ScrollToOffset(double offset)
         {
-            HideCrumbSplash();
-            if (_all.Count == 0)
+            var max = MaxScroll;
+            offset = Math.Clamp(offset, 0, max);
+            if (Math.Abs(offset - _offset) < 0.01)
             {
-                ApplyFold(0);
+                UpdateChrome();
                 return;
             }
-            if (!IsLoaded || CrumbRow.ActualWidth <= 0)
+            _offset = offset;
+            _pinToEnd = offset >= max - 2;
+            UpdateWindow();
+        }
+
+        // —— 鼠标滚轮：面包屑内部横滑，不让页面抢滚轮 ——
+
+        private void Capsule_MouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (IsPathEditing || MaxScroll <= 0) return;
+            ScrollToOffset(_offset - e.Delta);
+            e.Handled = true;
+        }
+
+        /// <summary>拖拽期间来自 Raw Input 的滚轮（OLE 循环吞掉 WPF MouseWheel）：横向滚动路径并按指针刷新落点。</summary>
+        public void ScrollByWheel(int delta)
+        {
+            if (delta == 0 || IsPathEditing || MaxScroll <= 0) return;
+            ScrollToOffset(_offset - delta);
+            RefreshDragTargetFromScreen();
+        }
+
+        private void RefreshDragTargetFromScreen()
+        {
+            if (!_dragOverBar || _all.Count == 0) return;
+            if (!GetCursorPos(out var screen)) return;
+            Point point;
+            try
             {
-                ApplyFold(_all.Count - 1);
+                point = CrumbViewport.PointFromScreen(new Point(screen.X, screen.Y));
+            }
+            catch (InvalidOperationException)
+            {
                 return;
             }
+            var segment = SegmentAt(point);
+            if (ReferenceEquals(segment, _lastDragTarget)) return;
+            _lastDragTarget = segment;
+            CrumbDragTargetChanged?.Invoke(this, new CrumbTargetChangedEventArgs { Segment = segment });
+        }
 
-            // 深路径首帧用一条纯文本路径遮住旧内容：不生成任何面包屑容器，也不把旧路径留在首帧；
-            // 精确折叠在首帧后落地（RelayoutCrumbs 隐藏占位）。
-            if (_all.Count > 8)
+        // —— 6px 轨道命中带：拇指拖动 / 两端按住自动滚 / 中段按比例跳转 ——
+
+        private void RailLayer_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left || IsPathEditing || MaxScroll <= 0) return;
+            e.Handled = true;
+
+            StopRailAuto();
+            var p = e.GetPosition(RailLayer);
+            _railTrackWidth = Math.Max(1, RailLayer.ActualWidth);
+            _railDragStart = p;
+            _railStartOffset = _offset;
+            _railDragMode = RailDragMode.None;
+
+            if (_thumbWidth > 0 && p.X >= _thumbLeft && p.X <= _thumbLeft + _thumbWidth)
             {
-                ShowCrumbSplash();
-                return;
+                _railDragMode = RailDragMode.Thumb;
+                SetRailThumbTone(hot: true);
             }
-
-            var widths = EstimateSegmentWidths();
-            ApplyFold(ComputeFoldCount(widths, CrumbRow.ActualWidth, OverflowButtonWidth));
-        }
-
-        /// <summary>已知段的真实容器宽（精确折叠后回填）：后续导航优先用它，避免重复估算。</summary>
-        private readonly Dictionary<(string Name, bool IsRoot, bool IsLast), double> _segmentWidths = new();
-
-        private void ShowCrumbSplash()
-        {
-            // 首帧只切透明度：固定省略号已在布局里，不为新路径生成任何面包屑容器。
-            CrumbSplash.Opacity = 1;
-            CrumbItems.Opacity = 0;          // 旧段被遮住且不参与命中的视觉层
-            OverflowButton.Opacity = 0;
-        }
-
-        private void HideCrumbSplash()
-        {
-            CrumbSplash.Opacity = 0;
-            CrumbItems.Opacity = 1;
-            OverflowButton.Opacity = 1;
-        }
-
-        private double[] EstimateSegmentWidths()
-        {
-            var widths = new double[_all.Count];
-            for (var i = 0; i < _all.Count; i++)
-                widths[i] = EstimateSegmentWidth(i, i == _all.Count - 1);
-            return widths;
-        }
-
-        private double EstimateSegmentWidth(int index, bool isLast)
-        {
-            var item = _all[index];
-            var name = SegmentName(item);
-            var isRoot = SegmentIsRoot(item);
-            var rootWidth = RootSegmentWidth;
-            if (isRoot && !double.IsNaN(rootWidth) && rootWidth > 0)
-                return rootWidth + (isLast ? SeparatorWidth : 0);
-
-            if (_segmentWidths.TryGetValue((name, isRoot, isLast), out var measured))
-                return measured;
-
-            return EstimateTextWidth(name, isLast) + 24 + (isLast ? 0 : SeparatorWidth);
-        }
-
-        /// <summary>13pt 下的保守字宽估算（CJK 13 / 大写 8.6 / 数字 7.4 / 其余 7.2）。
-        /// 只用于首帧前的**无布局**折叠；偏差由首帧后的精确折叠与 <see cref="_segmentWidths"/> 回填收敛。</summary>
-        private static double EstimateTextWidth(string text, bool bold)
-        {
-            double width = 0;
-            foreach (var ch in text)
+            else if (p.X <= RailEdgeZone && _offset > 0)
             {
-                if (char.IsWhiteSpace(ch)) width += 4;
-                else if (ch >= 0x2E80) width += 13;      // CJK / 全角
-                else if (char.IsUpper(ch)) width += 8.6;
-                else if (char.IsDigit(ch)) width += 7.4;
-                else width += 7.2;
+                _railDragMode = RailDragMode.End;
+                _railAutoRight = false;
+                StartRailAuto();
             }
-            return (width + 1) * (bold ? 1.04 : 1.0);
-        }
-
-        /// <summary>「›」+ 左右各 2px 的估算占宽（与 XAML Margin=2,0 对齐）。</summary>
-        private const double SeparatorWidth = 8;
-
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> NameProps = new();
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> RootProps = new();
-
-        private static string SegmentName(object item)
-        {
-            var prop = NameProps.GetOrAdd(item.GetType(), t => t.GetProperty("Name"));
-            return prop?.GetValue(item) as string ?? item.ToString() ?? string.Empty;
-        }
-
-        private static bool SegmentIsRoot(object item)
-        {
-            var prop = RootProps.GetOrAdd(item.GetType(), t => t.GetProperty("IsRoot"));
-            return prop?.GetValue(item) is true;
-        }
-
-        /// <summary>
-        /// 量测并应用折叠：**只从右端（当前段）开始物化**，放不下就减少、放得下就翻倍 ——
-        /// 绝不为了量总宽把整条深路径（实测 100 层 = 102 段）全部塞进 ItemsControl。
-        /// 旧实现先全显再折叠，首帧要为 102 个段容器做两次布局（实测 136–193ms 的同步阻塞）；
-        /// 现在常驻只物化「能放下的那几段」，深路径折叠耗时降到个位数毫秒。
-        /// </summary>
-        private void RelayoutCrumbs()
-        {
-            HideCrumbSplash();
-            if (IsPathEditing || _all.Count == 0)
+            else if (p.X >= _railTrackWidth - RailEdgeZone && _offset < MaxScroll)
             {
-                ApplyFold(0);
-                return;
-            }
-            if (CrumbRow.ActualWidth <= 0)
-            {
-                // 尚未完成首轮布局：先只保留当前段（不把整条路径塞进 ItemsControl），Loaded 后再精确收敛。
-                ApplyFold(_all.Count - 1);
-                return;
-            }
-
-            var available = CrumbRow.ActualWidth;
-            var keep = Math.Min(_all.Count, InitialProbeCount);
-            var lastGood = -1;
-            while (true)
-            {
-                ApplyFold(_all.Count - keep);
-                MeasureCrumbs();
-                var reserve = OverflowButton.Visibility == Visibility.Visible ? OverflowButtonWidth : 0;
-                if (CrumbItems.DesiredSize.Width + reserve <= available)
-                {
-                    lastGood = keep;
-                    if (keep >= _all.Count) return;                 // 全部放得下
-                    keep = Math.Min(_all.Count, keep * 2);          // 放得下 → 试着多留几段
-                    continue;
-                }
-                break;
-            }
-
-            if (lastGood < 0)
-            {
-                // 起始探针就放不下：从 keep-1 往回找（最多 7 轮，每轮只有个位数段）。
-                for (var k = keep - 1; k >= 1; k--)
-                {
-                    ApplyFold(_all.Count - k);
-                    MeasureCrumbs();
-                    if (CrumbItems.DesiredSize.Width + OverflowButtonWidth <= available)
-                    {
-                        lastGood = k;
-                        break;
-                    }
-                }
-                if (lastGood < 0) lastGood = 1;   // 至少保留当前段（哪怕它自己超宽）
+                _railDragMode = RailDragMode.End;
+                _railAutoRight = true;
+                StartRailAuto();
             }
             else
             {
-                // 在「放得下」与「放不下」之间二分收敛。
-                var lo = lastGood;
-                var hi = keep;
-                while (hi - lo > 1)
-                {
-                    var mid = (lo + hi) / 2;
-                    ApplyFold(_all.Count - mid);
-                    MeasureCrumbs();
-                    if (CrumbItems.DesiredSize.Width + OverflowButtonWidth <= available) lo = mid;
-                    else hi = mid;
-                }
-                lastGood = lo;
+                _railDragMode = RailDragMode.Track;
+                ScrollToOffset((p.X / _railTrackWidth) * MaxScroll);
             }
 
-            ApplyFold(_all.Count - lastGood);
-            MeasureCrumbs();
-            CacheMeasuredWidths();
+            RailLayer.CaptureMouse();
         }
 
-        /// <summary>精确折叠后把可见行的真实容器宽存起来：下一次导航的首帧估算直接命中。</summary>
-        private void CacheMeasuredWidths()
+        private void RailLayer_MouseMove(object sender, MouseEventArgs e)
         {
-            for (var i = 0; i < CrumbItems.Items.Count; i++)
+            if (_railDragMode != RailDragMode.Thumb) return;
+            var p = e.GetPosition(RailLayer);
+            var usable = Math.Max(1, _railTrackWidth - _thumbWidth);
+            var next = _railStartOffset + ((p.X - _railDragStart.X) / usable) * MaxScroll;
+            ScrollToOffset(next);
+            e.Handled = true;
+        }
+
+        private void RailLayer_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left) return;
+            StopRailDrag();
+            e.Handled = true;
+        }
+
+        private void StopRailDrag()
+        {
+            StopRailAuto();
+            _railDragMode = RailDragMode.None;
+            if (RailLayer.IsMouseCaptured) RailLayer.ReleaseMouseCapture();
+            SetRailThumbTone(RailLayer.IsMouseOver);
+        }
+
+        private void RailLayer_MouseEnter(object sender, MouseEventArgs e)
+        {
+            if (_railDragMode == RailDragMode.None) SetRailThumbTone(hot: true);
+        }
+
+        private void RailLayer_MouseLeave(object sender, MouseEventArgs e)
+        {
+            if (_railDragMode == RailDragMode.None) SetRailThumbTone(hot: false);
+        }
+
+        /// <summary>拇指只做“同色深浅/透明度”反馈，绝不换成强调蓝（用户实测明确否决拖动变蓝）。</summary>
+        private void SetRailThumbTone(bool hot)
+        {
+            RailThumb.SetResourceReference(Border.BackgroundProperty,
+                hot ? "App.Text.Secondary" : "App.Text.Muted");
+            RailThumb.Opacity = hot ? 1 : 0.78;
+        }
+
+        private void StartRailAuto()
+        {
+            StopRailAuto();
+            _railAutoEligible = DateTime.UtcNow.AddMilliseconds(RailHoldDelayMs);
+            _railAutoLast = DateTime.UtcNow;
+            _railAutoTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
             {
-                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is not FrameworkElement container) continue;
-                var item = CrumbItems.Items[i];
-                _segmentWidths[(SegmentName(item), SegmentIsRoot(item), i == CrumbItems.Items.Count - 1)]
-                    = container.ActualWidth;
-            }
+                Interval = TimeSpan.FromMilliseconds(16),
+            };
+            _railAutoTimer.Tick += RailAutoTick;
+            _railAutoTimer.Start();
         }
 
-        /// <summary>
-        /// 只布局面包屑子树（**不**对整个 UserControl 调 UpdateLayout）：导航首帧前得到精确折数，
-        /// 同时不会把主表/树的布局提前到渲染之前。条目数 = 探针段数（8/16/…），代价与路径深度无关。
-        /// </summary>
-        private void MeasureCrumbs()
+        private void RailAutoTick(object? sender, EventArgs e)
         {
-            if (!IsLoaded) return;
-            CrumbItems.UpdateLayout();
-        }
-
-        /// <summary>应用折叠：左侧 <paramref name="count"/> 段收进 «（清单同步），其余照常显示。
-        /// 同一段集合版本 + 同一折叠数 = 已是不该动的状态（跳过 ItemsSource 重建）。</summary>
-        private void ApplyFold(int count)
-        {
-            count = Math.Clamp(count, 0, _all.Count);
-            if (_appliedVersion == _allVersion && _appliedFoldCount == count) return;
-            _appliedVersion = _allVersion;
-            _appliedFoldCount = count;
-
-            var folded = new List<object>();
-            var visible = new List<object>();
-            for (var i = 0; i < _all.Count; i++)
-                (i < count ? folded : visible).Add(_all[i]);
-
-            CrumbItems.ItemsSource = visible;
-            _foldedCrumbs = folded;
-            // « 清单只在弹层真正打开时绑定：首帧不把深层祖先列表灌给隐藏的 ListBox。
-            if (count == 0) OverflowPopup.IsOpen = false;
-            OverflowButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-
-        private List<object> _foldedCrumbs = [];
-
-        private void OverflowButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (!OverflowPopup.IsOpen) FoldedCrumbs = _foldedCrumbs;
-            OverflowPopup.IsOpen = !OverflowPopup.IsOpen;
-        }
-
-        /// <summary>点 « 清单里的折叠段 = 直达该层级（复用宿主的 CrumbClickCommand，与可见段同一条导航路径）。</summary>
-        private void OverflowList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            var hit = e.OriginalSource as DependencyObject;
-            while (hit != null)
+            if (_railDragMode != RailDragMode.End)
             {
-                if (hit is ListBoxItem item)
-                {
-                    if (item.DataContext != null) CrumbClickCommand?.Execute(item.DataContext);
-                    OverflowPopup.IsOpen = false;
-                    e.Handled = true;
-                    return;
-                }
-                hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+                StopRailAuto();
+                return;
             }
+            var now = DateTime.UtcNow;
+            if (now < _railAutoEligible)
+            {
+                _railAutoLast = now;
+                return;
+            }
+            var dt = Math.Min(0.05, Math.Max(0.001, (now - _railAutoLast).TotalSeconds));
+            _railAutoLast = now;
+            var max = MaxScroll;
+            if (max <= 0)
+            {
+                StopRailAuto();
+                return;
+            }
+            var speed = EdgeScrollSpeed(RailEdgeZone, RailEdgeZone, 900);
+            var before = _offset;
+            ScrollToOffset(before + (_railAutoRight ? speed : -speed) * dt);
+            if ((_railAutoRight && _offset >= max) || (!_railAutoRight && _offset <= 0))
+                StopRailAuto();
+        }
+
+        private void StopRailAuto()
+        {
+            if (_railAutoTimer != null)
+            {
+                _railAutoTimer.Stop();
+                _railAutoTimer.Tick -= RailAutoTick;
+                _railAutoTimer = null;
+            }
+        }
+
+        // —— 条级拖放：滚动时容器会重建，因此落点由指针坐标解析，而不是绑在段按钮上 ——
+
+        private object? SegmentAt(Point pointInViewport)
+        {
+            if (_all.Count == 0 || _viewportWidth <= 0) return null;
+            if (pointInViewport.X < 0 || pointInViewport.X > _viewportWidth) return null;
+
+            var x = _offset + pointInViewport.X;
+            var acc = 0d;
+            for (var i = 0; i < _widths.Length; i++)
+            {
+                acc += _widths[i];
+                if (x < acc) return _all[i];
+            }
+            return x <= TotalWidth + 0.5 && _all.Count > 0 ? _all[_all.Count - 1] : null;
+        }
+
+        private void Capsule_DragOver(object sender, DragEventArgs e)
+        {
+            if (!CrumbDropEnabled || IsPathEditing) return;
+            var p = e.GetPosition(CrumbViewport);
+            _dragOverBar = true;
+
+            var segment = SegmentAt(p);
+            if (segment == null)
+            {
+                e.Effects = DragDropEffects.None;
+                e.Handled = true;
+                return;
+            }
+
+            _lastDragTarget = segment;
+            CrumbDragOver?.Invoke(this, new CrumbDragEventArgs
+            {
+                Args = e,
+                Segment = segment,
+                Source = CapsuleShell,
+            });
+            e.Handled = true;
+        }
+
+        private void Capsule_DragLeave(object sender, DragEventArgs e)
+        {
+            _dragOverBar = false;
+            CrumbDragLeave?.Invoke(this, new CrumbDragEventArgs
+            {
+                Args = e,
+                Segment = null,
+                Source = CapsuleShell,
+            });
+            e.Handled = true;
+        }
+
+        private void Capsule_Drop(object sender, DragEventArgs e)
+        {
+            _dragOverBar = false;
+            var segment = SegmentAt(e.GetPosition(CrumbViewport));
+            if (segment != null)
+            {
+                CrumbDrop?.Invoke(this, new CrumbDragEventArgs
+                {
+                    Args = e,
+                    Segment = segment,
+                    Source = CapsuleShell,
+                });
+            }
+            e.Handled = true;
+        }
+
+        /// <summary>拖拽悬停段的高亮：**半透明强调色叠层**（不实心、不反白，落点提示由浮层说明）。
+        /// 传 null = 熄灭。只写 <c>Tag=DropTarget</c>，底色/文字仍归样式状态机管。</summary>
+        public void SetDropHighlight(object? segment)
+        {
+            if (_dropHighlighted != null)
+            {
+                _dropHighlighted.ClearValue(TagProperty);
+                _dropHighlighted = null;
+            }
+            if (segment == null) return;
+
+            // 按“路径值”匹配而不是引用：后台等值刷新后 Items 里可能还是旧实例，_all 已是新实例。
+            for (var i = 0; i < _visibleItems.Count; i++)
+            {
+                if (!SameSegment(_visibleItems[i], segment)) continue;
+                if (CrumbItems.ItemContainerGenerator.ContainerFromIndex(i) is ContentPresenter cp)
+                {
+                    var btn = FindVisualChild<Button>(cp);
+                    if (btn != null)
+                    {
+                        btn.Tag = "DropTarget";   // 模板触发器据此出半透明强调叠层
+                        _dropHighlighted = btn;
+                    }
+                }
+                break;
+            }
+        }
+
+        private FrameworkElement? _dropHighlighted;
+
+        private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+        {
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is T hit) return hit;
+                var sub = FindVisualChild<T>(child);
+                if (sub != null) return sub;
+            }
+            return null;
+        }
+
+        private void CrumbHost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (IsPathEditing) return;   // 编辑态点击归 TextBox / 失焦路径，不再请求进入
+            EditRequested?.Invoke(this, EventArgs.Empty);
+            e.Handled = true;
         }
 
         // —— 路径编辑态（候选补全） ——
@@ -746,7 +1087,7 @@ namespace LinkPocket.Views
         /// <summary>
         /// 候选只由<b>鼠标点选</b>触发 Choose：VM 每次输入都会重建候选并把
         /// SelectedCandidateIndex 置 0 —— 若再经 SelectionChanged 自动 Choose，会形成
-        /// "输入一个字符 → 自动补全整段路径 → 再输入…"的闭环。SelectedIndex 双向绑定仅用于
+        /// “输入一个字符 → 自动补全整段路径 → 再输入…”的闭环。SelectedIndex 双向绑定仅用于
         /// 高亮跟随（↑/↓ 与 Tab 补全由 CompletePathCommand 显式触发）。
         /// </summary>
         private void PathCandidatesList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -761,8 +1102,55 @@ namespace LinkPocket.Views
                     e.Handled = true;
                     return;
                 }
-                hit = System.Windows.Media.VisualTreeHelper.GetParent(hit);
+                hit = VisualTreeHelper.GetParent(hit);
             }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out ScreenPoint point);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ScreenPoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> NameProps = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> RootProps = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> LastProps = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, System.Reflection.PropertyInfo?> IdProps = new();
+
+        /// <summary>两段是否代表**同一条路径位置**（刷新会换 VM 实例，所以不能比引用）。</summary>
+        private static bool SameSegment(object a, object b)
+            => SegmentName(a) == SegmentName(b)
+               && SegmentIsRoot(a) == SegmentIsRoot(b)
+               && SegmentIsLast(a) == SegmentIsLast(b)
+               && SegmentId(a) == SegmentId(b);
+
+        private static string SegmentName(object item)
+        {
+            var prop = NameProps.GetOrAdd(item.GetType(), t => t.GetProperty("Name"));
+            return prop?.GetValue(item) as string ?? item.ToString() ?? string.Empty;
+        }
+
+        private static bool SegmentIsRoot(object item)
+        {
+            var prop = RootProps.GetOrAdd(item.GetType(), t => t.GetProperty("IsRoot"));
+            return prop?.GetValue(item) is true;
+        }
+
+        private static bool SegmentIsLast(object item)
+        {
+            var prop = LastProps.GetOrAdd(item.GetType(), t => t.GetProperty("IsLast"));
+            return prop?.GetValue(item) is true;
+        }
+
+        /// <summary>段标识：控件段是 <c>Id</c>，浏览页 VM 是 <c>FolderId</c>（根段为空）。</summary>
+        private static string? SegmentId(object item)
+        {
+            var prop = IdProps.GetOrAdd(item.GetType(), t => t.GetProperty("Id") ?? t.GetProperty("FolderId"));
+            return prop?.GetValue(item) as string;
         }
     }
 }

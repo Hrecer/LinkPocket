@@ -214,7 +214,7 @@ public partial class BrowserViewModel
             navMarks[3] = navWatch.ElapsedMilliseconds;   // 侧栏/选中/改名投影 + 定位
 
             // 面包屑（含 ID，可点击跳转；最后一级为当前目录，高亮显示）。
-            // ReplaceAll = 一次 Reset；深路径首帧由 BreadcrumbBar 用固定占位（省略号），首帧后精确折叠。
+            // ReplaceAll = 一次 Reset；路径等值时 BreadcrumbBar 直接采纳新实例（不重排），深路径只物化可见窗口。
             var chain = BuildBreadcrumbIds(Controller.CurrentFolderId).ToList();
             var crumbs = new List<BrowserCrumbViewModel>(chain.Count + 1)
             {

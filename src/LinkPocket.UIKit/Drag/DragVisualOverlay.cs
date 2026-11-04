@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using LinkPocket.I18n;
 using LinkPocket.UIKit;
 using LinkPocket.ViewModels;
@@ -19,9 +20,9 @@ namespace LinkPocket.Views;
 /// 拖拽浮层（复刻 Windows 11 资源管理器手感）：
 /// <list type="bullet">
 /// <item>跟随指针的**半透明行快照**（图标 + 名称）；多选时下方叠出"多层"观感并挂「N 个项目」计数徽标；</item>
-/// <item>浮层被指针**按抓取点捏住**（抓在行左侧 = 指针落在快照左侧，抓在中间 = 指针落在快照中间），
-/// 不是固定挂在指针右下角——像把这一行真的提起来，而不是给指针配一条标注；</item>
-/// <item>浮层下方的「移动到「X」」提示（内容随落点实时变化；无落点/非法落点时整条隐藏）。</item>
+/// <item>光标**固定落在浮层下缘的水平中点**（下缘略上方）——与卡片大小、按下在行左侧还是右侧无关，
+/// 与资源管理器一致；</item>
+/// <item>「移动到「X」」提示的**左上角紧贴光标的右下角**（极短距离；内容随落点实时变化；无落点/非法落点时整条隐藏）。</item>
 /// </list>
 ///
 /// <para><b>为什么用独立小窗，而不是挂在页面的装饰层上</b>：主窗口为了圆角/阴影开启了
@@ -31,9 +32,9 @@ namespace LinkPocket.Views;
 /// 不穿透就会挡住真实拖拽的落点命中；同时不进 Alt-Tab、不抢焦点。</para>
 ///
 /// <para><b>位置口径</b>：宿主给的是**被装饰视图坐标**（<c>ownerPoint</c>），这里换算成屏幕物理像素，
-/// 由专用线程按系统光标驱动 visual offset（不做 WPF 布局/变换）。抓取锚点 = 指针在来源行里的相对比例
-/// 映射到快照卡片的同一点，于是"抓哪儿、快照的哪儿就在指针下"。指针由系统光标平面绘制，
-/// 浮层只追随位置，不接管光标。</para>
+/// 由专用线程按系统光标驱动 visual offset（不做 WPF 布局/变换）。锚点 = **卡片下缘的水平中点**
+/// （卡片尺寸变了也照样居中），于是光标永远捏着卡片下沿；提示条左上角相对这个锚点落在光标右下角。
+/// 指针由系统光标平面绘制，浮层只追随位置，不接管光标。</para>
 ///
 /// <para>归属 <c>LinkPocket.UIKit</c>：浏览页与回收站两页共用同一份浮层实现（public——页面程序集都要用；
 /// 内部可见性后门是架构红线，不开）。</para>
@@ -47,8 +48,8 @@ public sealed class DragVisualOverlay
     private readonly FrameworkElement _owner;
 
     /// <summary>
-    /// 抓取点在内容里的位置（内容坐标）：来源元素里按下时指针落在哪个相对比例，
-    /// 这里就取快照里的同一比例。窗口左上角 = 屏幕指针 − 它，于是"抓哪儿、快照的哪儿就在指针下"。
+    /// 光标在内容里的固定位置（内容坐标）：**卡片下缘略上方的水平中点**。
+    /// 与按下的位置/卡片大小无关；窗口左上角 = 屏幕指针 − 它。
     /// </summary>
     private Point _grabAnchor = new(16, 16);
 
@@ -62,6 +63,11 @@ public sealed class DragVisualOverlay
     /// 真正的可见性只由 <see cref="IsShown"/> 读取宿主状态。
     /// </summary>
     private bool _shown;
+
+    /// <summary>拖拽期间的滚轮增量（已切回 UI 线程；OLE 循环内 WPF 收不到 MouseWheel）。</summary>
+    public event EventHandler<int>? WheelDelta;
+
+    private bool _hostWheelHooked;
 
     private DragVisualOverlay(FrameworkElement owner)
     {
@@ -100,11 +106,7 @@ public sealed class DragVisualOverlay
     /// 计数口径 = 拖动集合里的实体数（文件夹 / 链接各算一项，**不含**文件夹里的子项），与选中统计一致。</item>
     /// </list>
     /// </summary>
-    /// <param name="grabFraction">
-    /// 抓取点在源元素里的相对位置（0..1，宿主按按下时刻的指针坐标算好）：
-    /// 浮层按同一比例被指针"捏住"。来源尺寸不可得时传 (0.5, 0.5)（指针落在快照中心）。
-    /// </param>
-    public void Show(IReadOnlyList<DragItem> items, Point grabFraction, bool autoFollow = false)
+    public void Show(IReadOnlyList<DragItem> items, bool autoFollow = false)
     {
         try
         {
@@ -113,7 +115,8 @@ public sealed class DragVisualOverlay
             // 提示条若还画在卡片位图里，每次换字都会把整张卡片一起带成空白。
             _content.UpdateHint(string.Empty);
             ArrangeContent();
-            _grabAnchor = _content.AnchorFor(grabFraction);
+            // 资源管理器口径：不管卡片多大、按下在行左侧还是右侧，光标永远在卡片下缘的水平中点。
+            _grabAnchor = _content.CursorAnchor();
 #if LINKPOCKET_DRAG_DIAGNOSTICS
             _content.DebugSetMarker(_grabAnchor, DebugMarkerColor);
 #endif
@@ -127,6 +130,7 @@ public sealed class DragVisualOverlay
                 _grabAnchor.Y * dpi.DpiScaleY,
                 autoFollow);
             _shown = true;
+            HookHostWheel();
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -277,9 +281,37 @@ public sealed class DragVisualOverlay
     /// </summary>
     public void Detach()
     {
+        UnhookHostWheel();
         _shown = false;
         _bitmap = null;
+        WheelDelta = null;
         GhostWindowHost.Shared.Hide();
+    }
+
+    private void HookHostWheel()
+    {
+        if (_hostWheelHooked) return;
+        GhostWindowHost.Shared.WheelTurned += OnHostWheelTurned;
+        _hostWheelHooked = true;
+    }
+
+    private void UnhookHostWheel()
+    {
+        if (!_hostWheelHooked) return;
+        GhostWindowHost.Shared.WheelTurned -= OnHostWheelTurned;
+        _hostWheelHooked = false;
+    }
+
+    private void OnHostWheelTurned(int delta)
+    {
+        // 宿主线程 → UI 线程；拖拽已结束时丢掉迟到的滚轮。
+        var dispatcher = _owner.Dispatcher;
+        if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+        dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+        {
+            if (!_shown) return;
+            WheelDelta?.Invoke(this, delta);
+        }));
     }
 
     /// <summary>把内容量好、排好，供离屏位图渲染（不依赖窗口/演示源）。</summary>
@@ -385,6 +417,13 @@ public sealed class DragVisualOverlay
         /// 实测提示条 129–141 DIP；留足余量，超长名称用省略号收尾（浮层不该随落点名伸缩/撑大）。</summary>
         private const double MaxHintWidth = 240;
 
+        /// <summary>光标在卡片上的固定锚点（垂直比例）：下缘略上方，像捏着卡片的下沿。</summary>
+        private const double CursorAnchorY = 0.85;
+
+        /// <summary>提示条左上角相对光标的偏移（DIP）：紧贴光标的右下角边缘，留极短距离。</summary>
+        private const double HintOffsetX = 8;
+        private const double HintOffsetY = 8;
+
         /// <summary>提示条预留高度（DIP）：首次测量空提示得到，之后固定不变。</summary>
         private double _hintReserveHeight;
 
@@ -401,7 +440,7 @@ public sealed class DragVisualOverlay
         /// （用户截图可见提示条底部阴影是一条直线）。取 16 &gt; 卡片 BlurRadius 12 + ShadowDepth 2。</summary>
         private const double ShadowPad = 16;
 
-        /// <summary>卡片在内容层里的落点（与 <see cref="ArrangeOverride"/> 共用，锚点计算必须读同一组值）。</summary>
+        /// <summary>卡片在内容层里的落点（锚点计算与 <see cref="ArrangeOverride"/> 共用）。</summary>
         private const double CardLeft = ShadowPad;
         private const double CardTop = ShadowPad;
 
@@ -556,15 +595,15 @@ public sealed class DragVisualOverlay
 #endif
 
         /// <summary>
-        /// 抓取比例 → 内容坐标：指针按同一比例落在卡片上（抓在行左侧 = 落在快照左侧）。
-        /// 卡片宽度/高度来自最近一次测量；比例为 0..1，宿主已保证来源尺寸有效。
+        /// 光标固定落在卡片**下缘略上方的水平中点**（与按下的位置、卡片大小无关）。
+        /// 卡片尺寸来自最近一次测量。
         /// </summary>
-        internal Point AnchorFor(Point fraction)
+        internal Point CursorAnchor()
         {
             var card = _card.DesiredSize;
             return new Point(
-                CardLeft + Math.Clamp(fraction.X, 0, 1) * card.Width,
-                CardTop + Math.Clamp(fraction.Y, 0, 1) * card.Height);
+                CardLeft + card.Width / 2,
+                CardTop + card.Height * CursorAnchorY);
         }
 
         protected override Size MeasureOverride(Size constraint)
@@ -575,8 +614,15 @@ public sealed class DragVisualOverlay
             // MaxHintWidth 预留场景宽度——显隐/换字不会触发窗口 resize（拖拽中的 resize 会卡住 OLE 循环），
             // 但药丸的可见背景会随文字缩短/增长。
             // 宽高 = 卡片/提示区 + 四周投影留白（左右/上下各 ShadowPad）
-            var w = Math.Max(_card.DesiredSize.Width, MaxHintWidth + 2) + ShadowPad * 2;
-            var h = _card.DesiredSize.Height + HintReserveHeight() + 4 + ShadowPad * 2;
+            var cardW = _card.DesiredSize.Width;
+            var cardH = _card.DesiredSize.Height;
+            var anchorX = CardLeft + cardW / 2;
+            var anchorY = CardTop + cardH * CursorAnchorY;
+            // 提示条左上角紧贴光标右下角（极短距离）；宽度按 MaxHintWidth 预留，换字不 resize 窗口。
+            var hintRight = anchorX + HintOffsetX + MaxHintWidth + 2;
+            var hintBottom = anchorY + HintOffsetY + HintReserveHeight();
+            var w = Math.Max(CardLeft + cardW, hintRight) + ShadowPad;
+            var h = Math.Max(CardTop + cardH, hintBottom) + ShadowPad;
             return new Size(w, h);
         }
 
@@ -595,16 +641,19 @@ public sealed class DragVisualOverlay
 
         protected override Size ArrangeOverride(Size finalSize)
         {
-            // 卡片在内容层的位置由抓取锚点反推（宿主把"锚点"摆到指针下）；堆叠背板向左上各让 2/4px；
-            // 提示条贴在卡片正下方。
-            _stackBack2.Arrange(new Rect(CardLeft, ShadowPad - 4, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            _stackBack1.Arrange(new Rect(ShadowPad - 2, ShadowPad - 2, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            _card.Arrange(new Rect(CardLeft, CardTop, _card.DesiredSize.Width, _card.DesiredSize.Height));
-            var hintTop = CardTop + _card.DesiredSize.Height + 4;
+            // 卡片在内容层的位置由固定光标锚点反推（宿主把"下缘中点"摆到指针下）；
+            // 堆叠背板向左上各让 2/4px；提示条落在光标的左下角（相对光标定位，不跟卡片左缘走）。
+            var cardW = _card.DesiredSize.Width;
+            var cardH = _card.DesiredSize.Height;
+            var anchorX = CardLeft + cardW / 2;
+            var anchorY = CardTop + cardH * CursorAnchorY;
+            _stackBack2.Arrange(new Rect(CardLeft, ShadowPad - 4, cardW, cardH));
+            _stackBack1.Arrange(new Rect(ShadowPad - 2, ShadowPad - 2, cardW, cardH));
+            _card.Arrange(new Rect(CardLeft, CardTop, cardW, cardH));
             // 宽度跟当前文字走（上限由测量约束），短目标不再继承上一次长目标的宽度。
-            // 左边与卡片左边缘对齐（不额外右移），提示条和卡片共用同一条视觉基线。
+            // 左上角固定在光标右下角外 8px，文字变长时向右扩展（始终与光标保持极短距离）。
             var hintWidth = _hint.DesiredSize.Width;
-            HintRect = new Rect(CardLeft, hintTop, hintWidth, _hint.DesiredSize.Height);
+            HintRect = new Rect(anchorX + HintOffsetX, anchorY + HintOffsetY, hintWidth, _hint.DesiredSize.Height);
             _hint.Arrange(HintRect);
             return finalSize;
         }

@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shell;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -29,10 +30,24 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     private readonly SearchViewModel _searchVm;
 
+    /// <summary>启动直达目录（<c>--folder &lt;id&gt;</c>，供外部工具/深路径交互实测使用）。</summary>
+    internal string? StartupFolderId { get; set; }
+
     public MainWindow(Services.AppHost host)
     {
         _host = host;
         InitializeComponent();
+
+        // 标题栏的**整条高度**都算窗口拖拽区：原来 CaptionHeight 固定 44，而标题栏实际更高，
+        // 下部那截落在标题栏里却不属于 caption → 拖不动。交互控件已标 IsHitTestVisibleInChrome，
+        // 空白处（含底部内边距）统一交给系统 caption 拖动。
+        TitleBar.SizeChanged += (_, _) => UpdateCaptionHeight();
+        Loaded += (_, _) => UpdateCaptionHeight();
+
+        // 拖拽游标兜底（资源管理器口径）：应用内永远不显示“禁止”，只有拖出窗口才交给系统显示。
+        // 内层落点会把非法区设成 None；这里在冒泡末端（含已处理事件）恢复成移动/复制。
+        AddHandler(DragDrop.DragEnterEvent, new DragEventHandler(WindowDragCursorFallback), true);
+        AddHandler(DragDrop.DragOverEvent, new DragEventHandler(WindowDragCursorFallback), true);
         // 页面对象图按窗口取一份（容器 Scoped）：再开一个窗口拿到的是干净的 VM 图，
         // 不继承上一个窗口的选中/编辑态；窗口关闭时随作用域一起释放。
         _scope = host.Services.CreateScope();
@@ -171,6 +186,24 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     #endregion
 
+    private void UpdateCaptionHeight()
+    {
+        var chrome = WindowChrome.GetWindowChrome(this);
+        if (chrome == null || TitleBar.ActualHeight <= 0) return;
+
+        // CaptionHeight 从**窗口顶端**量，而标题栏在 WindowShell 的外边距之内：
+        // 必须算上标题栏顶端的窗口坐标偏移，否则最下面那截（= 外边距高度）永远拖不动。
+        try
+        {
+            var top = TitleBar.TransformToAncestor(this).Transform(new Point(0, 0)).Y;
+            chrome.CaptionHeight = top + TitleBar.ActualHeight;
+        }
+        catch (InvalidOperationException)
+        {
+            chrome.CaptionHeight = TitleBar.ActualHeight;
+        }
+    }
+
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount == 2)
@@ -204,6 +237,9 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             WindowShell.CornerRadius = new CornerRadius(22);
         }
         UpdateShellClip();
+        // 外距变了 ⇒ 标题栏的窗口坐标偏移变了；等布局落地后重算 caption 高度。
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
+            new Action(UpdateCaptionHeight));
     }
 
     /// <summary>CornerRadius 不会圆角裁切子内容：用 RectangleGeometry 裁出窗口圆角。</summary>
@@ -236,6 +272,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 因此必须在这里主动装载一次，否则左侧文件夹树与列表在启动时是空的、
         // 要手动点一下「浏览」才会加载。
         await viewModel.BrowserViewModel.LoadAsync(null);
+        if (!string.IsNullOrEmpty(StartupFolderId))
+        {
+            await viewModel.BrowserViewModel.LoadAsync(StartupFolderId);
+            LpLog.Info($"startup folder: requested={StartupFolderId} current={viewModel.BrowserViewModel.CurrentFolderId ?? "root"}",
+                category: "app.lifecycle");
+        }
         // 导航条（SlidingNavStrip 组件）在首次布局后自行贴齐选中项，窗口无需干预。
     }
 
@@ -276,6 +318,20 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
             LpLog.Write(LogLevel.Info, NavLogCategory,
                 $"visibility->{navId} shown={shown?.GetType().Name ?? "(none)"}",
                 elapsedMs: watch.ElapsedMilliseconds)));
+    }
+
+    /// <summary>
+    /// 应用内拖拽游标兜底：内层落点已把非法区设成 None 时，恢复成移动/复制。
+    /// 只认本应用自己的拖拽载荷（外部文件等仍由系统决定）；拖出窗口后没有本处理器，系统照常显示禁止。
+    /// </summary>
+    private static void WindowDragCursorFallback(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(typeof(LinkPocket.Views.Browser.BrowserView.BrowserDragPayload))) return;
+        if (e.Effects != DragDropEffects.None) return;
+        e.Effects = (Keyboard.Modifiers & ModifierKeys.Control) != 0
+            ? DragDropEffects.Copy
+            : DragDropEffects.Move;
+        e.Handled = true;
     }
 
     /// <summary>切页耗时留痕的分类（与 MainViewModel / BrowserViewModel 同一支：现场日志按它取）。</summary>

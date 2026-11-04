@@ -132,6 +132,16 @@ internal sealed class GhostWindowHost
     private long _lastTraceQpc;
     private long _rawInputCount;
 #endif
+
+    /// <summary>
+    /// 拖拽期间滚轮（宿主线程）：OLE 拖拽循环吞掉 WPF 的 MouseWheel，只能从 Raw Input 取。
+    /// 参数 = 带符号的滚轮增量（上滚为正，通常 ±120）。
+    /// </summary>
+    internal event Action<int>? WheelTurned;
+
+    /// <summary>RAWINPUT 解析缓冲（宿主单线程复用，避免每次鼠标输入都分配）。</summary>
+    private IntPtr _rawInputBuffer;
+
     private long _lastAppliedChangeQpc;
     private int _lastSetPosUs;
     private int _lastBitmapUs;
@@ -824,7 +834,7 @@ internal sealed class GhostWindowHost
         return since < 0 ? -1 : (int)Math.Min(int.MaxValue, since * 1_000_000L / Stopwatch.Frequency);
     }
 
-    private void OnRawInput()
+    private void OnRawInput(IntPtr rawHandle)
     {
         if (!_visible || !_autoFollow) return;
 #if LINKPOCKET_DRAG_DIAGNOSTICS
@@ -834,6 +844,28 @@ internal sealed class GhostWindowHost
         {
             Volatile.Write(ref _targetX, (int)Math.Round(cursor.X - _anchorX));
             Volatile.Write(ref _targetY, (int)Math.Round(cursor.Y - _anchorY));
+        }
+
+        // 滚轮：RAWMOUSE.usButtonFlags & RI_MOUSE_WHEEL，usButtonData = 带符号增量。
+        // OLE 拖拽循环期间 WPF 收不到 MouseWheel，这里是唯一可靠来源。
+        try
+        {
+            if (_rawInputBuffer == IntPtr.Zero) _rawInputBuffer = Marshal.AllocHGlobal(256);
+            var size = 256u;
+            var headerSize = (uint)Marshal.SizeOf<RawInputHeader>();
+            var copied = GetRawInputData(rawHandle, RidInput, _rawInputBuffer, ref size, headerSize);
+            if (copied == uint.MaxValue || copied < headerSize) return;
+
+            var header = Marshal.PtrToStructure<RawInputHeader>(_rawInputBuffer);
+            if (header.dwType != RimTypeMouse) return;
+            var mouse = Marshal.PtrToStructure<RawMouse>(
+                IntPtr.Add(_rawInputBuffer, (int)headerSize));
+            if ((mouse.usButtonFlags & RiMouseWheel) != 0)
+                WheelTurned?.Invoke((short)mouse.usButtonData);
+        }
+        catch (Exception)
+        {
+            // Raw Input 只是拖拽期间的附加通道：解析失败不得影响浮层/拖拽。
         }
     }
 
@@ -846,7 +878,7 @@ internal sealed class GhostWindowHost
     {
         if (msg == WmInput)
         {
-            Shared.OnRawInput();
+            Shared.OnRawInput(lParam);
             return DefWindowProc(hWnd, msg, wParam, lParam);
         }
         if (msg == WmNcHitTest) return new IntPtr(-1);
@@ -1344,6 +1376,36 @@ internal sealed class GhostWindowHost
         public uint dwFlags;
         public IntPtr hwndTarget;
     }
+
+    private const uint RidInput = 0x10000003;
+    private const uint RimTypeMouse = 0;
+    private const ushort RiMouseWheel = 0x0400;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputHeader
+    {
+        public uint dwType;
+        public uint dwSize;
+        public IntPtr hDevice;
+        public IntPtr wParam;
+    }
+
+    /// <summary>RAWMOUSE（联合体按字节偏移声明；x64/x86 下 usButtonFlags 都在 +4）。</summary>
+    [StructLayout(LayoutKind.Explicit)]
+    private struct RawMouse
+    {
+        [FieldOffset(0)] public ushort usFlags;
+        [FieldOffset(4)] public ushort usButtonFlags;
+        [FieldOffset(6)] public short usButtonData;
+        [FieldOffset(8)] public uint ulRawButtons;
+        [FieldOffset(12)] public int lLastX;
+        [FieldOffset(16)] public int lLastY;
+        [FieldOffset(20)] public uint ulExtraInformation;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetRawInputData(IntPtr hRawInput, uint command, IntPtr data,
+        ref uint size, uint headerSize);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterRawInputDevices(ref RawInputDevice devices, uint count, uint size);

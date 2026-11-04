@@ -99,6 +99,7 @@ public partial class App : Application
         {
             var host = Services.AppHost.CreateDefault();
             var window = host.Services.GetRequiredService<MainWindow>();   // 前端对象图由容器装配（见 AppServiceGraph）
+            window.StartupFolderId = ParseArgumentValue(e.Args, "--folder");
             MainWindow = window; // ShutdownMode=OnMainWindowClose 依赖此引用
             window.Show();
 
@@ -190,6 +191,18 @@ public partial class App : Application
         _capabilityHost.Dispose();
         _capabilityHost = null;
         Shutdown(0);
+    }
+
+    /// <summary>读取 <c>--arg value</c> 形式的启动参数（缺省 null）。</summary>
+    private static string? ParseArgumentValue(string[] args, string name)
+    {
+        for (var i = 0; i + 1 < args.Length; i++)
+        {
+            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(args[i + 1]))
+                return args[i + 1];
+        }
+        return null;
     }
 
     private static int? ParseParentPid(string[] args)

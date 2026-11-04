@@ -133,7 +133,7 @@
              （图标 + 四列 LocFit 日期）≈ 50ms"降到"20 行 × 一个 TextBlock ≈ 15ms"。
              交互面（右键/拖拽/双击/选中/落点）由表级适配器转发到完整行同一批处理器，首帧不存在能力空窗。 -->
         <DataTemplate x:Key="BrowserRowCompactTemplate">
-            <TextBlock Tag="BrowserRowCompact" Cursor="Hand" Height="36.3"
+            <TextBlock Tag="BrowserRowCompact" Cursor="Arrow" Height="36.3"
                        Background="Transparent" Padding="46,9,16,9" Margin="0,1"
                        FontSize="14" TextOptions.TextFormattingMode="Display"
                        Text="{Binding Name}"
@@ -294,6 +294,7 @@
                                      CompletePathCommand="{Binding CompletePathCommand}"
                                      EditRequested="Breadcrumb_EditRequested"
                                      CrumbDragOver="Breadcrumb_CrumbDragOver"
+                                     CrumbDragTargetChanged="Breadcrumb_CrumbDragTargetChanged"
                                      CrumbDragLeave="Breadcrumb_CrumbDragLeave"
                                      CrumbDrop="Breadcrumb_CrumbDrop"
                                      CandidateMoveRequested="Breadcrumb_CandidateMoveRequested"
@@ -371,7 +372,7 @@
                                  ⚠️ 外层必须 `Background=Transparent`（=有命中面）：RowSkin 的 1px 外距是视觉缝隙，
                                     但它落在外层 Border 内部；外层没有背景时 WPF 不把这条缝算进行的命中区，
                                     拖拽经过两行之间会命中下层列表卡 → 落点被抢成"当前文件夹"，提示与高亮闪一下。 -->
-                            <Border x:Name="RowBorder" Tag="BrowserRow" Cursor="Hand" Background="Transparent"
+                            <Border x:Name="RowBorder" Tag="BrowserRow" Cursor="Arrow" Background="Transparent"
                                     Width="{Binding RowWidth, RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"
                                     PreviewMouseLeftButtonDown="RowBorder_PreviewMouseLeftButtonDown"
                                     PreviewMouseRightButtonDown="RowBorder_PreviewMouseRightButtonDown"

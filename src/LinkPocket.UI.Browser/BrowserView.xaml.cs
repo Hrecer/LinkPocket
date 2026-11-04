@@ -123,6 +123,10 @@ public partial class BrowserView : UserControl
         MainTable.DragLeave += CompactRows_DragLeave;
         MainTable.Drop += CompactRows_Drop;
 
+        // 拖拽自动滚之后没有新的 OLE DragOver：滚动一次就按指针重新命中行/节点，落点与提示不掉队。
+        MainTable.RowsAutoScrolled += MainTable_RowsAutoScrolled;
+        FolderTreePanelCtl.DragScrollTargetChanged += FolderTree_DragScrollTargetChanged;
+
         // 预热拖拽浮层的专用承载线程（首次拖拽不等待线程/窗口冷启动；失败静默降级）。
         DragVisualOverlay.Prewarm();
         DataContextChanged += (_, _) =>
@@ -526,17 +530,32 @@ public partial class BrowserView : UserControl
         {
             try
             {
-                if (ViewModel == null) return;
-                var (id, name) = CrumbTargetOf(e.Segment);
-                var mode = CurrentDropMode();
-                ApplyDropTarget(new BrowserDropTarget(id, BrowserPane.Breadcrumb, name, mode));
-                Breadcrumb.SetDropHighlight(e.Segment);
-                e.Args.Effects = DragSupport.EffectFor(mode);
+                ApplyBreadcrumbDropTarget(e.Segment);
+                e.Args.Effects = DragSupport.EffectFor(CurrentDropMode());
             }
             finally
             {
                 e.Args.Handled = true;
             }
+        }
+
+        /// <summary>拖拽自动滚后容器已重建、没有新的 OLE DragOver：仍要按指针下的新段更新落点与提示。</summary>
+        private void Breadcrumb_CrumbDragTargetChanged(object? sender, CrumbTargetChangedEventArgs e)
+            => ApplyBreadcrumbDropTarget(e.Segment);
+
+        /// <summary>面包屑落点的唯一写入口（DragOver 与自动滚后的 TargetChanged 共用）。</summary>
+        private void ApplyBreadcrumbDropTarget(object? segment)
+        {
+            if (ViewModel == null) return;
+            if (segment == null)
+            {
+                ViewModel.ClearDropTarget();
+                Breadcrumb.SetDropHighlight(null);
+                return;
+            }
+            var (id, name) = CrumbTargetOf(segment);
+            ApplyDropTarget(new BrowserDropTarget(id, BrowserPane.Breadcrumb, name, CurrentDropMode()));
+            Breadcrumb.SetDropHighlight(segment);
         }
 
         /// <summary>拖拽离开面包屑段：段内子元素之间移动不清（见 <see cref="ClearDropTargetOnLeave"/>）；

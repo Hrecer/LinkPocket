@@ -10,8 +10,22 @@ namespace LinkPocket.Views;
 /// </summary>
 public partial class DetailSidebar : UserControl
 {
+    /// <summary>拖拽悬停时的纵向自动滚（右栏内容可滚时生效）。</summary>
+    private DragAutoScroll? _dragAutoScroll;
+
     public DetailSidebar()
     {
         InitializeComponent();
+        Loaded += (_, _) =>
+        {
+            _dragAutoScroll ??= DragAutoScroll.Attach(this, () => Content as ScrollViewer);
+        };
+    }
+
+    /// <summary>拖拽期间来自 Raw Input 的滚轮：纵向滚动右栏。</summary>
+    public void ScrollByWheel(int delta)
+    {
+        if (delta == 0 || Content is not ScrollViewer scroller) return;
+        scroller.ScrollToVerticalOffset(scroller.VerticalOffset - delta * 0.4);
     }
 }

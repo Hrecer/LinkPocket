@@ -482,7 +482,7 @@
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Background" Value="{DynamicResource App.Surface.Hover}"/>
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Muted}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
+                            <Setter Property="Cursor" Value="Hand"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -710,7 +710,7 @@
                             <Setter TargetName="Track" Property="Background" Value="{DynamicResource App.State.Disabled.Fill}"/>
                             <Setter TargetName="Track" Property="BorderThickness" Value="0"/>
                             <Setter TargetName="Thumb" Property="Background" Value="{DynamicResource App.State.Disabled.Content}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
+                            <Setter Property="Cursor" Value="Hand"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -794,7 +794,7 @@
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource App.Text.Muted}"/>
-                            <Setter Property="Cursor" Value="Arrow"/>
+                            <Setter Property="Cursor" Value="Hand"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

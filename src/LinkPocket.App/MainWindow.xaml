@@ -18,6 +18,7 @@
         Title="LinkPocket"
         Icon="Assets/linkpocket.ico"
         Height="860" Width="1400"
+        AllowDrop="True"
         MinHeight="680" MinWidth="1024"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
@@ -28,9 +29,12 @@
         TextElement.Foreground="{DynamicResource App.Text.Primary}">
 
     <WindowChrome.WindowChrome>
+        <!-- ResizeBorderThickness 从**窗口外缘**往里量：外壳有 18px 阴影外边距，
+             可见圆角边框在 18px 处。取 18 + 8 = 26，让可见边缘本身也有 8px 缩放热区，
+             否则鼠标停在看得见的边上永远只是普通箭头。 -->
         <WindowChrome CaptionHeight="44"
                       GlassFrameThickness="0"
-                      ResizeBorderThickness="8"
+                      ResizeBorderThickness="26"
                       CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 

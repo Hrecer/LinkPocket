@@ -8,52 +8,136 @@ namespace LinkPocket.App.Tests;
 
 /// <summary>
 /// 面包屑地址栏（BreadcrumbBar）：
-/// ① 溢出折叠装箱算法（Windows 11 口径：从左折叠、当前段永远可见、« 占宽）——纯函数直测；
+/// ① 横向滚动的纯几何：窗口范围、拇指长度/位置、边缘速度——直测纯函数；
 /// ② 面包屑作为第三落点区（Pane=Breadcrumb）的投影隔离——行与树不因面包屑落点而高亮。
 /// </summary>
 public class BreadcrumbBarTests
 {
-    // —— ComputeFoldCount：从左折叠、保底保留当前段 ——
+    // —— ComputeWindow：只物化可见 + 缓冲，绝不把整条深路径塞进 ItemsControl ——
 
     [Fact]
-    public void 放得下_不折叠()
+    public void 放得下_全量窗口()
     {
-        // 三段共 200px，可用 300px → 全显
-        Assert.Equal(0, BreadcrumbBar.ComputeFoldCount(new[] { 80.0, 60.0, 60.0 }, 300, 0));
+        var (start, count, inside) = BreadcrumbBar.ComputeWindow(new[] { 80.0, 60.0, 60.0 }, 0, 300, 2);
+        Assert.Equal(0, start);
+        Assert.Equal(3, count);
+        Assert.Equal(0, inside, 3);
     }
 
     [Fact]
-    public void 放不下_从左折叠_保住右侧()
+    public void 中间偏移_窗口从可见段开始()
     {
-        // 段宽 [100,100,100,100]（共 400），可用 250：从右累加 100+100=200 ≤ 250，+100=300 > 250
-        // → 保留后 2 段，折叠前 2 段
-        Assert.Equal(2, BreadcrumbBar.ComputeFoldCount(new[] { 100.0, 100.0, 100.0, 100.0 }, 250, 0));
+        var (start, count, inside) = BreadcrumbBar.ComputeWindow(new[] { 100.0, 100.0, 100.0, 100.0 }, 100, 250, 0);
+        Assert.Equal(1, start);
+        Assert.Equal(3, count);
+        Assert.Equal(0, inside, 3);
     }
 
     [Fact]
-    public void 预留折叠按钮占宽_折叠数相应变多()
+    public void 缓冲只扩可见窗口_不扩到全路径()
     {
-        // 同样四段：可用 250，但 « 要占 60 → 预算 190 → 只保得住最后 1 段，折叠前 3 段
-        Assert.Equal(3, BreadcrumbBar.ComputeFoldCount(new[] { 100.0, 100.0, 100.0, 100.0 }, 250, 60));
+        // 100 段各 100px，视口 100px，偏移 5000px（第 50 段）：可见 1–2 段，缓冲后 ≤5 段。
+        var widths = Enumerable.Repeat(100.0, 100).ToArray();
+        var (start, count, inside) = BreadcrumbBar.ComputeWindow(widths, 5000, 100, 2);
+        Assert.InRange(count, 1, 5);
+        Assert.InRange(start, 47, 50);
+        Assert.InRange(inside, 0, 2 * 100.0);   // 左缓冲可能把窗口顶回 2 段
     }
 
     [Fact]
-    public void 当前段自己超宽_至少保留它()
+    public void 偏移越界_夹在端点()
     {
-        // 唯一段就超宽：保住它（折叠数最多 = count-1 = 0）
-        Assert.Equal(0, BreadcrumbBar.ComputeFoldCount(new[] { 500.0 }, 200, 44));
+        var widths = new[] { 100.0, 100.0, 100.0 };
+        var atEnd = BreadcrumbBar.ComputeWindow(widths, 99999, 100, 0);
+        var atStart = BreadcrumbBar.ComputeWindow(widths, -50, 100, 0);
+        Assert.Equal(2, atEnd.Start);
+        Assert.Equal(0, atStart.Start);
     }
 
     [Fact]
-    public void 全都放不下_折叠到只剩当前段()
+    public void 空段集合_空窗口()
     {
-        // 五段可用仅够一段：折叠 4 段，保住最后一段（当前段永可见）
-        Assert.Equal(4, BreadcrumbBar.ComputeFoldCount(new[] { 90.0, 90.0, 90.0, 90.0, 90.0 }, 100, 0));
+        Assert.Equal((0, 0, 0d), BreadcrumbBar.ComputeWindow(System.Array.Empty<double>(), 0, 300, 2));
+    }
+
+    // —— ComputeThumb：3px 视觉线，最小 36px，长度只随比例变化 ——
+
+    [Fact]
+    public void 拇指按比例_且有最小长度()
+    {
+        var half = BreadcrumbBar.ComputeThumb(250, 500, 1000, 200);
+        Assert.Equal(100, half.Width, 3);
+        Assert.Equal(50, half.Left, 3);
+
+        var deep = BreadcrumbBar.ComputeThumb(0, 500, 100_000, 200);
+        Assert.Equal(36, deep.Width, 3);           // 100 层时仍可抓
+        Assert.Equal(0, deep.Left, 3);
     }
 
     [Fact]
-    public void 空段集合_不折叠()
-        => Assert.Equal(0, BreadcrumbBar.ComputeFoldCount(System.Array.Empty<double>(), 300, 44));
+    public void 拇指到端点_贴住轨道两端()
+    {
+        var end = BreadcrumbBar.ComputeThumb(500, 500, 1000, 200);
+        Assert.Equal(100, end.Width, 3);
+        Assert.Equal(100, end.Left, 3);
+
+        var all = BreadcrumbBar.ComputeThumb(0, 1000, 1000, 200);
+        Assert.Equal(200, all.Width, 3);
+        Assert.Equal(0, all.Left, 3);
+    }
+
+    [Fact]
+    public void 拇指轨道为零_返回零几何()
+    {
+        Assert.Equal((0, 0), BreadcrumbBar.ComputeThumb(0, 500, 1000, 0));
+    }
+
+    // —— EdgeScrollSpeed：越靠边越快 ——
+
+    [Fact]
+    public void 边缘速度_从慢到快_并夹住上限()
+    {
+        Assert.Equal(220, BreadcrumbBar.EdgeScrollSpeed(0, 28, 900), 3);
+        Assert.Equal(900, BreadcrumbBar.EdgeScrollSpeed(28, 28, 900), 3);
+        Assert.Equal(900, BreadcrumbBar.EdgeScrollSpeed(99, 28, 900), 3);
+        Assert.Equal(220, BreadcrumbBar.EdgeScrollSpeed(-10, 28, 900), 3);
+    }
+
+    // —— SamePath：刷新会重建 VM 实例；路径没变就不许重排/闪省略号 ——
+
+    [Fact]
+    public void 路径等值_新实例也算同一条路径()
+    {
+        var a = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "甲") { IsLast = true } };
+        var b = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "甲") { IsLast = true } };
+        Assert.True(BreadcrumbBar.SamePath(a, b));
+    }
+
+    [Fact]
+    public void 路径改名_不是同一条路径()
+    {
+        var a = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "甲") { IsLast = true } };
+        var b = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "乙") { IsLast = true } };
+        Assert.False(BreadcrumbBar.SamePath(a, b));
+    }
+
+    [Fact]
+    public void 同名不同文件夹_不是同一条路径()
+    {
+        var a = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "同名") { IsLast = true } };
+        var b = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f2", "同名") { IsLast = true } };
+        Assert.False(BreadcrumbBar.SamePath(a, b));
+    }
+
+    [Fact]
+    public void 层级数变化或空集合_不是同一条路径()
+    {
+        var a = new object[] { new BrowserCrumbViewModel(null, "@root") };
+        var b = new object[] { new BrowserCrumbViewModel(null, "@root"), new BrowserCrumbViewModel("f1", "甲") { IsLast = true } };
+        Assert.False(BreadcrumbBar.SamePath(a, b));
+        Assert.False(BreadcrumbBar.SamePath(System.Array.Empty<object>(), System.Array.Empty<object>()));
+        Assert.False(BreadcrumbBar.SamePath(System.Array.Empty<object>(), a));
+    }
 
     // —— 面包屑作为第三落点区：投影按栏隔离 ——
 
