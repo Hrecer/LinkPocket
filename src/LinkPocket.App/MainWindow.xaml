@@ -19,7 +19,7 @@
         Icon="Assets/linkpocket.ico"
         Height="860" Width="1400"
         AllowDrop="True"
-        MinHeight="680" MinWidth="1024"
+        MinHeight="680" MinWidth="840"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -96,13 +96,22 @@
 
     <!-- 无边框大圆角悬浮窗壳：外圆角 22 + 柔和阴影。
          ⚠️ Border 的 CornerRadius 不会圆角裁切子内容，圆角裁切由 code-behind 在 SizeChanged 上
-         设置 RectangleGeometry（WindowShell_SizeChanged）；最大化时由 Window_StateChanged 收圆角、收外距。 -->
+         设置 RectangleGeometry（WindowShell_SizeChanged）；最大化/贴靠时由 UpdateFrameMode 收圆角、收外距。 -->
     <Grid Background="Transparent">
+        <!-- 阴影只跟着**静态背景壳**走：Effect 若挂在整个 WindowShell 上，内部任何一帧变化
+             （导航指示器滑动、悬停、列表滚动、换页）都会把整窗子树重新栅格化 + 重新模糊。
+             背景壳与内容宿主分成同几何的两层：投影只依赖背景壳的静态圆角矩形，内容在上层照常绘制，
+             圆角/裁剪与旧版逐像素一致。 -->
         <Border x:Name="WindowShell" Margin="18" CornerRadius="22"
                 Background="{DynamicResource App.Surface.Base}">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32" Color="{DynamicResource App.Color.Shadow}"/>
             </Border.Effect>
+        </Border>
+        <Border x:Name="WindowContent"
+                Margin="{Binding Margin, ElementName=WindowShell}"
+                CornerRadius="{Binding CornerRadius, ElementName=WindowShell}"
+                Background="Transparent">
             <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -118,8 +127,10 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- 品牌：PrimaryContainer 圆角 chip + 粗字标 -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" WindowChrome.IsHitTestVisibleInChrome="True">
+                <!-- 品牌：PrimaryContainer 圆角 chip + 粗字标。
+                     不标 IsHitTestVisibleInChrome：整块（含图标/文字）都属于 caption 拖动区；
+                     否则鼠标落在品牌上拖不动窗口（与标题栏空白区行为不一致）。 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
                     <Border Width="30" Height="30" CornerRadius="10"
                             Background="{DynamicResource App.Accent.Container}">
                         <m3:M3Icon Kind="link-variant" Width="17" Height="17"

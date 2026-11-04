@@ -1,9 +1,12 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shell;
+using System.Windows.Threading;
 using LinkPocket.Contracts;
 using LinkPocket.Services;
 using LinkPocket.ViewModels;
@@ -32,6 +35,11 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     /// <summary>启动直达目录（<c>--folder &lt;id&gt;</c>，供外部工具/深路径交互实测使用）。</summary>
     internal string? StartupFolderId { get; set; }
+
+    /// <summary>贴靠/最大化时壳体贴满窗口（无外边距、无圆角）；普通浮动窗才保留悬浮壳。</summary>
+    private bool _flushShell;
+    private bool _frameModeApplied;
+    private HwndSource? _hwndSource;
 
     public MainWindow(Services.AppHost host)
     {
@@ -117,6 +125,14 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         Loaded += MainWindow_Loaded;
         StateChanged += Window_StateChanged;
         SizeChanged += (_, _) => UpdateShellClip();
+        // 贴靠/标题栏拖动都走 Win32 窗口消息：在几何提交前同步切换壳形态，避免先闪一帧旧状态。
+        SourceInitialized += (_, _) =>
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            _hwndSource = HwndSource.FromHwnd(hwnd);
+            _hwndSource?.AddHook(WndProc);
+        };
+        Loaded += (_, _) => UpdateFrameMode();
         // 分段胶囊导航 = SlidingNavStrip 组件（几何贴齐与滑动动画由组件自持）：
         // 选中项经 TwoWay 绑定同步，本窗口零导航动画代码。
     }
@@ -224,22 +240,106 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
 
     private void Window_StateChanged(object? sender, EventArgs e)
     {
-        // 无边框大圆角壳：最大化时收掉外距与圆角（窗口贴满工作区），
-        // 恢复时回到悬浮卡形态（外距 18 = 阴影呼吸空间，外圆角 22）。
-        if (WindowState == WindowState.Maximized)
-        {
-            WindowShell.Margin = new Thickness(8);
-            WindowShell.CornerRadius = new CornerRadius(0);
-        }
-        else
-        {
-            WindowShell.Margin = new Thickness(18);
-            WindowShell.CornerRadius = new CornerRadius(22);
-        }
+        // 最大化/还原/最小化都会改变窗口区域；贴靠态由几何判定（WindowState 仍是 Normal）。
+        UpdateFrameMode();
+    }
+
+    /// <summary>普通浮动窗保留 18px 阴影外边距 + 22 圆角；贴靠/最大化时壳体贴满窗口，无外距、无圆角。</summary>
+    private void UpdateFrameMode()
+        => ApplyFrameMode(WindowState == WindowState.Maximized || IsSnappedToWorkArea());
+
+    /// <summary>切换壳形态。只在形态真的变化时改属性，避免拖动/缩放期间反复触发整窗布局。</summary>
+    private void ApplyFrameMode(bool flush)
+    {
+        if (_frameModeApplied && flush == _flushShell) return;
+        _frameModeApplied = true;
+        _flushShell = flush;
+
+        WindowShell.Margin = flush ? new Thickness(0) : new Thickness(18);
+        WindowShell.CornerRadius = flush ? new CornerRadius(0) : new CornerRadius(22);
         UpdateShellClip();
+
         // 外距变了 ⇒ 标题栏的窗口坐标偏移变了；等布局落地后重算 caption 高度。
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded,
-            new Action(UpdateCaptionHeight));
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateCaptionHeight));
+    }
+
+    /// <summary>
+    /// 在窗口尺寸/位置**提交之前**按提议矩形判定贴靠：WM_WINDOWPOSCHANGING 里同步切换壳形态，
+    /// 使 Windows 提交新几何后的第一帧就是无圆角/无外边距，不再先闪一帧旧状态。
+    /// </summary>
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (WindowState == WindowState.Minimized) return IntPtr.Zero;
+
+        if (msg == WmWindowPosChanging && lParam != IntPtr.Zero)
+        {
+            var pos = Marshal.PtrToStructure<NativeWindowPos>(lParam);
+            if ((pos.flags & (SwpNoSize | SwpNoMove)) == 0 && pos.cx > 0 && pos.cy > 0)
+            {
+                var proposed = new NativeRect
+                {
+                    Left = pos.x,
+                    Top = pos.y,
+                    Right = pos.x + pos.cx,
+                    Bottom = pos.y + pos.cy,
+                };
+                ApplyFrameMode(WindowState == WindowState.Maximized || IsTiledRect(proposed));
+            }
+        }
+        else if (msg == WmWindowPosChanged)
+        {
+            // 兜底：提议矩形被系统调整（最大化/跨屏 DPI）后，以实际矩形收敛。
+            UpdateFrameMode();
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>贴靠态判定：窗口外框贴齐当前显示器工作区，且宽/高是常见平铺分数。</summary>
+    private bool IsSnappedToWorkArea()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var wr)) return false;
+        return IsTiledRect(wr);
+    }
+
+    /// <summary>
+    /// 给定外框是否为一个平铺格：贴齐工作区边缘 + 宽/高是常见分数。
+    /// 覆盖 Windows 10 半屏/四分之一与 Windows 11 的 1/3、2/3、70/30 等；
+    /// 正常手动缩放只要不贴边就不会误判。
+    /// </summary>
+    private static bool IsTiledRect(NativeRect wr)
+    {
+        var monitor = MonitorFromRect(ref wr, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero) return false;
+        var info = new NativeMonitorInfo { cbSize = Marshal.SizeOf<NativeMonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info)) return false;
+
+        var work = info.rcWork;
+        double w = wr.Right - wr.Left;
+        double h = wr.Bottom - wr.Top;
+        double ww = work.Right - work.Left;
+        double wh = work.Bottom - work.Top;
+        if (ww <= 0 || wh <= 0) return false;
+
+        const double tol = 4;
+        bool Near(double value, double target) => Math.Abs(value - target) <= tol;
+        bool Fraction(double value, double whole) =>
+            Near(value, whole / 4) || Near(value, whole / 3) || Near(value, whole * 0.3)
+            || Near(value, whole * 0.4) || Near(value, whole / 2) || Near(value, whole * 0.6)
+            || Near(value, whole * 2 / 3) || Near(value, whole * 0.7) || Near(value, whole * 0.75);
+
+        var left = Near(wr.Left, work.Left);
+        var right = Near(wr.Right, work.Right);
+        var top = Near(wr.Top, work.Top);
+        var bottom = Near(wr.Bottom, work.Bottom);
+        var fullW = Near(w, ww);
+        var fullH = Near(h, wh);
+
+        if (fullW && fullH) return true;                       // 无边框满工作区
+        if (fullH && (left || right) && Fraction(w, ww)) return true;
+        if (fullW && (top || bottom) && Fraction(h, wh)) return true;
+        if ((left || right) && (top || bottom) && Fraction(w, ww) && Fraction(h, wh)) return true;
+        return false;
     }
 
     /// <summary>CornerRadius 不会圆角裁切子内容：用 RectangleGeometry 裁出窗口圆角。</summary>
@@ -247,12 +347,17 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     {
         var w = WindowShell.ActualWidth;
         var h = WindowShell.ActualHeight;
-        if (WindowState == WindowState.Maximized || w <= 0 || h <= 0)
+        if (_flushShell || w <= 0 || h <= 0)
         {
             WindowShell.Clip = null;
+            WindowContent.Clip = null;
             return;
         }
         WindowShell.Clip = new RectangleGeometry(
+            new Rect(0, 0, w, h), 22, 22);
+        // 内容宿主必须与背景壳同几何、同裁剪：内容已经不在投影子树里，
+        // 圆角裁切要在这一层自己补回来，否则内容会画出圆角。
+        WindowContent.Clip = new RectangleGeometry(
             new Rect(0, 0, w, h), 22, 22);
     }
 
@@ -340,7 +445,54 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)
     {
+        _hwndSource?.RemoveHook(WndProc);
+        _hwndSource = null;
         _scope.Dispose();
         base.OnClosed(e);
     }
+
+    private const int WmWindowPosChanging = 0x0046;
+    private const int WmWindowPosChanged = 0x0047;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint MonitorDefaultToNearest = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeWindowPos
+    {
+        public IntPtr hwnd;
+        public IntPtr hwndInsertAfter;
+        public int x;
+        public int y;
+        public int cx;
+        public int cy;
+        public uint flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMonitorInfo
+    {
+        public int cbSize;
+        public NativeRect rcMonitor;
+        public NativeRect rcWork;
+        public uint dwFlags;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromRect(ref NativeRect lprc, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref NativeMonitorInfo lpmi);
 }

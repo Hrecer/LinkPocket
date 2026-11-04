@@ -929,10 +929,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private void CompleteLoad()
     {
         _loadFailed = false;
-        IsLoadingAll = false;
         var changed = Selection.RemoveMissing(id => _itemsById.ContainsKey(id));
         if (!changed) OnSelectionChanged();
-        OnPropertyChanged(nameof(LoadingNotice));
 
         var selectAll = _selectAllAfterLoad;
         var selectLast = _selectLastAfterLoad;
@@ -940,6 +938,11 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         _selectLastAfterLoad = false;
         if (selectAll) Selection.SelectAll(_orderedIds);
         else if (selectLast) FocusOn(Selection.SelectLast(_orderedIds));
+
+        // “加载完成”必须是**最后一个**发布的读数：补全期间按下的 Ctrl+A / End 落在这里才生效，
+        // 先置 false 会让观察方（界面状态行、量具、回归用例）读到“已加载 N 条、选中仍是 0”的中间态。
+        IsLoadingAll = false;
+        OnPropertyChanged(nameof(LoadingNotice));
     }
 
     private void MarkLoadFailed(string reason)
