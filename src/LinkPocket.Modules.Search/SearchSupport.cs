@@ -106,32 +106,57 @@ internal static class SearchSupport
     /// 虚根「全部书签」不落库、没有 ID，天然不会出现在这里；空 id / 空名再挡一次。
     /// </summary>
     public static async Task<List<LinkDto>> FindMatchingFoldersAsync(
-        Kernel.IUnitOfWork uow, string query, bool searchTitle, bool searchPath, CancellationToken ct)
+        Kernel.IUnitOfWork uow, string query, bool searchTitle, bool searchPath, CancellationToken ct,
+        IReadOnlyList<Folder>? preloaded = null)
     {
         if (string.IsNullOrWhiteSpace(query) || (!searchTitle && !searchPath)) return [];
 
-        var all = await uow.Folders.ListAllAsync(ct);
+        // 目录表（10 万级）一次搜索只读一次：位置范围展开子树与文件夹匹配共用同一份
+        //（否则每次搜索两次 ListAll，复杂库上多付 ~120ms 的实体物化）。
+        var all = preloaded ?? await uow.Folders.ListAllAsync(ct);
         if (all.Count == 0) return [];
 
         var byId = new Dictionary<string, Folder>(all.Count, StringComparer.Ordinal);
         foreach (var folder in all) byId[folder.FolderId] = folder;
 
-        // 祖先名命中：沿父链走一次并记忆化。文件夹数量级远小于链接（本机 107 vs 100 006），
-        // 深树（101 层）也只走一遍；不物化 path 列、不做 SQL 递归 CTE。
+        // 祖先名命中：**从根往下推一遍（O(N)）**，而不是每个目录各自上溯。
+        // 后者是 O(N × 深度)：10 万目录 × 100 层 = 1000 万次字符串比较（复杂库实测 ~200ms）；
+        // 前者每个目录只比较一次（父节点是否命中 + 自己是否是命中源）。
+        // 不物化 path 列、不做 SQL 递归 CTE——目录表本来就常驻内存（folders.tree 就是这么取的）。
         var ancestorHit = new Dictionary<string, bool>(all.Count, StringComparer.Ordinal);
-        bool AncestorMatches(string folderId)
+        if (searchPath)
         {
-            if (ancestorHit.TryGetValue(folderId, out var known)) return known;
-            var hit = false;
-            var cursor = byId.TryGetValue(folderId, out var self) ? self.ParentId : null;
-            for (var guard = 0; !string.IsNullOrEmpty(cursor) && guard < 512; guard++)
+            var children = new Dictionary<string, List<Folder>>(StringComparer.Ordinal);
+            var roots = new List<Folder>();
+            foreach (var folder in all)
             {
-                if (!byId.TryGetValue(cursor, out var parent)) break;
-                if (parent.Name.Contains(query, StringComparison.OrdinalIgnoreCase)) { hit = true; break; }
-                cursor = parent.ParentId;
+                if (string.IsNullOrEmpty(folder.FolderId)) continue;
+                if (string.IsNullOrEmpty(folder.ParentId) || !byId.ContainsKey(folder.ParentId))
+                {
+                    roots.Add(folder);      // 根，或父链断掉的孤立节点：按"没有祖先"处理
+                }
+                else
+                {
+                    if (!children.TryGetValue(folder.ParentId, out var kids))
+                        children[folder.ParentId] = kids = [];
+                    kids.Add(folder);
+                }
             }
-            ancestorHit[folderId] = hit;
-            return hit;
+
+            var pending = new Queue<Folder>(roots);
+            foreach (var root in roots) ancestorHit[root.FolderId] = false;
+            while (pending.Count > 0)
+            {
+                var parent = pending.Dequeue();
+                var inherited = ancestorHit[parent.FolderId]
+                                || parent.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
+                if (!children.TryGetValue(parent.FolderId, out var kids)) continue;
+                foreach (var kid in kids)
+                {
+                    if (!ancestorHit.TryAdd(kid.FolderId, inherited)) continue;   // 环/重复父链：只走一次
+                    pending.Enqueue(kid);
+                }
+            }
         }
 
         var rows = new List<LinkDto>();
@@ -139,7 +164,8 @@ internal static class SearchSupport
         {
             if (string.IsNullOrEmpty(folder.FolderId) || string.IsNullOrWhiteSpace(folder.Name)) continue;
             var titleHit = searchTitle && folder.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
-            if (!titleHit && !(searchPath && AncestorMatches(folder.FolderId))) continue;
+            if (!titleHit && !(searchPath && ancestorHit.TryGetValue(folder.FolderId, out var inherited) && inherited))
+                continue;
 
             rows.Add(new LinkDto
             {
@@ -217,21 +243,22 @@ internal static class SearchSupport
     public static async Task<LinkSearchScope> BuildScopeAsync(
         Kernel.IUnitOfWork uow, string query,
         bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
-        CancellationToken ct)
+        CancellationToken ct, IReadOnlyList<Folder>? preloadedFolders = null)
         => new()
         {
             Query = query,
             Title = searchTitle,
             Url = searchUrl,
             Description = searchDescription,
-            Folders = searchPath ? await ExpandMatchingFoldersAsync(uow, query, ct) : [],
+            Folders = searchPath ? await ExpandMatchingFoldersAsync(uow, query, ct, preloadedFolders) : [],
         };
 
     /// <summary>目录名命中的文件夹 + 其整棵子树（命中目录本身也算命中）。</summary>
     private static async Task<List<FolderId>> ExpandMatchingFoldersAsync(
-        Kernel.IUnitOfWork uow, string query, CancellationToken ct)
+        Kernel.IUnitOfWork uow, string query, CancellationToken ct,
+        IReadOnlyList<Folder>? preloaded = null)
     {
-        var folders = await uow.Folders.ListAllAsync(ct);
+        var folders = preloaded ?? await uow.Folders.ListAllAsync(ct);
         var childrenOf = folders
             .Where(f => f.ParentId != null)
             .ToLookup(f => f.ParentId!, StringComparer.Ordinal);

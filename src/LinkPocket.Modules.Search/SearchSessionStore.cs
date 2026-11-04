@@ -50,13 +50,18 @@ internal sealed class SearchSessionStore
         try
         {
             await tx.BeginAsync(ct);
+            // 目录表（10 万级）这次搜索只读一次：位置范围要展开子树、文件夹块要筛命中，
+            // 两处用的是同一份快照（同一读事务；重复 ListAll 只是白付实体物化）。
+            var needsFolders = includeFolders || searchPath;
+            var allFolders = needsFolders ? await uow.Folders.ListAllAsync(ct) : null;
+
             var scope = await SearchSupport.BuildScopeAsync(
-                uow, query, searchTitle, searchUrl, searchDescription, searchPath, ct);
+                uow, query, searchTitle, searchUrl, searchDescription, searchPath, ct, allFolders);
 
             // 文件夹与链接在同一条结果流里：文件夹块固定排在链接块之前（各自按当前排序键排）。
             // 只在"标题/位置"两档下命中——URL/描述对文件夹没有意义（见 SearchSupport）。
             var folders = includeFolders
-                ? await SearchSupport.FindMatchingFoldersAsync(uow, query, searchTitle, searchPath, ct)
+                ? await SearchSupport.FindMatchingFoldersAsync(uow, query, searchTitle, searchPath, ct, allFolders)
                 : [];
             if (folders.Count > 0) SearchSupport.SortFolders(folders, sortBy, sortOrder);
 

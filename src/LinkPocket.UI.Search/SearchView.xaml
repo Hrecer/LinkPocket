@@ -24,23 +24,9 @@
         </Style>
 
         <!-- 链接专属单元格：占位时隐藏（沿用上面的口径），文件夹行折叠 -->
-        <Style x:Key="SearchLinkCell" TargetType="FrameworkElement" BasedOn="{StaticResource SearchPlaceholderHidden}">
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <!-- 文件夹专属单元格：只有文件夹行显示（时间/次数对文件夹没有意义） -->
-        <Style x:Key="SearchFolderCell" TargetType="FrameworkElement">
-            <Setter Property="Visibility" Value="Collapsed"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsFolder}" Value="True">
-                    <Setter Property="Visibility" Value="Visible"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
+        <!-- 时间/次数单元格：链接与文件夹**共用**（文件夹同样有创建/更新/访问/次数，库里都有值）。
+             区别只在空值文案（链接"从未"、文件夹未访问同样是"从未"），由值投影自己给。 -->
+        <Style x:Key="SearchLinkCell" TargetType="FrameworkElement" BasedOn="{StaticResource SearchPlaceholderHidden}"/>
 
         <!-- 首帧紧凑行：只画标题/URL（真实数据），与完整行同高。
              十万级结果集的首帧如果直接实例化完整行模板（地理路径 + 4 个日期 + 图标 + 高亮），
@@ -407,37 +393,21 @@
                                                           Foreground="{DynamicResource App.Text.Secondary}"
                                                           Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding UpdatedValue}"/>
-                                <TextBlock Grid.Column="2" Text="—" FontSize="12.5"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
                                                           Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding LastVisitedValue}"/>
-                                <TextBlock Grid.Column="3" Text="—" FontSize="12.5"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
                                                           Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding VisitCountValue}"/>
-                                <TextBlock Grid.Column="4" Text="—" FontSize="12.5"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="5" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
                                                           Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding CreatedValue}"/>
-                                <TextBlock Grid.Column="5" Text="—" FontSize="12.5"
-                                           VerticalAlignment="Center"
-                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                           Style="{StaticResource SearchFolderCell}"/>
                             </Grid>
                         </Border>
                     </DataTemplate>

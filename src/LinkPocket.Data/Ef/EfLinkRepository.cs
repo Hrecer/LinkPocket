@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using LinkPocket.Kernel;
 
@@ -119,6 +120,9 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         return true;
     }
 
+    /// <summary>目录集合超过这个数就改走 `json_each`，不逐个绑定参数（SQLite 变量上限 32766）。</summary>
+    private const int MaxInlineFolderIds = 512;
+
     /// <summary>搜索谓词的唯一 SQL 构造（计数与取页共用；用户输入只经参数绑定）。</summary>
     private static bool TryBuildSearchWhereSql(
         LinkSearchScope scope, out string where, out (string Name, object? Value)[] parameters)
@@ -130,15 +134,30 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         if (scope.Url) conditions.Add("url LIKE @q ESCAPE '\\'");
         if (scope.Description) conditions.Add("description LIKE @q ESCAPE '\\'");
         var folders = scope.Folders.Select(x => x.Value).ToArray();
-        if (folders.Length > 0)
-            conditions.Add("folder_id IN (" + string.Join(",", folders.Select((_, i) => "@f" + i)) + ")");
-        if (conditions.Count == 0) return false;
-
-        var list = new List<(string Name, object? Value)>(folders.Length + 1)
+        var list = new List<(string Name, object? Value)>(Math.Min(folders.Length, MaxInlineFolderIds) + 2)
         {
             ("@q", $"%{EscapeLike(scope.Query)}%"),
         };
-        for (var i = 0; i < folders.Length; i++) list.Add(("@f" + i, folders[i]));
+        if (folders.Length > 0)
+        {
+            // ⚠️ 目录集合可能到几万个（深树 + 祖先名命中会展开整棵子树）：逐个绑定会撞 SQLite 的
+            //    变量上限（SQLITE_MAX_VARIABLE_NUMBER = 32766），实测 5 万目录直接
+            //    "too many SQL variables"。大集合改走 `json_each(单个 JSON 参数)`：
+            //    一个参数、一条语句，`folder_id IN (SELECT value FROM json_each(@fjson))` 与
+            //    `IN (...)` 语义一致（字符串完全相等）。小集合仍用占位符，不引入函数调用。
+            if (folders.Length <= MaxInlineFolderIds)
+            {
+                conditions.Add("folder_id IN (" + string.Join(",", folders.Select((_, i) => "@f" + i)) + ")");
+                for (var i = 0; i < folders.Length; i++) list.Add(("@f" + i, folders[i]));
+            }
+            else
+            {
+                conditions.Add("folder_id IN (SELECT value FROM json_each(@fjson))");
+                list.Add(("@fjson", JsonSerializer.Serialize(folders)));
+            }
+        }
+        if (conditions.Count == 0) return false;
+
         where = string.Join(" OR ", conditions);
         parameters = [.. list];
         return true;
