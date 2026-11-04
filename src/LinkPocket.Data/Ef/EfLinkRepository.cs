@@ -514,7 +514,7 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         }
 
         var rows = new List<LinkPocket.Contracts.LinkDto>(duplicateRows);
-        foreach (var chunk in duplicateGroups.Chunk(400))
+        foreach (var chunk in duplicateGroups.Chunk(900))
         {
             var urls = chunk.Select(g => g.Key).ToArray();
             var names = string.Join(", ", urls.Select((_, i) => "@u" + i));
@@ -523,6 +523,74 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
                 $"SELECT {columns} FROM links WHERE url IN ({names})", parameters, ct));
         }
         return rows;
+    }
+
+    public async Task<IReadOnlyList<(string Url, int Count, string? FirstListId)>> ListDuplicateGroupSummariesAsync(
+        CancellationToken ct)
+    {
+        var groups = await db.Links.AsNoTracking()
+            .GroupBy(l => l.Url)
+            .Where(g => g.Count() > 1)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        if (groups.Count == 0) return [];
+
+        var keep = new HashSet<string>(groups.Select(g => g.Key), StringComparer.Ordinal);
+        var duplicateRows = groups.Sum(g => g.Count);
+        var total = await db.Links.AsNoTracking().CountAsync(ct);
+
+        // 只取四列（url / folder_id / created_at / id）找每组首条的目录：摘要模式不需要链接正文。
+        var first = new Dictionary<string, (DateTime CreatedAt, string LinkId, string? ListId)>(
+            keep.Count, StringComparer.Ordinal);
+        void Consider(string url, string? listId, DateTime createdAt, string linkId)
+        {
+            if (!keep.Contains(url)) return;
+            if (!first.TryGetValue(url, out var current)
+                || createdAt < current.CreatedAt
+                || (createdAt == current.CreatedAt && string.CompareOrdinal(linkId, current.LinkId) < 0))
+                first[url] = (createdAt, linkId, listId);
+        }
+
+        async Task ReadAsync(string sql, (string Name, object? Value)[] parameters)
+        {
+            using var cmd = await RawSql.CreateAsync(db, sql, ct);
+            foreach (var (name, value) in parameters) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var url = reader.GetString(0);
+                if (!keep.Contains(url)) continue;   // 全表扫时先按 URL 过滤，唯一行不再解析时间/ID
+                Consider(
+                    url,
+                    reader.IsDBNull(1) ? null : reader.GetString(1),
+                    reader.GetDateTime(2),
+                    reader.GetString(3));
+            }
+        }
+
+        // 重复面大或组数很多时，一次顺序扫全表（四列）更便宜；组数少时才按 URL 批量取回。
+        // 组数阈值避免 2 万个组被拆成几十条 IN 查询（每条查询的固定开销会反超全表扫）。
+        if ((long)duplicateRows * 2 >= total || groups.Count >= 5000)
+        {
+            await ReadAsync("SELECT url, folder_id, created_at, id FROM links", []);
+        }
+        else
+        {
+            foreach (var chunk in groups.Chunk(900))
+            {
+                var urls = chunk.Select(g => g.Key).ToArray();
+                var names = string.Join(", ", urls.Select((_, i) => "@u" + i));
+                var parameters = urls.Select((u, i) => ("@u" + i, (object?)u)).ToArray();
+                await ReadAsync(
+                    $"SELECT url, folder_id, created_at, id FROM links WHERE url IN ({names})", parameters);
+            }
+        }
+
+        return groups
+            .Select(g => (g.Key, g.Count, first.TryGetValue(g.Key, out var f) ? f.ListId : null))
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static IQueryable<Link> ApplyFilter(IQueryable<Link> q, LinkFilter f)

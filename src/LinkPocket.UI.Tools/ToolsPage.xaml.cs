@@ -229,7 +229,7 @@ namespace LinkPocket.Views
 
                 var inDetail = DetailPanel.Visibility == Visibility.Visible;
                 await RunDedupAsync();
-                if (inDetail) ReconcileOpenDetail();
+                if (inDetail) await ReconcileOpenDetailAsync();
             }
             catch (Exception ex)
             {
@@ -239,7 +239,7 @@ namespace LinkPocket.Views
 
         /// <summary>重扫后按 URL 重组当前明细组（组已不再重复 → 退回主表，主表即最新）。
         /// 重进明细时**保留仍在新结果里的选中**（只剔除消失的项），行重建后统一重投。</summary>
-        private void ReconcileOpenDetail()
+        private async Task ReconcileOpenDetailAsync()
         {
             var openUrl = VmTools.CurrentGroupUrl;
             if (string.IsNullOrEmpty(openUrl)) return;
@@ -248,7 +248,7 @@ namespace LinkPocket.Views
             if (row == null)
                 GoBackToList();      // 组已不再重复：退回即见最新主表
             else
-                EnterDetail(row, preserveSelection: true);   // 组仍在：重进明细 + 保留仍存在的选中
+                await EnterDetailAsync(row, preserveSelection: true);   // 组仍在：重进明细 + 保留仍存在的选中
         }
 
         /// <summary>F5 重新查重（明细视图）：重扫 + 按 URL 重组当前组（与入口对齐同一条链路）。
@@ -257,7 +257,7 @@ namespace LinkPocket.Views
         {
             if (DetailPanel.Visibility != Visibility.Visible) return;
             await RunDedupAsync(navigating: true);
-            ReconcileOpenDetail();
+            await ReconcileOpenDetailAsync();
             RowEntrance.Play(DetailTable.RowsList);   // 用户发起的重查：明细表播行入场（UIKit 唯一实现）
             PageFocus.Restore(this);
         }

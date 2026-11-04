@@ -11,8 +11,12 @@ internal sealed class DedupScanHandler : ICommandHandler
     public CommandDescriptor Descriptor { get; } = new(
         Name: "dedup.scan",
         Category: "dedup",
-        Description: "Scan duplicate bookmarks: grouped by URL, returning groups with more than one entry (ascending creation time within a group)",
-        Parameters: [],
+        Description: "Scan duplicate bookmarks: grouped by URL, returning groups with more than one entry (ascending creation time within a group). include_links=false returns group summaries only (UI optimization; default true = full links)",
+        Parameters:
+        [
+            ParamSpec.Opt<bool>("include_links",
+                "Include full link objects (default true). false = groups + counts + first_list_id only (UI summary mode; external callers should omit this)"),
+        ],
         Caps: CommandCaps.Query,
         // 结果只随链接/回收站变化而变（回收站变化会改变"谁还在库里"）；同一次数据状态下的重复调用
         // （进入去重页 + 事件刷新 + 防抖补跑）不必各扫一遍
@@ -22,7 +26,10 @@ internal sealed class DedupScanHandler : ICommandHandler
 
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
-        var groups = await ScanAsync(ctx.Uow, ctx.Ct);
+        var includeLinks = CommandArgs.OptionalBoolOrNull(args, "include_links") ?? true;
+        var groups = includeLinks
+            ? await ScanAsync(ctx.Uow, ctx.Ct)
+            : await ScanSummariesAsync(ctx.Uow, ctx.Ct);
         return CommandResult.Ok(groups);
     }
 
@@ -34,13 +41,28 @@ internal sealed class DedupScanHandler : ICommandHandler
         var groups = links
             .GroupBy(l => l.Url, StringComparer.Ordinal)
             .Where(g => g.Count() > 1)
-            .Select(g => new DedupGroup(
-                g.Key,
-                g.Count(),
-                g.OrderBy(l => l.CreatedAt).ThenBy(l => l.LinkId, StringComparer.Ordinal).ToList()))
+            .Select(g =>
+            {
+                var ordered = g.OrderBy(l => l.CreatedAt).ThenBy(l => l.LinkId, StringComparer.Ordinal).ToList();
+                return new DedupGroup(
+                    g.Key,
+                    ordered.Count,
+                    ordered,
+                    ordered[0].ListId);
+            })
             .OrderByDescending(g => g.Count)
             .ThenBy(g => g.Url, StringComparer.Ordinal)
             .ToList();
         return groups;
+    }
+
+    /// <summary>UI 摘要模式：只回组 URL / 条数 / 首条目录，不取链接正文。</summary>
+    internal static async Task<IReadOnlyList<DedupGroup>> ScanSummariesAsync(
+        Kernel.IUnitOfWork uow, CancellationToken ct)
+    {
+        var summaries = await uow.Links.ListDuplicateGroupSummariesAsync(ct);
+        return summaries
+            .Select(s => new DedupGroup(s.Url, s.Count, new List<LinkDto>(), s.FirstListId))
+            .ToList();
     }
 }

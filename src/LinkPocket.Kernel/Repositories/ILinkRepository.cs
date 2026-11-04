@@ -62,4 +62,11 @@ public interface ILinkRepository
     /// 顺序不保证，调用方按 URL/CreatedAt/LinkId 自行分组排序。
     /// </summary>
     Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDuplicatedDtosAsync(CancellationToken ct);
+
+    /// <summary>
+    /// 重复组摘要（UI 摘要模式）：只回 URL / 组内条数 / 首条（创建时间最早）的目录 ID，
+    /// 不取链接正文。外部宿主默认仍走 <see cref="ListDuplicatedDtosAsync"/> 的全量结果。
+    /// </summary>
+    Task<IReadOnlyList<(string Url, int Count, string? FirstListId)>> ListDuplicateGroupSummariesAsync(
+        CancellationToken ct);
 }

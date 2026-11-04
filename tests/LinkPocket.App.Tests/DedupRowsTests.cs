@@ -67,6 +67,7 @@ public class DedupRowsTests
             Assert.Equal(1, calls);   // 同一目录只解析一次（旧写法逐 LinkId 是 4 次）
 
             vm.EnterGroup(groups[0]);
+            await vm.LoadGroupLinksAsync(groups[0]);
             Assert.True(vm.ToggleChecked(created[0].LinkId));
             var rest = await vm.DeleteCheckedAsync();
 
@@ -97,6 +98,7 @@ public class DedupRowsTests
             Assert.Single(groups);
 
             vm.EnterGroup(groups[0]);
+            await vm.LoadGroupLinksAsync(groups[0]);
             Assert.True(vm.ToggleChecked(a.LinkId));
             var rest = await vm.DeleteCheckedAsync();
 
@@ -150,7 +152,7 @@ public class DedupRowsTests
 
             // 外部宿主身份（CLI / MCP）：全量、完整字段，且绕过查询缓存（EngineCore 既定口径）。
             var external = new CallOptions(Caller: CallerRef.ExternalAgent);
-            var groups = await client.DedupScanAsync(external);
+            var groups = await client.DedupScanAsync(o: external);
 
             Assert.Equal(2, groups.Count);
             Assert.Equal(5, groups.Sum(g => g.Links.Count));
@@ -178,6 +180,17 @@ public class DedupRowsTests
             }
 
             Assert.Equal(2, full.Links.Single(l => l.LinkId == b.LinkId).VisitCount);
+
+            // UI 摘要模式（显式 include_links=false）：组/计数/首条目录一致，但不带链接正文。
+            var lean = await client.DedupScanAsync(includeLinks: false, o: external);
+            Assert.Equal(groups.Count, lean.Count);
+            Assert.All(lean, g => Assert.Empty(g.Links));
+            foreach (var group in lean)
+            {
+                var detailed = groups.Single(g => g.Url == group.Url);
+                Assert.Equal(detailed.Count, group.Count);
+                Assert.Equal(detailed.FirstListId, group.FirstListId);
+            }
         }
         finally { AppTestEnv.Delete(db); }
     }
@@ -188,6 +201,7 @@ public class DedupRowsTests
             new DedupGroupRow
             {
                 Url = url,
+                Count = ids.Length,
                 Links = ids.Select(id => new LinkDto
                 {
                     LinkId = id,

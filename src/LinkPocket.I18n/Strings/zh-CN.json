@@ -420,6 +420,8 @@
   "tools.dedup.emptyHint": "点击右上角「开始查重」，扫描完全相同的 URL",
   "tools.dedup.scanningTitle": "正在扫描重复链接…",
   "tools.dedup.scanningHint": "全库比对 URL，请稍候",
+  "tools.dedup.loadingGroupTitle": "正在读取组内链接…",
+  "tools.dedup.loadingGroupHint": "只读取当前重复组",
   "tools.dedup.readFailedTitle": "读取数据失败",
   "tools.dedup.noneTitle": "没有发现重复链接",
   "tools.dedup.noneHint": "所有链接的 URL 都互不相同",

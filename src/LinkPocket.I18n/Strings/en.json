@@ -420,6 +420,8 @@
   "tools.dedup.emptyHint": "Use Start scan at the top right to scan for identical URLs",
   "tools.dedup.scanningTitle": "Scanning for duplicates...",
   "tools.dedup.scanningHint": "Comparing every URL in the database",
+  "tools.dedup.loadingGroupTitle": "Loading group links...",
+  "tools.dedup.loadingGroupHint": "Reading only this duplicate group",
   "tools.dedup.readFailedTitle": "Could not read the data",
   "tools.dedup.noneTitle": "No duplicates found",
   "tools.dedup.noneHint": "Every link has a distinct URL",

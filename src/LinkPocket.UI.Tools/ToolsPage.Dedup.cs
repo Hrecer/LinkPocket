@@ -222,21 +222,65 @@ public partial class ToolsPage : UserControl
         private List<DedupLinkRow> BuildDetailRows(IEnumerable<LinkDto> links)
             => links.Select(l => new DedupLinkRow(l, VmTools.ResolvePath(l))).ToList();
 
+        /// <summary>明细加载代次：切组/返回会推进，迟到的旧加载结果直接丢弃。</summary>
+        private int _detailGeneration;
+
         /// <summary>
-        /// 展开明细：组状态记录在 VM（EnterGroup），本方法只做视觉切换。
+        /// 展开明细：组状态记录在 VM（EnterGroup），先亮面板，再按需读取该组链接。
         /// <paramref name="preserveSelection"/> = true 时**保留仍在新结果里的选中**（F5 重查 / 入口对齐重进）；
         /// 换组进入时为 false（清选中）。
         /// </summary>
-        private void EnterDetail(DedupGroupRow row, bool preserveSelection = false)
+        private async Task EnterDetailAsync(DedupGroupRow row, bool preserveSelection = false)
         {
+            var generation = ++_detailGeneration;
             var previous = preserveSelection ? VmTools.DetailSelection.Ids.ToList() : null;
 
-            VmTools.EnterGroup(row);   // 进组即清选中（换组语义）；需要保留的由下面按新结果重新落回
-            _detailLinks = BuildDetailRows(row.Links);
+            VmTools.EnterGroup(row);   // 进组即清选中（换组语义）；需要保留的由加载完成后重新落回
+            _detailLinks = new List<DedupLinkRow>();
 
             DetailUrlText.Text = row.Url;
             DetailHintText.SetText(Loc.K("tools.dedup.groupHint", row.Count));
-            DetailTable.EmptyContent = null!;
+            DetailTable.EmptyContent = BuildState("refresh", Loc.K("tools.dedup.loadingGroupTitle"),
+                Loc.K("tools.dedup.loadingGroupHint"));
+            DetailTable.ItemsSource = null;
+            ApplyDetailSelectionProjection();   // 清掉上一组的选中投影/右栏
+            UpdateDeleteState();
+            MainPanel.Visibility = Visibility.Collapsed;
+            DetailPanel.Visibility = Visibility.Visible;
+            // 焦点收回**页面根**（原先 Focus 明细面板容器：容器拿到键盘焦点后会画一条原生焦点虚线框，
+            // 表现为明细页出现黑虚线）。焦点在页内 = 快捷键照常路由（ShortcutHost 不变式）。
+            PageFocus.Restore(this);
+
+            List<LinkDto>? links;
+            try
+            {
+                links = await VmTools.LoadGroupLinksAsync(row);
+            }
+            catch (Exception ex)
+            {
+                LpLog.Error("load duplicate group links failed", ex);
+                if (generation == _detailGeneration)
+                    DetailTable.EmptyContent = BuildState("alert-circle-outline",
+                        Loc.K("tools.dedup.readFailedTitle"), Loc.K("err.unexpected"));
+                return;
+            }
+
+            // 加载期间用户已切组/返回：结果与当前面板无关，丢弃。
+            if (generation != _detailGeneration || links is null) return;
+
+            // 外部改动把该组删到只剩 1 条及以下：组已不再重复，回主表并按入口对齐重扫。
+            if (links.Count <= 1)
+            {
+                GoBackToList();
+                await RunDedupAsync();
+                return;
+            }
+
+            _detailLinks = BuildDetailRows(links);
+            DetailHintText.SetText(Loc.K("tools.dedup.groupHint", links.Count));
+            DetailTable.EmptyContent = links.Count > 0
+                ? null!
+                : BuildState("content-duplicate", Loc.K("tools.dedup.noneTitle"), Loc.K("tools.dedup.noneHint"));
             ApplyDetailSort();
 
             if (previous is { Count: > 0 })
@@ -244,17 +288,14 @@ public partial class ToolsPage : UserControl
 
             ApplyDetailSelectionProjection();   // 行重建后同步行绘制与右栏（保留的选中在此重投）
             UpdateDeleteState();
-            MainPanel.Visibility = Visibility.Collapsed;
-            DetailPanel.Visibility = Visibility.Visible;
-            // 焦点收回**页面根**（原先 Focus 明细面板容器：容器拿到键盘焦点后会画一条原生焦点虚线框，
-            // 表现为明细页出现黑虚线）。焦点在页内 = 快捷键照常路由（ShortcutHost 不变式）。
-            PageFocus.Restore(this);
         }
 
         private void GoBackToList()
         {
+            _detailGeneration++;   // 使进行中的组加载失效
             VmTools.LeaveGroup();
             _detailLinks = new List<DedupLinkRow>();
+            DetailTable.EmptyContent = null!;
             DetailTable.ItemsSource = null;
             DetailPanel.Visibility = Visibility.Collapsed;
             MainPanel.Visibility = Visibility.Visible;
@@ -274,9 +315,10 @@ public partial class ToolsPage : UserControl
         // —— 模板行交互（模板模式下控件不代建行，事件由行模板路由到这里） ——
         // ============================================================
 
-        private void PaneRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        private async void PaneRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (sender is FrameworkElement { DataContext: DedupGroupRow row }) EnterDetail(row);
+            if (sender is FrameworkElement { DataContext: DedupGroupRow row })
+                await EnterDetailAsync(row);
         }
 
         private void DetailRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

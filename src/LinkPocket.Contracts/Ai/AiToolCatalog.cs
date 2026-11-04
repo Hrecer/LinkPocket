@@ -84,7 +84,7 @@ public sealed class AiToolCatalog
         ["links.find_by_url"] = "an array of {id, url, title}",
         ["batch.run"] = "{batch_id, ok, steps: [{ref, command, ok, data}]}",
         ["batch.dry_run"] = "{batch_id, ok, steps: [{ref, command, ok, data}]}",
-        ["dedup.scan"] = "{groups: [{url, links: []}]}",
+        ["dedup.scan"] = "{groups: [{url, count, first_list_id, links: []}]}",
         ["staging.transform"] = "{items_before, items_after, preview_json}",
     };
 

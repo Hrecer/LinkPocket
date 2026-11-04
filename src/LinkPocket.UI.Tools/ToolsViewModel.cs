@@ -17,6 +17,7 @@ public sealed class DedupGroupRow : INotifyPropertyChanged
     public string Url { get; init; } = string.Empty;
 
     private List<LinkDto> _links = new();
+    /// <summary>组内链接（摘要扫描时为空；展开明细时按需加载）。</summary>
     public List<LinkDto> Links
     {
         get => _links;
@@ -25,11 +26,21 @@ public sealed class DedupGroupRow : INotifyPropertyChanged
             if (ReferenceEquals(_links, value)) return;
             _links = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(Count));
         }
     }
 
-    public int Count => _links.Count;
+    private int _count;
+    /// <summary>组内链接数（摘要扫描直接给出，不依赖 Links 是否已加载）。</summary>
+    public int Count
+    {
+        get => _count;
+        set
+        {
+            if (_count == value) return;
+            _count = value;
+            OnPropertyChanged();
+        }
+    }
 
     private LocValue _locationsSummary;
     public LocValue LocationsSummary
@@ -62,7 +73,8 @@ public sealed class DedupGroupRow : INotifyPropertyChanged
         {
             var x = a[i];
             var y = b[i];
-            if (x.Url != y.Url || x.LocationsSummary != y.LocationsSummary || x.Links.Count != y.Links.Count)
+            if (x.Url != y.Url || x.Count != y.Count || x.LocationsSummary != y.LocationsSummary
+                || x.Links.Count != y.Links.Count)
                 return false;
             for (var j = 0; j < x.Links.Count; j++)
             {
@@ -203,16 +215,15 @@ public sealed class ToolsViewModel
     private static string PathKey(string? listId) => listId ?? string.Empty;
 
     /// <summary>
-    /// 扫描重复 URL 并分组（引擎 <c>dedup.scan</c>：只回重复组，SQL 侧已判定，不再拉全库）。
-    /// 分组键与引擎的 URL 判定同口径（完全相同的字符串，Ordinal）。
+    /// 扫描重复 URL 并分组（UI 摘要模式：只取组 URL / 条数 / 首条目录，不取链接正文）。
+    /// 组内链接在展开某组时按需加载（<see cref="LoadGroupLinksAsync"/>）。
+    /// 外部宿主的 <c>dedup.scan</c> 默认仍是全量链接，不受这里影响。
     /// 抛出异常 = 读取数据失败（视图展示错误空态）；返回的列表可能为空（没有重复）。
     /// </summary>
     public async Task<List<DedupGroupRow>> RunDedupAsync()
     {
-        // 引擎查询（SQL + 100k 行 DTO 物化/序列化）放到线程池：进程内引擎是同步计算，
-        // 留在 UI 线程会把一次重扫变成 0.8～1.7s 的整窗停摆。路径解析仍回 UI 线程
-        // （它读的是界面持有的目录树），但只按目录去重后调用，次数是文件夹数而不是链接数。
-        var scan = await Task.Run(() => _api.DedupScanAsync());
+        // 摘要查询同样放线程池：进程内引擎是同步计算，留在 UI 线程会阻塞整窗。
+        var scan = await Task.Run(() => _api.DedupScanAsync(includeLinks: false));
 
         HasRunDedup = true;
 
@@ -223,22 +234,19 @@ public sealed class ToolsViewModel
             return Groups;
         }
 
-        // 位置解析：每个目录一次（组内/跨组共享同一份缓存）
+        // 位置解析：每个首条目录一次（摘要只带首条目录）
         _pathCache = new Dictionary<string, LocValue>(StringComparer.Ordinal);
-        foreach (var listId in scan.SelectMany(g => g.Links).Select(l => l.ListId).Distinct(StringComparer.Ordinal))
+        foreach (var listId in scan.Select(g => g.FirstListId).Distinct(StringComparer.Ordinal))
             _pathCache[PathKey(listId)] = await _resolveLinkPath(listId);
 
-        // 行对象与位置摘要是纯内存计算，同样移出 UI 线程（50k 组时仍有数万个对象 + 排序）。
+        // 行对象与位置摘要是纯内存计算，同样移出 UI 线程（50k 组时仍有数万个对象）。
         var cache = _pathCache;
-        Groups = await Task.Run(() => scan.Select(g =>
+        Groups = await Task.Run(() => scan.Select(g => new DedupGroupRow
         {
-            var links = g.Links.ToList();
-            return new DedupGroupRow
-            {
-                Url = g.Url,
-                Links = links,
-                LocationsSummary = BuildLocationsSummary(links, cache)
-            };
+            Url = g.Url,
+            Count = g.Count,
+            Links = new List<LinkDto>(),
+            LocationsSummary = BuildSummary(g.FirstListId, g.Count, cache)
         }).ToList());
         return Groups;
     }
@@ -250,6 +258,13 @@ public sealed class ToolsViewModel
         Groups = new List<DedupGroupRow>();
         _pathCache.Clear();
         LeaveGroup();
+    }
+
+    /// <summary>摘要模式的位置：首条所在位置 + 组内条数（与旧展示同口径）。</summary>
+    private static LocValue BuildSummary(string? firstListId, int count, Dictionary<string, LocValue> cache)
+    {
+        var first = cache.TryGetValue(PathKey(firstListId), out var path) ? path : Loc.K("tools.pathRoot");
+        return count <= 1 ? first : Loc.K("tools.pathsHint", first, count);
     }
 
     /// <summary>位置摘要：首条所在位置，多处时补「等 N 处」（不罗列全部，避免单元格噪音）。</summary>
@@ -267,13 +282,40 @@ public sealed class ToolsViewModel
     /// <summary>去重明细的行选中（**共享 ListSelection 核心**；对照页 = 只读：可读、可选、不可操作）。</summary>
     public ListSelection DetailSelection { get; } = new();
 
-    /// <summary>展开某组明细：记录当前组并清空勾选与行选中。</summary>
+    /// <summary>展开某组明细：记录当前组并清空勾选与行选中；链接由 <see cref="LoadGroupLinksAsync"/> 按需加载。</summary>
     public void EnterGroup(DedupGroupRow row)
     {
         CurrentGroupUrl = row.Url;
-        CurrentGroupLinks = row.Links;
+        CurrentGroupLinks = null;
         CheckedIds.Clear();
         DetailSelection.Clear();
+    }
+
+    /// <summary>
+    /// 读取当前组的全部链接（按需）：外部/界面看到的仍是同一 URL 的全量链接。
+    /// 返回 null = 读取期间用户已切换组/返回主表（结果丢弃，不写回）。
+    /// </summary>
+    public async Task<List<LinkDto>?> LoadGroupLinksAsync(DedupGroupRow row)
+    {
+        var links = await Task.Run(() => _api.LinkFindByUrlAsync(row.Url));
+        if (!string.Equals(CurrentGroupUrl, row.Url, StringComparison.Ordinal)) return null;
+
+        var sorted = links
+            .OrderBy(l => l.CreatedAt)
+            .ThenBy(l => l.LinkId, StringComparer.Ordinal)
+            .ToList();
+
+        // 明细「位置」列需要组内每个目录的路径；通常只有少数几个目录。
+        foreach (var listId in sorted.Select(l => l.ListId).Distinct(StringComparer.Ordinal))
+        {
+            var key = PathKey(listId);
+            if (!_pathCache.ContainsKey(key)) _pathCache[key] = await _resolveLinkPath(listId);
+        }
+
+        row.Links = sorted;
+        row.Count = sorted.Count;
+        CurrentGroupLinks = sorted;
+        return sorted;
     }
 
     /// <summary>退出明细回主表：清当前组、勾选与行选中。</summary>
@@ -313,7 +355,7 @@ public sealed class ToolsViewModel
     /// </summary>
     public async Task<List<LinkDto>?> DeleteCheckedAsync()
     {
-        if (CheckedIds.Count == 0) return CurrentGroupLinks;
+        if (CheckedIds.Count == 0 || CurrentGroupLinks is null) return CurrentGroupLinks;
 
         // 编辑优先：正在就地改名 / 整页编辑的那一条不能被去重删除（整批拒绝，避免半删）。
         if (BlockDestructiveIfEditing(CheckedIds)) return CurrentGroupLinks;
@@ -324,7 +366,7 @@ public sealed class ToolsViewModel
 
         var deletedSet = new HashSet<string>(deleted, StringComparer.Ordinal);
         var url = CurrentGroupUrl;
-        var rest = CurrentGroupLinks?.Where(l => !deletedSet.Contains(l.LinkId)).ToList() ?? new List<LinkDto>();
+        var rest = CurrentGroupLinks.Where(l => !deletedSet.Contains(l.LinkId)).ToList();
         CheckedIds.Clear();
 
         var index = Groups.FindIndex(g => string.Equals(g.Url, url, StringComparison.Ordinal));
@@ -334,6 +376,7 @@ public sealed class ToolsViewModel
             {
                 var row = Groups[index];
                 row.Links = rest;
+                row.Count = rest.Count;
                 row.LocationsSummary = BuildLocationsSummary(rest);
             }
             CurrentGroupLinks = rest;
