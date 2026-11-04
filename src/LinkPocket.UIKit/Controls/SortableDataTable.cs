@@ -202,10 +202,10 @@ public class SortableDataTable : Grid
     /// <summary>已绘制选中底色的行集合（**唯一绘制事实源**：内部单选自绘与外部托管投影共用一套）。</summary>
     private readonly HashSet<object> _paintedSelection = new();
 
-    /// <summary>行单击时触发（参数 = 数据项；仅默认工厂模式）。</summary>
+    /// <summary>行单击时触发（参数 = 数据项；仅默认工厂模式；模板模式由行模板自行路由）。</summary>
     public event EventHandler<object>? RowClick;
 
-    /// <summary>行双击时触发（参数 = 数据项；仅默认工厂模式）。</summary>
+    /// <summary>行双击时触发（参数 = 数据项；仅默认工厂模式；模板模式由行模板自行路由）。</summary>
     public event EventHandler<object>? RowDoubleClick;
 
     /// <summary>行宿主（供使用方做行容器级操作，如入场动画取容器）。</summary>

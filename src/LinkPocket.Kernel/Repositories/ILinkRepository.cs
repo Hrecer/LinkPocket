@@ -57,8 +57,9 @@ public interface ILinkRepository
     Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct);
 
     /// <summary>
-    /// URL 出现多次的链接（去重扫描专用）：分组与计数**下推到 SQL**，只把重复项带回来。
-    /// 原实现把全表拉进内存再分组 —— 10k 库上每次数据变更（防抖重跑）都要重付一遍全表扫描。
+    /// URL 出现多次的链接（去重扫描专用）：重复 URL 由 SQL 判定，链接**直出 DTO**（原生 reader，
+    /// 不物化实体再逐条 ToDto）。返回的是**全量重复链接**（外部命令与界面看到同一份结果）；
+    /// 顺序不保证，调用方按 URL/CreatedAt/LinkId 自行分组排序。
     /// </summary>
-    Task<IReadOnlyList<Link>> ListDuplicatedAsync(CancellationToken ct);
+    Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDuplicatedDtosAsync(CancellationToken ct);
 }

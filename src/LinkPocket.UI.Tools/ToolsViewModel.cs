@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using LinkPocket.Contracts;
@@ -10,17 +12,46 @@ using LinkPocket.I18n;
 namespace LinkPocket.ViewModels;
 
 /// <summary>一个重复组（同一 URL 的多条链接）在去重主表里的行数据。</summary>
-public sealed class DedupGroupRow
+public sealed class DedupGroupRow : INotifyPropertyChanged
 {
     public string Url { get; init; } = string.Empty;
-    public List<LinkDto> Links { get; init; } = new();
-    public int Count => Links.Count;
-    public LocValue LocationsSummary { get; init; }
+
+    private List<LinkDto> _links = new();
+    public List<LinkDto> Links
+    {
+        get => _links;
+        set
+        {
+            if (ReferenceEquals(_links, value)) return;
+            _links = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Count));
+        }
+    }
+
+    public int Count => _links.Count;
+
+    private LocValue _locationsSummary;
+    public LocValue LocationsSummary
+    {
+        get => _locationsSummary;
+        set
+        {
+            if (_locationsSummary.Equals(value)) return;
+            _locationsSummary = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     /// <summary>
     /// 两组"重复组"列表是否**渲染等价**（URL / 位置摘要 / 组内各条的关键字段逐项一致，含顺序）。
-    /// 用途：重扫后判断"要不要重设主表 ItemsSource"——工厂模式重设 = 整表重建（同步主线程），
-    /// 内容没变时纯属白烧（低性能设备切页偶发明显卡顿）。
+    /// 用途：重扫后判断"要不要重设主表 ItemsSource"——模板模式重设仍会重建视口行，
+    /// 内容没变时纯属白烧（低 CPU 设备切页偶发明显卡顿）。
     /// </summary>
     public static bool SameSequence(IReadOnlyList<DedupGroupRow>? a, IReadOnlyList<DedupGroupRow>? b)
     {
@@ -47,8 +78,69 @@ public sealed class DedupGroupRow
 }
 
 /// <summary>
+/// 去重明细行（模板虚拟化用）：链接数据 + 已解析的位置/时间文案 + 勾选态。
+/// </summary>
+/// <remarks>
+/// 明细表原来用工厂模式，行视觉由 <c>CellFactory</c> 每次整表重建；改模板模式后，
+/// 行模板只绑定本投影，勾选与语言都靠属性通知按行更新，不再重建整表。
+/// </remarks>
+public sealed class DedupLinkRow : INotifyPropertyChanged
+{
+    public DedupLinkRow(LinkDto link, LocValue path)
+    {
+        Link = link;
+        Path = path;
+        TitleValue = string.IsNullOrWhiteSpace(link.Title)
+            ? Loc.K("tools.untitled")
+            : LocValue.Literal(link.Title);
+        UpdatedValue = LocValue.Clock(link.UpdatedAt.ToLocalTime(), @short: false);
+        LastVisitedValue = link.LastVisitedAt is { } visited
+            ? LocValue.Clock(visited.ToLocalTime(), @short: false)
+            : Loc.K("clock.never");
+        VisitCountValue = Loc.K("count.viewsN", link.VisitCount);
+    }
+
+    public LinkDto Link { get; }
+    public string LinkId => Link.LinkId;
+    public string Url => Link.Url;
+    public string FaviconUrl => Link.FaviconUrl;
+    public LocValue TitleValue { get; }
+    public LocValue Path { get; }
+    public LocValue UpdatedValue { get; }
+    public LocValue LastVisitedValue { get; }
+    public LocValue VisitCountValue { get; }
+
+    private bool _isChecked;
+    public bool IsChecked
+    {
+        get => _isChecked;
+        set
+        {
+            if (_isChecked == value) return;
+            _isChecked = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChecked)));
+        }
+    }
+
+    private bool _isSelected;
+    /// <summary>行选中的投影（唯一事实源 = <see cref="ToolsViewModel.DetailSelection"/>）。</summary>
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>
 /// 工具页 ViewModel（MVVM）：三个工具的业务逻辑全部在此——
-/// 去重（扫描/分组/位置缓存/勾选守卫/删除并重算）、ID 跳转（统一走
+/// 去重（扫描/分组/位置缓存/勾选守卫/删除并局部更新）、ID 跳转（统一走
 /// <see cref="IContentLocator"/> 组件）、书签导入导出（预检/导入/导出+自校验，
 /// 算法全在引擎契约，本类只转发命令调用）。视图（Views/ToolsPage）只做
 /// 表格装配、状态渲染与文件对话框——界面不持有任何命令调用与业务规则。
@@ -58,18 +150,16 @@ public sealed class ToolsViewModel
     private readonly EngineClient _api;
     private readonly IContentLocator? _locator;
     private readonly Func<string?, Task<LocValue>> _resolveLinkPath;
-    private readonly Func<Task> _refreshFolderTree;
     private readonly IBrowseEditState? _editState;
     private readonly IUiNoticeService? _notices;
 
     public ToolsViewModel(EngineClient api, IContentLocator? locator,
-        Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree,
+        Func<string?, Task<LocValue>> resolveLinkPath,
         IBrowseEditState? editState = null, IUiNoticeService? notices = null)
     {
         _api = api;
         _locator = locator;
         _resolveLinkPath = resolveLinkPath;
-        _refreshFolderTree = refreshFolderTree;
         _editState = editState;
         _notices = notices;
     }
@@ -104,44 +194,52 @@ public sealed class ToolsViewModel
     /// <summary>明细里勾选待删除的链接 ID（视图据此渲染勾选态与按钮可用性）。</summary>
     public HashSet<string> CheckedIds { get; } = new();
 
-    private Dictionary<string, LocValue> _pathCache = new();
+    /// <summary>
+    /// 位置缓存：键 = 目录 ID（null 归一为空串）。去重结果里同一目录的链接通常很多，
+    /// 按 ListId 解析一次即可；旧写法逐 LinkId 解析，深层大库里同一个文件夹会被走 N 遍。
+    /// </summary>
+    private Dictionary<string, LocValue> _pathCache = new(StringComparer.Ordinal);
+
+    private static string PathKey(string? listId) => listId ?? string.Empty;
 
     /// <summary>
-    /// 全库扫描重复 URL 并分组。抛出异常 = 读取数据失败（视图展示错误空态）；
-    /// 返回的列表可能为空（没有重复）。
+    /// 扫描重复 URL 并分组（引擎 <c>dedup.scan</c>：只回重复组，SQL 侧已判定，不再拉全库）。
+    /// 分组键与引擎的 URL 判定同口径（完全相同的字符串，Ordinal）。
+    /// 抛出异常 = 读取数据失败（视图展示错误空态）；返回的列表可能为空（没有重复）。
     /// </summary>
     public async Task<List<DedupGroupRow>> RunDedupAsync()
     {
-        var links = await _api.LinkAllAsync();
-
-        var groups = links
-            .GroupBy(l => l.Url ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .Where(g => g.Count() > 1)
-            .OrderByDescending(g => g.Count())
-            .ToList();
+        // 引擎查询（SQL + 100k 行 DTO 物化/序列化）放到线程池：进程内引擎是同步计算，
+        // 留在 UI 线程会把一次重扫变成 0.8～1.7s 的整窗停摆。路径解析仍回 UI 线程
+        // （它读的是界面持有的目录树），但只按目录去重后调用，次数是文件夹数而不是链接数。
+        var scan = await Task.Run(() => _api.DedupScanAsync());
 
         HasRunDedup = true;
 
-        if (groups.Count == 0)
+        if (scan.Count == 0)
         {
+            _pathCache.Clear();
             Groups = new List<DedupGroupRow>();
             return Groups;
         }
 
-        // 位置解析（每个链接一次；同一 URL 组内共享缓存）
-        _pathCache = new Dictionary<string, LocValue>();
-        foreach (var link in groups.SelectMany(g => g))
-        {
-            if (!_pathCache.ContainsKey(link.LinkId))
-                _pathCache[link.LinkId] = await _resolveLinkPath(link.ListId);
-        }
+        // 位置解析：每个目录一次（组内/跨组共享同一份缓存）
+        _pathCache = new Dictionary<string, LocValue>(StringComparer.Ordinal);
+        foreach (var listId in scan.SelectMany(g => g.Links).Select(l => l.ListId).Distinct(StringComparer.Ordinal))
+            _pathCache[PathKey(listId)] = await _resolveLinkPath(listId);
 
-        Groups = groups.Select(g => new DedupGroupRow
+        // 行对象与位置摘要是纯内存计算，同样移出 UI 线程（50k 组时仍有数万个对象 + 排序）。
+        var cache = _pathCache;
+        Groups = await Task.Run(() => scan.Select(g =>
         {
-            Url = g.Key,
-            Links = g.ToList(),
-            LocationsSummary = BuildLocationsSummary(g.ToList())
-        }).ToList();
+            var links = g.Links.ToList();
+            return new DedupGroupRow
+            {
+                Url = g.Url,
+                Links = links,
+                LocationsSummary = BuildLocationsSummary(links, cache)
+            };
+        }).ToList());
         return Groups;
     }
 
@@ -156,9 +254,12 @@ public sealed class ToolsViewModel
 
     /// <summary>位置摘要：首条所在位置，多处时补「等 N 处」（不罗列全部，避免单元格噪音）。</summary>
     private LocValue BuildLocationsSummary(List<LinkDto> links)
+        => BuildLocationsSummary(links, _pathCache);
+
+    private static LocValue BuildLocationsSummary(List<LinkDto> links, Dictionary<string, LocValue> cache)
     {
         var paths = links
-            .Select(l => _pathCache.TryGetValue(l.LinkId, out var p) ? p : Loc.K("tools.pathRoot"))
+            .Select(l => cache.TryGetValue(PathKey(l.ListId), out var p) ? p : Loc.K("tools.pathRoot"))
             .ToList();
         return paths.Count == 1 ? paths[0] : Loc.K("tools.pathsHint", paths[0], paths.Count);
     }
@@ -200,14 +301,15 @@ public sealed class ToolsViewModel
         return true;
     }
 
-    /// <summary>明细表某行的「位置」列（与主表同一缓存）。</summary>
+    /// <summary>明细表某行的「位置」列（与主表同一缓存，按目录 ID 命中）。</summary>
     public LocValue ResolvePath(LinkDto link)
-        => _pathCache.TryGetValue(link.LinkId, out var p) ? p : Loc.K("tools.pathRoot");
+        => _pathCache.TryGetValue(PathKey(link.ListId), out var p) ? p : Loc.K("tools.pathRoot");
 
     /// <summary>
-    /// 删除勾选的重复链接，随后重算当前 URL 的重复组：
-    /// 返回非 null = 仍有多条（就地刷新明细，值为新组内链接）；
-    /// 返回 null = 已剩一条及以下（视图应回主表并重跑查重）。
+    /// 删除勾选的重复链接（单命令批量入站，整批原子），随后**局部**更新当前组：
+    /// 返回非 null = 仍有多条（值为新组内链接，主表行已同步）；
+    /// 返回 null = 已剩一条及以下（组已从 <see cref="Groups"/> 移除，视图应回主表）。
+    /// 不再全库重读：删掉几条链接不会改变其它 URL 的分组，只有当前组需要重算。
     /// </summary>
     public async Task<List<LinkDto>?> DeleteCheckedAsync()
     {
@@ -216,31 +318,36 @@ public sealed class ToolsViewModel
         // 编辑优先：正在就地改名 / 整页编辑的那一条不能被去重删除（整批拒绝，避免半删）。
         if (BlockDestructiveIfEditing(CheckedIds)) return CurrentGroupLinks;
 
-        foreach (var linkId in CheckedIds.ToList())
-            await _api.LinkTrashAsync(linkId);
+        var deleted = CheckedIds.ToList();
+        // 批量入站：单命令单事务；任一 ID 已消失/并发变化 → 整批回滚，不会出现删一半。
+        await _api.LinkTrashBatchAsync(deleted);
 
-        // 刷新目录树计数（事件防抖链路不动；查重重跑由视图在回表后承担）
-        await _refreshFolderTree();
-
-        var all = await _api.LinkAllAsync();
-        var rest = all
-            .Where(l => string.Equals(l.Url ?? string.Empty, CurrentGroupUrl, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
+        var deletedSet = new HashSet<string>(deleted, StringComparer.Ordinal);
+        var url = CurrentGroupUrl;
+        var rest = CurrentGroupLinks?.Where(l => !deletedSet.Contains(l.LinkId)).ToList() ?? new List<LinkDto>();
         CheckedIds.Clear();
+
+        var index = Groups.FindIndex(g => string.Equals(g.Url, url, StringComparison.Ordinal));
         if (rest.Count > 1)
         {
-            foreach (var link in rest)
+            if (index >= 0)
             {
-                if (!_pathCache.ContainsKey(link.LinkId))
-                    _pathCache[link.LinkId] = await _resolveLinkPath(link.ListId);
+                var row = Groups[index];
+                row.Links = rest;
+                row.LocationsSummary = BuildLocationsSummary(rest);
             }
             CurrentGroupLinks = rest;
-            return rest;
+        }
+        else
+        {
+            if (index >= 0) Groups.RemoveAt(index);
+            LeaveGroup();
         }
 
-        LeaveGroup();
-        return null;
+        // 目录树/计数的刷新由后端事件链统一承担（UiEventHub 300ms 防抖 → MainViewModel.OnBackendRefresh
+        // 总会 LoadFolderTreeAsync）。这里不再同步再刷一次：删除动作因此从「等一次树加载」变成
+        // 「只做批量入站 + 本地行更新」，也避免同一次变更触发两遍树刷新。
+        return rest.Count > 1 ? rest : null;
     }
 
     // ============================================================

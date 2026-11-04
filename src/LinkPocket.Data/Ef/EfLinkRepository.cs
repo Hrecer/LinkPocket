@@ -486,13 +486,44 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     public async Task<IReadOnlyList<Link>> FindByUrlAsync(string url, CancellationToken ct)
         => await db.Links.AsNoTracking().Where(l => l.Url == url).ToListAsync(ct);
 
-    public async Task<IReadOnlyList<Link>> ListDuplicatedAsync(CancellationToken ct)
-        // 相关子查询（EXISTS 语义）= "同址还有别的链接"；比先查重复 URL 再 IN 更稳：
-        // IN 列表在超大库上会撞参数个数上限。返回顺序与去重页既有口径一致（URL → 创建时间 → ID）。
-        => await db.Links.AsNoTracking()
-            .Where(l => db.Links.Any(other => other.Url == l.Url && other.LinkId != l.LinkId))
-            .OrderBy(l => l.Url).ThenBy(l => l.CreatedAt).ThenBy(l => l.LinkId)
+    public async Task<IReadOnlyList<LinkPocket.Contracts.LinkDto>> ListDuplicatedDtosAsync(CancellationToken ct)
+    {
+        const string columns = "id, url, title, description, favicon_url, folder_id, last_visited_at, " +
+                               "visit_count, is_important, created_at, updated_at";
+
+        // 先只把「重复 URL」取出来（GROUP BY 走 idx_links_url 覆盖索引，100k 约 10ms）。
+        // 再把对应链接取回：
+        // · 重复行数超过全库一半 → **顺序扫一遍全表 + 内存过滤**：此时逐 URL 回表是随机读。
+        // · 否则按批 IN 取回（每批 400 个 URL，不会撞 SQLite 参数上限）。
+        // 两条路都走原生 reader **直出 DTO**，不物化 Link 实体再逐条 ToDto（省掉实体对象与属性赋值）。
+        // 顺序不保证：分组/组内排序由调用方（DedupScanHandler）统一做。
+        var duplicateGroups = await db.Links.AsNoTracking()
+            .GroupBy(l => l.Url)
+            .Where(g => g.Count() > 1)
+            .Select(g => new { g.Key, Count = g.Count() })
             .ToListAsync(ct);
+        if (duplicateGroups.Count == 0) return [];
+
+        var duplicateRows = duplicateGroups.Sum(g => g.Count);
+        var total = await db.Links.AsNoTracking().CountAsync(ct);
+        if ((long)duplicateRows * 2 >= total)
+        {
+            var keep = new HashSet<string>(duplicateGroups.Select(g => g.Key), StringComparer.Ordinal);
+            var all = await ReadDtosRawAsync($"SELECT {columns} FROM links", [], ct);
+            return all.Where(l => keep.Contains(l.Url)).ToList();
+        }
+
+        var rows = new List<LinkPocket.Contracts.LinkDto>(duplicateRows);
+        foreach (var chunk in duplicateGroups.Chunk(400))
+        {
+            var urls = chunk.Select(g => g.Key).ToArray();
+            var names = string.Join(", ", urls.Select((_, i) => "@u" + i));
+            var parameters = urls.Select((u, i) => ("@u" + i, (object?)u)).ToArray();
+            rows.AddRange(await ReadDtosRawAsync(
+                $"SELECT {columns} FROM links WHERE url IN ({names})", parameters, ct));
+        }
+        return rows;
+    }
 
     private static IQueryable<Link> ApplyFilter(IQueryable<Link> q, LinkFilter f)
     {

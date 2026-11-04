@@ -237,7 +237,53 @@
                          去重表没有选中概念：点击行 = 进入明细，关掉行选中视觉（否则返回后残留高亮）。 -->
                     <Border x:Name="PaneTableHost" Background="{DynamicResource App.Surface.Card}"
                             CornerRadius="24" ClipToBounds="True">
-                        <views:SortableDataTable x:Name="PaneTable" HeaderBandMargin="0" SelectionEnabled="False"/>
+                        <views:SortableDataTable x:Name="PaneTable" HeaderBandMargin="0"
+                                                 SelectionEnabled="False" RowCacheLength="0">
+                            <views:SortableDataTable.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- 行容器约定：Tag="DataRow" 供"点空白清选中"识别；点击行 = 进入明细 -->
+                                    <Border Tag="DataRow" Cursor="Hand" HorizontalAlignment="Stretch"
+                                            PreviewMouseLeftButtonDown="PaneRow_PreviewMouseLeftButtonDown">
+                                        <Border.Style>
+                                            <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                                <Setter Property="Margin" Value="8,1"/>
+                                                <Setter Property="Padding" Value="16,9"/>
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                            </Style>
+                                        </Border.Style>
+                                        <Grid VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                                <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Url}" FontSize="12"
+                                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                       FontFamily="{DynamicResource App.Font.Mono}"
+                                                       Foreground="{DynamicResource App.Text.Primary}"/>
+                                            <Border Grid.Column="1" CornerRadius="8" Padding="8,2"
+                                                    HorizontalAlignment="Left"
+                                                    Background="{DynamicResource App.Accent.Container}">
+                                                <TextBlock Text="{Binding Count, StringFormat=×{0}}"
+                                                           FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource App.Text.OnContainer}"/>
+                                            </Border>
+                                            <TextBlock Grid.Column="2" FontSize="12.5" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource App.Text.Secondary}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                        <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                        <Binding Path="LocationsSummary"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </views:SortableDataTable.ItemTemplate>
+                        </views:SortableDataTable>
                     </Border>
 
                     <!-- 书签导入 / 导出（合并为一项：同一入口内切换方向） -->
@@ -581,7 +627,141 @@
                  SelectionEnabled=False = 外部托管：选中由 ToolsViewModel.DetailSelection（共享 ListSelection）承载。 -->
             <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource App.Surface.Card}"
                     CornerRadius="24" Margin="8,0,16,16" ClipToBounds="True">
-                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0" SelectionEnabled="False"/>
+                <views:SortableDataTable x:Name="DetailTable" HeaderBandMargin="0"
+                                         SelectionEnabled="False" RowCacheLength="0">
+                    <views:SortableDataTable.ItemTemplate>
+                        <DataTemplate>
+                            <Border Tag="DataRow" Cursor="Hand" HorizontalAlignment="Stretch"
+                                    PreviewMouseLeftButtonDown="DetailRow_PreviewMouseLeftButtonDown">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                        <Setter Property="Margin" Value="8,1"/>
+                                        <Setter Property="Padding" Value="16,9"/>
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                        <Style.Triggers>
+                                            <!-- 派生触发器优先于基样式悬停：选中行悬停不换色 -->
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <Grid VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[3], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[4], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[5], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 勾选：MD3 圆形勾选（选中 = Primary 实心 + 白勾，未选 = 描边圆） -->
+                                    <Button Grid.Column="0" Width="30" Height="26" Padding="0"
+                                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            Cursor="Hand" FocusVisualStyle="{x:Null}"
+                                            Style="{StaticResource RowIconButton}"
+                                            Click="DetailCheck_Click"
+                                            ToolTip="{loc:Loc tools.dedup.deleteChecked}">
+                                        <Grid Width="22" Height="22">
+                                            <Border Width="20" Height="20" CornerRadius="10"
+                                                    BorderThickness="1.6" Background="Transparent"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    BorderBrush="{DynamicResource App.Text.Secondary}"/>
+                                            <Border Width="20" Height="20" CornerRadius="10"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Background="{DynamicResource App.Accent.Fill}">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsChecked}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Path Data="M1,4.6 L3.6,7.1 L8,1.8" Stroke="White"
+                                                      StrokeThickness="1.7"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </Button>
+
+                                    <!-- 名称：favicon + 标题 + URL 副行 -->
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <views:LpFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
+                                                              Width="18" Height="18" Margin="0,0,10,0"
+                                                              VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock FontSize="13.5" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource App.Text.Primary}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                        <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                        <Binding Path="TitleValue"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding Url}" FontSize="11.5" Margin="0,3,0,0"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource App.Text.Secondary}"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock Grid.Column="2" FontSize="12.5" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource App.Text.Secondary}">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                <Binding Path="Path"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="3" FontSize="12.5" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource App.Text.Secondary}">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                <Binding Path="UpdatedValue"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="4" FontSize="12.5" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource App.Text.Secondary}">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                <Binding Path="LastVisitedValue"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                    <TextBlock Grid.Column="5" FontSize="12.5" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource App.Text.Secondary}">
+                                        <TextBlock.Text>
+                                            <MultiBinding Converter="{x:Static loc:LocValueResolver.Instance}">
+                                                <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                <Binding Path="VisitCountValue"/>
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </views:SortableDataTable.ItemTemplate>
+                </views:SortableDataTable>
             </Border>
 
             <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的重查时亮；

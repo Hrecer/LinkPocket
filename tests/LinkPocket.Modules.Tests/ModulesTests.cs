@@ -1560,7 +1560,7 @@ public class DedupModuleTests
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://dup.example", title = "V2" });
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://unique.example", title = "U" });
 
-        var groups = await engine.QueryAsync<List<Modules.Dedup.DedupGroup>>("dedup.scan", null);
+        var groups = await engine.QueryAsync<List<DedupGroup>>("dedup.scan", null);
         var group = Assert.Single(groups);
         Assert.Equal("https://dup.example", group.Url);
         Assert.Equal(3, group.Count);
@@ -1593,7 +1593,7 @@ public class DedupModuleTests
         await engine.ExecuteAsync<LinkDto>("links.create", new { url = "https://b.example", title = "B3" });
 
         // explicit_keep 只列 a.example → 计划只含该组；b.example 组必须跳过（不回落到别的策略）
-        var groups = await engine.QueryAsync<List<Modules.Dedup.DedupGroup>>("dedup.scan", null);
+        var groups = await engine.QueryAsync<List<DedupGroup>>("dedup.scan", null);
         var groupA = groups.Single(g => g.Url == "https://a.example");
         var explicitKeep = new Dictionary<string, string> { [groupA.Url] = groupA.Links[0].LinkId };
 
@@ -1609,7 +1609,7 @@ public class DedupModuleTests
         Assert.Contains("trash.changed", applied.Changes!.Events);
 
         // 未点名的 b.example 组原样保留（仍有重复），a.example 组已被处置
-        var after = await engine.QueryAsync<List<Modules.Dedup.DedupGroup>>("dedup.scan", null);
+        var after = await engine.QueryAsync<List<DedupGroup>>("dedup.scan", null);
         var remaining = Assert.Single(after);
         Assert.Equal("https://b.example", remaining.Url);
         Assert.Equal(3, remaining.Count);

@@ -66,6 +66,37 @@ public readonly record struct LocValue(string Key, ReadOnlyMemory<object?> Args)
 
     public bool IsEmpty => string.IsNullOrEmpty(Key);
 
+    /// <summary>
+    /// 结构化相等：键 + 参数逐项比较。
+    /// </summary>
+    /// <remarks>
+    /// record struct 的自动相等对 <see cref="ReadOnlyMemory{T}"/> 参数只比引用，而
+    /// <c>Loc.K(key, args)</c> 每次调用都新建数组 ⇒ 同一句话的两个实例永远不相等。
+    /// 「重扫后内容没变就不重设表格」正是靠这个判定（<c>DedupGroupRow.SameSequence</c>），
+    /// 自动相等会让它恒为 false、每次重扫都整表重建——实测就是切页/重扫那一下卡顿。
+    /// 参数数组都很小（文案参数），逐项比较的成本可以忽略。
+    /// </remarks>
+    public bool Equals(LocValue other)
+    {
+        if (!string.Equals(Key, other.Key, StringComparison.Ordinal)) return false;
+        var left = Args.Span;
+        var right = other.Args.Span;
+        if (left.Length != right.Length) return false;
+        for (var i = 0; i < left.Length; i++)
+        {
+            if (!Equals(left[i], right[i])) return false;
+        }
+        return true;
+    }
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Key, StringComparer.Ordinal);
+        foreach (var arg in Args.Span) hash.Add(arg);
+        return hash.ToHashCode();
+    }
+
     /// <summary>路径投影值（canonical → 显示串）。</summary>
     public bool IsPath => Key == PathKey;
 

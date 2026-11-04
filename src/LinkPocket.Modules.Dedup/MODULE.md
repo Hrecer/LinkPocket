@@ -11,7 +11,7 @@
 
 | 命令 | 类型 | 要点 |
 |---|---|---|
-| `dedup.scan` | 查询 | 全量链接一次拉取 + 内存按 URL 分组，返回重复数 > 1 的组（组内按创建时间升序） |
+| `dedup.scan` | 查询 | 先用 `GROUP BY url` 取重复 URL（覆盖索引），再按重复行密度选「顺序扫全表」或「按批 IN 取回」，**原生 reader 直出 `LinkDto`**；返回重复数 > 1 的组（组内按创建时间升序）。外部宿主与 UI 消费同一条查询、同一份**全量**结果；UI 另带 30s 查询缓存（外部身份绕过缓存） |
 | `dedup.plan` | 查询 | **纯函数零副作用**：策略 + 可选 URL 过滤 + 显式保留者 → 每组的 keep / trash 清单 |
 | `dedup.apply` | 变更 | 按计划把多余项移入回收站；支持 `DryRun` 预演（执行但不提交、零事件）；唯一落审计的入口 |
 
@@ -29,7 +29,7 @@
 
 ## 内部组件
 
-- `DedupDtos`：`DedupGroup` / `DedupPlan`（组内 keep/trash）等结果模型。
+- `DedupDtos`：`DedupPlan`（组内 keep/trash）等结果模型；`DedupGroup` 已提升到 `LinkPocket.Contracts`（客户端强类型复用）。
 
 ## 这是"复杂命令"的样板
 
@@ -45,5 +45,6 @@
 
 ## 复用点
 
-处置复用 `links.trash`，所以回收站口径永远只有一处；分组 = 全量链接内存按 URL 分组
-（查重必须全量扫描，不逐 URL 查询；`links.find_by_url` 只服务单 URL 精确查找）。
+处置复用 `links.trash`，所以回收站口径永远只有一处；分组由 SQL 先判定重复 URL，
+再按重复行密度取回（重复行 > 全库一半 → 顺序扫全表；否则按批 IN，不逐 URL 查询；
+`links.find_by_url` 仍只服务单 URL 精确查找）。

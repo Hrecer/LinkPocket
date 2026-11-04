@@ -336,7 +336,7 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <local:SearchFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
+                                    <views:LpFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
                                                               Width="18" Height="18" Margin="0,0,10,0"
                                                               VerticalAlignment="Center"
                                                               Style="{StaticResource SearchPlaceholderHidden}"/>

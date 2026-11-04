@@ -293,7 +293,7 @@ public class JumpEditingGuardTests
     {
         var notices = new FakeNoticeService();
         var vm = new ToolsViewModel(null!, null,
-            _ => Task.FromResult(LocValue.Empty), () => Task.CompletedTask,
+            _ => Task.FromResult(LocValue.Empty),
             new FakeEditState { EditingId = "L1" }, notices);
 
         Assert.True(vm.BlockDestructiveIfEditing(new[] { "L1", "L2" }));   // 整批拒绝，不删一半

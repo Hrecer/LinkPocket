@@ -1,11 +1,6 @@
 namespace LinkPocket.Modules.Dedup;
 
-/// <summary>查重模块结果 DTO 组。</summary>
-/// <summary>一个同址组。</summary>
-public sealed record DedupGroup(
-    string Url,
-    int Count,
-    IReadOnlyList<LinkPocket.Contracts.LinkDto> Links);
+// DedupGroup 已提升到 LinkPocket.Contracts（UI 客户端经 dedup.scan 直接消费同一 DTO）。
 
 /// <summary>保留策略。</summary>
 public static class DedupStrategy

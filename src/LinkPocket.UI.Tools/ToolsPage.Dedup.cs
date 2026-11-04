@@ -7,8 +7,6 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using LinkPocket.Contracts;
 using LinkPocket.Input;
 using LinkPocket.Models;
@@ -34,57 +32,48 @@ public partial class ToolsPage : UserControl
                 new DataTableColumn
                 {
                     Field = "url", LabelKey = "ui.noun.duplicateUrl", Width = -3,
-                    SortKey = r => (IComparable)((DedupGroupRow)r).Url,
-                    CellFactory = r =>
-                    {
-                        var cell = new TextBlock
-                        {
-                            Text = ((DedupGroupRow)r).Url,
-                            FontSize = 12,
-                            VerticalAlignment = VerticalAlignment.Center,
-                            TextTrimming = TextTrimming.CharacterEllipsis
-                        };
-                        // 字体/文字色一律走**资源引用**：一次性取值（FindResource 后赋值）会在
-                        // 换主题或换字体后停在旧值上 —— 与表头底色同一根因。
-                        cell.SetResourceReference(TextElement.FontFamilyProperty, Theming.Tokens.AppTokens.FontMono);
-                        cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
-                        return cell;
-                    }
+                    SortKey = r => (IComparable)((DedupGroupRow)r).Url
                 },
                 new DataTableColumn
                 {
                     Field = "count", LabelKey = "ui.noun.duplicateCount", Width = 90,
-                    SortKey = r => (IComparable)((DedupGroupRow)r).Count,
-                    CellFactory = r =>
-                    {
-                        var countText = new TextBlock
-                        {
-                            Text = $"×{((DedupGroupRow)r).Count}",
-                            FontSize = 12, FontWeight = FontWeights.SemiBold
-                        };
-                        countText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.OnContainer");
-                        var chip = new Border
-                        {
-                            CornerRadius = new CornerRadius(8),
-                            Padding = new Thickness(8, 2, 8, 2),
-                            HorizontalAlignment = HorizontalAlignment.Left,
-                            Child = countText
-                        };
-                        chip.SetResourceReference(Border.BackgroundProperty, "App.Accent.Container");
-                        return chip;
-                    }
+                    SortKey = r => (IComparable)((DedupGroupRow)r).Count
                 },
                 new DataTableColumn
                 {
                     Field = "locations", LabelKey = "ui.noun.locatedIn", Width = -2,
-                    SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary.Resolve(),
-                    CellFactory = r => TextCell(((DedupGroupRow)r).LocationsSummary)
+                    SortKey = r => (IComparable)((DedupGroupRow)r).LocationsSummary.Resolve()
                 },
             };
 
-            PaneTable.RowClick += (_, item) => EnterDetail((DedupGroupRow)item);
-            PaneTable.RowDoubleClick += (_, item) => EnterDetail((DedupGroupRow)item);
+            // 默认排序与旧工厂模式一致：URL 升序（模板模式不内部排序，由下方 ApplyPaneSort 落实）
+            PaneTable.SortField = "url";
+            PaneTable.SortAscending = true;
+            PaneTable.SortChanged += (_, _) => ApplyPaneSort();
             ShowDedupPlaceholder();
+        }
+
+        /// <summary>按表头当前排序重排主表（模板模式：只换 ItemsSource，视口行才实例化）。</summary>
+        private void ApplyPaneSort()
+        {
+            if (_groups.Count == 0)
+            {
+                PaneTable.ItemsSource = null;
+                return;
+            }
+
+            var ascending = PaneTable.SortAscending;
+            var items = PaneTable.EffectiveSortField switch
+            {
+                "count" => ascending ? _groups.OrderBy(g => g.Count) : _groups.OrderByDescending(g => g.Count),
+                "locations" => ascending
+                    ? _groups.OrderBy(g => g.LocationsSummary.Resolve())
+                    : _groups.OrderByDescending(g => g.LocationsSummary.Resolve()),
+                _ => ascending
+                    ? _groups.OrderBy(g => g.Url)
+                    : _groups.OrderByDescending(g => g.Url),
+            };
+            PaneTable.ItemsSource = items.ToList();
         }
 
         /// <summary>
@@ -138,8 +127,8 @@ public partial class ToolsPage : UserControl
                 return;
             }
 
-            // 内容未变（重扫/切回常见）→ **不重设 ItemsSource**：工厂模式重设 = 整表重建（同步主线程）
-            if (!DedupGroupRow.SameSequence(previous, groups)) PaneTable.ItemsSource = groups;
+            // 内容未变（重扫/切回常见）→ **不重设 ItemsSource**：模板模式重设仍会重建视口行
+            if (!DedupGroupRow.SameSequence(previous, groups)) ApplyPaneSort();
             PaneTable.EmptyContent = null!;
             PaneSubtitle.SetText(Loc.K("tools.dedup.foundSubtitle", groups.Count, groups.Sum(g => g.Count)));
         }
@@ -154,57 +143,84 @@ public partial class ToolsPage : UserControl
             {
                 new DataTableColumn
                 {
-                    Field = "check", LabelKey = "", Width = 44,
-                    CellFactory = BuildCheckCell
+                    Field = "check", LabelKey = "", Width = 44
                 },
                 new DataTableColumn
                 {
                     Field = "title", LabelKey = "ui.noun.name", Width = -1,
-                    SortKey = r => (IComparable)(string.IsNullOrEmpty(((LinkDto)r).Title) ? ((LinkDto)r).Url : ((LinkDto)r).Title),
-                    CellFactory = r => BuildNameCell((LinkDto)r)
+                    SortKey = r => (IComparable)TitleKey((DedupLinkRow)r)
                 },
                 new DataTableColumn
                 {
                     // 与搜索页/智能列表同口径：路径最宽，右侧时间列压缩到刚好够用
                     Field = "path", LabelKey = "ui.noun.location", Width = -3,
-                    SortKey = r => (IComparable)VmTools.ResolvePath((LinkDto)r).Resolve(),
-                    CellFactory = r =>
-                    {
-                        return TextCell(VmTools.ResolvePath((LinkDto)r));
-                    }
+                    SortKey = r => (IComparable)((DedupLinkRow)r).Path.Resolve()
                 },
                 new DataTableColumn
                 {
                     Field = "updated_at", LabelKey = "ui.noun.updatedAt", Width = 130,
-                    SortKey = r => (IComparable)((LinkDto)r).UpdatedAt,
-                    CellFactory = r => TextCell(UiClock.Text(((LinkDto)r).UpdatedAt.ToLocalTime()))
+                    SortKey = r => (IComparable)((DedupLinkRow)r).Link.UpdatedAt
                 },
                 new DataTableColumn
                 {
                     Field = "last_visited_at", LabelKey = "ui.noun.lastVisited", Width = 130,
-                    SortKey = r => (IComparable)(((LinkDto)r).LastVisitedAt ?? DateTime.MinValue),
-                    CellFactory = r => ((LinkDto)r).LastVisitedAt is { } visited
-                        ? TextCell(UiClock.Text(visited.ToLocalTime()))
-                        : TextCell(Loc.K("clock.never"))
+                    SortKey = r => (IComparable)(((DedupLinkRow)r).Link.LastVisitedAt ?? DateTime.MinValue)
                 },
                 new DataTableColumn
                 {
                     Field = "visit_count", LabelKey = "ui.noun.visitCount", Width = 84,
-                    SortKey = r => (IComparable)((LinkDto)r).VisitCount,
-                    CellFactory = r => TextCell(Loc.K("count.viewsN", ((LinkDto)r).VisitCount))
+                    SortKey = r => (IComparable)((DedupLinkRow)r).Link.VisitCount
                 },
                 // 重复组明细**没有**「操作」列 / 行内跳转按钮：
                 // 对比页是"看差异"的只读视图；「跳转」（顶部 URL 组药丸 / 右栏图标钮）走定位组件 IContentLocator
                 // ——与「ID 跳转」工具同一套语义（进目录 + 选中行），本页不自带定位算法。
             };
 
-            // 外部托管选中（SelectionEnabled=False）：单选中由 ToolsViewModel.DetailSelection（共享核心）承载，
-            // 行绘制 + 右栏统一经 ApplyDetailSelectionProjection 一处投影
-            DetailTable.RowClick += (_, item) => VmTools.DetailSelection.SelectSingle(((LinkDto)item).LinkId);
+            // 与旧工厂模式的默认排序一致：标题升序
+            DetailTable.SortField = "title";
+            DetailTable.SortAscending = true;
+            DetailTable.SortChanged += (_, _) => ApplyDetailSort();
         }
 
-        /// <summary>当前明细行的数据镜像（EnterDetail 赋值；选中投影 / ↑↓ 顺序 / 右栏都读它）。</summary>
-        private List<LinkDto> _detailLinks = new();
+        private static string TitleKey(DedupLinkRow row)
+            => string.IsNullOrEmpty(row.Link.Title) ? row.Url : row.Link.Title;
+
+        /// <summary>按表头当前排序重排明细（模板模式：只换 ItemsSource，视口行才实例化）。</summary>
+        private void ApplyDetailSort()
+        {
+            if (_detailLinks.Count == 0)
+            {
+                DetailTable.ItemsSource = null;
+                return;
+            }
+
+            var ascending = DetailTable.SortAscending;
+            var items = DetailTable.EffectiveSortField switch
+            {
+                "path" => ascending
+                    ? _detailLinks.OrderBy(r => r.Path.Resolve())
+                    : _detailLinks.OrderByDescending(r => r.Path.Resolve()),
+                "updated_at" => ascending
+                    ? _detailLinks.OrderBy(r => r.Link.UpdatedAt)
+                    : _detailLinks.OrderByDescending(r => r.Link.UpdatedAt),
+                "last_visited_at" => ascending
+                    ? _detailLinks.OrderBy(r => r.Link.LastVisitedAt ?? DateTime.MinValue)
+                    : _detailLinks.OrderByDescending(r => r.Link.LastVisitedAt ?? DateTime.MinValue),
+                "visit_count" => ascending
+                    ? _detailLinks.OrderBy(r => r.Link.VisitCount)
+                    : _detailLinks.OrderByDescending(r => r.Link.VisitCount),
+                _ => ascending
+                    ? _detailLinks.OrderBy(TitleKey)
+                    : _detailLinks.OrderByDescending(TitleKey),
+            };
+            DetailTable.ItemsSource = items.ToList();
+        }
+
+        /// <summary>明细行数据镜像（模板绑定这一份；选中投影 / ↑↓ 顺序 / 右栏都读它）。</summary>
+        private List<DedupLinkRow> _detailLinks = new();
+
+        private List<DedupLinkRow> BuildDetailRows(IEnumerable<LinkDto> links)
+            => links.Select(l => new DedupLinkRow(l, VmTools.ResolvePath(l))).ToList();
 
         /// <summary>
         /// 展开明细：组状态记录在 VM（EnterGroup），本方法只做视觉切换。
@@ -216,16 +232,15 @@ public partial class ToolsPage : UserControl
             var previous = preserveSelection ? VmTools.DetailSelection.Ids.ToList() : null;
 
             VmTools.EnterGroup(row);   // 进组即清选中（换组语义）；需要保留的由下面按新结果重新落回
-            _detailLinks = row.Links;
+            _detailLinks = BuildDetailRows(row.Links);
 
             DetailUrlText.Text = row.Url;
             DetailHintText.SetText(Loc.K("tools.dedup.groupHint", row.Count));
-            DetailTable.ItemsSource = null;
-            DetailTable.ItemsSource = row.Links;
             DetailTable.EmptyContent = null!;
+            ApplyDetailSort();
 
             if (previous is { Count: > 0 })
-                VmTools.DetailSelection.Set(previous.Where(id => row.Links.Any(l => l.LinkId == id)));
+                VmTools.DetailSelection.Set(previous.Where(id => _detailLinks.Any(l => l.LinkId == id)));
 
             ApplyDetailSelectionProjection();   // 行重建后同步行绘制与右栏（保留的选中在此重投）
             UpdateDeleteState();
@@ -239,7 +254,7 @@ public partial class ToolsPage : UserControl
         private void GoBackToList()
         {
             VmTools.LeaveGroup();
-            _detailLinks = new List<LinkDto>();
+            _detailLinks = new List<DedupLinkRow>();
             DetailTable.ItemsSource = null;
             DetailPanel.Visibility = Visibility.Collapsed;
             MainPanel.Visibility = Visibility.Visible;
@@ -255,172 +270,42 @@ public partial class ToolsPage : UserControl
             }
         }
 
-        /// <summary>勾选单元：MD3 圆形勾选（选中 = Primary 实心 + 白勾，未选 = 描边圆）。守卫规则在 VM。</summary>
-        private FrameworkElement BuildCheckCell(object data)
+        // ============================================================
+        // —— 模板行交互（模板模式下控件不代建行，事件由行模板路由到这里） ——
+        // ============================================================
+
+        private void PaneRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            var link = (LinkDto)data;
-            var checkedNow = VmTools.CheckedIds.Contains(link.LinkId);
-
-            var outline = new Border
-            {
-                Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
-                BorderThickness = new Thickness(1.6),
-                Background = Brushes.Transparent,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            outline.SetResourceReference(Border.BorderBrushProperty, "App.Text.Secondary");
-            var fill = new Border
-            {
-                Width = 20, Height = 20, CornerRadius = new CornerRadius(10),
-                Visibility = checkedNow ? Visibility.Visible : Visibility.Collapsed,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = new Path
-                {
-                    Data = Geometry.Parse("M1,4.6 L3.6,7.1 L8,1.8"),
-                    Stroke = Brushes.White,
-                    StrokeThickness = 1.7,
-                    StrokeStartLineCap = PenLineCap.Round,
-                    StrokeEndLineCap = PenLineCap.Round,
-                    StrokeLineJoin = PenLineJoin.Round,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            fill.SetResourceReference(Border.BackgroundProperty, "App.Accent.Fill");
-
-            var host = new Grid { Width = 22, Height = 22 };
-            host.Children.Add(outline);
-            host.Children.Add(fill);
-
-            var deleteTip = Loc.T("tools.dedup.deleteChecked");
-            var button = new Button
-            {
-                Content = host,
-                Width = 30, Height = 26,
-                Cursor = Cursors.Hand,
-                FocusVisualStyle = null,
-                Style = (Style)FindResource("RowIconButton"),
-                ToolTip = deleteTip
-            };
-            button.Click += async (_, _) =>
-            {
-                if (!VmTools.ToggleChecked(link.LinkId))
-                {
-                    await FlashSelectionInfo(Loc.K("tools.dedup.keepOne"));
-                    return;
-                }
-
-                var nowChecked = VmTools.CheckedIds.Contains(link.LinkId);
-                fill.Visibility = nowChecked ? Visibility.Visible : Visibility.Collapsed;
-                UpdateDeleteState();
-            };
-
-            return button;
+            if (sender is FrameworkElement { DataContext: DedupGroupRow row }) EnterDetail(row);
         }
 
-        private FrameworkElement BuildNameCell(LinkDto link)
+        private void DetailRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            // 勾选按钮自己处理点击，不把"勾选"同时当成"选中行"
+            if (e.OriginalSource is DependencyObject source && IsInsideButton(source)) return;
+            if (sender is FrameworkElement { DataContext: DedupLinkRow row })
+                VmTools.DetailSelection.SelectSingle(row.LinkId);
+        }
 
-            var iconGrid = new Grid { Width = 18, Height = 18, Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center };
-            var faviconBmp = FaviconService.LoadFromCache(link.FaviconUrl);
-            var faviconImg = new Image
-            {
-                Source = faviconBmp,
-                Stretch = Stretch.Uniform,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            RenderOptions.SetBitmapScalingMode(faviconImg, BitmapScalingMode.HighQuality);
-            if (faviconBmp == null) faviconImg.Visibility = Visibility.Collapsed;
+        private static bool IsInsideButton(DependencyObject source)
+        {
+            for (DependencyObject? d = source; d != null; d = VisualTreeHelper.GetParent(d))
+                if (d is Button) return true;
+            return false;
+        }
 
-            var earthIcon = new M3Icon
+        /// <summary>明细勾选按钮：守卫规则在 VM（至少保留一条）；勾选态是行投影的属性。</summary>
+        private async void DetailCheck_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement { DataContext: DedupLinkRow row }) return;
+            if (!VmTools.ToggleChecked(row.LinkId))
             {
-                Kind = "earth", Width = 16, Height = 16,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            earthIcon.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Muted");
-            if (faviconBmp != null) earthIcon.Visibility = Visibility.Collapsed;
-            iconGrid.Children.Add(faviconImg);
-            iconGrid.Children.Add(earthIcon);
-
-            if (!string.IsNullOrWhiteSpace(link.FaviconUrl) && faviconBmp == null)
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await FaviconService.PrefetchAndCacheAsync(link.FaviconUrl);
-                        var cached = FaviconService.LoadFromCache(link.FaviconUrl);
-                        if (cached != null)
-                        {
-                            Dispatcher.Invoke(() =>
-                            {
-                                faviconImg.Source = cached;
-                                faviconImg.Visibility = Visibility.Visible;
-                                earthIcon.Visibility = Visibility.Collapsed;
-                            });
-                        }
-                    }
-                    catch { /* 图标解码/加载失败：保留地球占位符 */ }
-                });
+                await FlashSelectionInfo(Loc.K("tools.dedup.keepOne"));
+                return;
             }
 
-            var textStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            var nameText = new TextBlock
-            {
-                FontSize = 13.5, FontWeight = FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            // 标题是用户数据；没有标题时画「无标题」（文案值，跟语言走）
-            if (string.IsNullOrWhiteSpace(link.Title)) nameText.SetText(Loc.K("tools.untitled"));
-            else nameText.Text = link.Title;
-            nameText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Primary");
-            textStack.Children.Add(nameText);
-            var urlText = new TextBlock
-            {
-                Text = link.Url,
-                FontSize = 11.5, Margin = new Thickness(0, 3, 0, 0),
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            urlText.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
-            textStack.Children.Add(urlText);
-
-            panel.Children.Add(iconGrid);
-            panel.Children.Add(textStack);
-            return panel;
-        }
-
-        /// <summary>
-        /// 数据单元格（用户数据：URL / 标题 / 时间戳）。
-        /// ⚠️ 走 <see cref="LocValue.Literal"/> 而不是 <c>LocValue.Of</c>：后者把这串当**文案键**查表，
-        /// 查不到就画出 <c>⟨…⟩</c> 缺键哨兵——时间戳与 URL 不是键，那样渲染出来的日期是错的。
-        /// </summary>
-        private TextBlock TextCell(string text) => TextCell(LocValue.Literal(text));
-
-        /// <summary>
-        /// 两个长度形态的单元格（日期/计数这类结构化列：放不下时换短式，不缩字号）。
-        /// 参数用全限定名：UIKit 的代码写文字门面 <c>LinkPocket.Views.LocText</c> 与本类型同名，
-        /// 而本文件两个命名空间都 using 了。
-        /// </summary>
-        private TextBlock TextCell(LinkPocket.I18n.LocText text)
-            => LocFitResolver.BuildCell(text);
-
-        /// <summary>文案单元格（键 + 参数；语言一变自己重算）。</summary>
-        private TextBlock TextCell(LocValue text)
-        {
-            var cell = new TextBlock
-            {
-                FontSize = 12.5,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            cell.SetText(text);
-            cell.SetResourceReference(TextElement.ForegroundProperty, "App.Text.Secondary");
-            return cell;
+            row.IsChecked = VmTools.CheckedIds.Contains(row.LinkId);
+            UpdateDeleteState();
         }
 
         private void UpdateDeleteState()
@@ -451,26 +336,51 @@ public partial class ToolsPage : UserControl
 
             try
             {
-                // 业务在 VM：逐条移入回收站 → 刷新目录树计数 → 重算当前组
+                // 业务在 VM：单命令批量入站 → 局部更新当前组（不全库重读、不重跑查重）
                 var rest = await VmTools.DeleteCheckedAsync();
-                if (rest != null)
-                {
-                    DetailHintText.SetText(Loc.K("tools.dedup.groupHint", rest.Count));
-                    DetailTable.ItemsSource = null;
-                    DetailTable.ItemsSource = rest;
-                    UpdateDeleteState();
-                }
-                else
-                {
-                    GoBackToList();
-                    await RunDedupAsync();
-                }
+                ApplyDeletionResult(rest);
             }
             catch (Exception ex)
             {
                 LpLog.Error("duplicate deletion failed", ex);
                 await FlashSelectionInfo(Loc.K("tools.dedup.deleteFailed"));
             }
+        }
+
+        /// <summary>
+        /// 删除完成后的视图投影（VM 已把当前组局部更新；这里只换行集/摘要，不重扫）。
+        /// 返回 null = 组已不再重复：回主表；否则就地刷新明细。
+        /// </summary>
+        private void ApplyDeletionResult(List<LinkDto>? rest)
+        {
+            _groups = VmTools.Groups;
+            if (rest != null)
+            {
+                _detailLinks = BuildDetailRows(rest);
+                DetailHintText.SetText(Loc.K("tools.dedup.groupHint", rest.Count));
+                ApplyDetailSort();
+                VmTools.DetailSelection.Set(VmTools.DetailSelection.Ids.Where(id => rest.Any(l => l.LinkId == id)));
+                ApplyDetailSelectionProjection();
+                UpdateDeleteState();
+                ApplyPaneSort();
+                PaneSubtitle.SetText(Loc.K("tools.dedup.foundSubtitle", _groups.Count, _groups.Sum(g => g.Count)));
+                return;
+            }
+
+            PaneTable.ItemsSource = null;
+            ApplyPaneSort();
+            if (_groups.Count == 0)
+            {
+                PaneTable.EmptyContent = BuildState("content-duplicate", Loc.K("tools.dedup.noneTitle"),
+                    Loc.K("tools.dedup.noneHint"));
+                PaneSubtitle.SetText(Loc.K("tools.dedup.none"));
+            }
+            else
+            {
+                PaneTable.EmptyContent = null!;
+                PaneSubtitle.SetText(Loc.K("tools.dedup.foundSubtitle", _groups.Count, _groups.Sum(g => g.Count)));
+            }
+            GoBackToList();
         }
 
         // ============================================================

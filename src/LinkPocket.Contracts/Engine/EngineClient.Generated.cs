@@ -44,6 +44,10 @@ public sealed partial class EngineClient
     public Task<CommandResult<JsonElement>> DedupApplyAsync(string? strategy = null, JsonElement? groupUrls = null, JsonElement? explicitKeep = null, CallOptions? o = null, CancellationToken ct = default)
         => ExecuteAsync<JsonElement>("dedup.apply", new { strategy, group_urls = groupUrls, explicit_keep = explicitKeep }, o, ct);
 
+    /// <summary>Scan duplicate bookmarks: grouped by URL, returning groups with more than one entry (ascending creation time within a group)</summary>
+    public Task<IReadOnlyList<DedupGroup>> DedupScanAsync(CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<IReadOnlyList<DedupGroup>>("dedup.scan", null, o, ct);
+
     // —— favicon ——
 
     /// <summary>Delete favicon cache files not referenced by any link or trash entry (orphans from deleted links); referenced files and unrecognized files are kept; locked files are reported and retried later</summary>

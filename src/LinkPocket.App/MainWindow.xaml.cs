@@ -82,7 +82,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         var locator = _scope.ServiceProvider.GetRequiredService<IContentLocator>();
         ToolsView.Configure(client, locator, this,
             listId => vm.ResolveLinkPathAsync(listId),
-            () => vm.RefreshFolderTreeAndUIAsync(),
             _host.Ports.BrowseEdit, _host.Ports.Notices);
         SettingsView.Configure(client, vm.ReinitializeDatabaseAsync,
             () => vm.RefreshFolderTreeAndUIAsync(), _host.Ai, _host.Updates);

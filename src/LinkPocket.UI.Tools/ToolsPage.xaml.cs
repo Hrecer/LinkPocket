@@ -37,25 +37,23 @@ namespace LinkPocket.Views
         private IContentLocator? _locator;
         private INavigationService? _navigation;
         private Func<string?, Task<LocValue>> _resolveLinkPath = _ => Task.FromResult(Loc.K("tools.pathRoot"));
-        private Func<Task> _refreshFolderTree = () => Task.CompletedTask;
         private IBrowseEditState? _browseEdit;
         private IUiNoticeService? _notices;
 
         /// <summary>
-        /// Shell 在构造时注入：引擎客户端、定位组件、导航端口（打开浏览页详情页）、路径解析与目录树刷新委托。
+        /// Shell 在构造时注入：引擎客户端、定位组件、导航端口（打开浏览页详情页）与路径解析委托。
         /// 「打开详情」走 <see cref="INavigationService.OpenLinkInBrowser"/>——与搜索页 / 智能列表结果页
         /// **同一条路径**（三页的 Enter 都是"打开详情页"）；「跳转（进目录 + 选中行）」
         /// 走 <see cref="IContentLocator"/>（ID 跳转工具 + 明细顶部/右栏入口），两者互不替代。
         /// </summary>
         public void Configure(EngineClient api, IContentLocator? locator, INavigationService? navigation,
-            Func<string?, Task<LocValue>> resolveLinkPath, Func<Task> refreshFolderTree,
+            Func<string?, Task<LocValue>> resolveLinkPath,
             IBrowseEditState? browseEdit = null, IUiNoticeService? notices = null)
         {
             _api = api;
             _locator = locator;
             _navigation = navigation;
             _resolveLinkPath = resolveLinkPath;
-            _refreshFolderTree = refreshFolderTree;
             _browseEdit = browseEdit;
             _notices = notices;
 
@@ -104,7 +102,7 @@ namespace LinkPocket.Views
             get
             {
                 if (_toolsVm != null) return _toolsVm;
-                return _toolsVm = new ToolsViewModel(_api, _locator, _resolveLinkPath, _refreshFolderTree,
+                return _toolsVm = new ToolsViewModel(_api, _locator, _resolveLinkPath,
                     _browseEdit, _notices);
             }
         }
@@ -246,7 +244,7 @@ namespace LinkPocket.Views
             var openUrl = VmTools.CurrentGroupUrl;
             if (string.IsNullOrEmpty(openUrl)) return;
             var row = _groups.FirstOrDefault(g =>
-                string.Equals(g.Url, openUrl, StringComparison.OrdinalIgnoreCase));
+                string.Equals(g.Url, openUrl, StringComparison.Ordinal));
             if (row == null)
                 GoBackToList();      // 组已不再重复：退回即见最新主表
             else
@@ -272,10 +270,11 @@ namespace LinkPocket.Views
         private void ApplyDetailSelectionProjection()
         {
             var sel = VmTools.DetailSelection;
+            // 模板模式：选中底色由行模板绑定 IsSelected（共享控件在模板模式下不做内部绘制）
+            foreach (var link in _detailLinks) link.IsSelected = sel.Contains(link.LinkId);
             var row = sel.HasAny ? _detailLinks.FirstOrDefault(l => sel.Contains(l.LinkId)) : null;
-            DetailTable.ApplySelection(row == null ? Array.Empty<object>() : new object[] { row });
-            _detailSidebar.UpdateFrom(row == null ? null : LinkItem.FromDto(row),
-                row == null ? LocValue.Empty : VmTools.ResolvePath(row));
+            _detailSidebar.UpdateFrom(row == null ? null : LinkItem.FromDto(row.Link),
+                row == null ? LocValue.Empty : row.Path);
             // 顶部「跳转」药丸与选中行同源（无选中 = 没有跳转目标）；不在投影点之外另设刷新时机
             DetailJumpBtn.IsEnabled = row != null && _locator != null;
             CommandRefresh.Request();
@@ -290,14 +289,14 @@ namespace LinkPocket.Views
 
         private void MoveDetailSelection(int delta)
         {
-            var order = DetailTable.OrderedItems().OfType<LinkDto>().Select(l => l.LinkId).ToList();
+            var order = DetailTable.OrderedItems().OfType<DedupLinkRow>().Select(l => l.LinkId).ToList();
             var target = VmTools.DetailSelection.Move(delta, order);
             ScrollDetailTo(target);
         }
 
         private void SelectLastDetailRow()
         {
-            var order = DetailTable.OrderedItems().OfType<LinkDto>().Select(l => l.LinkId).ToList();
+            var order = DetailTable.OrderedItems().OfType<DedupLinkRow>().Select(l => l.LinkId).ToList();
             ScrollDetailTo(VmTools.DetailSelection.SelectLast(order));
         }
 

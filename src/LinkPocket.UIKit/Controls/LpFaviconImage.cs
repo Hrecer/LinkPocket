@@ -10,7 +10,7 @@ namespace LinkPocket.Views;
 /// 搜索结果行的 favicon：一个元素同时承担“图标”和“地球占位”。
 /// 图标解码/磁盘读取在后台完成，首帧只画地球；模板虚拟化下每行只多一个绘制元素。
 /// </summary>
-public sealed class SearchFaviconImage : FrameworkElement
+public sealed class LpFaviconImage : FrameworkElement
 {
     private static readonly Geometry Earth = Geometry.Parse(
         "M17.9,17.39C17.64,16.59 16.89,16 16,16H15V13A1,1 0 0,0 14,12H8V10H10A1,1 0 0,0 11,9V7H13A2,2 0 0,0 15,5V4.59" +
@@ -18,8 +18,8 @@ public sealed class SearchFaviconImage : FrameworkElement
         "L9,15V16A2,2 0 0,0 11,18M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z");
 
     public static readonly DependencyProperty UrlProperty = DependencyProperty.Register(
-        nameof(Url), typeof(string), typeof(SearchFaviconImage),
-        new PropertyMetadata(string.Empty, (d, _) => ((SearchFaviconImage)d).Reload()));
+        nameof(Url), typeof(string), typeof(LpFaviconImage),
+        new PropertyMetadata(string.Empty, (d, _) => ((LpFaviconImage)d).Reload()));
 
     public string Url
     {
@@ -30,7 +30,7 @@ public sealed class SearchFaviconImage : FrameworkElement
     private ImageSource? _icon;
     private int _generation;
 
-    public SearchFaviconImage()
+    public LpFaviconImage()
     {
         Width = 18;
         Height = 18;
