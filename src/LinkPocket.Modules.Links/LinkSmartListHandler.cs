@@ -9,7 +9,6 @@ namespace LinkPocket.Modules.Links;
 internal sealed class LinkSmartListHandler : ICommandHandler
 {
     private const int DefaultDays = 7;
-    private const int DefaultLimit = 50;
 
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.smart_list",
@@ -19,7 +18,7 @@ internal sealed class LinkSmartListHandler : ICommandHandler
         [
             ParamSpec.Req<string>("kind", "recently_added | recently_visited | recently_edited | most_visited",
                 enumValues: ["recently_added", "recently_visited", "recently_edited", "most_visited"]),
-            ParamSpec.Opt<int>("limit", "Maximum rows returned (default 50)"),
+            ParamSpec.Opt<int>("limit", "Maximum rows returned; 0 or omitted = all matching rows"),
             ParamSpec.Opt<int>("days", "Time window in days, only for the recently_* presets (default 7)"),
         ],
         Caps: CommandCaps.Query,
@@ -30,7 +29,9 @@ internal sealed class LinkSmartListHandler : ICommandHandler
     public async Task<CommandResult> ExecuteAsync(ICommandContext ctx, JsonElement args)
     {
         var kind = CommandArgs.RequireString(args, "kind");
-        var limit = Math.Max(1, CommandArgs.OptionalInt(args, "limit", DefaultLimit));
+        // 智能列表 = 筛选语义（时间窗 / 访问过），不是分页视图：缺省返回**全部命中**。
+        // 「前 N」只由调用方显式传 limit 表达（界面只对「最常查看（前 20）」这样做）。
+        var limit = Math.Max(0, CommandArgs.OptionalInt(args, "limit", 0));
         var days = Math.Max(1, CommandArgs.OptionalInt(args, "days", DefaultDays));
         var since = DateTime.UtcNow.AddDays(-days);
         var ct = ctx.Ct;
@@ -60,8 +61,9 @@ internal sealed class LinkSmartListHandler : ICommandHandler
                     EngineErrors.EnumOutOfRange, $"unknown smart list kind: {kind}", correlationId: ctx.CorrelationId));
         }
 
-        var items = await ctx.Uow.Links.ListAsync(
+        // 直出 DTO（不做实体物化再 ToDto）：十万行智能列表省一段逐行映射，也少一层临时对象。
+        var items = await ctx.Uow.Links.ListDtosAsync(
             new LinkQuerySpec { Filter = filter, Sort = sort, Page = new PageSpec(1, limit) }, ct);
-        return CommandResult.Ok(items.Select(l => l.ToDto()).ToList());
+        return CommandResult.Ok(items);
     }
 }

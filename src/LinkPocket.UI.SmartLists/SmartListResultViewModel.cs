@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -54,6 +55,12 @@ namespace LinkPocket.ViewModels
         private LocValue _title = Loc.K("smartlists.title");
         private LocValue _emptyMessage = Loc.K("smartlists.empty");
         private int _totalCount;
+        private string _sortField = "title";
+        private bool _sortAscending = true;
+
+        /// <summary>位置列文本缓存（按目录 + 语言版本）：行模板只解析视口内的行，排序时才批量取。</summary>
+        private const int MaxPathDisplayChars = 200;
+        private readonly Dictionary<string, (int Version, string Text)> _pathTextCache = new(StringComparer.Ordinal);
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -215,7 +222,64 @@ namespace LinkPocket.ViewModels
             OnPropertyChanged(nameof(HasSelection));
             var item = PrimarySelected;
             Details.UpdateFrom(item, item == null ? LocValue.Empty : _resolveFolderPath(item.ListId));
+            ProjectSelection();
             CommandRefresh.Request();
+        }
+
+        /// <summary>把选中集合投影到行模型（模板模式的选中底色由 <see cref="LinkItem.IsSelected"/> 驱动）。</summary>
+        public void ProjectSelection()
+        {
+            foreach (var item in _items)
+            {
+                var selected = Selection.Contains(item.LinkId);
+                if (item.IsSelected != selected) item.IsSelected = selected;
+            }
+        }
+
+        /// <summary>位置列文本（目录 + 语言版本缓存，限长 200 字；只服务显示与按位置排序）。</summary>
+        public string ResolveFolderPathText(string? listId)
+        {
+            var key = listId ?? string.Empty;
+            var version = Loc.Table.Version;
+            if (_pathTextCache.TryGetValue(key, out var hit) && hit.Version == version)
+                return hit.Text;
+
+            var text = _resolveFolderPath(string.IsNullOrEmpty(listId) ? null : listId).Resolve();
+            if (text.Length > MaxPathDisplayChars)
+                text = string.Concat(text.AsSpan(0, MaxPathDisplayChars), "…");
+            _pathTextCache[key] = (version, text);
+            return text;
+        }
+
+        /// <summary>
+        /// 外部排序（模板模式）：按列头字段重排当前结果集并**替换集合实例**，由视图重绑。
+        /// 十万行是内存排序（引擎侧不再按列头重查）；返回 false = 排序未变化，视图无需重绑。
+        /// </summary>
+        public bool Sort(string field, bool ascending)
+        {
+            if (string.Equals(field, _sortField, StringComparison.Ordinal) && ascending == _sortAscending)
+                return false;
+
+            _sortField = string.IsNullOrEmpty(field) ? "title" : field;
+            _sortAscending = ascending;
+            if (_items.Count > 1)
+                Items = new ObservableCollection<LinkItem>(SortItems(_items));
+            ProjectSelection();
+            return true;
+        }
+
+        private IEnumerable<LinkItem> SortItems(IEnumerable<LinkItem> items)
+        {
+            Func<LinkItem, object> key = _sortField switch
+            {
+                "path" => i => ResolveFolderPathText(i.ListId),
+                "updated_at" => i => i.UpdatedAt,
+                "last_visited_at" => i => i.LastVisitedAt ?? DateTime.MinValue,
+                "visit_count" => i => i.VisitCount,
+                "created_at" => i => i.CreatedAt,
+                _ => i => string.IsNullOrEmpty(i.Title) ? i.Url : i.Title,
+            };
+            return _sortAscending ? items.OrderBy(key) : items.OrderByDescending(key);
         }
 
         // —— ↑/↓ / End（与浏览页主栏同一套共享语义；顺序由视图注入） ——
@@ -254,10 +318,14 @@ namespace LinkPocket.ViewModels
             IsLoading = true;
             try
             {
-                var limit = _listId == "most_visited" ? 20 : 100;
-                List<LinkDto> links = await _client.LinkSmartListAsync(_listId, limit, days: days);
+                // 三个「最近」= 时间窗筛选，命中多少显示多少（卡片副标题即语义，不设条数上限）；
+                // 「最常查看」=「访问次数前 20」榜单，是全站唯一带「前 N」口径的智能列表。
+                var limit = _listId == "most_visited" ? 20 : 0;
+                // 取数放到线程池：引擎在 SQLite provider 上可能整段同步完成，十万行留在 UI 线程会堵住首帧。
+                List<LinkDto> links = await Task.Run(() => _client.LinkSmartListAsync(_listId, limit, days: days));
 
                 TotalCount = links.Count;
+                _pathTextCache.Clear();   // 目录改名/移动后重载必须重算路径
 
                 if (links.Count == 0)
                 {
@@ -275,11 +343,12 @@ namespace LinkPocket.ViewModels
                 }
 
                 var items = links.Select(LinkItem.FromDto).ToList();
-                // 内容未变 → **保持集合实例不动**（视图不重绑、不整表重建）：切页进入的静默刷新常是这种情况，
-                // 而整表重建（≤100 行 × 单元格，同步主线程）正是"切页偶发卡顿"的主要来源。
+                items = SortItems(items).ToList();   // 保留当前列头排序（默认名称升序）
+                // 内容未变 → **保持集合实例不动**（视图不重绑）：切页进入的静默刷新常是这种情况。
                 // 同时不再"先清空再填"——加载期间保留旧内容，避免闪空（与"进入保内容"口径一致）。
                 if (!LinkItem.SameSequence(_items, items))
                     Items = new ObservableCollection<LinkItem>(items);   // 一次性整体替换（逐条 Add 会 N 次 CollectionChanged）
+                ProjectSelection();
                 HasData = true;
             }
             finally

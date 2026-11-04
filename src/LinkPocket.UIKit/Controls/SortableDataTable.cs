@@ -332,8 +332,8 @@ public class SortableDataTable : Grid
     /// <para>⚠️ 1.1 如实说明：【工厂模式】的 ItemsSource 元素是 BuildRow 生成的 Border（UIElement），
     /// 行对象会按数据量**一次性创建**；模板模式则只实例化视口附近的容器（搜索 100 000 数据行实测
     /// **11** 个容器，`RowCacheLength=0`；浏览页默认 1 页缓存 ≈21–33）。不要按"行数 = 可视控件数"
-    /// 估 UI 成本。工厂模式仍用于智能列表/回收站：智能列表上限 20/100；回收站仍整页全量（已知待做）；
-    /// 搜索已改模板模式并支持十万级连续结果集。</para>
+    /// 估 UI 成本。工厂模式现在只用于**有界列表**（回收站整页；已知待做）；搜索与智能列表都已改模板模式，
+    /// 十万级连续结果集实测只实例化视口附近 11–12 个容器。</para>
     /// </remarks>
     private static ItemsPanelTemplate BuildRowsPanel(double cachePages = 1)
     {

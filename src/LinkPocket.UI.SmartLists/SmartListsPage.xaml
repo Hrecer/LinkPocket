@@ -4,6 +4,7 @@
              xmlns:loc="clr-namespace:LinkPocket.I18n;assembly=LinkPocket.I18n"
              xmlns:m3="clr-namespace:Material3.Wpf;assembly=Material3.Wpf"
              xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
+             xmlns:local="clr-namespace:LinkPocket.Views"
              Focusable="True">
     <!-- 智能列表页（v2 完全重做）：与搜索页/回收站页同构 ——
          入口：MD3E 页头 + 卡片网格（卡面 SurfaceContainerHigh、悬停 SurfaceContainerHighest）；
@@ -13,6 +14,8 @@
 
     <UserControl.Resources>
         <!-- BoolToVis 已上收 UIKit.xaml -->
+        <!-- 位置列：目录 → 显示路径（按目录 + 语言版本缓存；第一路绑版本号驱动换语言时重取词） -->
+        <local:SmartListPathConverter x:Key="SmartListPathText"/>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource App.Surface.Base}">
@@ -206,8 +209,88 @@
                      绘制经 code-behind 投影（↑/↓/End/Esc/点空白 = 全站共享选择机械）。 -->
                 <Border Grid.Row="1" Background="{DynamicResource App.Surface.Card}"
                         CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
+                    <!-- 模板模式 = 真实虚拟化：十万行只实例化视口附近的容器（RowCacheLength=0）。
+                         行高固定 57.9 + 上下 Margin 1：extent 从首帧起稳定，滚动条不随行内容跳。
+                         选中底色由 LinkItem.IsSelected 驱动（VM 的 ListSelection 是唯一事实来源）。 -->
                     <views:SortableDataTable x:Name="SmartTable" HeaderBandMargin="0"
-                                             SelectionEnabled="False"/>
+                                             SelectionEnabled="False" RowCacheLength="0">
+                        <views:SortableDataTable.ItemTemplate>
+                            <DataTemplate>
+                                <Border Tag="DataRow" Cursor="Hand" HorizontalAlignment="Stretch" Height="57.9"
+                                        PreviewMouseLeftButtonDown="SmartRow_PreviewMouseLeftButtonDown">
+                                    <Border.Style>
+                                        <Style TargetType="Border" BasedOn="{StaticResource LpRowCard}">
+                                            <Setter Property="Margin" Value="8,1"/>
+                                            <Setter Property="Padding" Value="16,9"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="SnapsToDevicePixels" Value="True"/>
+                                            <Style.Triggers>
+                                                <!-- 选中行悬停不换色（派生触发器优先于基样式悬停） -->
+                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource App.Surface.Selected}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[0], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[1], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[2], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[3], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[4], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                            <ColumnDefinition views:ColumnWidthBinding.Width="{Binding ColumnWidths[5], RelativeSource={RelativeSource AncestorType=views:SortableDataTable}}"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 名称：favicon（后台解码）+ 标题 + URL 副行 -->
+                                        <Grid Grid.Column="0" VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <views:LpFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
+                                                                  Width="18" Height="18" Margin="0,0,10,0"
+                                                                  VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding DisplayTitle}" FontSize="14" FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource App.Text.Primary}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Url}" FontSize="11.5" Margin="0,3,0,0"
+                                                           Foreground="{DynamicResource App.Text.Secondary}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- 位置：目录路径（用户数据，不翻译；根 token 随语言变） -->
+                                        <TextBlock Grid.Column="1" FontSize="12.5" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis">
+                                            <TextBlock.Text>
+                                                <MultiBinding Converter="{StaticResource SmartListPathText}">
+                                                    <Binding Path="Version" Source="{x:Static loc:Loc.Table}"/>
+                                                    <Binding Path="DataContext" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                    <Binding Path="ListId"/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
+
+                                        <TextBlock Grid.Column="2" Text="{loc:Value UpdatedValue}" FontSize="12.5"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="3" Text="{loc:Value LastVisitedValue}" FontSize="12.5"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="4" Text="{loc:Value VisitCountValue}" FontSize="12.5"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="5" Text="{loc:Value CreatedValue}" FontSize="12.5"
+                                                   VerticalAlignment="Center" Foreground="{DynamicResource App.Text.Secondary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </views:SortableDataTable.ItemTemplate>
+                    </views:SortableDataTable>
                 </Border>
 
                 <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的重查时亮；

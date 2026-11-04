@@ -15,7 +15,7 @@
 | `links.get` | 查询 | 单条；不存在 → `LP.STATE.001` |
 | `links.roots` | 查询 | 根级（未归类）书签，缺省 `created_at desc`；默认 `per_page=0` = 全部，显式正数才限制 |
 | `links.stats` | 查询 | 全库统计（总数 / 回收站项数 / 根级数 / 按目录计数）；声明缓存（Counting） |
-| `links.smart_list` | 查询 | 四预设：`recently_added` / `recently_visited` / `recently_edited` / `most_visited` |
+| `links.smart_list` | 查询 | 四预设：`recently_added` / `recently_visited` / `recently_edited` / `most_visited`；**筛选语义 = 缺省/`limit=0` 全量**，显式正数才「前 N」（界面仅「最常查看」传 20） |
 | `links.query` | 查询 | ★ 结构化查询器：filter 白名单 + sort 下推 + page(size=0 全量) + fields 投影；**AI 用，不接 UI** |
 | `links.find_by_url` | 查询 | ★ 按 URL 精确找全部同址链接（Dedup 复用点） |
 | `links.metadata_fetch` | 查询 | 抓取网页元数据；**闸外执行**（`NetworkOutsideGate`）；HTTP 10s 超时，浏览器渲染 / 人工验证另有预算，结果用 `elapsed_ms` 如实报告；反爬兜底 = 三级阶梯：拦截页（403/503 或 200 + 人机校验页）**先**走浏览器指纹重试；普通拦截页仍空则交宿主的**浏览器内核渲染**（`PageRenderHook`）；Cloudflare 人机挑战在指纹仍被挑战时才考虑人工；结果带 `resolution` / `needs_human_verification` / `human_verification_available` / `elapsed_ms`。**`interactive=true` 才允许开真实浏览器窗口**（仅用户主动发起；默认 false，遇到挑战立即返回需要人工的标记） |

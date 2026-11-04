@@ -637,6 +637,34 @@ public class LinksModuleTests
     }
 
     [Fact]
+    public async Task SmartList_Default_And_Zero_Limit_Return_All_Explicit_Limit_Caps()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            for (var i = 0; i < 60; i++)
+                db.Links.Add(new LinkPocket.Data.Link
+                {
+                    LinkId = $"SL{i:D13}",
+                    Url = $"https://smart.example/{i}",
+                    Title = $"智能命中 {i:D3}",
+                });
+            await db.SaveChangesAsync();
+        }
+
+        // 智能列表 = 筛选语义：不传 limit / 传 0 都是全部命中，不再有隐藏的 50/100 上限。
+        var all = await engine.QueryAsync<List<LinkDto>>("links.smart_list", new { kind = "recently_added" });
+        Assert.Equal(60, all.Count);
+
+        var zero = await engine.QueryAsync<List<LinkDto>>("links.smart_list", new { kind = "recently_added", limit = 0 });
+        Assert.Equal(60, zero.Count);
+
+        // 「前 N」只由显式 limit 表达（界面只对「最常查看（前 20）」这样做）。
+        var capped = await engine.QueryAsync<List<LinkDto>>("links.smart_list", new { kind = "recently_added", limit = 7 });
+        Assert.Equal(7, capped.Count);
+    }
+
+    [Fact]
     public async Task Query_Structured_Filter_Sort_Fields()
     {
         var (engine, _, _) = TestHost.Create();

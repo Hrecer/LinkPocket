@@ -206,7 +206,33 @@ namespace LinkPocket.ViewModels
         public ObservableCollection<FolderNode> FolderItems
         {
             get => _folderItems;
-            set { _folderItems = value; OnPropertyChanged(); }
+            set { _folderItems = value; RebuildFolderPathIndex(); OnPropertyChanged(); }
+        }
+
+        /// <summary>目录 ID → 用户段路径（不含根段）：树加载时一次建好，路径列/排序不再逐行走树。</summary>
+        private Dictionary<string, string> _folderPathSegments = new(StringComparer.Ordinal);
+
+        private void RebuildFolderPathIndex()
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            void Walk(IEnumerable<FolderNode> nodes, string? parentPath)
+            {
+                foreach (var node in nodes)
+                {
+                    if (node.IsRoot)
+                    {
+                        Walk(node.Children, null);
+                        continue;
+                    }
+
+                    var segment = BookmarkDisplay.Segment(node.Name);
+                    var path = parentPath == null ? segment : parentPath + " > " + segment;
+                    if (!string.IsNullOrEmpty(node.FolderId)) map[node.FolderId] = path;
+                    if (node.Children is { Count: > 0 }) Walk(node.Children, path);
+                }
+            }
+            Walk(_folderItems, null);
+            _folderPathSegments = map;
         }
 
         /// <summary>回收站页视图模型（与浏览页 BrowserViewModel 同构的"回收站浏览器"）。</summary>
@@ -408,10 +434,9 @@ namespace LinkPocket.ViewModels
         public LocValue FolderPathValue(string? folderId)
         {
             if (string.IsNullOrEmpty(folderId)) return Loc.K("nav.root.bookmarks");
-            var treePath = FindFolderPathInNodes(FolderItems, folderId);
-            return treePath is null
-                ? Loc.K("path.unknown")
-                : Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath);
+            return _folderPathSegments.TryGetValue(folderId, out var treePath)
+                ? Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath)
+                : Loc.K("path.unknown");
         }
 
         /// <summary>
@@ -452,6 +477,8 @@ namespace LinkPocket.ViewModels
         public async Task<LocValue> ResolveLinkPathAsync(string? listId)
         {
             if (string.IsNullOrEmpty(listId)) return Loc.K("nav.root.bookmarks");
+            if (_folderPathSegments.TryGetValue(listId, out var indexedPath))
+                return Loc.K("path.joined", Loc.K("nav.root.bookmarks"), indexedPath);
             var treePath = FindFolderPathInNodes(FolderItems, listId);
             if (treePath != null) return Loc.K("path.joined", Loc.K("nav.root.bookmarks"), treePath);
             try
