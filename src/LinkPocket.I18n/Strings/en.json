@@ -406,6 +406,7 @@
   "smartlists.preset.mostVisited": "Most Visited",
   "smartlists.preset.mostVisitedDesc": "The 20 most-visited bookmarks",
   "smartlists.liveHint": "Bookmark changes gather here in real time",
+  "smartlists.rowLoading": "Loading…",
   "smartlists.sortHint": "- sorted by {0} {1}",
   "sort.asc": "ascending",
   "sort.desc": "descending",

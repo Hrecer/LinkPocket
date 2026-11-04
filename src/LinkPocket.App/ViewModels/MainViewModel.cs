@@ -76,7 +76,7 @@ namespace LinkPocket.ViewModels
 
             TrashViewModel = new TrashViewModel(client, _ports);
             SettingsViewModel = new SettingsViewModel();
-            SmartListViewModel = new SmartListViewModel(client, _ports, FolderPathValue, locator);   // 结果页「跳转」= 进目录 + 选中行（定位组件，与 ID 跳转同一套语义）
+            SmartListViewModel = new SmartListViewModel(client, _ports, FolderPathValue, locator, FolderPathOrder);   // 结果页「跳转」= 进目录 + 选中行；位置排序 = 目录树前序
             BrowserViewModel = new BrowserViewModel(client, _ports, locator);   // 共享端口槽位：对话框/导航走 IDialogService；locator = 侧栏「跳转」
 
             SelectNavCommand = new RelayCommand<object>(param => SelectNav(param?.ToString() ?? NavIds.Browser));
@@ -209,12 +209,20 @@ namespace LinkPocket.ViewModels
             set { _folderItems = value; RebuildFolderPathIndex(); OnPropertyChanged(); }
         }
 
-        /// <summary>目录 ID → 用户段路径（不含根段）：树加载时一次建好，路径列/排序不再逐行走树。</summary>
+        /// <summary>目录 ID → 用户段路径（不含根段）：树加载时一次建好，路径列不再逐行走树。</summary>
         private Dictionary<string, string> _folderPathSegments = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 目录 ID → **树前序序号**（0 = 根级链接）：与目录树从上到下的显示顺序一致。
+        /// 「位置」排序用它做整数键——不再为十万个目录各拼一条 200 字显示路径再逐对比较。
+        /// </summary>
+        private Dictionary<string, int> _folderPathOrder = new(StringComparer.Ordinal);
 
         private void RebuildFolderPathIndex()
         {
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            var order = new Dictionary<string, int>(StringComparer.Ordinal);
+            var next = 0;
             void Walk(IEnumerable<FolderNode> nodes, string? parentPath)
             {
                 foreach (var node in nodes)
@@ -227,12 +235,27 @@ namespace LinkPocket.ViewModels
 
                     var segment = BookmarkDisplay.Segment(node.Name);
                     var path = parentPath == null ? segment : parentPath + " > " + segment;
-                    if (!string.IsNullOrEmpty(node.FolderId)) map[node.FolderId] = path;
+                    if (!string.IsNullOrEmpty(node.FolderId))
+                    {
+                        map[node.FolderId] = path;
+                        order[node.FolderId] = ++next;
+                    }
                     if (node.Children is { Count: > 0 }) Walk(node.Children, path);
                 }
             }
             Walk(_folderItems, null);
             _folderPathSegments = map;
+            _folderPathOrder = order;
+        }
+
+        /// <summary>
+        /// 「位置」排序键：目录树前序序号（根级链接 = 0，其后与树的从上到下顺序一致）。
+        /// 目录不在当前树（刚被移走/尚未加载）时排最后；未知目录不会插到已知目录中间。
+        /// </summary>
+        public int FolderPathOrder(string? folderId)
+        {
+            if (string.IsNullOrEmpty(folderId)) return 0;
+            return _folderPathOrder.TryGetValue(folderId, out var order) ? order : int.MaxValue;
         }
 
         /// <summary>回收站页视图模型（与浏览页 BrowserViewModel 同构的"回收站浏览器"）。</summary>

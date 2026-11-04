@@ -105,6 +105,77 @@ public class LinkPageReadEquivalenceTests
         finally { Cleanup(dbPath); }
     }
 
+    [Theory]
+    [InlineData("title")]
+    [InlineData("url")]
+    [InlineData("created_at")]
+    [InlineData("updated_at")]
+    [InlineData("last_visited_at")]
+    [InlineData("visit_count")]
+    [InlineData("is_important")]
+    public async Task 智能列表直读_与EF实体路径_逐字段一致(string field)
+    {
+        var (_, factory, dbPath) = TestHost.Create();
+        try
+        {
+            await SeedAsync(factory);
+            await using var uow = new EfUnitOfWork(factory.CreateDbContext());
+            var t0 = new DateTime(2025, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+            var filters = new[]
+            {
+                new LinkFilter { CreatedFrom = t0.AddDays(1) },
+                new LinkFilter { UpdatedFrom = t0.AddDays(1) },
+                new LinkFilter { LastVisitedFrom = t0.AddDays(1) },
+                new LinkFilter { VisitCountMin = 2 },
+            };
+
+            foreach (var filter in filters)
+            foreach (var dir in new[] { SortDir.Asc, SortDir.Desc })
+            foreach (var page in new[] { new PageSpec(1, 3), new PageSpec(2, 3), new PageSpec(1, 0) })
+            {
+                var spec = new LinkQuerySpec
+                {
+                    Filter = filter,
+                    Sort = [new SortSpec(field, dir)],
+                    Page = page,
+                };
+                var direct = await uow.Links.ListDtosAsync(spec, default);
+                var oracle = (await uow.Links.ListAsync(spec, default)).Select(l => l.ToDto()).ToList();
+                AssertRowsEqual(oracle, direct);
+            }
+        }
+        finally { Cleanup(dbPath); }
+    }
+
+    [Fact]
+    public async Task 智能列表直读_带归属条件时不得接管()
+    {
+        var (_, factory, dbPath) = TestHost.Create();
+        try
+        {
+            await SeedAsync(factory);
+            await using var uow = new EfUnitOfWork(factory.CreateDbContext());
+            var t0 = new DateTime(2025, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+
+            // 时间窗 + 目录归属：智能列表直读只认"单一时间/访问条件 + 全空其它过滤"，
+            // 这里必须回 EF（否则目录条件会被静默丢掉）。
+            var spec = new LinkQuerySpec
+            {
+                Filter = new LinkFilter
+                {
+                    FolderId = new FolderId(FolderA),
+                    CreatedFrom = t0.AddDays(1),
+                },
+                Sort = [new SortSpec("title", SortDir.Asc)],
+                Page = new PageSpec(1, 0),
+            };
+            var direct = await uow.Links.ListDtosAsync(spec, default);
+            var oracle = (await uow.Links.ListAsync(spec, default)).Select(l => l.ToDto()).ToList();
+            AssertRowsEqual(oracle, direct);
+        }
+        finally { Cleanup(dbPath); }
+    }
+
     [Fact]
     public async Task 目录页直读_缺省排序与复杂过滤回退_同样一致()
     {

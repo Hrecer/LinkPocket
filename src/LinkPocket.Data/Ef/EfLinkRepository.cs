@@ -58,9 +58,124 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
     {
         if (TryBuildRawSearchSql(spec, out var searchSql, out var searchParameters))
             return await ReadDtosRawAsync(searchSql, searchParameters, ct);
+        if (TryBuildRawSmartListSql(spec, out var smartSql, out var smartParameters))
+            return await ReadDtosRawAsync(smartSql, smartParameters, ct);
         if (TryBuildRawPageSql(spec, out var sql, out var parameters))
             return await ReadDtosRawAsync(sql, parameters, ct);
         return await ListDtosEfAsync(spec, ct);
+    }
+
+    /// <summary>
+    /// 智能列表过滤（时间窗 / 访问过）的**唯一谓词构造**：计数与取页共用，字段集合严格受限
+    /// （恰好一个时间/访问条件，其余过滤全空）——多一个条件即返回 false，回 EF 的通用语义。
+    /// </summary>
+    private static bool TryBuildSmartListWhereSql(
+        LinkFilter f, out string where, out (string Name, object? Value)[] parameters)
+    {
+        where = string.Empty;
+        parameters = [];
+
+        var conditions = 0;
+        string? clause = null;
+        (string Name, object? Value)? bound = null;
+        if (f.CreatedFrom is { } created)
+        {
+            conditions++;
+            clause = "created_at >= @created_from";
+            bound = ("@created_from", created);
+        }
+        if (f.UpdatedFrom is { } updated)
+        {
+            conditions++;
+            clause = "updated_at >= @updated_from";
+            bound = ("@updated_from", updated);
+        }
+        if (f.LastVisitedFrom is { } visited)
+        {
+            conditions++;
+            clause = "last_visited_at >= @last_visited_from";
+            bound = ("@last_visited_from", visited);
+        }
+        if (f.VisitCountMin is { } min)
+        {
+            conditions++;
+            clause = "visit_count >= @visit_min";
+            bound = ("@visit_min", min);
+        }
+        if (conditions != 1 || bound is null) return false;
+
+        // 归属谓词也不能有：IsAreaFilter 只判"除归属外"的条件，FolderId/Unfiled 由调用方判——
+        // 这里若漏判，带 FolderId + CreatedFrom 的查询会静默丢掉目录条件。
+        if (f.FolderId is not null || f.Unfiled is not null) return false;
+
+        // 其余条件必须全空：智能列表的四种形态都不带别的过滤（多条件查询走 EF 的正确性路径）。
+        if (!IsAreaFilter(f with
+            {
+                CreatedFrom = null,
+                UpdatedFrom = null,
+                LastVisitedFrom = null,
+                VisitCountMin = null,
+            }))
+            return false;
+
+        where = clause!;
+        parameters = [bound.Value];
+        return true;
+    }
+
+    /// <summary>
+    /// 智能列表直读：谓词 = 时间窗/访问次数，排序 = 白名单 1–2 列（与 EF 的 ID 兜底、NULL 恒排最后同口径）。
+    /// 十万行全量取数走原生 reader：省掉 EF 物化/投影管线，首屏的「计数 + 首页」也不必等整个查询编译。
+    /// </summary>
+    private static bool TryBuildRawSmartListSql(
+        LinkQuerySpec spec, out string sql, out (string Name, object? Value)[] parameters)
+    {
+        sql = string.Empty;
+        parameters = [];
+        if (!TryBuildSmartListWhereSql(spec.Filter, out var where, out var whereParameters)) return false;
+        if (spec.Sort.Count is < 1 or > 2) return false;
+
+        var order = new List<string>(3);
+        foreach (var clause in spec.Sort)
+        {
+            var expr = clause.Field switch
+            {
+                "title" => "title COLLATE NOCASE",
+                "url" => "url COLLATE NOCASE",
+                "created_at" => "created_at",
+                "updated_at" => "updated_at",
+                "last_visited_at" => "last_visited_at",
+                "visit_count" => "visit_count",
+                "is_important" => "is_important",
+                _ => null,
+            };
+            if (expr is null) return false;
+
+            var dir = clause.Dir == SortDir.Desc ? "DESC" : "ASC";
+            if (clause.Field == "last_visited_at")
+                order.Add($"(last_visited_at IS NULL) ASC, last_visited_at {dir}");
+            else
+                order.Add($"{expr} {dir}");
+        }
+        // ID 兜底方向随最后一条排序（与 BuildPageQuery 一致）：倒序扫也整段命中复合索引。
+        order.Add($"id {(spec.Sort[^1].Dir == SortDir.Desc ? "DESC" : "ASC")}");
+
+        var sb = new StringBuilder(
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links WHERE ");
+        sb.Append(where);
+        sb.Append(" ORDER BY ").Append(string.Join(", ", order));
+
+        var list = new List<(string Name, object? Value)>(whereParameters.Length + 2);
+        list.AddRange(whereParameters);
+        if (spec.Page.Size > 0)
+        {
+            sb.Append(" LIMIT @take OFFSET @skip");
+            list.Add(("@take", spec.Page.Size));
+            list.Add(("@skip", spec.Page.Skip));
+        }
+        sql = sb.ToString();
+        parameters = [.. list];
+        return true;
     }
 
     /// <summary>EF 投影路径（复杂形态兜底；正确性基准 = <c>ListAsync().ToDto()</c> 实体路径，测试逐字段对照）。</summary>
@@ -389,6 +504,18 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             foreach (var (name, value) in searchParameters)
                 searchCmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
             return Convert.ToInt32(await searchCmd.ExecuteScalarAsync(ct),
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        // 智能列表计数也直读：与取页共用同一谓词（时间窗走 idx_links_created/updated/last_visited，
+        // 访问次数过滤走表扫但只数不取列），十万行 COUNT 不经过 EF 查询管线。
+        if (TryBuildSmartListWhereSql(filter, out var smartWhere, out var smartParameters))
+        {
+            using var smartCmd = await RawSql.CreateAsync(db,
+                "SELECT COUNT(*) FROM links WHERE (" + smartWhere + ")", ct);
+            foreach (var (name, value) in smartParameters)
+                smartCmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            return Convert.ToInt32(await smartCmd.ExecuteScalarAsync(ct),
                 System.Globalization.CultureInfo.InvariantCulture);
         }
 

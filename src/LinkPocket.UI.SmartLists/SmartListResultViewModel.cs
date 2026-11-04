@@ -5,12 +5,14 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.Views;
 
 namespace LinkPocket.ViewModels
 {
@@ -22,15 +24,28 @@ namespace LinkPocket.ViewModels
     /// 删除 = 确认后移入回收站并重载当前列表（Reloaded 事件驱动视图重绑）。
     /// 选中由全站共享的 <see cref="ListSelection"/> 承载（本页为**单选中**：结果页 = 只读页，
     /// 可读、可选、不可操作——不引入删除/Ctrl+A 等操作键）。
+    ///
+    /// 装载口径（十万行）：**首帧 = 真实总数 + 首页真实行**，其余行是同高占位行，
+    /// 全量数据在后台取回后按页**原位填充**——不替换集合、不重建行、不移动滚动位置。
+    /// 排序仍是内存排序（位置列走目录树前序整数键，不再逐目录拼显示路径）。
     /// </summary>
     public class SmartListResultViewModel : INotifyPropertyChanged
     {
+        /// <summary>首帧取多少条真实行（与搜索页同一量级：一屏多）。</summary>
+        private const int FirstPageRows = 64;
+        /// <summary>后台原位填充的分块大小（单块属性通知有界；块间让出一帧）。</summary>
+        private const int FillChunkRows = 5000;
+        /// <summary>「最常查看」= 全站唯一带「前 N」口径的智能列表。</summary>
+        private const int MostVisitedRows = 20;
+
         /// <summary>引擎客户端门面（分层 API 面，由组合根注入）。</summary>
         private readonly EngineClient _client;
         private readonly INavigationService? _navigation;
         private readonly IDialogService? _dialogs;
         private readonly IContentLocator? _locator;
         private readonly Func<string?, LocValue> _resolveFolderPath;
+        /// <summary>位置排序键：目录树前序序号（0 = 根级）；组合根注入，缺省恒等（测试/无树时退化为稳定顺序）。</summary>
+        private readonly Func<string?, int> _resolveFolderOrder;
         private readonly IBrowseEditState? _editState;
         private readonly IUiNoticeService? _notices;
         private bool _isDeleting;
@@ -58,7 +73,17 @@ namespace LinkPocket.ViewModels
         private string _sortField = "title";
         private bool _sortAscending = true;
 
-        /// <summary>位置列文本缓存（按目录 + 语言版本）：行模板只解析视口内的行，排序时才批量取。</summary>
+        // —— 渐进装载状态（全部只在 UI 线程读写；后台只负责取数） ——
+        private int _loadGeneration;
+        private CancellationTokenSource? _loadCts;
+        private bool _fillComplete = true;
+        private int _loadedRows;
+        private bool _pendingSort;
+        private string _pendingSortField = "title";
+        private bool _pendingSortAscending = true;
+        private bool _selectLastAfterFill;
+
+        /// <summary>位置列文本缓存（按目录 + 语言版本）：行模板只解析视口内的行。</summary>
         private const int MaxPathDisplayChars = 200;
         private readonly Dictionary<string, (int Version, string Text)> _pathTextCache = new(StringComparer.Ordinal);
 
@@ -66,6 +91,9 @@ namespace LinkPocket.ViewModels
 
         /// <summary>删除重载完成后通知视图重绑表格（排序复位 + 行集替换 + 清表格选中）。</summary>
         public event EventHandler? Reloaded;
+
+        /// <summary>后台补全结束时若有排队的排序：集合已重排，视图据此事重绑（保留滚动位置）。</summary>
+        public event EventHandler? ItemsReordered;
 
         /// <summary>宿主（SmartListViewModel.RefreshCurrentAsync 等）在跨页事件刷新后调用，
         /// 触发视图重绑——与删除后重载同一出口（事件只能在声明类内触发，故提供公开方法）。</summary>
@@ -104,6 +132,30 @@ namespace LinkPocket.ViewModels
         {
             get => _items;
             set { _items = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>后台全量补全是否结束（含「无需补全」的小结果集）。UiBench/探针等它的最终态。</summary>
+        public bool IsFillComplete
+        {
+            get => _fillComplete;
+            private set
+            {
+                if (_fillComplete == value) return;
+                _fillComplete = value;
+                OnPropertyChanged();
+            }
+        }
+
+        /// <summary>已填入真实数据的行数（占位行不计；补全后等于 <see cref="TotalCount"/>）。</summary>
+        public int LoadedRows
+        {
+            get => _loadedRows;
+            private set
+            {
+                if (_loadedRows == value) return;
+                _loadedRows = value;
+                OnPropertyChanged();
+            }
         }
 
         /// <summary>空态文案（键 + 参数；语言一变自己重算）。</summary>
@@ -158,7 +210,8 @@ namespace LinkPocket.ViewModels
 
         public SmartListResultViewModel(EngineClient client, string listId, LocValue title,
             INavigationService? navigation, IDialogService? dialogs, Func<string?, LocValue> resolveFolderPath,
-            IContentLocator? locator = null, IBrowseEditState? editState = null, IUiNoticeService? notices = null)
+            IContentLocator? locator = null, IBrowseEditState? editState = null, IUiNoticeService? notices = null,
+            Func<string?, int>? resolveFolderOrder = null)
         {
             _client = client;
             _listId = listId;
@@ -166,6 +219,7 @@ namespace LinkPocket.ViewModels
             _navigation = navigation;
             _dialogs = dialogs;
             _resolveFolderPath = resolveFolderPath;
+            _resolveFolderOrder = resolveFolderOrder ?? (_ => int.MaxValue);
             _locator = locator;
             _editState = editState;
             _notices = notices;
@@ -185,7 +239,7 @@ namespace LinkPocket.ViewModels
             // 只读页的键位延伸（↑/↓/End/F5；不引入任何会改数据的键）
             MoveSelectionCommand = new RelayCommand<object?>(p => MoveSelection(ParseDirection(p)));
             SelectLastCommand = new RelayCommand(SelectLast);
-            // F5 = 重新查询（**导航加载口径**）：亮加载遮罩、结束后播行入场动画 + 保留选中
+            // F5 = 重新查询（**导航加载口径**）：亮加载遮罩、首页落地后视图重绑，剩余行后台补齐
             RefreshCommand = new RelayCommand(() => _ = ReloadAsync(navigating: true));
             // 点空白清选中（BlankClick 挂在结果区；与 Esc 分层共用同一"出口"语义）
             ClearSelectionCommand = new RelayCommand(() => Selection.Clear());
@@ -210,11 +264,23 @@ namespace LinkPocket.ViewModels
         public ICommand RefreshCommand { get; }
         public ICommand ClearSelectionCommand { get; }
 
-        /// <summary>视图在用户点击行时调用（单选中：只读页只有"读 + 选"）。</summary>
-        public void ClickItem(LinkItem item) => Selection.SelectSingle(item.LinkId);
+        /// <summary>视图在用户点击行时调用（单选中：只读页只有"读 + 选"；占位行拒绝）。</summary>
+        public void ClickItem(LinkItem item)
+        {
+            if (item is SmartListResultRow { IsPlaceholder: true }) return;
+            _selectLastAfterFill = false;   // 用户在补全中自己点了行：不再兑现之前的 End 意图
+            Selection.SelectSingle(item.LinkId);
+        }
 
         /// <summary>清空选中与详情栏（返回卡片页/重载列表时由视图或本类调用）。</summary>
-        public void ClearSelection() => Selection.Clear();
+        public void ClearSelection()
+        {
+            _selectLastAfterFill = false;
+            Selection.Clear();
+        }
+
+        /// <summary>取消在途取数/补全（返回卡片页、打开另一个列表、页面卸载时调用）。</summary>
+        public void CancelLoad() => _loadCts?.Cancel();
 
         /// <summary>选中的**唯一投影点**：集合 → 属性通知 + 右栏（恒为单选详情态）。</summary>
         private void OnSelectionChanged()
@@ -226,17 +292,30 @@ namespace LinkPocket.ViewModels
             CommandRefresh.Request();
         }
 
-        /// <summary>把选中集合投影到行模型（模板模式的选中底色由 <see cref="LinkItem.IsSelected"/> 驱动）。</summary>
+        /// <summary>
+        /// 把选中的那一行投影到行模型（模板模式的选中底色由 <see cref="LinkItem.IsSelected"/> 驱动）。
+        /// 本页是**单选中**：只维护"当前选中行 + 上一个选中行"，未选中时 O(1)——十万行首帧不为此扫全表。
+        /// </summary>
         public void ProjectSelection()
         {
-            foreach (var item in _items)
+            LinkItem? selected = null;
+            if (Selection.HasAny)
             {
-                var selected = Selection.Contains(item.LinkId);
-                if (item.IsSelected != selected) item.IsSelected = selected;
+                foreach (var item in _items)
+                {
+                    if (Selection.Contains(item.LinkId)) { selected = item; break; }
+                }
             }
+
+            if (ReferenceEquals(_projectedSelection, selected)) return;
+            if (_projectedSelection is { IsSelected: true }) _projectedSelection.IsSelected = false;
+            if (selected is { IsSelected: false }) selected.IsSelected = true;
+            _projectedSelection = selected;
         }
 
-        /// <summary>位置列文本（目录 + 语言版本缓存，限长 200 字；只服务显示与按位置排序）。</summary>
+        private LinkItem? _projectedSelection;
+
+        /// <summary>位置列文本（目录 + 语言版本缓存，限长 200 字；只服务显示，不参与排序）。</summary>
         public string ResolveFolderPathText(string? listId)
         {
             var key = listId ?? string.Empty;
@@ -253,34 +332,75 @@ namespace LinkPocket.ViewModels
 
         /// <summary>
         /// 外部排序（模板模式）：按列头字段重排当前结果集并**替换集合实例**，由视图重绑。
-        /// 十万行是内存排序（引擎侧不再按列头重查）；返回 false = 排序未变化，视图无需重绑。
+        /// 十万行是内存排序；位置列用目录树前序整数键（不逐目录拼 200 字显示路径）。
+        /// 后台补全尚未结束时只记下排队排序，补全完成后统一应用（行数不完整时排序没有正确结果）。
+        /// 返回 false = 视图无需立即重绑（排序未变化，或已排队到补全完成）。
         /// </summary>
         public bool Sort(string field, bool ascending)
         {
-            if (string.Equals(field, _sortField, StringComparison.Ordinal) && ascending == _sortAscending)
+            var normalized = string.IsNullOrEmpty(field) ? "title" : field;
+            if (string.Equals(normalized, _sortField, StringComparison.Ordinal) && ascending == _sortAscending)
                 return false;
 
-            _sortField = string.IsNullOrEmpty(field) ? "title" : field;
+            _sortField = normalized;
             _sortAscending = ascending;
-            if (_items.Count > 1)
-                Items = new ObservableCollection<LinkItem>(SortItems(_items));
-            ProjectSelection();
+            if (!_fillComplete)
+            {
+                _pendingSort = true;
+                _pendingSortField = normalized;
+                _pendingSortAscending = ascending;
+                return false;
+            }
+
+            ApplySortNow(normalized, ascending);
             return true;
         }
 
-        private IEnumerable<LinkItem> SortItems(IEnumerable<LinkItem> items)
+        private void ApplySortNow(string field, bool ascending)
         {
-            Func<LinkItem, object> key = _sortField switch
-            {
-                "path" => i => ResolveFolderPathText(i.ListId),
-                "updated_at" => i => i.UpdatedAt,
-                "last_visited_at" => i => i.LastVisitedAt ?? DateTime.MinValue,
-                "visit_count" => i => i.VisitCount,
-                "created_at" => i => i.CreatedAt,
-                _ => i => string.IsNullOrEmpty(i.Title) ? i.Url : i.Title,
-            };
-            return _sortAscending ? items.OrderBy(key) : items.OrderByDescending(key);
+            if (_items.Count > 1)
+                Items = NewCollection(SortRows(_items, field, ascending));
+            ProjectSelection();
         }
+
+        /// <summary>一次性集合（构造即 Reset，无逐条通知）：BulkObservableCollection 没有带初值的构造函数。</summary>
+        private static BulkObservableCollection<LinkItem> NewCollection(IEnumerable<LinkItem> rows)
+        {
+            var collection = new BulkObservableCollection<LinkItem>();
+            collection.ReplaceAll(rows);
+            return collection;
+        }
+
+        private List<LinkItem> SortRows(IEnumerable<LinkItem> items, string field, bool ascending)
+        {
+            // 稳定排序 + 强类型键：名称用当前区域比较（与旧口径一致），其余用整数/日期键。
+            return field switch
+            {
+                "path" => ascending
+                    ? items.OrderBy(i => _resolveFolderOrder(i.ListId)).ToList()
+                    : items.OrderByDescending(i => _resolveFolderOrder(i.ListId)).ToList(),
+                "updated_at" => ascending
+                    ? items.OrderBy(i => i.UpdatedAt).ToList()
+                    : items.OrderByDescending(i => i.UpdatedAt).ToList(),
+                "last_visited_at" => ascending
+                    ? items.OrderBy(i => i.LastVisitedAt is null)
+                        .ThenBy(i => i.LastVisitedAt ?? DateTime.MinValue).ToList()
+                    : items.OrderBy(i => i.LastVisitedAt is null)
+                        .ThenByDescending(i => i.LastVisitedAt ?? DateTime.MinValue).ToList(),
+                "visit_count" => ascending
+                    ? items.OrderBy(i => i.VisitCount).ToList()
+                    : items.OrderByDescending(i => i.VisitCount).ToList(),
+                "created_at" => ascending
+                    ? items.OrderBy(i => i.CreatedAt).ToList()
+                    : items.OrderByDescending(i => i.CreatedAt).ToList(),
+                _ => ascending
+                    ? items.OrderBy(TitleKey, StringComparer.CurrentCulture).ToList()
+                    : items.OrderByDescending(TitleKey, StringComparer.CurrentCulture).ToList(),
+            };
+        }
+
+        private static string TitleKey(LinkItem item)
+            => string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
 
         // —— ↑/↓ / End（与浏览页主栏同一套共享语义；顺序由视图注入） ——
 
@@ -298,6 +418,17 @@ namespace LinkPocket.ViewModels
 
         private void SelectLast()
         {
+            // 补全未完成时末行还是占位行：记下意图，等全量落地后再选中 + 滚入视口。
+            if (!_fillComplete)
+            {
+                _selectLastAfterFill = true;
+                return;
+            }
+            SelectLastCore();
+        }
+
+        private void SelectLastCore()
+        {
             var target = Selection.SelectLast(OrderProvider?.Invoke() ?? Array.Empty<string>());
             FocusOn(target);
         }
@@ -310,24 +441,44 @@ namespace LinkPocket.ViewModels
         }
 
         /// <summary>
-        /// 装载当前列表的数据。<c>days</c> = 时间窗覆盖（**null = 命令缺省 7 天**，即用户口径）；
-        /// 探针等自动化用大窗口拿到足够样本，才能真正核对"渲染行序 = 排序"（小窗口在旧数据上恒为空）。
+        /// 装载当前列表的**首页**（真实总数 + 首页真实行 + 同高占位行），返回即上屏；
+        /// 全量数据随后在后台取回并原位填充（<see cref="FillRemainingAsync"/>）。
+        /// <c>days</c> = 时间窗覆盖（**null = 命令缺省 7 天**，即用户口径）；
+        /// 探针等自动化用大窗口拿到足够样本，才能真正核对"渲染行序 = 排序"。
         /// </summary>
         public async Task LoadAsync(int? days = null)
         {
             IsLoading = true;
+            CancelLoad();
+            var cts = new CancellationTokenSource();
+            _loadCts = cts;
+            var gen = ++_loadGeneration;
+            var fillStarted = false;
             try
             {
-                // 三个「最近」= 时间窗筛选，命中多少显示多少（卡片副标题即语义，不设条数上限）；
-                // 「最常查看」=「访问次数前 20」榜单，是全站唯一带「前 N」口径的智能列表。
-                var limit = _listId == "most_visited" ? 20 : 0;
-                // 取数放到线程池：引擎在 SQLite provider 上可能整段同步完成，十万行留在 UI 线程会堵住首帧。
-                List<LinkDto> links = await Task.Run(() => _client.LinkSmartListAsync(_listId, limit, days: days));
+                var isMostVisited = _listId == "most_visited";
+                // 「最常查看」= 先按访问次数取前 20，再由界面按当前列头排序（默认名称升序）；
+                // 其余三个 = 时间窗筛选，命中多少显示多少（无条数上限）。
+                var engineSortField = isMostVisited ? "visit_count" : EngineSortField();
+                var engineSortAsc = isMostVisited ? false : EngineSortAscending();
+                var perPage = isMostVisited ? MostVisitedRows : FirstPageRows;
+                var phase = Stopwatch.StartNew();
 
-                TotalCount = links.Count;
+                SmartListPageDto first;
+                try
+                {
+                    first = await FetchPageAsync(engineSortField, engineSortAsc, page: 1, perPage, days, cts.Token);
+                }
+                catch (OperationCanceledException) { return; }
+
+                if (gen != _loadGeneration) return;
+                var engineMs = phase.ElapsedMilliseconds;
+                phase.Restart();
+
+                TotalCount = isMostVisited ? first.Items.Count : first.TotalCount;
                 _pathTextCache.Clear();   // 目录改名/移动后重载必须重算路径
 
-                if (links.Count == 0)
+                if (TotalCount == 0)
                 {
                     EmptyMessage = _listId switch
                     {
@@ -337,29 +488,239 @@ namespace LinkPocket.ViewModels
                         "most_visited" => Loc.K("smartlists.empty.mostVisited"),
                         _ => Loc.K("smartlists.empty")
                     };
-                    if (_items.Count > 0) Items = new ObservableCollection<LinkItem>();
+                    Items = new BulkObservableCollection<LinkItem>();
+                    LoadedRows = 0;
+                    IsFillComplete = true;
                     HasData = false;
                     return;
                 }
 
-                var items = links.Select(LinkItem.FromDto).ToList();
-                items = SortItems(items).ToList();   // 保留当前列头排序（默认名称升序）
-                // 内容未变 → **保持集合实例不动**（视图不重绑）：切页进入的静默刷新常是这种情况。
-                // 同时不再"先清空再填"——加载期间保留旧内容，避免闪空（与"进入保内容"口径一致）。
-                if (!LinkItem.SameSequence(_items, items))
-                    Items = new ObservableCollection<LinkItem>(items);   // 一次性整体替换（逐条 Add 会 N 次 CollectionChanged）
+                var loadingText = Loc.T("smartlists.rowLoading");
+                var total = TotalCount;
+                var prefetch = first.Items;
+                var rows = await Task.Run(() => BuildInitialRows(total, prefetch, loadingText), cts.Token);
+                if (gen != _loadGeneration) return;
+                var buildMs = phase.ElapsedMilliseconds;
+                phase.Restart();
+
+                if (isMostVisited)
+                {
+                    // 前 20 已按访问次数选出；展示顺序 = 当前列头（默认名称升序）。
+                    rows = SortRows(rows, _sortField, _sortAscending);
+                }
+                else if (_sortField == "path")
+                {
+                    // 引擎没有"目录树位置"排序：首页先按名称上屏，补全完成后统一按位置重排。
+                    _pendingSort = true;
+                    _pendingSortField = "path";
+                    _pendingSortAscending = _sortAscending;
+                }
+
+                Items = NewCollection(rows);
+                LoadedRows = isMostVisited ? rows.Count : Math.Min(total, prefetch.Count);
+                IsFillComplete = isMostVisited || total <= prefetch.Count;
                 ProjectSelection();
                 HasData = true;
+                LpLog.Info(
+                    $"first page kind={_listId} engine={engineMs}ms build={buildMs}ms publish={phase.ElapsedMilliseconds}ms"
+                    + $" rows={rows.Count} filled={LoadedRows}",
+                    category: "app.smartlist");
+
+                if (!IsFillComplete)
+                {
+                    fillStarted = true;
+                    _ = FillRemainingAsync(gen, cts, days);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 被新一次打开/刷新/返回取代：不发布任何半成品状态。
+            }
+            catch (Exception ex)
+            {
+                LpLog.Error("smart list load failed", ex);
+                if (gen == _loadGeneration) IsFillComplete = true;
             }
             finally
             {
-                IsLoading = false;
+                // 后台补全持有本轮 token，由它负责释放；没有补全才在本方法收尾。
+                if (!fillStarted) DisposeLoadToken(cts);
+                if (gen == _loadGeneration) IsLoading = false;
             }
+        }
+
+        private string EngineSortField() => _sortField == "path" ? "title" : _sortField;
+        private bool EngineSortAscending() => _sortField == "path" ? true : _sortAscending;
+
+        private async Task<SmartListPageDto> FetchPageAsync(
+            string sortField, bool ascending, int page, int perPage, int? days, CancellationToken ct)
+            => await Task.Run(() => _client.LinkSmartListPageAsync(
+                _listId,
+                sortBy: sortField,
+                sortOrder: ascending ? "asc" : "desc",
+                page: page,
+                perPage: perPage,
+                days: days,
+                ct: ct), ct);
+
+        /// <summary>首屏行集（后台线程构建）：占位行 + 首页真实行；十万行也不在 UI 线程分配。</summary>
+        private static List<LinkItem> BuildInitialRows(int total, IReadOnlyList<LinkDto> prefetch, string loadingText)
+        {
+            var rows = new List<LinkItem>(total);
+            for (var i = 0; i < total; i++)
+                rows.Add(SmartListResultRow.Placeholder(loadingText));
+
+            var filled = Math.Min(total, prefetch.Count);
+            for (var i = 0; i < filled; i++)
+                ((SmartListResultRow)rows[i]).Fill(prefetch[i]);
+            return rows;
+        }
+
+        /// <summary>
+        /// 后台补齐剩余行：一次取回全量（同一排序）→ 分块**原位填充**占位行。
+        /// 块间让出一帧，最大单次 UI 停摆只跟分块大小走，不跟结果总数走。
+        /// </summary>
+        private async Task FillRemainingAsync(int gen, CancellationTokenSource cts, int? days)
+        {
+            var ct = cts.Token;
+            try
+            {
+                // 先让首帧真正渲染：补页不抢首屏。
+                await Task.Delay(120, ct);
+
+                SmartListPageDto all = null!;
+                for (var attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        all = await FetchPageAsync(EngineSortField(), EngineSortAscending(), 1, 0, days, ct);
+                        break;
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) when (attempt < 2)
+                    {
+                        LpLog.Warn("smart list full fetch failed, retrying", ex, category: "smartlist");
+                        await Task.Delay(100, ct);
+                    }
+                }
+
+                if (gen != _loadGeneration) return;
+                var rows = all.Items;
+
+                // 计数之后被并发删空：以全量结果为准回到空态（不把十万占位行留在屏幕上）。
+                if (rows.Count == 0)
+                {
+                    Items = new BulkObservableCollection<LinkItem>();
+                    TotalCount = 0;
+                    LoadedRows = 0;
+                    IsFillComplete = true;
+                    HasData = false;
+                    return;
+                }
+
+                // 计数与全量取数之间若发生并发写，以全量结果为准调整占位行数。
+                if (rows.Count != _items.Count)
+                    ResizeRows(rows.Count);
+
+                TotalCount = rows.Count;
+                for (var start = 0; start < rows.Count; start += FillChunkRows)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (gen != _loadGeneration) return;
+
+                    var end = Math.Min(start + FillChunkRows, rows.Count);
+                    ApplyRows(rows, start, end);
+                    LoadedRows = end;
+                    if (end < rows.Count) await Task.Delay(1, ct);
+                }
+
+                if (gen != _loadGeneration) return;
+
+                // 选中行可能在补全中才落地 / 数据有更新：统一重投影一次。
+                // 补全前无法判断选中 ID 是否还在后续页里，所以这里才是"剔除已消失项"的最终点。
+                if (Selection.HasAny)
+                {
+                    var changed = Selection.RemoveMissing(id => _items.Any(i => i.LinkId == id));
+                    if (!changed) OnSelectionChanged();
+                }
+                else
+                {
+                    ProjectSelection();
+                }
+
+                if (_pendingSort)
+                {
+                    _pendingSort = false;
+                    ApplySortNow(_pendingSortField, _pendingSortAscending);
+                    ItemsReordered?.Invoke(this, EventArgs.Empty);
+                }
+                if (_selectLastAfterFill)
+                {
+                    _selectLastAfterFill = false;
+                    SelectLastCore();
+                }
+
+                // 终态最后发布：观察方（界面/量具）看到 true 时排序与选中都已经是最终态。
+                IsFillComplete = true;
+            }
+            catch (OperationCanceledException)
+            {
+                // 新一次加载接管；不要发布任何终态。
+            }
+            catch (Exception ex)
+            {
+                if (gen == _loadGeneration)
+                {
+                    LpLog.Error("smart list background fill failed", ex);
+                    IsFillComplete = true;   // 允许 F5 重试，别把界面永久卡在"正在加载…"
+                }
+            }
+            finally
+            {
+                DisposeLoadToken(cts);
+            }
+        }
+
+        /// <summary>把一页 DTO 原位写进对应行（含首屏真实行的覆盖写）；只填占位行或重排后的同一行。</summary>
+        private void ApplyRows(IReadOnlyList<LinkDto> rows, int start, int end)
+        {
+            for (var i = start; i < end && i < _items.Count; i++)
+            {
+                if (_items[i] is not SmartListResultRow row) continue;
+                row.Fill(rows[i]);
+                if (Selection.Contains(row.LinkId)) row.IsSelected = true;
+            }
+        }
+
+        /// <summary>全量结果与首屏计数不一致（并发写）时调整尾部占位行；正常路径不触发。</summary>
+        private void ResizeRows(int count)
+        {
+            if (_items is not BulkObservableCollection<LinkItem> bulk) return;
+            if (count < bulk.Count)
+            {
+                var trimmed = new List<LinkItem>(count);
+                for (var i = 0; i < count; i++) trimmed.Add(bulk[i]);
+                Items = NewCollection(trimmed);
+                ItemsReordered?.Invoke(this, EventArgs.Empty);
+                return;
+            }
+
+            var loadingText = Loc.T("smartlists.rowLoading");
+            var extra = new List<LinkItem>(count - bulk.Count);
+            for (var i = bulk.Count; i < count; i++)
+                extra.Add(SmartListResultRow.Placeholder(loadingText));
+            bulk.AddRange(extra);
+        }
+
+        private void DisposeLoadToken(CancellationTokenSource cts)
+        {
+            if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
+            cts.Dispose();
         }
 
         /// <summary>
         /// 重新查询：重拉当前列表并通知视图重绑（与删除后重载同一条出口）。
-        /// <paramref name="navigating"/> = **用户发起**（F5）：亮加载遮罩、结束后播行入场动画；
+        /// <paramref name="navigating"/> = **用户发起**（F5）：亮加载遮罩、首页落地后重绑；
         /// 删除后的重载、跨页事件刷新等一律 false（静默）——与浏览页的导航加载口径一致。
         /// 选中保留由视图重绑时统一处理（只剔除已不在结果里的 ID）。
         /// </summary>

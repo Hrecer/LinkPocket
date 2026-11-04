@@ -42,7 +42,7 @@ public sealed class EngineHost : IDisposable
     /// 界面宿主用它做精确失效与精确提示；命令行/网关自身是写入方，一般不用它。</summary>
     public IChangeFeed? ChangeFeed => Composition.ChangeFeed;
 
-    /// <summary>外部宿主可见的自描述清单（85 条：66 业务 + 16 编排 + 3 批；不含 3 条 UI 专用 search.session_*）。</summary>
+    /// <summary>外部宿主可见的自描述清单（86 条：67 业务 + 16 编排 + 3 批；不含 3 条 UI 专用 search.session_*）。</summary>
     public EngineManifest Manifest { get; }
 
     /// <summary>按名索引的命令描述符。</summary>

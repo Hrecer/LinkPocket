@@ -14,14 +14,19 @@ public class SmartListResultViewModelTests
         {
             await using (var db = new LinkPocket.Data.LinkPocketDbContext(dbPath))
             {
+                db.Folders.AddRange(
+                    new LinkPocket.Data.Folder { FolderId = "000000000001", Name = "B" },
+                    new LinkPocket.Data.Folder { FolderId = "000000000002", Name = "A" });
                 db.Links.AddRange(
                     new LinkPocket.Data.Link
                     {
                         LinkId = "SLSORT0000000001", Url = "https://c.example", Title = "C", VisitCount = 3,
+                        ListId = "000000000001",
                     },
                     new LinkPocket.Data.Link
                     {
                         LinkId = "SLSORT0000000002", Url = "https://b.example", Title = "B", VisitCount = 1,
+                        ListId = "000000000002",
                     },
                     new LinkPocket.Data.Link
                     {
@@ -30,8 +35,17 @@ public class SmartListResultViewModelTests
                 await db.SaveChangesAsync();
             }
 
+            // 「位置」排序 = 目录树前序整数键（根级 0，其后与树顺序一致），不逐目录拼显示路径。
+            var pathOrder = new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["000000000001"] = 1,
+                ["000000000002"] = 2,
+            };
             var vm = new SmartListResultViewModel(client, "recently_added",
-                Loc.K("smartlists.preset.added"), null, null, _ => LocValue.Empty);
+                Loc.K("smartlists.preset.added"), null, null, _ => LocValue.Empty,
+                resolveFolderOrder: folderId => folderId == null
+                    ? 0
+                    : pathOrder.TryGetValue(folderId, out var order) ? order : int.MaxValue);
             await vm.LoadAsync();
 
             // 默认 = 名称升序（与页面默认排序一致）
@@ -50,6 +64,11 @@ public class SmartListResultViewModelTests
             Assert.True(vm.Sort("title", false));
             Assert.Equal(["C", "B", "A"], vm.Items.Select(i => i.Title));
             Assert.True(vm.Selection.Contains(selectedId));
+            Assert.True(vm.Items.Single(i => i.LinkId == selectedId).IsSelected);
+
+            // 位置：根级最前，其后按目录树前序（F-B=1 在 F-A=2 之前）——与目录树显示顺序一致。
+            Assert.True(vm.Sort("path", true));
+            Assert.Equal(["A", "C", "B"], vm.Items.Select(i => i.Title));
             Assert.True(vm.Items.Single(i => i.LinkId == selectedId).IsSelected);
         }
         finally

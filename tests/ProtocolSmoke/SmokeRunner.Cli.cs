@@ -23,9 +23,9 @@ internal static partial class SmokeRunner
 
         try
         {
-            // 外部宿主不注册界面专用搜索会话：85 = 66 业务 + 16 编排 + 3 批（界面宿主才是 88）。
-            Asserts.That(host.Commands.Count == 85 && !host.Commands.ContainsKey("search.session_open"),
-                $"外部命令面应为 85 条且不含 UI 会话，实际 {host.Commands.Count}");
+            // 外部宿主不注册界面专用搜索会话：86 = 67 业务 + 16 编排 + 3 批（界面宿主才是 89）。
+            Asserts.That(host.Commands.Count == 86 && !host.Commands.ContainsKey("search.session_open"),
+                $"外部命令面应为 86 条且不含 UI 会话，实际 {host.Commands.Count}");
             await CliSection(host);
             await GatewaySection(server, host);
             Console.WriteLine("[OK] §12 命令行与网关：命令行直调/两段写法/空跑/两阶段确认 + MCP 初始化/工具面/工具调用/资源读取");

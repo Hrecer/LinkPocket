@@ -170,6 +170,10 @@ public sealed partial class EngineClient
     public Task<List<LinkDto>> LinkSmartListAsync(string kind, int? limit = null, int? days = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<List<LinkDto>>("links.smart_list", new { kind, limit, days }, o, ct);
 
+    /// <summary>Paged smart list (total + one page; sort_by defaults to the preset's natural order; per_page=0 returns all)</summary>
+    public Task<SmartListPageDto> LinkSmartListPageAsync(string kind, string? sortBy = null, string? sortOrder = null, int? page = null, int? perPage = null, int? days = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<SmartListPageDto>("links.smart_list_page", new { kind, sort_by = sortBy, sort_order = sortOrder, page, per_page = perPage, days }, o, ct);
+
     /// <summary>Database statistics: total links / trash item count / root bookmark count / direct child link count per folder</summary>
     public Task<LinkCountsDto> LinkStatsAsync(CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<LinkCountsDto>("links.stats", null, o, ct);

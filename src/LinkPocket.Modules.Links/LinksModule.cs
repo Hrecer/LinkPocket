@@ -23,6 +23,7 @@ public static class LinksModule
             new LinkRootsHandler(),
             new LinkStatsHandler(),
             new LinkSmartListHandler(),
+            new LinkSmartListPageHandler(),
             new LinkMetadataFetchHandler(),
             new LinkMetadataFetchBatchHandler(),
             new LinkQueryHandler(),

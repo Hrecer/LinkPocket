@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -7,6 +8,8 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Media;
+using LinkPocket.Contracts;
 using LinkPocket.Input;
 using LinkPocket.Models;
 using LinkPocket.Services;
@@ -31,11 +34,16 @@ namespace LinkPocket.Views
         private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
         private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
+        private DataTemplate? _fullRowTemplate;
+        private DataTemplate? _compactRowTemplate;
+        private int _rowTemplateGen;
 
         public SmartListsPage()
         {
             InitializeComponent();
             SetupTable();
+            _fullRowTemplate = SmartTable.ItemTemplate;
+            _compactRowTemplate = (DataTemplate)Resources["SmartListRowCompactTemplate"];
             Focusable = true;
             DataContextChanged += (_, __) => WireOnce();
             Loaded += (_, __) => WireOnce();
@@ -220,15 +228,20 @@ namespace LinkPocket.Views
                     _boundResult.FocusRowRequested -= OnResultFocusRowRequested;
                     _boundResult.Selection.Changed -= OnResultSelectionChanged;
                     _boundResult.RefreshCompleted -= OnResultRefreshCompleted;
+                    _boundResult.ItemsReordered -= OnResultItemsReordered;
                 }
                 _boundResult = resultVm;
                 resultVm.Reloaded += OnResultReloaded;
                 resultVm.FocusRowRequested += OnResultFocusRowRequested;
                 resultVm.Selection.Changed += OnResultSelectionChanged;
                 resultVm.RefreshCompleted += OnResultRefreshCompleted;
+                resultVm.ItemsReordered += OnResultItemsReordered;
             }
-            // 视觉顺序注入（↑/↓、End 据此计算；单一来源 = VM 当前排序后的集合）
-            resultVm.OrderProvider = () => SmartTable.OrderedItems().OfType<LinkItem>().Select(i => i.LinkId).ToList();
+            // 视觉顺序注入（↑/↓、End 据此计算；单一来源 = VM 当前排序后的集合）。
+            // 补全未完成时只算已落地（非空 ID）的行：占位行没有身份，不能作为选中目标。
+            resultVm.OrderProvider = () => SmartTable.OrderedItems().OfType<LinkItem>()
+                .Where(i => !string.IsNullOrEmpty(i.LinkId))
+                .Select(i => i.LinkId).ToList();
 
             // 换列表 = 回到默认名称升序；同一列表重绑（F5 / 删除后重载）保留用户当前排序
             if (switchedList)
@@ -246,20 +259,100 @@ namespace LinkPocket.Views
             // 空态先就位（ItemsSource = null 时也不至于露出旧空态），再绑数据
             SmartTable.EmptyContent = BuildSmartState("bookmark-off-outline", resultVm.EmptyMessage,
                 Loc.K("smartlists.liveHint"));
+            // 新结果集先挂紧凑行模板：首帧只实例化标题 + URL（真实数据、同高），
+            // 完整模板在首帧渲染后恢复——位置/日期/次数/图标随后补全，不改变滚动范围。
+            ApplyCompactRowTemplate();
+            var bindSw = Stopwatch.StartNew();
             SmartTable.ItemsSource = null;
             SmartTable.ItemsSource = resultVm.Items;
 
             if (switchedList) resultVm.ClearSelection();   // 换列表：旧选中已无意义
-            else resultVm.Selection.RemoveMissing(id => resultVm.Items.Any(i => i.LinkId == id));   // 重绑：保留仍在结果里的
+            else if (resultVm.IsFillComplete)
+                resultVm.Selection.RemoveMissing(id => resultVm.Items.Any(i => i.LinkId == id));   // 重绑：保留仍在结果里的
+            // 补全未完成：暂不剔除（选中项可能在后续页里），全量落地后由结果 VM 统一 RemoveMissing
             resultVm.ProjectSelection();   // 模板模式的选中底色由 LinkItem.IsSelected 驱动
             SmartSidebar.DataContext = resultVm.Details;
             // 模板模式只实现视口行：这里同步落地一次布局，保证"结果已就绪"时首帧行真的生成
             //（否则极慢主机/离屏测量下可能等到下一次外部失效才实现行容器）。
             // 列宽会按滚动条扣除后的真实行区宽度重算（探针按 225/337 卡住）。
             SmartTable.UpdateLayout();
+            LpLog.Info($"rebind rows={resultVm.Items.Count} bind+layout={bindSw.ElapsedMilliseconds}ms",
+                category: "app.smartlist");
+        }
+
+        /// <summary>新结果集先换紧凑行模板（标题 + URL、真实数据、同高），让首帧只实例化两个文本块。</summary>
+        private void ApplyCompactRowTemplate()
+        {
+            if (_compactRowTemplate is null || _fullRowTemplate is null) return;
+            var gen = ++_rowTemplateGen;
+            SmartTable.ItemTemplate = _compactRowTemplate;
+            RestoreFullRowTemplateAfterFirstFrame(gen);
+        }
+
+        /// <summary>等紧凑行真的落地并渲染出一帧后再恢复完整模板（挂在 Loaded/Background 会抢在首帧之前，
+        /// 首帧又背上完整模板的布局——与搜索页/浏览页同一判据）。</summary>
+        private void RestoreFullRowTemplateAfterFirstFrame(int gen)
+        {
+            var restored = false;
+            var compactLaidOut = false;
+            EventHandler? onRendered = null;
+            EventHandler? onLayout = null;
+            System.Windows.Threading.DispatcherTimer? fallback = null;
+
+            void Restore()
+            {
+                if (restored) return;
+                restored = true;
+                if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
+                if (onLayout is not null) SmartTable.LayoutUpdated -= onLayout;
+                fallback?.Stop();
+                if (gen != _rowTemplateGen || _fullRowTemplate is null) return;
+                SmartTable.ItemTemplate = _fullRowTemplate;
+            }
+
+            onLayout = (_, _) =>
+            {
+                // 无命中时没有行容器可等：空态本身已经布局完成，按"紧凑帧已落地"处理。
+                if (!HasCompactRow(SmartTable) && SmartTable.RowsList.Items.Count != 0) return;
+                compactLaidOut = true;
+                if (onLayout is not null) SmartTable.LayoutUpdated -= onLayout;
+            };
+            SmartTable.LayoutUpdated += onLayout;
+
+            onRendered = (_, _) =>
+            {
+                if (!compactLaidOut) return;
+                CompositionTarget.Rendering -= onRendered;
+                fallback?.Stop();
+                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(Restore));
+            };
+            CompositionTarget.Rendering += onRendered;
+            fallback = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(250),
+            };
+            fallback.Tick += (_, _) => Restore();
+            fallback.Start();
+        }
+
+        private static bool HasCompactRow(DependencyObject root)
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is FrameworkElement { Name: "SmartListRowCompact" }) return true;
+                if (HasCompactRow(child)) return true;
+            }
+            return false;
         }
 
         private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();
+
+        /// <summary>后台补全结束时应用了排队的排序（集合已替换）：重绑数据源并保留滚动位置。</summary>
+        private void OnResultItemsReordered(object? sender, EventArgs e)
+        {
+            if (ResultVm is { } vm) RebindItems(vm);
+        }
 
         /// <summary>用户发起的重查（F5）结束：播行入场动画（UIKit 唯一实现）+ 焦点收回页内。</summary>
         private void OnResultRefreshCompleted(object? sender, EventArgs e)
@@ -279,13 +372,15 @@ namespace LinkPocket.Views
             if (e.ClickCount == 2) ResultVm?.OpenInBrowserCommand.Execute(null);
         }
 
-        /// <summary>排序后重绑列表（模板模式只重绑数据源，不为十万行建控件）；保留滚动位置。</summary>
+        /// <summary>排序后重绑列表（模板模式只重绑数据源，不为十万行建控件）；保留滚动位置。
+        /// 同步落地一次布局：排序的"可见代价"（视口行重建）计入本次操作，而不是拖到下一帧。</summary>
         private void RebindItems(SmartListResultViewModel vm)
         {
             var offset = SmartTable.VerticalOffset;
             SmartTable.ItemsSource = null;
             SmartTable.ItemsSource = vm.Items;
             vm.ProjectSelection();
+            SmartTable.UpdateLayout();
             if (offset > 0)
                 Dispatcher.BeginInvoke(new Action(() => SmartTable.ScrollToVerticalOffset(offset)),
                     System.Windows.Threading.DispatcherPriority.Loaded);

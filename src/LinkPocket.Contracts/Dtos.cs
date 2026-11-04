@@ -156,6 +156,16 @@ public class PagedLinksDto
     [JsonPropertyName("last_page")] public int LastPage { get; set; }
 }
 
+/// <summary>
+/// 智能列表分页结果：界面首帧只要「真实总数 + 首页」，剩余行在后台按同一排序补齐
+/// （总数与行集来自同一次命令；per_page=0 时 total 直接等于返回行数，不再单独 COUNT）。
+/// </summary>
+public class SmartListPageDto
+{
+    [JsonPropertyName("total_count")] public int TotalCount { get; set; }
+    [JsonPropertyName("items")] public List<LinkDto> Items { get; set; } = new();
+}
+
 /// <summary>回收站平铺条目类型常量（杜绝 "link"/"folder" 魔法值拼写错即静默失效）。</summary>
 public static class TrashEntryType
 {

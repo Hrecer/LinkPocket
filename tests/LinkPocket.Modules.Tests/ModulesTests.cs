@@ -6,17 +6,17 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：69 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：70 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
-    public void Describe_Returns_All_69_Commands()
+    public void Describe_Returns_All_70_Commands()
     {
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(69, manifest.Commands.Count);
-        Assert.Equal(69, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(70, manifest.Commands.Count);
+        Assert.Equal(70, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -25,7 +25,7 @@ public class CatalogTests
     {
         var (engine, _, _) = TestHost.Create();
         Assert.Equal(15, engine.Describe("folders").Commands.Count);  // + folders.tree_links（树叶子懒加载的轻量出口）
-        Assert.Equal(18, engine.Describe("links").Commands.Count);
+        Assert.Equal(19, engine.Describe("links").Commands.Count);
         Assert.Equal(9, engine.Describe("trash").Commands.Count);
         Assert.Equal(4, engine.Describe("favicon").Commands.Count);
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
@@ -662,6 +662,55 @@ public class LinksModuleTests
         // 「前 N」只由显式 limit 表达（界面只对「最常查看（前 20）」这样做）。
         var capped = await engine.QueryAsync<List<LinkDto>>("links.smart_list", new { kind = "recently_added", limit = 7 });
         Assert.Equal(7, capped.Count);
+    }
+
+    [Fact]
+    public async Task SmartListPage_TotalAndPaging_Sorted_TopN()
+    {
+        var (engine, factory, _) = TestHost.Create();
+        await using (var db = factory.CreateDbContext())
+        {
+            for (var i = 0; i < 60; i++)
+                db.Links.Add(new LinkPocket.Data.Link
+                {
+                    LinkId = $"SLP{i:D13}",
+                    Url = $"https://smart-page.example/{i}",
+                    Title = $"智能命中 {i:D3}",
+                    VisitCount = i < 25 ? 5 : 0,
+                });
+            await db.SaveChangesAsync();
+        }
+
+        // 首屏口径：真实总数 + 指定排序的一页（计数与取页同一次命令）。
+        var first = await engine.QueryAsync<SmartListPageDto>("links.smart_list_page", new
+        {
+            kind = "recently_added", sort_by = "title", sort_order = "asc", page = 1, per_page = 2,
+        });
+        Assert.Equal(60, first.TotalCount);
+        Assert.Equal(["智能命中 000", "智能命中 001"], first.Items.Select(i => i.Title));
+
+        // 页码是 1-based，翻页不重不漏。
+        var third = await engine.QueryAsync<SmartListPageDto>("links.smart_list_page", new
+        {
+            kind = "recently_added", sort_by = "title", sort_order = "asc", page = 3, per_page = 2,
+        });
+        Assert.Equal(["智能命中 004", "智能命中 005"], third.Items.Select(i => i.Title));
+
+        // per_page=0 = 全部命中（外部调用方的缺省语义；不再有隐藏上限）。
+        var all = await engine.QueryAsync<SmartListPageDto>("links.smart_list_page", new
+        {
+            kind = "recently_added", sort_by = "title", sort_order = "asc", per_page = 0,
+        });
+        Assert.Equal(60, all.TotalCount);
+        Assert.Equal(60, all.Items.Count);
+
+        // 「最常查看」= 先按访问次数取前 20，再由界面按当前列头排序。
+        var most = await engine.QueryAsync<SmartListPageDto>("links.smart_list_page", new
+        {
+            kind = "most_visited", sort_by = "visit_count", sort_order = "desc", per_page = 20,
+        });
+        Assert.Equal(20, most.Items.Count);
+        Assert.All(most.Items, i => Assert.True(i.VisitCount >= 1));
     }
 
     [Fact]

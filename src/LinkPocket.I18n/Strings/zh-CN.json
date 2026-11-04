@@ -406,6 +406,7 @@
   "smartlists.preset.mostVisited": "最常查看",
   "smartlists.preset.mostVisitedDesc": "访问次数前 20 的书签",
   "smartlists.liveHint": "书签的变动会实时汇集到这里",
+  "smartlists.rowLoading": "正在加载…",
   "smartlists.sortHint": "· 按{0}{1}",
   "sort.asc": "升序",
   "sort.desc": "降序",

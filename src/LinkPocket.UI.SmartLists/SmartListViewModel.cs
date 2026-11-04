@@ -25,8 +25,10 @@ namespace LinkPocket.ViewModels
         private readonly Services.UiPortProvider _ports;
         private readonly IContentLocator? _locator;
         private readonly Func<string?, LocValue> _resolveFolderPath;
+        private readonly Func<string?, int>? _resolveFolderOrder;
         private bool _isLoading;
         private int _openGeneration;   // 打开代次：GoBack / 重新打开时递增，使在途结果失效
+        private SmartListResultViewModel? _loadingResult;   // 首页仍在取的结果页（GoBack 要能取消它）
         private ObservableCollection<SmartListCardItem> _cards = new();
         private SmartListResultViewModel? _resultViewModel;
 
@@ -42,12 +44,14 @@ namespace LinkPocket.ViewModels
         /// （MainViewModel 注入，与浏览页同一份树）。
         /// </summary>
         public SmartListViewModel(EngineClient api, Services.UiPortProvider ports,
-            Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null)
+            Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null,
+            Func<string?, int>? resolveFolderOrder = null)
         {
             _api = api;
             _ports = ports;
             _locator = locator;
             _resolveFolderPath = resolveFolderPath;
+            _resolveFolderOrder = resolveFolderOrder;
             ResolveFolderPath = resolveFolderPath;
             GoBackCommand = new RelayCommand(GoBack, () => ResultViewModel != null);
             InitializeCards();
@@ -101,18 +105,26 @@ namespace LinkPocket.ViewModels
         {
             IsLoading = true;
             var generation = ++_openGeneration;
+            _loadingResult?.CancelLoad();
+            ResultViewModel?.CancelLoad();
+            SmartListResultViewModel? resultVm = null;
             try
             {
                 var def = Definition(listId);
-                var resultVm = new SmartListResultViewModel(_api, listId, def.Title,
+                resultVm = new SmartListResultViewModel(_api, listId, def.Title,
                     _ports.Navigation, _ports.Dialogs, _resolveFolderPath, _locator,
-                    _ports.BrowseEdit, _ports.Notices)
+                    _ports.BrowseEdit, _ports.Notices, _resolveFolderOrder)
                 {
                     Subtitle = def.Subtitle,
                 };
+                _loadingResult = resultVm;
                 await resultVm.LoadAsync(days);
                 // 代次校验：期间用户已返回卡片页或打开了别的列表 → 晚到结果不覆盖
-                if (generation != _openGeneration) return;
+                if (generation != _openGeneration)
+                {
+                    resultVm.CancelLoad();
+                    return;
+                }
                 ResultViewModel = resultVm;
             }
             catch (Exception ex)
@@ -122,13 +134,16 @@ namespace LinkPocket.ViewModels
             }
             finally
             {
-                IsLoading = false;
+                if (ReferenceEquals(_loadingResult, resultVm)) _loadingResult = null;
+                if (generation == _openGeneration) IsLoading = false;
             }
         }
 
         public void GoBack()
         {
             _openGeneration++;   // 使在途加载结果失效
+            _loadingResult?.CancelLoad();
+            ResultViewModel?.CancelLoad();
             ResultViewModel = null;
         }
 
