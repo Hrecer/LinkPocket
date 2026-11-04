@@ -36,15 +36,10 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>启动直达目录（<c>--folder &lt;id&gt;</c>，供外部工具/深路径交互实测使用）。</summary>
     internal string? StartupFolderId { get; set; }
 
-    /// <summary>贴靠/最大化时壳体贴满窗口（无外边距、无圆角）；普通浮动窗才保留悬浮壳。</summary>
-    private bool _flushShell;
-    private bool _frameModeApplied;
 
-    /// <summary>用户正在拖边缘/拖标题栏（WM_ENTERSIZEMOVE 与 WM_EXITSIZEMOVE 之间）。
-    /// 互动缩放期间只承认"至少一维满格"的平铺，理由见 <see cref="IsTiledRect"/>。</summary>
+    /// <summary>用户正在拖动/缩放（`WM_ENTERSIZEMOVE`…`WM_EXITSIZEMOVE`）。圆角只在循环外重判：
+    /// 循环内跟着矩形走，窗口擦过一个贴靠位就会一帧方一帧圆（现场：角在跳）。</summary>
     private bool _inSizeMove;
-
-    private HwndSource? _hwndSource;
 
     public MainWindow(Services.AppHost host)
     {
@@ -128,16 +123,19 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         ContextRefresh.Install(this, TitleBar);
 
         Loaded += MainWindow_Loaded;
-        StateChanged += Window_StateChanged;
-        SizeChanged += (_, _) => UpdateShellClip();
-        // 贴靠/标题栏拖动都走 Win32 窗口消息：在几何提交前同步切换壳形态，避免先闪一帧旧状态。
+        // 圆角是分层窗自己画的（Win10 没有 DWM 圆角）。窗口矩形 = 可见窗口，所以这里只管一件事：
+        // 最大化时把圆角收成 0（四角本来就在屏幕外，留着只会在屏幕上缺出四个缺口）。
+        StateChanged += (_, _) => ApplyCornerRadius();
+        // 裁剪必须跟着**壳自己的**尺寸：改圆角/尺寸时窗口尺寸不一定变，只有壳变。
+        WindowShell.SizeChanged += (_, _) => UpdateShellClip();
+        Loaded += (_, _) => ApplyCornerRadius();
+        // 贴靠（Aero Snap）不改 WindowState（仍是 Normal），只能按几何判；但**只在几何提交之后**判，
+        // 而且拖动/缩放循环里不判（那时矩形会擦过各种贴靠位，跟着判就是角在跳）。
         SourceInitialized += (_, _) =>
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            _hwndSource = HwndSource.FromHwnd(hwnd);
-            _hwndSource?.AddHook(WndProc);
+            HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
         };
-        Loaded += (_, _) => UpdateFrameMode();
         // 分段胶囊导航 = SlidingNavStrip 组件（几何贴齐与滑动动画由组件自持）：
         // 选中项经 TwoWay 绑定同步，本窗口零导航动画代码。
     }
@@ -217,12 +215,108 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         try
         {
             var top = TitleBar.TransformToAncestor(this).Transform(new Point(0, 0)).Y;
-            chrome.CaptionHeight = top + TitleBar.ActualHeight;
+            var height = top + TitleBar.ActualHeight;
+            // 只在真的变了才写：写它会让系统重算非客户区（拖动/缩放期间尤其贵）。
+            if (Math.Abs(chrome.CaptionHeight - height) > 0.5) chrome.CaptionHeight = height;
         }
         catch (InvalidOperationException)
         {
             chrome.CaptionHeight = TitleBar.ActualHeight;
         }
+    }
+
+    /// <summary>圆角半径：平时 22；最大化或正好填满一个平铺格时 0（四角在屏幕外 / 贴着屏幕边，
+    /// 留着只会在屏幕上啃出缺口）。</summary>
+    private void ApplyCornerRadius()
+    {
+        var radius = WindowState == WindowState.Maximized || IsTiled() ? 0 : 22;
+        if (Math.Abs(WindowShell.CornerRadius.TopLeft - radius) < 0.1) return;
+        WindowShell.CornerRadius = new CornerRadius(radius);
+        UpdateShellClip();
+    }
+
+    /// <summary>
+    /// `CornerRadius` 不裁子内容：给壳补一次圆角裁剪。
+    /// ⚠️ 必须挂在**壳自己的** `SizeChanged` 上——只挂窗口的会让裁剪停在旧尺寸上，内容四角不圆。
+    /// </summary>
+    /// <summary>拖动/缩放的起止 + 几何提交后的重判。见 ctor 里的说明。</summary>
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmEnterSizeMove)
+        {
+            _inSizeMove = true;
+        }
+        else if (msg == WmExitSizeMove)
+        {
+            _inSizeMove = false;
+            ApplyCornerRadius();
+        }
+        else if (msg == WmWindowPosChanged && !_inSizeMove)
+        {
+            ApplyCornerRadius();
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>按窗口**实际矩形**判是否正好填满一个平铺格（贴靠态）。</summary>
+    private bool IsTiled()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        return hwnd != IntPtr.Zero && GetWindowRect(hwnd, out var rect) && IsTiledRect(rect);
+    }
+
+    /// <summary>给定外框是否为平铺格：贴齐工作区边 + 尺寸属于**同一个布局族**。</summary>
+    /// <remarks>
+    /// 宽高不能各自独立取分数：列类布局（1/3、1/2、2/3、70/30、1/4、3/4）**高度必定整格**，
+    /// 行类布局**宽度必定整格**，角格只有「列宽 × 半高」。宽高任意组合都算贴靠的话，
+    /// 窗口在贴靠位附近挪动会被反复判成「又贴靠了」（现场：直角/圆角来回闪）。
+    /// 贴边与满格一律按**覆盖**判：最大化矩形会被 `WindowChrome` 按缩放边向外膨胀一圈。
+    /// </remarks>
+    private static bool IsTiledRect(NativeRect wr)
+    {
+        var monitor = MonitorFromRect(ref wr, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero) return false;
+        var info = new NativeMonitorInfo { cbSize = Marshal.SizeOf<NativeMonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info)) return false;
+
+        var work = info.rcWork;
+        double w = wr.Right - wr.Left, h = wr.Bottom - wr.Top;
+        double ww = work.Right - work.Left, wh = work.Bottom - work.Top;
+        if (ww <= 0 || wh <= 0) return false;
+
+        const double tol = 4;
+        bool Near(double value, double target) => Math.Abs(value - target) <= tol;
+
+        bool ColumnWidth(double value) =>
+            Near(value, ww / 4) || Near(value, ww / 3) || Near(value, ww * 0.3)
+            || Near(value, ww * 0.4) || Near(value, ww / 2) || Near(value, ww * 0.6)
+            || Near(value, ww * 2 / 3) || Near(value, ww * 0.7) || Near(value, ww * 3 / 4);
+
+        bool RowHeight(double value) =>
+            Near(value, wh / 4) || Near(value, wh / 3) || Near(value, wh / 2)
+            || Near(value, wh * 2 / 3) || Near(value, wh * 3 / 4);
+
+        var left = wr.Left <= work.Left + tol;
+        var right = wr.Right >= work.Right - tol;
+        var top = wr.Top <= work.Top + tol;
+        var bottom = wr.Bottom >= work.Bottom - tol;
+        var fullW = w >= ww - tol;
+        var fullH = h >= wh - tol;
+
+        if (fullW && fullH) return true;                                 // 满工作区
+        if (fullH && (left || right) && ColumnWidth(w)) return true;      // 竖切：列
+        if (fullW && (top || bottom) && RowHeight(h)) return true;        // 横切：行
+        return (left || right) && (top || bottom) && ColumnWidth(w) && Near(h, wh / 2);   // 角格
+    }
+
+    private void UpdateShellClip()
+    {
+        var radius = WindowShell.CornerRadius.TopLeft;
+        var w = WindowShell.ActualWidth;
+        var h = WindowShell.ActualHeight;
+        WindowShell.Clip = radius <= 0 || w <= 0 || h <= 0
+            ? null
+            : new RectangleGeometry(new Rect(0, 0, w, h), radius, radius);
     }
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -241,170 +335,6 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     private void MaximizeButton_Click(object sender, RoutedEventArgs e)
     {
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-    }
-
-    private void Window_StateChanged(object? sender, EventArgs e)
-    {
-        // 最大化/还原/最小化都会改变窗口区域；贴靠态由几何判定（WindowState 仍是 Normal）。
-        UpdateFrameMode();
-    }
-
-    /// <summary>普通浮动窗保留 18px 阴影外边距 + 22 圆角；贴靠/最大化时壳体贴满窗口，无外距、无圆角。</summary>
-    private void UpdateFrameMode()
-        => ApplyFrameMode(WindowState == WindowState.Maximized || IsSnappedToWorkArea());
-
-    /// <summary>切换壳形态。只在形态真的变化时改属性，避免拖动/缩放期间反复触发整窗布局。</summary>
-    private void ApplyFrameMode(bool flush)
-    {
-        if (_frameModeApplied && flush == _flushShell) return;
-        _frameModeApplied = true;
-        _flushShell = flush;
-
-        WindowShell.Margin = flush ? new Thickness(0) : new Thickness(ShellMargin);
-        WindowShell.CornerRadius = flush ? new CornerRadius(0) : new CornerRadius(22);
-        // 缩放热区从**窗口外缘**往里量：浮动窗有 ShellMargin 的透明外边距挡在可见边框外面，
-        // 贴靠/最大化没有那层外距 ⇒ 热区必须自己瘦回去，否则"看得见的内容"往下 26px 都还算缩放边
-        // （鼠标停在标题栏上就被判成 HTTOP，出现上下箭头）。
-        ApplyResizeBorder(flush ? ResizeGrip : ShellMargin + ResizeGrip);
-        UpdateShellClip();
-
-        // 外距变了 ⇒ 标题栏的窗口坐标偏移变了；等布局落地后重算 caption 高度。
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateCaptionHeight));
-    }
-
-    private void ApplyResizeBorder(double thickness)
-    {
-        var chrome = WindowChrome.GetWindowChrome(this);
-        if (chrome == null) return;
-        var value = new Thickness(thickness);
-        if (chrome.ResizeBorderThickness != value) chrome.ResizeBorderThickness = value;
-    }
-
-    /// <summary>
-    /// 在窗口尺寸/位置**提交之前**按提议矩形判定贴靠：WM_WINDOWPOSCHANGING 里同步切换壳形态，
-    /// 使 Windows 提交新几何后的第一帧就是无圆角/无外边距，不再先闪一帧旧状态。
-    /// </summary>
-    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        // 互动缩放/拖动的起止：起止本身不判形态，但"是否允许认角格"要按它来（见 IsTiledRect），
-        // 且结束时必须重判一次——拖到边缘贴靠时，系统是在松手那一刻才把最终矩形提交上来的。
-        if (msg == WmEnterSizeMove)
-        {
-            _inSizeMove = true;
-        }
-        else if (msg == WmExitSizeMove)
-        {
-            _inSizeMove = false;
-            UpdateFrameMode();
-        }
-
-        if (WindowState == WindowState.Minimized) return IntPtr.Zero;
-
-        if (msg == WmWindowPosChanging && lParam != IntPtr.Zero)
-        {
-            var pos = Marshal.PtrToStructure<NativeWindowPos>(lParam);
-            if ((pos.flags & (SwpNoSize | SwpNoMove)) == 0 && pos.cx > 0 && pos.cy > 0)
-            {
-                var proposed = new NativeRect
-                {
-                    Left = pos.x,
-                    Top = pos.y,
-                    Right = pos.x + pos.cx,
-                    Bottom = pos.y + pos.cy,
-                };
-                ApplyFrameMode(WindowState == WindowState.Maximized || IsTiledRect(proposed, !_inSizeMove));
-            }
-        }
-        else if (msg == WmWindowPosChanged)
-        {
-            // 兜底：提议矩形被系统调整（最大化/跨屏 DPI）后，以实际矩形收敛。
-            UpdateFrameMode();
-        }
-        return IntPtr.Zero;
-    }
-
-    /// <summary>贴靠态判定：窗口外框贴齐当前显示器工作区，且宽/高是常见平铺分数。</summary>
-    private bool IsSnappedToWorkArea()
-    {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var wr)) return false;
-        return IsTiledRect(wr, !_inSizeMove);
-    }
-
-    /// <summary>
-    /// 给定外框是否为一个平铺格：贴齐工作区边缘 + 尺寸是某个**布局**里的分格。
-    /// </summary>
-    /// <remarks>
-    /// ⚠️ 宽高不能各自独立取分数。Windows 的列类布局（1/3、1/2、2/3、70/30、1/4、3/4）**高度必定整格**，
-    /// 行类布局**宽度必定整格**；只有"分区+横切"的组合布局才会出现宽高都非满格的格子。
-    /// 旧写法让宽高任意组合都算贴靠，于是从左半屏往下拖上边缘时，高度依次扫过 3/4、0.7、2/3、0.6……
-    /// 每扫过一个分数就判成"又贴靠了" → 壳形态在直角/圆角之间来回闪几次（用户实测：
-    /// 一开头是圆角，往下拖到某个位置突然变方形，再往下又变回圆角）。
-    /// </remarks>
-    /// <param name="allowCornerTiles">是否承认"宽高都非满格"的角格（2×2 四分格、三分区右上角那类）。
-    /// **互动缩放期间必须为 false**：这类格子和"用户把窗口拖到恰好半分"在几何上无法区分，
-    /// 开着就会在拖到恰好半分的那一小段里闪回直角。</param>
-    private static bool IsTiledRect(NativeRect wr, bool allowCornerTiles)
-    {
-        var monitor = MonitorFromRect(ref wr, MonitorDefaultToNearest);
-        if (monitor == IntPtr.Zero) return false;
-        var info = new NativeMonitorInfo { cbSize = Marshal.SizeOf<NativeMonitorInfo>() };
-        if (!GetMonitorInfo(monitor, ref info)) return false;
-
-        var work = info.rcWork;
-        double w = wr.Right - wr.Left;
-        double h = wr.Bottom - wr.Top;
-        double ww = work.Right - work.Left;
-        double wh = work.Bottom - work.Top;
-        if (ww <= 0 || wh <= 0) return false;
-
-        const double tol = 4;
-        bool Near(double value, double target) => Math.Abs(value - target) <= tol;
-
-        // 列宽：Windows 11 的单列 / 双列 / 三列 / 70-30 等布局实际会出现的列分数
-        bool ColumnWidth(double value) =>
-            Near(value, ww / 4) || Near(value, ww / 3) || Near(value, ww * 0.3)
-            || Near(value, ww * 0.4) || Near(value, ww / 2) || Near(value, ww * 0.6)
-            || Near(value, ww * 2 / 3) || Near(value, ww * 0.7) || Near(value, ww * 3 / 4);
-
-        // 行高：上下切分的布局只有这几档（0.3/0.4/0.7 之类是列宽专用，不能拿来比高度）
-        bool RowHeight(double value) =>
-            Near(value, wh / 4) || Near(value, wh / 3) || Near(value, wh / 2)
-            || Near(value, wh * 2 / 3) || Near(value, wh * 3 / 4);
-
-        var left = Near(wr.Left, work.Left);
-        var right = Near(wr.Right, work.Right);
-        var top = Near(wr.Top, work.Top);
-        var bottom = Near(wr.Bottom, work.Bottom);
-        var fullW = Near(w, ww);
-        var fullH = Near(h, wh);
-
-        if (fullW && fullH) return true;                                  // 满工作区
-        if (fullH && (left || right) && ColumnWidth(w)) return true;       // 竖切：列
-        if (fullW && (top || bottom) && RowHeight(h)) return true;         // 横切：行
-        // 角格只有两种真实布局：2×2 四分格、以及"列 + 该列上下各半"的三分区 ⇒ 高度必须是半格。
-        // 放开成任意行高会让"左半屏 + 3/4 高"这类用户随手拖出来的尺寸也算贴靠。
-        return allowCornerTiles && (left || right) && (top || bottom)
-            && ColumnWidth(w) && Near(h, wh / 2);
-    }
-
-    /// <summary>CornerRadius 不会圆角裁切子内容：用 RectangleGeometry 裁出窗口圆角。</summary>
-    private void UpdateShellClip()
-    {
-        var w = WindowShell.ActualWidth;
-        var h = WindowShell.ActualHeight;
-        if (_flushShell || w <= 0 || h <= 0)
-        {
-            WindowShell.Clip = null;
-            WindowContent.Clip = null;
-            return;
-        }
-        WindowShell.Clip = new RectangleGeometry(
-            new Rect(0, 0, w, h), 22, 22);
-        // 内容宿主必须与背景壳同几何、同裁剪：内容已经不在投影子树里，
-        // 圆角裁切要在这一层自己补回来，否则内容会画出圆角。
-        WindowContent.Clip = new RectangleGeometry(
-            new Rect(0, 0, w, h), 22, 22);
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -491,37 +421,14 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)
     {
-        _hwndSource?.RemoveHook(WndProc);
-        _hwndSource = null;
         _scope.Dispose();
         base.OnClosed(e);
     }
 
-    private const int WmWindowPosChanging = 0x0046;
     private const int WmWindowPosChanged = 0x0047;
     private const int WmEnterSizeMove = 0x0231;
     private const int WmExitSizeMove = 0x0232;
-    private const uint SwpNoSize = 0x0001;
-    private const uint SwpNoMove = 0x0002;
     private const uint MonitorDefaultToNearest = 2;
-
-    /// <summary>浮动窗的阴影外边距（贴靠/最大化归零）——与 XAML 里 WindowShell.Margin 同源。</summary>
-    private const double ShellMargin = 18;
-
-    /// <summary>**看得见的边框**上的缩放热区厚度（从可见边框往里量）。</summary>
-    private const double ResizeGrip = 8;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeWindowPos
-    {
-        public IntPtr hwnd;
-        public IntPtr hwndInsertAfter;
-        public int x;
-        public int y;
-        public int cx;
-        public int cy;
-        public uint flags;
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect

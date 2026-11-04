@@ -29,15 +29,12 @@
         TextElement.Foreground="{DynamicResource App.Text.Primary}">
 
     <WindowChrome.WindowChrome>
-        <!-- ResizeBorderThickness 从**窗口外缘**往里量：外壳有 18px 阴影外边距，
-             可见圆角边框在 18px 处。取 18 + 8 = 26，让可见边缘本身也有 8px 缩放热区，
-             否则鼠标停在看得见的边上永远只是普通箭头。
-             ⚠️ 这个值只在浮动窗成立：贴靠/最大化没有那 18px 外距，26 会变成"可见边缘往下
-             26px 都算缩放边"（鼠标停在标题栏上就出上下箭头）。两种形态由 code-behind 的
-             ApplyFrameMode 按 26 / 8 切换，这里只是设计期的默认值。 -->
+        <!-- ResizeBorderThickness 从窗口外缘往里量，而窗口矩形现在就是**可见窗口**
+             （没有阴影外边距了）⇒ 统一取 8，让看得见的边框本身有 8px 缩放热区。
+             CaptionHeight 由 code-behind 按标题栏实际高度算（见 UpdateCaptionHeight）。 -->
         <WindowChrome CaptionHeight="44"
                       GlassFrameThickness="0"
-                      ResizeBorderThickness="26"
+                      ResizeBorderThickness="8"
                       CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 
@@ -97,124 +94,111 @@
             </Style>
     </Window.Resources>
 
-    <!-- 无边框大圆角悬浮窗壳：外圆角 22 + 柔和阴影。
-         ⚠️ Border 的 CornerRadius 不会圆角裁切子内容，圆角裁切由 code-behind 在 SizeChanged 上
-         设置 RectangleGeometry（WindowShell_SizeChanged）；最大化/贴靠时由 UpdateFrameMode 收圆角、收外距。 -->
-    <Grid Background="Transparent">
-        <!-- 阴影只跟着**静态背景壳**走：Effect 若挂在整个 WindowShell 上，内部任何一帧变化
-             （导航指示器滑动、悬停、列表滚动、换页）都会把整窗子树重新栅格化 + 重新模糊。
-             背景壳与内容宿主分成同几何的两层：投影只依赖背景壳的静态圆角矩形，内容在上层照常绘制，
-             圆角/裁剪与旧版逐像素一致。 -->
-        <Border x:Name="WindowShell" Margin="18" CornerRadius="22"
-                Background="{DynamicResource App.Surface.Base}">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Opacity="0.32" Color="{DynamicResource App.Color.Shadow}"/>
-            </Border.Effect>
-        </Border>
-        <Border x:Name="WindowContent"
-                Margin="{Binding Margin, ElementName=WindowShell}"
-                CornerRadius="{Binding CornerRadius, ElementName=WindowShell}"
-                Background="Transparent">
-            <Grid x:Name="RootGrid">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <!-- 圆角靠**分层窗**实现（AllowsTransparency）：22px 圆角要真透明，Win10 没有 DWM 圆角可用。
+         代价是已知的：移动时靠整张 ARGB 位图重传（大窗口拖动顿挫）、BitBlt/WGC 读不到窗口表面
+         （OBS 窗口采集黑屏）。所以**不要再自绘投影**：一轮 28px 大模糊会把这个代价再放大一倍
+         （见 WARNINGS 236）。窗口矩形 = 可见窗口：没有"阴影外边距"，也就没有收壳/放壳那一套。
+         圆角裁切由 code-behind 在壳自己的 SizeChanged 上设 RectangleGeometry（CornerRadius 不裁子内容）。 -->
+    <Border x:Name="WindowShell" CornerRadius="22" Background="{DynamicResource App.Surface.Base}">
+    <Grid x:Name="RootGrid">
+<Grid.RowDefinitions>
+    <RowDefinition Height="Auto"/>
+    <RowDefinition Height="*"/>
+</Grid.RowDefinitions>
 
-        <!-- ===== 全局标题栏（所有页面共享）：Brand chip + 分段胶囊导航 + 圆角窗口键 ===== -->
-        <!-- 标题栏（品牌 + 胶囊导航 + 窗口键）：**右键刷新的排除区**——导航条上的右键不接管 -->
-        <Border Grid.Row="0" x:Name="TitleBar" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-            <Grid Margin="12,8,12,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <!-- 品牌：PrimaryContainer 圆角 chip + 粗字标。
-                     不标 IsHitTestVisibleInChrome：整块（含图标/文字）都属于 caption 拖动区；
-                     否则鼠标落在品牌上拖不动窗口（与标题栏空白区行为不一致）。 -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Border Width="30" Height="30" CornerRadius="10"
-                            Background="{DynamicResource App.Accent.Container}">
-                        <m3:M3Icon Kind="link-variant" Width="17" Height="17"
-                                   Foreground="{DynamicResource App.Text.OnContainer}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <TextBlock Text="LinkPocket" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                </StackPanel>
-                <!-- 分段胶囊导航 = 可复用组件 SlidingNavStrip（ListBox 基座 + 组件内部的滑动指示器）——
-                     几何贴齐与滑动动画由组件自持，本窗口不再有任何导航动画 code-behind（同 SideNavList 模式）。
-                     ⚠️ 全局导航常驻：任何页面（含二级视图）都不得隐藏它——历史上曾绑 IsInSecondaryPage
-                     导致进智能列表/工具详情时导航消失，该状态已彻底移除。 -->
-                <views:SlidingNavStrip Grid.Column="1" x:Name="NavigationStrip"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Style="{StaticResource SlidingNavStripStyle}"
-                                       ItemContainerStyle="{StaticResource SlidingNavStripItemStyle}"
-                                       ItemsSource="{Binding NavigationItems}"
-                                       SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
-                                       WindowChrome.IsHitTestVisibleInChrome="True">
-                    <views:SlidingNavStrip.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{loc:LocKey LabelKey}" Margin="6,0,0,0" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </DataTemplate>
-                    </views:SlidingNavStrip.ItemTemplate>
-                </views:SlidingNavStrip>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right"
-                            WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="{loc:Loc window.minimize}">
-                        <Path Data="M0,6 L10,6" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
-                    </Button>
-                    <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="{loc:Loc window.maximize}">
-                        <Path Data="M2,0 L8,0 A2,2 0 0 1 10,2 L10,8 A2,2 0 0 1 8,10 L2,10 A2,2 0 0 1 0,8 L0,2 A2,2 0 0 1 2,0 Z" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
-                    </Button>
-                    <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="{loc:Loc common.close}">
-                        <Path Data="M2,2 L8,8 M8,2 L2,8" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.3" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- ===== 搜索页：视图/逻辑在 Views/SearchView + SearchViewModel，
-             显隐由 Shell 按「视图注册表」重投影（唯一登记点）；DataContext 由 Shell 下发为 SearchViewModel ===== -->
-        <uisearch:SearchView Grid.Row="1" x:Name="SearchView"
-                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uisearch:SearchView>
-
-        <!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存；显隐由 Shell 按注册表重投影） ===== -->
-        <!-- 老「链接」页删除后它成为默认首页 -->
-        <uibr:BrowserView Grid.Row="1" x:Name="BrowserPage"
-                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uibr:BrowserView>
-
-        <!-- ===== 回收站视图（独立页面） ===== -->
-        <uitrash:TrashPage Grid.Row="1" x:Name="TrashView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uitrash:TrashPage>
-
-        <!-- ===== 智能列表视图（独立页面） ===== -->
-        <uisl:SmartListsPage Grid.Row="1" x:Name="SmartListsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uisl:SmartListsPage>
-
-        <!-- ===== AI 助手页（三栏：会话 / 对话 / 变更与审计） ===== -->
-        <uiai:AiView Grid.Row="1" x:Name="AiPage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uiai:AiView>
-
-        <!-- ===== 工具页面（空壳） ===== -->
-        <uitools:ToolsPage Grid.Row="1" x:Name="ToolsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uitools:ToolsPage>
-
-        <!-- ===== 设置视图（独立页面） ===== -->
-        <uisettings:SettingsPage Grid.Row="1" x:Name="SettingsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
-        </uisettings:SettingsPage>
-
-        <!-- 全站共用的 Toast（轻提示）栈（UIKit/NoticeBar）：底部居中、最多 3 条、
-             新提示在底部堆叠、1.8 秒后快速淡出。阻断类提示与一次性事件都在这一处显示——
-             所有页面共用同一实例、同一视觉、同一计时。 -->
-        <views:NoticeBar x:Name="ShellNotice" Grid.RowSpan="2" Panel.ZIndex="100"/>
-
-            </Grid>
-        </Border>
+<!-- ===== 全局标题栏（所有页面共享）：Brand chip + 分段胶囊导航 + 圆角窗口键 ===== -->
+<!-- 标题栏（品牌 + 胶囊导航 + 窗口键）：**右键刷新的排除区**——导航条上的右键不接管 -->
+<Border Grid.Row="0" x:Name="TitleBar" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+    <Grid Margin="12,8,12,8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <!-- 品牌：PrimaryContainer 圆角 chip + 粗字标。
+             不标 IsHitTestVisibleInChrome：整块（含图标/文字）都属于 caption 拖动区；
+             否则鼠标落在品牌上拖不动窗口（与标题栏空白区行为不一致）。 -->
+        <StackPanel Grid.Column="0" Orientation="Horizontal">
+            <Border Width="30" Height="30" CornerRadius="10"
+                    Background="{DynamicResource App.Accent.Container}">
+                <m3:M3Icon Kind="link-variant" Width="17" Height="17"
+                           Foreground="{DynamicResource App.Text.OnContainer}"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock Text="LinkPocket" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
+        </StackPanel>
+        <!-- 分段胶囊导航 = 可复用组件 SlidingNavStrip（ListBox 基座 + 组件内部的滑动指示器）——
+             几何贴齐与滑动动画由组件自持，本窗口不再有任何导航动画 code-behind（同 SideNavList 模式）。
+             ⚠️ 全局导航常驻：任何页面（含二级视图）都不得隐藏它——历史上曾绑 IsInSecondaryPage
+             导致进智能列表/工具详情时导航消失，该状态已彻底移除。 -->
+        <views:SlidingNavStrip Grid.Column="1" x:Name="NavigationStrip"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Style="{StaticResource SlidingNavStripStyle}"
+                               ItemContainerStyle="{StaticResource SlidingNavStripItemStyle}"
+                               ItemsSource="{Binding NavigationItems}"
+                               SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
+                               WindowChrome.IsHitTestVisibleInChrome="True">
+            <views:SlidingNavStrip.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <m3:M3Icon Kind="{Binding IconKind}" Width="16" Height="16" VerticalAlignment="Center"/>
+                        <TextBlock Text="{loc:LocKey LabelKey}" Margin="6,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DataTemplate>
+            </views:SlidingNavStrip.ItemTemplate>
+        </views:SlidingNavStrip>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right"
+                    WindowChrome.IsHitTestVisibleInChrome="True">
+            <Button Style="{StaticResource TitleBarButton}" Click="MinimizeButton_Click" ToolTip="{loc:Loc window.minimize}">
+                <Path Data="M0,6 L10,6" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+            </Button>
+            <Button Style="{StaticResource TitleBarButton}" Click="MaximizeButton_Click" ToolTip="{loc:Loc window.maximize}">
+                <Path Data="M2,0 L8,0 A2,2 0 0 1 10,2 L10,8 A2,2 0 0 1 8,10 L2,10 A2,2 0 0 1 0,8 L0,2 A2,2 0 0 1 2,0 Z" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.2" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+            </Button>
+            <Button Style="{StaticResource CloseButton}" Click="CloseButton_Click" ToolTip="{loc:Loc common.close}">
+                <Path Data="M2,2 L8,8 M8,2 L2,8" Stroke="{DynamicResource App.Text.Primary}" StrokeThickness="1.3" Stretch="Uniform" VerticalAlignment="Center" HorizontalAlignment="Center" Width="10" Height="10"/>
+            </Button>
+        </StackPanel>
     </Grid>
+</Border>
+
+<!-- ===== 搜索页：视图/逻辑在 Views/SearchView + SearchViewModel，
+     显隐由 Shell 按「视图注册表」重投影（唯一登记点）；DataContext 由 Shell 下发为 SearchViewModel ===== -->
+<uisearch:SearchView Grid.Row="1" x:Name="SearchView"
+                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uisearch:SearchView>
+
+<!-- ===== 资源管理器式浏览页（P4 新页面，与旧界面并存；显隐由 Shell 按注册表重投影） ===== -->
+<!-- 老「链接」页删除后它成为默认首页 -->
+<uibr:BrowserView Grid.Row="1" x:Name="BrowserPage"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uibr:BrowserView>
+
+<!-- ===== 回收站视图（独立页面） ===== -->
+<uitrash:TrashPage Grid.Row="1" x:Name="TrashView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uitrash:TrashPage>
+
+<!-- ===== 智能列表视图（独立页面） ===== -->
+<uisl:SmartListsPage Grid.Row="1" x:Name="SmartListsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uisl:SmartListsPage>
+
+<!-- ===== AI 助手页（三栏：会话 / 对话 / 变更与审计） ===== -->
+<uiai:AiView Grid.Row="1" x:Name="AiPage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uiai:AiView>
+
+<!-- ===== 工具页面（空壳） ===== -->
+<uitools:ToolsPage Grid.Row="1" x:Name="ToolsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uitools:ToolsPage>
+
+<!-- ===== 设置视图（独立页面） ===== -->
+<uisettings:SettingsPage Grid.Row="1" x:Name="SettingsView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Visibility="Collapsed">
+</uisettings:SettingsPage>
+
+<!-- 全站共用的 Toast（轻提示）栈（UIKit/NoticeBar）：底部居中、最多 3 条、
+     新提示在底部堆叠、1.8 秒后快速淡出。阻断类提示与一次性事件都在这一处显示——
+     所有页面共用同一实例、同一视觉、同一计时。 -->
+<views:NoticeBar x:Name="ShellNotice" Grid.RowSpan="2" Panel.ZIndex="100"/>
+
+    </Grid>
+    </Border>
 </Window>

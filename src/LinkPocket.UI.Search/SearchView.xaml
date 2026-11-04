@@ -296,7 +296,14 @@
                  其余后台原位填充；视口只实例化约 11 个行容器（缓存 0 页），不存在“只显示前 N 条”。
                  列定义/表头/列宽仍由 code-behind 装配；选中由 VM 的 ListSelection 承载，
                  行底色绑定 LinkItem.IsSelected（覆盖式投影，多选 Ctrl/Shift 由 code-behind 路由）。 -->
-            <views:SortableDataTable x:Name="ResultsTable" Grid.Row="2" Margin="12,0,12,8"
+            <!-- 结果卡：与浏览页主栏**同一张卡**（同底色 / 同圆角 24 / 同外距 8 / 同裁剪）。
+                 少了这层卡，表头色带（24 圆角只在上沿）会浮在页面底上、行区与页面同色、
+                 滚动条贴到页面边缘——表头/表底之间看不出"这是一张表"（现场：搜索页表格边框不明确、
+                 颜色与浏览页不一致、滚动条位置也不对）。
+                 HeaderBandMargin=0：嵌进卡片时表头色带贴满卡宽（默认 8 是给"浮动行区"用的）。 -->
+            <Border Grid.Row="2" Background="{DynamicResource App.Surface.Card}"
+                    CornerRadius="24" Margin="8,0,8,8" ClipToBounds="True">
+            <views:SortableDataTable x:Name="ResultsTable" HeaderBandMargin="0"
                                      SelectionEnabled="False" RowCacheLength="0">
                 <views:SortableDataTable.ItemTemplate>
                     <DataTemplate>
@@ -393,10 +400,11 @@
                     </DataTemplate>
                 </views:SortableDataTable.ItemTemplate>
             </views:SortableDataTable>
+            </Border>
 
             <!-- 加载遮罩（唯一实现 = UIKit ListBusyOverlay）：只在 F5 这类**用户发起**的刷新时亮；
-                 事件驱动的静默刷新不亮。放在表格之后 = z 序在上。 -->
-            <views:ListBusyOverlay Grid.Row="2" Margin="12,0,12,8" IsBusy="{Binding IsNavigating}"/>
+                 事件驱动的静默刷新不亮。放在表格之后 = z 序在上；外距与结果卡对齐。 -->
+            <views:ListBusyOverlay Grid.Row="2" Margin="8,0,8,8" IsBusy="{Binding IsNavigating}"/>
         </Grid>
 
         <!-- 详情栏可拖拽分隔线（与浏览页同款交互） -->

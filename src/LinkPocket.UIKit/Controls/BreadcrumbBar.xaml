@@ -186,7 +186,12 @@
                           HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled"
                           CanContentScroll="False" Focusable="False" PanningMode="None">
                 <!-- 窗口化路径段：只物化“可见段 + 缓冲”，由 code-behind 维护 ItemsSource。 -->
-                <ItemsControl x:Name="CrumbItems" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <!-- 段列表整体右移 4：药丸上下已经各让出 8（描边 2 + 内距 2 + 居中 4），
+                     左边原本只有 4（描边 2 + 内距 2）——补 4 才与上下等距（视觉平衡）。
+                     ⚠️ 这条内距只加在**内容**上，不动 CrumbContent 的 2px 裁剪内距：
+                     那个 2 是"内容滑进胶囊圆头"的沉浸式裁剪口径，改了会露出直边。 -->
+                <ItemsControl x:Name="CrumbItems" HorizontalAlignment="Left" VerticalAlignment="Center"
+                              Margin="4,0,0,0">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Horizontal"/>
