@@ -253,6 +253,10 @@ namespace LinkPocket.Views
             else resultVm.Selection.RemoveMissing(id => resultVm.Items.Any(i => i.LinkId == id));   // 重绑：保留仍在结果里的
             resultVm.ProjectSelection();   // 模板模式的选中底色由 LinkItem.IsSelected 驱动
             SmartSidebar.DataContext = resultVm.Details;
+            // 模板模式只实现视口行：这里同步落地一次布局，保证"结果已就绪"时首帧行真的生成
+            //（否则极慢主机/离屏测量下可能等到下一次外部失效才实现行容器）。
+            // 列宽会按滚动条扣除后的真实行区宽度重算（探针按 225/337 卡住）。
+            SmartTable.UpdateLayout();
         }
 
         private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();

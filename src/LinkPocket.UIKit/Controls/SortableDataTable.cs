@@ -1046,13 +1046,14 @@ public class SortableDataTable : Grid
             return;
         }
 
-        // 未实现：按平均行高估算滚动（行高由内容定，量出来比猜常量可靠），随后容器已生成即对齐。
+        // 未实现：按平均行高估算滚动（行高由内容定，量出来比猜常量可靠）。
+        // ⚠️ 不在这里同步 UpdateLayout + BringIntoView：十万行下虚拟化面板会因"实现→对齐→再实现"
+        // 的同步布局链卡死（实测 UiBench 直接挂起并涨到 600MB）。滚动请求交给下一帧布局即可，
+        // 目标行落在视口附近后会自然被实现。
         var count = _rowsList.Items.Count;
         if (count <= 0 || scroller.ExtentHeight <= 0) return;
         var average = scroller.ExtentHeight / count;
         scroller.ScrollToVerticalOffset(Math.Max(0, (index - 2) * average));
-        _rowsList.UpdateLayout();
-        (_rowsList.ItemContainerGenerator.ContainerFromIndex(index) as FrameworkElement)?.BringIntoView();
     }
 
     /// <summary>
