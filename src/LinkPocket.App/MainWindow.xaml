@@ -31,7 +31,10 @@
     <WindowChrome.WindowChrome>
         <!-- ResizeBorderThickness 从**窗口外缘**往里量：外壳有 18px 阴影外边距，
              可见圆角边框在 18px 处。取 18 + 8 = 26，让可见边缘本身也有 8px 缩放热区，
-             否则鼠标停在看得见的边上永远只是普通箭头。 -->
+             否则鼠标停在看得见的边上永远只是普通箭头。
+             ⚠️ 这个值只在浮动窗成立：贴靠/最大化没有那 18px 外距，26 会变成"可见边缘往下
+             26px 都算缩放边"（鼠标停在标题栏上就出上下箭头）。两种形态由 code-behind 的
+             ApplyFrameMode 按 26 / 8 切换，这里只是设计期的默认值。 -->
         <WindowChrome CaptionHeight="44"
                       GlassFrameThickness="0"
                       ResizeBorderThickness="26"
