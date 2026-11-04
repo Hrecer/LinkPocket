@@ -272,8 +272,8 @@ public sealed class DragVisualOverlay
 
     /// <summary>
     /// 关闭浮层（拖拽结束 / 页面卸载）：隐藏窗口，保留专用线程给下一次拖拽复用。
-    /// 即使本次 <c>Show</c> 早退（宿主失败/无位图），也照样走 <c>Hide</c> 收尾；宿主侧因此
-    /// 可能出现“End 多于 Begin”的降级路径，正常拖拽路径仍严格一次 Begin/一次 End。
+    /// 即使本次 <c>Show</c> 早退（宿主失败/无位图），也照样走 <c>Hide</c> 收尾；宿主侧
+    /// 的 End 是幂等配对，没有对应 Begin 时为空操作，正常拖拽路径仍严格一次 Begin/一次 End。
     /// </summary>
     public void Detach()
     {
