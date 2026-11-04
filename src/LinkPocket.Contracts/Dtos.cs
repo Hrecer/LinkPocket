@@ -20,6 +20,13 @@ public class LinkDto
     [JsonPropertyName("is_important")] public bool IsImportant { get; set; }
     [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
     [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+
+    /// <summary>
+    /// 行类型：<c>link</c>（默认）或 <c>folder</c>。
+    /// 搜索结果把两类实体放在同一条有序结果集里，界面按本字段决定图标/列/可用动作；
+    /// 老命令不读它时保持 <c>link</c>，序列化面完全兼容。
+    /// </summary>
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "link";
 }
 
 public class FolderDto

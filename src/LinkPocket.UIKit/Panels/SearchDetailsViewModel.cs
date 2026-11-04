@@ -100,25 +100,31 @@ public class SearchDetailsViewModel : DetailSidebarModel
 
         HasSelection = true;
         IsMulti = false;
-        IsFolder = false;
-        ConfigureSidebarActionLabels(isFolder: false);   // 搜索结果恒为链接（共享动作面缺省配置）
-        // 「跳转」= 进目录 + 选中该行（经使用方注入的 JumpCommand）；单一目标动作 → 只在单选态开。
+        IsFolder = item.IsFolder;
+        // 文件夹行：动作面「打开 / 重命名」这套标签不适用于搜索页（重名入口在浏览页），
+        // 只保留「打开（进入目录）」「跳转（定位到父目录并选中）」「删除（整树进回收站）」。
+        ConfigureSidebarActionLabels(isFolder: IsFolder);
         ShowJumpAction = true;
+        ShowEditAction = !IsFolder;
         DisplayNameData = string.IsNullOrEmpty(item.Title) ? item.Url : item.Title;
         IdText = item.LinkId;
-        UrlText = item.Url;
-        DescriptionText = item.Description ?? "";
-        Favicon = FaviconService.LoadFromCache(item.FaviconUrl);
+        UrlText = IsFolder ? string.Empty : item.Url;
+        DescriptionText = IsFolder ? string.Empty : item.Description ?? "";
+        Favicon = IsFolder ? null : FaviconService.LoadFromCache(item.FaviconUrl);
 
-        SetRows(new List<DetailSidebarRow>
+        var rows = new List<DetailSidebarRow>
         {
             new() { IconKind = "folder-outline", LabelKey = "ui.noun.location", ValueCopy = pathText },
             new() { IconKind = "refresh", LabelKey = "ui.noun.updatedAt", ValueData = FormatTime(item.UpdatedAt) },
-            new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = item.LastVisitedAt is null ? "" : FormatTime(item.LastVisitedAt.Value), ValueCopy = item.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty },
-            new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueCopy = Loc.K("count.viewsN", item.VisitCount) },
-            new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = FormatTime(item.CreatedAt) },
-            new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId") },
-        });
+        };
+        if (!IsFolder)
+        {
+            rows.Add(new() { IconKind = "history", LabelKey = "ui.noun.lastVisited", ValueData = item.LastVisitedAt is null ? "" : FormatTime(item.LastVisitedAt.Value), ValueCopy = item.LastVisitedAt is null ? Loc.K("clock.never") : LocValue.Empty });
+            rows.Add(new() { IconKind = "trending-up", LabelKey = "ui.noun.visitCount", ValueCopy = Loc.K("count.viewsN", item.VisitCount) });
+        }
+        rows.Add(new() { IconKind = "plus-circle-outline", LabelKey = "ui.noun.createdAt", ValueData = FormatTime(item.CreatedAt) });
+        rows.Add(new() { IconKind = "fingerprint", LabelKey = "ui.noun.id", ValueData = item.LinkId, IsMono = true, CopyCommand = CopyIdCommand, CopyToolTip = Loc.K("common.copyId") });
+        SetRows(rows);
 
         ApplyPageLayout();   // 排布位在 RaiseAll 之前落地（RaiseAll 里的动作面通知才带得上它）
         RaiseAll();

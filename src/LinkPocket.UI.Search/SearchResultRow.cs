@@ -12,10 +12,19 @@ internal sealed class SearchResultRow : LinkItem
     /// <summary>尚未填入真实数据；点击/选中/详情等命令必须拒绝。</summary>
     public bool IsPlaceholder { get; private set; } = true;
 
+    private bool _isFolder;
+
+    /// <summary>文件夹行：与链接同处一条结果集（文件夹块恒在链接块之前）。</summary>
+    public override bool IsFolder => _isFolder;
+
+    /// <summary>跨类型不撞车的身份键（见 <see cref="LinkItem.Key"/>）。</summary>
+    public override string Key => _isFolder ? "f:" + LinkId : "l:" + LinkId;
+
     /// <summary>把 DTO 写入本行；只在本行第一次填充时调用（重复填充由调用方拒绝）。</summary>
     public void Fill(LinkDto dto, string query)
     {
         IsPlaceholder = false;
+        _isFolder = string.Equals(dto.Kind, "folder", StringComparison.OrdinalIgnoreCase);
         LinkId = dto.LinkId;
         Url = dto.Url ?? string.Empty;
         Title = dto.Title ?? string.Empty;
@@ -30,6 +39,8 @@ internal sealed class SearchResultRow : LinkItem
         HighlightQuery = query;
 
         OnPropertyChanged(nameof(IsPlaceholder));
+        OnPropertyChanged(nameof(IsFolder));
+        OnPropertyChanged(nameof(Key));
         OnPropertyChanged(nameof(LinkId));
         OnPropertyChanged(nameof(Url));
         OnPropertyChanged(nameof(Title));

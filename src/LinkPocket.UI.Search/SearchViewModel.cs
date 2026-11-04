@@ -57,7 +57,13 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         // **「详情」= 打开浏览页的链接详情页**（INavigationService）——与「跳转」是两条互不替代的语义：
         // 顶部跳转药丸 / 右栏跳转钮走前者，`Enter` / 双击 / 右栏「详情」/ 铅笔槽走后者。
         OpenDetailCommand = new RelayCommand(
-            () => { if (PrimarySelected is { } item) _navigation.OpenLinkInBrowser(item.LinkId); },
+            () =>
+            {
+                if (PrimarySelected is not { } item) return;
+                // 文件夹行 = 进入该目录（与浏览页双击文件夹同一语义）；链接行 = 详情页（不变）。
+                if (item.IsFolder) _navigation.OpenFolderInBrowser(item.LinkId);
+                else _navigation.OpenLinkInBrowser(item.LinkId);
+            },
             () => SelectionCount > 0);
         OpenWebsiteCommand = new RelayCommand(() => _ = OpenSelectedWebsiteAsync(), () => SelectionCount == 1);
         DeleteSelectionCommand = new RelayCommand(() => _ = DeleteSelectionAsync(), () => SelectionCount > 0 && !IsDeleting);
@@ -229,8 +235,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private bool RegisterLoaded(LinkItem item, int rowIndex)
     {
         if (string.IsNullOrEmpty(item.LinkId)) return false;
-        if (!_itemsById.TryAdd(item.LinkId, item)) return false;
-        _idsByRow[rowIndex] = item.LinkId;
+        if (!_itemsById.TryAdd(item.Key, item)) return false;
+        _idsByRow[rowIndex] = item.Key;
         return true;
     }
 
@@ -328,7 +334,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// <summary>视图在用户点击行时调用（带修饰键路由：Ctrl 翻转 / Shift 区间 / 无修饰 = 单选）。</summary>
     public void ClickItem(LinkItem item, ModifierKeys mods)    {
         if (item is SearchResultRow { IsPlaceholder: true }) return;
-        Selection.Click(item.LinkId,
+        // 选中集合按**跨类型身份键**索引（链接 l: / 文件夹 f:），不是裸 LinkId。
+        Selection.Click(item.Key,
             mods.HasFlag(ModifierKeys.Control), mods.HasFlag(ModifierKeys.Shift), CurrentOrder());
     }
 
@@ -395,7 +402,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             {
                 var warm = await _api.SearchSessionOpenAsync("\u0001warmup",
                     searchTitle: true, searchUrl: true, searchDescription: true, searchPath: true,
-                    sortBy: "title", sortOrder: "asc", firstPageSize: 1);
+                    sortBy: "title", sortOrder: "asc", firstPageSize: 1, includeFolders: true);
                 await _api.SearchSessionCloseAsync(warm.SessionId);
             }
             catch { /* 预热失败不影响真实搜索 */ }
@@ -764,7 +771,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         var open = await Task.Run(() => _api.SearchSessionOpenAsync(query,
             searchTitle: title, searchUrl: url,
             searchDescription: desc, searchPath: path,
-            sortBy: sortBy, sortOrder: sortOrder, firstPageSize: prefetchRows, ct: ct), ct);
+            sortBy: sortBy, sortOrder: sortOrder, firstPageSize: prefetchRows,
+            includeFolders: true, ct: ct), ct);
 
         return (open.SessionId, open.Total, open.FirstPage?.ToList() ?? []);
     }
@@ -1125,12 +1133,14 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             return;
         }
 
-        var result = await _locator.LocateLinkAsync(item.LinkId);
+        var result = item.IsFolder
+            ? await _locator.LocateFolderAsync(item.LinkId)
+            : await _locator.LocateLinkAsync(item.LinkId);
         if (result.IsSuccess || result.UserNotified) return;   // 阻断类提示已由共享 NoticeBar 给出
 
         _dialogs.Alert(Loc.T("common.jump"), (result.Message ?? result.Status switch
         {
-            LocateStatus.NotFound => Loc.K("locate.notFoundLink"),
+            LocateStatus.NotFound => item.IsFolder ? Loc.K("locate.notFoundFolderId") : Loc.K("locate.notFoundLink"),
             LocateStatus.RowMissing => Loc.K("locate.rowMissing"),
             LocateStatus.Failed => Loc.K("locate.failedRetry"),
             _ => Loc.K("locate.incomplete"),
@@ -1141,12 +1151,12 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private async Task OpenSelectedWebsiteAsync()
     {
         var item = PrimarySelected;
-        if (item == null) return;
+        if (item == null || item.IsFolder) return;   // 文件夹没有网站可开（按钮已隐，这里挡键盘/自动化路径）
         Services.LinkLauncher.Open(item.Url);
         try
         {
             await _api.LinkVisitRecordAsync(item.LinkId);
-            if (Selection.Count == 1 && Selection.Contains(item.LinkId))
+            if (Selection.Count == 1 && Selection.Contains(item.Key))
                 Details.UpdateFrom(item, _resolveFolderPath(item.ListId)); // 统计行原位刷新
         }
         catch { /* 记账失败不打断 */ }
@@ -1167,10 +1177,26 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             return;
         }
 
-        var message = victims.Count == 1
-            ? Loc.T("browser.confirm.linkToTrash", (string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title))
-            : Loc.T("tools.dedup.deleteConfirm", victims.Count);
-        if (!_dialogs.Confirm(Loc.T("common.title.deleteLink"), message, Loc.T("common.delete"))) return;
+        // 确认文案与浏览页**同一套键**：同一个动作不允许两套说法（文件夹 = 整树进回收站）。
+        var folderCount = victims.Count(v => v.IsFolder);
+        var linkCount = victims.Count - folderCount;
+        LocValue message;
+        if (folderCount > 0 && linkCount > 0)
+            message = Loc.K("browser.confirm.mixedToTrash", folderCount, linkCount);
+        else if (folderCount > 0)
+            message = folderCount == 1
+                ? Loc.K("browser.confirm.folderToTrash", victims.First(v => v.IsFolder).Title)
+                : Loc.K("browser.confirm.foldersToTrash", folderCount);
+        else
+            message = linkCount == 1
+                ? Loc.K("browser.confirm.linkToTrash",
+                    string.IsNullOrEmpty(victims[0].Title) ? victims[0].Url : victims[0].Title)
+                : Loc.K("tools.dedup.deleteConfirm", linkCount);
+
+        var title = folderCount > 0 && linkCount == 0
+            ? Loc.T("common.title.deleteFolder")
+            : folderCount > 0 ? Loc.T("common.delete") : Loc.T("common.title.deleteLink");
+        if (!_dialogs.Confirm(title, message.Resolve(), Loc.T("common.delete"))) return;
 
         IsDeleting = true;
         try
@@ -1180,7 +1206,10 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             // 把陈旧行从结果集清掉，用户重试即可（不会出现"看着删了、库里却还在"）。
             var deleted = 0;
             var failed = 0;
-            var ids = victims.Select(v => v.LinkId).Distinct(StringComparer.Ordinal).ToList();
+
+            // 链接：一次批量入站（单命令单事务）。
+            var ids = victims.Where(v => !v.IsFolder)
+                .Select(v => v.LinkId).Distinct(StringComparer.Ordinal).ToList();
             if (ids.Count > 0)
             {
                 try
@@ -1190,8 +1219,23 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                 }
                 catch (Exception ex)
                 {
-                    failed = ids.Count;
+                    failed += ids.Count;
                     LpLog.Error($"search batch delete failed for {ids.Count} link(s)", ex);
+                }
+            }
+
+            // 文件夹：逐条走 folders.delete（自带整树级联，一条命令覆盖整棵子树）。
+            foreach (var folder in victims.Where(v => v.IsFolder))
+            {
+                try
+                {
+                    await _api.FolderDeleteAsync(folder.LinkId, "trash_links");
+                    deleted++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    LpLog.Error($"search delete failed for folder '{folder.LinkId}'", ex);
                 }
             }
 

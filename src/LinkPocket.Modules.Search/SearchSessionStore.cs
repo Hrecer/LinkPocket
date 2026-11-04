@@ -40,7 +40,7 @@ internal sealed class SearchSessionStore
 
     public async Task<SearchSessionOpenResult> OpenAsync(
         string query, bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
-        string sortBy, string sortOrder, int firstPageSize, CancellationToken ct)
+        string sortBy, string sortOrder, int firstPageSize, bool includeFolders, CancellationToken ct)
     {
         SweepExpired();
         await EvictForCapacityAsync();
@@ -53,9 +53,26 @@ internal sealed class SearchSessionStore
             var scope = await SearchSupport.BuildScopeAsync(
                 uow, query, searchTitle, searchUrl, searchDescription, searchPath, ct);
 
+            // 文件夹与链接在同一条结果流里：文件夹块固定排在链接块之前（各自按当前排序键排）。
+            // 只在"标题/位置"两档下命中——URL/描述对文件夹没有意义（见 SearchSupport）。
+            var folders = includeFolders
+                ? await SearchSupport.FindMatchingFoldersAsync(uow, query, searchTitle, searchPath, ct)
+                : [];
+            if (folders.Count > 0) SearchSupport.SortFolders(folders, sortBy, sortOrder);
+
             int total;
             List<LinkDto> firstPage;
-            if (firstPageSize > 0)
+            if (folders.Count > 0)
+            {
+                // 有文件夹命中 ⇒ 必须走拼接分页（链接段的起点是"全局偏移 − 文件夹数"）；
+                // 计数 = 链接命中 + 文件夹命中，仍在同一个读事务里取。
+                total = await SearchSupport.CountAsync(uow, scope, ct) + folders.Count;
+                firstPage = firstPageSize > 0
+                    ? (await SearchSupport.BuildPageAsync(
+                        uow, scope, folders, sortBy, sortOrder, page: 1, perPage: firstPageSize, ct)).ToList()
+                    : [];
+            }
+            else if (firstPageSize > 0)
             {
                 // 首屏快路径：纯文本 page-first / path 单扫（仓储内部按 scope 选路），同一事务。
                 var first = await uow.Links.CountAndFirstPageAsync(
@@ -70,7 +87,7 @@ internal sealed class SearchSessionStore
             }
 
             var sessionId = Guid.NewGuid().ToString("N");
-            var session = new Session(scope, sortBy, sortOrder, uow, tx);
+            var session = new Session(scope, sortBy, sortOrder, uow, tx, folders);
             if (!_sessions.TryAdd(sessionId, session))
                 throw new InvalidOperationException("search snapshot session id collision");
             ScheduleSweep();
@@ -96,6 +113,13 @@ internal sealed class SearchSessionStore
         try
         {
             session.Touch();
+            if (session.Folders.Count > 0)
+            {
+                return await SearchSupport.BuildPageAsync(
+                    session.Uow, session.Scope, session.Folders, session.SortBy, session.SortOrder,
+                    page, perPage, ct);
+            }
+
             var hits = await SearchSupport.SearchAsync(
                 session.Uow, session.Scope, session.SortBy, session.SortOrder, ct, page, perPage);
             return hits.Select(h => h.Link).ToList();
@@ -205,7 +229,8 @@ internal sealed class SearchSessionStore
     }
 
     private sealed class Session(
-        LinkSearchScope scope, string sortBy, string sortOrder, IUnitOfWork uow, ITransactionScope tx)
+        LinkSearchScope scope, string sortBy, string sortOrder, IUnitOfWork uow, ITransactionScope tx,
+        IReadOnlyList<LinkDto> folders)
     {
         private long _lastAccessTicks = DateTimeOffset.UtcNow.UtcTicks;
 
@@ -214,6 +239,9 @@ internal sealed class SearchSessionStore
         public string SortOrder { get; } = sortOrder;
         public IUnitOfWork Uow { get; } = uow;
         public ITransactionScope Tx { get; } = tx;
+
+        /// <summary>本快照命中的文件夹行（已按当前排序键排好）；空 = 纯链接结果集，走原来的单表分页快路径。</summary>
+        public IReadOnlyList<LinkDto> Folders { get; } = folders;
         public SemaphoreSlim Gate { get; } = new(1, 1);
 
         public DateTimeOffset LastAccess => new(Interlocked.Read(ref _lastAccessTicks), TimeSpan.Zero);

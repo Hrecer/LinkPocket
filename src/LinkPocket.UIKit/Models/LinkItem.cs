@@ -63,6 +63,13 @@ namespace LinkPocket.Models
         public int VisitCount { get; set; }
         public bool IsImportant { get; set; }
 
+        /// <summary>文件夹行（搜索页把文件夹与链接放在同一条结果集里）。</summary>
+        public virtual bool IsFolder => false;
+
+        /// <summary>结果集内的稳定身份键：链接 <c>l:&lt;id&gt;</c> / 文件夹 <c>f:&lt;id&gt;</c>。
+        /// 两类实体共用一条结果流，键必须跨类型不撞车（选中集合/顺序表都按它索引）。</summary>
+        public virtual string Key => "l:" + LinkId;
+
         // 时间戳
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }

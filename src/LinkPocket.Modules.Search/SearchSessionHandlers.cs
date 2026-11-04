@@ -25,6 +25,7 @@ internal sealed class SearchSessionOpenHandler(EngineLimits limits, SearchSessio
             ParamSpec.Opt<string>("sort_by", "title | url | created_at | updated_at | last_visited_at | visit_count | is_important"),
             ParamSpec.Opt<string>("sort_order", "asc | desc", enumValues: ["asc", "desc"]),
             ParamSpec.Opt<int>("first_page_size", "Rows returned with the session (default 0; 0 = none)"),
+            ParamSpec.Opt<bool>("include_folders", "Include folders as results (matched by name / ancestor path only)"),
         ],
         Caps: CommandCaps.Query);
 
@@ -41,6 +42,7 @@ internal sealed class SearchSessionOpenHandler(EngineLimits limits, SearchSessio
             CommandArgs.OptionalString(args, "sort_by") ?? string.Empty,
             QueryParsing.NormalizeOrder(CommandArgs.OptionalString(args, "sort_order")),
             firstPageSize,
+            CommandArgs.OptionalBool(args, "include_folders"),
             ctx.Ct);
         return CommandResult.Ok(result);
     }

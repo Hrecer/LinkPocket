@@ -23,6 +23,25 @@
             </Style.Triggers>
         </Style>
 
+        <!-- 链接专属单元格：占位时隐藏（沿用上面的口径），文件夹行折叠 -->
+        <Style x:Key="SearchLinkCell" TargetType="FrameworkElement" BasedOn="{StaticResource SearchPlaceholderHidden}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 文件夹专属单元格：只有文件夹行显示（时间/次数对文件夹没有意义） -->
+        <Style x:Key="SearchFolderCell" TargetType="FrameworkElement">
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- 首帧紧凑行：只画标题/URL（真实数据），与完整行同高。
              十万级结果集的首帧如果直接实例化完整行模板（地理路径 + 4 个日期 + 图标 + 高亮），
              WPF 首帧布局要 50–70ms；先付 10ms 把"真实标题 + 正确滚动范围"放上屏，
@@ -343,10 +362,17 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <views:LpFaviconImage Grid.Column="0" Url="{Binding FaviconUrl}"
-                                                              Width="18" Height="18" Margin="0,0,10,0"
-                                                              VerticalAlignment="Center"
-                                                              Style="{StaticResource SearchPlaceholderHidden}"/>
+                                    <Grid Grid.Column="0" Width="18" Height="18" Margin="0,0,10,0"
+                                          VerticalAlignment="Center">
+                                        <Grid.Style>
+                                            <Style TargetType="FrameworkElement"
+                                                   BasedOn="{StaticResource SearchPlaceholderHidden}"/>
+                                        </Grid.Style>
+                                        <views:LpFaviconImage Url="{Binding FaviconUrl}"
+                                                             Visibility="{Binding IsFolder, Converter={StaticResource InvBoolToVis}}"/>
+                                        <m3:M3Icon Kind="folder-outline" Width="18" Height="18"
+                                                   Visibility="{Binding IsFolder, Converter={StaticResource BoolToVis}}"/>
+                                    </Grid>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <local:HighlightTextBlock RowText="{Binding DisplayTitle}"
                                                                   HighlightQuery="{Binding HighlightQuery}"
@@ -356,6 +382,7 @@
                                                                   HighlightQuery="{Binding HighlightQuery}"
                                                                   NormalBrushKey="App.Text.Secondary"
                                                                   FontSize="11.5" Margin="0,3,0,0"
+                                                                  Visibility="{Binding IsFolder, Converter={StaticResource InvBoolToVis}}"
                                                                   TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Grid>
@@ -378,23 +405,39 @@
                                 <local:LocalizedTextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding UpdatedValue}"/>
+                                <TextBlock Grid.Column="2" Text="—" FontSize="12.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"
+                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="3" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding LastVisitedValue}"/>
+                                <TextBlock Grid.Column="3" Text="—" FontSize="12.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"
+                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding VisitCountValue}"/>
+                                <TextBlock Grid.Column="4" Text="—" FontSize="12.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"
+                                           Style="{StaticResource SearchFolderCell}"/>
                                 <local:LocalizedTextBlock Grid.Column="5" VerticalAlignment="Center" FontSize="12.5"
                                                           TextTrimming="CharacterEllipsis"
                                                           Foreground="{DynamicResource App.Text.Secondary}"
-                                                          Style="{StaticResource SearchPlaceholderHidden}"
+                                                          Style="{StaticResource SearchLinkCell}"
                                                           TextValue="{Binding CreatedValue}"/>
+                                <TextBlock Grid.Column="5" Text="—" FontSize="12.5"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource App.Text.Secondary}"
+                                           Style="{StaticResource SearchFolderCell}"/>
                             </Grid>
                         </Border>
                     </DataTemplate>

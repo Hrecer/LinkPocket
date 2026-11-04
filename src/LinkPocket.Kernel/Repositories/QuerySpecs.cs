@@ -11,9 +11,13 @@ public enum SortDir
 public sealed record SortSpec(string Field, SortDir Dir);
 
 /// <summary>分页：size = 0 表示全量（保留现状语义）。</summary>
-public sealed record PageSpec(int Index = 1, int Size = 0)
+public sealed record PageSpec(int Index = 1, int Size = 0, int? SkipOverride = null)
 {
-    public int Skip => (Math.Max(1, Index) - 1) * Math.Max(0, Size);
+    /// <summary>
+    /// 实际跳过条数。<paramref name="SkipOverride"/> 用于"窗口起点不在整页边界"的调用方
+    /// （搜索结果里文件夹与链接同处一条有序流，链接段的起点 = 全局偏移 − 文件夹数，一般不是 Size 的倍数）。
+    /// </summary>
+    public int Skip => SkipOverride ?? (Math.Max(1, Index) - 1) * Math.Max(0, Size);
 }
 
 /// <summary>

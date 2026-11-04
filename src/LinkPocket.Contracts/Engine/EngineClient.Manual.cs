@@ -64,7 +64,7 @@ public sealed partial class EngineClient
     public Task<SearchSessionOpenResult> SearchSessionOpenAsync(string query,
         bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null,
         string? sortBy = null, string? sortOrder = null, int? firstPageSize = null,
-        CallOptions? o = null, CancellationToken ct = default)
+        bool? includeFolders = null, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<SearchSessionOpenResult>("search.session_open",
             new
             {
@@ -76,6 +76,7 @@ public sealed partial class EngineClient
                 sort_by = sortBy,
                 sort_order = sortOrder,
                 first_page_size = firstPageSize,
+                include_folders = includeFolders,
             }, o, ct);
 
     /// <summary>从快照会话取一页（页码从 1 开始；per_page=0 = 引擎单页上限）。</summary>
