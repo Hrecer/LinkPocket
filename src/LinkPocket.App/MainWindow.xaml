@@ -16,6 +16,7 @@
         xmlns:views="clr-namespace:LinkPocket.Views;assembly=LinkPocket.UIKit"
         mc:Ignorable="d"
         Title="LinkPocket"
+        Icon="Assets/linkpocket.ico"
         Height="860" Width="1400"
         MinHeight="680" MinWidth="1024"
         WindowStartupLocation="CenterScreen"

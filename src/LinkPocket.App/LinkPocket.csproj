@@ -6,6 +6,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- EXE 图标 = 标题栏品牌 chip 的矢量复原（Assets/linkpocket.ico，多尺寸 16–256）。 -->
+    <ApplicationIcon>Assets\linkpocket.ico</ApplicationIcon>
     <PublishRepositoryUrl>false</PublishRepositoryUrl>
     <EnableSourceLink>false</EnableSourceLink>
     <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
@@ -25,6 +27,11 @@
     <ProjectReference Include="..\LinkPocket.UI.Settings\LinkPocket.UI.Settings.csproj" />
     <ProjectReference Include="..\LinkPocket.UI.Ai\LinkPocket.UI.Ai.csproj" />
     <ProjectReference Include="..\LinkPocket.Ai\LinkPocket.Ai.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 同一份 .ico 也作为 WPF 资源：Window.Icon 走包资源，任务栏/Alt+Tab 不依赖 EXE 图标缓存。 -->
+    <Resource Include="Assets\linkpocket.ico" />
   </ItemGroup>
 
   <ItemGroup>
