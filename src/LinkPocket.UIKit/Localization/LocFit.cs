@@ -598,7 +598,15 @@ public static class LocFit
     public static void Project(FrameworkElement element)
     {
         if (GetMode(element) == LocFitMode.Off) return;
-        if (Normalize(GetText(element)) is not LocText text || text.IsEmpty) return;
+        if (Normalize(GetText(element)) is not LocText text || text.IsEmpty)
+        {
+            // ⚠️ **文案变空必须把已投影的文字清掉**，不能直接 return：`Chosen` 是上一次投影的产物，
+            //    早退会把它留在屏幕上（实测：搜索「正在加载全部结果…」在加载全部结束、状态已为空之后
+            //    仍一直挂在工具行上——`LoadingNotice` 归空，界面却不动）。这是"模型说没了、界面还在"，
+            //    比多写一次 `SetValue` 贵得多；`PlaceChosen` 自带"值不变不写"的比较，稳定态无代价。
+            PlaceChosen(element, string.Empty);
+            return;
+        }
 
         var available = AvailableWidth(element);
 
