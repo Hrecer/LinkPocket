@@ -1,3 +1,5 @@
+using LinkPocket.Data;
+
 namespace LinkPocket.Kernel;
 
 /// <summary>排序方向。</summary>
@@ -103,4 +105,16 @@ public sealed record LinkQuerySpec
     public LinkFilter Filter { get; init; } = new();
     public IReadOnlyList<SortSpec> Sort { get; init; } = [];
     public PageSpec Page { get; init; } = new();
+}
+
+/// <summary>
+/// 目录名搜索结果：<see cref="Matches"/> = 名称命中，<see cref="Descendants"/> = 命中目录的
+/// **严格后代**（已排除命中的那些自身）。
+/// </summary>
+public sealed record FolderNameSearch(IReadOnlyList<Folder> Matches, IReadOnlyList<Folder> Descendants)
+{
+    public static readonly FolderNameSearch Empty = new([], []);
+
+    /// <summary>位置范围的目录集合 = 名称命中 ∪ 后代。</summary>
+    public IEnumerable<Folder> All => Matches.Concat(Descendants);
 }

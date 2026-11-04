@@ -11,6 +11,18 @@ public interface IFolderRepository
     Task<IReadOnlyList<Folder>> ListAllAsync(CancellationToken ct);
 
     /// <summary>
+    /// 目录名搜索（SQL 侧完成）：返回「名称命中」与「命中目录的**严格后代**」两组。
+    /// </summary>
+    /// <remarks>
+    /// 为什么不用 <see cref="ListAllAsync"/> 再在内存里筛：十万目录时全量物化 ≈410ms，
+    /// 而 SQL 只返回命中行（2 000 个名称命中 ≈20ms；5 万个后代 ≈100–200ms）。
+    /// 位置范围 = 两组之和；文件夹结果行 = 名称命中（标题档）∪ 后代（位置档）。
+    /// <paramref name="includeDescendants"/> = false 时只查名称命中（标题档不需要后代）。
+    /// 匹配口径 = SQL `LIKE`（与链接搜索一致，ASCII 大小写不敏感；中文无大小写）。
+    /// </remarks>
+    Task<FolderNameSearch> SearchByNameAsync(string query, bool includeDescendants, CancellationToken ct);
+
+    /// <summary>
     /// 按 ID 集合批量取（`id in (...)`，分块下推）：批量还原/批量操作的冲突预检用——
     /// 逐 ID <see cref="FindAsync"/> 在几百条时是线性点查（大条目撤销/还原的实测瓶颈之一）。
     /// 语义与 <see cref="FindAsync"/> 对齐：本单元已删的不返回、未提交新增的会返回。

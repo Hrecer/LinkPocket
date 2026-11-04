@@ -105,83 +105,46 @@ internal static class SearchSupport
     /// URL / 描述对文件夹没有意义，那两档单独选中时文件夹不命中。
     /// 虚根「全部书签」不落库、没有 ID，天然不会出现在这里；空 id / 空名再挡一次。
     /// </summary>
+    /// <remarks>
+    /// 目录命中在 **SQL 侧**算完（`IFolderRepository.SearchByNameAsync`）：十万目录时全量物化 ≈410ms，
+    /// 只取命中行是 20–200ms。调用方（会话）通常已经有 <paramref name="hits"/>——与位置范围的子树展开共用同一次查询。
+    /// </remarks>
     public static async Task<List<LinkDto>> FindMatchingFoldersAsync(
         Kernel.IUnitOfWork uow, string query, bool searchTitle, bool searchPath, CancellationToken ct,
-        IReadOnlyList<Folder>? preloaded = null)
+        FolderNameSearch? hits = null)
     {
         if (string.IsNullOrWhiteSpace(query) || (!searchTitle && !searchPath)) return [];
+        var found = hits ?? await uow.Folders.SearchByNameAsync(query, searchPath, ct);
+        return BuildFolderRows(found, searchTitle, searchPath);
+    }
 
-        // 目录表（10 万级）一次搜索只读一次：位置范围展开子树与文件夹匹配共用同一份
-        //（否则每次搜索两次 ListAll，复杂库上多付 ~120ms 的实体物化）。
-        var all = preloaded ?? await uow.Folders.ListAllAsync(ct);
-        if (all.Count == 0) return [];
-
-        var byId = new Dictionary<string, Folder>(all.Count, StringComparer.Ordinal);
-        foreach (var folder in all) byId[folder.FolderId] = folder;
-
-        // 祖先名命中：**从根往下推一遍（O(N)）**，而不是每个目录各自上溯。
-        // 后者是 O(N × 深度)：10 万目录 × 100 层 = 1000 万次字符串比较（复杂库实测 ~200ms）；
-        // 前者每个目录只比较一次（父节点是否命中 + 自己是否是命中源）。
-        // 不物化 path 列、不做 SQL 递归 CTE——目录表本来就常驻内存（folders.tree 就是这么取的）。
-        var ancestorHit = new Dictionary<string, bool>(all.Count, StringComparer.Ordinal);
+    /// <summary>由目录命中构造文件夹结果行：标题档取「名称命中」，位置档取「严格后代」。</summary>
+    public static List<LinkDto> BuildFolderRows(FolderNameSearch hits, bool searchTitle, bool searchPath)
+    {
+        var rows = new List<LinkDto>(hits.Matches.Count + hits.Descendants.Count);
+        if (searchTitle)
+            foreach (var folder in hits.Matches) AddFolderRow(rows, folder);
         if (searchPath)
-        {
-            var children = new Dictionary<string, List<Folder>>(StringComparer.Ordinal);
-            var roots = new List<Folder>();
-            foreach (var folder in all)
-            {
-                if (string.IsNullOrEmpty(folder.FolderId)) continue;
-                if (string.IsNullOrEmpty(folder.ParentId) || !byId.ContainsKey(folder.ParentId))
-                {
-                    roots.Add(folder);      // 根，或父链断掉的孤立节点：按"没有祖先"处理
-                }
-                else
-                {
-                    if (!children.TryGetValue(folder.ParentId, out var kids))
-                        children[folder.ParentId] = kids = [];
-                    kids.Add(folder);
-                }
-            }
-
-            var pending = new Queue<Folder>(roots);
-            foreach (var root in roots) ancestorHit[root.FolderId] = false;
-            while (pending.Count > 0)
-            {
-                var parent = pending.Dequeue();
-                var inherited = ancestorHit[parent.FolderId]
-                                || parent.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
-                if (!children.TryGetValue(parent.FolderId, out var kids)) continue;
-                foreach (var kid in kids)
-                {
-                    if (!ancestorHit.TryAdd(kid.FolderId, inherited)) continue;   // 环/重复父链：只走一次
-                    pending.Enqueue(kid);
-                }
-            }
-        }
-
-        var rows = new List<LinkDto>();
-        foreach (var folder in all)
-        {
-            if (string.IsNullOrEmpty(folder.FolderId) || string.IsNullOrWhiteSpace(folder.Name)) continue;
-            var titleHit = searchTitle && folder.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
-            if (!titleHit && !(searchPath && ancestorHit.TryGetValue(folder.FolderId, out var inherited) && inherited))
-                continue;
-
-            rows.Add(new LinkDto
-            {
-                Kind = FolderKind,
-                LinkId = folder.FolderId,
-                Title = folder.Name,
-                Url = string.Empty,
-                Description = folder.Description ?? string.Empty,
-                ListId = folder.ParentId,          // 位置列 = 父路径（与链接行的"所在目录"同义）
-                VisitCount = folder.VisitCount,
-                LastVisitedAt = folder.LastVisitedAt,
-                CreatedAt = folder.CreatedAt,
-                UpdatedAt = folder.UpdatedAt,
-            });
-        }
+            foreach (var folder in hits.Descendants) AddFolderRow(rows, folder);
         return rows;
+    }
+
+    private static void AddFolderRow(List<LinkDto> rows, Folder folder)
+    {
+        if (string.IsNullOrEmpty(folder.FolderId) || string.IsNullOrWhiteSpace(folder.Name)) return;
+        rows.Add(new LinkDto
+        {
+            Kind = FolderKind,
+            LinkId = folder.FolderId,
+            Title = folder.Name,
+            Url = string.Empty,
+            Description = folder.Description ?? string.Empty,
+            ListId = folder.ParentId,          // 位置列 = 父路径（与链接行的"所在目录"同义）
+            VisitCount = folder.VisitCount,
+            LastVisitedAt = folder.LastVisitedAt,
+            CreatedAt = folder.CreatedAt,
+            UpdatedAt = folder.UpdatedAt,
+        });
     }
 
     /// <summary>文件夹块排序：与链接同名的排序键各取自己的字段；`url`/`is_important` 对文件夹恒等 → 退化为按名称。</summary>
@@ -239,45 +202,32 @@ internal static class SearchSupport
         return rows;
     }
 
-    /// <summary>构建一次多范围谓词；目录名命中时**只在这里展开子树**。</summary>
-    public static async Task<LinkSearchScope> BuildScopeAsync(
-        Kernel.IUnitOfWork uow, string query,
-        bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
-        CancellationToken ct, IReadOnlyList<Folder>? preloadedFolders = null)
+    /// <summary>由目录命中构造作用域（同步：与文件夹结果行共用同一次 SQL 查询）。</summary>
+    public static LinkSearchScope BuildScope(
+        string query, bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
+        FolderNameSearch? hits)
         => new()
         {
             Query = query,
             Title = searchTitle,
             Url = searchUrl,
             Description = searchDescription,
-            Folders = searchPath ? await ExpandMatchingFoldersAsync(uow, query, ct, preloadedFolders) : [],
+            // 位置范围 = 名称命中 ∪ 全部后代（同一份命中结果，不再二次展开）
+            Folders = searchPath && hits is not null
+                ? hits.All.Select(f => new FolderId(f.FolderId)).ToList()
+                : [],
         };
 
-    /// <summary>目录名命中的文件夹 + 其整棵子树（命中目录本身也算命中）。</summary>
-    private static async Task<List<FolderId>> ExpandMatchingFoldersAsync(
-        Kernel.IUnitOfWork uow, string query, CancellationToken ct,
-        IReadOnlyList<Folder>? preloaded = null)
+    /// <summary>构建一次多范围谓词（外部命令入口：自己查目录命中；会话走 <see cref="BuildScope"/> 复用一次查询）。</summary>
+    public static async Task<LinkSearchScope> BuildScopeAsync(
+        Kernel.IUnitOfWork uow, string query,
+        bool searchTitle, bool searchUrl, bool searchDescription, bool searchPath,
+        CancellationToken ct)
     {
-        var folders = preloaded ?? await uow.Folders.ListAllAsync(ct);
-        var childrenOf = folders
-            .Where(f => f.ParentId != null)
-            .ToLookup(f => f.ParentId!, StringComparer.Ordinal);
-
-        var expanded = new List<FolderId>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var pending = new Queue<string>(folders
-            .Where(f => TextMatch.Contains(f.Name, query))
-            .Select(f => f.FolderId));
-
-        while (pending.Count > 0)
-        {
-            var id = pending.Dequeue();
-            if (!seen.Add(id)) continue;
-            expanded.Add(new FolderId(id));
-            foreach (var child in childrenOf[id]) pending.Enqueue(child.FolderId);
-        }
-
-        return expanded;
+        var hits = searchPath && !string.IsNullOrWhiteSpace(query)
+            ? await uow.Folders.SearchByNameAsync(query, includeDescendants: true, ct)
+            : null;
+        return BuildScope(query, searchTitle, searchUrl, searchDescription, searchPath, hits);
     }
 
     /// <summary>逐字段标注命中来源（与 SQL 谓词同义；供 search.explain 与结果高亮）。
