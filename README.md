@@ -40,7 +40,7 @@ A local-first bookmark manager for Windows. Your links live in one folder on you
 
 **Large libraries**
 
-- Tens of thousands of bookmarks stay responsive.
+- Tested with 100,000 bookmarks and 100,000 folders; lists, search and sorting stay responsive.
 
 **Appearance**
 
@@ -84,7 +84,7 @@ Requires the .NET SDK.
 ```powershell
 dotnet build LinkPocket.sln -c Release
 dotnet run --project src/LinkPocket.App -c Release
-dotnet test LinkPocket.sln -c Release
+powershell -ExecutionPolicy Bypass -File build\ci.ps1   # five CI gates; tests run serially
 ```
 
 ## Credits
