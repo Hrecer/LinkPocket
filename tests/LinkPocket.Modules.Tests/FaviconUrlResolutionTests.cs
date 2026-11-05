@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using LinkPocket.Contracts;
 using Xunit;
 
@@ -28,6 +30,17 @@ public class FaviconUrlResolutionTests
         var path = FaviconCache.GetCacheFilePath("https://example.com/assets/logo-abc123.svg");
 
         Assert.EndsWith(".png", path, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SVG图标_换光栅化规则后旧缓存不被复用()
+    {
+        const string svg = "https://example.com/assets/logo-abc123.svg";
+        var legacyPath = Path.Combine(
+            FaviconCache.CacheDirectory,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(svg))) + ".png");
+
+        Assert.NotEqual(legacyPath, FaviconCache.GetCacheFilePath(svg), StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

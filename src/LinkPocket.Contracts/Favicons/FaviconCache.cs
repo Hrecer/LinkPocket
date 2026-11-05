@@ -31,6 +31,12 @@ public static class FaviconCache
     /// <remarks>派生自 <see cref="AppPaths"/>（唯一解析实现），绝不在这里手拼 <c>AppContext.BaseDirectory</c>。</remarks>
     public static string CacheDirectory => Path.Combine(AppPaths.DataRoot, "favicons");
 
+    /// <summary>
+    /// SVG 光栅化结果的缓存版本：截图适配规则一改就 +1，让旧的 SVG 图标重新画一遍。
+    /// 位图缓存不参与这个版本（同一地址仍是旧键），不会因一次光栅化改动而全量重下。
+    /// </summary>
+    private const string SvgRasterCacheVersion = "fit-v1|";
+
     /// <summary>单文件上限：超过即判失败（挡住"服务器把一个大文件当图标返回"）。</summary>
     private const int MaxBytes = 2 * 1024 * 1024;
 
@@ -252,10 +258,14 @@ public static class FaviconCache
         }
     }
 
-    /// <summary>缓存文件路径 = 目录 + SHA256(地址) + 扩展名（同一地址恒定同名）。</summary>
+    /// <summary>
+    /// 缓存文件路径 = 目录 + SHA256(地址) + 扩展名（同一地址恒定同名）。
+    /// SVG 地址额外带上光栅化版本，适配规则更新时只换掉这一类图标的缓存。
+    /// </summary>
     public static string GetCacheFilePath(string faviconUrl)
     {
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(faviconUrl)));
+        var key = IsSvgUrl(faviconUrl) ? SvgRasterCacheVersion + faviconUrl : faviconUrl;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
         // SVG 位子上落盘的是光栅化后的 PNG，文件扩展名跟着内容走（BitmapImage 按内容解码，但名字要对得上）
         return Path.Combine(CacheDirectory, $"{hash}{CacheExtension(faviconUrl)}");
     }

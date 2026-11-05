@@ -116,11 +116,11 @@ internal sealed class SvgIconRasterizer : IDisposable
                 "document.documentElement.style.margin='0';document.documentElement.style.overflow='hidden';")
                 .ConfigureAwait(true);
 
-            // **按固有尺寸适配缩放**：SVG 文档被直接打开时按它自己的 width/height 排版
-            // （常见 256 / 512），而截图视口只有 128 —— 不缩放就只截到图形的一角
-            // （实测症状：拿回来的"图标"是一个被放大的黑圆的一段弧）。
-            if (await FitIntoViewportAsync(view, core).ConfigureAwait(true))
-                await Task.Delay(120).ConfigureAwait(true);   // 等浏览器按新缩放重绘一帧
+            // **让整张 SVG 落进截图视口**：SVG 作为文档打开时按自身 width/height 排版
+            // （可能远大于 128），不处理就只截到左上角。这里改的是文档自身的视口尺寸，
+            // 不是浏览器缩放——缩放有内部上下限，超大图会被归一化后仍然截偏。
+            if (await FitSvgIntoViewportAsync(core).ConfigureAwait(true))
+                await Task.Delay(120).ConfigureAwait(true);   // 等浏览器按新视口重绘一帧
 
             using var png = new MemoryStream();
             await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
@@ -138,52 +138,61 @@ internal sealed class SvgIconRasterizer : IDisposable
     }
 
     /// <summary>
-    /// 把页面缩放到"整张图刚好塞进 <see cref="CanvasSize"/> 见方"的比例；已经合适就不动。
+    /// 把 SVG 文档的根元素铺满截图视口（保留宽高比），让截图拿到整张图而不是左上角。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// SVG 作为文档被打开时，排版宽高取它自己的 <c>width</c>/<c>height</c>（没有就按 <c>viewBox</c>，
-    /// 再没有就是 300×150 的缺省）。而截图视口固定 <see cref="CanvasSize"/>，两者不等就会截偏：
-    /// 图比视口大 → 只截到左上角；图比视口小 → 周围一大片空白。
+    /// SVG 作为独立文档打开时，排版宽高取它自己的 <c>width</c>/<c>height</c>；截图视口固定
+    /// <see cref="CanvasSize"/> 见方，图比视口大就只截到一角。改文档视口而不是用 WebView2 的
+    /// <c>ZoomFactor</c>：后者有内部支持的缩放范围，超大图需要的小比例会被归一化，
+    /// 结果仍是原尺寸截图。
     /// </para>
     /// <para>
-    /// 用 <c>ZoomFactor</c> 而不是改窗口大小：缩放是浏览器的渲染变换，矢量图仍然按目标尺寸精确绘制，
-    /// 也不会因为窗口尺寸变化而在屏幕上闪一下。上下限都夹住 —— 太小的小图标放大到 4 倍就够，
-    /// 再大只是糊；太大的图缩到 0.02 已经远超实际。
+    /// 没有 <c>viewBox</c> 的 SVG 先用内容包围盒（退回当前布局尺寸）补一个，
+    /// 否则仅改 CSS 宽高不会缩放内容。最终统一用 <c>meet</c> 完整显示，绝不裁切。
     /// </para>
     /// </remarks>
-    private static async Task<bool> FitIntoViewportAsync(WebView2 view, CoreWebView2 core)
+    private static async Task<bool> FitSvgIntoViewportAsync(CoreWebView2 core)
     {
         const string script = """
             (() => {
-              const r = document.documentElement.getBoundingClientRect();
-              return JSON.stringify({ w: Math.round(r.width), h: Math.round(r.height) });
+              const svg = document.documentElement;
+              if (!svg || svg.tagName.toLowerCase() !== 'svg') return false;
+
+              if (!svg.getAttribute('viewBox')) {
+                let box = null;
+                try { box = svg.getBBox(); } catch (e) { box = null; }
+                if (box && box.width > 0 && box.height > 0) {
+                  svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.width} ${box.height}`);
+                } else {
+                  const r = svg.getBoundingClientRect();
+                  if (r.width > 0 && r.height > 0)
+                    svg.setAttribute('viewBox', `0 0 ${r.width} ${r.height}`);
+                }
+              }
+
+              svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+              svg.style.setProperty('width', '100vw', 'important');
+              svg.style.setProperty('height', '100vh', 'important');
+              svg.style.setProperty('display', 'block', 'important');
+              svg.style.setProperty('margin', '0', 'important');
+              svg.style.setProperty('position', 'fixed', 'important');
+              svg.style.setProperty('inset', '0', 'important');
+              document.documentElement.style.setProperty('overflow', 'hidden', 'important');
+              document.documentElement.style.setProperty('background', 'transparent', 'important');
+              return true;
             })()
             """;
 
         try
         {
             var raw = await core.ExecuteScriptAsync(script).ConfigureAwait(true);
-            if (string.IsNullOrEmpty(raw)) return false;
-
-            // ExecuteScriptAsync 把结果再 JSON 编码一次，所以先解一层拿到内层字符串
-            var json = System.Text.Json.JsonSerializer.Deserialize<string>(raw);
-            if (string.IsNullOrEmpty(json)) return false;
-
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var w = doc.RootElement.GetProperty("w").GetDouble();
-            var h = doc.RootElement.GetProperty("h").GetDouble();
-            if (w <= 0 || h <= 0) return false;
-
-            var zoom = Math.Clamp(Math.Min(CanvasSize / w, CanvasSize / h), 0.02, 4.0);
-            if (Math.Abs(zoom - 1.0) < 0.01) return false;
-
-            view.ZoomFactor = zoom;
-            return true;
+            return !string.IsNullOrEmpty(raw)
+                   && !string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
-            // 缩放只是"截得完整"的修饰：拿不到尺寸就按原样截，总比不给图标好
+            // 适配只是"截得完整"的修饰：拿不到就按原样截，总比不给图标好
             LpLog.Debug($"svg fit-to-viewport failed: {ex.GetType().Name}", "app.favicon");
             return false;
         }

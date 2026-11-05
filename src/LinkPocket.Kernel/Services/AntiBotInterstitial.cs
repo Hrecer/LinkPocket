@@ -25,7 +25,7 @@ public static class AntiBotInterstitial
     /// <summary>厂商挑战页的指纹：命中即判，不看大小与标题。</summary>
     private static readonly string[] HardMarkers =
     [
-        "__waf_verification_challenge",   // 火山引擎 WAF（36kr 首页即此例：200 + 25 KB 空壳）
+        "__waf_verification_challenge",   // 火山引擎 WAF（部分站点首页：200 + 25 KB 空壳）
         "_waf_verification_proof",
         "cf-browser-verification",        // Cloudflare
         "cf_chl_opt",

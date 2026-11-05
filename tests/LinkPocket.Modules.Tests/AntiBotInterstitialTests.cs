@@ -10,7 +10,7 @@ namespace LinkPocket.Modules.Tests;
 /// </summary>
 public class AntiBotInterstitialTests
 {
-    /// <summary>36kr 首页实测挑战页的裁剪样本（火山引擎 WAF：JSON 挑战 + 内联 proof 脚本 + 空 data URI 图标）。</summary>
+    /// <summary>某站点首页实测挑战页的裁剪样本（火山引擎 WAF：JSON 挑战 + 内联 proof 脚本 + 空 data URI 图标）。</summary>
     private const string VolcengineChallenge = """
         <!DOCTYPE html><html lang="en"><head>
         <meta charset="UTF-8" />
@@ -93,8 +93,8 @@ public class AntiBotInterstitialTests
     [Fact]
     public void 正常页面不算拦截页()
         => Assert.False(AntiBotInterstitial.Detect(
-            "<html><head><title>36氪_让一部分人先看到未来</title>"
-            + "<meta name=\"description\" content=\"36氪通过全面，独家的视角\"></head><body>…</body></html>"));
+            "<html><head><title>示例站点_让一部分人先看到未来</title>"
+            + "<meta name=\"description\" content=\"示例站点的描述\"></head><body>…</body></html>"));
 
     [Fact]
     public void 空文档不算拦截页()
@@ -110,10 +110,10 @@ public class AntiBotInterstitialTests
     [Fact]
     public void 挑战页解析出的正是只有图标()
     {
-        var metadata = RegexMetadataParser.Instance.Parse(VolcengineChallenge, new Uri("https://www.36kr.com/"));
+        var metadata = RegexMetadataParser.Instance.Parse(VolcengineChallenge, new Uri("https://example.com/"));
 
         Assert.Null(metadata.Title);
         Assert.Null(metadata.Description);
-        Assert.Equal("https://www.36kr.com/favicon.ico", metadata.FaviconUrl);   // data URI 无扩展名 → 回落站点根
+        Assert.Equal("https://example.com/favicon.ico", metadata.FaviconUrl);   // data URI 无扩展名 → 回落站点根
     }
 }
