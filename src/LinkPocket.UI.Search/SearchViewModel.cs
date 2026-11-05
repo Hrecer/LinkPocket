@@ -512,6 +512,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     /// </summary>
     private async Task RefreshAsync()
     {
+        CancelStartupWarm();
         if (string.IsNullOrWhiteSpace(LastQuery)) return;
         IsNavigating = true;
         try
@@ -527,8 +528,57 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
     // —— 查询执行 ——
 
+    /// <summary>
+    /// 启动后空闲预热：随便一个文本查询都会沿搜索覆盖索引做一次全扫（结果不用），
+    /// 目的只是把索引页读热；不预取任何用户结果、不建占位行。真实搜索/刷新会取消它。
+    /// </summary>
+    public void WarmIndexForStartup()
+    {
+        CancelStartupWarm();
+        var cts = new CancellationTokenSource();
+        _startupWarmCts = cts;
+        _ = Task.Run(async () =>
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                await _api.SearchCountAsync("a",
+                    searchTitle: true, searchUrl: true, searchDescription: true,
+                    searchPath: false, ct: cts.Token);
+                LpLog.Info($"startup warm: search index {watch.ElapsedMilliseconds}ms",
+                    category: "app.lifecycle");
+            }
+            catch (OperationCanceledException)
+            {
+                // 用户已开始搜索：真实请求优先。
+            }
+            catch (Exception ex)
+            {
+                LpLog.Warn("startup warm: search index failed", ex, category: "app.lifecycle");
+            }
+            finally
+            {
+                if (ReferenceEquals(_startupWarmCts, cts)) _startupWarmCts = null;
+                cts.Dispose();
+            }
+        }, cts.Token);
+    }
+
+    /// <summary>取消启动预热（真实搜索/刷新时调用；幂等）。</summary>
+    public void CancelStartupWarm()
+    {
+        var cts = Interlocked.Exchange(ref _startupWarmCts, null);
+        if (cts is not null)
+        {
+            try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        }
+    }
+
+    private CancellationTokenSource? _startupWarmCts;
+
     private async Task SearchAsync()
     {
+        CancelStartupWarm();   // 真实搜索优先，启动预热让路
         var query = Query.Trim();
         if (string.IsNullOrWhiteSpace(query))
         {

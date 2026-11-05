@@ -112,32 +112,90 @@ namespace LinkPocket.ViewModels
         /// </summary>
         public void WarmEngine()
         {
+            CancelStartupWarm();
             if (Interlocked.Exchange(ref _engineWarmStarted, 1) != 0) return;
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var added = await _api.LinkSmartListPageAsync("recently_added", "title", "asc", 1, 64);
-                    var edited = await _api.LinkSmartListPageAsync("recently_edited", "title", "asc", 1, 64);
-                    var visited = await _api.LinkSmartListPageAsync("recently_visited", "title", "asc", 1, 64);
-                    var most = await _api.LinkSmartListPageAsync("most_visited", "visit_count", "desc", 1, 20);
-                    var at = DateTime.UtcNow;
-                    lock (_warmPages)
-                    {
-                        _warmPages["recently_added"] = (added, at);
-                        _warmPages["recently_edited"] = (edited, at);
-                        _warmPages["recently_visited"] = (visited, at);
-                        _warmPages["most_visited"] = (most, at);
-                    }
-                    // 先建一组同规模的占位行（十万行约 10ms）：点卡时直接复用，
-                    // 首帧不再在关键路径上分配十万个行对象。
-                    EnsureSpareRows(added.TotalCount);
+                    await WarmPagesAsync(ensureSpareRows: true, CancellationToken.None);
                 }
                 catch
                 {
                     // 预热失败不影响真实查询（真实打开自己会报错）
                 }
             });
+        }
+
+        /// <summary>
+        /// 启动后空闲预热：只取四个预设首页，**不建 10 万占位行池**
+        /// （启动阶段不额外占约 50MB、不触发 GC）；用户点卡时页数据已在缓存/磁盘已热。
+        /// 真实进入智能列表页或打开列表会取消本预热。
+        /// </summary>
+        public async Task WarmForStartupAsync()
+        {
+            CancelStartupWarm();
+            var cts = new CancellationTokenSource();
+            _startupWarmCts = cts;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                await WarmPagesAsync(ensureSpareRows: false, cts.Token);
+                LpLog.Info($"startup warm: smart lists {watch.ElapsedMilliseconds}ms",
+                    category: "app.lifecycle");
+            }
+            catch (OperationCanceledException)
+            {
+                // 用户已进入智能列表：真实请求优先。
+            }
+            catch (Exception ex)
+            {
+                LpLog.Warn("startup warm: smart lists failed", ex, category: "app.lifecycle");
+            }
+            finally
+            {
+                if (ReferenceEquals(_startupWarmCts, cts)) _startupWarmCts = null;
+                cts.Dispose();
+            }
+        }
+
+        /// <summary>取消启动预热（页面进入/真实打开时调用；幂等）。</summary>
+        public void CancelStartupWarm()
+        {
+            var cts = Interlocked.Exchange(ref _startupWarmCts, null);
+            if (cts is not null)
+            {
+                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+            }
+        }
+
+        private CancellationTokenSource? _startupWarmCts;
+
+        private async Task WarmPagesAsync(bool ensureSpareRows, CancellationToken ct)
+        {
+            var added = await _api.LinkSmartListPageAsync(
+                "recently_added", "title", "asc", 1, 64, ct: ct);
+            ct.ThrowIfCancellationRequested();
+            var edited = await _api.LinkSmartListPageAsync(
+                "recently_edited", "title", "asc", 1, 64, ct: ct);
+            ct.ThrowIfCancellationRequested();
+            var visited = await _api.LinkSmartListPageAsync(
+                "recently_visited", "title", "asc", 1, 64, ct: ct);
+            ct.ThrowIfCancellationRequested();
+            var most = await _api.LinkSmartListPageAsync(
+                "most_visited", "visit_count", "desc", 1, 20, ct: ct);
+            ct.ThrowIfCancellationRequested();
+
+            var at = DateTime.UtcNow;
+            lock (_warmPages)
+            {
+                _warmPages["recently_added"] = (added, at);
+                _warmPages["recently_edited"] = (edited, at);
+                _warmPages["recently_visited"] = (visited, at);
+                _warmPages["most_visited"] = (most, at);
+            }
+            // 页面进入时的预热才建占位行池；启动预热刻意跳过。
+            if (ensureSpareRows) EnsureSpareRows(added.TotalCount);
         }
 
         private int _engineWarmStarted;
@@ -204,6 +262,7 @@ namespace LinkPocket.ViewModels
 
         public async void OpenSmartList(string listId, int? days = null)
         {
+            CancelStartupWarm();   // 真实打开优先，启动预热让路
             IsLoading = true;
             var generation = ++_openGeneration;
             _loadingResult?.CancelLoad();

@@ -87,7 +87,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(MainViewModel.CurrentNavId) && DataContext is MainViewModel active)
+            {
+                // 用户切页 = 真实使用开始：任何还没跑完的启动预热都让路。
+                active.SmartListViewModel.CancelStartupWarm();
+                _searchVm?.CancelStartupWarm();
                 ApplyNavVisibility(active.CurrentNavId);
+            }
         };
         ApplyNavVisibility(vm.CurrentNavId);
 
@@ -360,6 +365,39 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
                 category: "app.lifecycle");
         }
         // 导航条（SlidingNavStrip 组件）在首次布局后自行贴齐选中项，窗口无需干预。
+
+        // 启动后空闲预热：首帧与浏览页就绪后延迟 2 秒，后台把智能列表四预设首页与
+        // 搜索覆盖索引读热；不建 10 万占位行池、不碰 UI 线程。用户已打开搜索/智能列表则跳过。
+        _ = RunStartupWarmupAsync(viewModel);
+    }
+
+    private readonly CancellationTokenSource _startupWarmCts = new();
+
+    private async Task RunStartupWarmupAsync(MainViewModel vm)
+    {
+        var ct = _startupWarmCts.Token;
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            if (ct.IsCancellationRequested) return;
+            if (vm.CurrentNavId is NavIds.Search or NavIds.SmartLists) return;
+
+            LpLog.Info("startup warm: begin (smart lists + search index)", category: "app.lifecycle");
+            // Task.Run 保证整段预热不占 UI 线程；WarmForStartupAsync 内部只存页数据，不建行池。
+            await Task.Run(() => vm.SmartListViewModel.WarmForStartupAsync(), ct);
+            if (ct.IsCancellationRequested) return;
+            if (vm.CurrentNavId is NavIds.Search or NavIds.SmartLists) return;
+
+            _searchVm.WarmIndexForStartup();
+        }
+        catch (OperationCanceledException)
+        {
+            // 窗口关闭或用户已接管：预热让路。
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn("startup warm failed", ex, category: "app.lifecycle");
+        }
     }
 
     /// <summary>
@@ -421,6 +459,12 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
     /// <summary>窗口关闭：释放本窗口的页面对象图作用域（引擎面是应用级的，不在这里释放）。</summary>
     protected override void OnClosed(EventArgs e)
     {
+        _startupWarmCts.Cancel();
+        if (DataContext is MainViewModel vm)
+        {
+            vm.SmartListViewModel.CancelStartupWarm();
+            _searchVm.CancelStartupWarm();
+        }
         _scope.Dispose();
         base.OnClosed(e);
     }
