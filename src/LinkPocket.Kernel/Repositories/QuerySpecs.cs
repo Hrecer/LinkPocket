@@ -117,6 +117,13 @@ public sealed record LinkQuerySpec
     public LinkFilter Filter { get; init; } = new();
     public IReadOnlyList<SortSpec> Sort { get; init; } = [];
     public PageSpec Page { get; init; } = new();
+
+    /// <summary>
+    /// 选择性过滤的计划提示：true = 先用过滤列索引收候选，再按排序键排（适合命中少的时间窗查询）；
+    /// false = 让 SQLite 沿排序键索引取前 N 行（适合命中近乎全表、排序键索引能提前停的场景）。
+    /// 只影响原生直读计划，不改变结果；由引擎按“预设 + 计数”设置，外部调用方不需要关心。
+    /// </summary>
+    public bool PreferFilterIndex { get; init; }
 }
 
 /// <summary>

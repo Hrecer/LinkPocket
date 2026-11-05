@@ -62,6 +62,12 @@ public class IndexPlanTests
     [InlineData("SELECT id FROM links WHERE (title LIKE '%git%' ESCAPE '\\' OR url LIKE '%git%' ESCAPE '\\') ORDER BY title COLLATE NOCASE, id LIMIT 500", "idx_links_search")]
     [InlineData("SELECT COUNT(*) FROM links WHERE (title LIKE '%git%' ESCAPE '\\' OR url LIKE '%git%' ESCAPE '\\')", "idx_links_search")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY title COLLATE NOCASE, id LIMIT 2000", "idx_links_folder_title")]
+    // 智能列表标题序分页：固定走老搜索覆盖索引，避免新索引把计划器带偏
+    [InlineData("SELECT id FROM links INDEXED BY idx_links_search WHERE created_at >= '2026-01-01' ORDER BY title COLLATE NOCASE, id LIMIT 64", "idx_links_search")]
+    // 最常查看：全局访问次数索引，反向取前 20（冷盘 0.7s → 4ms）
+    [InlineData("SELECT id FROM links WHERE visit_count >= 1 AND (folder_id IS NOT NULL OR folder_id IS NULL) ORDER BY visit_count DESC, last_visited_at DESC, id DESC LIMIT 20", "idx_links_visits")]
+    // 最近访问：选择性过滤 + 标题序，强制过滤列索引收候选再排序（否则沿标题索引扫十万行回表）
+    [InlineData("SELECT id FROM links INDEXED BY idx_links_last_visited WHERE last_visited_at >= '2026-01-01' ORDER BY title COLLATE NOCASE, id LIMIT 64", "idx_links_last_visited")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY created_at, id LIMIT 2000", "idx_links_folder_created")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY updated_at DESC, id DESC LIMIT 2000", "idx_links_folder_updated")]
     [InlineData("SELECT id FROM links WHERE folder_id = 'F1' ORDER BY visit_count DESC, id DESC LIMIT 2000", "idx_links_folder_visits")]

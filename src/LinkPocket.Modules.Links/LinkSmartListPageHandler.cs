@@ -12,6 +12,10 @@ namespace LinkPocket.Modules.Links;
 /// </summary>
 internal sealed class LinkSmartListPageHandler : ICommandHandler
 {
+    /// <summary>「最近访问」命中这么多行以内时，过滤索引 + 内存排序比沿标题索引扫十万行更快；
+    /// 超过则让标题索引提前停（两种计划在 10K 分界附近实测交叉）。</summary>
+    private const int FilterIndexMaxRows = 10_000;
+
     public CommandDescriptor Descriptor { get; } = new(
         Name: "links.smart_list_page",
         Category: "links",
@@ -50,18 +54,32 @@ internal sealed class LinkSmartListPageHandler : ICommandHandler
             ? naturalSort
             : QueryParsing.ParseSort(sortBy, sortOrder, QueryParsing.LinkSortFields, naturalSort[0].Field);
 
+        // 选择性过滤（最近访问、最常查看）先走过滤列索引收候选再排序；命中近全表的
+        // 最近添加/编辑仍沿标题索引取前 N 行（见 LinkQuerySpec.PreferFilterIndex）。
+        // 全量取数必须排完所有命中，过滤索引始终更划算。
         if (perPage == 0)
         {
+            var preferFilterIndexAll = kind is "recently_visited" or "most_visited";
             var all = await ctx.Uow.Links.ListDtosAsync(
-                new LinkQuerySpec { Filter = filter, Sort = sort, Page = new PageSpec(1, 0) }, ct);
+                new LinkQuerySpec
+                {
+                    Filter = filter, Sort = sort, Page = new PageSpec(1, 0),
+                    PreferFilterIndex = preferFilterIndexAll,
+                }, ct);
             return CommandResult.Ok(new SmartListPageDto { TotalCount = all.Count, Items = all.ToList() });
         }
 
         // COUNT 先走（索引覆盖），首页沿排序列取——首帧只付「计数 + 64 行」，
         // 不把十万行 DTO 留在 UI 线程上等。
         var total = await ctx.Uow.Links.CountAsync(filter, ct);
+        var preferFilterIndex = kind == "most_visited"
+            || (kind == "recently_visited" && total <= FilterIndexMaxRows);
         var rows = await ctx.Uow.Links.ListDtosAsync(
-            new LinkQuerySpec { Filter = filter, Sort = sort, Page = new PageSpec(page, perPage) }, ct);
+            new LinkQuerySpec
+            {
+                Filter = filter, Sort = sort, Page = new PageSpec(page, perPage),
+                PreferFilterIndex = preferFilterIndex,
+            }, ct);
         return CommandResult.Ok(new SmartListPageDto { TotalCount = total, Items = rows.ToList() });
     }
 }

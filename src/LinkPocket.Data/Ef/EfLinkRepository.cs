@@ -119,8 +119,22 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             return false;
 
         where = clause!;
+        // 访问次数索引是部分索引（目录恒真谓词）：这里必须带上同一谓词，计划器才允许使用；
+        // 谓词对每一行都成立，不改变结果。搜索页的同列排序不带它，因此不会误选该索引。
+        if (f.VisitCountMin is not null)
+            where += " AND (folder_id IS NOT NULL OR folder_id IS NULL)";
         parameters = [bound.Value];
         return true;
+    }
+
+    /// <summary>智能列表过滤列对应的紧凑索引（与 <see cref="SchemaMigrator.HotIndexDdl"/> 同名同义）。</summary>
+    private static string? SmartListFilterIndex(LinkFilter f)
+    {
+        if (f.CreatedFrom is not null) return "idx_links_created";
+        if (f.UpdatedFrom is not null) return "idx_links_updated";
+        if (f.LastVisitedFrom is not null) return "idx_links_last_visited";
+        if (f.VisitCountMin is not null) return "idx_links_visits";
+        return null;
     }
 
     /// <summary>
@@ -161,8 +175,16 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         order.Add($"id {(spec.Sort[^1].Dir == SortDir.Desc ? "DESC" : "ASC")}");
 
         var sb = new StringBuilder(
-            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links WHERE ");
-        sb.Append(where);
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links");
+        // 选择性过滤：强制走过滤列索引收候选，再按标题排（否则 SQLite 会沿标题索引扫十万行回表）。
+        // 其余标题序（最近添加/编辑等）固定走老的搜索覆盖索引：新索引会改变计划器对“取全量”
+        // 的估算，曾把 1.0s 的标题序全量拖到 2.0s（见 WARNINGS 251）。
+        if ((spec.PreferFilterIndex || spec.Page.Size == 0)
+            && SmartListFilterIndex(spec.Filter) is { } index)
+            sb.Append(" INDEXED BY ").Append(index);
+        else if (spec.Page.Size > 0 && spec.Sort.Count == 1 && spec.Sort[0].Field == "title")
+            sb.Append(" INDEXED BY idx_links_search");
+        sb.Append(" WHERE ").Append(where);
         sb.Append(" ORDER BY ").Append(string.Join(", ", order));
 
         var list = new List<(string Name, object? Value)>(whereParameters.Length + 2);
@@ -317,8 +339,8 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
             : $"{expr} {dir}, id {dir}";
 
         var sb = new StringBuilder(
-            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links WHERE ");
-        sb.Append(byFolder ? "folder_id = @folder" : "folder_id IS NULL");
+            "SELECT id, url, title, description, favicon_url, folder_id, last_visited_at, visit_count, is_important, created_at, updated_at FROM links");
+        sb.Append(" WHERE ").Append(byFolder ? "folder_id = @folder" : "folder_id IS NULL");
         sb.Append(" ORDER BY ").Append(order);
 
         var list = new List<(string Name, object? Value)>(3);
@@ -511,8 +533,12 @@ internal sealed class EfLinkRepository(LinkPocketDbContext db) : ILinkRepository
         // 访问次数过滤走表扫但只数不取列），十万行 COUNT 不经过 EF 查询管线。
         if (TryBuildSmartListWhereSql(filter, out var smartWhere, out var smartParameters))
         {
+            // 计数固定走最小的过滤列索引；十万吨级时别让计划器去扫带投影列的宽索引。
+            var smartIndex = SmartListFilterIndex(filter);
             using var smartCmd = await RawSql.CreateAsync(db,
-                "SELECT COUNT(*) FROM links WHERE (" + smartWhere + ")", ct);
+                "SELECT COUNT(*) FROM links"
+                + (smartIndex is null ? string.Empty : " INDEXED BY " + smartIndex)
+                + " WHERE (" + smartWhere + ")", ct);
             foreach (var (name, value) in smartParameters)
                 smartCmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
             return Convert.ToInt32(await smartCmd.ExecuteScalarAsync(ct),

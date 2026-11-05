@@ -156,6 +156,12 @@ public static class SchemaMigrator
         // 追加 url/description/folder_id 后谓词也能在索引内判定（不用为每一行回表）——
         // 稀疏命中/无命中不再退化成"全索引 + 10 万次随机回表"（100K 实测 300ms → 40ms）。
         "CREATE INDEX IF NOT EXISTS idx_links_search ON links(title COLLATE NOCASE, id, folder_id, url, description);",
+        // 全局访问次数（不按目录拆）：most_visited 的
+        // `WHERE visit_count>=? ORDER BY visit_count DESC, last_visited_at DESC, id DESC LIMIT 20`
+        // 沿索引反向取前 20 行；100K 冷盘实测 0.7s → 4ms。
+        // 做成“目录恒真谓词”的部分索引：只有带同一谓词的智能列表查询能用，
+        // 搜索页按 visit_count 排序不会误选它（曾把 0.13s 的搜索排序拖到 1.8s）。
+        "CREATE INDEX IF NOT EXISTS idx_links_visits ON links(visit_count, last_visited_at, id) WHERE folder_id IS NOT NULL OR folder_id IS NULL;",
     ];
 
     /// <summary>补齐热索引（幂等；同纪元老库开库时调用，见 <see cref="HotIndexDdl"/>）。</summary>
@@ -242,6 +248,7 @@ public static class SchemaMigrator
         CREATE INDEX idx_links_folder_visits ON links(folder_id, visit_count, id);
         CREATE INDEX idx_links_folder_lastvisit ON links(folder_id, last_visited_at IS NULL, last_visited_at, id);
         CREATE INDEX idx_links_folder_lastvisit_desc ON links(folder_id, last_visited_at IS NULL, last_visited_at DESC, id DESC);
+        CREATE INDEX idx_links_visits ON links(visit_count, last_visited_at, id) WHERE folder_id IS NOT NULL OR folder_id IS NULL;
 
         CREATE TABLE trash_folders (id TEXT PRIMARY KEY, parent_id TEXT NULL, name TEXT NOT NULL,
           origin_folder_id TEXT NULL, origin_path TEXT NULL, deleted_at TEXT NOT NULL,

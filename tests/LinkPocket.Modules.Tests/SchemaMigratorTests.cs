@@ -173,6 +173,7 @@ public class SchemaMigratorTests
                 "idx_links_updated",
                 "idx_links_url",
                 "idx_links_url_nocase",
+                "idx_links_visits",
                 "idx_trash_folders_deleted",
                 "idx_trash_folders_parent",
                 "idx_trash_links_deleted",
