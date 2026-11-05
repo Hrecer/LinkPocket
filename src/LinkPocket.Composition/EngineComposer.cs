@@ -70,6 +70,10 @@ public sealed class EngineComposition
     /// <summary>跨进程变更流（**外部进程**写库的精确变更，读附属库审计尾）：只有落了库的宿主才有；
     /// 不触库的宿主（目录导出）为 null——那里的 UoW/上下文工厂本就会抛。</summary>
     public IChangeFeed? ChangeFeed { get; init; }
+
+    /// <summary>审计尾总水位（全部调用方）：界面用它区分“data_version 跳变来自已有审计的引擎写”
+    /// 与“绕过引擎的直接写”。null = 无附属库。</summary>
+    public Func<long>? AuditWatermark { get; init; }
 }
 
 /// <summary>
@@ -241,6 +245,7 @@ public static class EngineComposer
             // 跨进程变更流：只认**外部进程**身份（CLI / 网关）的审计行——界面自己的写有进程内事件，
             // 混进来会让用户自己的操作也弹"外部变更"提示（见 CallerRef.IsExternalProcess）。
             ChangeFeed = ops is null ? null : new OpsChangeFeed(operationRecords, CallerRef.ExternalAgent.ToString()),
+            AuditWatermark = ops is null ? null : ops.ReadMaxAuditId,
         };
     }
 }

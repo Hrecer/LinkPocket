@@ -20,8 +20,13 @@ internal sealed class SearchResultRow : LinkItem
     /// <summary>跨类型不撞车的身份键（见 <see cref="LinkItem.Key"/>）。</summary>
     public override string Key => _isFolder ? "f:" + LinkId : "l:" + LinkId;
 
-    /// <summary>把 DTO 写入本行；只在本行第一次填充时调用（重复填充由调用方拒绝）。</summary>
-    public void Fill(LinkDto dto, string query)
+    /// <summary>把 DTO 写入本行；只在本行第一次填充时调用。</summary>
+    public void Fill(LinkDto dto, string query) => Apply(dto, query);
+
+    /// <summary>活结果集更新：把最新 DTO 原位写回已有行（保持行对象/选中/详情引用不变）。</summary>
+    public void Refill(LinkDto dto, string query) => Apply(dto, query);
+
+    private void Apply(LinkDto dto, string query)
     {
         IsPlaceholder = false;
         _isFolder = string.Equals(dto.Kind, "folder", StringComparison.OrdinalIgnoreCase);

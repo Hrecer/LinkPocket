@@ -60,6 +60,16 @@ public sealed class OpsDbContextFactory : IDbContextFactory<OpsDbContext>
 
     public OpsDbContext CreateDbContext() => new(new DbContextOptionsBuilder<OpsDbContext>().UseSqlite(_connectionString).Options);
 
+    /// <summary>审计尾水位（全部调用方）：用于区分“探针跳变来自一次已落审计的引擎写”与“绕过引擎的直写”。</summary>
+    public long ReadMaxAuditId()
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(MAX(id), 0) FROM audit_log;";
+        return Convert.ToInt64(cmd.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     /// <summary>主库路径 → 附属库路径（唯一推导点：测试清理与宿主回显都走它，避免两处各写一份）。</summary>
     public static string PathFor(string mainDbPath)
     {

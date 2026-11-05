@@ -37,6 +37,12 @@
 - `SearchSessionStore`（internal）：持有 `IUnitOfWork + SqliteTransaction(deferred:true)`；
   count 与全部分页同事务、同快照，**WAL 写者不被长读事务阻塞**（测试见 `Search_Session_Is_One_Snapshot_Across_Pages`）。
   TTL 2 分钟 + 30s 定时清扫 + 16 个会话上限（只淘汰空闲的最久未用会话）；正常完成/取消显式 close。
+- **增量对账 `search.reconcile`（界面专用，外部宿主不注册）**：只接收本批变更的 `link_ids`，
+  用与 `search.session_open` 相同的范围/谓词返回**当前仍命中的最新 DTO**；未返回的 ID = 已删除或已不命中。
+  变更 ID 超过 512 条直接要求全量刷新。界面据此维护活结果集：只更新/插入/移除变化行，按与引擎一致的
+  排序键（NOCASE / NULL 恒后 / ID 兜底 / 文件夹块前置）二分定位；文件夹变更、无精确信息、批量超限
+  一律回落全量快照——**增量是加速器，正确性由全量兜底**。
+  数据源复用既有 `ChangeSet.Touched` 与外部变更流（不新增表、不升 schema 纪元、写路径零额外开销）。
 - `LinkPocket.Contracts.SearchDtos`：`SearchSessionOpenResult(SessionId, Total, FirstPage)`、
   `SearchExplanation` 等；explain 仍是独立执行，不与 `search.links` 共快照。
 - 界面侧：`SearchViewModel` 从首帧起把 `Results.Count` 设为 `TotalHitCount`，未到页是 `SearchResultRow` 占位，

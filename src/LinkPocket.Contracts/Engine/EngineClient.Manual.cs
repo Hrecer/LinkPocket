@@ -89,6 +89,21 @@ public sealed partial class EngineClient
     public Task<bool> SearchSessionCloseAsync(string sessionId, CallOptions? o = null, CancellationToken ct = default)
         => QueryAsync<bool>("search.session_close", new { session_id = sessionId }, o, ct);
 
+    /// <summary>增量对账：只按变更 ID 重新判定命中（界面活结果集；外部宿主不注册）。</summary>
+    public Task<SearchReconcileResult> SearchReconcileAsync(string query,
+        bool? searchTitle = null, bool? searchUrl = null, bool? searchDescription = null, bool? searchPath = null,
+        IReadOnlyList<string>? linkIds = null, CallOptions? o = null, CancellationToken ct = default)
+        => QueryAsync<SearchReconcileResult>("search.reconcile",
+            new
+            {
+                query,
+                search_title = searchTitle,
+                search_url = searchUrl,
+                search_description = searchDescription,
+                search_path = searchPath,
+                link_ids = linkIds,
+            }, o, ct);
+
     /// <summary>Client 侧序列化口径（与 wire 层一致：snake_case + 枚举字符串）。</summary>
     private static readonly JsonSerializerOptions EngineOptions = new()
     {

@@ -23,7 +23,7 @@ internal static partial class SmokeRunner
 
         try
         {
-            // 外部宿主不注册界面专用搜索会话：86 = 67 业务 + 16 编排 + 3 批（界面宿主才是 89）。
+            // 外部宿主不注册界面专用搜索会话/增量对账：86 = 67 业务 + 16 编排 + 3 批（界面宿主才是 90）。
             Asserts.That(host.Commands.Count == 86 && !host.Commands.ContainsKey("search.session_open"),
                 $"外部命令面应为 86 条且不含 UI 会话，实际 {host.Commands.Count}");
             await CliSection(host);

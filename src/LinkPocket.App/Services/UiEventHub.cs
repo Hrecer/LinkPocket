@@ -23,6 +23,18 @@ public sealed class UiEventHub
 
     private DispatcherTimer? _timer;
 
+    /// <summary>
+    /// 防抖窗口内聚合出的**精确变更批次**（在 <see cref="RefreshRequested"/> 之前触发）。
+    /// <para><see cref="ChangeBatch.Precise"/> = false 表示拿不到“改了哪些实体/什么事件”，
+    /// 订阅方必须退化为整体刷新；精确是优化，正确性不依赖它。</para>
+    /// </summary>
+    public event Action<ChangeBatch>? ChangeBatchReady;
+
+    private readonly HashSet<EntityRef> _pendingTouched = new();
+    private readonly HashSet<string> _pendingEvents = new(StringComparer.Ordinal);
+    private bool _pendingPrecise = true;
+    private bool _hasPending;
+
     /// <summary>防抖后的刷新通知（UI 线程触发）。</summary>
     public event Action? RefreshRequested;
 
@@ -33,9 +45,15 @@ public sealed class UiEventHub
     /// </summary>
     public event Action<IReadOnlyList<ExternalChange>>? ExternalChangesObserved;
 
-    /// <summary>接入引擎事件源（领域事件总线；枢纽只关心"有变更"，不消费事件负载）。</summary>
+    /// <summary>接入引擎事件源：解析事件负载里的精确变更（Touched/Events）并汇入防抖批次。</summary>
     public void Attach(IEventBus bus)
-        => bus.Subscribe(_ => OnEvent());
+        => bus.Subscribe(e =>
+        {
+            var view = e.Data is { } data ? ChangeSetPayload.Parse(data.GetRawText()) : null;
+            Merge(view?.Touched ?? [], view?.Events ?? [],
+                precise: view is not null && view.Touched.Count > 0);
+            OnEvent();
+        });
 
     /// <summary>
     /// **外部进程**（CLI / 外部 Agent 经 MCP）写库后的通知入口：走**同一条** 300ms 防抖通道，
@@ -50,6 +68,20 @@ public sealed class UiEventHub
     /// </summary>
     public void NotifyExternalChanges(IReadOnlyList<ExternalChange> changes)
     {
+        // 先把精确变更并入防抖批次：外部变更与进程内事件共用同一条刷新通道。
+        if (changes.Count == 0)
+        {
+            Merge([], [], precise: false);   // 探针只说明“有提交”，不知道改了什么
+        }
+        else
+        {
+            var effective = changes.Where(c => c.IsEffective).ToArray();
+            var touched = effective.SelectMany(c => c.Touched).ToArray();
+            var events = effective.SelectMany(c => c.Events)
+                .Distinct(StringComparer.Ordinal).ToArray();
+            Merge(touched, events, precise: touched.Length > 0);
+        }
+
         if (changes.Count > 0 && ExternalChangesObserved is { } observers)
         {
             // 与刷新处理器同一隔离口径：一个订阅方抛异常不得让别的订阅方与刷新一起失效
@@ -71,6 +103,26 @@ public sealed class UiEventHub
             _timer.Tick += (_, _) =>
             {
                 _timer.Stop();
+
+                // 批次先于刷新投递：页面订阅方据此做精确增量，未订阅者行为不变。
+                var batch = new ChangeBatch(
+                    [.. _pendingTouched],
+                    [.. _pendingEvents],
+                    _hasPending && _pendingPrecise);
+                _pendingTouched.Clear();
+                _pendingEvents.Clear();
+                _pendingPrecise = true;
+                _hasPending = false;
+
+                if (ChangeBatchReady is { } batchHandlers)
+                {
+                    foreach (var handler in batchHandlers.GetInvocationList())
+                    {
+                        try { ((Action<ChangeBatch>)handler)(batch); }
+                        catch (Exception ex) { LpLog.Error("a change-batch handler failed", ex); }
+                    }
+                }
+
                 var handlers = RefreshRequested;
                 if (handlers == null) return;
 
@@ -87,4 +139,21 @@ public sealed class UiEventHub
         _timer.Stop();
         _timer.Start();
     }
+
+    private void Merge(IReadOnlyList<EntityRef> touched, IReadOnlyList<string> events, bool precise)
+    {
+        foreach (var entity in touched) _pendingTouched.Add(entity);
+        foreach (var name in events) _pendingEvents.Add(name);
+        if (!precise) _pendingPrecise = false;
+        _hasPending = true;
+    }
 }
+
+/// <summary>
+/// 一次防抖窗口内的变更批次：Touched/Events 来自进程内 ChangeSet 或外部审计变更流；
+/// <paramref name="Precise"/> = false（拿不到具体实体）时必须整体刷新。
+/// </summary>
+public sealed record ChangeBatch(
+    IReadOnlyList<EntityRef> Touched,
+    IReadOnlyList<string> Events,
+    bool Precise);

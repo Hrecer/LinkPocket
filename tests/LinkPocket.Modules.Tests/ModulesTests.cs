@@ -6,7 +6,7 @@ using Xunit;
 
 namespace LinkPocket.Modules.Tests;
 
-/// <summary>目录自描述：70 个命令全部注册、无重复、查询/变更分类正确。</summary>
+/// <summary>目录自描述：71 个命令全部注册、无重复、查询/变更分类正确。</summary>
 public class CatalogTests
 {
     [Fact]
@@ -15,8 +15,8 @@ public class CatalogTests
         var (engine, _, _) = TestHost.Create();
         var manifest = engine.Describe();
 
-        Assert.Equal(70, manifest.Commands.Count);
-        Assert.Equal(70, manifest.Commands.Select(c => c.Name).Distinct().Count());
+        Assert.Equal(71, manifest.Commands.Count);
+        Assert.Equal(71, manifest.Commands.Select(c => c.Name).Distinct().Count());
         Assert.All(manifest.Commands, c => Assert.Matches(@"^[a-z_]+\.[a-z_]+$", c.Name));
     }
 
@@ -29,7 +29,7 @@ public class CatalogTests
         Assert.Equal(9, engine.Describe("trash").Commands.Count);
         Assert.Equal(4, engine.Describe("favicon").Commands.Count);
         Assert.Equal(3, engine.Describe("maintenance").Commands.Count);
-        Assert.Equal(6, engine.Describe("search").Commands.Count);   // + session_open/page/close
+        Assert.Equal(7, engine.Describe("search").Commands.Count);   // + session_open/page/close + reconcile
         Assert.Single(engine.Describe("locate").Commands);
         Assert.Equal(2, engine.Describe("audit").Commands.Count);  // audit.query / audit.prune
         Assert.Equal(2, engine.Describe("logs").Commands.Count);   // logs.query / logs.level
@@ -1156,6 +1156,94 @@ public class SearchModuleTests
 
         var desc = await engine.QueryAsync<List<LinkDto>>("search.links", new { query = "工具", sort_order = "desc" });
         Assert.Equal(new[] { "beta 工具", "Alpha 工具" }, desc.Select(l => l.Title));
+    }
+
+    [Fact]
+    public async Task Search_Reconcile_OnlyChangedIds_CurrentPredicate_AndCap()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var a = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://reconcile.example/a", title = "对账甲" });
+        var b = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://reconcile.example/b", title = "对账乙" });
+
+        var before = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账",
+            search_title = true,
+            search_url = true,
+            search_description = true,
+            search_path = true,
+            link_ids = new[] { a.Data!.LinkId, b.Data!.LinkId },
+        });
+        Assert.False(before.NeedsFullRefresh);
+        Assert.Equal(2, before.Matched.Count);
+
+        // 改名后只有仍命中的那一条会回来；未返回的 ID = 已不命中 / 已删除。
+        await engine.ExecuteAsync<LinkDto>("links.update", new { id = a.Data.LinkId, title = "改名了" });
+        var after = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账",
+            search_title = true,
+            search_url = true,
+            search_description = true,
+            search_path = true,
+            link_ids = new[] { a.Data.LinkId, b.Data.LinkId },
+        });
+        var only = Assert.Single(after.Matched);
+        Assert.Equal(b.Data.LinkId, only.LinkId);
+
+        // 删除后同样不返回（界面据此移除结果行）。
+        await engine.ExecuteAsync<object>("links.trash", new { id = b.Data.LinkId });
+        var deleted = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账",
+            search_title = true,
+            link_ids = new[] { b.Data.LinkId },
+        });
+        Assert.Empty(deleted.Matched);
+
+        // 超过局部对账上限 = 明确要求全量刷新，绝不逐条硬扛。
+        var tooMany = Enumerable.Range(0, 513).Select(i => $"X{i:D6}").ToArray();
+        var capped = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账",
+            link_ids = tooMany,
+        });
+        Assert.True(capped.NeedsFullRefresh);
+        Assert.Empty(capped.Matched);
+    }
+
+    [Fact]
+    public async Task Search_Reconcile_PathScope_UsesCurrentFolderLocation()
+    {
+        var (engine, _, _) = TestHost.Create();
+        var folder = await engine.ExecuteAsync<FolderDto>("folders.create", new { name = "对账目录" });
+        var child = await engine.ExecuteAsync<FolderDto>("folders.create",
+            new { name = "对账子目录", parent_id = folder.Data!.FolderId });
+        var link = await engine.ExecuteAsync<LinkDto>("links.create",
+            new { url = "https://reconcile-path.example", title = "无关键词", list_id = child.Data!.FolderId });
+
+        var inside = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账目录",
+            search_title = false,
+            search_path = true,
+            link_ids = new[] { link.Data!.LinkId },
+        });
+        Assert.Single(inside.Matched);
+
+        // 移到根级后不再属于命中目录的子树。
+        await engine.ExecuteAsync<LinkBatchResult>("links.move_batch",
+            new { link_ids = new[] { link.Data.LinkId }, target_list_id = (string?)null });
+        var outside = await engine.QueryAsync<SearchReconcileResult>("search.reconcile", new
+        {
+            query = "对账目录",
+            search_title = false,
+            search_path = true,
+            link_ids = new[] { link.Data.LinkId },
+        });
+        Assert.Empty(outside.Matched);
     }
 
     [Fact]

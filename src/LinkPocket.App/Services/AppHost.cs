@@ -72,7 +72,7 @@ public sealed class AppHost : IDisposable
         => _warmWritePath?.Invoke(ct) ?? Task.CompletedTask;
 
     private AppHost(EngineClient client, EngineWire wire, string databasePath, IChangeFeed? changeFeed,
-        Func<CancellationToken, Task>? warmWritePath)
+        Func<long>? auditWatermark, Func<CancellationToken, Task>? warmWritePath)
     {
         Client = client;
         Wire = wire;
@@ -80,7 +80,8 @@ public sealed class AppHost : IDisposable
         _warmWritePath = warmWritePath;
         Locator = new ContentLocator(client, () => LocateHost, Ports);
         // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
-        ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
+        ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, auditWatermark,
+            client.InvalidateQueryCache, Hub);
         Updates = new UpdateService(AppPaths.ProgramRoot,
             UpdateService.ReadProductVersion(Environment.ProcessPath ?? string.Empty) ?? "0.0.0");
     }
@@ -201,7 +202,8 @@ public sealed class AppHost : IDisposable
         if (composed.Wire is null)
             throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
-        var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed, composed.WarmWritePath);
+        var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed,
+            composed.AuditWatermark, composed.WarmWritePath);
         host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
             LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
         host.AttachPageRenderer();                 // 元数据抓取的浏览器渲染兜底（WebView2，懒建）

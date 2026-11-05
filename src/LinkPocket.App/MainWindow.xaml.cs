@@ -122,7 +122,7 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // MainViewModel 的 search 路由事件 → 搜索页 ViewModel（进入保内容+静默刷新 / 离开清选中 / 数据变更重跑）
         vm.NavigatedToSearch += (_, _) => _searchVm.OnNavigatedTo();
         vm.NavigatedFromSearch += (_, _) => _searchVm.OnNavigatedFrom();
-        vm.SearchRefreshRequested += (_, _) => _ = _searchVm.RefreshFromEventAsync();
+        vm.SearchChangesReady += (touched, events, precise) => _searchVm.NotifyDataChanges(touched, events, precise);
 
         // 右键必有「刷新」（标题栏/导航条除外）：菜单里的刷新项走各页登记的刷新命令，
         // 与 F5 是同一个命令对象（见 PageRefresh / ContextRefresh）。

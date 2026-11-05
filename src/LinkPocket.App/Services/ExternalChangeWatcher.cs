@@ -36,25 +36,31 @@ public sealed class ExternalChangeWatcher : IDisposable
 
     private readonly LibraryChangeProbe _probe;
     private readonly IChangeFeed? _changeFeed;
+    private readonly Func<long>? _auditWatermark;
     private readonly Action<IReadOnlyList<string>> _invalidateQueryCache;
     private readonly UiEventHub _hub;
     private readonly DispatcherTimer _timer;
+    private long _lastAuditWatermark;
     private bool _disposed;
 
     /// <param name="databasePath">库文件路径（与引擎同一个库）。</param>
     /// <param name="changeFeed">精确变更流（附属库审计尾）；null = 无精确信息（一律整体失效 + 通用刷新）。</param>
+    /// <param name="auditWatermark">审计尾**总水位**（全部调用方）；用来识别 data_version 跳变
+    /// 其实来自一次已落审计的引擎写（进程内事件已覆盖），避免把自己的写误判成“无法精确”而全刷。</param>
     /// <param name="invalidateQueryCache">先于刷新的**缓存失效**动作（<c>EngineClient.InvalidateQueryCache</c>）：
     /// 外部提交不产生进程内事件 → 事件驱动失效不触发 → 不先失效就只能读到旧值。
     /// 参数 = 本次变更实际发布的事件名；空数组 = 整体清空（无法精确时的保守口径）。</param>
     /// <param name="hub">目标枢纽（外部变更与进程内事件共用同一条防抖通道）。</param>
     /// <exception cref="Microsoft.Data.Sqlite.SqliteException">库打不开（调用方在引擎装配之后构造，不应发生）。</exception>
-    public ExternalChangeWatcher(string databasePath, IChangeFeed? changeFeed,
+    public ExternalChangeWatcher(string databasePath, IChangeFeed? changeFeed, Func<long>? auditWatermark,
         Action<IReadOnlyList<string>> invalidateQueryCache, UiEventHub hub)
     {
         _changeFeed = changeFeed;
+        _auditWatermark = auditWatermark;
         _invalidateQueryCache = invalidateQueryCache ?? throw new ArgumentNullException(nameof(invalidateQueryCache));
         _hub = hub ?? throw new ArgumentNullException(nameof(hub));
         _probe = new LibraryChangeProbe(databasePath);
+        _lastAuditWatermark = ReadAuditWatermark();
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ActiveIntervalMilliseconds) };
         _timer.Tick += (_, _) => Poll();
     }
@@ -79,8 +85,11 @@ public sealed class ExternalChangeWatcher : IDisposable
             // 为什么不让探针当闸门：外部提交与"审计行落库"之间有一小段窗口（审计在建库提交之后写），
             // 探针恰好在窗口内跳一次，就会漏掉这条变更的**精确信息**（只剩保守失效）。
             var changes = _changeFeed?.Poll(MaxChangesPerPoll) ?? [];
+            var auditWatermark = ReadAuditWatermark();
             if (changes.Count > 0)
             {
+                _lastAuditWatermark = auditWatermark;
+
                 // 精确失效：只推进本次变更真正发布过的事件名（与进程内写同一条失效机制）。
                 // 有一行"提交了数据却没报事件"（含嵌套子步骤）→ 精确不可信 → 整体失效（保守，绝不读到旧值）。
                 var opaque = changes.Any(c => c.Success && !c.DryRun && c.Events.Count == 0);
@@ -97,6 +106,17 @@ public sealed class ExternalChangeWatcher : IDisposable
             // 兜底：探针说"别的连接提交过"，但变更流里没有外部行（非外部身份的写 / 未落审计 / 流不可用）
             // → 拿不到精确信息，整体失效 + 通用刷新。与"本进程自己的写也会让 data_version 跳"同一口径（幂等）。
             if (!_probe.HasChanged()) return;
+
+            // 审计尾前进了 = 这次提交来自一条**已落审计的引擎调用**（本进程的写已有进程内精确事件；
+            // 外部引擎写应已由上面的变更流报出）。不能把它误判成“无法精确”——否则自己每改一条，
+            // 搜索页都会收到一次全量刷新。只有审计没动、data_version 却跳了，才是绕过引擎的直写。
+            if (_changeFeed is not null && auditWatermark > _lastAuditWatermark)
+            {
+                _lastAuditWatermark = auditWatermark;
+                return;
+            }
+
+            _lastAuditWatermark = auditWatermark;
             _invalidateQueryCache([]);
             _hub.NotifyExternalChange();
         }
@@ -104,6 +124,19 @@ public sealed class ExternalChangeWatcher : IDisposable
         {
             _timer.Stop();   // 长连接坏了就不再轮询；界面仍可手动刷新
             LpLog.Error("external change probe failed (polling stopped; manual refresh still works)", ex);
+        }
+    }
+
+    /// <summary>审计尾总水位；读失败按“不可用”处理（-1），由探针走保守全刷，绝不让观测组件自愈或静默。</summary>
+    private long ReadAuditWatermark()
+    {
+        if (_auditWatermark is null) return -1;
+        try { return _auditWatermark(); }
+        catch (Exception ex)
+        {
+            LpLog.Warn("audit watermark read failed; falling back to conservative refresh", ex,
+                category: "app.external");
+            return -1;
         }
     }
 

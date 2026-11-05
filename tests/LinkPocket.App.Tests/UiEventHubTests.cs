@@ -111,6 +111,36 @@ public class UiEventHubTests
         Assert.Equal(1, fires);       // 但刷新照旧（正确性不依赖精确）
     });
 
+    [Fact]
+    public Task 内部事件负载被聚合为精确批次_无负载标记为不精确() => StaPump.RunAsync(async () =>
+    {
+        var bus = new InMemoryEventBus();
+        var hub = new UiEventHub();
+        hub.Attach(bus);
+
+        var batches = new List<ChangeBatch>();
+        hub.ChangeBatchReady += batches.Add;
+
+        var payload = ChangeSetPayload.From(new ChangeSet(
+            [new EntityRef("link", "L1"), new EntityRef("link", "L2")],
+            [DomainEventNames.LinksChanged],
+            "changed"));
+        await bus.PublishAsync(new DomainEvent(
+            DomainEventNames.LinksChanged, DateTimeOffset.Now, payload, "app-tests", CallerRef.Ui));
+        await Task.Delay(400);
+
+        var precise = Assert.Single(batches);
+        Assert.True(precise.Precise);
+        Assert.Equal(2, precise.Touched.Count);
+        Assert.Contains(DomainEventNames.LinksChanged, precise.Events);
+
+        // 没带负载的事件 = 不知道改了什么 → Precise=false（订阅方回落全量）。
+        await bus.PublishAsync(Evt());
+        await Task.Delay(400);
+        Assert.Equal(2, batches.Count);
+        Assert.False(batches[^1].Precise);
+    });
+
     private static ExternalChange Change(string command) => new(
         Id: 1, At: DateTimeOffset.Now, Command: command, Caller: CallerRef.ExternalAgent.ToString(),
         Success: true, DryRun: false, IsNested: false, BatchId: null,

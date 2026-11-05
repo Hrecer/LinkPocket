@@ -25,7 +25,7 @@ public sealed record SearchEmptyState(string IconKind, LocValue Title, LocValue?
 /// 「位置」路径由组合根注入的解析器解析（与浏览页/智能列表同一目录树）。
 /// 选中由全站共享的 <see cref="ListSelection"/> 承载（与浏览页/回收站/智能列表/去重明细同一实现）。
 /// </summary>
-public sealed class SearchViewModel : INotifyPropertyChanged
+public sealed partial class SearchViewModel : INotifyPropertyChanged
 {
     private readonly EngineClient _api;
     private readonly INavigationService _navigation;
@@ -394,18 +394,24 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     // —— 导航生命周期（MainViewModel 的 search 路由事件转发到这里） ——
 
     /// <summary>进入搜索页（Shell 路由）：**不清空任何内容**——查询文本 / 结果 / 排序原样保留；
-    /// 有已执行查询时静默刷新保最新（入口对齐，与浏览页/工具页同一模式）；随后把焦点收回搜索框。</summary>
+    /// 隐藏期间收到的精确变更在这里一次对账（只改变化行）；没有变更就**零工作**，
+    /// 不再用“入口全量静默刷新”碰运气。随后把焦点收回搜索框。</summary>
     public void OnNavigatedTo()
     {
+        _isActive = true;
+
         // 进入页面就把搜索命令/SQLite 读路径走热一次（查询本身不命中任何数据）：
         // 首次用户搜索不必再付 JIT + 连接池预热，首屏延迟更稳定。
         WarmUpSearchEngine();
 
-        // 「进入保内容」的**唯一入口**（低性能设备上切到搜索页偶发明显卡顿，故不做重建）：
-        // 只对**已执行的查询**做静默刷新；绝不看输入框里尚未执行的文本——那会走 SearchAsync
-        // 清空结果 + 亮"正在搜索…"加载态（每次切回都重置一遍：既闪一下、又要整表重建）。
-        // 未执行过的文本属于"回车 / 搜索按钮"的语义，不由切页触发。
-        _ = RefreshSilentlyAsync();
+        if (!string.IsNullOrWhiteSpace(LastQuery))
+        {
+            if (_loadFailed && !IsLoadingAll)
+                _ = RefreshResultsAsync(forceReplace: true);
+            else if (!IsLoadingAll && (_pendingFullRefresh || _pendingLinkIds.Count > 0))
+                _ = ApplyPendingChangesAsync();
+            // 后台补页仍在进行：让它跑完，CompleteLoad 会一次性追平变更。
+        }
         ResetRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -427,27 +433,12 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         });
     }
 
-    /// <summary>静默刷新最新（切页进入的入口对齐）：已执行过查询才重跑；保留结果与选中、不闪加载态。
-    /// 结果内容未变时 <see cref="Results"/> 不通知 → 视图不重建行（见该属性说明）。</summary>
-    private Task RefreshSilentlyAsync()
-        => string.IsNullOrWhiteSpace(LastQuery) ? Task.CompletedTask : RefreshResultsAsync();
-
-    /// <summary>离开搜索页：只清选中与详情栏（保留查询与结果，返回时原样呈现）。</summary>
+    /// <summary>离开搜索页：只清选中与详情栏（保留查询与结果，返回时原样呈现）。
+    /// 隐藏期间的数据变更由 <see cref="NotifyDataChanges"/> 排队，进入时一次对账。</summary>
     public void OnNavigatedFrom()
     {
+        _isActive = false;
         Selection.Clear();
-    }
-
-    /// <summary>后端数据变更（UiEventHub 防抖路由）：
-    /// 输入框文本 == 已执行查询（用户正在看结果）→ **静默刷新**（不闪加载态、不丢选中，与范围切换同一条路径）；
-    /// 文本已改但未执行 → 保持原口径，按当前输入框文本重跑（而非上次的 LastQuery）。</summary>
-    public Task RefreshFromEventAsync()
-    {
-        var query = Query.Trim();
-        if (string.IsNullOrWhiteSpace(query)) return Task.CompletedTask;
-        // 数据变更事件必须以新快照重载全部命中；不能拿“首 64 行相同”跳过（变化可能在后段）。
-        if (string.Equals(query, LastQuery, StringComparison.Ordinal)) return RefreshResultsAsync(forceReplace: true);
-        return SearchAsync();
     }
 
     private bool _isDeleting;
@@ -601,6 +592,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
 
         CancelSession();
+        ClearPendingChanges();   // 新快照本身覆盖这一刻的全部已提交状态
         _loadFailed = false;
         _pendingPathSort = string.Equals(_sortField, "path", StringComparison.Ordinal);
         var gen = ++_searchGen;
@@ -1096,6 +1088,10 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         // 先置 false 会让观察方（界面状态行、量具、回归用例）读到“已加载 N 条、选中仍是 0”的中间态。
         IsLoadingAll = false;
         OnPropertyChanged(nameof(LoadingNotice));
+
+        // 补页期间收到的数据变更不逐行插进半成品；补完立刻从完整结果集上追平。
+        if (_pendingFullRefresh || _pendingLinkIds.Count > 0)
+            _ = ApplyPendingChangesAsync();
     }
 
     private void MarkLoadFailed(string reason)
@@ -1148,6 +1144,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         // 旧结果只有在“真正补全且未失败”时才可以走等价跳过；否则占位行不是完整结果。
         var wasComplete = !_loadFailed && _loadedCount == TotalHitCount && Results.Count == TotalHitCount;
         CancelSession();
+        ClearPendingChanges();   // 全量快照已包含当前全部状态；查询期间的变更事件会在之后重新入队
         _pathTextCache.Clear();
         _loadFailed = false;
         _pendingPathSort = string.Equals(_sortField, "path", StringComparison.Ordinal);
@@ -1353,6 +1350,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             // 把陈旧行从结果集清掉，用户重试即可（不会出现"看着删了、库里却还在"）。
             var deleted = 0;
             var failed = 0;
+            var deletedLinkIds = new List<string>();
+            var folderDeleted = false;
 
             // 链接：一次批量入站（单命令单事务）。
             var ids = victims.Where(v => !v.IsFolder)
@@ -1363,6 +1362,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                 {
                     var result = await _api.LinkTrashBatchAsync(ids);
                     deleted = result.Data?.Affected ?? ids.Count;
+                    deletedLinkIds.AddRange(ids);
                 }
                 catch (Exception ex)
                 {
@@ -1378,6 +1378,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
                 {
                     await _api.FolderDeleteAsync(folder.LinkId, "trash_links");
                     deleted++;
+                    folderDeleted = true;
                 }
                 catch (Exception ex)
                 {
@@ -1390,9 +1391,15 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             {
                 if (deleted > 0) Selection.Clear();
 
-                // 重跑当前搜索刷新结果（无在搜关键词时只清详情）
                 if (!string.IsNullOrWhiteSpace(LastQuery))
-                    await RefreshResultsAsync();
+                {
+                    // 纯链接删除 = 活结果集按 ID 对账（只移除这几行）；文件夹/部分失败改变整棵子树或存在
+                    // 不确定状态，走全量快照，绝不让增量逻辑猜。
+                    if (failed == 0 && !folderDeleted && deletedLinkIds.Count > 0)
+                        await ApplyLinkChangesAsync(deletedLinkIds);
+                    else
+                        await RefreshResultsAsync();
+                }
             }
 
             if (failed == 0) return;

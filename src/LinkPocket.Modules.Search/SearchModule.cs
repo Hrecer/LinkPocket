@@ -24,6 +24,8 @@ public static class SearchModule
             handlers.Add(new SearchSessionOpenHandler(effectiveLimits, store));
             handlers.Add(new SearchSessionPageHandler(effectiveLimits, store));
             handlers.Add(new SearchSessionCloseHandler(store));
+            // 活结果集增量对账：只服务界面（外部宿主 IncludeSearchSessions=false，不注册）。
+            handlers.Add(new SearchReconcileHandler());
         }
         return handlers;
     }

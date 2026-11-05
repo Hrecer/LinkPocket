@@ -20,3 +20,15 @@ public sealed record SearchExplanation(
 /// </summary>
 public sealed record SearchSessionOpenResult(
     string SessionId, int Total, IReadOnlyList<LinkDto> FirstPage);
+
+/// <summary>
+/// search.reconcile 的结果：把一批变更链接按**当前查询谓词**重新对账。
+/// <para><see cref="Matched"/> 只含当前仍命中且仍在库中的链接（最新 DTO）；调用方对
+/// 请求里未返回的 ID 按“已删除 / 已不命中”处理。这样增量刷新既不重放操作、也不依赖
+/// 变更类型——重复事件、乱序、删了又恢复都幂等。</para>
+/// <para><see cref="NeedsFullRefresh"/> = 变更集过大或遇到无法安全局部处理的情况；
+/// 调用方必须退回一次全量快照（正确性不依赖增量逻辑）。</para>
+/// </summary>
+public sealed record SearchReconcileResult(
+    IReadOnlyList<LinkDto> Matched,
+    bool NeedsFullRefresh);

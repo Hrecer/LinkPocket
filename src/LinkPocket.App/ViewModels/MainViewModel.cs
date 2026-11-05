@@ -91,6 +91,7 @@ namespace LinkPocket.ViewModels
 
             // 事件推送：UiEventHub 是后端数据变更抵达界面的唯一 300ms 防抖通道，
             // 本 VM 只按当前活跃视图路由刷新（防抖在枢纽内完成）。
+            _events.ChangeBatchReady += OnChangeBatchReady;
             _events.RefreshRequested += OnBackendRefresh;
             // 外部进程（CLI / 外部 Agent）的**精确变更**：在刷新之外额外走一次"发生了什么"的提示与留痕。
             _events.ExternalChangesObserved += OnExternalChanges;
@@ -112,8 +113,18 @@ namespace LinkPocket.ViewModels
                 BrowserViewModel.ShowNotice(Loc.K("browser.status.externalChange", changes.Count).Resolve());
         }
 
+        private ChangeBatch _changeBatch = new([], [], Precise: true);
+
+        private void OnChangeBatchReady(ChangeBatch batch) => _changeBatch = batch;
+
         private void OnBackendRefresh()
         {
+            // 本批次带 "改了哪些实体/事件" 吗：搜索页据此做行级增量；精确=false 时它在内部回落全量。
+            var batch = _changeBatch;
+            _changeBatch = new([], [], Precise: true);
+            try { SearchChangesReady?.Invoke(batch.Touched, batch.Events, batch.Precise); }
+            catch (Exception ex) { LpLog.Error("search change routing failed", ex); }
+
             // 必须保留选中：写操作（重命名/新建/移动…）自己刚恢复的选中，
             // 会被防抖后的刷新抹掉 —— 表现为"刚重命名完是选中的，立马又没了"（浏览器页内处理）。
             // ⚠️ 数据闸纪律：本处理器不得同步回派协议命令；await 续体统一经 Dispatcher 执行
@@ -142,7 +153,7 @@ namespace LinkPocket.ViewModels
                         await RefreshTrashAsync();
                         break;
                     case NavIds.Search:
-                        SearchRefreshRequested?.Invoke(this, EventArgs.Empty);
+                        // 搜索页由 SearchChangesReady 精确路由（行级增量 / 必要时全刷），这里不再重复触发。
                         break;
                     // 事件防抖刷新补齐三页——此前只在浏览器/回收站/搜索里路由，
                     // 跨页操作（如浏览页删链接后切到智能列表/工具）会看到陈旧快照。
@@ -190,7 +201,9 @@ namespace LinkPocket.ViewModels
 
         public event EventHandler? NavigatedToSearch;
         public event EventHandler? NavigatedFromSearch;
-        public event EventHandler? SearchRefreshRequested;
+        /// <summary>搜索页数据变更批次（Touched + Events + 是否精确）：无论搜索页是否活跃都投递，
+        /// 隐藏时由 VM 排队、进入时一次对账；精确=false 时 VM 自行回落全量快照。</summary>
+        public event Action<IReadOnlyList<EntityRef>, IReadOnlyList<string>, bool>? SearchChangesReady;
         /// <summary>外部数据变更（Shell 转发给工具页做入口对齐）。</summary>
         public event EventHandler? ToolsDataChanged;
         /// <summary>进入工具页（Shell 转发到 ToolsView.OnNavigatedTo）：去重结果的入口对齐信号。</summary>

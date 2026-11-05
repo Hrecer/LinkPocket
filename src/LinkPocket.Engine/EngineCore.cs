@@ -361,7 +361,7 @@ public sealed class EngineCore : IEngine
     /// 自描述（<c>engine.describe</c>；文档与 **AI 工具清单**的唯一来源）。
     /// 批三命令不进注册表（wire 直路由 <see cref="IBatchEngine"/>），但**只要批引擎已装配就并入**——
     /// 否则进程内消费者（AI / <c>EngineClient</c>）的工具清单会缺掉 <c>batch.*</c>，
-    /// 而它们正是"多步操作的唯一正确形态"（AI-ASSISTANT §3.3 的 89 条口径）。
+    /// 而它们正是"多步操作的唯一正确形态"（AI-ASSISTANT §3.3 的 90 条口径）。
     /// 与目录导出（<see cref="EngineCatalog"/>）同口径；批未装配时原样返回注册表内容。
     /// </summary>
     public EngineManifest Describe(string? category = null)

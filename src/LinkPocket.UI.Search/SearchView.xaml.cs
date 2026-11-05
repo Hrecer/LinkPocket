@@ -35,6 +35,13 @@ public partial class SearchView : UserControl
 
     private double _lastVerticalOffset;
 
+    /// <summary>活结果集结构变化前的阅读锚点：第一条可见行 + 行内像素偏移。</summary>
+    private string? _liveAnchorKey;
+    private int _liveAnchorIndex;
+    private double _liveAnchorOffset;
+    private double _liveAnchorAverage;
+    private bool _liveAnchorCaptured;
+
     public SearchView()
     {
         InitializeComponent();
@@ -58,6 +65,8 @@ public partial class SearchView : UserControl
             {
                 _vm.PropertyChanged -= OnVmPropertyChanged;
                 _vm.RefreshCompleted -= OnRefreshCompleted;
+                _vm.LiveUpdateStarting -= OnLiveUpdateStarting;
+                _vm.LiveUpdateCompleted -= OnLiveUpdateCompleted;
                 _vm.Results.CollectionChanged -= OnResultsCollectionChanged;
                 _vm.ResultSetReplaced -= OnResultSetReplaced;
             }
@@ -65,6 +74,8 @@ public partial class SearchView : UserControl
             if (_vm != null)
             {
                 _vm.PropertyChanged += OnVmPropertyChanged;
+                _vm.LiveUpdateStarting += OnLiveUpdateStarting;
+                _vm.LiveUpdateCompleted += OnLiveUpdateCompleted;
                 _vm.Results.CollectionChanged += OnResultsCollectionChanged;
                 _vm.ResultSetReplaced += OnResultSetReplaced;
                 _vm.ResetRequested += (_, _) => SearchBox.Focus();
@@ -219,6 +230,53 @@ public partial class SearchView : UserControl
     {
         RowEntrance.Play(ResultsTable.RowsList);
         PageFocus.Restore(this);
+    }
+
+    /// <summary>增量插入/删除/移动前：按“平均行高 = Extent/Count”换算出第一条可见行与行内偏移。
+    /// 搜索行高固定，因此结构变化完成后按同一行号重算像素偏移即可把同一内容留在原处。</summary>
+    private void OnLiveUpdateStarting(object? sender, EventArgs e)
+    {
+        _liveAnchorCaptured = false;
+        if (_vm == null || !IsVisible || _vm.Results.Count == 0) return;
+
+        var count = _vm.Results.Count;
+        var average = ResultsTable.ExtentHeight > 0 ? ResultsTable.ExtentHeight / count : 58.0;
+        if (average <= 0) average = 58.0;
+
+        var index = (int)Math.Clamp(Math.Floor(ResultsTable.VerticalOffset / average), 0, count - 1);
+        _liveAnchorKey = _vm.Results[index].Key;
+        _liveAnchorIndex = index;
+        _liveAnchorOffset = ResultsTable.VerticalOffset - index * average;
+        _liveAnchorAverage = average;
+        _liveAnchorCaptured = true;
+    }
+
+    private void OnLiveUpdateCompleted(object? sender, EventArgs e)
+    {
+        if (_vm == null || !_liveAnchorCaptured) return;
+        _liveAnchorCaptured = false;
+
+        var key = _liveAnchorKey;
+        var oldIndex = _liveAnchorIndex;
+        var within = _liveAnchorOffset;
+        var fallbackAverage = _liveAnchorAverage;
+
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (_vm == null) return;
+            var newIndex = string.IsNullOrEmpty(key) ? -1 : _vm.IndexOfRowKey(key);
+            if (newIndex < 0) newIndex = Math.Min(oldIndex, _vm.Results.Count - 1);
+            if (newIndex < 0) return;
+
+            var count = _vm.Results.Count;
+            var average = ResultsTable.ExtentHeight > 0 && count > 0
+                ? ResultsTable.ExtentHeight / count
+                : fallbackAverage;
+            if (average <= 0) average = 58.0;
+
+            var max = Math.Max(0, ResultsTable.ExtentHeight - ResultsTable.ViewportHeight);
+            ResultsTable.ScrollToVerticalOffset(Math.Clamp(newIndex * average + within, 0, max));
+        }));
     }
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)

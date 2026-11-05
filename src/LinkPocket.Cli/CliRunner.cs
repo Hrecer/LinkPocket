@@ -128,7 +128,7 @@ public static partial class CliRunner
         }
     }
 
-    /// <summary>列出命令目录（engine.describe 的同一份数据：89 条 = 业务 + 编排 + 批）。</summary>
+    /// <summary>列出命令目录（engine.describe 的同一份数据：90 条 = 业务 + 编排 + 批）。</summary>
     private static int Describe(CliArgs parsed, EngineHost host, TextWriter output)
     {
         var rest = parsed.Positional.Skip(1).ToList();

@@ -106,7 +106,7 @@ public sealed partial class AiAssistant
             mentions.AppendLine(referenceReminder);
 
         var skills = material.SkillsSection ?? string.Empty;
-        // ⚠️ 每段**只估一次**并复用：早先把同一串（尤其工具 schema——它是把 89 条名字 + 描述 + JSON
+        // ⚠️ 每段**只估一次**并复用：早先把同一串（尤其工具 schema——它是把 90 条名字 + 描述 + JSON
         // 拼起来的最大一段）估了两遍，等于每次请求白烧一遍全量扫描与一次大字符串拼接。
         var pageContextText = pageContext.ToString();
         var mentionsText = mentions.ToString();
