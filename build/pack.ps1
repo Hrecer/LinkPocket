@@ -322,8 +322,9 @@ Set-Content -LiteralPath (Join-Path $out "mcp.example.json") -Value $mcp -Encodi
 Get-ChildItem -LiteralPath $out -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
-# ---- WebView2 的 XML 文档不进交付（引用自带的 doc 文件会随输出拷进根目录；运行时不需要，
-#      WebView2Loader.dll 已由 IncludeNativeLibrariesForSelfExtract 内嵌进 exe）----
+# ---- WebView2 XML docs are not part of the delivery (the referenced doc files are copied
+#      into the output root by MSBuild; the runtime does not need them, and WebView2Loader.dll
+#      is already embedded in the exe by IncludeNativeLibrariesForSelfExtract) ----
 Get-ChildItem -LiteralPath $out -Filter "Microsoft.Web.WebView2*.xml" -File -ErrorAction SilentlyContinue |
     Remove-Item -Force -ErrorAction SilentlyContinue
 
@@ -355,9 +356,10 @@ if ($missing.Count -gt 0) {
 # stale across versions. The update path descends one wrapper level when reading a
 # package zip (UpdateService.PrepareCoreAsync), so this wrapper never reaches the updater.
 if ($Zip) {
-    # 相对路径必须先钉成绝对路径：`ZipFile.Open()` 与 `Get-Item` 用的是**进程工作目录**，
-    # 而 PowerShell 的 `Set-Location` 不会改它——文档里那条 `-Zip ..\..\LinkPocket_vX.Y.Z.zip`
-    # 会因此把包写到盘符根（实测：G:\LinkPocket_v4.2.2.zip），随后 Get-Item 又报"文件不存在"。
+    # Resolve a relative path to an absolute one first: ZipFile.Open() and Get-Item use the
+    # PROCESS working directory, which PowerShell's Set-Location does not change. The documented
+    # "-Zip ..\..\LinkPocket_vX.Y.Z.zip" would therefore write to the drive root (observed:
+    # G:\LinkPocket_v4.2.2.zip) and then Get-Item would report "file not found".
     if (-not [System.IO.Path]::IsPathRooted($Zip)) {
         $Zip = Join-Path (Get-Location).ProviderPath $Zip
     }

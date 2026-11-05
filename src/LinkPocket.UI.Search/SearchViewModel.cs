@@ -535,8 +535,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     public void WarmIndexForStartup()
     {
         CancelStartupWarm();
-        var cts = new CancellationTokenSource();
-        _startupWarmCts = cts;
+        var slot = new StartupWarmSlot();
+        lock (_startupWarmGate) _startupWarm = slot;
         _ = Task.Run(async () =>
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
@@ -544,7 +544,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             {
                 await _api.SearchCountAsync("a",
                     searchTitle: true, searchUrl: true, searchDescription: true,
-                    searchPath: false, ct: cts.Token);
+                    searchPath: false, ct: slot.Token);
                 LpLog.Info($"startup warm: search index {watch.ElapsedMilliseconds}ms",
                     category: "app.lifecycle");
             }
@@ -558,23 +558,26 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             }
             finally
             {
-                if (ReferenceEquals(_startupWarmCts, cts)) _startupWarmCts = null;
-                cts.Dispose();
+                slot.Finish();
             }
-        }, cts.Token);
+        });
     }
 
     /// <summary>取消启动预热（真实搜索/刷新时调用；幂等）。</summary>
     public void CancelStartupWarm()
     {
-        var cts = Interlocked.Exchange(ref _startupWarmCts, null);
-        if (cts is not null)
+        StartupWarmSlot? slot;
+        lock (_startupWarmGate)
         {
-            try { cts.Cancel(); } catch (ObjectDisposedException) { }
+            slot = _startupWarm;
+            _startupWarm = null;
         }
+
+        slot?.Cancel();
     }
 
-    private CancellationTokenSource? _startupWarmCts;
+    private readonly object _startupWarmGate = new();
+    private StartupWarmSlot? _startupWarm;
 
     private async Task SearchAsync()
     {

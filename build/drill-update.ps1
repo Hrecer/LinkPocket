@@ -257,9 +257,10 @@ function Run-Direct {
     Section 'S1: data area (prune, conversion, byte-identity)'
     foreach ($rel in @('linkpocket-ops.db', 'linkpocket-ops.db-wal', 'linkpocket-ops.db-shm',
                        'undo-journal.json', 'undo-journal.cli.json', 'undo-journal.cli.json.parts',
-                       'ai\usage.json', 'favicons')) {
+                       'ai\usage.json')) {
         Check (-not (Test-Path -LiteralPath (Join-Path $data $rel))) "pruned: $rel is gone"
     }
+    Check (Test-Path -LiteralPath (Join-Path $data 'favicons')) 'favicons carried (user data, never pruned)'
     Check (Test-Path -LiteralPath (Join-Path $data 'linkpocket.db')) 'the database stayed in place'
     $prefsRaw = Get-Content -LiteralPath (Join-Path $data 'ui-preferences.json') -Raw
     $prefs = $prefsRaw | ConvertFrom-Json
@@ -274,7 +275,7 @@ function Run-Direct {
     Check (-not (Test-Path -LiteralPath (Join-Path $data 'ai\credentials.json'))) 'out-of-version settings file was dropped'
     Compare-Tree $baseline $data @('ui-preferences.json', 'ai/credentials.json',
                                    'linkpocket-ops.db', 'undo-journal.json', 'undo-journal.cli.json',
-                                   'ai/usage.json', 'favicons/') 'S1 (data)'
+                                   'ai/usage.json') 'S1 (data)'
 
     Section 'S1: the moved database is still the same database to the engine'
     $postStats = Run-Cli (Join-Path $installDir 'tools\linkpocket.exe') (Join-Path $data 'linkpocket.db') @('links', 'stats')

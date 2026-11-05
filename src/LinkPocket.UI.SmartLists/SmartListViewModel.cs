@@ -135,12 +135,12 @@ namespace LinkPocket.ViewModels
         public async Task WarmForStartupAsync()
         {
             CancelStartupWarm();
-            var cts = new CancellationTokenSource();
-            _startupWarmCts = cts;
+            var slot = new StartupWarmSlot();
+            lock (_startupWarmGate) _startupWarm = slot;
             var watch = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                await WarmPagesAsync(ensureSpareRows: false, cts.Token);
+                await WarmPagesAsync(ensureSpareRows: false, slot.Token);
                 LpLog.Info($"startup warm: smart lists {watch.ElapsedMilliseconds}ms",
                     category: "app.lifecycle");
             }
@@ -154,22 +154,25 @@ namespace LinkPocket.ViewModels
             }
             finally
             {
-                if (ReferenceEquals(_startupWarmCts, cts)) _startupWarmCts = null;
-                cts.Dispose();
+                slot.Finish();
             }
         }
 
         /// <summary>取消启动预热（页面进入/真实打开时调用；幂等）。</summary>
         public void CancelStartupWarm()
         {
-            var cts = Interlocked.Exchange(ref _startupWarmCts, null);
-            if (cts is not null)
+            StartupWarmSlot? slot;
+            lock (_startupWarmGate)
             {
-                try { cts.Cancel(); } catch (ObjectDisposedException) { }
+                slot = _startupWarm;
+                _startupWarm = null;
             }
+
+            slot?.Cancel();
         }
 
-        private CancellationTokenSource? _startupWarmCts;
+        private readonly object _startupWarmGate = new();
+        private StartupWarmSlot? _startupWarm;
 
         private async Task WarmPagesAsync(bool ensureSpareRows, CancellationToken ct)
         {
