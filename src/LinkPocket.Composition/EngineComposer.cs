@@ -59,6 +59,9 @@ public sealed class EngineComposition
     public required CommandRegistry Registry { get; init; }
     public LinkPocketDbContextFactory? Factory { get; init; }
 
+    /// <summary>启动空闲预热写路径（事务内执行后回滚，不留数据）；无库组合为 null。</summary>
+    public Func<CancellationToken, Task>? WarmWritePath { get; init; }
+
     /// <summary>会话管理器（能力门：只读拒绝写 + 滑窗限流）。四个宿主共用同一实现；
     /// 调用方须自行 BeginAsync 并把 SessionId 放进 <c>CallOptions.Caller</c> 才受约束——
     /// 未带 SessionId 的调用是宿主自有调用，零约束（既有口径）。</summary>
@@ -233,6 +236,7 @@ public static class EngineComposer
             Wire = wire,
             Registry = registry,
             Factory = factory,
+            WarmWritePath = factory is null ? null : factory.WarmWritePathAsync,
             Sessions = sessions,
             // 跨进程变更流：只认**外部进程**身份（CLI / 网关）的审计行——界面自己的写有进程内事件，
             // 混进来会让用户自己的操作也弹"外部变更"提示（见 CallerRef.IsExternalProcess）。

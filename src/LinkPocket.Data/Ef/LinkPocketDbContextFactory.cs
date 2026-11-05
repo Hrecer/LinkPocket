@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using LinkPocket.Kernel;
 
 namespace LinkPocket.Data;
 
@@ -39,6 +40,42 @@ public sealed class LinkPocketDbContextFactory : IDbContextFactory<LinkPocketDbC
 
     public LinkPocketDbContext CreateDbContext()
         => new(contextPath: null, connectionStringOverride: _connectionString);
+
+    /// <summary>
+    /// 在真实事务里走一遍文件夹写路径（命名查询、插入、父链触达），随后整体回滚。
+    /// 只用于启动空闲预热：EF 模型与查询编译是进程级一次性成本，先在这里付掉，用户第一次新建文件夹不再卡顿。
+    /// 不留任何行、事件或审计；失败由调用方记录，不重试。
+    /// </summary>
+    public async Task WarmWritePathAsync(CancellationToken ct = default)
+    {
+        using var db = CreateDbContext();
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var uow = new EfUnitOfWork(db);
+        var parent = await db.Folders.AsNoTracking()
+            .Select(f => f.FolderId)
+            .FirstOrDefaultAsync(ct);
+        var desired = $"__linkpocket_warmup_{Guid.NewGuid():N}";
+        var resolved = await uow.Naming.ResolveAsync(parent, desired, null, ct);
+        var folder = new Folder
+        {
+            Name = resolved,
+            ParentId = parent,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        _ = await uow.Folders.AddAsync(folder, ct);
+        await uow.Trees.TouchModifiedAsync(parent is null ? null : new FolderId(parent), ct);
+        try
+        {
+            await uow.CommitAsync(ct);
+        }
+        finally
+        {
+            // 回滚不接受取消：提交完成后即使窗口正在关闭，也必须把预热写入丢掉。
+            await tx.RollbackAsync(CancellationToken.None);
+        }
+    }
+
     /// <summary>一次性启用 WAL；已处于 WAL 时为幂等 no-op。</summary>
     private static void EnableWal(string dbPath)
     {

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -369,9 +370,31 @@ public partial class MainWindow : Window, Services.IDialogService, Services.INav
         // 启动后空闲预热：首帧与浏览页就绪后延迟 2 秒，后台把智能列表四预设首页与
         // 搜索覆盖索引读热；不建 10 万占位行池、不碰 UI 线程。用户已打开搜索/智能列表则跳过。
         _ = RunStartupWarmupAsync(viewModel);
+
+        // 写路径预热要赶在用户第一次新建文件夹之前完成，所以不等 2 秒；事务回滚，不留任何数据。
+        _ = WarmWritePathAsync();
     }
 
     private readonly CancellationTokenSource _startupWarmCts = new();
+
+    private async Task WarmWritePathAsync()
+    {
+        var ct = _startupWarmCts.Token;
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            await Task.Run(() => _host.WarmWritePathAsync(ct), ct);
+            LpLog.Info($"startup warm: write path {watch.ElapsedMilliseconds}ms", category: "app.lifecycle");
+        }
+        catch (OperationCanceledException)
+        {
+            // 窗口关闭：预热让路。
+        }
+        catch (Exception ex)
+        {
+            LpLog.Warn("startup warm: write path failed", ex, category: "app.lifecycle");
+        }
+    }
 
     private async Task RunStartupWarmupAsync(MainViewModel vm)
     {

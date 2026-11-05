@@ -67,11 +67,17 @@ public sealed class AppHost : IDisposable
     /// </summary>
     public IServiceProvider Services { get; private set; } = null!;
 
-    private AppHost(EngineClient client, EngineWire wire, string databasePath, IChangeFeed? changeFeed)
+    /// <summary>启动空闲预热写路径：事务内执行后回滚，不留数据；无库组合为空操作。</summary>
+    public Task WarmWritePathAsync(CancellationToken ct)
+        => _warmWritePath?.Invoke(ct) ?? Task.CompletedTask;
+
+    private AppHost(EngineClient client, EngineWire wire, string databasePath, IChangeFeed? changeFeed,
+        Func<CancellationToken, Task>? warmWritePath)
     {
         Client = client;
         Wire = wire;
         _databasePath = databasePath;
+        _warmWritePath = warmWritePath;
         Locator = new ContentLocator(client, () => LocateHost, Ports);
         // 外部变更 → 先失效缓存（客户端门面透传；事件名来自精确变更流）→ 再走枢纽；顺序由 watcher 内部保证。
         ExternalChanges = new ExternalChangeWatcher(databasePath, changeFeed, client.InvalidateQueryCache, Hub);
@@ -94,6 +100,7 @@ public sealed class AppHost : IDisposable
     private readonly HumanVerificationBrowser _humanVerify = new();
 
     private readonly string _databasePath;
+    private readonly Func<CancellationToken, Task>? _warmWritePath;
 
     /// <summary>能力桥服务端：把本进程已有的浏览器能力借给 CLI / MCP（同一数据库 = 同一条管道）。</summary>
     private CapabilityBridgeServer? _capabilityBridge;
@@ -194,7 +201,7 @@ public sealed class AppHost : IDisposable
         if (composed.Wire is null)
             throw new InvalidOperationException("the default assembly must produce an EngineWire (was ComposeOptions.BuildWire turned off?)");
 
-        var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed);
+        var host = new AppHost(composed.Client, composed.Wire, dbPath, composed.ChangeFeed, composed.WarmWritePath);
         host.AttachAi(LinkPocket.Ai.AiRuntime.Create(
             LinkPocket.Ai.AiRuntime.DefaultDataRoot, composed.Client, composed.Sessions));
         host.AttachPageRenderer();                 // 元数据抓取的浏览器渲染兜底（WebView2，懒建）
