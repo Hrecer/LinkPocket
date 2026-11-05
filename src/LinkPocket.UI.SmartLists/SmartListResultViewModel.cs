@@ -84,7 +84,9 @@ namespace LinkPocket.ViewModels
         private bool _selectLastAfterFill;
 
         /// <summary>位置列文本缓存（按目录 + 语言版本）：行模板只解析视口内的行。</summary>
-        private const int MaxPathDisplayChars = 200;
+        // 列宽在现实窗口尺寸内放不下 128 字以后的路径段（超出部分本来就不可见），
+        // 只影响 TextBlock 排版成本；排序不使用显示文本（见 _resolveFolderOrder）。
+        private const int MaxPathDisplayChars = 128;
         private readonly Dictionary<string, (int Version, string Text)> _pathTextCache = new(StringComparer.Ordinal);
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -446,7 +448,7 @@ namespace LinkPocket.ViewModels
         /// <c>days</c> = 时间窗覆盖（**null = 命令缺省 7 天**，即用户口径）；
         /// 探针等自动化用大窗口拿到足够样本，才能真正核对"渲染行序 = 排序"。
         /// </summary>
-        public async Task LoadAsync(int? days = null)
+        public async Task LoadAsync(int? days = null, SmartListPageDto? prefetched = null)
         {
             IsLoading = true;
             CancelLoad();
@@ -467,7 +469,8 @@ namespace LinkPocket.ViewModels
                 SmartListPageDto first;
                 try
                 {
-                    first = await FetchPageAsync(engineSortField, engineSortAsc, page: 1, perPage, days, cts.Token);
+                    first = prefetched
+                        ?? await FetchPageAsync(engineSortField, engineSortAsc, page: 1, perPage, days, cts.Token);
                 }
                 catch (OperationCanceledException) { return; }
 
@@ -498,8 +501,18 @@ namespace LinkPocket.ViewModels
                 var loadingText = Loc.T("smartlists.rowLoading");
                 var total = TotalCount;
                 var prefetch = first.Items;
-                var rows = await Task.Run(() => BuildInitialRows(total, prefetch, loadingText), cts.Token);
+                // 预热期预建的占位行池（同规模）直接复用：点卡不再付十万行分配；
+                // 没有/规模不符才现场构建（后台线程）。
+                var spare = SpareRowsProvider?.Invoke(total);
+                var rows = spare ?? await Task.Run(() => BuildInitialRows(total, loadingText), cts.Token);
                 if (gen != _loadGeneration) return;
+                var filled = Math.Min(total, prefetch.Count);
+                for (var i = 0; i < filled; i++)
+                {
+                    var row = (SmartListResultRow)rows[i];
+                    row.SetPathResolver(ResolveFolderPathText);
+                    row.Fill(prefetch[i]);
+                }
                 var buildMs = phase.ElapsedMilliseconds;
                 phase.Restart();
 
@@ -563,18 +576,18 @@ namespace LinkPocket.ViewModels
                 days: days,
                 ct: ct), ct);
 
-        /// <summary>首屏行集（后台线程构建）：占位行 + 首页真实行；十万行也不在 UI 线程分配。</summary>
-        private static List<LinkItem> BuildInitialRows(int total, IReadOnlyList<LinkDto> prefetch, string loadingText)
+        /// <summary>首屏行集（后台线程构建）：同高占位行；首页真实行在 UI 线程原地写前 N 行。</summary>
+        private static List<LinkItem> BuildInitialRows(int total, string loadingText)
         {
             var rows = new List<LinkItem>(total);
             for (var i = 0; i < total; i++)
                 rows.Add(SmartListResultRow.Placeholder(loadingText));
-
-            var filled = Math.Min(total, prefetch.Count);
-            for (var i = 0; i < filled; i++)
-                ((SmartListResultRow)rows[i]).Fill(prefetch[i]);
             return rows;
         }
+
+        /// <summary>预热行池的提供者（组合根/页 VM 注入）：给出与 <paramref name="total"/> 同规模的占位行列表。
+        /// 只应被取用一次；行随后被原地填充，池本身不得他处复用。</summary>
+        public Func<int, List<LinkItem>?>? SpareRowsProvider { get; set; }
 
         /// <summary>
         /// 后台补齐剩余行：一次取回全量（同一排序）→ 分块**原位填充**占位行。
@@ -687,6 +700,7 @@ namespace LinkPocket.ViewModels
             for (var i = start; i < end && i < _items.Count; i++)
             {
                 if (_items[i] is not SmartListResultRow row) continue;
+                row.SetPathResolver(ResolveFolderPathText);
                 row.Fill(rows[i]);
                 if (Selection.Contains(row.LinkId)) row.IsSelected = true;
             }

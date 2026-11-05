@@ -1,11 +1,9 @@
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -34,22 +32,121 @@ namespace LinkPocket.Views
         private SmartListResultViewModel? _boundResult;   // 当前订阅了 Reloaded 的结果 VM
         private bool _wired;       // 装配守卫：只在成功路径置位（DataContext 中间态不会误锁）
         private bool _openingGuard;    // 开卡重入守卫：防连点同一/不同卡片并发开两次
-        private DataTemplate? _fullRowTemplate;
-        private DataTemplate? _compactRowTemplate;
-        private int _rowTemplateGen;
 
         public SmartListsPage()
         {
             InitializeComponent();
             SetupTable();
-            _fullRowTemplate = SmartTable.ItemTemplate;
-            _compactRowTemplate = (DataTemplate)Resources["SmartListRowCompactTemplate"];
+            // 预热行模板（脱离可视树实例化 + Measure/Arrange）：把 BAML/JIT、样式与
+            // DynamicResource 首次查找、文本排版预热都挪到页面构造期，首次开卡的 rebind
+            // 不再付这笔一次性成本（与搜索页同一做法）。
+            WarmRowTemplate(SmartTable.ItemTemplate);
             Focusable = true;
+            // 换语言：行文本（位置/日期/次数）是渲染边界直出，视图对**可视行**统一失效一次；
+            // 未实现的行在 DataContext 落地时自然按新语言取词。
+            Loc.Table.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(LocTable.Version)) RefreshVisibleRowText();
+            };
             DataContextChanged += (_, __) => WireOnce();
             Loaded += (_, __) => WireOnce();
             // 切到本页 → 焦点收进页内（快捷键按焦点路由；焦点掉出页面则 Esc 静默失效）
             // 焦点不变式 = UIKit `Views.PageFocus`（**唯一实现**，与浏览页/回收站/搜索页/工具页共用）
-            IsVisibleChanged += (_, _) => { if (IsVisible) PageFocus.Take(this); };
+            IsVisibleChanged += (_, _) =>
+            {
+                if (!IsVisible) return;
+                PageFocus.Take(this);
+                ScheduleWarmUp();
+            };
+        }
+
+        // —— 首开预热：卡片页展示期间把四个预设的引擎首页各取一次（后台、不渲染、不改可见内容） ——
+        private bool _warmScheduled;
+        private bool _warmDone;
+        private bool _warmCancelled;
+
+        private void ScheduleWarmUp()
+        {
+            if (_warmScheduled || _warmDone) return;
+            _warmScheduled = true;
+            var timer = new System.Windows.Threading.DispatcherTimer(
+                System.Windows.Threading.DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(160),
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (_warmDone) return;
+                _warmDone = true;
+                if (_warmCancelled || ResultVm != null) return;
+                if (DataContext is SmartListViewModel slVm) slVm.WarmEngine();
+            };
+            timer.Start();
+        }
+
+        /// <summary>预热完整行模板：真实数据（占位 = false）走一遍全部单元格的生成/绑定/测量。</summary>
+        private static void WarmRowTemplate(DataTemplate? template)
+        {
+            if (template == null) return;
+            var warm = new SmartListResultRow();
+            warm.Fill(new LinkDto
+            {
+                LinkId = "__warm__",
+                Title = "Warmup",
+                Url = "https://warmup.invalid/",
+                CreatedAt = DateTime.Now,
+                UpdatedAt = DateTime.Now,
+                LastVisitedAt = DateTime.Now,
+                VisitCount = 1,
+            });
+            for (var i = 0; i < 12; i++)
+            {
+                var presenter = new ContentPresenter
+                {
+                    Content = warm,
+                    ContentTemplate = template,
+                    Width = 1200,
+                    Height = 60,
+                };
+                presenter.Measure(new Size(1200, 60));
+                presenter.Arrange(new Rect(0, 0, 1200, 60));
+                presenter.UpdateLayout();
+            }
+        }
+
+        private int CountDataRows()
+        {
+            var count = 0;
+            void Walk(DependencyObject node)
+            {
+                var children = VisualTreeHelper.GetChildrenCount(node);
+                for (var i = 0; i < children; i++)
+                {
+                    var child = VisualTreeHelper.GetChild(node, i);
+                    if (child is FrameworkElement { Tag: "DataRow" }) count++;
+                    Walk(child);
+                }
+            }
+            Walk(SmartTable.RowsList);
+            return count;
+        }
+
+        /// <summary>换语言后让已实现的行重读文本（虚拟化下只有视口内的十几行，代价与总行数无关）。</summary>
+        private void RefreshVisibleRowText()
+        {
+            static void Walk(DependencyObject node)
+            {
+                var count = VisualTreeHelper.GetChildrenCount(node);
+                for (var i = 0; i < count; i++)
+                {
+                    var child = VisualTreeHelper.GetChild(node, i);
+                    if (child is ContentPresenter { DataContext: SmartListResultRow row })
+                        row.NotifyLanguageChanged();
+                    Walk(child);
+                }
+            }
+            Walk(SmartTable.RowsList);
         }
 
         private ShortcutHost? _shortcutHost;
@@ -110,6 +207,10 @@ namespace LinkPocket.Views
             {
                 CardPanel.Visibility = Visibility.Collapsed;
                 ResultPanel.Visibility = Visibility.Visible;
+                // 先把结果页骨架（表头 / 空表 / 详情栏）落地，再绑行：首次上屏的固定布局成本与行成本分开付。
+                var chromeSw = Stopwatch.StartNew();
+                ResultPanel.UpdateLayout();
+                LpLog.Info($"chrome layout={chromeSw.ElapsedMilliseconds}ms", category: "app.smartlist");
                 RebindResultTable();
             }
             else
@@ -129,6 +230,7 @@ namespace LinkPocket.Views
             if (sender is not FrameworkElement fe || fe.Tag is not string listId) return;
             if (DataContext is not SmartListViewModel slVm) return;
 
+            _warmCancelled = true;   // 预热还没跑就被点开：不再为预热排后台查询
             _openingGuard = true;
             try
             {
@@ -243,6 +345,7 @@ namespace LinkPocket.Views
                 .Where(i => !string.IsNullOrEmpty(i.LinkId))
                 .Select(i => i.LinkId).ToList();
 
+            var phase = Stopwatch.StartNew();
             // 换列表 = 回到默认名称升序；同一列表重绑（F5 / 删除后重载）保留用户当前排序
             if (switchedList)
             {
@@ -255,16 +358,24 @@ namespace LinkPocket.Views
                 UpdateSortHint(field, SmartTable.SortAscending);
                 resultVm.Sort(field, SmartTable.SortAscending);
             }
+            var sortMs = phase.ElapsedMilliseconds;
+            phase.Restart();
 
             // 空态先就位（ItemsSource = null 时也不至于露出旧空态），再绑数据
             SmartTable.EmptyContent = BuildSmartState("bookmark-off-outline", resultVm.EmptyMessage,
                 Loc.K("smartlists.liveHint"));
-            // 新结果集先挂紧凑行模板：首帧只实例化标题 + URL（真实数据、同高），
-            // 完整模板在首帧渲染后恢复——位置/日期/次数/图标随后补全，不改变滚动范围。
-            ApplyCompactRowTemplate();
-            var bindSw = Stopwatch.StartNew();
-            SmartTable.ItemsSource = null;
+            var emptyMs = phase.ElapsedMilliseconds;
+            phase.Restart();
+
+            // 换源 = 直接赋值（虚拟化回收池可复用已实现的行容器）；只有同一集合实例重绑时才清一次。
+            if (ReferenceEquals(SmartTable.ItemsSource, resultVm.Items))
+            {
+                SmartTable.ItemsSource = null;
+            }
             SmartTable.ItemsSource = resultVm.Items;
+            var bindMs = phase.ElapsedMilliseconds;
+            var containersBefore = CountDataRows();
+            phase.Restart();
 
             if (switchedList) resultVm.ClearSelection();   // 换列表：旧选中已无意义
             else if (resultVm.IsFillComplete)
@@ -272,78 +383,16 @@ namespace LinkPocket.Views
             // 补全未完成：暂不剔除（选中项可能在后续页里），全量落地后由结果 VM 统一 RemoveMissing
             resultVm.ProjectSelection();   // 模板模式的选中底色由 LinkItem.IsSelected 驱动
             SmartSidebar.DataContext = resultVm.Details;
+            var selectMs = phase.ElapsedMilliseconds;
+            phase.Restart();
             // 模板模式只实现视口行：这里同步落地一次布局，保证"结果已就绪"时首帧行真的生成
             //（否则极慢主机/离屏测量下可能等到下一次外部失效才实现行容器）。
             // 列宽会按滚动条扣除后的真实行区宽度重算（探针按 225/337 卡住）。
             SmartTable.UpdateLayout();
-            LpLog.Info($"rebind rows={resultVm.Items.Count} bind+layout={bindSw.ElapsedMilliseconds}ms",
+            LpLog.Info($"rebind rows={resultVm.Items.Count} switched={switchedList}"
+                + $" sort={sortMs}ms empty={emptyMs}ms bind={bindMs}ms select={selectMs}ms"
+                + $" layout={phase.ElapsedMilliseconds}ms containers={containersBefore}->{CountDataRows()}",
                 category: "app.smartlist");
-        }
-
-        /// <summary>新结果集先换紧凑行模板（标题 + URL、真实数据、同高），让首帧只实例化两个文本块。</summary>
-        private void ApplyCompactRowTemplate()
-        {
-            if (_compactRowTemplate is null || _fullRowTemplate is null) return;
-            var gen = ++_rowTemplateGen;
-            SmartTable.ItemTemplate = _compactRowTemplate;
-            RestoreFullRowTemplateAfterFirstFrame(gen);
-        }
-
-        /// <summary>等紧凑行真的落地并渲染出一帧后再恢复完整模板（挂在 Loaded/Background 会抢在首帧之前，
-        /// 首帧又背上完整模板的布局——与搜索页/浏览页同一判据）。</summary>
-        private void RestoreFullRowTemplateAfterFirstFrame(int gen)
-        {
-            var restored = false;
-            var compactLaidOut = false;
-            EventHandler? onRendered = null;
-            EventHandler? onLayout = null;
-            System.Windows.Threading.DispatcherTimer? fallback = null;
-
-            void Restore()
-            {
-                if (restored) return;
-                restored = true;
-                if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
-                if (onLayout is not null) SmartTable.LayoutUpdated -= onLayout;
-                fallback?.Stop();
-                if (gen != _rowTemplateGen || _fullRowTemplate is null) return;
-                SmartTable.ItemTemplate = _fullRowTemplate;
-            }
-
-            onLayout = (_, _) =>
-            {
-                // 无命中时没有行容器可等：空态本身已经布局完成，按"紧凑帧已落地"处理。
-                if (!HasCompactRow(SmartTable) && SmartTable.RowsList.Items.Count != 0) return;
-                compactLaidOut = true;
-                if (onLayout is not null) SmartTable.LayoutUpdated -= onLayout;
-            };
-            SmartTable.LayoutUpdated += onLayout;
-
-            onRendered = (_, _) =>
-            {
-                if (!compactLaidOut) return;
-                CompositionTarget.Rendering -= onRendered;
-                fallback?.Stop();
-                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(Restore));
-            };
-            CompositionTarget.Rendering += onRendered;
-            fallback = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromMilliseconds(250),
-            };
-            fallback.Tick += (_, _) => Restore();
-            fallback.Start();
-        }
-
-        private static bool HasCompactRow(DependencyObject root)
-        {
-            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            {
-                var child = VisualTreeHelper.GetChild(root, i);
-                if (child is FrameworkElement { Name: "SmartListRowCompact" }) return true;
-                if (HasCompactRow(child)) return true;
-            }
-            return false;
         }
 
         private void OnResultReloaded(object? sender, EventArgs e) => RebindResultTable();
@@ -484,21 +533,4 @@ namespace LinkPocket.Views
         }
     }
 
-    /// <summary>
-    /// 位置列：目录 → 显示路径（复用结果 VM 的按目录 + 语言版本缓存）。
-    /// 第一路绑语言版本：路径里的根 token 随语言变化，版本一变必须重新取词。
-    /// </summary>
-    public sealed class SmartListPathConverter : IMultiValueConverter
-    {
-        public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
-        {
-            if (values.Length < 3 || values[1] is not SmartListViewModel vm) return string.Empty;
-            var listId = values[2] as string;
-            return vm.ResultViewModel?.ResolveFolderPathText(string.IsNullOrEmpty(listId) ? null : listId)
-                   ?? string.Empty;
-        }
-
-        public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
-            => throw new NotSupportedException("smart list path projection is one-way.");
-    }
 }

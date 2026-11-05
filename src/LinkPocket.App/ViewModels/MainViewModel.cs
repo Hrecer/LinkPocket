@@ -121,6 +121,7 @@ namespace LinkPocket.ViewModels
             // 目录树（含各节点的链接计数）可能因本次变更过期：下一次刷新要重新取树。
             // 纯导航不置脏，所以上面那条 0.6s 的整树搬运只发生在"数据真的变了之后的一次"。
             BrowserViewModel.MarkTreeDirty();
+            SmartListViewModel.InvalidateWarmPages();   // 智能列表的预热首页随数据变更一起作废
             _ = RefreshActiveViewAsync();
             // 路径解析树的同步（与活跃页路由无关）：搜索页「位置」列 / 智能列表位置列 / 工具页路径
             // 都读这份快照——改名 / 移动 / 新建后，任何页面再解析都必须看到新名字。

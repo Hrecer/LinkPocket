@@ -1,11 +1,15 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 using LinkPocket.Services;
 using LinkPocket.I18n;
+using LinkPocket.Views;
 
 namespace LinkPocket.ViewModels
 {
@@ -101,6 +105,103 @@ namespace LinkPocket.ViewModels
             Cards = cards;
         }
 
+        /// <summary>
+        /// 进入智能列表页时把四个预设的**首页查询**各走热一次（后台）：点卡时不再付
+        /// EF 查询编译 / SQLite 连接与页读的冷启动成本（「最常查看」首次查询实测 35–180ms）。
+        /// 只取首页，不取全量；失败不影响真实打开。
+        /// </summary>
+        public void WarmEngine()
+        {
+            if (Interlocked.Exchange(ref _engineWarmStarted, 1) != 0) return;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var added = await _api.LinkSmartListPageAsync("recently_added", "title", "asc", 1, 64);
+                    var edited = await _api.LinkSmartListPageAsync("recently_edited", "title", "asc", 1, 64);
+                    var visited = await _api.LinkSmartListPageAsync("recently_visited", "title", "asc", 1, 64);
+                    var most = await _api.LinkSmartListPageAsync("most_visited", "visit_count", "desc", 1, 20);
+                    var at = DateTime.UtcNow;
+                    lock (_warmPages)
+                    {
+                        _warmPages["recently_added"] = (added, at);
+                        _warmPages["recently_edited"] = (edited, at);
+                        _warmPages["recently_visited"] = (visited, at);
+                        _warmPages["most_visited"] = (most, at);
+                    }
+                    // 先建一组同规模的占位行（十万行约 10ms）：点卡时直接复用，
+                    // 首帧不再在关键路径上分配十万个行对象。
+                    EnsureSpareRows(added.TotalCount);
+                }
+                catch
+                {
+                    // 预热失败不影响真实查询（真实打开自己会报错）
+                }
+            });
+        }
+
+        private int _engineWarmStarted;
+        private readonly Dictionary<string, (SmartListPageDto Page, DateTime At)> _warmPages = new(StringComparer.Ordinal);
+        private static readonly TimeSpan WarmPageTtl = TimeSpan.FromSeconds(10);   // 与引擎查询缓存同一窗口；数据变更会主动清空
+
+        // —— 首开占位行池：后台预建、取用一次；语言版本或规模不符则弃用（正常现场构建） ——
+        private readonly object _spareLock = new();
+        private List<LinkItem>? _spareRows;
+        private int _spareCount;
+        private int _spareLocVersion = -1;
+
+        private List<LinkItem>? TryTakeSpareRows(int total)
+        {
+            lock (_spareLock)
+            {
+                if (_spareRows == null || _spareLocVersion != Loc.Table.Version) return null;
+                // 小结果集现场构建本来就只花 0–1ms，别为它消耗行池（留给下一个十万级列表）。
+                if (total < _spareCount / 2) return null;
+                if (_spareCount < total) return null;
+                var rows = _spareRows;
+                _spareRows = null;
+                return rows.Count == total ? rows : rows.GetRange(0, total);
+            }
+        }
+
+        private void EnsureSpareRows(int total)
+        {
+            if (total <= 0) return;
+            var version = Loc.Table.Version;
+            lock (_spareLock)
+            {
+                if (_spareRows != null && _spareCount == total && _spareLocVersion == version) return;
+            }
+            var text = Loc.T("smartlists.rowLoading");
+            var rows = new List<LinkItem>(total);
+            for (var i = 0; i < total; i++)
+                rows.Add(SmartListResultRow.Placeholder(text));
+            lock (_spareLock)
+            {
+                _spareRows = rows;
+                _spareCount = total;
+                _spareLocVersion = version;
+            }
+        }
+
+        /// <summary>数据变更（任意页面/外部进程）后预热页立即作废，绝不把过期快照当首屏。</summary>
+        public void InvalidateWarmPages()
+        {
+            lock (_warmPages) _warmPages.Clear();
+        }
+
+        /// <summary>刚预热的首页（TTL 内、与默认排序同口径）直接交付，点卡不再等一次引擎往返；
+        /// 过期则丢弃，真实打开自己查询（引擎侧本身也有事件失效的查询缓存）。</summary>
+        private SmartListPageDto? TakeWarmPage(string kind)
+        {
+            lock (_warmPages)
+            {
+                if (!_warmPages.TryGetValue(kind, out var entry)) return null;
+                _warmPages.Remove(kind);
+                return DateTime.UtcNow - entry.At <= WarmPageTtl ? entry.Page : null;
+            }
+        }
+
         public async void OpenSmartList(string listId, int? days = null)
         {
             IsLoading = true;
@@ -118,7 +219,8 @@ namespace LinkPocket.ViewModels
                     Subtitle = def.Subtitle,
                 };
                 _loadingResult = resultVm;
-                await resultVm.LoadAsync(days);
+                resultVm.SpareRowsProvider = TryTakeSpareRows;
+                await resultVm.LoadAsync(days, days == null ? TakeWarmPage(listId) : null);
                 // 代次校验：期间用户已返回卡片页或打开了别的列表 → 晚到结果不覆盖
                 if (generation != _openGeneration)
                 {
@@ -126,6 +228,17 @@ namespace LinkPocket.ViewModels
                     return;
                 }
                 ResultViewModel = resultVm;
+                // 补页开始后（约 0.5s）在后台把下一次开卡要用的占位行池补回来。
+                var total = resultVm.TotalCount;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(900);
+                        EnsureSpareRows(total);
+                    }
+                    catch { /* 行池是加速项，失败不影响打开 */ }
+                });
             }
             catch (Exception ex)
             {

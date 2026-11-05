@@ -1,3 +1,5 @@
+using System;
+using System.Windows;
 using LinkPocket.Contracts;
 using LinkPocket.Models;
 
@@ -10,6 +12,10 @@ namespace LinkPocket.Views;
 /// </summary>
 internal sealed class SmartListResultRow : LinkItem
 {
+    /// <summary>位置列文本解析器（结果 VM 的按目录 + 语言版本缓存）：行只存委托，不存文本——
+    /// 换语言时由视图对可视行发一次"全部属性失效"，getter 重新取词。</summary>
+    private Func<string?, string>? _pathResolver;
+
     public bool IsPlaceholder { get; private set; } = true;
 
     public static SmartListResultRow Placeholder(string loadingText) => new()
@@ -17,6 +23,20 @@ internal sealed class SmartListResultRow : LinkItem
         Title = loadingText,
         Url = "\u00A0",
     };
+
+    public void SetPathResolver(Func<string?, string> resolver) => _pathResolver = resolver;
+
+    /// <summary>占位行的非身份单元格一律"空文本"（身份 = 标题 + URL），不参与日期/次数的渲染。</summary>
+    public string PathText => IsPlaceholder ? string.Empty : _pathResolver?.Invoke(ListId) ?? string.Empty;
+    public string UpdatedText => IsPlaceholder ? string.Empty : UpdatedValue.Resolve();
+    public string LastVisitedText => IsPlaceholder ? string.Empty : LastVisitedValue.Resolve();
+    public string VisitCountText => IsPlaceholder ? string.Empty : VisitCountValue.Resolve();
+    public string CreatedText => IsPlaceholder ? string.Empty : CreatedValue.Resolve();
+    /// <summary>图标在占位期隐藏（保留几何）；渲染口径与其它非身份单元格一致。</summary>
+    public Visibility FaviconVisibility => IsPlaceholder ? Visibility.Hidden : Visibility.Visible;
+
+    /// <summary>换语言：可视行一次性让所有属性绑定重读（文案仍在渲染边界取词，不落库）。</summary>
+    public void NotifyLanguageChanged() => OnPropertyChanged(string.Empty);
 
     /// <summary>把 DTO 写入本行（首填或重排后覆盖）；只由结果 VM 的填充器调用。</summary>
     public void Fill(LinkDto dto)
@@ -47,9 +67,11 @@ internal sealed class SmartListResultRow : LinkItem
         OnPropertyChanged(nameof(IsImportant));
         OnPropertyChanged(nameof(CreatedAt));
         OnPropertyChanged(nameof(UpdatedAt));
-        OnPropertyChanged(nameof(UpdatedValue));
-        OnPropertyChanged(nameof(LastVisitedValue));
-        OnPropertyChanged(nameof(VisitCountValue));
-        OnPropertyChanged(nameof(CreatedValue));
+        OnPropertyChanged(nameof(PathText));
+        OnPropertyChanged(nameof(UpdatedText));
+        OnPropertyChanged(nameof(LastVisitedText));
+        OnPropertyChanged(nameof(VisitCountText));
+        OnPropertyChanged(nameof(CreatedText));
+        OnPropertyChanged(nameof(FaviconVisibility));
     }
 }
