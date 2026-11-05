@@ -40,7 +40,7 @@ A local-first bookmark manager for Windows. Your links live in one folder on you
 
 **Large libraries**
 
-- Tested with 100,000 bookmarks and 100,000 folders; lists, search and sorting stay responsive.
+- Built to stay responsive with large libraries.
 
 **Appearance**
 
