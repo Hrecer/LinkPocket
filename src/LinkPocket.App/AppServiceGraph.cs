@@ -69,7 +69,7 @@ internal static class AppServiceGraph
             // 本 VM 只在窗口构造中被解析 —— 那时端口必然已就位。
             return new SearchViewModel(h.Client, h.Ports.Navigation!, h.Ports.Dialogs!,
                 folderId => shell.FolderPathValue(folderId), h.Locator,
-                h.Ports.BrowseEdit, h.Ports.Notices);
+                h.Ports.BrowseEdit, h.Ports.Notices, shell.FolderPathOrder);
         });
 
         services.AddTransient<MainWindow>();

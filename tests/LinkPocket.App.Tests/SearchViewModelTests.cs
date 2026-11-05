@@ -238,6 +238,89 @@ public class SearchViewModelTests
         }
     }
 
+    /// <summary>
+    /// 「位置」列：引擎白名单没有 path，界面必须用目录树前序在**全量到齐后**本地重排，
+    /// 而不是把 path 静默当 title。补页期间点排序 → 排队，CompleteLoad 应用；文件夹块仍在前。
+    /// </summary>
+    [Fact]
+    public async Task 位置排序_补页期间排队_全量完成后按目录前序重排()
+    {
+        var (client, _, dbPath) = AppTestEnv.Create();
+        try
+        {
+            await using (var db = new LinkPocket.Data.LinkPocketDbContext(dbPath))
+            {
+                db.Folders.AddRange(
+                    new LinkPocket.Data.Folder { FolderId = "900000000001", Name = "F1" },
+                    new LinkPocket.Data.Folder { FolderId = "900000000002", Name = "F2" });
+                // 标题序 = F2(A) → F1(B) → 根(C)，与位置序（根 → F1 → F2）相反。
+                for (var i = 0; i < 300; i++)
+                    db.Links.Add(new LinkPocket.Data.Link
+                    {
+                        LinkId = $"SRTPATH2{i:D8}",
+                        Url = $"https://path2.example/{i}",
+                        Title = $"排序标记 A{i:D3}",
+                        ListId = "900000000002",
+                    });
+                for (var i = 0; i < 300; i++)
+                    db.Links.Add(new LinkPocket.Data.Link
+                    {
+                        LinkId = $"SRTPATH1{i:D8}",
+                        Url = $"https://path1.example/{i}",
+                        Title = $"排序标记 B{i:D3}",
+                        ListId = "900000000001",
+                    });
+                for (var i = 0; i < 200; i++)
+                    db.Links.Add(new LinkPocket.Data.Link
+                    {
+                        LinkId = $"SRTPATH0{i:D8}",
+                        Url = $"https://path0.example/{i}",
+                        Title = $"排序标记 C{i:D3}",
+                    });
+                await db.SaveChangesAsync();
+            }
+
+            var vm = new SearchViewModel(client, new FakeNavigationService(),
+                new FakeDialogService(), _ => LocValue.Empty,
+                resolveFolderOrder: id => id switch
+                {
+                    "900000000001" => 1,
+                    "900000000002" => 2,
+                    _ => 0,
+                });
+            vm.Query = "排序标记";
+            vm.SearchCommand.Execute(null);
+
+            Assert.True(await WaitUntilAsync(() => !vm.IsSearching && vm.TotalHitCount == 800,
+                    TimeSpan.FromSeconds(30)),
+                $"首屏没有在超时内完成（总数：{vm.TotalHitCount}）");
+
+            // 补页中（或刚好完成）点「位置」：无论哪一刻，最终都必须按前序排好。
+            await vm.SortAsync("path", true);
+            Assert.True(await WaitUntilAsync(() => !vm.IsLoadingAll && vm.LoadedCount == 800,
+                    TimeSpan.FromSeconds(30)),
+                $"补全/位置排序没有在超时内完成（{vm.LoadedCount}/800）");
+
+            var titles = vm.Results.Select(r => r.Title).ToList();
+            Assert.Equal(800, titles.Count);
+            Assert.All(titles.Take(200), t => Assert.StartsWith("排序标记 C", t));   // 根级（前序 0）
+            Assert.All(titles.Skip(200).Take(300), t => Assert.StartsWith("排序标记 B", t)); // F1
+            Assert.All(titles.Skip(500), t => Assert.StartsWith("排序标记 A", t));   // F2
+
+            // 降序：块顺序仍为 文件夹块 → 链接块；链接块内前序反向（F2 → F1 → 根）。
+            await vm.SortAsync("path", false);
+            var desc = vm.Results.Select(r => r.Title).ToList();
+            Assert.All(desc.Take(300), t => Assert.StartsWith("排序标记 A", t));
+            Assert.All(desc.Skip(300).Take(300), t => Assert.StartsWith("排序标记 B", t));
+            Assert.All(desc.Skip(600), t => Assert.StartsWith("排序标记 C", t));
+            Assert.Equal(800, vm.LoadedCount);
+        }
+        finally
+        {
+            AppTestEnv.Delete(dbPath);
+        }
+    }
+
     private sealed class FakeDialogService : IDialogService
     {
         public bool ConfirmDeleteFolder(string folderName) => true;

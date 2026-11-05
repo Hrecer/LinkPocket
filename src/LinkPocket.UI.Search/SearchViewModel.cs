@@ -32,17 +32,21 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private readonly IDialogService _dialogs;
     private readonly IContentLocator? _locator;
     private readonly Func<string?, LocValue> _resolveFolderPath;
+    /// <summary>位置排序键：目录树前序序号（0 = 根级）；与智能列表同一份注入。</summary>
+    private readonly Func<string?, int> _resolveFolderOrder;
     private readonly IBrowseEditState? _editState;
     private readonly IUiNoticeService? _notices;
 
     public SearchViewModel(EngineClient api, INavigationService navigation, IDialogService dialogs,
         Func<string?, LocValue> resolveFolderPath, IContentLocator? locator = null,
-        IBrowseEditState? editState = null, IUiNoticeService? notices = null)
+        IBrowseEditState? editState = null, IUiNoticeService? notices = null,
+        Func<string?, int>? resolveFolderOrder = null)
     {
         _api = api;
         _navigation = navigation;
         _dialogs = dialogs;
         _resolveFolderPath = resolveFolderPath;
+        _resolveFolderOrder = resolveFolderOrder ?? (_ => int.MaxValue);
         _locator = locator;
         _editState = editState;
         _notices = notices;
@@ -245,6 +249,20 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         _orderedIds.Clear();
         foreach (var id in _idsByRow)
             if (id is not null) _orderedIds.Add(id);
+    }
+
+    /// <summary>整表重排后按新行序重建行号索引；`_itemsById` 不变（同一批行对象，键没变）。</summary>
+    private void ReorderLoadedMaps(IReadOnlyList<LinkItem> sorted)
+    {
+        _idsByRow = new string?[sorted.Count];
+        _orderedIds.Clear();
+        _orderedIds.Capacity = sorted.Count;
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var key = sorted[i].Key;
+            _idsByRow[i] = key;
+            _orderedIds.Add(key);
+        }
     }
 
     /// <summary>
@@ -531,6 +549,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
         CancelSession();
         _loadFailed = false;
+        _pendingPathSort = string.Equals(_sortField, "path", StringComparison.Ordinal);
         var gen = ++_searchGen;
         var cts = new CancellationTokenSource();
         _loadCts = cts;
@@ -702,6 +721,8 @@ public sealed class SearchViewModel : INotifyPropertyChanged
 
     private string _sortField = "title";
     private bool _sortAscending = true;
+    /// <summary>位置排序等全量到齐后再应用（引擎白名单无 path，快照仍按 title 取页）。</summary>
+    private bool _pendingPathSort;
 
     private void OnScopeChanged()
     {
@@ -710,14 +731,31 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             _ = RefreshResultsAsync(forceReplace: true);
     }
 
-    /// <summary>表头排序：交给引擎重算（新快照会话），首屏返回后同样在后台原位补齐全部命中。</summary>
+    /// <summary>表头排序：普通列交给引擎重算（新快照会话）；「位置」列引擎没有排序键，
+    /// 用目录树前序在**全量到齐后**本地重排（补页期间先排队，完成时应用）。</summary>
     public Task SortAsync(string field, bool ascending)
     {
         if (string.Equals(field, _sortField, StringComparison.Ordinal) && ascending == _sortAscending)
             return Task.CompletedTask;
         _sortField = field;
         _sortAscending = ascending;
-        return string.IsNullOrWhiteSpace(LastQuery) ? Task.CompletedTask : RefreshResultsAsync(forceReplace: true);
+        if (!string.Equals(field, "path", StringComparison.Ordinal))
+        {
+            _pendingPathSort = false;
+            return string.IsNullOrWhiteSpace(LastQuery) ? Task.CompletedTask : RefreshResultsAsync(forceReplace: true);
+        }
+
+        // 位置排序：全量已到 → 立即本地重排；仍在补页 → 记下意图，CompleteLoad 统一应用。
+        if (string.IsNullOrWhiteSpace(LastQuery) || Results.Count == 0)
+            return Task.CompletedTask;
+        if (IsLoadingAll)
+        {
+            _pendingPathSort = true;
+            return Task.CompletedTask;
+        }
+        _pendingPathSort = false;
+        ApplyPathSortNow();
+        return Task.CompletedTask;
     }
 
     /// <summary>取消旧代次并关闭其快照会话；不修改结果/选中的最终状态（调用方决定清空或保留）。</summary>
@@ -731,6 +769,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
             _ = CloseSessionQuietlyAsync(sessionId);
 
         _loadFailed = false;
+        _pendingPathSort = false;
         IsLoadingAll = false;
         _selectAllAfterLoad = false;
         _selectLastAfterLoad = false;
@@ -765,8 +804,11 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         var url = SearchUrl;
         var desc = SearchDesc;
         var path = SearchPath;
-        var sortBy = _sortField;
-        var sortOrder = _sortAscending ? "asc" : "desc";
+        // 引擎白名单没有 path：位置排序先用 title 取一份完整快照，补全后本地重排。
+        var sortBy = string.Equals(_sortField, "path", StringComparison.Ordinal) ? "title" : _sortField;
+        var sortOrder = string.Equals(_sortField, "path", StringComparison.Ordinal)
+            ? "asc"
+            : _sortAscending ? "asc" : "desc";
 
         var open = await Task.Run(() => _api.SearchSessionOpenAsync(query,
             searchTitle: title, searchUrl: url,
@@ -934,9 +976,59 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// 位置排序（本地）：按目录树前序整数键重排**已全部落地**的结果集，文件夹块与链接块各自有序、
+    /// 文件夹块仍在前（与引擎的块顺序口径一致）；替换集合后重建行号索引（↑/↓、Ctrl+A、End 依赖它）。
+    /// </summary>
+    private void ApplyPathSortNow()
+    {
+        if (Results.Count < 2 || _loadedCount < TotalHitCount) return;
+
+        var dir = _sortAscending ? 1 : -1;
+
+        // 每行只解析一次目录前序键与标题（十万行若在比较器里查字典 = 百万级查找）。
+        var folders = new List<(int Order, string Title, string Id, LinkItem Item)>();
+        var links = new List<(int Order, string Title, string Id, LinkItem Item)>();
+        foreach (var item in Results)
+        {
+            var entry = (_resolveFolderOrder(item.ListId), item.DisplayTitle, item.LinkId, item);
+            (item.IsFolder ? folders : links).Add(entry);
+        }
+
+        static int Compare(
+            (int Order, string Title, string Id, LinkItem Item) a,
+            (int Order, string Title, string Id, LinkItem Item) b, int dir)
+        {
+            var byPath = a.Order.CompareTo(b.Order);
+            if (byPath != 0) return byPath * dir;
+            var byName = string.Compare(a.Title, b.Title, StringComparison.CurrentCulture);
+            if (byName != 0) return byName * dir;
+            return string.CompareOrdinal(a.Id, b.Id) * dir;
+        }
+        folders.Sort((a, b) => Compare(a, b, dir));
+        links.Sort((a, b) => Compare(a, b, dir));
+
+        var sorted = new List<LinkItem>(Results.Count);
+        foreach (var entry in folders) sorted.Add(entry.Item);
+        foreach (var entry in links) sorted.Add(entry.Item);
+
+        PreserveScrollOnNextResultReplace = true;   // 排序保留阅读位置（视图在 Reset 时恢复）
+        Results.ReplaceAll(sorted);
+        ReorderLoadedMaps(sorted);
+        OnPropertyChanged(nameof(LoadedCount));
+        OnPropertyChanged(nameof(LoadingNotice));
+        if (Selection.HasAny) OnSelectionChanged();
+        LpLog.Info($"search path sort rows={sorted.Count} asc={_sortAscending}", category: "search");
+    }
+
     private void CompleteLoad()
     {
         _loadFailed = false;
+        if (_pendingPathSort)
+        {
+            _pendingPathSort = false;
+            ApplyPathSortNow();
+        }
         var changed = Selection.RemoveMissing(id => _itemsById.ContainsKey(id));
         if (!changed) OnSelectionChanged();
 
@@ -956,6 +1048,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
     private void MarkLoadFailed(string reason)
     {
         _loadFailed = true;
+        _pendingPathSort = false;
         IsLoadingAll = false;
         _selectAllAfterLoad = false;
         _selectLastAfterLoad = false;
@@ -1004,6 +1097,7 @@ public sealed class SearchViewModel : INotifyPropertyChanged
         CancelSession();
         _pathTextCache.Clear();
         _loadFailed = false;
+        _pendingPathSort = string.Equals(_sortField, "path", StringComparison.Ordinal);
         int gen = ++_searchGen;
         var cts = new CancellationTokenSource();
         _loadCts = cts;
