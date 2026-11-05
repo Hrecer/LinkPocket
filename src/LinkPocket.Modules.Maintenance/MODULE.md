@@ -36,7 +36,7 @@
 
 ## 关于 `maintenance.reinit` 的语义
 
-实现 = **单事务清空业务表**（链接/文件夹/回收站两表；`macros` / `schema_migrations` 有保留策略，不清），
+实现 = **单事务清空业务表**（链接 / 文件夹 / 回收站两表；`schema_migrations` 保留纪元行；宏是 `data\macros.json` 文件、不在库内，也不在重置范围），
 不做"删库文件再建"——因此不需要停连接、不怕句柄占用。
 整库重置时引擎**同步清空查询缓存与撤销/重做栈**
 （`Impact = Database` → `_cache.Clear()` + `Undo.ClearAsync`——旧撤销条目的目标 ID 已不存在，

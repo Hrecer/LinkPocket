@@ -15,9 +15,9 @@ through **the same commands and the same engine pipeline** as the UI and the bui
 | **Tool calls** | Reuses `LinkPocket.Cli.CliRunner` in-process - the **same execution path** as a human typing commands (same argument binding, same engine pipeline, same output) |
 | **Data / change semantics** | The engine pipeline itself (undo, audit, events, write lock, destructive confirmations); the gateway holds no policy of its own |
 
-So there is no "external crippled edition": the engine exposes 85 external commands
-(66 business + 16 orchestration + 3 batch), and the gateway exposes all 85. The desktop host
-additionally registers 3 **UI-only** search snapshot-session commands (88 in the in-app catalog);
+So there is no "external crippled edition": the engine exposes 86 external commands
+(67 business + 16 orchestration + 3 batch), and the gateway exposes all 86. The desktop host
+additionally registers 3 **UI-only** search snapshot-session commands (89 in the in-app catalog);
 they are stateful renderer internals and are deliberately not part of the external tool surface.
 External reads are full by default: `search.links` / `search.explain` return all hits when
 `per_page` is omitted, and `folders.overview` includes `tree_links`.
