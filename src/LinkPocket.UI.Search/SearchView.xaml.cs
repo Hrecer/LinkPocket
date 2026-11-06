@@ -28,11 +28,6 @@ public partial class SearchView : UserControl
     private SearchViewModel? _vm;
     private ShortcutHost? _shortcutHost;
 
-    /// <summary>首帧紧凑行模板 / 完整行模板（切换只影响容器实例化，不改变数据与选中）。</summary>
-    private DataTemplate? _compactRowTemplate;
-    private DataTemplate? _fullRowTemplate;
-    private int _rowTemplateGen;
-
     private double _lastVerticalOffset;
 
     /// <summary>活结果集结构变化前的阅读锚点：第一条可见行 + 行内像素偏移。</summary>
@@ -45,13 +40,15 @@ public partial class SearchView : UserControl
     public SearchView()
     {
         InitializeComponent();
-        _fullRowTemplate = ResultsTable.ItemTemplate;
-        _compactRowTemplate = (DataTemplate)Resources["SearchRowCompactTemplate"];
         // 预热行模板（建一个脱离可视树的实例并走一遍 Measure/Arrange）：
-        // 首次搜索结果落地时少付一次 BAML/JIT 与文本排版预热。紧凑模板也要预热——
-        // 首帧走的就是它，否则第一次搜索会多付一次模板 JIT（实测首查比复跑慢 ~14ms）。
+        // 首次搜索结果落地时少付一次 BAML/JIT 与文本排版预热。
         WarmRowTemplate(ResultsTable.ItemTemplate);
-        WarmRowTemplate(_compactRowTemplate);
+        // 换语言：行文本（位置/日期/次数）是渲染边界直出，视图对**可视行**统一失效一次；
+        // 未实现的行在 DataContext 落地时自然按新语言取词。
+        Loc.Table.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LocTable.Version)) RefreshVisibleRowText();
+        };
         ResultsTable.VerticalOffsetChanged += (_, offset) =>
         {
             _lastVerticalOffset = offset;
@@ -68,7 +65,6 @@ public partial class SearchView : UserControl
                 _vm.LiveUpdateStarting -= OnLiveUpdateStarting;
                 _vm.LiveUpdateCompleted -= OnLiveUpdateCompleted;
                 _vm.Results.CollectionChanged -= OnResultsCollectionChanged;
-                _vm.ResultSetReplaced -= OnResultSetReplaced;
             }
             _vm = DataContext as SearchViewModel;
             if (_vm != null)
@@ -77,7 +73,6 @@ public partial class SearchView : UserControl
                 _vm.LiveUpdateStarting += OnLiveUpdateStarting;
                 _vm.LiveUpdateCompleted += OnLiveUpdateCompleted;
                 _vm.Results.CollectionChanged += OnResultsCollectionChanged;
-                _vm.ResultSetReplaced += OnResultSetReplaced;
                 _vm.ResetRequested += (_, _) => SearchBox.Focus();
                 _vm.FocusRowRequested += (_, item) => ResultsTable.ScrollItemIntoView(item);
                 // 点空白 = 清选中 + 焦点收回页内（BlankClick 唯一实现；命令端在视图收口——
@@ -200,14 +195,18 @@ public partial class SearchView : UserControl
     private static void WarmRowTemplate(System.Windows.DataTemplate? template)
     {
         if (template == null) return;
-        var warm = new LinkItem
+        var warm = new SearchResultRow();
+        warm.SetPathResolver(_ => "Warmup / Path");
+        warm.Fill(new LinkDto
         {
             LinkId = "__warm__",
             Title = "Warmup",
             Url = "https://warmup.invalid/",
             CreatedAt = DateTime.Now,
             UpdatedAt = DateTime.Now,
-        };
+            LastVisitedAt = DateTime.Now,
+            VisitCount = 1,
+        }, "Warm");
         for (var i = 0; i < 12; i++)
         {
             var presenter = new ContentPresenter
@@ -302,76 +301,6 @@ public partial class SearchView : UserControl
         ApplySelectionPaint();   // 行重建后把选中集合重新投影（外部托管：绘制随 ItemsSource 重建清零）
     }
 
-    /// <summary>
-    /// 新结果集挂上后：先换**紧凑行模板**（标题 + URL，真实数据、同高），让首帧只实例化两个文本块；
-    /// 下一帧（Loaded 优先级，排在渲染之后）恢复完整模板补全位置/日期/图标/高亮。
-    /// 只影响行的视觉实例化，不动集合、数据、选中与滚动范围。
-    /// </summary>
-    private void OnResultSetReplaced(object? sender, EventArgs e)
-    {
-        if (_compactRowTemplate is null || _fullRowTemplate is null) return;
-        var gen = ++_rowTemplateGen;
-        ResultsTable.ItemTemplate = _compactRowTemplate;
-        RestoreFullTemplateAfterFirstFrame(gen);
-    }
-
-    /// <summary>等紧凑行真的落地并渲染出一帧后再恢复完整模板（与浏览页同一判据）：
-    /// 挂在 Loaded/Background 会抢在首帧之前执行，首帧又背上完整模板的布局。</summary>
-    private void RestoreFullTemplateAfterFirstFrame(int gen)
-    {
-        var restored = false;
-        var compactLaidOut = false;
-        EventHandler? onRendered = null;
-        EventHandler? onLayout = null;
-        System.Windows.Threading.DispatcherTimer? fallback = null;
-
-        void Restore()
-        {
-            if (restored) return;
-            restored = true;
-            if (onRendered is not null) CompositionTarget.Rendering -= onRendered;
-            if (onLayout is not null) ResultsTable.LayoutUpdated -= onLayout;
-            fallback?.Stop();
-            if (gen != _rowTemplateGen || _fullRowTemplate is null) return;
-            ResultsTable.ItemTemplate = _fullRowTemplate;
-        }
-
-        onLayout = (_, _) =>
-        {
-            // 无命中时没有行容器可等：空态本身已经布局完成，按“紧凑帧已落地”处理。
-            if (!HasCompactRow(ResultsTable) && ResultsTable.RowsList.Items.Count != 0) return;
-            compactLaidOut = true;
-            if (onLayout is not null) ResultsTable.LayoutUpdated -= onLayout;
-        };
-        ResultsTable.LayoutUpdated += onLayout;
-
-        onRendered = (_, _) =>
-        {
-            if (!compactLaidOut) return;
-            CompositionTarget.Rendering -= onRendered;
-            fallback?.Stop();
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(Restore));
-        };
-        CompositionTarget.Rendering += onRendered;
-        fallback = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(250),
-        };
-        fallback.Tick += (_, _) => Restore();
-        fallback.Start();
-    }
-
-    private static bool HasCompactRow(DependencyObject root)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is FrameworkElement { Name: "SearchRowCompact" }) return true;
-            if (HasCompactRow(child)) return true;
-        }
-        return false;
-    }
-
     /// <summary>结果集合被整批替换（Reset）后，旧的选中投影已失效：重投影到新行对象。</summary>
     private void OnResultsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -411,6 +340,23 @@ public partial class SearchView : UserControl
 
     /// <summary>已画过选中的行（只记选中项，不遍历全部结果）：十万条下每次点选仍只改变化的几个。</summary>
     private readonly Dictionary<string, LinkItem> _paintedSelected = new(StringComparer.Ordinal);
+
+    /// <summary>换语言后让已实现的行重读文本（虚拟化下只有视口内的十几行，代价与总行数无关）。</summary>
+    private void RefreshVisibleRowText()
+    {
+        static void Walk(DependencyObject node)
+        {
+            var count = VisualTreeHelper.GetChildrenCount(node);
+            for (var i = 0; i < count; i++)
+            {
+                var child = VisualTreeHelper.GetChild(node, i);
+                if (child is ContentPresenter { DataContext: SearchResultRow row })
+                    row.NotifyLanguageChanged();
+                Walk(child);
+            }
+        }
+        Walk(ResultsTable.RowsList);
+    }
 
     /// <summary>选中投影（**外部托管**）：把 VM 的选中集合差异投影到行模型的 IsSelected。
     /// 只有视口附近的容器订阅该属性；未实现的选中行在滚入视口时直接带着标志绑定。</summary>

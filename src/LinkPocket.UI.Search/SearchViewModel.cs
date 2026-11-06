@@ -362,7 +362,7 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
     /// <summary>视图在取消/重置后获得焦点用（VM 不碰键盘焦点）。</summary>
     public event EventHandler? ResetRequested;
 
-    /// <summary>结果集刚整批挂上表格：视图先挂**紧凑行模板**保证首帧快，下一帧再恢复完整模板。</summary>
+    /// <summary>结果集刚整批挂上表格（订阅方据此重建派生投影；行模板不因此切换）。</summary>
     public event EventHandler? ResultSetReplaced;
 
     /// <summary>下一次整批替换是否保留当前阅读位置：刷新/F5 保留；**新查询**回到顶部。</summary>
@@ -390,6 +390,9 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
         _pathTextCache[key] = (languageVersion, text);
         return text;
     }
+
+    /// <summary>行模型的位置文本入口：每次读取现取当前语言版本（换语言后可视行失效即得新文案）。</summary>
+    internal string ResolveRowPathText(string? listId) => ResolveFolderPathText(listId, Loc.Table.Version);
 
     // —— 导航生命周期（MainViewModel 的 search 路由事件转发到这里） ——
 
@@ -622,7 +625,7 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
 
             var loadingText = Loc.T("search.result.rowLoading");
             var initial = await BuildInitialRowsAsync(
-                snapshot.Total, snapshot.Prefetch, query, loadingText, cts.Token);
+                snapshot.Total, snapshot.Prefetch, query, loadingText, ResolveRowPathText, cts.Token);
             if (gen != _searchGen || cts.IsCancellationRequested)
             {
                 await CloseSessionQuietlyAsync(snapshot.SessionId);
@@ -872,7 +875,8 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
 
     /// <summary>首屏：总数条占位行 + 前 prefetch 行真实数据；一次 Reset 挂进表格，绝不再整批替换。</summary>
     private static Task<List<LinkItem>> BuildInitialRowsAsync(
-        int total, IReadOnlyList<LinkDto> prefetch, string query, string loadingText, CancellationToken ct)
+        int total, IReadOnlyList<LinkDto> prefetch, string query, string loadingText,
+        Func<string?, string> pathResolver, CancellationToken ct)
         => Task.Run(() =>
         {
             var rows = new List<LinkItem>(total);
@@ -883,6 +887,7 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
             for (var i = 0; i < filled; i++)
             {
                 var row = new SearchResultRow();
+                row.SetPathResolver(pathResolver);
                 row.Fill(prefetch[i], query);
                 rows[i] = row;
             }
@@ -896,12 +901,14 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
     {
         var offset = (page - 1) * RemainingLoadSize;
         var filled = 0;
+        var pathResolver = new Func<string?, string>(ResolveRowPathText);
         for (var i = 0; i < rows.Count; i++)
         {
             var index = offset + i;
             if (index >= Results.Count) break;
             if (Results[index] is not SearchResultRow row || !row.IsPlaceholder) continue;
 
+            row.SetPathResolver(pathResolver);
             row.Fill(rows[i], query);
             if (!RegisterLoaded(row, index))
                 throw new InvalidOperationException($"duplicate link id in search snapshot: {rows[i].LinkId}");
@@ -1189,7 +1196,7 @@ public sealed partial class SearchViewModel : INotifyPropertyChanged
             _sessionId = snapshot.SessionId;
             var loadingText = Loc.T("search.result.rowLoading");
             var initial = await BuildInitialRowsAsync(
-                snapshot.Total, snapshot.Prefetch, query, loadingText, cts.Token);
+                snapshot.Total, snapshot.Prefetch, query, loadingText, ResolveRowPathText, cts.Token);
             if (gen != _searchGen || cts.IsCancellationRequested)
             {
                 await CloseSessionQuietlyAsync(snapshot.SessionId);

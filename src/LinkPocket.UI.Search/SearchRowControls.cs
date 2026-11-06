@@ -1,13 +1,8 @@
 using System;
-using System.Globalization;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Documents;
 using LinkPocket.Contracts;
-using LinkPocket.I18n;
-using LinkPocket.ViewModels;
 
 namespace LinkPocket.Views;
 
@@ -81,57 +76,4 @@ public sealed class HighlightTextBlock : TextBlock
         run.SetResourceReference(TextElement.ForegroundProperty, key);
         return run;
     }
-}
-
-/// <summary>
-/// 模板里的轻量文案单元格：值是 <see cref="LocValue"/>（键 + 参数 / 时刻），渲染时取词。
-/// 相比 LocFit：不做可用宽探测、不订阅布局；语言版本变化时重取一次即可。
-/// 搜索表格的列宽是冻结几何，日期列放不下由 TextTrimming 兜底（与工厂模式的显示口径一致）。
-/// </summary>
-public sealed class LocalizedTextBlock : TextBlock
-{
-    public static readonly DependencyProperty TextValueProperty = DependencyProperty.Register(
-        nameof(TextValue), typeof(LocValue), typeof(LocalizedTextBlock),
-        new PropertyMetadata(LocValue.Empty, (d, _) => ((LocalizedTextBlock)d).Refresh()));
-
-    public LocValue TextValue
-    {
-        get => (LocValue)GetValue(TextValueProperty);
-        set => SetValue(TextValueProperty, value);
-    }
-
-    public LocalizedTextBlock()
-    {
-        Loaded += (_, _) =>
-        {
-            Loc.Table.PropertyChanged -= OnLocaleChanged;
-            Loc.Table.PropertyChanged += OnLocaleChanged;
-        };
-        Unloaded += (_, _) => Loc.Table.PropertyChanged -= OnLocaleChanged;
-    }
-
-    private void OnLocaleChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => Refresh();
-
-    private void Refresh() => Text = TextValue.Resolve();
-}
-
-/// <summary>
-/// 搜索结果"位置"列：ListId → 目录路径（复用 SearchViewModel 注入的解析器）。
-/// 第一路绑语言版本：路径里的虚根 token 随语言变化，版本一变必须重新取词。
-/// </summary>
-public sealed class SearchPathConverter : IMultiValueConverter
-{
-    public static SearchPathConverter Instance { get; } = new();
-
-    public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (values.Length < 3 || values[1] is not SearchViewModel vm) return string.Empty;
-        if (values.Length >= 4 && values[3] is true) return string.Empty;   // 占位行不显示“根目录”
-        var listId = values[2] as string;
-        var version = values[0] is int v ? v : 0;
-        return vm.ResolveFolderPathText(string.IsNullOrEmpty(listId) ? null : listId, version);
-    }
-
-    public object[]? ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotSupportedException("search path projection is one-way.");
 }

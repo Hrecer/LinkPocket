@@ -210,12 +210,14 @@ public sealed partial class SearchViewModel
             }
         }
 
+        var pathResolver = new Func<string?, string>(ResolveRowPathText);
         foreach (var dto in toUpdate)
         {
             var key = "l:" + dto.LinkId;
             if (!_itemsById.TryGetValue(key, out var item) || item.IsFolder) continue;
             var row = (SearchResultRow)item;
             var move = SortKeyChanged(row, dto);
+            row.SetPathResolver(pathResolver);
             row.Refill(dto, LastQuery);
             if (move) MoveRow(row);
         }
@@ -223,6 +225,7 @@ public sealed partial class SearchViewModel
         foreach (var dto in toInsert)
         {
             var row = new SearchResultRow();
+            row.SetPathResolver(pathResolver);
             row.Fill(dto, LastQuery);
             var index = FindInsertIndex(row);
             Results.Insert(index, row);
