@@ -1,0 +1,9 @@
+bin/
+obj/
+logs/
+favicons/
+*.db
+*.db-wal
+*.db-shm
+ui_bench_report.txt
+ui_bench_report.json
