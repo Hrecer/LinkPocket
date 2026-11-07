@@ -382,7 +382,8 @@ internal static class MetadataTransport
 
     /// <summary>
     /// 读取正文；**读到 <c>&lt;/head&gt;</c> 就停**（元数据全在 head 里），找不到 head 才读到 2MB 上限。
-    /// 按响应头里的 charset 解码，与托管实现的取字符口径一致。
+    /// 字符集按响应头 charset → BOM → 页内 &lt;meta&gt; 声明 → UTF-8 兜底解码（见 <see cref="HtmlTextDecoder"/>）：
+    /// 不少站点只发 <c>Content-Type: text/html</c>，charset 写在页内 &lt;meta&gt; 里。
     /// <para>为什么提前停：正文可能有几百 KB～数 MB，而标题/描述/图标声明都在 head。
     /// 慢网络上把整页读完会让"解析"多等好几秒（实测百度首页 ~739 KB，其中 &lt;/head&gt; 在 ~289 KB）；
     /// 停止读取后剩余正文随响应一起丢弃，不占带宽也不进解析器。</para>
@@ -401,11 +402,8 @@ internal static class MetadataTransport
             if (ContainsHeadEnd(buffer.GetBuffer(), writtenBefore, (int)buffer.Length)) break;
         }
 
-        buffer.Position = 0;
-        using var bounded = new StreamContent(buffer);
-        if (content.Headers.ContentType is { } contentType)
-            bounded.Headers.ContentType = contentType;
-        return await bounded.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return HtmlTextDecoder.Decode(
+            buffer.GetBuffer(), (int)buffer.Length, content.Headers.ContentType?.CharSet);
     }
 
     /// <summary>
