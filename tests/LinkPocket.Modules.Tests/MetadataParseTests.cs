@@ -4,14 +4,18 @@ using Xunit;
 namespace LinkPocket.Modules.Tests;
 
 /// <summary>
-/// 页面元数据纯解析（L0 <see cref="RegexMetadataParser"/>）的 favicon 回归：
-/// 真实站点（如 chat.qwen.ai）用 HTML5 **无引号属性**书写 &lt;link rel=icon href=//cdn/x.png&gt;，
-/// 旧正则要求值必须被引号包住 → 整站解析不出图标、回落到站点根 /favicon.ico（多数站点 404）。
+/// 页面元数据纯解析（L0 <see cref="RegexMetadataParser"/>）回归：
+/// favicon 的真实站点书写差异（如 chat.qwen.ai 用 HTML5 **无引号属性**书写
+/// &lt;link rel=icon href=//cdn/x.png&gt;），以及 SPA 空壳页
+/// （work.n.cn 的 &lt;title&gt; 为空、只有站点描述）的标题回落。
 /// </summary>
 public class MetadataParseTests
 {
     private static string? FaviconOf(string html, string pageUrl = "https://chat.qwen.ai/")
         => RegexMetadataParser.Instance.Parse(html, new Uri(pageUrl)).FaviconUrl;
+
+    private static PageMetadata MetaOf(string html, string pageUrl = "https://work.n.cn/")
+        => RegexMetadataParser.Instance.Parse(html, new Uri(pageUrl));
 
     [Fact]
     public void 无引号属性也能解析出图标_协议相对地址补https()
@@ -52,5 +56,46 @@ public class MetadataParseTests
     public void 没有link标签时回落站点根()
     {
         Assert.Equal("https://chat.qwen.ai/favicon.ico", FaviconOf("<head><title>x</title></head>"));
+    }
+
+    [Fact]
+    public void 空title时回落到页面描述_SPA空壳也能解析出标题()
+    {
+        // work.n.cn 首页：<title></title> 由前端脚本稍后写入，HTML 里只有站点描述
+        var html = "<head><title></title><meta name=\"keywords\" content=\"纳米Work\">"
+                   + "<meta name=\"description\" content=\"纳米Work\"></head>";
+        var meta = MetaOf(html);
+        Assert.Equal("纳米Work", meta.Title);
+        Assert.Equal("纳米Work", meta.Description);
+    }
+
+    [Fact]
+    public void 空title时优先回落到og_site_name()
+    {
+        var html = "<head><title></title><meta property=\"og:site_name\" content=\"站点名\">"
+                   + "<meta name=\"description\" content=\"一段更长的描述\"></head>";
+        Assert.Equal("站点名", MetaOf(html).Title);
+    }
+
+    [Fact]
+    public void 空title时application_name先于描述()
+    {
+        var html = "<head><title>   </title><meta name=\"application-name\" content=\"应用名\">"
+                   + "<meta name=\"description\" content=\"描述\"></head>";
+        Assert.Equal("应用名", MetaOf(html).Title);
+    }
+
+    [Fact]
+    public void 非空title不被描述覆盖()
+    {
+        var html = "<head><title>真标题</title><meta name=\"description\" content=\"描述\"></head>";
+        Assert.Equal("真标题", MetaOf(html).Title);
+    }
+
+    [Fact]
+    public void twitter_title的name写法也能覆盖title()
+    {
+        var html = "<head><title>旧标题</title><meta name=\"twitter:title\" content=\"推文标题\"></head>";
+        Assert.Equal("推文标题", MetaOf(html).Title);
     }
 }

@@ -8,7 +8,9 @@ namespace LinkPocket.Kernel;
 /// 页面元数据解析（自 LinkService 正则组下沉为 L0 纯函数）：
 /// HTML → 标题 / 描述 / favicon 地址。解析规则与既有实现逐条等价（行为等价项）：
 /// <list type="bullet">
-/// <item>标题：&lt;title&gt;，被 og:title / twitter:title 覆盖；</item>
+/// <item>标题：&lt;title&gt;，被 og:title / twitter:title 覆盖；**&lt;title&gt; 为空时依次回落
+/// og:site_name / application-name / apple-mobile-web-app-title / 页面描述**——SPA 常把 &lt;title&gt;
+/// 留给前端脚本稍后写入，HTML 里只有站点名或描述，不能因此返回空标题；</item>
 /// <item>描述：meta[name=description]（name/content 两种属性序），被 og:description 覆盖；</item>
 /// <item>favicon：link[rel=icon]（含 shortcut icon；**属性值可加引号也可裸写**，且**属性顺序任意**——
 /// 相对地址按页面根解析）；解析出的地址不含常见图标扩展名时回落 {host}/favicon.ico；无 link 标签同样回落。</item>
@@ -32,13 +34,25 @@ public sealed class RegexMetadataParser : IMetadataParser
         var titleMatch = Regex.Match(html, @"<title[^>]*>(.*?)</title>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
         var title = titleMatch.Success ? WebUtility.HtmlDecode(titleMatch.Groups[1].Value.Trim()) : null;
+        if (string.IsNullOrEmpty(title)) title = null;
 
-        // og:title / twitter:title 覆盖（与既有四种属性序尝试的最终效果等价）
-        var ogTitle = FirstMetaContent(html, "(?:og:title|twitter:title)");
-        if (!string.IsNullOrEmpty(ogTitle)) title = ogTitle;
+        // og:title / twitter:title 覆盖（twitter:title 也常用 name= 书写，property / name 两种都认）
+        var ogTitle = FirstMetaContentAnyOrder(html, "og:title")
+                      ?? FirstMetaContentAnyOrder(html, "twitter:title", isName: true);
+        if (!string.IsNullOrEmpty(ogTitle)) return ogTitle;
 
-        return title;
+        return title ?? SiteNameOrDescription(html);
     }
+
+    /// <summary>
+    /// 标题缺位时的回落：站点名优先，其次页面描述。
+    /// SPA（如 work.n.cn）把 &lt;title&gt; 留给前端脚本写入，HTML 里只有站点名/描述是唯一可用文字。
+    /// </summary>
+    private static string? SiteNameOrDescription(string html)
+        => FirstMetaContentAnyOrder(html, "og:site_name")
+           ?? FirstMetaContentAnyOrder(html, "application-name", isName: true)
+           ?? FirstMetaContentAnyOrder(html, "apple-mobile-web-app-title", isName: true)
+           ?? ParseDescription(html);
 
     private static string? ParseDescription(string html)
     {
@@ -60,6 +74,11 @@ public sealed class RegexMetadataParser : IMetadataParser
         var value = WebUtility.HtmlDecode(match.Groups[1].Value.Trim());
         return value.Length == 0 ? null : value;
     }
+
+    /// <summary>读 meta 标签内容值：键与 content 两种属性顺序都认。</summary>
+    private static string? FirstMetaContentAnyOrder(string html, string key, bool isName = false)
+        => FirstMetaContent(html, key, isName)
+           ?? FirstMetaContent(html, key, isName, contentFirst: true);
 
     private static readonly Regex LinkTagPattern = new(@"<link\b[^>]*>", RegexOptions.IgnoreCase);
 
