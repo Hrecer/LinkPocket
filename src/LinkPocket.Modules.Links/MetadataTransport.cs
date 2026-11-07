@@ -58,7 +58,13 @@ internal static class MetadataTransport
     /// <summary>重定向跳数上限（手动跟随：每跳都要重新校验）。</summary>
     private const int MaxRedirects = 5;
 
-    private static readonly HttpClient Client = CreateClient();
+    private static readonly HttpClient Client = CreateClient(allowLocalMapping: false);
+
+    /// <summary>
+    /// HTTPS 域名专用客户端：允许域名解析到本机回环（证书仍按原域名校验）。
+    /// 由 <see cref="TargetGuard.AllowsLocalMapping"/> 判定，字面 IP / localhost / HTTP 不走这里。
+    /// </summary>
+    private static readonly HttpClient ClientLocalMapping = CreateClient(allowLocalMapping: true);
 
     /// <summary>
     /// 反爬兜底客户端（curl-impersonate：真实浏览器 TLS/HTTP2 指纹），懒加载。
@@ -95,13 +101,13 @@ internal static class MetadataTransport
         }
     }
 
-    private static HttpClient CreateClient()
+    private static HttpClient CreateClient(bool allowLocalMapping)
     {
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = false,   // 重定向由 DownloadAsync 手动跟随并逐跳校验
             ConnectTimeout = TimeSpan.FromSeconds(10),
-            ConnectCallback = ConnectPublicAsync,
+            ConnectCallback = allowLocalMapping ? ConnectAllowingLocalMappingAsync : ConnectPublicAsync,
         };
 
         var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
@@ -280,7 +286,8 @@ internal static class MetadataTransport
     /// </summary>
     private static async Task<HttpResponseMessage> SendAsync(Uri target, CancellationToken ct)
     {
-        var response = await Client.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        var client = TargetGuard.AllowsLocalMapping(target) ? ClientLocalMapping : Client;
+        var response = await client.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!IsBotWall(response.StatusCode))
             return response;
 
@@ -467,7 +474,8 @@ internal static class MetadataTransport
         }
 
         var addresses = await Dns.GetHostAddressesAsync(target.Host, ct).ConfigureAwait(false);
-        if (Array.Find(addresses, IsAllowed) is null)
+        if (Array.Find(addresses, IsAllowed) is null
+            && !(TargetGuard.AllowsLocalMapping(target) && TargetGuard.IsLoopbackOnly(addresses)))
             throw new IOException($"refused to connect (loopback/link-local address): {target.Host}");
     }
 
@@ -475,19 +483,31 @@ internal static class MetadataTransport
     /// 连接前解析目标地址并挡掉环回 / 链路本地（含 IPv6 fe80::、以及 v4-mapped 形式）。
     /// 放在连接回调里而不是"先解析再请求"：校验与实际连接用的是同一次解析结果，中间没有可乘之机。
     /// </summary>
-    private static async ValueTask<Stream> ConnectPublicAsync(SocketsHttpConnectionContext context, CancellationToken ct)
-    {
-        var endpoint = context.DnsEndPoint;
+    private static ValueTask<Stream> ConnectPublicAsync(
+        SocketsHttpConnectionContext context, CancellationToken ct)
+        => ConnectAsync(context.DnsEndPoint, allowLocalMapping: false, ct);
 
+    /// <summary>HTTPS 域名专用连接：允许解析到本机回环的目标；证书仍按原域名校验。</summary>
+    private static ValueTask<Stream> ConnectAllowingLocalMappingAsync(
+        SocketsHttpConnectionContext context, CancellationToken ct)
+        => ConnectAsync(context.DnsEndPoint, allowLocalMapping: true, ct);
+
+    private static async ValueTask<Stream> ConnectAsync(
+        DnsEndPoint endpoint, bool allowLocalMapping, CancellationToken ct)
+    {
         // 配了系统代理时，握手端点就是代理本身：它是用户自己选的出口，不是被抓取的目标，
         // 不能拿环回判据去挡（挡了等于断网）。目标主机的解析交给代理去做。
         var toProxy = IsSystemProxy(endpoint);
         if (!toProxy)
         {
             var addresses = await Dns.GetHostAddressesAsync(endpoint.Host, ct).ConfigureAwait(false);
-            var allowed = Array.Find(addresses, IsAllowed)
-                ?? throw new IOException($"refused to connect (loopback/link-local address): {endpoint.Host}");
-            endpoint = new DnsEndPoint(allowed.ToString(), endpoint.Port);
+            var allowed = Array.Find(addresses, IsAllowed);
+            if (allowed is not null)
+                endpoint = new DnsEndPoint(allowed.ToString(), endpoint.Port);
+            else if (allowLocalMapping && TargetGuard.IsLoopbackOnly(addresses))
+                endpoint = new DnsEndPoint(Array.Find(addresses, IPAddress.IsLoopback)!.ToString(), endpoint.Port);
+            else
+                throw new IOException($"refused to connect (loopback/link-local address): {endpoint.Host}");
         }
 
         var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
