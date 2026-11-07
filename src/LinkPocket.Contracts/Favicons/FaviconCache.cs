@@ -450,13 +450,26 @@ public static class FaviconCache
         return (null, reason);
     }
 
+    /// <summary>图标的来源地址（<c>scheme://authority/</c>），用于防盗链 CDN 的 Referer；地址非法时返回 <c>null</c>。</summary>
+    private static Uri? BuildReferrer(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? new Uri($"{uri.Scheme}://{uri.Authority}/")
+            : null;
+
     /// <summary>普通路径下载。<c>BotWall</c> = 失败形态像反爬墙（403/503 或连接异常）→ 值得交给指纹兜底再试。</summary>
     private static async Task<(byte[]? Bytes, bool BotWall, string Reason)> TryDownloadPlainAsync(
         string url, CancellationToken ct)
     {
         try
         {
-            using var response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            // 部分 CDN 按 Referer 防盗链：直接请求图标地址会 403（ieway.cn 即此例），
+            // 浏览器是从页面带 Referer 取的。这里用图标自身的来源作 Referer——
+            // 同源图标等于页面来源；跨域 CDN 也满足"来源属于该站"的常见白名单。
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Referrer = BuildReferrer(url);
+            using var response = await Http.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 LpLog.Error($"favicon download failed [{(int)response.StatusCode}]: {ShortUrl(url)}", null);
