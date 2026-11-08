@@ -13,7 +13,8 @@ namespace LinkPocket.Kernel;
 /// 留给前端脚本稍后写入，HTML 里只有站点名或描述，不能因此返回空标题；</item>
 /// <item>描述：meta[name=description]（name/content 两种属性序），被 og:description 覆盖；</item>
 /// <item>favicon：link[rel=icon]（含 shortcut icon；**属性值可加引号也可裸写**，且**属性顺序任意**——
-/// 相对地址按页面根解析）；解析出的地址不含常见图标扩展名时回落 {host}/favicon.ico；无 link 标签同样回落。</item>
+/// 相对地址按页面根解析）；**声明即采用**（地址可以没有图标扩展名，如头像 / 图片服务的无扩展名 URL），
+/// 只有完全没有声明时才回落 {host}/favicon.ico。</item>
 /// </list>
 /// 网络抓取不在本契约（模块层闸外执行）；本类型只做纯解析、可快照单测。
 /// </summary>
@@ -99,15 +100,10 @@ public sealed class RegexMetadataParser : IMetadataParser
                 _ => new Uri(pageUri, faviconPath).ToString(),
             };
 
-            var lowerUrl = resolvedUrl.ToLower();
-            if (lowerUrl.Contains("favicon") || lowerUrl.Contains(".ico") || lowerUrl.Contains(".png") ||
-                lowerUrl.Contains(".jpg") || lowerUrl.Contains(".jpeg") || lowerUrl.Contains(".gif") ||
-                lowerUrl.Contains(".svg") || lowerUrl.Contains(".webp"))
-            {
-                return resolvedUrl;
-            }
-
-            return $"{baseUrl}/favicon.ico";
+            // 声明即采用：浏览器不会因为地址没有 .ico/.png 就忽略它。图片服务的头像地址
+            // （如 .../avatar/<hash>?d=blank）常无扩展名，按扩展名白名单筛会误回落站点根，
+            // 而多数站点根 /favicon.ico 是 404（blog.siitake.cn 即此例）。
+            return resolvedUrl;
         }
 
         return $"{baseUrl}/favicon.ico";

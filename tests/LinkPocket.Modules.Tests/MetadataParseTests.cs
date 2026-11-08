@@ -46,10 +46,21 @@ public class MetadataParseTests
     }
 
     [Fact]
-    public void 无图标扩展名的地址回落站点根()
+    public void 无图标扩展名的声明地址原样采用_不回落站点根()
     {
         var html = "<link rel=icon href=/handler>";
-        Assert.Equal("https://chat.qwen.ai/favicon.ico", FaviconOf(html));
+        Assert.Equal("https://chat.qwen.ai/handler", FaviconOf(html));
+    }
+
+    [Fact]
+    public void 带查询串的无扩展名图标地址原样采用()
+    {
+        // blog.siitake.cn：<link rel="icon" href="https://i2.wp.com/.../avatar/<hash>?d=blank">
+        // 头像 / 图片服务的地址没有图标扩展名，旧实现按扩展名白名单误判并回落站点根（该站根路径 404）
+        var html = "<link rel=\"icon\" href=\"https://i2.wp.com/gravatar.loli.net/avatar/2fbd223c8ccde74c2e2ac9f9662249f6?d=blank\">";
+        Assert.Equal(
+            "https://i2.wp.com/gravatar.loli.net/avatar/2fbd223c8ccde74c2e2ac9f9662249f6?d=blank",
+            FaviconOf(html));
     }
 
     [Fact]
