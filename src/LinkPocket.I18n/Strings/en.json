@@ -80,6 +80,7 @@
   "menu.deleteWithCount": "Delete ({0})",
   "startup.fallbackNote": "\n\nYou can choose again under Settings → Appearance.",
   "startup.failed": "The app failed to start: {0}",
+  "startup.dbBusy": "The database is still held by a process left over from the previous exit. End the leftover LinkPocket process, or restart the computer and try again.",
   "startup.dbIncompatible": "This data file is not compatible with the current version; export a backup with the older version, then import it here.\n\nThe app did not start and left the file untouched:\n{0}",
   "status.undoFailed": "Undo failed",
   "status.linkCopied": "Link copied",

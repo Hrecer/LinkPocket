@@ -134,6 +134,9 @@ internal static class MetadataTransport
     {
         try
         {
+            // 单文件发布：先按完整路径把 curl 原生库装进进程；包内解析器随后按名字即可命中。
+            EmbeddedNativeBootstrap.PreloadCurl();
+
             var options = new CurlHandlerOptions
             {
                 // 固定为已实测通过的口径；跟进更新由升级 CurlImpersonate 包完成

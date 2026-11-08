@@ -3,6 +3,7 @@ using LinkPocket.Services;
 using LinkPocket.Theming;
 using LinkPocket.I18n;
 using LinkPocket.Contracts;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LinkPocket;
@@ -22,6 +23,9 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 单文件发布：先钉住 WPF 退出阶段要用到的 vcruntime，避免自解压目录清理先删掉它。
+        EmbeddedNativeBootstrap.PinVcruntime();
+
         // 按需能力宿主模式：只借浏览器能力，没有主窗口、不装配引擎、不打开数据库。
         var capabilityHost = e.Args.Contains("--capability-host", StringComparer.OrdinalIgnoreCase);
         if (capabilityHost) ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -164,11 +168,35 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            LpLog.Error("application startup failed", ex);
+            var leftoverLock = IsLeftoverDatabaseLock(ex);
+            LpLog.Error(leftoverLock
+                ? "database is still held by a leftover process at startup"
+                : "application startup failed", ex);
             LpLog.Flush(TimeSpan.FromSeconds(2));   // 启动失败即退出：先落盘再弹窗
-            MessageBox.Show(Loc.T("startup.failed"), "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(leftoverLock
+                    ? Loc.T("startup.dbBusy")
+                    : Loc.T("startup.failed"),
+                "LinkPocket", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    /// <summary>
+    /// 库被上次异常退出留下的进程占用：SQLite 在开启 WAL 时表现为 disk I/O error。
+    /// 这条路径现在只在修复前遗留的旧进程上出现；给专门文案，避免用户只看到笼统的启动失败。
+    /// </summary>
+    private static bool IsLeftoverDatabaseLock(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqlite
+                && (sqlite.SqliteErrorCode == 10
+                    || sqlite.SqliteExtendedErrorCode == 1034
+                    || sqlite.Message.Contains("disk I/O error", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

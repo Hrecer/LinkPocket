@@ -79,6 +79,9 @@ public static class BridgeUpdate
                 if (StageIo.TryDeleteTree(oldPath, emit)) oldPath = null;
             }
 
+            stage("cleanup-bundles");
+            BundleExtractionCleanup.Run(emit);
+
             stage("launch");
             launch(Path.Combine(ctx.InstallDir, "LinkPocket.exe"));
             emit("new version launched");

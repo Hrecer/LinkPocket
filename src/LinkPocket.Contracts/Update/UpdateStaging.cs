@@ -27,15 +27,21 @@ public static class UpdateStaging
     }
 
     /// <summary>
+    /// 临时目录根（<c>LP_TEMP_ROOT</c> 优先，否则系统临时目录）。更新暂存区与单文件解压目录清理
+    /// 共用同一口径——更新器是独立进程、不引引擎，故在契约层复刻这一条。
+    /// </summary>
+    public static string TempRoot()
+    {
+        var tempRoot = Environment.GetEnvironmentVariable("LP_TEMP_ROOT");
+        return string.IsNullOrWhiteSpace(tempRoot) ? Path.GetTempPath() : tempRoot;
+    }
+
+    /// <summary>
     /// 本安装的暂存区路径。根 = 系统临时目录；<c>LP_TEMP_ROOT</c> 指到别处时用它
     /// （与引擎 <c>TempArea</c> 同一环境变量、同一口径——更新器是独立进程、不引引擎，故在契约层复刻这一条）。
     /// </summary>
     public static string StagingRootFor(string installPath)
-    {
-        var tempRoot = Environment.GetEnvironmentVariable("LP_TEMP_ROOT");
-        if (string.IsNullOrWhiteSpace(tempRoot)) tempRoot = Path.GetTempPath();
-        return Path.Combine(tempRoot, DirectoryName, InstallId(installPath));
-    }
+        => Path.Combine(TempRoot(), DirectoryName, InstallId(installPath));
 
     /// <summary>读上次更新的结果 JSON（不存在 / 不可读 = null）。调用方读完后自行 <see cref="ConsumeResult"/>。</summary>
     public static string? TryReadResultJson(string installPath)

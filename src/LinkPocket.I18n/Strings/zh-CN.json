@@ -80,6 +80,7 @@
   "menu.deleteWithCount": "删除 ({0} 项)",
   "startup.fallbackNote": "\n\n可在「设置 → 外观」重新选择。",
   "startup.failed": "应用启动失败：{0}",
+  "startup.dbBusy": "数据库仍被上次异常退出的进程占用。请结束残留的 LinkPocket 进程，或重启电脑后再试。",
   "startup.dbIncompatible": "此数据文件与当前版本不兼容；请用旧版导出的备份在本版导入。\n\n应用未启动，也未改动该文件：\n{0}",
   "status.undoFailed": "撤销失败",
   "status.linkCopied": "已复制链接",
