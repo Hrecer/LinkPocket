@@ -46,6 +46,14 @@ public class MetadataParseTests
     }
 
     [Fact]
+    public void 跨行书写的标题折叠为单行()
+    {
+        // ziglang.org/zh-CN/：<title> 里逐行书写「主页 / ⚡ / Zig 编程语言」
+        var html = "<head><title id=\"title\">\n      主页\n      ⚡\n      Zig 编程语言\n    </title></head>";
+        Assert.Equal("主页 ⚡ Zig 编程语言", MetaOf(html, "https://ziglang.org/zh-CN/").Title);
+    }
+
+    [Fact]
     public void 无图标扩展名的声明地址原样采用_不回落站点根()
     {
         var html = "<link rel=icon href=/handler>";

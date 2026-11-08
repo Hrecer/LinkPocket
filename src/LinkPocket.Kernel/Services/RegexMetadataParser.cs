@@ -8,7 +8,7 @@ namespace LinkPocket.Kernel;
 /// 页面元数据解析（自 LinkService 正则组下沉为 L0 纯函数）：
 /// HTML → 标题 / 描述 / favicon 地址。解析规则与既有实现逐条等价（行为等价项）：
 /// <list type="bullet">
-/// <item>标题：&lt;title&gt;，被 og:title / twitter:title 覆盖；**&lt;title&gt; 为空时依次回落
+/// <item>标题：&lt;title&gt;，被 og:title / twitter:title 覆盖（**空白按 HTML 口径折叠**，跨行书写的标题不留换行）；**&lt;title&gt; 为空时依次回落
 /// og:site_name / application-name / apple-mobile-web-app-title / 页面描述**——SPA 常把 &lt;title&gt;
 /// 留给前端脚本稍后写入，HTML 里只有站点名或描述，不能因此返回空标题；</item>
 /// <item>描述：meta[name=description]（name/content 两种属性序），被 og:description 覆盖；</item>
@@ -40,10 +40,18 @@ public sealed class RegexMetadataParser : IMetadataParser
         // og:title / twitter:title 覆盖（twitter:title 也常用 name= 书写，property / name 两种都认）
         var ogTitle = FirstMetaContentAnyOrder(html, "og:title")
                       ?? FirstMetaContentAnyOrder(html, "twitter:title", isName: true);
-        if (!string.IsNullOrEmpty(ogTitle)) return ogTitle;
+        if (!string.IsNullOrEmpty(ogTitle)) return CollapseWhitespace(ogTitle);
 
-        return title ?? SiteNameOrDescription(html);
+        return CollapseWhitespace(title ?? SiteNameOrDescription(html));
     }
+
+    /// <summary>
+    /// 标题里的空白按 HTML 口径折叠：换行 / 制表 / 连续空格压成一个空格。
+    /// 标题元素允许跨行书写（ziglang.org 即此例），原样返回会在界面里画出换行与缩进。
+    /// 只折叠 ASCII 空白，<c>&amp;nbsp;</c> 等有意留白保持不动。
+    /// </summary>
+    private static string? CollapseWhitespace(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : Regex.Replace(value, @"[ \t\r\n\f]+", " ").Trim();
 
     /// <summary>
     /// 标题缺位时的回落：站点名优先，其次页面描述。
