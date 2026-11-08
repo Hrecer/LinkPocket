@@ -118,6 +118,31 @@ public class MetadataBatchAndFaviconFetchTests
     }
 
     [Fact]
+    public void 图标缓存_WebP按坏图删除_PNG保留()
+    {
+        var webpUrl = "https://example.test/icon-" + Guid.NewGuid().ToString("N") + ".png";
+        var webpPath = FaviconCache.GetCacheFilePath(webpUrl);
+        Directory.CreateDirectory(FaviconCache.CacheDirectory);
+        var webp = new byte[32];
+        "RIFF"u8.CopyTo(webp);
+        BitConverter.TryWriteBytes(webp.AsSpan(4), 24);
+        "WEBP"u8.CopyTo(webp.AsSpan(8));
+        "VP8X"u8.CopyTo(webp.AsSpan(12));
+        File.WriteAllBytes(webpPath, webp);
+
+        // CDN 变体：WPF 解码丢 alpha（Bgr32），落盘后会画成黑块 → 必须当坏图删掉并重下
+        Assert.Null(FaviconCache.TryGetCacheFilePath(webpUrl));
+        Assert.False(File.Exists(webpPath));
+
+        var pngUrl = "https://example.test/icon-" + Guid.NewGuid().ToString("N") + ".png";
+        var pngPath = FaviconCache.GetCacheFilePath(pngUrl);
+        File.WriteAllBytes(pngPath,
+            Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="));
+        Assert.Equal(pngPath, FaviconCache.TryGetCacheFilePath(pngUrl));
+        File.Delete(pngPath);
+    }
+
+    [Fact]
     public void 能力提供者锁_同库同名_不同库隔离()
     {
         var a = HostCapabilityBridge.ProviderMutexNameFor(@"C:\data\linkpocket.db");

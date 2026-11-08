@@ -150,7 +150,12 @@ public static class FaviconCache
         // 部分 CDN 对无 UA 请求直接拒绝或返回异常内容
         client.DefaultRequestHeaders.Add("User-Agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        client.DefaultRequestHeaders.Add("Accept", "image/avif,image/webp,image/png,image/*,*/*;q=0.8");
+        // 不声明 WebP / AVIF：本站图标是带 alpha 的 WebP 变体（Content-Type 仍是 image/webp，
+        // 即使地址以 .png 结尾），而 WPF 的 WebP 解码器会丢掉 alpha（解码成 Bgr32）——
+        // 透明区里的暗色 RGB 直接画出来就是黑块（quark.cn 即此例，深色只是表象）。
+        // 只请求位图老格式与 SVG，CDN 会返回原图；万一仍返回 WebP，由 AcceptImage 拒收。
+        client.DefaultRequestHeaders.Add("Accept",
+            "image/png,image/x-icon,image/vnd.microsoft.icon,image/gif,image/jpeg,image/svg+xml,image/bmp;q=0.9,*/*;q=0.1");
         client.DefaultRequestHeaders.Add("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
         return client;
     }
@@ -324,7 +329,8 @@ public static class FaviconCache
             return Task.FromResult(new FaviconFetchOutcome(false, FaviconFetchReasons.InvalidUrl));
 
         var cachePath = GetCacheFilePath(resolvedUrl);
-        if (File.Exists(cachePath))
+        // 带校验的查询：坏图（旧版本落下的 WebP / 错误页）会被删掉并按未缓存处理，触发重新下载。
+        if (TryGetCacheFilePath(resolvedUrl) is not null)
             return Task.FromResult(new FaviconFetchOutcome(true, FaviconFetchReasons.Cached));
 
         // 退避窗口内不再重试（失败多为"该站点没有图标"，每次刷新重发一遍纯属白烧）。
@@ -526,7 +532,11 @@ public static class FaviconCache
     private static bool IsSvgUrl(string url)
         => GetExtensionFromUrl(url).Equals(".svg", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>按文件头认 PNG / JPEG / GIF / BMP / ICO / CUR / WEBP。</summary>
+    /// <summary>按文件头认 PNG / JPEG / GIF / BMP / ICO / CUR。
+    /// <para>**不认 WebP**：WPF 的 WebP 解码器返回无 alpha 的 Bgr32，透明图标会变成黑块
+    /// （真实站点把图标地址的 CDN 变体做成带 alpha 的 WebP，见 <see cref="CreateHttpClient"/>）。
+    /// 旧缓存里的 WebP 因此会被 <see cref="TryGetCacheFilePath"/> 当作坏图删掉并重下。</para>
+    /// </summary>
     private static bool LooksLikeImage(ReadOnlySpan<byte> head) => head switch
     {
         [0x89, 0x50, 0x4E, 0x47, ..] => true,                       // PNG
@@ -535,9 +545,14 @@ public static class FaviconCache
         [0x42, 0x4D, ..] => true,                                   // BMP
         [0x00, 0x00, 0x01, 0x00, ..] => true,                       // ICO
         [0x00, 0x00, 0x02, 0x00, ..] => true,                       // CUR
-        [0x52, 0x49, 0x46, 0x46, ..] => true,                       // RIFF（WEBP 容器）
         _ => false,
     };
+
+    /// <summary>字节是不是 WebP（RIFF 容器 + WEBP 标识）：拒收，理由同 <see cref="LooksLikeImage"/>。</summary>
+    private static bool LooksLikeWebP(ReadOnlySpan<byte> bytes)
+        => bytes.Length >= 12
+           && bytes[..4].SequenceEqual("RIFF"u8)
+           && bytes.Slice(8, 4).SequenceEqual("WEBP"u8);
 
     /// <summary>
     /// 只收"真图片"：按文件头认 PNG / JPEG / GIF / BMP / ICO / WEBP。
@@ -550,6 +565,12 @@ public static class FaviconCache
     private static byte[]? AcceptImage(byte[]? bytes, string source)
     {
         if (bytes is not { Length: >= 8 }) return null;
+        if (LooksLikeWebP(bytes))
+        {
+            // 透明图标的 WebP 变体：WPF 解码丢 alpha，落盘后就是黑块——宁可回落站点根，也不存坏图
+            LpLog.Warn($"favicon rejected (WebP variant; WPF drops its alpha): {ShortUrl(source)}", null);
+            return null;
+        }
         if (LooksLikeSvg(bytes)) return null;   // 原文不能当位图；SVG 应经光栅化再进来
         if (LooksLikeImage(bytes)) return bytes;
 

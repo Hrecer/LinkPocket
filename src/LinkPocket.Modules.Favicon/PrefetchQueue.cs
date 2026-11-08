@@ -21,7 +21,9 @@ internal static class PrefetchQueue
         {
             var resolved = FaviconCache.ResolveFaviconUrl(raw);
             if (resolved.Length == 0) continue;
-            if (File.Exists(FaviconCache.GetCacheFilePath(resolved))) continue;
+            // 用带校验的查询：旧版本可能把 CDN 的 WebP 变体落成过缓存（WPF 解码丢 alpha → 黑块），
+            // 这类文件必须在这里就被删掉并重新入队，否则"已有文件"会让它永远不再下载。
+            if (FaviconCache.TryGetCacheFilePath(resolved) is not null) continue;
             if (!Pending.TryAdd(resolved, 0)) continue;
             queued++;
         }
