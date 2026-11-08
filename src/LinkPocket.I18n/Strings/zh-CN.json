@@ -510,6 +510,7 @@
   "shortcut.escapeDetail": "取消明细选中",
   "shortcut.toSearch": "搜索",
   "shortcut.runSearch": "执行搜索",
+  "shortcut.editorFetchMetadata": "一键解析标题/描述/图标",
   "shortcut.research": "重新搜索",
   "shortcut.requery": "重新查询",
   "shortcut.refreshTrash": "刷新回收站",

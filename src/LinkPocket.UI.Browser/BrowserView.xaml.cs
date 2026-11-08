@@ -99,6 +99,7 @@ public partial class BrowserView : UserControl
         .Add(ShortcutAction.BrowserTreeCollapse, vm.ToggleTreeExpandCommand)
         .Add(ShortcutAction.BrowserTreeExpand, vm.ToggleTreeExpandCommand)
         .Add(ShortcutAction.BrowserEscape, vm.EscapeCommand)
+        .Add(ShortcutAction.BrowserEditorFetchMetadata, vm.EditorFetchMetadataCommand)
         .Add(ShortcutAction.BrowserNavigateToSearch, vm.NavigateToSearchCommand);
 
     public BrowserView()
@@ -140,9 +141,13 @@ public partial class BrowserView : UserControl
             // 快捷键子系统：键位表 = ShortcutCatalog（全站唯一事实源——本页不再声明任何键位，
             // 只提供「动作 id → 命令」映射）；活跃作用域按"栏归属"（ActivePane）解析。
             _shortcutHost?.Detach();
+            var shortcutCommands = BuildShortcutCommands(ViewModel);
             _shortcutHost = new ShortcutHost(
-                ShortcutCatalog.Build(ShortcutPage.Browser, BuildShortcutCommands(ViewModel)), () => ActiveScope);
+                ShortcutCatalog.Build(ShortcutPage.Browser, shortcutCommands), () => ActiveScope);
             _shortcutHost.Attach(this);
+            // 控件锚定键（编辑器 URL 框回车）挂在编辑器页的命名域上——它有自己的 namescope，
+            // 页面根的 FindName 找不到 UrlBox。
+            _shortcutHost.AttachControls(ShortcutPage.Browser, EditorPageView, shortcutCommands);
             // 右键「刷新」用**同一个命令对象**（F5 那条），不做第二条刷新路径
             if (ViewModel is { } browserVm)
             {

@@ -647,7 +647,7 @@
                     </Style.Triggers>
                 </Style>
             </Grid.Style>
-            <local:LinkEditorPage DataContext="{Binding EditorPage}"/>
+            <local:LinkEditorPage x:Name="EditorPageView" DataContext="{Binding EditorPage}"/>
         </Grid>
     </Grid>
 </UserControl>

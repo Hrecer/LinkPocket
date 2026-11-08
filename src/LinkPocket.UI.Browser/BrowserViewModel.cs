@@ -310,6 +310,8 @@ public partial class BrowserViewModel : INotifyPropertyChanged
     public ICommand RenameSelectionCommand { get; }
     /// <summary>编辑选中项（整页编辑器）：**只有链接**能编辑，且必须恰好选中一个。</summary>
     public ICommand EditSelectionCommand { get; }
+    /// <summary>URL 框回车（控件锚定快捷键）落到当前编辑器的「一键解析」按钮——同一命令，不另建抓取路径。</summary>
+    public ICommand EditorFetchMetadataCommand { get; }
     public ICommand OpenSelectionCommand { get; }
     /// <summary>Alt+D / 点地址栏空白：聚焦地址栏（进编辑态，由视图聚焦并全选）。</summary>
     public ICommand EnterPathEditCommand { get; }
@@ -827,6 +829,9 @@ public partial class BrowserViewModel : INotifyPropertyChanged
         // 只有链接有编辑语义（文件夹灰掉）、且正在删除时让位（那一项马上就不在列表里了）
         EditSelectionCommand = new RelayCommand(EditSelection,
             () => IsSingleLinkSelected && !IsPathEditing && !IsRenaming && IsListContextActive && !IsDeleting);
+        EditorFetchMetadataCommand = new RelayCommand(
+            () => EditorPage?.FetchMetadataCommand.Execute(null),
+            () => IsEditorPageOpen && EditorPage?.FetchMetadataCommand.CanExecute(null) == true);
         OpenSelectionCommand = new RelayCommand(() => _ = OpenSelectedAsync(), () => SelectionCount == 1 && !IsPathEditing && !IsRenaming);
         // 改名编辑框（InlineNameEditor）只发命令：提交/取消都收口到同一会话状态
         CommitRenameCommand = new RelayCommand(() => _ = CommitRenameAsync());

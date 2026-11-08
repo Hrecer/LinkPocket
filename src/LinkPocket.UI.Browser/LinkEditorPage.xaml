@@ -328,7 +328,9 @@
                                 </Button>
                             </StackPanel>
                         </Grid>
-                        <TextBox Style="{StaticResource PageTextField}"
+                        <!-- URL 框内 Enter = 右侧「一键解析」按钮：键位声明在 ShortcutCatalog（控件锚定 UrlBox），
+                             由 BrowserView 的 ShortcutHost 装配；本文件不出现任何键位。 -->
+                        <TextBox x:Name="UrlBox" Style="{StaticResource PageTextField}"
                                  Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
                 </Border>

@@ -510,6 +510,7 @@
   "shortcut.escapeDetail": "Clear detail selection",
   "shortcut.toSearch": "Search",
   "shortcut.runSearch": "Run search",
+  "shortcut.editorFetchMetadata": "Fetch title, description and icon",
   "shortcut.research": "Search again",
   "shortcut.requery": "Query again",
   "shortcut.refreshTrash": "Refresh trash",

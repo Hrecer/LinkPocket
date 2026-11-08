@@ -29,6 +29,8 @@ public static class ShortcutAction
     public const string BrowserDelete = "browser.delete";
     public const string BrowserRename = "browser.rename";
     public const string BrowserOpen = "browser.open";
+    /// <summary>编辑器 URL 框内 Enter = 右侧「一键解析」按钮（控件锚定，只在 URL 框获焦时生效）。</summary>
+    public const string BrowserEditorFetchMetadata = "browser.editorFetchMetadata";
     public const string BrowserGoBack = "browser.goBack";
     public const string BrowserGoUp = "browser.goUp";
     public const string BrowserGoForward = "browser.goForward";
@@ -154,6 +156,9 @@ public static class ShortcutCatalog
         new(ShortcutAction.BrowserDelete, Key.Delete, ShortcutScope.Browser, "shortcut.deleteSelected", ContextGateKey: "gate.listContextSame"),
         new(ShortcutAction.BrowserRename, Key.F2, ShortcutScope.Browser, "shortcut.renameSelected", ContextGateKey: "gate.singlePlusList"),
         new(ShortcutAction.BrowserOpen, Key.Enter, ShortcutScope.Browser, "shortcut.openSelected", ContextGateKey: "gate.singlePlusList"),
+        // 编辑器（整页）URL 框内的 Enter = 右侧「一键解析」按钮：控件锚定，只在 URL 框获焦时生效
+        new(ShortcutAction.BrowserEditorFetchMetadata, Key.Enter, ShortcutScope.Browser, "shortcut.editorFetchMetadata",
+            ControlName: "UrlBox"),
 
         // —— 导航类 ——
         new(ShortcutAction.BrowserGoBack, Key.Back, ShortcutScope.Browser, "shortcut.back", ContextGateKey: "gate.pathEditingOrRename"),
